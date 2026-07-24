@@ -66,7 +66,9 @@ pub fn lower_program_with_assembly_for_entrypoint(
     _assembly: Option<&ProgramAssembly>,
     _link_entrypoint: Option<&str>,
 ) -> Result<CodegenArtifact, Vec<crate::errors::CodegenError>> {
-    Err(vec![crate::errors::CodegenError::retired_hir_lowering_path()])
+    Err(vec![
+        crate::errors::CodegenError::retired_hir_lowering_path(),
+    ])
 }
 
 fn effective_source_path(

@@ -227,13 +227,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
-        self.query(call_arguments(self.db, key)).and_then(|arguments| {
-            arguments
-                .iter()
-                .copied()
-                .map(|argument| self.unwrap_transparent(argument))
-                .collect()
-        })
+        self.query(call_arguments(self.db, key))
+            .and_then(|arguments| {
+                arguments
+                    .iter()
+                    .copied()
+                    .map(|argument| self.unwrap_transparent(argument))
+                    .collect()
+            })
     }
 
     fn inline_lambda_call(&self, key: AstNodeKey) -> Option<InlineLambdaCall> {
@@ -338,7 +339,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
         if self.node_kind(key) == Some(NodeKind::StructLiteralExpression)
-            && self.query(aggregate_literal_declaration(self.db, key)).is_some()
+            && self
+                .query(aggregate_literal_declaration(self.db, key))
+                .is_some()
         {
             return self.isa.map(|isa| isa.pointer_type());
         }
@@ -458,7 +461,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn range_fact(&self, key: AstNodeKey) -> Option<beskid_isle::RangeFact> {
         let range = self.query(range_for_fact(self.db, key))?;
-        Some(beskid_isle::RangeFact::new(range.start, range.end, 1, false))
+        Some(beskid_isle::RangeFact::new(
+            range.start,
+            range.end,
+            1,
+            false,
+        ))
     }
 
     fn spawn_entry(&self, key: AstNodeKey) -> Option<beskid_isle::SpawnEntry> {

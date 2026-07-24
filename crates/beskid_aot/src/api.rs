@@ -3,8 +3,6 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use cargo_cross::config::{Arch, Os, get_target_config};
-use cargo_cross::env::sanitize_cargo_env;
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, render_runtime_asm_include};
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
 use beskid_abi::runtime_source::{canonical_runtime_sources, prove_canonical_runtime_corpus};
@@ -13,6 +11,8 @@ use beskid_pipeline::{
     SharedPipelineObserver, observe_phase_result,
     phases::{AOT_EMIT_OBJECT, AOT_LINK, AOT_RUNTIME},
 };
+use cargo_cross::config::{Arch, Os, get_target_config};
+use cargo_cross::env::sanitize_cargo_env;
 
 use std::collections::HashSet;
 
@@ -519,17 +519,33 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
                 assembly_args: vec!["-c".into(), "-arch".into(), "arm64".into()],
                 assembly_output_before_source: false,
                 tls_program: "clang",
-                tls_args: vec!["-std=c11".into(), "-c".into(), "-arch".into(), "arm64".into()],
+                tls_args: vec![
+                    "-std=c11".into(),
+                    "-c".into(),
+                    "-arch".into(),
+                    "arm64".into(),
+                ],
                 object_extension: "o",
             }),
             (Arch::X86_64, Os::Linux) => Ok(PlatformObjectPlan {
                 assembly_source: "platform.S",
                 tls_source: "platform_tls.c",
                 assembly_program: "clang",
-                assembly_args: vec!["-target".into(), target.to_owned(), "-fPIC".into(), "-c".into()],
+                assembly_args: vec![
+                    "-target".into(),
+                    target.to_owned(),
+                    "-fPIC".into(),
+                    "-c".into(),
+                ],
                 assembly_output_before_source: false,
                 tls_program: "clang",
-                tls_args: vec!["-target".into(), target.to_owned(), "-std=c11".into(), "-fPIC".into(), "-c".into()],
+                tls_args: vec![
+                    "-target".into(),
+                    target.to_owned(),
+                    "-std=c11".into(),
+                    "-fPIC".into(),
+                    "-c".into(),
+                ],
                 object_extension: "o",
             }),
             (Arch::X86_64, Os::Windows) => Ok(PlatformObjectPlan {
@@ -546,7 +562,8 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
                 target: target.to_owned(),
                 message: format!(
                     "native platform shim is not implemented for {}-{}",
-                    config.arch.as_str(), config.os.as_str()
+                    config.arch.as_str(),
+                    config.os.as_str()
                 ),
             }),
         };
@@ -561,7 +578,11 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
             assembly_args: vec!["--m64".into(), "/c".into(), "/X".into(), "/Fo".into()],
             assembly_output_before_source: true,
             tls_program: "clang",
-            tls_args: vec!["--target=x86_64-pc-windows-msvc".into(), "-std=c11".into(), "-c".into()],
+            tls_args: vec![
+                "--target=x86_64-pc-windows-msvc".into(),
+                "-std=c11".into(),
+                "-c".into(),
+            ],
             object_extension: "obj",
         }),
         _ => Err(AotError::UnsupportedLinkerStrategy {

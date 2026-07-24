@@ -182,7 +182,9 @@ fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_an
     // complete object, so validation must reject a non-word offset and all arithmetic must be
     // checked before forming an address. Overflow uses wrapping multiply/add (not
     // `NativeWordMax() - 8`) because `word` compares are signed in Cranelift.
-    assert!(source.contains("pub bool ValidatePointerMap(pointer pointerMap, word pointerCount, word objectSize)"));
+    assert!(source.contains(
+        "pub bool ValidatePointerMap(pointer pointerMap, word pointerCount, word objectSize)"
+    ));
     assert!(source.contains("word mapOffset = index * 8"));
     assert!(source.contains("if mapOffset / 8 != index"));
     assert!(source.contains("if offset % 8 != 0"));
@@ -243,10 +245,20 @@ fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_an
     }
 
     assert!(source.contains("pub bool StoreClosureCapture(pointer environment, pointer descriptor, word mapIndex, pointer value)"));
-    assert!(source.contains("pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer environment)"));
+    assert!(source.contains(
+        "pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer environment)"
+    ));
     assert!(source.contains("return SetRootSlotValue(rootFrame, slotIndex, environment);"));
-    assert!(source.contains("pub bool RootClosureEnvironmentCurrent(word slotIndex, pointer environment)"));
-    assert!(source.contains("return RootClosureEnvironment(CurrentThreadState(), slotIndex, environment);"));
+    assert!(
+        source.contains(
+            "pub bool RootClosureEnvironmentCurrent(word slotIndex, pointer environment)"
+        )
+    );
+    assert!(
+        source.contains(
+            "return RootClosureEnvironment(CurrentThreadState(), slotIndex, environment);"
+        )
+    );
 }
 
 #[test]

@@ -82,8 +82,8 @@ pub i64 Repeat(i64 unit, i64 count) {
 }
 pub i64 Main() { return Repeat(1, 4); }
 "#;
-    let prepared =
-        prepare_jit_entrypoint(Path::new("repeat.bd"), source, "Main").expect("CodegenInput prepare");
+    let prepared = prepare_jit_entrypoint(Path::new("repeat.bd"), source, "Main")
+        .expect("CodegenInput prepare");
     engine
         .compile_artifact(&prepared.artifact)
         .expect("jit compile");

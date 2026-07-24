@@ -583,9 +583,7 @@ mod tests {
         .expect("prepare diagnostics");
 
         let syntax = prepared.syntax_assembly();
-        let expected = entry_path
-            .canonicalize()
-            .unwrap_or(entry_path.clone());
+        let expected = entry_path.canonicalize().unwrap_or(entry_path.clone());
         let actual = syntax
             .entry_unit()
             .path

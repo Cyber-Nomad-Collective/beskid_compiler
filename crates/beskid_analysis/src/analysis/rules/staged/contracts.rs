@@ -200,7 +200,7 @@ impl SemanticPipelineRule {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::{builtin_rules, run_rules, AnalysisOptions};
+    use crate::analysis::{AnalysisOptions, builtin_rules, run_rules};
     use crate::parser::{BeskidParser, Rule};
     use crate::parsing::parsable::Parsable;
     use crate::syntax::Program;

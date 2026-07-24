@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
     use beskid_analysis::projects::AssemblyDiscovery;
-    use beskid_analysis::services::{PrepareOptions, parse_program_with_source_name, resolve_input};
+    use beskid_analysis::services::{
+        PrepareOptions, parse_program_with_source_name, resolve_input,
+    };
     use beskid_queries::{BeskidDatabase, configure_db_for_project, entry_resolution_with_db};
     use std::path::PathBuf;
     use std::str::FromStr;
@@ -145,7 +147,8 @@ mod tests {
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
         };
-        let offset = main_source.find("Output.Write").expect("member prefix") + "Output.Write".len();
+        let offset =
+            main_source.find("Output.Write").expect("member prefix") + "Output.Write".len();
         let response = completion::handler::handle_completion(
             &db,
             &Uri::from_str("file:///tmp/intellisense-completion/src/Main.bd").expect("uri"),
@@ -317,9 +320,14 @@ mod tests {
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");
         assert!(
-            doc.syntax_hovers.iter().any(|hover| hover.markdown.contains("WriteLine"))
+            doc.syntax_hovers
+                .iter()
+                .any(|hover| hover.markdown.contains("WriteLine"))
                 || doc.syntax_definitions.iter().any(|definition| {
-                    definition.declaration_path.to_string_lossy().contains("Output")
+                    definition
+                        .declaration_path
+                        .to_string_lossy()
+                        .contains("Output")
                 }),
             "lifecycle build_document should attach syntax facts for WriteLine"
         );

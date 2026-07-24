@@ -280,9 +280,12 @@ fn install_prefix_derives_from_bin_layout_only() {
     let executable = PathBuf::from("/opt/beskid/bin/beskid_cli");
     let prefix = installed_runtime_prefix_for_executable(&executable).unwrap();
     assert_eq!(prefix, PathBuf::from("/opt/beskid"));
-    assert!(host_runtime_triple().is_ok() || cfg!(not(any(
-        all(target_os = "linux", target_arch = "x86_64"),
-        all(target_os = "macos", target_arch = "aarch64"),
-        all(target_os = "windows", target_arch = "x86_64"),
-    ))));
+    assert!(
+        host_runtime_triple().is_ok()
+            || cfg!(not(any(
+                all(target_os = "linux", target_arch = "x86_64"),
+                all(target_os = "macos", target_arch = "aarch64"),
+                all(target_os = "windows", target_arch = "x86_64"),
+            )))
+    );
 }

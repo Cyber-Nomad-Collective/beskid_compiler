@@ -330,7 +330,9 @@ fn parsed_capturing_lambda_spawn_allocates_roots_and_dispatches_fiber_entry() {
     );
     assert!(!main_clif.contains("interop_dispatch_"), "{main_clif}");
     assert!(
-        lambda_clif.contains("load") || lambda_clif.contains("ireduce") || lambda_clif.contains("iadd"),
+        lambda_clif.contains("load")
+            || lambda_clif.contains("ireduce")
+            || lambda_clif.contains("iadd"),
         "lambda entry must read the rooted capture environment: {lambda_clif}"
     );
     assert!(

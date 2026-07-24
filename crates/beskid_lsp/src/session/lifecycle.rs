@@ -20,11 +20,11 @@ use beskid_queries::{
 
 use crate::diagnostics::lsp_diagnostics_from_syntax;
 use crate::manifest_uri::is_manifest_uri;
+use crate::session::db_access::with_compilation_db_mut_state;
 use crate::session::diagnostics_bridge::collect_syntax_diagnostics_for_state;
 use crate::session::documentation_facts::{
     SyntaxDocumentationFact, syntax_documentation_facts_for_source,
 };
-use crate::session::db_access::with_compilation_db_mut_state;
 use crate::session::project_context::cached_compilation_context;
 use crate::session::startup::wait_for_initial_scan;
 use crate::session::store::{
@@ -369,8 +369,7 @@ async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &str) -> Syn
         syntax_documentation_facts_for_source(uri.as_str(), text)
     };
     if is_manifest_uri(uri) {
-        let diagnostics =
-            collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        let diagnostics = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
         return SyntaxFacts {
             documentation,
             diagnostics,
@@ -378,8 +377,7 @@ async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &str) -> Syn
         };
     }
     let Some(path) = uri_to_path(uri) else {
-        let diagnostics =
-            collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        let diagnostics = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
         return SyntaxFacts {
             documentation,
             diagnostics,
@@ -387,8 +385,7 @@ async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &str) -> Syn
         };
     };
     let Some((resolved, session)) = resolved_input_for_path(state, &path, text).await else {
-        let diagnostics =
-            collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        let diagnostics = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
         return SyntaxFacts {
             documentation,
             diagnostics,
@@ -735,12 +732,26 @@ mod tests {
         let file_uri = uri();
         let state = tokio::sync::RwLock::new(State::default());
         state.read().await.mark_initial_scan_complete();
-        set_document(&state, file_uri.clone(), 1, "i32 Old() { return 0; }".into()).await;
+        set_document(
+            &state,
+            file_uri.clone(),
+            1,
+            "i32 Old() { return 0; }".into(),
+        )
+        .await;
         {
             let read = state.read().await;
             let doc = read.docs.get(&file_uri).expect("document exists");
-            assert!(doc.syntax_documentation.iter().any(|fact| fact.name == "Old"));
-            assert!(!doc.syntax_documentation.iter().any(|fact| fact.name == "Current"));
+            assert!(
+                doc.syntax_documentation
+                    .iter()
+                    .any(|fact| fact.name == "Old")
+            );
+            assert!(
+                !doc.syntax_documentation
+                    .iter()
+                    .any(|fact| fact.name == "Current")
+            );
         }
         set_document(
             &state,
@@ -757,7 +768,11 @@ mod tests {
                 .any(|fact| fact.name == "Current"),
             "refresh must replace stale documentation facts"
         );
-        assert!(!doc.syntax_documentation.iter().any(|fact| fact.name == "Old"));
+        assert!(
+            !doc.syntax_documentation
+                .iter()
+                .any(|fact| fact.name == "Old")
+        );
     }
 
     #[tokio::test]

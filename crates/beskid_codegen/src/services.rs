@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use anyhow::Result;
 use crate::CodegenArtifact;
+use anyhow::Result;
 
 static SCRATCH_FILE_ID: AtomicU64 = AtomicU64::new(0);
 

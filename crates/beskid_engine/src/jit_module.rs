@@ -103,8 +103,7 @@ impl BeskidJitModule {
         symbols.extend_from_slice(extras);
         // Soft builtins are process-linked (`beskid_runtime`), not ABI-v5 kit exports.
         // Validation already allowlists them; Cranelift still needs concrete addresses.
-        let exact_symbols: HashSet<String> =
-            symbols.iter().map(|(name, _)| name.clone()).collect();
+        let exact_symbols: HashSet<String> = symbols.iter().map(|(name, _)| name.clone()).collect();
         for (name, addr) in process_linked_soft_builtins() {
             if exact_symbols.contains(&name) {
                 continue;
@@ -362,7 +361,10 @@ fn process_linked_soft_builtins() -> Vec<(String, *const u8)> {
             "dynamic_object_alloc".into(),
             beskid_runtime::dynamic_object_alloc as *const u8,
         ),
-        ("fiber_yield".into(), beskid_runtime::fiber_yield as *const u8),
+        (
+            "fiber_yield".into(),
+            beskid_runtime::fiber_yield as *const u8,
+        ),
         (
             "gc_register_root".into(),
             beskid_runtime::gc_register_root as *const u8,

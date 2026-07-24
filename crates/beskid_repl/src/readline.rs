@@ -172,8 +172,9 @@ mod tests {
 
     fn exact_kit_session() -> ReplSession {
         let target = host_runtime_target().expect("host target");
-        let engine = Engine::with_runtime_kit(shared_exact_kit_prefix(), target, BuildProfile::Debug)
-            .expect("load exact kit");
+        let engine =
+            Engine::with_runtime_kit(shared_exact_kit_prefix(), target, BuildProfile::Debug)
+                .expect("load exact kit");
         ReplSession::from_engine(engine)
     }
 

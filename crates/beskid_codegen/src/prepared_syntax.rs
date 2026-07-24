@@ -111,9 +111,8 @@ pub fn lower_canonical_runtime_prepared_syntax(
     if items.is_empty() {
         anyhow::bail!("canonical Bootstrap source has no declared exports");
     }
-    let mut artifact = lower_syntax_program(&input, isa, &items).map_err(|error| {
-        anyhow::anyhow!("canonical runtime ISLE lowering failed: {error}")
-    })?;
+    let mut artifact = lower_syntax_program(&input, isa, &items)
+        .map_err(|error| anyhow::anyhow!("canonical runtime ISLE lowering failed: {error}"))?;
     artifact.exports = syntax_export_entries(input.database(), &items)?;
     Ok(artifact)
 }
@@ -166,7 +165,7 @@ pub fn lower_syntax_assembly_entrypoint(
         Arc::clone(&assembly),
         capability,
     )
-        .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
+    .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
         .units()
         .iter()
@@ -176,14 +175,8 @@ pub fn lower_syntax_assembly_entrypoint(
             node: beskid_queries::AstNodeId(0),
         })
         .collect::<Vec<_>>();
-    let input = CodegenInput::new(
-        db,
-        typed,
-        Arc::from(roots),
-        target.clone(),
-        manifest,
-    )
-    .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?;
+    let input = CodegenInput::new(db, typed, Arc::from(roots), target.clone(), manifest)
+        .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?;
     let entry_root = AstNodeKey {
         unit: SourceUnitId::new(db, entry_path),
         generation,
@@ -260,7 +253,7 @@ pub fn lower_prepared_syntax_module(
         Arc::clone(&assembly),
         capability,
     )
-        .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
+    .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
         .units()
         .iter()
@@ -270,14 +263,8 @@ pub fn lower_prepared_syntax_module(
             node: beskid_queries::AstNodeId(0),
         })
         .collect::<Vec<_>>();
-    let input = CodegenInput::new(
-        db,
-        typed,
-        Arc::from(roots),
-        target.clone(),
-        manifest,
-    )
-    .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?;
+    let input = CodegenInput::new(db, typed, Arc::from(roots), target.clone(), manifest)
+        .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?;
     let items = input
         .roots()
         .iter()

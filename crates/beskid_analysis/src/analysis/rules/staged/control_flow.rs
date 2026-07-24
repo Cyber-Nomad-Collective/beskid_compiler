@@ -354,8 +354,10 @@ impl<'a> ControlFlowVisitor<'a> {
     ) {
         if constructor_expression.node.has_empty_parens
             && constructor_expression.node.args.is_empty()
-            && let Some(span) =
-                Self::explicit_empty_constructor_parens_span(constructor_expression, self.ctx.source())
+            && let Some(span) = Self::explicit_empty_constructor_parens_span(
+                constructor_expression,
+                self.ctx.source(),
+            )
         {
             self.ctx
                 .emit_issue(span, SemanticIssueKind::RedundantEnumConstructorParens);

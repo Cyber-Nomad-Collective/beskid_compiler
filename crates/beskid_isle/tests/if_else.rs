@@ -187,7 +187,15 @@ fn return_after_if_without_else_reaches_merge() {
     }
     impl NodeFacts for IfThenReturnFacts {
         fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
-            let [block, if_node, condition, then_stmt, then_value, ret, ret_value] = self.nodes;
+            let [
+                block,
+                if_node,
+                condition,
+                then_stmt,
+                then_value,
+                ret,
+                ret_value,
+            ] = self.nodes;
             if key == block {
                 Some(NodeKind::BlockExpression)
             } else if key == if_node {
@@ -219,7 +227,15 @@ fn return_after_if_without_else_reaches_merge() {
         }
 
         fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
-            let [block, if_node, condition, then_stmt, then_value, ret, ret_value] = self.nodes;
+            let [
+                block,
+                if_node,
+                condition,
+                then_stmt,
+                then_value,
+                ret,
+                ret_value,
+            ] = self.nodes;
             match (key, index) {
                 (key, 0) if key == block => Some(if_node),
                 (key, 1) if key == block => Some(ret),

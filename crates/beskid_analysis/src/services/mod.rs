@@ -75,8 +75,8 @@ pub use lower::{
     typed_hir_from_lowered,
 };
 pub use parse::{
-    parse_expression_source, parse_program, parse_program_with_source_name,
-    parse_program_with_source_name_and_diagnostics, ParsedProgram,
+    ParsedProgram, parse_expression_source, parse_program, parse_program_with_source_name,
+    parse_program_with_source_name_and_diagnostics,
 };
 pub use prepare::{
     PrepareOptions, PreparedCompilation, prepare_compilation, prepare_compilation_diagnostics,

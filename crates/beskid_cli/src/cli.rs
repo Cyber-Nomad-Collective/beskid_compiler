@@ -23,7 +23,6 @@ use crate::commands::test::TestArgs;
 use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::validate_bsol::ValidateBsolArgs;
-use beskid_up::UpArgs;
 use crate::commands::{
     analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, hi, import, lock, lsp,
     migrate_bsol, new, parse, repl, run, runtime_kit, test, tree, update, validate_bsol,
@@ -31,6 +30,7 @@ use crate::commands::{
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_pckg::PckgArgs;
 use beskid_pckg::cli::PckgCommand;
+use beskid_up::UpArgs;
 use clap::{ArgAction, Parser, Subcommand};
 use miette::Report;
 use std::env;

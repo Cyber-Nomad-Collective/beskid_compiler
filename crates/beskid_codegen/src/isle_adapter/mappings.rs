@@ -184,7 +184,9 @@ mod tests {
             ("raw_byte_store", RuntimeIntrinsicKind::RawByteStore),
         ] {
             assert_eq!(
-                beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::CallExpression),
+                beskid_isle::classify_syntax_node_kind(
+                    beskid_queries::IndexedNodeKind::CallExpression
+                ),
                 beskid_isle::SyntaxNodeClassification::IsleLowered(NodeKind::CallExpression),
             );
             assert_eq!(runtime_intrinsic_kind_for_name(name), Some(expected));

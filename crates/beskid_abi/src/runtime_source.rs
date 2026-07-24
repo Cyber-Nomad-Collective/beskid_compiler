@@ -41,90 +41,90 @@ pub const CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH: &str = "Core/Output/Output.bd
 pub const CANONICAL_FOUNDATION_ERROR_SOURCE_PATH: &str = "Core/Error/Error.bd";
 
 const CANONICAL_BOOTSTRAP_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Bootstrap.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Bootstrap.bd"
+));
 const CANONICAL_GC_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Mem/Gc.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Mem/Gc.bd"
+));
 const CANONICAL_STRINGS_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Data/Strings.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Data/Strings.bd"
+));
 const CANONICAL_COLLECTIONS_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Data/Collections.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Data/Collections.bd"
+));
 const CANONICAL_FIBER_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Fiber/Fiber.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Fiber/Fiber.bd"
+));
 const CANONICAL_SCHEDULER_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Fiber/Scheduler.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Fiber/Scheduler.bd"
+));
 const CANONICAL_CHANNEL_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Sync/Channel.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Sync/Channel.bd"
+));
 const CANONICAL_MUTEX_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Sync/Mutex.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Sync/Mutex.bd"
+));
 const CANONICAL_WAITGROUP_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Sync/WaitGroup.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Sync/WaitGroup.bd"
+));
 const CANONICAL_HUB_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/PubSub/Hub.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/PubSub/Hub.bd"
+));
 const CANONICAL_EVENTS_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/PubSub/Events.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/PubSub/Events.bd"
+));
 const CANONICAL_DYNAMIC_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Dynamic/Dynamic.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Dynamic/Dynamic.bd"
+));
 const CANONICAL_CLOCKS_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Host/Clocks.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Host/Clocks.bd"
+));
 const CANONICAL_PROCESS_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Host/Process.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Host/Process.bd"
+));
 const CANONICAL_COMPOSITION_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Host/Composition.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Host/Composition.bd"
+));
 const CANONICAL_CALLBACKS_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Host/Callbacks.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Host/Callbacks.bd"
+));
 const CANONICAL_SYSCALLS_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../runtime/beskid/src/Runtime/Io/Syscalls.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Io/Syscalls.bd"
+));
 
 const CANONICAL_CORELIB_SYSCALL_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../corelib/packages/foundation/src/Core/Syscall/Syscall.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/foundation/src/Core/Syscall/Syscall.bd"
+));
 const CANONICAL_FOUNDATION_ASSERT_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../corelib/packages/foundation/src/Testing/Assert.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/foundation/src/Testing/Assert.bd"
+));
 const CANONICAL_FOUNDATION_OUTPUT_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../corelib/packages/foundation/src/Core/Output/Output.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/foundation/src/Core/Output/Output.bd"
+));
 const CANONICAL_FOUNDATION_ERROR_SOURCE: &str = include_str!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/../../corelib/packages/foundation/src/Core/Error/Error.bd"
-  ));
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/foundation/src/Core/Error/Error.bd"
+));
 
 /// The runtime source corpus built into this compiler version.
 pub fn canonical_runtime_sources() -> Vec<SourceUnit> {

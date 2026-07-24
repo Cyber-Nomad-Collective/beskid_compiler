@@ -83,13 +83,21 @@ pub fn draw_build_report(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<
                 Span::styled("Errors: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     counts.errors.to_string(),
-                    Style::default().fg(if counts.errors > 0 { Color::Red } else { Color::Green }),
+                    Style::default().fg(if counts.errors > 0 {
+                        Color::Red
+                    } else {
+                        Color::Green
+                    }),
                 ),
                 Span::raw("   "),
                 Span::styled("Warnings: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     counts.warnings.to_string(),
-                    Style::default().fg(if counts.warnings > 0 { Color::Yellow } else { Color::Green }),
+                    Style::default().fg(if counts.warnings > 0 {
+                        Color::Yellow
+                    } else {
+                        Color::Green
+                    }),
                 ),
                 Span::raw("   "),
                 Span::styled("Notes: ", Style::default().fg(Color::DarkGray)),
@@ -118,28 +126,33 @@ pub fn draw_build_report(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<
 
         // Test results
         if !state.test_rows.is_empty() {
-                lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled("Tests:", Style::default().fg(Color::DarkGray)));
-                for row in state.test_rows.iter().take(20) {
-                    let (icon, color) = match row.state {
-                        crate::pipeline::tui::TestRowState::Passed => ("✔", Color::Green),
-                        crate::pipeline::tui::TestRowState::Failed => ("✘", Color::Red),
-                        crate::pipeline::tui::TestRowState::Skipped => ("◦", Color::Blue),
-                        crate::pipeline::tui::TestRowState::Pending => ("○", Color::DarkGray),
-                        crate::pipeline::tui::TestRowState::Running => ("▶", Color::Yellow),
-                        crate::pipeline::tui::TestRowState::FilteredOut => continue,
-                    };
-                    let suffix = match &row.failure_detail {
-                        Some(reason) if !reason.is_empty() => format!(" — {}", reason.lines().next().unwrap_or("")),
-                        _ => String::new(),
-                    };
-                    lines.push(Line::from(vec![
-                        Span::styled(format!("  {icon} "), Style::default().fg(color)),
-                        Span::styled(&row.qualified_name, Style::default().fg(color)),
-                        Span::styled(suffix, Style::default().fg(Color::DarkGray)),
-                    ]));
-                }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Tests:",
+                Style::default().fg(Color::DarkGray),
+            )));
+            for row in state.test_rows.iter().take(20) {
+                let (icon, color) = match row.state {
+                    crate::pipeline::tui::TestRowState::Passed => ("✔", Color::Green),
+                    crate::pipeline::tui::TestRowState::Failed => ("✘", Color::Red),
+                    crate::pipeline::tui::TestRowState::Skipped => ("◦", Color::Blue),
+                    crate::pipeline::tui::TestRowState::Pending => ("○", Color::DarkGray),
+                    crate::pipeline::tui::TestRowState::Running => ("▶", Color::Yellow),
+                    crate::pipeline::tui::TestRowState::FilteredOut => continue,
+                };
+                let suffix = match &row.failure_detail {
+                    Some(reason) if !reason.is_empty() => {
+                        format!(" — {}", reason.lines().next().unwrap_or(""))
+                    }
+                    _ => String::new(),
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(format!("  {icon} "), Style::default().fg(color)),
+                    Span::styled(&row.qualified_name, Style::default().fg(color)),
+                    Span::styled(suffix, Style::default().fg(Color::DarkGray)),
+                ]));
             }
+        }
     } else {
         lines.push(Line::from("○ Idle — run a build or test to see results"));
         lines.push(Line::from(""));

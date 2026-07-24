@@ -20,7 +20,10 @@ impl SyntaxNodeFacts<'_> {
         ))
     }
 
-    pub(super) fn struct_layout_for_declaration(&self, declaration: AstNodeKey) -> Option<StructLayout> {
+    pub(super) fn struct_layout_for_declaration(
+        &self,
+        declaration: AstNodeKey,
+    ) -> Option<StructLayout> {
         let isa = self.isa?;
         let aggregate = self.query(aggregate_layout(self.db, declaration))?;
         let mut size = 0_u32;
@@ -84,7 +87,12 @@ impl SyntaxNodeFacts<'_> {
                 payload.map(|value_type| FieldLayout::new(value_type, payload_offset)),
             ));
         }
-        Some(EnumLayout::new(size, alignment.ilog2() as u8, tag, variants))
+        Some(EnumLayout::new(
+            size,
+            alignment.ilog2() as u8,
+            tag,
+            variants,
+        ))
     }
 
     pub(super) fn array_elements_for_literal(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
@@ -96,7 +104,10 @@ impl SyntaxNodeFacts<'_> {
         })
     }
 
-    pub(super) fn array_layout_for_literal(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
+    pub(super) fn array_layout_for_literal(
+        &self,
+        key: AstNodeKey,
+    ) -> Option<beskid_isle::ArrayLayout> {
         let elements = self.array_elements_for_literal(key)?;
         if !elements.is_empty() {
             return None;

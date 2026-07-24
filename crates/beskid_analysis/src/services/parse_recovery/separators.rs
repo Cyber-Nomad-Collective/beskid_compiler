@@ -2,7 +2,7 @@
 
 use crate::parser::Rule;
 
-use super::{next_token_start, skip_ws, RepairCandidate};
+use super::{RepairCandidate, next_token_start, skip_ws};
 
 /// Generate separator insertion repairs near the Pest error locus.
 pub fn repairs(
@@ -151,8 +151,7 @@ fn double_colon_enum_path(source: &str, error_pos: usize, out: &mut Vec<RepairCa
 fn dot_member_access(source: &str, error_pos: usize, out: &mut Vec<RepairCandidate>) {
     let boundary = skip_ws(source, error_pos);
     let prev_non_ws = prev_non_ws_byte(source, boundary);
-    let prev_ok = matches!(prev_non_ws, Some(b')'))
-        || prev_token_is_identifier(source, boundary);
+    let prev_ok = matches!(prev_non_ws, Some(b')')) || prev_token_is_identifier(source, boundary);
     if !prev_ok {
         return;
     }
@@ -207,8 +206,7 @@ fn looks_like_type_keyword(source: &str, pos: usize) -> bool {
         "bool", "i32", "i64", "u8", "pointer", "word", "f64", "char", "string", "unit", "never",
     ];
     KEYWORDS.iter().any(|kw| {
-        source[pos..].starts_with(kw)
-            && !has_ident_continue_at(source.as_bytes(), pos + kw.len())
+        source[pos..].starts_with(kw) && !has_ident_continue_at(source.as_bytes(), pos + kw.len())
     })
 }
 

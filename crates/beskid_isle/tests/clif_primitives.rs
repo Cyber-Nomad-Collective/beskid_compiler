@@ -6,8 +6,14 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 #[test]
 fn clif_primitives_extending_loads_and_unsigned_compare_verify() {
     let mut function = Function::new();
-    function.signature.params.push(cranelift_codegen::ir::AbiParam::new(types::I64));
-    function.signature.returns.push(cranelift_codegen::ir::AbiParam::new(types::I64));
+    function
+        .signature
+        .params
+        .push(cranelift_codegen::ir::AbiParam::new(types::I64));
+    function
+        .signature
+        .returns
+        .push(cranelift_codegen::ir::AbiParam::new(types::I64));
     let mut builder_context = FunctionBuilderContext::new();
     {
         let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
@@ -42,6 +48,9 @@ fn clif_primitives_extending_loads_and_unsigned_compare_verify() {
     let clif = function.display().to_string();
     assert!(clif.contains("uextend"), "{clif}");
     assert!(clif.contains("ult") || clif.contains("icmp ult"), "{clif}");
-    assert!(clif.contains("stack_load") || clif.contains("stack_store"), "{clif}");
+    assert!(
+        clif.contains("stack_load") || clif.contains("stack_store"),
+        "{clif}"
+    );
     assert!(clif.contains("fcvt"), "{clif}");
 }

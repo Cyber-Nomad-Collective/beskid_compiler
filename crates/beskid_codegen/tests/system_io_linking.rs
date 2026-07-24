@@ -4,8 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use beskid_abi::{
-    abi_v5::TargetMetadata,
-    runtime_source::canonical_corelib_syscall_service_capability,
+    abi_v5::TargetMetadata, runtime_source::canonical_corelib_syscall_service_capability,
 };
 use beskid_analysis::services::{FrontEndOptions, ResolvedInput, resolve_input};
 use beskid_codegen::RETIRED_HIR_LOWERING_PATH;
@@ -13,8 +12,8 @@ use beskid_codegen::lowering::lower_program_with_assembly_for_entrypoint;
 use beskid_queries::{
     AstNodeId, AstNodeKey, CallLowering, SourceUnitId, SyntaxGenerationId,
     build_typed_program_with_corelib_syscall_services, call_lowering, child_nodes,
-    compile_front_end_from_resolved_input, enum_constructor, enum_layout, enum_match, item_name, node_kind, node_span,
-    project_session_for_syntax_assembly, resolved_item, with_db,
+    compile_front_end_from_resolved_input, enum_constructor, enum_layout, enum_match, item_name,
+    node_kind, node_span, project_session_for_syntax_assembly, resolved_item, with_db,
 };
 
 fn compiler_workspace_root() -> PathBuf {
@@ -99,7 +98,8 @@ fn lower_system_input_read_smoke_rejects_hir_driver() {
 #[test]
 fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() {
     let root = compiler_workspace_root();
-    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/system/OutputWriteTests.bd");
+    let entry =
+        root.join("corelib/beskid_corelib/tests/corelib_tests/src/system/OutputWriteTests.bd");
     let project_root = entry
         .parent()
         .and_then(|path| path.parent())
@@ -233,7 +233,10 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
         while let Some(key) = pending.pop() {
             if node_kind(db, key).expect("Syscall node kind")
                 == Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
-                && item_name(db, key).expect("Syscall function name").as_deref() == Some("Write")
+                && item_name(db, key)
+                    .expect("Syscall function name")
+                    .as_deref()
+                    == Some("Write")
             {
                 syscall_write = Some(key);
                 break;
@@ -262,7 +265,11 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
         let constructor = enum_constructor(db, invalid_fd);
         let layout = beskid_queries::enum_layout(db, invalid_fd);
         assert!(
-            constructor.as_ref().ok().and_then(|fact| fact.as_ref()).is_some(),
+            constructor
+                .as_ref()
+                .ok()
+                .and_then(|fact| fact.as_ref())
+                .is_some(),
             "Core.Syscall.Write must expose the Result::Error constructor fact for its fd guard; \
              constructor={constructor:?}; layout={layout:?}"
         );
@@ -272,7 +279,9 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
         while let Some(key) = pending.pop() {
             if node_kind(db, key).expect("Syscall node kind")
                 == Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
-                && item_name(db, key).expect("Syscall function name").as_deref()
+                && item_name(db, key)
+                    .expect("Syscall function name")
+                    .as_deref()
                     == Some("ResolveDescriptorFd")
             {
                 resolve_descriptor = Some(key);
@@ -343,6 +352,5 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
             "ResolveDescriptorFd must expose the nominal Descriptor payload binding fact; \
              descriptor_match={descriptor_match:?}"
         );
-
     });
 }

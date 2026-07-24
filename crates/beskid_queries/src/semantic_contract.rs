@@ -1414,9 +1414,14 @@ fn node_type_tracked(
 ) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
-            return Some(abi_type_for_binary_expression(db, program, index, key, binary));
+            return Some(abi_type_for_binary_expression(
+                db, program, index, key, binary,
+            ));
         }
-        if node.of::<beskid_analysis::syntax::CallExpression>().is_some() {
+        if node
+            .of::<beskid_analysis::syntax::CallExpression>()
+            .is_some()
+        {
             match call_lowering(db, key) {
                 Ok(Some(CallLowering::Direct(_))) => (),
                 Ok(Some(_) | None) => return Some(Err(SemanticError::unavailable("node_type"))),
@@ -1430,11 +1435,12 @@ fn node_type_tracked(
                     .map(|signature| signature.result),
             );
         }
-        if let Some(binding_type) = pattern_binding_semantic_type(db, program, index, key, node)
-        {
+        if let Some(binding_type) = pattern_binding_semantic_type(db, program, index, key, node) {
             return Some(binding_type);
         }
-        if node.of::<beskid_analysis::syntax::MatchExpression>().is_some()
+        if node
+            .of::<beskid_analysis::syntax::MatchExpression>()
+            .is_some()
             && matches!(enum_match(db, key), Ok(Some(_)))
         {
             return Some(enum_match_result_semantic_type(db, key));
@@ -1448,12 +1454,11 @@ fn enum_match_result_semantic_type(
     db: &dyn Db,
     key: AstNodeKey,
 ) -> Result<SemanticTypeId, SemanticError> {
-    let fact = enum_match(db, key)?
-        .ok_or_else(|| SemanticError::unavailable("node_type"))?;
+    let fact = enum_match(db, key)?.ok_or_else(|| SemanticError::unavailable("node_type"))?;
     let mut result = None;
     for arm in fact.arms.iter() {
-        let arm_type = node_type(db, arm.body)?
-            .ok_or_else(|| SemanticError::unavailable("node_type"))?;
+        let arm_type =
+            node_type(db, arm.body)?.ok_or_else(|| SemanticError::unavailable("node_type"))?;
         if result
             .replace(arm_type)
             .is_some_and(|previous| previous != arm_type)
@@ -1634,7 +1639,9 @@ fn semantic_type_for_binary_operands(
     let right = semantic_type_for_expression(program, index, reference, right)?;
     use beskid_analysis::syntax::BinaryOp;
     match op {
-        BinaryOp::Or | BinaryOp::And if left == SemanticTypeId::BOOL && right == SemanticTypeId::BOOL => {
+        BinaryOp::Or | BinaryOp::And
+            if left == SemanticTypeId::BOOL && right == SemanticTypeId::BOOL =>
+        {
             Ok(SemanticTypeId::BOOL)
         }
         BinaryOp::IdentityEq
@@ -1878,8 +1885,14 @@ fn range_for_fact_tracked(
             beskid_analysis::syntax_query::DynNodeRef::from(end),
         )?;
         Some(Ok(RangeForFact {
-            start: AstNodeKey { node: normalized_expression_node(index, start), ..key },
-            end: AstNodeKey { node: normalized_expression_node(index, end), ..key },
+            start: AstNodeKey {
+                node: normalized_expression_node(index, start),
+                ..key
+            },
+            end: AstNodeKey {
+                node: normalized_expression_node(index, end),
+                ..key
+            },
         }))
     })?
     .transpose()
@@ -2023,9 +2036,10 @@ fn resolve_local_extern_contract_method(
                 .and_then(|node| node.of::<beskid_analysis::syntax::ContractDefinition>())
                 .is_some_and(|contract| {
                     contract.name.node.name == contract_name
-                        && contract.attributes.iter().any(|attribute| {
-                            attribute.node.name.node.name == "Extern"
-                        })
+                        && contract
+                            .attributes
+                            .iter()
+                            .any(|attribute| attribute.node.name.node.name == "Extern")
                 })
         })
         .collect::<Vec<_>>();
@@ -2065,7 +2079,6 @@ fn resolve_local_extern_contract_method(
         node: *method_id,
     })
 }
-
 
 /// Return Extern import metadata for a [`ContractMethodSignature`] declaration key.
 pub fn extern_contract_import_for_declaration(
@@ -3467,7 +3480,9 @@ fn abi_type_tracked(
             ));
         }
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
-            return Some(abi_type_for_binary_expression(db, program, index, key, binary));
+            return Some(abi_type_for_binary_expression(
+                db, program, index, key, binary,
+            ));
         }
         if node.of::<beskid_analysis::syntax::Identifier>().is_some() {
             return abi_local_declaration_type(db, program, index, key, key.node);
@@ -3744,11 +3759,13 @@ fn enum_layout_tracked(
                 db, program, index, key, definition, None,
             ));
         }
-        node.of::<beskid_analysis::syntax::EnumConstructorExpression>().map(|constructor| {
-            let type_path = contextual_enum_constructor_type_path(program, index, key, constructor)
-                .unwrap_or(&constructor.path.node.type_path.node);
-            instantiated_enum_layout_for_path(db, key, type_path)
-        })
+        node.of::<beskid_analysis::syntax::EnumConstructorExpression>()
+            .map(|constructor| {
+                let type_path =
+                    contextual_enum_constructor_type_path(program, index, key, constructor)
+                        .unwrap_or(&constructor.path.node.type_path.node);
+                instantiated_enum_layout_for_path(db, key, type_path)
+            })
     })?
     .transpose()
 }
@@ -3794,10 +3811,20 @@ fn contextual_enum_constructor_type_path<'a>(
             }
             let item = index.node_at(program, item)?;
             item.of::<beskid_analysis::syntax::FunctionDefinition>()
-                .and_then(|function| function.return_type.as_ref().map(|annotation| &annotation.node))
+                .and_then(|function| {
+                    function
+                        .return_type
+                        .as_ref()
+                        .map(|annotation| &annotation.node)
+                })
                 .or_else(|| {
                     item.of::<beskid_analysis::syntax::MethodDefinition>()
-                        .and_then(|method| method.return_type.as_ref().map(|annotation| &annotation.node))
+                        .and_then(|method| {
+                            method
+                                .return_type
+                                .as_ref()
+                                .map(|annotation| &annotation.node)
+                        })
                 })
         }
         _ => None,
@@ -3809,7 +3836,7 @@ fn contextual_enum_constructor_type_path<'a>(
     let expected_terminal = expected_path.segments.last()?;
     (expected_terminal.node.name.node.name == constructor_name
         && !expected_terminal.node.type_args.is_empty())
-        .then_some(expected_path)
+    .then_some(expected_path)
 }
 
 fn instantiated_enum_layout_for_path(
@@ -3866,16 +3893,17 @@ fn enum_layout_substitutions(
         .iter()
         .zip(terminal.node.type_args.iter())
         .map(|(generic, argument)| {
-            aggregate_shape_from_applied_type(db, use_key, &argument.node).or_else(|error| {
-                if type_syntax_is_generic_parameter_reference(
-                    &argument.node,
-                    generic.node.name.as_str(),
-                ) {
-                    return Ok(AggregateFieldShape::Scalar(SemanticTypeId::POINTER));
-                }
-                Err(error)
-            })
-            .map(|shape| (generic.node.name.clone(), shape))
+            aggregate_shape_from_applied_type(db, use_key, &argument.node)
+                .or_else(|error| {
+                    if type_syntax_is_generic_parameter_reference(
+                        &argument.node,
+                        generic.node.name.as_str(),
+                    ) {
+                        return Ok(AggregateFieldShape::Scalar(SemanticTypeId::POINTER));
+                    }
+                    Err(error)
+                })
+                .map(|shape| (generic.node.name.clone(), shape))
         })
         .collect()
 }
@@ -4042,11 +4070,12 @@ fn enum_match_tracked(
 ) -> SemanticQueryResult<EnumMatchFact> {
     with_node(db, syntax, key, |program, index, node| {
         let expression = node.of::<beskid_analysis::syntax::MatchExpression>()?;
-        let (declaration, layout) = match enum_match_scrutinee_layout(db, program, index, key, expression) {
-            Some(Ok(fact)) => fact,
-            Some(Err(error)) => return Some(Err(error)),
-            None => return Some(Err(SemanticError::unavailable("enum_match"))),
-        };
+        let (declaration, layout) =
+            match enum_match_scrutinee_layout(db, program, index, key, expression) {
+                Some(Ok(fact)) => fact,
+                Some(Err(error)) => return Some(Err(error)),
+                None => return Some(Err(SemanticError::unavailable("enum_match"))),
+            };
         let mut arms = Vec::with_capacity(expression.arms.len());
         for arm in &expression.arms {
             if arm.node.guard.is_some() {
@@ -4097,12 +4126,17 @@ fn enum_match_tracked(
                     else {
                         return Some(Err(SemanticError::unavailable("enum_match")));
                     };
-                    if variant.fields.len() != pattern.node.items.len() || variant.fields.len() > 1 {
+                    if variant.fields.len() != pattern.node.items.len() || variant.fields.len() > 1
+                    {
                         return Some(Err(SemanticError::unavailable("enum_match")));
                     }
                     let binding = match pattern.node.items.as_slice() {
                         [] => None,
-                        [item] if matches!(item.node, beskid_analysis::syntax::Pattern::Wildcard) => None,
+                        [item]
+                            if matches!(item.node, beskid_analysis::syntax::Pattern::Wildcard) =>
+                        {
+                            None
+                        }
                         [item]
                             if matches!(
                                 item.node,
@@ -4113,7 +4147,9 @@ fn enum_match_tracked(
                                 .direct_child_id(
                                     program,
                                     arm_node,
-                                    beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.pattern),
+                                    beskid_analysis::syntax_query::DynNodeRef::from(
+                                        &arm.node.pattern,
+                                    ),
                                 )
                                 .and_then(|node| {
                                     index.direct_child_id(
@@ -4178,7 +4214,9 @@ fn enum_pattern_targets_declaration(
         return false;
     };
     if !terminal.node.type_args.is_empty()
-        || module_path.iter().any(|segment| !segment.node.type_args.is_empty())
+        || module_path
+            .iter()
+            .any(|segment| !segment.node.type_args.is_empty())
     {
         return false;
     }
@@ -4206,12 +4244,11 @@ fn enum_match_scrutinee_layout(
     key: AstNodeKey,
     expression: &beskid_analysis::syntax::MatchExpression,
 ) -> Option<Result<(AstNodeKey, EnumLayoutFact), SemanticError>> {
-    if let beskid_analysis::syntax::Expression::EnumConstructor(constructor) = &expression.scrutinee.node {
-        let declaration = resolve_type_declaration(
-            db,
-            key,
-            &constructor.node.path.node.type_path.node,
-        )?;
+    if let beskid_analysis::syntax::Expression::EnumConstructor(constructor) =
+        &expression.scrutinee.node
+    {
+        let declaration =
+            resolve_type_declaration(db, key, &constructor.node.path.node.type_path.node)?;
         return Some(
             enum_layout(db, declaration)
                 .and_then(|layout| layout.ok_or_else(|| SemanticError::unavailable("enum_match")))
@@ -4227,7 +4264,12 @@ fn enum_match_scrutinee_layout(
     if !segment.node.type_args.is_empty() {
         return None;
     }
-    let local = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())?;
+    let local = resolve_lexical_declaration(
+        program,
+        index,
+        key.node,
+        segment.node.name.node.name.as_str(),
+    )?;
     let parent = parent_node(index, local)?;
     if index.kind(parent)? == beskid_analysis::syntax_query::NodeKind::Pattern {
         let binding = match pattern_binding_fact(db, index, key, local)? {
@@ -4300,7 +4342,11 @@ fn resolve_nominal_layout_declaration(
         return Some(declaration);
     }
     let (name, module_path) = path.segments.split_last()?;
-    if module_path.is_empty() || module_path.iter().any(|segment| !segment.node.type_args.is_empty()) {
+    if module_path.is_empty()
+        || module_path
+            .iter()
+            .any(|segment| !segment.node.type_args.is_empty())
+    {
         return None;
     }
     let mut module_path = module_path
@@ -4452,7 +4498,9 @@ fn abi_type_for_direct_aggregate_field_projection(
         .segments
         .split_last()
         .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-    if module_path.iter().any(|segment| !segment.node.type_args.is_empty())
+    if module_path
+        .iter()
+        .any(|segment| !segment.node.type_args.is_empty())
         || terminal.node.type_args.len() != definition.generics.len()
     {
         return Err(SemanticError::unavailable("abi_type"));
@@ -4460,8 +4508,10 @@ fn abi_type_for_direct_aggregate_field_projection(
     let field = definition
         .fields
         .iter()
-        .find(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value
-            && field.node.name.node.name == field_name)
+        .find(|field| {
+            field.node.kind == beskid_analysis::syntax::FieldKind::Value
+                && field.node.name.node.name == field_name
+        })
         .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     let applied_generic = match &field.node.ty.node {
         beskid_analysis::syntax::Type::Complex(path) => {
@@ -6061,8 +6111,8 @@ pub fn completion_candidates(
         } else {
             let program = syntax.expanded_program(db);
             let index = syntax.syntax_index(db);
-            let reference = deepest_node_containing_offset(index, context.cursor)
-                .unwrap_or(key.node);
+            let reference =
+                deepest_node_containing_offset(index, context.cursor).unwrap_or(key.node);
             let lookup = AstNodeKey {
                 node: reference,
                 ..key
@@ -6072,27 +6122,13 @@ pub fn completion_candidates(
             else {
                 return Ok(None);
             };
-            push_nominal_receiver_candidates(
-                db,
-                &mut candidates,
-                declaration,
-                prefix,
-                &context,
-            );
+            push_nominal_receiver_candidates(db, &mut candidates, declaration, prefix, &context);
         }
     } else {
         let program = syntax.expanded_program(db);
         let index = syntax.syntax_index(db);
-        let reference =
-            deepest_node_containing_offset(index, context.cursor).unwrap_or(key.node);
-        push_lexical_local_candidates(
-            &mut candidates,
-            program,
-            index,
-            reference,
-            prefix,
-            &context,
-        );
+        let reference = deepest_node_containing_offset(index, context.cursor).unwrap_or(key.node);
+        push_lexical_local_candidates(&mut candidates, program, index, reference, prefix, &context);
         push_unit_type_candidates(&mut candidates, program, index, prefix, &context);
         for id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
             if let Some(function) = index

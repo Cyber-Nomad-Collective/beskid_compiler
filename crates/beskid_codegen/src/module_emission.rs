@@ -21,11 +21,13 @@ use cranelift_module::{
     DataDescription, DataId, FuncId, Linkage, Module, ModuleError, ModuleResult,
 };
 
+use crate::aggregate_static::{
+    ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticPlan, emit_aggregate_static_data,
+};
 use crate::closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
     ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT, ClosureStaticPlan, emit_closure_static_data,
 };
-use crate::aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticPlan, emit_aggregate_static_data};
 use crate::lowering::descriptor::TypeDescriptorData;
 use crate::lowering::{CodegenArtifact, ExternImport};
 use crate::{
@@ -359,9 +361,7 @@ fn lower_resolved_syntax_program(
     let mut extern_imports = runtime_intrinsics
         .into_values()
         .chain(corelib_services.into_values())
-        .chain(
-            (!trampolines.is_empty()).then_some(ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT.to_owned()),
-        )
+        .chain((!trampolines.is_empty()).then_some(ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT.to_owned()))
         .map(|symbol| ExternImport {
             symbol,
             abi: Some("C".into()),
@@ -369,7 +369,10 @@ fn lower_resolved_syntax_program(
         })
         .collect::<Vec<_>>();
     for import in extern_contract_imports(input, items) {
-        if !extern_imports.iter().any(|existing| existing.symbol == import.symbol) {
+        if !extern_imports
+            .iter()
+            .any(|existing| existing.symbol == import.symbol)
+        {
             extern_imports.push(import);
         }
     }
@@ -381,7 +384,10 @@ fn lower_resolved_syntax_program(
             ABI_V5_CLOSURE_CAPTURE_STORE,
             ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
         ] {
-            if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
+            if !extern_imports
+                .iter()
+                .any(|existing| existing.symbol == symbol)
+            {
                 extern_imports.push(ExternImport {
                     symbol: symbol.to_owned(),
                     abi: Some("C".into()),
@@ -391,8 +397,16 @@ fn lower_resolved_syntax_program(
         }
     }
     let aggregate_static_plans = collect_aggregate_static_plans(input, items);
-    if !aggregate_static_plans.is_empty() && !extern_imports.iter().any(|existing| existing.symbol == ABI_V5_MANAGED_OBJECT_ALLOCATE) {
-        extern_imports.push(ExternImport { symbol: ABI_V5_MANAGED_OBJECT_ALLOCATE.to_owned(), abi: Some("C".into()), library: None });
+    if !aggregate_static_plans.is_empty()
+        && !extern_imports
+            .iter()
+            .any(|existing| existing.symbol == ABI_V5_MANAGED_OBJECT_ALLOCATE)
+    {
+        extern_imports.push(ExternImport {
+            symbol: ABI_V5_MANAGED_OBJECT_ALLOCATE.to_owned(),
+            abi: Some("C".into()),
+            library: None,
+        });
     }
 
     Ok(CodegenArtifact {
@@ -405,11 +419,19 @@ fn lower_resolved_syntax_program(
     })
 }
 
-fn collect_aggregate_static_plans(input: &CodegenInput<'_>, items: &[ResolvedSyntaxModuleItem]) -> Vec<AggregateStaticPlan> {
+fn collect_aggregate_static_plans(
+    input: &CodegenInput<'_>,
+    items: &[ResolvedSyntaxModuleItem],
+) -> Vec<AggregateStaticPlan> {
     let mut visited = HashSet::new();
     let mut nodes = Vec::new();
-    for item in items { collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes); }
-    nodes.into_iter().filter_map(|key| input.aggregate_static_plan(key)).collect()
+    for item in items {
+        collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
+    }
+    nodes
+        .into_iter()
+        .filter_map(|key| input.aggregate_static_plan(key))
+        .collect()
 }
 
 /// Resolve source-proven zero-argument entries without ever re-entering HIR lowering.
@@ -575,7 +597,9 @@ fn resolve_spawn_trampolines(
                     continue;
                 }
                 if closure_captures.is_some() {
-                    signature.params.insert(0, AbiParam::new(isa.pointer_type()));
+                    signature
+                        .params
+                        .insert(0, AbiParam::new(isa.pointer_type()));
                 }
                 let target_symbol = format!(
                     "__beskid_spawn_lambda_syntax_g{}_n{}",
@@ -1043,7 +1067,6 @@ fn runtime_intrinsic_symbols(input: &CodegenInput<'_>) -> HashMap<DirectCallee, 
         .unwrap_or_default()
 }
 
-
 fn collect_extern_contract_callees(
     db: &dyn beskid_queries::Db,
     key: AstNodeKey,
@@ -1053,11 +1076,13 @@ fn collect_extern_contract_callees(
         && let Some((symbol, abi, library)) =
             extern_contract_import_for_declaration(db, declaration)
     {
-        callees.entry(DirectCallee::item(declaration)).or_insert(ExternImport {
-            symbol,
-            abi,
-            library,
-        });
+        callees
+            .entry(DirectCallee::item(declaration))
+            .or_insert(ExternImport {
+                symbol,
+                abi,
+                library,
+            });
     }
     if let Ok(Some(children)) = child_nodes(db, key) {
         for child in children.iter().copied() {

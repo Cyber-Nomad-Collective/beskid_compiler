@@ -2,8 +2,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use beskid_isle::{
-    classify_syntax_node_kind, syntax_node_kind_catalogue, unsupported_typed_operation_kinds,
     NodeKind, SyntaxNodeClassification, UNSUPPORTED_TYPED_OPERATION_KINDS,
+    classify_syntax_node_kind, syntax_node_kind_catalogue, unsupported_typed_operation_kinds,
 };
 use beskid_queries::IndexedNodeKind;
 
@@ -92,11 +92,26 @@ fn unsupported_kinds_are_intentionally_release_rejected_for_0_4() {
     use IndexedNodeKind as Syntax;
 
     let dispositions: &[(IndexedNodeKind, &str)] = &[
-        (Syntax::HostDefinition, "composition declaration; not an executable ISLE item"),
-        (Syntax::RegistryBlock, "composition declaration; not an executable ISLE item"),
-        (Syntax::RegistryEntry, "composition declaration; not an executable ISLE item"),
-        (Syntax::ScopeDefinition, "composition declaration; not an executable ISLE item"),
-        (Syntax::ScopeHook, "composition declaration; not an executable ISLE item"),
+        (
+            Syntax::HostDefinition,
+            "composition declaration; not an executable ISLE item",
+        ),
+        (
+            Syntax::RegistryBlock,
+            "composition declaration; not an executable ISLE item",
+        ),
+        (
+            Syntax::RegistryEntry,
+            "composition declaration; not an executable ISLE item",
+        ),
+        (
+            Syntax::ScopeDefinition,
+            "composition declaration; not an executable ISLE item",
+        ),
+        (
+            Syntax::ScopeHook,
+            "composition declaration; not an executable ISLE item",
+        ),
         (
             Syntax::WithStatement,
             "composition scope bracket waits on container facts (W5/composition)",

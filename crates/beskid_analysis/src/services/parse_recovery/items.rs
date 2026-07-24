@@ -2,7 +2,7 @@
 
 use crate::parser::Rule;
 
-use super::{next_token_start, skip_ws, unbalanced_delimiters, RepairCandidate};
+use super::{RepairCandidate, next_token_start, skip_ws, unbalanced_delimiters};
 
 const PRIORITY_USE_MOD_SEMI_EOF: u8 = 42;
 const PRIORITY_USE_MOD_SEMI_BEFORE_NEXT: u8 = 43;
@@ -349,7 +349,9 @@ fn find_next_brace_after(source: &str, from: usize) -> Option<usize> {
             }
             b'/' if pos + 1 < source.len() && source.as_bytes()[pos + 1] == b'*' => {
                 pos += 2;
-                while pos + 1 < source.len() && !(source.as_bytes()[pos] == b'*' && source.as_bytes()[pos + 1] == b'/') {
+                while pos + 1 < source.len()
+                    && !(source.as_bytes()[pos] == b'*' && source.as_bytes()[pos + 1] == b'/')
+                {
                     pos += 1;
                 }
                 pos = (pos + 2).min(source.len());

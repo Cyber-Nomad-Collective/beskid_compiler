@@ -275,13 +275,15 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
 #[cfg(feature = "slow")]
 #[test]
 fn ansi_csi_bold_red_link_plan_validates() {
-    let artifact = lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
+    let artifact =
+        lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
     validate_artifact(&artifact).expect("ansi_csi_bold_red link plan must validate");
 }
 
 #[cfg(feature = "slow")]
 #[test]
 fn dump_ansi_csi_bold_red_clif() {
-    let artifact = lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
+    let artifact =
+        lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
     println!("{}", beskid_codegen::render_clif(&artifact));
 }

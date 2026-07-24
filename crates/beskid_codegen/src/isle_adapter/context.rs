@@ -80,9 +80,13 @@ impl<'db> SyntaxNodeFacts<'db> {
         })
     }
 
-    pub(super) fn specialized_direct_parameter_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
-        (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression))
-            .then_some(())?;
+    pub(super) fn specialized_direct_parameter_type(
+        &self,
+        key: AstNodeKey,
+    ) -> Option<SemanticTypeId> {
+        (self.query(node_kind(self.db, key))
+            == Some(beskid_queries::IndexedNodeKind::PathExpression))
+        .then_some(())?;
         let declaration = self.query(resolved_local(self.db, key))?.declaration;
         let slot = self.query(local_slot(self.db, declaration))?;
         self.item_specializations

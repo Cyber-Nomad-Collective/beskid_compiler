@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
+use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::AnalysisOptions;
 use beskid_analysis::mod_host::{
     InvocationKind, ModHostInput, StubContractInvoker, run_analyze_rewrite_with_invoker,
@@ -23,7 +24,6 @@ use beskid_analysis::projects::{CompilePlan, ResolvedDependencyProject, Target, 
 use beskid_analysis::services::{
     parse_program_with_source_name, semantic_rule_diagnostics_for_program,
 };
-use beskid_abi::runtime_kit::BuildProfile;
 use beskid_engine::services::prepare_jit_entrypoint;
 use beskid_engine::{Engine, host_runtime_target};
 use beskid_pipeline::phases::{

@@ -157,7 +157,10 @@ fn emit(root: Root, field_index: u32, function_index: u32) -> String {
 #[test]
 fn struct_literal_and_field_read_emit_managed_clif() {
     let clif = emit(Root::Read, 1, 22);
-    assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
+    assert!(
+        clif.contains("beskid_rt_v5_managed_object_allocate"),
+        "{clif}"
+    );
     assert!(!clif.contains("stack_store"), "{clif}");
     assert!(clif.contains("load.i32"), "{clif}");
 }

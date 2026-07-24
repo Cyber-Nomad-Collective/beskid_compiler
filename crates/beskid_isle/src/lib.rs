@@ -14,11 +14,11 @@ use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::{ExternalName, GlobalValueData};
 pub use cranelift_codegen::ir::{
     AbiParam, Block, FuncRef, Function, MemFlags, Signature, StackSlotData, StackSlotKind,
     TrapCode, Type, UserFuncName, Value,
 };
+use cranelift_codegen::ir::{ExternalName, GlobalValueData};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::verify_function;
 use cranelift_frontend::FunctionBuilder;
@@ -1110,10 +1110,8 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         environment: &InlineClosureEnvironment,
     ) -> Option<Value> {
         let pointer = dispatch::pointer_type();
-        let request = self.symbol_global(
-            environment.allocation_request_symbol.as_ref(),
-            pointer,
-        )?;
+        let request =
+            self.symbol_global(environment.allocation_request_symbol.as_ref(), pointer)?;
         let allocate = self.import_runtime_helper(
             "beskid_rt_v5_closure_environment_allocate",
             &[pointer],
@@ -1121,9 +1119,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         )?;
         let allocate_call = self.builder.ins().call(allocate, &[request]);
         let env_ptr = self.builder.inst_results(allocate_call).first().copied()?;
-        self.builder
-            .ins()
-            .trapz(env_ptr, TrapCode::unwrap_user(5));
+        self.builder.ins().trapz(env_ptr, TrapCode::unwrap_user(5));
         let descriptor = self.symbol_global(environment.descriptor_symbol.as_ref(), pointer)?;
         for capture in &environment.captures {
             let (variable, value_type) = self.locals.get(&capture.local_slot).copied()?;
@@ -1147,9 +1143,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
                     .builder
                     .ins()
                     .iadd_imm(env_ptr, i64::from(capture.field_offset));
-                self.builder
-                    .ins()
-                    .store(MemFlags::new(), value, address, 0);
+                self.builder.ins().store(MemFlags::new(), value, address, 0);
             }
         }
         let slot = self
@@ -1163,19 +1157,20 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         )?;
         let root_call = self.builder.ins().call(root, &[slot, env_ptr]);
         let rooted = self.builder.inst_results(root_call).first().copied()?;
-        self.builder
-            .ins()
-            .trapz(rooted, TrapCode::unwrap_user(8));
+        self.builder.ins().trapz(rooted, TrapCode::unwrap_user(8));
         Some(env_ptr)
     }
 
     fn symbol_global(&mut self, symbol: &str, pointer: Type) -> Option<Value> {
-        let global = self.builder.func.create_global_value(GlobalValueData::Symbol {
-            name: ExternalName::testcase(symbol),
-            offset: 0.into(),
-            colocated: true,
-            tls: false,
-        });
+        let global = self
+            .builder
+            .func
+            .create_global_value(GlobalValueData::Symbol {
+                name: ExternalName::testcase(symbol),
+                offset: 0.into(),
+                colocated: true,
+                tls: false,
+            });
         Some(self.builder.ins().global_value(pointer, global))
     }
 
@@ -1376,11 +1371,7 @@ impl IsleContext<'_, '_, '_, '_> {
 
     /// Beskid maps `u8`/`bool` to CLIF `i8`; ordered compares and quotients must be unsigned.
     fn integer_ordered_cc(ty: Type, signed: IntCC, unsigned: IntCC) -> IntCC {
-        if ty == types::I8 {
-            unsigned
-        } else {
-            signed
-        }
+        if ty == types::I8 { unsigned } else { signed }
     }
 
     fn common_float_operands(&mut self, left: Value, right: Value) -> Option<(Value, Value)> {
@@ -1405,7 +1396,9 @@ impl IsleContext<'_, '_, '_, '_> {
             .iter()
             .find(|variant| variant.discriminant == discriminant)?
             .payload?;
-        if payload_layout.value_type != binding.value_type || self.locals.contains_key(&binding.slot) {
+        if payload_layout.value_type != binding.value_type
+            || self.locals.contains_key(&binding.slot)
+        {
             self.pending_error = Some(LoweringError {
                 key,
                 kind: LoweringErrorKind::InvalidMatchArms,
@@ -1420,7 +1413,8 @@ impl IsleContext<'_, '_, '_, '_> {
         );
         let variable = self.builder.declare_var(binding.value_type);
         self.builder.def_var(variable, payload);
-        self.locals.insert(binding.slot, (variable, binding.value_type));
+        self.locals
+            .insert(binding.slot, (variable, binding.value_type));
         Some(Some(binding.slot))
     }
 
@@ -1602,17 +1596,16 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         }
         let (left, right) = self.common_integer_operands(left, right);
         let ty = self.builder.func.dfg.value_type(left);
-        let cc = Self::integer_ordered_cc(
-            ty,
-            IntCC::SignedLessThan,
-            IntCC::UnsignedLessThan,
-        );
+        let cc = Self::integer_ordered_cc(ty, IntCC::SignedLessThan, IntCC::UnsignedLessThan);
         self.builder.ins().icmp(cc, left, right)
     }
 
     fn clif_sle(&mut self, left: Value, right: Value) -> Value {
         if let Some((left, right)) = self.common_float_operands(left, right) {
-            return self.builder.ins().fcmp(FloatCC::LessThanOrEqual, left, right);
+            return self
+                .builder
+                .ins()
+                .fcmp(FloatCC::LessThanOrEqual, left, right);
         }
         let (left, right) = self.common_integer_operands(left, right);
         let ty = self.builder.func.dfg.value_type(left);
@@ -1630,11 +1623,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         }
         let (left, right) = self.common_integer_operands(left, right);
         let ty = self.builder.func.dfg.value_type(left);
-        let cc = Self::integer_ordered_cc(
-            ty,
-            IntCC::SignedGreaterThan,
-            IntCC::UnsignedGreaterThan,
-        );
+        let cc = Self::integer_ordered_cc(ty, IntCC::SignedGreaterThan, IntCC::UnsignedGreaterThan);
         self.builder.ins().icmp(cc, left, right)
     }
 
@@ -2344,9 +2333,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 .imul_imm(pointer_index, i64::from(layout.stride))
         };
         let address = self.builder.ins().iadd(base, offset);
-        self.builder
-            .ins()
-            .store(MemFlags::new(), value, address, 0);
+        self.builder.ins().store(MemFlags::new(), value, address, 0);
         Some(value)
     }
 
@@ -2375,19 +2362,32 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         }
         let pointer_type = self.facts.scalar_type(key)?;
         if !pointer_type.is_int() {
-            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidStructLayout,
+            });
             return None;
         }
-        let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer_type)?;
-        let allocate = self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer_type], Some(pointer_type))?;
+        let request =
+            self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer_type)?;
+        let allocate = self.import_runtime_helper(
+            "beskid_rt_v5_managed_object_allocate",
+            &[pointer_type],
+            Some(pointer_type),
+        )?;
         let allocation_call = self.builder.ins().call(allocate, &[request]);
-        let object = self.builder.inst_results(allocation_call).first().copied()?;
+        let object = self
+            .builder
+            .inst_results(allocation_call)
+            .first()
+            .copied()?;
         self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
         for (value, field_layout) in values {
-            let address = self.builder.ins().iadd_imm(object, i64::from(field_layout.offset));
-            self.builder
+            let address = self
+                .builder
                 .ins()
-                .store(MemFlags::new(), value, address, 0);
+                .iadd_imm(object, i64::from(field_layout.offset));
+            self.builder.ins().store(MemFlags::new(), value, address, 0);
         }
         Some(object)
     }
@@ -2601,9 +2601,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             scrutinee,
             i32::try_from(layout.tag.offset).ok()?,
         );
-        let result_type = self.facts.scalar_type(key).or_else(|| {
-            arms.iter().find_map(|arm| self.facts.scalar_type(arm.body))
-        })?;
+        let result_type = self
+            .facts
+            .scalar_type(key)
+            .or_else(|| arms.iter().find_map(|arm| self.facts.scalar_type(arm.body)))?;
         let merge = self.builder.create_block();
         self.builder.append_block_param(merge, result_type);
         let arm_blocks = arms
@@ -2939,12 +2940,11 @@ impl<'isa> FunctionEmitter<'isa> {
                         .builder
                         .ins()
                         .iadd_imm(environment, i64::from(capture.field_offset));
-                    let value = context.builder.ins().load(
-                        capture.value_type,
-                        MemFlags::new(),
-                        address,
-                        0,
-                    );
+                    let value =
+                        context
+                            .builder
+                            .ins()
+                            .load(capture.value_type, MemFlags::new(), address, 0);
                     let variable = context.builder.declare_var(capture.value_type);
                     context.builder.def_var(variable, value);
                     context

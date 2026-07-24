@@ -590,10 +590,8 @@ mod tests {
         );
         // The merged span index is source-less. It represents the same dependency fact that
         // previously preempted the entry unit before TypeChecker reached ResolutionTables.
-        resolution.span_index = SpanIndex::build_from_maps(
-            &[],
-            &[(span, ResolvedType::Item(dependency_type))],
-        );
+        resolution.span_index =
+            SpanIndex::build_from_maps(&[], &[(span, ResolvedType::Item(dependency_type))]);
 
         let checker = TypeChecker::new(&resolution, &UnitTypeSurface::default())
             .with_source_path(&entry_path);

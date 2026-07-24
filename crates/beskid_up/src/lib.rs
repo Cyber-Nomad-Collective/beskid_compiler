@@ -1,9 +1,9 @@
 //! Verified Beskid release-manifest parsing and direct-install management.
 
-mod manifest;
-mod install;
 mod commands;
+mod install;
+mod manifest;
 
-pub use commands::{execute, UpArgs, UpCommand};
+pub use commands::{UpArgs, UpCommand, execute};
 pub use install::DirectInstall;
 pub use manifest::{Bundle, ReleaseManifest, UpError};

@@ -8,9 +8,9 @@
 //! hosts that run the mod SDK and should call [`beskid_pipeline::observe_phase`] around real mod
 //! work so observers match [`beskid_pipeline::phases::JIT_RUN_PHASE_ORDER`] when mods are active.
 
-pub mod codegen_input;
 pub mod aggregate_static;
 pub mod closure_static;
+pub mod codegen_input;
 pub mod cranelift_host;
 pub mod diagnostics;
 pub mod errors;
@@ -22,14 +22,17 @@ pub mod module_emission;
 pub mod prepared_syntax;
 pub mod services;
 
-pub use codegen_input::{CodegenInput, CodegenInputError};
-pub use aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticField, AggregateStaticPlan, emit_aggregate_static_data};
+pub use aggregate_static::{
+    ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticField, AggregateStaticPlan,
+    emit_aggregate_static_data,
+};
 pub use closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
     ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT, ClosureCaptureStaticField, ClosureLoweringAuthority,
     ClosureRootAuthority, ClosureStaticDataHandles, ClosureStaticPlan, RuntimeRootContext,
     emit_closure_static_data,
 };
+pub use codegen_input::{CodegenInput, CodegenInputError};
 pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
 pub use errors::{CodegenError, RETIRED_HIR_LOWERING_PATH};
 pub use isle_adapter::{

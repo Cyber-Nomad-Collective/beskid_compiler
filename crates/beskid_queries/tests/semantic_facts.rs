@@ -18,18 +18,17 @@ use beskid_queries::{
     ClosureCallTarget, ClosureCapture, ClosureEnvironmentField, ClosureLoweringStatus,
     ClosurePointerMapRequirement, CompletionContext, EnumLayoutFact, EnumMatchArmFact,
     EnumMatchFact, EnumVariantLayoutFact, ItemSignature, LocalSlot, MutableLocalAssignment,
-    OperatorFact, ProjectSession,
-    SemanticError, SemanticTypeId, SourceUnitId, SpawnDiagnosticKind, SpawnEntryValidation,
-    SyntaxGenerationId, abi_type, aggregate_field_access, aggregate_layout,
-    build_canonical_corelib_syscall_typed_program,
-    build_typed_program, build_typed_program_with_corelib_syscall_services, call_abi_signature,
-    call_arguments, call_lowering, callable_signature, capture_storage, cast_intents, child_nodes,
+    OperatorFact, ProjectSession, SemanticError, SemanticTypeId, SourceUnitId, SpawnDiagnosticKind,
+    SpawnEntryValidation, SyntaxGenerationId, abi_type, aggregate_field_access, aggregate_layout,
+    build_canonical_corelib_syscall_typed_program, build_typed_program,
+    build_typed_program_with_corelib_syscall_services, call_abi_signature, call_arguments,
+    call_lowering, callable_signature, capture_storage, cast_intents, child_nodes,
     closure_call_target, closure_environment, closure_signature, completion_candidates,
-    control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
+    control_flow, direct_callees, enum_constructor, enum_layout, enum_match, for_iterator_fact,
     generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
-    item_signature, literal_fact,     local_slot, mutable_local_assignment, node_kind, node_span, node_type,
-    nominal_member_receiver, operator_fact, reachable_items, resolved_item, resolved_local,
-    for_iterator_fact, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target,
+    item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind, node_span,
+    node_type, nominal_member_receiver, operator_fact, reachable_items, resolved_item,
+    resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target,
     test_item,
 };
 
@@ -412,7 +411,9 @@ unit Main() {
         generation,
         &index,
         NodeKind::PathExpression,
-        chained.find("outer.bar.percent").expect("chained projection"),
+        chained
+            .find("outer.bar.percent")
+            .expect("chained projection"),
     );
     assert_unavailable(abi_type(&db, projection));
 }
@@ -550,18 +551,27 @@ fn generic_enum_match_uses_the_explicit_scrutinee_application_for_cyb_137() {
     let fact = enum_match(&db, expression)
         .expect("generic enum match query")
         .expect("explicit generic enum scrutinee match");
-    assert_eq!(fact.declaration, key(unit, generation, &index, NodeKind::EnumDefinition, 0));
+    assert_eq!(
+        fact.declaration,
+        key(unit, generation, &index, NodeKind::EnumDefinition, 0)
+    );
     assert_eq!(fact.arms.len(), 2);
     assert_eq!(fact.arms[0].variant_index, Some(0));
     assert_eq!(fact.arms[1].variant_index, Some(1));
     assert_eq!(fact.layout.variants.len(), 2);
     assert_eq!(
         fact.layout.variants[0].fields.as_ref(),
-        &[(Arc::from("value"), beskid_queries::AggregateFieldShape::Scalar(SemanticTypeId::I64))]
+        &[(
+            Arc::from("value"),
+            beskid_queries::AggregateFieldShape::Scalar(SemanticTypeId::I64)
+        )]
     );
     assert_eq!(
         fact.layout.variants[1].fields.as_ref(),
-        &[(Arc::from("error"), beskid_queries::AggregateFieldShape::Scalar(SemanticTypeId::STRING))]
+        &[(
+            Arc::from("error"),
+            beskid_queries::AggregateFieldShape::Scalar(SemanticTypeId::STRING)
+        )]
     );
 }
 
@@ -584,7 +594,8 @@ unit Write() {
     return;
 }
 "#;
-    let results_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
+    let results_source =
+        "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
     let error_source = "pub enum SyscallError { InvalidFd(i64 fd) }";
     let sources = [
         (&output_path, output_source),
@@ -672,7 +683,6 @@ unit Write() {
     assert_eq!(fact.arms[1].variant_index, Some(1));
 }
 
-
 #[test]
 fn imported_generic_enum_match_accepts_fully_qualified_one_type_per_file_terror_for_cyb_137() {
     let mut db = BeskidDatabase::default();
@@ -692,7 +702,8 @@ unit Main() {
     return;
 }
 "#;
-    let results_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
+    let results_source =
+        "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
     let error_source = "pub enum SyscallError { InvalidFd(i64 fd) }";
     let sources = [
         (&main_path, main_source),
@@ -2918,8 +2929,14 @@ fn node_type_uses_the_exact_scalar_enum_payload_binding_shape() {
     let value = key(unit, generation, &index, NodeKind::PathExpression, 1);
     let error = key(unit, generation, &index, NodeKind::PathExpression, 2);
 
-    assert_eq!(node_type(&db, value).expect("Ok binding type"), Some(SemanticTypeId::I64));
-    assert_eq!(node_type(&db, error).expect("Error binding type"), Some(SemanticTypeId::I64));
+    assert_eq!(
+        node_type(&db, value).expect("Ok binding type"),
+        Some(SemanticTypeId::I64)
+    );
+    assert_eq!(
+        node_type(&db, error).expect("Error binding type"),
+        Some(SemanticTypeId::I64)
+    );
 }
 
 #[test]
@@ -2954,7 +2971,10 @@ fn node_type_composes_enum_match_results_from_binding_aware_arm_nodes() {
     let (db, _project, unit, generation, index) = setup(source);
     let outer_match = key(unit, generation, &index, NodeKind::MatchExpression, 0);
 
-    assert_eq!(node_type(&db, outer_match).expect("outer match type"), Some(SemanticTypeId::I64));
+    assert_eq!(
+        node_type(&db, outer_match).expect("outer match type"),
+        Some(SemanticTypeId::I64)
+    );
 }
 
 #[test]
@@ -2972,7 +2992,10 @@ fn node_type_uses_an_exact_direct_call_abi_result() {
     let (db, _project, unit, generation, index) = setup(source);
     let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
 
-    assert_eq!(node_type(&db, call).expect("direct call type"), Some(SemanticTypeId::I64));
+    assert_eq!(
+        node_type(&db, call).expect("direct call type"),
+        Some(SemanticTypeId::I64)
+    );
 }
 
 #[test]
@@ -3395,8 +3418,7 @@ i32 Main() {
 
 #[test]
 fn reachable_items_includes_inline_method_callees_without_hir() {
-    let source =
-        "type Point { i32 x, i32 Ping() { return 7; } } i32 Main() { return Point { x: 1 }.Ping(); }";
+    let source = "type Point { i32 x, i32 Ping() { return 7; } } i32 Main() { return Point { x: 1 }.Ping(); }";
     let (db, _project, unit, generation, index) = setup(source);
     let program = key(unit, generation, &index, NodeKind::Program, 0);
     let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
@@ -5028,7 +5050,6 @@ fn for_iterator_fact_rejects_non_range_iterables() {
     let for_stmt = key(unit, generation, &index, NodeKind::ForStatement, 0);
     assert_unavailable(for_iterator_fact(&db, for_stmt));
 }
-
 
 #[test]
 fn stale_generation_cannot_reuse_a_local_slot_identity() {

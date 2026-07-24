@@ -40,7 +40,6 @@ pub async fn analyze_document_for_state(
     source: &str,
     compilation_context: Option<&CompilationContext>,
 ) -> Vec<tower_lsp_server::ls_types::Diagnostic> {
-    let facts =
-        collect_syntax_diagnostics_for_state(state, uri, source, compilation_context).await;
+    let facts = collect_syntax_diagnostics_for_state(state, uri, source, compilation_context).await;
     lsp_diagnostics_from_syntax(source, &facts)
 }

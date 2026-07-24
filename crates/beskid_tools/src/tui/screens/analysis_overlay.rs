@@ -4,8 +4,8 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 
 use crate::shell::context::WidgetContext;
-use crate::shell::widgets::draw_analysis_panel;
+use crate::shell::widgets::draw_build_report;
 
 pub fn render(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
-    draw_analysis_panel(area, frame, ctx);
+    draw_build_report(area, frame, ctx);
 }

@@ -1,18 +1,16 @@
 //! Parse Beskid source to a spanned [`Program`](crate::syntax::Program), surfacing
 //! [`MietteReportError`] on failure and optional parse-recovery diagnostics.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use pest::Parser;
 
-use crate::analysis::diagnostics::{make_diagnostic, MietteReportError, Severity};
 use crate::analysis::diagnostics::SemanticDiagnostic;
+use crate::analysis::diagnostics::{MietteReportError, Severity, make_diagnostic};
 use crate::parser::{BeskidParser, Rule};
 use crate::parsing::parsable::Parsable;
 use crate::syntax::{Program, Spanned};
 
-use super::diagnostics_emit::{
-    parse_error_diagnostic, pest_error_diagnostic,
-};
+use super::diagnostics_emit::{parse_error_diagnostic, pest_error_diagnostic};
 use super::parse_recovery::collect_repair_candidates;
 
 /// Result of parser recovery: always includes diagnostics captured while building the program.
@@ -29,10 +27,7 @@ pub fn parse_program(source: &str) -> Result<Spanned<Program>> {
 }
 
 /// Parse with a stable `source_name` (file path or synthetic label) for diagnostics.
-pub fn parse_program_with_source_name(
-    source_name: &str,
-    source: &str,
-) -> Result<Spanned<Program>> {
+pub fn parse_program_with_source_name(source_name: &str, source: &str) -> Result<Spanned<Program>> {
     parse_program_with_source_name_and_diagnostics(source_name, source).map(|parsed| parsed.program)
 }
 
@@ -129,7 +124,12 @@ pub fn parse_expression_source(
         anyhow!(MietteReportError::new(make_diagnostic(
             source_name,
             source,
-            crate::syntax::SpanInfo { start: 0, end: 1.min(source.len()), line_col_start: (1,1), line_col_end: (1,1) },
+            crate::syntax::SpanInfo {
+                start: 0,
+                end: 1.min(source.len()),
+                line_col_start: (1, 1),
+                line_col_end: (1, 1)
+            },
             format!("no expression found in `{source_name}`"),
             "empty expression",
             None,

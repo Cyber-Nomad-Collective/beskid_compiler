@@ -9,9 +9,7 @@ use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{
     ProjectError, parse_bsol_document, parse_manifest, parse_workspace_manifest,
 };
-use beskid_analysis::services::{
-    self, FrontEndOptions, PrepareOptions, resolved_input_from_plan,
-};
+use beskid_analysis::services::{self, FrontEndOptions, PrepareOptions, resolved_input_from_plan};
 use beskid_analysis::syntax::Program;
 use beskid_analysis::{SemanticDiagnostic, Severity};
 use beskid_queries::BeskidDatabase;
@@ -79,10 +77,7 @@ pub fn collect_syntax_diagnostics(
 }
 
 /// Convert generation-bound facts into LSP diagnostics for the given source text.
-pub fn lsp_diagnostics_from_syntax(
-    source: &str,
-    facts: &[SyntaxDiagnostic],
-) -> Vec<Diagnostic> {
+pub fn lsp_diagnostics_from_syntax(source: &str, facts: &[SyntaxDiagnostic]) -> Vec<Diagnostic> {
     facts
         .iter()
         .map(|fact| syntax_to_lsp_diagnostic(source, fact))
@@ -112,7 +107,11 @@ fn structural_syntax_diagnostics(source_name: &str, source: &str) -> Vec<SyntaxD
                 .into_iter()
                 .map(syntax_diagnostic_from_semantic)
                 .collect::<Vec<_>>();
-            diagnostics.extend(semantic_diagnostics(source_name, source, &parsed.program.node));
+            diagnostics.extend(semantic_diagnostics(
+                source_name,
+                source,
+                &parsed.program.node,
+            ));
             diagnostics
         }
         Err(err) => vec![SyntaxDiagnostic {
@@ -125,7 +124,11 @@ fn structural_syntax_diagnostics(source_name: &str, source: &str) -> Vec<SyntaxD
     }
 }
 
-fn semantic_diagnostics(source_name: &str, source: &str, program: &Program) -> Vec<SyntaxDiagnostic> {
+fn semantic_diagnostics(
+    source_name: &str,
+    source: &str,
+    program: &Program,
+) -> Vec<SyntaxDiagnostic> {
     services::semantic_rule_diagnostics_for_program(
         program,
         source_name.to_string(),
@@ -156,7 +159,11 @@ fn syntax_diagnostic_from_semantic(diag: SemanticDiagnostic) -> SyntaxDiagnostic
 
 fn syntax_to_lsp_diagnostic(source: &str, fact: &SyntaxDiagnostic) -> Diagnostic {
     Diagnostic {
-        range: offset_range_to_lsp(source, fact.start, fact.end.max(fact.start.saturating_add(1))),
+        range: offset_range_to_lsp(
+            source,
+            fact.start,
+            fact.end.max(fact.start.saturating_add(1)),
+        ),
         severity: Some(match fact.severity {
             SyntaxDiagnosticSeverity::Error => DiagnosticSeverity::ERROR,
             SyntaxDiagnosticSeverity::Warning => DiagnosticSeverity::WARNING,
@@ -283,13 +290,8 @@ mod tests {
             .clone()
             .expect("corelib_mvp fixture must expose a compile plan");
         // Match the exact ResolvedInput / entry key that collect_syntax_diagnostics builds.
-        let resolved = resolved_input_from_plan(
-            main_path.clone(),
-            source.clone(),
-            plan,
-            None,
-            None,
-        );
+        let resolved =
+            resolved_input_from_plan(main_path.clone(), source.clone(), plan, None, None);
 
         let project_root = project_root
             .canonicalize()
@@ -316,7 +318,9 @@ mod tests {
             "stale typed generation must fail closed to structural diagnostics for the current buffer"
         );
         assert!(
-            collected.iter().all(|diag| diag.code.as_deref() != Some("W1504")),
+            collected
+                .iter()
+                .all(|diag| diag.code.as_deref() != Some("W1504")),
             "stale generation must not emit prepare-spine diagnostics such as W1504: {collected:#?}",
         );
     }

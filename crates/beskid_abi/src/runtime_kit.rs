@@ -87,8 +87,7 @@ pub fn installed_runtime_prefix() -> Result<PathBuf, InstalledRuntimePrefixError
     if let Some(prefix) = std::env::var_os(ENV_RUNTIME_PREFIX) {
         return Ok(PathBuf::from(prefix));
     }
-    let executable =
-        std::env::current_exe().map_err(InstalledRuntimePrefixError::CurrentExe)?;
+    let executable = std::env::current_exe().map_err(InstalledRuntimePrefixError::CurrentExe)?;
     installed_runtime_prefix_for_executable(&executable)
 }
 
@@ -96,16 +95,16 @@ pub fn installed_runtime_prefix() -> Result<PathBuf, InstalledRuntimePrefixError
 pub fn installed_runtime_prefix_for_executable(
     executable: &Path,
 ) -> Result<PathBuf, InstalledRuntimePrefixError> {
-    let bin = executable.parent().ok_or_else(|| {
-        InstalledRuntimePrefixError::MissingParent {
+    let bin = executable
+        .parent()
+        .ok_or_else(|| InstalledRuntimePrefixError::MissingParent {
+            executable: executable.to_path_buf(),
+        })?;
+    bin.parent().map(Path::to_path_buf).ok_or_else(|| {
+        InstalledRuntimePrefixError::MissingInstallPrefix {
             executable: executable.to_path_buf(),
         }
-    })?;
-    bin.parent()
-        .map(Path::to_path_buf)
-        .ok_or_else(|| InstalledRuntimePrefixError::MissingInstallPrefix {
-            executable: executable.to_path_buf(),
-        })
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,10 +117,7 @@ impl std::fmt::Display for HostRuntimeTargetError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnsupportedHost { arch, os } => {
-                write!(
-                    formatter,
-                    "unsupported ABI-v5 runtime host `{arch}-{os}`"
-                )
+                write!(formatter, "unsupported ABI-v5 runtime host `{arch}-{os}`")
             }
             Self::UnsupportedTarget { triple } => {
                 write!(formatter, "unsupported ABI-v5 runtime target `{triple}`")

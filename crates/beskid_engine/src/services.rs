@@ -169,17 +169,12 @@ pub fn prepare_jit_module(source_path: &Path, source: &str) -> Result<CodegenArt
     let target = crate::host_runtime_target()
         .map_err(|error| anyhow::anyhow!("host ABI-v5 target unavailable: {error}"))?;
     let isa = native_isa()?;
-    with_db(|db| {
-        beskid_codegen::lower_prepared_syntax_module(db, &front, target, isa.as_ref())
-    })
+    with_db(|db| beskid_codegen::lower_prepared_syntax_module(db, &front, target, isa.as_ref()))
 }
 
 /// Front-end prepare for JIT/REPL snippets; semantic diagnostics stay enabled so invalid
 /// extern contracts fail closed before CodegenInput construction.
-pub fn prepare_syntax_front_end(
-    source_path: &Path,
-    source: &str,
-) -> Result<FrontEndTypedResult> {
+pub fn prepare_syntax_front_end(source_path: &Path, source: &str) -> Result<FrontEndTypedResult> {
     let source_path = beskid_codegen::materialize_source_path_for_lowering(source_path, source)?;
     let plan = synthetic_compile_plan_for_source(&source_path);
     let resolved: ResolvedInput =

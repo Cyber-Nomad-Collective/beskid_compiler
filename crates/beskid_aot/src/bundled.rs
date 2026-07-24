@@ -69,11 +69,11 @@ fn runtime_target(target_triple: Option<&str>) -> AotResult<TargetMetadata> {
             .ok_or_else(|| AotError::RuntimeBuild {
                 message: format!("unsupported ABI-v5 runtime target `{triple}`"),
             }),
-        None => beskid_abi::runtime_kit::host_runtime_target().map_err(|error| {
-            AotError::RuntimeBuild {
+        None => {
+            beskid_abi::runtime_kit::host_runtime_target().map_err(|error| AotError::RuntimeBuild {
                 message: error.to_string(),
-            }
-        }),
+            })
+        }
     }
 }
 

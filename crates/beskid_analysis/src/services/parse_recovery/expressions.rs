@@ -2,7 +2,7 @@
 
 use crate::parser::Rule;
 
-use super::{next_token_start, skip_ws, unbalanced_delimiters, RepairCandidate};
+use super::{RepairCandidate, next_token_start, skip_ws, unbalanced_delimiters};
 
 const PRI_MATCH_CLOSE: u8 = 60;
 const PRI_MATCH_ARROW: u8 = 61;
@@ -223,11 +223,7 @@ fn find_match_block_brace(source: &str, through: usize) -> Option<usize> {
     let match_kw = find_keyword_backward(source, through, "match")?;
     let after_kw = skip_ws(source, match_kw + "match".len());
     let brace = find_next_brace_after_expression(source, after_kw, through)?;
-    if through > brace {
-        Some(brace)
-    } else {
-        None
-    }
+    if through > brace { Some(brace) } else { None }
 }
 
 fn find_next_brace_after_expression(source: &str, from: usize, limit: usize) -> Option<usize> {
@@ -666,7 +662,9 @@ fn find_keyword_backward(source: &str, through: usize, keyword: &str) -> Option<
 }
 
 fn is_identifier_start(bytes: &[u8], pos: usize) -> bool {
-    bytes.get(pos).is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+    bytes
+        .get(pos)
+        .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
 }
 
 fn is_identifier_part(bytes: &[u8], pos: usize) -> bool {

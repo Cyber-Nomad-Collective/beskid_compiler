@@ -85,7 +85,8 @@ pub fn handle_code_actions(
                     actions.push(CodeActionOrCommand::CodeAction(action));
                 }
                 if code == "W1639"
-                    && let Some(action) = remove_range_action(uri, diag, "Remove empty enum constructor parens")
+                    && let Some(action) =
+                        remove_range_action(uri, diag, "Remove empty enum constructor parens")
                 {
                     actions.push(CodeActionOrCommand::CodeAction(action));
                 }
@@ -300,7 +301,9 @@ mod tests {
         let changes = edit.changes.as_ref().expect("changes");
         let edits = changes.get(&uri).expect("uri edits");
         assert!(
-            edits.iter().any(|edit| edit.new_text.contains("@arg(value)")),
+            edits
+                .iter()
+                .any(|edit| edit.new_text.contains("@arg(value)")),
             "expected stub from syntax documentation facts, got {edits:?}"
         );
     }

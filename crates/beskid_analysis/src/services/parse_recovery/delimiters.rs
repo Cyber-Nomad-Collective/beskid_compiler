@@ -2,7 +2,7 @@
 
 use crate::parser::Rule;
 
-use super::{skip_ws, unbalanced_delimiters, RepairCandidate};
+use super::{RepairCandidate, skip_ws, unbalanced_delimiters};
 
 /// Generate delimiter close/open repairs near the Pest error locus.
 pub fn repairs(

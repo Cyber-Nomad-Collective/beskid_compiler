@@ -1,13 +1,13 @@
 use std::fs;
 
+use beskid_abi::abi_v5::TargetMetadata;
+use beskid_analysis::services::{
+    FrontEndOptions, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
+};
 use beskid_aot::object_module::BeskidObjectModule;
 use beskid_aot::{
     ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, build_mod_artifact,
     compute_mod_artifact_key, lower_prepared_syntax_entrypoint,
-};
-use beskid_abi::abi_v5::TargetMetadata;
-use beskid_analysis::services::{
-    FrontEndOptions, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
 };
 use beskid_codegen::CodegenArtifact;
 use beskid_queries::compile_front_end_from_resolved_input;

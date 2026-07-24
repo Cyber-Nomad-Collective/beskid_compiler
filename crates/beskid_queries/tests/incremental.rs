@@ -365,9 +365,7 @@ fn syntax_program_assembly_strips_hir_without_document_snapshot() {
             .path
             .canonicalize()
             .unwrap_or_else(|_| syntax.entry_unit().path.clone()),
-        entry_path
-            .canonicalize()
-            .unwrap_or(entry_path.clone())
+        entry_path.canonicalize().unwrap_or(entry_path.clone())
     );
     assert!(
         !syntax.units().is_empty(),

@@ -2,8 +2,6 @@ use clap::{Args, Subcommand};
 use semver::Version;
 use std::env;
 
-
-
 use crate::{DirectInstall, UpError};
 
 /// Toolchain version management commands exposed by `beskid up`.

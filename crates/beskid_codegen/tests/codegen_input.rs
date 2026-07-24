@@ -263,8 +263,14 @@ fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
         generation,
         node: AstNodeId(0),
     };
-    let input = CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), manifest.clone())
-        .expect("canonical codegen input");
+    let input = CodegenInput::new(
+        &db,
+        typed,
+        Arc::from([root]),
+        target.clone(),
+        manifest.clone(),
+    )
+    .expect("canonical codegen input");
 
     let trap_meta = manifest
         .trusted_runtime_intrinsics
@@ -305,7 +311,10 @@ fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
 
     let trap_wrapper = find_node_matching(&db, root, IndexedNodeKind::FunctionDefinition, |item| {
         matches!(
-            beskid_queries::item_name(&db, item).ok().flatten().as_deref(),
+            beskid_queries::item_name(&db, item)
+                .ok()
+                .flatten()
+                .as_deref(),
             Some("Trap")
         )
     })
@@ -335,7 +344,9 @@ fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
     )
     .expect("ordinary input");
     assert!(
-        user_input.runtime_intrinsic_for(user_root, "trap").is_none(),
+        user_input
+            .runtime_intrinsic_for(user_root, "trap")
+            .is_none(),
         "user packages cannot invoke the trusted trap intrinsic"
     );
 }

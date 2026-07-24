@@ -129,15 +129,9 @@ fn coff_object_exports_exactly_two_symbols_and_contains_no_unwind_sections() {
         ]
     );
 
-    let sections = String::from_utf8(
-        output(
-            Command::new(llvm_objdump)
-                .arg("-h")
-                .arg(&object),
-        )
-        .stdout,
-    )
-    .unwrap();
+    let sections =
+        String::from_utf8(output(Command::new(llvm_objdump).arg("-h").arg(&object)).stdout)
+            .unwrap();
     assert!(!sections.contains(".pdata"));
     assert!(!sections.contains(".xdata"));
 }

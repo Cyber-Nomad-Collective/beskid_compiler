@@ -31,8 +31,9 @@ use beskid_queries::{
     SyntaxGenerationId, aggregate_field_access, build_canonical_corelib_syscall_typed_program,
     build_canonical_runtime_typed_program, build_typed_program,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, child_nodes,
-    closure_environment, enum_constructor, enum_layout, enum_match, format_ast_node_site, item_body, item_name, literal_fact,
-    mutable_local_assignment, node_kind, node_type, spawn_target, test_statement_nodes,
+    closure_environment, enum_constructor, enum_layout, enum_match, format_ast_node_site,
+    item_body, item_name, literal_fact, mutable_local_assignment, node_kind, node_type,
+    spawn_target, test_statement_nodes,
 };
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::isa;
@@ -395,17 +396,13 @@ i32 Main() {
         let node = find_node(input.database(), root, kind)
             .unwrap_or_else(|| panic!("expected syntax node {kind:?}"));
 
-        let error = emit_isle_expression(&input, isa.as_ref(), node, types::I64).expect_err(
-            "unsupported typed operations must not route around generated ISLE",
-        );
+        let error = emit_isle_expression(&input, isa.as_ref(), node, types::I64)
+            .expect_err("unsupported typed operations must not route around generated ISLE");
         let first = error.display_with_db(input.database());
         let repeated = error.display_with_db(input.database());
 
         assert_eq!(first, repeated, "{kind:?}");
-        assert!(
-            first.contains("MissingRuleOrFact"),
-            "{kind:?}: {first}"
-        );
+        assert!(first.contains("MissingRuleOrFact"), "{kind:?}: {first}");
         assert!(
             first.contains(construct),
             "{kind:?}: expected construct {construct} in {first}"
@@ -550,7 +547,10 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    assert!(input.aggregate_static_plan(literal).is_some(), "aggregate static plan");
+    assert!(
+        input.aggregate_static_plan(literal).is_some(),
+        "aggregate static plan"
+    );
     let function = emit_isle_expression(&input, isa.as_ref(), literal, isa.pointer_type())
         .expect("aggregate literal lowers through syntax facts");
     let clif = function.display().to_string();
@@ -940,7 +940,11 @@ fn parsed_generic_enum_match_statement_lowers_empty_unit_blocks_without_hir() {
         .expect("item body query")
         .expect("item body");
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
-    assert_eq!(facts.statement_count(body), Some(3), "function body statements");
+    assert_eq!(
+        facts.statement_count(body),
+        Some(3),
+        "function body statements"
+    );
 
     let function = match emit_isle_item(&input, isa.as_ref(), item) {
         Ok(function) => function,
@@ -1444,10 +1448,7 @@ fn parsed_mutable_range_accumulator_exposes_local_write_syntax_facts() {
         .expect("assignment target slot fact");
     assert_eq!(
         mutable_local_assignment(db, assignment).expect("mutable assignment query"),
-        Some(beskid_queries::MutableLocalAssignment {
-            declaration,
-            slot,
-        })
+        Some(beskid_queries::MutableLocalAssignment { declaration, slot })
     );
     assert_eq!(
         facts.mutable_local_assignment_slot(assignment),
@@ -1477,10 +1478,7 @@ fn parsed_mutable_string_local_exposes_local_write_syntax_facts() {
         .expect("assignment target slot fact");
     assert_eq!(
         mutable_local_assignment(db, assignment).expect("mutable assignment query"),
-        Some(beskid_queries::MutableLocalAssignment {
-            declaration,
-            slot,
-        })
+        Some(beskid_queries::MutableLocalAssignment { declaration, slot })
     );
     assert_eq!(
         facts.mutable_local_assignment_slot(assignment),
@@ -1778,7 +1776,8 @@ fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
     let descriptor_path = root.join("Core/Syscall/Descriptor.bd");
     let stream_path = root.join("Core/Syscall/StandardStream.bd");
     let main_source = "use Core.Syscall.Descriptor;\nuse Core.Syscall.StandardStream;\nunit Main() { StandardStream stream = StandardStream::Stdout(); Descriptor descriptor = Descriptor::Standard(stream); return; }";
-    let descriptor_source = "pub enum Descriptor { Standard(Core.Syscall.StandardStream stream), Raw(i64 fd), }";
+    let descriptor_source =
+        "pub enum Descriptor { Standard(Core.Syscall.StandardStream stream), Raw(i64 fd), }";
     let stream_source = "pub enum StandardStream { Stdin, Stdout, Stderr, }";
     let units = [
         (main_path.clone(), main_source),
@@ -1822,7 +1821,11 @@ fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
         root,
         beskid_queries::IndexedNodeKind::EnumConstructorExpression,
     );
-    assert_eq!(constructors.len(), 2, "one StandardStream and one Descriptor constructor");
+    assert_eq!(
+        constructors.len(),
+        2,
+        "one StandardStream and one Descriptor constructor"
+    );
     let descriptor = constructors[1];
 
     assert!(
@@ -1831,7 +1834,6 @@ fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
             .is_some(),
         "an imported single-payload enum constructor must carry its declaration layout"
     );
-
 }
 
 #[test]
@@ -1882,8 +1884,8 @@ fn imported_nullary_enum_constructor_lowers_from_an_ordinary_function_block() {
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed = build_typed_program(&mut db, project, generation, assembly)
-        .expect("typed syntax program");
+    let typed =
+        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey {
         unit: entry,
         generation,
@@ -1964,8 +1966,8 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed = build_typed_program(&mut db, project, generation, assembly)
-        .expect("typed syntax program");
+    let typed =
+        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey {
         unit: entry,
         generation,
@@ -2042,14 +2044,12 @@ fn unknown_qualified_payload_type_remains_unavailable_to_isle() {
 #[test]
 fn user_copy_of_foundation_output_cannot_import_the_panic_service() {
     let mut db = BeskidDatabase::default();
-    let workspace = tempfile::tempdir().expect("user lookalike workspace").keep();
+    let workspace = tempfile::tempdir()
+        .expect("user lookalike workspace")
+        .keep();
     let source_path = workspace.join("Core/Output/Output.bd");
-    std::fs::create_dir_all(
-        source_path
-            .parent()
-            .expect("user lookalike output parent"),
-    )
-    .expect("create user lookalike output parent");
+    std::fs::create_dir_all(source_path.parent().expect("user lookalike output parent"))
+        .expect("create user lookalike output parent");
     let source = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../corelib/packages/foundation/src/Core/Output/Output.bd"),
@@ -2965,7 +2965,6 @@ fn parsed_program_specializes_zero_argument_generic_factory_without_hir() {
     );
 }
 
-
 #[test]
 fn parsed_test_program_specializes_is_ok_and_binds_match_payload_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
@@ -3282,9 +3281,9 @@ fn parsed_syntax_string_literal_materializes_runtime_string_abi() {
         })
         .expect("three UTF-8 e-acute scalars must materialize as six bytes");
     assert!(
-        clif.lines()
-            .any(|line| line.trim().starts_with(&format!("store {byte_len}, "))
-                && line.contains("+24")),
+        clif.lines().any(
+            |line| line.trim().starts_with(&format!("store {byte_len}, ")) && line.contains("+24")
+        ),
         "UTF-8 byte length must occupy str_new's second payload slot: {clif}",
     );
     let dispatch_ref = clif
@@ -3360,20 +3359,24 @@ fn canonical_runtime_test_assembly(
         });
     }
     let source_path = directory.join(CANONICAL_BOOTSTRAP_SOURCE_PATH);
-    (Arc::new(SyntaxProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry { dependency_name: None, source_root: directory.to_path_buf() },
-            dependencies: Vec::new(),
-        },
-        Arc::new(source_units),
-        0,
-        AssemblyDiscovery::ImportClosure,
-        Arc::new(ModuleIndex::empty()),
-        false,
-    )), source_path)
+    (
+        Arc::new(SyntaxProgramAssembly::new(
+            EffectiveCompilationRoots {
+                host: RootEntry {
+                    dependency_name: None,
+                    source_root: directory.to_path_buf(),
+                },
+                dependencies: Vec::new(),
+            },
+            Arc::new(source_units),
+            0,
+            AssemblyDiscovery::ImportClosure,
+            Arc::new(ModuleIndex::empty()),
+            false,
+        )),
+        source_path,
+    )
 }
-
-
 
 fn canonical_runtime_test_assembly(
     directory: &std::path::Path,
@@ -3398,7 +3401,10 @@ fn canonical_runtime_test_assembly(
     let source_path = directory.join(CANONICAL_BOOTSTRAP_SOURCE_PATH);
     let assembly = SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry { dependency_name: None, source_root: directory.to_path_buf() },
+            host: RootEntry {
+                dependency_name: None,
+                source_root: directory.to_path_buf(),
+            },
             dependencies: Vec::new(),
         },
         Arc::new(source_units),
@@ -3415,8 +3421,11 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
     let directory = tempfile::tempdir().expect("runtime project").keep();
     let (assembly, source_path) = canonical_runtime_test_assembly(&mut db, directory.as_ref());
     let project = ProjectSession::new(
-        &*db, directory.clone(), source_path.clone(),
-        "beskid-runtime-native".into(), "lock".into(),
+        &*db,
+        directory.clone(),
+        source_path.clone(),
+        "beskid-runtime-native".into(),
+        "lock".into(),
     );
     let generation = SyntaxGenerationId(31);
     let target = TargetMetadata::supported()
@@ -3543,8 +3552,11 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     let directory = tempfile::tempdir().expect("runtime project").keep();
     let (assembly, source_path) = canonical_runtime_test_assembly(&mut db, directory.as_ref());
     let project = ProjectSession::new(
-        &*db, directory.clone(), source_path.clone(),
-        "beskid-runtime-native".into(), "lock".into(),
+        &*db,
+        directory.clone(),
+        source_path.clone(),
+        "beskid-runtime-native".into(),
+        "lock".into(),
     );
     let generation = SyntaxGenerationId(32);
     let host_triple = if cfg!(target_os = "macos") {
@@ -3754,7 +3766,10 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     );
 
     pointer_map[0] = 16;
-    assert_eq!(pointer_map[0], 16, "restore valid pointer offset before allocate");
+    assert_eq!(
+        pointer_map[0], 16,
+        "restore valid pointer offset before allocate"
+    );
     descriptor[1] = 8;
     assert_eq!(
         validate(descriptor.as_ptr()),
@@ -4097,7 +4112,8 @@ fn canonical_foundation_service_fixture(
     let source_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corelib/packages/foundation/src")
         .join(source_relative_path);
-    let source_path = std::fs::canonicalize(&source_path).expect("canonical Foundation service path");
+    let source_path =
+        std::fs::canonicalize(&source_path).expect("canonical Foundation service path");
     let source = std::fs::read_to_string(&source_path).expect("embedded Foundation service source");
     let source_root = source_path
         .ancestors()
@@ -4508,18 +4524,34 @@ fn cyb137_assert_true_is_ok_then_bound_payload_match_must_lower() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem { key: is_ok, symbol: "IsOk".into() },
-            SyntaxModuleItem { key: true_fn, symbol: "True".into() },
-            SyntaxModuleItem { key: test, symbol: "sample".into() },
+            SyntaxModuleItem {
+                key: is_ok,
+                symbol: "IsOk".into(),
+            },
+            SyntaxModuleItem {
+                key: true_fn,
+                symbol: "True".into(),
+            },
+            SyntaxModuleItem {
+                key: test,
+                symbol: "sample".into(),
+            },
         ],
     ) {
         Ok(artifact) => artifact,
         Err(error) => panic!("CYB-137 SyscallWrite-shaped fixture must lower: {error:?}"),
     };
     assert!(
-        artifact.functions.iter().any(|f| f.name.starts_with("IsOk#generic_")),
+        artifact
+            .functions
+            .iter()
+            .any(|f| f.name.starts_with("IsOk#generic_")),
         "IsOk specialization missing: {:?}",
-        artifact.functions.iter().map(|f| &f.name).collect::<Vec<_>>(),
+        artifact
+            .functions
+            .iter()
+            .map(|f| &f.name)
+            .collect::<Vec<_>>(),
     );
 }
 
@@ -4541,8 +4573,14 @@ fn cyb169_enum_return_i64_main_must_lower() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem { key: main, symbol: "Main".into() },
-            SyntaxModuleItem { key: make_ok, symbol: "MakeOk".into() },
+            SyntaxModuleItem {
+                key: main,
+                symbol: "Main".into(),
+            },
+            SyntaxModuleItem {
+                key: make_ok,
+                symbol: "MakeOk".into(),
+            },
         ],
     ) {
         Ok(artifact) => artifact,

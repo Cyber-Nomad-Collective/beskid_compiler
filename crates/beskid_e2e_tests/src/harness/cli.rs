@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::{Mutex, OnceLock};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 static CORELIB_ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
 static STAGED_DEBUG_KIT: OnceLock<Mutex<()>> = OnceLock::new();
@@ -136,12 +136,7 @@ fn install_prefix_for_cli(cli_binary: &Path) -> PathBuf {
     });
     bin.parent()
         .map(Path::to_path_buf)
-        .unwrap_or_else(|| {
-            panic!(
-                "CLI binary has no install prefix: {}",
-                cli_binary.display()
-            )
-        })
+        .unwrap_or_else(|| panic!("CLI binary has no install prefix: {}", cli_binary.display()))
 }
 
 fn host_abi_v5_triple() -> Result<&'static str, String> {

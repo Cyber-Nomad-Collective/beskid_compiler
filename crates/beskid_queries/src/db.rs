@@ -29,8 +29,7 @@ pub struct SyntaxDependencyRegistry {
     pub(crate) modules: HashMap<(SyntaxGenerationId, Vec<String>), Vec<SourceUnitId>>,
     /// Compiler-minted Corelib service names available to one exact source unit generation.
     /// Ordinary program syntax never populates this registry entry.
-    pub(crate) corelib_services:
-        HashMap<(SourceUnitId, SyntaxGenerationId), Vec<CorelibService>>,
+    pub(crate) corelib_services: HashMap<(SourceUnitId, SyntaxGenerationId), Vec<CorelibService>>,
 }
 
 /// One explicit module import resolved to an assembled syntax unit.

@@ -450,12 +450,15 @@ fn trusted_corelib_service_paths(
         // Lexically clean both sides so `../..` from CARGO_MANIFEST_DIR matches a resolved
         // Foundation `source_root`. Do not canonicalize: symlink resolution would let a
         // user-project link to the compiler-owned file inherit panic/syscall provenance.
-        let Some((index, dependency)) = plan.dependency_projects.iter().enumerate().find(
-            |(_, dependency)| {
-                let source_root = normalize_lexically(&dependency.source_root);
-                canonical_path.starts_with(&source_root)
-            },
-        ) else {
+        let Some((index, dependency)) =
+            plan.dependency_projects
+                .iter()
+                .enumerate()
+                .find(|(_, dependency)| {
+                    let source_root = normalize_lexically(&dependency.source_root);
+                    canonical_path.starts_with(&source_root)
+                })
+        else {
             continue;
         };
         let source_root = normalize_lexically(&dependency.source_root);

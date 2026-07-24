@@ -144,7 +144,9 @@ impl<'a, 'f> ClifPrimitives<'a, 'f> {
     }
 
     pub fn icmp_ult(&mut self, left: Value, right: Value) -> Value {
-        self.builder.ins().icmp(IntCC::UnsignedLessThan, left, right)
+        self.builder
+            .ins()
+            .icmp(IntCC::UnsignedLessThan, left, right)
     }
 
     pub fn icmp_ule(&mut self, left: Value, right: Value) -> Value {
@@ -232,9 +234,7 @@ impl<'a, 'f> ClifPrimitives<'a, 'f> {
 
         builder.switch_to_block(loop_block);
         let idx = builder.block_params(loop_block)[0];
-        let idx_lt_len = builder
-            .ins()
-            .icmp(IntCC::UnsignedLessThan, idx, len);
+        let idx_lt_len = builder.ins().icmp(IntCC::UnsignedLessThan, idx, len);
         let body = builder.create_block();
         let done = builder.create_block();
         builder.ins().brif(idx_lt_len, body, &[], done, &[]);
@@ -262,9 +262,7 @@ impl<'a, 'f> ClifPrimitives<'a, 'f> {
         );
 
         builder.switch_to_block(mismatch);
-        let left_lt = builder
-            .ins()
-            .icmp(IntCC::UnsignedLessThan, lb64, rb64);
+        let left_lt = builder.ins().icmp(IntCC::UnsignedLessThan, lb64, rb64);
         let mismatch_result = builder.ins().select(left_lt, neg_one, one);
         builder
             .ins()
