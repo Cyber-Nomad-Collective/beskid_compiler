@@ -1,0 +1,38 @@
+/// Canonical Beskid callback registration.
+
+const CallbackTableMax = 32;
+
+pub pointer CallbackTable() {
+    pointer state = RuntimeState();
+    if state == NativePointer(0) { return NativePointer(0); }
+    return pointer_add(state, 33000);
+}
+
+[Export(Abi:"C", Symbol:"beskid_register_callbacks")]
+pub unit BeskidRegisterCallbacks(pointer entries, word count) {
+    if entries == NativePointer(0) || count == 0 || count > CallbackTableMax { return; }
+    pointer table = CallbackTable();
+    if table == NativePointer(0) { return; }
+    mut word i = 0;
+    while i < count {
+        pointer src = pointer_add(entries, i * 16);
+        pointer dst = pointer_add(table, 8 + i * 16);
+        raw_word_store(dst, raw_word_load(src));
+        raw_word_store(pointer_add(dst, 8), raw_word_load(pointer_add(src, 8)));
+        i = i + 1;
+    }
+    raw_word_store(table, count);
+    return;
+}
+
+[Export(Abi:"C", Symbol:"install_callback_trampoline")]
+pub unit InstallCallbackTrampoline(pointer target, pointer handler) {
+    if target == NativePointer(0) || handler == NativePointer(0) { return; }
+    raw_word_store(target, NativeWord(handler));
+    return;
+}
+
+[Export(Abi:"C", Symbol:"beskid_register_handlers")]
+pub unit BeskidRegisterHandlers(pointer table, word count) {
+    return;
+}

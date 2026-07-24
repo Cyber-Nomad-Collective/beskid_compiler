@@ -1,0 +1,48 @@
+/// Canonical Beskid event system.
+///
+/// Events carry a fixed-capacity handler list. Each handler is a codegen-emitted
+/// trampoline pointer. subscribe adds a handler, unsubscribe_first removes the first
+/// match, get_handler retrieves by index, len returns count.
+
+const EventMax = 16;
+const EventSlotSize = 144;
+
+pub pointer EventTable() {
+    pointer state = RuntimeState();
+    if state == NativePointer(0) { return NativePointer(0); }
+    return pointer_add(state, 28000);
+}
+
+[Export(Abi:"C", Symbol:"event_get_handler")]
+pub pointer EventGetHandler(pointer event, u32 index) {
+    if event == NativePointer(0) { return NativePointer(0); }
+    if word(index) >= raw_word_load(pointer_add(event, 128)) { return NativePointer(0); }
+    return NativePointer(raw_word_load(pointer_add(event, 8 + word(index) * 8)));
+}
+
+[Export(Abi:"C", Symbol:"event_len")]
+pub u32 EventLen(pointer event) {
+    if event == NativePointer(0) { return 0; }
+    return u32(raw_word_load(pointer_add(event, 128)));
+}
+
+[Export(Abi:"C", Symbol:"event_subscribe")]
+pub unit EventSubscribe(pointer event, pointer handler) {
+    if event == NativePointer(0) || handler == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(event, 128));
+    if count >= EventMax { return; }
+    raw_word_store(pointer_add(event, 8 + count * 8), NativeWord(handler));
+    raw_word_store(pointer_add(event, 128), count + 1);
+    raw_word_store(pointer_add(event, 136), word(count + 1));
+    return;
+}
+
+[Export(Abi:"C", Symbol:"event_unsubscribe_first")]
+pub unit EventUnsubscribeFirst(pointer event) {
+    if event == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(event, 128));
+    if count == 0 { return; }
+    raw_word_store(pointer_add(event, 128), count - 1);
+    raw_word_store(pointer_add(event, 8 + (count - 1) * 8), 0);
+    return;
+}
