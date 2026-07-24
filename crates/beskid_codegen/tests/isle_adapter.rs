@@ -3336,11 +3336,10 @@ fn parsed_syntax_program_emits_imported_unit_calls_as_statements() {
     assert!(main.function.display().to_string().contains("call"));
 }
 
-#[test]
 fn canonical_runtime_test_assembly(
-    db: &MutableDb,
-    directory: &Path,
-) -> (Arc<SyntaxProgramAssembly>, PathBuf) {
+    _db: &mut BeskidDatabase,
+    directory: &std::path::Path,
+) -> (Arc<SyntaxProgramAssembly>, std::path::PathBuf) {
     let all_sources = canonical_runtime_sources();
     let mut source_units = Vec::with_capacity(all_sources.len());
     for canonical in &all_sources {
@@ -3378,44 +3377,7 @@ fn canonical_runtime_test_assembly(
     )
 }
 
-fn canonical_runtime_test_assembly(
-    directory: &std::path::Path,
-) -> (Arc<SyntaxProgramAssembly>, std::path::PathBuf) {
-    let all_sources = canonical_runtime_sources();
-    let mut source_units = Vec::with_capacity(all_sources.len());
-    for canonical in &all_sources {
-        let sp = directory.join(&canonical.logical_path);
-        if let Some(parent) = sp.parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-        std::fs::write(&sp, &canonical.source).expect("write canonical runtime source");
-        let program = parse_program_with_source_name(sp.to_str().unwrap(), &canonical.source)
-            .expect("parse canonical runtime source");
-        source_units.push(SourceUnit {
-            logical_name: canonical.logical_path.clone(),
-            path: sp,
-            source: canonical.source.clone(),
-            program,
-        });
-    }
-    let source_path = directory.join(CANONICAL_BOOTSTRAP_SOURCE_PATH);
-    let assembly = SyntaxProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory.to_path_buf(),
-            },
-            dependencies: Vec::new(),
-        },
-        Arc::new(source_units),
-        0,
-        AssemblyDiscovery::ImportClosure,
-        Arc::new(ModuleIndex::empty()),
-        false,
-    );
-    (Arc::new(assembly), source_path)
-}
-
+#[test]
 fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_manifest_imports() {
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("runtime project").keep();
