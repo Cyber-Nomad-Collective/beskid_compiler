@@ -584,16 +584,13 @@ fn binary_u8_less_than_emits_unsigned_compare() {
             }
         }
 
-        #[allow(clippy::if_same_then_else)]
         fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
-            if key == self.root {
-                Some(types::I8)
-            } else if key == self.left {
-                Some(types::I8)
-            } else {
-                None
-            }
-        }
+              if key == self.root || key == self.left || key == self.right {
+                  Some(types::I8)
+              } else {
+                  None
+              }
+          }
     }
 
     let db = BeskidDatabase::default();
