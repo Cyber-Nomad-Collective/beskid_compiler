@@ -68,6 +68,9 @@ pub pointer DynamicObjectAlloc(pointer descriptor) { return NativePointer(0); }
 [Export(Abi:"C", Symbol:"beskid_register_callbacks")]
 pub unit BeskidRegisterCallbacks(pointer table, pointer count) { return; }
 
+[Export(Abi:"C", Symbol:"beskid_register_handlers")]
+pub unit BeskidRegisterHandlers(pointer table, word count) { return; }
+
 [Export(Abi:"C", Symbol:"beskid_runtime_abi_version")]
 pub u32 BeskidRuntimeAbiVersion() { return 5; }
 

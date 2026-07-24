@@ -94,6 +94,40 @@ pub pointer GcAlloc(word size, word alignment) {
     return NativePointer(alignedBump);
 }
 
+
+/// Canonical GC-tracked allocation entrypoint.
+///
+/// `size` bytes are allocated from the GC heap and zero-filled. When `type_desc_ptr`
+/// is non-null, the descriptor pointer is written at offset 0 as the object header.
+[Export(Abi:"C", Symbol:"alloc")]
+pub pointer Alloc(word size, pointer type_desc_ptr) {
+    if size == 0 {
+        return NativePointer(0);
+    }
+    // Use the GC heap for managed allocation; fall through to system
+    // allocation when the heap isn't initialized yet (bootstrap phase).
+    pointer heap = Heap();
+    if heap != NativePointer(0) {
+        pointer obj = GcAlloc(size, 8);
+        if obj != NativePointer(0) {
+            memory_set(obj, 0, size);
+            if type_desc_ptr != NativePointer(0) {
+                raw_word_store(obj, NativeWord(type_desc_ptr));
+            }
+            return obj;
+        }
+    }
+    // Fallback: direct system allocation for bootstrap/heap-init
+    pointer obj = SystemAllocate(size, 8);
+    if obj != NativePointer(0) {
+        memory_set(obj, 0, size);
+        if type_desc_ptr != NativePointer(0) {
+            raw_word_store(obj, NativeWord(type_desc_ptr));
+        }
+    }
+    return obj;
+}
+
 // ── GC Root Registration ──────────────────────────────────────────
 
 /// Registers a stack-slot address as an external GC root.
