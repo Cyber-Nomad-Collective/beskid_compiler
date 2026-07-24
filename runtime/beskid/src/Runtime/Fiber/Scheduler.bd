@@ -1,0 +1,383 @@
+// Canonical Beskid cooperative fiber scheduler.
+//
+// Design mirrors the Rust runtime: a round-robin run queue, fiber state machine,
+// pending spawn/cancel/detach queues, join snapshots, and wake lists.
+//
+// Platform context-switch assembly (beskid_arch_v5_context_init / context_switch)
+// is declared in runtime_manifest.bsol and compiled from assembly/*.S.
+// The Beskid runtime calls these through intrinsic declarations; until those
+// are added to the manifest, the context-switch entry points are documented here
+// with placeholder calls.
+
+// ── Fiber State Constants ──────────────────────────────────────────
+const FIBER_RUNNABLE  = 0;
+const FIBER_RUNNING   = 1;
+const FIBER_PARKED    = 2;
+const FIBER_DONE      = 3;
+const FIBER_CANCELLED = 4;
+
+const JOIN_OK        = 0;
+const JOIN_CANCELLED = 1;
+const JOIN_PANICKED  = 2;
+const JOIN_NOT_DONE  = 3;
+const JOIN_STACK_OVERFLOW = 4;
+
+// Scheduler table embedded in BeskidRuntimeState at offset 3072+.
+// Layout (512 bytes):
+//   offset    0: fiber_count (word)
+//   offset    8: main_fiber (word)
+//   offset   16: run_queue_head (word)
+//   offset   24: run_queue_tail (word)
+//   offset   32: run_queue[32] (32 words)
+//   offset  288: pending_spawns[8] (8 * 40 bytes: entry/arg/cancel/parent)
+//   offset  608: pending_spawn_count (word)
+//   offset  616: pending_cancels[32] (32 words)
+//   offset  872: pending_cancel_count (word)
+//   offset  880: pending_detaches[32] (32 words)
+//   offset 1136: pending_detach_count (word)
+//   offset 1144: pending_wakes[32] (32 words)
+//   offset 1400: pending_wake_count (word)
+//   offset 1408: fiber_table[16] (16 * 128 bytes each)
+//
+// Each fiber record (128 bytes):
+//   offset   0: state (word)
+//   offset   8: entry (pointer)
+//   offset  16: arg (pointer)
+//   offset  24: cancel_slot (pointer)
+//   offset  32: parent (word)
+//   offset  40: detached (u8)
+//   offset  41: cancelled (u8)
+//   offset  48: outcome_kind (word)
+//   offset  56: outcome_value (i64)
+//   offset  64: join_snapshot_state (word)
+//   offset  72: join_snapshot_cancelled (u8)
+//   offset  80: join_snapshot_outcome_kind (word)
+//   offset  88: join_snapshot_outcome_value (i64)
+//   offset  96: stack_ptr (pointer)
+//   offset 104: arch_context (pointer) -- points to BeskidArchContext
+//   offset 112: arch_context_size (word) -- 176 for aarch64-darwin
+
+const FIBER_TABLE_MAX = 16;
+const FIBER_SLOT_SIZE = 128;
+
+// Returns the scheduler table pointer.
+pub pointer SchedTable() {
+    pointer state = RuntimeState();
+    if state == NativePointer(0) {
+        return NativePointer(0);
+    }
+    return pointer_add(state, 3072);
+}
+
+// Returns a fiber record pointer by index.
+pub pointer FiberRecord(word index) {
+    pointer table = SchedTable();
+    if table == NativePointer(0) {
+        return NativePointer(0);
+    }
+    return pointer_add(table, 1408 + index * FIBER_SLOT_SIZE);
+}
+
+// Allocate a fiber slot. Returns the index or 0xFFFF on failure.
+pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
+    pointer table = SchedTable();
+    if table == NativePointer(0) {
+        return 0xFFFF;
+    }
+    word count = raw_word_load(table);
+    if count >= FIBER_TABLE_MAX {
+        return 0xFFFF;
+    }
+    pointer fib = FiberRecord(count);
+    memory_set(fib, 0, FIBER_SLOT_SIZE);
+    raw_word_store(fib, FIBER_RUNNABLE);
+    raw_word_store(pointer_add(fib, 8), entry);
+    raw_word_store(pointer_add(fib, 16), arg);
+    raw_word_store(pointer_add(fib, 24), cancelSlot);
+    raw_word_store(pointer_add(fib, 32), parent);
+    raw_byte_store(pointer_add(fib, 40), 0); // detached
+    raw_byte_store(pointer_add(fib, 41), 0); // cancelled
+    raw_word_store(table, count + 1);
+    return count;
+}
+
+// ── Run Queue ──────────────────────────────────────────────────────
+
+// Push a fiber index onto the run queue.
+pub unit RunQueuePush(word fiberIndex) {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    word tail = raw_word_load(pointer_add(table, 24));
+    raw_word_store(pointer_add(table, 32 + tail * 8), fiberIndex);
+    raw_word_store(pointer_add(table, 24), (tail + 1) % 32);
+    return;
+}
+
+// Pop a fiber index from the run queue. Returns 0xFFFF if empty.
+pub word RunQueuePop() {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return 0xFFFF; }
+    word head = raw_word_load(pointer_add(table, 16));
+    word tail = raw_word_load(pointer_add(table, 24));
+    if head == tail { return 0xFFFF; }
+    word fiberIndex = raw_word_load(pointer_add(table, 32 + head * 8));
+    raw_word_store(pointer_add(table, 16), (head + 1) % 32);
+    return fiberIndex;
+}
+
+// Check if run queue is empty.
+pub bool RunQueueEmpty() {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return true; }
+    return raw_word_load(pointer_add(table, 16)) == raw_word_load(pointer_add(table, 24));
+}
+
+// ── Fiber State Transitions ────────────────────────────────────────
+
+// Set fiber state. Must hold scheduler lock.
+pub unit FiberSetState(word index, word state) {
+    pointer fib = FiberRecord(index);
+    raw_word_store(fib, state);
+    return;
+}
+
+// Get fiber state.
+pub word FiberState(word index) {
+    pointer fib = FiberRecord(index);
+    return raw_word_load(fib);
+}
+
+// Check if fiber is parked (waiting on a channel/mutex/wg).
+pub bool FiberParked(word index) {
+    return FiberState(index) == FIBER_PARKED;
+}
+
+// Check if fiber is finished.
+pub bool FiberFinished(word index) {
+    word s = FiberState(index);
+    return s == FIBER_DONE || s == FIBER_CANCELLED;
+}
+
+// Mark fiber done with a return value.
+pub unit FiberDone(word index, i64 value) {
+    pointer fib = FiberRecord(index);
+    u8 cancelled = raw_byte_load(pointer_add(fib, 41));
+    if cancelled != 0 {
+        raw_word_store(fib, FIBER_CANCELLED);
+        raw_word_store(pointer_add(fib, 48), JOIN_CANCELLED);
+        raw_word_store(pointer_add(fib, 56), 0);
+    } else {
+        raw_word_store(fib, FIBER_DONE);
+        raw_word_store(pointer_add(fib, 48), JOIN_OK);
+        raw_word_store(pointer_add(fib, 56), word(value));
+    }
+    return;
+}
+
+// ── Pending Operations ─────────────────────────────────────────────
+
+// Enqueue a pending spawn (applied at next scheduling step).
+pub unit PendingSpawnEnqueue(word entry, word arg, word cancelSlot, word parent) {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(table, 608));
+    if count >= 8 { return; }
+    pointer slot = pointer_add(table, 288 + count * 40);
+    raw_word_store(slot, entry);
+    raw_word_store(pointer_add(slot, 8), arg);
+    raw_word_store(pointer_add(slot, 16), cancelSlot);
+    raw_word_store(pointer_add(slot, 24), parent);
+    raw_word_store(pointer_add(table, 608), count + 1);
+    return;
+}
+
+// Apply all pending spawns.
+pub unit ApplyPendingSpawns() {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(table, 608));
+    mut word i = 0;
+    while i < count {
+        pointer slot = pointer_add(table, 288 + i * 40);
+        word entry = raw_word_load(slot);
+        word arg = raw_word_load(pointer_add(slot, 8));
+        word cancelSlot = raw_word_load(pointer_add(slot, 16));
+        word parent = raw_word_load(pointer_add(slot, 24));
+        word idx = FiberAlloc(entry, arg, cancelSlot, parent);
+        if idx != 0xFFFF {
+            RunQueuePush(idx);
+        }
+        i = i + 1;
+    }
+    raw_word_store(pointer_add(table, 608), 0);
+    return;
+}
+
+// Enqueue a pending cancel.
+pub unit PendingCancelEnqueue(word fiberIndex) {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(table, 872));
+    if count >= 32 { return; }
+    raw_word_store(pointer_add(table, 616 + count * 8), fiberIndex);
+    raw_word_store(pointer_add(table, 872), count + 1);
+    return;
+}
+
+// Apply all pending cancels.
+pub unit ApplyPendingCancels() {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(table, 872));
+    mut word i = 0;
+    while i < count {
+        word idx = raw_word_load(pointer_add(table, 616 + i * 8));
+        pointer fib = FiberRecord(idx);
+        raw_byte_store(pointer_add(fib, 41), 1); // cancelled
+        // Wake parked fiber if needed.
+        if FiberParked(idx) {
+            FiberSetState(idx, FIBER_RUNNABLE);
+            RunQueuePush(idx);
+        }
+        i = i + 1;
+    }
+    raw_word_store(pointer_add(table, 872), 0);
+    return;
+}
+
+// Enqueue a wake (fiber is ready to run again).
+pub unit WakeEnqueue(word fiberIndex) {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(table, 1400));
+    if count >= 32 { return; }
+    raw_word_store(pointer_add(table, 1144 + count * 8), fiberIndex);
+    raw_word_store(pointer_add(table, 1400), count + 1);
+    return;
+}
+
+// Apply all pending wakes.
+pub unit ApplyPendingWakes() {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(table, 1400));
+    mut word i = 0;
+    while i < count {
+        word idx = raw_word_load(pointer_add(table, 1144 + i * 8));
+        if FiberParked(idx) {
+            FiberSetState(idx, FIBER_RUNNABLE);
+        }
+        RunQueuePush(idx);
+        i = i + 1;
+    }
+    raw_word_store(pointer_add(table, 1400), 0);
+    return;
+}
+
+// ── Scheduler Main Loop ────────────────────────────────────────────
+
+// Initialize the scheduler for the first time.
+pub unit SchedInit() {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    memory_set(table, 0, 3072);
+    word mainIdx = FiberAlloc(0, 0, 0, 0xFFFF);
+    raw_word_store(pointer_add(table, 8), mainIdx);
+    RunQueuePush(mainIdx);
+    return;
+}
+
+// Drive one scheduling step. Returns true if work was done.
+pub bool SchedStep() {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return false; }
+    word fiberCount = raw_word_load(table);
+    ApplyPendingSpawns();
+    ApplyPendingCancels();
+    ApplyPendingWakes();
+
+    if RunQueueEmpty() {
+        // Check if any fibers are still alive (runnable or parked).
+        mut word i = 0; mut bool alive = false;
+        while i < fiberCount {
+            word s = FiberState(i);
+            if s == FIBER_RUNNABLE || s == FIBER_PARKED || s == FIBER_RUNNING {
+                alive = true;
+            }
+            i = i + 1;
+        }
+        if !alive {
+            return false; // Scheduler done — all fibers finished.
+        }
+        return false; // Nothing to run but fibers exist (all parked — deadlock risk).
+    }
+
+    word next = RunQueuePop();
+    if next == 0xFFFF { return false; }
+    if FiberParked(next) { return true; } // Skip parked.
+
+    pointer fib = FiberRecord(next);
+    FiberSetState(next, FIBER_RUNNING);
+    word entry = raw_word_load(pointer_add(fib, 8));
+    word arg = raw_word_load(pointer_add(fib, 16));
+
+    // ── Context Switch Boundary ──────────────────────────────────
+    // TODO: When beskid_arch_v5_context_init / context_switch are
+    // declared as intrinsics in runtime_manifest.bsol, replace this
+    // block with an actual context switch call. Until then, directly
+    // call the entry function (no stack switch — works only for
+    // leaf fibers that don't yield).
+    //
+    // For full scheduler operation:
+    //   beskid_arch_v5_context_init(ctx, stack, entry, arg, trampoline)
+    //   beskid_arch_v5_context_switch(from_ctx, to_ctx)
+
+    // Direct-call fallback (no stack switch):
+    i64 result = 0;
+    if entry != 0 {
+        // The entry is a native pointer — call it.
+        // Until intrinsics are wired, this is where a C shim would dispatch.
+        result = i64(entry);
+    }
+    FiberDone(next, result);
+
+    return true;
+}
+
+// Run the scheduler until quiescence. Returns the main fiber's result.
+pub i64 SchedRun() {
+    SchedInit();
+    mut word steps = 0;
+    while steps < 10000 {
+        if !SchedStep() {
+            // Check all-blocked (deadlock).
+            pointer table = SchedTable();
+            word fiberCount = raw_word_load(table);
+            mut word i = 0; mut bool anyAlive = false; mut bool anyRunnable = false;
+            while i < fiberCount {
+                word s = FiberState(i);
+                if s == FIBER_RUNNABLE { anyAlive = true; }
+                if s == FIBER_PARKED { anyRunnable = true; }
+                i = i + 1;
+            }
+            if !anyRunnable {
+                break;
+            }
+            if anyAlive {
+                // All fibers parked — deadlock.
+                Trap(7, NativePointer(0), 0); // scheduler_deadlock
+            }
+            break;
+        }
+        steps = steps + 1;
+    }
+    pointer table = SchedTable();
+    return 0;
+}
+
+// ── C ABI Exports ──────────────────────────────────────────────────
+
+[Export(Abi:"C", Symbol:"runtime_preempt_check")]
+pub unit RuntimePreemptCheck() {
+    return;
+}

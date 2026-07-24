@@ -3338,43 +3338,51 @@ fn parsed_syntax_program_emits_imported_unit_calls_as_statements() {
 }
 
 #[test]
-fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_manifest_imports() {
-    let mut db = Box::new(BeskidDatabase::default());
-    let directory = tempfile::tempdir().expect("runtime project").keep();
-    let source = canonical_runtime_sources()
-        .pop()
-        .expect("embedded canonical runtime source");
-    let source_path = directory.join("Bootstrap.bd");
-    std::fs::write(&source_path, &source.source).expect("write canonical runtime source");
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
-        .expect("parse canonical runtime source");
-    let project = ProjectSession::new(
-        &*db,
-        directory.clone(),
-        source_path.clone(),
-        "beskid-runtime-native".into(),
-        "lock".into(),
-    );
-    let generation = SyntaxGenerationId(31);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+fn canonical_runtime_test_assembly(
+    db: &MutableDb,
+    directory: &Path,
+) -> (Arc<SyntaxProgramAssembly>, PathBuf) {
+    let all_sources = canonical_runtime_sources();
+    let mut source_units = Vec::with_capacity(all_sources.len());
+    for canonical in &all_sources {
+        let sp = directory.join(&canonical.logical_path);
+        if let Some(parent) = sp.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        std::fs::write(&sp, &canonical.source).expect("write canonical runtime source");
+        let program = parse_program_with_source_name(sp.to_str().unwrap(), &canonical.source)
+            .expect("parse canonical runtime source");
+        source_units.push(SourceUnit {
+            logical_name: canonical.logical_path.clone(),
+            path: sp,
+            source: canonical.source.clone(),
+            program,
+        });
+    }
+    let source_path = directory.join(CANONICAL_BOOTSTRAP_SOURCE_PATH);
+    (Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory,
-            },
+            host: RootEntry { dependency_name: None, source_root: directory.to_path_buf() },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit {
-            logical_name: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(),
-            path: source_path.clone(),
-            source: source.source,
-            program,
-        }]),
+        Arc::new(source_units),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-    ));
+    )), source_path)
+}
+
+
+fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_manifest_imports() {
+    let mut db = Box::new(BeskidDatabase::default());
+    let directory = tempfile::tempdir().expect("runtime project").keep();
+    let (assembly, source_path) = canonical_runtime_test_assembly(&mut db, directory.as_ref());
+    let project = ProjectSession::new(
+        &*db, directory.clone(), source_path.clone(),
+        "beskid-runtime-native".into(), "lock".into(),
+    );
+    let generation = SyntaxGenerationId(31);
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
@@ -3497,40 +3505,12 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
 fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_closed() {
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("runtime project").keep();
-    let source = canonical_runtime_sources()
-        .pop()
-        .expect("embedded canonical runtime source");
-    let source_path = directory.join("Bootstrap.bd");
-    std::fs::write(&source_path, &source.source).expect("write canonical runtime source");
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
-        .expect("parse canonical runtime source");
+    let (assembly, source_path) = canonical_runtime_test_assembly(&mut db, directory.as_ref());
     let project = ProjectSession::new(
-        &*db,
-        directory.clone(),
-        source_path.clone(),
-        "beskid-runtime-native".into(),
-        "lock".into(),
+        &*db, directory.clone(), source_path.clone(),
+        "beskid-runtime-native".into(), "lock".into(),
     );
     let generation = SyntaxGenerationId(32);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory,
-            },
-            dependencies: Vec::new(),
-        },
-        Arc::new(vec![SourceUnit {
-            logical_name: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(),
-            path: source_path.clone(),
-            source: source.source,
-            program,
-        }]),
-        0,
-        AssemblyDiscovery::ImportClosure,
-        Arc::new(ModuleIndex::empty()),
-        false,
-    ));
     let host_triple = if cfg!(target_os = "macos") {
         "aarch64-apple-darwin"
     } else {

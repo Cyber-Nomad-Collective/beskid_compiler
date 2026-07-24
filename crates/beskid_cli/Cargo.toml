@@ -35,3 +35,4 @@ toml = "0.8"
 argfile = "0.2"
 semver = "1.0.27"
 walkdir = "2"
+cargo-cross = { workspace = true }

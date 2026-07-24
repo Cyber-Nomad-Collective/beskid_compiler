@@ -1,1 +1,0 @@
-enum Result { Ok(i64 value), Error(string error) } i64 Main() { Result r = Result::Ok(1); i64 value = r?; return value; }

@@ -1,0 +1,135 @@
+// Canonical Beskid pub/sub hub broker.
+//
+// Hubs multiplex multiple channels: subscribers register channels by index,
+// and waiters poll all channels in round-robin order until one delivers.
+// Built on top of the channel subsystem.
+
+const HUB_TABLE_MAX = 16;
+const HUB_ENTRY_MAX = 64;
+const HUB_SLOT_SIZE = 544;
+
+const STATUS_OK = 0;
+const STATUS_HUB_EMPTY = 4;
+const STATUS_HUB_LIMIT = 5;
+const STATUS_HUB_NOT_FOUND = 6;
+
+// Returns the hub table pointer (offset 19072 in runtime state).
+pub pointer HubTable() {
+    pointer state = RuntimeState();
+    if state == NativePointer(0) { return NativePointer(0); }
+    return pointer_add(state, 19072);
+}
+
+pub pointer HubSlot(word index) {
+    pointer table = HubTable();
+    if table == NativePointer(0) { return NativePointer(0); }
+    return pointer_add(table, 8 + index * HUB_SLOT_SIZE);
+}
+
+// Hub layout (544 bytes):
+//   offset   0: entry_count (word)
+//   offset   8: cursor (word) — round-robin position
+//   offset  16: entries[HUB_ENTRY_MAX] — each is { index: i64 (8), channel: i64 (8) }
+
+[Export(Abi:"C", Symbol:"hub_create")]
+pub i64 HubCreate() {
+    pointer table = HubTable();
+    if table == NativePointer(0) { return -1; }
+    word count = raw_word_load(table);
+    if count >= HUB_TABLE_MAX { return -1; }
+    pointer slot = HubSlot(count);
+    memory_set(slot, 0, HUB_SLOT_SIZE);
+    raw_word_store(table, count + 1);
+    return i64(count);
+}
+
+[Export(Abi:"C", Symbol:"hub_register")]
+pub i64 HubRegister(i64 hubId, i64 index, i64 channelId) {
+    word hi = word(hubId);
+    if hi >= HUB_TABLE_MAX { return STATUS_HUB_NOT_FOUND; }
+    pointer hub = HubSlot(hi);
+    word entryCount = raw_word_load(hub);
+    if entryCount >= HUB_ENTRY_MAX { return STATUS_HUB_LIMIT; }
+    pointer entry = pointer_add(hub, 16 + entryCount * 16);
+    raw_word_store(entry, word(index));
+    raw_word_store(pointer_add(entry, 8), word(channelId));
+    raw_word_store(hub, entryCount + 1);
+    return STATUS_OK;
+}
+
+[Export(Abi:"C", Symbol:"hub_unregister")]
+pub i64 HubUnregister(i64 hubId, i64 index) {
+    word hi = word(hubId);
+    if hi >= HUB_TABLE_MAX { return STATUS_HUB_NOT_FOUND; }
+    pointer hub = HubSlot(hi);
+    word entryCount = raw_word_load(hub);
+    mut word i = 0;
+    while i < entryCount {
+        pointer entry = pointer_add(hub, 16 + i * 16);
+        i64 entryIndex = i64(raw_word_load(entry));
+        if entryIndex == index {
+            // Swap-remove.
+            word lastEntry = pointer_add(hub, 16 + (entryCount - 1) * 16);
+            raw_word_store(entry, raw_word_load(lastEntry));
+            raw_word_store(pointer_add(entry, 8), raw_word_load(pointer_add(lastEntry, 8)));
+            raw_word_store(lastEntry, 0);
+            raw_word_store(pointer_add(lastEntry, 8), 0);
+            raw_word_store(hub, entryCount - 1);
+            return STATUS_OK;
+        }
+        i = i + 1;
+    }
+    return STATUS_HUB_NOT_FOUND;
+}
+
+// Poll all channels round-robin until one delivers, then return index and value.
+[Export(Abi:"C", Symbol:"hub_wait_receive_status")]
+pub i64 HubWaitReceiveStatus(i64 hubId) {
+    word hi = word(hubId);
+    if hi >= HUB_TABLE_MAX { return STATUS_HUB_NOT_FOUND; }
+    pointer hub = HubSlot(hi);
+    word entryCount = raw_word_load(hub);
+    if entryCount == 0 { return STATUS_HUB_EMPTY; }
+    word cursor = raw_word_load(pointer_add(hub, 8));
+    word startPos = cursor % entryCount;
+    mut word attempts = 0;
+    while attempts < entryCount {
+        word pos = (startPos + attempts) % entryCount;
+        word entry = pointer_add(hub, 16 + pos * 16);
+        i64 chId = i64(raw_word_load(pointer_add(entry, 8)));
+        i64 status = ChannelReceiveStatus(chId);
+        if status == STATUS_OK {
+            raw_word_store(pointer_add(hub, 8), (pos + 1) % entryCount);
+            return STATUS_OK;
+        }
+        attempts = attempts + 1;
+    }
+    return STATUS_HUB_EMPTY;
+}
+
+[Export(Abi:"C", Symbol:"hub_wait_receive_value")]
+pub i64 HubWaitReceiveValue(i64 hubId) {
+    word hi = word(hubId);
+    if hi >= HUB_TABLE_MAX { return 0; }
+    pointer hub = HubSlot(hi);
+    word cursor = raw_word_load(pointer_add(hub, 8));
+    word entryCount = raw_word_load(hub);
+    if entryCount == 0 { return 0; }
+    word pos = (cursor + entryCount - 1) % entryCount;
+    word entry = pointer_add(hub, 16 + pos * 16);
+    i64 chId = i64(raw_word_load(pointer_add(entry, 8)));
+    return ChannelReceiveValue(chId);
+}
+
+[Export(Abi:"C", Symbol:"hub_wait_receive_index")]
+pub i64 HubWaitReceiveIndex(i64 hubId) {
+    word hi = word(hubId);
+    if hi >= HUB_TABLE_MAX { return -1; }
+    pointer hub = HubSlot(hi);
+    word cursor = raw_word_load(pointer_add(hub, 8));
+    word entryCount = raw_word_load(hub);
+    if entryCount == 0 { return -1; }
+    word pos = (cursor + entryCount - 1) % entryCount;
+    word entry = pointer_add(hub, 16 + pos * 16);
+    return i64(raw_word_load(entry));
+}

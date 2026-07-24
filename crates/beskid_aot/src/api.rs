@@ -3,6 +3,8 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+use cargo_cross::config::{Arch, Os, get_target_config};
+use cargo_cross::env::sanitize_cargo_env;
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, render_runtime_asm_include};
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
 use beskid_abi::runtime_source::{canonical_runtime_sources, prove_canonical_runtime_corpus};
@@ -506,8 +508,11 @@ struct PlatformObjectPlan {
 }
 
 fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
-    match target {
-        "aarch64-apple-darwin" => Ok(PlatformObjectPlan {
+    // Try cargo_cross config first; fall back to string-based matching for targets
+    // not in cargo_cross's database (e.g. msvc variants).
+    if let Some(config) = get_target_config(target) {
+        return match (&config.arch, &config.os) {
+            (Arch::Aarch64, Os::Darwin) => Ok(PlatformObjectPlan {
             assembly_source: "platform.S",
             tls_source: "platform_tls.c",
             assembly_program: "clang",
@@ -517,22 +522,38 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
             tls_args: &["-std=c11", "-c", "-arch", "arm64"],
             object_extension: "o",
         }),
-        "x86_64-unknown-linux-gnu" => Ok(PlatformObjectPlan {
+        (Arch::X86_64, Os::Linux) => Ok(PlatformObjectPlan {
             assembly_source: "platform.S",
             tls_source: "platform_tls.c",
             assembly_program: "clang",
-            assembly_args: &["-target", "x86_64-unknown-linux-gnu", "-fPIC", "-c"],
+            assembly_args: &["-target", target, "-fPIC", "-c"],
             assembly_output_before_source: false,
             tls_program: "clang",
-            tls_args: &[
-                "-target",
-                "x86_64-unknown-linux-gnu",
-                "-std=c11",
-                "-fPIC",
-                "-c",
-            ],
+            tls_args: &["-target", target, "-std=c11", "-fPIC", "-c"],
             object_extension: "o",
         }),
+        (Arch::X86_64, Os::Windows) => Ok(PlatformObjectPlan {
+            assembly_source: "platform.asm",
+            tls_source: "platform_tls.c",
+            assembly_program: "llvm-ml",
+            assembly_args: &["--m64", "/c", "/X", "/Fo"],
+            assembly_output_before_source: true,
+            tls_program: "clang",
+            tls_args: &[&format!("--target={target}"), "-std=c11", "-c"],
+            object_extension: "obj",
+        }),
+            _ => Err(AotError::UnsupportedLinkerStrategy {
+                target: target.to_owned(),
+                message: format!(
+                    "native platform shim is not implemented for {}-{}",
+                    config.arch.as_str(), config.os.as_str()
+                ),
+            }),
+        };
+    }
+
+    // Fallback: string-based target matching for targets not in cargo_cross config DB
+    match target {
         "x86_64-pc-windows-msvc" => Ok(PlatformObjectPlan {
             assembly_source: "platform.asm",
             tls_source: "platform_tls.c",
@@ -623,6 +644,9 @@ pub fn resolve_entrypoint(entrypoint: Option<String>) -> AotResult<String> {
 
 /// Run object emission, optional runtime preparation, and linking per `req.output_kind`.
 pub fn build(req: AotBuildRequest) -> AotResult<AotBuildResult> {
+    // Sanitize the cargo environment before building to avoid leaking
+    // host toolchain variables into cross-compilation invocations.
+    sanitize_cargo_env();
     validate_request(&req)?;
 
     let object_stage = emit_object_stage(&req)?;

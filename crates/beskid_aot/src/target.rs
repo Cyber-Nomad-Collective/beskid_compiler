@@ -2,6 +2,7 @@
 
 use crate::api::BuildOutputKind;
 use crate::error::{AotError, AotResult};
+use cargo_cross::config::{HostPlatform, Os, get_target_config};
 
 /// Resolved triple string plus platform-specific file extensions.
 #[derive(Debug, Clone)]
@@ -13,54 +14,48 @@ pub struct TargetInfo {
     pub exe_ext: &'static str,
 }
 
-/// Infer [`TargetInfo`] from `triple_override` or `{ARCH}-{OS}-{FAMILY}`; errors on unknown OS families.
+/// Infer [`TargetInfo`] from `triple_override` or host platform; uses [`cargo_cross::config`]
+/// for structured target knowledge, then maps to platform extensions.
 pub fn detect_target(triple_override: Option<&str>) -> AotResult<TargetInfo> {
     let triple = if let Some(explicit) = triple_override {
         explicit.to_owned()
     } else {
-        format!(
-            "{}-{}-{}",
-            std::env::consts::ARCH,
-            std::env::consts::OS,
-            std::env::consts::FAMILY
-        )
+        let host = HostPlatform::detect();
+        host.triple
     };
 
-    let lower = triple.to_ascii_lowercase();
-    if lower.contains("windows") {
-        return Ok(TargetInfo {
+    let config = get_target_config(&triple).ok_or_else(|| AotError::UnsupportedOutputKind {
+        target: triple.clone(),
+        kind: BuildOutputKind::ObjectOnly,
+    })?;
+
+    match config.os {
+        Os::Windows => Ok(TargetInfo {
             triple,
             object_ext: "obj",
             static_lib_ext: "lib",
             shared_lib_ext: "dll",
             exe_ext: "exe",
-        });
-    }
-
-    if lower.contains("darwin") || lower.contains("apple") || lower.contains("macos") {
-        return Ok(TargetInfo {
+        }),
+        Os::Darwin | Os::Ios | Os::IosSim => Ok(TargetInfo {
             triple,
             object_ext: "o",
             static_lib_ext: "a",
             shared_lib_ext: "dylib",
             exe_ext: "",
-        });
-    }
-
-    if lower.contains("linux") || lower.contains("gnu") || lower.contains("musl") {
-        return Ok(TargetInfo {
+        }),
+        Os::Linux | Os::FreeBsd | Os::Android => Ok(TargetInfo {
             triple,
             object_ext: "o",
             static_lib_ext: "a",
             shared_lib_ext: "so",
             exe_ext: "",
-        });
+        }),
+        _ => Err(AotError::UnsupportedOutputKind {
+            target: triple,
+            kind: BuildOutputKind::ObjectOnly,
+        }),
     }
-
-    Err(AotError::UnsupportedOutputKind {
-        target: triple,
-        kind: BuildOutputKind::ObjectOnly,
-    })
 }
 
 /// Default filename for `kind` on `target` (e.g. `libfoo.so`, `hello.exe`, `hello.o`).

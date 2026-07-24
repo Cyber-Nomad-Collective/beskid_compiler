@@ -1,0 +1,16 @@
+# cargo-cross configuration for the beskid compiler workspace.
+# See https://docs.rs/cargo-cross/latest/cargo_cross/ for reference.
+
+[build]
+# Default build command used by `cargo cross build`.
+command = "build"
+
+[target.x86_64-unknown-linux-gnu]
+# Linker and pre-built sysroot for glibc-based Linux.
+
+[target.aarch64-apple-darwin]
+
+[target.x86_64-pc-windows-msvc]
+
+[target.x86_64-unknown-linux-musl]
+# Fully static Linux builds.

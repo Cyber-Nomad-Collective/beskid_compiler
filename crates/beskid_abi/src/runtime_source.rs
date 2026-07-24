@@ -14,23 +14,23 @@ use crate::runtime_kit::{
 };
 
 pub const CANONICAL_BOOTSTRAP_SOURCE_PATH: &str = "src/Runtime/Bootstrap.bd";
-pub const CANONICAL_GC_SOURCE_PATH: &str = "src/Runtime/Gc.bd";
-pub const CANONICAL_STRINGS_SOURCE_PATH: &str = "src/Runtime/Strings.bd";
-pub const CANONICAL_COLLECTIONS_SOURCE_PATH: &str = "src/Runtime/Collections.bd";
-pub const CANONICAL_FIBER_SOURCE_PATH: &str = "src/Runtime/Fiber.bd";
-pub const CANONICAL_CHANNEL_SOURCE_PATH: &str = "src/Runtime/Channel.bd";
-pub const CANONICAL_COMPOSITION_SOURCE_PATH: &str = "src/Runtime/Composition.bd";
-pub const CANONICAL_CLOCKS_SOURCE_PATH: &str = "src/Runtime/Clocks.bd";
-pub const CANONICAL_SCHEDULER_SOURCE_PATH: &str = "src/Runtime/Scheduler.bd";
-pub const CANONICAL_SYSCALLS_SOURCE_PATH: &str = "src/Runtime/Syscalls.bd";
-pub const CANONICAL_PROCESS_SOURCE_PATH: &str = "src/Runtime/Process.bd";
-pub const CANONICAL_MISC_SOURCE_PATH: &str = "src/Runtime/Misc.bd";
-pub const CANONICAL_MUTEX_SOURCE_PATH: &str = "src/Runtime/Mutex.bd";
-pub const CANONICAL_WAITGROUP_SOURCE_PATH: &str = "src/Runtime/WaitGroup.bd";
-pub const CANONICAL_HUB_SOURCE_PATH: &str = "src/Runtime/Hub.bd";
-pub const CANONICAL_EVENTS_SOURCE_PATH: &str = "src/Runtime/Events.bd";
-pub const CANONICAL_DYNAMIC_SOURCE_PATH: &str = "src/Runtime/Dynamic.bd";
-pub const CANONICAL_CALLBACKS_SOURCE_PATH: &str = "src/Runtime/Callbacks.bd";
+pub const CANONICAL_GC_SOURCE_PATH: &str = "src/Runtime/Mem/Gc.bd";
+pub const CANONICAL_STRINGS_SOURCE_PATH: &str = "src/Runtime/Data/Strings.bd";
+pub const CANONICAL_COLLECTIONS_SOURCE_PATH: &str = "src/Runtime/Data/Collections.bd";
+pub const CANONICAL_FIBER_SOURCE_PATH: &str = "src/Runtime/Fiber/Fiber.bd";
+pub const CANONICAL_SCHEDULER_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler.bd";
+pub const CANONICAL_CHANNEL_SOURCE_PATH: &str = "src/Runtime/Sync/Channel.bd";
+pub const CANONICAL_MUTEX_SOURCE_PATH: &str = "src/Runtime/Sync/Mutex.bd";
+pub const CANONICAL_WAITGROUP_SOURCE_PATH: &str = "src/Runtime/Sync/WaitGroup.bd";
+pub const CANONICAL_HUB_SOURCE_PATH: &str = "src/Runtime/PubSub/Hub.bd";
+pub const CANONICAL_EVENTS_SOURCE_PATH: &str = "src/Runtime/PubSub/Events.bd";
+pub const CANONICAL_DYNAMIC_SOURCE_PATH: &str = "src/Runtime/Dynamic/Dynamic.bd";
+pub const CANONICAL_CLOCKS_SOURCE_PATH: &str = "src/Runtime/Host/Clocks.bd";
+pub const CANONICAL_PROCESS_SOURCE_PATH: &str = "src/Runtime/Host/Process.bd";
+pub const CANONICAL_COMPOSITION_SOURCE_PATH: &str = "src/Runtime/Host/Composition.bd";
+pub const CANONICAL_CALLBACKS_SOURCE_PATH: &str = "src/Runtime/Host/Callbacks.bd";
+pub const CANONICAL_SYSCALLS_SOURCE_PATH: &str = "src/Runtime/Io/Syscalls.bd";
+
 /// Canonical Foundation syscall facade eligible for Corelib service authority.
 pub const CANONICAL_CORELIB_SYSCALL_SOURCE_PATH: &str = "Core/Syscall/Syscall.bd";
 /// Canonical Foundation assertion helper eligible to import the panic runtime service.
@@ -41,36 +41,163 @@ pub const CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH: &str = "Core/Output/Output.bd
 pub const CANONICAL_FOUNDATION_ERROR_SOURCE_PATH: &str = "Core/Error/Error.bd";
 
 const CANONICAL_BOOTSTRAP_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Bootstrap.bd"
-));
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Bootstrap.bd"
+  ));
+const CANONICAL_GC_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Mem/Gc.bd"
+  ));
+const CANONICAL_STRINGS_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Data/Strings.bd"
+  ));
+const CANONICAL_COLLECTIONS_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Data/Collections.bd"
+  ));
+const CANONICAL_FIBER_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Fiber/Fiber.bd"
+  ));
+const CANONICAL_SCHEDULER_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Fiber/Scheduler.bd"
+  ));
+const CANONICAL_CHANNEL_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Sync/Channel.bd"
+  ));
+const CANONICAL_MUTEX_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Sync/Mutex.bd"
+  ));
+const CANONICAL_WAITGROUP_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Sync/WaitGroup.bd"
+  ));
+const CANONICAL_HUB_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/PubSub/Hub.bd"
+  ));
+const CANONICAL_EVENTS_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/PubSub/Events.bd"
+  ));
+const CANONICAL_DYNAMIC_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Dynamic/Dynamic.bd"
+  ));
+const CANONICAL_CLOCKS_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Host/Clocks.bd"
+  ));
+const CANONICAL_PROCESS_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Host/Process.bd"
+  ));
+const CANONICAL_COMPOSITION_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Host/Composition.bd"
+  ));
+const CANONICAL_CALLBACKS_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Host/Callbacks.bd"
+  ));
+const CANONICAL_SYSCALLS_SOURCE: &str = include_str!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../runtime/beskid/src/Runtime/Io/Syscalls.bd"
+  ));
 
 const CANONICAL_CORELIB_SYSCALL_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../corelib/packages/foundation/src/Core/Syscall/Syscall.bd"
-));
-
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../corelib/packages/foundation/src/Core/Syscall/Syscall.bd"
+  ));
 const CANONICAL_FOUNDATION_ASSERT_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../corelib/packages/foundation/src/Testing/Assert.bd"
-));
-
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../corelib/packages/foundation/src/Testing/Assert.bd"
+  ));
 const CANONICAL_FOUNDATION_OUTPUT_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../corelib/packages/foundation/src/Core/Output/Output.bd"
-));
-
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../corelib/packages/foundation/src/Core/Output/Output.bd"
+  ));
 const CANONICAL_FOUNDATION_ERROR_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../corelib/packages/foundation/src/Core/Error/Error.bd"
-));
+      env!("CARGO_MANIFEST_DIR"),
+      "/../../corelib/packages/foundation/src/Core/Error/Error.bd"
+  ));
 
 /// The runtime source corpus built into this compiler version.
 pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
-    vec![SourceUnit {
-        logical_path: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(),
-        source: CANONICAL_BOOTSTRAP_SOURCE.into(),
-    }]
+    vec![
+        SourceUnit {
+            logical_path: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(),
+            source: CANONICAL_BOOTSTRAP_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_GC_SOURCE_PATH.into(),
+            source: CANONICAL_GC_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_STRINGS_SOURCE_PATH.into(),
+            source: CANONICAL_STRINGS_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_COLLECTIONS_SOURCE_PATH.into(),
+            source: CANONICAL_COLLECTIONS_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_FIBER_SOURCE_PATH.into(),
+            source: CANONICAL_FIBER_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_SCHEDULER_SOURCE_PATH.into(),
+            source: CANONICAL_SCHEDULER_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_CHANNEL_SOURCE_PATH.into(),
+            source: CANONICAL_CHANNEL_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_MUTEX_SOURCE_PATH.into(),
+            source: CANONICAL_MUTEX_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_WAITGROUP_SOURCE_PATH.into(),
+            source: CANONICAL_WAITGROUP_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_HUB_SOURCE_PATH.into(),
+            source: CANONICAL_HUB_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_EVENTS_SOURCE_PATH.into(),
+            source: CANONICAL_EVENTS_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_DYNAMIC_SOURCE_PATH.into(),
+            source: CANONICAL_DYNAMIC_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_CLOCKS_SOURCE_PATH.into(),
+            source: CANONICAL_CLOCKS_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_PROCESS_SOURCE_PATH.into(),
+            source: CANONICAL_PROCESS_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_COMPOSITION_SOURCE_PATH.into(),
+            source: CANONICAL_COMPOSITION_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_CALLBACKS_SOURCE_PATH.into(),
+            source: CANONICAL_CALLBACKS_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_SYSCALLS_SOURCE_PATH.into(),
+            source: CANONICAL_SYSCALLS_SOURCE.into(),
+        },
+    ]
 }
 
 /// The compiler-embedded Corelib syscall facade. This is deliberately a distinct source corpus

@@ -18,21 +18,28 @@ fn linux_manifest() -> AbiManifestV5 {
 #[test]
 fn canonical_bootstrap_source_is_embedded_and_exports_the_v5_probe() {
     let sources = canonical_runtime_sources();
-    assert_eq!(sources.len(), 1);
-    assert_eq!(sources[0].logical_path, CANONICAL_BOOTSTRAP_SOURCE_PATH);
+    let bootstrap = sources
+        .iter()
+        .find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
+        .expect("bootstrap source");
     assert!(
-        sources[0]
+        bootstrap
             .source
             .contains("[Export(Abi:\"C\", Symbol:\"beskid_rt_v5_abi_version\")]")
     );
-    assert!(sources[0].source.contains("return 5;"));
-    assert!(!sources[0].source.contains("ABI v4"));
-    assert!(!sources[0].source.contains("__"));
+    assert!(bootstrap.source.contains("return 5;"));
+    assert!(!bootstrap.source.contains("ABI v4"));
+    assert!(!bootstrap.source.contains("__"));
 }
 
 #[test]
 fn canonical_bootstrap_source_exports_the_v5_lifecycle_and_trap_wrappers() {
-    let source = &canonical_runtime_sources()[0].source;
+    let sources = canonical_runtime_sources();
+    let source = &sources
+        .iter()
+        .find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
+        .expect("bootstrap source")
+        .source;
 
     // Every manifest lifecycle/trap export is source-owned. Context-switch exports are
     // intentionally supplied by target assembly and covered by their own assembly tests.
@@ -71,7 +78,12 @@ fn canonical_bootstrap_source_exports_the_v5_lifecycle_and_trap_wrappers() {
 
 #[test]
 fn canonical_bootstrap_source_uses_only_manifest_owned_allocation_and_tls_primitives() {
-    let source = &canonical_runtime_sources()[0].source;
+    let sources = canonical_runtime_sources();
+    let source = &sources
+        .iter()
+        .find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
+        .expect("bootstrap source")
+        .source;
 
     assert!(source.contains("pub pointer SystemAllocate(word size, word alignment)"));
     assert!(source.contains("return system_allocate(size, alignment);"));
@@ -91,7 +103,12 @@ fn canonical_bootstrap_source_uses_only_manifest_owned_allocation_and_tls_primit
 
 #[test]
 fn canonical_bootstrap_owns_beskid_tls_state_on_thread_attach_detach() {
-    let source = &canonical_runtime_sources()[0].source;
+    let sources = canonical_runtime_sources();
+    let source = &sources
+        .iter()
+        .find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
+        .expect("bootstrap source")
+        .source;
 
     // ProcessInit stamps BeskidRuntimeState.abi_version at offset 0 and must not install the
     // RuntimeState pointer as if it were BeskidTlsState (root_frame lives at TLS offset 8).
@@ -120,7 +137,12 @@ fn canonical_bootstrap_owns_beskid_tls_state_on_thread_attach_detach() {
 
 #[test]
 fn canonical_runtime_source_owns_allocation_headers_and_lifo_root_frames() {
-    let source = &canonical_runtime_sources()[0].source;
+    let sources = canonical_runtime_sources();
+    let source = &sources
+        .iter()
+        .find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
+        .expect("bootstrap source")
+        .source;
 
     // The bridge's `allocate_beskid` returns the address of an object header, zero-fills the
     // allocation, and installs the descriptor at offset zero.  The source runtime must retain
@@ -149,7 +171,12 @@ fn canonical_runtime_source_owns_allocation_headers_and_lifo_root_frames() {
 
 #[test]
 fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_and_rooting() {
-    let source = &canonical_runtime_sources()[0].source;
+    let sources = canonical_runtime_sources();
+    let source = &sources
+        .iter()
+        .find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
+        .expect("bootstrap source")
+        .source;
 
     // A descriptor is a 40-byte ABI record. Pointer-map entries are byte offsets into the
     // complete object, so validation must reject a non-word offset and all arithmetic must be
@@ -177,7 +204,7 @@ fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_an
         .split("pub pointer AllocateObject(pointer request)")
         .nth(1)
         .expect("managed allocation function")
-        .split("/// Allocates a closure capture environment")
+        .split("// Allocates a closure capture environment")
         .next()
         .expect("managed allocation body");
     let null_guard = allocate
@@ -199,7 +226,7 @@ fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_an
         .split("pub pointer AllocateClosureEnvironment(pointer request)")
         .nth(1)
         .expect("closure allocation function")
-        .split("/// Stores a capture")
+        .split("// Stores a capture")
         .next()
         .expect("closure allocation body");
     assert!(closure_allocate.contains("return AllocateObject(request);"));

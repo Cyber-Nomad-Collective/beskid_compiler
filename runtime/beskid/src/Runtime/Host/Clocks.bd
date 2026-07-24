@@ -1,0 +1,14 @@
+// Canonical Beskid clock primitives.
+
+// Returns monotonic time in nanoseconds since an arbitrary epoch.
+// Route to the platform clock in target assembly.
+[Export(Abi:"C", Symbol:"clock_monotonic_nanos")]
+pub i64 ClockMonotonicNanos() {
+    return 0;
+}
+
+// Returns real-time clock in nanoseconds since Unix epoch.
+[Export(Abi:"C", Symbol:"clock_realtime_nanos")]
+pub i64 ClockRealtimeNanos() {
+    return 0;
+}

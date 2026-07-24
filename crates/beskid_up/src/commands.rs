@@ -2,6 +2,8 @@ use clap::{Args, Subcommand};
 use semver::Version;
 use std::env;
 
+use cargo_cross::config::HostPlatform;
+
 use crate::{DirectInstall, UpError};
 
 /// Toolchain version management commands exposed by `beskid up`.
@@ -27,6 +29,8 @@ pub enum UpCommand {
         #[arg(value_parser = parse_version)]
         version: Version,
     },
+    /// Print the detected host target triple (uses cargo_cross::config).
+    HostTarget,
 }
 
 fn parse_version(value: &str) -> Result<Version, String> {
@@ -55,6 +59,10 @@ pub fn execute(args: UpArgs) -> Result<(), UpError> {
         UpCommand::Remove { version } => {
             store.remove(&version)?;
             println!("removed version: {version}");
+        }
+        UpCommand::HostTarget => {
+            let host = HostPlatform::detect();
+            println!("{}", host.triple);
         }
     }
     Ok(())

@@ -1,4 +1,5 @@
 //! Host linker and static-archive integration (`cc` / `cl`, `ar`, `libtool`, version scripts).
+use cargo_cross::config::HostPlatform;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -33,7 +34,8 @@ fn detect_c_compiler() -> String {
         }
     }
 
-    if cfg!(target_os = "windows") {
+    let host = HostPlatform::detect();
+    if host.is_windows() {
         "cl".to_owned()
     } else {
         "cc".to_owned()
