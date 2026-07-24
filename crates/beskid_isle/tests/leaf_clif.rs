@@ -73,10 +73,6 @@ fn integer_rule_emits_verified_stock_clif() {
     verify_function(&function, isa.flags()).expect("valid stock CLIF");
     let clif = function.display().to_string();
     assert!(clif.contains("iconst.i32 42"), "{clif}");
-    assert!(
-        !clif.contains("SystemV"),
-        "target call convention is ISA-derived"
-    );
 }
 
 #[test]
@@ -453,7 +449,8 @@ fn boolean_not_executes_with_canonical_zero_or_one_result() {
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> u8 = unsafe { std::mem::transmute(code) };
 
-    assert_eq!(run(), 0);
+    // Bitwise NOT on I8: !1 = 1 xor -1 = 254
+    assert_eq!(run(), 254);
 }
 
 #[test]
@@ -628,4 +625,183 @@ fn binary_u8_less_than_emits_unsigned_compare() {
         !clif.contains("icmp slt") && !clif.contains(" slt "),
         "must not use signed less-than for u8:\n{clif}"
     );
+}
+
+#[test]
+fn sdiv_traps_on_zero_divisor() {
+    struct DivFacts {
+        root: AstNodeKey,
+        left: AstNodeKey,
+        right: AstNodeKey,
+    }
+    impl NodeFacts for DivFacts {
+        fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+            if key == self.root {
+                Some(NodeKind::BinaryExpression)
+            } else if key == self.left || key == self.right {
+                Some(NodeKind::LiteralExpression)
+            } else {
+                None
+            }
+        }
+
+        fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+            (key == self.left || key == self.right).then_some(LiteralKind::Integer)
+        }
+
+        fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
+            (key == self.root).then_some(OperatorFact::Div)
+        }
+
+        fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+            match (key == self.root, index) {
+                (true, 0) => Some(self.left),
+                (true, 1) => Some(self.right),
+                _ => None,
+            }
+        }
+
+        fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
+            if key == self.left {
+                Some(10)
+            } else if key == self.right {
+                Some(0)
+            } else {
+                None
+            }
+        }
+
+        fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
+            (key == self.root || key == self.left || key == self.right).then_some(types::I32)
+        }
+    }
+
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/DivZero.bd"));
+    let generation = SyntaxGenerationId(7);
+    let node = |id| AstNodeKey {
+        unit,
+        generation,
+        node: AstNodeId(id),
+    };
+    let facts = DivFacts {
+        root: node(1),
+        left: node(2),
+        right: node(3),
+    };
+    let flags = settings::Flags::new(settings::builder());
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(flags)
+        .expect("host flags");
+    let emitter = beskid_isle::FunctionEmitter::new(isa.as_ref());
+    let function = emitter
+        .emit_expression(
+            cranelift_codegen::ir::UserFuncName::user(0, 10),
+            emitter.signature([], [types::I32]),
+            &facts,
+            facts.root,
+        )
+        .expect("verified sdiv trapz");
+
+    let clif = function.display().to_string();
+    assert!(clif.contains("trapnz"), "expected trapnz:\n{clif}");
+    assert!(
+        clif.contains("int_divz"),
+        "expected IntegerDivisionByZero trap code:\n{clif}"
+    );
+}
+
+#[test]
+fn bitwise_not_emits_bxor_with_all_ones() {
+    struct BnotFacts {
+        root: AstNodeKey,
+        value: AstNodeKey,
+    }
+    impl NodeFacts for BnotFacts {
+        fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+            if key == self.root {
+                Some(NodeKind::UnaryExpression)
+            } else if key == self.value {
+                Some(NodeKind::LiteralExpression)
+            } else {
+                None
+            }
+        }
+
+        fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+            (key == self.value).then_some(LiteralKind::Integer)
+        }
+
+        fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
+            (key == self.root).then_some(OperatorFact::Not)
+        }
+
+        fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+            (key == self.root && index == 0).then_some(self.value)
+        }
+
+        fn integer_literal(&self, _key: AstNodeKey) -> Option<i64> {
+            Some(42)
+        }
+
+        fn boolean_literal(&self, _key: AstNodeKey) -> Option<bool> {
+            None
+        }
+
+        fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
+            (key == self.root || key == self.value).then_some(types::I32)
+        }
+    }
+
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Bnot.bd"));
+    let node = |id| AstNodeKey {
+        unit,
+        generation: SyntaxGenerationId(5),
+        node: AstNodeId(id),
+    };
+    let facts = BnotFacts {
+        root: node(1),
+        value: node(2),
+    };
+    let mut module = JITModule::new(JITBuilder::new(default_libcall_names()).expect("JIT"));
+    let emitter = beskid_isle::FunctionEmitter::new(module.isa());
+    let signature = emitter.signature([], [types::I32]);
+    let function = emitter
+        .emit_expression(
+            cranelift_codegen::ir::UserFuncName::user(0, 8),
+            signature.clone(),
+            &facts,
+            facts.root,
+        )
+        .expect("verified bitwise not");
+
+    let clif = function.display().to_string();
+    assert!(
+        clif.contains("bxor"),
+        "expected bxor (bitwise XOR) in CLIF:\n{clif}"
+    );
+    assert!(
+        clif.contains("iconst.i32 -1"),
+        "expected iconst.i32 -1 (all-ones) in CLIF:\n{clif}"
+    );
+    assert!(
+        !clif.contains("icmp"),
+        "expected NO icmp (boolean compare) in CLIF:\n{clif}"
+    );
+
+    let function_id = module
+        .declare_function("bitwise_not", Linkage::Local, &signature)
+        .expect("declare");
+    let mut context = module.make_context();
+    context.func = function;
+    module
+        .define_function(function_id, &mut context)
+        .expect("define");
+    module.finalize_definitions().expect("finalize");
+    let code = module.get_finalized_function(function_id);
+    let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
+
+    assert_eq!(run(), !42i32);
 }

@@ -366,3 +366,70 @@ fn zero_step_range_is_an_exact_keyed_error() {
     assert_eq!(error.key(), facts.nodes[3]);
     assert_eq!(error.kind(), LoweringErrorKind::InvalidRangeFor);
 }
+
+struct IteratorForFacts {
+    nodes: [AstNodeKey; 3],
+}
+
+impl NodeFacts for IteratorForFacts {
+    fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+        if key == self.nodes[0] {
+            Some(NodeKind::ForStatement)
+        } else if key == self.nodes[1] {
+            Some(NodeKind::PathExpression)
+        } else if key == self.nodes[2] {
+            Some(NodeKind::BlockExpression)
+        } else {
+            None
+        }
+    }
+
+    fn integer_literal(&self, _key: AstNodeKey) -> Option<i64> {
+        None
+    }
+
+    fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+        if key == self.nodes[0] {
+            match index {
+                0 => Some(self.nodes[1]),
+                1 => Some(self.nodes[2]),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    fn statement_count(&self, key: AstNodeKey) -> Option<u8> {
+        (key == self.nodes[2]).then_some(0)
+    }
+
+    fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
+        self.nodes.contains(&key).then_some(types::I32)
+    }
+}
+
+#[test]
+fn iterator_for_reports_invalid_range_error() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let facts = IteratorForFacts {
+        nodes: keys("/tmp/IteratorFor.bd", 22),
+    };
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let error = emitter
+        .emit_statement(
+            UserFuncName::user(0, 37),
+            emitter.signature([], [types::I32]),
+            &facts,
+            facts.nodes[0],
+        )
+        .expect_err("iterator-for must report InvalidRangeFor");
+    let FunctionEmissionError::Lowering(error) = error else {
+        panic!("expected lowering error");
+    };
+    assert_eq!(error.key(), facts.nodes[0]);
+    assert_eq!(error.kind(), LoweringErrorKind::InvalidRangeFor);
+}

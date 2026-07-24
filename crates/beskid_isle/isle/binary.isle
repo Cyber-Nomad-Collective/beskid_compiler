@@ -80,3 +80,13 @@
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Mod))))
       (clif_srem (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+
+;; Zero-division trap guards: trap when the divisor is zero.
+(decl clif_div_trapz (Value Value) Value)
+(extern constructor clif_div_trapz clif_div_trapz)
+
+;; Literal-folding shortcuts for constant operands.
+(decl clif_iadd_imm (Value i64) Value)
+(extern constructor clif_iadd_imm clif_iadd_imm)
+(decl clif_imul_imm (Value i64) Value)
+(extern constructor clif_imul_imm clif_imul_imm)

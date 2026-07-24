@@ -1572,8 +1572,24 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         if ty == types::I8 {
             self.builder.ins().udiv(left, right)
         } else {
-            self.builder.ins().sdiv(left, right)
+            self.clif_div_trapz(left, right)
         }
+    }
+
+    fn clif_div_trapz(&mut self, left: Value, right: Value) -> Value {
+        let ty = self.builder.func.dfg.value_type(right);
+        let zero = self.builder.ins().iconst(ty, 0);
+        let is_zero = self.builder.ins().icmp(IntCC::Equal, right, zero);
+        self.builder.ins().trapnz(is_zero, TrapCode::INTEGER_DIVISION_BY_ZERO);
+        self.builder.ins().sdiv(left, right)
+    }
+
+    fn clif_iadd_imm(&mut self, value: Value, imm: i64) -> Value {
+        self.builder.ins().iadd_imm(value, imm)
+    }
+
+    fn clif_imul_imm(&mut self, value: Value, imm: i64) -> Value {
+        self.builder.ins().imul_imm(value, imm)
     }
 
     fn clif_srem(&mut self, left: Value, right: Value) -> Option<Value> {
@@ -1678,7 +1694,9 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn clif_bnot(&mut self, value: Value) -> Value {
-        self.builder.ins().icmp_imm(IntCC::Equal, value, 0)
+        let ty = self.builder.func.dfg.value_type(value);
+        let all_ones = self.builder.ins().iconst(ty, -1);
+        self.builder.ins().bxor(value, all_ones)
     }
 
     fn emit_direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -2157,7 +2175,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn emit_iterator_for(&mut self, key: AstNodeKey) -> Option<()> {
         self.pending_error = Some(LoweringError {
             key,
-            kind: LoweringErrorKind::MissingRuleOrFact,
+            kind: LoweringErrorKind::InvalidRangeFor,
         });
         None
     }
