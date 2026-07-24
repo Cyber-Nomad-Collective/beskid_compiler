@@ -37,11 +37,7 @@ fn main() {
     let heap = ctx.heap().clone();
 
     // Allocate a shared root node
-    let root = ctx.allocate(Node {
-        id: 0,
-        value: 0,
-        next: GcCell::new(None),
-    });
+    let root = ctx.allocate(Node { id: 0, value: 0, next: GcCell::new(None) });
     println!("Created root node (id=0)\n");
 
     // Number of worker threads
@@ -82,10 +78,7 @@ fn main() {
                         root.next.set(Some(node.as_ptr()));
                         node.next.set(current_next);
 
-                        println!(
-                            "Thread {} linked node {} (value={}) to root",
-                            thread_id, node.id, node.value
-                        );
+                        println!("Thread {} linked node {} (value={}) to root", thread_id, node.id, node.value);
                     }
 
                     nodes.push(node);
@@ -96,10 +89,7 @@ fn main() {
                     }
                 }
 
-                println!(
-                    "Thread {} finished allocating {} nodes",
-                    thread_id, ITERATIONS
-                );
+                println!("Thread {} finished allocating {} nodes", thread_id, ITERATIONS);
 
                 println!("Thread {} ready for phase 2", thread_id);
                 barrier.wait();
@@ -125,10 +115,7 @@ fn main() {
                     let bytes = heap.bytes_allocated();
                     let count = heap.allocation_count();
 
-                    println!(
-                        "[Monitor] Round {}: {} allocations, {} bytes",
-                        round, count, bytes
-                    );
+                    println!("[Monitor] Round {}: {} allocations, {} bytes", round, count, bytes);
 
                     // Trigger incremental GC
                     if bytes > 1024 * 10 {
@@ -137,10 +124,7 @@ fn main() {
 
                         let bytes_after = heap.bytes_allocated();
                         let count_after = heap.allocation_count();
-                        println!(
-                            "[Monitor] After GC: {} allocations, {} bytes",
-                            count_after, bytes_after
-                        );
+                        println!("[Monitor] After GC: {} allocations, {} bytes", count_after, bytes_after);
                     }
                 }
             };

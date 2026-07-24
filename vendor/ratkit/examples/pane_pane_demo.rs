@@ -4,9 +4,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::primitives::pane::Pane;
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct PaneDemo {
     ticks: u64,
@@ -19,9 +17,7 @@ impl CoordinatorApp for PaneDemo {
                 self.ticks += 1;
                 Ok(CoordinatorAction::Redraw)
             }
-            CoordinatorEvent::Keyboard(keyboard)
-                if keyboard.key_code == crossterm::event::KeyCode::Char('q') =>
-            {
+            CoordinatorEvent::Keyboard(keyboard) if keyboard.key_code == crossterm::event::KeyCode::Char('q') => {
                 Ok(CoordinatorAction::Quit)
             }
             _ => Ok(CoordinatorAction::Redraw),
@@ -30,10 +26,8 @@ impl CoordinatorApp for PaneDemo {
 
     fn on_draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
-        let pane = Pane::new("Pane")
-            .with_icon("■")
-            .with_uniform_padding(1)
-            .border_style(Style::default().fg(Color::Cyan));
+        let pane =
+            Pane::new("Pane").with_icon("■").with_uniform_padding(1).border_style(Style::default().fg(Color::Cyan));
 
         pane.render_paragraph(
             frame,

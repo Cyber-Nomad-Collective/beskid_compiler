@@ -39,10 +39,7 @@ impl MacroRegistry {
     fn register_definition(&mut self, def: &Spanned<MacroDefinition>) {
         let key = def.node.name.node.name.clone();
         if self.defs.contains_key(&key) {
-            self.registry_issues.push((
-                def.span,
-                SemanticIssueKind::MacroAmbiguousName { name: key.clone() },
-            ));
+            self.registry_issues.push((def.span, SemanticIssueKind::MacroAmbiguousName { name: key.clone() }));
         }
         self.check_duplicate_parameters(def);
         self.defs.insert(key, def.clone());

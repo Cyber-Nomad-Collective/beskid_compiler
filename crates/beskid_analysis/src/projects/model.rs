@@ -103,11 +103,7 @@ pub struct ModGeneratedOutput {
 
 impl ModGeneratedOutput {
     pub fn resolved_root(&self) -> &str {
-        if self.root.is_empty() {
-            "Generated"
-        } else {
-            &self.root
-        }
+        if self.root.is_empty() { "Generated" } else { &self.root }
     }
 }
 
@@ -270,11 +266,7 @@ pub struct AssemblyOptions {
 
 impl Default for AssemblyOptions {
     fn default() -> Self {
-        Self {
-            discovery: AssemblyDiscovery::ImportClosure,
-            max_units: 4096,
-            skip_parse_errors: false,
-        }
+        Self { discovery: AssemblyDiscovery::ImportClosure, max_units: 4096, skip_parse_errors: false }
     }
 }
 

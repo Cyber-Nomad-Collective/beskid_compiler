@@ -21,11 +21,7 @@ pub fn read_export_metadata(def: &Spanned<HirFunctionDefinition>) -> Option<Expo
     let beskid_name = def.node.name.node.name.clone();
     let exported_symbol = export.symbol.clone().unwrap_or_else(|| beskid_name.clone());
     let abi = export.abi.clone().unwrap_or_else(|| "C".to_string());
-    Some(ExportEntry {
-        beskid_name,
-        exported_symbol,
-        abi,
-    })
+    Some(ExportEntry { beskid_name, exported_symbol, abi })
 }
 
 /// Validate export placement and FFI signature for `def`.
@@ -48,19 +44,13 @@ pub fn validate_export_function(
     if entry.abi != "C" {
         return Err(CodegenError::InvalidExport {
             span: def.span,
-            message: format!(
-                "unsupported export ABI `{}` (v0.3 supports `C` only)",
-                entry.abi
-            ),
+            message: format!("unsupported export ABI `{}` (v0.3 supports `C` only)", entry.abi),
         });
     }
 
     validate_ffi_signature(signature, pointer).map_err(|msg| CodegenError::InvalidExport {
         span: def.span,
-        message: format!(
-            "export signature not allowed for {}: {msg}",
-            entry.exported_symbol
-        ),
+        message: format!("export signature not allowed for {}: {msg}", entry.exported_symbol),
     })?;
 
     Ok(Some(entry))
@@ -73,10 +63,7 @@ pub fn collect_exports(items: &[Spanned<beskid_analysis::hir::HirItem>]) -> Vec<
     out
 }
 
-fn collect_exports_from_items(
-    items: &[Spanned<beskid_analysis::hir::HirItem>],
-    out: &mut Vec<ExportEntry>,
-) {
+fn collect_exports_from_items(items: &[Spanned<beskid_analysis::hir::HirItem>], out: &mut Vec<ExportEntry>) {
     use beskid_analysis::hir::{HirInlineModule, HirItem};
 
     for item in items {
@@ -97,18 +84,13 @@ fn collect_exports_from_items(
 
 /// Resolve the Cranelift symbol name for a function that may carry `[Export(Symbol: "...")]`.
 pub fn export_linker_name(def: &Spanned<HirFunctionDefinition>) -> String {
-    read_export_metadata(def)
-        .map(|e| e.exported_symbol)
-        .unwrap_or_else(|| def.node.name.node.name.clone())
+    read_export_metadata(def).map(|e| e.exported_symbol).unwrap_or_else(|| def.node.name.node.name.clone())
 }
 
 /// Native object-file symbol for AOT linking (`Main` maps to C `main` for executable entry).
 pub fn object_link_symbol(beskid_name: &str, exports: &[ExportEntry]) -> String {
     let logical = beskid_name.split('#').next().unwrap_or(beskid_name);
-    if let Some(entry) = exports
-        .iter()
-        .find(|e| e.beskid_name == logical || e.beskid_name == beskid_name)
-    {
+    if let Some(entry) = exports.iter().find(|e| e.beskid_name == logical || e.beskid_name == beskid_name) {
         return entry.exported_symbol.clone();
     }
     if logical == "Main" {
@@ -133,28 +115,18 @@ mod tests {
     fn read_export_defaults_symbol_to_beskid_name() {
         let def = Spanned::new(
             HirFunctionDefinition {
-                export_interface: Some(HirExportInterface {
-                    abi: Some("C".into()),
-                    symbol: None,
-                }),
+                export_interface: Some(HirExportInterface { abi: Some("C".into()), symbol: None }),
                 runtime_handler: None,
                 attributes: Vec::new(),
                 visibility: Spanned::new(HirVisibility::Public, Default::default()),
                 name: Spanned::new(
-                    beskid_analysis::hir::HirIdentifier {
-                        name: "plugin_init".into(),
-                    },
+                    beskid_analysis::hir::HirIdentifier { name: "plugin_init".into() },
                     Default::default(),
                 ),
                 generics: Vec::new(),
                 parameters: Vec::new(),
                 return_type: None,
-                body: Spanned::new(
-                    beskid_analysis::hir::HirBlock {
-                        statements: Vec::new(),
-                    },
-                    Default::default(),
-                ),
+                body: Spanned::new(beskid_analysis::hir::HirBlock { statements: Vec::new() }, Default::default()),
             },
             Default::default(),
         );

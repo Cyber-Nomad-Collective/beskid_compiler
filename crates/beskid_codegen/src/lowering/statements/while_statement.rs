@@ -10,10 +10,7 @@ use cranelift_codegen::ir::InstBuilder;
 impl Lowerable<NodeLoweringContext<'_, '_>> for HirWhileStatement {
     type Output = ();
 
-    fn lower(
-        node: &Spanned<Self>,
-        ctx: &mut NodeLoweringContext<'_, '_>,
-    ) -> Result<Self::Output, CodegenError> {
+    fn lower(node: &Spanned<Self>, ctx: &mut NodeLoweringContext<'_, '_>) -> Result<Self::Output, CodegenError> {
         let cond_block = ctx.builder.create_block();
         let body_block = ctx.builder.create_block();
         let exit_block = ctx.builder.create_block();
@@ -22,16 +19,13 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirWhileStatement {
         ctx.builder.switch_to_block(cond_block);
         refresh_locals_at_loop_header(ctx.builder, ctx.state);
 
-        let condition =
-            lower_node(&node.node.condition, ctx)?.ok_or(CodegenError::UnsupportedNode {
-                span: node.node.condition.span,
-                node: "unit-valued while condition",
-            })?;
+        let condition = lower_node(&node.node.condition, ctx)?.ok_or(CodegenError::UnsupportedNode {
+            span: node.node.condition.span,
+            node: "unit-valued while condition",
+        })?;
         let condition_type = ctx.require_expr_type_for_node(&node.node.condition)?;
-        let is_bool = matches!(
-            ctx.type_result.types.get(condition_type),
-            Some(TypeInfo::Primitive(HirPrimitiveType::Bool))
-        );
+        let is_bool =
+            matches!(ctx.type_result.types.get(condition_type), Some(TypeInfo::Primitive(HirPrimitiveType::Bool)));
         if !is_bool {
             return Err(CodegenError::UnsupportedNode {
                 span: node.node.condition.span,
@@ -39,15 +33,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirWhileStatement {
             });
         }
 
-        ctx.builder
-            .ins()
-            .brif(condition, body_block, &[], exit_block, &[]);
+        ctx.builder.ins().brif(condition, body_block, &[], exit_block, &[]);
 
         ctx.builder.switch_to_block(body_block);
-        ctx.state.loop_stack.push(LoopControl {
-            continue_block: cond_block,
-            break_block: exit_block,
-        });
+        ctx.state.loop_stack.push(LoopControl { continue_block: cond_block, break_block: exit_block });
         ctx.state.block_terminated = false;
         for statement in &node.node.body.node.statements {
             lower_node(statement, ctx)?;

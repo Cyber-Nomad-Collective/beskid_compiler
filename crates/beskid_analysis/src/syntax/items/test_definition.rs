@@ -4,9 +4,7 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::items::parse_helpers::{
-    parse_attributes, parse_doc_attached_pair_raw, parse_visibility_or_default,
-};
+use crate::syntax::items::parse_helpers::{parse_attributes, parse_doc_attached_pair_raw, parse_visibility_or_default};
 use crate::syntax::{Attribute, Expression, Identifier, SpanInfo, Spanned, Statement, Visibility};
 
 use beskid_ast_derive::AstNode;
@@ -120,8 +118,7 @@ impl Parsable for TestDefinition {
         let mut statements = Vec::new();
         let mut statement_docs = Vec::new();
         for body_item in body.into_inner() {
-            let (doc_opt, item_pair) =
-                parse_doc_attached_pair_raw(body_item, Rule::TestBodyItemWithDocs)?;
+            let (doc_opt, item_pair) = parse_doc_attached_pair_raw(body_item, Rule::TestBodyItemWithDocs)?;
             match item_pair.as_rule() {
                 Rule::TestMetaSection => {
                     meta = Some(TestMetaSection::parse(item_pair)?);
@@ -137,17 +134,6 @@ impl Parsable for TestDefinition {
         }
         debug_assert_eq!(statements.len(), statement_docs.len());
 
-        Ok(Spanned::new(
-            Self {
-                attributes,
-                visibility,
-                name,
-                meta,
-                skip,
-                statements,
-                statement_docs,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { attributes, visibility, name, meta, skip, statements, statement_docs }, span))
     }
 }

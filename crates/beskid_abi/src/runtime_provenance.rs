@@ -19,13 +19,8 @@ use crate::runtime_source::canonical_runtime_source_hash;
 /// initial-exec TLS would make the runtime require unavailable static TLS.
 /// Keep this list exact so the shared-artifact audit continues to reject Rust runtime linkage and
 /// other undeclared imports.
-const LINUX_ELF_SHARED_LOADER_IMPORTS: &[&str] = &[
-    "_ITM_deregisterTMCloneTable",
-    "_ITM_registerTMCloneTable",
-    "__cxa_finalize",
-    "__gmon_start__",
-    "__tls_get_addr",
-];
+const LINUX_ELF_SHARED_LOADER_IMPORTS: &[&str] =
+    &["_ITM_deregisterTMCloneTable", "_ITM_registerTMCloneTable", "__cxa_finalize", "__gmon_start__", "__tls_get_addr"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,8 +36,7 @@ impl RuntimeProvenanceAudit {
     /// Builds the only audit policy valid for a supported ABI-v5 target.
     pub fn canonical(target: TargetMetadata) -> Result<Self, ManifestValidationError> {
         let manifest = AbiManifestV5::canonical_runtime(target.clone());
-        let metadata =
-            RuntimeAuditMetadata::for_manifest(&manifest, &canonical_runtime_source_hash())?;
+        let metadata = RuntimeAuditMetadata::for_manifest(&manifest, &canonical_runtime_source_hash())?;
         let required_exports = metadata.loader_required_exports.clone();
         Ok(Self {
             target: target.triple.as_str().into(),
@@ -65,16 +59,8 @@ impl RuntimeProvenanceAudit {
         let prefix = metadata.symbol_prefix;
         Ok(SymbolList {
             target: self.target.clone(),
-            defined: self
-                .allowed_exports
-                .iter()
-                .map(|symbol| format!("{prefix}{symbol}"))
-                .collect(),
-            undefined: self
-                .allowed_imports
-                .iter()
-                .map(|symbol| format!("{prefix}{symbol}"))
-                .collect(),
+            defined: self.allowed_exports.iter().map(|symbol| format!("{prefix}{symbol}")).collect(),
+            undefined: self.allowed_imports.iter().map(|symbol| format!("{prefix}{symbol}")).collect(),
         })
     }
 
@@ -176,31 +162,21 @@ pub fn parse_symbol_list(input: &str) -> Result<SymbolList, SymbolListError> {
             continue;
         }
         let Some((key, value)) = line.split_once('=') else {
-            return Err(SymbolListError::InvalidLine {
-                line: line_number + 1,
-            });
+            return Err(SymbolListError::InvalidLine { line: line_number + 1 });
         };
         if value.is_empty() {
-            return Err(SymbolListError::InvalidLine {
-                line: line_number + 1,
-            });
+            return Err(SymbolListError::InvalidLine { line: line_number + 1 });
         }
         match key {
             "target" if target.is_none() => target = Some(value.into()),
             "defined" => defined.push(value.into()),
             "undefined" => undefined.push(value.into()),
             _ => {
-                return Err(SymbolListError::InvalidLine {
-                    line: line_number + 1,
-                });
+                return Err(SymbolListError::InvalidLine { line: line_number + 1 });
             }
         }
     }
-    Ok(SymbolList {
-        target: target.ok_or(SymbolListError::MissingTarget)?,
-        defined,
-        undefined,
-    })
+    Ok(SymbolList { target: target.ok_or(SymbolListError::MissingTarget)?, defined, undefined })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -221,10 +197,7 @@ impl fmt::Display for SymbolListError {
                 write!(formatter, "unsupported ABI-v5 target `{target}`")
             }
             Self::TargetMismatch { expected, actual } => {
-                write!(
-                    formatter,
-                    "symbol-list target mismatch: expected `{expected}`, got `{actual}`"
-                )
+                write!(formatter, "symbol-list target mismatch: expected `{expected}`, got `{actual}`")
             }
             Self::Policy(message) => formatter.write_str(message),
         }

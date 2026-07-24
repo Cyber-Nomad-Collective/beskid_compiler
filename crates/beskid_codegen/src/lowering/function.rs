@@ -1,19 +1,15 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::{CodegenContext, CodegenResult, LoweredFunction};
-use crate::lowering::expressions::export::{
-    export_linker_name, read_export_metadata, validate_export_function,
-};
+use crate::lowering::expressions::export::{export_linker_name, read_export_metadata, validate_export_function};
 use crate::lowering::locals::local_id_for_span;
 use crate::lowering::lowerable::lower_node;
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::type_surface::named_type_names;
 use crate::lowering::types::{
-    map_type_id_to_clif, method_receiver_type_id, resolve_type_path_item_id_for_codegen,
-    type_id_for_type,
+    map_type_id_to_clif, method_receiver_type_id, resolve_type_path_item_id_for_codegen, type_id_for_type,
 };
 use beskid_analysis::hir::{
-    HirFunctionDefinition, HirLambdaExpression, HirMethodDefinition, HirPrimitiveType,
-    HirTestDefinition, HirType,
+    HirFunctionDefinition, HirLambdaExpression, HirMethodDefinition, HirPrimitiveType, HirTestDefinition, HirType,
 };
 use beskid_analysis::paths::same_file_opt;
 use beskid_analysis::resolve::{ItemId, LocalId, Resolution, canonical_item_id};
@@ -36,22 +32,10 @@ pub(crate) fn lower_function(
 ) -> CodegenResult<()> {
     let saved_source_path = ctx.current_source_path.clone();
     if ctx.current_source_path.is_none() {
-        ctx.current_source_path = resolution
-            .items
-            .iter()
-            .find(|info| info.span == def.span)
-            .and_then(|info| info.source_path.clone());
+        ctx.current_source_path =
+            resolution.items.iter().find(|info| info.span == def.span).and_then(|info| info.source_path.clone());
     }
-    let result = lower_function_with_name(
-        def,
-        resolution,
-        type_result,
-        function_defs,
-        ctx,
-        None,
-        None,
-        None,
-    );
+    let result = lower_function_with_name(def, resolution, type_result, function_defs, ctx, None, None, None);
     ctx.current_source_path = saved_source_path;
     result
 }
@@ -66,10 +50,7 @@ pub(crate) fn lower_method(
 ) -> CodegenResult<()> {
     let item_id = canonical_item_id(resolution, known_item_id);
     if ctx.current_source_path.is_none() {
-        ctx.current_source_path = resolution
-            .items
-            .get(item_id.0)
-            .and_then(|info| info.source_path.clone());
+        ctx.current_source_path = resolution.items.get(item_id.0).and_then(|info| info.source_path.clone());
     }
     ctx.emitting_items.insert(item_id);
     let result = lower_method_body(def, resolution, type_result, function_defs, ctx, item_id);
@@ -85,47 +66,23 @@ fn lower_method_body(
     ctx: &mut CodegenContext,
     item_id: ItemId,
 ) -> CodegenResult<()> {
-    let signature_types = type_result
-        .function_signatures
-        .get(&item_id)
-        .or_else(|| type_result.method_function_signatures.get(&item_id));
+    let signature_types =
+        type_result.function_signatures.get(&item_id).or_else(|| type_result.method_function_signatures.get(&item_id));
 
-    let receiver_type_id =
-        method_receiver_type_id(resolution, type_result, &def.node.receiver_type, item_id).ok_or(
-            CodegenError::UnsupportedNode {
-                span: def.node.receiver_type.span,
-                node: "method receiver type",
-            },
-        )?;
-    let receiver_clif_ty = map_type_id_to_clif(type_result, receiver_type_id).ok_or(
-        CodegenError::UnsupportedNode {
-            span: def.node.receiver_type.span,
-            node: "method receiver type",
-        },
-    )?;
+    let receiver_type_id = method_receiver_type_id(resolution, type_result, &def.node.receiver_type, item_id)
+        .ok_or(CodegenError::UnsupportedNode { span: def.node.receiver_type.span, node: "method receiver type" })?;
+    let receiver_clif_ty = map_type_id_to_clif(type_result, receiver_type_id)
+        .ok_or(CodegenError::UnsupportedNode { span: def.node.receiver_type.span, node: "method receiver type" })?;
 
     let mut signature = Signature::new(CallConv::SystemV);
     signature.params.push(AbiParam::new(receiver_clif_ty));
     for (index, param) in def.node.parameters.iter().enumerate() {
         let type_id = signature_types
             .and_then(|sig| sig.params.get(index).copied())
-            .or_else(|| {
-                type_id_for_type(
-                    resolution,
-                    type_result,
-                    ctx.current_source_path.as_ref(),
-                    &param.node.ty,
-                )
-            })
-            .ok_or(CodegenError::UnsupportedNode {
-                span: param.span,
-                node: "function parameter type",
-            })?;
-        let clif_ty =
-            map_type_id_to_clif(type_result, type_id).ok_or(CodegenError::UnsupportedNode {
-                span: param.span,
-                node: "function parameter type",
-            })?;
+            .or_else(|| type_id_for_type(resolution, type_result, ctx.current_source_path.as_ref(), &param.node.ty))
+            .ok_or(CodegenError::UnsupportedNode { span: param.span, node: "function parameter type" })?;
+        let clif_ty = map_type_id_to_clif(type_result, type_id)
+            .ok_or(CodegenError::UnsupportedNode { span: param.span, node: "function parameter type" })?;
         signature.params.push(AbiParam::new(clif_ty));
     }
 
@@ -156,58 +113,26 @@ fn lower_method_body(
     let mut state = FunctionLoweringState::default();
     let param_values = builder.block_params(entry).to_vec();
 
-    let this_local_id = local_id_for_span(
-        resolution,
-        def.node.receiver_type.span,
-        ctx.current_source_path.as_ref(),
-    )
-    .ok_or(CodegenError::InvalidLocalBinding {
-        span: def.node.receiver_type.span,
-    })?;
+    let this_local_id = local_id_for_span(resolution, def.node.receiver_type.span, ctx.current_source_path.as_ref())
+        .ok_or(CodegenError::InvalidLocalBinding { span: def.node.receiver_type.span })?;
     let this_var = builder.declare_var(receiver_clif_ty);
     builder.def_var(this_var, param_values[0]);
     state.locals.insert(this_local_id, this_var);
     state.parameter_locals.push(this_local_id);
-    state
-        .local_type_overrides
-        .insert(this_local_id, receiver_type_id);
+    state.local_type_overrides.insert(this_local_id, receiver_type_id);
 
-    for (index, (param, value)) in def
-        .node
-        .parameters
-        .iter()
-        .zip(param_values.iter().skip(1))
-        .enumerate()
-    {
-        let local_id = local_id_for_span(
-            resolution,
-            param.node.name.span,
-            ctx.current_source_path.as_ref(),
-        )
-        .ok_or(CodegenError::InvalidLocalBinding {
-            span: param.node.name.span,
-        })?;
+    for (index, (param, value)) in def.node.parameters.iter().zip(param_values.iter().skip(1)).enumerate() {
+        let local_id = local_id_for_span(resolution, param.node.name.span, ctx.current_source_path.as_ref())
+            .ok_or(CodegenError::InvalidLocalBinding { span: param.node.name.span })?;
         let type_id = type_result
             .local_types
             .get(&local_id)
             .copied()
             .or_else(|| signature_types.and_then(|sig| sig.params.get(index).copied()))
-            .or_else(|| {
-                type_id_for_type(
-                    resolution,
-                    type_result,
-                    ctx.current_source_path.as_ref(),
-                    &param.node.ty,
-                )
-            })
-            .ok_or(CodegenError::MissingLocalType {
-                span: param.node.name.span,
-            })?;
-        let clif_ty =
-            map_type_id_to_clif(type_result, type_id).ok_or(CodegenError::UnsupportedNode {
-                span: param.node.name.span,
-                node: "function parameter type",
-            })?;
+            .or_else(|| type_id_for_type(resolution, type_result, ctx.current_source_path.as_ref(), &param.node.ty))
+            .ok_or(CodegenError::MissingLocalType { span: param.node.name.span })?;
+        let clif_ty = map_type_id_to_clif(type_result, type_id)
+            .ok_or(CodegenError::UnsupportedNode { span: param.node.name.span, node: "function parameter type" })?;
         let var = builder.declare_var(clif_ty);
         builder.def_var(var, *value);
         state.locals.insert(local_id, var);
@@ -235,10 +160,7 @@ fn lower_method_body(
 
     if !node_ctx.state.return_emitted && !node_ctx.state.block_terminated {
         if expects_return {
-            return Err(CodegenError::UnsupportedNode {
-                span: def.span,
-                node: "implicit non-unit return",
-            });
+            return Err(CodegenError::UnsupportedNode { span: def.span, node: "implicit non-unit return" });
         }
         node_ctx.builder.ins().return_(&[]);
     }
@@ -266,17 +188,11 @@ fn lower_method_body(
 
     let flags = settings::Flags::new(settings::builder());
     if let Err(err) = verify_function(&function, &flags) {
-        return Err(CodegenError::VerificationFailed {
-            function: function_name.clone(),
-            message: err.to_string(),
-        });
+        return Err(CodegenError::VerificationFailed { function: function_name.clone(), message: err.to_string() });
     }
 
     ctx.functions_emitted += 1;
-    ctx.lowered_functions.push(LoweredFunction {
-        name: function_name,
-        function,
-    });
+    ctx.lowered_functions.push(LoweredFunction { name: function_name, function });
     Ok(())
 }
 
@@ -287,11 +203,7 @@ pub(crate) fn lower_test(
     function_defs: &HashMap<ItemId, &Spanned<HirFunctionDefinition>>,
     ctx: &mut CodegenContext,
 ) -> CodegenResult<()> {
-    let item_id = resolution
-        .items
-        .iter()
-        .find(|info| info.span == def.span)
-        .map(|info| info.id);
+    let item_id = resolution.items.iter().find(|info| info.span == def.span).map(|info| info.id);
     let saved_source_path = ctx.current_source_path.clone();
     ctx.current_source_path = item_id
         .and_then(|id| resolution.items.get(id.0))
@@ -353,10 +265,7 @@ fn lower_test_body(
 
     if !node_ctx.state.return_emitted && !node_ctx.state.block_terminated {
         if expects_return {
-            return Err(CodegenError::UnsupportedNode {
-                span: def.span,
-                node: "implicit non-unit return",
-            });
+            return Err(CodegenError::UnsupportedNode { span: def.span, node: "implicit non-unit return" });
         }
         node_ctx.builder.ins().return_(&[]);
     }
@@ -364,22 +273,15 @@ fn lower_test_body(
     drop(node_ctx);
     builder.finalize();
 
-    let function_name = item_id
-        .map(|id| mangle_item_function(resolution, id))
-        .unwrap_or_else(|| def.node.name.node.name.clone());
+    let function_name =
+        item_id.map(|id| mangle_item_function(resolution, id)).unwrap_or_else(|| def.node.name.node.name.clone());
     let flags = settings::Flags::new(settings::builder());
     if let Err(err) = verify_function(&function, &flags) {
-        return Err(CodegenError::VerificationFailed {
-            function: function_name.clone(),
-            message: err.to_string(),
-        });
+        return Err(CodegenError::VerificationFailed { function: function_name.clone(), message: err.to_string() });
     }
 
     ctx.functions_emitted += 1;
-    ctx.lowered_functions.push(LoweredFunction {
-        name: function_name,
-        function,
-    });
+    ctx.lowered_functions.push(LoweredFunction { name: function_name, function });
     Ok(())
 }
 
@@ -390,9 +292,7 @@ pub(crate) fn mangle_method_name(receiver: &str, method: &str) -> String {
 }
 
 pub(crate) fn is_self_parameter_function(def: &HirFunctionDefinition) -> bool {
-    def.parameters
-        .first()
-        .is_some_and(|param| param.node.name.node.name == "self")
+    def.parameters.first().is_some_and(|param| param.node.name.node.name == "self")
 }
 
 pub(crate) fn generic_mapping_for_method_receiver(
@@ -423,20 +323,13 @@ pub(crate) fn mangle_function_name(base: &str, args: &[beskid_analysis::types::T
     if args.is_empty() {
         return base.to_string();
     }
-    let suffix = args
-        .iter()
-        .map(|arg| arg.0.to_string())
-        .collect::<Vec<_>>()
-        .join("_");
+    let suffix = args.iter().map(|arg| arg.0.to_string()).collect::<Vec<_>>().join("_");
     format!("{base}#{suffix}")
 }
 
 /// Disambiguate non-generic link-plan functions that share a short name across modules (`Contains#42`).
 pub(crate) fn mangle_item_function(resolution: &Resolution, item_id: ItemId) -> String {
-    let info = resolution
-        .items
-        .get(item_id.0)
-        .unwrap_or_else(|| panic!("missing item for mangling: {:?}", item_id));
+    let info = resolution.items.get(item_id.0).unwrap_or_else(|| panic!("missing item for mangling: {:?}", item_id));
     let short = info.name.rsplit("::").next().unwrap_or(info.name.as_str());
     format!("{short}#{}", item_id.0)
 }
@@ -454,11 +347,7 @@ pub(crate) fn linker_name_for_item_function(
 }
 
 /// Stem-qualified mangling for generic factory functions on owning types (`Hub__Create#2`).
-pub(crate) fn mangle_generic_factory_name(
-    owner_stem: &str,
-    method: &str,
-    args: &[TypeId],
-) -> String {
+pub(crate) fn mangle_generic_factory_name(owner_stem: &str, method: &str, args: &[TypeId]) -> String {
     let leaf = method.rsplit("::").next().unwrap_or(method);
     mangle_function_name(&format!("{owner_stem}__{leaf}"), args)
 }
@@ -479,10 +368,7 @@ pub(crate) fn owner_stem_for_generic_factory(
     };
     let func_info = resolution.items.get(item_id.0)?;
     let owner_info = resolution.items.iter().find(|info| info.id == *base)?;
-    if !same_file_opt(
-        func_info.source_path.as_ref(),
-        owner_info.source_path.as_ref(),
-    ) {
+    if !same_file_opt(func_info.source_path.as_ref(), owner_info.source_path.as_ref()) {
         return None;
     }
     owner_info.name.rsplit("::").next().map(str::to_string)
@@ -515,11 +401,7 @@ pub(crate) fn generic_mapping_from_mangled(
     if suffix == mangled {
         return None;
     }
-    let type_ids: Vec<TypeId> = suffix
-        .split('_')
-        .filter_map(|part| part.parse::<usize>().ok())
-        .map(TypeId)
-        .collect();
+    let type_ids: Vec<TypeId> = suffix.split('_').filter_map(|part| part.parse::<usize>().ok()).map(TypeId).collect();
     if type_ids.len() != generic_names.len() {
         return None;
     }
@@ -601,24 +483,11 @@ fn lower_function_with_name_body(
     for (index, param) in def.node.parameters.iter().enumerate() {
         let type_id = signature_types
             .and_then(|sig| sig.params.get(index).copied())
-            .or_else(|| {
-                type_id_for_type(
-                    resolution,
-                    type_result,
-                    ctx.current_source_path.as_ref(),
-                    &param.node.ty,
-                )
-            })
+            .or_else(|| type_id_for_type(resolution, type_result, ctx.current_source_path.as_ref(), &param.node.ty))
             .map(&substitute)
-            .ok_or(CodegenError::UnsupportedNode {
-                span: param.span,
-                node: "function parameter type",
-            })?;
-        let clif_ty =
-            map_type_id_to_clif(type_result, type_id).ok_or(CodegenError::UnsupportedNode {
-                span: param.span,
-                node: "function parameter type",
-            })?;
+            .ok_or(CodegenError::UnsupportedNode { span: param.span, node: "function parameter type" })?;
+        let clif_ty = map_type_id_to_clif(type_result, type_id)
+            .ok_or(CodegenError::UnsupportedNode { span: param.span, node: "function parameter type" })?;
         signature.params.push(AbiParam::new(clif_ty));
     }
     let return_type_id = resolve_return_type_id(
@@ -653,34 +522,16 @@ fn lower_function_with_name_body(
     let mut state = FunctionLoweringState::default();
     let param_values = builder.block_params(entry).to_vec();
     for (index, (param, value)) in def.node.parameters.iter().zip(param_values).enumerate() {
-        let local_id = local_id_for_span(
-            resolution,
-            param.node.name.span,
-            ctx.current_source_path.as_ref(),
-        )
-        .ok_or(CodegenError::InvalidLocalBinding {
-            span: param.node.name.span,
-        })?;
+        let local_id = local_id_for_span(resolution, param.node.name.span, ctx.current_source_path.as_ref())
+            .ok_or(CodegenError::InvalidLocalBinding { span: param.node.name.span })?;
         let type_id = signature_types
             .and_then(|sig| sig.params.get(index).copied())
             .or_else(|| type_result.local_types.get(&local_id).copied())
-            .or_else(|| {
-                type_id_for_type(
-                    resolution,
-                    type_result,
-                    ctx.current_source_path.as_ref(),
-                    &param.node.ty,
-                )
-            })
+            .or_else(|| type_id_for_type(resolution, type_result, ctx.current_source_path.as_ref(), &param.node.ty))
             .map(&substitute)
-            .ok_or(CodegenError::MissingLocalType {
-                span: param.node.name.span,
-            })?;
-        let clif_ty =
-            map_type_id_to_clif(type_result, type_id).ok_or(CodegenError::UnsupportedNode {
-                span: param.node.name.span,
-                node: "function parameter type",
-            })?;
+            .ok_or(CodegenError::MissingLocalType { span: param.node.name.span })?;
+        let clif_ty = map_type_id_to_clif(type_result, type_id)
+            .ok_or(CodegenError::UnsupportedNode { span: param.node.name.span, node: "function parameter type" })?;
         let var = builder.declare_var(clif_ty);
         builder.def_var(var, value);
         state.locals.insert(local_id, var);
@@ -709,10 +560,7 @@ fn lower_function_with_name_body(
 
     if !node_ctx.state.return_emitted && !node_ctx.state.block_terminated {
         if expects_return {
-            return Err(CodegenError::UnsupportedNode {
-                span: def.span,
-                node: "implicit non-unit return",
-            });
+            return Err(CodegenError::UnsupportedNode { span: def.span, node: "implicit non-unit return" });
         }
         node_ctx.builder.ins().return_(&[]);
     }
@@ -731,14 +579,9 @@ fn lower_function_with_name_body(
 
     ctx.functions_emitted += 1;
     let function_name = name_override.unwrap_or_else(|| {
-        item_id
-            .map(|id| linker_name_for_item_function(resolution, id, def))
-            .unwrap_or_else(|| export_linker_name(def))
+        item_id.map(|id| linker_name_for_item_function(resolution, id, def)).unwrap_or_else(|| export_linker_name(def))
     });
-    ctx.lowered_functions.push(LoweredFunction {
-        name: function_name,
-        function,
-    });
+    ctx.lowered_functions.push(LoweredFunction { name: function_name, function });
 
     Ok(())
 }
@@ -762,10 +605,7 @@ pub(crate) struct LoopControl {
 }
 
 /// Re-read parameter locals at the loop header so invariant bindings survive backedges.
-pub(crate) fn refresh_locals_at_loop_header(
-    builder: &mut FunctionBuilder,
-    state: &FunctionLoweringState,
-) {
+pub(crate) fn refresh_locals_at_loop_header(builder: &mut FunctionBuilder, state: &FunctionLoweringState) {
     for local_id in &state.parameter_locals {
         let Some(var) = state.locals.get(local_id) else {
             continue;
@@ -786,21 +626,13 @@ fn resolve_return_type_id(
     return_type: Option<&Spanned<HirType>>,
     signature_return: Option<TypeId>,
 ) -> Option<TypeId> {
-    if let Some(annotated) =
-        return_type.and_then(|ty| type_id_for_type(resolution, type_result, source_path, ty))
-    {
+    if let Some(annotated) = return_type.and_then(|ty| type_id_for_type(resolution, type_result, source_path, ty)) {
         return Some(annotated);
     }
-    return_type
-        .and_then(|ty| fallback_applied_return_type(resolution, type_result, source_path, ty))
-        .or_else(|| {
-            signature_return.filter(|sig| {
-                !matches!(
-                    type_result.types.get(*sig),
-                    Some(TypeInfo::Primitive(HirPrimitiveType::Unit))
-                )
-            })
-        })
+    return_type.and_then(|ty| fallback_applied_return_type(resolution, type_result, source_path, ty)).or_else(|| {
+        signature_return
+            .filter(|sig| !matches!(type_result.types.get(*sig), Some(TypeInfo::Primitive(HirPrimitiveType::Unit))))
+    })
 }
 
 fn fallback_applied_return_type(
@@ -816,33 +648,21 @@ fn fallback_applied_return_type(
     if last.node.type_args.is_empty() {
         return None;
     }
-    let segments: Vec<String> = path
-        .node
-        .segments
-        .iter()
-        .map(|segment| segment.node.name.node.name.clone())
-        .collect();
+    let segments: Vec<String> = path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect();
     let mut arg_ids = Vec::with_capacity(last.node.type_args.len());
     for arg in &last.node.type_args {
-        let type_id =
-            type_id_for_type(resolution, type_result, source_path, arg).or_else(|| {
-                match &arg.node {
-                    HirType::Primitive(primitive) => {
-                        find_primitive_type_id(type_result, primitive.node)
-                    }
-                    HirType::Complex(path) => {
-                        let name = path.node.segments.last()?.node.name.node.name.as_str();
-                        match name {
-                            "i64" => find_primitive_type_id(type_result, HirPrimitiveType::I64),
-                            "string" => {
-                                find_primitive_type_id(type_result, HirPrimitiveType::String)
-                            }
-                            _ => find_named_type_by_leaf(type_result, name),
-                        }
-                    }
-                    _ => None,
+        let type_id = type_id_for_type(resolution, type_result, source_path, arg).or_else(|| match &arg.node {
+            HirType::Primitive(primitive) => find_primitive_type_id(type_result, primitive.node),
+            HirType::Complex(path) => {
+                let name = path.node.segments.last()?.node.name.node.name.as_str();
+                match name {
+                    "i64" => find_primitive_type_id(type_result, HirPrimitiveType::I64),
+                    "string" => find_primitive_type_id(type_result, HirPrimitiveType::String),
+                    _ => find_named_type_by_leaf(type_result, name),
                 }
-            })?;
+            }
+            _ => None,
+        })?;
         arg_ids.push(type_id);
     }
     if let Some(base) = resolve_type_path_item_id_for_codegen(resolution, type_result, &segments)
@@ -854,21 +674,14 @@ fn fallback_applied_return_type(
         .or_else(|| find_applied_type_id_by_ok_arg(type_result, arg_ids.first().copied()))
 }
 
-fn find_applied_type_id_by_base_and_args(
-    type_result: &TypeResult,
-    base: ItemId,
-    args: &[TypeId],
-) -> Option<TypeId> {
+fn find_applied_type_id_by_base_and_args(type_result: &TypeResult, base: ItemId, args: &[TypeId]) -> Option<TypeId> {
     let mut index = 0usize;
     loop {
         let type_id = TypeId(index);
         let Some(info) = type_result.types.get(type_id) else {
             return None;
         };
-        if let TypeInfo::Applied {
-            base: found_base,
-            args: found_args,
-        } = info
+        if let TypeInfo::Applied { base: found_base, args: found_args } = info
             && *found_base == base
             && found_args.as_slice() == args
         {
@@ -878,10 +691,7 @@ fn find_applied_type_id_by_base_and_args(
     }
 }
 
-fn find_applied_type_id_by_ok_arg(
-    type_result: &TypeResult,
-    ok_type: Option<TypeId>,
-) -> Option<TypeId> {
+fn find_applied_type_id_by_ok_arg(type_result: &TypeResult, ok_type: Option<TypeId>) -> Option<TypeId> {
     let ok_type = ok_type?;
     let mut index = 0usize;
     loop {
@@ -940,9 +750,7 @@ fn find_applied_type_id_by_args(type_result: &TypeResult, args: &[TypeId]) -> Op
         let Some(info) = type_result.types.get(type_id) else {
             return None;
         };
-        if let TypeInfo::Applied {
-            args: found_args, ..
-        } = info
+        if let TypeInfo::Applied { args: found_args, .. } = info
             && found_args.as_slice() == args
         {
             return Some(type_id);
@@ -965,11 +773,7 @@ pub(crate) fn item_id_for_item_span(
         return Some(info.id);
     }
 
-    let matches: Vec<_> = resolution
-        .items
-        .iter()
-        .filter(|info| info.span == span)
-        .collect();
+    let matches: Vec<_> = resolution.items.iter().filter(|info| info.span == span).collect();
     match matches.as_slice() {
         [] => None,
         [single] => Some(single.id),

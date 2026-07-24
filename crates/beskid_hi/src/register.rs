@@ -46,11 +46,7 @@ mod tests {
         let mut registry = WidgetRegistry::new();
         register_widgets(&mut registry);
         for desc in WIDGET_CATALOG {
-            assert!(
-                registry.get(desc.id).is_some(),
-                "missing widget for catalog id {}",
-                desc.id
-            );
+            assert!(registry.get(desc.id).is_some(), "missing widget for catalog id {}", desc.id);
         }
     }
 }

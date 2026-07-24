@@ -7,11 +7,7 @@ use crate::position::{offset_range_to_lsp, position_to_offset};
 use crate::session::store::Document;
 
 /// Valid rename range for the identifier at `offset` (manifest tokens or resolved Beskid refs).
-pub fn handle_prepare_rename(
-    uri: &Uri,
-    doc: &Document,
-    offset: usize,
-) -> Option<PrepareRenameResponse> {
+pub fn handle_prepare_rename(uri: &Uri, doc: &Document, offset: usize) -> Option<PrepareRenameResponse> {
     let (start, end) = if project_manifest::is_manifest_uri(uri) {
         token_span_at_offset(&doc.text, offset)?
     } else {
@@ -19,18 +15,11 @@ pub fn handle_prepare_rename(
         token_span_at_offset(&doc.text, offset)?
     };
 
-    Some(PrepareRenameResponse::Range(offset_range_to_lsp(
-        &doc.text, start, end,
-    )))
+    Some(PrepareRenameResponse::Range(offset_range_to_lsp(&doc.text, start, end)))
 }
 
 /// Produce a workspace edit renaming the symbol at `position` when the new name is a valid identifier.
-pub fn handle_rename(
-    uri: &Uri,
-    doc: &Document,
-    position: Position,
-    new_name: &str,
-) -> Option<WorkspaceEdit> {
+pub fn handle_rename(uri: &Uri, doc: &Document, position: Position, new_name: &str) -> Option<WorkspaceEdit> {
     if !is_valid_identifier(new_name) {
         return None;
     }
@@ -72,10 +61,7 @@ pub fn handle_rename(
     let mut changes = HashMap::new();
     changes.insert(uri.clone(), edits);
 
-    Some(WorkspaceEdit {
-        changes: Some(changes),
-        ..WorkspaceEdit::default()
-    })
+    Some(WorkspaceEdit { changes: Some(changes), ..WorkspaceEdit::default() })
 }
 
 fn resolved_syntax_target<'a>(
@@ -86,9 +72,7 @@ fn resolved_syntax_target<'a>(
     let path = crate::workspace_scan::uri_to_path(uri);
     doc.syntax_definitions.iter().find(|definition| {
         (definition.reference_start <= offset && offset <= definition.reference_end)
-            || (path
-                .as_deref()
-                .is_some_and(|path| path == definition.declaration_path)
+            || (path.as_deref().is_some_and(|path| path == definition.declaration_path)
                 && definition.declaration_start <= offset
                 && offset <= definition.declaration_end)
     })
@@ -134,8 +118,7 @@ fn is_valid_identifier(name: &str) -> bool {
     let Some(first) = chars.next() else {
         return false;
     };
-    (first == '_' || first.is_ascii_alphabetic())
-        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    (first == '_' || first.is_ascii_alphabetic()) && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
 #[cfg(test)]
@@ -199,10 +182,7 @@ target "App" {
         let edit = handle_rename(&uri, &doc, position, "left").expect("workspace edit");
         let changes = edit.changes.expect("changes map");
         let edits = changes.get(&uri).expect("uri edits");
-        assert!(
-            edits.len() >= 2,
-            "rename should include declaration and references"
-        );
+        assert!(edits.len() >= 2, "rename should include declaration and references");
         assert!(edits.iter().all(|item| item.new_text == "left"));
     }
 }

@@ -59,9 +59,7 @@ impl<'a, T> TreeView<'a, T> {
             self.handle_filter_key(key, state)
         } else {
             navigator.handle_key_event(key, &self.nodes, state);
-            WidgetEvent::Selected {
-                path: state.selected_path.clone().unwrap_or_default(),
-            }
+            WidgetEvent::Selected { path: state.selected_path.clone().unwrap_or_default() }
         }
     }
 
@@ -69,30 +67,20 @@ impl<'a, T> TreeView<'a, T> {
         match key.code {
             KeyCode::Esc => {
                 state.clear_filter();
-                WidgetEvent::FilterModeExited {
-                    path: state.selected_path.clone().unwrap_or_default(),
-                }
+                WidgetEvent::FilterModeExited { path: state.selected_path.clone().unwrap_or_default() }
             }
             KeyCode::Enter => {
                 let path = state.selected_path.clone();
                 state.exit_filter_mode();
-                WidgetEvent::FilterModeExited {
-                    path: path.unwrap_or_default(),
-                }
+                WidgetEvent::FilterModeExited { path: path.unwrap_or_default() }
             }
             KeyCode::Backspace => {
                 state.backspace_filter();
-                WidgetEvent::FilterModeChanged {
-                    active: true,
-                    filter: state.filter.clone().unwrap_or_default(),
-                }
+                WidgetEvent::FilterModeChanged { active: true, filter: state.filter.clone().unwrap_or_default() }
             }
             KeyCode::Char(c) => {
                 state.append_to_filter(c);
-                WidgetEvent::FilterModeChanged {
-                    active: true,
-                    filter: state.filter.clone().unwrap_or_default(),
-                }
+                WidgetEvent::FilterModeChanged { active: true, filter: state.filter.clone().unwrap_or_default() }
             }
             _ => WidgetEvent::None,
         }
@@ -113,12 +101,7 @@ impl<'a, T> TreeView<'a, T> {
     /// # Returns
     ///
     /// A `WidgetEvent` indicating what action was taken.
-    pub fn handle_mouse_event(
-        &mut self,
-        event: MouseEvent,
-        state: &mut TreeViewState,
-        area: Rect,
-    ) -> WidgetEvent {
+    pub fn handle_mouse_event(&mut self, event: MouseEvent, state: &mut TreeViewState, area: Rect) -> WidgetEvent {
         let inner_area = match self.block {
             Some(ref block) => block.inner(area),
             None => area,

@@ -39,11 +39,7 @@ pub extern "C-unwind" fn fs_exists(path: *const BeskidStr) -> i64 {
 pub extern "C-unwind" fn fs_delete(path: *const BeskidStr) -> i64 {
     let path = read_string_path(path);
     let p = std::path::Path::new(&path);
-    let result = if p.is_dir() {
-        std::fs::remove_dir(p)
-    } else {
-        std::fs::remove_file(p)
-    };
+    let result = if p.is_dir() { std::fs::remove_dir(p) } else { std::fs::remove_file(p) };
     match result {
         Ok(()) => 0,
         Err(_) => -1,

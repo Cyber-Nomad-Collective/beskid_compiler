@@ -26,25 +26,18 @@ pub fn render(
     let content_width = width.saturating_sub(prefix_char_width);
 
     // Use theme color for blockquote text if available
-    let quote_text_color = app_theme
-        .map(|t| t.markdown.block_quote)
-        .unwrap_or(Color::Rgb(180, 180, 200));
+    let quote_text_color = app_theme.map(|t| t.markdown.block_quote).unwrap_or(Color::Rgb(180, 180, 200));
 
     // Build content from segments - all blockquote text is italic
     let mut content_spans: Vec<Span<'static>> = Vec::new();
-    let quote_style = Style::default()
-        .fg(quote_text_color)
-        .add_modifier(ratatui::style::Modifier::ITALIC);
+    let quote_style = Style::default().fg(quote_text_color).add_modifier(ratatui::style::Modifier::ITALIC);
 
     for segment in segments {
         content_spans.push(render_text_segment(segment, quote_style));
     }
 
     // Get plain text for wrapping calculation
-    let plain_text: String = content_spans
-        .iter()
-        .map(|s| s.content.to_string())
-        .collect();
+    let plain_text: String = content_spans.iter().map(|s| s.content.to_string()).collect();
     let wrapped = wrap_text(&plain_text, content_width);
 
     let marker_style = Style::default().fg(BLOCKQUOTE_COLOR);

@@ -14,10 +14,7 @@ pub struct PckgClient {
 
 impl PckgClient {
     pub fn new(config: PckgClientConfig) -> Result<Self, PckgError> {
-        let http = reqwest::Client::builder()
-            .timeout(config.timeout)
-            .user_agent(config.user_agent.clone())
-            .build()?;
+        let http = reqwest::Client::builder().timeout(config.timeout).user_agent(config.user_agent.clone()).build()?;
 
         Ok(Self { config, http })
     }
@@ -26,12 +23,7 @@ impl PckgClient {
         &self.config
     }
 
-    pub(crate) async fn send_no_body<R>(
-        &self,
-        method: Method,
-        path: &str,
-        require_auth: bool,
-    ) -> Result<R, PckgError>
+    pub(crate) async fn send_no_body<R>(&self, method: Method, path: &str, require_auth: bool) -> Result<R, PckgError>
     where
         R: DeserializeOwned,
     {
@@ -64,9 +56,7 @@ impl PckgClient {
     where
         R: DeserializeOwned,
     {
-        let request = self
-            .build_request(method, path, require_auth)?
-            .multipart(form);
+        let request = self.build_request(method, path, require_auth)?.multipart(form);
         self.execute_json(request).await
     }
 
@@ -78,6 +68,25 @@ impl PckgClient {
     ) -> Result<Vec<u8>, PckgError> {
         let request = self.build_request(method, path, require_auth)?;
         self.execute_bytes(request).await
+    }
+
+    /// Send a request and return the raw [`reqwest::Response`] without
+    /// consuming the body stream. The caller is responsible for streaming
+    /// bytes from the response (e.g. via `.bytes_stream()`) and MUST
+    /// consume or drop the response to release the connection.
+    pub(crate) async fn send_streaming(
+        &self,
+        method: Method,
+        path: &str,
+        require_auth: bool,
+    ) -> Result<reqwest::Response, PckgError> {
+        let response = self.build_request(method, path, require_auth)?.send().await?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(PckgError::from_api_error(status, body));
+        }
+        Ok(response)
     }
 
     fn build_request(

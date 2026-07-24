@@ -60,43 +60,28 @@ mod tests {
         let directory = std::env::temp_dir().join(format!(
             "beskid_cli_syntax_codegen_{}_{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system clock")
-                .as_nanos(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("system clock").as_nanos(),
         ));
         std::fs::create_dir_all(&directory).expect("create test project");
         let path = directory.join("Main.bd");
         let source = "i32 Echo(i32 value) { return value; } i32 Main() { return Echo(41); }";
         std::fs::write(&path, source).expect("write source");
         let plan = synthetic_compile_plan_for_source(&path);
-        let resolved: ResolvedInput =
-            resolved_input_from_plan(path.clone(), source.into(), plan, None, None);
+        let resolved: ResolvedInput = resolved_input_from_plan(path.clone(), source.into(), plan, None, None);
         let front = compile_front_end_from_resolved_input(
             &resolved,
-            FrontEndOptions {
-                with_semantic_diagnostics: false,
-                ..Default::default()
-            },
+            FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
             None,
         )
         .expect("prepare frontend");
 
-        let artifact = lower_prepared_entrypoint(&front, "Main", None, None)
-            .expect("syntax entrypoint lowering");
+        let artifact = lower_prepared_entrypoint(&front, "Main", None, None).expect("syntax entrypoint lowering");
 
         assert_eq!(artifact.functions.len(), 2);
         assert!(
-            artifact
-                .functions
-                .iter()
-                .any(|function| function.name.starts_with("Echo#syntax_")),
+            artifact.functions.iter().any(|function| function.name.starts_with("Echo#syntax_")),
             "emitted functions: {:?}",
-            artifact
-                .functions
-                .iter()
-                .map(|function| &function.name)
-                .collect::<Vec<_>>(),
+            artifact.functions.iter().map(|function| &function.name).collect::<Vec<_>>(),
         );
         std::fs::remove_dir_all(directory).expect("remove test project");
     }

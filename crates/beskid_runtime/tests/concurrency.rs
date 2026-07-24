@@ -2,10 +2,9 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
 use beskid_runtime::{
-    channel_close, channel_create, channel_receive, channel_send, channel_try_receive,
-    channel_try_send, fiber_cancel, fiber_detach, fiber_join, fiber_spawn,
-    fiber_spawn_with_cancel_slot, fiber_yield, hub_create, hub_register, hub_wait_receive,
-    mutex_create, mutex_lock, mutex_try_lock, mutex_unlock, run_closure_as_main,
+    channel_close, channel_create, channel_receive, channel_send, channel_try_receive, channel_try_send, fiber_cancel,
+    fiber_detach, fiber_join, fiber_spawn, fiber_spawn_with_cancel_slot, fiber_yield, hub_create, hub_register,
+    hub_wait_receive, mutex_create, mutex_lock, mutex_try_lock, mutex_unlock, run_closure_as_main,
     status::{FIBER_JOIN_CANCELLED, FIBER_JOIN_OK, STATUS_CLOSED, STATUS_OK, STATUS_WOULD_BLOCK},
     wait_group_add, wait_group_create, wait_group_done, wait_group_wait,
 };
@@ -152,11 +151,7 @@ fn fiber_spawn_join() {
 fn fiber_spawn_with_cancel_slot_returns_i64_handle() {
     run_closure_as_main(|| {
         let mut on_cancelled_slot = std::ptr::null_mut();
-        let child = fiber_spawn_with_cancel_slot(
-            bump_counter,
-            std::ptr::null_mut(),
-            &mut on_cancelled_slot,
-        );
+        let child = fiber_spawn_with_cancel_slot(bump_counter, std::ptr::null_mut(), &mut on_cancelled_slot);
         assert!(child > 0, "spawn should return an i64 fiber id");
         let mut out = 0i64;
         assert_eq!(fiber_join(child, &mut out), FIBER_JOIN_OK);

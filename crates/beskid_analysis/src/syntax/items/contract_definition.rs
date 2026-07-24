@@ -4,9 +4,7 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::items::parse_helpers::{
-    parse_attributes, parse_doc_attached_with, parse_visibility_or_default,
-};
+use crate::syntax::items::parse_helpers::{parse_attributes, parse_doc_attached_with, parse_visibility_or_default};
 use crate::syntax::{Attribute, ContractNode, Identifier, SpanInfo, Spanned, Visibility};
 
 use beskid_ast_derive::AstNode;
@@ -36,24 +34,14 @@ impl Parsable for ContractDefinition {
         let mut items = Vec::new();
         let mut item_docs = Vec::new();
         for pair in inner {
-            let (doc, item) =
-                parse_doc_attached_with(pair, Rule::ContractItemWithDocs, |inner_pair| {
-                    ContractNode::parse(inner_pair)
-                })?;
+            let (doc, item) = parse_doc_attached_with(pair, Rule::ContractItemWithDocs, |inner_pair| {
+                ContractNode::parse(inner_pair)
+            })?;
             items.push(item);
             item_docs.push(doc);
         }
         debug_assert_eq!(items.len(), item_docs.len());
 
-        Ok(Spanned::new(
-            Self {
-                attributes,
-                visibility,
-                name,
-                items,
-                item_docs,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { attributes, visibility, name, items, item_docs }, span))
     }
 }

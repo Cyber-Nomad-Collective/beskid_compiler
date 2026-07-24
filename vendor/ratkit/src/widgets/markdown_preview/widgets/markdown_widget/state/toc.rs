@@ -97,10 +97,7 @@ impl TocState {
     /// A new TocState with extracted entries.
     pub fn from_content(content: &str) -> Self {
         let entries = Self::extract_headings(content);
-        Self {
-            entries,
-            ..Default::default()
-        }
+        Self { entries, ..Default::default() }
     }
 
     /// Update entries from markdown content.

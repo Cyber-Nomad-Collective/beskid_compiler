@@ -6,10 +6,7 @@ use super::roots::EffectiveCompilationRoots;
 
 pub fn module_path_to_relative_path(module_path: &str) -> PathBuf {
     let normalized = module_path.replace("::", ".");
-    let segments: Vec<&str> = normalized
-        .split('.')
-        .filter(|segment| !segment.is_empty())
-        .collect();
+    let segments: Vec<&str> = normalized.split('.').filter(|segment| !segment.is_empty()).collect();
     let mut relative = PathBuf::new();
     for segment in segments {
         relative.push(segment);
@@ -40,10 +37,7 @@ fn module_file_candidates(relative: &std::path::Path, source_root: &Path) -> Vec
     out
 }
 
-pub fn resolve_module_file(
-    module_path: &str,
-    roots: &EffectiveCompilationRoots,
-) -> Option<PathBuf> {
+pub fn resolve_module_file(module_path: &str, roots: &EffectiveCompilationRoots) -> Option<PathBuf> {
     let roots_list = module_roots_from_effective(roots);
     for candidate in module_path_lookup_candidates(module_path) {
         let relative = module_path_to_relative_path(&candidate);
@@ -67,11 +61,9 @@ pub fn module_path_exists_on_disk(module_path: &str, roots: &[PathBuf]) -> bool 
     if relative.as_os_str().is_empty() {
         return false;
     }
-    roots.iter().any(|root| {
-        module_file_candidates(&relative, root)
-            .into_iter()
-            .any(|candidate| root.join(candidate).is_file())
-    })
+    roots
+        .iter()
+        .any(|root| module_file_candidates(&relative, root).into_iter().any(|candidate| root.join(candidate).is_file()))
 }
 
 fn module_roots_from_effective(roots: &EffectiveCompilationRoots) -> Vec<PathBuf> {

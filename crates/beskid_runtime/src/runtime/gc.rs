@@ -20,11 +20,7 @@ impl fmt::Display for GcSnapshot {
         write!(
             f,
             "gc bytes={} objects={} phase={:?} threshold={} roots={}",
-            self.bytes_allocated,
-            self.object_count,
-            self.phase,
-            self.collection_threshold,
-            self.external_root_count
+            self.bytes_allocated, self.object_count, self.phase, self.collection_threshold, self.external_root_count
         )
     }
 }

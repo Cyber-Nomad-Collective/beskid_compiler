@@ -5,11 +5,7 @@ use std::path::Path;
 use crate::widgets::code_widget::foundation::CodeLanguage;
 
 /// Detects a source language from override, file path, and shebang.
-pub fn detect_language(
-    path: Option<&Path>,
-    content: &str,
-    override_language: Option<&str>,
-) -> CodeLanguage {
+pub fn detect_language(path: Option<&Path>, content: &str, override_language: Option<&str>) -> CodeLanguage {
     if let Some(language) = override_language {
         return CodeLanguage::from_token(language);
     }
@@ -43,10 +39,7 @@ fn detect_from_shebang(content: &str) -> Option<CodeLanguage> {
 
 /// Returns true for languages that should be trusted from shebang tokens.
 fn is_shebang_language(language: &CodeLanguage) -> bool {
-    matches!(
-        language,
-        CodeLanguage::Python | CodeLanguage::JavaScript | CodeLanguage::Shell
-    )
+    matches!(language, CodeLanguage::Python | CodeLanguage::JavaScript | CodeLanguage::Shell)
 }
 
 #[cfg(test)]

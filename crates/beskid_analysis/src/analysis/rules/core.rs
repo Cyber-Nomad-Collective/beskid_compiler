@@ -56,17 +56,8 @@ pub struct RuleContext {
 }
 
 impl RuleContext {
-    pub fn new(
-        source_name: impl Into<String>,
-        source: impl Into<String>,
-        options: AnalysisOptions,
-    ) -> Self {
-        Self {
-            source_name: source_name.into(),
-            source: source.into(),
-            diagnostics: Vec::new(),
-            options,
-        }
+    pub fn new(source_name: impl Into<String>, source: impl Into<String>, options: AnalysisOptions) -> Self {
+        Self { source_name: source_name.into(), source: source.into(), diagnostics: Vec::new(), options }
     }
 
     pub fn source_name(&self) -> &str {
@@ -94,16 +85,8 @@ impl RuleContext {
         help: Option<String>,
         severity: Severity,
     ) {
-        let diagnostic = make_diagnostic(
-            &self.source_name,
-            &self.source,
-            span,
-            message,
-            label,
-            help,
-            Some(code.into()),
-            severity,
-        );
+        let diagnostic =
+            make_diagnostic(&self.source_name, &self.source, span, message, label, help, Some(code.into()), severity);
         self.emit(diagnostic);
     }
 
@@ -135,7 +118,5 @@ pub fn run_rules(
         rule.run(&mut ctx, program);
     }
 
-    AnalysisResult {
-        diagnostics: ctx.diagnostics,
-    }
+    AnalysisResult { diagnostics: ctx.diagnostics }
 }

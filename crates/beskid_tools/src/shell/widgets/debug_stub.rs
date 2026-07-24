@@ -12,11 +12,7 @@ pub struct DebugFutureWidget;
 
 impl BeskidWidget for DebugFutureWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: "debug.future",
-            title: "Debugger",
-            icon: "◉",
-        }
+        WidgetMeta { id: "debug.future", title: "Debugger", icon: "◉" }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {
@@ -28,12 +24,6 @@ impl BeskidWidget for DebugFutureWidget {
     }
 
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
-        draw_compile_debug_panel(
-            frame,
-            area,
-            Some(ctx.scope),
-            ctx.shell_state,
-            CompileDebugTab::Timeline,
-        );
+        draw_compile_debug_panel(frame, area, Some(ctx.scope), ctx.shell_state, CompileDebugTab::Timeline);
     }
 }

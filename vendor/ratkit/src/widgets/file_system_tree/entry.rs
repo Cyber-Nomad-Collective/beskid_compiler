@@ -20,11 +20,6 @@ impl FileSystemEntry {
         let is_dir = path.is_dir();
         let is_hidden = name.starts_with('.');
 
-        Ok(Self {
-            name,
-            path,
-            is_dir,
-            is_hidden,
-        })
+        Ok(Self { name, path, is_dir, is_hidden })
     }
 }

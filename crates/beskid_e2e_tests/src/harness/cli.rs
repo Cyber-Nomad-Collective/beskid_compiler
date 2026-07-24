@@ -18,17 +18,9 @@ impl BeskidCliInvoker {
         let binary = resolve_cli_binary();
         let runtime_prefix = ensure_exact_debug_runtime_kit(&binary);
         let corelib_root = unique_corelib_root();
-        fs::create_dir_all(&corelib_root).unwrap_or_else(|error| {
-            panic!(
-                "create e2e corelib root {}: {error}",
-                corelib_root.display()
-            )
-        });
-        Self {
-            binary,
-            corelib_root,
-            runtime_prefix,
-        }
+        fs::create_dir_all(&corelib_root)
+            .unwrap_or_else(|error| panic!("create e2e corelib root {}: {error}", corelib_root.display()));
+        Self { binary, corelib_root, runtime_prefix }
     }
 
     pub fn command_in<I, S>(&self, working_dir: &Path, args: I) -> Command
@@ -61,9 +53,7 @@ impl BeskidCliInvoker {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.command_in(working_dir, args)
-            .output()
-            .expect("run Beskid CLI command")
+        self.command_in(working_dir, args).output().expect("run Beskid CLI command")
     }
 
     pub fn run<I, S>(&self, args: I) -> Output
@@ -84,14 +74,9 @@ fn ensure_exact_debug_runtime_kit(cli_binary: &Path) -> PathBuf {
     let lock = STAGED_DEBUG_KIT.get_or_init(|| Mutex::new(()));
     let _guard = lock.lock().expect("runtime-kit staging lock");
 
-    let triple = host_abi_v5_triple().unwrap_or_else(|host| {
-        panic!("e2e CLI harness requires a supported ABI-v5 host; got {host}")
-    });
-    let metadata = prefix
-        .join("lib/beskid-runtime/abi-5")
-        .join(triple)
-        .join("debug")
-        .join("abi.json");
+    let triple = host_abi_v5_triple()
+        .unwrap_or_else(|host| panic!("e2e CLI harness requires a supported ABI-v5 host; got {host}"));
+    let metadata = prefix.join("lib/beskid-runtime/abi-5").join(triple).join("debug").join("abi.json");
     if metadata.is_file() {
         return prefix;
     }
@@ -119,21 +104,13 @@ fn ensure_exact_debug_runtime_kit(cli_binary: &Path) -> PathBuf {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(
-        metadata.is_file(),
-        "exact debug kit metadata missing after staging: {}",
-        metadata.display()
-    );
+    assert!(metadata.is_file(), "exact debug kit metadata missing after staging: {}", metadata.display());
     prefix
 }
 
 fn install_prefix_for_cli(cli_binary: &Path) -> PathBuf {
-    let bin = cli_binary.parent().unwrap_or_else(|| {
-        panic!(
-            "CLI binary has no parent directory: {}",
-            cli_binary.display()
-        )
-    });
+    let bin =
+        cli_binary.parent().unwrap_or_else(|| panic!("CLI binary has no parent directory: {}", cli_binary.display()));
     bin.parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| panic!("CLI binary has no install prefix: {}", cli_binary.display()))
@@ -151,11 +128,7 @@ fn host_abi_v5_triple() -> Result<&'static str, String> {
 fn resolve_cli_binary() -> PathBuf {
     if let Ok(path) = std::env::var("BESKID_CLI_BIN") {
         let binary = PathBuf::from(path);
-        assert!(
-            binary.is_file(),
-            "BESKID_CLI_BIN points to non-existent file: {}",
-            binary.display()
-        );
+        assert!(binary.is_file(), "BESKID_CLI_BIN points to non-existent file: {}", binary.display());
         return binary;
     }
 
@@ -169,33 +142,19 @@ fn resolve_cli_binary() -> PathBuf {
 }
 
 fn default_binary_path() -> PathBuf {
-    workspace_root()
-        .join("target")
-        .join("debug")
-        .join(binary_name())
+    workspace_root().join("target").join("debug").join(binary_name())
 }
 
 fn workspace_root() -> PathBuf {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    crate_root
-        .parent()
-        .expect("crate parent")
-        .parent()
-        .expect("workspace root")
-        .to_path_buf()
+    crate_root.parent().expect("crate parent").parent().expect("workspace root").to_path_buf()
 }
 
 fn binary_name() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "beskid_cli.exe"
-    } else {
-        "beskid_cli"
-    }
+    if cfg!(target_os = "windows") { "beskid_cli.exe" } else { "beskid_cli" }
 }
 
 fn unique_corelib_root() -> PathBuf {
     let nonce = CORELIB_ROOT_COUNTER.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir()
-        .join("beskid_e2e_corelib")
-        .join(format!("{}_{}", std::process::id(), nonce))
+    std::env::temp_dir().join("beskid_e2e_corelib").join(format!("{}_{}", std::process::id(), nonce))
 }

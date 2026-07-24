@@ -41,53 +41,23 @@ impl<'a> FileSystemTree<'a> {
     pub fn new(root_path: std::path::PathBuf) -> std::io::Result<Self> {
         let config = FileSystemTreeConfig::default();
         let root_entry = FileSystemEntry::new(root_path.clone())?;
-        let root_children = if root_entry.is_dir {
-            Self::load_directory(&root_path, &config)?
-        } else {
-            Vec::new()
-        };
-        let nodes = vec![FileSystemTreeNode {
-            data: root_entry,
-            children: root_children,
-            expandable: root_path.is_dir(),
-        }];
+        let root_children = if root_entry.is_dir { Self::load_directory(&root_path, &config)? } else { Vec::new() };
+        let nodes =
+            vec![FileSystemTreeNode { data: root_entry, children: root_children, expandable: root_path.is_dir() }];
 
-        Ok(Self {
-            root_path,
-            nodes,
-            config,
-            block: None,
-        })
+        Ok(Self { root_path, nodes, config, block: None })
     }
 
-    pub fn with_config(
-        root_path: std::path::PathBuf,
-        config: FileSystemTreeConfig,
-    ) -> std::io::Result<Self> {
+    pub fn with_config(root_path: std::path::PathBuf, config: FileSystemTreeConfig) -> std::io::Result<Self> {
         let root_entry = FileSystemEntry::new(root_path.clone())?;
-        let root_children = if root_entry.is_dir {
-            Self::load_directory(&root_path, &config)?
-        } else {
-            Vec::new()
-        };
-        let nodes = vec![FileSystemTreeNode {
-            data: root_entry,
-            children: root_children,
-            expandable: root_path.is_dir(),
-        }];
+        let root_children = if root_entry.is_dir { Self::load_directory(&root_path, &config)? } else { Vec::new() };
+        let nodes =
+            vec![FileSystemTreeNode { data: root_entry, children: root_children, expandable: root_path.is_dir() }];
 
-        Ok(Self {
-            root_path,
-            nodes,
-            config,
-            block: None,
-        })
+        Ok(Self { root_path, nodes, config, block: None })
     }
 
-    fn load_directory(
-        path: &Path,
-        config: &FileSystemTreeConfig,
-    ) -> std::io::Result<Vec<FileSystemTreeNode>> {
+    fn load_directory(path: &Path, config: &FileSystemTreeConfig) -> std::io::Result<Vec<FileSystemTreeNode>> {
         let mut entries = Vec::new();
 
         let read_dir = fs::read_dir(path)?;
@@ -103,11 +73,7 @@ impl<'a> FileSystemTree<'a> {
             }
 
             let node = if fs_entry.is_dir {
-                FileSystemTreeNode {
-                    data: fs_entry,
-                    children: Vec::new(),
-                    expandable: true,
-                }
+                FileSystemTreeNode { data: fs_entry, children: Vec::new(), expandable: true }
             } else {
                 FileSystemTreeNode::new(fs_entry)
             };
@@ -154,10 +120,7 @@ impl<'a> FileSystemTree<'a> {
     }
 
     pub fn get_entry_at_path(&self, path: &[usize]) -> Option<&FileSystemEntry> {
-        fn find_entry<'a>(
-            nodes: &'a [FileSystemTreeNode],
-            path: &[usize],
-        ) -> Option<&'a FileSystemEntry> {
+        fn find_entry<'a>(nodes: &'a [FileSystemTreeNode], path: &[usize]) -> Option<&'a FileSystemEntry> {
             if path.is_empty() {
                 return None;
             }
@@ -175,10 +138,7 @@ impl<'a> FileSystemTree<'a> {
     }
 
     pub fn get_selected_entry(&self, state: &FileSystemTreeState) -> Option<&FileSystemEntry> {
-        state
-            .selected_path
-            .as_ref()
-            .and_then(|path| self.get_entry_at_path(path))
+        state.selected_path.as_ref().and_then(|path| self.get_entry_at_path(path))
     }
 
     pub fn get_visible_paths(&self, state: &FileSystemTreeState) -> Vec<Vec<usize>> {
@@ -329,9 +289,7 @@ impl<'a> FileSystemTree<'a> {
 
                 Ok(false)
             }
-            crossterm::event::KeyCode::Left | crossterm::event::KeyCode::Char('h') => {
-                Ok(self.collapse_selected(state))
-            }
+            crossterm::event::KeyCode::Left | crossterm::event::KeyCode::Char('h') => Ok(self.collapse_selected(state)),
             _ => Ok(false),
         }
     }
@@ -352,11 +310,7 @@ impl<'a> FileSystemTree<'a> {
         state.clear_filter();
     }
 
-    pub fn handle_filter_key(
-        &self,
-        key: crossterm::event::KeyCode,
-        state: &mut FileSystemTreeState,
-    ) -> bool {
+    pub fn handle_filter_key(&self, key: crossterm::event::KeyCode, state: &mut FileSystemTreeState) -> bool {
         match key {
             crossterm::event::KeyCode::Esc => {
                 state.exit_filter_mode();
@@ -398,14 +352,8 @@ impl<'a> ratatui::widgets::StatefulWidget for FileSystemTree<'a> {
         let has_filter = state.filter.as_ref().is_some_and(|f| !f.is_empty());
         let show_filter_line = filter_mode || has_filter;
 
-        let tree_area = if show_filter_line && area.height > 1 {
-            Rect {
-                height: area.height - 1,
-                ..area
-            }
-        } else {
-            area
-        };
+        let tree_area =
+            if show_filter_line && area.height > 1 { Rect { height: area.height - 1, ..area } } else { area };
 
         let visible_paths = self.get_visible_paths(state);
         let visible_count = visible_paths.len();
@@ -436,11 +384,7 @@ impl<'a> ratatui::widgets::StatefulWidget for FileSystemTree<'a> {
                         ('\u{f114}', yazi_dir_icon_color())
                     }
                 } else {
-                    let theme = if config.use_dark_theme {
-                        DevIconTheme::Dark
-                    } else {
-                        DevIconTheme::Light
-                    };
+                    let theme = if config.use_dark_theme { DevIconTheme::Dark } else { DevIconTheme::Light };
                     let file_icon = icon_for_file(&entry.name, &Some(theme));
                     let icon_char = file_icon.icon;
                     let color = parse_hex_color(file_icon.color).unwrap_or(Color::White);
@@ -471,23 +415,15 @@ impl<'a> ratatui::widgets::StatefulWidget for FileSystemTree<'a> {
 
                     if is_selected {
                         if entry.is_dir {
-                            buf[(left_x, y)]
-                                .set_symbol(" ")
-                                .set_style(selected_text_style);
-                            buf[(right_x, y)]
-                                .set_symbol(" ")
-                                .set_style(selected_text_style);
+                            buf[(left_x, y)].set_symbol(" ").set_style(selected_text_style);
+                            buf[(right_x, y)].set_symbol(" ").set_style(selected_text_style);
 
                             for x in (left_x + 1)..right_x {
                                 buf[(x, y)].set_style(selected_text_style);
                             }
                         } else {
-                            buf[(left_x, y)]
-                                .set_symbol("")
-                                .set_style(Style::default().fg(selected_bg));
-                            buf[(right_x, y)]
-                                .set_symbol("")
-                                .set_style(Style::default().fg(selected_bg));
+                            buf[(left_x, y)].set_symbol("").set_style(Style::default().fg(selected_bg));
+                            buf[(right_x, y)].set_symbol("").set_style(Style::default().fg(selected_bg));
 
                             for x in (left_x + 1)..right_x {
                                 buf[(x, y)].set_style(selected_text_style);
@@ -495,9 +431,7 @@ impl<'a> ratatui::widgets::StatefulWidget for FileSystemTree<'a> {
                         }
                     } else {
                         buf[(left_x, y)].set_symbol(" ").set_style(Style::default());
-                        buf[(right_x, y)]
-                            .set_symbol(" ")
-                            .set_style(Style::default());
+                        buf[(right_x, y)].set_symbol(" ").set_style(Style::default());
                     }
 
                     (left_x + 1, tree_area.width - 2)
@@ -545,10 +479,7 @@ impl<'a> ratatui::widgets::StatefulWidget for FileSystemTree<'a> {
                 Span::styled(filter_str, Style::default().fg(Color::White)),
                 Span::styled(
                     cursor,
-                    Style::default()
-                        .fg(Color::Magenta)
-                        .add_modifier(Modifier::BOLD)
-                        .add_modifier(Modifier::ITALIC),
+                    Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD).add_modifier(Modifier::ITALIC),
                 ),
             ]);
 

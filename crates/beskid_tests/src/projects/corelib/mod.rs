@@ -16,9 +16,7 @@ pub(super) fn corelib_root() -> PathBuf {
 /// Parent `compiler/corelib` directory containing `Workspace.proj` and `packages/`.
 pub(super) fn corelib_workspace_root() -> PathBuf {
     let pkg = corelib_root();
-    pkg.parent()
-        .expect("corelib package must live under compiler/corelib workspace root")
-        .to_path_buf()
+    pkg.parent().expect("corelib package must live under compiler/corelib workspace root").to_path_buf()
 }
 
 pub(super) fn foundation_src() -> PathBuf {
@@ -39,10 +37,7 @@ fn corelib_source_candidates(manifest_dir: &Path) -> [PathBuf; 1] {
 
 /// Representative corelib sources for fast parse smoke (full inventory stays in `layout`).
 pub(super) fn stratified_corelib_parse_samples() -> &'static [&'static str] {
-    &[
-        "packages/foundation/src/Core/Results/Results.bd",
-        "packages/console/src/Platform/Terminal.bd",
-    ]
+    &["packages/foundation/src/Core/Results/Results.bd", "packages/console/src/Platform/Terminal.bd"]
 }
 
 /// Workspace-relative `.bd` sources that must exist for the split corelib layout.

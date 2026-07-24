@@ -1,7 +1,6 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::syntax::{
-    EnumPath, Field, FieldKind, Identifier, Parameter, Path, PathSegment, PrimitiveType, Spanned,
-    Type, Visibility,
+    EnumPath, Field, FieldKind, Identifier, Parameter, Path, PathSegment, PrimitiveType, Spanned, Type, Visibility,
 };
 use std::fmt::Write;
 
@@ -113,10 +112,7 @@ impl Emit for Type {
                 w.write_str("[]")?;
                 Ok(())
             }
-            Type::Function {
-                return_type,
-                parameters,
-            } => {
+            Type::Function { return_type, parameters } => {
                 return_type.emit(w, cx)?;
                 w.write_char('(')?;
                 for (i, p) in parameters.iter().enumerate() {

@@ -6,24 +6,13 @@ use crate::compose::{SpecBuilder, style_module};
 use crate::model::{GraphDocument, GraphKind, GraphNodeKind, NodeMetadata};
 use crate::render::render_document;
 
-pub fn from_module_graph(
-    module_graph: &ModuleGraph,
-) -> Result<GraphDocument, crate::render::GraphError> {
+pub fn from_module_graph(module_graph: &ModuleGraph) -> Result<GraphDocument, crate::render::GraphError> {
     let mut builder = SpecBuilder::new(GraphKind::ModuleTree);
     let mut id_by_module = HashMap::new();
 
     for module in module_graph.modules() {
-        let path_label = if module.path.is_empty() {
-            "(root)".to_owned()
-        } else {
-            module.path.join("::")
-        };
-        let id = builder.add_node(
-            path_label,
-            GraphNodeKind::Module,
-            Some(style_module()),
-            NodeMetadata::default(),
-        );
+        let path_label = if module.path.is_empty() { "(root)".to_owned() } else { module.path.join("::") };
+        let id = builder.add_node(path_label, GraphNodeKind::Module, Some(style_module()), NodeMetadata::default());
         id_by_module.insert(module.id, id);
     }
 

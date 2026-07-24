@@ -33,10 +33,7 @@ fn bench_chain(c: &mut Criterion) {
             let ctx = GcContext::new();
             let mut prev = None;
             for i in 0..10_000 {
-                let n = ctx.allocate(Node {
-                    _value: i,
-                    next: prev,
-                });
+                let n = ctx.allocate(Node { _value: i, next: prev });
                 prev = Some(n.as_ptr());
             }
             ctx.heap().force_collect();

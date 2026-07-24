@@ -5,20 +5,14 @@ use beskid_analysis::services::analyze_program;
 fn async_keyword_reserved_diagnostic() {
     let source = "i64 Main() { async x = 1; return 0; }\n";
     let diags = analyze_program(std::path::Path::new("test.bd"), source).expect("analyze");
-    assert!(
-        diags.iter().any(|d| d.code.as_deref() == Some("E1226")),
-        "expected E1226 for async, got: {diags:?}"
-    );
+    assert!(diags.iter().any(|d| d.code.as_deref() == Some("E1226")), "expected E1226 for async, got: {diags:?}");
 }
 
 #[test]
 fn await_keyword_reserved_diagnostic() {
     let source = "i64 Main() { let x = await; return 0; }\n";
     let diags = analyze_program(std::path::Path::new("test.bd"), source).expect("analyze");
-    assert!(
-        diags.iter().any(|d| d.code.as_deref() == Some("E1227")),
-        "expected E1227 for await, got: {diags:?}"
-    );
+    assert!(diags.iter().any(|d| d.code.as_deref() == Some("E1227")), "expected E1227 for await, got: {diags:?}");
 }
 
 #[test]

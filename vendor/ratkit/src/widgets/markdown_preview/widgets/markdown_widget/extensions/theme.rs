@@ -129,8 +129,7 @@ impl ColorMapping {
         } else {
             self.light.as_ref().or(self.dark.as_ref())
         };
-        key.map(|s| palette.get_or_default(s))
-            .unwrap_or(Color::White)
+        key.map(|s| palette.get_or_default(s)).unwrap_or(Color::White)
     }
 }
 
@@ -581,11 +580,7 @@ impl SyntaxHighlighter {
         let theme_set = syntect::highlighting::ThemeSet::load_defaults();
         let theme = theme_set.themes["base16-ocean.dark"].clone();
 
-        Self {
-            syntax_set,
-            theme,
-            theme_variant: SyntaxThemeVariant::Dark,
-        }
+        Self { syntax_set, theme, theme_variant: SyntaxThemeVariant::Dark }
     }
 }
 
@@ -610,11 +605,7 @@ impl SyntaxHighlighter {
             SyntaxThemeVariant::Dark
         };
 
-        Self {
-            syntax_set,
-            theme,
-            theme_variant,
-        }
+        Self { syntax_set, theme, theme_variant }
     }
 }
 
@@ -628,11 +619,7 @@ impl SyntaxHighlighter {
         let theme_set = syntect::highlighting::ThemeSet::load_defaults();
         let theme = theme_set.themes["base16-ocean.dark"].clone();
 
-        Self {
-            syntax_set,
-            theme,
-            theme_variant: SyntaxThemeVariant::Dark,
-        }
+        Self { syntax_set, theme, theme_variant: SyntaxThemeVariant::Dark }
     }
 }
 
@@ -658,11 +645,7 @@ impl SyntaxHighlighter {
             .cloned()
             .unwrap_or_else(|| theme_set.themes["base16-ocean.light"].clone());
 
-        Self {
-            syntax_set,
-            theme,
-            theme_variant: SyntaxThemeVariant::Light,
-        }
+        Self { syntax_set, theme, theme_variant: SyntaxThemeVariant::Light }
     }
 }
 
@@ -686,26 +669,15 @@ impl SyntaxHighlighter {
     pub fn with_named_theme(theme_name: &str) -> Self {
         let syntax_set = syntect::parsing::SyntaxSet::load_defaults_newlines();
         let theme_set = syntect::highlighting::ThemeSet::load_defaults();
-        let theme = theme_set
-            .themes
-            .get(theme_name)
-            .cloned()
-            .unwrap_or_else(|| {
-                // Fallback to dark theme
-                theme_set.themes["base16-ocean.dark"].clone()
-            });
+        let theme = theme_set.themes.get(theme_name).cloned().unwrap_or_else(|| {
+            // Fallback to dark theme
+            theme_set.themes["base16-ocean.dark"].clone()
+        });
 
-        let theme_variant = if theme_name.contains("light") {
-            SyntaxThemeVariant::Light
-        } else {
-            SyntaxThemeVariant::Dark
-        };
+        let theme_variant =
+            if theme_name.contains("light") { SyntaxThemeVariant::Light } else { SyntaxThemeVariant::Dark };
 
-        Self {
-            syntax_set,
-            theme,
-            theme_variant,
-        }
+        Self { syntax_set, theme, theme_variant }
     }
 }
 
@@ -762,8 +734,8 @@ impl SyntaxHighlighter {
                 let spans: Vec<ratatui::text::Span<'static>> = highlighted
                     .into_iter()
                     .map(|(style, text)| {
-                        let ratatui_style = syntect_tui::translate_style(style)
-                            .unwrap_or_else(|_| ratatui::style::Style::default());
+                        let ratatui_style =
+                            syntect_tui::translate_style(style).unwrap_or_else(|_| ratatui::style::Style::default());
                         ratatui::text::Span::styled(text.to_string(), ratatui_style)
                     })
                     .collect();
@@ -818,15 +790,14 @@ impl SyntaxHighlighter {
             let line_num_str = format!("{:4} ", line_num);
 
             if let Ok(highlighted) = highlighter.highlight_line(line, &self.syntax_set) {
-                let num_style =
-                    ratatui::style::Style::default().fg(ratatui::style::Color::Rgb(100, 100, 100));
+                let num_style = ratatui::style::Style::default().fg(ratatui::style::Color::Rgb(100, 100, 100));
                 let num_span = ratatui::text::Span::styled(line_num_str, num_style);
 
                 let content_spans: Vec<ratatui::text::Span<'static>> = highlighted
                     .into_iter()
                     .map(|(style, text)| {
-                        let ratatui_style = syntect_tui::translate_style(style)
-                            .unwrap_or_else(|_| ratatui::style::Style::default());
+                        let ratatui_style =
+                            syntect_tui::translate_style(style).unwrap_or_else(|_| ratatui::style::Style::default());
                         ratatui::text::Span::styled(text.to_string(), ratatui_style)
                     })
                     .collect();
@@ -835,10 +806,8 @@ impl SyntaxHighlighter {
                 all_spans.extend(content_spans);
                 lines.push(Line::from(all_spans));
             } else {
-                let num_style =
-                    ratatui::style::Style::default().fg(ratatui::style::Color::Rgb(100, 100, 100));
-                let span =
-                    ratatui::text::Span::styled(format!("{}{}", line_num_str, line), num_style);
+                let num_style = ratatui::style::Style::default().fg(ratatui::style::Color::Rgb(100, 100, 100));
+                let span = ratatui::text::Span::styled(format!("{}{}", line_num_str, line), num_style);
                 lines.push(Line::from(span));
             }
         }

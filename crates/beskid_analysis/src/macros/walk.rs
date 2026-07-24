@@ -47,12 +47,7 @@ pub fn map_expression(
         Expression::Call(c) => {
             let mut n = c.clone();
             n.node.callee = Box::new(map_expression(*c.node.callee, f));
-            n.node.args = c
-                .node
-                .args
-                .iter()
-                .map(|a| map_expression(a.clone(), f))
-                .collect();
+            n.node.args = c.node.args.iter().map(|a| map_expression(a.clone(), f)).collect();
             Expression::Call(n)
         }
         Expression::Member(m) => {
@@ -78,12 +73,7 @@ pub fn map_expression(
         }
         Expression::EnumConstructor(e) => {
             let mut n = e.clone();
-            n.node.args = e
-                .node
-                .args
-                .iter()
-                .map(|a| map_expression(a.clone(), f))
-                .collect();
+            n.node.args = e.node.args.iter().map(|a| map_expression(a.clone(), f)).collect();
             Expression::EnumConstructor(n)
         }
         Expression::Block(b) => {
@@ -114,12 +104,7 @@ pub fn map_expression(
         }
         Expression::ArrayLiteral(a) => {
             let mut n = a.clone();
-            n.node.elements = a
-                .node
-                .elements
-                .iter()
-                .map(|e| map_expression(e.clone(), f))
-                .collect();
+            n.node.elements = a.node.elements.iter().map(|e| map_expression(e.clone(), f)).collect();
             Expression::ArrayLiteral(n)
         }
         Expression::CodeString(c) => Expression::CodeString(c.clone()),
@@ -145,11 +130,8 @@ fn map_if_statement(
     let mut mapped = if_stmt.clone();
     mapped.node.condition = map_expression(if_stmt.node.condition.clone(), f);
     mapped.node.then_block = map_block(if_stmt.node.then_block.clone(), f);
-    mapped.node.else_branch = if_stmt
-        .node
-        .else_branch
-        .as_ref()
-        .map(|else_branch| map_else_branch(else_branch.clone(), f));
+    mapped.node.else_branch =
+        if_stmt.node.else_branch.as_ref().map(|else_branch| map_else_branch(else_branch.clone(), f));
     mapped
 }
 
@@ -158,14 +140,7 @@ pub fn map_block(
     f: &mut impl FnMut(Spanned<Expression>) -> Spanned<Expression>,
 ) -> Spanned<Block> {
     Spanned::new(
-        Block {
-            statements: block
-                .node
-                .statements
-                .iter()
-                .map(|s| map_statement(s.clone(), f))
-                .collect(),
-        },
+        Block { statements: block.node.statements.iter().map(|s| map_statement(s.clone(), f)).collect() },
         block.span,
     )
 }
@@ -177,9 +152,7 @@ pub fn map_statement(
     let span = stmt.span;
     let mapped = match stmt.node {
         Statement::Expression(es) => Statement::Expression(Spanned::new(
-            ExpressionStatement {
-                expression: map_expression(es.node.expression.clone(), f),
-            },
+            ExpressionStatement { expression: map_expression(es.node.expression.clone(), f) },
             es.span,
         )),
         Statement::Let(ls) => {
@@ -209,23 +182,13 @@ pub fn map_statement(
         }
         Statement::With(w) => {
             let mut n = w.clone();
-            n.node.arguments = w
-                .node
-                .arguments
-                .iter()
-                .map(|a| map_expression(a.clone(), f))
-                .collect();
+            n.node.arguments = w.node.arguments.iter().map(|a| map_expression(a.clone(), f)).collect();
             n.node.body = map_block(w.node.body.clone(), f);
             Statement::With(n)
         }
         Statement::Launch(l) => {
             let mut n = l.clone();
-            n.node.arguments = l
-                .node
-                .arguments
-                .iter()
-                .map(|a| map_expression(a.clone(), f))
-                .collect();
+            n.node.arguments = l.node.arguments.iter().map(|a| map_expression(a.clone(), f)).collect();
             Statement::Launch(n)
         }
         Statement::Break(_) | Statement::Continue(_) => stmt.node,

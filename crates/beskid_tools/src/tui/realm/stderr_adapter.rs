@@ -5,9 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
-use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 use crossterm::{execute, queue};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -88,21 +86,15 @@ impl TerminalAdapter for StderrTerminalAdapter {
     type Backend = CrosstermBackend<Stderr>;
 
     fn clear_screen(&mut self) -> TerminalResult<()> {
-        self.terminal
-            .clear()
-            .map_err(|_| TerminalError::CannotClear)
+        self.terminal.clear().map_err(|_| TerminalError::CannotClear)
     }
 
     fn enable_raw_mode(&mut self) -> TerminalResult<()> {
-        enable_raw_mode()
-            .map_err(|_| TerminalError::CannotToggleRawMode)
-            .inspect(|_| self.set_mode(MODE_RAW))
+        enable_raw_mode().map_err(|_| TerminalError::CannotToggleRawMode).inspect(|_| self.set_mode(MODE_RAW))
     }
 
     fn disable_raw_mode(&mut self) -> TerminalResult<()> {
-        disable_raw_mode()
-            .map_err(|_| TerminalError::CannotToggleRawMode)
-            .inspect(|_| self.unset_mode(MODE_RAW))
+        disable_raw_mode().map_err(|_| TerminalError::CannotToggleRawMode).inspect(|_| self.unset_mode(MODE_RAW))
     }
 
     fn enter_alternate_screen(&mut self) -> TerminalResult<()> {
@@ -112,13 +104,9 @@ impl TerminalAdapter for StderrTerminalAdapter {
     }
 
     fn leave_alternate_screen(&mut self) -> TerminalResult<()> {
-        execute!(
-            self.terminal.backend_mut(),
-            LeaveAlternateScreen,
-            DisableMouseCapture
-        )
-        .map_err(|_| TerminalError::CannotLeaveAlternateMode)
-        .inspect(|_| self.unset_mode(MODE_ALTERNATE))
+        execute!(self.terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)
+            .map_err(|_| TerminalError::CannotLeaveAlternateMode)
+            .inspect(|_| self.unset_mode(MODE_ALTERNATE))
     }
 
     fn enable_mouse_capture(&mut self) -> TerminalResult<()> {
@@ -153,9 +141,7 @@ impl StderrTerminalAdapter {
     where
         F: FnOnce(&mut Frame<'_>),
     {
-        self.raw_mut()
-            .draw(render_callback)
-            .map_err(|_| TerminalError::CannotDrawFrame)
+        self.raw_mut().draw(render_callback).map_err(|_| TerminalError::CannotDrawFrame)
     }
 
     /// Release the alternate screen and raw mode so a child process can use the terminal.

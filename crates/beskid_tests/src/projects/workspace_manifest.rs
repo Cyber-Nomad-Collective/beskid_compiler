@@ -14,8 +14,7 @@ member "core" {
 
 #[test]
 fn parses_minimal_workspace_manifest() {
-    let manifest =
-        parse_workspace_manifest(base_workspace_manifest()).expect("valid workspace manifest");
+    let manifest = parse_workspace_manifest(base_workspace_manifest()).expect("valid workspace manifest");
 
     assert_eq!(manifest.workspace.name, "Root");
     assert_eq!(manifest.workspace.resolver, "v1");
@@ -63,10 +62,7 @@ member "core" {
 
     let error = parse_workspace_manifest(source).expect_err("must fail");
     assert!(
-        matches!(
-            error,
-            ProjectError::Validation(_) | ProjectError::Parse(_) | ProjectError::ParseAt { .. }
-        ),
+        matches!(error, ProjectError::Validation(_) | ProjectError::Parse(_) | ProjectError::ParseAt { .. }),
         "unexpected workspace error: {error:?}"
     );
 }

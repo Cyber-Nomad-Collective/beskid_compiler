@@ -45,12 +45,8 @@ struct BeskidAllocationMappings {
 impl BeskidAllocationRegistry {
     fn register(&self, payload: *mut u8, header: *mut GcHeader) {
         let mut mappings = self.mappings.lock();
-        mappings
-            .payload_to_header
-            .insert(payload as usize, header as usize);
-        mappings
-            .header_to_payload
-            .insert(header as usize, payload as usize);
+        mappings.payload_to_header.insert(payload as usize, header as usize);
+        mappings.header_to_payload.insert(header as usize, payload as usize);
     }
 
     fn unregister(&self, header: *mut GcHeader) {
@@ -61,21 +57,11 @@ impl BeskidAllocationRegistry {
     }
 
     fn header_for(&self, payload: *mut u8) -> Option<*mut GcHeader> {
-        self.mappings
-            .lock()
-            .payload_to_header
-            .get(&(payload as usize))
-            .copied()
-            .map(|header| header as *mut GcHeader)
+        self.mappings.lock().payload_to_header.get(&(payload as usize)).copied().map(|header| header as *mut GcHeader)
     }
 
     fn owns(&self, payload: *mut u8) -> bool {
-        !payload.is_null()
-            && self
-                .mappings
-                .lock()
-                .payload_to_header
-                .contains_key(&(payload as usize))
+        !payload.is_null() && self.mappings.lock().payload_to_header.contains_key(&(payload as usize))
     }
 }
 
@@ -86,10 +72,7 @@ struct StartStopJoinHandle {
 
 impl StartStopJoinHandle {
     fn new() -> Self {
-        Self {
-            mutex: parking_lot::Mutex::new((0, None)),
-            condvar: parking_lot::Condvar::new(),
-        }
+        Self { mutex: parking_lot::Mutex::new((0, None)), condvar: parking_lot::Condvar::new() }
     }
 
     fn start(&self, f: impl FnOnce(StopCondition) + Send + 'static) -> bool {
@@ -339,11 +322,7 @@ impl GcOptions {
                     }
                 }
             }
-            if new_threshold < self.min_threshold_bytes {
-                self.min_threshold_bytes
-            } else {
-                new_threshold
-            }
+            if new_threshold < self.min_threshold_bytes { self.min_threshold_bytes } else { new_threshold }
         }
     }
 }
@@ -407,11 +386,7 @@ impl Heap {
         }
 
         let type_desc = type_desc_ptr.cast::<TypeDescriptor>();
-        let obj = BeskidObject {
-            heap: self as *const Self,
-            type_desc,
-            bytes: vec![0u8; size].into_boxed_slice(),
-        };
+        let obj = BeskidObject { heap: self as *const Self, type_desc, bytes: vec![0u8; size].into_boxed_slice() };
         let ptr = GcBox::new_with_root(obj, false);
         let header_ptr = unsafe { &(*ptr.as_ptr()).header as *const GcHeader as *mut GcHeader };
         self.insert_allocation(header_ptr);
@@ -439,16 +414,7 @@ impl Heap {
                 (*header_ptr).next.store(current_head, Ordering::Relaxed);
             }
 
-            if self
-                .head
-                .compare_exchange(
-                    current_head,
-                    header_ptr,
-                    Ordering::Release,
-                    Ordering::Acquire,
-                )
-                .is_ok()
-            {
+            if self.head.compare_exchange(current_head, header_ptr, Ordering::Release, Ordering::Acquire).is_ok() {
                 break;
             }
         }
@@ -469,8 +435,7 @@ impl Heap {
     fn update_threshold(&self, live_bytes: usize) {
         let old_threshold = self.current_threshold.load(Ordering::Relaxed);
         let new_threshold = self.options.calculate_threshold(old_threshold, live_bytes);
-        self.current_threshold
-            .store(new_threshold, Ordering::Relaxed);
+        self.current_threshold.store(new_threshold, Ordering::Relaxed);
     }
 
     pub fn should_collect(&self) -> bool {
@@ -586,12 +551,7 @@ impl Heap {
     /// Try to transition to marking phase
     fn try_start_marking(&self) -> bool {
         self.phase
-            .compare_exchange(
-                GcPhase::Idle as u8,
-                GcPhase::Marking as u8,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
+            .compare_exchange(GcPhase::Idle as u8, GcPhase::Marking as u8, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
     }
 
@@ -827,9 +787,7 @@ impl Drop for Heap {
 fn background_gc_thread(heap: Arc<Heap>, c: StopCondition) {
     let tracer = Tracer::new();
     while !heap.options.collection_interval.is_zero()
-        && !heap
-            .bg_thread
-            .wait_stopped(c, heap.options.collection_interval)
+        && !heap.bg_thread.wait_stopped(c, heap.options.collection_interval)
     {
         // Check if we should start a collection
         if heap.should_collect() && heap.try_start_marking() {
@@ -843,8 +801,7 @@ fn background_gc_thread(heap: Arc<Heap>, c: StopCondition) {
                     return;
                 }
 
-                let marking_complete =
-                    heap.do_mark_incremental(heap.options.incremental_work_budget);
+                let marking_complete = heap.do_mark_incremental(heap.options.incremental_work_budget);
                 if marking_complete {
                     if !heap.yield_once_if_marking_busy() {
                         break;

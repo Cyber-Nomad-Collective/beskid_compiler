@@ -104,11 +104,7 @@ pub extern "C-unwind" fn bytes_get(value: *const BeskidArray, index: i64) -> i64
 
 /// Stores `byte` at `index` (traps when out of bounds); returns the array handle.
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn bytes_set(
-    value: *const BeskidArray,
-    index: i64,
-    byte: i64,
-) -> *const BeskidArray {
+pub extern "C-unwind" fn bytes_set(value: *const BeskidArray, index: i64, byte: i64) -> *const BeskidArray {
     if value.is_null() {
         panic!("null array handle");
     }

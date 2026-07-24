@@ -24,9 +24,7 @@ impl ExternalLibraryRegistry {
     /// Empty registry; primarily used for tests that want to verify the closed-registry rejection
     /// path without depending on the default content.
     pub fn empty() -> Self {
-        Self {
-            providers: Vec::new(),
-        }
+        Self { providers: Vec::new() }
     }
 
     /// Register a provider; the first registration for a given `id()` wins on duplicate inserts.
@@ -55,12 +53,10 @@ impl ExternalLibraryRegistry {
         host_key: &str,
         logical: &str,
     ) -> Result<LibraryResolution, LibraryResolveError> {
-        let provider =
-            self.find(provider_id)
-                .ok_or_else(|| LibraryResolveError::UnknownProvider {
-                    provider: provider_id.to_string(),
-                    known: self.provider_ids().join(", "),
-                })?;
+        let provider = self.find(provider_id).ok_or_else(|| LibraryResolveError::UnknownProvider {
+            provider: provider_id.to_string(),
+            known: self.provider_ids().join(", "),
+        })?;
 
         if !host_matches(provider.host_key(), host_key) {
             return Err(LibraryResolveError::HostUnsupported {
@@ -93,9 +89,7 @@ impl Default for ExternalLibraryRegistry {
 /// Tier-1 hosts get `c-posix` (also acts as a libc default) and a `posix` alias for
 /// POSIX-only resolutions (`pthread`, etc.).
 pub fn default_registry() -> ExternalLibraryRegistry {
-    ExternalLibraryRegistry::empty()
-        .with_provider(Arc::new(CPosixProvider))
-        .with_provider(Arc::new(PosixProvider))
+    ExternalLibraryRegistry::empty().with_provider(Arc::new(CPosixProvider)).with_provider(Arc::new(PosixProvider))
 }
 
 /// Returns the closed list of provider ids supported by [`default_registry`].
@@ -113,10 +107,7 @@ fn host_matches(provider_host: &str, requested_host: &str) -> bool {
         return true;
     }
     // POSIX provider serves linux/macos hosts.
-    matches!(
-        (provider_host, requested_host),
-        ("posix", "linux" | "macos" | "darwin" | "posix")
-    )
+    matches!((provider_host, requested_host), ("posix", "linux" | "macos" | "darwin" | "posix"))
 }
 
 /// Runtime host key the CLI sends to the registry when callers do not override `--provider`.
@@ -149,9 +140,7 @@ mod tests {
     #[test]
     fn unknown_provider_rejected() {
         let registry = default_registry();
-        let err = registry
-            .resolve("msvc", "linux", "libc")
-            .expect_err("msvc is not registered");
+        let err = registry.resolve("msvc", "linux", "libc").expect_err("msvc is not registered");
         match err {
             LibraryResolveError::UnknownProvider { provider, .. } => assert_eq!(provider, "msvc"),
             other => panic!("expected UnknownProvider, got {other:?}"),
@@ -162,9 +151,8 @@ mod tests {
     fn c_posix_resolves_libc_on_linux_or_macos() {
         let registry = default_registry();
         for host in ["linux", "macos", "posix"] {
-            let resolution = registry
-                .resolve("c-posix", host, "libc")
-                .unwrap_or_else(|_| panic!("resolve libc on {host}"));
+            let resolution =
+                registry.resolve("c-posix", host, "libc").unwrap_or_else(|_| panic!("resolve libc on {host}"));
             assert_eq!(resolution.link_args, vec!["-lc"]);
             assert_eq!(resolution.provider, "c-posix");
         }

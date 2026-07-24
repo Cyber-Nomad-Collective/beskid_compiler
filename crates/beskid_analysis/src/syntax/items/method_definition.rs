@@ -8,8 +8,8 @@ use crate::syntax::items::parse_helpers::{
     parse_attributes, parse_parameter_list_with_docs, parse_visibility_or_default,
 };
 use crate::syntax::{
-    Attribute, Block, Expression, Identifier, Parameter, Path, PrimitiveType, ReturnStatement,
-    SpanInfo, Spanned, Statement, Type, Visibility,
+    Attribute, Block, Expression, Identifier, Parameter, Path, PrimitiveType, ReturnStatement, SpanInfo, Spanned,
+    Statement, Type, Visibility,
 };
 
 use beskid_ast_derive::AstNode;
@@ -45,19 +45,13 @@ fn parse_path_segment(pair: Pair<Rule>) -> Result<Spanned<crate::syntax::PathSeg
             type_args.push(Type::parse(arg)?);
         }
     }
-    Ok(Spanned::new(
-        crate::syntax::PathSegment { name, type_args },
-        span,
-    ))
+    Ok(Spanned::new(crate::syntax::PathSegment { name, type_args }, span))
 }
 
 impl Parsable for MethodDefinition {
     /// Always fails; use [`MethodDefinition::parse_with_receiver`] for `impl` methods.
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
-        Err(ParseError::unexpected_rule(
-            pair,
-            Some(Rule::ImplMethodDefinition),
-        ))
+        Err(ParseError::unexpected_rule(pair, Some(Rule::ImplMethodDefinition)))
     }
 }
 
@@ -75,9 +69,7 @@ impl MethodDefinition {
         let mut inner = pair.clone().into_inner().peekable();
         let attributes = parse_attributes(&mut inner)?;
         let visibility = parse_visibility_or_default(&pair, &mut inner)?;
-        let return_type = Some(Type::parse(
-            inner.next().ok_or(ParseError::missing(Rule::BeskidType))?,
-        )?);
+        let return_type = Some(Type::parse(inner.next().ok_or(ParseError::missing(Rule::BeskidType))?)?);
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
 
         let mut parameters = Vec::new();
@@ -92,10 +84,7 @@ impl MethodDefinition {
                     parameter_docs = parsed_docs;
                 }
                 Rule::MethodBody => {
-                    let method_body = item
-                        .into_inner()
-                        .next()
-                        .ok_or(ParseError::missing(Rule::MethodBody))?;
+                    let method_body = item.into_inner().next().ok_or(ParseError::missing(Rule::MethodBody))?;
                     body = Some(parse_method_body(method_body, span)?);
                 }
                 Rule::Block => body = Some(Block::parse(item)?),
@@ -107,13 +96,8 @@ impl MethodDefinition {
         }
         debug_assert_eq!(parameters.len(), parameter_docs.len());
 
-        if let Some(parameter) = parameters
-            .iter()
-            .find(|parameter| parameter.node.name.node.name == "self")
-        {
-            return Err(ParseError::forbidden_impl_self_parameter(
-                parameter.node.name.span,
-            ));
+        if let Some(parameter) = parameters.iter().find(|parameter| parameter.node.name.node.name == "self") {
+            return Err(ParseError::forbidden_impl_self_parameter(parameter.node.name.span));
         }
 
         Ok(Spanned::new(
@@ -141,30 +125,15 @@ fn parse_method_body(pair: Pair<Rule>, span: SpanInfo) -> Result<Spanned<Block>,
 }
 
 fn parse_expression_body(pair: Pair<Rule>, span: SpanInfo) -> Result<Spanned<Block>, ParseError> {
-    let expr_pair = pair
-        .into_inner()
-        .next()
-        .ok_or(ParseError::missing(Rule::Expression))?;
+    let expr_pair = pair.into_inner().next().ok_or(ParseError::missing(Rule::Expression))?;
     let expression = Expression::parse(expr_pair)?;
     Ok(block_from_expression(expression, span))
 }
 
 fn block_from_expression(expression: Spanned<Expression>, span: SpanInfo) -> Spanned<Block> {
-    let return_stmt = Spanned::new(
-        Statement::Return(Spanned::new(
-            ReturnStatement {
-                value: Some(expression),
-            },
-            span,
-        )),
-        span,
-    );
-    Spanned::new(
-        Block {
-            statements: vec![return_stmt],
-        },
-        span,
-    )
+    let return_stmt =
+        Spanned::new(Statement::Return(Spanned::new(ReturnStatement { value: Some(expression) }, span)), span);
+    Spanned::new(Block { statements: vec![return_stmt] }, span)
 }
 
 /// Parses the `impl` receiver type (primitive, single segment, or full path).
@@ -181,12 +150,7 @@ pub(crate) fn parse_receiver_type(pair: Pair<Rule>) -> Result<Spanned<Type>, Par
         Rule::PrimitiveType => Type::Primitive(PrimitiveType::parse(first)?),
         Rule::PathSegment => {
             let segment = parse_path_segment(first)?;
-            Type::Complex(Spanned::new(
-                Path {
-                    segments: vec![segment],
-                },
-                span,
-            ))
+            Type::Complex(Spanned::new(Path { segments: vec![segment] }, span))
         }
         Rule::Path => Type::Complex(Path::parse(first)?),
         _ => return Err(ParseError::unexpected_rule(first, Some(Rule::ReceiverType))),

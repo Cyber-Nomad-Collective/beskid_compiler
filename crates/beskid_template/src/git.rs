@@ -40,10 +40,7 @@ pub fn clone_or_update(spec: &GitTemplateRef, install: bool) -> TemplateResult<P
 
     let status = cmd.status().map_err(TemplateError::Io)?;
     if !status.success() {
-        return Err(TemplateError::GitSource(format!(
-            "git clone failed for {}",
-            spec.url
-        )));
+        return Err(TemplateError::GitSource(format!("git clone failed for {}", spec.url)));
     }
 
     Ok(resolve_subpath(&dest, spec.subpath.as_deref()))

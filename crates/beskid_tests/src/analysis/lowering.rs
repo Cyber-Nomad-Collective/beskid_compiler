@@ -1,6 +1,6 @@
 use beskid_analysis::hir::{
-    AstItem, AstProgram, HirAssignOp, HirBinaryOp, HirExpressionNode, HirFieldKind, HirItem,
-    HirPattern, HirProgram, HirStatementNode, lower_program,
+    AstItem, AstProgram, HirAssignOp, HirBinaryOp, HirExpressionNode, HirFieldKind, HirItem, HirPattern, HirProgram,
+    HirStatementNode, lower_program,
 };
 use beskid_analysis::syntax::Spanned;
 
@@ -22,9 +22,8 @@ fn lower_sample_program() -> (Spanned<AstProgram>, Spanned<HirProgram>) {
     let program = parse_program_ast(sample_source());
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
-    let resolution = beskid_analysis::resolve::Resolver::new()
-        .resolve_program(&hir)
-        .expect("resolution for try desugar test");
+    let resolution =
+        beskid_analysis::resolve::Resolver::new().resolve_program(&hir).expect("resolution for try desugar test");
     beskid_analysis::hir::normalize_program_with_resolution(&mut hir, Some(&resolution), &[])
         .expect("normalization failed");
     (ast, hir)
@@ -67,11 +66,7 @@ fn lowering_maps_statement_and_expression_kinds() {
         .expect("expected main function");
 
     let statements = &main_fn.node.body.node.statements;
-    assert!(
-        statements
-            .iter()
-            .any(|statement| { matches!(statement.node, HirStatementNode::IfStatement(_)) })
-    );
+    assert!(statements.iter().any(|statement| { matches!(statement.node, HirStatementNode::IfStatement(_)) }));
 
     let mut saw_struct_literal = false;
     let mut saw_member = false;
@@ -84,9 +79,7 @@ fn lowering_maps_statement_and_expression_kinds() {
         };
         match &let_stmt.node.value.node {
             HirExpressionNode::StructLiteralExpression(_) => saw_struct_literal = true,
-            HirExpressionNode::MemberExpression(_) | HirExpressionNode::PathExpression(_) => {
-                saw_member = true
-            }
+            HirExpressionNode::MemberExpression(_) | HirExpressionNode::PathExpression(_) => saw_member = true,
             HirExpressionNode::EnumConstructorExpression(_) => saw_enum_constructor = true,
             HirExpressionNode::MatchExpression(_) => saw_match = true,
             _ => {}
@@ -95,10 +88,7 @@ fn lowering_maps_statement_and_expression_kinds() {
 
     assert!(saw_struct_literal, "expected struct literal let binding");
     assert!(saw_member, "expected member access let binding");
-    assert!(
-        saw_enum_constructor,
-        "expected enum constructor let binding"
-    );
+    assert!(saw_enum_constructor, "expected enum constructor let binding");
     assert!(saw_match, "expected match let binding");
 }
 
@@ -115,8 +105,7 @@ fn lowering_preserves_match_patterns() {
         })
         .expect("expected main function");
 
-    let HirStatementNode::LetStatement(match_let) = &main_fn.node.body.node.statements[3].node
-    else {
+    let HirStatementNode::LetStatement(match_let) = &main_fn.node.body.node.statements[3].node else {
         panic!("expected match let statement");
     };
     let HirExpressionNode::MatchExpression(match_expr) = &match_let.node.value.node else {
@@ -154,19 +143,11 @@ fn lowering_collects_extern_interface_metadata() {
         })
         .expect("expected module declaration");
 
-    let contract_extern = contract
-        .node
-        .extern_interface
-        .as_ref()
-        .expect("contract extern metadata");
+    let contract_extern = contract.node.extern_interface.as_ref().expect("contract extern metadata");
     assert_eq!(contract_extern.abi.as_deref(), Some("C"));
     assert_eq!(contract_extern.library.as_deref(), Some("libc"));
 
-    let module_extern = module
-        .node
-        .extern_interface
-        .as_ref()
-        .expect("module extern metadata");
+    let module_extern = module.node.extern_interface.as_ref().expect("module extern metadata");
     assert_eq!(module_extern.abi.as_deref(), Some("C"));
     assert_eq!(module_extern.library.as_deref(), Some("libc"));
 }
@@ -190,20 +171,11 @@ fn lowering_preserves_attribute_declaration_items() {
 
     assert_eq!(declaration.node.name.node.name, "Extern");
     assert_eq!(declaration.node.targets.len(), 2);
-    assert_eq!(
-        declaration.node.targets[0].node.name.node.name,
-        "ModuleDeclaration"
-    );
-    assert_eq!(
-        declaration.node.targets[1].node.name.node.name,
-        "ContractDeclaration"
-    );
+    assert_eq!(declaration.node.targets[0].node.name.node.name, "ModuleDeclaration");
+    assert_eq!(declaration.node.targets[1].node.name.node.name, "ContractDeclaration");
     assert_eq!(declaration.node.parameters.len(), 2);
     assert_eq!(declaration.node.parameters[0].node.name.node.name, "Abi");
-    assert_eq!(
-        declaration.node.parameters[1].node.name.node.name,
-        "Library"
-    );
+    assert_eq!(declaration.node.parameters[1].node.name.node.name, "Library");
 }
 
 #[test]
@@ -212,9 +184,8 @@ fn analysis_desugars_try_to_match() {
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
-    let resolution = beskid_analysis::resolve::Resolver::new()
-        .resolve_program(&hir)
-        .expect("resolution for try desugar test");
+    let resolution =
+        beskid_analysis::resolve::Resolver::new().resolve_program(&hir).expect("resolution for try desugar test");
     beskid_analysis::hir::normalize_program_with_resolution(&mut hir, Some(&resolution), &[])
         .expect("normalization failed");
 
@@ -228,8 +199,7 @@ fn analysis_desugars_try_to_match() {
         })
         .expect("expected main function");
 
-    let HirStatementNode::LetStatement(let_stmt) = &main_fn.node.body.node.statements[0].node
-    else {
+    let HirStatementNode::LetStatement(let_stmt) = &main_fn.node.body.node.statements[0].node else {
         panic!("expected let statement");
     };
 
@@ -237,29 +207,16 @@ fn analysis_desugars_try_to_match() {
         panic!("expected desugared match expression");
     };
     assert!(
-        matches!(
-            match_expr.node.scrutinee.node,
-            HirExpressionNode::CallExpression(_)
-        ),
+        matches!(match_expr.node.scrutinee.node, HirExpressionNode::CallExpression(_)),
         "expected try scrutinee call to become match scrutinee"
     );
-    assert_eq!(
-        match_expr.node.arms.len(),
-        2,
-        "expected Ok and wildcard arms"
-    );
+    assert_eq!(match_expr.node.arms.len(), 2, "expected Ok and wildcard arms");
     assert!(
-        matches!(
-            match_expr.node.arms[0].node.pattern.node,
-            HirPattern::Enum(_)
-        ),
+        matches!(match_expr.node.arms[0].node.pattern.node, HirPattern::Enum(_)),
         "expected first arm to pattern-match Result::Ok"
     );
     assert!(
-        matches!(
-            match_expr.node.arms[1].node.pattern.node,
-            HirPattern::Wildcard
-        ),
+        matches!(match_expr.node.arms[1].node.pattern.node, HirPattern::Wildcard),
         "expected second arm to be wildcard error arm"
     );
 }
@@ -280,9 +237,8 @@ fn lowering_normalizes_iterable_for_statement_to_state_machine() {
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
-    let resolution = beskid_analysis::resolve::Resolver::new()
-        .resolve_program(&hir)
-        .expect("resolution for try desugar test");
+    let resolution =
+        beskid_analysis::resolve::Resolver::new().resolve_program(&hir).expect("resolution for try desugar test");
     beskid_analysis::hir::normalize_program_with_resolution(&mut hir, Some(&resolution), &[])
         .expect("normalization failed");
 
@@ -297,13 +253,7 @@ fn lowering_normalizes_iterable_for_statement_to_state_machine() {
         .expect("expected main function");
 
     assert!(
-        main_fn
-            .node
-            .body
-            .node
-            .statements
-            .iter()
-            .any(|stmt| matches!(stmt.node, HirStatementNode::LetStatement(_))),
+        main_fn.node.body.node.statements.iter().any(|stmt| matches!(stmt.node, HirStatementNode::LetStatement(_))),
         "expected normalization to introduce iterator state let bindings"
     );
     let while_stmt = main_fn
@@ -318,14 +268,8 @@ fn lowering_normalizes_iterable_for_statement_to_state_machine() {
         })
         .expect("expected while statement");
     assert_eq!(while_stmt.node.body.node.statements.len(), 2);
-    assert!(matches!(
-        while_stmt.node.body.node.statements[0].node,
-        HirStatementNode::LetStatement(_)
-    ));
-    assert!(matches!(
-        while_stmt.node.body.node.statements[1].node,
-        HirStatementNode::ExpressionStatement(_)
-    ));
+    assert!(matches!(while_stmt.node.body.node.statements[0].node, HirStatementNode::LetStatement(_)));
+    assert!(matches!(while_stmt.node.body.node.statements[1].node, HirStatementNode::ExpressionStatement(_)));
 }
 
 #[test]
@@ -334,9 +278,8 @@ fn lowering_normalizes_range_for_statement_to_fast_path() {
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
-    let resolution = beskid_analysis::resolve::Resolver::new()
-        .resolve_program(&hir)
-        .expect("resolution for try desugar test");
+    let resolution =
+        beskid_analysis::resolve::Resolver::new().resolve_program(&hir).expect("resolution for try desugar test");
     beskid_analysis::hir::normalize_program_with_resolution(&mut hir, Some(&resolution), &[])
         .expect("normalization failed");
 
@@ -350,22 +293,12 @@ fn lowering_normalizes_range_for_statement_to_fast_path() {
         })
         .expect("expected main function");
 
-    assert!(matches!(
-        main_fn.node.body.node.statements[0].node,
-        HirStatementNode::LetStatement(_)
-    ));
-    assert!(matches!(
-        main_fn.node.body.node.statements[1].node,
-        HirStatementNode::LetStatement(_)
-    ));
-    let HirStatementNode::WhileStatement(while_stmt) = &main_fn.node.body.node.statements[2].node
-    else {
+    assert!(matches!(main_fn.node.body.node.statements[0].node, HirStatementNode::LetStatement(_)));
+    assert!(matches!(main_fn.node.body.node.statements[1].node, HirStatementNode::LetStatement(_)));
+    let HirStatementNode::WhileStatement(while_stmt) = &main_fn.node.body.node.statements[2].node else {
         panic!("expected while statement");
     };
-    assert!(matches!(
-        while_stmt.node.condition.node,
-        HirExpressionNode::BinaryExpression(_)
-    ));
+    assert!(matches!(while_stmt.node.condition.node, HirExpressionNode::BinaryExpression(_)));
 }
 
 #[test]
@@ -398,9 +331,8 @@ fn lowering_maps_identity_binary_and_assign_ops() {
     let program = parse_program_ast(source);
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
-    let resolution = beskid_analysis::resolve::Resolver::new()
-        .resolve_program(&hir)
-        .expect("resolution for try desugar test");
+    let resolution =
+        beskid_analysis::resolve::Resolver::new().resolve_program(&hir).expect("resolution for try desugar test");
     beskid_analysis::hir::normalize_program_with_resolution(&mut hir, Some(&resolution), &[])
         .expect("normalization failed");
 
@@ -414,8 +346,7 @@ fn lowering_maps_identity_binary_and_assign_ops() {
         })
         .expect("expected main function");
 
-    let HirStatementNode::LetStatement(let_same) = &main_fn.node.body.node.statements[1].node
-    else {
+    let HirStatementNode::LetStatement(let_same) = &main_fn.node.body.node.statements[1].node else {
         panic!("expected let statement");
     };
     match &let_same.node.value.node {
@@ -425,9 +356,7 @@ fn lowering_maps_identity_binary_and_assign_ops() {
         _ => panic!("expected binary expression"),
     }
 
-    let HirStatementNode::ExpressionStatement(expr_stmt) =
-        &main_fn.node.body.node.statements[2].node
-    else {
+    let HirStatementNode::ExpressionStatement(expr_stmt) = &main_fn.node.body.node.statements[2].node else {
         panic!("expected expression statement");
     };
     match &expr_stmt.node.expression.node {

@@ -60,15 +60,8 @@ fn bind_generic_inference(
                 true
             }
         }
-        Some(TypeInfo::Applied {
-            base: param_base,
-            args: param_args,
-        }) => {
-            let Some(TypeInfo::Applied {
-                base: arg_base,
-                args: arg_args,
-            }) = types.get(arg_type)
-            else {
+        Some(TypeInfo::Applied { base: param_base, args: param_args }) => {
+            let Some(TypeInfo::Applied { base: arg_base, args: arg_args }) = types.get(arg_type) else {
                 return false;
             };
             if param_base != arg_base || param_args.len() != arg_args.len() {

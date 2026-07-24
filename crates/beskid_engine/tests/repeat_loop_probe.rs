@@ -41,8 +41,7 @@ impl Drop for EnvironmentVariableGuard {
 #[test]
 fn jit_repeat_string_accumulation_with_mut() {
     let prefix = tempfile::tempdir().expect("exact kit prefix");
-    build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
-        .expect("publish exact native kit");
+    build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).expect("publish exact native kit");
     let _runtime_prefix = EnvironmentVariableGuard::set("BESKID_RUNTIME_PREFIX", prefix.path());
 
     let source = r#"
@@ -64,11 +63,9 @@ pub i64 Main() { return Repeat(1, 4); }
 #[test]
 fn jit_repeat_accumulation_via_codegen_input_compile_artifact() {
     let prefix = tempfile::tempdir().expect("exact kit prefix");
-    build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
-        .expect("publish exact native kit");
+    build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).expect("publish exact native kit");
     let target = host_runtime_target().expect("host target");
-    let mut engine = Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug)
-        .expect("load exact kit");
+    let mut engine = Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).expect("load exact kit");
 
     let source = r#"
 pub i64 Repeat(i64 unit, i64 count) {
@@ -82,11 +79,8 @@ pub i64 Repeat(i64 unit, i64 count) {
 }
 pub i64 Main() { return Repeat(1, 4); }
 "#;
-    let prepared = prepare_jit_entrypoint(Path::new("repeat.bd"), source, "Main")
-        .expect("CodegenInput prepare");
-    engine
-        .compile_artifact(&prepared.artifact)
-        .expect("jit compile");
+    let prepared = prepare_jit_entrypoint(Path::new("repeat.bd"), source, "Main").expect("CodegenInput prepare");
+    engine.compile_artifact(&prepared.artifact).expect("jit compile");
     let ptr = unsafe { engine.entrypoint_ptr(&prepared.symbol) }.expect("main ptr");
     let main: extern "C" fn() -> i64 = unsafe { std::mem::transmute(ptr) };
     let len = main();
@@ -111,8 +105,5 @@ mod Frame {
 pub i64 Main() { return Frame.Repeat(1, 4); }
 "#;
     let output = run_entrypoint(Path::new("repeat.bd"), source, "Main").expect("main should run");
-    assert_eq!(
-        output, "4",
-        "expected cross-module repeat sum 4, got {output}"
-    );
+    assert_eq!(output, "4", "expected cross-module repeat sum 4, got {output}");
 }

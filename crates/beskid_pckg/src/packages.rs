@@ -9,65 +9,38 @@ use tokio_util::io::ReaderStream;
 use crate::client::PckgClient;
 use crate::error::PckgError;
 use crate::models::{
-    PackageDetailsResponse, PackageReviewResponse, PackageSearchResponse, PackageSummaryResponse,
-    PackageVersionLifecycleResponse, PackageVersionSummaryResponse, PublishPackageVersionResponse,
-    ReviewActionRequest, ReviewActionResponse, UpsertPackageRequest, UpsertPackageResponse,
+    PackageDetailsResponse, PackageFileListResponse, PackageReviewResponse, PackageSearchResponse,
+    PackageSummaryResponse, PackageVersionLifecycleResponse, PackageVersionSummaryResponse,
+    PublishPackageVersionResponse, ReviewActionRequest, ReviewActionResponse, UpsertPackageRequest,
+    UpsertPackageResponse,
 };
 
 fn ensure_publish_success(
     response: PublishPackageVersionResponse,
     body_hint: Option<String>,
 ) -> Result<PublishPackageVersionResponse, PckgError> {
-    if response.success {
-        Ok(response)
-    } else {
-        Err(PckgError::logical_failure(
-            response.message.clone(),
-            body_hint,
-        ))
-    }
+    if response.success { Ok(response) } else { Err(PckgError::logical_failure(response.message.clone(), body_hint)) }
 }
 
 fn ensure_upsert_success(
     response: UpsertPackageResponse,
     body_hint: Option<String>,
 ) -> Result<UpsertPackageResponse, PckgError> {
-    if response.success {
-        Ok(response)
-    } else {
-        Err(PckgError::logical_failure(
-            response.message.clone(),
-            body_hint,
-        ))
-    }
+    if response.success { Ok(response) } else { Err(PckgError::logical_failure(response.message.clone(), body_hint)) }
 }
 
 fn ensure_review_success(
     response: ReviewActionResponse,
     body_hint: Option<String>,
 ) -> Result<ReviewActionResponse, PckgError> {
-    if response.success {
-        Ok(response)
-    } else {
-        Err(PckgError::logical_failure(
-            response.message.clone(),
-            body_hint,
-        ))
-    }
+    if response.success { Ok(response) } else { Err(PckgError::logical_failure(response.message.clone(), body_hint)) }
 }
 
 fn ensure_lifecycle_success(
     response: PackageVersionLifecycleResponse,
     body_hint: Option<String>,
 ) -> Result<PackageVersionLifecycleResponse, PckgError> {
-    if response.success {
-        Ok(response)
-    } else {
-        Err(PckgError::logical_failure(
-            response.message.clone(),
-            body_hint,
-        ))
-    }
+    if response.success { Ok(response) } else { Err(PckgError::logical_failure(response.message.clone(), body_hint)) }
 }
 
 impl PckgClient {
@@ -75,29 +48,18 @@ impl PckgClient {
         self.send_no_body(Method::GET, "/api/packages", false).await
     }
 
-    pub async fn upsert_package(
-        &self,
-        request: &UpsertPackageRequest,
-    ) -> Result<UpsertPackageResponse, PckgError> {
-        let response: UpsertPackageResponse = self
-            .send_with_body(Method::POST, "/api/packages", request, true)
-            .await?;
+    pub async fn upsert_package(&self, request: &UpsertPackageRequest) -> Result<UpsertPackageResponse, PckgError> {
+        let response: UpsertPackageResponse = self.send_with_body(Method::POST, "/api/packages", request, true).await?;
         ensure_upsert_success(response, None)
     }
 
     pub async fn list_review_queue(&self) -> Result<Vec<PackageReviewResponse>, PckgError> {
-        self.send_no_body(Method::GET, "/api/packages/reviews", true)
-            .await
+        self.send_no_body(Method::GET, "/api/packages/reviews", true).await
     }
 
-    pub async fn review_action(
-        &self,
-        request: &ReviewActionRequest,
-    ) -> Result<ReviewActionResponse, PckgError> {
+    pub async fn review_action(&self, request: &ReviewActionRequest) -> Result<ReviewActionResponse, PckgError> {
         let path = format!("/api/packages/reviews/{}/actions", request.review_id);
-        let response: ReviewActionResponse = self
-            .send_with_body(Method::POST, &path, request, true)
-            .await?;
+        let response: ReviewActionResponse = self.send_with_body(Method::POST, &path, request, true).await?;
         ensure_review_success(response, None)
     }
 
@@ -135,12 +97,12 @@ impl PckgClient {
         let file = File::open(artifact_path).await.map_err(PckgError::Io)?;
         let len = file.metadata().await.map_err(PckgError::Io)?.len();
 
-        let tracked_file: std::pin::Pin<Box<dyn tokio::io::AsyncRead + Send>> =
-            if let Some(progress) = upload_progress {
-                Box::pin(progress.wrap_async_read(file))
-            } else {
-                Box::pin(file)
-            };
+        let tracked_file: std::pin::Pin<Box<dyn tokio::io::AsyncRead + Send>> = if let Some(progress) = upload_progress
+        {
+            Box::pin(progress.wrap_async_read(file))
+        } else {
+            Box::pin(file)
+        };
 
         let stream = ReaderStream::new(tracked_file);
         let body = reqwest::Body::wrap_stream(stream);
@@ -163,35 +125,53 @@ impl PckgClient {
             form = form.text("checksumSha256", checksum_sha256.to_string());
         }
 
-        let response: PublishPackageVersionResponse =
-            self.send_multipart(Method::POST, &path, form, true).await?;
+        let response: PublishPackageVersionResponse = self.send_multipart(Method::POST, &path, form, true).await?;
         ensure_publish_success(response, None)
     }
 
-    pub async fn download_package_version(
+    pub async fn download_package_version(&self, package_name: &str, version: &str) -> Result<Vec<u8>, PckgError> {
+        let path = format!("/api/packages/{}/versions/{}/download", package_name, version);
+        let response = self.send_streaming(Method::GET, &path, false).await?;
+        let bytes = response.bytes().await.map_err(PckgError::Transport)?;
+        Ok(bytes.to_vec())
+    }
+
+    /// List every file entry inside a package version (sparse file-tree
+    /// manifest).  Does NOT download the artifact — callers use the
+    /// returned [`PackageFileListResponse`] to pick individual files
+    /// for streaming via [`stream_package_file`].
+    pub async fn list_package_files(
         &self,
         package_name: &str,
         version: &str,
-    ) -> Result<Vec<u8>, PckgError> {
-        let path = format!(
-            "/api/packages/{}/versions/{}/download",
-            package_name, version
-        );
-        self.send_no_body_bytes(Method::GET, &path, false).await
+    ) -> Result<PackageFileListResponse, PckgError> {
+        let path = format!("/api/packages/{}/versions/{}/files", package_name, version);
+        self.send_no_body(Method::GET, &path, false).await
     }
 
-    pub async fn get_package_details(
+    /// Stream a single file from a package version sparsely, without
+    /// downloading the entire `.bpk` artifact.
+    ///
+    /// Returns a raw [`reqwest::Response`] whose body can be consumed
+    /// incrementally via `.bytes_stream()`.  The caller MUST drop the
+    /// response when done to release the connection-pool slot.
+    pub async fn stream_package_file(
         &self,
-        id_or_name: &str,
-    ) -> Result<PackageDetailsResponse, PckgError> {
+        package_name: &str,
+        version: &str,
+        file_path: &str,
+    ) -> Result<reqwest::Response, PckgError> {
+        let path =
+            format!("/api/packages/{}/versions/{}/files/{}", package_name, version, file_path.trim_start_matches('/'));
+        self.send_streaming(Method::GET, &path, false).await
+    }
+
+    pub async fn get_package_details(&self, id_or_name: &str) -> Result<PackageDetailsResponse, PckgError> {
         let path = format!("/api/packages/{id_or_name}");
         self.send_no_body(Method::GET, &path, false).await
     }
 
-    pub async fn search_packages(
-        &self,
-        query: &str,
-    ) -> Result<Vec<PackageSearchResponse>, PckgError> {
+    pub async fn search_packages(&self, query: &str) -> Result<Vec<PackageSearchResponse>, PckgError> {
         let encoded: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
         let path = format!("/api/search?q={encoded}");
         self.send_no_body(Method::GET, &path, false).await
@@ -203,8 +183,7 @@ impl PckgClient {
         version: &str,
     ) -> Result<PackageVersionLifecycleResponse, PckgError> {
         let path = format!("/api/packages/{}/versions/{}/yank", package_name, version);
-        let response: PackageVersionLifecycleResponse =
-            self.send_no_body(Method::POST, &path, true).await?;
+        let response: PackageVersionLifecycleResponse = self.send_no_body(Method::POST, &path, true).await?;
         ensure_lifecycle_success(response, None)
     }
 
@@ -214,8 +193,7 @@ impl PckgClient {
         version: &str,
     ) -> Result<PackageVersionLifecycleResponse, PckgError> {
         let path = format!("/api/packages/{}/versions/{}/unyank", package_name, version);
-        let response: PackageVersionLifecycleResponse =
-            self.send_no_body(Method::POST, &path, true).await?;
+        let response: PackageVersionLifecycleResponse = self.send_no_body(Method::POST, &path, true).await?;
         ensure_lifecycle_success(response, None)
     }
 }

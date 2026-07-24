@@ -5,11 +5,7 @@ use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::elem
 use crate::widgets::markdown_preview::widgets::markdown_widget::widget::MarkdownWidget;
 
 impl<'a> MarkdownWidget<'a> {
-    pub fn get_line_info_at_position(
-        &self,
-        y: usize,
-        width: usize,
-    ) -> Option<(usize, String, String)> {
+    pub fn get_line_info_at_position(&self, y: usize, width: usize) -> Option<(usize, String, String)> {
         let document_y = y + self.scroll.scroll_offset;
         self.resolve_line_info_at_document_y(document_y, width)
     }
@@ -27,9 +23,7 @@ impl<'a> MarkdownWidget<'a> {
         self.selection.is_active()
     }
 
-    pub fn selection(
-        &self,
-    ) -> &crate::widgets::markdown_preview::widgets::markdown_widget::state::SelectionState {
+    pub fn selection(&self) -> &crate::widgets::markdown_preview::widgets::markdown_widget::state::SelectionState {
         &self.selection
     }
 
@@ -54,25 +48,17 @@ impl<'a> MarkdownWidget<'a> {
             ElementKind::CodeBlockContent { content, .. } => content.clone(),
             ElementKind::CodeBlockHeader { language, .. } => language.clone(),
             ElementKind::ListItem { content, .. } => content.iter().map(segment_to_text).collect(),
-            ElementKind::Blockquote { content, .. } => {
-                content.iter().map(segment_to_text).collect()
+            ElementKind::Blockquote { content, .. } => content.iter().map(segment_to_text).collect(),
+            ElementKind::Frontmatter { fields, .. } => {
+                fields.iter().map(|(k, v)| format!("{}: {}", k, v)).collect::<Vec<_>>().join(", ")
             }
-            ElementKind::Frontmatter { fields, .. } => fields
-                .iter()
-                .map(|(k, v)| format!("{}: {}", k, v))
-                .collect::<Vec<_>>()
-                .join(", "),
             ElementKind::FrontmatterField { key, value } => format!("{}: {}", key, value),
             ElementKind::TableRow { cells, .. } => cells.join(" | "),
             _ => String::new(),
         }
     }
 
-    fn resolve_line_info_at_document_y(
-        &self,
-        document_y: usize,
-        width: usize,
-    ) -> Option<(usize, String, String)> {
+    fn resolve_line_info_at_document_y(&self, document_y: usize, width: usize) -> Option<(usize, String, String)> {
         let elements = self.parse_elements();
         let mut visual_line_idx = 0;
         let mut logical_line_num = 0;

@@ -160,10 +160,7 @@ pub mod diff_hunk {
                 new_start,
                 new_count,
                 lines: Vec::new(),
-                header: format!(
-                    "@@ -{},{} +{},{} @@",
-                    old_start, old_count, new_start, new_count
-                ),
+                header: format!("@@ -{},{} +{},{} @@", old_start, old_count, new_start, new_count),
             }
         }
 

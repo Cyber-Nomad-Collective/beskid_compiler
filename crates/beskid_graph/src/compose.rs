@@ -1,6 +1,6 @@
 use crate::model::{
-    GraphDirection, GraphEdge, GraphKind, GraphNode, GraphNodeKind, GraphSpec, GraphSubgraph,
-    GraphWarning, GraphWarningCode, NodeMetadata,
+    GraphDirection, GraphEdge, GraphKind, GraphNode, GraphNodeKind, GraphSpec, GraphSubgraph, GraphWarning,
+    GraphWarningCode, NodeMetadata,
 };
 
 /// Accumulates a [`GraphSpec`] with shared node-id sanitization and style helpers.
@@ -17,10 +17,7 @@ pub struct SpecBuilder {
 
 impl SpecBuilder {
     pub fn new(kind: GraphKind) -> Self {
-        Self {
-            kind,
-            ..Default::default()
-        }
+        Self { kind, ..Default::default() }
     }
 
     pub fn direction(mut self, direction: GraphDirection) -> Self {
@@ -29,10 +26,7 @@ impl SpecBuilder {
     }
 
     pub fn warn(mut self, code: GraphWarningCode, message: impl Into<String>) -> Self {
-        self.warnings.push(GraphWarning {
-            code,
-            message: message.into(),
-        });
+        self.warnings.push(GraphWarning { code, message: message.into() });
         self
     }
 
@@ -56,13 +50,7 @@ impl SpecBuilder {
         id
     }
 
-    pub fn add_edge(
-        &mut self,
-        from: &str,
-        to: &str,
-        label: Option<String>,
-        style_class: Option<&str>,
-    ) {
+    pub fn add_edge(&mut self, from: &str, to: &str, label: Option<String>, style_class: Option<&str>) {
         self.edges.push(GraphEdge {
             from: from.to_owned(),
             to: to.to_owned(),
@@ -74,11 +62,7 @@ impl SpecBuilder {
     pub fn add_subgraph(&mut self, label: impl Into<String>, node_ids: Vec<String>) -> String {
         let label = label.into();
         let id = sanitize_id(&label);
-        self.subgraphs.push(GraphSubgraph {
-            id: id.clone(),
-            label,
-            node_ids,
-        });
+        self.subgraphs.push(GraphSubgraph { id: id.clone(), label, node_ids });
         id
     }
 

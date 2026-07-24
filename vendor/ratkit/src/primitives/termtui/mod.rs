@@ -9,7 +9,6 @@ pub use io::write_screen_diff;
 pub use protocol::CursorStyle;
 pub use ratatui_render::render_screen;
 pub use vt100::{
-    attrs, cell, grid, parser, row, screen, screen_differ, size, Attrs, BorderType, BufferView,
-    Cell, Color, Grid, Margin, MouseProtocolMode, Parser, Pos, Rect, Screen, ScreenDiffer, Size,
-    VtEvent,
+    attrs, cell, grid, parser, row, screen, screen_differ, size, Attrs, BorderType, BufferView, Cell, Color, Grid,
+    Margin, MouseProtocolMode, Parser, Pos, Rect, Screen, ScreenDiffer, Size, VtEvent,
 };

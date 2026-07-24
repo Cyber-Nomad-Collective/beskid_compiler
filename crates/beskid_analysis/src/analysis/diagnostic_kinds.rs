@@ -597,46 +597,30 @@ impl SemanticIssueKind {
             Self::DuplicateContractMethod { .. } => "duplicate contract method".to_string(),
             Self::DuplicateItemName { .. } => "duplicate item name".to_string(),
             Self::UnknownTypeInDefinition { .. } => "unknown type in definition".to_string(),
-            Self::ConflictingEmbeddedContractMethod { .. } => {
-                "conflicting embedded contract method".to_string()
-            }
+            Self::ConflictingEmbeddedContractMethod { .. } => "conflicting embedded contract method".to_string(),
             Self::AmbiguousImport { .. } => "ambiguous import".to_string(),
             Self::UnknownImportPath { .. } => "unknown import path".to_string(),
             Self::UseBeforeDeclaration { .. } => "use before declaration".to_string(),
             Self::InvalidHirSpan { .. } => "invalid HIR span".to_string(),
             Self::UnresolvedHirValuePath => "unresolved HIR value path".to_string(),
             Self::UnresolvedHirTypePath => "unresolved HIR type path".to_string(),
-            Self::NonNormalizedHirControlFlow { .. } => {
-                "non-normalized HIR control-flow".to_string()
-            }
-            Self::DuplicateAttributeDeclarationTarget { .. } => {
-                "duplicate attribute declaration target".to_string()
-            }
-            Self::UnknownAttributeDeclarationTarget { .. } => {
-                "unknown attribute declaration target".to_string()
-            }
+            Self::NonNormalizedHirControlFlow { .. } => "non-normalized HIR control-flow".to_string(),
+            Self::DuplicateAttributeDeclarationTarget { .. } => "duplicate attribute declaration target".to_string(),
+            Self::UnknownAttributeDeclarationTarget { .. } => "unknown attribute declaration target".to_string(),
             Self::AttributeTargetNotAllowed { .. } => "attribute target not allowed".to_string(),
             Self::VisibilityModuleNotFound { .. } => "module not found".to_string(),
-            Self::FileScopedModuleNotFirstItem { .. } => {
-                "file-scoped module must be first item".to_string()
-            }
+            Self::FileScopedModuleNotFirstItem { .. } => "file-scoped module must be first item".to_string(),
             Self::DuplicateFileScopedModule { .. } => "duplicate file-scoped module".to_string(),
-            Self::ModuleDeclarationForbiddenInFileScopedModule => {
-                "module declaration not allowed".to_string()
-            }
+            Self::ModuleDeclarationForbiddenInFileScopedModule => "module declaration not allowed".to_string(),
             Self::VisibilityViolationImportPrivate { .. } => "visibility violation".to_string(),
-            Self::ExtendTypePrivateMemberAccess { .. } => {
-                "extend type private member access".to_string()
-            }
+            Self::ExtendTypePrivateMemberAccess { .. } => "extend type private member access".to_string(),
             Self::UnusedImport { .. } => "unused import".to_string(),
             Self::UnusedPrivateItem { .. } => "unused private item".to_string(),
             Self::ContractMethodNotFound { .. } => "method not found".to_string(),
             Self::ContractImplementationSignatureMismatch { .. } => {
                 "contract implementation signature mismatch".to_string()
             }
-            Self::ContractMethodMissingImplementation { .. } => {
-                "contract method missing implementation".to_string()
-            }
+            Self::ContractMethodMissingImplementation { .. } => "contract method missing implementation".to_string(),
             Self::ImmutableAssignment { .. } => "immutable assignment".to_string(),
             Self::MatchGuardMustBeBoolean => "guard type mismatch".to_string(),
             Self::MatchArmTypeMismatch { .. } => "match arm type mismatch".to_string(),
@@ -644,9 +628,7 @@ impl SemanticIssueKind {
             Self::DuplicatePatternBinding { .. } => "duplicate pattern binding".to_string(),
             Self::UnknownEnumPath { .. } => "unknown enum path".to_string(),
             Self::PatternArityMismatch { .. } => "pattern arity mismatch".to_string(),
-            Self::EnumConstructorArityMismatch { .. } => {
-                "enum constructor arity mismatch".to_string()
-            }
+            Self::EnumConstructorArityMismatch { .. } => "enum constructor arity mismatch".to_string(),
             Self::UnqualifiedEnumConstructor { .. } => "unqualified enum constructor".to_string(),
             Self::BreakOutsideLoop => "break outside loop".to_string(),
             Self::ContinueOutsideLoop => "continue outside loop".to_string(),
@@ -658,9 +640,7 @@ impl SemanticIssueKind {
             Self::ResolveUnknownModulePath { .. } => "unknown module path".to_string(),
             Self::ResolveUnknownValueInModule { .. } => "unknown value in module".to_string(),
             Self::ResolveUnknownTypeInModule { .. } => "unknown type in module".to_string(),
-            Self::ResolveInvalidConformanceTarget { .. } => {
-                "invalid conformance target".to_string()
-            }
+            Self::ResolveInvalidConformanceTarget { .. } => "invalid conformance target".to_string(),
             Self::ResolvePrivateItemInModule { .. } => "private item access".to_string(),
             Self::ResolveShadowedLocal { .. } => "shadowed local".to_string(),
             Self::TypeUnknownType { .. } => "unknown type".to_string(),
@@ -678,9 +658,7 @@ impl SemanticIssueKind {
             Self::TypeMatchArmMismatch { .. } => "match arm type mismatch".to_string(),
             Self::TypeCallArityMismatch { .. } => "call arity mismatch".to_string(),
             Self::TypeCallArgumentMismatch { .. } => "call argument mismatch".to_string(),
-            Self::TypeEnumConstructorMismatch { .. } => {
-                "enum constructor arity mismatch".to_string()
-            }
+            Self::TypeEnumConstructorMismatch { .. } => "enum constructor arity mismatch".to_string(),
             Self::TypeUnknownCallTarget => "unknown call target".to_string(),
             Self::TypeInvalidBinaryOp => "invalid binary operation".to_string(),
             Self::TypeInvalidUnaryOp => "invalid unary operation".to_string(),
@@ -689,9 +667,7 @@ impl SemanticIssueKind {
             Self::TypeInvalidTryTarget => "invalid try target".to_string(),
             Self::TypeInvalidEventInvocationScope => "invalid event invocation scope".to_string(),
             Self::TypeInvalidEventCapacity => "invalid event capacity".to_string(),
-            Self::TypeInvalidEventSubscriptionTarget => {
-                "invalid event subscription target".to_string()
-            }
+            Self::TypeInvalidEventSubscriptionTarget => "invalid event subscription target".to_string(),
             Self::SpawnTargetNotFiberCompatible => "spawn target not fiber compatible".to_string(),
             Self::JoinWouldDeadlock => "join would deadlock".to_string(),
             Self::StackReferenceEscapesSpawn => "stack reference escapes spawn".to_string(),
@@ -700,12 +676,8 @@ impl SemanticIssueKind {
             Self::MacroUnknown { .. } => "unknown macro".to_string(),
             Self::MacroArgumentArityMismatch { .. } => "macro argument count mismatch".to_string(),
             Self::MacroArgumentKindMismatch { .. } => "macro argument kind mismatch".to_string(),
-            Self::MacroMetavariableOutsideBody { .. } => {
-                "macro metavariable outside body".to_string()
-            }
-            Self::MacroExpansionDepthExceeded { .. } => {
-                "macro expansion depth exceeded".to_string()
-            }
+            Self::MacroMetavariableOutsideBody { .. } => "macro metavariable outside body".to_string(),
+            Self::MacroExpansionDepthExceeded { .. } => "macro expansion depth exceeded".to_string(),
             Self::MacroAmbiguousName { .. } => "ambiguous macro name".to_string(),
             Self::MacroDuplicateParameter { .. } => "duplicate macro parameter".to_string(),
             Self::QueryBoundsExceeded { .. } => "query bounds exceeded".to_string(),
@@ -719,34 +691,22 @@ impl SemanticIssueKind {
             Self::CompositionUnresolvedInject { .. } => "unresolved inject".to_string(),
             Self::CompositionAmbiguousInject { .. } => "ambiguous inject".to_string(),
             Self::CompositionScopedOutsideWith => "scope used outside with".to_string(),
-            Self::CompositionChildScopeWithoutParent { .. } => {
-                "child scope without parent".to_string()
-            }
+            Self::CompositionChildScopeWithoutParent { .. } => "child scope without parent".to_string(),
             Self::CompositionWithArgsMismatch { .. } => "with argument mismatch".to_string(),
-            Self::CompositionLaunchTargetNotHost { .. } => {
-                "launch target is not a host".to_string()
-            }
+            Self::CompositionLaunchTargetNotHost { .. } => "launch target is not a host".to_string(),
             Self::CompositionHostInheritanceCycle { .. } => "host inheritance cycle".to_string(),
             Self::CompositionDuplicateScopeName { .. } => "duplicate scope name".to_string(),
             Self::CompositionHostInModProject => "host in mod project".to_string(),
             Self::CompositionLaunchInLibProject => "launch in lib project".to_string(),
             Self::CompositionInjectOnConstructor => "inject on constructor".to_string(),
-            Self::CompositionOverrideLifetimeMismatch { .. } => {
-                "override lifetime mismatch".to_string()
-            }
+            Self::CompositionOverrideLifetimeMismatch { .. } => "override lifetime mismatch".to_string(),
             Self::CompositionInvalidScopeQualifier { .. } => "invalid scope qualifier".to_string(),
 
             Self::TypeReturnMismatch { .. } => "return type mismatch".to_string(),
             Self::TypeNonIterableForTarget => "non-iterable for target".to_string(),
-            Self::TypeIterableNextArityMismatch { .. } => {
-                "iterable Next arity mismatch".to_string()
-            }
-            Self::TypeIterableNextReturnNotOption => {
-                "iterable Next return must be Option<T>".to_string()
-            }
-            Self::TypeIterableOptionSomeArityMismatch { .. } => {
-                "iterable Option::Some arity mismatch".to_string()
-            }
+            Self::TypeIterableNextArityMismatch { .. } => "iterable Next arity mismatch".to_string(),
+            Self::TypeIterableNextReturnNotOption => "iterable Next return must be Option<T>".to_string(),
+            Self::TypeIterableOptionSomeArityMismatch { .. } => "iterable Option::Some arity mismatch".to_string(),
             Self::TypeImplicitNumericCast { .. } => "implicit numeric cast".to_string(),
 
             Self::DocUnknownArgName { .. } => "unknown @arg parameter".to_string(),
@@ -767,12 +727,8 @@ impl SemanticIssueKind {
             Self::NamingNotPascalCaseVariant { .. } => "enum variant not PascalCase".to_string(),
             Self::NamingNotCamelCaseField { .. } => "field not lowerCamelCase".to_string(),
             Self::NamingNotPascalCaseCallable { .. } => "callable not PascalCase".to_string(),
-            Self::NamingNotPascalCaseModuleSegment { .. } => {
-                "module segment not PascalCase".to_string()
-            }
-            Self::NamingNotPascalCaseGeneric { .. } => {
-                "generic parameter not PascalCase".to_string()
-            }
+            Self::NamingNotPascalCaseModuleSegment { .. } => "module segment not PascalCase".to_string(),
+            Self::NamingNotPascalCaseGeneric { .. } => "generic parameter not PascalCase".to_string(),
             Self::NamingNotCamelCaseBinding { .. } => "binding not lowerCamelCase".to_string(),
             Self::NamingNotSnakeCaseTest { .. } => "test name not snake_case".to_string(),
             Self::NamingNotCamelCaseMacro { .. } => "macro name not lowerCamelCase".to_string(),
@@ -1188,16 +1144,11 @@ impl SemanticIssueKind {
             | Self::AttributeTargetNotAllowed { allowed, .. } => {
                 Some(format!("allowed targets: {}", allowed.join(", ")))
             }
-            Self::VisibilityModuleNotFound {
-                file_candidate,
-                mod_candidate,
-                ..
-            } => Some(format!("expected `{file_candidate}` or `{mod_candidate}`")),
-            Self::FileScopedModuleNotFirstItem { .. } => {
-                Some("move `mod ...;` to the top of the file".to_string())
+            Self::VisibilityModuleNotFound { file_candidate, mod_candidate, .. } => {
+                Some(format!("expected `{file_candidate}` or `{mod_candidate}`"))
             }
-            Self::DuplicateFileScopedModule { .. }
-            | Self::ModuleDeclarationForbiddenInFileScopedModule => {
+            Self::FileScopedModuleNotFirstItem { .. } => Some("move `mod ...;` to the top of the file".to_string()),
+            Self::DuplicateFileScopedModule { .. } | Self::ModuleDeclarationForbiddenInFileScopedModule => {
                 Some("keep a single top-level `mod ...;` and remove other module declarations".to_string())
             }
             Self::VisibilityViolationImportPrivate { private_span, .. } => Some(format!(
@@ -1208,46 +1159,33 @@ impl SemanticIssueKind {
                 "member is private (declared at line {}, column {})",
                 private_span.line_col_start.0, private_span.line_col_start.1
             )),
-            Self::ContractImplementationSignatureMismatch {
-                expected, actual, ..
-            } => Some(format!("expected `{expected}`, got `{actual}`")),
+            Self::ContractImplementationSignatureMismatch { expected, actual, .. } => {
+                Some(format!("expected `{expected}`, got `{actual}`"))
+            }
             Self::ContractMethodMissingImplementation { expected, .. } => {
                 Some(format!("expected signature `{expected}`"))
             }
-            Self::ImmutableAssignment { .. } => {
-                Some("declare it as `let mut` to allow assignment".to_string())
-            }
-            Self::MatchArmTypeMismatch { expected, actual } => {
-                Some(format!("expected `{expected}`, got `{actual}`"))
-            }
+            Self::ImmutableAssignment { .. } => Some("declare it as `let mut` to allow assignment".to_string()),
+            Self::MatchArmTypeMismatch { expected, actual } => Some(format!("expected `{expected}`, got `{actual}`")),
             Self::ResolvePrivateItemInModule { .. } => {
                 Some("mark the item `pub` or avoid cross-module access".to_string())
             }
             Self::ResolveInvalidConformanceTarget { .. } => {
                 Some("declare conformance against a `contract`, not a type/enum/function".to_string())
             }
-            Self::TypeMissingTypeArguments => {
-                Some("provide explicit type arguments, e.g. `Type<i32>`".to_string())
-            }
-            Self::TypeInvalidTryTarget => {
-                Some("apply `?` only to a `Result<Ok, Error>` expression".to_string())
-            }
+            Self::TypeMissingTypeArguments => Some("provide explicit type arguments, e.g. `Type<i32>`".to_string()),
+            Self::TypeInvalidTryTarget => Some("apply `?` only to a `Result<Ok, Error>` expression".to_string()),
             Self::TypeInvalidEventSubscriptionTarget => Some(
-                "use `+=`/`-=` with an event field declared as `event Name(...)` or `event{N} Name(...)`"
-                    .to_string(),
+                "use `+=`/`-=` with an event field declared as `event Name(...)` or `event{N} Name(...)`".to_string(),
             ),
             Self::TypeImplicitNumericCast { .. } => {
                 Some("add an explicit cast to make conversion intent clear".to_string())
             }
-            Self::UnreachableCode => Some(
-                "remove this statement or move it before the terminating statement".to_string(),
-            ),
-            Self::DocUnresolvedRef { .. } => {
-                Some("use a name that exists in this compilation unit".to_string())
+            Self::UnreachableCode => {
+                Some("remove this statement or move it before the terminating statement".to_string())
             }
-            Self::RedundantEnumConstructorParens => {
-                Some("remove the redundant empty parentheses".to_string())
-            }
+            Self::DocUnresolvedRef { .. } => Some("use a name that exists in this compilation unit".to_string()),
+            Self::RedundantEnumConstructorParens => Some("remove the redundant empty parentheses".to_string()),
             Self::NamingNotPascalCaseType { name }
             | Self::NamingNotPascalCaseVariant { name }
             | Self::NamingNotPascalCaseCallable { name }
@@ -1260,10 +1198,7 @@ impl SemanticIssueKind {
             | Self::NamingNotCamelCaseBinding { name }
             | Self::NamingNotCamelCaseMacro { name } => Some(format!(
                 "try `{}`",
-                crate::naming_case::normalize_to_profile(
-                    name,
-                    crate::naming_case::NamingProfile::LowerCamelCase,
-                )
+                crate::naming_case::normalize_to_profile(name, crate::naming_case::NamingProfile::LowerCamelCase,)
             )),
             Self::NamingNotSnakeCaseTest { name } => Some(format!(
                 "try `{}`",

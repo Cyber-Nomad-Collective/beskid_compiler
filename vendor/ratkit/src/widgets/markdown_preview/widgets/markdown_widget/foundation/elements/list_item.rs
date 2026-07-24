@@ -28,9 +28,7 @@ pub fn render(
         _ => (None, content),
     };
 
-    let bullet_color = app_theme
-        .map(|t| t.markdown.list_item)
-        .unwrap_or(Color::Yellow);
+    let bullet_color = app_theme.map(|t| t.markdown.list_item).unwrap_or(Color::Yellow);
 
     let marker = if ordered {
         format!("{}. ", number.unwrap_or(1))
@@ -53,10 +51,8 @@ pub fn render(
     let prefix_len = prefix.chars().count() + checkbox_len;
     let content_width = width.saturating_sub(prefix_len).max(1);
 
-    let rendered_segments: Vec<(String, Style)> = remaining_content
-        .iter()
-        .map(|segment| segment_text_and_style(segment, app_theme))
-        .collect();
+    let rendered_segments: Vec<(String, Style)> =
+        remaining_content.iter().map(|segment| segment_text_and_style(segment, app_theme)).collect();
 
     let wrapped_lines = wrap_styled_segments(&rendered_segments, content_width);
 
@@ -81,10 +77,8 @@ pub fn render(
     }
 
     if lines.is_empty() {
-        let mut spans = vec![
-            Span::styled(indent, Style::default()),
-            Span::styled(marker, Style::default().fg(bullet_color)),
-        ];
+        let mut spans =
+            vec![Span::styled(indent, Style::default()), Span::styled(marker, Style::default().fg(bullet_color))];
         if let Some(cb_span) = checkbox_span {
             spans.push(cb_span);
         }
@@ -98,44 +92,20 @@ fn segment_text_and_style(
     segment: &TextSegment,
     app_theme: Option<&crate::widgets::markdown_preview::services::theme::AppTheme>,
 ) -> (String, Style) {
-    let link_color = app_theme
-        .map(|t| t.markdown.link_text)
-        .unwrap_or(Color::Rgb(100, 200, 100));
+    let link_color = app_theme.map(|t| t.markdown.link_text).unwrap_or(Color::Rgb(100, 200, 100));
     let emph_color = app_theme.map(|t| t.markdown.emph).unwrap_or(Color::Reset);
     let strong_color = app_theme.map(|t| t.markdown.strong).unwrap_or(Color::Reset);
 
     match segment {
         TextSegment::Plain(text) => (text.clone(), Style::default()),
-        TextSegment::Bold(text) => (
-            text.clone(),
-            Style::default()
-                .fg(strong_color)
-                .add_modifier(Modifier::BOLD),
-        ),
-        TextSegment::Italic(text) => (
-            text.clone(),
-            Style::default()
-                .fg(emph_color)
-                .add_modifier(Modifier::ITALIC),
-        ),
+        TextSegment::Bold(text) => (text.clone(), Style::default().fg(strong_color).add_modifier(Modifier::BOLD)),
+        TextSegment::Italic(text) => (text.clone(), Style::default().fg(emph_color).add_modifier(Modifier::ITALIC)),
         TextSegment::BoldItalic(text) => (
             text.clone(),
-            Style::default()
-                .fg(strong_color)
-                .add_modifier(Modifier::BOLD)
-                .add_modifier(Modifier::ITALIC),
+            Style::default().fg(strong_color).add_modifier(Modifier::BOLD).add_modifier(Modifier::ITALIC),
         ),
-        TextSegment::InlineCode(text) => (
-            format!(" {} ", text),
-            inline_code_style(Style::default(), app_theme),
-        ),
-        TextSegment::Link {
-            text,
-            is_autolink,
-            bold,
-            italic,
-            ..
-        } => {
+        TextSegment::InlineCode(text) => (format!(" {} ", text), inline_code_style(Style::default(), app_theme)),
+        TextSegment::Link { text, is_autolink, bold, italic, .. } => {
             let mut style = if *is_autolink {
                 Style::default()
                     .fg(Color::Rgb(100, 150, 255))
@@ -154,18 +124,12 @@ fn segment_text_and_style(
 
             (text.clone(), style)
         }
-        TextSegment::Strikethrough(text) => (
-            text.clone(),
-            Style::default()
-                .fg(Color::Rgb(150, 150, 150))
-                .add_modifier(Modifier::CROSSED_OUT),
-        ),
-        TextSegment::Html(text) => (
-            text.clone(),
-            Style::default()
-                .fg(Color::Rgb(100, 180, 100))
-                .add_modifier(Modifier::ITALIC),
-        ),
+        TextSegment::Strikethrough(text) => {
+            (text.clone(), Style::default().fg(Color::Rgb(150, 150, 150)).add_modifier(Modifier::CROSSED_OUT))
+        }
+        TextSegment::Html(text) => {
+            (text.clone(), Style::default().fg(Color::Rgb(100, 180, 100)).add_modifier(Modifier::ITALIC))
+        }
         TextSegment::Checkbox(state) => {
             let (icon, color) = match state {
                 CheckboxState::Unchecked => (CHECKBOX_UNCHECKED, Color::Rgb(180, 180, 180)),
@@ -223,10 +187,7 @@ fn wrap_styled_segments(segments: &[(String, Style)], width: usize) -> Vec<Vec<S
                 return;
             }
 
-            let tok_width: usize = tok
-                .chars()
-                .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
-                .sum();
+            let tok_width: usize = tok.chars().map(|c| UnicodeWidthChar::width(c).unwrap_or(0)).sum();
 
             // Skip leading whitespace at start of wrapped lines.
             if is_ws && *current_width == 0 {

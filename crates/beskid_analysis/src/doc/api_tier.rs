@@ -63,23 +63,14 @@ pub fn resolve_item_tiers(items: &mut [ApiDocItem]) {
     let direct: Vec<Option<String>> = items
         .iter()
         .map(|item| {
-            item.doc_markdown
-                .as_deref()
-                .and_then(parse_tier_directive)
-                .or_else(|| {
-                    item.doc
-                        .as_ref()
-                        .and_then(|d| d.summary_markdown.as_deref())
-                        .and_then(parse_tier_directive)
-                })
+            item.doc_markdown.as_deref().and_then(parse_tier_directive).or_else(|| {
+                item.doc.as_ref().and_then(|d| d.summary_markdown.as_deref()).and_then(parse_tier_directive)
+            })
         })
         .collect();
 
-    let by_id: HashMap<usize, usize> = items
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, item)| item.id.map(|id| (id, idx)))
-        .collect();
+    let by_id: HashMap<usize, usize> =
+        items.iter().enumerate().filter_map(|(idx, item)| item.id.map(|id| (id, idx))).collect();
 
     let mut resolved: Vec<Option<String>> = direct.clone();
     for idx in 0..items.len() {
@@ -137,11 +128,7 @@ mod tests {
             return_type: None,
             parameters: Vec::new(),
             generic_parameters: Vec::new(),
-            doc_markdown: if doc.is_empty() {
-                None
-            } else {
-                Some(doc.to_string())
-            },
+            doc_markdown: if doc.is_empty() { None } else { Some(doc.to_string()) },
             doc: None,
             declaring_package: None,
             controls: vec![],
@@ -151,26 +138,11 @@ mod tests {
 
     #[test]
     fn resolves_each_directive_spelling() {
-        assert_eq!(
-            parse_tier_directive("/// @tier(standard)"),
-            Some(TIER_STANDARD.to_string())
-        );
-        assert_eq!(
-            parse_tier_directive("/// @tier(Tier1)"),
-            Some(TIER_STANDARD.to_string())
-        );
-        assert_eq!(
-            parse_tier_directive("/// @tier(SUPPORTED) summary"),
-            Some(TIER_SUPPORTED.to_string())
-        );
-        assert_eq!(
-            parse_tier_directive("/// notes\n/// @tier(unstable)\n"),
-            Some(TIER_UNSTABLE.to_string())
-        );
-        assert_eq!(
-            parse_tier_directive("/// @tier( Tier3 )"),
-            Some(TIER_UNSTABLE.to_string())
-        );
+        assert_eq!(parse_tier_directive("/// @tier(standard)"), Some(TIER_STANDARD.to_string()));
+        assert_eq!(parse_tier_directive("/// @tier(Tier1)"), Some(TIER_STANDARD.to_string()));
+        assert_eq!(parse_tier_directive("/// @tier(SUPPORTED) summary"), Some(TIER_SUPPORTED.to_string()));
+        assert_eq!(parse_tier_directive("/// notes\n/// @tier(unstable)\n"), Some(TIER_UNSTABLE.to_string()));
+        assert_eq!(parse_tier_directive("/// @tier( Tier3 )"), Some(TIER_UNSTABLE.to_string()));
     }
 
     #[test]
@@ -197,20 +169,14 @@ mod tests {
 
     #[test]
     fn item_site_directive_wins_over_parent() {
-        let mut items = vec![
-            item(1, None, "/// @tier(unstable)"),
-            item(2, Some(1), "/// @tier(standard)"),
-        ];
+        let mut items = vec![item(1, None, "/// @tier(unstable)"), item(2, Some(1), "/// @tier(standard)")];
         resolve_item_tiers(&mut items);
         assert_eq!(items[1].tier.as_deref(), Some(TIER_STANDARD));
     }
 
     #[test]
     fn member_inherits_parent_tier_when_missing() {
-        let mut items = vec![
-            item(1, None, "/// @tier(supported)"),
-            item(2, Some(1), "/// member without tier"),
-        ];
+        let mut items = vec![item(1, None, "/// @tier(supported)"), item(2, Some(1), "/// member without tier")];
         resolve_item_tiers(&mut items);
         assert_eq!(items[0].tier.as_deref(), Some(TIER_SUPPORTED));
         assert_eq!(items[1].tier.as_deref(), Some(TIER_SUPPORTED));
@@ -246,10 +212,7 @@ mod tests {
         resolve_item_tiers(std::slice::from_mut(&mut row));
         assert_eq!(row.tier.as_deref(), Some(TIER_STANDARD));
         let json = serde_json::to_string(&row).expect("serialize");
-        assert!(
-            json.contains("\"tier\":\"standard\""),
-            "tier should serialize as camelCase lowercase: {json}"
-        );
+        assert!(json.contains("\"tier\":\"standard\""), "tier should serialize as camelCase lowercase: {json}");
         let de: ApiDocItem = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(de.tier.as_deref(), Some(TIER_STANDARD));
     }

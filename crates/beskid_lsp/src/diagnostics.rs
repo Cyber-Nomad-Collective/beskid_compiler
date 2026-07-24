@@ -6,9 +6,7 @@
 
 use beskid_analysis::AnalysisOptions;
 use beskid_analysis::CompilationContext;
-use beskid_analysis::projects::{
-    ProjectError, parse_bsol_document, parse_manifest, parse_workspace_manifest,
-};
+use beskid_analysis::projects::{ProjectError, parse_bsol_document, parse_manifest, parse_workspace_manifest};
 use beskid_analysis::services::{self, FrontEndOptions, PrepareOptions, resolved_input_from_plan};
 use beskid_analysis::syntax::Program;
 use beskid_analysis::{SemanticDiagnostic, Severity};
@@ -58,18 +56,12 @@ pub fn collect_syntax_diagnostics(
             db,
             &resolved,
             PrepareOptions {
-                front_end: FrontEndOptions {
-                    with_semantic_diagnostics: true,
-                    ..Default::default()
-                },
+                front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                 dependency_typing: beskid_analysis::services::DependencyTypingPolicy::FullClosure,
             },
             None,
         ) {
-            return diags
-                .into_iter()
-                .map(syntax_diagnostic_from_semantic)
-                .collect();
+            return diags.into_iter().map(syntax_diagnostic_from_semantic).collect();
         }
     }
 
@@ -78,10 +70,7 @@ pub fn collect_syntax_diagnostics(
 
 /// Convert generation-bound facts into LSP diagnostics for the given source text.
 pub fn lsp_diagnostics_from_syntax(source: &str, facts: &[SyntaxDiagnostic]) -> Vec<Diagnostic> {
-    facts
-        .iter()
-        .map(|fact| syntax_to_lsp_diagnostic(source, fact))
-        .collect()
+    facts.iter().map(|fact| syntax_to_lsp_diagnostic(source, fact)).collect()
 }
 
 /// Produce LSP diagnostics for a buffer (one-shot callers / tests).
@@ -102,16 +91,9 @@ pub fn analyze_document(
 fn structural_syntax_diagnostics(source_name: &str, source: &str) -> Vec<SyntaxDiagnostic> {
     match services::parse_program_with_source_name_and_diagnostics(source_name, source) {
         Ok(parsed) => {
-            let mut diagnostics = parsed
-                .diagnostics
-                .into_iter()
-                .map(syntax_diagnostic_from_semantic)
-                .collect::<Vec<_>>();
-            diagnostics.extend(semantic_diagnostics(
-                source_name,
-                source,
-                &parsed.program.node,
-            ));
+            let mut diagnostics =
+                parsed.diagnostics.into_iter().map(syntax_diagnostic_from_semantic).collect::<Vec<_>>();
+            diagnostics.extend(semantic_diagnostics(source_name, source, &parsed.program.node));
             diagnostics
         }
         Err(err) => vec![SyntaxDiagnostic {
@@ -124,11 +106,7 @@ fn structural_syntax_diagnostics(source_name: &str, source: &str) -> Vec<SyntaxD
     }
 }
 
-fn semantic_diagnostics(
-    source_name: &str,
-    source: &str,
-    program: &Program,
-) -> Vec<SyntaxDiagnostic> {
+fn semantic_diagnostics(source_name: &str, source: &str, program: &Program) -> Vec<SyntaxDiagnostic> {
     services::semantic_rule_diagnostics_for_program(
         program,
         source_name.to_string(),
@@ -159,11 +137,7 @@ fn syntax_diagnostic_from_semantic(diag: SemanticDiagnostic) -> SyntaxDiagnostic
 
 fn syntax_to_lsp_diagnostic(source: &str, fact: &SyntaxDiagnostic) -> Diagnostic {
     Diagnostic {
-        range: offset_range_to_lsp(
-            source,
-            fact.start,
-            fact.end.max(fact.start.saturating_add(1)),
-        ),
+        range: offset_range_to_lsp(source, fact.start, fact.end.max(fact.start.saturating_add(1))),
         severity: Some(match fact.severity {
             SyntaxDiagnosticSeverity::Error => DiagnosticSeverity::ERROR,
             SyntaxDiagnosticSeverity::Warning => DiagnosticSeverity::WARNING,
@@ -177,17 +151,12 @@ fn syntax_to_lsp_diagnostic(source: &str, fact: &SyntaxDiagnostic) -> Diagnostic
 }
 
 fn analyze_project_manifest(uri: &Uri, source: &str) -> Vec<SyntaxDiagnostic> {
-    let source_label = if project_manifest::is_workspace_manifest_uri(uri) {
-        "workspace manifest"
-    } else {
-        "project manifest"
-    };
+    let source_label =
+        if project_manifest::is_workspace_manifest_uri(uri) { "workspace manifest" } else { "project manifest" };
 
     if let Err(err) = parse_bsol_document(source) {
         let error = ProjectError::from_bsol(err.into());
-        return vec![syntax_diagnostic_from_semantic(
-            services::project_error_diagnostic(source_label, source, &error),
-        )];
+        return vec![syntax_diagnostic_from_semantic(services::project_error_diagnostic(source_label, source, &error))];
     }
 
     let err = if project_manifest::is_workspace_manifest_uri(uri) {
@@ -197,9 +166,9 @@ fn analyze_project_manifest(uri: &Uri, source: &str) -> Vec<SyntaxDiagnostic> {
     };
     match err {
         None => Vec::new(),
-        Some(error) => vec![syntax_diagnostic_from_semantic(
-            services::project_error_diagnostic(source_label, source, &error),
-        )],
+        Some(error) => {
+            vec![syntax_diagnostic_from_semantic(services::project_error_diagnostic(source_label, source, &error))]
+        }
     }
 }
 
@@ -210,14 +179,13 @@ mod tests {
 
     use beskid_analysis::services::resolved_input_from_plan;
     use beskid_queries::{
-        BeskidDatabase, bump_file_revision, configure_db_for_project, fingerprint_key,
-        is_typed_bundle_stale, session_fingerprint,
+        BeskidDatabase, bump_file_revision, configure_db_for_project, fingerprint_key, is_typed_bundle_stale,
+        session_fingerprint,
     };
     use tower_lsp_server::ls_types::{NumberOrString, Uri};
 
     use super::{
-        analyze_document, collect_syntax_diagnostics, lsp_diagnostics_from_syntax,
-        structural_syntax_diagnostics,
+        analyze_document, collect_syntax_diagnostics, lsp_diagnostics_from_syntax, structural_syntax_diagnostics,
     };
     use crate::session::store::{Document, SyntaxDiagnostic, SyntaxDiagnosticSeverity};
     use crate::workspace_scan::path_to_uri;
@@ -241,9 +209,9 @@ mod tests {
 
         let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
         assert!(
-            diagnostics.iter().all(|diagnostic| {
-                diagnostic.code.as_ref() != Some(&NumberOrString::String("E1709".to_string()))
-            }),
+            diagnostics
+                .iter()
+                .all(|diagnostic| { diagnostic.code.as_ref() != Some(&NumberOrString::String("E1709".to_string())) }),
             "no-analysis structural path must not invent composition diagnostics: {diagnostics:#?}",
         );
     }
@@ -256,9 +224,9 @@ mod tests {
         let diagnostics = analyze_document(None, &uri, "i32 Main() { return 0; }", None);
 
         assert!(
-            diagnostics.iter().all(|diagnostic| {
-                diagnostic.code.as_ref() != Some(&NumberOrString::String("E1709".to_string()))
-            }),
+            diagnostics
+                .iter()
+                .all(|diagnostic| { diagnostic.code.as_ref() != Some(&NumberOrString::String("E1709".to_string())) }),
             "diagnostics must describe the current buffer rather than a stale analysis snapshot: {diagnostics:#?}",
         );
     }
@@ -273,41 +241,26 @@ mod tests {
         let previous = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(&root).expect("chdir");
 
-        let main_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
+        let main_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
         let source = std::fs::read_to_string(&main_path).expect("read Main.bd");
-        let project_root = main_path
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("fixture root")
-            .to_path_buf();
+        let project_root = main_path.parent().and_then(|p| p.parent()).expect("fixture root").to_path_buf();
         let uri = path_to_uri(&main_path).expect("file uri");
 
-        let ctx = beskid_analysis::CompilationContext::try_for_analysis_path(&main_path, None)
-            .expect("compilation context");
-        let plan = ctx
-            .compile_plan
-            .clone()
-            .expect("corelib_mvp fixture must expose a compile plan");
+        let ctx =
+            beskid_analysis::CompilationContext::try_for_analysis_path(&main_path, None).expect("compilation context");
+        let plan = ctx.compile_plan.clone().expect("corelib_mvp fixture must expose a compile plan");
         // Match the exact ResolvedInput / entry key that collect_syntax_diagnostics builds.
-        let resolved =
-            resolved_input_from_plan(main_path.clone(), source.clone(), plan, None, None);
+        let resolved = resolved_input_from_plan(main_path.clone(), source.clone(), plan, None, None);
 
-        let project_root = project_root
-            .canonicalize()
-            .unwrap_or_else(|_| project_root.clone());
+        let project_root = project_root.canonicalize().unwrap_or_else(|_| project_root.clone());
         configure_db_for_project(&project_root);
         let mut db = BeskidDatabase::with_persistence(&project_root);
         db.ensure_file_text(main_path.clone(), source.clone());
 
-        let entry_key = session_fingerprint(&resolved)
-            .map(|fp| fingerprint_key(&fp))
-            .expect("entry fingerprint");
+        let entry_key = session_fingerprint(&resolved).map(|fp| fingerprint_key(&fp)).expect("entry fingerprint");
         bump_file_revision(&mut db, &entry_key);
-        assert!(
-            is_typed_bundle_stale(&db, &entry_key),
-            "test requires a stale typed bundle after file revision bump"
-        );
+        assert!(is_typed_bundle_stale(&db, &entry_key), "test requires a stale typed bundle after file revision bump");
 
         let expected = structural_syntax_diagnostics(uri.as_str(), &source);
         let collected = collect_syntax_diagnostics(Some(&mut db), &uri, &source, Some(&ctx));
@@ -318,9 +271,7 @@ mod tests {
             "stale typed generation must fail closed to structural diagnostics for the current buffer"
         );
         assert!(
-            collected
-                .iter()
-                .all(|diag| diag.code.as_deref() != Some("W1504")),
+            collected.iter().all(|diag| diag.code.as_deref() != Some("W1504")),
             "stale generation must not emit prepare-spine diagnostics such as W1504: {collected:#?}",
         );
     }
@@ -337,10 +288,7 @@ mod tests {
         }];
         let diagnostics = lsp_diagnostics_from_syntax(source, &facts);
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(
-            diagnostics[0].code.as_ref(),
-            Some(&NumberOrString::String("E9999".to_string()))
-        );
+        assert_eq!(diagnostics[0].code.as_ref(), Some(&NumberOrString::String("E9999".to_string())));
         assert_eq!(diagnostics[0].message, "probe");
     }
 }

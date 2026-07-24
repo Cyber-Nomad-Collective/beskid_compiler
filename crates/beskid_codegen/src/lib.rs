@@ -23,14 +23,12 @@ pub mod prepared_syntax;
 pub mod services;
 
 pub use aggregate_static::{
-    ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticField, AggregateStaticPlan,
-    emit_aggregate_static_data,
+    ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticField, AggregateStaticPlan, emit_aggregate_static_data,
 };
 pub use closure_static::{
-    ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
-    ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT, ClosureCaptureStaticField, ClosureLoweringAuthority,
-    ClosureRootAuthority, ClosureStaticDataHandles, ClosureStaticPlan, RuntimeRootContext,
-    emit_closure_static_data,
+    ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
+    ClosureCaptureStaticField, ClosureLoweringAuthority, ClosureRootAuthority, ClosureStaticDataHandles,
+    ClosureStaticPlan, RuntimeRootContext, emit_closure_static_data,
 };
 pub use codegen_input::{CodegenInput, CodegenInputError};
 pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
@@ -38,26 +36,22 @@ pub use errors::{CodegenError, RETIRED_HIR_LOWERING_PATH};
 pub use isle_adapter::{
     ItemModuleImporter, SyntaxNodeFacts, emit_isle_closure_lambda_entry, emit_isle_expression,
     emit_isle_expression_with_call_importer, emit_isle_item, emit_isle_item_with_call_importer,
-    emit_isle_item_with_services, emit_isle_item_with_services_specialization,
-    syntax_item_signature,
+    emit_isle_item_with_services, emit_isle_item_with_services_specialization, syntax_item_signature,
 };
 pub use linking::{
-    FunctionDefIndex, LinkPlan, LinkSymbol, MissingSymbol, referenced_extern_imports,
-    validate_artifact,
+    FunctionDefIndex, LinkPlan, LinkSymbol, MissingSymbol, referenced_extern_imports, validate_artifact,
 };
 pub use lowering::{
-    CodegenArtifact, CodegenContext, CodegenResult, DYNAMIC_TYPE_NAME, ExportEntry, ExternImport,
-    LoweredFunction, dynamic_clif_type, is_dynamic_type_id, lower_node, lower_program,
-    map_type_id_to_clif_with_dynamic, mapping_pair_eligible, object_link_symbol, pointer_type,
-    require_mapping_eligible, shape_id_for_item,
+    CodegenArtifact, CodegenContext, CodegenResult, DYNAMIC_TYPE_NAME, ExportEntry, ExternImport, LoweredFunction,
+    dynamic_clif_type, is_dynamic_type_id, lower_node, lower_program, map_type_id_to_clif_with_dynamic,
+    mapping_pair_eligible, object_link_symbol, pointer_type, require_mapping_eligible, shape_id_for_item,
 };
 pub use module_emission::{
-    DescriptorHandles, SyntaxModuleItem, emit_closure_static_plans, emit_string_literals,
-    emit_type_descriptors, lower_syntax_program,
+    DescriptorHandles, SyntaxModuleItem, emit_closure_static_plans, emit_string_literals, emit_type_descriptors,
+    lower_syntax_program,
 };
 pub use prepared_syntax::{
-    PreparedSyntaxEntrypoint, lower_canonical_runtime_prepared_syntax,
-    lower_prepared_syntax_entrypoint, lower_prepared_syntax_module,
-    lower_syntax_assembly_entrypoint,
+    PreparedSyntaxEntrypoint, lower_canonical_runtime_prepared_syntax, lower_prepared_syntax_entrypoint,
+    lower_prepared_syntax_module, lower_syntax_assembly_entrypoint,
 };
 pub use services::{jit_symbol_for_item, materialize_source_path_for_lowering, render_clif};

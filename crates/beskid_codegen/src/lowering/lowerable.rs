@@ -7,12 +7,12 @@ use crate::lowering::context::{CodegenArtifact, CodegenContext, CodegenResult, E
 use crate::lowering::expressions::export::collect_exports;
 use crate::lowering::function::linker_name_for_item_function;
 use crate::lowering::function::{
-    generic_mapping_for_method_receiver, generic_mapping_from_mangled, is_self_parameter_function,
-    lower_function, lower_function_with_name, lower_method, lower_test,
+    generic_mapping_for_method_receiver, generic_mapping_from_mangled, is_self_parameter_function, lower_function,
+    lower_function_with_name, lower_method, lower_test,
 };
 use beskid_analysis::hir::{
-    HirContractDefinition, HirContractNode, HirFunctionDefinition, HirInlineModule, HirItem,
-    HirProgram, HirTestDefinition,
+    HirContractDefinition, HirContractNode, HirFunctionDefinition, HirInlineModule, HirItem, HirProgram,
+    HirTestDefinition,
 };
 use beskid_analysis::projects::assembly::ProgramAssembly;
 use beskid_analysis::resolve::{ItemId, ItemKind, Resolution};
@@ -66,22 +66,14 @@ pub fn lower_program_with_assembly_for_entrypoint(
     _assembly: Option<&ProgramAssembly>,
     _link_entrypoint: Option<&str>,
 ) -> Result<CodegenArtifact, Vec<crate::errors::CodegenError>> {
-    Err(vec![
-        crate::errors::CodegenError::retired_hir_lowering_path(),
-    ])
+    Err(vec![crate::errors::CodegenError::retired_hir_lowering_path()])
 }
 
-fn effective_source_path(
-    item: ItemId,
-    def_index: &FunctionDefIndex<'_>,
-    resolution: &Resolution,
-) -> Option<PathBuf> {
-    def_index.source_path(item).cloned().or_else(|| {
-        resolution
-            .items
-            .get(item.0)
-            .and_then(|info| info.source_path.clone())
-    })
+fn effective_source_path(item: ItemId, def_index: &FunctionDefIndex<'_>, resolution: &Resolution) -> Option<PathBuf> {
+    def_index
+        .source_path(item)
+        .cloned()
+        .or_else(|| resolution.items.get(item.0).and_then(|info| info.source_path.clone()))
 }
 
 fn emit_link_plan(
@@ -95,28 +87,10 @@ fn emit_link_plan(
 ) {
     let function_defs = def_index.functions();
     for symbol in &plan.callees {
-        emit_link_symbol(
-            symbol,
-            entry,
-            resolution,
-            type_result,
-            &function_defs,
-            def_index,
-            ctx,
-            errors,
-        );
+        emit_link_symbol(symbol, entry, resolution, type_result, &function_defs, def_index, ctx, errors);
     }
     for symbol in &plan.entries {
-        emit_link_symbol(
-            symbol,
-            entry,
-            resolution,
-            type_result,
-            &function_defs,
-            def_index,
-            ctx,
-            errors,
-        );
+        emit_link_symbol(symbol, entry, resolution, type_result, &function_defs, def_index, ctx, errors);
     }
 }
 
@@ -135,10 +109,9 @@ fn emit_function_item(
     let loaded_hir;
     let def = if let Some(def) = def_index.function(item) {
         def
-    } else if let (Some(info), Some(hir)) = (
-        resolution.items.get(item.0),
-        crate::linking::load_hir_program_for_item(resolution, item),
-    ) {
+    } else if let (Some(info), Some(hir)) =
+        (resolution.items.get(item.0), crate::linking::load_hir_program_for_item(resolution, item))
+    {
         loaded_hir = hir;
         let short_name = info.name.rsplit("::").next().unwrap_or(&info.name);
         let Some(def) = crate::linking::find_function_by_span(&loaded_hir, info.span)
@@ -150,25 +123,20 @@ fn emit_function_item(
     } else {
         return;
     };
-    let method_style = mangled
-        .as_ref()
-        .is_some_and(|name| name.starts_with("__method__"))
-        && is_self_parameter_function(&def.node);
+    let method_style =
+        mangled.as_ref().is_some_and(|name| name.starts_with("__method__")) && is_self_parameter_function(&def.node);
     if !def.node.generics.is_empty() {
         if method_style {
             let Some(receiver_type) = receiver_type else {
                 return;
             };
-            let generic_args =
-                generic_mapping_for_method_receiver(type_result, item, receiver_type);
+            let generic_args = generic_mapping_for_method_receiver(type_result, item, receiver_type);
             if let Some(names) = type_result.generic_items.get(&item)
                 && names.iter().any(|name| !generic_args.contains_key(name))
             {
                 return;
             }
-            let symbol_name = mangled
-                .clone()
-                .unwrap_or_else(|| linker_name_for_item_function(resolution, item, def));
+            let symbol_name = mangled.clone().unwrap_or_else(|| linker_name_for_item_function(resolution, item, def));
             if ctx.symbol_emitted(&symbol_name) {
                 return;
             }
@@ -190,12 +158,9 @@ fn emit_function_item(
             return;
         }
         if let Some(mangled_name) = mangled.as_ref()
-            && let Some(generic_args) =
-                generic_mapping_from_mangled(type_result, item, mangled_name)
+            && let Some(generic_args) = generic_mapping_from_mangled(type_result, item, mangled_name)
         {
-            let symbol_name = mangled
-                .clone()
-                .unwrap_or_else(|| linker_name_for_item_function(resolution, item, def));
+            let symbol_name = mangled.clone().unwrap_or_else(|| linker_name_for_item_function(resolution, item, def));
             if ctx.symbol_emitted(&symbol_name) {
                 return;
             }
@@ -217,23 +182,12 @@ fn emit_function_item(
         }
         return;
     }
-    let symbol_name = mangled
-        .clone()
-        .unwrap_or_else(|| linker_name_for_item_function(resolution, item, def));
+    let symbol_name = mangled.clone().unwrap_or_else(|| linker_name_for_item_function(resolution, item, def));
     if ctx.symbol_emitted(&symbol_name) {
         return;
     }
     ctx.current_source_path = effective_source_path(item, def_index, resolution);
-    let result = lower_function_with_name(
-        def,
-        resolution,
-        type_result,
-        function_defs,
-        ctx,
-        mangled,
-        None,
-        Some(item),
-    );
+    let result = lower_function_with_name(def, resolution, type_result, function_defs, ctx, mangled, None, Some(item));
     if let Err(error) = result {
         errors.push(error);
     }
@@ -252,23 +206,14 @@ fn emit_link_symbol(
     errors: &mut Vec<crate::errors::CodegenError>,
 ) {
     match symbol {
-        LinkSymbol::Function {
-            item,
-            mangled,
-            receiver_type,
-        } => {
-            if resolution
-                .items
-                .get(item.0)
-                .is_some_and(|info| info.kind == ItemKind::Method)
-            {
+        LinkSymbol::Function { item, mangled, receiver_type } => {
+            if resolution.items.get(item.0).is_some_and(|info| info.kind == ItemKind::Method) {
                 let loaded_hir;
                 let def = if let Some(def) = def_index.method(*item) {
                     def
-                } else if let (Some(info), Some(hir)) = (
-                    resolution.items.get(item.0),
-                    crate::linking::load_hir_program_for_item(resolution, *item),
-                ) {
+                } else if let (Some(info), Some(hir)) =
+                    (resolution.items.get(item.0), crate::linking::load_hir_program_for_item(resolution, *item))
+                {
                     loaded_hir = hir;
                     let short_name = info.name.rsplit("::").next().unwrap_or(&info.name);
                     let Some(def) = crate::linking::find_method_by_span(&loaded_hir, info.span)
@@ -281,9 +226,7 @@ fn emit_link_symbol(
                     return;
                 };
                 ctx.current_source_path = effective_source_path(*item, def_index, resolution);
-                if let Err(error) =
-                    lower_method(def, resolution, type_result, function_defs, ctx, *item)
-                {
+                if let Err(error) = lower_method(def, resolution, type_result, function_defs, ctx, *item) {
                     errors.push(error);
                 }
                 ctx.current_source_path = None;
@@ -305,10 +248,9 @@ fn emit_link_symbol(
             let loaded_hir;
             let def = if let Some(def) = def_index.method(*item) {
                 def
-            } else if let (Some(info), Some(hir)) = (
-                resolution.items.get(item.0),
-                crate::linking::load_hir_program_for_item(resolution, *item),
-            ) {
+            } else if let (Some(info), Some(hir)) =
+                (resolution.items.get(item.0), crate::linking::load_hir_program_for_item(resolution, *item))
+            {
                 loaded_hir = hir;
                 let short_name = info.name.rsplit("::").next().unwrap_or(&info.name);
                 let Some(def) = crate::linking::find_method_by_span(&loaded_hir, info.span)
@@ -321,9 +263,7 @@ fn emit_link_symbol(
                 return;
             };
             ctx.current_source_path = effective_source_path(*item, def_index, resolution);
-            if let Err(error) =
-                lower_method(def, resolution, type_result, function_defs, ctx, *item)
-            {
+            if let Err(error) = lower_method(def, resolution, type_result, function_defs, ctx, *item) {
                 errors.push(error);
             }
             ctx.current_source_path = None;
@@ -387,8 +327,7 @@ fn lower_function_items(
         match &item.node {
             HirItem::FunctionDefinition(def) => {
                 if def.node.generics.is_empty()
-                    && let Err(error) =
-                        lower_function(def, resolution, type_result, function_defs, ctx)
+                    && let Err(error) = lower_function(def, resolution, type_result, function_defs, ctx)
                 {
                     errors.push(error);
                 }
@@ -403,21 +342,13 @@ fn lower_function_items(
                     resolution,
                     item.span,
                     ctx.current_source_path.as_ref(),
-                ) && let Err(error) =
-                    lower_method(def, resolution, type_result, function_defs, ctx, item_id)
+                ) && let Err(error) = lower_method(def, resolution, type_result, function_defs, ctx, item_id)
                 {
                     errors.push(error);
                 }
             }
             HirItem::InlineModule(module) => {
-                lower_function_items(
-                    &module.node.items,
-                    resolution,
-                    type_result,
-                    function_defs,
-                    ctx,
-                    errors,
-                );
+                lower_function_items(&module.node.items, resolution, type_result, function_defs, ctx, errors);
             }
             _ => {}
         }
@@ -433,11 +364,7 @@ fn collect_extern_imports(
         match &item.node {
             HirItem::InlineModule(m) => {
                 let m: &beskid_analysis::syntax::Spanned<HirInlineModule> = m;
-                let effective = m
-                    .node
-                    .extern_interface
-                    .clone()
-                    .or_else(|| parent_extern.clone());
+                let effective = m.node.extern_interface.clone().or_else(|| parent_extern.clone());
                 if let Some(ext) = effective.as_ref() {
                     for sub in &m.node.items {
                         if let HirItem::FunctionDefinition(def) = &sub.node {

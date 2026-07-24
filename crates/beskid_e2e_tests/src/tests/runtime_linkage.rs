@@ -1,8 +1,6 @@
 use std::time::Duration;
 
-use crate::harness::assertions::{
-    assert_exit_code, assert_file_exists, assert_output_contains, assert_success,
-};
+use crate::harness::assertions::{assert_exit_code, assert_file_exists, assert_output_contains, assert_success};
 use crate::harness::cli::BeskidCliInvoker;
 use crate::harness::process::run_binary;
 use crate::harness::workspace::E2eWorkspace;

@@ -17,10 +17,7 @@ pub struct Block {
 impl Parsable for Block {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
-        let statements = pair
-            .into_inner()
-            .map(Statement::parse)
-            .collect::<Result<Vec<_>, _>>()?;
+        let statements = pair.into_inner().map(Statement::parse).collect::<Result<Vec<_>, _>>()?;
 
         Ok(Spanned::new(Self { statements }, span))
     }

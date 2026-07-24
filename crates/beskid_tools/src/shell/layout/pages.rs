@@ -60,10 +60,7 @@ pub fn emit_pages(doc: &PagesDoc) -> String {
     let mut out = String::new();
     out.push_str(&format!("pages \"{}\" {{\n", escape(&doc.name)));
     out.push_str(&format!("  version = {}\n", doc.version));
-    out.push_str(&format!(
-        "  default_page = \"{}\"\n",
-        escape(&doc.default_page)
-    ));
+    out.push_str(&format!("  default_page = \"{}\"\n", escape(&doc.default_page)));
     if let Some(title) = &doc.title {
         out.push_str(&format!("  title = \"{}\"\n", escape(title)));
     }
@@ -106,11 +103,7 @@ pub fn embedded_default() -> Result<PagesDoc, String> {
 }
 
 pub fn switch_page(state: &mut HiLayoutState, page_id: &str) -> Result<(), String> {
-    let page = state
-        .pages
-        .page(page_id)
-        .ok_or_else(|| format!("unknown page `{page_id}`"))?
-        .clone();
+    let page = state.pages.page(page_id).ok_or_else(|| format!("unknown page `{page_id}`"))?.clone();
     state.active_page_id = page_id.to_string();
     if let Some(root) = page.board_root
         && state.doc.nodes.contains_key(&root)
@@ -163,38 +156,19 @@ fn lower_pages(doc: ValidatedDocument) -> Result<PagesDoc, String> {
                 title = block.fields.get("title").cloned();
             }
             "page" => {
-                let id = block
-                    .label
-                    .clone()
-                    .ok_or_else(|| "page missing label".to_string())?;
-                let page_title = block
-                    .fields
-                    .get("title")
-                    .cloned()
-                    .ok_or_else(|| format!("page `{id}` missing title"))?;
+                let id = block.label.clone().ok_or_else(|| "page missing label".to_string())?;
+                let page_title =
+                    block.fields.get("title").cloned().ok_or_else(|| format!("page `{id}` missing title"))?;
                 pages.insert(
                     id.clone(),
-                    PageEntry {
-                        id,
-                        title: page_title,
-                        board_root: block.fields.get("board_root").cloned(),
-                    },
+                    PageEntry { id, title: page_title, board_root: block.fields.get("board_root").cloned() },
                 );
             }
             "nav_item" => {
-                let id = block
-                    .label
-                    .clone()
-                    .ok_or_else(|| "nav_item missing label".to_string())?;
-                let label = block
-                    .fields
-                    .get("label")
-                    .cloned()
-                    .ok_or_else(|| format!("nav_item `{id}` missing label"))?;
-                let action_str = block
-                    .fields
-                    .get("action")
-                    .ok_or_else(|| format!("nav_item `{id}` missing action"))?;
+                let id = block.label.clone().ok_or_else(|| "nav_item missing label".to_string())?;
+                let label =
+                    block.fields.get("label").cloned().ok_or_else(|| format!("nav_item `{id}` missing label"))?;
+                let action_str = block.fields.get("action").ok_or_else(|| format!("nav_item `{id}` missing action"))?;
                 let target = block.fields.get("target").cloned();
                 let action = NavAction::from_str(action_str, target.as_deref())?;
                 nav_items.insert(
@@ -218,14 +192,7 @@ fn lower_pages(doc: ValidatedDocument) -> Result<PagesDoc, String> {
         return Err("shell.pages.v1 missing default_page".into());
     }
 
-    Ok(PagesDoc {
-        name,
-        version,
-        default_page,
-        title,
-        pages,
-        nav_items,
-    })
+    Ok(PagesDoc { name, version, default_page, title, pages, nav_items })
 }
 
 fn emit_page(out: &mut String, page: &PageEntry) {
@@ -240,10 +207,7 @@ fn emit_page(out: &mut String, page: &PageEntry) {
 fn emit_nav_item(out: &mut String, item: &NavItemEntry) {
     out.push_str(&format!("nav_item \"{}\" {{\n", escape(&item.id)));
     out.push_str(&format!("  label = \"{}\"\n", escape(&item.label)));
-    out.push_str(&format!(
-        "  action = {}\n",
-        nav_action_keyword(&item.action)
-    ));
+    out.push_str(&format!("  action = {}\n", nav_action_keyword(&item.action)));
     if let Some(target) = &item.target {
         out.push_str(&format!("  target = \"{}\"\n", escape(target)));
     }

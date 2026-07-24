@@ -13,9 +13,7 @@ use beskid_analysis::analysis::SemanticDiagnostic;
 use beskid_analysis::services::{self, PreparedCompilation, ResolvedInput};
 use beskid_pipeline::PipelineObserver;
 
-use crate::pipeline::{
-    CliPipeline, CliResolveOptions, PipelineProgressKind, frontend, use_cli_spinner,
-};
+use crate::pipeline::{CliPipeline, CliResolveOptions, PipelineProgressKind, frontend, use_cli_spinner};
 use crate::tui::shell::runtime::RuntimeOp;
 
 /// Project / lockfile inputs for [`CommandSession::resolve_input`].
@@ -39,10 +37,7 @@ pub struct SemanticGateOptions {
 
 impl Default for SemanticGateOptions {
     fn default() -> Self {
-        Self {
-            finish_prepare_ui: true,
-            prepare_message: "Analysis complete",
-        }
+        Self { finish_prepare_ui: true, prepare_message: "Analysis complete" }
     }
 }
 
@@ -57,16 +52,12 @@ impl CommandSession {
     /// Use [`PipelineProgressKind::PrepareAndRun`] for run / test / clif paths that call
     /// [`executable_gate_prepared`] once, then lower or JIT-run.
     pub fn with_progress(plain: bool, kind: PipelineProgressKind) -> Self {
-        Self {
-            pipeline: Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), kind)),
-        }
+        Self { pipeline: Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), kind)) }
     }
 
     /// Session whose pipeline progress is rendered by a parent `beskid hi` shell.
     pub fn with_attached_pipeline(msg_tx: Sender<RuntimeOp>, kind: PipelineProgressKind) -> Self {
-        Self {
-            pipeline: Arc::new(CliPipeline::for_attached(msg_tx, kind)),
-        }
+        Self { pipeline: Arc::new(CliPipeline::for_attached(msg_tx, kind)) }
     }
 
     /// Resolve project input while forwarding pipeline events to this session.
@@ -121,10 +112,7 @@ impl CommandSession {
         let (prepared, gate_diagnostics) = beskid_queries::prepare_compilation_diagnostics(
             resolved,
             services::PrepareOptions {
-                front_end: services::FrontEndOptions {
-                    with_semantic_diagnostics: true,
-                    ..Default::default()
-                },
+                front_end: services::FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                 dependency_typing: services::DependencyTypingPolicy::FullClosure,
             },
             Some(self.pipeline.as_ref()),
@@ -147,20 +135,12 @@ impl CommandSession {
     /// **Deprecated:** use [`executable_gate_prepared`] instead.
     ///
     /// Thin wrapper that forwards to [`executable_gate_prepared`] without a second prepare.
-    pub fn semantic_gate(
-        &self,
-        resolved: &ResolvedInput,
-        options: SemanticGateOptions,
-    ) -> Result<()> {
+    pub fn semantic_gate(&self, resolved: &ResolvedInput, options: SemanticGateOptions) -> Result<()> {
         let _ = self.executable_gate_prepared(resolved, options)?;
         Ok(())
     }
 
-    fn finish_gate(
-        &self,
-        gate_diagnostics: &[SemanticDiagnostic],
-        options: SemanticGateOptions,
-    ) -> Result<()> {
+    fn finish_gate(&self, gate_diagnostics: &[SemanticDiagnostic], options: SemanticGateOptions) -> Result<()> {
         self.pipeline.report_semantic_diagnostics(gate_diagnostics);
         services::require_no_semantic_errors(gate_diagnostics).map_err(anyhow::Error::from)?;
 

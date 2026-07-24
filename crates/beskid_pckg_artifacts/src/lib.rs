@@ -98,23 +98,18 @@ pub struct ArtifactBrowser {
 }
 
 impl ArtifactBrowser {
-    pub fn from_validated_bytes(
-        bytes: &[u8],
-        validated: &ValidatedArtifact,
-    ) -> Result<Self, ArtifactError> {
+    pub fn from_validated_bytes(bytes: &[u8], validated: &ValidatedArtifact) -> Result<Self, ArtifactError> {
         if sha256_hex(bytes) != validated.checksum_sha256 {
             return Err(ArtifactError::ChecksumMismatch);
         }
         validate_package_artifact(bytes, &validated.package_name, &validated.version)?;
 
-        let mut zip = ZipArchive::new(Cursor::new(bytes))
-            .map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
+        let mut zip =
+            ZipArchive::new(Cursor::new(bytes)).map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
         let mut entries = BTreeMap::new();
         let mut indices = BTreeMap::new();
         for index in 0..zip.len() {
-            let entry = zip
-                .by_index(index)
-                .map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
+            let entry = zip.by_index(index).map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
             if entry.is_dir() {
                 continue;
             }
@@ -122,29 +117,15 @@ impl ArtifactBrowser {
             if !is_browseable_archive_entry(&path) {
                 return Err(ArtifactError::UnsafeBrowseEntry(path));
             }
-            entries.insert(
-                path.clone(),
-                BrowseEntry {
-                    path: path.clone(),
-                    size_bytes: entry.size(),
-                },
-            );
+            entries.insert(path.clone(), BrowseEntry { path: path.clone(), size_bytes: entry.size() });
             indices.insert(path, index);
         }
-        Ok(Self {
-            bytes: bytes.to_vec(),
-            entries,
-            indices,
-        })
+        Ok(Self { bytes: bytes.to_vec(), entries, indices })
     }
 
     pub fn list_docs(&self) -> Result<Vec<BrowseEntry>, ArtifactError> {
-        let mut entries = self
-            .entries
-            .values()
-            .filter(|entry| is_documentation_path(&entry.path))
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut entries =
+            self.entries.values().filter(|entry| is_documentation_path(&entry.path)).cloned().collect::<Vec<_>>();
         entries.sort_by(|left, right| {
             documentation_sort_rank(&left.path)
                 .cmp(&documentation_sort_rank(&right.path))
@@ -158,12 +139,7 @@ impl ArtifactBrowser {
     }
 
     pub fn list_source_tree(&self) -> Result<Vec<BrowseEntry>, ArtifactError> {
-        Ok(self
-            .entries
-            .values()
-            .filter(|entry| is_source_path(&entry.path))
-            .cloned()
-            .collect())
+        Ok(self.entries.values().filter(|entry| is_source_path(&entry.path)).cloned().collect())
     }
 
     pub fn read_source(&self, path: &str) -> Result<String, ArtifactError> {
@@ -171,20 +147,13 @@ impl ArtifactBrowser {
     }
 
     pub fn documentation(&self) -> Result<ArtifactDocumentation, ArtifactError> {
-        let readme = if self.entries.contains_key("README.md") {
-            Some(self.read_doc("README.md")?)
-        } else {
-            None
-        };
+        let readme = if self.entries.contains_key("README.md") { Some(self.read_doc("README.md")?) } else { None };
         let metadata = if self.entries.contains_key(".beskid/docs/metadata.json") {
             let contents = self.read_doc(".beskid/docs/metadata.json")?;
-            let value: Value = serde_json::from_str(&contents).map_err(|error| {
-                ArtifactError::InvalidDocumentation(format!("metadata.json is not JSON: {error}"))
-            })?;
+            let value: Value = serde_json::from_str(&contents)
+                .map_err(|error| ArtifactError::InvalidDocumentation(format!("metadata.json is not JSON: {error}")))?;
             if !value.is_object() {
-                return Err(ArtifactError::InvalidDocumentation(
-                    "metadata.json root must be an object".into(),
-                ));
+                return Err(ArtifactError::InvalidDocumentation("metadata.json root must be an object".into()));
             }
             Some(value)
         } else {
@@ -193,34 +162,20 @@ impl ArtifactBrowser {
         Ok(ArtifactDocumentation { readme, metadata })
     }
 
-    fn read_text(
-        &self,
-        requested_path: &str,
-        allowed: fn(&str) -> bool,
-    ) -> Result<String, ArtifactError> {
+    fn read_text(&self, requested_path: &str, allowed: fn(&str) -> bool) -> Result<String, ArtifactError> {
         let path = normalize_browse_request(requested_path)?;
         if !allowed(&path) {
             return Err(ArtifactError::ForbiddenBrowsePath);
         }
-        let entry = self
-            .entries
-            .get(&path)
-            .ok_or(ArtifactError::EntryNotFound)?;
+        let entry = self.entries.get(&path).ok_or(ArtifactError::EntryNotFound)?;
         if entry.size_bytes > MAX_BROWSE_READ_BYTES {
-            return Err(ArtifactError::EntryTooLarge {
-                path,
-                limit_bytes: MAX_BROWSE_READ_BYTES,
-            });
+            return Err(ArtifactError::EntryTooLarge { path, limit_bytes: MAX_BROWSE_READ_BYTES });
         }
         let mut zip = ZipArchive::new(Cursor::new(self.bytes.as_slice()))
             .map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
-        let index = *self
-            .indices
-            .get(&entry.path)
-            .ok_or(ArtifactError::EntryNotFound)?;
+        let index = *self.indices.get(&entry.path).ok_or(ArtifactError::EntryNotFound)?;
         let bytes = read_entry_limited(&mut zip, index, &entry.path)?;
-        String::from_utf8(bytes)
-            .map_err(|_| ArtifactError::InvalidZip("text entry is not UTF-8".into()))
+        String::from_utf8(bytes).map_err(|_| ArtifactError::InvalidZip("text entry is not UTF-8".into()))
     }
 }
 
@@ -261,10 +216,7 @@ impl LocalFileArtifactStore {
         else {
             return Err(ArtifactError::InvalidStorageKey);
         };
-        if filename != "artifact.bpk"
-            || !is_storage_component(package)
-            || !is_storage_component(version)
-        {
+        if filename != "artifact.bpk" || !is_storage_component(package) || !is_storage_component(version) {
             return Err(ArtifactError::InvalidStorageKey);
         }
         Ok(self.root.join(package).join(version).join(filename))
@@ -274,10 +226,7 @@ impl LocalFileArtifactStore {
     /// deterministic package/version object. The boolean is true only when
     /// this call created the object, so a caller can safely compensate a later
     /// metadata-transaction failure without deleting another publisher's work.
-    pub fn save_staged(
-        &self,
-        request: PublishRequest<'_>,
-    ) -> Result<(StoredArtifact, bool), ArtifactError> {
+    pub fn save_staged(&self, request: PublishRequest<'_>) -> Result<(StoredArtifact, bool), ArtifactError> {
         let actual = sha256_hex(request.bytes);
         if actual != request.validated.checksum_sha256 {
             return Err(ArtifactError::ChecksumMismatch);
@@ -286,11 +235,8 @@ impl LocalFileArtifactStore {
         let version = storage_component(&request.validated.version);
         let storage_key = format!("{package}/{version}/artifact.bpk");
         let path = self.path_for_key(&storage_key)?;
-        let stored = StoredArtifact {
-            storage_key,
-            checksum_sha256: actual.clone(),
-            size_bytes: request.bytes.len() as u64,
-        };
+        let stored =
+            StoredArtifact { storage_key, checksum_sha256: actual.clone(), size_bytes: request.bytes.len() as u64 };
         match fs::read(&path) {
             Ok(existing) => {
                 return if sha256_hex(&existing) == actual {
@@ -310,9 +256,7 @@ impl LocalFileArtifactStore {
             std::process::id(),
             TEMPORARY_SEQUENCE.fetch_add(1, Ordering::Relaxed),
         ));
-        fs::File::create_new(&temporary)
-            .and_then(|mut file| file.write_all(request.bytes))
-            .map_err(io_error)?;
+        fs::File::create_new(&temporary).and_then(|mut file| file.write_all(request.bytes)).map_err(io_error)?;
         match fs::hard_link(&temporary, &path) {
             Ok(()) => {
                 let _ = fs::remove_file(&temporary);
@@ -321,11 +265,7 @@ impl LocalFileArtifactStore {
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 let _ = fs::remove_file(&temporary);
                 let existing = fs::read(&path).map_err(io_error)?;
-                if sha256_hex(&existing) == actual {
-                    Ok((stored, false))
-                } else {
-                    Err(ArtifactError::ChecksumMismatch)
-                }
+                if sha256_hex(&existing) == actual { Ok((stored, false)) } else { Err(ArtifactError::ChecksumMismatch) }
             }
             Err(error) => {
                 let _ = fs::remove_file(&temporary);
@@ -342,11 +282,7 @@ impl PackageArtifactStore for LocalFileArtifactStore {
 
     fn open(&self, storage_key: &str) -> Result<Vec<u8>, ArtifactError> {
         fs::read(self.path_for_key(storage_key)?).map_err(|error| {
-            if error.kind() == std::io::ErrorKind::NotFound {
-                ArtifactError::NotFound
-            } else {
-                io_error(error)
-            }
+            if error.kind() == std::io::ErrorKind::NotFound { ArtifactError::NotFound } else { io_error(error) }
         })
     }
 
@@ -381,91 +317,62 @@ pub fn validate_package_artifact(
     if bytes.is_empty() {
         return Err(ArtifactError::EmptyArtifact);
     }
-    let mut zip = ZipArchive::new(Cursor::new(bytes))
-        .map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
+    let mut zip = ZipArchive::new(Cursor::new(bytes)).map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
     if zip.len() > MAX_ENTRIES {
         return Err(ArtifactError::InvalidZip("too many entries".into()));
     }
     let mut entries = BTreeMap::new();
     let mut uncompressed = 0_u64;
     for index in 0..zip.len() {
-        let entry = zip
-            .by_index(index)
-            .map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
+        let entry = zip.by_index(index).map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
         if entry.is_dir() {
             continue;
         }
         let name = normalize_zip_path(entry.name())?;
         uncompressed = uncompressed.saturating_add(entry.size());
         if uncompressed > MAX_UNCOMPRESSED_BYTES {
-            return Err(ArtifactError::InvalidZip(
-                "uncompressed size limit exceeded".into(),
-            ));
+            return Err(ArtifactError::InvalidZip("uncompressed size limit exceeded".into()));
         }
         if entries.insert(name.clone(), index).is_some() {
-            return Err(ArtifactError::InvalidZip(format!(
-                "duplicate entry '{name}'"
-            )));
+            return Err(ArtifactError::InvalidZip(format!("duplicate entry '{name}'")));
         }
     }
     for required in REQUIRED_ENTRIES {
         if !entries.contains_key(required) {
-            return Err(ArtifactError::InvalidZip(format!(
-                "missing required entry '{required}'"
-            )));
+            return Err(ArtifactError::InvalidZip(format!("missing required entry '{required}'")));
         }
     }
     if !entries.keys().any(|path| path.starts_with("src/")) {
-        return Err(ArtifactError::InvalidZip(
-            "missing source file under src/".into(),
-        ));
+        return Err(ArtifactError::InvalidZip("missing source file under src/".into()));
     }
     if entries.keys().any(|path| forbidden_path(path)) {
-        return Err(ArtifactError::InvalidZip(
-            "contains forbidden .beskid entry".into(),
-        ));
+        return Err(ArtifactError::InvalidZip("contains forbidden .beskid entry".into()));
     }
     let manifest_json = read_entry(&mut zip, entries["package.json"])?;
-    validate_manifest(
-        &manifest_json,
-        expected_package_name,
-        expected_version,
-        &entries,
-    )?;
+    validate_manifest(&manifest_json, expected_package_name, expected_version, &entries)?;
     let project = read_entry(&mut zip, entries["Project.proj"])?;
-    if !project
-        .replace('\r', "")
-        .contains(&format!("name = \"{expected_package_name}\""))
-    {
-        return Err(ArtifactError::InvalidManifest(
-            "Project.proj package name does not match".into(),
-        ));
+    if !project.replace('\r', "").contains(&format!("name = \"{expected_package_name}\"")) {
+        return Err(ArtifactError::InvalidManifest("Project.proj package name does not match".into()));
     }
     let checksums = parse_checksums(&read_entry(&mut zip, entries["checksums.sha256"])?)?;
     if checksums.contains_key("checksums.sha256") {
-        return Err(ArtifactError::InvalidChecksums(
-            "checksums.sha256 must not reference itself".into(),
-        ));
+        return Err(ArtifactError::InvalidChecksums("checksums.sha256 must not reference itself".into()));
     }
     for (path, index) in &entries {
         if path == "checksums.sha256" {
             continue;
         }
-        let expected = checksums.get(path).ok_or_else(|| {
-            ArtifactError::InvalidChecksums(format!("missing checksum for '{path}'"))
-        })?;
+        let expected = checksums
+            .get(path)
+            .ok_or_else(|| ArtifactError::InvalidChecksums(format!("missing checksum for '{path}'")))?;
         let actual = sha256_hex(&read_entry_bytes(&mut zip, *index)?);
         if &actual != expected {
-            return Err(ArtifactError::InvalidChecksums(format!(
-                "checksum mismatch for '{path}'"
-            )));
+            return Err(ArtifactError::InvalidChecksums(format!("checksum mismatch for '{path}'")));
         }
     }
     for path in checksums.keys() {
         if !entries.contains_key(path) {
-            return Err(ArtifactError::InvalidChecksums(format!(
-                "references missing entry '{path}'"
-            )));
+            return Err(ArtifactError::InvalidChecksums(format!("references missing entry '{path}'")));
         }
     }
     Ok(ValidatedArtifact {
@@ -484,33 +391,21 @@ pub struct ArtifactRecord {
 }
 impl ArtifactRecord {
     pub fn new(version: impl Into<String>, is_yanked: bool) -> Self {
-        Self {
-            version: version.into(),
-            is_yanked,
-        }
+        Self { version: version.into(), is_yanked }
     }
 }
 
 /// Selects an exact non-yanked version, or the greatest semver for `latest`.
-pub fn select_download<'a>(
-    records: &'a [ArtifactRecord],
-    requested: &str,
-) -> Option<&'a ArtifactRecord> {
+pub fn select_download<'a>(records: &'a [ArtifactRecord], requested: &str) -> Option<&'a ArtifactRecord> {
     if requested.eq_ignore_ascii_case("latest") {
         records
             .iter()
             .filter(|record| !record.is_yanked)
-            .filter_map(|record| {
-                Version::parse(&record.version)
-                    .ok()
-                    .map(|version| (version, record))
-            })
+            .filter_map(|record| Version::parse(&record.version).ok().map(|version| (version, record)))
             .max_by(|left, right| left.0.cmp(&right.0))
             .map(|(_, record)| record)
     } else {
-        records
-            .iter()
-            .find(|record| !record.is_yanked && record.version == requested)
+        records.iter().find(|record| !record.is_yanked && record.version == requested)
     }
 }
 
@@ -522,60 +417,37 @@ fn validate_manifest(
 ) -> Result<(), ArtifactError> {
     let value: Value = serde_json::from_str(manifest)
         .map_err(|_| ArtifactError::InvalidManifest("package.json is not valid JSON".into()))?;
-    let object = value.as_object().ok_or_else(|| {
-        ArtifactError::InvalidManifest("package.json root must be an object".into())
-    })?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| ArtifactError::InvalidManifest("package.json root must be an object".into()))?;
     let field = |name: &str| object.get(name).and_then(Value::as_str);
     if field("schema") != Some("beskid.package.v1") {
-        return Err(ArtifactError::InvalidManifest(
-            "schema must be beskid.package.v1".into(),
-        ));
+        return Err(ArtifactError::InvalidManifest("schema must be beskid.package.v1".into()));
     }
     if !field("id").is_some_and(|id| id.eq_ignore_ascii_case(package)) {
-        return Err(ArtifactError::InvalidManifest(
-            "id does not match requested package".into(),
-        ));
+        return Err(ArtifactError::InvalidManifest("id does not match requested package".into()));
     }
     if field("version") != Some(version) {
-        return Err(ArtifactError::InvalidManifest(
-            "version does not match requested version".into(),
-        ));
+        return Err(ArtifactError::InvalidManifest("version does not match requested version".into()));
     }
     let kind = field("packageKind").unwrap_or("library");
     if !matches!(kind, "library" | "template" | "tool") {
-        return Err(ArtifactError::InvalidManifest(
-            "packageKind is unsupported".into(),
-        ));
+        return Err(ArtifactError::InvalidManifest("packageKind is unsupported".into()));
     }
     if kind == "template" && !entries.contains_key("template.json") {
-        return Err(ArtifactError::InvalidManifest(
-            "template package requires template.json".into(),
-        ));
+        return Err(ArtifactError::InvalidManifest("template package requires template.json".into()));
     }
     if kind != "template" && entries.contains_key("template.json") {
-        return Err(ArtifactError::InvalidManifest(
-            "only templates may include template.json".into(),
-        ));
+        return Err(ArtifactError::InvalidManifest("only templates may include template.json".into()));
     }
     if let Some(dependencies) = object.get("dependencies").and_then(Value::as_array) {
         for dependency in dependencies {
-            let source = dependency
-                .get("source")
-                .and_then(Value::as_str)
-                .unwrap_or("registry");
+            let source = dependency.get("source").and_then(Value::as_str).unwrap_or("registry");
             if !matches!(source, "registry" | "pckg") {
-                return Err(ArtifactError::InvalidManifest(
-                    "published dependency must use registry source".into(),
-                ));
+                return Err(ArtifactError::InvalidManifest("published dependency must use registry source".into()));
             }
-            if dependency
-                .get("version")
-                .and_then(Value::as_str)
-                .is_none_or(str::is_empty)
-            {
-                return Err(ArtifactError::InvalidManifest(
-                    "published dependency must have a version".into(),
-                ));
+            if dependency.get("version").and_then(Value::as_str).is_none_or(str::is_empty) {
+                return Err(ArtifactError::InvalidManifest("published dependency must have a version".into()));
             }
         }
     }
@@ -584,22 +456,13 @@ fn validate_manifest(
 
 fn parse_checksums(contents: &str) -> Result<BTreeMap<String, String>, ArtifactError> {
     let mut checksums = BTreeMap::new();
-    for line in contents
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-    {
+    for line in contents.lines().map(str::trim).filter(|line| !line.is_empty() && !line.starts_with('#')) {
         let mut chunks = line.split_whitespace();
-        let digest = chunks
-            .next()
-            .ok_or_else(|| ArtifactError::InvalidChecksums(format!("invalid entry '{line}'")))?;
-        let path = chunks
-            .next_back()
-            .ok_or_else(|| ArtifactError::InvalidChecksums(format!("invalid entry '{line}'")))?;
+        let digest = chunks.next().ok_or_else(|| ArtifactError::InvalidChecksums(format!("invalid entry '{line}'")))?;
+        let path =
+            chunks.next_back().ok_or_else(|| ArtifactError::InvalidChecksums(format!("invalid entry '{line}'")))?;
         if chunks.next().is_some() || !is_sha256(digest) {
-            return Err(ArtifactError::InvalidChecksums(format!(
-                "invalid entry '{line}'"
-            )));
+            return Err(ArtifactError::InvalidChecksums(format!("invalid entry '{line}'")));
         }
         checksums.insert(normalize_zip_path(path)?, digest.to_ascii_lowercase());
     }
@@ -610,10 +473,7 @@ fn read_entry(zip: &mut ZipArchive<Cursor<&[u8]>>, index: usize) -> Result<Strin
     String::from_utf8(read_entry_bytes(zip, index)?)
         .map_err(|_| ArtifactError::InvalidZip("text entry is not UTF-8".into()))
 }
-fn read_entry_bytes(
-    zip: &mut ZipArchive<Cursor<&[u8]>>,
-    index: usize,
-) -> Result<Vec<u8>, ArtifactError> {
+fn read_entry_bytes(zip: &mut ZipArchive<Cursor<&[u8]>>, index: usize) -> Result<Vec<u8>, ArtifactError> {
     let mut bytes = Vec::new();
     zip.by_index(index)
         .map_err(|error| ArtifactError::InvalidZip(error.to_string()))?
@@ -621,24 +481,12 @@ fn read_entry_bytes(
         .map_err(io_error)?;
     Ok(bytes)
 }
-fn read_entry_limited(
-    zip: &mut ZipArchive<Cursor<&[u8]>>,
-    index: usize,
-    path: &str,
-) -> Result<Vec<u8>, ArtifactError> {
-    let entry = zip
-        .by_index(index)
-        .map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
+fn read_entry_limited(zip: &mut ZipArchive<Cursor<&[u8]>>, index: usize, path: &str) -> Result<Vec<u8>, ArtifactError> {
+    let entry = zip.by_index(index).map_err(|error| ArtifactError::InvalidZip(error.to_string()))?;
     let mut bytes = Vec::with_capacity(entry.size().min(MAX_BROWSE_READ_BYTES) as usize);
-    entry
-        .take(MAX_BROWSE_READ_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(io_error)?;
+    entry.take(MAX_BROWSE_READ_BYTES + 1).read_to_end(&mut bytes).map_err(io_error)?;
     if bytes.len() as u64 > MAX_BROWSE_READ_BYTES {
-        return Err(ArtifactError::EntryTooLarge {
-            path: path.to_owned(),
-            limit_bytes: MAX_BROWSE_READ_BYTES,
-        });
+        return Err(ArtifactError::EntryTooLarge { path: path.to_owned(), limit_bytes: MAX_BROWSE_READ_BYTES });
     }
     Ok(bytes)
 }
@@ -646,13 +494,9 @@ fn normalize_zip_path(path: &str) -> Result<String, ArtifactError> {
     let path = path.replace('\\', "/");
     if path.is_empty()
         || path.starts_with('/')
-        || path
-            .split('/')
-            .any(|part| part.is_empty() || part == "." || part == "..")
+        || path.split('/').any(|part| part.is_empty() || part == "." || part == "..")
     {
-        return Err(ArtifactError::InvalidZip(format!(
-            "unsafe entry path '{path}'"
-        )));
+        return Err(ArtifactError::InvalidZip(format!("unsafe entry path '{path}'")));
     }
     Ok(path)
 }
@@ -670,9 +514,9 @@ fn is_browseable_archive_entry(path: &str) -> bool {
         return true;
     }
     if is_documentation_path(path) || is_source_path(path) {
-        return !path.split('/').any(|segment| {
-            segment.starts_with('.') && !(segment == ".beskid" && path.starts_with(".beskid/"))
-        });
+        return !path
+            .split('/')
+            .any(|segment| segment.starts_with('.') && !(segment == ".beskid" && path.starts_with(".beskid/")));
     }
     false
 }
@@ -699,21 +543,13 @@ fn storage_component(input: &str) -> String {
         .trim()
         .to_ascii_lowercase()
         .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
-                ch
-            } else {
-                '_'
-            }
-        })
+        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') { ch } else { '_' })
         .collect()
 }
 fn is_storage_component(component: &str) -> bool {
     !component.is_empty()
         && component.len() <= 200
-        && component
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+        && component.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
         && component != "."
         && component != ".."
 }

@@ -71,10 +71,7 @@ impl<'a, T> TreeView<'a, T> {
                 // Prepend indent and expansion icon
                 let mut spans = vec![
                     Span::raw(indent),
-                    Span::styled(
-                        format!("{} ", expansion_icon),
-                        Style::default().fg(Color::DarkGray),
-                    ),
+                    Span::styled(format!("{} ", expansion_icon), Style::default().fg(Color::DarkGray)),
                 ];
                 spans.extend(custom_line.spans);
 

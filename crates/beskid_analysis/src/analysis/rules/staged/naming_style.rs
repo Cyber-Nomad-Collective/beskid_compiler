@@ -40,9 +40,7 @@ impl NamingIssue for NamingRole {
             Self::EnumVariant => SemanticIssueKind::NamingNotPascalCaseVariant { name },
             Self::Field => SemanticIssueKind::NamingNotCamelCaseField { name },
             Self::Callable => SemanticIssueKind::NamingNotPascalCaseCallable { name },
-            Self::ModuleSegment => {
-                SemanticIssueKind::NamingNotPascalCaseModuleSegment { segment: name }
-            }
+            Self::ModuleSegment => SemanticIssueKind::NamingNotPascalCaseModuleSegment { segment: name },
             Self::GenericParameter => SemanticIssueKind::NamingNotPascalCaseGeneric { name },
             Self::Binding => SemanticIssueKind::NamingNotCamelCaseBinding { name },
             Self::Test => SemanticIssueKind::NamingNotSnakeCaseTest { name },
@@ -60,9 +58,7 @@ mod tests {
     fn warning_codes(src: &str) -> Vec<String> {
         let program = parse_program(src).expect("parse").node;
         let mut ctx = RuleContext::new("test.bd", src, AnalysisOptions::default());
-        walk_program(&program, |role, ident| {
-            check_naming_role(&mut ctx, role, ident)
-        });
+        walk_program(&program, |role, ident| check_naming_role(&mut ctx, role, ident));
         ctx.diagnostics.into_iter().filter_map(|d| d.code).collect()
     }
 

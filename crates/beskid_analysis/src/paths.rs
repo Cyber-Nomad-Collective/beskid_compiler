@@ -16,9 +16,8 @@ pub fn same_file(left: &Path, right: &Path) -> bool {
         (Ok(a), Ok(b)) if a == b => return true,
         _ => {}
     }
-    logical_source_suffix(left).is_some_and(|left_suffix| {
-        logical_source_suffix(right).is_some_and(|right_suffix| left_suffix == right_suffix)
-    })
+    logical_source_suffix(left)
+        .is_some_and(|left_suffix| logical_source_suffix(right).is_some_and(|right_suffix| left_suffix == right_suffix))
 }
 
 /// Suffix from the final `/src/` segment (stable across materialized `obj/` copies).

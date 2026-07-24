@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
 use beskid_abi::abi_v5::TargetMetadata;
-use beskid_analysis::services::{
-    FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source,
-};
+use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source};
 use beskid_analysis::{
     projects::{
-        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit,
-        SyntaxProgramAssembly,
+        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
     },
     services::parse_program_with_source_name,
 };
@@ -48,10 +45,7 @@ fn retired_public_codegen_facade_is_absent() {
     );
 }
 
-fn parse_production_units(
-    root: &std::path::Path,
-    units: &[(&str, &str, &str)],
-) -> Arc<SyntaxProgramAssembly> {
+fn parse_production_units(root: &std::path::Path, units: &[(&str, &str, &str)]) -> Arc<SyntaxProgramAssembly> {
     let mut source_units = Vec::with_capacity(units.len());
     for (relative_path, logical_name, source) in units {
         let path = root.join(relative_path);
@@ -59,22 +53,13 @@ fn parse_production_units(
             std::fs::create_dir_all(parent).expect("unit parent directory");
         }
         std::fs::write(&path, source).expect("write project source");
-        let program =
-            parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
-                .expect("production source parse");
-        source_units.push(SourceUnit {
-            logical_name: (*logical_name).into(),
-            path,
-            source: (*source).into(),
-            program,
-        });
+        let program = parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
+            .expect("production source parse");
+        source_units.push(SourceUnit { logical_name: (*logical_name).into(), path, source: (*source).into(), program });
     }
     Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: root.to_path_buf(),
-            },
+            host: RootEntry { dependency_name: None, source_root: root.to_path_buf() },
             dependencies: Vec::new(),
         },
         Arc::new(source_units),
@@ -85,10 +70,7 @@ fn parse_production_units(
     ))
 }
 
-fn x86_64_target_and_isa() -> (
-    TargetMetadata,
-    std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa>,
-) {
+fn x86_64_target_and_isa() -> (TargetMetadata, std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa>) {
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
@@ -113,9 +95,8 @@ fn lower_verified_entrypoint(
         lowered.symbol
     );
     for function in &lowered.artifact.functions {
-        verify_function(&function.function, isa.flags()).unwrap_or_else(|error| {
-            panic!("stock CLIF verifier rejected {}: {error}", function.name)
-        });
+        verify_function(&function.function, isa.flags())
+            .unwrap_or_else(|error| panic!("stock CLIF verifier rejected {}: {error}", function.name));
     }
     lowered
 }
@@ -134,10 +115,7 @@ fn assert_unsupported_closed_failure(
     let rendered = error.to_string();
     assert!(rendered.contains("MissingRuleOrFact"), "{rendered}");
     for fragment in expected_site_fragments {
-        assert!(
-            rendered.contains(fragment),
-            "expected {fragment:?} in {rendered}"
-        );
+        assert!(rendered.contains(fragment), "expected {fragment:?} in {rendered}");
     }
 }
 
@@ -159,11 +137,7 @@ fn parsed_project_reaches_verified_isle_without_a_legacy_codegen_entrypoint() {
     // The production syntax-only entrypoint accepts only parsed SyntaxProgramAssembly data: no
     // HIR or Lowerable value is constructed or supplied to the code-generation route.
     let lowered = lower_verified_entrypoint(assembly, target.clone(), isa.as_ref());
-    assert_eq!(
-        lowered.artifact.functions.len(),
-        2,
-        "reachable direct-call closure"
-    );
+    assert_eq!(lowered.artifact.functions.len(), 2, "reachable direct-call closure");
 
     let unsupported_source = "
         i32 Main() {
@@ -172,16 +146,8 @@ fn parsed_project_reaches_verified_isle_without_a_legacy_codegen_entrypoint() {
             return outer;
         }
     ";
-    let unsupported = parse_production_units(
-        project.path(),
-        &[("Unsupported.bd", "Main", unsupported_source)],
-    );
-    assert_unsupported_closed_failure(
-        unsupported,
-        target,
-        isa.as_ref(),
-        &["Unsupported.bd", "Block@"],
-    );
+    let unsupported = parse_production_units(project.path(), &[("Unsupported.bd", "Main", unsupported_source)]);
+    assert_unsupported_closed_failure(unsupported, target, isa.as_ref(), &["Unsupported.bd", "Block@"]);
 }
 
 #[test]
@@ -195,11 +161,7 @@ fn parsed_direct_zero_argument_spawn_emits_syntax_owned_trampoline_and_fiber_dis
     let (target, isa) = x86_64_target_and_isa();
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
-    assert_eq!(
-        lowered.artifact.functions.len(),
-        3,
-        "Entry, Main, and the syntax-owned spawn trampoline"
-    );
+    assert_eq!(lowered.artifact.functions.len(), 3, "Entry, Main, and the syntax-owned spawn trampoline");
     let main = lowered
         .artifact
         .functions
@@ -214,16 +176,10 @@ fn parsed_direct_zero_argument_spawn_emits_syntax_owned_trampoline_and_fiber_dis
         .expect("syntax-owned spawn trampoline");
     let main_clif = main.function.display().to_string();
     let trampoline_clif = trampoline.function.display().to_string();
-    assert!(
-        main_clif.contains("beskid_rt_v5_fiber_spawn_with_cancel_slot"),
-        "{main_clif}"
-    );
+    assert!(main_clif.contains("beskid_rt_v5_fiber_spawn_with_cancel_slot"), "{main_clif}");
     assert!(!main_clif.contains("interop_dispatch_"), "{main_clif}");
     assert!(main_clif.contains("func_addr"), "{main_clif}");
-    assert!(
-        trampoline_clif.contains("Entry#syntax_"),
-        "{trampoline_clif}"
-    );
+    assert!(trampoline_clif.contains("Entry#syntax_"), "{trampoline_clif}");
     assert!(trampoline_clif.contains("return"), "{trampoline_clif}");
 }
 
@@ -237,11 +193,7 @@ fn parsed_zero_capture_lambda_spawn_emits_syntax_owned_entry_and_fiber_dispatch(
     let (target, isa) = x86_64_target_and_isa();
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
-    assert_eq!(
-        lowered.artifact.functions.len(),
-        3,
-        "Main, the syntax-owned lambda entry, and its spawn trampoline"
-    );
+    assert_eq!(lowered.artifact.functions.len(), 3, "Main, the syntax-owned lambda entry, and its spawn trampoline");
     let main = lowered
         .artifact
         .functions
@@ -263,17 +215,11 @@ fn parsed_zero_capture_lambda_spawn_emits_syntax_owned_entry_and_fiber_dispatch(
     let main_clif = main.function.display().to_string();
     let lambda_clif = lambda.function.display().to_string();
     let trampoline_clif = trampoline.function.display().to_string();
-    assert!(
-        main_clif.contains("beskid_rt_v5_fiber_spawn_with_cancel_slot"),
-        "{main_clif}"
-    );
+    assert!(main_clif.contains("beskid_rt_v5_fiber_spawn_with_cancel_slot"), "{main_clif}");
     assert!(!main_clif.contains("interop_dispatch_"), "{main_clif}");
     assert!(main_clif.contains("func_addr"), "{main_clif}");
     assert!(lambda_clif.contains("iconst.i64 7"), "{lambda_clif}");
-    assert!(
-        trampoline_clif.contains("__beskid_spawn_lambda_syntax_"),
-        "{trampoline_clif}"
-    );
+    assert!(trampoline_clif.contains("__beskid_spawn_lambda_syntax_"), "{trampoline_clif}");
 }
 
 #[test]
@@ -316,29 +262,15 @@ fn parsed_capturing_lambda_spawn_allocates_roots_and_dispatches_fiber_entry() {
     let main_clif = main.function.display().to_string();
     let lambda_clif = lambda.function.display().to_string();
     let trampoline_clif = trampoline.function.display().to_string();
-    assert!(
-        main_clif.contains("beskid_rt_v5_closure_environment_allocate"),
-        "{main_clif}"
-    );
-    assert!(
-        main_clif.contains("beskid_rt_v5_closure_environment_root_current"),
-        "{main_clif}"
-    );
-    assert!(
-        main_clif.contains("beskid_rt_v5_fiber_spawn_with_cancel_slot"),
-        "{main_clif}"
-    );
+    assert!(main_clif.contains("beskid_rt_v5_closure_environment_allocate"), "{main_clif}");
+    assert!(main_clif.contains("beskid_rt_v5_closure_environment_root_current"), "{main_clif}");
+    assert!(main_clif.contains("beskid_rt_v5_fiber_spawn_with_cancel_slot"), "{main_clif}");
     assert!(!main_clif.contains("interop_dispatch_"), "{main_clif}");
     assert!(
-        lambda_clif.contains("load")
-            || lambda_clif.contains("ireduce")
-            || lambda_clif.contains("iadd"),
+        lambda_clif.contains("load") || lambda_clif.contains("ireduce") || lambda_clif.contains("iadd"),
         "lambda entry must read the rooted capture environment: {lambda_clif}"
     );
-    assert!(
-        trampoline_clif.contains("__beskid_spawn_lambda_syntax_"),
-        "{trampoline_clif}"
-    );
+    assert!(trampoline_clif.contains("__beskid_spawn_lambda_syntax_"), "{trampoline_clif}");
 }
 
 #[test]
@@ -351,20 +283,12 @@ fn multi_unit_parsed_project_lowers_through_codegen_input_isle_only() {
             return Util.Double(21);
         }
     ";
-    let assembly = parse_production_units(
-        project.path(),
-        &[
-            ("Main.bd", "Main", main_source),
-            ("Util.bd", "Util", util_source),
-        ],
-    );
+    let assembly =
+        parse_production_units(project.path(), &[("Main.bd", "Main", main_source), ("Util.bd", "Util", util_source)]);
     let (target, isa) = x86_64_target_and_isa();
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
-    assert!(
-        lowered.artifact.functions.len() >= 2,
-        "reachable closure must include Main and imported Util.Double"
-    );
+    assert!(lowered.artifact.functions.len() >= 2, "reachable closure must include Main and imported Util.Double");
 }
 
 #[test]
@@ -395,10 +319,7 @@ fn parsed_project_control_flow_while_break_continue_reaches_verified_clif() {
         .expect("Main artifact function");
     let clif = main.function.display().to_string();
     assert!(clif.contains("brif"), "expected while/if branching: {clif}");
-    assert!(
-        clif.matches("jump").count() >= 2,
-        "expected loop transfer jumps: {clif}"
-    );
+    assert!(clif.matches("jump").count() >= 2, "expected loop transfer jumps: {clif}");
 }
 
 #[test]
@@ -453,10 +374,7 @@ fn parsed_project_range_for_accumulator_reaches_verified_clif_without_hir_fallba
         .expect("Main artifact function");
     let clif = main.function.display().to_string();
     assert!(clif.contains("brif"), "expected range-for branch: {clif}");
-    assert!(
-        clif.contains("iadd"),
-        "expected accumulator addition: {clif}"
-    );
+    assert!(clif.contains("iadd"), "expected accumulator addition: {clif}");
 }
 
 #[test]
@@ -471,11 +389,7 @@ fn parsed_project_nested_direct_calls_reach_verified_clif() {
     let (target, isa) = x86_64_target_and_isa();
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
-    assert_eq!(
-        lowered.artifact.functions.len(),
-        3,
-        "reachable closure must include Main, Mid, and Inner"
-    );
+    assert_eq!(lowered.artifact.functions.len(), 3, "reachable closure must include Main, Mid, and Inner");
     let main = lowered
         .artifact
         .functions
@@ -488,14 +402,8 @@ fn parsed_project_nested_direct_calls_reach_verified_clif() {
         .iter()
         .find(|function| function.name.starts_with("Mid#syntax_"))
         .expect("Mid artifact function");
-    assert!(
-        main.function.display().to_string().contains("call"),
-        "Main must call Mid"
-    );
-    assert!(
-        mid.function.display().to_string().matches("call").count() >= 2,
-        "Mid must nest two Inner calls"
-    );
+    assert!(main.function.display().to_string().contains("call"), "Main must call Mid");
+    assert!(mid.function.display().to_string().matches("call").count() >= 2, "Mid must nest two Inner calls");
 }
 
 #[test]
@@ -510,12 +418,7 @@ fn unsupported_lambda_fails_closed_without_legacy_fallback() {
     ";
     let assembly = parse_production_units(project.path(), &[("Lambda.bd", "Main", source)]);
     let (target, isa) = x86_64_target_and_isa();
-    assert_unsupported_closed_failure(
-        assembly,
-        target,
-        isa.as_ref(),
-        &["Lambda.bd", "MissingRuleOrFact"],
-    );
+    assert_unsupported_closed_failure(assembly, target, isa.as_ref(), &["Lambda.bd", "MissingRuleOrFact"]);
 }
 
 #[test]
@@ -579,18 +482,11 @@ fn parsed_project_capturing_lambda_keeps_generation_safe_capture_facts_and_fails
             typed.runtime_intrinsic_capability.is_none(),
             "ordinary parsed projects must not mint trusted runtime intrinsic authority"
         );
-        let root = AstNodeKey {
-            unit,
-            generation,
-            node: AstNodeId(0),
-        };
+        let root = AstNodeKey { unit, generation, node: AstNodeId(0) };
         let mut pending = vec![root];
         let mut lambda = None;
         while let Some(key) = pending.pop() {
-            if matches!(
-                node_kind(db, key),
-                Ok(Some(beskid_queries::IndexedNodeKind::LambdaExpression))
-            ) {
+            if matches!(node_kind(db, key), Ok(Some(beskid_queries::IndexedNodeKind::LambdaExpression))) {
                 lambda = Some(key);
                 break;
             }
@@ -599,19 +495,13 @@ fn parsed_project_capturing_lambda_keeps_generation_safe_capture_facts_and_fails
             }
         }
         let lambda = lambda.expect("capturing lambda source node");
-        let environment = closure_environment(db, lambda)
-            .expect("capture fact query")
-            .expect("generation-safe capture environment");
+        let environment =
+            closure_environment(db, lambda).expect("capture fact query").expect("generation-safe capture environment");
         assert_eq!(environment.captures.len(), 1, "outer parameter is captured");
         assert_eq!(environment.parameters.len(), 1, "inner lambda parameter");
     });
 
-    assert_unsupported_closed_failure(
-        assembly,
-        target,
-        isa.as_ref(),
-        &["Capture.bd", "MissingRuleOrFact"],
-    );
+    assert_unsupported_closed_failure(assembly, target, isa.as_ref(), &["Capture.bd", "MissingRuleOrFact"]);
 }
 
 #[test]
@@ -619,14 +509,10 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
     let (target, isa) = x86_64_target_and_isa();
     let artifact = with_db(|db| lower_canonical_runtime_prepared_syntax(db, target, isa.as_ref()))
         .expect("canonical runtime lowers through TypedProgram → CodegenInput → ISLE");
-    assert!(
-        !artifact.functions.is_empty(),
-        "canonical Bootstrap must emit at least one verified function"
-    );
+    assert!(!artifact.functions.is_empty(), "canonical Bootstrap must emit at least one verified function");
     for function in &artifact.functions {
-        verify_function(&function.function, isa.flags()).unwrap_or_else(|error| {
-            panic!("stock CLIF verifier rejected {}: {error}", function.name)
-        });
+        verify_function(&function.function, isa.flags())
+            .unwrap_or_else(|error| panic!("stock CLIF verifier rejected {}: {error}", function.name));
     }
     assert!(
         artifact.functions.iter().any(|function| {
@@ -656,30 +542,20 @@ fn production_path_never_constructs_hir_or_lowerable() {
     );
     let (target, isa) = x86_64_target_and_isa();
     let lowered = lower_verified_entrypoint(Arc::clone(&assembly), target.clone(), isa.as_ref());
-    assert!(
-        lowered.artifact.functions.len() >= 2,
-        "direct-call closure through syntax ISLE"
-    );
+    assert!(lowered.artifact.functions.len() >= 2, "direct-call closure through syntax ISLE");
 
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved = resolved_input_from_plan(path, source.to_string(), plan, None, None);
     let front = compile_front_end_from_resolved_input(
         &resolved,
-        FrontEndOptions {
-            with_semantic_diagnostics: false,
-            ..Default::default()
-        },
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
     )
     .expect("front-end for Lowerable rejection probe");
     match lower_program(&front.hir, &front.resolution, &front.typed) {
         Ok(_) => panic!("lower_program must not construct a Lowerable artifact"),
         Err(errors) => {
-            let message = errors
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect::<Vec<_>>()
-                .join("; ");
+            let message = errors.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join("; ");
             assert!(message.contains(RETIRED_HIR_PATH_MARKER), "{message}");
             assert!(message.contains("lower_syntax_"), "{message}");
         }
@@ -697,21 +573,14 @@ fn remaining_hir_driver_is_rejected_without_fallback() {
     let resolved = resolved_input_from_plan(path, source.to_string(), plan, None, None);
     let front = compile_front_end_from_resolved_input(
         &resolved,
-        FrontEndOptions {
-            with_semantic_diagnostics: false,
-            ..Default::default()
-        },
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
     )
     .expect("front-end for rejection probe");
     match lower_program(&front.hir, &front.resolution, &front.typed) {
         Ok(_) => panic!("lower_program must reject the retired HIR path"),
         Err(errors) => {
-            let message = errors
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect::<Vec<_>>()
-                .join("; ");
+            let message = errors.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join("; ");
             assert!(message.contains(RETIRED_HIR_PATH_MARKER), "{message}");
             assert!(message.contains("lower_syntax_"), "{message}");
         }

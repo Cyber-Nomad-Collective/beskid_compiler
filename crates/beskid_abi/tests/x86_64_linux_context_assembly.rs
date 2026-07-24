@@ -1,7 +1,4 @@
-#![cfg(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "macos", target_arch = "aarch64")
-))]
+#![cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64")))]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,14 +11,8 @@ struct TempDir(PathBuf);
 
 impl TempDir {
     fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "beskid-x86-64-context-{}-{nonce}",
-            std::process::id()
-        ));
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let path = std::env::temp_dir().join(format!("beskid-x86-64-context-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         Self(path)
     }
@@ -34,10 +25,7 @@ impl Drop for TempDir {
 }
 
 fn target() -> TargetMetadata {
-    TargetMetadata::supported()
-        .into_iter()
-        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
-        .unwrap()
+    TargetMetadata::supported().into_iter().find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu").unwrap()
 }
 
 fn source() -> PathBuf {
@@ -59,11 +47,7 @@ fn prepare_include(temp: &Path) {
 
 fn output(command: &mut Command) -> std::process::Output {
     let output = command.output().unwrap();
-    assert!(
-        output.status.success(),
-        "command failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert!(output.status.success(), "command failed: {}", String::from_utf8_lossy(&output.stderr));
     output
 }
 
@@ -92,29 +76,17 @@ fn elf_object_exports_exactly_two_symbols_and_saves_the_manifest_preserved_set()
         command
     };
     let mut nm = nm;
-    let mut symbols = String::from_utf8(output(nm.arg(&object)).stdout)
-        .unwrap()
-        .lines()
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
+    let mut symbols =
+        String::from_utf8(output(nm.arg(&object)).stdout).unwrap().lines().map(str::to_owned).collect::<Vec<_>>();
     symbols.sort();
-    assert_eq!(
-        symbols,
-        [
-            "beskid_arch_v5_context_init".to_owned(),
-            "beskid_arch_v5_context_switch".to_owned(),
-        ]
-    );
+    assert_eq!(symbols, ["beskid_arch_v5_context_init".to_owned(), "beskid_arch_v5_context_switch".to_owned(),]);
 
     let source = fs::read_to_string(source()).unwrap();
     for register in ["%rbx", "%rbp", "%r12", "%r13", "%r14", "%r15"] {
         assert!(source.contains(&format!("movq {register},")));
         assert!(source.contains(&format!(", {register}")));
     }
-    assert!(
-        !source.contains(".cfi_"),
-        "context switching must not advertise unwind"
-    );
+    assert!(!source.contains(".cfi_"), "context switching must not advertise unwind");
 }
 
 #[test]
@@ -123,20 +95,13 @@ fn linux_platform_tls_uses_dynamic_relocations_for_dlopen() {
     let object = temp.0.join("platform_tls.o");
     output(
         Command::new("clang")
-            .args([
-                "-target",
-                "x86_64-unknown-linux-gnu",
-                "-std=c11",
-                "-fPIC",
-                "-c",
-            ])
+            .args(["-target", "x86_64-unknown-linux-gnu", "-std=c11", "-fPIC", "-c"])
             .arg(tls_source())
             .arg("-o")
             .arg(&object),
     );
 
-    let relocations =
-        String::from_utf8(output(Command::new("objdump").arg("-r").arg(&object)).stdout).unwrap();
+    let relocations = String::from_utf8(output(Command::new("objdump").arg("-r").arg(&object)).stdout).unwrap();
     assert!(
         relocations.contains("TLSLD") || relocations.contains("TLSGD"),
         "dlopen-safe TLS must use dynamic TLS relocations, got:\n{relocations}"
@@ -206,15 +171,7 @@ int main(void) {
     if cfg!(target_os = "macos") {
         clang.args(["-arch", "x86_64", "-D__BESKID_TEST_MACHO=1"]);
     }
-    output(
-        clang
-            .arg(source())
-            .arg(&harness)
-            .arg("-I")
-            .arg(&temp.0)
-            .arg("-o")
-            .arg(&executable),
-    );
+    output(clang.arg(source()).arg(&harness).arg("-I").arg(&temp.0).arg("-o").arg(&executable));
     if cfg!(target_os = "macos") {
         output(Command::new("arch").arg("-x86_64").arg(executable));
     } else {

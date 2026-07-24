@@ -8,9 +8,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::widgets::file_system_tree::{FileSystemTree, FileSystemTreeState};
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct FileSystemTreeDemo {
     tree: FileSystemTree<'static>,
@@ -21,16 +19,11 @@ struct FileSystemTreeDemo {
 impl FileSystemTreeDemo {
     fn new() -> io::Result<Self> {
         let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let tree =
-            FileSystemTree::new(root).map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        let tree = FileSystemTree::new(root).map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
         let mut state = FileSystemTreeState::new();
         state.select(vec![0]);
 
-        Ok(Self {
-            tree,
-            state,
-            last_selection: "No selection".to_string(),
-        })
+        Ok(Self { tree, state, last_selection: "No selection".to_string() })
     }
 }
 
@@ -49,9 +42,7 @@ impl CoordinatorApp for FileSystemTreeDemo {
                     | KeyCode::Right
                     | KeyCode::Char('h')
                     | KeyCode::Char('l') => {
-                        let _ = self
-                            .tree
-                            .handle_navigation_key(keyboard.key_code, &mut self.state);
+                        let _ = self.tree.handle_navigation_key(keyboard.key_code, &mut self.state);
                     }
                     KeyCode::Char('/') => {
                         if !self.tree.is_filter_mode(&self.state) {
@@ -60,9 +51,7 @@ impl CoordinatorApp for FileSystemTreeDemo {
                     }
                     _ => {
                         if self.tree.is_filter_mode(&self.state) {
-                            let _ = self
-                                .tree
-                                .handle_filter_key(keyboard.key_code, &mut self.state);
+                            let _ = self.tree.handle_filter_key(keyboard.key_code, &mut self.state);
                         }
                     }
                 }
@@ -81,17 +70,10 @@ impl CoordinatorApp for FileSystemTreeDemo {
         let area = frame.area();
         let layout = ratatui::layout::Layout::default()
             .direction(ratatui::layout::Direction::Vertical)
-            .constraints([
-                ratatui::layout::Constraint::Min(0),
-                ratatui::layout::Constraint::Length(3),
-            ])
+            .constraints([ratatui::layout::Constraint::Min(0), ratatui::layout::Constraint::Length(3)])
             .split(area);
 
-        let tree = self.tree.clone().block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" File System "),
-        );
+        let tree = self.tree.clone().block(Block::default().borders(Borders::ALL).title(" File System "));
         frame.render_stateful_widget(tree, layout[0], &mut self.state);
 
         let footer = Paragraph::new(vec![

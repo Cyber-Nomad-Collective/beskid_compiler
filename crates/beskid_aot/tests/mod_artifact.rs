@@ -6,8 +6,8 @@ use beskid_analysis::services::{
 };
 use beskid_aot::object_module::BeskidObjectModule;
 use beskid_aot::{
-    ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, build_mod_artifact,
-    compute_mod_artifact_key, lower_prepared_syntax_entrypoint,
+    ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, build_mod_artifact, compute_mod_artifact_key,
+    lower_prepared_syntax_entrypoint,
 };
 use beskid_codegen::CodegenArtifact;
 use beskid_queries::compile_front_end_from_resolved_input;
@@ -68,34 +68,21 @@ project {
     })
     .expect("build mod artifact");
 
-    let expected_key = compute_mod_artifact_key(
-        &descriptor.lock_hash,
-        &descriptor.mod_source_hash,
-        host_triple,
-        "0.2.0-dev",
-    );
+    let expected_key =
+        compute_mod_artifact_key(&descriptor.lock_hash, &descriptor.mod_source_hash, host_triple, "0.2.0-dev");
     assert_eq!(descriptor.artifact_key, expected_key);
     assert_eq!(
         descriptor.artifact_dir,
-        workspace_root
-            .join(".beskid/obj/mods/compiler_sdk_test_mod")
-            .join(&expected_key)
-            .join(host_triple)
+        workspace_root.join(".beskid/obj/mods/compiler_sdk_test_mod").join(&expected_key).join(host_triple)
     );
     assert_eq!(descriptor.object_file, "mod.o");
     assert!(descriptor.artifact_dir.join("mod.o").is_file());
-    assert!(
-        descriptor
-            .artifact_dir
-            .join("mod.descriptor.json")
-            .is_file()
-    );
+    assert!(descriptor.artifact_dir.join("mod.descriptor.json").is_file());
     assert!(descriptor.registrations.is_empty());
 
-    let descriptor_json = fs::read_to_string(descriptor.artifact_dir.join("mod.descriptor.json"))
-        .expect("descriptor json");
-    let sidecar: ModArtifactDescriptor =
-        serde_json::from_str(&descriptor_json).expect("descriptor schema");
+    let descriptor_json =
+        fs::read_to_string(descriptor.artifact_dir.join("mod.descriptor.json")).expect("descriptor json");
+    let sidecar: ModArtifactDescriptor = serde_json::from_str(&descriptor_json).expect("descriptor schema");
     assert_eq!(sidecar.schema_version, 1);
     assert_eq!(sidecar.package_id, "compiler_sdk_test_mod");
     assert_eq!(sidecar.package_version.as_deref(), Some("0.0.0-local"));
@@ -125,14 +112,10 @@ i32 Main() {
     fs::write(&source_path, source).expect("write source");
 
     let plan = synthetic_compile_plan_for_source(&source_path);
-    let resolved: ResolvedInput =
-        resolved_input_from_plan(source_path, source.to_owned(), plan, None, None);
+    let resolved: ResolvedInput = resolved_input_from_plan(source_path, source.to_owned(), plan, None, None);
     let front = compile_front_end_from_resolved_input(
         &resolved,
-        FrontEndOptions {
-            with_semantic_diagnostics: true,
-            ..Default::default()
-        },
+        FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
         None,
     )
     .expect("prepare syntax frontend");
@@ -140,12 +123,9 @@ i32 Main() {
         .into_iter()
         .find(|target| target.triple.as_str() == host_target_triple())
         .expect("host ABI target");
-    let artifact = lower_prepared_syntax_entrypoint(&front, "Main", target)
-        .expect("lower prepared syntax fixture");
+    let artifact = lower_prepared_syntax_entrypoint(&front, "Main", target).expect("lower prepared syntax fixture");
     beskid_codegen::validate_artifact(&artifact).expect("validate link plan");
 
     let mut object = BeskidObjectModule::new(None).expect("object module");
-    object
-        .compile_artifact(&artifact, None)
-        .expect("compile artifact");
+    object.compile_artifact(&artifact, None).expect("compile artifact");
 }

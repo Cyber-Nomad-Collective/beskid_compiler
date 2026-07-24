@@ -15,10 +15,9 @@ pub struct TreeArgs {
 
 /// Parse `args.input` and print the formatter-style syntax tree.
 pub fn execute(args: TreeArgs) -> Result<()> {
-    let source = fs::read_to_string(&args.input)
-        .with_context(|| format!("Failed to read file: {}", args.input.display()))?;
-    let program =
-        services::parse_program_with_source_name(&args.input.display().to_string(), &source)?;
+    let source =
+        fs::read_to_string(&args.input).with_context(|| format!("Failed to read file: {}", args.input.display()))?;
+    let program = services::parse_program_with_source_name(&args.input.display().to_string(), &source)?;
     print!("{}", services::render_program_tree(&program));
 
     Ok(())

@@ -50,18 +50,10 @@ impl Parsable for IfStatement {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner();
-        let condition =
-            Expression::parse(inner.next().ok_or(ParseError::missing(Rule::Expression))?)?;
+        let condition = Expression::parse(inner.next().ok_or(ParseError::missing(Rule::Expression))?)?;
         let then_block = Block::parse(inner.next().ok_or(ParseError::missing(Rule::Block))?)?;
         let else_branch = inner.next().map(ElseBranch::parse).transpose()?;
 
-        Ok(Spanned::new(
-            Self {
-                condition,
-                then_block,
-                else_branch,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { condition, then_block, else_branch }, span))
     }
 }

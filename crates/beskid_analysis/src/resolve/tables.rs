@@ -57,11 +57,7 @@ impl ResolutionTables {
         self.resolved_values.insert(span, value);
     }
 
-    pub fn resolved_value_at(
-        &self,
-        span: SpanInfo,
-        source_path: Option<&PathBuf>,
-    ) -> Option<ResolvedValue> {
+    pub fn resolved_value_at(&self, span: SpanInfo, source_path: Option<&PathBuf>) -> Option<ResolvedValue> {
         if let Some(path) = source_path {
             let mut candidate: Option<ResolvedValue> = None;
             for (scoped_path, values) in &self.scoped_resolved_values {
@@ -108,11 +104,7 @@ impl ResolutionTables {
         self.resolved_types.insert(span, resolved_type);
     }
 
-    pub fn resolved_type_at(
-        &self,
-        span: SpanInfo,
-        source_path: Option<&PathBuf>,
-    ) -> Option<ResolvedType> {
+    pub fn resolved_type_at(&self, span: SpanInfo, source_path: Option<&PathBuf>) -> Option<ResolvedType> {
         if let Some(path) = source_path {
             if let Some(resolved_type) = self.scoped_type_at(path, span) {
                 return Some(resolved_type);
@@ -150,27 +142,13 @@ impl ResolutionTables {
         None
     }
 
-    pub fn intern_local(
-        &mut self,
-        name: String,
-        span: SpanInfo,
-        source_path: Option<PathBuf>,
-    ) -> LocalId {
+    pub fn intern_local(&mut self, name: String, span: SpanInfo, source_path: Option<PathBuf>) -> LocalId {
         let id = LocalId(self.locals.len());
-        self.locals.push(LocalInfo {
-            id,
-            name,
-            span,
-            source_path,
-        });
+        self.locals.push(LocalInfo { id, name, span, source_path });
         id
     }
 
-    pub fn local_id_for_span(
-        &self,
-        span: SpanInfo,
-        source_path: Option<&PathBuf>,
-    ) -> Option<LocalId> {
+    pub fn local_id_for_span(&self, span: SpanInfo, source_path: Option<&PathBuf>) -> Option<LocalId> {
         if let Some(id) = self
             .locals
             .iter()
@@ -184,30 +162,19 @@ impl ResolutionTables {
             let matches: Vec<&LocalInfo> = self
                 .locals
                 .iter()
-                .filter(|info| {
-                    info.span.start == span.start
-                        && same_file_opt(info.source_path.as_ref(), Some(path))
-                })
+                .filter(|info| info.span.start == span.start && same_file_opt(info.source_path.as_ref(), Some(path)))
                 .collect();
             if matches.len() == 1 {
                 return Some(matches[0].id);
             }
         }
 
-        let matches: Vec<&LocalInfo> = self
-            .locals
-            .iter()
-            .filter(|info| info.span == span)
-            .collect();
+        let matches: Vec<&LocalInfo> = self.locals.iter().filter(|info| info.span == span).collect();
         if matches.len() == 1 {
             return Some(matches[0].id);
         }
 
-        let start_matches: Vec<&LocalInfo> = self
-            .locals
-            .iter()
-            .filter(|info| info.span.start == span.start)
-            .collect();
+        let start_matches: Vec<&LocalInfo> = self.locals.iter().filter(|info| info.span.start == span.start).collect();
         if start_matches.len() == 1 {
             return Some(start_matches[0].id);
         }
@@ -218,17 +185,9 @@ impl ResolutionTables {
         self.locals.get(id.0)
     }
 
-    pub fn insert_type_conformance(
-        &mut self,
-        type_item_id: ItemId,
-        contract_item_id: ItemId,
-        span: SpanInfo,
-    ) {
+    pub fn insert_type_conformance(&mut self, type_item_id: ItemId, contract_item_id: ItemId, span: SpanInfo) {
         let entries = self.type_conformances.entry(type_item_id).or_default();
-        if entries
-            .iter()
-            .any(|(item_id, item_span)| *item_id == contract_item_id && *item_span == span)
-        {
+        if entries.iter().any(|(item_id, item_span)| *item_id == contract_item_id && *item_span == span) {
             return;
         }
         entries.push((contract_item_id, span));
@@ -242,26 +201,19 @@ impl ResolutionTables {
                 local_remap.insert(local.id, existing);
                 continue;
             }
-            let new_id =
-                self.intern_local(local.name.clone(), local.span, local.source_path.clone());
+            let new_id = self.intern_local(local.name.clone(), local.span, local.source_path.clone());
             local_remap.insert(local.id, new_id);
         }
 
-        let scoped_types = self
-            .scoped_resolved_types
-            .entry(crate::paths::unit_path_key(&unit_source_path))
-            .or_default();
+        let scoped_types =
+            self.scoped_resolved_types.entry(crate::paths::unit_path_key(&unit_source_path)).or_default();
         scoped_types.extend(other.resolved_types.iter().map(|(k, v)| (*k, v.clone())));
 
-        let scoped_values = self
-            .scoped_resolved_values
-            .entry(crate::paths::unit_path_key(&unit_source_path))
-            .or_default();
+        let scoped_values =
+            self.scoped_resolved_values.entry(crate::paths::unit_path_key(&unit_source_path)).or_default();
         for (span, value) in &other.resolved_values {
             let remapped = match value {
-                ResolvedValue::Local(id) => {
-                    ResolvedValue::Local(*local_remap.get(id).unwrap_or(id))
-                }
+                ResolvedValue::Local(id) => ResolvedValue::Local(*local_remap.get(id).unwrap_or(id)),
                 other => *other,
             };
             scoped_values.insert(*span, remapped);

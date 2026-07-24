@@ -34,11 +34,7 @@ async fn full_returns_none_after_document_close() {
     open_sample_document(server, doc_uri.clone()).await;
 
     server
-        .did_close(DidCloseTextDocumentParams {
-            text_document: TextDocumentIdentifier {
-                uri: doc_uri.clone(),
-            },
-        })
+        .did_close(DidCloseTextDocumentParams { text_document: TextDocumentIdentifier { uri: doc_uri.clone() } })
         .await;
 
     let response = server

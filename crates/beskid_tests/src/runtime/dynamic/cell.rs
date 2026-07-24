@@ -17,9 +17,6 @@ fn dynamic_cell_create_allocates_through_runtime_arena() {
         assert_eq!(cell.flags, 0);
         assert_eq!(DynamicCell::SIZE, std::mem::size_of::<DynamicCell>());
 
-        assert!(
-            gc_object_count() > before,
-            "dynamic cell header allocation should increase object count"
-        );
+        assert!(gc_object_count() > before, "dynamic cell header allocation should increase object count");
     });
 }

@@ -16,15 +16,10 @@ impl<'a> TypeChecker<'a> {
         let Some(method_item_id) = self.item_id_for_span(method_span) else {
             return;
         };
-        let Some(ResolvedType::Item(receiver_item_id)) =
-            self.resolved_type_at(def.node.receiver_type.span)
-        else {
+        let Some(ResolvedType::Item(receiver_item_id)) = self.resolved_type_at(def.node.receiver_type.span) else {
             return;
         };
-        self.methods_by_receiver.insert(
-            (receiver_item_id, def.node.name.node.name.clone()),
-            method_item_id,
-        );
+        self.methods_by_receiver.insert((receiver_item_id, def.node.name.node.name.clone()), method_item_id);
     }
 
     pub(super) fn seed_contract_signatures(&mut self, program: &Spanned<HirProgram>) {
@@ -47,13 +42,11 @@ impl<'a> TypeChecker<'a> {
                 &mut cache,
                 &mut HashSet::new(),
             );
-            let Some(contract_item_id) = self.item_id_for_name(&contract_name, ItemKind::Contract)
-            else {
+            let Some(contract_item_id) = self.item_id_for_name(&contract_name, ItemKind::Contract) else {
                 continue;
             };
             for (method_name, signature) in signatures {
-                self.contract_signatures
-                    .insert((contract_item_id, method_name), signature);
+                self.contract_signatures.insert((contract_item_id, method_name), signature);
             }
 
             // If this contract has an extern interface, perform static validation.
@@ -61,27 +54,14 @@ impl<'a> TypeChecker<'a> {
                 && let Some(ext) = &def.node.extern_interface
             {
                 // ABI must be exactly "C"
-                let abi_ok = ext
-                    .abi
-                    .as_ref()
-                    .map(|s| s.eq_ignore_ascii_case("C"))
-                    .unwrap_or(false);
+                let abi_ok = ext.abi.as_ref().map(|s| s.eq_ignore_ascii_case("C")).unwrap_or(false);
                 if !abi_ok {
-                    self.errors.push(TypeError::ExternInvalidAbi {
-                        span: def.node.name.span,
-                        abi: ext.abi.clone(),
-                    });
+                    self.errors.push(TypeError::ExternInvalidAbi { span: def.node.name.span, abi: ext.abi.clone() });
                 }
                 // Library must be present and non-empty
-                let lib_ok = ext
-                    .library
-                    .as_ref()
-                    .map(|s| !s.trim().is_empty())
-                    .unwrap_or(false);
+                let lib_ok = ext.library.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
                 if !lib_ok {
-                    self.errors.push(TypeError::ExternMissingLibrary {
-                        span: def.node.name.span,
-                    });
+                    self.errors.push(TypeError::ExternMissingLibrary { span: def.node.name.span });
                 }
 
                 // Validate method signatures declared directly in this contract
@@ -134,10 +114,7 @@ impl<'a> TypeChecker<'a> {
         for node in &definition.node.items {
             match &node.node {
                 HirContractNode::MethodSignature(signature) => {
-                    if methods
-                        .iter()
-                        .any(|(name, _)| name == &signature.node.name.node.name)
-                    {
+                    if methods.iter().any(|(name, _)| name == &signature.node.name.node.name) {
                         continue;
                     }
                     let mut params = Vec::new();
@@ -161,13 +138,7 @@ impl<'a> TypeChecker<'a> {
                     let Some(return_type) = return_type else {
                         continue;
                     };
-                    methods.push((
-                        signature.node.name.node.name.clone(),
-                        FunctionSignature {
-                            params,
-                            return_type,
-                        },
-                    ));
+                    methods.push((signature.node.name.node.name.clone(), FunctionSignature { params, return_type }));
                 }
                 HirContractNode::Embedding(embedding) => {
                     let embedded = self.collect_contract_signatures_recursive(
@@ -208,9 +179,7 @@ impl<'a> TypeChecker<'a> {
         // Allow: primitives (Bool, U8, I32, I64, F64), or Unit if unspecified upstream
         use crate::hir::{HirPrimitiveType, HirType};
         match &ret.node {
-            HirType::Primitive(p) => {
-                Self::is_allowed_ffi_primitive(p.node) || matches!(p.node, HirPrimitiveType::Unit)
-            }
+            HirType::Primitive(p) => Self::is_allowed_ffi_primitive(p.node) || matches!(p.node, HirPrimitiveType::Unit),
             _ => false,
         }
     }

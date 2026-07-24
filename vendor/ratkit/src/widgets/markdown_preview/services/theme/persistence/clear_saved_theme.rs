@@ -24,12 +24,9 @@ use super::default_config_path::default_config_path;
 /// - The config directory cannot be determined (when using default path)
 /// - The file exists but cannot be removed
 pub fn clear_saved_theme(config_path: Option<PathBuf>) -> io::Result<()> {
-    let path = config_path.or_else(default_config_path).ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            "Could not determine config directory",
-        )
-    })?;
+    let path = config_path
+        .or_else(default_config_path)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Could not determine config directory"))?;
 
     if path.exists() {
         fs::remove_file(&path)?;

@@ -43,15 +43,9 @@ pub(crate) fn ensure_type_compatibility(
     let expected_info = type_result.types.get(expected);
     let actual_info = type_result.types.get(actual);
 
-    if let Some(contract_value) = lower_contract_compatibility(
-        span,
-        expected,
-        actual,
-        value,
-        type_result,
-        resolution,
-        builder,
-    )? {
+    if let Some(contract_value) =
+        lower_contract_compatibility(span, expected, actual, value, type_result, resolution, builder)?
+    {
         return Ok(contract_value);
     }
 
@@ -62,8 +56,8 @@ pub(crate) fn ensure_type_compatibility(
     {
         let expected_width = expected_prim.bit_width();
         let actual_width = actual_prim.bit_width();
-        let target_ty = crate::lowering::types::map_primitive_to_clif(*expected_prim)
-            .expect("expected clif type for numeric cast");
+        let target_ty =
+            crate::lowering::types::map_primitive_to_clif(*expected_prim).expect("expected clif type for numeric cast");
 
         let value_ty = builder.func.dfg.value_type(value);
         if expected_width > actual_width && value_ty != target_ty {
@@ -78,23 +72,13 @@ pub(crate) fn ensure_type_compatibility(
         return coerce_numeric_to_string(span, value, actual_info, builder);
     }
 
-    if let Some(mapped) = try_lower_struct_object_mapping(
-        span,
-        expected,
-        actual,
-        value,
-        type_result,
-        resolution,
-        builder,
-    )? {
+    if let Some(mapped) =
+        try_lower_struct_object_mapping(span, expected, actual, value, type_result, resolution, builder)?
+    {
         return Ok(mapped);
     }
 
-    Err(CodegenError::TypeMismatch {
-        span,
-        expected,
-        actual,
-    })
+    Err(CodegenError::TypeMismatch { span, expected, actual })
 }
 
 fn try_lower_struct_object_mapping(
@@ -123,17 +107,10 @@ fn try_lower_struct_object_mapping(
 
     if mapping_pair_eligible(resolution, type_result, actual_item, expected_item) {
         let mut layouts = HashMap::new();
-        let layout = get_or_compute_layout(&mut layouts, type_result, expected).ok_or(
-            CodegenError::UnsupportedNode {
-                span,
-                node: "struct mapping destination layout",
-            },
-        )?;
-        let slot = builder.create_sized_stack_slot(StackSlotData::new(
-            StackSlotKind::ExplicitSlot,
-            layout.size as u32,
-            3,
-        ));
+        let layout = get_or_compute_layout(&mut layouts, type_result, expected)
+            .ok_or(CodegenError::UnsupportedNode { span, node: "struct mapping destination layout" })?;
+        let slot =
+            builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, layout.size as u32, 3));
         let dst_out = builder.ins().stack_addr(pointer_type(), slot, 0);
         let _status = lower_aot_object_mapping(
             builder,
@@ -153,11 +130,7 @@ fn try_lower_struct_object_mapping(
     {
         let src_name = item_display_name(resolution, actual_item);
         let dst_name = item_display_name(resolution, expected_item);
-        return Err(CodegenError::IneligibleSerializeMapping {
-            span,
-            src_name,
-            dst_name,
-        });
+        return Err(CodegenError::IneligibleSerializeMapping { span, src_name, dst_name });
     }
 
     Ok(None)
@@ -183,37 +156,13 @@ pub(crate) fn ensure_type_compatibility_or_expected(
     builder: &mut FunctionBuilder,
     value: Value,
 ) -> CodegenResult<Value> {
-    match ensure_type_compatibility(
-        span,
-        expected,
-        actual,
-        type_result,
-        resolution,
-        builder,
-        value,
-    ) {
+    match ensure_type_compatibility(span, expected, actual, type_result, resolution, builder, value) {
         Ok(value) => Ok(value),
-        Err(CodegenError::TypeMismatch {
-            span,
-            expected,
-            actual,
-        }) => {
+        Err(CodegenError::TypeMismatch { span, expected, actual }) => {
             if expected != actual {
-                ensure_type_compatibility(
-                    span,
-                    actual,
-                    actual,
-                    type_result,
-                    resolution,
-                    builder,
-                    value,
-                )
+                ensure_type_compatibility(span, actual, actual, type_result, resolution, builder, value)
             } else {
-                Err(CodegenError::TypeMismatch {
-                    span,
-                    expected,
-                    actual,
-                })
+                Err(CodegenError::TypeMismatch { span, expected, actual })
             }
         }
         Err(err) => Err(err),
@@ -230,8 +179,7 @@ fn coerce_numeric_to_string(
     actual_info: Option<&TypeInfo>,
     builder: &mut FunctionBuilder,
 ) -> CodegenResult<Value> {
-    let i64_ty =
-        crate::lowering::types::map_primitive_to_clif(HirPrimitiveType::I64).expect("i64 clif");
+    let i64_ty = crate::lowering::types::map_primitive_to_clif(HirPrimitiveType::I64).expect("i64 clif");
     let value = match actual_info {
         Some(TypeInfo::Primitive(HirPrimitiveType::I64)) => value,
         Some(TypeInfo::Primitive(HirPrimitiveType::I32)) | None => {
@@ -244,15 +192,11 @@ fn coerce_numeric_to_string(
         }
         Some(TypeInfo::Primitive(HirPrimitiveType::U8)) => builder.ins().uextend(i64_ty, value),
         _ => {
-            return Err(CodegenError::UnsupportedNode {
-                span,
-                node: "numeric to string coercion",
-            });
+            return Err(CodegenError::UnsupportedNode { span, node: "numeric to string coercion" });
         }
     };
 
-    emit_str_from_i64_dispatch(builder, value)
-        .map_err(|node| CodegenError::UnsupportedNode { span, node })
+    emit_str_from_i64_dispatch(builder, value).map_err(|node| CodegenError::UnsupportedNode { span, node })
 }
 
 fn lower_contract_compatibility(
@@ -280,19 +224,12 @@ fn lower_contract_compatibility(
         .tables
         .type_conformances
         .get(&actual_item_id)
-        .is_some_and(|entries| {
-            entries
-                .iter()
-                .any(|(contract_item, _)| *contract_item == expected_item_id)
-        });
+        .is_some_and(|entries| entries.iter().any(|(contract_item, _)| *contract_item == expected_item_id));
     if !conforms {
         return Ok(None);
     }
 
-    let methods = contract_method_order(type_result)
-        .get(&expected_item_id)
-        .cloned()
-        .unwrap_or_default();
+    let methods = contract_method_order(type_result).get(&expected_item_id).cloned().unwrap_or_default();
     let wrapper_ptr = emit_contract_wrapper_alloc(builder, methods.len());
     builder.ins().store(MemFlags::new(), value, wrapper_ptr, 0);
 
@@ -308,48 +245,31 @@ fn lower_contract_compatibility(
             .ok_or(CodegenError::MissingSymbol("contract method signature"))?;
 
         let mut signature_ir = Signature::new(CallConv::SystemV);
-        let receiver_clif_ty =
-            map_type_id_to_clif(type_result, actual).ok_or(CodegenError::UnsupportedNode {
-                span,
-                node: "contract receiver type",
-            })?;
+        let receiver_clif_ty = map_type_id_to_clif(type_result, actual)
+            .ok_or(CodegenError::UnsupportedNode { span, node: "contract receiver type" })?;
         signature_ir.params.push(AbiParam::new(receiver_clif_ty));
         for param in &signature.params {
-            let clif_ty =
-                map_type_id_to_clif(type_result, *param).ok_or(CodegenError::UnsupportedNode {
-                    span,
-                    node: "contract parameter type",
-                })?;
+            let clif_ty = map_type_id_to_clif(type_result, *param)
+                .ok_or(CodegenError::UnsupportedNode { span, node: "contract parameter type" })?;
             signature_ir.params.push(AbiParam::new(clif_ty));
         }
-        if !matches!(
-            type_result.types.get(signature.return_type),
-            Some(TypeInfo::Primitive(HirPrimitiveType::Unit))
-        ) {
-            let return_clif = map_type_id_to_clif(type_result, signature.return_type).ok_or(
-                CodegenError::UnsupportedNode {
-                    span,
-                    node: "contract return type",
-                },
-            )?;
+        if !matches!(type_result.types.get(signature.return_type), Some(TypeInfo::Primitive(HirPrimitiveType::Unit))) {
+            let return_clif = map_type_id_to_clif(type_result, signature.return_type)
+                .ok_or(CodegenError::UnsupportedNode { span, node: "contract return type" })?;
             signature_ir.returns.push(AbiParam::new(return_clif));
         }
 
         let symbol = mangle_method_name(&receiver_name, method_name);
         let sig_ref = builder.func.import_signature(signature_ir);
-        let func_ref = builder
-            .func
-            .import_function(cranelift_codegen::ir::ExtFuncData {
-                name: ExternalName::testcase(symbol),
-                signature: sig_ref,
-                colocated: true,
-                patchable: false,
-            });
+        let func_ref = builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
+            name: ExternalName::testcase(symbol),
+            signature: sig_ref,
+            colocated: true,
+            patchable: false,
+        });
         let func_addr = builder.ins().func_addr(pointer_type(), func_ref);
         let offset = ((index + 1) * std::mem::size_of::<u64>()) as i32;
-        builder
-            .ins()
-            .store(MemFlags::new(), func_addr, wrapper_ptr, offset);
+        builder.ins().store(MemFlags::new(), func_addr, wrapper_ptr, offset);
     }
 
     Ok(Some(wrapper_ptr))
@@ -361,29 +281,20 @@ fn emit_contract_wrapper_alloc(builder: &mut FunctionBuilder, method_count: usiz
     signature.params.push(AbiParam::new(pointer_type()));
     signature.returns.push(AbiParam::new(pointer_type()));
     let sig_ref = builder.func.import_signature(signature);
-    let func_ref = builder
-        .func
-        .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("alloc"),
-            signature: sig_ref,
-            colocated: false,
-            patchable: false,
-        });
+    let func_ref = builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
+        name: ExternalName::testcase("alloc"),
+        signature: sig_ref,
+        colocated: false,
+        patchable: false,
+    });
     let wrapper_size = ((method_count + 1) * std::mem::size_of::<u64>()) as i64;
     let size_val = builder.ins().iconst(pointer_type(), wrapper_size);
     let null_desc = builder.ins().iconst(pointer_type(), 0);
     let call = builder.ins().call(func_ref, &[size_val, null_desc]);
-    builder
-        .inst_results(call)
-        .first()
-        .copied()
-        .expect("alloc must return pointer")
+    builder.inst_results(call).first().copied().expect("alloc must return pointer")
 }
 
-fn named_item_id(
-    type_result: &TypeResult,
-    type_id: TypeId,
-) -> Option<beskid_analysis::resolve::ItemId> {
+fn named_item_id(type_result: &TypeResult, type_id: TypeId) -> Option<beskid_analysis::resolve::ItemId> {
     match type_result.types.get(type_id) {
         Some(TypeInfo::Named(item_id)) => Some(*item_id),
         Some(TypeInfo::Applied { base, .. }) => Some(*base),
@@ -397,34 +308,21 @@ fn types_structurally_equal(
     expected: TypeId,
     actual: TypeId,
 ) -> bool {
-    match (
-        type_result.types.get(expected),
-        type_result.types.get(actual),
-    ) {
+    match (type_result.types.get(expected), type_result.types.get(actual)) {
         (Some(TypeInfo::Primitive(e)), Some(TypeInfo::Primitive(a))) => e == a,
         (Some(TypeInfo::Named(expected_item)), Some(TypeInfo::Named(actual_item))) => {
-            canonical_item_id(resolution, *expected_item)
-                == canonical_item_id(resolution, *actual_item)
+            canonical_item_id(resolution, *expected_item) == canonical_item_id(resolution, *actual_item)
         }
         (
-            Some(TypeInfo::Applied {
-                base: expected_base,
-                args: expected_args,
-            }),
-            Some(TypeInfo::Applied {
-                base: actual_base,
-                args: actual_args,
-            }),
+            Some(TypeInfo::Applied { base: expected_base, args: expected_args }),
+            Some(TypeInfo::Applied { base: actual_base, args: actual_args }),
         ) => {
-            canonical_item_id(resolution, *expected_base)
-                == canonical_item_id(resolution, *actual_base)
+            canonical_item_id(resolution, *expected_base) == canonical_item_id(resolution, *actual_base)
                 && expected_args.len() == actual_args.len()
                 && expected_args
                     .iter()
                     .zip(actual_args.iter())
-                    .all(|(left, right)| {
-                        types_structurally_equal(type_result, resolution, *left, *right)
-                    })
+                    .all(|(left, right)| types_structurally_equal(type_result, resolution, *left, *right))
         }
         (Some(TypeInfo::Applied { base, .. }), Some(TypeInfo::Named(actual_base))) => {
             canonical_item_id(resolution, *base) == canonical_item_id(resolution, *actual_base)
@@ -456,20 +354,8 @@ pub(crate) fn validate_cast_intents(type_result: &TypeResult) -> Vec<CodegenErro
         // offsets, so the same offset+cast in two different units is NOT a
         // duplicate. Include source_path so cross-unit collisions in an assembled
         // multi-file program are not flagged as duplicates.
-        let key = (
-            intent.source_path.clone(),
-            intent.span.start,
-            intent.span.end,
-            intent.from.0,
-            intent.to.0,
-        );
-        let reverse_key = (
-            intent.source_path.clone(),
-            intent.span.start,
-            intent.span.end,
-            intent.to.0,
-            intent.from.0,
-        );
+        let key = (intent.source_path.clone(), intent.span.start, intent.span.end, intent.from.0, intent.to.0);
+        let reverse_key = (intent.source_path.clone(), intent.span.start, intent.span.end, intent.to.0, intent.from.0);
         if !seen.insert(key) {
             errors.push(CodegenError::InvalidCastIntent {
                 span: intent.span,
@@ -493,11 +379,7 @@ fn coerce_int_clif(
     }
     let from_bits = from.bits();
     let to_bits = to.bits();
-    if to_bits > from_bits {
-        builder.ins().sextend(to, value)
-    } else {
-        builder.ins().ireduce(to, value)
-    }
+    if to_bits > from_bits { builder.ins().sextend(to, value) } else { builder.ins().ireduce(to, value) }
 }
 
 /// Align a lowered value with the CLIF type used for a `declare_var` binding.
@@ -520,10 +402,7 @@ fn is_numeric_type(info: Option<&TypeInfo>) -> bool {
     matches!(
         info,
         Some(TypeInfo::Primitive(
-            HirPrimitiveType::I32
-                | HirPrimitiveType::I64
-                | HirPrimitiveType::U8
-                | HirPrimitiveType::F64
+            HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8 | HirPrimitiveType::F64
         ))
     )
 }
@@ -569,12 +448,7 @@ mod struct_mapping_clif_tests {
                     parent_id: None,
                     name: "Source".to_string(),
                     kind: ItemKind::Type,
-                    span: SpanInfo {
-                        start: 0,
-                        end: 1,
-                        line_col_start: (1, 1),
-                        line_col_end: (1, 2),
-                    },
+                    span: SpanInfo { start: 0, end: 1, line_col_start: (1, 1), line_col_end: (1, 2) },
                     source_path: None,
                     visibility: HirVisibility::Public,
                     symbol: None,
@@ -584,12 +458,7 @@ mod struct_mapping_clif_tests {
                     parent_id: None,
                     name: "Target".to_string(),
                     kind: ItemKind::Type,
-                    span: SpanInfo {
-                        start: 2,
-                        end: 3,
-                        line_col_start: (1, 3),
-                        line_col_end: (1, 4),
-                    },
+                    span: SpanInfo { start: 2, end: 3, line_col_start: (1, 3), line_col_end: (1, 4) },
                     source_path: None,
                     visibility: HirVisibility::Public,
                     symbol: None,
@@ -610,12 +479,7 @@ mod struct_mapping_clif_tests {
     #[test]
     fn ensure_type_compatibility_emits_dynamic_map_aot_for_eligible_structs() {
         let (type_result, resolution, source_type, target_type) = struct_mapping_type_context();
-        let span = SpanInfo {
-            start: 0,
-            end: 1,
-            line_col_start: (1, 1),
-            line_col_end: (1, 2),
-        };
+        let span = SpanInfo { start: 0, end: 1, line_col_start: (1, 1), line_col_end: (1, 2) };
 
         let mut sig = Signature::new(CallConv::SystemV);
         sig.params.push(AbiParam::new(pointer_type()));
@@ -632,24 +496,14 @@ mod struct_mapping_clif_tests {
         builder.seal_block(entry);
 
         let src_ptr = builder.block_params(entry)[0];
-        let mapped = ensure_type_compatibility(
-            span,
-            target_type,
-            source_type,
-            &type_result,
-            &resolution,
-            &mut builder,
-            src_ptr,
-        )
-        .expect("eligible struct mapping should lower");
+        let mapped =
+            ensure_type_compatibility(span, target_type, source_type, &type_result, &resolution, &mut builder, src_ptr)
+                .expect("eligible struct mapping should lower");
 
         builder.ins().return_(&[mapped]);
         builder.finalize();
 
         let clif = func.to_string();
-        assert!(
-            clif.contains("dynamic_map_aot"),
-            "expected dynamic_map_aot in struct coercion CLIF: {clif}"
-        );
+        assert!(clif.contains("dynamic_map_aot"), "expected dynamic_map_aot in struct coercion CLIF: {clif}");
     }
 }

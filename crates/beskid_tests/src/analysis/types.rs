@@ -20,135 +20,89 @@ fn assert_type_case(case: &TypeCase) {
         }
     } else {
         let errors = result.expect_err(&format!("{}: expected typing error", case.name));
-        let matcher = case
-            .error_matcher
-            .expect("error case must provide error_matcher");
-        assert!(
-            matcher(&errors),
-            "{}: unexpected errors: {errors:?}",
-            case.name
-        );
+        let matcher = case.error_matcher.expect("error case must provide error_matcher");
+        assert!(matcher(&errors), "{}: unexpected errors: {errors:?}", case.name);
     }
 }
 
 fn matches_non_iterable_for_target(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::NonIterableForTarget { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::NonIterableForTarget { .. }))
 }
 
 fn matches_iterable_next_not_option(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::IterableNextReturnNotOption { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::IterableNextReturnNotOption { .. }))
 }
 
 fn matches_iterable_next_arity(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::IterableNextArityMismatch { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::IterableNextArityMismatch { .. }))
 }
 
 fn matches_iterable_option_some_arity(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::IterableOptionSomeArityMismatch { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::IterableOptionSomeArityMismatch { .. }))
 }
 
 fn matches_invalid_event_subscription(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::InvalidEventSubscriptionTarget { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::InvalidEventSubscriptionTarget { .. }))
 }
 
 fn matches_missing_type_args(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::MissingTypeArguments { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::MissingTypeArguments { .. }))
 }
 
 fn matches_generic_arg_mismatch(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::GenericArgumentMismatch { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::GenericArgumentMismatch { .. }))
 }
 
 fn matches_enum_constructor_mismatch(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::EnumConstructorMismatch { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::EnumConstructorMismatch { .. }))
 }
 
 fn matches_type_mismatch(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::TypeMismatch { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::TypeMismatch { .. }))
 }
 
 fn matches_invalid_binary_op(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::InvalidBinaryOp { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::InvalidBinaryOp { .. }))
 }
 
 fn matches_unsupported_expression(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::UnsupportedExpression { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::UnsupportedExpression { .. }))
 }
 
 fn matches_invalid_event_capacity(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::InvalidEventCapacity { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::InvalidEventCapacity { .. }))
 }
 
 fn matches_invalid_event_invoke_scope(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::InvalidEventInvocationScope { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::InvalidEventInvocationScope { .. }))
 }
 
 fn matches_unknown_call_target(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::UnknownCallTarget { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::UnknownCallTarget { .. }))
 }
 
 fn matches_non_bool_condition(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::NonBoolCondition { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::NonBoolCondition { .. }))
 }
 
 fn matches_call_arity_mismatch(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::CallArityMismatch { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::CallArityMismatch { .. }))
 }
 
 fn matches_missing_struct_field(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::MissingStructField { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::MissingStructField { .. }))
 }
 
 fn matches_invalid_member_target(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::InvalidMemberTarget { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::InvalidMemberTarget { .. }))
 }
 
 fn matches_unknown_struct_field(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::UnknownStructField { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::UnknownStructField { .. }))
 }
 
 fn matches_invalid_try_target(errors: &[TypeError]) -> bool {
-    errors
-        .iter()
-        .any(|e| matches!(e, TypeError::InvalidTryTarget { .. }))
+    errors.iter().any(|e| matches!(e, TypeError::InvalidTryTarget { .. }))
 }
 
 struct CallKindCase {
@@ -158,8 +112,7 @@ struct CallKindCase {
 }
 
 fn assert_call_kind_case(case: &CallKindCase) {
-    let result = resolve_and_type(case.source)
-        .unwrap_or_else(|_| panic!("{}: expected typing to succeed", case.name));
+    let result = resolve_and_type(case.source).unwrap_or_else(|_| panic!("{}: expected typing to succeed", case.name));
     assert!(
         result.lowering.call_kinds.values().any(case.predicate),
         "{}: expected matching call kind, got {:?}",
@@ -456,12 +409,7 @@ fn typing_reports_return_mismatch() {
 
 #[test]
 fn typing_function_calls_succeeds() {
-    assert!(
-        resolve_and_type(
-            "i64 add(i64 a, i64 b) { return a + b; } unit Main() { i64 x = add(1, 2); }",
-        )
-        .is_ok()
-    );
+    assert!(resolve_and_type("i64 add(i64 a, i64 b) { return a + b; } unit Main() { i64 x = add(1, 2); }",).is_ok());
 }
 
 #[test]
@@ -573,27 +521,18 @@ const STRING_INTERPOLATION_OK_CASES: &[&str] = &[
 #[test]
 fn typing_string_interpolation_succeeds() {
     for source in STRING_INTERPOLATION_OK_CASES {
-        assert!(
-            resolve_and_type(source).is_ok(),
-            "expected interpolation typing to succeed for: {source}"
-        );
+        assert!(resolve_and_type(source).is_ok(), "expected interpolation typing to succeed for: {source}");
     }
 }
 
 #[test]
 fn typing_records_cast_intent_for_numeric_mismatch() {
-    let result = resolve_and_type("unit Main() { i32 x = 1; i64 y = x; }")
-        .expect("expected typing to succeed with cast intent");
+    let result =
+        resolve_and_type("unit Main() { i32 x = 1; i64 y = x; }").expect("expected typing to succeed with cast intent");
     assert_eq!(result.cast_intents().len(), 1);
     let intent = &result.cast_intents()[0];
-    assert_eq!(
-        result.types.get(intent.from),
-        Some(&TypeInfo::Primitive(HirPrimitiveType::I32))
-    );
-    assert_eq!(
-        result.types.get(intent.to),
-        Some(&TypeInfo::Primitive(HirPrimitiveType::I64))
-    );
+    assert_eq!(result.types.get(intent.from), Some(&TypeInfo::Primitive(HirPrimitiveType::I32)));
+    assert_eq!(result.types.get(intent.to), Some(&TypeInfo::Primitive(HirPrimitiveType::I64)));
     assert_eq!(result.cast_intents_for_node(intent.node_id).count(), 1);
 }
 
@@ -609,24 +548,16 @@ fn typing_cast_intents_are_sorted_by_source_span() {
 
 #[test]
 fn typing_cast_intents_preserve_source_line_spans() {
-    let result = resolve_and_type(
-        "unit Main() {\n  i32 x = 1;\n  i64 y = x;\n  i32 z = 2;\n  i64 w = z;\n}",
-    )
-    .expect("expected typing to succeed with cast intents");
-    let lines: Vec<usize> = result
-        .cast_intents()
-        .iter()
-        .map(|intent| intent.span.line_col_start.0)
-        .collect();
+    let result = resolve_and_type("unit Main() {\n  i32 x = 1;\n  i64 y = x;\n  i32 z = 2;\n  i64 w = z;\n}")
+        .expect("expected typing to succeed with cast intents");
+    let lines: Vec<usize> = result.cast_intents().iter().map(|intent| intent.span.line_col_start.0).collect();
     assert_eq!(lines, vec![3, 5]);
 }
 
 #[test]
 fn typing_records_cast_intent_for_numeric_call_argument_mismatch() {
-    let result = resolve_and_type(
-        "i64 take(i64 v) { return v; } unit Main() { i32 x = 1; i64 y = take(x); }",
-    )
-    .expect("expected typing to succeed with cast intent in call argument");
+    let result = resolve_and_type("i64 take(i64 v) { return v; } unit Main() { i32 x = 1; i64 y = take(x); }")
+        .expect("expected typing to succeed with cast intent in call argument");
     assert!(!result.cast_intents().is_empty());
 }
 
@@ -639,14 +570,10 @@ fn typing_records_cast_intent_for_numeric_return_mismatch() {
 
 #[test]
 fn typing_cast_intent_accessor_finds_intent_by_node() {
-    let result = resolve_and_type("unit Main() { i32 x = 1; i64 y = x; }")
-        .expect("expected typing to succeed with cast intent");
+    let result =
+        resolve_and_type("unit Main() { i32 x = 1; i64 y = x; }").expect("expected typing to succeed with cast intent");
     let intent = &result.cast_intents()[0];
-    assert!(
-        result
-            .cast_intents_for_node(intent.node_id)
-            .any(|found| found == intent)
-    );
+    assert!(result.cast_intents_for_node(intent.node_id).any(|found| found == intent));
 }
 
 #[test]
@@ -726,10 +653,7 @@ fn typing_enum_constructor_errors() {
 #[test]
 fn typing_accepts_nullary_enum_constructor_without_parens() {
     assert!(
-        resolve_and_type(
-            "enum Choice { Some(i64 value), None } unit Main() { Choice x = Choice::None; }",
-        )
-        .is_ok()
+        resolve_and_type("enum Choice { Some(i64 value), None } unit Main() { Choice x = Choice::None; }",).is_ok()
     );
 }
 

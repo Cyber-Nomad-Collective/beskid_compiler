@@ -54,9 +54,7 @@ unsafe impl Trace for BeskidObject {
                 continue;
             }
             // SAFETY: bounds-checked above; load unaligned pointer-sized field.
-            let value_ptr = unsafe {
-                std::ptr::read_unaligned(self.bytes.as_ptr().add(*offset).cast::<*mut u8>())
-            };
+            let value_ptr = unsafe { std::ptr::read_unaligned(self.bytes.as_ptr().add(*offset).cast::<*mut u8>()) };
             if value_ptr.is_null() || self.heap.is_null() {
                 continue;
             }

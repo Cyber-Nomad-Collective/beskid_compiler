@@ -7,26 +7,21 @@ use std::sync::Arc;
 use anyhow::{Context, Result, anyhow};
 use beskid_analysis::mod_host::extract_mod_contract_registrations_from_syntax;
 use beskid_analysis::projects::{
-    ProjectKind, WorkspacePrepareOptions, build_compile_plan,
-    discover_project_manifest_from_input_or_cwd, discover_project_manifest_in_dir,
-    discover_workspace_manifest_in_dir, load_manifest_from_path,
+    ProjectKind, WorkspacePrepareOptions, build_compile_plan, discover_project_manifest_from_input_or_cwd,
+    discover_project_manifest_in_dir, discover_workspace_manifest_in_dir, load_manifest_from_path,
     prepare_project_workspace_with_options, resolve_workspace_candidate_path,
 };
 use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan};
 use beskid_aot::{ModArtifactBuildRequest, build_mod_artifact};
 use beskid_pipeline::{
     PipelineObserver, observe_phase, observe_phase_result,
-    phases::{
-        AOT_LINK, RESOLVE_GRAPH, RESOLVE_MANIFEST, WORKSPACE_GRAPH_CHANGED, WORKSPACE_MATERIALIZE,
-    },
+    phases::{AOT_LINK, RESOLVE_GRAPH, RESOLVE_MANIFEST, WORKSPACE_GRAPH_CHANGED, WORKSPACE_MATERIALIZE},
 };
 use clap::{Args, Subcommand};
 use walkdir::WalkDir;
 
 use crate::project_args::LockfilePolicyArgs;
-use beskid_tools::pipeline::{
-    CliPipeline, PipelineProgressKind, tui::CommandSummary, use_cli_spinner,
-};
+use beskid_tools::pipeline::{CliPipeline, PipelineProgressKind, tui::CommandSummary, use_cli_spinner};
 
 #[derive(Args, Debug)]
 pub struct ModArgs {
@@ -89,10 +84,7 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
     let prepared = observe_phase_result(pipeline, WORKSPACE_MATERIALIZE, || {
         prepare_project_workspace_with_options(
             &resolved.plan,
-            WorkspacePrepareOptions {
-                frozen: args.lockfile.frozen,
-                locked: args.lockfile.locked,
-            },
+            WorkspacePrepareOptions { frozen: args.lockfile.frozen, locked: args.lockfile.locked },
             pipeline,
         )
         .map_err(anyhow::Error::from)
@@ -111,27 +103,17 @@ fn rebuild(args: ModRebuildArgs) -> Result<()> {
     }
 
     if artifact_policy == "reuse"
-        && mod_artifact_descriptor_exists(
-            &resolved.plan.project_root,
-            &resolved.manifest.project.name,
-        )
+        && mod_artifact_descriptor_exists(&resolved.plan.project_root, &resolved.manifest.project.name)
     {
         pipeline_ui.finish_session_with_summary(
             "Mod rebuild complete",
-            Some(CommandSummary::plain(
-                "Mod rebuild",
-                "Reused cached mod artifact",
-            )),
+            Some(CommandSummary::plain("Mod rebuild", "Reused cached mod artifact")),
         );
-        println!(
-            "mod artifact cache hit for {} (artifactPolicy = reuse)",
-            resolved.manifest.project.name
-        );
+        println!("mod artifact cache hit for {} (artifactPolicy = reuse)", resolved.manifest.project.name);
         return Ok(());
     };
 
-    let descriptor =
-        build_mod_artifact_for_resolved(&resolved, &prepared, args.target_triple, pipeline)?;
+    let descriptor = build_mod_artifact_for_resolved(&resolved, &prepared, args.target_triple, pipeline)?;
 
     pipeline_ui.finish_session_with_summary(
         "Mod rebuild complete",
@@ -151,24 +133,15 @@ fn clean(args: ModCleanArgs) -> Result<()> {
     let pipeline: Option<&dyn PipelineObserver> = Some(pipeline_ui.as_ref());
     let _resolved = resolve_mod_project(args.project.as_ref(), pipeline)?;
 
-    let removed = remove_mod_cache_dir(
-        &_resolved.plan.project_root,
-        &_resolved.manifest.project.name,
-    )?;
+    let removed = remove_mod_cache_dir(&_resolved.plan.project_root, &_resolved.manifest.project.name)?;
     pipeline_ui.finish_session_with_summary(
         "Mod clean complete",
         Some(CommandSummary::plain("Mod clean", "Mod clean complete")),
     );
     if removed {
-        println!(
-            "removed mod artifact cache for {}",
-            _resolved.manifest.project.name
-        );
+        println!("removed mod artifact cache for {}", _resolved.manifest.project.name);
     } else {
-        println!(
-            "no mod artifact cache found for {}",
-            _resolved.manifest.project.name
-        );
+        println!("no mod artifact cache found for {}", _resolved.manifest.project.name);
     }
     Ok(())
 }
@@ -179,10 +152,7 @@ struct ResolvedModProject {
 }
 
 fn mod_pipeline(plain: bool) -> Arc<CliPipeline> {
-    Arc::new(CliPipeline::new_with_kind(
-        use_cli_spinner(plain),
-        PipelineProgressKind::ModBuild,
-    ))
+    Arc::new(CliPipeline::new_with_kind(use_cli_spinner(plain), PipelineProgressKind::ModBuild))
 }
 
 fn build_mod_artifact_for_resolved(
@@ -203,27 +173,18 @@ fn build_mod_artifact_for_resolved(
     );
     let front = beskid_queries::compile_front_end_from_resolved_input(
         &resolved_input,
-        FrontEndOptions {
-            with_semantic_diagnostics: false,
-            ..Default::default()
-        },
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         pipeline,
     )?;
-    let artifact =
-        super::syntax_codegen::lower_prepared_module(&front, target_triple.as_deref(), pipeline)?;
-    let registrations = extract_mod_contract_registrations_from_syntax(
-        &resolved.manifest.project.name,
-        &front.program,
-    )
-    .into_iter()
-    .map(
-        |registration| beskid_aot::mod_artifact::ContractRegistration {
+    let artifact = super::syntax_codegen::lower_prepared_module(&front, target_triple.as_deref(), pipeline)?;
+    let registrations = extract_mod_contract_registrations_from_syntax(&resolved.manifest.project.name, &front.program)
+        .into_iter()
+        .map(|registration| beskid_aot::mod_artifact::ContractRegistration {
             contract_id: registration.contract_id,
             type_id: registration.type_id,
             entry_symbol: registration.entry_symbol,
-        },
-    )
-    .collect();
+        })
+        .collect();
     let target = beskid_aot::target::detect_target(target_triple.as_deref())?;
     observe_phase_result(pipeline, AOT_LINK, || {
         build_mod_artifact(ModArtifactBuildRequest {
@@ -247,15 +208,10 @@ fn resolve_mod_project(
     project: Option<&PathBuf>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ResolvedModProject> {
-    let manifest_path = observe_phase_result(pipeline, RESOLVE_MANIFEST, || {
-        resolve_manifest_path(project)
-    })?;
+    let manifest_path = observe_phase_result(pipeline, RESOLVE_MANIFEST, || resolve_manifest_path(project))?;
     let manifest = load_manifest_from_path(&manifest_path).map_err(anyhow::Error::from)?;
     if manifest.project.kind != ProjectKind::Mod {
-        return Err(anyhow!(
-            "`beskid mod rebuild` requires a `type = Mod` project, got `{}`",
-            manifest.project.name
-        ));
+        return Err(anyhow!("`beskid mod rebuild` requires a `type = Mod` project, got `{}`", manifest.project.name));
     }
 
     let plan = observe_phase_result(pipeline, RESOLVE_GRAPH, || {
@@ -273,18 +229,13 @@ fn ensure_resolved_dependencies(plan: &beskid_analysis::projects::CompilePlan) -
     let unresolved = plan
         .unresolved_dependencies
         .iter()
-        .filter(|dependency| {
-            dependency.source != beskid_analysis::projects::DependencySource::Registry
-        })
+        .filter(|dependency| dependency.source != beskid_analysis::projects::DependencySource::Registry)
         .map(|dependency| dependency.dependency_name.as_str())
         .collect::<Vec<_>>();
     if unresolved.is_empty() {
         return Ok(());
     }
-    Err(anyhow!(
-        "unresolved mod project dependencies: {}",
-        unresolved.join(", ")
-    ))
+    Err(anyhow!("unresolved mod project dependencies: {}", unresolved.join(", ")))
 }
 
 fn resolve_manifest_path(project: Option<&PathBuf>) -> Result<PathBuf> {
@@ -299,29 +250,19 @@ fn resolve_manifest_path(project: Option<&PathBuf>) -> Result<PathBuf> {
 
 fn resolve_explicit_project_path(project: &Path) -> Result<PathBuf> {
     let candidate = if project.is_dir() {
-        if let Some(manifest) =
-            discover_project_manifest_in_dir(project).map_err(anyhow::Error::from)?
-        {
+        if let Some(manifest) = discover_project_manifest_in_dir(project).map_err(anyhow::Error::from)? {
             manifest
-        } else if let Some(workspace) =
-            discover_workspace_manifest_in_dir(project).map_err(anyhow::Error::from)?
-        {
+        } else if let Some(workspace) = discover_workspace_manifest_in_dir(project).map_err(anyhow::Error::from)? {
             workspace
         } else {
-            return Err(anyhow!(
-                "no `.bproj` or `.bws` manifest found in {}",
-                project.display()
-            ));
+            return Err(anyhow!("no `.bproj` or `.bws` manifest found in {}", project.display()));
         }
     } else {
         project.to_path_buf()
     };
 
     if !candidate.is_file() {
-        return Err(anyhow!(
-            "project manifest not found at {}",
-            candidate.display()
-        ));
+        return Err(anyhow!("project manifest not found at {}", candidate.display()));
     }
 
     resolve_workspace_candidate_path(&candidate, None, None)
@@ -360,11 +301,7 @@ fn discover_mod_entry_source(source_root: &Path) -> Result<PathBuf> {
 }
 
 fn mod_artifact_descriptor_exists(project_root: &Path, package_id: &str) -> bool {
-    let cache_dir = project_root
-        .join(".beskid")
-        .join("obj")
-        .join("mods")
-        .join(package_id);
+    let cache_dir = project_root.join(".beskid").join("obj").join("mods").join(package_id);
     if !cache_dir.is_dir() {
         return false;
     }
@@ -375,20 +312,12 @@ fn mod_artifact_descriptor_exists(project_root: &Path, package_id: &str) -> bool
 }
 
 fn remove_mod_cache_dir(project_root: &Path, package_id: &str) -> Result<bool> {
-    let cache_dir = project_root
-        .join(".beskid")
-        .join("obj")
-        .join("mods")
-        .join(package_id);
+    let cache_dir = project_root.join(".beskid").join("obj").join("mods").join(package_id);
     if !cache_dir.exists() {
         return Ok(false);
     }
-    fs::remove_dir_all(&cache_dir).with_context(|| {
-        format!(
-            "failed to remove mod artifact cache {}",
-            cache_dir.display()
-        )
-    })?;
+    fs::remove_dir_all(&cache_dir)
+        .with_context(|| format!("failed to remove mod artifact cache {}", cache_dir.display()))?;
     Ok(true)
 }
 
@@ -404,10 +333,7 @@ mod tests {
         let only_source = source_root.join("Generator.bd");
         fs::write(&only_source, "unit Main() { return; }\n").expect("source");
 
-        assert_eq!(
-            discover_mod_entry_source(&source_root).expect("entry source"),
-            only_source
-        );
+        assert_eq!(discover_mod_entry_source(&source_root).expect("entry source"), only_source);
 
         let _ = fs::remove_dir_all(root);
     }
@@ -440,9 +366,8 @@ DemoMod {
 
         let manifest = load_manifest_from_path(&manifest_path).expect("load manifest");
         let plan = build_compile_plan(&manifest_path, None).expect("compile plan");
-        let prepared =
-            prepare_project_workspace_with_options(&plan, WorkspacePrepareOptions::default(), None)
-                .expect("prepare workspace");
+        let prepared = prepare_project_workspace_with_options(&plan, WorkspacePrepareOptions::default(), None)
+            .expect("prepare workspace");
         let descriptor = build_mod_artifact_for_resolved(
             &ResolvedModProject { manifest, plan },
             &prepared,
@@ -470,10 +395,7 @@ DemoMod {
     }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
-        let id = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("time")
-            .as_nanos();
+        let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("time").as_nanos();
         std::env::temp_dir().join(format!("{prefix}_{id}"))
     }
 }

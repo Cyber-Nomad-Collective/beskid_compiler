@@ -25,9 +25,7 @@ impl EntryReturnKind {
             SemanticTypeId::BOOL => Self::Bool,
             SemanticTypeId::F64 => Self::F64,
             SemanticTypeId::CHAR => Self::Char,
-            SemanticTypeId::STRING | SemanticTypeId::WORD | SemanticTypeId::POINTER => {
-                Self::PointerLike
-            }
+            SemanticTypeId::STRING | SemanticTypeId::WORD | SemanticTypeId::POINTER => Self::PointerLike,
             // The syntax contract leaves non-primitive signatures unavailable, so this is a
             // defensive ABI choice rather than a fallback to HIR type information.
             _ => Self::PointerLike,
@@ -92,9 +90,7 @@ impl JitCallable {
             EntryReturnKind::U8 => (value as u8).to_string(),
             EntryReturnKind::Bool => ((value as u8) != 0).to_string(),
             EntryReturnKind::F64 => f64::from_bits(value as u64).to_string(),
-            EntryReturnKind::Char => std::char::from_u32(value as u32)
-                .unwrap_or('\u{FFFD}')
-                .to_string(),
+            EntryReturnKind::Char => std::char::from_u32(value as u32).unwrap_or('\u{FFFD}').to_string(),
         }
     }
 }

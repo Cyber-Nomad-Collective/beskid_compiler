@@ -9,9 +9,7 @@ use serde_json::Value;
 use tower_lsp_server::jsonrpc::Result;
 use tower_lsp_server::ls_types::LSPAny;
 
-use crate::commands::pckg_registry::{
-    CMD_GET_CONNECTION_STATUS, CMD_SET_REGISTRY, CMD_VALIDATE_CONNECTION,
-};
+use crate::commands::pckg_registry::{CMD_GET_CONNECTION_STATUS, CMD_SET_REGISTRY, CMD_VALIDATE_CONNECTION};
 use crate::commands::symbol_documentation::CMD_GET_DOCUMENTATION_URI;
 use crate::manifest_uri::manifest_path_from_uri_str;
 use crate::protocol::execute_args::{missing_args, required_uri_arg};
@@ -74,13 +72,7 @@ pub fn handle_project_explorer_command(
             let kind = graph::graph_kind_from_args(arguments.as_deref());
             let entry_uri = graph::optional_uri_arg(arguments.as_deref(), "entryUri");
             let workspace_uri = graph::optional_uri_arg(arguments.as_deref(), "workspaceUri");
-            Ok(Some(graph::get_graph(
-                &uri,
-                kind,
-                entry_uri.as_deref(),
-                workspace_uri.as_deref(),
-                compilation_db,
-            )?))
+            Ok(Some(graph::get_graph(&uri, kind, entry_uri.as_deref(), workspace_uri.as_deref(), compilation_db)?))
         }
         CMD_GET_PROJECT_DEPENDENCIES => {
             let uri = required_uri_arg(&arguments, "projectUri")?;
@@ -295,8 +287,7 @@ target "Ext" {
         let (_temp, root) = workspace_fixture();
         let project = root.join("apps/demo/demo.bproj");
         let uri = path_to_uri_string(&project);
-        let value = graph::get_graph(&uri, beskid_graph::GraphKind::ProjectDeps, None, None, None)
-            .expect("graph");
+        let value = graph::get_graph(&uri, beskid_graph::GraphKind::ProjectDeps, None, None, None).expect("graph");
         let nodes = value["metadata"]["nodes"].as_array().expect("nodes");
         assert!(!nodes.is_empty());
         assert!(value.get("mermaid").and_then(|v| v.as_str()).is_some());
@@ -361,14 +352,10 @@ dependency "missing" {
     #[test]
     fn project_explorer_command_contract_matches_snapshot() {
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let snapshot_path = manifest_dir
-            .join("../../../beskid_vscode/test/fixtures/lsp-project-explorer-commands.json");
-        let text = fs::read_to_string(&snapshot_path).unwrap_or_else(|err| {
-            panic!(
-                "read contract snapshot at {}: {err}",
-                snapshot_path.display()
-            )
-        });
+        let snapshot_path =
+            manifest_dir.join("../../../beskid_vscode/test/fixtures/lsp-project-explorer-commands.json");
+        let text = fs::read_to_string(&snapshot_path)
+            .unwrap_or_else(|err| panic!("read contract snapshot at {}: {err}", snapshot_path.display()));
         let snapshot: Value = serde_json::from_str(&text).expect("parse contract snapshot");
         let expected = snapshot["commands"]
             .as_array()
@@ -376,30 +363,22 @@ dependency "missing" {
             .iter()
             .map(|entry| entry.as_str().expect("command name").to_string())
             .collect::<Vec<_>>();
-        let actual = PROJECT_EXPLORER_COMMANDS
-            .iter()
-            .map(|command| (*command).to_string())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            actual, expected,
-            "update beskid_vscode/test/fixtures/lsp-project-explorer-commands.json"
-        );
+        let actual = PROJECT_EXPLORER_COMMANDS.iter().map(|command| (*command).to_string()).collect::<Vec<_>>();
+        assert_eq!(actual, expected, "update beskid_vscode/test/fixtures/lsp-project-explorer-commands.json");
     }
 
     #[test]
     fn handle_unknown_command_returns_none() {
         let (_temp, root) = workspace_fixture();
-        let result =
-            handle_project_explorer_command("beskid.unknown", None, &[root], None).expect("ok");
+        let result = handle_project_explorer_command("beskid.unknown", None, &[root], None).expect("ok");
         assert!(result.is_none());
     }
 
     #[test]
     fn handle_list_workspaces_via_command_router() {
         let (_temp, root) = workspace_fixture();
-        let result = handle_project_explorer_command(CMD_LIST_WORKSPACES, None, &[root], None)
-            .expect("ok")
-            .expect("payload");
+        let result =
+            handle_project_explorer_command(CMD_LIST_WORKSPACES, None, &[root], None).expect("ok").expect("payload");
         let value = serde_json::to_value(&result).expect("json");
         assert!(value.get("workspaces").is_some());
     }
@@ -407,8 +386,8 @@ dependency "missing" {
     #[test]
     fn handle_get_workspace_summary_requires_uri() {
         let (_temp, root) = workspace_fixture();
-        let err = handle_project_explorer_command(CMD_GET_WORKSPACE_SUMMARY, None, &[root], None)
-            .expect_err("missing args");
+        let err =
+            handle_project_explorer_command(CMD_GET_WORKSPACE_SUMMARY, None, &[root], None).expect_err("missing args");
         assert!(format!("{err}").contains("missing"));
     }
 
@@ -424,20 +403,11 @@ dependency "missing" {
         let settings = serde_json::json!({ "beskid": { "focusedProjectUri": uri } });
         let focused = focused_project_from_configuration(&settings).expect("some");
         assert!(focused.is_some());
-        let settings_legacy =
-            serde_json::json!({ "beskid": { "selectedProjectUri": uri.clone() } });
-        assert!(
-            focused_project_from_configuration(&settings_legacy)
-                .expect("some")
-                .is_some()
-        );
+        let settings_legacy = serde_json::json!({ "beskid": { "selectedProjectUri": uri.clone() } });
+        assert!(focused_project_from_configuration(&settings_legacy).expect("some").is_some());
         let settings_nested = serde_json::json!({
             "beskid": { "project": { "focusedProjectUri": uri } }
         });
-        assert!(
-            focused_project_from_configuration(&settings_nested)
-                .expect("some")
-                .is_some()
-        );
+        assert!(focused_project_from_configuration(&settings_nested).expect("some").is_some());
     }
 }

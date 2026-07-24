@@ -130,15 +130,7 @@ impl Parsable for HostDefinition {
             }
         }
 
-        Ok(Spanned::new(
-            Self {
-                name,
-                parameters,
-                base_host,
-                body,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { name, parameters, base_host, body }, span))
     }
 }
 
@@ -158,13 +150,8 @@ impl Parsable for RegistryEntry {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner().peekable();
-        let lifetime = if inner
-            .peek()
-            .is_some_and(|item| item.as_rule() == Rule::RegistrationLifetime)
-        {
-            let life = inner
-                .next()
-                .ok_or(ParseError::missing(Rule::RegistrationLifetime))?;
+        let lifetime = if inner.peek().is_some_and(|item| item.as_rule() == Rule::RegistrationLifetime) {
+            let life = inner.next().ok_or(ParseError::missing(Rule::RegistrationLifetime))?;
             Some(parse_lifetime(life)?)
         } else {
             None
@@ -182,14 +169,7 @@ impl Parsable for RegistryEntry {
             }
         }
 
-        Ok(Spanned::new(
-            Self {
-                lifetime,
-                implementation,
-                target,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { lifetime, implementation, target }, span))
     }
 }
 
@@ -206,23 +186,13 @@ impl Parsable for ScopeDefinition {
                 Rule::ParameterList => {
                     parameters = parse_parameter_list(item)?;
                 }
-                Rule::RegistryBlock
-                | Rule::ScopeDefinition
-                | Rule::ScopeHook
-                | Rule::RegistryEntry => {
+                Rule::RegistryBlock | Rule::ScopeDefinition | Rule::ScopeHook | Rule::RegistryEntry => {
                     body.push(parse_body_item_from_inner(item)?);
                 }
                 _ => return Err(ParseError::unexpected_rule(item, None)),
             }
         }
-        Ok(Spanned::new(
-            Self {
-                name,
-                parameters,
-                body,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { name, parameters, body }, span))
     }
 }
 
@@ -230,9 +200,7 @@ impl Parsable for ScopeHook {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner();
-        let name = inner
-            .next()
-            .ok_or(ParseError::missing(Rule::ScopeHookName))?;
+        let name = inner.next().ok_or(ParseError::missing(Rule::ScopeHookName))?;
         let kind = match name.as_str() {
             "init" => ScopeHookKind::Init,
             "dispose" => ScopeHookKind::Dispose,
@@ -252,14 +220,7 @@ impl Parsable for ScopeHook {
             }
         }
 
-        Ok(Spanned::new(
-            Self {
-                kind,
-                parameters,
-                body: body.ok_or(ParseError::missing(Rule::Block))?,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { kind, parameters, body: body.ok_or(ParseError::missing(Rule::Block))? }, span))
     }
 }
 
@@ -267,30 +228,20 @@ impl Parsable for WithStatement {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner();
-        let scope_name =
-            Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
+        let scope_name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
         let mut arguments = Vec::new();
         let mut body = None;
         for item in inner {
             match item.as_rule() {
                 Rule::ArgumentList => {
-                    arguments = item
-                        .into_inner()
-                        .map(crate::syntax::Expression::parse)
-                        .collect::<Result<Vec<_>, _>>()?;
+                    arguments =
+                        item.into_inner().map(crate::syntax::Expression::parse).collect::<Result<Vec<_>, _>>()?;
                 }
                 Rule::Block => body = Some(Block::parse(item)?),
                 _ => return Err(ParseError::unexpected_rule(item, None)),
             }
         }
-        Ok(Spanned::new(
-            Self {
-                scope_name,
-                arguments,
-                body: body.ok_or(ParseError::missing(Rule::Block))?,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { scope_name, arguments, body: body.ok_or(ParseError::missing(Rule::Block))? }, span))
     }
 }
 
@@ -302,19 +253,10 @@ impl Parsable for LaunchStatement {
         let mut arguments = Vec::new();
         for item in inner {
             if item.as_rule() == Rule::ArgumentList {
-                arguments = item
-                    .into_inner()
-                    .map(crate::syntax::Expression::parse)
-                    .collect::<Result<Vec<_>, _>>()?;
+                arguments = item.into_inner().map(crate::syntax::Expression::parse).collect::<Result<Vec<_>, _>>()?;
             }
         }
-        Ok(Spanned::new(
-            Self {
-                host_path,
-                arguments,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { host_path, arguments }, span))
     }
 }
 
@@ -322,45 +264,24 @@ fn parse_lifetime(pair: Pair<Rule>) -> Result<RegistrationLifetime, ParseError> 
     match pair.as_str() {
         "single" => Ok(RegistrationLifetime::Single),
         "transient" => Ok(RegistrationLifetime::Transient),
-        _ => Err(ParseError::unexpected_rule(
-            pair,
-            Some(Rule::RegistrationLifetime),
-        )),
+        _ => Err(ParseError::unexpected_rule(pair, Some(Rule::RegistrationLifetime))),
     }
 }
 
 fn parse_body_item_from_inner(inner: Pair<Rule>) -> Result<Spanned<HostBodyItem>, ParseError> {
     let span = SpanInfo::from_span(&inner.as_span());
     match inner.as_rule() {
-        Rule::RegistryBlock => Ok(Spanned::new(
-            HostBodyItem::Registry(RegistryBlock::parse(inner)?),
-            span,
-        )),
-        Rule::RegistryEntry => Ok(Spanned::new(
-            HostBodyItem::Registration(RegistryEntry::parse(inner)?),
-            span,
-        )),
-        Rule::ScopeDefinition => Ok(Spanned::new(
-            HostBodyItem::Scope(ScopeDefinition::parse(inner)?),
-            span,
-        )),
-        Rule::ScopeHook => Ok(Spanned::new(
-            HostBodyItem::Hook(ScopeHook::parse(inner)?),
-            span,
-        )),
+        Rule::RegistryBlock => Ok(Spanned::new(HostBodyItem::Registry(RegistryBlock::parse(inner)?), span)),
+        Rule::RegistryEntry => Ok(Spanned::new(HostBodyItem::Registration(RegistryEntry::parse(inner)?), span)),
+        Rule::ScopeDefinition => Ok(Spanned::new(HostBodyItem::Scope(ScopeDefinition::parse(inner)?), span)),
+        Rule::ScopeHook => Ok(Spanned::new(HostBodyItem::Hook(ScopeHook::parse(inner)?), span)),
         _ => Err(ParseError::unexpected_rule(inner, None)),
     }
 }
 
 fn parse_parameter_list(pair: Pair<Rule>) -> Result<Vec<Spanned<Parameter>>, ParseError> {
     pair.into_inner()
-        .filter_map(|entry| {
-            if entry.as_rule() == Rule::ParameterWithDocs {
-                Some(entry)
-            } else {
-                None
-            }
-        })
+        .filter_map(|entry| if entry.as_rule() == Rule::ParameterWithDocs { Some(entry) } else { None })
         .map(|entry| {
             let mut inner = entry.into_inner();
             let first = inner.next().ok_or(ParseError::missing(Rule::Parameter))?;
@@ -384,16 +305,10 @@ pub fn parse_field_inject_parts(
             Some("global") => Some(InjectQualifier::Global),
             Some("parent") => Some(InjectQualifier::Parent),
             _ => {
-                return Err(ParseError::unexpected_rule(
-                    first,
-                    Some(Rule::InjectQualifier),
-                ));
+                return Err(ParseError::unexpected_rule(first, Some(Rule::InjectQualifier)));
             }
         };
-        (
-            qualifier,
-            inner.next().ok_or(ParseError::missing(Rule::BeskidType))?,
-        )
+        (qualifier, inner.next().ok_or(ParseError::missing(Rule::BeskidType))?)
     } else {
         (None, first)
     };

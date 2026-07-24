@@ -83,11 +83,7 @@ mod tests {
     fn syscall_write_payload_offsets() {
         let text = std::ptr::null::<BeskidStr>();
         let envelope = SyscallWriteEnvelope {
-            header: RuntimeInteropEnvelope {
-                type_desc_ptr: std::ptr::null(),
-                tag: TAG_SYSCALL_WRITE,
-                pad: 0,
-            },
+            header: RuntimeInteropEnvelope { type_desc_ptr: std::ptr::null(), tag: TAG_SYSCALL_WRITE, pad: 0 },
             fd: 1,
             text,
         };
@@ -100,11 +96,7 @@ mod tests {
     fn bytes_get_payload_offsets() {
         let array = std::ptr::null::<BeskidArray>();
         let envelope = BytesGetEnvelope {
-            header: RuntimeInteropEnvelope {
-                type_desc_ptr: std::ptr::null(),
-                tag: 1,
-                pad: 0,
-            },
+            header: RuntimeInteropEnvelope { type_desc_ptr: std::ptr::null(), tag: 1, pad: 0 },
             array,
             index: 3,
         };

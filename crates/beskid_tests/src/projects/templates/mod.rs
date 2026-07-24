@@ -28,16 +28,9 @@ beskid_templates_console {
     let m = parse_manifest(src).expect("parse");
     assert_eq!(m.project.kind, ProjectKind::Template);
     assert!(m.targets.is_empty());
-    let template = m
-        .project
-        .template_section
-        .as_ref()
-        .expect("template section");
+    let template = m.project.template_section.as_ref().expect("template section");
     assert_eq!(template.short_name.as_deref(), Some("console"));
-    assert_eq!(
-        template.identity.as_deref(),
-        Some("beskid.templates.console")
-    );
+    assert_eq!(template.identity.as_deref(), Some("beskid.templates.console"));
 }
 
 #[test]
@@ -203,8 +196,8 @@ Tpl {
 fn instantiated_project_analyzes_cleanly() {
     use beskid_analysis::services::{self, FrontEndOptions, PrepareOptions};
     use beskid_template::{
-        InstantiateOptions, SymbolCollectOptions, TEMPLATE_MANIFEST_REL, TEMPLATE_SCHEMA,
-        instantiate, load_manifest_from_template_root,
+        InstantiateOptions, SymbolCollectOptions, TEMPLATE_MANIFEST_REL, TEMPLATE_SCHEMA, instantiate,
+        load_manifest_from_template_root,
     };
 
     fn write_inline_fixture(root: &std::path::Path) -> std::path::PathBuf {
@@ -250,8 +243,7 @@ target "app" {
     let _env = std_dependency_env_lock();
     let temp = tempfile::tempdir().expect("tempdir");
     let template_root = write_inline_fixture(temp.path());
-    let manifest =
-        load_manifest_from_template_root(&template_root).expect("load template manifest");
+    let manifest = load_manifest_from_template_root(&template_root).expect("load template manifest");
     let output = temp.path().join("scaffolded");
     let options = InstantiateOptions {
         template_root,
@@ -272,26 +264,18 @@ target "app" {
     instantiate(&manifest, &options).expect("instantiate");
 
     let entry = output.join("Src/Main.bd");
-    assert!(
-        entry.is_file(),
-        "expected entry source at {}",
-        entry.display()
-    );
+    assert!(entry.is_file(), "expected entry source at {}", entry.display());
 
     let manifest_path = discover_project_manifest_in_dir(&output)
         .expect("discover scaffold manifest")
         .expect("scaffold manifest present");
-    let resolved =
-        services::resolve_input(Some(&entry), Some(&manifest_path), None, None, false, false)
-            .expect("resolve instantiated project");
+    let resolved = services::resolve_input(Some(&entry), Some(&manifest_path), None, None, false, false)
+        .expect("resolve instantiated project");
 
     let (_, diagnostics) = beskid_queries::prepare_compilation_diagnostics(
         &resolved,
         PrepareOptions {
-            front_end: FrontEndOptions {
-                with_semantic_diagnostics: true,
-                ..Default::default()
-            },
+            front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
         None,

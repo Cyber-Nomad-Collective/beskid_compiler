@@ -1,7 +1,5 @@
 use serde_json::json;
-use tower_lsp_server::ls_types::{
-    DocumentSymbol, DocumentSymbolResponse, Range, SymbolKind, SymbolTag, Uri,
-};
+use tower_lsp_server::ls_types::{DocumentSymbol, DocumentSymbolResponse, Range, SymbolKind, SymbolTag, Uri};
 
 use crate::adapters::symbol::analysis_symbol_kind_to_lsp;
 use crate::features::project_manifest::api as project_manifest;

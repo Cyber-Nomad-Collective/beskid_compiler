@@ -34,19 +34,14 @@ fn strip_rust_visibility(line: &str) -> &str {
 
 /// Extracts one Rust symbol from a trimmed line.
 fn rust_symbol(line: &str) -> Option<(&'static str, String)> {
-    for (prefix, kind) in [
-        ("fn ", "fn"),
-        ("struct ", "struct"),
-        ("enum ", "enum"),
-        ("trait ", "trait"),
-        ("mod ", "mod"),
-    ] {
+    for (prefix, kind) in
+        [("fn ", "fn"), ("struct ", "struct"), ("enum ", "enum"), ("trait ", "trait"), ("mod ", "mod")]
+    {
         if let Some(rest) = line.strip_prefix(prefix) {
             return Some((kind, take_identifier(rest)));
         }
     }
-    line.strip_prefix("impl ")
-        .map(|rest| ("impl", format!("impl {}", take_impl_target(rest))))
+    line.strip_prefix("impl ").map(|rest| ("impl", format!("impl {}", take_impl_target(rest))))
 }
 
 /// Extracts TypeScript and JavaScript symbols from source text.
@@ -55,12 +50,8 @@ fn extract_script_symbols(content: &str) -> Vec<CodeOutlineItem> {
         .lines()
         .enumerate()
         .filter_map(|(index, line)| {
-            let trimmed = line
-                .trim_start()
-                .strip_prefix("export ")
-                .unwrap_or(line.trim_start());
-            script_symbol(trimmed)
-                .map(|(kind, name)| CodeOutlineItem::new(name, index + 1, 0, kind))
+            let trimmed = line.trim_start().strip_prefix("export ").unwrap_or(line.trim_start());
+            script_symbol(trimmed).map(|(kind, name)| CodeOutlineItem::new(name, index + 1, 0, kind))
         })
         .collect()
 }
@@ -90,12 +81,7 @@ fn extract_python_symbols(content: &str) -> Vec<CodeOutlineItem> {
             let trimmed = line.trim_start();
             let level = line.len().saturating_sub(trimmed.len()) / 4;
             if let Some(rest) = trimmed.strip_prefix("def ") {
-                return Some(CodeOutlineItem::new(
-                    take_identifier(rest),
-                    index + 1,
-                    level,
-                    "def",
-                ));
+                return Some(CodeOutlineItem::new(take_identifier(rest), index + 1, level, "def"));
             }
             trimmed
                 .strip_prefix("class ")
@@ -106,9 +92,7 @@ fn extract_python_symbols(content: &str) -> Vec<CodeOutlineItem> {
 
 /// Takes an identifier-like prefix from source text.
 fn take_identifier(rest: &str) -> String {
-    rest.chars()
-        .take_while(|character| character.is_alphanumeric() || *character == '_')
-        .collect()
+    rest.chars().take_while(|character| character.is_alphanumeric() || *character == '_').collect()
 }
 
 /// Takes a Rust impl target from source text.
@@ -122,10 +106,7 @@ mod tests {
 
     #[test]
     fn extracts_rust_symbols() {
-        let outline = extract_symbol_outline(
-            "pub struct App;\nimpl App {\nfn run() {}",
-            &CodeLanguage::Rust,
-        );
+        let outline = extract_symbol_outline("pub struct App;\nimpl App {\nfn run() {}", &CodeLanguage::Rust);
         assert_eq!(outline[0].name, "App");
         assert_eq!(outline[1].kind, "impl");
         assert_eq!(outline[2].name, "run");
@@ -133,20 +114,14 @@ mod tests {
 
     #[test]
     fn extracts_script_symbols() {
-        let outline = extract_symbol_outline(
-            "export const run = () => {};\nclass App {}",
-            &CodeLanguage::TypeScript,
-        );
+        let outline = extract_symbol_outline("export const run = () => {};\nclass App {}", &CodeLanguage::TypeScript);
         assert_eq!(outline.len(), 2);
         assert_eq!(outline[0].name, "run");
     }
 
     #[test]
     fn extracts_python_symbols() {
-        let outline = extract_symbol_outline(
-            "class App:\n    def run(self):\n        pass",
-            &CodeLanguage::Python,
-        );
+        let outline = extract_symbol_outline("class App:\n    def run(self):\n        pass", &CodeLanguage::Python);
         assert_eq!(outline[1].level, 1);
         assert_eq!(outline[1].kind, "def");
     }

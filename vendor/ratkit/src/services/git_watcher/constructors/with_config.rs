@@ -37,12 +37,6 @@ impl GitWatcher {
             Config::default().with_poll_interval(Duration::from_millis(config.debounce_ms)),
         )?;
 
-        Ok(Self {
-            watcher,
-            rx,
-            config,
-            repo_path: None,
-            has_pending_changes: false,
-        })
+        Ok(Self { watcher, rx, config, repo_path: None, has_pending_changes: false })
     }
 }

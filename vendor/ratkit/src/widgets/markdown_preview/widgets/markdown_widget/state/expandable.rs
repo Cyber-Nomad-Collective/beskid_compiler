@@ -20,10 +20,7 @@ pub struct ExpandableState {
 impl ExpandableState {
     /// Create a new expandable state with defaults.
     pub fn new() -> Self {
-        Self {
-            content: HashMap::new(),
-            default_max_lines: 3,
-        }
+        Self { content: HashMap::new(), default_max_lines: 3 }
     }
 }
 
@@ -41,10 +38,7 @@ pub struct ExpandableEntry {
 impl ExpandableEntry {
     /// Create a new expandable entry.
     pub fn new(collapsed: bool, max_lines: usize) -> Self {
-        Self {
-            collapsed,
-            max_lines: max_lines.max(1),
-        }
+        Self { collapsed, max_lines: max_lines.max(1) }
     }
 }
 
@@ -95,10 +89,7 @@ impl ExpandableState {
     ///
     /// The maximum visible lines for this content, or the default if not set.
     pub fn get_max_lines(&self, content_id: &str) -> usize {
-        self.content
-            .get(content_id)
-            .map(|state| state.max_lines)
-            .unwrap_or(self.default_max_lines)
+        self.content.get(content_id).map(|state| state.max_lines).unwrap_or(self.default_max_lines)
     }
 }
 
@@ -115,10 +106,7 @@ impl ExpandableState {
     ///
     /// `true` if the content is collapsed (default state).
     pub fn is_collapsed(&self, content_id: &str) -> bool {
-        self.content
-            .get(content_id)
-            .map(|state| state.collapsed)
-            .unwrap_or(true)
+        self.content.get(content_id).map(|state| state.collapsed).unwrap_or(true)
     }
 }
 

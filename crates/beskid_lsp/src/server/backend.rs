@@ -9,12 +9,12 @@ use tower_lsp_server::ls_types::*;
 use tower_lsp_server::{Client, LanguageServer};
 
 use crate::commands::{
-    PckgRegistryState, focused_project_from_configuration, focused_project_from_value,
-    handle_project_explorer_command, pckg_registry, symbol_documentation,
+    PckgRegistryState, focused_project_from_configuration, focused_project_from_value, handle_project_explorer_command,
+    pckg_registry, symbol_documentation,
 };
 use crate::features::{
-    code_actions, completion, definition, document_symbols, formatting, hover, inlay_hints,
-    references, rename, semantic_tokens, signature_help, workspace_symbols,
+    code_actions, completion, definition, document_symbols, formatting, hover, inlay_hints, references, rename,
+    semantic_tokens, signature_help, workspace_symbols,
 };
 use crate::logging::{ClientLogFilter, client_log};
 use crate::protocol::request::{snapshot_document, snapshot_lsp_request, snapshot_request};
@@ -26,8 +26,7 @@ use crate::session::lifecycle::{
 use crate::session::store::State;
 use crate::text_sync::apply_document_changes;
 use crate::workspace_scan::{
-    clear_closed_workspace_under_root, hydrate_disk_after_close, refresh_after_disk_change,
-    scan_workspace, uri_to_path,
+    clear_closed_workspace_under_root, hydrate_disk_after_close, refresh_after_disk_change, scan_workspace, uri_to_path,
 };
 
 /// Tower-LSP [`LanguageServer`] implementation for Beskid (sync, diagnostics, IDE features).
@@ -77,13 +76,8 @@ impl Backend {
                 map.get(&uri).copied() == Some(rev)
             };
             if should_run {
-                client_log(
-                    &client,
-                    filter,
-                    MessageType::LOG,
-                    format!("publishing diagnostics for {}", uri.as_str()),
-                )
-                .await;
+                client_log(&client, filter, MessageType::LOG, format!("publishing diagnostics for {}", uri.as_str()))
+                    .await;
                 publish_diagnostics_for_uri(&client, &state, &uri).await;
             }
         });
@@ -94,13 +88,8 @@ impl Backend {
         let focused = { self.state.read().await.focused_project.clone() };
         let filter = *self.log_filter.read().await;
         for root in roots {
-            client_log(
-                &self.client,
-                filter,
-                MessageType::INFO,
-                format!("workspace scan started: {}", root.display()),
-            )
-            .await;
+            client_log(&self.client, filter, MessageType::INFO, format!("workspace scan started: {}", root.display()))
+                .await;
             scan_workspace(&self.client, &self.state, &root, focused.as_deref()).await;
             client_log(
                 &self.client,
@@ -144,13 +133,7 @@ impl LanguageServer for Backend {
 
     async fn initialized(&self, _: InitializedParams) {
         let filter = *self.log_filter.read().await;
-        client_log(
-            &self.client,
-            filter,
-            MessageType::INFO,
-            "Beskid LSP initialized".to_string(),
-        )
-        .await;
+        client_log(&self.client, filter, MessageType::INFO, "Beskid LSP initialized".to_string()).await;
         self.refresh_workspace_scan().await;
     }
 
@@ -170,26 +153,11 @@ impl LanguageServer for Backend {
         let content_changes = params.content_changes;
         let updated = if let Some(mut doc) = snapshot_document(&self.state, &uri).await {
             apply_document_changes(&mut doc.text, content_changes);
-            set_document(
-                &self.state,
-                uri.clone(),
-                params.text_document.version,
-                doc.text,
-            )
-            .await
-        } else if let Some(full_text) = content_changes
-            .into_iter()
-            .rev()
-            .find(|change| change.range.is_none())
-            .map(|change| change.text)
+            set_document(&self.state, uri.clone(), params.text_document.version, doc.text).await
+        } else if let Some(full_text) =
+            content_changes.into_iter().rev().find(|change| change.range.is_none()).map(|change| change.text)
         {
-            set_document(
-                &self.state,
-                uri.clone(),
-                params.text_document.version,
-                full_text,
-            )
-            .await
+            set_document(&self.state, uri.clone(), params.text_document.version, full_text).await
         } else {
             false
         };
@@ -200,8 +168,7 @@ impl LanguageServer for Backend {
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        self.schedule_publish_diagnostics(params.text_document.uri)
-            .await;
+        self.schedule_publish_diagnostics(params.text_document.uri).await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
@@ -214,25 +181,14 @@ impl LanguageServer for Backend {
         let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
             return Ok(None);
         };
-        Ok(hover::handler::handle_hover(
-            &snapshot.uri,
-            &snapshot.document,
-            snapshot.offset,
-        ))
+        Ok(hover::handler::handle_hover(&snapshot.uri, &snapshot.document, snapshot.offset))
     }
 
-    async fn goto_definition(
-        &self,
-        params: GotoDefinitionParams,
-    ) -> Result<Option<GotoDefinitionResponse>> {
+    async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
         let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
             return Ok(None);
         };
-        Ok(definition::handler::handle_definition(
-            &snapshot.uri,
-            &snapshot.document,
-            snapshot.offset,
-        ))
+        Ok(definition::handler::handle_definition(&snapshot.uri, &snapshot.document, snapshot.offset))
     }
 
     async fn goto_declaration(
@@ -242,11 +198,7 @@ impl LanguageServer for Backend {
         let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
             return Ok(None);
         };
-        Ok(definition::handler::handle_definition(
-            &snapshot.uri,
-            &snapshot.document,
-            snapshot.offset,
-        ))
+        Ok(definition::handler::handle_definition(&snapshot.uri, &snapshot.document, snapshot.offset))
     }
 
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
@@ -270,41 +222,26 @@ impl LanguageServer for Backend {
         };
         Ok(Some(
             with_compilation_db(&self.state, |db| {
-                completion::handler::handle_completion(
-                    db,
-                    &snapshot.uri,
-                    &snapshot.document,
-                    snapshot.offset,
-                )
+                completion::handler::handle_completion(db, &snapshot.uri, &snapshot.document, snapshot.offset)
             })
             .await,
         ))
     }
 
-    async fn document_symbol(
-        &self,
-        params: DocumentSymbolParams,
-    ) -> Result<Option<DocumentSymbolResponse>> {
+    async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
         let uri = params.text_document.uri;
         let Some(document) = snapshot_document(&self.state, &uri).await else {
             return Ok(Some(DocumentSymbolResponse::Nested(Vec::new())));
         };
-        Ok(Some(document_symbols::handler::handle_document_symbols(
-            &uri, &document,
-        )))
+        Ok(Some(document_symbols::handler::handle_document_symbols(&uri, &document)))
     }
 
-    async fn semantic_tokens_full(
-        &self,
-        params: SemanticTokensParams,
-    ) -> Result<Option<SemanticTokensResult>> {
+    async fn semantic_tokens_full(&self, params: SemanticTokensParams) -> Result<Option<SemanticTokensResult>> {
         let uri = params.text_document.uri;
         let Some(document) = snapshot_document(&self.state, &uri).await else {
             return Ok(None);
         };
-        Ok(Some(semantic_tokens::handler::handle_semantic_tokens(
-            &document,
-        )))
+        Ok(Some(semantic_tokens::handler::handle_semantic_tokens(&document)))
     }
 
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
@@ -312,20 +249,14 @@ impl LanguageServer for Backend {
         let Some(document) = snapshot_document(&self.state, &uri).await else {
             return Ok(Some(Vec::new()));
         };
-        Ok(Some(inlay_hints::handler::handle_inlay_hints(
-            &uri, &document, &params,
-        )))
+        Ok(Some(inlay_hints::handler::handle_inlay_hints(&uri, &document, &params)))
     }
 
     async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
         let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
             return Ok(None);
         };
-        Ok(signature_help::handler::handle_signature_help(
-            &snapshot.uri,
-            &snapshot.document,
-            snapshot.offset,
-        ))
+        Ok(signature_help::handler::handle_signature_help(&snapshot.uri, &snapshot.document, snapshot.offset))
     }
 
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
@@ -333,33 +264,19 @@ impl LanguageServer for Backend {
         let Some(document) = snapshot_document(&self.state, &uri).await else {
             return Ok(Some(Vec::new()));
         };
-        Ok(Some(code_actions::handler::handle_code_actions(
-            &uri, &document, &params,
-        )))
+        Ok(Some(code_actions::handler::handle_code_actions(&uri, &document, &params)))
     }
 
-    async fn symbol(
-        &self,
-        params: WorkspaceSymbolParams,
-    ) -> Result<Option<WorkspaceSymbolResponse>> {
+    async fn symbol(&self, params: WorkspaceSymbolParams) -> Result<Option<WorkspaceSymbolResponse>> {
         let state = self.state.read().await;
-        Ok(Some(workspace_symbols::handler::handle_workspace_symbols(
-            &state, params,
-        )))
+        Ok(Some(workspace_symbols::handler::handle_workspace_symbols(&state, params)))
     }
 
-    async fn prepare_rename(
-        &self,
-        params: TextDocumentPositionParams,
-    ) -> Result<Option<PrepareRenameResponse>> {
+    async fn prepare_rename(&self, params: TextDocumentPositionParams) -> Result<Option<PrepareRenameResponse>> {
         let Some(snapshot) = snapshot_request(&self.state, params).await else {
             return Ok(None);
         };
-        Ok(rename::handler::handle_prepare_rename(
-            &snapshot.uri,
-            &snapshot.document,
-            snapshot.offset,
-        ))
+        Ok(rename::handler::handle_prepare_rename(&snapshot.uri, &snapshot.document, snapshot.offset))
     }
 
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
@@ -368,12 +285,7 @@ impl LanguageServer for Backend {
         let Some(snapshot) = snapshot_lsp_request(&self.state, request.clone()).await else {
             return Ok(None);
         };
-        Ok(rename::handler::handle_rename(
-            &snapshot.uri,
-            &snapshot.document,
-            request.position,
-            &new_name,
-        ))
+        Ok(rename::handler::handle_rename(&snapshot.uri, &snapshot.document, request.position, &new_name))
     }
 
     async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<LSPAny>> {
@@ -386,12 +298,7 @@ impl LanguageServer for Backend {
             let uri = symbol_documentation::uri_from_command_args(&Some(args.clone()))?;
             let state = self.state.read().await;
             let doc = state.docs.get(&uri);
-            return symbol_documentation::handle_symbol_documentation_command(
-                &params.command,
-                Some(args),
-                doc,
-                &uri,
-            );
+            return symbol_documentation::handle_symbol_documentation_command(&params.command, Some(args), doc, &uri);
         }
         let roots = self.workspace_roots.read().await.clone();
         if let Some(result) = pckg_registry::handle_pckg_registry_command(
@@ -405,12 +312,7 @@ impl LanguageServer for Backend {
             return Ok(Some(result));
         }
         let explorer_result = with_compilation_db(&self.state, |db| {
-            handle_project_explorer_command(
-                &params.command,
-                Some(params.arguments),
-                &roots,
-                Some(db),
-            )
+            handle_project_explorer_command(&params.command, Some(params.arguments), &roots, Some(db))
         })
         .await?;
         Ok(explorer_result)
@@ -464,11 +366,7 @@ impl LanguageServer for Backend {
     }
 
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
-        let changed: Vec<PathBuf> = params
-            .changes
-            .into_iter()
-            .filter_map(|change| uri_to_path(&change.uri))
-            .collect();
+        let changed: Vec<PathBuf> = params.changes.into_iter().filter_map(|change| uri_to_path(&change.uri)).collect();
         refresh_after_disk_change(&self.client, &self.state, &changed).await;
     }
 
@@ -480,17 +378,11 @@ impl LanguageServer for Backend {
         Ok(formatting::handler::handle_document_formatting(&document))
     }
 
-    async fn range_formatting(
-        &self,
-        params: DocumentRangeFormattingParams,
-    ) -> Result<Option<Vec<TextEdit>>> {
+    async fn range_formatting(&self, params: DocumentRangeFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         let uri = params.text_document.uri;
         let Some(document) = snapshot_document(&self.state, &uri).await else {
             return Ok(None);
         };
-        Ok(formatting::handler::handle_range_formatting(
-            &document,
-            params.range,
-        ))
+        Ok(formatting::handler::handle_range_formatting(&document, params.range))
     }
 }

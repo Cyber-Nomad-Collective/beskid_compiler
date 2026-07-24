@@ -16,16 +16,12 @@ async fn include_declaration_returns_all_occurrences() {
     let response = server
         .references(ReferenceParams {
             text_document_position: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier {
-                    uri: doc_uri.clone(),
-                },
+                text_document: TextDocumentIdentifier { uri: doc_uri.clone() },
                 position: Position::new(3, 12),
             },
             work_done_progress_params: WorkDoneProgressParams::default(),
             partial_result_params: PartialResultParams::default(),
-            context: ReferenceContext {
-                include_declaration: true,
-            },
+            context: ReferenceContext { include_declaration: true },
         })
         .await
         .expect("references request should succeed")

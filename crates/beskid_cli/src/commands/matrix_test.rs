@@ -28,10 +28,7 @@ pub fn execute_all_targets(mut args: TestArgs) -> Result<()> {
     test_targets = filter_targets_by_env(test_targets)?;
 
     if test_targets.is_empty() {
-        return Err(anyhow!(
-            "no Test or Lib targets in {}",
-            manifest_path.display()
-        ));
+        return Err(anyhow!("no Test or Lib targets in {}", manifest_path.display()));
     }
 
     let mut failures = Vec::new();
@@ -65,11 +62,7 @@ pub fn execute_all_targets(mut args: TestArgs) -> Result<()> {
         eprintln!("failed targets: {}", failures.join(", "));
     }
 
-    if failures.is_empty() {
-        Ok(())
-    } else {
-        Err(anyhow!("matrix run failed for {failed}/{total} target(s)"))
-    }
+    if failures.is_empty() { Ok(()) } else { Err(anyhow!("matrix run failed for {failed}/{total} target(s)")) }
 }
 
 fn filter_targets_by_env(targets: Vec<String>) -> Result<Vec<String>> {
@@ -78,31 +71,17 @@ fn filter_targets_by_env(targets: Vec<String>) -> Result<Vec<String>> {
     if raw.is_empty() {
         return Ok(targets);
     }
-    let wanted: std::collections::HashSet<String> = raw
-        .split(',')
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .map(str::to_owned)
-        .collect();
+    let wanted: std::collections::HashSet<String> =
+        raw.split(',').map(str::trim).filter(|part| !part.is_empty()).map(str::to_owned).collect();
     if wanted.is_empty() {
         return Ok(targets);
     }
     let available: std::collections::HashSet<&str> = targets.iter().map(String::as_str).collect();
-    let missing: Vec<String> = wanted
-        .iter()
-        .filter(|name| !available.contains(name.as_str()))
-        .cloned()
-        .collect();
+    let missing: Vec<String> = wanted.iter().filter(|name| !available.contains(name.as_str())).cloned().collect();
     if !missing.is_empty() {
-        return Err(anyhow!(
-            "BESKID_CORELIB_TEST_TARGETS unknown targets: {}",
-            missing.join(", ")
-        ));
+        return Err(anyhow!("BESKID_CORELIB_TEST_TARGETS unknown targets: {}", missing.join(", ")));
     }
-    Ok(targets
-        .into_iter()
-        .filter(|name| wanted.contains(name))
-        .collect())
+    Ok(targets.into_iter().filter(|name| wanted.contains(name)).collect())
 }
 
 fn resolve_manifest_path(args: &TestArgs) -> Result<PathBuf> {
@@ -114,21 +93,17 @@ fn resolve_manifest_path(args: &TestArgs) -> Result<PathBuf> {
         {
             return Ok(project.clone());
         }
-        if let Some(manifest) = beskid_analysis::projects::discover_project_manifest_in_dir(project)
-            .map_err(anyhow::Error::from)?
+        if let Some(manifest) =
+            beskid_analysis::projects::discover_project_manifest_in_dir(project).map_err(anyhow::Error::from)?
         {
             return Ok(manifest);
         }
         if let Some(workspace) =
-            beskid_analysis::projects::discover_workspace_manifest_in_dir(project)
-                .map_err(anyhow::Error::from)?
+            beskid_analysis::projects::discover_workspace_manifest_in_dir(project).map_err(anyhow::Error::from)?
         {
             return Ok(workspace);
         }
-        return Err(anyhow!(
-            "no `.bproj` or `.bws` manifest found in {}",
-            project.display()
-        ));
+        return Err(anyhow!("no `.bproj` or `.bws` manifest found in {}", project.display()));
     }
     Err(anyhow!("--all-targets requires --project"))
 }

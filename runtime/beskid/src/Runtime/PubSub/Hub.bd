@@ -8,10 +8,10 @@ const HUB_TABLE_MAX = 16;
 const HUB_ENTRY_MAX = 64;
 const HUB_SLOT_SIZE = 544;
 
-const STATUS_OK = 0;
-const STATUS_HUB_EMPTY = 4;
-const STATUS_HUB_LIMIT = 5;
-const STATUS_HUB_NOT_FOUND = 6;
+// Hub-specific ABI status codes (gapped; function-constant pattern from Concurrency.Status).
+pub i64 HubEmpty() { return 4; }
+pub i64 HubLimit() { return 5; }
+pub i64 HubNotFound() { return 6; }
 
 // Returns the hub table pointer (offset 19072 in runtime state).
 pub pointer HubTable() {
@@ -46,21 +46,21 @@ pub i64 HubCreate() {
 [Export(Abi:"C", Symbol:"hub_register")]
 pub i64 HubRegister(i64 hubId, i64 index, i64 channelId) {
     word hi = word(hubId);
-    if hi >= HUB_TABLE_MAX { return STATUS_HUB_NOT_FOUND; }
+    if hi >= HUB_TABLE_MAX { return HubNotFound(); }
     pointer hub = HubSlot(hi);
     word entryCount = raw_word_load(hub);
-    if entryCount >= HUB_ENTRY_MAX { return STATUS_HUB_LIMIT; }
+    if entryCount >= HUB_ENTRY_MAX { return HubLimit(); }
     pointer entry = pointer_add(hub, 16 + entryCount * 16);
     raw_word_store(entry, word(index));
     raw_word_store(pointer_add(entry, 8), word(channelId));
     raw_word_store(hub, entryCount + 1);
-    return STATUS_OK;
+    return ChannelStatus::Ok;
 }
 
 [Export(Abi:"C", Symbol:"hub_unregister")]
 pub i64 HubUnregister(i64 hubId, i64 index) {
     word hi = word(hubId);
-    if hi >= HUB_TABLE_MAX { return STATUS_HUB_NOT_FOUND; }
+    if hi >= HUB_TABLE_MAX { return HubNotFound(); }
     pointer hub = HubSlot(hi);
     word entryCount = raw_word_load(hub);
     mut word i = 0;
@@ -75,21 +75,21 @@ pub i64 HubUnregister(i64 hubId, i64 index) {
             raw_word_store(lastEntry, 0);
             raw_word_store(pointer_add(lastEntry, 8), 0);
             raw_word_store(hub, entryCount - 1);
-            return STATUS_OK;
+            return ChannelStatus::Ok;
         }
         i = i + 1;
     }
-    return STATUS_HUB_NOT_FOUND;
+    return HubNotFound();
 }
 
 // Poll all channels round-robin until one delivers, then return index and value.
 [Export(Abi:"C", Symbol:"hub_wait_receive_status")]
 pub i64 HubWaitReceiveStatus(i64 hubId) {
     word hi = word(hubId);
-    if hi >= HUB_TABLE_MAX { return STATUS_HUB_NOT_FOUND; }
+    if hi >= HUB_TABLE_MAX { return HubNotFound(); }
     pointer hub = HubSlot(hi);
     word entryCount = raw_word_load(hub);
-    if entryCount == 0 { return STATUS_HUB_EMPTY; }
+    if entryCount == 0 { return HubEmpty(); }
     word cursor = raw_word_load(pointer_add(hub, 8));
     word startPos = cursor % entryCount;
     mut word attempts = 0;
@@ -98,13 +98,13 @@ pub i64 HubWaitReceiveStatus(i64 hubId) {
         word entry = pointer_add(hub, 16 + pos * 16);
         i64 chId = i64(raw_word_load(pointer_add(entry, 8)));
         i64 status = ChannelReceiveStatus(chId);
-        if status == STATUS_OK {
+        if status == ChannelStatus::Ok {
             raw_word_store(pointer_add(hub, 8), (pos + 1) % entryCount);
-            return STATUS_OK;
+            return ChannelStatus::Ok;
         }
         attempts = attempts + 1;
     }
-    return STATUS_HUB_EMPTY;
+    return HubEmpty();
 }
 
 [Export(Abi:"C", Symbol:"hub_wait_receive_value")]

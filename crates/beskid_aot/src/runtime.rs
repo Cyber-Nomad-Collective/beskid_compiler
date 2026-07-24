@@ -20,10 +20,6 @@ pub struct RuntimeBuildRequest {
 
 /// Resolve the static archive from the request's hash-verified ABI-v5 kit.
 pub fn prepare_runtime(req: &RuntimeBuildRequest) -> AotResult<RuntimeArtifact> {
-    let kit =
-        crate::bundled::resolve_aot_runtime_kit(&req.kit.prefix, &req.kit.target, req.kit.profile)?;
-    Ok(RuntimeArtifact {
-        staticlib_path: kit.static_library,
-        exported_symbols: kit.metadata.export_allowlist,
-    })
+    let kit = crate::bundled::resolve_aot_runtime_kit(&req.kit.prefix, &req.kit.target, req.kit.profile)?;
+    Ok(RuntimeArtifact { staticlib_path: kit.static_library, exported_symbols: kit.metadata.export_allowlist })
 }

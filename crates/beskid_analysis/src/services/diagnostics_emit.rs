@@ -5,11 +5,7 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::projects::ProjectError;
 
-pub fn pest_error_diagnostic(
-    source_name: &str,
-    source: &str,
-    err: &pest::error::Error<Rule>,
-) -> SemanticDiagnostic {
+pub fn pest_error_diagnostic(source_name: &str, source: &str, err: &pest::error::Error<Rule>) -> SemanticDiagnostic {
     let start = match err.location {
         InputLocation::Pos(pos) => pos,
         InputLocation::Span((start, _)) => start,
@@ -17,12 +13,7 @@ pub fn pest_error_diagnostic(
     crate::analysis::diagnostics::make_diagnostic(
         source_name,
         source,
-        crate::syntax::SpanInfo {
-            start,
-            end: start.saturating_add(1),
-            line_col_start: (1, 1),
-            line_col_end: (1, 1),
-        },
+        crate::syntax::SpanInfo { start, end: start.saturating_add(1), line_col_start: (1, 1), line_col_end: (1, 1) },
         format!("parse error: {err}"),
         "parse",
         None,
@@ -31,17 +22,9 @@ pub fn pest_error_diagnostic(
     )
 }
 
-pub fn parse_error_diagnostic(
-    source_name: &str,
-    source: &str,
-    err: &ParseError,
-) -> SemanticDiagnostic {
+pub fn parse_error_diagnostic(source_name: &str, source: &str, err: &ParseError) -> SemanticDiagnostic {
     match err {
-        ParseError::UnexpectedRule {
-            expected,
-            found,
-            span,
-        } => {
+        ParseError::UnexpectedRule { expected, found, span } => {
             let message = match expected {
                 Some(rule) => format!("parse error: expected {rule:?}, found {found:?}"),
                 None => format!("parse error: unexpected {found:?}"),
@@ -60,30 +43,23 @@ pub fn parse_error_diagnostic(
         ParseError::MissingPair { expected } => crate::analysis::diagnostics::make_diagnostic(
             source_name,
             source,
-            crate::syntax::SpanInfo {
-                start: 0,
-                end: 0,
-                line_col_start: (1, 1),
-                line_col_end: (1, 1),
-            },
+            crate::syntax::SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) },
             format!("parse error: missing {expected:?}"),
             "missing blk",
             None,
             Some("parse".to_string()),
             crate::analysis::Severity::Error,
         ),
-        ParseError::ForbiddenImplSelfParameter { span } => {
-            crate::analysis::diagnostics::make_diagnostic(
-                source_name,
-                source,
-                *span,
-                "explicit `self` parameter is not allowed in impl methods",
-                "forbidden self",
-                None,
-                Some("parse".to_string()),
-                crate::analysis::Severity::Error,
-            )
-        }
+        ParseError::ForbiddenImplSelfParameter { span } => crate::analysis::diagnostics::make_diagnostic(
+            source_name,
+            source,
+            *span,
+            "explicit `self` parameter is not allowed in impl methods",
+            "forbidden self",
+            None,
+            Some("parse".to_string()),
+            crate::analysis::Severity::Error,
+        ),
     }
 }
 
@@ -105,18 +81,9 @@ pub fn parse_recovery_diagnostic(
     )
 }
 
-pub fn project_error_diagnostic(
-    source_name: &str,
-    source: &str,
-    error: &ProjectError,
-) -> SemanticDiagnostic {
+pub fn project_error_diagnostic(source_name: &str, source: &str, error: &ProjectError) -> SemanticDiagnostic {
     let (span, message): (crate::syntax::SpanInfo, String) = match error {
-        ProjectError::ParseAt {
-            line,
-            message,
-            start,
-            end,
-        } => {
+        ProjectError::ParseAt { line, message, start, end } => {
             let span = if let (Some(s), Some(e)) = (start, end) {
                 if *e > *s {
                     crate::syntax::SpanInfo::from_byte_range_in_source(source, *s, *e)
@@ -129,20 +96,8 @@ pub fn project_error_diagnostic(
             (span, message.clone())
         }
         _ => {
-            let end = if source.is_empty() {
-                0
-            } else {
-                1.min(source.len())
-            };
-            (
-                crate::syntax::SpanInfo {
-                    start: 0,
-                    end,
-                    line_col_start: (1, 1),
-                    line_col_end: (1, 1),
-                },
-                error.to_string(),
-            )
+            let end = if source.is_empty() { 0 } else { 1.min(source.len()) };
+            (crate::syntax::SpanInfo { start: 0, end, line_col_start: (1, 1), line_col_end: (1, 1) }, error.to_string())
         }
     };
 

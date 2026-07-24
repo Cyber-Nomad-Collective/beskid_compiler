@@ -9,20 +9,12 @@ pub struct FileSystemTreeNode {
 
 impl FileSystemTreeNode {
     pub fn new(data: FileSystemEntry) -> Self {
-        Self {
-            data,
-            children: Vec::new(),
-            expandable: false,
-        }
+        Self { data, children: Vec::new(), expandable: false }
     }
 
     pub fn with_children(data: FileSystemEntry, children: Vec<FileSystemTreeNode>) -> Self {
         let expandable = !children.is_empty();
-        Self {
-            data,
-            children,
-            expandable,
-        }
+        Self { data, children, expandable }
     }
 
     pub fn is_dir(&self) -> bool {

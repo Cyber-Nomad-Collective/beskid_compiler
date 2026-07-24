@@ -10,11 +10,7 @@ use crate::platform::{setup_cmake, setup_generic_cmake_toolchain, should_setup_r
 use crate::runner;
 
 /// Setup Darwin cross-compilation environment
-pub async fn setup(
-    target_config: &TargetConfig,
-    args: &Args,
-    host: &HostPlatform,
-) -> Result<CrossEnv> {
+pub async fn setup(target_config: &TargetConfig, args: &Args, host: &HostPlatform) -> Result<CrossEnv> {
     let arch = target_config.arch;
     let rust_target = target_config.target;
 
@@ -23,20 +19,12 @@ pub async fn setup(
     } else if host.is_linux() {
         setup_osxcross(arch, rust_target, args, host).await
     } else {
-        Err(CrossError::CrossCompilationNotSupported {
-            target_os: "darwin".to_string(),
-            host_os: host.os.to_string(),
-        })
+        Err(CrossError::CrossCompilationNotSupported { target_os: "darwin".to_string(), host_os: host.os.to_string() })
     }
 }
 
 /// Setup native Darwin compilation (on macOS host)
-async fn setup_native(
-    arch: Arch,
-    rust_target: &str,
-    args: &Args,
-    host: &HostPlatform,
-) -> Result<CrossEnv> {
+async fn setup_native(arch: Arch, rust_target: &str, args: &Args, host: &HostPlatform) -> Result<CrossEnv> {
     let mut env = CrossEnv::new();
 
     // Setup Rosetta runner for x86_64 targets on ARM macOS
@@ -57,31 +45,20 @@ async fn setup_native(
     if let Some(ref sdk) = sdk_path {
         env.set_sdkroot(sdk);
         env.add_rustflag(format!("-C link-arg=--sysroot={}", sdk.display()));
-        color::log_success(&format!(
-            "Using macOS SDK at {}",
-            color::cyan(&sdk.display().to_string())
-        ));
+        color::log_success(&format!("Using macOS SDK at {}", color::cyan(&sdk.display().to_string())));
     }
 
     // Setup CMake generator if specified
     setup_cmake(&mut env, args.cmake_generator.as_deref(), host.is_windows());
     setup_generic_cmake_toolchain(&mut env);
 
-    color::log_success(&format!(
-        "Using native macOS toolchain for {}",
-        color::yellow(rust_target)
-    ));
+    color::log_success(&format!("Using native macOS toolchain for {}", color::yellow(rust_target)));
 
     Ok(env)
 }
 
 /// Setup osxcross for cross-compilation from Linux
-async fn setup_osxcross(
-    arch: Arch,
-    rust_target: &str,
-    args: &Args,
-    host: &HostPlatform,
-) -> Result<CrossEnv> {
+async fn setup_osxcross(arch: Arch, rust_target: &str, args: &Args, host: &HostPlatform) -> Result<CrossEnv> {
     // Map host architecture
     let host_arch_name = match host.arch {
         "x86_64" | "amd64" => "amd64",
@@ -96,32 +73,19 @@ async fn setup_osxcross(
 
     let osxcross_version = "v0.2.6";
     let macos_sdk_suffix = args.macos_sdk_version.replace('.', "-");
-    let osxcross_dir = args.cross_compiler_dir.join(format!(
-        "osxcross-{macos_sdk_suffix}-{host_arch_name}-{osxcross_version}"
-    ));
+    let osxcross_dir =
+        args.cross_compiler_dir.join(format!("osxcross-{macos_sdk_suffix}-{host_arch_name}-{osxcross_version}"));
 
     // Download osxcross if not present
     if !osxcross_dir.join("bin").exists() {
-        let ubuntu_version = super::get_ubuntu_version()
-            .await
-            .unwrap_or_else(|| "20.04".to_string());
-        let url_arch = if host_arch_name == "amd64" {
-            "x86_64"
-        } else {
-            host_arch_name
-        };
+        let ubuntu_version = super::get_ubuntu_version().await.unwrap_or_else(|| "20.04".to_string());
+        let url_arch = if host_arch_name == "amd64" { "x86_64" } else { host_arch_name };
 
         let download_url = format!(
             "https://github.com/zijiren233/osxcross/releases/download/{osxcross_version}/osxcross-{macos_sdk_suffix}-linux-{url_arch}-gnu-ubuntu-{ubuntu_version}.tar.gz"
         );
 
-        download_and_extract(
-            &download_url,
-            &osxcross_dir,
-            None,
-            args.github_proxy.as_deref(),
-        )
-        .await?;
+        download_and_extract(&download_url, &osxcross_dir, None, args.github_proxy.as_deref()).await?;
     }
 
     let mut env = CrossEnv::new();
@@ -142,18 +106,14 @@ async fn setup_osxcross(
     let clang_pattern = format!("{}-apple-darwin*-clang", arch.as_str());
     let clang_path = super::find_file_by_pattern(&osxcross_dir.join("bin"), &clang_pattern)
         .await
-        .ok_or_else(|| CrossError::CompilerNotFound {
-            path: osxcross_dir.join("bin"),
-        })?;
+        .ok_or_else(|| CrossError::CompilerNotFound { path: osxcross_dir.join("bin") })?;
 
     // Extract tool prefix (e.g., aarch64-apple-darwin25.2)
     let tool_prefix = clang_path
         .file_name()
         .and_then(|n| n.to_str())
         .and_then(|n| n.strip_suffix("-clang"))
-        .ok_or_else(|| CrossError::CompilerNotFound {
-            path: clang_path.clone(),
-        })?
+        .ok_or_else(|| CrossError::CompilerNotFound { path: clang_path.clone() })?
         .to_string();
 
     // Set compiler paths
@@ -165,10 +125,7 @@ async fn setup_osxcross(
     env.add_path(osxcross_dir.join("clang/bin"));
 
     // Set COMPILER_PATH for cc crate
-    env.set_env(
-        "COMPILER_PATH",
-        osxcross_dir.join("bin").display().to_string(),
-    );
+    env.set_env("COMPILER_PATH", osxcross_dir.join("bin").display().to_string());
 
     // Set linker flags
     let linker_path = osxcross_dir.join("bin").join(format!("{tool_prefix}-ld"));

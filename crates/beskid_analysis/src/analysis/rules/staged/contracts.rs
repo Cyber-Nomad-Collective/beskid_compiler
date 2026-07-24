@@ -16,27 +16,18 @@ impl SemanticPipelineRule {
         let contracts = self.collect_contract_signatures(hir);
 
         for (type_item_id, conformances) in &resolution.tables.type_conformances {
-            let Some(type_name) = resolution
-                .items
-                .get(type_item_id.0)
-                .map(|item| item.name.clone())
-            else {
+            let Some(type_name) = resolution.items.get(type_item_id.0).map(|item| item.name.clone()) else {
                 continue;
             };
             for (contract_item_id, conformance_span) in conformances {
-                let Some(contract_name) = resolution
-                    .items
-                    .get(contract_item_id.0)
-                    .map(|item| item.name.clone())
-                else {
+                let Some(contract_name) = resolution.items.get(contract_item_id.0).map(|item| item.name.clone()) else {
                     continue;
                 };
                 let Some(expected_methods) = contracts.get(&contract_name) else {
                     continue;
                 };
                 for (method_name, expected) in expected_methods {
-                    let actual =
-                        self.impl_method_signature_for_type(hir, &type_name, method_name.as_str());
+                    let actual = self.impl_method_signature_for_type(hir, &type_name, method_name.as_str());
                     let Some(actual) = actual else {
                         ctx.emit_issue(
                             *conformance_span,
@@ -63,18 +54,13 @@ impl SemanticPipelineRule {
         }
     }
 
-    fn collect_contract_signatures(
-        &self,
-        hir: &Spanned<HirProgram>,
-    ) -> HashMap<String, HashMap<String, String>> {
+    fn collect_contract_signatures(&self, hir: &Spanned<HirProgram>) -> HashMap<String, HashMap<String, String>> {
         let definitions: HashMap<String, &Spanned<crate::hir::HirContractDefinition>> = hir
             .node
             .items
             .iter()
             .filter_map(|item| match &item.node {
-                HirItem::ContractDefinition(definition)
-                    if definition.node.extern_interface.is_none() =>
-                {
+                HirItem::ContractDefinition(definition) if definition.node.extern_interface.is_none() => {
                     Some((definition.node.name.node.name.clone(), definition))
                 }
                 _ => None,
@@ -83,12 +69,8 @@ impl SemanticPipelineRule {
 
         let mut cache = HashMap::new();
         for contract_name in definitions.keys() {
-            let _ = self.collect_contract_methods_recursive(
-                contract_name,
-                &definitions,
-                &mut cache,
-                &mut HashSet::new(),
-            );
+            let _ =
+                self.collect_contract_methods_recursive(contract_name, &definitions, &mut cache, &mut HashSet::new());
         }
         cache
     }
@@ -126,12 +108,8 @@ impl SemanticPipelineRule {
                 }
                 HirContractNode::Embedding(embedding) => {
                     let embedded_name = embedding.node.name.node.name.clone();
-                    let embedded = self.collect_contract_methods_recursive(
-                        embedded_name.as_str(),
-                        definitions,
-                        cache,
-                        active,
-                    );
+                    let embedded =
+                        self.collect_contract_methods_recursive(embedded_name.as_str(), definitions, cache, active);
                     for (method_name, signature) in embedded {
                         methods.entry(method_name).or_insert(signature);
                     }
@@ -156,34 +134,30 @@ impl SemanticPipelineRule {
                     let HirType::Complex(receiver_path) = &method.node.receiver_type.node else {
                         continue;
                     };
-                    let Some(receiver_name) = receiver_path
-                        .node
-                        .segments
-                        .last()
-                        .map(|segment| segment.node.name.node.name.as_str())
+                    let Some(receiver_name) =
+                        receiver_path.node.segments.last().map(|segment| segment.node.name.node.name.as_str())
                     else {
                         continue;
                     };
                     if receiver_name == type_name && method.node.name.node.name == method_name {
-                        return Some(self.method_signature_string(
-                            method.node.parameters.len(),
-                            method.node.return_type.is_some(),
-                        ));
+                        return Some(
+                            self.method_signature_string(
+                                method.node.parameters.len(),
+                                method.node.return_type.is_some(),
+                            ),
+                        );
                     }
                 }
-                HirItem::TypeDefinition(definition)
-                    if definition.node.name.node.name == type_name =>
-                {
-                    if let Some(method) = definition
-                        .node
-                        .methods
-                        .iter()
-                        .find(|method| method.node.name.node.name == method_name)
+                HirItem::TypeDefinition(definition) if definition.node.name.node.name == type_name => {
+                    if let Some(method) =
+                        definition.node.methods.iter().find(|method| method.node.name.node.name == method_name)
                     {
-                        return Some(self.method_signature_string(
-                            method.node.parameters.len(),
-                            method.node.return_type.is_some(),
-                        ));
+                        return Some(
+                            self.method_signature_string(
+                                method.node.parameters.len(),
+                                method.node.return_type.is_some(),
+                            ),
+                        );
                     }
                 }
                 _ => {}
@@ -207,18 +181,10 @@ mod tests {
     use pest::Parser;
 
     fn analyze(source: &str) -> crate::analysis::AnalysisResult {
-        let pair = BeskidParser::parse(Rule::Program, source)
-            .expect("source should parse")
-            .next()
-            .expect("program pair");
+        let pair =
+            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
         let program = Program::parse(pair).expect("source should build AST");
-        run_rules(
-            &program.node,
-            "test.bd",
-            source,
-            &builtin_rules(),
-            AnalysisOptions::default(),
-        )
+        run_rules(&program.node, "test.bd", source, &builtin_rules(), AnalysisOptions::default())
     }
 
     #[test]
@@ -241,10 +207,7 @@ mod tests {
         let result = analyze(source);
 
         assert!(
-            !result
-                .diagnostics
-                .iter()
-                .any(|diagnostic| diagnostic.code.as_deref() == Some("E1601")),
+            !result.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1601")),
             "nested type method must satisfy Analyzer.Analyze; got: {:?}",
             result.diagnostics
         );

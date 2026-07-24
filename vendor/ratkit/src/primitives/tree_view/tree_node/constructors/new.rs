@@ -25,10 +25,6 @@ impl<T> TreeNode<T> {
     /// assert!(node.children.is_empty());
     /// ```
     pub fn new(data: T) -> Self {
-        Self {
-            data,
-            children: Vec::new(),
-            expandable: false,
-        }
+        Self { data, children: Vec::new(), expandable: false }
     }
 }

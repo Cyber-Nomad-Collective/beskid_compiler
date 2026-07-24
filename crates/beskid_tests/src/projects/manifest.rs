@@ -74,10 +74,7 @@ target "App" {
 "#;
 
     let manifest = parse_manifest(source).expect("valid manifest");
-    assert_eq!(
-        manifest.project.root_namespace.as_deref(),
-        Some("Company.Product")
-    );
+    assert_eq!(manifest.project.root_namespace.as_deref(), Some("Company.Product"));
 }
 
 #[test]
@@ -258,39 +255,21 @@ target "App" {
 
 #[test]
 fn enforces_dependency_fields_by_source_type() {
-    let path_missing = format!(
-        "{}\ndependency \"Core\" {{\n  source = \"path\"\n}}\n",
-        base_manifest()
-    );
+    let path_missing = format!("{}\ndependency \"Core\" {{\n  source = \"path\"\n}}\n", base_manifest());
     let git_missing = format!(
         "{}\ndependency \"Std\" {{\n  source = \"git\"\n  url = \"git@example.com:std.git\"\n}}\n",
         base_manifest()
     );
-    let registry_missing = format!(
-        "{}\ndependency \"Std\" {{\n  source = \"registry\"\n}}\n",
-        base_manifest()
-    );
+    let registry_missing = format!("{}\ndependency \"Std\" {{\n  source = \"registry\"\n}}\n", base_manifest());
 
-    assert!(matches!(
-        parse_manifest(&path_missing),
-        Err(ProjectError::Validation(_))
-    ));
-    assert!(matches!(
-        parse_manifest(&git_missing),
-        Err(ProjectError::Validation(_))
-    ));
-    assert!(matches!(
-        parse_manifest(&registry_missing),
-        Err(ProjectError::Validation(_))
-    ));
+    assert!(matches!(parse_manifest(&path_missing), Err(ProjectError::Validation(_))));
+    assert!(matches!(parse_manifest(&git_missing), Err(ProjectError::Validation(_))));
+    assert!(matches!(parse_manifest(&registry_missing), Err(ProjectError::Validation(_))));
 }
 
 #[test]
 fn allows_std_path_dependency_without_explicit_path() {
-    let source = format!(
-        "{}\ndependency \"Std\" {{\n  source = \"path\"\n}}\n",
-        base_manifest()
-    );
+    let source = format!("{}\ndependency \"Std\" {{\n  source = \"path\"\n}}\n", base_manifest());
 
     let manifest = parse_manifest(&source).expect("Std path dependency should be accepted");
     assert_eq!(manifest.dependencies.len(), 1);
@@ -317,10 +296,7 @@ workspace {
 "#;
 
     let error = parse_manifest(source).expect_err("must fail");
-    assert!(matches!(
-        error,
-        ProjectError::Parse(_) | ProjectError::ParseAt { .. }
-    ));
+    assert!(matches!(error, ProjectError::Parse(_) | ProjectError::ParseAt { .. }));
 }
 
 #[test]
@@ -333,8 +309,5 @@ fn parses_registry_dependency_with_registry_alias() {
     let manifest = parse_manifest(&source).expect("valid manifest");
     assert_eq!(manifest.dependencies.len(), 1);
     assert_eq!(manifest.dependencies[0].name, "Std");
-    assert_eq!(
-        manifest.dependencies[0].registry.as_deref(),
-        Some("default")
-    );
+    assert_eq!(manifest.dependencies[0].registry.as_deref(), Some("default"));
 }

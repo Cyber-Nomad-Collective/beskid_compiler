@@ -27,13 +27,6 @@ impl Parsable for UseDeclaration {
         let path = Path::parse(inner.next().ok_or(ParseError::missing(Rule::Path))?)?;
         let alias = inner.next().map(Identifier::parse).transpose()?;
 
-        Ok(Spanned::new(
-            Self {
-                visibility,
-                path,
-                alias,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { visibility, path, alias }, span))
     }
 }

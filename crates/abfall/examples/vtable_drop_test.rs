@@ -48,20 +48,14 @@ fn main() {
         println!("  Dropped 2 GcRoot references");
 
         ctx.collect();
-        println!(
-            "  After GC: {} objects dropped",
-            DROP_COUNT.load(Ordering::SeqCst)
-        );
+        println!("  After GC: {} objects dropped", DROP_COUNT.load(Ordering::SeqCst));
         assert_eq!(DROP_COUNT.load(Ordering::SeqCst), 2);
 
         drop(obj1);
         // ctx is dropped here, calling Drop on remaining object
     }
 
-    println!(
-        "  After context dropped: {} total drops",
-        DROP_COUNT.load(Ordering::SeqCst)
-    );
+    println!("  After context dropped: {} total drops", DROP_COUNT.load(Ordering::SeqCst));
     assert_eq!(DROP_COUNT.load(Ordering::SeqCst), 3);
 
     println!("✓ Test passed: All Drop implementations called!\n");
@@ -71,9 +65,7 @@ fn main() {
 
     let ctx = GcContext::new();
 
-    let s1 = ctx.allocate(String::from(
-        "Hello, World! This is a long string that allocates on the heap",
-    ));
+    let s1 = ctx.allocate(String::from("Hello, World! This is a long string that allocates on the heap"));
     let s2 = ctx.allocate(String::from("Another heap-allocated string"));
     let s3 = ctx.allocate(String::from("Yet another string"));
 

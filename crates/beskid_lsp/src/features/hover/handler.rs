@@ -29,10 +29,7 @@ pub fn handle_hover(uri: &Uri, doc: &Document, offset: usize) -> Option<Hover> {
         .min_by_key(|hover| hover.reference_end.saturating_sub(hover.reference_start))?;
     let entry_path = uri_to_path(uri);
     Some(Hover {
-        contents: HoverContents::Markup(MarkupContent {
-            kind: MarkupKind::Markdown,
-            value: hover.markdown.clone(),
-        }),
+        contents: HoverContents::Markup(MarkupContent { kind: MarkupKind::Markdown, value: hover.markdown.clone() }),
         range: Some(symbol_location_to_lsp_range(
             &beskid_analysis::services::SymbolLocation {
                 path: hover.location_path.clone(),

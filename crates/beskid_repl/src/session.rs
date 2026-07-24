@@ -14,16 +14,12 @@ impl ReplSession {
 
     /// Fallible form of [`Self::new`]; missing or tampered exact kits fail closed.
     pub fn try_new() -> Result<Self, JitError> {
-        Ok(Self {
-            engine: Engine::try_new()?,
-        })
+        Ok(Self { engine: Engine::try_new()? })
     }
 
     /// Drop the current JIT module and reload the same validated exact ABI-v5 runtime kit.
     pub fn reset(&mut self) {
-        self.engine
-            .reload_runtime_kit()
-            .expect("failed to reload exact ABI-v5 REPL runtime kit");
+        self.engine.reload_runtime_kit().expect("failed to reload exact ABI-v5 REPL runtime kit");
     }
 
     /// Construct a session around an already-validated exact-kit [`Engine`] (tests).

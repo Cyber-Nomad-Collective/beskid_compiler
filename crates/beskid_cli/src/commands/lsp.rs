@@ -1,9 +1,7 @@
 //! `beskid lsp` — run or install the Beskid language server.
 
 use anyhow::Result;
-use beskid_tools::toolchain::release::{
-    InstallLspOptions, install_lsp, managed_lsp_exists, managed_lsp_path,
-};
+use beskid_tools::toolchain::release::{InstallLspOptions, install_lsp, managed_lsp_exists, managed_lsp_path};
 use clap::{Args, Subcommand};
 use std::process::Command;
 
@@ -30,9 +28,7 @@ pub struct LspInstallArgs {
 pub fn execute(args: LspArgs) -> Result<()> {
     match args.command {
         Some(LspCommand::Install(install)) => {
-            install_lsp(&InstallLspOptions {
-                release_tag: install.release_tag,
-            })?;
+            install_lsp(&InstallLspOptions { release_tag: install.release_tag })?;
             Ok(())
         }
         None => run_stdio_server(),
@@ -44,18 +40,12 @@ fn run_stdio_server() -> Result<()> {
         let path = managed_lsp_path()?;
         let status = Command::new(&path).status().with_context_spawn(&path)?;
         if !status.success() {
-            anyhow::bail!(
-                "managed language server exited with {}",
-                status.code().unwrap_or(-1)
-            );
+            anyhow::bail!("managed language server exited with {}", status.code().unwrap_or(-1));
         }
         return Ok(());
     }
 
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?
-        .block_on(beskid_lsp::run_stdio_server())
+    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(beskid_lsp::run_stdio_server())
 }
 
 trait WithContextSpawn {

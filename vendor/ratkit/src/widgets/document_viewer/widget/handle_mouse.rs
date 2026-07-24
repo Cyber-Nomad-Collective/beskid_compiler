@@ -40,10 +40,7 @@ pub fn handle_viewer_mouse(
 
 /// Returns true when a coordinate is inside an area.
 fn contains_point(area: Rect, x: u16, y: u16) -> bool {
-    x >= area.x
-        && y >= area.y
-        && x < area.x.saturating_add(area.width)
-        && y < area.y.saturating_add(area.height)
+    x >= area.x && y >= area.y && x < area.x.saturating_add(area.width) && y < area.y.saturating_add(area.height)
 }
 
 #[cfg(test)]
@@ -65,12 +62,7 @@ mod tests {
             row: 3,
             modifiers: KeyModifiers::NONE,
         };
-        assert!(handle_viewer_mouse(
-            event,
-            Rect::new(0, 0, 10, 10),
-            &mut scroll,
-            &mut selection
-        ));
+        assert!(handle_viewer_mouse(event, Rect::new(0, 0, 10, 10), &mut scroll, &mut selection));
         assert_eq!(scroll.current_line, 9);
         assert!(selection.selected_range().unwrap().contains(&8));
     }
@@ -81,18 +73,8 @@ mod tests {
         scroll.update_total_lines(20);
         scroll.viewport_height = 10;
         let mut selection = SelectionState::default();
-        let event = MouseEvent {
-            kind: MouseEventKind::ScrollDown,
-            column: 0,
-            row: 0,
-            modifiers: KeyModifiers::NONE,
-        };
-        assert!(handle_viewer_mouse(
-            event,
-            Rect::new(0, 0, 10, 10),
-            &mut scroll,
-            &mut selection
-        ));
+        let event = MouseEvent { kind: MouseEventKind::ScrollDown, column: 0, row: 0, modifiers: KeyModifiers::NONE };
+        assert!(handle_viewer_mouse(event, Rect::new(0, 0, 10, 10), &mut scroll, &mut selection));
         assert_eq!(scroll.effective_offset(), 3);
     }
 }

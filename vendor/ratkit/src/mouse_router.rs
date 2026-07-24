@@ -148,22 +148,13 @@ impl MouseRouter {
         false
     }
 
-    pub fn route_mouse_event(
-        &mut self,
-        x: u16,
-        y: u16,
-        layout: &LayoutManager,
-    ) -> Vec<(ElementId, Rect)> {
+    pub fn route_mouse_event(&mut self, x: u16, y: u16, layout: &LayoutManager) -> Vec<(ElementId, Rect)> {
         self.take_snapshot(layout);
 
         if self.is_captured() && !self.capture_state.is_expired() {
             if let Some(captured_id) = self.capture_state.element_id() {
                 if let Some(rect) = layout.get_element_rect(captured_id) {
-                    if x >= rect.x
-                        && x < rect.x + rect.width
-                        && y >= rect.y
-                        && y < rect.y + rect.height
-                    {
+                    if x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height {
                         return vec![(captured_id, rect)];
                     }
                 }
@@ -186,10 +177,7 @@ impl MouseRouter {
         if self.config.auto_release_on_click_outside && self.is_captured() {
             if let Some(captured_id) = self.capture_state.element_id() {
                 if let Some(rect) = layout.get_element_rect(captured_id) {
-                    let is_outside = x < rect.x
-                        || x >= rect.x + rect.width
-                        || y < rect.y
-                        || y >= rect.y + rect.height;
+                    let is_outside = x < rect.x || x >= rect.x + rect.width || y < rect.y || y >= rect.y + rect.height;
 
                     if is_outside {
                         self.release_capture();
@@ -280,9 +268,7 @@ mod tests {
 
         let id = ElementId::new();
         let metadata = ElementMetadata::new(id, Region::Center);
-        let _ = layout
-            .registry_mut()
-            .register(metadata, Arc::new(DummyElement::new(id)));
+        let _ = layout.registry_mut().register(metadata, Arc::new(DummyElement::new(id)));
 
         layout.mark_dirty();
         layout.recompute().unwrap();
@@ -290,10 +276,7 @@ mod tests {
         let rect = layout.get_element_rect(id);
         assert!(rect.is_some(), "Element rect should be assigned");
         let rect = rect.unwrap();
-        assert!(
-            rect.width > 0 && rect.height > 0,
-            "Element rect should have size"
-        );
+        assert!(rect.width > 0 && rect.height > 0, "Element rect should have size");
 
         router.capture(id).unwrap();
 

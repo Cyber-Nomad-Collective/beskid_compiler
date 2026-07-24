@@ -27,10 +27,7 @@ fn parse_contract_node(pair: Pair<Rule>) -> Result<Spanned<ContractNode>, ParseE
 
     match pair.as_rule() {
         Rule::ContractItem => {
-            let inner = pair
-                .into_inner()
-                .next()
-                .ok_or(ParseError::missing(Rule::ContractItem))?;
+            let inner = pair.into_inner().next().ok_or(ParseError::missing(Rule::ContractItem))?;
             parse_contract_node(inner)
         }
         Rule::ContractMethodSignature => {

@@ -31,12 +31,7 @@ impl TreeNavigator {
     /// let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
     /// let handled = navigator.handle_key_event(key, &nodes, &mut state);
     /// ```
-    pub fn handle_key_event<T>(
-        &self,
-        key: KeyEvent,
-        nodes: &[TreeNode<T>],
-        state: &mut TreeViewState,
-    ) -> bool {
+    pub fn handle_key_event<T>(&self, key: KeyEvent, nodes: &[TreeNode<T>], state: &mut TreeViewState) -> bool {
         self.handle_key(key, nodes, state)
     }
 }

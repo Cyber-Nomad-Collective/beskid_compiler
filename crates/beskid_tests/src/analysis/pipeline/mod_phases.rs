@@ -1,15 +1,13 @@
 use std::fs;
 use std::sync::Mutex;
 
-use beskid_analysis::mod_host::{
-    ModHostInput, run_analyze_rewrite_with_invoker, run_through_generate,
-};
+use beskid_analysis::mod_host::{ModHostInput, run_analyze_rewrite_with_invoker, run_through_generate};
 use beskid_analysis::projects::{CompilePlan, ResolvedDependencyProject, Target, TargetKind};
 use beskid_analysis::services::SemanticSnapshot;
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_pipeline::phases::{
-    COMPOSITION_RESOLVE, FULL_BUILD_PHASE_ORDER, MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT,
-    MOD_GENERATE, MOD_LOAD, MOD_REWRITE, SEMANTIC_SNAPSHOT,
+    COMPOSITION_RESOLVE, FULL_BUILD_PHASE_ORDER, MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD,
+    MOD_REWRITE, SEMANTIC_SNAPSHOT,
 };
 use beskid_pipeline::{PipelineEvent, PipelineObserver};
 
@@ -85,11 +83,7 @@ project {
         manifest_path: host_dir.join("Host.bproj"),
         project_name: "Host".to_string(),
         source_root: host_dir.join("Src"),
-        target: Target {
-            name: "main".to_string(),
-            kind: TargetKind::App,
-            entry: Some("Main.bd".to_string()),
-        },
+        target: Target { name: "main".to_string(), kind: TargetKind::App, entry: Some("Main.bd".to_string()) },
         dependency_projects: vec![ResolvedDependencyProject {
             dependency_name: "ModA".to_string(),
             manifest_path: mod_dir.join("ModA.bproj"),
@@ -117,8 +111,8 @@ project {
     assert_eq!(generated.session.loaded_descriptor_count(), 1);
 
     let composition_snapshot = generated.session.composition_snapshot_or_default();
-    let semantic_snapshot = SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
-        .with_composition(&composition_snapshot);
+    let semantic_snapshot =
+        SemanticSnapshot::from_diagnostics(&[], 1, "semantic").with_composition(&composition_snapshot);
 
     let _program = run_analyze_rewrite_with_invoker(
         generated.program,
@@ -134,15 +128,7 @@ project {
     let events = pipeline.phase_starts();
     assert_subsequence(
         &events,
-        &[
-            MACRO_EXPAND,
-            MOD_LOAD,
-            MOD_COLLECT,
-            MOD_GENERATE,
-            MACRO_EXPAND,
-            MOD_ANALYZE,
-            MOD_REWRITE,
-        ],
+        &[MACRO_EXPAND, MOD_LOAD, MOD_COLLECT, MOD_GENERATE, MACRO_EXPAND, MOD_ANALYZE, MOD_REWRITE],
     );
 
     let _ = fs::remove_dir_all(root);
@@ -166,13 +152,8 @@ fn full_build_phase_order_keeps_mod_hooks_between_parse_and_lower_ready() {
 }
 
 fn write_noop_descriptor(host_dir: &std::path::Path, package_id: &str) {
-    let descriptor_dir = host_dir
-        .join(".beskid")
-        .join("obj")
-        .join("mods")
-        .join(package_id)
-        .join("cache-key")
-        .join("test-triple");
+    let descriptor_dir =
+        host_dir.join(".beskid").join("obj").join("mods").join(package_id).join("cache-key").join("test-triple");
     fs::create_dir_all(&descriptor_dir).expect("descriptor cache dir");
     fs::write(
         descriptor_dir.join("mod.descriptor.json"),
@@ -218,9 +199,5 @@ fn assert_subsequence(events: &[&'static str], expected: &[&'static str]) {
             cursor += 1;
         }
     }
-    assert_eq!(
-        cursor,
-        expected.len(),
-        "expected phase subsequence {expected:?} in observed events {events:?}"
-    );
+    assert_eq!(cursor, expected.len(), "expected phase subsequence {expected:?} in observed events {events:?}");
 }

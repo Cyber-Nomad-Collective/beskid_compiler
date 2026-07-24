@@ -20,15 +20,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, crate::errors::CodegenError> {
-        let mut left = lower_node(&node.node.left, ctx)?.ok_or(CodegenError::UnsupportedNode {
-            span: node.node.left.span,
-            node: "unit-valued binary operand",
-        })?;
-        let mut right =
-            lower_node(&node.node.right, ctx)?.ok_or(CodegenError::UnsupportedNode {
-                span: node.node.right.span,
-                node: "unit-valued binary operand",
-            })?;
+        let mut left = lower_node(&node.node.left, ctx)?
+            .ok_or(CodegenError::UnsupportedNode { span: node.node.left.span, node: "unit-valued binary operand" })?;
+        let mut right = lower_node(&node.node.right, ctx)?
+            .ok_or(CodegenError::UnsupportedNode { span: node.node.right.span, node: "unit-valued binary operand" })?;
 
         let left_type = ctx.require_expr_type_for_node(&node.node.left)?;
         let right_type = ctx.require_expr_type_for_node(&node.node.right)?;
@@ -36,9 +31,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
         if node.node.op.node == HirBinaryOp::Add {
             let left_is_string = is_string_type(ctx, left_type);
             let right_is_string = is_string_type(ctx, right_type);
-            let result_is_string = ctx
-                .expr_type(node.id)
-                .is_some_and(|type_id| is_string_type(ctx, type_id));
+            let result_is_string = ctx.expr_type(node.id).is_some_and(|type_id| is_string_type(ctx, type_id));
             if result_is_string || left_is_string || right_is_string {
                 let string_type = [ctx.expr_type(node.id), Some(left_type), Some(right_type)]
                     .into_iter()
@@ -46,22 +39,10 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     .find(|type_id| is_string_type(ctx, *type_id))
                     .unwrap_or(left_type);
                 if !is_string_type(ctx, left_type) {
-                    left = coerce_operand_to_string(
-                        node.node.left.span,
-                        left,
-                        left_type,
-                        string_type,
-                        ctx,
-                    )?;
+                    left = coerce_operand_to_string(node.node.left.span, left, left_type, string_type, ctx)?;
                 }
                 if !is_string_type(ctx, right_type) {
-                    right = coerce_operand_to_string(
-                        node.node.right.span,
-                        right,
-                        right_type,
-                        string_type,
-                        ctx,
-                    )?;
+                    right = coerce_operand_to_string(node.node.right.span, right, right_type, string_type, ctx)?;
                 }
                 return lower_string_concat(node, left, right, ctx);
             }
@@ -72,28 +53,12 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
         } else if matches!(node.node.op.node, HirBinaryOp::Eq | HirBinaryOp::NotEq)
             && (is_string_type(ctx, left_type) || is_string_type(ctx, right_type))
         {
-            let string_type = if is_string_type(ctx, left_type) {
-                left_type
-            } else {
-                right_type
-            };
+            let string_type = if is_string_type(ctx, left_type) { left_type } else { right_type };
             if !is_string_type(ctx, left_type) {
-                left = coerce_operand_to_string(
-                    node.node.left.span,
-                    left,
-                    left_type,
-                    string_type,
-                    ctx,
-                )?;
+                left = coerce_operand_to_string(node.node.left.span, left, left_type, string_type, ctx)?;
             }
             if !is_string_type(ctx, right_type) {
-                right = coerce_operand_to_string(
-                    node.node.right.span,
-                    right,
-                    right_type,
-                    string_type,
-                    ctx,
-                )?;
+                right = coerce_operand_to_string(node.node.right.span, right, right_type, string_type, ctx)?;
             }
             string_type
         } else if is_numeric_type(ctx.type_result.types.get(left_type))
@@ -141,25 +106,15 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
             )?;
             target
         };
-        let operand_type = resolve_monomorph_type_id(
-            ctx.type_result,
-            &ctx.codegen.active_generic_substitution,
-            operand_type,
-        );
+        let operand_type =
+            resolve_monomorph_type_id(ctx.type_result, &ctx.codegen.active_generic_substitution, operand_type);
         let operand_info = ctx.type_result.types.get(operand_type);
-        let operand_clif_ty = map_type_id_to_clif(ctx.type_result, operand_type).ok_or(
-            CodegenError::UnsupportedNode {
-                span: node.span,
-                node: "binary operand type",
-            },
-        )?;
+        let operand_clif_ty = map_type_id_to_clif(ctx.type_result, operand_type)
+            .ok_or(CodegenError::UnsupportedNode { span: node.span, node: "binary operand type" })?;
 
         let value = match node.node.op.node {
             HirBinaryOp::Add => {
-                if matches!(
-                    operand_info,
-                    Some(TypeInfo::Primitive(HirPrimitiveType::String))
-                ) {
+                if matches!(operand_info, Some(TypeInfo::Primitive(HirPrimitiveType::String))) {
                     return lower_string_concat(node, left, right, ctx);
                 }
                 if operand_clif_ty.is_float() {
@@ -167,10 +122,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                 } else if operand_clif_ty.is_int() {
                     ctx.builder.ins().iadd(left, right)
                 } else {
-                    return Err(CodegenError::UnsupportedNode {
-                        span: node.span,
-                        node: "binary add type",
-                    });
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary add type" });
                 }
             }
             HirBinaryOp::Sub => {
@@ -179,10 +131,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                 } else if operand_clif_ty.is_int() {
                     ctx.builder.ins().isub(left, right)
                 } else {
-                    return Err(CodegenError::UnsupportedNode {
-                        span: node.span,
-                        node: "binary sub type",
-                    });
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary sub type" });
                 }
             }
             HirBinaryOp::Mul => {
@@ -191,10 +140,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                 } else if operand_clif_ty.is_int() {
                     ctx.builder.ins().imul(left, right)
                 } else {
-                    return Err(CodegenError::UnsupportedNode {
-                        span: node.span,
-                        node: "binary mul type",
-                    });
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary mul type" });
                 }
             }
             HirBinaryOp::Div => {
@@ -203,64 +149,37 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                 } else if operand_clif_ty.is_int() {
                     ctx.builder.ins().sdiv(left, right)
                 } else {
-                    return Err(CodegenError::UnsupportedNode {
-                        span: node.span,
-                        node: "binary div type",
-                    });
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary div type" });
                 }
             }
             HirBinaryOp::Mod => {
                 if operand_clif_ty.is_float() {
-                    return Err(CodegenError::UnsupportedNode {
-                        span: node.span,
-                        node: "binary mod on float",
-                    });
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary mod on float" });
                 }
                 if operand_clif_ty.is_int() {
                     ctx.builder.ins().srem(left, right)
                 } else {
-                    return Err(CodegenError::UnsupportedNode {
-                        span: node.span,
-                        node: "binary mod type",
-                    });
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary mod type" });
                 }
             }
             HirBinaryOp::And | HirBinaryOp::Or => {
-                let left_type = resolve_monomorph_type_id(
-                    ctx.type_result,
-                    &ctx.codegen.active_generic_substitution,
-                    left_type,
-                );
-                let right_type = resolve_monomorph_type_id(
-                    ctx.type_result,
-                    &ctx.codegen.active_generic_substitution,
-                    right_type,
-                );
-                let left_is_bool = matches!(
-                    ctx.type_result.types.get(left_type),
-                    Some(TypeInfo::Primitive(HirPrimitiveType::Bool))
-                );
-                let right_is_bool = matches!(
-                    ctx.type_result.types.get(right_type),
-                    Some(TypeInfo::Primitive(HirPrimitiveType::Bool))
-                );
+                let left_type =
+                    resolve_monomorph_type_id(ctx.type_result, &ctx.codegen.active_generic_substitution, left_type);
+                let right_type =
+                    resolve_monomorph_type_id(ctx.type_result, &ctx.codegen.active_generic_substitution, right_type);
+                let left_is_bool =
+                    matches!(ctx.type_result.types.get(left_type), Some(TypeInfo::Primitive(HirPrimitiveType::Bool)));
+                let right_is_bool =
+                    matches!(ctx.type_result.types.get(right_type), Some(TypeInfo::Primitive(HirPrimitiveType::Bool)));
                 let left_clif = ctx.builder.func.dfg.value_type(left);
                 let right_clif = ctx.builder.func.dfg.value_type(right);
-                let operands_are_bool_clif = left_clif.is_int()
-                    && right_clif.is_int()
-                    && left_clif.bits() == 8
-                    && right_clif.bits() == 8;
+                let operands_are_bool_clif =
+                    left_clif.is_int() && right_clif.is_int() && left_clif.bits() == 8 && right_clif.bits() == 8;
                 let is_bool = (left_is_bool && right_is_bool)
                     || operands_are_bool_clif
-                    || matches!(
-                        operand_info,
-                        Some(TypeInfo::Primitive(HirPrimitiveType::Bool))
-                    );
+                    || matches!(operand_info, Some(TypeInfo::Primitive(HirPrimitiveType::Bool)));
                 if !is_bool {
-                    return Err(CodegenError::UnsupportedNode {
-                        span: node.span,
-                        node: "binary logical type",
-                    });
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary logical type" });
                 }
                 match node.node.op.node {
                     HirBinaryOp::And => ctx.builder.ins().band(left, right),
@@ -270,43 +189,22 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
             }
             HirBinaryOp::IdentityEq | HirBinaryOp::IdentityNotEq => {
                 let enum_item_id = match operand_info {
-                    Some(TypeInfo::Named(id)) => ctx
-                        .type_result
-                        .enum_variants_ordered
-                        .contains_key(id)
-                        .then_some(*id),
-                    Some(TypeInfo::Applied { base, .. }) => ctx
-                        .type_result
-                        .enum_variants_ordered
-                        .contains_key(base)
-                        .then_some(*base),
+                    Some(TypeInfo::Named(id)) => ctx.type_result.enum_variants_ordered.contains_key(id).then_some(*id),
+                    Some(TypeInfo::Applied { base, .. }) => {
+                        ctx.type_result.enum_variants_ordered.contains_key(base).then_some(*base)
+                    }
                     _ => None,
                 };
                 if let Some(item_id) = enum_item_id {
-                    let payload_start = enum_payload_start(ctx.type_result, item_id).ok_or(
-                        CodegenError::UnsupportedNode {
-                            span: node.span,
-                            node: "enum payload start",
-                        },
-                    )?;
-                    let tag_offset = ctx
-                        .builder
-                        .ins()
-                        .iconst(pointer_type(), payload_start as i64);
+                    let payload_start = enum_payload_start(ctx.type_result, item_id)
+                        .ok_or(CodegenError::UnsupportedNode { span: node.span, node: "enum payload start" })?;
+                    let tag_offset = ctx.builder.ins().iconst(pointer_type(), payload_start as i64);
                     let left_tag_addr = ctx.builder.ins().iadd(left, tag_offset);
                     let right_tag_addr = ctx.builder.ins().iadd(right, tag_offset);
-                    let left_tag = ctx.builder.ins().load(
-                        cranelift_codegen::ir::types::I32,
-                        MemFlags::new(),
-                        left_tag_addr,
-                        0,
-                    );
-                    let right_tag = ctx.builder.ins().load(
-                        cranelift_codegen::ir::types::I32,
-                        MemFlags::new(),
-                        right_tag_addr,
-                        0,
-                    );
+                    let left_tag =
+                        ctx.builder.ins().load(cranelift_codegen::ir::types::I32, MemFlags::new(), left_tag_addr, 0);
+                    let right_tag =
+                        ctx.builder.ins().load(cranelift_codegen::ir::types::I32, MemFlags::new(), right_tag_addr, 0);
                     let cond = match node.node.op.node {
                         HirBinaryOp::IdentityEq => IntCC::Equal,
                         HirBinaryOp::IdentityNotEq => IntCC::NotEqual,
@@ -340,51 +238,23 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
             | HirBinaryOp::Lte
             | HirBinaryOp::Gt
             | HirBinaryOp::Gte => {
-                let is_bool = matches!(
-                    operand_info,
-                    Some(TypeInfo::Primitive(HirPrimitiveType::Bool))
-                );
+                let is_bool = matches!(operand_info, Some(TypeInfo::Primitive(HirPrimitiveType::Bool)));
                 if is_bool && !matches!(node.node.op.node, HirBinaryOp::Eq | HirBinaryOp::NotEq) {
-                    return Err(CodegenError::UnsupportedNode {
-                        span: node.span,
-                        node: "binary comparison type",
-                    });
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary comparison type" });
                 }
 
-                if (matches!(
-                    operand_info,
-                    Some(TypeInfo::Primitive(HirPrimitiveType::String))
-                ) || is_string_type(ctx, left_type)
+                if (matches!(operand_info, Some(TypeInfo::Primitive(HirPrimitiveType::String)))
+                    || is_string_type(ctx, left_type)
                     || is_string_type(ctx, right_type))
                     && matches!(node.node.op.node, HirBinaryOp::Eq | HirBinaryOp::NotEq)
                 {
                     if !is_string_type(ctx, left_type) {
-                        let string_type = if is_string_type(ctx, right_type) {
-                            right_type
-                        } else {
-                            left_type
-                        };
-                        left = coerce_operand_to_string(
-                            node.node.left.span,
-                            left,
-                            left_type,
-                            string_type,
-                            ctx,
-                        )?;
+                        let string_type = if is_string_type(ctx, right_type) { right_type } else { left_type };
+                        left = coerce_operand_to_string(node.node.left.span, left, left_type, string_type, ctx)?;
                     }
                     if !is_string_type(ctx, right_type) {
-                        let string_type = if is_string_type(ctx, left_type) {
-                            left_type
-                        } else {
-                            right_type
-                        };
-                        right = coerce_operand_to_string(
-                            node.node.right.span,
-                            right,
-                            right_type,
-                            string_type,
-                            ctx,
-                        )?;
+                        let string_type = if is_string_type(ctx, left_type) { left_type } else { right_type };
+                        right = coerce_operand_to_string(node.node.right.span, right, right_type, string_type, ctx)?;
                     }
                     return lower_string_eq(node, left, right, ctx);
                 }
@@ -412,10 +282,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     };
                     ctx.builder.ins().icmp(cond, left, right)
                 } else {
-                    return Err(CodegenError::UnsupportedNode {
-                        span: node.span,
-                        node: "binary comparison type",
-                    });
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary comparison type" });
                 }
             }
         };
@@ -430,14 +297,9 @@ fn lower_string_eq(
     right: Value,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Option<Value>, CodegenError> {
-    let route = dispatch_route_for_symbol("str_eq")
-        .ok_or(CodegenError::MissingSymbol("str_eq dispatch route"))?;
-    let eq_flag = lower_dispatch_builtin_call(node.span, route, &[left, right], true, ctx)?.ok_or(
-        CodegenError::UnsupportedNode {
-            span: node.span,
-            node: "string eq result",
-        },
-    )?;
+    let route = dispatch_route_for_symbol("str_eq").ok_or(CodegenError::MissingSymbol("str_eq dispatch route"))?;
+    let eq_flag = lower_dispatch_builtin_call(node.span, route, &[left, right], true, ctx)?
+        .ok_or(CodegenError::UnsupportedNode { span: node.span, node: "string eq result" })?;
     let zero = ctx.builder.ins().iconst(clif_types::I64, 0);
     let value = match node.node.op.node {
         HirBinaryOp::Eq => ctx.builder.ins().icmp(IntCC::NotEqual, eq_flag, zero),
@@ -453,21 +315,14 @@ fn lower_string_concat(
     right: Value,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Option<Value>, CodegenError> {
-    let route = dispatch_route_for_symbol("str_concat")
-        .ok_or(CodegenError::MissingSymbol("str_concat dispatch route"))?;
+    let route =
+        dispatch_route_for_symbol("str_concat").ok_or(CodegenError::MissingSymbol("str_concat dispatch route"))?;
     lower_dispatch_builtin_call(node.span, route, &[left, right], true, ctx)
 }
 
 fn is_string_type(ctx: &NodeLoweringContext<'_, '_>, type_id: TypeId) -> bool {
-    let type_id = resolve_monomorph_type_id(
-        ctx.type_result,
-        &ctx.codegen.active_generic_substitution,
-        type_id,
-    );
-    matches!(
-        ctx.type_result.types.get(type_id),
-        Some(TypeInfo::Primitive(HirPrimitiveType::String))
-    )
+    let type_id = resolve_monomorph_type_id(ctx.type_result, &ctx.codegen.active_generic_substitution, type_id);
+    matches!(ctx.type_result.types.get(type_id), Some(TypeInfo::Primitive(HirPrimitiveType::String)))
 }
 
 fn coerce_operand_to_string(
@@ -477,11 +332,7 @@ fn coerce_operand_to_string(
     string_type: TypeId,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Value, CodegenError> {
-    let type_id = resolve_monomorph_type_id(
-        ctx.type_result,
-        &ctx.codegen.active_generic_substitution,
-        type_id,
-    );
+    let type_id = resolve_monomorph_type_id(ctx.type_result, &ctx.codegen.active_generic_substitution, type_id);
     if is_string_type(ctx, type_id) {
         return Ok(value);
     }
@@ -500,11 +351,7 @@ fn coerce_operand_to_string(
             let extended = ctx.builder.ins().uextend(clif_types::I64, value);
             lower_str_from_i64(extended, span, ctx)
         }
-        _ => Err(CodegenError::TypeMismatch {
-            span,
-            expected: string_type,
-            actual: type_id,
-        }),
+        _ => Err(CodegenError::TypeMismatch { span, expected: string_type, actual: type_id }),
     }
 }
 
@@ -513,34 +360,22 @@ fn lower_str_from_i64(
     span: SpanInfo,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Value, CodegenError> {
-    emit_str_from_i64_dispatch(ctx.builder, value)
-        .map_err(|node| CodegenError::UnsupportedNode { span, node })
+    emit_str_from_i64_dispatch(ctx.builder, value).map_err(|node| CodegenError::UnsupportedNode { span, node })
 }
 
 fn is_numeric_type(info: Option<&TypeInfo>) -> bool {
     matches!(
         info,
         Some(TypeInfo::Primitive(
-            HirPrimitiveType::I32
-                | HirPrimitiveType::I64
-                | HirPrimitiveType::U8
-                | HirPrimitiveType::F64
+            HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8 | HirPrimitiveType::F64
         ))
     )
 }
 
-fn preferred_numeric_type_id(
-    ctx: &NodeLoweringContext<'_, '_>,
-    left: TypeId,
-    right: TypeId,
-) -> TypeId {
+fn preferred_numeric_type_id(ctx: &NodeLoweringContext<'_, '_>, left: TypeId, right: TypeId) -> TypeId {
     let left_width = numeric_bit_width(ctx.type_result.types.get(left));
     let right_width = numeric_bit_width(ctx.type_result.types.get(right));
-    if left_width >= right_width {
-        left
-    } else {
-        right
-    }
+    if left_width >= right_width { left } else { right }
 }
 
 fn numeric_bit_width(info: Option<&TypeInfo>) -> u32 {

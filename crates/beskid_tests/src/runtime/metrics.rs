@@ -1,10 +1,9 @@
 use crate::support::runtime::with_runtime_scope;
 use beskid_runtime::{
-    alloc, event_get_handler, event_subscribe, event_unsubscribe_first, rt_metrics_alloc_bytes,
-    rt_metrics_alloc_calls, rt_metrics_event_get_handler_calls, rt_metrics_event_subscribe_calls,
-    rt_metrics_event_unsubscribe_calls, rt_metrics_heap_fragmentation_bytes,
-    rt_metrics_heap_live_bytes, rt_metrics_heap_total_bytes, rt_metrics_str_concat_bytes,
-    rt_metrics_str_concat_calls, str_concat, str_new,
+    alloc, event_get_handler, event_subscribe, event_unsubscribe_first, rt_metrics_alloc_bytes, rt_metrics_alloc_calls,
+    rt_metrics_event_get_handler_calls, rt_metrics_event_subscribe_calls, rt_metrics_event_unsubscribe_calls,
+    rt_metrics_heap_fragmentation_bytes, rt_metrics_heap_live_bytes, rt_metrics_heap_total_bytes,
+    rt_metrics_str_concat_bytes, rt_metrics_str_concat_calls, str_concat, str_new,
 };
 
 #[test]

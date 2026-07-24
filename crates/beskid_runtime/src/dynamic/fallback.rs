@@ -56,12 +56,7 @@ pub unsafe fn map_dynamic_fallback(cell: &DynamicCell, dst_shape: u32, dst_out: 
 /// # Safety
 ///
 /// `src_ptr` and `dst_out` must point to valid buffers of the registered shape sizes.
-pub unsafe fn map_objects_aot(
-    src_shape: u32,
-    dst_shape: u32,
-    src_ptr: *const u8,
-    dst_out: *mut u8,
-) -> i32 {
+pub unsafe fn map_objects_aot(src_shape: u32, dst_shape: u32, src_ptr: *const u8, dst_out: *mut u8) -> i32 {
     if src_ptr.is_null() || dst_out.is_null() {
         return DYNAMIC_ERR_INCOMPATIBLE;
     }

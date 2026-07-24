@@ -23,17 +23,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
         let operator = self.query(operator_fact(self.db, key))?;
-        let specialized_string_operands = matches!(
-            operator,
-            beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq
-        ) && self
-            .child(key, 0)
-            .and_then(|operand| self.specialized_direct_parameter_type(operand))
-            == Some(SemanticTypeId::STRING)
-            && self
-                .child(key, 1)
-                .and_then(|operand| self.specialized_direct_parameter_type(operand))
-                == Some(SemanticTypeId::STRING);
+        let specialized_string_operands =
+            matches!(operator, beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq)
+                && self.child(key, 0).and_then(|operand| self.specialized_direct_parameter_type(operand))
+                    == Some(SemanticTypeId::STRING)
+                && self.child(key, 1).and_then(|operand| self.specialized_direct_parameter_type(operand))
+                    == Some(SemanticTypeId::STRING);
         Some(match (operator, specialized_string_operands) {
             (beskid_queries::OperatorFact::Eq, true) => OperatorFact::StringEq,
             (beskid_queries::OperatorFact::NotEq, true) => OperatorFact::StringNotEq,
@@ -51,10 +46,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                 .iter()
                 .copied()
                 .filter(|child| {
-                    !matches!(
-                        self.query(node_kind(self.db, *child)),
-                        Some(beskid_queries::IndexedNodeKind::BinaryOp)
-                    )
+                    !matches!(self.query(node_kind(self.db, *child)), Some(beskid_queries::IndexedNodeKind::BinaryOp))
                 })
                 .collect()
         } else if self.node_kind(key) == Some(NodeKind::UnaryExpression) {
@@ -63,10 +55,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                 .iter()
                 .copied()
                 .filter(|child| {
-                    !matches!(
-                        self.query(node_kind(self.db, *child)),
-                        Some(beskid_queries::IndexedNodeKind::UnaryOp)
-                    )
+                    !matches!(self.query(node_kind(self.db, *child)), Some(beskid_queries::IndexedNodeKind::UnaryOp))
                 })
                 .collect()
         } else if self.node_kind(key) == Some(NodeKind::ForStatement) {
@@ -74,17 +63,13 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                 .iter()
                 .copied()
                 .filter(|child| {
-                    self.query(node_kind(self.db, *child))
-                        != Some(beskid_queries::IndexedNodeKind::Identifier)
+                    self.query(node_kind(self.db, *child)) != Some(beskid_queries::IndexedNodeKind::Identifier)
                 })
                 .collect()
         } else {
             self.children(key).into()
         };
-        children
-            .get(usize::from(index))
-            .copied()
-            .and_then(|child| self.unwrap_transparent(child))
+        children.get(usize::from(index)).copied().and_then(|child| self.unwrap_transparent(child))
     }
 
     fn statement_count(&self, key: AstNodeKey) -> Option<u8> {
@@ -124,40 +109,27 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                     .map(|resolved| resolved.declaration)
                     .or_else(|| self.query(nominal_member_receiver(self.db, key)))?;
                 self.query(local_slot(self.db, declaration))
-                    .map(|slot| LocalSlotId {
-                        owner_node: slot.owner.node.0,
-                        index: slot.index,
-                    })
+                    .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index })
             }
             beskid_queries::IndexedNodeKind::LetStatement => self
                 .raw_children(key)
                 .into_iter()
                 .find(|child| {
-                    self.query(node_kind(self.db, *child))
-                        == Some(beskid_queries::IndexedNodeKind::Identifier)
+                    self.query(node_kind(self.db, *child)) == Some(beskid_queries::IndexedNodeKind::Identifier)
                 })
                 .and_then(|identifier| self.query(local_slot(self.db, identifier)))
-                .map(|slot| LocalSlotId {
-                    owner_node: slot.owner.node.0,
-                    index: slot.index,
-                }),
+                .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index }),
             beskid_queries::IndexedNodeKind::ForStatement => self
                 .query(for_iterator_fact(self.db, key))
                 .and_then(|fact| self.query(local_slot(self.db, fact.declaration)))
-                .map(|slot| LocalSlotId {
-                    owner_node: slot.owner.node.0,
-                    index: slot.index,
-                }),
+                .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index }),
             _ => None,
         }
     }
 
     fn mutable_local_assignment_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         self.query(mutable_local_assignment(self.db, key))
-            .map(|assignment| LocalSlotId {
-                owner_node: assignment.slot.owner.node.0,
-                index: assignment.slot.index,
-            })
+            .map(|assignment| LocalSlotId { owner_node: assignment.slot.owner.node.0, index: assignment.slot.index })
     }
 
     fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
@@ -178,19 +150,15 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn dispatch_builtin_symbol(&self, key: AstNodeKey) -> Option<&'static str> {
-        self.query(dispatch_builtin_symbol(self.db, key))
-            .map(|symbol| symbol.0)
+        self.query(dispatch_builtin_symbol(self.db, key)).map(|symbol| symbol.0)
     }
 
     fn expression_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
-        self.specialized_direct_parameter_type(key)
-            .or_else(|| self.scalar_semantic_type(key))
+        self.specialized_direct_parameter_type(key).or_else(|| self.scalar_semantic_type(key))
     }
 
     fn index_target_is_string(&self, key: AstNodeKey) -> bool {
-        self.child(key, 0)
-            .and_then(|target| self.scalar_semantic_type(target))
-            == Some(SemanticTypeId::STRING)
+        self.child(key, 0).and_then(|target| self.scalar_semantic_type(target)) == Some(SemanticTypeId::STRING)
     }
 
     fn runtime_intrinsic_kind(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
@@ -228,13 +196,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
         self.query(call_arguments(self.db, key))
-            .and_then(|arguments| {
-                arguments
-                    .iter()
-                    .copied()
-                    .map(|argument| self.unwrap_transparent(argument))
-                    .collect()
-            })
+            .and_then(|arguments| arguments.iter().copied().map(|argument| self.unwrap_transparent(argument)).collect())
     }
 
     fn inline_lambda_call(&self, key: AstNodeKey) -> Option<InlineLambdaCall> {
@@ -256,10 +218,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             .map(|(parameter, semantic)| {
                 let slot = self.query(local_slot(self.db, parameter))?;
                 Some(ParameterSlot {
-                    slot: LocalSlotId {
-                        owner_node: slot.owner.node.0,
-                        index: slot.index,
-                    },
+                    slot: LocalSlotId { owner_node: slot.owner.node.0, index: slot.index },
                     value_type: map_signature_type(self.isa?, semantic)?,
                 })
             })
@@ -282,16 +241,11 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn function_parameters(&self, key: AstNodeKey) -> Option<Vec<ParameterSlot>> {
         let mut parameters = Vec::new();
-        if self.query(node_kind(self.db, key))
-            == Some(beskid_queries::IndexedNodeKind::MethodDefinition)
-        {
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition) {
             parameters.push(ParameterSlot {
                 // Methods cannot spell `self` in Beskid source. The ABI receiver still needs a
                 // materialized local so its declared pointer position is consumed by ISLE.
-                slot: LocalSlotId {
-                    owner_node: u32::MAX,
-                    index: u32::MAX,
-                },
+                slot: LocalSlotId { owner_node: u32::MAX, index: u32::MAX },
                 value_type: self.isa?.pointer_type(),
             });
         }
@@ -303,10 +257,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         let LiteralFact::Integer(text) = self.literal(key)? else {
             return None;
         };
-        text.split_once('_')
-            .map_or(text.as_ref(), |(value, _)| value)
-            .parse()
-            .ok()
+        text.split_once('_').map_or(text.as_ref(), |(value, _)| value).parse().ok()
     }
 
     fn boolean_literal(&self, key: AstNodeKey) -> Option<bool> {
@@ -339,9 +290,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
         if self.node_kind(key) == Some(NodeKind::StructLiteralExpression)
-            && self
-                .query(aggregate_literal_declaration(self.db, key))
-                .is_some()
+            && self.query(aggregate_literal_declaration(self.db, key)).is_some()
         {
             return self.isa.map(|isa| isa.pointer_type());
         }
@@ -357,10 +306,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             .query(call_argument_abi_type(self.db, key))
             .or_else(|| self.scalar_semantic_type(key))
             .or_else(|| Some(self.query(call_abi_signature(self.db, key))?.result))?;
-        if matches!(
-            semantic,
-            SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING
-        ) {
+        if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING) {
             return self.isa.map(|isa| isa.pointer_type());
         }
         map_scalar_type(semantic)
@@ -371,8 +317,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             self.raw_children(key)
                 .into_iter()
                 .filter(|child| {
-                    self.query(node_kind(self.db, *child))
-                        == Some(beskid_queries::IndexedNodeKind::StructLiteralField)
+                    self.query(node_kind(self.db, *child)) == Some(beskid_queries::IndexedNodeKind::StructLiteralField)
                 })
                 .filter_map(|field| self.raw_children(field).last().copied())
                 .filter_map(|value| self.unwrap_transparent(value))
@@ -389,26 +334,18 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn managed_struct_allocation(&self, key: AstNodeKey) -> Option<ManagedStructAllocation> {
         Some(ManagedStructAllocation {
-            allocation_request_symbol: self
-                .input
-                .aggregate_static_plan(key)?
-                .allocation_request_symbol
-                .into(),
+            allocation_request_symbol: self.input.aggregate_static_plan(key)?.allocation_request_symbol.into(),
         })
     }
 
     fn field_index(&self, key: AstNodeKey) -> Option<u32> {
-        self.query(aggregate_field_access(self.db, key))
-            .map(|access| access.index)
+        self.query(aggregate_field_access(self.db, key)).map(|access| access.index)
     }
 
     fn field_receiver_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         let access = self.query(aggregate_field_access(self.db, key))?;
         self.query(local_slot(self.db, access.receiver))
-            .map(|slot| LocalSlotId {
-                owner_node: slot.owner.node.0,
-                index: slot.index,
-            })
+            .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index })
     }
 
     fn enum_layout(&self, key: AstNodeKey) -> Option<EnumLayout> {
@@ -416,8 +353,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn enum_variant_index(&self, key: AstNodeKey) -> Option<u32> {
-        self.query(enum_constructor(self.db, key))
-            .map(|constructor| constructor.variant_index)
+        self.query(enum_constructor(self.db, key)).map(|constructor| constructor.variant_index)
     }
 
     fn enum_payload(&self, key: AstNodeKey) -> Option<AstNodeKey> {
@@ -433,25 +369,18 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                     Some(binding) => {
                         let slot = self.query(local_slot(self.db, binding.declaration))?;
                         let value_type = match binding.payload {
-                            AggregateFieldShape::Scalar(semantic) => {
-                                map_signature_type(self.isa?, semantic)?
-                            }
+                            AggregateFieldShape::Scalar(semantic) => map_signature_type(self.isa?, semantic)?,
                             AggregateFieldShape::Nominal(_) => self.isa?.pointer_type(),
                         };
                         Some(MatchArmBindingFact {
-                            slot: LocalSlotId {
-                                owner_node: slot.owner.node.0,
-                                index: slot.index,
-                            },
+                            slot: LocalSlotId { owner_node: slot.owner.node.0, index: slot.index },
                             value_type,
                         })
                     }
                     None => None,
                 };
                 Some(match arm.variant_index {
-                    Some(variant) => {
-                        MatchArmFact::variant_with_binding(u64::from(variant), arm.body, binding)
-                    }
+                    Some(variant) => MatchArmFact::variant_with_binding(u64::from(variant), arm.body, binding),
                     None if binding.is_none() => MatchArmFact::wildcard(arm.body),
                     None => return None,
                 })
@@ -461,12 +390,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn range_fact(&self, key: AstNodeKey) -> Option<beskid_isle::RangeFact> {
         let range = self.query(range_for_fact(self.db, key))?;
-        Some(beskid_isle::RangeFact::new(
-            range.start,
-            range.end,
-            1,
-            false,
-        ))
+        Some(beskid_isle::RangeFact::new(range.start, range.end, 1, false))
     }
 
     fn spawn_entry(&self, key: AstNodeKey) -> Option<beskid_isle::SpawnEntry> {
@@ -489,9 +413,6 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             }
             _ => return None,
         };
-        Some(beskid_isle::SpawnEntry {
-            trampoline: DirectCallee::spawn_trampoline(key),
-            closure_environment,
-        })
+        Some(beskid_isle::SpawnEntry { trampoline: DirectCallee::spawn_trampoline(key), closure_environment })
     }
 }

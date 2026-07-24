@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use beskid_analysis::resolve::{
-    ItemId, Resolution, SymbolId, SymbolRegistry, canonical_item_id, item_id_for_symbol,
-    qualified_name, symbol_for_item,
+    ItemId, Resolution, SymbolId, SymbolRegistry, canonical_item_id, item_id_for_symbol, qualified_name,
+    symbol_for_item,
 };
 use beskid_analysis::services::FrontEndTypedResult;
 use beskid_analysis::types::{TypeResult, UnitTypeSurface};

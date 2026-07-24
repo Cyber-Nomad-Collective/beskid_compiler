@@ -4,9 +4,7 @@ use std::path::Path;
 
 use crate::hir::HirProgram;
 use crate::projects::CompilePlan;
-use crate::projects::assembly::{
-    ModuleIndex, ProgramAssembly, SourceUnit, UnitHir, build_hir_units,
-};
+use crate::projects::assembly::{ModuleIndex, ProgramAssembly, SourceUnit, UnitHir, build_hir_units};
 use crate::resolve::Resolution;
 use crate::services::lower::{
     DependencyTypingPolicy, LowerResolveTypeError, TypedHirResolution, typed_hir_from_lowered,
@@ -16,11 +14,7 @@ use crate::types::surface::{UnitTypeSurface, build_unit_type_surface};
 use crate::types::{CheckerResult, TypeChecker, TypeResult};
 
 /// Query: exported signatures and layouts for one unit (EntryOnly surface pass).
-pub fn type_unit_signatures(
-    hir: &Spanned<HirProgram>,
-    resolution: &Resolution,
-    source_path: &Path,
-) -> UnitTypeSurface {
+pub fn type_unit_signatures(hir: &Spanned<HirProgram>, resolution: &Resolution, source_path: &Path) -> UnitTypeSurface {
     build_unit_type_surface(hir, resolution, source_path)
 }
 
@@ -38,10 +32,7 @@ pub fn type_unit_body(
 
 /// Query: assemble one unit's HIR from source (invalidated by content hash).
 pub fn assemble_unit(source_unit: &SourceUnit) -> UnitHir {
-    build_hir_units(std::slice::from_ref(source_unit))
-        .into_iter()
-        .next()
-        .expect("single unit hir")
+    build_hir_units(std::slice::from_ref(source_unit)).into_iter().next().expect("single unit hir")
 }
 
 /// Query: resolve entry HIR against module index.
@@ -51,10 +42,7 @@ pub fn resolve_entry(
     entry_source_path: Option<&Path>,
 ) -> Result<Resolution, LowerResolveTypeError> {
     module_index
-        .resolve_entry_hir(
-            entry_hir,
-            entry_source_path.map(|path| path.to_path_buf()).as_ref(),
-        )
+        .resolve_entry_hir(entry_hir, entry_source_path.map(|path| path.to_path_buf()).as_ref())
         .map_err(LowerResolveTypeError::Resolve)
 }
 
@@ -85,9 +73,7 @@ pub fn type_entry_gate(
 }
 
 /// Query: prefetch dependency signatures without typing dependency bodies.
-pub fn type_dep_signatures(
-    assembly: &ProgramAssembly,
-) -> Result<TypeResult, LowerResolveTypeError> {
+pub fn type_dep_signatures(assembly: &ProgramAssembly) -> Result<TypeResult, LowerResolveTypeError> {
     let entry_unit = assembly.entry_unit().clone();
     let entry_hir = assemble_unit(&entry_unit).hir;
     let (_, _, typed) = typed_hir_from_lowered(
@@ -108,21 +94,11 @@ pub fn module_index_query(
     plan: &CompilePlan,
     prefetch_dependency_roots: bool,
 ) -> ModuleIndex {
-    ModuleIndex::build(
-        units,
-        hir_units,
-        entry_index,
-        roots,
-        plan,
-        prefetch_dependency_roots,
-    )
+    ModuleIndex::build(units, hir_units, entry_index, roots, plan, prefetch_dependency_roots)
 }
 
 /// Invalidate dependent units when imports change (BFS over import edges).
-pub fn invalidate_dependents(
-    changed_fingerprint: &str,
-    import_edges: &[(String, Vec<String>)],
-) -> Vec<String> {
+pub fn invalidate_dependents(changed_fingerprint: &str, import_edges: &[(String, Vec<String>)]) -> Vec<String> {
     let mut invalidated = vec![changed_fingerprint.to_string()];
     let mut queue = vec![changed_fingerprint.to_string()];
     while let Some(current) = queue.pop() {

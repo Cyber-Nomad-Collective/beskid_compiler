@@ -23,11 +23,7 @@ fn plain_document_lines(content: &str) -> Vec<DocumentLine> {
         .lines()
         .enumerate()
         .map(|(index, line)| {
-            let kind = if line.is_empty() {
-                DocumentLineKind::Empty
-            } else {
-                DocumentLineKind::Code
-            };
+            let kind = if line.is_empty() { DocumentLineKind::Empty } else { DocumentLineKind::Code };
             DocumentLine::plain(index + 1, line.to_string(), kind)
         })
         .collect();
@@ -43,9 +39,7 @@ fn highlight_with_syntect(content: &str, token: &str) -> Option<Vec<DocumentLine
     let syntax_set = syntect::parsing::SyntaxSet::load_defaults_newlines();
     let theme_set = syntect::highlighting::ThemeSet::load_defaults();
     let theme = theme_set.themes.get("base16-ocean.dark")?;
-    let syntax = syntax_set
-        .find_syntax_by_token(token)
-        .or_else(|| syntax_set.find_syntax_by_extension(token))?;
+    let syntax = syntax_set.find_syntax_by_token(token).or_else(|| syntax_set.find_syntax_by_extension(token))?;
     let mut highlighter = syntect::easy::HighlightLines::new(syntax, theme);
     let mut lines = Vec::new();
 
@@ -60,11 +54,7 @@ fn highlight_with_syntect(content: &str, token: &str) -> Option<Vec<DocumentLine
                 .collect(),
             Err(_) => vec![Span::raw(line.to_string())],
         };
-        let kind = if line.is_empty() {
-            DocumentLineKind::Empty
-        } else {
-            DocumentLineKind::Code
-        };
+        let kind = if line.is_empty() { DocumentLineKind::Empty } else { DocumentLineKind::Code };
         lines.push(DocumentLine::new(index + 1, spans, kind));
     }
 

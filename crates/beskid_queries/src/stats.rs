@@ -47,11 +47,7 @@ pub fn record_revision_bump() {
 }
 
 pub fn snapshot() -> (u64, u64, u64) {
-    (
-        QUERY_HITS.load(Ordering::Relaxed),
-        QUERY_MISSES.load(Ordering::Relaxed),
-        REVISION_BUMPS.load(Ordering::Relaxed),
-    )
+    (QUERY_HITS.load(Ordering::Relaxed), QUERY_MISSES.load(Ordering::Relaxed), REVISION_BUMPS.load(Ordering::Relaxed))
 }
 
 pub fn reset() {
@@ -64,27 +60,9 @@ pub fn reset() {
 pub fn emit_salsa_stats<O: PipelineObserver + ?Sized>(obs: Option<&O>) {
     let (hits, misses, bumps) = snapshot();
     let disk = beskid_analysis::projects::assembly::disk_cache_stats();
-    emit_work_unit(
-        obs,
-        phases::SALSA_QUERY_HIT,
-        hits,
-        hits.saturating_add(misses).max(1),
-        "Salsa query hits",
-    );
-    emit_work_unit(
-        obs,
-        phases::SALSA_QUERY_MISS,
-        misses,
-        hits.saturating_add(misses).max(1),
-        "Salsa query misses",
-    );
-    emit_work_unit(
-        obs,
-        phases::SALSA_REVISION_BUMP,
-        bumps,
-        bumps.max(1),
-        "Salsa revision bumps",
-    );
+    emit_work_unit(obs, phases::SALSA_QUERY_HIT, hits, hits.saturating_add(misses).max(1), "Salsa query hits");
+    emit_work_unit(obs, phases::SALSA_QUERY_MISS, misses, hits.saturating_add(misses).max(1), "Salsa query misses");
+    emit_work_unit(obs, phases::SALSA_REVISION_BUMP, bumps, bumps.max(1), "Salsa revision bumps");
     emit_work_unit(
         obs,
         phases::SALSA_ARTIFACT_DISK_HIT,

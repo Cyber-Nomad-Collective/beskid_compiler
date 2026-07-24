@@ -114,11 +114,7 @@ impl<'a> TypeChecker<'a> {
         c
     }
 
-    pub(super) fn from_merged(
-        resolution: &'a Resolution,
-        merged: &MergedTypeEnv,
-        types: TypeTable,
-    ) -> Self {
+    pub(super) fn from_merged(resolution: &'a Resolution, merged: &MergedTypeEnv, types: TypeTable) -> Self {
         let surface = UnitTypeSurface {
             types,
             function_signatures: merged.function_signatures.clone(),
@@ -154,11 +150,7 @@ impl<'a> TypeChecker<'a> {
         self.named_item_id(type_id)
     }
 
-    pub(crate) fn variant_display_name(
-        &self,
-        enum_item_id: ItemId,
-        variant: &str,
-    ) -> Option<String> {
+    pub(crate) fn variant_display_name(&self, enum_item_id: ItemId, variant: &str) -> Option<String> {
         self.ok_variant_name(enum_item_id, variant)
     }
 
@@ -246,27 +238,17 @@ impl<'a> TypeChecker<'a> {
             let Some(ret) = self.builtin_surface_type_id(spec, spec.returns, true) else {
                 continue;
             };
-            self.function_signatures.insert(
-                *item_id,
-                FunctionSignature {
-                    params,
-                    return_type: ret,
-                },
-            );
+            self.function_signatures.insert(*item_id, FunctionSignature { params, return_type: ret });
         }
     }
     fn rebuild_struct_field_maps(&mut self) {
         for (id, ord) in &self.struct_fields_ordered {
-            self.struct_fields
-                .insert(*id, ord.iter().map(|(n, t)| (n.clone(), *t)).collect());
+            self.struct_fields.insert(*id, ord.iter().map(|(n, t)| (n.clone(), *t)).collect());
         }
     }
     fn rebuild_enum_variant_maps(&mut self) {
         for (id, ord) in &self.enum_variants_ordered {
-            self.enum_variants.insert(
-                *id,
-                ord.iter().map(|(n, f)| (n.clone(), f.clone())).collect(),
-            );
+            self.enum_variants.insert(*id, ord.iter().map(|(n, f)| (n.clone(), f.clone())).collect());
         }
     }
     fn builtin_surface_type_id(

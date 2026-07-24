@@ -11,15 +11,8 @@ use beskid_engine::services::{prepare_jit_entrypoint, prepare_jit_module};
 use beskid_runtime::{CallbackTableEntry, beskid_register_callbacks};
 
 fn temp_case_dir(name: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time ok")
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!(
-        "beskid_engine_ffi_v03_{name}_{}_{}",
-        std::process::id(),
-        nanos
-    ));
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).expect("time ok").as_nanos();
+    let dir = std::env::temp_dir().join(format!("beskid_engine_ffi_v03_{name}_{}_{}", std::process::id(), nanos));
     std::fs::create_dir_all(&dir).expect("create temp dir");
     dir
 }
@@ -57,32 +50,17 @@ fn export_plugin_init_visible_to_linker() -> Result<()> {
 pub unit plugin_init() { return; }
 "#;
     let artifact = prepare_jit_module(Path::new("<memory>"), src)?;
-    assert!(
-        artifact
-            .exports
-            .iter()
-            .any(|e| e.exported_symbol == "beskid_plugin_init")
-    );
+    assert!(artifact.exports.iter().any(|e| e.exported_symbol == "beskid_plugin_init"));
     let dir = temp_case_dir("export_so");
     let output = dir.join("libplugin.so");
-    let result = build(AotBuildRequest::with_defaults(
-        artifact,
-        BuildOutputKind::SharedLib,
-        output.clone(),
-        "plugin_init",
-    ))?;
+    let result =
+        build(AotBuildRequest::with_defaults(artifact, BuildOutputKind::SharedLib, output.clone(), "plugin_init"))?;
     let shared = result.final_path.expect("shared library path");
     let nm = Command::new("nm").arg("-D").arg(&shared).output()?;
-    assert!(
-        nm.status.success(),
-        "nm failed: {}",
-        String::from_utf8_lossy(&nm.stderr)
-    );
+    assert!(nm.status.success(), "nm failed: {}", String::from_utf8_lossy(&nm.stderr));
     let stdout = String::from_utf8_lossy(&nm.stdout);
     assert!(
-        stdout
-            .lines()
-            .any(|line| line.contains("beskid_plugin_init")),
+        stdout.lines().any(|line| line.contains("beskid_plugin_init")),
         "expected exported symbol in nm output:\n{stdout}"
     );
     let _ = std::fs::remove_dir_all(dir);
@@ -91,18 +69,8 @@ pub unit plugin_init() { return; }
 
 #[test]
 fn host_registers_callbacks_with_layout_band() -> Result<()> {
-    let table = [CallbackTableEntry {
-        symbol_id: 1,
-        fn_ptr: std::ptr::null(),
-        userdata: std::ptr::null_mut(),
-    }];
-    assert_eq!(
-        beskid_register_callbacks(BESKID_USER_FFI_LAYOUT_BAND, table.as_ptr(), table.len()),
-        0
-    );
-    assert_eq!(
-        beskid_register_callbacks(BESKID_USER_FFI_LAYOUT_BAND - 1, table.as_ptr(), table.len()),
-        1
-    );
+    let table = [CallbackTableEntry { symbol_id: 1, fn_ptr: std::ptr::null(), userdata: std::ptr::null_mut() }];
+    assert_eq!(beskid_register_callbacks(BESKID_USER_FFI_LAYOUT_BAND, table.as_ptr(), table.len()), 0);
+    assert_eq!(beskid_register_callbacks(BESKID_USER_FFI_LAYOUT_BAND - 1, table.as_ptr(), table.len()), 1);
     Ok(())
 }

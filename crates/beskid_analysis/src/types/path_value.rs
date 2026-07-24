@@ -36,9 +36,7 @@ pub fn resolve_path_base_local(
     first_segment: &str,
     source_path: Option<&PathBuf>,
 ) -> Option<LocalId> {
-    if let Some(ResolvedValue::Local(local_id)) =
-        resolution.tables.resolved_value_at(path_span, source_path)
-    {
+    if let Some(ResolvedValue::Local(local_id)) = resolution.tables.resolved_value_at(path_span, source_path) {
         return Some(local_id);
     }
 
@@ -53,10 +51,7 @@ pub fn resolve_path_base_local(
         .iter()
         .filter(|info| {
             info.name == first_segment
-                && info
-                    .source_path
-                    .as_ref()
-                    .is_some_and(|local_path| paths::same_file(local_path, source))
+                && info.source_path.as_ref().is_some_and(|local_path| paths::same_file(local_path, source))
         })
         .collect();
     match scoped.as_slice() {
@@ -73,10 +68,7 @@ pub fn named_item_id(env: &PathTypeEnv<'_>, type_id: TypeId) -> Option<ItemId> {
     }
 }
 
-pub fn generic_mapping_for_type_id(
-    env: &PathTypeEnv<'_>,
-    type_id: TypeId,
-) -> HashMap<String, TypeId> {
+pub fn generic_mapping_for_type_id(env: &PathTypeEnv<'_>, type_id: TypeId) -> HashMap<String, TypeId> {
     let Some(TypeInfo::Applied { base, args }) = env.types.get(type_id) else {
         return HashMap::new();
     };
@@ -89,10 +81,7 @@ pub fn generic_mapping_for_type_id(
     names.iter().cloned().zip(args.iter().copied()).collect()
 }
 
-fn find_matching_type_id(
-    env: &PathTypeEnv<'_>,
-    matches: impl Fn(&TypeInfo) -> bool,
-) -> Option<TypeId> {
+fn find_matching_type_id(env: &PathTypeEnv<'_>, matches: impl Fn(&TypeInfo) -> bool) -> Option<TypeId> {
     let mut index = 0usize;
     loop {
         let candidate = TypeId(index);
@@ -107,21 +96,15 @@ fn find_matching_type_id(
     None
 }
 
-fn substitute_type_id_readonly(
-    env: &PathTypeEnv<'_>,
-    type_id: TypeId,
-    mapping: &HashMap<String, TypeId>,
-) -> TypeId {
+fn substitute_type_id_readonly(env: &PathTypeEnv<'_>, type_id: TypeId, mapping: &HashMap<String, TypeId>) -> TypeId {
     if mapping.is_empty() {
         return type_id;
     }
     match env.types.get(type_id) {
         Some(TypeInfo::GenericParam(name)) => mapping.get(name).copied().unwrap_or(type_id),
         Some(TypeInfo::Applied { base, args }) => {
-            let new_args: Vec<TypeId> = args
-                .iter()
-                .map(|arg| substitute_type_id_readonly(env, *arg, mapping))
-                .collect();
+            let new_args: Vec<TypeId> =
+                args.iter().map(|arg| substitute_type_id_readonly(env, *arg, mapping)).collect();
             find_matching_type_id(env, |info| {
                 matches!(
                     info,
@@ -138,11 +121,8 @@ fn substitute_type_id_readonly(
             if substituted == *element {
                 return type_id;
             }
-            find_matching_type_id(
-                env,
-                |info| matches!(info, TypeInfo::Array(existing) if *existing == substituted),
-            )
-            .unwrap_or(type_id)
+            find_matching_type_id(env, |info| matches!(info, TypeInfo::Array(existing) if *existing == substituted))
+                .unwrap_or(type_id)
         }
         _ => type_id,
     }
@@ -154,21 +134,16 @@ fn item_id_for_name(
     kind: ItemKind,
     source_path: Option<&PathBuf>,
 ) -> Option<ItemId> {
-    let matches: Vec<_> = resolution
-        .items
-        .iter()
-        .filter(|info| info.name == name && info.kind == kind)
-        .collect();
+    let matches: Vec<_> = resolution.items.iter().filter(|info| info.name == name && info.kind == kind).collect();
     match matches.as_slice() {
         [] => None,
         [single] => Some(single.id),
         many => {
             if let Some(path) = source_path
-                && let Some(info) = many.iter().rev().find(|info| {
-                    info.source_path
-                        .as_ref()
-                        .is_some_and(|source| paths::same_file(source, path))
-                })
+                && let Some(info) = many
+                    .iter()
+                    .rev()
+                    .find(|info| info.source_path.as_ref().is_some_and(|source| paths::same_file(source, path)))
             {
                 return Some(info.id);
             }
@@ -204,10 +179,7 @@ pub fn field_type_on_receiver(
 ) -> Option<TypeId> {
     let item_id = named_item_id(env, receiver_type)?;
     let fields = struct_fields_for_item(env, resolution, item_id, source_path)?;
-    let field_type = fields
-        .iter()
-        .find(|(name, _)| name.as_str() == field_name)
-        .map(|(_, field_type)| *field_type)?;
+    let field_type = fields.iter().find(|(name, _)| name.as_str() == field_name).map(|(_, field_type)| *field_type)?;
     let mapping = generic_mapping_for_type_id(env, receiver_type);
     Some(substitute_type_id_readonly(env, field_type, &mapping))
 }
@@ -228,13 +200,8 @@ pub fn field_type_for_value_path(
     let local_id = resolve_path_base_local(resolution, path_span, first_name, source_path)?;
     let mut current_type = env.local_types.get(&local_id).copied()?;
     for segment in segments.iter().skip(1) {
-        current_type = field_type_on_receiver(
-            resolution,
-            env,
-            current_type,
-            segment.node.name.node.name.as_str(),
-            source_path,
-        )?;
+        current_type =
+            field_type_on_receiver(resolution, env, current_type, segment.node.name.node.name.as_str(), source_path)?;
     }
     Some(current_type)
 }
@@ -243,20 +210,12 @@ pub fn field_type_for_value_path(
 pub fn field_segments_before_method(
     segments: &[Spanned<crate::hir::HirPathSegment>],
 ) -> &[Spanned<crate::hir::HirPathSegment>] {
-    if segments.len() <= 2 {
-        &[]
-    } else {
-        &segments[1..segments.len() - 1]
-    }
+    if segments.len() <= 2 { &[] } else { &segments[1..segments.len() - 1] }
 }
 
 /// Method name for a dotted path callee (`local.method` or `local.field.method`).
-pub fn method_name_from_path_callee(
-    segments: &[Spanned<crate::hir::HirPathSegment>],
-) -> Option<&str> {
-    segments
-        .last()
-        .map(|segment| segment.node.name.node.name.as_str())
+pub fn method_name_from_path_callee(segments: &[Spanned<crate::hir::HirPathSegment>]) -> Option<&str> {
+    segments.last().map(|segment| segment.node.name.node.name.as_str())
 }
 
 /// Receiver type after walking field segments before the method name on a path callee.
@@ -274,20 +233,13 @@ pub fn receiver_type_for_path_callee(
     let local_id = resolve_path_base_local(resolution, path_span, first_name, source_path)?;
     let mut receiver_type = env.local_types.get(&local_id).copied()?;
     for segment in field_segments_before_method(segments) {
-        receiver_type = field_type_on_receiver(
-            resolution,
-            env,
-            receiver_type,
-            segment.node.name.node.name.as_str(),
-            source_path,
-        )?;
+        receiver_type =
+            field_type_on_receiver(resolution, env, receiver_type, segment.node.name.node.name.as_str(), source_path)?;
     }
     Some((local_id, receiver_type))
 }
 
 /// First field segment on a path rooted at a local (`local.eventField` → `"eventField"`).
 pub fn first_field_segment_name(segments: &[Spanned<crate::hir::HirPathSegment>]) -> Option<&str> {
-    segments
-        .get(1)
-        .map(|segment| segment.node.name.node.name.as_str())
+    segments.get(1).map(|segment| segment.node.name.node.name.as_str())
 }

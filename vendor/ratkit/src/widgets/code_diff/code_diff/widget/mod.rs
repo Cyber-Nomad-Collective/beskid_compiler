@@ -84,11 +84,8 @@ impl CodeDiff {
 
 impl Widget for CodeDiff {
     fn render(self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-        let content = if let Some(path) = &self.file_path {
-            format!("Diff: {}", path)
-        } else {
-            "Diff: (no file)".to_string()
-        };
+        let content =
+            if let Some(path) = &self.file_path { format!("Diff: {}", path) } else { "Diff: (no file)".to_string() };
 
         let widget = ratatui::widgets::Paragraph::new(content);
         widget.render(area, buf);

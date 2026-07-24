@@ -112,14 +112,9 @@ pub(crate) fn execute_single_target(
         locked: args.lockfile.locked,
     };
     let (session, resolved) = match hi_tx {
-        None => CommandSession::open_and_resolve(
-            args.plain,
-            PipelineProgressKind::PrepareAndRun,
-            &resolve_args,
-        )?,
+        None => CommandSession::open_and_resolve(args.plain, PipelineProgressKind::PrepareAndRun, &resolve_args)?,
         Some(tx) => {
-            let session =
-                CommandSession::with_attached_pipeline(tx, PipelineProgressKind::PrepareAndRun);
+            let session = CommandSession::with_attached_pipeline(tx, PipelineProgressKind::PrepareAndRun);
             let resolved = session.resolve_input(&resolve_args)?;
             (session, resolved)
         }
@@ -127,10 +122,7 @@ pub(crate) fn execute_single_target(
     let hi_attached = session.pipeline().is_hi_attached();
     let prepared = session.executable_gate_prepared(
         &resolved,
-        SemanticGateOptions {
-            finish_prepare_ui: false,
-            prepare_message: "Analysis complete",
-        },
+        SemanticGateOptions { finish_prepare_ui: false, prepare_message: "Analysis complete" },
     )?;
 
     let tests = syntax_test_items_from_front_end(prepared.executable()?)?;
@@ -153,24 +145,15 @@ pub(crate) fn execute_single_target(
 
     let source_name = resolved.source_path.display().to_string();
 
-    let include_tags: Vec<String> = args
-        .include_tags
-        .iter()
-        .map(|tag| tag.trim().to_string())
-        .filter(|tag| !tag.is_empty())
-        .collect();
-    let exclude_tags: Vec<String> = args
-        .exclude_tags
-        .iter()
-        .map(|tag| tag.trim().to_string())
-        .filter(|tag| !tag.is_empty())
-        .collect();
+    let include_tags: Vec<String> =
+        args.include_tags.iter().map(|tag| tag.trim().to_string()).filter(|tag| !tag.is_empty()).collect();
+    let exclude_tags: Vec<String> =
+        args.exclude_tags.iter().map(|tag| tag.trim().to_string()).filter(|tag| !tag.is_empty()).collect();
 
     let mut test_ui = TestRunUi::new(args.plain, Some(session.pipeline()));
     let mut planned = Vec::new();
     for (row_index, test) in tests.iter().enumerate() {
-        let initial = if is_filtered_out(test, &include_tags, &exclude_tags, args.group.as_deref())
-        {
+        let initial = if is_filtered_out(test, &include_tags, &exclude_tags, args.group.as_deref()) {
             TestRowState::FilteredOut
         } else if test.skip_condition == Some(true) {
             TestRowState::Skipped
@@ -211,10 +194,7 @@ pub(crate) fn execute_single_target(
         }
 
         if initial == TestRowState::Skipped {
-            let reason = test
-                .skip_reason
-                .as_deref()
-                .or(Some("skip.condition is true"));
+            let reason = test.skip_reason.as_deref().or(Some("skip.condition is true"));
             if !args.json {
                 test_ui.finish_row(row_index, TestRowState::Skipped, Duration::ZERO, reason)?;
             }
@@ -269,11 +249,7 @@ pub(crate) fn execute_single_target(
                     diagnostics::format_report(&diagnostics::report_from_anyhow(&error)).to_string()
                 };
                 // Always print failure details so users see what went wrong
-                let detail = format!(
-                    "\n  FAIL {name}: {reason}",
-                    name = test.qualified_name,
-                    reason = reason.trim()
-                );
+                let detail = format!("\n  FAIL {name}: {reason}", name = test.qualified_name, reason = reason.trim());
                 if test_ui.is_plain() {
                     eprintln!("{detail}");
                 } else {
@@ -304,12 +280,7 @@ pub(crate) fn execute_single_target(
             }))?
         );
     } else {
-        test_ui.print_summary(
-            summary.passed,
-            summary.failed,
-            summary.skipped,
-            summary.filtered_out,
-        )?;
+        test_ui.print_summary(summary.passed, summary.failed, summary.skipped, summary.filtered_out)?;
         if !args.plain && !hi_attached {
             session.pipeline().wait_for_dismiss()?;
         }
@@ -330,20 +301,13 @@ fn is_filtered_out(
     group_prefix: Option<&str>,
 ) -> bool {
     if !include_tags.is_empty() {
-        let has_included = test
-            .tags
-            .iter()
-            .any(|tag| include_tags.iter().any(|include| include == tag));
+        let has_included = test.tags.iter().any(|tag| include_tags.iter().any(|include| include == tag));
         if !has_included {
             return true;
         }
     }
 
-    if test
-        .tags
-        .iter()
-        .any(|tag| exclude_tags.iter().any(|exclude| exclude == tag))
-    {
+    if test.tags.iter().any(|tag| exclude_tags.iter().any(|exclude| exclude == tag)) {
         return true;
     }
 

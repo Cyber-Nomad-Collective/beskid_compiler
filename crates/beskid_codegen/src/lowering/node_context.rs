@@ -1,12 +1,8 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::CodegenContext;
 use crate::lowering::function::FunctionLoweringState;
-use crate::lowering::locals::{
-    expr_type_for_node, node_expr_type, require_expr_type, resolved_value_at,
-};
-use beskid_analysis::hir::{
-    HirBinaryOp, HirExpressionNode, HirFunctionDefinition, HirPrimitiveType,
-};
+use crate::lowering::locals::{expr_type_for_node, node_expr_type, require_expr_type, resolved_value_at};
+use beskid_analysis::hir::{HirBinaryOp, HirExpressionNode, HirFunctionDefinition, HirPrimitiveType};
 use beskid_analysis::resolve::{HirNodeId, ItemId, Resolution, ResolvedValue};
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::types::{TypeId, TypeResult, resolve_path_base_local};
@@ -33,16 +29,10 @@ impl NodeLoweringContext<'_, '_> {
         expr_type_for_node(self.type_result, node)
     }
 
-    pub(crate) fn require_expr_type_for_node(
-        &self,
-        node: &Spanned<HirExpressionNode>,
-    ) -> Result<TypeId, CodegenError> {
+    pub(crate) fn require_expr_type_for_node(&self, node: &Spanned<HirExpressionNode>) -> Result<TypeId, CodegenError> {
         if let HirExpressionNode::BinaryExpression(binary) = &node.node
             && binary.node.op.node == HirBinaryOp::Add
-            && let Some(type_id) = self
-                .type_result
-                .types
-                .find_primitive(HirPrimitiveType::String)
+            && let Some(type_id) = self.type_result.types.find_primitive(HirPrimitiveType::String)
         {
             return Ok(type_id);
         }
@@ -86,11 +76,7 @@ impl NodeLoweringContext<'_, '_> {
         require_expr_type(self.type_result, node)
     }
 
-    pub(crate) fn with_expected_expr_type<R>(
-        &mut self,
-        expected: TypeId,
-        f: impl FnOnce(&mut Self) -> R,
-    ) -> R {
+    pub(crate) fn with_expected_expr_type<R>(&mut self, expected: TypeId, f: impl FnOnce(&mut Self) -> R) -> R {
         let previous = self.expected_expr_type.replace(expected);
         let result = f(self);
         self.expected_expr_type = previous;

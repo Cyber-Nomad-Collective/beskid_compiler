@@ -3,8 +3,7 @@ use beskid_analysis::services::{
     FrontEndOptions, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
 };
 use beskid_codegen::{
-    lower_prepared_syntax_entrypoint, lower_prepared_syntax_module,
-    lower_syntax_assembly_entrypoint,
+    lower_prepared_syntax_entrypoint, lower_prepared_syntax_module, lower_syntax_assembly_entrypoint,
 };
 use beskid_queries::{compile_front_end_from_resolved_input, with_db};
 use cranelift_codegen::{isa, settings};
@@ -12,10 +11,7 @@ use std::process::Command;
 
 #[test]
 fn prepared_syntax_entrypoint_lowers_without_hir_host_authority() {
-    let directory = std::env::temp_dir().join(format!(
-        "beskid_codegen_prepared_syntax_{}",
-        std::process::id()
-    ));
+    let directory = std::env::temp_dir().join(format!("beskid_codegen_prepared_syntax_{}", std::process::id()));
     std::fs::create_dir_all(&directory).expect("create project");
     let path = directory.join("Main.bd");
     let source = "i32 Echo(i32 value) { return value; } i32 Main() { return Echo(41); }";
@@ -24,10 +20,7 @@ fn prepared_syntax_entrypoint_lowers_without_hir_host_authority() {
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
     let front = compile_front_end_from_resolved_input(
         &resolved,
-        FrontEndOptions {
-            with_semantic_diagnostics: false,
-            ..Default::default()
-        },
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
     )
     .expect("prepare frontend");
@@ -39,14 +32,11 @@ fn prepared_syntax_entrypoint_lowers_without_hir_host_authority() {
         .expect("x86 ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("finish ISA");
-    let lowered = with_db(|db| {
-        lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref())
-    })
-    .expect("prepared syntax lowering");
-    let lowered_again = with_db(|db| {
-        lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref())
-    })
-    .expect("repeated prepared syntax lowering");
+    let lowered = with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref()))
+        .expect("prepared syntax lowering");
+    let lowered_again =
+        with_db(|db| lower_prepared_syntax_entrypoint(db, &front, "Main", target.clone(), isa.as_ref()))
+            .expect("repeated prepared syntax lowering");
     let lowered_from_assembly = with_db(|db| {
         lower_syntax_assembly_entrypoint(
             db,
@@ -68,20 +58,11 @@ fn prepared_syntax_entrypoint_lowers_without_hir_host_authority() {
 #[test]
 fn compiler_trace_reports_syntax_facts_without_source_literal_payloads() {
     let output = Command::new(std::env::current_exe().expect("current test executable"))
-        .args([
-            "--ignored",
-            "--exact",
-            "compiler_trace_child_lowers_a_syntax_entrypoint",
-            "--nocapture",
-        ])
+        .args(["--ignored", "--exact", "compiler_trace_child_lowers_a_syntax_entrypoint", "--nocapture"])
         .env("BESKID_COMPILER_TRACE", "1")
         .output()
         .expect("run trace child process");
-    assert!(
-        output.status.success(),
-        "trace child failed:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert!(output.status.success(), "trace child failed:\n{}", String::from_utf8_lossy(&output.stderr));
 
     let trace = String::from_utf8(output.stderr).expect("UTF-8 trace output");
     assert!(trace.contains("beskid-isle-trace event=entry.selected"));
@@ -92,18 +73,9 @@ fn compiler_trace_reports_syntax_facts_without_source_literal_payloads() {
         trace.contains("callee=Item("),
         "call.fact should render DirectCallee with Item(name@path#gN:nN), got:\n{trace}"
     );
-    assert!(
-        !trace.contains("AstNodeKey {"),
-        "call.fact must not Debug-dump AstNodeKey: {trace}"
-    );
-    assert!(
-        !trace.contains("abi_identity:"),
-        "call.fact must not Debug-dump abi_identity numbers: {trace}"
-    );
-    assert!(
-        !trace.contains("SourceUnitId(Id("),
-        "traces must not Debug-dump salsa SourceUnitId handles: {trace}"
-    );
+    assert!(!trace.contains("AstNodeKey {"), "call.fact must not Debug-dump AstNodeKey: {trace}");
+    assert!(!trace.contains("abi_identity:"), "call.fact must not Debug-dump abi_identity numbers: {trace}");
+    assert!(!trace.contains("SourceUnitId(Id("), "traces must not Debug-dump salsa SourceUnitId handles: {trace}");
     assert!(
         !trace.contains("AstNodeId(") && !trace.contains("SyntaxGenerationId("),
         "traces must use #gN:nN cursors, not Debug id wrappers: {trace}"
@@ -119,8 +91,7 @@ fn compiler_trace_reports_syntax_facts_without_source_literal_payloads() {
 #[test]
 #[ignore = "run only as the isolated child process that captures compiler trace stderr"]
 fn compiler_trace_child_lowers_a_syntax_entrypoint() {
-    let directory =
-        std::env::temp_dir().join(format!("beskid_codegen_trace_{}", std::process::id()));
+    let directory = std::env::temp_dir().join(format!("beskid_codegen_trace_{}", std::process::id()));
     std::fs::create_dir_all(&directory).expect("create project");
     let path = directory.join("Main.bd");
     let source = "unit WriteLine(string text) { return; } unit Main() { WriteLine(\"trace-literal-payload-must-not-appear\"); return; }";
@@ -129,10 +100,7 @@ fn compiler_trace_child_lowers_a_syntax_entrypoint() {
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
     let front = compile_front_end_from_resolved_input(
         &resolved,
-        FrontEndOptions {
-            with_semantic_diagnostics: false,
-            ..Default::default()
-        },
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
     )
     .expect("prepare frontend");
@@ -152,10 +120,7 @@ fn compiler_trace_child_lowers_a_syntax_entrypoint() {
 
 #[test]
 fn prepared_syntax_module_lowers_functions_and_methods_without_hir() {
-    let directory = std::env::temp_dir().join(format!(
-        "beskid_codegen_prepared_syntax_module_{}",
-        std::process::id()
-    ));
+    let directory = std::env::temp_dir().join(format!("beskid_codegen_prepared_syntax_module_{}", std::process::id()));
     std::fs::create_dir_all(&directory).expect("create project");
     let path = directory.join("Mod.bd");
     let source = "i32 Echo(i32 value) { return value; } type Worker { i32 Run(i32 value) { return value; } }";
@@ -164,10 +129,7 @@ fn prepared_syntax_module_lowers_functions_and_methods_without_hir() {
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
     let front = compile_front_end_from_resolved_input(
         &resolved,
-        FrontEndOptions {
-            with_semantic_diagnostics: false,
-            ..Default::default()
-        },
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
     )
     .expect("prepare frontend");
@@ -183,27 +145,14 @@ fn prepared_syntax_module_lowers_functions_and_methods_without_hir() {
         .expect("prepared syntax module lowering");
 
     assert_eq!(artifact.functions.len(), 2);
-    assert!(
-        artifact
-            .functions
-            .iter()
-            .any(|function| function.name.starts_with("Echo#syntax_"))
-    );
-    assert!(
-        artifact
-            .functions
-            .iter()
-            .any(|function| function.name.starts_with("Run#syntax_"))
-    );
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Echo#syntax_")));
+    assert!(artifact.functions.iter().any(|function| function.name.starts_with("Run#syntax_")));
     std::fs::remove_dir_all(directory).expect("remove project");
 }
 
 #[test]
 fn prepared_syntax_module_preserves_interop_export_metadata() {
-    let directory = std::env::temp_dir().join(format!(
-        "beskid_codegen_prepared_syntax_exports_{}",
-        std::process::id()
-    ));
+    let directory = std::env::temp_dir().join(format!("beskid_codegen_prepared_syntax_exports_{}", std::process::id()));
     std::fs::create_dir_all(&directory).expect("create project");
     let path = directory.join("Plugin.bd");
     let source = r#"
@@ -215,10 +164,7 @@ pub unit plugin_init() { return; }
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
     let front = compile_front_end_from_resolved_input(
         &resolved,
-        FrontEndOptions {
-            with_semantic_diagnostics: true,
-            ..Default::default()
-        },
+        FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
         None,
     )
     .expect("prepare frontend");
@@ -236,9 +182,7 @@ pub unit plugin_init() { return; }
 
     assert!(
         artifact.exports.iter().any(|entry| {
-            entry.beskid_name == "plugin_init"
-                && entry.exported_symbol == "beskid_plugin_init"
-                && entry.abi == "C"
+            entry.beskid_name == "plugin_init" && entry.exported_symbol == "beskid_plugin_init" && entry.abi == "C"
         }),
         "syntax lowering must retain [Export] metadata for AOT/JIT interop"
     );
@@ -247,10 +191,8 @@ pub unit plugin_init() { return; }
 
 #[test]
 fn prepared_syntax_module_lowers_sample_mod_nominal_contract_methods() {
-    let directory = std::env::temp_dir().join(format!(
-        "beskid_codegen_prepared_syntax_sample_mod_{}",
-        std::process::id()
-    ));
+    let directory =
+        std::env::temp_dir().join(format!("beskid_codegen_prepared_syntax_sample_mod_{}", std::process::id()));
     std::fs::create_dir_all(&directory).expect("create project");
     let path = directory.join("Mod.bd");
     let source = include_str!("../../beskid_tests/fixtures/mods/sample_mod/Src/Mod.bd");
@@ -259,10 +201,7 @@ fn prepared_syntax_module_lowers_sample_mod_nominal_contract_methods() {
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);
     let front = compile_front_end_from_resolved_input(
         &resolved,
-        FrontEndOptions {
-            with_semantic_diagnostics: false,
-            ..Default::default()
-        },
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
     )
     .expect("prepare frontend");

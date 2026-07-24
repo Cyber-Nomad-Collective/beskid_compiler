@@ -22,8 +22,5 @@ pub fn confirm_yanked(package_id: &str, version: &str) -> Result<bool> {
 fn read_yes_no() -> Result<bool> {
     let mut line = String::new();
     io::stdin().read_line(&mut line)?;
-    Ok(matches!(
-        line.trim().to_ascii_lowercase().as_str(),
-        "y" | "yes"
-    ))
+    Ok(matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
 }

@@ -3,8 +3,8 @@
 use bsol::{ValidatedBlock, ValidatedDocument};
 
 use crate::model::{
-    DispatchEntry, DispatchTables, IntrinsicEntry, KernelEntry, ManifestMeta, ManifestProfiles,
-    ManifestRoot, ProfileEntry,
+    DispatchEntry, DispatchTables, IntrinsicEntry, KernelEntry, ManifestMeta, ManifestProfiles, ManifestRoot,
+    ProfileEntry,
 };
 
 pub fn lower_runtime_manifest(document: ValidatedDocument) -> Result<ManifestRoot, String> {
@@ -23,9 +23,7 @@ pub fn lower_runtime_manifest(document: ValidatedDocument) -> Result<ManifestRoo
                 manifest.abi_version = parse_u32_field(&block, "abi_version")?;
             }
             "profile" => {
-                let label = block
-                    .label
-                    .ok_or_else(|| "profile block requires label".to_string())?;
+                let label = block.label.ok_or_else(|| "profile block requires label".to_string())?;
                 let owners = block.lists.get("owners").cloned().unwrap_or_default();
                 let entry = ProfileEntry { owners };
                 match label.as_str() {
@@ -51,12 +49,7 @@ pub fn lower_runtime_manifest(document: ValidatedDocument) -> Result<ManifestRoo
     Ok(ManifestRoot {
         manifest,
         kernel,
-        dispatch: DispatchTables {
-            usize: dispatch_usize,
-            ptr: dispatch_ptr,
-            unit: dispatch_unit,
-            i64: dispatch_i64,
-        },
+        dispatch: DispatchTables { usize: dispatch_usize, ptr: dispatch_ptr, unit: dispatch_unit, i64: dispatch_i64 },
         intrinsic,
         profiles,
     })
@@ -82,11 +75,7 @@ fn lower_dispatch(block: ValidatedBlock) -> Result<DispatchEntry, String> {
         returns: required_field(&block, "returns")?,
         injected: bool_field(&block, "injected").unwrap_or(true),
         beskid_path: list_field(&block, "beskid_path"),
-        owner: block
-            .fields
-            .get("owner")
-            .cloned()
-            .unwrap_or_else(|| "language".to_string()),
+        owner: block.fields.get("owner").cloned().unwrap_or_else(|| "language".to_string()),
         language_handler: bool_field(&block, "language_handler").unwrap_or(false),
     })
 }
@@ -102,11 +91,7 @@ fn lower_intrinsic(block: ValidatedBlock) -> Result<IntrinsicEntry, String> {
 }
 
 fn required_field(block: &ValidatedBlock, key: &str) -> Result<String, String> {
-    block
-        .fields
-        .get(key)
-        .cloned()
-        .ok_or_else(|| format!("missing required field `{key}`"))
+    block.fields.get(key).cloned().ok_or_else(|| format!("missing required field `{key}`"))
 }
 
 fn list_field(block: &ValidatedBlock, key: &str) -> Vec<String> {
@@ -119,9 +104,7 @@ fn bool_field(block: &ValidatedBlock, key: &str) -> Option<bool> {
 
 fn parse_u32_field(block: &ValidatedBlock, key: &str) -> Result<u32, String> {
     let value = required_field(block, key)?;
-    value
-        .parse::<u32>()
-        .map_err(|_| format!("`{key}` must be a u32, found `{value}`"))
+    value.parse::<u32>().map_err(|_| format!("`{key}` must be a u32, found `{value}`"))
 }
 
 #[cfg(test)]

@@ -9,20 +9,12 @@ pub fn is_numeric(table: &TypeTable, type_id: TypeId) -> bool {
     matches!(
         table.get(type_id),
         Some(TypeInfo::Primitive(
-            HirPrimitiveType::I32
-                | HirPrimitiveType::I64
-                | HirPrimitiveType::U8
-                | HirPrimitiveType::F64
+            HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8 | HirPrimitiveType::F64
         ))
     )
 }
 
-pub fn unify_types(
-    table: &TypeTable,
-    left: TypeId,
-    right: TypeId,
-    span: SpanInfo,
-) -> Result<TypeId, TypeError> {
+pub fn unify_types(table: &TypeTable, left: TypeId, right: TypeId, span: SpanInfo) -> Result<TypeId, TypeError> {
     if left == right {
         return Ok(left);
     }
@@ -35,11 +27,7 @@ pub fn unify_types(
         });
     }
 
-    Err(TypeError::TypeMismatch {
-        span,
-        expected: left,
-        actual: right,
-    })
+    Err(TypeError::TypeMismatch { span, expected: left, actual: right })
 }
 
 pub fn unify_numeric_types(table: &TypeTable, left: TypeId, right: TypeId) -> Option<TypeId> {
@@ -53,9 +41,7 @@ pub fn unify_numeric_types(table: &TypeTable, left: TypeId, right: TypeId) -> Op
     let right_prim = primitive_of(table, right)?;
     match (left_prim, right_prim) {
         (HirPrimitiveType::I64, HirPrimitiveType::I32) => Some(left),
-        (HirPrimitiveType::I32, HirPrimitiveType::I64) => {
-            table.find_primitive(HirPrimitiveType::I64)
-        }
+        (HirPrimitiveType::I32, HirPrimitiveType::I64) => table.find_primitive(HirPrimitiveType::I64),
         _ => Some(left),
     }
 }

@@ -267,6 +267,24 @@ pub struct PackageDetailsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageFileEntry {
+    pub name: String,
+    #[serde(rename = "sizeBytes")]
+    pub size_bytes: i64,
+    pub kind: String,
+    #[serde(rename = "modifiedAtUtc")]
+    pub modified_at_utc: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageFileListResponse {
+    #[serde(rename = "packageName")]
+    pub package_name: String,
+    pub version: String,
+    pub entries: Vec<PackageFileEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageVersionLifecycleResponse {
     pub success: bool,
     pub message: String,

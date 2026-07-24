@@ -4,8 +4,8 @@ use crate::widgets::markdown_preview::widgets::markdown_widget::extensions::scro
 use crate::widgets::markdown_preview::widgets::markdown_widget::extensions::toc::TocConfig;
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::types::GitStats;
 use crate::widgets::markdown_preview::widgets::markdown_widget::state::{
-    CacheState, CollapseState, DisplaySettings, DoubleClickState, ExpandableState, GitStatsState,
-    MarkdownState, ScrollState, SelectionState, SourceState, TocState, VimState,
+    CacheState, CollapseState, DisplaySettings, DoubleClickState, ExpandableState, GitStatsState, MarkdownState,
+    ScrollState, SelectionState, SourceState, TocState, VimState,
 };
 use crate::widgets::markdown_preview::widgets::markdown_widget::widget::{
     MarkdownWidget, MarkdownWidgetMode, FRONTMATTER_SECTION_ID,
@@ -15,18 +15,10 @@ use ratatui::layout::Rect;
 impl<'a> MarkdownWidget<'a> {
     pub fn from_state(state: &'a MarkdownState) -> Self {
         let content = state.content().to_string();
-        let rendered_lines = state
-            .cache
-            .render
-            .as_ref()
-            .map(|c| c.lines.clone())
-            .unwrap_or_else(|| state.rendered_lines.clone());
+        let rendered_lines =
+            state.cache.render.as_ref().map(|c| c.lines.clone()).unwrap_or_else(|| state.rendered_lines.clone());
 
-        let mode = if state.filter_mode {
-            MarkdownWidgetMode::Filter
-        } else {
-            MarkdownWidgetMode::Normal
-        };
+        let mode = if state.filter_mode { MarkdownWidgetMode::Filter } else { MarkdownWidgetMode::Normal };
 
         Self {
             content,
@@ -161,14 +153,12 @@ impl<'a> MarkdownWidget<'a> {
     }
 
     pub fn with_frontmatter_collapsed(mut self, collapsed: bool) -> Self {
-        self.collapse
-            .set_section_collapsed(FRONTMATTER_SECTION_ID, collapsed);
+        self.collapse.set_section_collapsed(FRONTMATTER_SECTION_ID, collapsed);
         self
     }
 
     pub fn set_frontmatter_collapsed(&mut self, collapsed: bool) {
-        self.collapse
-            .set_section_collapsed(FRONTMATTER_SECTION_ID, collapsed);
+        self.collapse.set_section_collapsed(FRONTMATTER_SECTION_ID, collapsed);
         self.cache.invalidate();
     }
 
@@ -185,10 +175,7 @@ impl<'a> MarkdownWidget<'a> {
 
     pub fn calculate_scrollbar_area(&self, area: Rect) -> Option<Rect> {
         let content_area = if self.show_statusline && area.height > 1 {
-            Rect {
-                height: area.height.saturating_sub(1),
-                ..area
-            }
+            Rect { height: area.height.saturating_sub(1), ..area }
         } else {
             area
         };
@@ -218,11 +205,7 @@ impl<'a> MarkdownWidget<'a> {
     }
 
     pub fn git_stats_tuple(mut self, additions: usize, modified: usize, deletions: usize) -> Self {
-        self.git_stats = Some(GitStats {
-            additions,
-            modified,
-            deletions,
-        });
+        self.git_stats = Some(GitStats { additions, modified, deletions });
         self
     }
 

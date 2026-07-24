@@ -17,20 +17,11 @@ use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifes
 
 fn run_semantic_rules(source: &str) -> AnalysisResult {
     let program = parse_program_ast(source);
-    run_rules(
-        &program.node,
-        "ffi_v03_spec.bd",
-        source,
-        &builtin_rules(),
-        AnalysisOptions::default(),
-    )
+    run_rules(&program.node, "ffi_v03_spec.bd", source, &builtin_rules(), AnalysisOptions::default())
 }
 
 fn diagnostic_codes(diagnostics: &[SemanticDiagnostic]) -> HashSet<String> {
-    diagnostics
-        .iter()
-        .filter_map(|diag| diag.code.clone())
-        .collect()
+    diagnostics.iter().filter_map(|diag| diag.code.clone()).collect()
 }
 
 fn prepare_diagnostic_codes(source: &str) -> HashSet<String> {
@@ -56,17 +47,12 @@ target "app" {
     fs::write(&entry, source).expect("write source");
 
     let codes = with_cwd(&root, || {
-        let plan =
-            beskid_analysis::services::compile_plan_for_input_path(&entry).expect("compile plan");
-        let resolved =
-            resolved_input_from_plan(entry.clone(), source.to_string(), plan, None, None);
+        let plan = beskid_analysis::services::compile_plan_for_input_path(&entry).expect("compile plan");
+        let resolved = resolved_input_from_plan(entry.clone(), source.to_string(), plan, None, None);
         let (_, diagnostics) = prepare_compilation_diagnostics(
             &resolved,
             PrepareOptions {
-                front_end: FrontEndOptions {
-                    with_semantic_diagnostics: true,
-                    ..Default::default()
-                },
+                front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                 ..Default::default()
             },
             None,
@@ -154,10 +140,5 @@ pub unit Main() {}
 fn v03_extern_on_mod_emits_e1510() {
     let source = r#"attribute Extern(ContractDeclaration) { Abi: string = "C" } [Extern(Abi: "C")] mod sys.io;"#;
     let result = run_semantic_rules(source);
-    assert!(
-        result
-            .diagnostics
-            .iter()
-            .any(|d| d.code.as_deref() == Some("E1510"))
-    );
+    assert!(result.diagnostics.iter().any(|d| d.code.as_deref() == Some("E1510")));
 }

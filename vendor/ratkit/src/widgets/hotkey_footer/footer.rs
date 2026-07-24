@@ -17,20 +17,10 @@ pub struct HotkeyFooter {
 
 impl HotkeyFooter {
     pub fn new(items: Vec<HotkeyItem>) -> Self {
-        Self {
-            items,
-            key_color: Color::Cyan,
-            description_color: Color::DarkGray,
-            background_color: Color::Black,
-        }
+        Self { items, key_color: Color::Cyan, description_color: Color::DarkGray, background_color: Color::Black }
     }
 
-    pub fn with_theme_colors(
-        mut self,
-        key_color: Color,
-        description_color: Color,
-        background_color: Color,
-    ) -> Self {
+    pub fn with_theme_colors(mut self, key_color: Color, description_color: Color, background_color: Color) -> Self {
         self.key_color = key_color;
         self.description_color = description_color;
         self.background_color = background_color;
@@ -60,17 +50,10 @@ impl HotkeyFooter {
                 spans.push(Span::raw(" "));
             }
 
-            spans.push(Span::styled(
-                item.key.clone(),
-                Style::default()
-                    .fg(self.key_color)
-                    .add_modifier(Modifier::BOLD),
-            ));
+            spans
+                .push(Span::styled(item.key.clone(), Style::default().fg(self.key_color).add_modifier(Modifier::BOLD)));
 
-            spans.push(Span::styled(
-                format!(" {}  ", item.description),
-                Style::default().fg(self.description_color),
-            ));
+            spans.push(Span::styled(format!(" {}  ", item.description), Style::default().fg(self.description_color)));
         }
 
         Line::from(spans)

@@ -30,23 +30,11 @@ impl ModFixtureWorkspace {
         let mod_dir = root.join("SampleMod");
         fs::create_dir_all(host_dir.join("Src")).expect("host source root");
         fs::create_dir_all(mod_dir.join("Src")).expect("mod source root");
-        fs::write(
-            host_dir.join("Src").join("Main.bd"),
-            "unit Main() { return; }\n",
-        )
-        .expect("host source");
+        fs::write(host_dir.join("Src").join("Main.bd"), "unit Main() { return; }\n").expect("host source");
         fs::write(host_dir.join(HOST_PROJECT_MANIFEST), HOST_MANIFEST).expect("host manifest");
-        fs::write(
-            mod_dir.join(SAMPLE_MOD_PROJECT_MANIFEST),
-            SAMPLE_MOD_PROJECT,
-        )
-        .expect("mod manifest");
+        fs::write(mod_dir.join(SAMPLE_MOD_PROJECT_MANIFEST), SAMPLE_MOD_PROJECT).expect("mod manifest");
         fs::write(mod_dir.join("Src").join("Mod.bd"), SAMPLE_MOD_SOURCE).expect("mod source");
-        Self {
-            root,
-            host_dir,
-            mod_dir,
-        }
+        Self { root, host_dir, mod_dir }
     }
 
     pub(crate) fn write_descriptor(&self, registrations_json: &str) -> PathBuf {
@@ -94,11 +82,7 @@ impl ModFixtureWorkspace {
             manifest_path: self.host_dir.join(HOST_PROJECT_MANIFEST),
             project_name: "Host".to_string(),
             source_root: self.host_dir.join("Src"),
-            target: Target {
-                name: "main".to_string(),
-                kind: TargetKind::App,
-                entry: Some("Main.bd".to_string()),
-            },
+            target: Target { name: "main".to_string(), kind: TargetKind::App, entry: Some("Main.bd".to_string()) },
             dependency_projects: vec![ResolvedDependencyProject {
                 dependency_name: "SampleMod".to_string(),
                 manifest_path: self.mod_dir.join(SAMPLE_MOD_PROJECT_MANIFEST),

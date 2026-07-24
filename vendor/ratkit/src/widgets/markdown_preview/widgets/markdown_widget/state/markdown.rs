@@ -5,8 +5,8 @@
 
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::types::GitStats;
 use crate::widgets::markdown_preview::widgets::markdown_widget::state::{
-    CacheState, CollapseState, DisplaySettings, DoubleClickState, ExpandableState, GitStatsState,
-    ScrollState, SelectionState, SourceState, VimState,
+    CacheState, CollapseState, DisplaySettings, DoubleClickState, ExpandableState, GitStatsState, ScrollState,
+    SelectionState, SourceState, VimState,
 };
 
 /// Unified state for the markdown widget.
@@ -131,9 +131,6 @@ impl MarkdownState {
 
     /// Create a new MarkdownState with custom display settings.
     pub fn with_display(display: DisplaySettings) -> Self {
-        Self {
-            display,
-            ..Default::default()
-        }
+        Self { display, ..Default::default() }
     }
 }

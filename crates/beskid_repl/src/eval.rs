@@ -1,8 +1,7 @@
 use anyhow::Result;
 use beskid_engine::Engine;
 use beskid_engine::services::{
-    prepare_syntax_front_end, run_entrypoint_from_front_end_with_engine,
-    syntax_entrypoint_return_type_from_front_end,
+    prepare_syntax_front_end, run_entrypoint_from_front_end_with_engine, syntax_entrypoint_return_type_from_front_end,
 };
 use beskid_pipeline::PipelineObserver;
 
@@ -60,26 +59,17 @@ fn wrap_snippet(snippet: &str) -> Result<WrappedSnippet, String> {
     }
 
     if is_likely_statement(trimmed) {
-        return Ok(WrappedSnippet {
-            source: format!("unit Main() {{ {trimmed} }}"),
-            return_type: "unit".to_string(),
-        });
+        return Ok(WrappedSnippet { source: format!("unit Main() {{ {trimmed} }}"), return_type: "unit".to_string() });
     }
 
     for ret in EXPR_RETURN_TYPES {
         let wrapped = format!("{ret} Main() {{ return {trimmed}; }}");
         if prepare_wrapped(&wrapped).is_ok() {
-            return Ok(WrappedSnippet {
-                source: wrapped,
-                return_type: (*ret).to_string(),
-            });
+            return Ok(WrappedSnippet { source: wrapped, return_type: (*ret).to_string() });
         }
     }
 
-    Err(format!(
-        "could not type-check expression `{trimmed}` (tried return types: {})",
-        EXPR_RETURN_TYPES.join(", ")
-    ))
+    Err(format!("could not type-check expression `{trimmed}` (tried return types: {})", EXPR_RETURN_TYPES.join(", ")))
 }
 
 fn is_likely_statement(snippet: &str) -> bool {
@@ -88,17 +78,13 @@ fn is_likely_statement(snippet: &str) -> bool {
         return true;
     }
 
-    const STATEMENT_PREFIXES: &[&str] = &[
-        "let ", "mut ", "for ", "while ", "if ", "return ", "unit ", "spawn ", "match ",
-    ];
-    STATEMENT_PREFIXES
-        .iter()
-        .any(|prefix| trimmed.starts_with(prefix))
+    const STATEMENT_PREFIXES: &[&str] =
+        &["let ", "mut ", "for ", "while ", "if ", "return ", "unit ", "spawn ", "match "];
+    STATEMENT_PREFIXES.iter().any(|prefix| trimmed.starts_with(prefix))
 }
 
 fn prepare_wrapped(source: &str) -> Result<beskid_analysis::services::FrontEndTypedResult, String> {
-    prepare_syntax_front_end(std::path::Path::new(REPL_SOURCE_PATH), source)
-        .map_err(format_lower_error)
+    prepare_syntax_front_end(std::path::Path::new(REPL_SOURCE_PATH), source).map_err(format_lower_error)
 }
 
 fn run_wrapped(
@@ -108,15 +94,8 @@ fn run_wrapped(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String, String> {
     let front = prepare_wrapped(source)?;
-    run_entrypoint_from_front_end_with_engine(
-        engine,
-        &front,
-        REPL_SOURCE_PATH,
-        source,
-        entrypoint,
-        pipeline,
-    )
-    .map_err(format_lower_error)
+    run_entrypoint_from_front_end_with_engine(engine, &front, REPL_SOURCE_PATH, source, entrypoint, pipeline)
+        .map_err(format_lower_error)
 }
 
 fn format_semantic_type(ty: beskid_queries::SemanticTypeId) -> String {
@@ -153,16 +132,14 @@ mod tests {
         static PREFIX: OnceLock<std::path::PathBuf> = OnceLock::new();
         PREFIX.get_or_init(|| {
             let prefix = tempfile::tempdir().expect("exact kit prefix").keep();
-            build_native_host(prefix.clone(), RuntimeKitProfile::Debug)
-                .expect("publish exact native kit");
+            build_native_host(prefix.clone(), RuntimeKitProfile::Debug).expect("publish exact native kit");
             prefix
         })
     }
 
     fn exact_kit_engine() -> Engine {
         let target = host_runtime_target().expect("supported native host target");
-        Engine::with_runtime_kit(shared_exact_kit_prefix(), target, BuildProfile::Debug)
-            .expect("load exact kit")
+        Engine::with_runtime_kit(shared_exact_kit_prefix(), target, BuildProfile::Debug).expect("load exact kit")
     }
 
     #[test]
@@ -175,10 +152,7 @@ mod tests {
     #[test]
     fn eval_uses_a_fresh_native_runtime_kit() {
         let mut engine = exact_kit_engine();
-        assert_eq!(
-            eval_snippet(&mut engine, "true"),
-            EvalOutcome::Value("true".to_string())
-        );
+        assert_eq!(eval_snippet(&mut engine, "true"), EvalOutcome::Value("true".to_string()));
     }
 
     #[test]
@@ -194,13 +168,9 @@ mod tests {
             value => panic!("unsupported staged runtime profile: {value:?}"),
         };
         let target = host_runtime_target().expect("supported native host target");
-        let mut engine = Engine::with_runtime_kit(&prefix, target, profile)
-            .expect("load the staged Linux runtime kit");
+        let mut engine = Engine::with_runtime_kit(&prefix, target, profile).expect("load the staged Linux runtime kit");
 
-        assert_eq!(
-            eval_snippet(&mut engine, "41 + 1"),
-            EvalOutcome::Value("42".to_string())
-        );
+        assert_eq!(eval_snippet(&mut engine, "41 + 1"), EvalOutcome::Value("42".to_string()));
     }
 
     #[test]
@@ -219,14 +189,8 @@ mod tests {
     #[test]
     fn eval_reuses_engine() {
         let mut engine = exact_kit_engine();
-        assert_eq!(
-            eval_snippet(&mut engine, "10 + 5"),
-            EvalOutcome::Value("15".to_string())
-        );
-        assert_eq!(
-            eval_snippet(&mut engine, "6 * 7"),
-            EvalOutcome::Value("42".to_string())
-        );
+        assert_eq!(eval_snippet(&mut engine, "10 + 5"), EvalOutcome::Value("15".to_string()));
+        assert_eq!(eval_snippet(&mut engine, "6 * 7"), EvalOutcome::Value("42".to_string()));
     }
 
     #[test]
@@ -238,10 +202,7 @@ mod tests {
 
     #[test]
     fn formats_word_type_from_syntax_authority() {
-        assert_eq!(
-            format_semantic_type(beskid_queries::SemanticTypeId::WORD),
-            "word"
-        );
+        assert_eq!(format_semantic_type(beskid_queries::SemanticTypeId::WORD), "word");
     }
 
     #[test]
@@ -263,9 +224,7 @@ mod tests {
         }
         let message = error.to_string();
         assert!(
-            message.contains("abi.json")
-                || message.contains("MetadataRead")
-                || message.contains("runtime kit"),
+            message.contains("abi.json") || message.contains("MetadataRead") || message.contains("runtime kit"),
             "expected missing-kit fail-closed diagnostic, got {message}"
         );
     }
@@ -278,8 +237,7 @@ mod tests {
         let prefix = tempfile::tempdir().expect("tampered kit prefix");
         let built = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
             .expect("publish canonical native runtime kit");
-        std::fs::write(&built.shared_library, b"tampered shared runtime")
-            .expect("tamper shared library");
+        std::fs::write(&built.shared_library, b"tampered shared runtime").expect("tamper shared library");
 
         let error = match Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug) {
             Ok(_) => panic!("tampered exact kit must fail closed for REPL Engine"),

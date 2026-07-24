@@ -14,9 +14,7 @@ pub fn lower_runtime(doc: &BoardV2Doc) -> Result<LayoutRuntime, String> {
 }
 
 pub fn lower_layout(doc: &BoardV2Doc) -> Result<Layout, String> {
-    let root = doc
-        .node(&doc.root)
-        .ok_or_else(|| "root node missing".to_string())?;
+    let root = doc.node(&doc.root).ok_or_else(|| "root node missing".to_string())?;
     match root.kind {
         NodeKind::Tabs => lower_tabbed(doc, root),
         NodeKind::Stack => lower_stacked(doc, root),
@@ -53,30 +51,17 @@ fn lower_split_preset(doc: &BoardV2Doc, root: &BoardNode) -> Result<Layout, Stri
     split.build().map_err(map_err)
 }
 
-fn build_into_root(
-    builder: &mut LayoutBuilder,
-    doc: &BoardV2Doc,
-    node_id: &str,
-) -> Result<(), String> {
-    let node = doc
-        .node(node_id)
-        .ok_or_else(|| format!("node `{node_id}` missing"))?;
+fn build_into_root(builder: &mut LayoutBuilder, doc: &BoardV2Doc, node_id: &str) -> Result<(), String> {
+    let node = doc.node(node_id).ok_or_else(|| format!("node `{node_id}` missing"))?;
     match node.kind {
         NodeKind::Col => {
-            builder
-                .col(|ctx| build_children(ctx, doc, node))
-                .map_err(map_err)?;
+            builder.col(|ctx| build_children(ctx, doc, node)).map_err(map_err)?;
         }
         NodeKind::Row => {
-            builder
-                .row(|ctx| build_children(ctx, doc, node))
-                .map_err(map_err)?;
+            builder.row(|ctx| build_children(ctx, doc, node)).map_err(map_err)?;
         }
         NodeKind::Panel => {
-            let widget = node
-                .widget
-                .as_deref()
-                .ok_or_else(|| format!("panel `{node_id}` missing widget"))?;
+            let widget = node.widget.as_deref().ok_or_else(|| format!("panel `{node_id}` missing widget"))?;
             builder
                 .col(|ctx| {
                     ctx.panel_with(widget, constraints_for(node));
@@ -96,14 +81,8 @@ fn build_children(ctx: &mut ContainerCtx<'_>, doc: &BoardV2Doc, parent: &BoardNo
     }
 }
 
-fn build_into_container(
-    ctx: &mut ContainerCtx<'_>,
-    doc: &BoardV2Doc,
-    node_id: &str,
-) -> Result<(), String> {
-    let node = doc
-        .node(node_id)
-        .ok_or_else(|| format!("node `{node_id}` missing"))?;
+fn build_into_container(ctx: &mut ContainerCtx<'_>, doc: &BoardV2Doc, node_id: &str) -> Result<(), String> {
+    let node = doc.node(node_id).ok_or_else(|| format!("node `{node_id}` missing"))?;
     match node.kind {
         NodeKind::Col => {
             ctx.col(|c| build_children(c, doc, node));
@@ -112,10 +91,7 @@ fn build_into_container(
             ctx.row(|c| build_children(c, doc, node));
         }
         NodeKind::Panel => {
-            let widget = node
-                .widget
-                .as_deref()
-                .ok_or_else(|| format!("panel `{node_id}` missing widget"))?;
+            let widget = node.widget.as_deref().ok_or_else(|| format!("panel `{node_id}` missing widget"))?;
             ctx.panel_with(widget, constraints_for(node));
         }
         NodeKind::Tabs | NodeKind::Stack | NodeKind::Split => {
@@ -136,19 +112,12 @@ fn constraints_for(node: &BoardNode) -> panes::Constraints {
 }
 
 fn panel_kinds_for_children(doc: &BoardV2Doc, root: &BoardNode) -> Result<Vec<Arc<str>>, String> {
-    root.children
-        .iter()
-        .map(|id| widget_kind(doc, id).map(Arc::from))
-        .collect()
+    root.children.iter().map(|id| widget_kind(doc, id).map(Arc::from)).collect()
 }
 
 fn widget_kind(doc: &BoardV2Doc, node_id: &str) -> Result<String, String> {
-    let node = doc
-        .node(node_id)
-        .ok_or_else(|| format!("node `{node_id}` missing"))?;
-    node.widget
-        .clone()
-        .ok_or_else(|| format!("node `{node_id}` missing widget"))
+    let node = doc.node(node_id).ok_or_else(|| format!("node `{node_id}` missing"))?;
+    node.widget.clone().ok_or_else(|| format!("node `{node_id}` missing widget"))
 }
 
 fn map_err(e: PaneError) -> String {

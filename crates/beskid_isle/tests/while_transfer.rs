@@ -53,13 +53,9 @@ impl NodeFacts for WhileFacts {
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
         if key == self.nodes[0] {
-            [self.nodes[1], self.nodes[4]]
-                .get(usize::from(index))
-                .copied()
+            [self.nodes[1], self.nodes[4]].get(usize::from(index)).copied()
         } else if key == self.nodes[1] {
-            [self.nodes[2], self.nodes[3]]
-                .get(usize::from(index))
-                .copied()
+            [self.nodes[2], self.nodes[3]].get(usize::from(index)).copied()
         } else if key == self.nodes[4] && index == 0 {
             Some(self.nodes[5])
         } else {
@@ -122,14 +118,10 @@ fn emit_loop(
 fn execute(isa: std::sync::Arc<dyn TargetIsa>, name: &str, function: Function) -> i32 {
     let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
     let signature = function.signature.clone();
-    let function_id = module
-        .declare_function(name, Linkage::Local, &signature)
-        .expect("declare");
+    let function_id = module.declare_function(name, Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
     context.func = function;
-    module
-        .define_function(function_id, &mut context)
-        .expect("define");
+    module.define_function(function_id, &mut context).expect("define");
     module.finalize_definitions().expect("finalize");
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };

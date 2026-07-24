@@ -40,15 +40,11 @@ impl NodeFacts for LocalFacts {
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
         if key == self.nodes[0] {
-            [self.nodes[1], self.nodes[3], self.nodes[7]]
-                .get(usize::from(index))
-                .copied()
+            [self.nodes[1], self.nodes[3], self.nodes[7]].get(usize::from(index)).copied()
         } else if key == self.nodes[3] && index == 0 {
             Some(self.nodes[4])
         } else if key == self.nodes[4] {
-            [self.nodes[5], self.nodes[6]]
-                .get(usize::from(index))
-                .copied()
+            [self.nodes[5], self.nodes[6]].get(usize::from(index)).copied()
         } else if key == self.nodes[7] && index == 0 {
             Some(self.nodes[8])
         } else {
@@ -79,19 +75,12 @@ impl NodeFacts for LocalFacts {
     }
 
     fn local_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
-        (key == self.nodes[1] || key == self.nodes[5] || key == self.nodes[8]).then_some(
-            LocalSlotId {
-                owner_node: 0,
-                index: 0,
-            },
-        )
+        (key == self.nodes[1] || key == self.nodes[5] || key == self.nodes[8])
+            .then_some(LocalSlotId { owner_node: 0, index: 0 })
     }
 
     fn mutable_local_assignment_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
-        (key == self.nodes[4]).then_some(LocalSlotId {
-            owner_node: 0,
-            index: 0,
-        })
+        (key == self.nodes[4]).then_some(LocalSlotId { owner_node: 0, index: 0 })
     }
 }
 
@@ -105,35 +94,22 @@ fn let_assign_and_path_rules_share_one_ssa_local() {
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Locals.bd"));
     let generation = SyntaxGenerationId(14);
     let facts = LocalFacts {
-        nodes: std::array::from_fn(|index| AstNodeKey {
-            unit,
-            generation,
-            node: AstNodeId(index as u32 + 1),
-        }),
+        nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }),
     };
     let emitter = FunctionEmitter::new(isa.as_ref());
     let signature = emitter.signature([], [types::I32]);
     let function = emitter
-        .emit_statement(
-            UserFuncName::user(0, 17),
-            signature.clone(),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_statement(UserFuncName::user(0, 17), signature.clone(), &facts, facts.nodes[0])
         .expect("verified local assignment");
     let clif = function.display().to_string();
     assert!(clif.contains("iconst.i32 1"), "{clif}");
     assert!(clif.contains("iconst.i32 2"), "{clif}");
 
     let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-    let function_id = module
-        .declare_function("locals", Linkage::Local, &signature)
-        .expect("declare");
+    let function_id = module.declare_function("locals", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
     context.func = function;
-    module
-        .define_function(function_id, &mut context)
-        .expect("define");
+    module.define_function(function_id, &mut context).expect("define");
     module.finalize_definitions().expect("finalize");
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };

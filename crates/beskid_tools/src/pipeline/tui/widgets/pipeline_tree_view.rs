@@ -16,11 +16,7 @@ pub fn draw_pipeline_tree(
     title: &str,
 ) {
     let tree = TreeViewRef::new(nodes)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" {title} ")),
-        )
+        .block(Block::default().borders(Borders::ALL).title(format!(" {title} ")))
         .highlight_style(Style::default().fg(Color::Cyan))
         .render_fn(|label, _| Line::from(label.clone()));
     frame.render_stateful_widget(tree, area, tree_state);

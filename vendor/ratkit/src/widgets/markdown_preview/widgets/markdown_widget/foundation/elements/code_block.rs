@@ -1,12 +1,12 @@
 //! Render code block header, content, and border.
 
+use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::elements::blockquote::{
+    blockquote_prefix_width, create_blockquote_prefix,
+};
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::elements::constants::{
     get_language_icon, CodeBlockTheme,
 };
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::elements::enums::CodeBlockBorderKind;
-use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::elements::blockquote::{
-    blockquote_prefix_width, create_blockquote_prefix,
-};
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::elements::MarkdownElement;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -20,11 +20,7 @@ pub fn render_header(
 ) -> Line<'static> {
     let colors = theme.colors();
     let icon = get_language_icon(language);
-    let lang_display = if language.is_empty() {
-        "text"
-    } else {
-        language
-    };
+    let lang_display = if language.is_empty() { "text" } else { language };
 
     // Account for blockquote prefix in width
     let bq_width = blockquote_prefix_width(blockquote_depth);
@@ -37,10 +33,7 @@ pub fn render_header(
 
     let border_style = Style::default().fg(colors.border);
     let header_style = Style::default().fg(colors.header_text).bg(colors.header_bg);
-    let icon_style = Style::default()
-        .fg(colors.icon)
-        .bg(colors.header_bg)
-        .add_modifier(Modifier::BOLD);
+    let icon_style = Style::default().fg(colors.icon).bg(colors.header_bg).add_modifier(Modifier::BOLD);
 
     // Create header with background only on icon and text, not on border dashes
     let dashes = "\u{2500}".repeat(remaining);
@@ -68,9 +61,7 @@ pub fn render_content(
 ) -> Line<'static> {
     let colors = theme.colors();
     let border_style = Style::default().fg(colors.border);
-    let line_num_style = Style::default()
-        .fg(colors.line_number)
-        .bg(colors.background);
+    let line_num_style = Style::default().fg(colors.line_number).bg(colors.background);
     let bg_style = Style::default().bg(colors.background);
 
     // Account for blockquote prefix in width
@@ -91,11 +82,7 @@ pub fn render_content(
     let mut all_spans = create_blockquote_prefix(blockquote_depth);
 
     if let Some(highlighted_text) = highlighted {
-        let spans: Vec<Span<'static>> = highlighted_text
-            .lines
-            .iter()
-            .flat_map(|line| line.spans.clone())
-            .collect();
+        let spans: Vec<Span<'static>> = highlighted_text.lines.iter().flat_map(|line| line.spans.clone()).collect();
 
         let total_width: usize = spans.iter().map(|s| s.content.chars().count()).sum();
         let padding = inner_width.saturating_sub(total_width);
@@ -121,19 +108,13 @@ pub fn render_content(
         Line::from(all_spans)
     } else {
         let padded = if content.chars().count() < inner_width {
-            format!(
-                "{}{}",
-                content,
-                " ".repeat(inner_width.saturating_sub(content.chars().count()))
-            )
+            format!("{}{}", content, " ".repeat(inner_width.saturating_sub(content.chars().count())))
         } else {
             content.chars().take(inner_width).collect()
         };
 
         // Use a light green for unhighlighted code
-        let code_style = Style::default()
-            .fg(colors.header_text)
-            .bg(colors.background);
+        let code_style = Style::default().fg(colors.header_text).bg(colors.background);
 
         all_spans.extend(vec![
             Span::styled("\u{2502}", border_style),

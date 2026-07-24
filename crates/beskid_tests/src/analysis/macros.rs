@@ -7,26 +7,16 @@ use beskid_analysis::syntax::items::{MacroFragmentKind, Node};
 use beskid_pipeline::phases::{FULL_BUILD_PHASE_ORDER, MACRO_EXPAND, PARSE};
 
 use super::macros_support::{
-    assert_no_macro_invocations_in_block, assert_no_macro_invocations_in_expr,
-    block_contains_macro_invocation_named, count_macro_invocations,
-    expression_contains_binary_with_literal, find_function_body, parse_expand,
+    assert_no_macro_invocations_in_block, assert_no_macro_invocations_in_expr, block_contains_macro_invocation_named,
+    count_macro_invocations, expression_contains_binary_with_literal, find_function_body, parse_expand,
     parse_expand_with_depth,
 };
 
 #[test]
 fn full_build_phase_order_places_macro_expand_after_parse() {
-    let parse = FULL_BUILD_PHASE_ORDER
-        .iter()
-        .position(|p| *p == PARSE)
-        .expect("parse");
-    let expand = FULL_BUILD_PHASE_ORDER
-        .iter()
-        .position(|p| *p == MACRO_EXPAND)
-        .expect("macro.expand");
-    let mod_load = FULL_BUILD_PHASE_ORDER
-        .iter()
-        .position(|p| *p == "mod.load")
-        .expect("mod.load");
+    let parse = FULL_BUILD_PHASE_ORDER.iter().position(|p| *p == PARSE).expect("parse");
+    let expand = FULL_BUILD_PHASE_ORDER.iter().position(|p| *p == MACRO_EXPAND).expect("macro.expand");
+    let mod_load = FULL_BUILD_PHASE_ORDER.iter().position(|p| *p == "mod.load").expect("mod.load");
     assert!(parse < expand);
     assert!(expand < mod_load);
 }
@@ -50,11 +40,7 @@ unit Main() {
         beskid_analysis::syntax::Statement::Let(ls) => &ls.node.value,
         other => panic!("expected let, got {other:?}"),
     };
-    assert!(
-        matches!(expr.node, Expression::Binary(_)),
-        "expected expanded addition, got {:?}",
-        expr.node
-    );
+    assert!(matches!(expr.node, Expression::Binary(_)), "expected expanded addition, got {:?}", expr.node);
     assert_no_macro_invocations_in_expr(&expr.node);
 }
 
@@ -110,11 +96,7 @@ unit Main() {
         beskid_analysis::syntax::Statement::Let(ls) => &ls.node.value,
         other => panic!("expected let, got {other:?}"),
     };
-    assert!(
-        expression_contains_binary_with_literal(&expr.node, 1),
-        "expected expanded 1 + 1, got {:?}",
-        expr.node
-    );
+    assert!(expression_contains_binary_with_literal(&expr.node, 1), "expected expanded 1 + 1, got {:?}", expr.node);
     assert_no_macro_invocations_in_expr(&expr.node);
 }
 
@@ -130,13 +112,9 @@ unit Main() {
 }
 "#;
     let program = parse_program_with_source_name("Main.bd", source).expect("parse");
-    let outcome =
-        beskid_analysis::macros::expand_program_with_diagnostics(program, 2, "Main.bd", source);
+    let outcome = beskid_analysis::macros::expand_program_with_diagnostics(program, 2, "Main.bd", source);
     assert!(
-        outcome
-            .diagnostics
-            .iter()
-            .any(|d| d.code.as_deref() == Some("E1905")),
+        outcome.diagnostics.iter().any(|d| d.code.as_deref() == Some("E1905")),
         "expected E1905, got {:?}",
         outcome.diagnostics
     );
@@ -207,11 +185,7 @@ unit Main() {
         beskid_analysis::syntax::Statement::Let(ls) => &ls.node.value,
         other => panic!("expected let, got {other:?}"),
     };
-    assert!(
-        expression_contains_binary_with_literal(&expr.node, 2),
-        "expected expanded 2 + 2, got {:?}",
-        expr.node
-    );
+    assert!(expression_contains_binary_with_literal(&expr.node, 2), "expected expanded 2 + 2, got {:?}", expr.node);
 }
 
 #[test]
@@ -260,10 +234,7 @@ unit Main() {
         source,
     );
     assert!(
-        outcome
-            .diagnostics
-            .iter()
-            .any(|d| d.code.as_deref() == Some("E1902")),
+        outcome.diagnostics.iter().any(|d| d.code.as_deref() == Some("E1902")),
         "expected E1902, got {:?}",
         outcome.diagnostics
     );
@@ -287,10 +258,7 @@ unit Main() {
         source,
     );
     assert!(
-        outcome
-            .diagnostics
-            .iter()
-            .any(|d| d.code.as_deref() == Some("E1903")),
+        outcome.diagnostics.iter().any(|d| d.code.as_deref() == Some("E1903")),
         "expected E1903, got {:?}",
         outcome.diagnostics
     );
@@ -333,15 +301,10 @@ unit Main() {
 fn corelib_compiler_sdk_identity_macro_expands() {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../corelib/packages/compiler-sdk/src/Beskid/Macros.bd");
-    let source = std::fs::read_to_string(&path)
-        .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
+    let source = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let program = parse_program_with_source_name("Macros.bd", &source).expect("parse");
     let expanded = expand_program(program, DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
-    let has_macro_def = expanded
-        .node
-        .items
-        .iter()
-        .any(|item| matches!(&item.node, Node::MacroDefinition(_)));
+    let has_macro_def = expanded.node.items.iter().any(|item| matches!(&item.node, Node::MacroDefinition(_)));
     assert!(has_macro_def, "macro definition should remain in the unit");
 }
 
@@ -438,10 +401,7 @@ fn fragment_kind_matrix_valid_invocations_parse() {
         if matches!(case.kind, "statement" | "node" | "pattern" | "item") {
             continue;
         }
-        let source = format!(
-            "{}\nunit Main() {{\n    {}\n    return;\n}}\n",
-            case.macro_def, case.valid_invocation
-        );
+        let source = format!("{}\nunit Main() {{\n    {}\n    return;\n}}\n", case.macro_def, case.valid_invocation);
         parse_program_with_source_name("Main.bd", &source)
             .unwrap_or_else(|e| panic!("parse valid `{}`: {e}", case.kind));
     }
@@ -450,10 +410,7 @@ fn fragment_kind_matrix_valid_invocations_parse() {
 #[test]
 fn fragment_kind_matrix_invalid_invocations_parse() {
     for case in fragment_kind_cases() {
-        let source = format!(
-            "{}\nunit Main() {{\n    {}\n    return;\n}}\n",
-            case.macro_def, case.invalid_invocation
-        );
+        let source = format!("{}\nunit Main() {{\n    {}\n    return;\n}}\n", case.macro_def, case.invalid_invocation);
         parse_program_with_source_name("Main.bd", &source)
             .unwrap_or_else(|e| panic!("parse invalid `{}`: {e}", case.kind));
     }
@@ -462,25 +419,15 @@ fn fragment_kind_matrix_invalid_invocations_parse() {
 #[test]
 fn fragment_kind_matrix_valid_expansion_behavior() {
     for case in fragment_kind_cases() {
-        if matches!(
-            case.kind,
-            "statement" | "node" | "pattern" | "type" | "identifier" | "literal" | "path" | "item"
-        ) {
+        if matches!(case.kind, "statement" | "node" | "pattern" | "type" | "identifier" | "literal" | "path" | "item") {
             continue;
         }
-        let source = format!(
-            "{}\nunit Main() {{\n    {}\n    return;\n}}\n",
-            case.macro_def, case.valid_invocation
-        );
+        let source = format!("{}\nunit Main() {{\n    {}\n    return;\n}}\n", case.macro_def, case.valid_invocation);
         let expanded = parse_expand(&source);
         let body = find_function_body(&expanded.node, "Main");
         let has_invocation = block_contains_macro_invocation_named(&body.node, "m");
         if case.expect_valid_expands {
-            assert!(
-                !has_invocation,
-                "kind `{}` valid invocation should expand fully",
-                case.kind
-            );
+            assert!(!has_invocation, "kind `{}` valid invocation should expand fully", case.kind);
         } else {
             assert!(
                 has_invocation || count_macro_invocations(&expanded.node) > 0,
@@ -506,10 +453,6 @@ fn fragment_kind_enum_matches_parser_keywords() {
         ("node", MacroFragmentKind::Node),
     ];
     for (kw, expected) in kinds {
-        assert_eq!(
-            MacroFragmentKind::from_keyword(kw),
-            Some(expected),
-            "keyword `{kw}`"
-        );
+        assert_eq!(MacroFragmentKind::from_keyword(kw), Some(expected), "keyword `{kw}`");
     }
 }

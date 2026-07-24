@@ -79,17 +79,11 @@ impl Default for ElementRegistry {
 
 impl ElementRegistry {
     pub fn new() -> Self {
-        Self {
-            elements: HashMap::new(),
-        }
+        Self { elements: HashMap::new() }
     }
 
     /// Register a new element with the registry.
-    pub fn register(
-        &mut self,
-        metadata: ElementMetadata,
-        element: ElementRef,
-    ) -> LayoutResult<ElementHandle> {
+    pub fn register(&mut self, metadata: ElementMetadata, element: ElementRef) -> LayoutResult<ElementHandle> {
         let id = metadata.id;
 
         if self.elements.contains_key(&id) {
@@ -118,45 +112,27 @@ impl ElementRegistry {
 
     /// Get metadata for an element.
     pub fn get_metadata(&self, id: ElementId) -> LayoutResult<&ElementMetadata> {
-        self.elements
-            .get(&id)
-            .map(|(metadata, _)| metadata)
-            .ok_or_else(|| LayoutError::element_not_found(id))
+        self.elements.get(&id).map(|(metadata, _)| metadata).ok_or_else(|| LayoutError::element_not_found(id))
     }
 
     /// Get mutable metadata for an element.
     pub fn get_metadata_mut(&mut self, id: ElementId) -> LayoutResult<&mut ElementMetadata> {
-        self.elements
-            .get_mut(&id)
-            .map(|(metadata, _)| metadata)
-            .ok_or_else(|| LayoutError::element_not_found(id))
+        self.elements.get_mut(&id).map(|(metadata, _)| metadata).ok_or_else(|| LayoutError::element_not_found(id))
     }
 
     /// Get a weak reference to an element.
     pub fn get_weak_ref(&self, id: ElementId) -> LayoutResult<ElementWeakRef> {
-        self.elements
-            .get(&id)
-            .map(|(_, weak_ref)| weak_ref.clone())
-            .ok_or_else(|| LayoutError::element_not_found(id))
+        self.elements.get(&id).map(|(_, weak_ref)| weak_ref.clone()).ok_or_else(|| LayoutError::element_not_found(id))
     }
 
     /// Get a strong reference to an element (if still alive).
     pub fn get_strong_ref(&self, id: ElementId) -> LayoutResult<ElementRef> {
-        self.get_weak_ref(id)?
-            .upgrade()
-            .ok_or_else(|| LayoutError::element_not_found(id))
+        self.get_weak_ref(id)?.upgrade().ok_or_else(|| LayoutError::element_not_found(id))
     }
 
     /// Update element metadata and notify the element.
-    pub fn update_metadata(
-        &mut self,
-        id: ElementId,
-        mut update: impl FnMut(&mut ElementMetadata),
-    ) -> LayoutResult<()> {
-        let (metadata, weak_ref) = self
-            .elements
-            .get_mut(&id)
-            .ok_or_else(|| LayoutError::element_not_found(id))?;
+    pub fn update_metadata(&mut self, id: ElementId, mut update: impl FnMut(&mut ElementMetadata)) -> LayoutResult<()> {
+        let (metadata, weak_ref) = self.elements.get_mut(&id).ok_or_else(|| LayoutError::element_not_found(id))?;
 
         update(metadata);
 
@@ -210,11 +186,7 @@ impl ElementRegistry {
             .map(|(id, (metadata, _))| (*id, metadata.clone()))
             .collect();
 
-        elements.sort_by(|a, b| {
-            (a.1.region as u32)
-                .cmp(&(b.1.region as u32))
-                .then(b.1.z_order.cmp(&a.1.z_order))
-        });
+        elements.sort_by(|a, b| (a.1.region as u32).cmp(&(b.1.region as u32)).then(b.1.z_order.cmp(&a.1.z_order)));
         elements
     }
 
@@ -222,8 +194,7 @@ impl ElementRegistry {
     pub fn cleanup_dead_refs(&mut self) -> usize {
         let initial_count = self.elements.len();
 
-        self.elements
-            .retain(|_, (_, weak_ref)| weak_ref.strong_count() > 0);
+        self.elements.retain(|_, (_, weak_ref)| weak_ref.strong_count() > 0);
 
         let cleaned = initial_count - self.elements.len();
 

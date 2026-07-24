@@ -84,12 +84,7 @@ pub enum ElementKind {
     /// Paragraph text with formatting.
     Paragraph(Vec<TextSegment>),
     /// List item with nesting level.
-    ListItem {
-        depth: usize,
-        ordered: bool,
-        number: Option<usize>,
-        content: Vec<TextSegment>,
-    },
+    ListItem { depth: usize, ordered: bool, number: Option<usize>, content: Vec<TextSegment> },
     /// Blockquote with nesting depth.
     Blockquote {
         content: Vec<TextSegment>,
@@ -97,11 +92,7 @@ pub enum ElementKind {
         depth: usize,
     },
     /// Table row.
-    TableRow {
-        cells: Vec<String>,
-        is_header: bool,
-        alignments: Vec<ColumnAlignment>,
-    },
+    TableRow { cells: Vec<String>, is_header: bool, alignments: Vec<ColumnAlignment> },
     /// Table border.
     TableBorder(TableBorderKind),
     /// Horizontal rule.

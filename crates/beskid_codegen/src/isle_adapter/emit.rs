@@ -30,12 +30,7 @@ pub fn emit_isle_expression<'db>(
 ) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
     let emitter = FunctionEmitter::new(isa);
     let facts = SyntaxNodeFacts::new_with_isa(input, isa);
-    emitter.emit_expression(
-        UserFuncName::user(0, 0),
-        emitter.signature([], [result]),
-        &facts,
-        body,
-    )
+    emitter.emit_expression(UserFuncName::user(0, 0), emitter.signature([], [result]), &facts, body)
 }
 
 /// Emit one parsed expression through generated ISLE selection with exact artifact call imports.
@@ -122,14 +117,7 @@ pub fn emit_isle_item_with_call_importer<'db>(
         .ok_or_else(|| FunctionEmissionError::verification(item, "item signature unavailable"))?;
     let emitter = FunctionEmitter::new(isa);
     let facts = SyntaxNodeFacts::new_with_isa(input, isa);
-    emitter.emit_item_statement_with_call_importer(
-        UserFuncName::user(0, 0),
-        signature,
-        &facts,
-        item,
-        body,
-        importer,
-    )
+    emitter.emit_item_statement_with_call_importer(UserFuncName::user(0, 0), signature, &facts, item, body, importer)
 }
 
 /// Emit a syntax-only item with the shared artifact string pool and exact call imports.
@@ -153,17 +141,8 @@ pub fn emit_isle_item_with_services<'db>(
     let emitter = FunctionEmitter::new(isa);
     let facts = SyntaxNodeFacts::new_with_isa(input, isa);
     emitter.emit_item_statement_with_services(
-        ItemStatementEmission {
-            name: UserFuncName::user(0, 0),
-            signature,
-            facts: &facts,
-            item,
-            body,
-        },
-        EmissionServices {
-            string_interner: Some(string_interner),
-            call_importer: Some(importer),
-        },
+        ItemStatementEmission { name: UserFuncName::user(0, 0), signature, facts: &facts, item, body },
+        EmissionServices { string_interner: Some(string_interner), call_importer: Some(importer) },
     )
 }
 
@@ -185,22 +164,12 @@ pub fn emit_isle_item_with_services_specialization<'db>(
         .ok()
         .flatten()
         .ok_or_else(|| FunctionEmissionError::verification(item, "item has no syntax body"))?;
-    let signature = signature_for_item(isa, specialization.clone()).ok_or_else(|| {
-        FunctionEmissionError::verification(item, "generic item specialization is unavailable")
-    })?;
+    let signature = signature_for_item(isa, specialization.clone())
+        .ok_or_else(|| FunctionEmissionError::verification(item, "generic item specialization is unavailable"))?;
     let emitter = FunctionEmitter::new(isa);
     let facts = SyntaxNodeFacts::new_with_item_specialization(input, isa, item, specialization);
     emitter.emit_item_statement_with_services(
-        ItemStatementEmission {
-            name: UserFuncName::user(0, 0),
-            signature,
-            facts: &facts,
-            item,
-            body,
-        },
-        EmissionServices {
-            string_interner: Some(string_interner),
-            call_importer: Some(importer),
-        },
+        ItemStatementEmission { name: UserFuncName::user(0, 0), signature, facts: &facts, item, body },
+        EmissionServices { string_interner: Some(string_interner), call_importer: Some(importer) },
     )
 }

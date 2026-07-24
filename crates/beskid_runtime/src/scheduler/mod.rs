@@ -11,6 +11,6 @@ pub use spawn::{fiber_cancel, fiber_detach, fiber_spawn};
 pub use state::FiberKey;
 pub use syscall_pool::{run_blocking, run_blocking_value};
 pub use tls::{
-    current_fiber_cancelled, current_fiber_id, current_fiber_key, fiber_now_millis,
-    in_fiber_scheduler, init, processor_count, wake_fiber,
+    current_fiber_cancelled, current_fiber_id, current_fiber_key, fiber_now_millis, in_fiber_scheduler, init,
+    processor_count, wake_fiber,
 };

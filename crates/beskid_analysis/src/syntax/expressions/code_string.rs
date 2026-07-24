@@ -47,26 +47,19 @@ impl CodeStringLiteral {
     }
 
     /// Evaluate compile-time `@{}` holes and return the final Beskid source text.
-    pub fn materialize_evaluated(
-        &self,
-        eval_hole: impl Fn(&str) -> Result<String, String>,
-    ) -> Result<String, String> {
+    pub fn materialize_evaluated(&self, eval_hole: impl Fn(&str) -> Result<String, String>) -> Result<String, String> {
         materialize_code_segments(&self.segments, eval_hole)
     }
 }
 
 /// Parse a plain Beskid code body containing optional `@{}` compile-time holes.
 pub fn parse_plain_code_body(source: &str) -> Result<Vec<CodeStringSegment>, ParseError> {
-    let mut pairs = BeskidParser::parse(Rule::CodePlainBody, source).map_err(|_| {
-        ParseError::UnexpectedRule {
-            expected: Some(Rule::CodePlainBody),
-            found: Rule::CodePlainBody,
-            span: SpanInfo::default(),
-        }
+    let mut pairs = BeskidParser::parse(Rule::CodePlainBody, source).map_err(|_| ParseError::UnexpectedRule {
+        expected: Some(Rule::CodePlainBody),
+        found: Rule::CodePlainBody,
+        span: SpanInfo::default(),
     })?;
-    let root = pairs.next().ok_or(ParseError::MissingPair {
-        expected: Rule::CodePlainBody,
-    })?;
+    let root = pairs.next().ok_or(ParseError::MissingPair { expected: Rule::CodePlainBody })?;
 
     let mut segments = Vec::new();
     for child in root.into_inner() {
@@ -115,14 +108,8 @@ pub fn materialize_code_segments(
 
 fn parse_code_fence(pair: Pair<Rule>) -> Result<(String, Vec<CodeStringSegment>), ParseError> {
     let mut inner = pair.into_inner();
-    let open = inner
-        .next()
-        .ok_or_else(|| ParseError::missing(Rule::CodeFenceOpen))?;
-    let language = open
-        .into_inner()
-        .next()
-        .map(|tag| tag.as_str().to_string())
-        .unwrap_or_else(|| "beskid".to_string());
+    let open = inner.next().ok_or_else(|| ParseError::missing(Rule::CodeFenceOpen))?;
+    let language = open.into_inner().next().map(|tag| tag.as_str().to_string()).unwrap_or_else(|| "beskid".to_string());
     let mut segments = Vec::new();
     for segment in inner {
         for piece in code_fence_body_segments(segment) {

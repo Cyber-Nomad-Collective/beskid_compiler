@@ -23,10 +23,7 @@ pub struct CacheState {
 impl CacheState {
     /// Create a new cache state with empty caches.
     pub fn new() -> Self {
-        Self {
-            parsed: None,
-            render: None,
-        }
+        Self { parsed: None, render: None }
     }
 
     /// Clear the render cache (e.g., when exiting filter mode).
@@ -91,10 +88,7 @@ pub struct ParsedCache {
 impl ParsedCache {
     /// Create a new parsed cache.
     pub fn new(content_hash: u64, elements: Vec<MarkdownElement>) -> Self {
-        Self {
-            content_hash,
-            elements,
-        }
+        Self { content_hash, elements }
     }
 }
 

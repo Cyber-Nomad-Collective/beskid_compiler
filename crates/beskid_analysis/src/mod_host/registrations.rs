@@ -19,37 +19,16 @@ struct SdkContractSpec {
 }
 
 const SDK_MOD_CONTRACTS: &[SdkContractSpec] = &[
-    SdkContractSpec {
-        contract_id: "Beskid.Compiler.Collect.Collector",
-        entry_method: "Collect",
-    },
-    SdkContractSpec {
-        contract_id: "Beskid.Compiler.Collect.Generator",
-        entry_method: "Generate",
-    },
-    SdkContractSpec {
-        contract_id: "Beskid.Compiler.Collect.AttributeGenerator",
-        entry_method: "Attributes",
-    },
-    SdkContractSpec {
-        contract_id: "Beskid.Compiler.Collect.Analyzer",
-        entry_method: "Analyze",
-    },
-    SdkContractSpec {
-        contract_id: "Beskid.Compiler.Collect.Rewriter",
-        entry_method: "Rewrite",
-    },
-    SdkContractSpec {
-        contract_id: "Beskid.Compiler.Collect.GrammarGenerator",
-        entry_method: "Generate",
-    },
+    SdkContractSpec { contract_id: "Beskid.Compiler.Collect.Collector", entry_method: "Collect" },
+    SdkContractSpec { contract_id: "Beskid.Compiler.Collect.Generator", entry_method: "Generate" },
+    SdkContractSpec { contract_id: "Beskid.Compiler.Collect.AttributeGenerator", entry_method: "Attributes" },
+    SdkContractSpec { contract_id: "Beskid.Compiler.Collect.Analyzer", entry_method: "Analyze" },
+    SdkContractSpec { contract_id: "Beskid.Compiler.Collect.Rewriter", entry_method: "Rewrite" },
+    SdkContractSpec { contract_id: "Beskid.Compiler.Collect.GrammarGenerator", entry_method: "Generate" },
 ];
 
 /// Discover mod SDK contract registrations from resolved type conformances.
-pub fn extract_mod_contract_registrations(
-    package_id: &str,
-    resolution: &Resolution,
-) -> Vec<ContractRegistration> {
+pub fn extract_mod_contract_registrations(package_id: &str, resolution: &Resolution) -> Vec<ContractRegistration> {
     extract_mod_contract_registrations_with_program(package_id, resolution, None)
 }
 
@@ -64,12 +43,7 @@ pub fn extract_mod_contract_registrations_from_syntax(
 ) -> Vec<ContractRegistration> {
     let internal_symbols = collect_internal_symbol_entry_methods(program).unwrap_or_default();
     let mut registrations = Vec::new();
-    collect_syntax_registrations_from_items(
-        package_id,
-        &program.node.items,
-        &internal_symbols,
-        &mut registrations,
-    );
+    collect_syntax_registrations_from_items(package_id, &program.node.items, &internal_symbols, &mut registrations);
     registrations.sort_by(|left, right| {
         left.contract_id
             .cmp(&right.contract_id)
@@ -97,9 +71,7 @@ fn collect_syntax_registrations_from_items(
                     let entry_symbol = internal_symbols
                         .get(&(type_name.clone(), spec.entry_method.to_string()))
                         .map(|method_name| mod_contract_entry_symbol(package_id, method_name))
-                        .unwrap_or_else(|| {
-                            mod_contract_entry_symbol(package_id, spec.entry_method)
-                        });
+                        .unwrap_or_else(|| mod_contract_entry_symbol(package_id, spec.entry_method));
                     registrations.push(ContractRegistration {
                         contract_id: spec.contract_id.to_string(),
                         type_id: format!("{package_id}.{type_name}"),
@@ -107,31 +79,19 @@ fn collect_syntax_registrations_from_items(
                     });
                 }
             }
-            Node::InlineModule(module) => collect_syntax_registrations_from_items(
-                package_id,
-                &module.node.items,
-                internal_symbols,
-                registrations,
-            ),
+            Node::InlineModule(module) => {
+                collect_syntax_registrations_from_items(package_id, &module.node.items, internal_symbols, registrations)
+            }
             _ => {}
         }
     }
 }
 
 fn sdk_contract_spec_for_path(path: &crate::syntax::Path) -> Option<&'static SdkContractSpec> {
-    let qualified = path
-        .segments
-        .iter()
-        .map(|segment| segment.node.name.node.name.as_str())
-        .collect::<Vec<_>>()
-        .join(".");
+    let qualified =
+        path.segments.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>().join(".");
     SDK_MOD_CONTRACTS.iter().find(|spec| {
-        spec.contract_id == qualified
-            || spec
-                .contract_id
-                .rsplit('.')
-                .next()
-                .is_some_and(|short| short == qualified)
+        spec.contract_id == qualified || spec.contract_id.rsplit('.').next().is_some_and(|short| short == qualified)
     })
 }
 
@@ -167,9 +127,8 @@ pub fn extract_mod_contract_registrations_with_program(
         }
     }
 
-    let internal_symbols = program
-        .and_then(|program| collect_internal_symbol_entry_methods(program).ok())
-        .unwrap_or_default();
+    let internal_symbols =
+        program.and_then(|program| collect_internal_symbol_entry_methods(program).ok()).unwrap_or_default();
 
     let mut registrations = Vec::new();
     for (type_item_id, conformances) in &resolution.tables.type_conformances {
@@ -206,9 +165,7 @@ pub fn extract_mod_contract_registrations_with_program(
     registrations
 }
 
-fn collect_internal_symbol_entry_methods(
-    program: &Spanned<Program>,
-) -> Result<HashMap<(String, String), String>, ()> {
+fn collect_internal_symbol_entry_methods(program: &Spanned<Program>) -> Result<HashMap<(String, String), String>, ()> {
     let mut internal_symbols = HashMap::new();
     collect_internal_symbol_entry_methods_from_items(&program.node.items, &mut internal_symbols);
     Ok(internal_symbols)
@@ -224,10 +181,7 @@ fn collect_internal_symbol_entry_methods_from_items(
                 collect_internal_symbol_entry_methods_from_type(&definition.node, internal_symbols);
             }
             Node::InlineModule(module) => {
-                collect_internal_symbol_entry_methods_from_items(
-                    &module.node.items,
-                    internal_symbols,
-                );
+                collect_internal_symbol_entry_methods_from_items(&module.node.items, internal_symbols);
             }
             _ => {}
         }
@@ -249,9 +203,7 @@ fn collect_internal_symbol_entry_methods_from_type(
 }
 
 fn method_has_attribute(attributes: &[Spanned<crate::syntax::Attribute>], name: &str) -> bool {
-    attributes
-        .iter()
-        .any(|attribute| attribute.node.name.node.name == name)
+    attributes.iter().any(|attribute| attribute.node.name.node.name == name)
 }
 
 /// Stable AOT export symbol for a mod contract entrypoint (`{package}_{method}`).
@@ -287,13 +239,9 @@ type DemoCollect : Collector {
         let program = parse_program_with_source_name("Mod.bd", source).expect("parse");
         let (_hir, resolution, _typed) =
             lower_normalize_resolve_type_spanned(&program).expect("lower mod registration fixture");
-        let registrations =
-            extract_mod_contract_registrations_with_program("DemoMod", &resolution, Some(&program));
+        let registrations = extract_mod_contract_registrations_with_program("DemoMod", &resolution, Some(&program));
         assert_eq!(registrations.len(), 1);
-        assert_eq!(
-            registrations[0].contract_id,
-            "Beskid.Compiler.Collect.Collector"
-        );
+        assert_eq!(registrations[0].contract_id, "Beskid.Compiler.Collect.Collector");
         assert_eq!(registrations[0].type_id, "DemoMod.DemoCollect");
         assert_eq!(registrations[0].entry_symbol, "demomod_collect");
     }
@@ -309,20 +257,14 @@ type DemoCollect : Collector {
         let program = parse_program_with_source_name("Mod.bd", source).expect("parse");
         let registrations = extract_mod_contract_registrations_from_syntax("DemoMod", &program);
         assert_eq!(registrations.len(), 1);
-        assert_eq!(
-            registrations[0].contract_id,
-            "Beskid.Compiler.Collect.Collector"
-        );
+        assert_eq!(registrations[0].contract_id, "Beskid.Compiler.Collect.Collector");
         assert_eq!(registrations[0].type_id, "DemoMod.DemoCollect");
         assert_eq!(registrations[0].entry_symbol, "demomod_collect");
     }
 
     #[test]
     fn entry_symbol_maps_attributes_method_to_attribute_suffix() {
-        assert_eq!(
-            mod_contract_entry_symbol("SampleMod", "Attributes"),
-            "samplemod_attribute"
-        );
+        assert_eq!(mod_contract_entry_symbol("SampleMod", "Attributes"), "samplemod_attribute");
     }
 
     #[test]
@@ -338,14 +280,10 @@ type DemoCollect : Collector {
 "#;
         let program = parse_program_with_source_name("Mod.bd", source).expect("parse");
         let symbols = collect_internal_symbol_entry_methods(&program).expect("scan");
-        assert_eq!(
-            symbols.get(&("DemoCollect".to_string(), "Collect".to_string())),
-            Some(&"Collect".to_string())
-        );
+        assert_eq!(symbols.get(&("DemoCollect".to_string(), "Collect".to_string())), Some(&"Collect".to_string()));
         let (_hir, resolution, _typed) =
             lower_normalize_resolve_type_spanned(&program).expect("lower mod registration fixture");
-        let registrations =
-            extract_mod_contract_registrations_with_program("DemoMod", &resolution, Some(&program));
+        let registrations = extract_mod_contract_registrations_with_program("DemoMod", &resolution, Some(&program));
         assert_eq!(registrations.len(), 1);
         assert_eq!(registrations[0].entry_symbol, "demomod_collect");
     }
@@ -361,10 +299,8 @@ type DemoCollect : Collector {
 }
 "#;
         let program = parse_program_with_source_name("Mod.bd", source).expect("parse");
-        let (_hir, resolution, _typed) =
-            lower_normalize_resolve_type_spanned(&program).expect("lower");
-        let registrations =
-            extract_mod_contract_registrations_with_program("DemoMod", &resolution, Some(&program));
+        let (_hir, resolution, _typed) = lower_normalize_resolve_type_spanned(&program).expect("lower");
+        let registrations = extract_mod_contract_registrations_with_program("DemoMod", &resolution, Some(&program));
         assert_eq!(registrations.len(), 1);
     }
 

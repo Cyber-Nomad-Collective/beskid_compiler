@@ -4,9 +4,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::primitives::widget_event::WidgetEvent;
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct WidgetEventDemo {
     last: WidgetEvent,
@@ -14,9 +12,7 @@ struct WidgetEventDemo {
 
 impl WidgetEventDemo {
     fn new() -> Self {
-        Self {
-            last: WidgetEvent::None,
-        }
+        Self { last: WidgetEvent::None }
     }
 }
 
@@ -25,23 +21,15 @@ impl CoordinatorApp for WidgetEventDemo {
         match event {
             CoordinatorEvent::Keyboard(keyboard) => {
                 match keyboard.key_code {
-                    ratatui::crossterm::event::KeyCode::Char('q') => {
-                        return Ok(CoordinatorAction::Quit)
-                    }
+                    ratatui::crossterm::event::KeyCode::Char('q') => return Ok(CoordinatorAction::Quit),
                     ratatui::crossterm::event::KeyCode::Char('s') => {
                         self.last = WidgetEvent::Selected { path: vec![0, 1] };
                     }
                     ratatui::crossterm::event::KeyCode::Char('t') => {
-                        self.last = WidgetEvent::Toggled {
-                            path: vec![0, 2],
-                            expanded: true,
-                        };
+                        self.last = WidgetEvent::Toggled { path: vec![0, 2], expanded: true };
                     }
                     ratatui::crossterm::event::KeyCode::Char('f') => {
-                        self.last = WidgetEvent::FilterModeChanged {
-                            active: true,
-                            filter: "name".to_string(),
-                        };
+                        self.last = WidgetEvent::FilterModeChanged { active: true, filter: "name".to_string() };
                     }
                     _ => {
                         self.last = WidgetEvent::None;
@@ -61,11 +49,7 @@ impl CoordinatorApp for WidgetEventDemo {
             Line::from("f: FilterModeChanged"),
             Line::from(format!("Last: {:?}", self.last)),
         ])
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" WidgetEvent "),
-        );
+        .block(Block::default().borders(Borders::ALL).title(" WidgetEvent "));
         frame.render_widget(body, area);
     }
 }

@@ -170,21 +170,12 @@ impl ResizableGrid {
                 LayoutNode::Pane { id } => {
                     layouts.push(PaneLayout::new(*id, node_area));
                 }
-                LayoutNode::Split {
-                    axis,
-                    ratio,
-                    first,
-                    second,
-                } => match axis {
+                LayoutNode::Split { axis, ratio, first, second } => match axis {
                     SplitAxis::Vertical => {
                         let first_width = ((node_area.width as u32 * *ratio as u32) / 100) as u16;
                         let second_width = node_area.width.saturating_sub(first_width);
-                        let first_area = Rect {
-                            x: node_area.x,
-                            y: node_area.y,
-                            width: first_width,
-                            height: node_area.height,
-                        };
+                        let first_area =
+                            Rect { x: node_area.x, y: node_area.y, width: first_width, height: node_area.height };
                         let second_area = Rect {
                             x: node_area.x.saturating_add(first_width),
                             y: node_area.y,
@@ -197,12 +188,8 @@ impl ResizableGrid {
                     SplitAxis::Horizontal => {
                         let first_height = ((node_area.height as u32 * *ratio as u32) / 100) as u16;
                         let second_height = node_area.height.saturating_sub(first_height);
-                        let first_area = Rect {
-                            x: node_area.x,
-                            y: node_area.y,
-                            width: node_area.width,
-                            height: first_height,
-                        };
+                        let first_area =
+                            Rect { x: node_area.x, y: node_area.y, width: node_area.width, height: first_height };
                         let second_area = Rect {
                             x: node_area.x,
                             y: node_area.y.saturating_add(first_height),
@@ -256,13 +243,7 @@ impl ResizableGrid {
                 continue;
             };
 
-            if let LayoutNode::Split {
-                axis,
-                ratio,
-                first,
-                second,
-            } = node
-            {
+            if let LayoutNode::Split { axis, ratio, first, second } = node {
                 dividers.push(SplitDividerLayout {
                     split_index: node_index,
                     axis: *axis,
@@ -274,12 +255,8 @@ impl ResizableGrid {
                     SplitAxis::Vertical => {
                         let first_width = ((node_area.width as u32 * *ratio as u32) / 100) as u16;
                         let second_width = node_area.width.saturating_sub(first_width);
-                        let first_area = Rect {
-                            x: node_area.x,
-                            y: node_area.y,
-                            width: first_width,
-                            height: node_area.height,
-                        };
+                        let first_area =
+                            Rect { x: node_area.x, y: node_area.y, width: first_width, height: node_area.height };
                         let second_area = Rect {
                             x: node_area.x.saturating_add(first_width),
                             y: node_area.y,
@@ -292,12 +269,8 @@ impl ResizableGrid {
                     SplitAxis::Horizontal => {
                         let first_height = ((node_area.height as u32 * *ratio as u32) / 100) as u16;
                         let second_height = node_area.height.saturating_sub(first_height);
-                        let first_area = Rect {
-                            x: node_area.x,
-                            y: node_area.y,
-                            width: node_area.width,
-                            height: first_height,
-                        };
+                        let first_area =
+                            Rect { x: node_area.x, y: node_area.y, width: node_area.width, height: first_height };
                         let second_area = Rect {
                             x: node_area.x,
                             y: node_area.y.saturating_add(first_height),
@@ -340,12 +313,7 @@ impl ResizableGrid {
     pub fn calculate_split_area(&self, area: Rect, split_percent: u16) -> SplitAreas {
         let left_width = (area.width as u32 * split_percent as u32 / 100) as u16;
 
-        let left = Rect {
-            x: area.x,
-            y: area.y,
-            width: left_width,
-            height: area.height,
-        };
+        let left = Rect { x: area.x, y: area.y, width: left_width, height: area.height };
 
         let right = Rect {
             x: area.x + left_width,
@@ -383,10 +351,7 @@ impl ResizableGrid {
     pub fn get_panes(&self, area: Rect) -> Vec<PaneInfo> {
         self.layout_panes(area)
             .into_iter()
-            .map(|layout| PaneInfo {
-                id: layout.pane_id(),
-                area: layout.area(),
-            })
+            .map(|layout| PaneInfo { id: layout.pane_id(), area: layout.area() })
             .collect()
     }
 }

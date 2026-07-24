@@ -17,11 +17,7 @@ pub fn render_screen(screen: &Screen, area: Rect, buf: &mut Buffer) {
                 continue;
             };
             if let Some(cell) = screen.cell(row, col) {
-                let symbol = if cell.has_contents() {
-                    cell.contents()
-                } else {
-                    " "
-                };
+                let symbol = if cell.has_contents() { cell.contents() } else { " " };
                 buf_cell.set_symbol(symbol);
                 buf_cell.set_style(style_from_attrs(*cell.attrs()));
             } else {
@@ -36,17 +32,14 @@ pub fn render_screen(screen: &Screen, area: Rect, buf: &mut Buffer) {
         let label_width = label.len() as u16;
         if label_width <= area.width {
             let x = area.x + area.width - label_width;
-            let style =
-                style_from_attrs(Attrs::default().fg(Color::BLACK).bg(Color::BRIGHT_YELLOW));
+            let style = style_from_attrs(Attrs::default().fg(Color::BLACK).bg(Color::BRIGHT_YELLOW));
             buf.set_string(x, area.y, label, style);
         }
     }
 }
 
 fn style_from_attrs(attrs: Attrs) -> Style {
-    let mut style = Style::default()
-        .fg(to_ratatui_color(attrs.fgcolor))
-        .bg(to_ratatui_color(attrs.bgcolor));
+    let mut style = Style::default().fg(to_ratatui_color(attrs.fgcolor)).bg(to_ratatui_color(attrs.bgcolor));
 
     let mut modifier = Modifier::empty();
     if attrs.bold() {

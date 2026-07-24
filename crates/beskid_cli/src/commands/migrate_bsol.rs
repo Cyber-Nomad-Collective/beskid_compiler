@@ -23,14 +23,11 @@ pub struct MigrateBsolArgs {
 
 pub fn execute(args: MigrateBsolArgs) -> Result<()> {
     let source = match &args.path {
-        Some(path) => std::fs::read_to_string(path)
-            .with_context(|| format!("failed to read `{}`", path.display()))?,
+        Some(path) => std::fs::read_to_string(path).with_context(|| format!("failed to read `{}`", path.display()))?,
         None => {
             use std::io::Read;
             let mut buf = String::new();
-            std::io::stdin()
-                .read_to_string(&mut buf)
-                .context("failed to read stdin")?;
+            std::io::stdin().read_to_string(&mut buf).context("failed to read stdin")?;
             buf
         }
     };
@@ -39,8 +36,9 @@ pub fn execute(args: MigrateBsolArgs) -> Result<()> {
         migrate_document(&source, &args.to).map_err(|err| anyhow::Error::msg(err.to_string()))?;
 
     match &args.output {
-        Some(path) => std::fs::write(path, &migrated)
-            .with_context(|| format!("failed to write `{}`", path.display()))?,
+        Some(path) => {
+            std::fs::write(path, &migrated).with_context(|| format!("failed to write `{}`", path.display()))?
+        }
         None => print!("{migrated}"),
     }
 

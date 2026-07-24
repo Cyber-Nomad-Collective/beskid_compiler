@@ -32,10 +32,7 @@ impl PipelineShellComponent {
         Self { app }
     }
 
-    pub fn handle_shell_event(
-        &mut self,
-        event: crate::tui::realm::shell_event::ShellRealmEvent,
-    ) -> PipelineShellMsg {
+    pub fn handle_shell_event(&mut self, event: crate::tui::realm::shell_event::ShellRealmEvent) -> PipelineShellMsg {
         match self.app.handle_shell_event(event) {
             ShellOutcome::Quit => PipelineShellMsg::Quit,
             ShellOutcome::Redraw | ShellOutcome::Continue => {
@@ -77,12 +74,7 @@ impl AppComponent<PipelineShellMsg, NoUserEvent> for PipelineShellComponent {
 }
 
 impl PipelineShellComponent {
-    pub fn as_any_mut(
-        component: &mut dyn AppComponent<PipelineShellMsg, NoUserEvent>,
-    ) -> &mut Self {
-        component
-            .as_any_mut()
-            .downcast_mut::<Self>()
-            .expect("pipeline shell component")
+    pub fn as_any_mut(component: &mut dyn AppComponent<PipelineShellMsg, NoUserEvent>) -> &mut Self {
+        component.as_any_mut().downcast_mut::<Self>().expect("pipeline shell component")
     }
 }

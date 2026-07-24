@@ -2,8 +2,7 @@
 
 use crate::builtins::alloc;
 use crate::dynamic::{
-    DYNAMIC_ERR_INCOMPATIBLE, DYNAMIC_ERR_NULL_PAYLOAD, DYNAMIC_OK, DynamicCell,
-    map_dynamic_fallback, map_objects_aot,
+    DYNAMIC_ERR_INCOMPATIBLE, DYNAMIC_ERR_NULL_PAYLOAD, DYNAMIC_OK, DynamicCell, map_dynamic_fallback, map_objects_aot,
 };
 use crate::gc::with_current_heap_and_root;
 
@@ -17,11 +16,7 @@ pub extern "C-unwind" fn dynamic_cell_create(shape_id: u32, payload: *mut u8) ->
         root.runtime_state.allocation_counter += 1;
         // Safety: fresh allocation sized for `DynamicCell`.
         let cell = unsafe { &mut *(ptr as *mut DynamicCell) };
-        *cell = DynamicCell {
-            shape_id,
-            flags: 0,
-            payload,
-        };
+        *cell = DynamicCell { shape_id, flags: 0, payload };
         ptr as *mut DynamicCell
     })
 }
@@ -40,31 +35,18 @@ pub extern "C-unwind" fn dynamic_cast_checked(cell: *mut DynamicCell, expected_s
     }
     // Safety: caller owns a cell pointer from `dynamic_cell_create` / `dynamic_cell_wrap`.
     let cell = unsafe { &*cell };
-    if cell.shape_id == expected_shape {
-        ABI_OK
-    } else {
-        DYNAMIC_ERR_INCOMPATIBLE
-    }
+    if cell.shape_id == expected_shape { ABI_OK } else { DYNAMIC_ERR_INCOMPATIBLE }
 }
 
 /// AOT object-to-object mapping between registered shapes.
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn dynamic_map_aot(
-    src_shape: u32,
-    dst_shape: u32,
-    src_ptr: *const u8,
-    dst_out: *mut u8,
-) -> i32 {
+pub extern "C-unwind" fn dynamic_map_aot(src_shape: u32, dst_shape: u32, src_ptr: *const u8, dst_out: *mut u8) -> i32 {
     unsafe { map_objects_aot(src_shape, dst_shape, src_ptr, dst_out) }
 }
 
 /// Runtime fallback mapping from a dynamic cell to `dst_shape`.
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn dynamic_map_fallback(
-    cell: *mut DynamicCell,
-    dst_shape: u32,
-    dst_out: *mut u8,
-) -> i32 {
+pub extern "C-unwind" fn dynamic_map_fallback(cell: *mut DynamicCell, dst_shape: u32, dst_out: *mut u8) -> i32 {
     if cell.is_null() {
         return DYNAMIC_ERR_NULL_PAYLOAD;
     }

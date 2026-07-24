@@ -28,10 +28,6 @@ impl<T> TreeNode<T> {
     /// ```
     pub fn with_children(data: T, children: Vec<TreeNode<T>>) -> Self {
         let expandable = !children.is_empty();
-        Self {
-            data,
-            children,
-            expandable,
-        }
+        Self { data, children, expandable }
     }
 }

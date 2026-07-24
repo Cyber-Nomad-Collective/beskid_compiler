@@ -21,11 +21,7 @@ pub fn build_api_doc_link_context(
     }
 
     let effective = effective_roots_for_plan(plan, workspace);
-    let mut packages = vec![host_package_roots(
-        plan,
-        &effective.host.source_root,
-        publishing.clone(),
-    )];
+    let mut packages = vec![host_package_roots(plan, &effective.host.source_root, publishing.clone())];
 
     for dep in &plan.dependency_projects {
         let match_root = effective
@@ -37,17 +33,10 @@ pub fn build_api_doc_link_context(
         packages.push(dependency_package_roots(dep, &match_root));
     }
 
-    Some(ApiDocLinkContext {
-        publishing_package: publishing,
-        packages,
-    })
+    Some(ApiDocLinkContext { publishing_package: publishing, packages })
 }
 
-fn host_package_roots(
-    plan: &CompilePlan,
-    match_root: &Path,
-    package: String,
-) -> ApiDocPackageRoots {
+fn host_package_roots(plan: &CompilePlan, match_root: &Path, package: String) -> ApiDocPackageRoots {
     ApiDocPackageRoots {
         package,
         match_root: match_root.to_path_buf(),
@@ -55,10 +44,7 @@ fn host_package_roots(
     }
 }
 
-fn dependency_package_roots(
-    dep: &ResolvedDependencyProject,
-    match_root: &Path,
-) -> ApiDocPackageRoots {
+fn dependency_package_roots(dep: &ResolvedDependencyProject, match_root: &Path) -> ApiDocPackageRoots {
     let package = load_manifest_from_path(&dep.manifest_path)
         .ok()
         .map(|manifest| manifest.project.name.trim().to_string())
@@ -72,29 +58,17 @@ fn dependency_package_roots(
 }
 
 fn artifact_source_prefix(project_root: &Path, source_root: &Path) -> String {
-    source_root
-        .strip_prefix(project_root)
-        .map(forward_slashes_path)
-        .unwrap_or_default()
+    source_root.strip_prefix(project_root).map(forward_slashes_path).unwrap_or_default()
 }
 
 /// Rewrite root `source` and every item `location.file` to artifact-relative paths (`.bpk` layout).
 ///
 /// Must run after [`super::assign_declaring_packages`] (which matches absolute `match_root` paths).
-pub fn relativize_api_doc_paths(
-    root: &mut ApiDocRoot,
-    ctx: Option<&ApiDocLinkContext>,
-) -> Result<(), String> {
+pub fn relativize_api_doc_paths(root: &mut ApiDocRoot, ctx: Option<&ApiDocLinkContext>) -> Result<(), String> {
     if let Some(ctx) = ctx {
-        let publishing = ctx
-            .packages
-            .iter()
-            .find(|pkg| pkg.package == ctx.publishing_package)
-            .ok_or_else(|| {
-                format!(
-                    "api.json link context missing publishing package {:?}",
-                    ctx.publishing_package
-                )
+        let publishing =
+            ctx.packages.iter().find(|pkg| pkg.package == ctx.publishing_package).ok_or_else(|| {
+                format!("api.json link context missing publishing package {:?}", ctx.publishing_package)
             })?;
         root.source = to_artifact_path(publishing, &root.source)?;
         for item in &mut root.items {
@@ -111,10 +85,7 @@ pub fn relativize_api_doc_paths(
     Ok(())
 }
 
-fn resolve_package_for_item<'a>(
-    ctx: &'a ApiDocLinkContext,
-    item: &ApiDocItem,
-) -> &'a ApiDocPackageRoots {
+fn resolve_package_for_item<'a>(ctx: &'a ApiDocLinkContext, item: &ApiDocItem) -> &'a ApiDocPackageRoots {
     if let Some(declaring) = item.declaring_package.as_deref()
         && let Some(pkg) = ctx.packages.iter().find(|pkg| pkg.package == declaring)
     {
@@ -148,10 +119,7 @@ fn to_artifact_path(package: &ApiDocPackageRoots, path: &str) -> Result<String, 
 }
 
 fn strip_match_root(path: &str, match_root: &Path) -> Option<String> {
-    Path::new(path)
-        .strip_prefix(match_root)
-        .ok()
-        .map(forward_slashes_path)
+    Path::new(path).strip_prefix(match_root).ok().map(forward_slashes_path)
 }
 
 fn join_artifact_prefix(prefix: &str, relative: &str) -> String {
@@ -237,11 +205,7 @@ mod tests {
     use crate::doc::api_snapshot::{ApiDocItem, ApiLocation};
     use crate::doc::graph_link::{ApiDocLinkContext, ApiDocPackageRoots};
 
-    fn ctx(
-        host_match: &str,
-        host_prefix: &str,
-        dep: Option<(&str, &str, &str)>,
-    ) -> ApiDocLinkContext {
+    fn ctx(host_match: &str, host_prefix: &str, dep: Option<(&str, &str, &str)>) -> ApiDocLinkContext {
         let mut packages = vec![ApiDocPackageRoots {
             package: "host_pkg".into(),
             match_root: PathBuf::from(host_match),
@@ -254,10 +218,7 @@ mod tests {
                 artifact_source_prefix: prefix.into(),
             });
         }
-        ApiDocLinkContext {
-            publishing_package: "host_pkg".into(),
-            packages,
-        }
+        ApiDocLinkContext { publishing_package: "host_pkg".into(), packages }
     }
 
     #[test]

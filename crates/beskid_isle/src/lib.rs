@@ -15,8 +15,8 @@ use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
 pub use cranelift_codegen::ir::{
-    AbiParam, Block, FuncRef, Function, MemFlags, Signature, StackSlotData, StackSlotKind,
-    TrapCode, Type, UserFuncName, Value,
+    AbiParam, Block, FuncRef, Function, MemFlags, Signature, StackSlotData, StackSlotKind, TrapCode, Type,
+    UserFuncName, Value,
 };
 use cranelift_codegen::ir::{ExternalName, GlobalValueData};
 use cranelift_codegen::isa::TargetIsa;
@@ -30,9 +30,7 @@ mod clif_primitives;
 mod dispatch;
 
 pub use clif_primitives::ClifPrimitives;
-pub use dispatch::{
-    emit_dispatch_call, emit_str_from_i64_dispatch, pointer_type as isle_pointer_type,
-};
+pub use dispatch::{emit_dispatch_call, emit_str_from_i64_dispatch, pointer_type as isle_pointer_type};
 
 macro_rules! node_kinds {
     ($($name:ident),+ $(,)?) => {
@@ -87,9 +85,7 @@ pub enum SyntaxNodeClassification {
 }
 
 /// Classify every authoritative expanded-syntax kind without a fallback arm.
-pub const fn classify_syntax_node_kind(
-    kind: beskid_queries::IndexedNodeKind,
-) -> SyntaxNodeClassification {
+pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) -> SyntaxNodeClassification {
     use SyntaxNodeClassification::{IsleLowered, Structural, UnsupportedTypedOperation};
     use beskid_queries::IndexedNodeKind as Syntax;
 
@@ -190,10 +186,7 @@ pub const fn classify_syntax_node_kind(
 /// Deterministic catalogue in the authoritative syntax declaration order.
 pub fn syntax_node_kind_catalogue()
 -> impl ExactSizeIterator<Item = (beskid_queries::IndexedNodeKind, SyntaxNodeClassification)> {
-    beskid_queries::IndexedNodeKind::ALL
-        .iter()
-        .copied()
-        .map(|kind| (kind, classify_syntax_node_kind(kind)))
+    beskid_queries::IndexedNodeKind::ALL.iter().copied().map(|kind| (kind, classify_syntax_node_kind(kind)))
 }
 
 /// Authoritative roster of executable syntax forms rejected at the generated ISLE boundary.
@@ -221,14 +214,9 @@ pub const UNSUPPORTED_TYPED_OPERATION_KINDS: &[beskid_queries::IndexedNodeKind] 
 ];
 
 /// Syntax kinds currently classified as unsupported typed operations, in catalogue order.
-pub fn unsupported_typed_operation_kinds() -> impl Iterator<Item = beskid_queries::IndexedNodeKind>
-{
+pub fn unsupported_typed_operation_kinds() -> impl Iterator<Item = beskid_queries::IndexedNodeKind> {
     syntax_node_kind_catalogue().filter_map(|(kind, classification)| {
-        matches!(
-            classification,
-            SyntaxNodeClassification::UnsupportedTypedOperation
-        )
-        .then_some(kind)
+        matches!(classification, SyntaxNodeClassification::UnsupportedTypedOperation).then_some(kind)
     })
 }
 
@@ -352,14 +340,8 @@ impl DirectCallee {
         Self::Item(key)
     }
 
-    pub fn specialized_item(
-        declaration: AstNodeKey,
-        abi_identity: impl Into<std::sync::Arc<[u32]>>,
-    ) -> Self {
-        Self::SpecializedItem {
-            declaration,
-            abi_identity: abi_identity.into(),
-        }
+    pub fn specialized_item(declaration: AstNodeKey, abi_identity: impl Into<std::sync::Arc<[u32]>>) -> Self {
+        Self::SpecializedItem { declaration, abi_identity: abi_identity.into() }
     }
 
     pub const fn runtime_intrinsic(index: u32) -> Self {
@@ -433,12 +415,7 @@ pub struct ArrayLayout {
 
 impl ArrayLayout {
     pub const fn new(element_type: Type, stride: u32, length: u32, align_shift: u8) -> Self {
-        Self {
-            element_type,
-            stride,
-            length,
-            align_shift,
-        }
+        Self { element_type, stride, length, align_shift }
     }
 
     fn byte_size(self) -> Option<u32> {
@@ -498,11 +475,7 @@ pub struct ManagedStructAllocation {
 
 impl StructLayout {
     pub fn new(size: u32, align_shift: u8, fields: Vec<FieldLayout>) -> Self {
-        Self {
-            size,
-            align_shift,
-            fields,
-        }
+        Self { size, align_shift, fields }
     }
 
     fn is_valid(&self) -> bool {
@@ -516,10 +489,7 @@ impl StructLayout {
             if !aggregate_field_is_valid(self.size, alignment, *field) {
                 return false;
             }
-            if self.fields[..index]
-                .iter()
-                .any(|other| aggregate_fields_overlap(*field, *other))
-            {
+            if self.fields[..index].iter().any(|other| aggregate_fields_overlap(*field, *other)) {
                 return false;
             }
         }
@@ -535,10 +505,7 @@ pub struct EnumVariantLayout {
 
 impl EnumVariantLayout {
     pub const fn new(discriminant: u64, payload: Option<FieldLayout>) -> Self {
-        Self {
-            discriminant,
-            payload,
-        }
+        Self { discriminant, payload }
     }
 }
 
@@ -551,18 +518,8 @@ pub struct EnumLayout {
 }
 
 impl EnumLayout {
-    pub fn new(
-        size: u32,
-        align_shift: u8,
-        tag: FieldLayout,
-        variants: Vec<EnumVariantLayout>,
-    ) -> Self {
-        Self {
-            size,
-            align_shift,
-            tag,
-            variants,
-        }
+    pub fn new(size: u32, align_shift: u8, tag: FieldLayout, variants: Vec<EnumVariantLayout>) -> Self {
+        Self { size, align_shift, tag, variants }
     }
 
     fn is_valid(&self) -> bool {
@@ -586,8 +543,7 @@ impl EnumLayout {
         self.variants.iter().all(|variant| {
             let discriminant_fits = tag_bits == 64 || variant.discriminant < (1_u64 << tag_bits);
             let payload_is_valid = variant.payload.is_none_or(|payload| {
-                aggregate_field_is_valid(self.size, alignment, payload)
-                    && !aggregate_fields_overlap(self.tag, payload)
+                aggregate_field_is_valid(self.size, alignment, payload) && !aggregate_fields_overlap(self.tag, payload)
             });
             discriminant_fits && payload_is_valid && discriminants.insert(variant.discriminant)
         })
@@ -609,11 +565,7 @@ pub struct MatchArmFact {
 
 impl MatchArmFact {
     pub const fn variant(discriminant: u64, body: AstNodeKey) -> Self {
-        Self {
-            discriminant: Some(discriminant),
-            body,
-            binding: None,
-        }
+        Self { discriminant: Some(discriminant), body, binding: None }
     }
 
     pub const fn variant_with_binding(
@@ -621,19 +573,11 @@ impl MatchArmFact {
         body: AstNodeKey,
         binding: Option<MatchArmBindingFact>,
     ) -> Self {
-        Self {
-            discriminant: Some(discriminant),
-            body,
-            binding,
-        }
+        Self { discriminant: Some(discriminant), body, binding }
     }
 
     pub const fn wildcard(body: AstNodeKey) -> Self {
-        Self {
-            discriminant: None,
-            body,
-            binding: None,
-        }
+        Self { discriminant: None, body, binding: None }
     }
 }
 
@@ -647,12 +591,7 @@ pub struct RangeFact {
 
 impl RangeFact {
     pub const fn new(start: AstNodeKey, end: AstNodeKey, step: i64, inclusive: bool) -> Self {
-        Self {
-            start,
-            end,
-            step,
-            inclusive,
-        }
+        Self { start, end, step, inclusive }
     }
 }
 
@@ -669,10 +608,7 @@ pub type Unit = ();
     clippy::match_ref_pats
 )]
 mod generated {
-    use super::{
-        AstNodeKey, CallKind, CursorKind, LiteralKind, NodeKind, OperatorFact, StatementCursor,
-        Unit, Value,
-    };
+    use super::{AstNodeKey, CallKind, CursorKind, LiteralKind, NodeKind, OperatorFact, StatementCursor, Unit, Value};
 
     include!(concat!(env!("OUT_DIR"), "/beskid_lower.rs"));
 }
@@ -827,10 +763,7 @@ pub struct EmissionServices<'a> {
 
 impl EmissionServices<'_> {
     pub const fn none() -> Self {
-        Self {
-            string_interner: None,
-            call_importer: None,
-        }
+        Self { string_interner: None, call_importer: None }
     }
 }
 
@@ -909,10 +842,7 @@ pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
 }
 
 impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'facts, 'interner> {
-    pub fn new(
-        builder: &'builder mut FunctionBuilder<'function>,
-        facts: &'facts dyn NodeFacts,
-    ) -> Self {
+    pub fn new(builder: &'builder mut FunctionBuilder<'function>, facts: &'facts dyn NodeFacts) -> Self {
         Self {
             builder,
             facts,
@@ -983,13 +913,9 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         self.builder.append_block_param(merge_block, value_type);
 
         if branch_on_true {
-            self.builder
-                .ins()
-                .brif(left, merge_block, &[left.into()], right_block, &[]);
+            self.builder.ins().brif(left, merge_block, &[left.into()], right_block, &[]);
         } else {
-            self.builder
-                .ins()
-                .brif(left, right_block, &[], merge_block, &[left.into()]);
+            self.builder.ins().brif(left, right_block, &[], merge_block, &[left.into()]);
         }
 
         self.builder.switch_to_block(right_block);
@@ -1001,23 +927,13 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         self.builder.block_params(merge_block).first().copied()
     }
 
-    fn import_direct_call(
-        &mut self,
-        key: AstNodeKey,
-    ) -> Option<(cranelift_codegen::ir::Inst, Signature)> {
+    fn import_direct_call(&mut self, key: AstNodeKey) -> Option<(cranelift_codegen::ir::Inst, Signature)> {
         let callee = self.facts.direct_callee(key)?;
         let signature = self.facts.call_signature(key)?;
-        let function = match self.call_importer.as_deref_mut()?.import(
-            self.builder,
-            callee.clone(),
-            &signature,
-        ) {
+        let function = match self.call_importer.as_deref_mut()?.import(self.builder, callee.clone(), &signature) {
             Ok(function) => function,
             Err(CallImportError::UnknownCallee) => {
-                self.pending_error = Some(LoweringError {
-                    key,
-                    kind: LoweringErrorKind::UnknownCallee(callee),
-                });
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(callee) });
                 return None;
             }
         };
@@ -1065,8 +981,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         let left = self.coerce_expression_to_string(left_key)?;
         let right = self.coerce_expression_to_string(right_key)?;
         let route = beskid_abi::dispatch_route_for_symbol("str_eq")?;
-        let eq_flag =
-            dispatch::emit_dispatch_call(self.builder, route, &[left, right], true).ok()??;
+        let eq_flag = dispatch::emit_dispatch_call(self.builder, route, &[left, right], true).ok()??;
         let zero = self.builder.ins().iconst(types::I64, 0);
         Some(if invert {
             self.builder.ins().icmp(IntCC::Equal, eq_flag, zero)
@@ -1101,8 +1016,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             (!self.locals.contains_key(&parameter.slot)).then_some(())?;
             let variable = self.builder.declare_var(parameter.value_type);
             self.builder.def_var(variable, value);
-            self.locals
-                .insert(parameter.slot, (variable, parameter.value_type));
+            self.locals.insert(parameter.slot, (variable, parameter.value_type));
         }
         if let Some(environment) = &lambda.closure_environment {
             let _env = self.emit_inline_closure_environment(environment)?;
@@ -1111,18 +1025,11 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         (self.builder.func.dfg.value_type(value) == lambda.result_type).then_some(value)
     }
 
-    fn emit_inline_closure_environment(
-        &mut self,
-        environment: &InlineClosureEnvironment,
-    ) -> Option<Value> {
+    fn emit_inline_closure_environment(&mut self, environment: &InlineClosureEnvironment) -> Option<Value> {
         let pointer = dispatch::pointer_type();
-        let request =
-            self.symbol_global(environment.allocation_request_symbol.as_ref(), pointer)?;
-        let allocate = self.import_runtime_helper(
-            "beskid_rt_v5_closure_environment_allocate",
-            &[pointer],
-            Some(pointer),
-        )?;
+        let request = self.symbol_global(environment.allocation_request_symbol.as_ref(), pointer)?;
+        let allocate =
+            self.import_runtime_helper("beskid_rt_v5_closure_environment_allocate", &[pointer], Some(pointer))?;
         let allocate_call = self.builder.ins().call(allocate, &[request]);
         let env_ptr = self.builder.inst_results(allocate_call).first().copied()?;
         self.builder.ins().trapz(env_ptr, TrapCode::unwrap_user(5));
@@ -1138,24 +1045,15 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
                     &[pointer, pointer, pointer, pointer],
                     Some(types::I8),
                 )?;
-                let store_call = self
-                    .builder
-                    .ins()
-                    .call(store, &[env_ptr, descriptor, index, value]);
+                let store_call = self.builder.ins().call(store, &[env_ptr, descriptor, index, value]);
                 let ok = self.builder.inst_results(store_call).first().copied()?;
                 self.builder.ins().trapz(ok, TrapCode::unwrap_user(8));
             } else {
-                let address = self
-                    .builder
-                    .ins()
-                    .iadd_imm(env_ptr, i64::from(capture.field_offset));
+                let address = self.builder.ins().iadd_imm(env_ptr, i64::from(capture.field_offset));
                 self.builder.ins().store(MemFlags::new(), value, address, 0);
             }
         }
-        let slot = self
-            .builder
-            .ins()
-            .iconst(pointer, environment.root_slot_index as i64);
+        let slot = self.builder.ins().iconst(pointer, environment.root_slot_index as i64);
         let root = self.import_runtime_helper(
             "beskid_rt_v5_closure_environment_root_current",
             &[pointer, pointer],
@@ -1168,50 +1066,32 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
     }
 
     fn symbol_global(&mut self, symbol: &str, pointer: Type) -> Option<Value> {
-        let global = self
-            .builder
-            .func
-            .create_global_value(GlobalValueData::Symbol {
-                name: ExternalName::testcase(symbol),
-                offset: 0.into(),
-                colocated: true,
-                tls: false,
-            });
+        let global = self.builder.func.create_global_value(GlobalValueData::Symbol {
+            name: ExternalName::testcase(symbol),
+            offset: 0.into(),
+            colocated: true,
+            tls: false,
+        });
         Some(self.builder.ins().global_value(pointer, global))
     }
 
-    fn import_runtime_helper(
-        &mut self,
-        symbol: &str,
-        params: &[Type],
-        result: Option<Type>,
-    ) -> Option<FuncRef> {
+    fn import_runtime_helper(&mut self, symbol: &str, params: &[Type], result: Option<Type>) -> Option<FuncRef> {
         let mut signature = Signature::new(self.builder.func.signature.call_conv);
-        signature
-            .params
-            .extend(params.iter().copied().map(AbiParam::new));
+        signature.params.extend(params.iter().copied().map(AbiParam::new));
         if let Some(result) = result {
             signature.returns.push(AbiParam::new(result));
         }
         let signature = self.builder.func.import_signature(signature);
-        Some(
-            self.builder
-                .func
-                .import_function(cranelift_codegen::ir::ExtFuncData {
-                    name: ExternalName::testcase(symbol),
-                    signature,
-                    colocated: false,
-                    patchable: false,
-                }),
-        )
+        Some(self.builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
+            name: ExternalName::testcase(symbol),
+            signature,
+            colocated: false,
+            patchable: false,
+        }))
     }
 
     fn direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
-        self.facts
-            .call_signature(key)?
-            .returns
-            .is_empty()
-            .then_some(())?;
+        self.facts.call_signature(key)?.returns.is_empty().then_some(())?;
         let (call, _) = self.import_direct_call(key)?;
         self.builder.inst_results(call).is_empty().then_some(())
     }
@@ -1238,9 +1118,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
                 if !pointer.is_int() {
                     return None;
                 }
-                self.builder
-                    .ins()
-                    .store(MemFlags::new(), *value, *address, 0);
+                self.builder.ins().store(MemFlags::new(), *value, *address, 0);
                 Some(())
             }
             RuntimeIntrinsicKind::MemorySet => {
@@ -1319,14 +1197,9 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         self.builder.ins().brif(done, exit, &[], body, &[]);
         self.builder.switch_to_block(body);
         let source_address = self.builder.use_var(source_var);
-        let byte = self
-            .builder
-            .ins()
-            .load(types::I8, MemFlags::new(), source_address, 0);
+        let byte = self.builder.ins().load(types::I8, MemFlags::new(), source_address, 0);
         let destination_address = self.builder.use_var(destination_var);
-        self.builder
-            .ins()
-            .store(MemFlags::new(), byte, destination_address, 0);
+        self.builder.ins().store(MemFlags::new(), byte, destination_address, 0);
         let next_source = self.builder.ins().iadd_imm(source_address, 1);
         self.builder.def_var(source_var, next_source);
         let next_destination = self.builder.ins().iadd_imm(destination_address, 1);
@@ -1355,11 +1228,7 @@ impl IsleContext<'_, '_, '_, '_> {
         if !left_type.is_int() || !right_type.is_int() || left_type == right_type {
             return (left, right);
         }
-        let target = if left_type.bits() >= right_type.bits() {
-            left_type
-        } else {
-            right_type
-        };
+        let target = if left_type.bits() >= right_type.bits() { left_type } else { right_type };
         let widen = |builder: &mut FunctionBuilder<'_>, value: Value, source: Type| {
             if source == target {
                 value
@@ -1369,10 +1238,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 builder.ins().sextend(target, value)
             }
         };
-        (
-            widen(self.builder, left, left_type),
-            widen(self.builder, right, right_type),
-        )
+        (widen(self.builder, left, left_type), widen(self.builder, right, right_type))
     }
 
     /// Beskid maps `u8`/`bool` to CLIF `i8`; ordered compares and quotients must be unsigned.
@@ -1397,18 +1263,9 @@ impl IsleContext<'_, '_, '_, '_> {
             return Some(None);
         };
         let discriminant = arm.discriminant?;
-        let payload_layout = layout
-            .variants
-            .iter()
-            .find(|variant| variant.discriminant == discriminant)?
-            .payload?;
-        if payload_layout.value_type != binding.value_type
-            || self.locals.contains_key(&binding.slot)
-        {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidMatchArms,
-            });
+        let payload_layout = layout.variants.iter().find(|variant| variant.discriminant == discriminant)?.payload?;
+        if payload_layout.value_type != binding.value_type || self.locals.contains_key(&binding.slot) {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
             return None;
         }
         let payload = self.builder.ins().load(
@@ -1419,8 +1276,7 @@ impl IsleContext<'_, '_, '_, '_> {
         );
         let variable = self.builder.declare_var(binding.value_type);
         self.builder.def_var(variable, payload);
-        self.locals
-            .insert(binding.slot, (variable, binding.value_type));
+        self.locals.insert(binding.slot, (variable, binding.value_type));
         Some(Some(binding.slot))
     }
 
@@ -1438,12 +1294,7 @@ impl IsleContext<'_, '_, '_, '_> {
             let base_key = self.facts.child(field_key, 0)?;
             generated::constructor_lower_expression(self, base_key)?
         };
-        self.builder
-            .func
-            .dfg
-            .value_type(base)
-            .is_int()
-            .then_some(base)
+        self.builder.func.dfg.value_type(base).is_int().then_some(base)
     }
 }
 
@@ -1465,25 +1316,17 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn assignment_target_kind(&mut self, key: AstNodeKey) -> Option<NodeKind> {
-        self.facts
-            .child(key, 0)
-            .and_then(|target| self.facts.node_kind(target))
+        self.facts.child(key, 0).and_then(|target| self.facts.node_kind(target))
     }
 
     fn for_iterable_kind(&mut self, key: AstNodeKey) -> Option<NodeKind> {
-        self.facts
-            .child(key, 0)
-            .and_then(|iterable| self.facts.node_kind(iterable))
+        self.facts.child(key, 0).and_then(|iterable| self.facts.node_kind(iterable))
     }
 
     fn for_iterable_class(&mut self, key: AstNodeKey) -> Option<ForIterableKind> {
         let iterable = self.facts.child(key, 0)?;
         let kind = self.facts.node_kind(iterable)?;
-        if kind == NodeKind::RangeExpression {
-            Some(ForIterableKind::Range)
-        } else {
-            Some(ForIterableKind::Other)
-        }
+        if kind == NodeKind::RangeExpression { Some(ForIterableKind::Range) } else { Some(ForIterableKind::Other) }
     }
 
     fn child_at(&mut self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
@@ -1505,11 +1348,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn emit_float(&mut self, key: AstNodeKey) -> Option<Value> {
         let immediate = self.facts.float_literal(key)?;
         match self.facts.scalar_type(key)? {
-            types::F32 => Some(
-                self.builder
-                    .ins()
-                    .f32const(Ieee32::with_float(immediate as f32)),
-            ),
+            types::F32 => Some(self.builder.ins().f32const(Ieee32::with_float(immediate as f32))),
             types::F64 => Some(self.builder.ins().f64const(Ieee64::with_float(immediate))),
             _ => None,
         }
@@ -1523,17 +1362,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn emit_string(&mut self, key: AstNodeKey) -> Option<Value> {
         let text = self.facts.string_literal(key)?;
-        match self
-            .string_interner
-            .as_deref_mut()?
-            .intern(self.builder, key, &text)
-        {
+        match self.string_interner.as_deref_mut()?.intern(self.builder, key, &text) {
             Ok(value) => Some(value),
             Err(error) => {
-                self.pending_error = Some(LoweringError {
-                    key,
-                    kind: LoweringErrorKind::StringMaterialization(error),
-                });
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::StringMaterialization(error) });
                 None
             }
         }
@@ -1569,11 +1401,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         }
         let (left, right) = self.common_integer_operands(left, right);
         let ty = self.builder.func.dfg.value_type(left);
-        if ty == types::I8 {
-            self.builder.ins().udiv(left, right)
-        } else {
-            self.clif_div_trapz(left, right)
-        }
+        if ty == types::I8 { self.builder.ins().udiv(left, right) } else { self.clif_div_trapz(left, right) }
     }
 
     fn clif_div_trapz(&mut self, left: Value, right: Value) -> Value {
@@ -1634,18 +1462,11 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn clif_sle(&mut self, left: Value, right: Value) -> Value {
         if let Some((left, right)) = self.common_float_operands(left, right) {
-            return self
-                .builder
-                .ins()
-                .fcmp(FloatCC::LessThanOrEqual, left, right);
+            return self.builder.ins().fcmp(FloatCC::LessThanOrEqual, left, right);
         }
         let (left, right) = self.common_integer_operands(left, right);
         let ty = self.builder.func.dfg.value_type(left);
-        let cc = Self::integer_ordered_cc(
-            ty,
-            IntCC::SignedLessThanOrEqual,
-            IntCC::UnsignedLessThanOrEqual,
-        );
+        let cc = Self::integer_ordered_cc(ty, IntCC::SignedLessThanOrEqual, IntCC::UnsignedLessThanOrEqual);
         self.builder.ins().icmp(cc, left, right)
     }
 
@@ -1661,18 +1482,11 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn clif_sge(&mut self, left: Value, right: Value) -> Value {
         if let Some((left, right)) = self.common_float_operands(left, right) {
-            return self
-                .builder
-                .ins()
-                .fcmp(FloatCC::GreaterThanOrEqual, left, right);
+            return self.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, left, right);
         }
         let (left, right) = self.common_integer_operands(left, right);
         let ty = self.builder.func.dfg.value_type(left);
-        let cc = Self::integer_ordered_cc(
-            ty,
-            IntCC::SignedGreaterThanOrEqual,
-            IntCC::UnsignedGreaterThanOrEqual,
-        );
+        let cc = Self::integer_ordered_cc(ty, IntCC::SignedGreaterThanOrEqual, IntCC::UnsignedGreaterThanOrEqual);
         self.builder.ins().icmp(cc, left, right)
     }
 
@@ -1686,11 +1500,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn clif_ineg(&mut self, value: Value) -> Value {
         let ty = self.builder.func.dfg.value_type(value);
-        if ty.is_float() {
-            self.builder.ins().fneg(value)
-        } else {
-            self.builder.ins().ineg(value)
-        }
+        if ty.is_float() { self.builder.ins().fneg(value) } else { self.builder.ins().ineg(value) }
     }
 
     fn clif_bnot(&mut self, value: Value) -> Value {
@@ -1730,20 +1540,15 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let mut signature = Signature::new(self.builder.func.signature.call_conv);
         signature.params.push(AbiParam::new(pointer));
         signature.returns.push(AbiParam::new(types::I64));
-        let trampoline = match self.call_importer.as_deref_mut()?.import(
-            self.builder,
-            entry.trampoline.clone(),
-            &signature,
-        ) {
-            Ok(function) => function,
-            Err(CallImportError::UnknownCallee) => {
-                self.pending_error = Some(LoweringError {
-                    key,
-                    kind: LoweringErrorKind::UnknownCallee(entry.trampoline),
-                });
-                return None;
-            }
-        };
+        let trampoline =
+            match self.call_importer.as_deref_mut()?.import(self.builder, entry.trampoline.clone(), &signature) {
+                Ok(function) => function,
+                Err(CallImportError::UnknownCallee) => {
+                    self.pending_error =
+                        Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(entry.trampoline) });
+                    return None;
+                }
+            };
         let entry_ptr = self.builder.ins().func_addr(pointer, trampoline);
         let environment = if let Some(closure) = &entry.closure_environment {
             self.emit_inline_closure_environment(closure)?
@@ -1763,19 +1568,13 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         signature.params.push(AbiParam::new(pointer));
         signature.returns.push(AbiParam::new(types::I64));
         let signature = self.builder.func.import_signature(signature);
-        let runtime_entry = self
-            .builder
-            .func
-            .import_function(cranelift_codegen::ir::ExtFuncData {
-                name: ExternalName::testcase("beskid_rt_v5_fiber_spawn_with_cancel_slot"),
-                signature,
-                colocated: false,
-                patchable: false,
-            });
-        self.builder.ins().call(
-            runtime_entry,
-            &[entry_ptr, environment, cancel_slot_address],
-        );
+        let runtime_entry = self.builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
+            name: ExternalName::testcase("beskid_rt_v5_fiber_spawn_with_cancel_slot"),
+            signature,
+            colocated: false,
+            patchable: false,
+        });
+        self.builder.ins().call(runtime_entry, &[entry_ptr, environment, cancel_slot_address]);
         let entry_call = self.builder.ins().call(trampoline, &[environment]);
         self.builder.inst_results(entry_call).first().copied()
     }
@@ -1806,21 +1605,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         if !pointer_type.is_int() || !self.builder.func.dfg.value_type(index).is_int() {
             return None;
         }
-        let ptr = self
-            .builder
-            .ins()
-            .load(pointer_type, MemFlags::new(), handle, 0);
-        let len = self
-            .builder
-            .ins()
-            .load(pointer_type, MemFlags::new(), handle, 8);
-        let out_of_bounds = self
-            .builder
-            .ins()
-            .icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
-        self.builder
-            .ins()
-            .trapnz(out_of_bounds, TrapCode::unwrap_user(2));
+        let ptr = self.builder.ins().load(pointer_type, MemFlags::new(), handle, 0);
+        let len = self.builder.ins().load(pointer_type, MemFlags::new(), handle, 8);
+        let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
+        self.builder.ins().trapnz(out_of_bounds, TrapCode::unwrap_user(2));
         let addr = self.builder.ins().iadd(ptr, index);
         Some(self.builder.ins().load(types::I8, MemFlags::new(), addr, 0))
     }
@@ -1854,15 +1642,11 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                     .map(|argument| generated::constructor_lower_expression(self, argument))
                     .collect::<Option<Vec<_>>>()?;
                 let returns_value = self.facts.scalar_type(expression).is_some();
-                dispatch::emit_dispatch_call(self.builder, route, &arguments, returns_value)
-                    .ok()?;
+                dispatch::emit_dispatch_call(self.builder, route, &arguments, returns_value).ok()?;
                 return Some(());
             }
             if self.facts.call_kind(expression) == Some(CallKind::Direct)
-                && self
-                    .facts
-                    .call_signature(expression)
-                    .is_some_and(|signature| signature.returns.is_empty())
+                && self.facts.call_signature(expression).is_some_and(|signature| signature.returns.is_empty())
             {
                 return self.direct_call_statement(expression);
             }
@@ -1879,8 +1663,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let arguments = self.runtime_intrinsic_arguments(key)?;
         let result = self.facts.scalar_type(key)?;
         match kind {
-            RuntimeIntrinsicKind::NativeWordFromPointer
-            | RuntimeIntrinsicKind::PointerFromNativeWord => {
+            RuntimeIntrinsicKind::NativeWordFromPointer | RuntimeIntrinsicKind::PointerFromNativeWord => {
                 let [value] = arguments.as_slice() else {
                     return None;
                 };
@@ -1898,11 +1681,8 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 let [address] = arguments.as_slice() else {
                     return None;
                 };
-                (self.builder.func.dfg.value_type(*address) == result).then(|| {
-                    self.builder
-                        .ins()
-                        .load(result, MemFlags::new(), *address, 0)
-                })
+                (self.builder.func.dfg.value_type(*address) == result)
+                    .then(|| self.builder.ins().load(result, MemFlags::new(), *address, 0))
             }
             RuntimeIntrinsicKind::RawByteLoad => {
                 let [address] = arguments.as_slice() else {
@@ -1912,10 +1692,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 if !address_ty.is_int() {
                     return None;
                 }
-                let loaded = self
-                    .builder
-                    .ins()
-                    .load(types::I8, MemFlags::trusted(), *address, 0);
+                let loaded = self.builder.ins().load(types::I8, MemFlags::trusted(), *address, 0);
                 if result == types::I8 {
                     Some(loaded)
                 } else if result.is_int() && result.bits() > 8 {
@@ -1954,20 +1731,14 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 generated::constructor_lower_statement(self, statement)?;
                 let current = self.builder.current_block()?;
                 if block_is_terminated(self.builder, current) {
-                    self.pending_error = Some(LoweringError {
-                        key,
-                        kind: LoweringErrorKind::InvalidBlockExpression,
-                    });
+                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidBlockExpression });
                     return None;
                 }
             }
             let result_key = self.facts.block_result(key)?;
             let value = generated::constructor_lower_expression(self, result_key)?;
             if self.builder.func.dfg.value_type(value) != self.facts.scalar_type(key)? {
-                self.pending_error = Some(LoweringError {
-                    key,
-                    kind: LoweringErrorKind::InvalidBlockExpression,
-                });
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidBlockExpression });
                 return None;
             }
             Some(value)
@@ -2022,9 +1793,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let then_block = self.builder.create_block();
         let else_block = self.builder.create_block();
         let merge_block = self.builder.create_block();
-        self.builder
-            .ins()
-            .brif(condition, then_block, &[], else_block, &[]);
+        self.builder.ins().brif(condition, then_block, &[], else_block, &[]);
 
         // Track whether any arm jumps into the merge. Both arms often terminate with a
         // jump to merge (ordinary fallthrough); that must not be treated as unreachable.
@@ -2074,10 +1843,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
         self.builder.switch_to_block(body);
         self.builder.seal_block(body);
-        self.loop_stack.push(LoopTargets {
-            continue_block: header,
-            break_block: exit,
-        });
+        self.loop_stack.push(LoopTargets { continue_block: header, break_block: exit });
         let lowered = generated::constructor_lower_statement(self, body_key);
         self.loop_stack.pop();
         lowered?;
@@ -2097,10 +1863,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let iterator_type = self.facts.scalar_type(key)?;
         let slot = self.facts.local_slot(key)?;
         if range.step == 0 || !iterator_type.is_int() || self.locals.contains_key(&slot) {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidRangeFor,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidRangeFor });
             return None;
         }
         let start = generated::constructor_lower_expression(self, range.start)?;
@@ -2108,10 +1871,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         if self.builder.func.dfg.value_type(start) != iterator_type
             || self.builder.func.dfg.value_type(end) != iterator_type
         {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidRangeFor,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidRangeFor });
             return None;
         }
         let iterator = self.builder.declare_var(iterator_type);
@@ -2128,27 +1888,15 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let current = self.builder.use_var(iterator);
         let condition = match (range.step.is_positive(), range.inclusive) {
             (true, false) => self.builder.ins().icmp(IntCC::SignedLessThan, current, end),
-            (true, true) => self
-                .builder
-                .ins()
-                .icmp(IntCC::SignedLessThanOrEqual, current, end),
-            (false, false) => self
-                .builder
-                .ins()
-                .icmp(IntCC::SignedGreaterThan, current, end),
-            (false, true) => self
-                .builder
-                .ins()
-                .icmp(IntCC::SignedGreaterThanOrEqual, current, end),
+            (true, true) => self.builder.ins().icmp(IntCC::SignedLessThanOrEqual, current, end),
+            (false, false) => self.builder.ins().icmp(IntCC::SignedGreaterThan, current, end),
+            (false, true) => self.builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, current, end),
         };
         self.builder.ins().brif(condition, body, &[], exit, &[]);
 
         self.builder.switch_to_block(body);
         self.builder.seal_block(body);
-        self.loop_stack.push(LoopTargets {
-            continue_block: latch,
-            break_block: exit,
-        });
+        self.loop_stack.push(LoopTargets { continue_block: latch, break_block: exit });
         let lowered = generated::constructor_lower_statement(self, body_key);
         self.loop_stack.pop();
         if lowered.is_none() {
@@ -2173,10 +1921,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn emit_iterator_for(&mut self, key: AstNodeKey) -> Option<()> {
-        self.pending_error = Some(LoweringError {
-            key,
-            kind: LoweringErrorKind::InvalidRangeFor,
-        });
+        self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidRangeFor });
         None
     }
 
@@ -2194,10 +1939,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn statement_cursor(&mut self, key: AstNodeKey) -> Option<StatementCursor> {
         self.facts.statement_count(key)?;
-        Some(StatementCursor {
-            block: key,
-            index: 0,
-        })
+        Some(StatementCursor { block: key, index: 0 })
     }
 
     fn cursor_kind(&mut self, cursor: StatementCursor) -> Option<CursorKind> {
@@ -2206,11 +1948,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             return Some(CursorKind::End);
         }
         let count = self.facts.statement_count(cursor.block)?;
-        Some(if cursor.index < count {
-            CursorKind::More
-        } else {
-            CursorKind::End
-        })
+        Some(if cursor.index < count { CursorKind::More } else { CursorKind::End })
     }
 
     fn cursor_head(&mut self, cursor: StatementCursor) -> Option<AstNodeKey> {
@@ -2218,10 +1956,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn cursor_tail(&mut self, cursor: StatementCursor) -> StatementCursor {
-        StatementCursor {
-            block: cursor.block,
-            index: cursor.index.saturating_add(1),
-        }
+        StatementCursor { block: cursor.block, index: cursor.index.saturating_add(1) }
     }
 
     fn finish_statements(&mut self) {}
@@ -2254,10 +1989,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let elements = self.facts.array_elements(key)?;
         let layout = self.facts.array_layout(key)?;
         if !layout.is_valid() || usize::try_from(layout.length).ok()? != elements.len() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidArrayLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
             return None;
         }
         let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
@@ -2268,16 +2000,11 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         for (index, element) in elements.into_iter().enumerate() {
             let value = generated::constructor_lower_expression(self, element)?;
             if self.builder.func.dfg.value_type(value) != layout.element_type {
-                self.pending_error = Some(LoweringError {
-                    key,
-                    kind: LoweringErrorKind::InvalidArrayLayout,
-                });
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
                 return None;
             }
-            let offset = u32::try_from(index)
-                .ok()?
-                .checked_mul(layout.stride)
-                .and_then(|offset| i32::try_from(offset).ok())?;
+            let offset =
+                u32::try_from(index).ok()?.checked_mul(layout.stride).and_then(|offset| i32::try_from(offset).ok())?;
             self.builder.ins().stack_store(value, slot, offset);
         }
         let pointer_type = self.facts.scalar_type(key)?;
@@ -2287,10 +2014,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn emit_index_read(&mut self, key: AstNodeKey) -> Option<Value> {
         let layout = self.facts.array_layout(key)?;
         if !layout.is_valid() || self.facts.scalar_type(key)? != layout.element_type {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidArrayLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
             return None;
         }
         let base_key = self.facts.child(key, 0)?;
@@ -2302,14 +2026,9 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         if !index_type.is_int() || !pointer_type.is_int() {
             return None;
         }
-        let out_of_bounds = self.builder.ins().icmp_imm(
-            IntCC::UnsignedGreaterThanOrEqual,
-            index,
-            i64::from(layout.length),
-        );
-        self.builder
-            .ins()
-            .trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
+        let out_of_bounds =
+            self.builder.ins().icmp_imm(IntCC::UnsignedGreaterThanOrEqual, index, i64::from(layout.length));
+        self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
         let pointer_index = if index_type.bits() < pointer_type.bits() {
             self.builder.ins().uextend(pointer_type, index)
         } else if index_type.bits() > pointer_type.bits() {
@@ -2320,16 +2039,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let offset = if layout.stride == 1 {
             pointer_index
         } else {
-            self.builder
-                .ins()
-                .imul_imm(pointer_index, i64::from(layout.stride))
+            self.builder.ins().imul_imm(pointer_index, i64::from(layout.stride))
         };
         let address = self.builder.ins().iadd(base, offset);
-        Some(
-            self.builder
-                .ins()
-                .load(layout.element_type, MemFlags::new(), address, 0),
-        )
+        Some(self.builder.ins().load(layout.element_type, MemFlags::new(), address, 0))
     }
 
     fn emit_index_assign(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -2337,10 +2050,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let value_key = self.facts.child(key, 1)?;
         let layout = self.facts.array_layout(target)?;
         if !layout.is_valid() || self.facts.scalar_type(key)? != layout.element_type {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidArrayLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
             return None;
         }
         let base_key = self.facts.child(target, 0)?;
@@ -2349,10 +2059,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let index = generated::constructor_lower_expression(self, index_key)?;
         let value = generated::constructor_lower_expression(self, value_key)?;
         if self.builder.func.dfg.value_type(value) != layout.element_type {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidArrayLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
             return None;
         }
         let index_type = self.builder.func.dfg.value_type(index);
@@ -2360,14 +2067,9 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         if !index_type.is_int() || !pointer_type.is_int() {
             return None;
         }
-        let out_of_bounds = self.builder.ins().icmp_imm(
-            IntCC::UnsignedGreaterThanOrEqual,
-            index,
-            i64::from(layout.length),
-        );
-        self.builder
-            .ins()
-            .trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
+        let out_of_bounds =
+            self.builder.ins().icmp_imm(IntCC::UnsignedGreaterThanOrEqual, index, i64::from(layout.length));
+        self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
         let pointer_index = if index_type.bits() < pointer_type.bits() {
             self.builder.ins().uextend(pointer_type, index)
         } else if index_type.bits() > pointer_type.bits() {
@@ -2378,9 +2080,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let offset = if layout.stride == 1 {
             pointer_index
         } else {
-            self.builder
-                .ins()
-                .imul_imm(pointer_index, i64::from(layout.stride))
+            self.builder.ins().imul_imm(pointer_index, i64::from(layout.stride))
         };
         let address = self.builder.ins().iadd(base, offset);
         self.builder.ins().store(MemFlags::new(), value, address, 0);
@@ -2391,10 +2091,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let fields = self.facts.struct_fields(key)?;
         let layout = self.facts.struct_layout(key)?;
         if !layout.is_valid() || fields.len() != layout.fields.len() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidStructLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
             return None;
         }
         let allocation = self.facts.managed_struct_allocation(key)?;
@@ -2402,41 +2099,24 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         for (field_key, field_layout) in fields.into_iter().zip(&layout.fields) {
             let value = generated::constructor_lower_expression(self, field_key)?;
             if self.builder.func.dfg.value_type(value) != field_layout.value_type {
-                self.pending_error = Some(LoweringError {
-                    key,
-                    kind: LoweringErrorKind::InvalidStructLayout,
-                });
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
                 return None;
             }
             values.push((value, *field_layout));
         }
         let pointer_type = self.facts.scalar_type(key)?;
         if !pointer_type.is_int() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidStructLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
             return None;
         }
-        let request =
-            self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer_type)?;
-        let allocate = self.import_runtime_helper(
-            "beskid_rt_v5_managed_object_allocate",
-            &[pointer_type],
-            Some(pointer_type),
-        )?;
+        let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer_type)?;
+        let allocate =
+            self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer_type], Some(pointer_type))?;
         let allocation_call = self.builder.ins().call(allocate, &[request]);
-        let object = self
-            .builder
-            .inst_results(allocation_call)
-            .first()
-            .copied()?;
+        let object = self.builder.inst_results(allocation_call).first().copied()?;
         self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
         for (value, field_layout) in values {
-            let address = self
-                .builder
-                .ins()
-                .iadd_imm(object, i64::from(field_layout.offset));
+            let address = self.builder.ins().iadd_imm(object, i64::from(field_layout.offset));
             self.builder.ins().store(MemFlags::new(), value, address, 0);
         }
         Some(object)
@@ -2445,38 +2125,20 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn emit_field_read(&mut self, key: AstNodeKey) -> Option<Value> {
         let layout = self.facts.struct_layout(key)?;
         if !layout.is_valid() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidStructLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
             return None;
         }
         let field_index = self.facts.field_index(key)?;
-        let Some(field) = usize::try_from(field_index)
-            .ok()
-            .and_then(|index| layout.fields.get(index))
-            .copied()
-        else {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidStructField(field_index),
-            });
+        let Some(field) = usize::try_from(field_index).ok().and_then(|index| layout.fields.get(index)).copied() else {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructField(field_index) });
             return None;
         };
         if self.facts.scalar_type(key)? != field.value_type {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidStructLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
             return None;
         }
         let base = self.field_base_pointer(key)?;
-        Some(self.builder.ins().load(
-            field.value_type,
-            MemFlags::new(),
-            base,
-            i32::try_from(field.offset).ok()?,
-        ))
+        Some(self.builder.ins().load(field.value_type, MemFlags::new(), base, i32::try_from(field.offset).ok()?))
     }
 
     fn emit_field_assign(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -2484,22 +2146,12 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let value_key = self.facts.child(key, 1)?;
         let layout = self.facts.struct_layout(target)?;
         if !layout.is_valid() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidStructLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
             return None;
         }
         let field_index = self.facts.field_index(target)?;
-        let Some(field) = usize::try_from(field_index)
-            .ok()
-            .and_then(|index| layout.fields.get(index))
-            .copied()
-        else {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidStructField(field_index),
-            });
+        let Some(field) = usize::try_from(field_index).ok().and_then(|index| layout.fields.get(index)).copied() else {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructField(field_index) });
             return None;
         };
         let base = self.field_base_pointer(target)?;
@@ -2507,40 +2159,24 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         if self.builder.func.dfg.value_type(value) != field.value_type
             || self.facts.scalar_type(key)? != field.value_type
         {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidStructLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
             return None;
         }
-        self.builder.ins().store(
-            MemFlags::new(),
-            value,
-            base,
-            i32::try_from(field.offset).ok()?,
-        );
+        self.builder.ins().store(MemFlags::new(), value, base, i32::try_from(field.offset).ok()?);
         Some(value)
     }
 
     fn emit_enum_literal(&mut self, key: AstNodeKey) -> Option<Value> {
         let layout = self.facts.enum_layout(key)?;
         if !layout.is_valid() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidEnumLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
             return None;
         }
         let variant_index = self.facts.enum_variant_index(key)?;
-        let Some(variant) = usize::try_from(variant_index)
-            .ok()
-            .and_then(|index| layout.variants.get(index))
-            .copied()
+        let Some(variant) = usize::try_from(variant_index).ok().and_then(|index| layout.variants.get(index)).copied()
         else {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidEnumVariant(variant_index),
-            });
+            self.pending_error =
+                Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumVariant(variant_index) });
             return None;
         };
         let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
@@ -2548,44 +2184,26 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             layout.size,
             layout.align_shift,
         ));
-        let tag = self
-            .builder
-            .ins()
-            .iconst(layout.tag.value_type, variant.discriminant as i64);
-        self.builder
-            .ins()
-            .stack_store(tag, slot, i32::try_from(layout.tag.offset).ok()?);
+        let tag = self.builder.ins().iconst(layout.tag.value_type, variant.discriminant as i64);
+        self.builder.ins().stack_store(tag, slot, i32::try_from(layout.tag.offset).ok()?);
         match (variant.payload, self.facts.enum_payload(key)) {
             (Some(payload_layout), Some(payload_key)) => {
                 let payload = generated::constructor_lower_expression(self, payload_key)?;
                 if self.builder.func.dfg.value_type(payload) != payload_layout.value_type {
-                    self.pending_error = Some(LoweringError {
-                        key,
-                        kind: LoweringErrorKind::InvalidEnumLayout,
-                    });
+                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
                     return None;
                 }
-                self.builder.ins().stack_store(
-                    payload,
-                    slot,
-                    i32::try_from(payload_layout.offset).ok()?,
-                );
+                self.builder.ins().stack_store(payload, slot, i32::try_from(payload_layout.offset).ok()?);
             }
             (None, None) => {}
             _ => {
-                self.pending_error = Some(LoweringError {
-                    key,
-                    kind: LoweringErrorKind::InvalidEnumLayout,
-                });
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
                 return None;
             }
         }
         let pointer_type = self.facts.scalar_type(key)?;
         if !pointer_type.is_int() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidEnumLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
             return None;
         }
         Some(self.builder.ins().stack_addr(pointer_type, slot, 0))
@@ -2594,25 +2212,15 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn emit_match(&mut self, key: AstNodeKey) -> Option<Value> {
         let layout = self.facts.enum_layout(key)?;
         if !layout.is_valid() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidEnumLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
             return None;
         }
         let arms = self.facts.match_arms(key)?;
         if arms.is_empty() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidMatchArms,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
             return None;
         }
-        let layout_discriminants = layout
-            .variants
-            .iter()
-            .map(|variant| variant.discriminant)
-            .collect::<HashSet<_>>();
+        let layout_discriminants = layout.variants.iter().map(|variant| variant.discriminant).collect::<HashSet<_>>();
         let mut covered = HashSet::with_capacity(arms.len());
         let wildcard_index = arms.iter().position(|arm| arm.discriminant.is_none());
         if wildcard_index.is_some_and(|index| index + 1 != arms.len())
@@ -2622,27 +2230,18 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 .filter_map(|arm| arm.discriminant)
                 .any(|tag| !layout_discriminants.contains(&tag) || !covered.insert(tag))
         {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidMatchArms,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
             return None;
         }
         if wildcard_index.is_none() && covered != layout_discriminants {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::NonExhaustiveMatch,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::NonExhaustiveMatch });
             return None;
         }
 
         let scrutinee_key = self.facts.child(key, 0)?;
         let scrutinee = generated::constructor_lower_expression(self, scrutinee_key)?;
         if !self.builder.func.dfg.value_type(scrutinee).is_int() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidEnumLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
             return None;
         }
         let tag = self.builder.ins().load(
@@ -2651,23 +2250,14 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             scrutinee,
             i32::try_from(layout.tag.offset).ok()?,
         );
-        let result_type = self
-            .facts
-            .scalar_type(key)
-            .or_else(|| arms.iter().find_map(|arm| self.facts.scalar_type(arm.body)))?;
+        let result_type =
+            self.facts.scalar_type(key).or_else(|| arms.iter().find_map(|arm| self.facts.scalar_type(arm.body)))?;
         let merge = self.builder.create_block();
         self.builder.append_block_param(merge, result_type);
-        let arm_blocks = arms
-            .iter()
-            .map(|_| self.builder.create_block())
-            .collect::<Vec<_>>();
-        let trap = wildcard_index
-            .is_none()
-            .then(|| self.builder.create_block());
-        let default = wildcard_index.map_or_else(
-            || trap.expect("trap block exists without wildcard"),
-            |index| arm_blocks[index],
-        );
+        let arm_blocks = arms.iter().map(|_| self.builder.create_block()).collect::<Vec<_>>();
+        let trap = wildcard_index.is_none().then(|| self.builder.create_block());
+        let default =
+            wildcard_index.map_or_else(|| trap.expect("trap block exists without wildcard"), |index| arm_blocks[index]);
         let mut switch = Switch::new();
         for (arm, block) in arms.iter().zip(&arm_blocks) {
             if let Some(discriminant) = arm.discriminant {
@@ -2682,10 +2272,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             let binding = self.bind_match_arm_payload(key, &layout, scrutinee, &arm)?;
             let value = generated::constructor_lower_expression(self, arm.body)?;
             if self.builder.func.dfg.value_type(value) != result_type {
-                self.pending_error = Some(LoweringError {
-                    key,
-                    kind: LoweringErrorKind::InvalidMatchArms,
-                });
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                 return None;
             }
             if let Some(binding) = binding {
@@ -2706,25 +2293,15 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn emit_match_statement(&mut self, key: AstNodeKey) -> Option<()> {
         let layout = self.facts.enum_layout(key)?;
         if !layout.is_valid() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidEnumLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
             return None;
         }
         let arms = self.facts.match_arms(key)?;
         if arms.is_empty() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidMatchArms,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
             return None;
         }
-        let layout_discriminants = layout
-            .variants
-            .iter()
-            .map(|variant| variant.discriminant)
-            .collect::<HashSet<_>>();
+        let layout_discriminants = layout.variants.iter().map(|variant| variant.discriminant).collect::<HashSet<_>>();
         let mut covered = HashSet::with_capacity(arms.len());
         let wildcard_index = arms.iter().position(|arm| arm.discriminant.is_none());
         if wildcard_index.is_some_and(|index| index + 1 != arms.len())
@@ -2734,27 +2311,18 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 .filter_map(|arm| arm.discriminant)
                 .any(|tag| !layout_discriminants.contains(&tag) || !covered.insert(tag))
         {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidMatchArms,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
             return None;
         }
         if wildcard_index.is_none() && covered != layout_discriminants {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::NonExhaustiveMatch,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::NonExhaustiveMatch });
             return None;
         }
 
         let scrutinee_key = self.facts.child(key, 0)?;
         let scrutinee = generated::constructor_lower_expression(self, scrutinee_key)?;
         if !self.builder.func.dfg.value_type(scrutinee).is_int() {
-            self.pending_error = Some(LoweringError {
-                key,
-                kind: LoweringErrorKind::InvalidEnumLayout,
-            });
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
             return None;
         }
         let tag = self.builder.ins().load(
@@ -2764,17 +2332,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             i32::try_from(layout.tag.offset).ok()?,
         );
         let merge = self.builder.create_block();
-        let arm_blocks = arms
-            .iter()
-            .map(|_| self.builder.create_block())
-            .collect::<Vec<_>>();
-        let trap = wildcard_index
-            .is_none()
-            .then(|| self.builder.create_block());
-        let default = wildcard_index.map_or_else(
-            || trap.expect("trap block exists without wildcard"),
-            |index| arm_blocks[index],
-        );
+        let arm_blocks = arms.iter().map(|_| self.builder.create_block()).collect::<Vec<_>>();
+        let trap = wildcard_index.is_none().then(|| self.builder.create_block());
+        let default =
+            wildcard_index.map_or_else(|| trap.expect("trap block exists without wildcard"), |index| arm_blocks[index]);
         let mut switch = Switch::new();
         for (arm, block) in arms.iter().zip(&arm_blocks) {
             if let Some(discriminant) = arm.discriminant {
@@ -2875,27 +2436,15 @@ impl std::fmt::Debug for LoweringError {
     }
 }
 
-pub fn lower_expression(
-    context: &mut IsleContext<'_, '_, '_, '_>,
-    key: AstNodeKey,
-) -> Result<Value, LoweringError> {
+pub fn lower_expression(context: &mut IsleContext<'_, '_, '_, '_>, key: AstNodeKey) -> Result<Value, LoweringError> {
     generated::constructor_lower_expression(context, key).ok_or_else(|| {
-        context.pending_error.take().unwrap_or(LoweringError {
-            key,
-            kind: LoweringErrorKind::MissingRuleOrFact,
-        })
+        context.pending_error.take().unwrap_or(LoweringError { key, kind: LoweringErrorKind::MissingRuleOrFact })
     })
 }
 
-pub fn lower_statement(
-    context: &mut IsleContext<'_, '_, '_, '_>,
-    key: AstNodeKey,
-) -> Result<(), LoweringError> {
+pub fn lower_statement(context: &mut IsleContext<'_, '_, '_, '_>, key: AstNodeKey) -> Result<(), LoweringError> {
     generated::constructor_lower_statement(context, key).ok_or_else(|| {
-        context.pending_error.take().unwrap_or(LoweringError {
-            key,
-            kind: LoweringErrorKind::MissingRuleOrFact,
-        })
+        context.pending_error.take().unwrap_or(LoweringError { key, kind: LoweringErrorKind::MissingRuleOrFact })
     })
 }
 
@@ -2919,12 +2468,8 @@ impl<'isa> FunctionEmitter<'isa> {
         returns: impl IntoIterator<Item = Type>,
     ) -> Signature {
         let mut signature = Signature::new(self.isa.default_call_conv());
-        signature
-            .params
-            .extend(parameters.into_iter().map(AbiParam::new));
-        signature
-            .returns
-            .extend(returns.into_iter().map(AbiParam::new));
+        signature.params.extend(parameters.into_iter().map(AbiParam::new));
+        signature.returns.extend(returns.into_iter().map(AbiParam::new));
         signature
     }
 
@@ -2983,38 +2528,24 @@ impl<'isa> FunctionEmitter<'isa> {
             builder.seal_block(entry);
             let environment = builder.block_params(entry)[0];
             let value = {
-                let mut context =
-                    IsleContext::new_with_call_importer(&mut builder, facts, call_importer);
+                let mut context = IsleContext::new_with_call_importer(&mut builder, facts, call_importer);
                 for capture in captures {
-                    let address = context
-                        .builder
-                        .ins()
-                        .iadd_imm(environment, i64::from(capture.field_offset));
-                    let value =
-                        context
-                            .builder
-                            .ins()
-                            .load(capture.value_type, MemFlags::new(), address, 0);
+                    let address = context.builder.ins().iadd_imm(environment, i64::from(capture.field_offset));
+                    let value = context.builder.ins().load(capture.value_type, MemFlags::new(), address, 0);
                     let variable = context.builder.declare_var(capture.value_type);
                     context.builder.def_var(variable, value);
-                    context
-                        .locals
-                        .insert(capture.local_slot, (variable, capture.value_type));
+                    context.locals.insert(capture.local_slot, (variable, capture.value_type));
                 }
                 lower_expression(&mut context, body).map_err(FunctionEmissionError::Lowering)?
             };
             if builder.func.dfg.value_type(value) != result {
-                return Err(FunctionEmissionError::verification(
-                    body,
-                    "closure lambda entry result type mismatch",
-                ));
+                return Err(FunctionEmissionError::verification(body, "closure lambda entry result type mismatch"));
             }
             builder.ins().return_(&[value]);
             builder.finalize();
         }
-        verify_function(&function, self.isa.flags()).map_err(|error| {
-            FunctionEmissionError::verification(body, format!("closure lambda entry: {error}"))
-        })?;
+        verify_function(&function, self.isa.flags())
+            .map_err(|error| FunctionEmissionError::verification(body, format!("closure lambda entry: {error}")))?;
         Ok(function)
     }
 
@@ -3026,13 +2557,7 @@ impl<'isa> FunctionEmitter<'isa> {
         body: AstNodeKey,
     ) -> Result<Function, FunctionEmissionError> {
         self.emit_statement_inner(
-            StatementEmission {
-                name,
-                signature,
-                facts,
-                item: None,
-                body,
-            },
+            StatementEmission { name, signature, facts, item: None, body },
             EmissionServices::none(),
         )
     }
@@ -3047,13 +2572,7 @@ impl<'isa> FunctionEmitter<'isa> {
         body: AstNodeKey,
     ) -> Result<Function, FunctionEmissionError> {
         self.emit_statement_inner(
-            StatementEmission {
-                name,
-                signature,
-                facts,
-                item: Some(item),
-                body,
-            },
+            StatementEmission { name, signature, facts, item: Some(item), body },
             EmissionServices::none(),
         )
     }
@@ -3082,12 +2601,9 @@ impl<'isa> FunctionEmitter<'isa> {
                 materialize_parameters(&mut context, item)?;
             }
             lower_statement(&mut context, request.body).map_err(FunctionEmissionError::Lowering)?;
-            let final_block = builder.current_block().ok_or_else(|| {
-                FunctionEmissionError::verification(
-                    verification_site,
-                    "function has no final block",
-                )
-            })?;
+            let final_block = builder
+                .current_block()
+                .ok_or_else(|| FunctionEmissionError::verification(verification_site, "function has no final block"))?;
             let terminated = block_is_terminated(&builder, final_block);
             if !terminated {
                 if builder.func.signature.returns.is_empty() {
@@ -3101,9 +2617,8 @@ impl<'isa> FunctionEmitter<'isa> {
             }
             builder.finalize();
         }
-        verify_function(&function, self.isa.flags()).map_err(|error| {
-            FunctionEmissionError::verification(verification_site, error.to_string())
-        })?;
+        verify_function(&function, self.isa.flags())
+            .map_err(|error| FunctionEmissionError::verification(verification_site, error.to_string()))?;
         Ok(function)
     }
 
@@ -3116,17 +2631,8 @@ impl<'isa> FunctionEmitter<'isa> {
         call_importer: &mut dyn CallImporter,
     ) -> Result<Function, FunctionEmissionError> {
         self.emit_statement_inner(
-            StatementEmission {
-                name,
-                signature,
-                facts,
-                item: None,
-                body,
-            },
-            EmissionServices {
-                string_interner: None,
-                call_importer: Some(call_importer),
-            },
+            StatementEmission { name, signature, facts, item: None, body },
+            EmissionServices { string_interner: None, call_importer: Some(call_importer) },
         )
     }
 
@@ -3141,17 +2647,8 @@ impl<'isa> FunctionEmitter<'isa> {
         call_importer: &mut dyn CallImporter,
     ) -> Result<Function, FunctionEmissionError> {
         self.emit_statement_inner(
-            StatementEmission {
-                name,
-                signature,
-                facts,
-                item: Some(item),
-                body,
-            },
-            EmissionServices {
-                string_interner: None,
-                call_importer: Some(call_importer),
-            },
+            StatementEmission { name, signature, facts, item: Some(item), body },
+            EmissionServices { string_interner: None, call_importer: Some(call_importer) },
         )
     }
 
@@ -3190,12 +2687,7 @@ impl<'isa> FunctionEmitter<'isa> {
             builder.switch_to_block(entry);
             builder.seal_block(entry);
             let value = lower_expression(
-                &mut IsleContext::new_with_services(
-                    &mut builder,
-                    facts,
-                    string_interner,
-                    call_importer,
-                ),
+                &mut IsleContext::new_with_services(&mut builder, facts, string_interner, call_importer),
                 body,
             )
             .map_err(FunctionEmissionError::Lowering)?;
@@ -3212,14 +2704,18 @@ fn materialize_parameters(
     context: &mut IsleContext<'_, '_, '_, '_>,
     item: AstNodeKey,
 ) -> Result<(), FunctionEmissionError> {
-    let parameters = context.facts.function_parameters(item).ok_or_else(|| {
-        FunctionEmissionError::verification(item, "item parameter facts are unavailable")
-    })?;
+    let parameters = context
+        .facts
+        .function_parameters(item)
+        .ok_or_else(|| FunctionEmissionError::verification(item, "item parameter facts are unavailable"))?;
     let incoming = context
         .builder
-        .block_params(context.builder.current_block().ok_or_else(|| {
-            FunctionEmissionError::verification(item, "function has no entry block")
-        })?)
+        .block_params(
+            context
+                .builder
+                .current_block()
+                .ok_or_else(|| FunctionEmissionError::verification(item, "function has no entry block"))?,
+        )
         .to_vec();
     if parameters.len() != incoming.len() {
         return Err(FunctionEmissionError::verification(
@@ -3231,26 +2727,17 @@ fn materialize_parameters(
         if context.locals.contains_key(&parameter.slot)
             || context.builder.func.dfg.value_type(value) != parameter.value_type
         {
-            return Err(FunctionEmissionError::verification(
-                item,
-                "item parameter slot or type is invalid".to_owned(),
-            ));
+            return Err(FunctionEmissionError::verification(item, "item parameter slot or type is invalid".to_owned()));
         }
         let variable = context.builder.declare_var(parameter.value_type);
         context.builder.def_var(variable, value);
-        context
-            .locals
-            .insert(parameter.slot, (variable, parameter.value_type));
+        context.locals.insert(parameter.slot, (variable, parameter.value_type));
     }
     Ok(())
 }
 
 fn block_is_terminated(builder: &FunctionBuilder<'_>, block: Block) -> bool {
-    builder
-        .func
-        .layout
-        .last_inst(block)
-        .is_some_and(|inst| builder.func.dfg.insts[inst].opcode().is_terminator())
+    builder.func.layout.last_inst(block).is_some_and(|inst| builder.func.dfg.insts[inst].opcode().is_terminator())
 }
 
 /// If the builder's current block is unterminated, jump to `target` and return true.
@@ -3288,20 +2775,16 @@ impl std::fmt::Display for FunctionEmissionError {
 
 impl FunctionEmissionError {
     pub fn verification(site: AstNodeKey, message: impl Into<String>) -> Self {
-        Self::Verification {
-            site,
-            message: message.into(),
-        }
+        Self::Verification { site, message: message.into() }
     }
 
     /// Expand nested AstNodeKey labels with path, construct, and source range when a db is available.
     pub fn display_with_db(&self, db: &dyn beskid_queries::Db) -> String {
         match self {
             Self::Lowering(error) => format!("Lowering({})", error.display_with_db(db)),
-            Self::Verification { site, message } => format!(
-                "Verification({message} at {})",
-                beskid_queries::format_ast_node_site(db, *site)
-            ),
+            Self::Verification { site, message } => {
+                format!("Verification({message} at {})", beskid_queries::format_ast_node_site(db, *site))
+            }
         }
     }
 }

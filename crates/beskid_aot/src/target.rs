@@ -24,37 +24,20 @@ pub fn detect_target(triple_override: Option<&str>) -> AotResult<TargetInfo> {
         host.triple
     };
 
-    let config = get_target_config(&triple).ok_or_else(|| AotError::UnsupportedOutputKind {
-        target: triple.clone(),
-        kind: BuildOutputKind::ObjectOnly,
-    })?;
+    let config = get_target_config(&triple)
+        .ok_or_else(|| AotError::UnsupportedOutputKind { target: triple.clone(), kind: BuildOutputKind::ObjectOnly })?;
 
     match config.os {
-        Os::Windows => Ok(TargetInfo {
-            triple,
-            object_ext: "obj",
-            static_lib_ext: "lib",
-            shared_lib_ext: "dll",
-            exe_ext: "exe",
-        }),
-        Os::Darwin | Os::Ios | Os::IosSim => Ok(TargetInfo {
-            triple,
-            object_ext: "o",
-            static_lib_ext: "a",
-            shared_lib_ext: "dylib",
-            exe_ext: "",
-        }),
-        Os::Linux | Os::FreeBsd | Os::Android => Ok(TargetInfo {
-            triple,
-            object_ext: "o",
-            static_lib_ext: "a",
-            shared_lib_ext: "so",
-            exe_ext: "",
-        }),
-        _ => Err(AotError::UnsupportedOutputKind {
-            target: triple,
-            kind: BuildOutputKind::ObjectOnly,
-        }),
+        Os::Windows => {
+            Ok(TargetInfo { triple, object_ext: "obj", static_lib_ext: "lib", shared_lib_ext: "dll", exe_ext: "exe" })
+        }
+        Os::Darwin | Os::Ios | Os::IosSim => {
+            Ok(TargetInfo { triple, object_ext: "o", static_lib_ext: "a", shared_lib_ext: "dylib", exe_ext: "" })
+        }
+        Os::Linux | Os::FreeBsd | Os::Android => {
+            Ok(TargetInfo { triple, object_ext: "o", static_lib_ext: "a", shared_lib_ext: "so", exe_ext: "" })
+        }
+        _ => Err(AotError::UnsupportedOutputKind { target: triple, kind: BuildOutputKind::ObjectOnly }),
     }
 }
 
@@ -100,10 +83,7 @@ mod tests {
             exe_ext: "",
         };
 
-        assert_eq!(
-            output_filename("hello", BuildOutputKind::ObjectOnly, &target),
-            "hello.o"
-        );
+        assert_eq!(output_filename("hello", BuildOutputKind::ObjectOnly, &target), "hello.o");
     }
 
     #[test]
@@ -116,9 +96,6 @@ mod tests {
             exe_ext: "exe",
         };
 
-        assert_eq!(
-            output_filename("hello", BuildOutputKind::StaticLib, &target),
-            "hello.lib"
-        );
+        assert_eq!(output_filename("hello", BuildOutputKind::StaticLib, &target), "hello.lib");
     }
 }

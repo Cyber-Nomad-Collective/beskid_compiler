@@ -33,20 +33,11 @@ pub fn emit_error_semantic_diagnostic(
     err: EmitError,
 ) -> crate::analysis::diagnostics::SemanticDiagnostic {
     use crate::analysis::diagnostics::{Severity, make_diagnostic};
-    let end = if source.is_empty() {
-        0
-    } else {
-        1.min(source.len())
-    };
+    let end = if source.is_empty() { 0 } else { 1.min(source.len()) };
     make_diagnostic(
         source_name,
         source,
-        SpanInfo {
-            start: 0,
-            end,
-            line_col_start: (1, 1),
-            line_col_end: (1, 1),
-        },
+        SpanInfo { start: 0, end, line_col_start: (1, 1), line_col_end: (1, 1) },
         format!("format error: {err}"),
         "format",
         None,
@@ -63,10 +54,7 @@ pub struct EmitCtx {
 
 impl EmitCtx {
     pub fn new() -> Self {
-        Self {
-            indent: 0,
-            policy_blank_line_between_members: true,
-        }
+        Self { indent: 0, policy_blank_line_between_members: true }
     }
 
     pub fn push_indent(&mut self) {

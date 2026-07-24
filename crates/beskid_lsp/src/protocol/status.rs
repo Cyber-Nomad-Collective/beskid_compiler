@@ -29,11 +29,7 @@ pub async fn send_beskid_status(client: &Client, params: BeskidStatusParams) {
 }
 
 /// Progress notification while indexing workspace files on disk.
-pub fn workspace_scan_status(
-    current: u32,
-    total: u32,
-    message: Option<String>,
-) -> BeskidStatusParams {
+pub fn workspace_scan_status(current: u32, total: u32, message: Option<String>) -> BeskidStatusParams {
     BeskidStatusParams {
         source: "lsp".into(),
         phase: "workspace_scan".into(),

@@ -25,22 +25,13 @@ impl Rule for SemanticPipelineRule {
 }
 
 impl SemanticPipelineRule {
-    pub(crate) fn run_stages(
-        &self,
-        ctx: &mut RuleContext,
-        program: &Program,
-        pipeline: Option<&dyn PipelineObserver>,
-    ) {
-        let span = program
-            .items
-            .first()
-            .map(|item| item.span)
-            .unwrap_or(SpanInfo {
-                start: 0,
-                end: 0,
-                line_col_start: (1, 1),
-                line_col_end: (1, 1),
-            });
+    pub(crate) fn run_stages(&self, ctx: &mut RuleContext, program: &Program, pipeline: Option<&dyn PipelineObserver>) {
+        let span = program.items.first().map(|item| item.span).unwrap_or(SpanInfo {
+            start: 0,
+            end: 0,
+            line_col_start: (1, 1),
+            line_col_end: (1, 1),
+        });
         let spanned_program = Spanned::new(program.clone(), span);
         let ast: Spanned<AstProgram> = spanned_program.into();
         let hir = observe_phase_value(pipeline, phases::SEMANTIC_AST_LOWER, || lower_program(&ast));
@@ -52,11 +43,9 @@ impl SemanticPipelineRule {
             self.stage3_control_flow_and_patterns(ctx, &hir);
         });
 
-        let Some(resolution) =
-            observe_stage_optional(pipeline, phases::SEMANTIC_NAME_RESOLUTION, || {
-                self.stage1_name_resolution(ctx, &hir)
-            })
-        else {
+        let Some(resolution) = observe_stage_optional(pipeline, phases::SEMANTIC_NAME_RESOLUTION, || {
+            self.stage1_name_resolution(ctx, &hir)
+        }) else {
             return;
         };
 
@@ -78,11 +67,7 @@ impl SemanticPipelineRule {
     }
 }
 
-fn observe_stage<O: PipelineObserver + ?Sized>(
-    obs: Option<&O>,
-    id: &'static str,
-    f: impl FnOnce(),
-) {
+fn observe_stage<O: PipelineObserver + ?Sized>(obs: Option<&O>, id: &'static str, f: impl FnOnce()) {
     if let Some(o) = obs {
         observe_phase(Some(o), id, f);
     } else {

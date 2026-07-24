@@ -51,9 +51,7 @@ struct CompileDebugWidgetState {
 
 impl Default for CompileDebugWidgetState {
     fn default() -> Self {
-        Self {
-            active_tab: CompileDebugTab::Timeline,
-        }
+        Self { active_tab: CompileDebugTab::Timeline }
     }
 }
 
@@ -63,19 +61,13 @@ pub struct CompileDebugWidget {
 
 impl Default for CompileDebugWidget {
     fn default() -> Self {
-        Self {
-            state: RefCell::new(CompileDebugWidgetState::default()),
-        }
+        Self { state: RefCell::new(CompileDebugWidgetState::default()) }
     }
 }
 
 impl BeskidWidget for CompileDebugWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: "compile.debugger",
-            title: "Compile debugger",
-            icon: "▣",
-        }
+        WidgetMeta { id: "compile.debugger", title: "Compile debugger", icon: "▣" }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {
@@ -99,8 +91,7 @@ pub fn draw_compile_debug_panel(
     state: &mut crate::tui::shell::state::ShellState,
     active_tab: CompileDebugTab,
 ) {
-    let [tabs_area, body] =
-        Layout::vertical([Constraint::Length(1), Constraint::Min(4)]).areas(area);
+    let [tabs_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(4)]).areas(area);
 
     if scope.is_some_and(|s| s.is_user()) && !state.pipeline_active() {
         let tabs = Tabs::new(vec!["Timeline", "Incremental", "Traces"])
@@ -120,11 +111,7 @@ pub fn draw_compile_debug_panel(
     let tabs = Tabs::new(titles)
         .block(toolbar_block("Compile debugger"))
         .style(Style::default().fg(Color::DarkGray))
-        .highlight_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
+        .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         .select(active_tab.index())
         .divider(symbols::DOT)
         .padding(" ", " ");
@@ -137,52 +124,22 @@ pub fn draw_compile_debug_panel(
     }
 }
 
-fn draw_timeline_tab(
-    frame: &mut Frame,
-    area: Rect,
-    state: &mut crate::tui::shell::state::ShellState,
-) {
-    let [progress, tree] =
-        Layout::vertical([Constraint::Length(5), Constraint::Min(4)]).areas(area);
+fn draw_timeline_tab(frame: &mut Frame, area: Rect, state: &mut crate::tui::shell::state::ShellState) {
+    let [progress, tree] = Layout::vertical([Constraint::Length(5), Constraint::Min(4)]).areas(area);
     draw_progress_footer(frame, progress, &state.pipeline);
     let focus = StageFocus::from_shell_state(state);
-    draw_pipeline_tree(
-        frame,
-        tree,
-        &state.tree_nodes,
-        &mut state.tree_state,
-        focus.title(),
-    );
+    draw_pipeline_tree(frame, tree, &state.tree_nodes, &mut state.tree_state, focus.title());
 }
 
-fn draw_incremental_tab(
-    frame: &mut Frame,
-    area: Rect,
-    state: &mut crate::tui::shell::state::ShellState,
-) {
-    draw_log_panel(
-        frame,
-        area,
-        LogTab::Incremental.scroll_hint(),
-        state.log_states.state_mut(LogTab::Incremental),
-    );
+fn draw_incremental_tab(frame: &mut Frame, area: Rect, state: &mut crate::tui::shell::state::ShellState) {
+    draw_log_panel(frame, area, LogTab::Incremental.scroll_hint(), state.log_states.state_mut(LogTab::Incremental));
 }
 
-fn draw_traces_tab(
-    frame: &mut Frame,
-    area: Rect,
-    state: &mut crate::tui::shell::state::ShellState,
-) {
-    draw_log_panel(
-        frame,
-        area,
-        LogTab::Traces.scroll_hint(),
-        state.log_states.state_mut(LogTab::Traces),
-    );
+fn draw_traces_tab(frame: &mut Frame, area: Rect, state: &mut crate::tui::shell::state::ShellState) {
+    draw_log_panel(frame, area, LogTab::Traces.scroll_hint(), state.log_states.state_mut(LogTab::Traces));
 }
 
 pub fn open_compile_debug(ctx: &mut WidgetContext<'_>) {
-    ctx.shell_state
-        .set_overlay_visible(OverlayKind::CompileDebug, true);
+    ctx.shell_state.set_overlay_visible(OverlayKind::CompileDebug, true);
     ctx.shell_state.focus_overlay(OverlayKind::CompileDebug);
 }

@@ -53,32 +53,19 @@ pub(crate) fn parse_binary_expression(pair: Pair<Rule>) -> Result<Spanned<Expres
 fn parse_chain(pair: Pair<Rule>, operators: &[&str]) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
     let input = pair.as_span().get_input();
-    let mut expressions = pair
-        .into_inner()
-        .map(Expression::parse)
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter();
+    let mut expressions = pair.into_inner().map(Expression::parse).collect::<Result<Vec<_>, _>>()?.into_iter();
 
-    let mut expr = expressions
-        .next()
-        .ok_or(ParseError::missing(Rule::Expression))?;
+    let mut expr = expressions.next().ok_or(ParseError::missing(Rule::Expression))?;
 
     for next in expressions {
-        let op_text = extract_operator(input, &expr.span, &next.span, operators)
-            .ok_or(ParseError::missing(Rule::Expression))?;
+        let op_text =
+            extract_operator(input, &expr.span, &next.span, operators).ok_or(ParseError::missing(Rule::Expression))?;
         let op_span = span_from_range(input, expr.span.end, next.span.start, op_text)
             .ok_or(ParseError::missing(Rule::Expression))?;
         let op = Spanned::new(map_binary_op(op_text)?, op_span);
-        let node_span = span_from_bounds(input, expr.span.start, next.span.end)
-            .ok_or(ParseError::missing(Rule::Expression))?;
-        let binary = Spanned::new(
-            BinaryExpression {
-                left: Box::new(expr),
-                op,
-                right: Box::new(next),
-            },
-            node_span,
-        );
+        let node_span =
+            span_from_bounds(input, expr.span.start, next.span.end).ok_or(ParseError::missing(Rule::Expression))?;
+        let binary = Spanned::new(BinaryExpression { left: Box::new(expr), op, right: Box::new(next) }, node_span);
         expr = Spanned::new(Expression::Binary(binary), node_span);
     }
 
@@ -106,12 +93,7 @@ fn map_binary_op(op_text: &str) -> Result<BinaryOp, ParseError> {
     }
 }
 
-fn extract_operator<'a>(
-    input: &'a str,
-    left: &SpanInfo,
-    right: &SpanInfo,
-    operators: &[&'a str],
-) -> Option<&'a str> {
+fn extract_operator<'a>(input: &'a str, left: &SpanInfo, right: &SpanInfo, operators: &[&'a str]) -> Option<&'a str> {
     let between = input.get(left.end..right.start)?.trim();
     operators.iter().find(|op| between == **op).copied()
 }

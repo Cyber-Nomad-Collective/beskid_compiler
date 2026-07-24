@@ -22,9 +22,6 @@ impl FileWatcher {
     /// watcher.watch(Path::new("./src")).unwrap();
     /// ```
     pub fn for_directory() -> Result<Self, notify::Error> {
-        Self::with_config(WatchConfig {
-            mode: WatchMode::Recursive,
-            debounce_ms: 200,
-        })
+        Self::with_config(WatchConfig { mode: WatchMode::Recursive, debounce_ms: 200 })
     }
 }

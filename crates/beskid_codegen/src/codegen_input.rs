@@ -41,12 +41,8 @@ impl<'db> CodegenInput<'db> {
         if roots.is_empty() {
             return Err(CodegenInputError::MissingRoots);
         }
-        target
-            .validate()
-            .map_err(|_| CodegenInputError::InvalidTarget)?;
-        abi_manifest
-            .validate()
-            .map_err(|_| CodegenInputError::ManifestDrift)?;
+        target.validate().map_err(|_| CodegenInputError::InvalidTarget)?;
+        abi_manifest.validate().map_err(|_| CodegenInputError::ManifestDrift)?;
         if abi_manifest.target != target {
             return Err(CodegenInputError::ManifestTargetMismatch);
         }
@@ -55,34 +51,21 @@ impl<'db> CodegenInput<'db> {
         }
 
         let entry_path = typed_program.entry.path(db);
-        let entry_matches = typed_program
-            .assembly
-            .units()
-            .iter()
-            .any(|unit| paths_match(&unit.path, entry_path));
+        let entry_matches = typed_program.assembly.units().iter().any(|unit| paths_match(&unit.path, entry_path));
         if !entry_matches {
             return Err(CodegenInputError::InvalidEntry);
         }
 
         for root in roots.iter().copied() {
             let unit_path = root.unit.path(db);
-            let belongs_to_assembly = typed_program
-                .assembly
-                .units()
-                .iter()
-                .any(|unit| paths_match(&unit.path, unit_path));
+            let belongs_to_assembly =
+                typed_program.assembly.units().iter().any(|unit| paths_match(&unit.path, unit_path));
             if !belongs_to_assembly || !matches!(node_kind(db, root), Ok(Some(_))) {
                 return Err(CodegenInputError::InvalidRoot(root));
             }
         }
 
-        Ok(Self {
-            db,
-            typed_program,
-            roots,
-            target,
-            abi_manifest,
-        })
+        Ok(Self { db, typed_program, roots, target, abi_manifest })
     }
 
     pub fn database(&self) -> &'db dyn Db {

@@ -4,18 +4,11 @@ use crate::harness::workspace::E2eWorkspace;
 
 #[test]
 fn fetch_fails_when_manifest_is_missing() {
-    let empty = tempfile::Builder::new()
-        .prefix("beskid_e2e_missing_manifest_")
-        .tempdir()
-        .expect("create temp dir");
+    let empty = tempfile::Builder::new().prefix("beskid_e2e_missing_manifest_").tempdir().expect("create temp dir");
     let project_path = empty.path().join("Project.proj");
     let cli = BeskidCliInvoker::new();
 
-    let result = cli.run([
-        "fetch",
-        "--project",
-        project_path.to_str().expect("project path str"),
-    ]);
+    let result = cli.run(["fetch", "--project", project_path.to_str().expect("project path str")]);
     assert_failure(&result, "fetch missing manifest");
     assert_output_contains(&result, "Project.proj", "fetch missing manifest");
 }
@@ -81,9 +74,5 @@ fn build_reports_linker_unavailable_with_invalid_cc() {
     let result = command.output().expect("run build with invalid CC");
 
     assert_failure(&result, "build invalid linker toolchain");
-    assert_output_contains(
-        &result,
-        "Linker tool not available",
-        "build invalid linker toolchain",
-    );
+    assert_output_contains(&result, "Linker tool not available", "build invalid linker toolchain");
 }

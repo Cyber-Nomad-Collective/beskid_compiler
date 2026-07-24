@@ -2,16 +2,14 @@
 
 use std::collections::HashMap;
 
-use bsol::{
-    BsolSpan, ValidatedBlock, ValidatedDocument, load_profile, parse_bsol_document, validate,
-};
+use bsol::{BsolSpan, ValidatedBlock, ValidatedDocument, load_profile, parse_bsol_document, validate};
 
 use super::error::ProjectError;
 use super::model::{
-    Dependency, DependencySource, GrammarOutputEntry, ModGeneratedOutput, ProjectGrammarSection,
-    ProjectKind, ProjectLinkSection, ProjectManifest, ProjectModSection, ProjectSchemasSection,
-    ProjectSection, ProjectTemplateSection, SchemaExport, Target, TargetKind, WorkspaceManifest,
-    WorkspaceMember, WorkspaceOverride, WorkspaceRegistry, WorkspaceSection,
+    Dependency, DependencySource, GrammarOutputEntry, ModGeneratedOutput, ProjectGrammarSection, ProjectKind,
+    ProjectLinkSection, ProjectManifest, ProjectModSection, ProjectSchemasSection, ProjectSection,
+    ProjectTemplateSection, SchemaExport, Target, TargetKind, WorkspaceManifest, WorkspaceMember, WorkspaceOverride,
+    WorkspaceRegistry, WorkspaceSection,
 };
 use super::validator::{validate_manifest, validate_workspace_manifest};
 
@@ -63,27 +61,18 @@ enum ModFieldValue {
     String(String),
 }
 
-const PROJECT_ROOT_FIELDS: &[&str] = &[
-    "name",
-    "version",
-    "root",
-    "root_namespace",
-    "type",
-    "readme",
-];
+const PROJECT_ROOT_FIELDS: &[&str] = &["name", "version", "root", "root_namespace", "type", "readme"];
 const WORKSPACE_ROOT_FIELDS: &[&str] = &["name", "resolver"];
 const MEMBER_FIELDS: &[&str] = &["path"];
 
 fn parse_project_document(source: &str) -> Result<ValidatedDocument, ProjectError> {
-    let document = parse_bsol_document(source)
-        .map_err(|e| ProjectError::from_bsol(bsol::BsolError::from(e)))?;
+    let document = parse_bsol_document(source).map_err(|e| ProjectError::from_bsol(bsol::BsolError::from(e)))?;
     let profile = load_profile("project.v1").map_err(ProjectError::from_bsol)?;
     validate(&document, &profile).map_err(ProjectError::from_bsol)
 }
 
 fn parse_workspace_document(source: &str) -> Result<ValidatedDocument, ProjectError> {
-    let document = parse_bsol_document(source)
-        .map_err(|e| ProjectError::from_bsol(bsol::BsolError::from(e)))?;
+    let document = parse_bsol_document(source).map_err(|e| ProjectError::from_bsol(bsol::BsolError::from(e)))?;
     let profile = load_profile("workspace.v1").map_err(ProjectError::from_bsol)?;
     validate(&document, &profile).map_err(ProjectError::from_bsol)
 }
@@ -116,10 +105,7 @@ fn lower_project_document(validated: ValidatedDocument) -> Result<ParsedBlocks, 
                     ));
                 }
                 if parsed.project.is_some() {
-                    return Err(parse_at(
-                        block.span,
-                        "manifest must contain exactly one named project root block",
-                    ));
+                    return Err(parse_at(block.span, "manifest must contain exactly one named project root block"));
                 }
                 parsed.project = Some(lower_project_root_block(block)?);
             }
@@ -127,27 +113,19 @@ fn lower_project_document(validated: ValidatedDocument) -> Result<ParsedBlocks, 
             "dependency" => parsed.dependencies.push(lower_flat_block(block)),
             "link" => {
                 if parsed.link.is_some() {
-                    return Err(ProjectError::meta_contract(
-                        "E1890",
-                        "duplicate `link` block at top level",
-                    ));
+                    return Err(ProjectError::meta_contract("E1890", "duplicate `link` block at top level"));
                 }
                 parsed.link = Some(lower_link_block(block)?);
             }
             other => {
-                return Err(parse_at(
-                    block.span,
-                    format!("unexpected `{other}` block in project manifest"),
-                ));
+                return Err(parse_at(block.span, format!("unexpected `{other}` block in project manifest")));
             }
         }
     }
     Ok(parsed)
 }
 
-fn lower_workspace_document(
-    validated: ValidatedDocument,
-) -> Result<ParsedWorkspaceBlocks, ProjectError> {
+fn lower_workspace_document(validated: ValidatedDocument) -> Result<ParsedWorkspaceBlocks, ProjectError> {
     let mut parsed = ParsedWorkspaceBlocks::default();
     for block in validated.blocks {
         match block.rule_id.as_str() {
@@ -156,10 +134,7 @@ fn lower_workspace_document(
             "override" => parsed.overrides.push(lower_flat_block(block)),
             "registry" => parsed.registries.push(lower_flat_block(block)),
             other => {
-                return Err(parse_at(
-                    block.span,
-                    format!("unexpected `{other}` block in workspace manifest"),
-                ));
+                return Err(parse_at(block.span, format!("unexpected `{other}` block in workspace manifest")));
             }
         }
     }
@@ -171,28 +146,11 @@ fn lower_project_root_block(block: ValidatedBlock) -> Result<ParsedProjectBlock,
     let (fields, extras) = split_known_fields(block.fields, PROJECT_ROOT_FIELDS);
     let mod_block = block.nested.iter().find(|n| n.rule_id == "mod");
     let mod_section = mod_block.map(lower_mod_block).transpose()?;
-    let mod_generated_outputs = mod_block
-        .map(lower_mod_generated_outputs)
-        .transpose()?
-        .unwrap_or_default();
-    let grammar_section = block
-        .nested
-        .iter()
-        .find(|n| n.rule_id == "grammar")
-        .map(lower_grammar_block)
-        .transpose()?;
-    let template_section = block
-        .nested
-        .iter()
-        .find(|n| n.rule_id == "template")
-        .map(lower_template_block)
-        .transpose()?;
-    let schemas_section = block
-        .nested
-        .iter()
-        .find(|n| n.rule_id == "schemas")
-        .map(lower_schemas_block)
-        .transpose()?;
+    let mod_generated_outputs = mod_block.map(lower_mod_generated_outputs).transpose()?.unwrap_or_default();
+    let grammar_section = block.nested.iter().find(|n| n.rule_id == "grammar").map(lower_grammar_block).transpose()?;
+    let template_section =
+        block.nested.iter().find(|n| n.rule_id == "template").map(lower_template_block).transpose()?;
+    let schemas_section = block.nested.iter().find(|n| n.rule_id == "schemas").map(lower_schemas_block).transpose()?;
     Ok(ParsedProjectBlock {
         block_kind: block.kind,
         fields,
@@ -219,15 +177,10 @@ fn lower_grammar_block(block: &ValidatedBlock) -> Result<ProjectGrammarSection, 
             })
         })
         .collect::<Result<Vec<_>, ProjectError>>()?;
-    Ok(ProjectGrammarSection {
-        roots,
-        grammar_outputs,
-    })
+    Ok(ProjectGrammarSection { roots, grammar_outputs })
 }
 
-fn lower_mod_generated_outputs(
-    block: &ValidatedBlock,
-) -> Result<Vec<ModGeneratedOutput>, ProjectError> {
+fn lower_mod_generated_outputs(block: &ValidatedBlock) -> Result<Vec<ModGeneratedOutput>, ProjectError> {
     block
         .nested
         .iter()
@@ -249,26 +202,21 @@ fn lower_schemas_block(block: &ValidatedBlock) -> Result<ProjectSchemasSection, 
             continue;
         }
         exports.push(SchemaExport {
-            name: nested.label.clone().ok_or_else(|| {
-                ProjectError::Validation("`export` block requires a label".to_string())
-            })?,
+            name: nested
+                .label
+                .clone()
+                .ok_or_else(|| ProjectError::Validation("`export` block requires a label".to_string()))?,
             profile: required_field(&nested.fields, "profile")?,
             path: required_field(&nested.fields, "path")?,
         });
     }
-    Ok(ProjectSchemasSection {
-        default_profile,
-        exports,
-    })
+    Ok(ProjectSchemasSection { default_profile, exports })
 }
 
 fn lower_flat_block(block: ValidatedBlock) -> ParsedBlock {
     let mut fields = block.fields;
     fields.extend(block.extras);
-    ParsedBlock {
-        label: block.label,
-        fields,
-    }
+    ParsedBlock { label: block.label, fields }
 }
 
 fn lower_link_block(block: ValidatedBlock) -> Result<ParsedLinkBlock, ProjectError> {
@@ -300,14 +248,11 @@ fn lower_mod_block(block: &ValidatedBlock) -> Result<HashMap<String, ModFieldVal
             fields.insert(key.to_string(), ModFieldValue::StringList(list.clone()));
         } else if let Some(value) = block.fields.get(key) {
             let parsed = match key {
-                "maxGeneratorRounds" | "maxMetaRounds" => {
-                    ModFieldValue::U32(value.parse::<u32>().map_err(|_| {
-                        parse_at(
-                            block.span,
-                            format!("`mod.{key}` must be a positive integer"),
-                        )
-                    })?)
-                }
+                "maxGeneratorRounds" | "maxMetaRounds" => ModFieldValue::U32(
+                    value
+                        .parse::<u32>()
+                        .map_err(|_| parse_at(block.span, format!("`mod.{key}` must be a positive integer")))?,
+                ),
                 "artifactPolicy" => ModFieldValue::String(value.clone()),
                 "capabilities" => ModFieldValue::StringList(vec![value.clone()]),
                 _ => ModFieldValue::String(value.clone()),
@@ -321,10 +266,7 @@ fn lower_mod_block(block: &ValidatedBlock) -> Result<HashMap<String, ModFieldVal
 fn lower_template_block(block: &ValidatedBlock) -> Result<HashMap<String, String>, ProjectError> {
     for key in block.fields.keys().chain(block.extras.keys()) {
         if key != "shortName" && key != "identity" {
-            return Err(ProjectError::meta_contract(
-                "E1885",
-                format!("unknown `template` field `{key}`"),
-            ));
+            return Err(ProjectError::meta_contract("E1885", format!("unknown `template` field `{key}`")));
         }
     }
     Ok(block.fields.clone())
@@ -432,23 +374,12 @@ fn build_project_mod_from_fields(
         }
     };
 
-    let generated_outputs = if generated_outputs.is_empty() {
-        None
-    } else {
-        Some(generated_outputs.to_vec())
-    };
+    let generated_outputs = if generated_outputs.is_empty() { None } else { Some(generated_outputs.to_vec()) };
 
-    Ok(ProjectModSection {
-        max_generator_rounds,
-        capabilities,
-        artifact_policy,
-        generated_outputs,
-    })
+    Ok(ProjectModSection { max_generator_rounds, capabilities, artifact_policy, generated_outputs })
 }
 
-fn build_project_template_from_fields(
-    template_fields: &HashMap<String, String>,
-) -> ProjectTemplateSection {
+fn build_project_template_from_fields(template_fields: &HashMap<String, String>) -> ProjectTemplateSection {
     ProjectTemplateSection {
         short_name: template_fields.get("shortName").cloned(),
         identity: template_fields.get("identity").cloned(),
@@ -456,56 +387,27 @@ fn build_project_template_from_fields(
 }
 
 fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSection, ProjectError> {
-    reject_corelib_opt_out_keys(
-        &project.fields,
-        &project.extras,
-        BsolSpan {
-            start: 0,
-            end: 0,
-            line: 1,
-        },
-    )?;
+    reject_corelib_opt_out_keys(&project.fields, &project.extras, BsolSpan { start: 0, end: 0, line: 1 })?;
     let kind = build_project_kind(project.fields.get("type").map(|s| s.as_str()))?;
     let mod_section = match (&kind, &project.mod_section) {
-        (
-            ProjectKind::Host | ProjectKind::Template | ProjectKind::Aggregate | ProjectKind::Bsol,
-            Some(_),
-        ) => {
-            return Err(ProjectError::meta_contract(
-                "E1874",
-                "`mod` is only allowed when `type = Mod`",
-            ));
+        (ProjectKind::Host | ProjectKind::Template | ProjectKind::Aggregate | ProjectKind::Bsol, Some(_)) => {
+            return Err(ProjectError::meta_contract("E1874", "`mod` is only allowed when `type = Mod`"));
         }
-        (ProjectKind::Mod, Some(mod_fields)) => Some(build_project_mod_from_fields(
-            mod_fields,
-            &project.mod_generated_outputs,
-        )?),
+        (ProjectKind::Mod, Some(mod_fields)) => {
+            Some(build_project_mod_from_fields(mod_fields, &project.mod_generated_outputs)?)
+        }
         _ => None,
     };
     let template_section = match (&kind, &project.template_section) {
-        (
-            ProjectKind::Host | ProjectKind::Mod | ProjectKind::Aggregate | ProjectKind::Bsol,
-            Some(_),
-        ) => {
-            return Err(ProjectError::meta_contract(
-                "E1879",
-                "`template` is only allowed when `type = Template`",
-            ));
+        (ProjectKind::Host | ProjectKind::Mod | ProjectKind::Aggregate | ProjectKind::Bsol, Some(_)) => {
+            return Err(ProjectError::meta_contract("E1879", "`template` is only allowed when `type = Template`"));
         }
-        (ProjectKind::Template, Some(template_fields)) => {
-            Some(build_project_template_from_fields(template_fields))
-        }
+        (ProjectKind::Template, Some(template_fields)) => Some(build_project_template_from_fields(template_fields)),
         _ => None,
     };
     let schemas_section = match (&kind, &project.schemas_section) {
-        (
-            ProjectKind::Host | ProjectKind::Mod | ProjectKind::Template | ProjectKind::Aggregate,
-            Some(_),
-        ) => {
-            return Err(ProjectError::meta_contract(
-                "E1900",
-                "`schemas` is only allowed when `type = Bsol`",
-            ));
+        (ProjectKind::Host | ProjectKind::Mod | ProjectKind::Template | ProjectKind::Aggregate, Some(_)) => {
+            return Err(ProjectError::meta_contract("E1900", "`schemas` is only allowed when `type = Bsol`"));
         }
         (ProjectKind::Bsol, section) => section.clone(),
         (_, None) => None,
@@ -516,11 +418,7 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
         name: required_field(&project.fields, "name")?,
         version: required_field(&project.fields, "version")?,
         root: project.fields.get("root").cloned().unwrap_or_else(|| {
-            if matches!(kind, ProjectKind::Aggregate | ProjectKind::Bsol) {
-                String::new()
-            } else {
-                "Src".to_string()
-            }
+            if matches!(kind, ProjectKind::Aggregate | ProjectKind::Bsol) { String::new() } else { "Src".to_string() }
         }),
         root_namespace: project.fields.get("root_namespace").cloned(),
         kind,
@@ -534,9 +432,9 @@ fn assemble_project_section(project: &ParsedProjectBlock) -> Result<ProjectSecti
 }
 
 fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError> {
-    let project = parsed.project.ok_or_else(|| {
-        ProjectError::Validation("missing required named project root block".to_string())
-    })?;
+    let project = parsed
+        .project
+        .ok_or_else(|| ProjectError::Validation("missing required named project root block".to_string()))?;
 
     let project_section = assemble_project_section(&project)?;
     if project_section.block_kind != project_section.name {
@@ -572,9 +470,9 @@ fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError>
         }
 
         targets.push(Target {
-            name: target.label.ok_or_else(|| {
-                ProjectError::Validation("target block must include a label".to_string())
-            })?,
+            name: target
+                .label
+                .ok_or_else(|| ProjectError::Validation("target block must include a label".to_string()))?,
             kind,
             entry,
         });
@@ -595,9 +493,9 @@ fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError>
         };
 
         dependencies.push(Dependency {
-            name: dependency.label.ok_or_else(|| {
-                ProjectError::Validation("dependency block must include a label".to_string())
-            })?,
+            name: dependency
+                .label
+                .ok_or_else(|| ProjectError::Validation("dependency block must include a label".to_string()))?,
             source,
             path: dependency.fields.get("path").cloned(),
             url: dependency.fields.get("url").cloned(),
@@ -613,29 +511,17 @@ fn build_manifest(parsed: ParsedBlocks) -> Result<ProjectManifest, ProjectError>
         extra_args: l.extra_args,
     });
 
-    Ok(ProjectManifest {
-        project: project_section,
-        targets,
-        dependencies,
-        link,
-    })
+    Ok(ProjectManifest { project: project_section, targets, dependencies, link })
 }
 
-fn build_workspace_manifest(
-    parsed: ParsedWorkspaceBlocks,
-) -> Result<WorkspaceManifest, ProjectError> {
-    let workspace = parsed.workspace.ok_or_else(|| {
-        ProjectError::Validation("missing required `workspace` block".to_string())
-    })?;
+fn build_workspace_manifest(parsed: ParsedWorkspaceBlocks) -> Result<WorkspaceManifest, ProjectError> {
+    let workspace =
+        parsed.workspace.ok_or_else(|| ProjectError::Validation("missing required `workspace` block".to_string()))?;
 
-    let (workspace_fields, workspace_extras) =
-        split_known_fields(workspace.fields, WORKSPACE_ROOT_FIELDS);
+    let (workspace_fields, workspace_extras) = split_known_fields(workspace.fields, WORKSPACE_ROOT_FIELDS);
     let workspace_section = WorkspaceSection {
         name: required_field(&workspace_fields, "name")?,
-        resolver: workspace_fields
-            .get("resolver")
-            .cloned()
-            .unwrap_or_else(|| "v1".to_string()),
+        resolver: workspace_fields.get("resolver").cloned().unwrap_or_else(|| "v1".to_string()),
         extras: workspace_extras,
     };
 
@@ -643,9 +529,9 @@ fn build_workspace_manifest(
     for member in parsed.members {
         let (member_fields, member_extras) = split_known_fields(member.fields, MEMBER_FIELDS);
         members.push(WorkspaceMember {
-            name: member.label.ok_or_else(|| {
-                ProjectError::Validation("member block must include a label".to_string())
-            })?,
+            name: member
+                .label
+                .ok_or_else(|| ProjectError::Validation("member block must include a label".to_string()))?,
             path: required_field(&member_fields, "path")?,
             extras: member_extras,
         });
@@ -654,9 +540,9 @@ fn build_workspace_manifest(
     let mut overrides = Vec::with_capacity(parsed.overrides.len());
     for dependency_override in parsed.overrides {
         overrides.push(WorkspaceOverride {
-            dependency: dependency_override.label.ok_or_else(|| {
-                ProjectError::Validation("override block must include a label".to_string())
-            })?,
+            dependency: dependency_override
+                .label
+                .ok_or_else(|| ProjectError::Validation("override block must include a label".to_string()))?,
             version: required_field(&dependency_override.fields, "version")?,
         });
     }
@@ -664,35 +550,22 @@ fn build_workspace_manifest(
     let mut registries = Vec::with_capacity(parsed.registries.len());
     for registry in parsed.registries {
         registries.push(WorkspaceRegistry {
-            name: registry.label.ok_or_else(|| {
-                ProjectError::Validation("registry block must include a label".to_string())
-            })?,
+            name: registry
+                .label
+                .ok_or_else(|| ProjectError::Validation("registry block must include a label".to_string()))?,
             url: required_field(&registry.fields, "url")?,
         });
     }
 
-    Ok(WorkspaceManifest {
-        workspace: workspace_section,
-        members,
-        overrides,
-        registries,
-    })
+    Ok(WorkspaceManifest { workspace: workspace_section, members, overrides, registries })
 }
 
 fn required_field(fields: &HashMap<String, String>, key: &str) -> Result<String, ProjectError> {
-    fields
-        .get(key)
-        .cloned()
-        .ok_or_else(|| ProjectError::Validation(format!("missing required field `{key}`")))
+    fields.get(key).cloned().ok_or_else(|| ProjectError::Validation(format!("missing required field `{key}`")))
 }
 
 fn parse_at(span: BsolSpan, message: impl Into<String>) -> ProjectError {
-    ProjectError::ParseAt {
-        line: span.line,
-        message: message.into(),
-        start: Some(span.start),
-        end: Some(span.end),
-    }
+    ProjectError::ParseAt { line: span.line, message: message.into(), start: Some(span.start), end: Some(span.end) }
 }
 
 #[cfg(test)]
@@ -860,13 +733,7 @@ member "corelib_tests" {
 }
 "#;
         let w = parse_workspace_manifest(src).expect("parse workspace");
-        assert_eq!(
-            w.workspace
-                .extras
-                .get("defaultTestMember")
-                .map(String::as_str),
-            Some("corelib_tests")
-        );
+        assert_eq!(w.workspace.extras.get("defaultTestMember").map(String::as_str), Some("corelib_tests"));
     }
 
     #[test]
@@ -893,10 +760,7 @@ target "lib" {
         assert_eq!(grammar.roots, vec!["grammars"]);
         assert_eq!(grammar.grammar_outputs.len(), 1);
         assert_eq!(grammar.grammar_outputs[0].pest, "grammars/regex.pest");
-        assert_eq!(
-            grammar.grammar_outputs[0].module,
-            "Core.Text.Regex.Generated"
-        );
+        assert_eq!(grammar.grammar_outputs[0].module, "Core.Text.Regex.Generated");
         assert_eq!(grammar.grammar_outputs[0].package_id, "corelib_foundation");
     }
 

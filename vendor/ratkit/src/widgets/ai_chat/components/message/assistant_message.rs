@@ -40,12 +40,7 @@ pub struct ToolCall {
 impl ToolCall {
     /// Create a new tool call.
     pub fn new(name: String, arguments: String) -> Self {
-        Self {
-            name,
-            arguments,
-            result: None,
-            executing: false,
-        }
+        Self { name, arguments, result: None, executing: false }
     }
 
     /// Set the result.
@@ -171,24 +166,15 @@ impl<'a> AssistantMessage<'a> {
         };
 
         // Determine border and background colors based on state
-        let border_color = if self.error {
-            colors.error
-        } else {
-            self.agent_color
-        };
+        let border_color = if self.error { colors.error } else { self.agent_color };
 
         // Draw left border
         for y in area.y..area.y + area.height {
-            buf.get_mut(area.x, y)
-                .set_style(Style::default().fg(border_color));
+            buf.get_mut(area.x, y).set_style(Style::default().fg(border_color));
         }
 
         // Fill background
-        let bg_color = if self.focused {
-            colors.background_element
-        } else {
-            colors.background_panel
-        };
+        let bg_color = if self.focused { colors.background_element } else { colors.background_panel };
         for x in (area.x + 1)..(area.x + area.width) {
             for y in area.y..area.y + area.height {
                 buf.get_mut(x, y).set_bg(bg_color);
@@ -218,12 +204,8 @@ impl<'a> AssistantMessage<'a> {
                 MessagePart::Reasoning(reasoning) => {
                     // Render reasoning in italic/dim style
                     if area.y + y_offset < max_y {
-                        let label = Span::styled(
-                            "🤔 ",
-                            Style::default()
-                                .fg(colors.text_muted)
-                                .add_modifier(Modifier::ITALIC),
-                        );
+                        let label =
+                            Span::styled("🤔 ", Style::default().fg(colors.text_muted).add_modifier(Modifier::ITALIC));
                         buf.set_span(area.x + 2, area.y + y_offset, &label, 3);
                     }
                     y_offset += 1;
@@ -232,12 +214,8 @@ impl<'a> AssistantMessage<'a> {
                         if area.y + y_offset >= max_y {
                             break;
                         }
-                        let span = Span::styled(
-                            line,
-                            Style::default()
-                                .fg(colors.text_muted)
-                                .add_modifier(Modifier::ITALIC),
-                        );
+                        let span =
+                            Span::styled(line, Style::default().fg(colors.text_muted).add_modifier(Modifier::ITALIC));
                         buf.set_span(area.x + 2, area.y + y_offset, &span, content_area.width - 2);
                         y_offset += 1;
                     }
@@ -245,17 +223,11 @@ impl<'a> AssistantMessage<'a> {
                 MessagePart::Tool(tool) => {
                     // Render tool call header
                     let tool_style = if tool.executing {
-                        Style::default()
-                            .fg(colors.warning)
-                            .add_modifier(Modifier::BOLD)
+                        Style::default().fg(colors.warning).add_modifier(Modifier::BOLD)
                     } else if tool.result.is_some() {
-                        Style::default()
-                            .fg(colors.success)
-                            .add_modifier(Modifier::BOLD)
+                        Style::default().fg(colors.success).add_modifier(Modifier::BOLD)
                     } else {
-                        Style::default()
-                            .fg(colors.primary)
-                            .add_modifier(Modifier::BOLD)
+                        Style::default().fg(colors.primary).add_modifier(Modifier::BOLD)
                     };
 
                     let status_icon = if tool.executing {
@@ -267,14 +239,8 @@ impl<'a> AssistantMessage<'a> {
                     };
 
                     if area.y + y_offset < max_y {
-                        let header =
-                            Span::styled(format!("{} {} ", status_icon, tool.name), tool_style);
-                        buf.set_span(
-                            area.x + 2,
-                            area.y + y_offset,
-                            &header,
-                            content_area.width - 2,
-                        );
+                        let header = Span::styled(format!("{} {} ", status_icon, tool.name), tool_style);
+                        buf.set_span(area.x + 2, area.y + y_offset, &header, content_area.width - 2);
                         y_offset += 1;
                     }
 
@@ -282,32 +248,18 @@ impl<'a> AssistantMessage<'a> {
                     if !tool.arguments.is_empty() && area.y + y_offset < max_y {
                         let args_span = Span::styled(
                             format!("  {}", tool.arguments),
-                            Style::default()
-                                .fg(colors.text_muted)
-                                .add_modifier(Modifier::DIM),
+                            Style::default().fg(colors.text_muted).add_modifier(Modifier::DIM),
                         );
-                        buf.set_span(
-                            area.x + 2,
-                            area.y + y_offset,
-                            &args_span,
-                            content_area.width - 2,
-                        );
+                        buf.set_span(area.x + 2, area.y + y_offset, &args_span, content_area.width - 2);
                         y_offset += 1;
                     }
 
                     // Render tool result if present
                     if let Some(result) = &tool.result {
                         if area.y + y_offset < max_y {
-                            let result_span = Span::styled(
-                                format!("  → {}", result),
-                                Style::default().fg(colors.success),
-                            );
-                            buf.set_span(
-                                area.x + 2,
-                                area.y + y_offset,
-                                &result_span,
-                                content_area.width - 2,
-                            );
+                            let result_span =
+                                Span::styled(format!("  → {}", result), Style::default().fg(colors.success));
+                            buf.set_span(area.x + 2, area.y + y_offset, &result_span, content_area.width - 2);
                             y_offset += 1;
                         }
                     }
@@ -324,59 +276,30 @@ impl<'a> AssistantMessage<'a> {
                 // Mode icon
                 Span::styled("▣ ", Style::default().fg(colors.text_muted)),
                 // Agent name
-                Span::styled(
-                    self.agent_name,
-                    Style::default()
-                        .fg(colors.text_muted)
-                        .add_modifier(Modifier::DIM),
-                ),
+                Span::styled(self.agent_name, Style::default().fg(colors.text_muted).add_modifier(Modifier::DIM)),
                 // Separator
                 Span::styled(" • ", Style::default().fg(colors.text_muted)),
                 // Model ID
-                Span::styled(
-                    self.model_id,
-                    Style::default()
-                        .fg(colors.text_muted)
-                        .add_modifier(Modifier::DIM),
-                ),
+                Span::styled(self.model_id, Style::default().fg(colors.text_muted).add_modifier(Modifier::DIM)),
                 // Separator
                 Span::styled(" • ", Style::default().fg(colors.text_muted)),
                 // Duration
                 Span::styled(
                     self.format_duration(),
-                    Style::default()
-                        .fg(colors.text_muted)
-                        .add_modifier(Modifier::DIM),
+                    Style::default().fg(colors.text_muted).add_modifier(Modifier::DIM),
                 ),
             ];
 
             if self.interrupted {
                 // Add interrupted badge
                 footer_parts.iter().for_each(|span| {
-                    buf.set_span(
-                        area.x + 2,
-                        area.y + y_offset,
-                        span,
-                        span.content.chars().count() as u16,
-                    );
+                    buf.set_span(area.x + 2, area.y + y_offset, span, span.content.chars().count() as u16);
                 });
 
-                let interrupted_span = Span::styled(
-                    " [interrupted]",
-                    Style::default()
-                        .fg(colors.warning)
-                        .add_modifier(Modifier::ITALIC),
-                );
-                let x_offset = footer_parts
-                    .iter()
-                    .map(|s| s.content.chars().count())
-                    .sum::<usize>() as u16;
-                buf.set_span(
-                    area.x + 2 + x_offset,
-                    area.y + y_offset,
-                    &interrupted_span,
-                    13,
-                );
+                let interrupted_span =
+                    Span::styled(" [interrupted]", Style::default().fg(colors.warning).add_modifier(Modifier::ITALIC));
+                let x_offset = footer_parts.iter().map(|s| s.content.chars().count()).sum::<usize>() as u16;
+                buf.set_span(area.x + 2 + x_offset, area.y + y_offset, &interrupted_span, 13);
             } else {
                 let mut x_pos = area.x + 2;
                 for span in footer_parts {
@@ -498,10 +421,7 @@ mod tests {
 
     #[test]
     fn test_tool_call_builder() {
-        let tool = ToolCall::new(
-            "filesystem_read".to_string(),
-            r#"{"path": "/test.txt"}"#.to_string(),
-        );
+        let tool = ToolCall::new("filesystem_read".to_string(), r#"{"path": "/test.txt"}"#.to_string());
         assert_eq!(tool.name, "filesystem_read");
         assert!(tool.result.is_none());
         assert!(!tool.executing);

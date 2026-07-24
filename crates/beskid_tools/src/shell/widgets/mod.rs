@@ -18,9 +18,7 @@ use super::registry::WidgetRegistry;
 
 pub use analysis::{AnalysisWidget, draw_build_report, open_analysis};
 pub use chrome::ChromeWidget;
-pub use compile_debug::{
-    CompileDebugTab, CompileDebugWidget, draw_compile_debug_panel, open_compile_debug,
-};
+pub use compile_debug::{CompileDebugTab, CompileDebugWidget, draw_compile_debug_panel, open_compile_debug};
 pub use debug_stub::DebugFutureWidget;
 pub use graph::{GraphCompileWidget, GraphWidget, draw_graph_deps_panel};
 pub use hi_welcome::HiWelcomeWidget;

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use beskid_isle::{
-    AstNodeKey, CallImportError, CallImporter, CallKind, DirectCallee, FunctionEmissionError,
-    FunctionEmitter, LiteralKind, LoweringErrorKind, NodeFacts, NodeKind,
+    AstNodeKey, CallImportError, CallImporter, CallKind, DirectCallee, FunctionEmissionError, FunctionEmitter,
+    LiteralKind, LoweringErrorKind, NodeFacts, NodeKind,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{AbiParam, FuncRef, Signature, UserFuncName, types};
@@ -102,16 +102,8 @@ fn call_facts(isa: &dyn TargetIsa, callee: DirectCallee) -> CallFacts {
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Call.bd"));
     let generation = SyntaxGenerationId(15);
     CallFacts {
-        call: AstNodeKey {
-            unit,
-            generation,
-            node: AstNodeId(1),
-        },
-        argument: AstNodeKey {
-            unit,
-            generation,
-            node: AstNodeId(2),
-        },
+        call: AstNodeKey { unit, generation, node: AstNodeId(1) },
+        argument: AstNodeKey { unit, generation, node: AstNodeId(2) },
         callee,
         signature: Signature {
             params: vec![AbiParam::new(types::I32)],
@@ -124,10 +116,7 @@ fn call_facts(isa: &dyn TargetIsa, callee: DirectCallee) -> CallFacts {
 fn importer(isa: std::sync::Arc<dyn TargetIsa>, expected: DirectCallee) -> KnownCallImporter {
     let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
     builder.symbol("add_one", add_one as *const u8);
-    KnownCallImporter {
-        module: JITModule::new(builder),
-        expected,
-    }
+    KnownCallImporter { module: JITModule::new(builder), expected }
 }
 
 #[test]
@@ -151,16 +140,10 @@ fn direct_call_imports_semantic_callee_and_executes() {
         .expect("verified direct call");
     assert!(function.display().to_string().contains("call"));
 
-    let function_id = importer
-        .module
-        .declare_function("caller", Linkage::Local, &signature)
-        .expect("declare caller");
+    let function_id = importer.module.declare_function("caller", Linkage::Local, &signature).expect("declare caller");
     let mut context = importer.module.make_context();
     context.func = function;
-    importer
-        .module
-        .define_function(function_id, &mut context)
-        .expect("define caller");
+    importer.module.define_function(function_id, &mut context).expect("define caller");
     importer.module.finalize_definitions().expect("finalize");
     let code = importer.module.get_finalized_function(function_id);
     let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
@@ -213,10 +196,7 @@ fn source_callees_with_the_same_node_id_in_different_units_are_distinct() {
         node: beskid_queries::AstNodeId(7),
     };
 
-    let symbols = HashMap::from([
-        (DirectCallee::item(left), "Left"),
-        (DirectCallee::item(right), "Right"),
-    ]);
+    let symbols = HashMap::from([(DirectCallee::item(left), "Left"), (DirectCallee::item(right), "Right")]);
 
     assert_ne!(DirectCallee::item(left), DirectCallee::item(right));
     assert_eq!(symbols[&DirectCallee::item(left)], "Left");

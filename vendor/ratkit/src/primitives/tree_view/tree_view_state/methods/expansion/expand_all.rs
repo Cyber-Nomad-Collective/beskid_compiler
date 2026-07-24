@@ -29,11 +29,7 @@ impl TreeViewState {
     /// assert!(state.is_expanded(&[0]));
     /// ```
     pub fn expand_all<T>(&mut self, nodes: &[TreeNode<T>]) {
-        fn collect_paths<T>(
-            nodes: &[TreeNode<T>],
-            current_path: Vec<usize>,
-            expanded: &mut HashSet<Vec<usize>>,
-        ) {
+        fn collect_paths<T>(nodes: &[TreeNode<T>], current_path: Vec<usize>, expanded: &mut HashSet<Vec<usize>>) {
             for (idx, node) in nodes.iter().enumerate() {
                 let mut path = current_path.clone();
                 path.push(idx);

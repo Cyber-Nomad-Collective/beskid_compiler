@@ -37,17 +37,11 @@ impl ExportTable {
     }
 
     pub fn linker_symbols(&self) -> Vec<String> {
-        self.entries
-            .iter()
-            .map(|entry| entry.exported_symbol.clone())
-            .collect()
+        self.entries.iter().map(|entry| entry.exported_symbol.clone()).collect()
     }
 
     pub fn symbol_id_for_exported_symbol(&self, exported_symbol: &str) -> Option<u32> {
-        self.entries
-            .iter()
-            .find(|entry| entry.exported_symbol == exported_symbol)
-            .map(|entry| entry.symbol_id)
+        self.entries.iter().find(|entry| entry.exported_symbol == exported_symbol).map(|entry| entry.symbol_id)
     }
 
     pub fn resolve_export_policy(&self, base: &ExportPolicy) -> ExportPolicy {

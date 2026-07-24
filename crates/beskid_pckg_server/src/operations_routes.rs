@@ -15,9 +15,8 @@ use axum::{
 };
 use beskid_pckg_operations::BlockedLinkPatterns;
 use beskid_pckg_store::{
-    AsyncAdministrationRepository, AsyncRegistryOperationsRepository, BlockedLinkPolicy,
-    NewBlockedLinkPolicy, NewRegistryActivity, RegistryActivity, RegistryOperationsStoreError,
-    SqlxPackageRepository, WeeklySpotlightRun,
+    AsyncAdministrationRepository, AsyncRegistryOperationsRepository, BlockedLinkPolicy, NewBlockedLinkPolicy,
+    NewRegistryActivity, RegistryActivity, RegistryOperationsStoreError, SqlxPackageRepository, WeeklySpotlightRun,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -51,25 +50,18 @@ struct InMemoryOperations {
 impl OperationsState {
     pub(crate) fn in_memory(in_memory_super_admin_subject: Option<String>) -> Self {
         Self {
-            backend: OperationsBackend::InMemory(Arc::new(Mutex::new(
-                InMemoryOperations::default(),
-            ))),
+            backend: OperationsBackend::InMemory(Arc::new(Mutex::new(InMemoryOperations::default()))),
             in_memory_super_admin_subject,
         }
     }
 
     pub(crate) fn sqlx(repository: Arc<SqlxPackageRepository>) -> Self {
-        Self {
-            backend: OperationsBackend::Sqlx(repository),
-            in_memory_super_admin_subject: None,
-        }
+        Self { backend: OperationsBackend::Sqlx(repository), in_memory_super_admin_subject: None }
     }
 
     pub(crate) async fn is_super_admin(&self, subject: &str) -> bool {
         match &self.backend {
-            OperationsBackend::InMemory(_) => {
-                self.in_memory_super_admin_subject.as_deref() == Some(subject)
-            }
+            OperationsBackend::InMemory(_) => self.in_memory_super_admin_subject.as_deref() == Some(subject),
             OperationsBackend::Sqlx(repository) => repository
                 .roles_for_subject(subject)
                 .await
@@ -82,9 +74,7 @@ impl OperationsState {
         activity: NewRegistryActivity,
     ) -> Result<RegistryActivity, RegistryOperationsStoreError> {
         match &self.backend {
-            OperationsBackend::Sqlx(repository) => {
-                repository.append_registry_activity(activity).await
-            }
+            OperationsBackend::Sqlx(repository) => repository.append_registry_activity(activity).await,
             OperationsBackend::InMemory(operations) => {
                 validate_in_memory_activity(&activity)?;
                 let mut operations = operations.lock().expect("operations mutex is not poisoned");
@@ -113,31 +103,22 @@ impl OperationsState {
         }
     }
 
-    async fn list_blocked_links(
-        &self,
-    ) -> Result<Vec<BlockedLinkPolicy>, RegistryOperationsStoreError> {
+    async fn list_blocked_links(&self) -> Result<Vec<BlockedLinkPolicy>, RegistryOperationsStoreError> {
         match &self.backend {
             OperationsBackend::Sqlx(repository) => repository.list_blocked_link_policies().await,
-            OperationsBackend::InMemory(operations) => Ok(operations
-                .lock()
-                .expect("operations mutex is not poisoned")
-                .blocked_links
-                .clone()),
+            OperationsBackend::InMemory(operations) => {
+                Ok(operations.lock().expect("operations mutex is not poisoned").blocked_links.clone())
+            }
         }
     }
 
     /// Reads the durable blocked-link policy through the one shared domain
     /// matcher. Community adapters call this at their mutation boundary; they
     /// neither cache nor reinterpret policy rows.
-    pub(crate) async fn block_reason(
-        &self,
-        text: &str,
-    ) -> Result<Option<&'static str>, RegistryOperationsStoreError> {
+    pub(crate) async fn block_reason(&self, text: &str) -> Result<Option<&'static str>, RegistryOperationsStoreError> {
         let policies = self.list_blocked_links().await?;
-        let patterns = BlockedLinkPatterns::from_patterns(
-            policies.iter().map(|policy| policy.pattern.as_str()),
-        )
-        .map_err(|_| RegistryOperationsStoreError::InvalidBlockedLinkPattern)?;
+        let patterns = BlockedLinkPatterns::from_patterns(policies.iter().map(|policy| policy.pattern.as_str()))
+            .map_err(|_| RegistryOperationsStoreError::InvalidBlockedLinkPattern)?;
         Ok(patterns.block_reason(text))
     }
 
@@ -156,11 +137,7 @@ impl OperationsState {
                     return Err(RegistryOperationsStoreError::InvalidAuthHubSubject);
                 }
                 let mut operations = operations.lock().expect("operations mutex is not poisoned");
-                if operations
-                    .blocked_links
-                    .iter()
-                    .any(|existing| existing.pattern.eq_ignore_ascii_case(pattern))
-                {
+                if operations.blocked_links.iter().any(|existing| existing.pattern.eq_ignore_ascii_case(pattern)) {
                     return Err(RegistryOperationsStoreError::DuplicateBlockedLinkPattern);
                 }
                 let policy = BlockedLinkPolicy {
@@ -171,11 +148,9 @@ impl OperationsState {
                     created_at_unix_seconds: policy.created_at_unix_seconds,
                 };
                 operations.blocked_links.push(policy.clone());
-                operations.blocked_links.sort_by(|left, right| {
-                    right
-                        .created_at_unix_seconds
-                        .cmp(&left.created_at_unix_seconds)
-                });
+                operations
+                    .blocked_links
+                    .sort_by(|left, right| right.created_at_unix_seconds.cmp(&left.created_at_unix_seconds));
                 Ok(policy)
             }
         }
@@ -188,17 +163,12 @@ impl OperationsState {
                 let mut operations = operations.lock().expect("operations mutex is not poisoned");
                 let before = operations.blocked_links.len();
                 operations.blocked_links.retain(|policy| policy.id != id);
-                (before != operations.blocked_links.len())
-                    .then_some(())
-                    .ok_or(RegistryOperationsStoreError::NotFound)
+                (before != operations.blocked_links.len()).then_some(()).ok_or(RegistryOperationsStoreError::NotFound)
             }
         }
     }
 
-    async fn recent_activity(
-        &self,
-        take: u16,
-    ) -> Result<Vec<RegistryActivity>, RegistryOperationsStoreError> {
+    async fn recent_activity(&self, take: u16) -> Result<Vec<RegistryActivity>, RegistryOperationsStoreError> {
         match &self.backend {
             OperationsBackend::Sqlx(repository) => repository.recent_registry_activity(take).await,
             OperationsBackend::InMemory(operations) => Ok(operations
@@ -229,26 +199,16 @@ impl OperationsState {
 
 impl CommunityLinkPolicy for OperationsState {
     fn block_reason<'a>(&'a self, text: &'a str) -> CommunityLinkPolicyFuture<'a> {
-        Box::pin(async move {
-            OperationsState::block_reason(self, text)
-                .await
-                .map_err(|_| ())
-        })
+        Box::pin(async move { OperationsState::block_reason(self, text).await.map_err(|_| ()) })
     }
 }
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
-        .route(
-            "/api/admin/blocked-links",
-            get(list_blocked_links).post(add_blocked_link),
-        )
+        .route("/api/admin/blocked-links", get(list_blocked_links).post(add_blocked_link))
         .route("/api/admin/blocked-links/{id}", delete(delete_blocked_link))
         .route("/api/admin/registry-activity", get(registry_activity))
-        .route(
-            "/api/admin/notifications/weekly-spotlight/run",
-            post(run_weekly_spotlight),
-        )
+        .route("/api/admin/notifications/weekly-spotlight/run", post(run_weekly_spotlight))
 }
 
 #[derive(Deserialize)]
@@ -301,13 +261,7 @@ async fn list_blocked_links(State(state): State<AppState>, headers: HeaderMap) -
         return forbidden();
     }
     match state.operations.list_blocked_links().await {
-        Ok(policies) => Json(
-            policies
-                .into_iter()
-                .map(blocked_link_response)
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
+        Ok(policies) => Json(policies.into_iter().map(blocked_link_response).collect::<Vec<_>>()).into_response(),
         Err(_) => unavailable(),
     }
 }
@@ -340,21 +294,13 @@ async fn add_blocked_link(
             item: blocked_link_response(policy),
         })
         .into_response(),
-        Err(RegistryOperationsStoreError::DuplicateBlockedLinkPattern) => {
-            conflict("that pattern is already blocked")
-        }
-        Err(RegistryOperationsStoreError::InvalidBlockedLinkPattern) => {
-            bad_request("invalid blocked-link pattern")
-        }
+        Err(RegistryOperationsStoreError::DuplicateBlockedLinkPattern) => conflict("that pattern is already blocked"),
+        Err(RegistryOperationsStoreError::InvalidBlockedLinkPattern) => bad_request("invalid blocked-link pattern"),
         Err(_) => unavailable(),
     }
 }
 
-async fn delete_blocked_link(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Response {
+async fn delete_blocked_link(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>) -> Response {
     let Some(actor) = authenticated_subject(&state, &headers) else {
         return unauthorized_response();
     };
@@ -364,9 +310,7 @@ async fn delete_blocked_link(
     match state.operations.delete_blocked_link(&id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(RegistryOperationsStoreError::NotFound) => StatusCode::NOT_FOUND.into_response(),
-        Err(RegistryOperationsStoreError::InvalidBlockedLinkId) => {
-            bad_request("invalid blocked-link id")
-        }
+        Err(RegistryOperationsStoreError::InvalidBlockedLinkId) => bad_request("invalid blocked-link id"),
         Err(_) => unavailable(),
     }
 }
@@ -384,13 +328,7 @@ async fn registry_activity(
     }
     let take = query.take.filter(|take| *take > 0).unwrap_or(200).min(500);
     match state.operations.recent_activity(take).await {
-        Ok(activity) => Json(
-            activity
-                .into_iter()
-                .map(activity_response)
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
+        Ok(activity) => Json(activity.into_iter().map(activity_response).collect::<Vec<_>>()).into_response(),
         Err(_) => unavailable(),
     }
 }
@@ -404,10 +342,9 @@ async fn run_weekly_spotlight(State(state): State<AppState>, headers: HeaderMap)
     }
     let now = crate::now_unix_seconds();
     let activity_count = match state.operations.recent_activity(500).await {
-        Ok(entries) => entries
-            .iter()
-            .filter(|entry| entry.occurred_at_unix_seconds >= now - 7 * 24 * 60 * 60)
-            .count() as u64,
+        Ok(entries) => {
+            entries.iter().filter(|entry| entry.occurred_at_unix_seconds >= now - 7 * 24 * 60 * 60).count() as u64
+        }
         Err(_) => return unavailable(),
     };
     let run = WeeklySpotlightRun {
@@ -424,8 +361,7 @@ async fn run_weekly_spotlight(State(state): State<AppState>, headers: HeaderMap)
                 occurred_at_unix_seconds: now,
                 severity: "Information".to_owned(),
                 action: "weekly_spotlight_run".to_owned(),
-                message: "Weekly spotlight evaluated for in-app delivery; SMTP is retired."
-                    .to_owned(),
+                message: "Weekly spotlight evaluated for in-app delivery; SMTP is retired.".to_owned(),
                 trace_id: None,
                 actor_subject: Some(actor),
                 package_name: None,
@@ -436,10 +372,7 @@ async fn run_weekly_spotlight(State(state): State<AppState>, headers: HeaderMap)
     {
         return unavailable();
     }
-    Json(
-        serde_json::json!({"ok": true, "activityCount": activity_count, "delivery": "in_app_only"}),
-    )
-    .into_response()
+    Json(serde_json::json!({"ok": true, "activityCount": activity_count, "delivery": "in_app_only"})).into_response()
 }
 
 fn blocked_link_response(policy: BlockedLinkPolicy) -> BlockedLinkResponse {
@@ -472,20 +405,11 @@ fn normalize_note(note: Option<String>) -> Result<Option<String>, RegistryOperat
     Ok(note)
 }
 
-fn validate_in_memory_activity(
-    activity: &NewRegistryActivity,
-) -> Result<(), RegistryOperationsStoreError> {
-    if activity.severity.trim().is_empty()
-        || activity.action.trim().is_empty()
-        || activity.message.len() > 4000
-    {
+fn validate_in_memory_activity(activity: &NewRegistryActivity) -> Result<(), RegistryOperationsStoreError> {
+    if activity.severity.trim().is_empty() || activity.action.trim().is_empty() || activity.message.len() > 4000 {
         return Err(RegistryOperationsStoreError::InvalidActivity);
     }
-    if activity
-        .actor_subject
-        .as_deref()
-        .is_some_and(|subject| !is_github_subject(subject))
-    {
+    if activity.actor_subject.as_deref().is_some_and(|subject| !is_github_subject(subject)) {
         return Err(RegistryOperationsStoreError::InvalidAuthHubSubject);
     }
     Ok(())
@@ -496,33 +420,18 @@ fn is_github_subject(subject: &str) -> bool {
 }
 
 fn bad_request(message: &'static str) -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        Json(serde_json::json!({"message": message})),
-    )
-        .into_response()
+    (StatusCode::BAD_REQUEST, Json(serde_json::json!({"message": message}))).into_response()
 }
 
 fn conflict(message: &'static str) -> Response {
-    (
-        StatusCode::CONFLICT,
-        Json(serde_json::json!({"message": message})),
-    )
-        .into_response()
+    (StatusCode::CONFLICT, Json(serde_json::json!({"message": message}))).into_response()
 }
 
 fn forbidden() -> Response {
-    (
-        StatusCode::FORBIDDEN,
-        Json(serde_json::json!({"message": "forbidden"})),
-    )
-        .into_response()
+    (StatusCode::FORBIDDEN, Json(serde_json::json!({"message": "forbidden"}))).into_response()
 }
 
 fn unavailable() -> Response {
-    (
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(serde_json::json!({"message": "registry operations unavailable"})),
-    )
+    (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"message": "registry operations unavailable"})))
         .into_response()
 }

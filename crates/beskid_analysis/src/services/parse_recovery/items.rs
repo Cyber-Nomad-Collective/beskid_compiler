@@ -12,26 +12,11 @@ const PRIORITY_ITEM_BRACE_ERROR: u8 = 46;
 const PRIORITY_FN_BODY_STUB: u8 = 48;
 const PRIORITY_EMPTY_BODY_STUB: u8 = 49;
 
-const ITEM_START_KEYWORDS: &[&str] = &[
-    "host",
-    "macro",
-    "impl",
-    "extend",
-    "type",
-    "enum",
-    "contract",
-    "test",
-    "attribute",
-    "mod",
-    "use",
-];
+const ITEM_START_KEYWORDS: &[&str] =
+    &["host", "macro", "impl", "extend", "type", "enum", "contract", "test", "attribute", "mod", "use"];
 
 /// Generate item-boundary repairs (closers / trailing `;`) near the Pest error locus.
-pub fn repairs(
-    source: &str,
-    error_pos: usize,
-    _parse_error: &pest::error::Error<Rule>,
-) -> Vec<RepairCandidate> {
+pub fn repairs(source: &str, error_pos: usize, _parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
     let error_pos = error_pos.min(source.len());
     let mut candidates = Vec::new();
     candidates.extend(unclosed_item_brace_repairs(source, error_pos));
@@ -182,12 +167,7 @@ fn empty_stub_body_repairs(source: &str, error_pos: usize) -> Vec<RepairCandidat
         return Vec::new();
     };
 
-    vec![RepairCandidate::insert(
-        insert_pos,
-        " { }",
-        reason,
-        PRIORITY_EMPTY_BODY_STUB,
-    )]
+    vec![RepairCandidate::insert(insert_pos, " { }", reason, PRIORITY_EMPTY_BODY_STUB)]
 }
 
 fn near_item_body_context(source: &str, error_pos: usize) -> bool {
@@ -352,8 +332,7 @@ fn find_next_brace_after(source: &str, from: usize) -> Option<usize> {
             }
             b'/' if pos + 1 < source.len() && source.as_bytes()[pos + 1] == b'*' => {
                 pos += 2;
-                while pos + 1 < source.len()
-                    && !(source.as_bytes()[pos] == b'*' && source.as_bytes()[pos + 1] == b'/')
+                while pos + 1 < source.len() && !(source.as_bytes()[pos] == b'*' && source.as_bytes()[pos + 1] == b'/')
                 {
                     pos += 1;
                 }

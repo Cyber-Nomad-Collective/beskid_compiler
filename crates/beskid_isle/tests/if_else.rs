@@ -35,9 +35,7 @@ impl NodeFacts for ReturnSequenceFacts {
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
-        (key == self.nodes[0])
-            .then(|| self.nodes.get(usize::from(index) + 1).copied())
-            .flatten()
+        (key == self.nodes[0]).then(|| self.nodes.get(usize::from(index) + 1).copied()).flatten()
     }
 
     fn integer_literal(&self, _key: AstNodeKey) -> Option<i64> {
@@ -51,14 +49,7 @@ impl NodeFacts for ReturnSequenceFacts {
 
 impl NodeFacts for IfElseFacts {
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
-        let [
-            if_node,
-            condition,
-            then_return,
-            then_value,
-            else_return,
-            else_value,
-        ] = self.nodes;
+        let [if_node, condition, then_return, then_value, else_return, else_value] = self.nodes;
         if key == if_node {
             Some(NodeKind::IfStatement)
         } else if key == then_return || key == else_return {
@@ -82,14 +73,7 @@ impl NodeFacts for IfElseFacts {
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
-        let [
-            if_node,
-            condition,
-            then_return,
-            then_value,
-            else_return,
-            else_value,
-        ] = self.nodes;
+        let [if_node, condition, then_return, then_value, else_return, else_value] = self.nodes;
         match (key, index) {
             (key, 0) if key == if_node => Some(condition),
             (key, 1) if key == if_node => Some(then_return),
@@ -129,31 +113,19 @@ impl NodeFacts for IfElseFacts {
 #[test]
 fn if_else_rule_emits_verified_multi_block_clif() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/IfElse.bd"));
     let generation = SyntaxGenerationId(10);
     let facts = IfElseFacts {
-        nodes: std::array::from_fn(|index| AstNodeKey {
-            unit,
-            generation,
-            node: AstNodeId(index as u32 + 1),
-        }),
+        nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }),
         has_else: true,
         returns_values: true,
     };
     let emitter = FunctionEmitter::new(isa.as_ref());
     let signature = emitter.signature([], [types::I32]);
     let function = emitter
-        .emit_statement(
-            UserFuncName::user(0, 13),
-            signature.clone(),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_statement(UserFuncName::user(0, 13), signature.clone(), &facts, facts.nodes[0])
         .expect("verified if/else statement");
 
     let clif = function.display().to_string();
@@ -163,14 +135,10 @@ fn if_else_rule_emits_verified_multi_block_clif() {
     assert_eq!(clif.matches("return").count(), 2, "{clif}");
 
     let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-    let function_id = module
-        .declare_function("if_else", Linkage::Local, &signature)
-        .expect("declare");
+    let function_id = module.declare_function("if_else", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
     context.func = function;
-    module
-        .define_function(function_id, &mut context)
-        .expect("define");
+    module.define_function(function_id, &mut context).expect("define");
     module.finalize_definitions().expect("finalize");
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
@@ -187,15 +155,7 @@ fn return_after_if_without_else_reaches_merge() {
     }
     impl NodeFacts for IfThenReturnFacts {
         fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
-            let [
-                block,
-                if_node,
-                condition,
-                then_stmt,
-                then_value,
-                ret,
-                ret_value,
-            ] = self.nodes;
+            let [block, if_node, condition, then_stmt, then_value, ret, ret_value] = self.nodes;
             if key == block {
                 Some(NodeKind::BlockExpression)
             } else if key == if_node {
@@ -227,15 +187,7 @@ fn return_after_if_without_else_reaches_merge() {
         }
 
         fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
-            let [
-                block,
-                if_node,
-                condition,
-                then_stmt,
-                then_value,
-                ret,
-                ret_value,
-            ] = self.nodes;
+            let [block, if_node, condition, then_stmt, then_value, ret, ret_value] = self.nodes;
             match (key, index) {
                 (key, 0) if key == block => Some(if_node),
                 (key, 1) if key == block => Some(ret),
@@ -274,10 +226,7 @@ fn return_after_if_without_else_reaches_merge() {
     }
 
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/IfThenReturn.bd"));
     let facts = IfThenReturnFacts {
@@ -290,30 +239,18 @@ fn return_after_if_without_else_reaches_merge() {
     let emitter = FunctionEmitter::new(isa.as_ref());
     let signature = emitter.signature([], [types::I64]);
     let function = emitter
-        .emit_statement(
-            UserFuncName::user(0, 16),
-            signature.clone(),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_statement(UserFuncName::user(0, 16), signature.clone(), &facts, facts.nodes[0])
         .expect("return after if-without-else must lower");
 
     let clif = function.display().to_string();
-    assert!(
-        !clif.contains("trap"),
-        "reachable merge must not trap:\n{clif}"
-    );
+    assert!(!clif.contains("trap"), "reachable merge must not trap:\n{clif}");
     assert!(clif.contains("return"), "{clif}");
 
     let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-    let function_id = module
-        .declare_function("if_then_return", Linkage::Local, &signature)
-        .expect("declare");
+    let function_id = module.declare_function("if_then_return", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
     context.func = function;
-    module
-        .define_function(function_id, &mut context)
-        .expect("define");
+    module.define_function(function_id, &mut context).expect("define");
     module.finalize_definitions().expect("finalize");
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(code) };
@@ -323,10 +260,7 @@ fn return_after_if_without_else_reaches_merge() {
 #[test]
 fn if_without_else_terminates_reachable_fallthrough() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/IfWithoutElse.bd"));
     let facts = IfElseFacts {
@@ -340,12 +274,7 @@ fn if_without_else_terminates_reachable_fallthrough() {
     };
     let emitter = FunctionEmitter::new(isa.as_ref());
     let function = emitter
-        .emit_statement(
-            UserFuncName::user(0, 14),
-            emitter.signature([], []),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_statement(UserFuncName::user(0, 14), emitter.signature([], []), &facts, facts.nodes[0])
         .expect("verified if without else");
 
     assert!(function.display().to_string().contains("return"));
@@ -354,10 +283,7 @@ fn if_without_else_terminates_reachable_fallthrough() {
 #[test]
 fn statement_cursor_stops_after_a_terminator() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/ReturnSequence.bd"));
     let facts = ReturnSequenceFacts {
@@ -369,12 +295,7 @@ fn statement_cursor_stops_after_a_terminator() {
     };
     let emitter = FunctionEmitter::new(isa.as_ref());
     let function = emitter
-        .emit_statement(
-            UserFuncName::user(0, 15),
-            emitter.signature([], []),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_statement(UserFuncName::user(0, 15), emitter.signature([], []), &facts, facts.nodes[0])
         .expect("a statement sequence after return remains valid CLIF");
 
     assert_eq!(function.display().to_string().matches("return").count(), 1);

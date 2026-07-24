@@ -28,43 +28,33 @@ pub i64 Main() { return 0; }
     // Allowed by allowlist
     set_security_policies_for_tests(Some("libc.so.6:getpid"), None);
     let mut engine = beskid_engine::Engine::new();
-    engine
-        .compile_artifact(&prepared.artifact)
-        .expect("compile allowed");
+    engine.compile_artifact(&prepared.artifact).expect("compile allowed");
 
     // Blocked by allowlist mismatch
     set_security_policies_for_tests(Some("libc.so.6:write"), None);
     let mut engine = beskid_engine::Engine::new();
-    let err = engine
-        .compile_artifact(&prepared.artifact)
-        .expect_err("should be denied by allowlist");
+    let err = engine.compile_artifact(&prepared.artifact).expect_err("should be denied by allowlist");
     let msg = format!("{:?}", err);
     assert!(msg.contains("denied by allowlist"));
 
     // Blocked by denylist
     set_security_policies_for_tests(None, Some("libc.so.6:getpid"));
     let mut engine = beskid_engine::Engine::new();
-    let err = engine
-        .compile_artifact(&prepared.artifact)
-        .expect_err("should be denied by denylist");
+    let err = engine.compile_artifact(&prepared.artifact).expect_err("should be denied by denylist");
     let msg = format!("{:?}", err);
     assert!(msg.contains("denied by denylist"));
 
     // Denylist must override allowlist when both match.
     set_security_policies_for_tests(Some("libc.so.6:getpid"), Some("libc.so.6:getpid"));
     let mut engine = beskid_engine::Engine::new();
-    let err = engine
-        .compile_artifact(&prepared.artifact)
-        .expect_err("should be denied when allow and deny both match");
+    let err = engine.compile_artifact(&prepared.artifact).expect_err("should be denied when allow and deny both match");
     let msg = format!("{:?}", err);
     assert!(msg.contains("denied by denylist"));
 
     // Wildcard policies should match as documented.
     set_security_policies_for_tests(Some("libc.so.*:getpid"), None);
     let mut engine = beskid_engine::Engine::new();
-    engine
-        .compile_artifact(&prepared.artifact)
-        .expect("compile allowed by wildcard allowlist");
+    engine.compile_artifact(&prepared.artifact).expect("compile allowed by wildcard allowlist");
 
     set_security_policies_for_tests(Some("*:getpid"), Some("libc.so.*:getpid"));
     let mut engine = beskid_engine::Engine::new();

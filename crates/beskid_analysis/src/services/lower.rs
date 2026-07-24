@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use crate::hir::{
-    AstProgram, HirNormalizeError, HirProgram, index_program_from_base,
-    lower_program as lower_hir_program, max_hir_node_id, normalize_program_with_resolution,
+    AstProgram, HirNormalizeError, HirProgram, index_program_from_base, lower_program as lower_hir_program,
+    max_hir_node_id, normalize_program_with_resolution,
 };
 use crate::projects::assembly::ModuleIndex;
 use crate::projects::{AssemblyDiscovery, assembly::ProgramAssembly};
@@ -22,14 +22,7 @@ fn lower_trace_context(entry_source_path: Option<&std::path::PathBuf>) -> Resolv
 
 fn index_hir_program(hir: &mut Spanned<HirProgram>, assembly: Option<&ProgramAssembly>) {
     let base = assembly
-        .map(|assembly| {
-            assembly
-                .hir_units
-                .iter()
-                .map(|unit| max_hir_node_id(&unit.hir))
-                .max()
-                .unwrap_or(0)
-        })
+        .map(|assembly| assembly.hir_units.iter().map(|unit| max_hir_node_id(&unit.hir)).max().unwrap_or(0))
         .unwrap_or(0);
     let _ = index_program_from_base(hir, base);
 }
@@ -69,10 +62,7 @@ pub enum TypedHirResolution<'a> {
     /// Assembly-backed resolution (import closure or workspace scan).
     Assembly(Option<&'a ProgramAssembly>),
     /// Prefetched module index (analyze / IDE without assembly).
-    ModuleIndex {
-        module_index: &'a ModuleIndex,
-        entry_source_path: Option<std::path::PathBuf>,
-    },
+    ModuleIndex { module_index: &'a ModuleIndex, entry_source_path: Option<std::path::PathBuf> },
     /// Pass-1 resolution already computed (single-unit analyze without assembly).
     Pass1(&'a Resolution),
 }
@@ -81,12 +71,7 @@ pub enum TypedHirResolution<'a> {
 pub fn lower_normalize_resolve_type_spanned(
     program: &Spanned<Program>,
 ) -> std::result::Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
-    lower_normalize_resolve_type_spanned_with_assembly(
-        program,
-        None,
-        None,
-        DependencyTypingPolicy::FullClosure,
-    )
+    lower_normalize_resolve_type_spanned_with_assembly(program, None, None, DependencyTypingPolicy::FullClosure)
 }
 
 /// Like [`lower_normalize_resolve_type_spanned`], resolving against [`ProgramAssembly`] when provided.
@@ -100,12 +85,7 @@ pub fn lower_normalize_resolve_type_spanned_with_assembly(
     let _lower_guard = enter_lower_span(entry_path);
     let ast: Spanned<AstProgram> = program.clone().into();
     let hir = observe_phase_value(pipeline, phases::LOWER_AST, || lower_hir_program(&ast));
-    typed_hir_from_lowered(
-        hir,
-        TypedHirResolution::Assembly(assembly),
-        pipeline,
-        policy,
-    )
+    typed_hir_from_lowered(hir, TypedHirResolution::Assembly(assembly), pipeline, policy)
 }
 
 /// Unified typed-HIR spine: normalize, re-resolve, and type-check from an already-lowered program.
@@ -119,16 +99,9 @@ pub fn typed_hir_from_lowered(
         TypedHirResolution::Assembly(assembly) => {
             typed_hir_from_lowered_with_assembly_inner(hir, assembly, pipeline, policy)
         }
-        TypedHirResolution::ModuleIndex {
-            module_index,
-            entry_source_path,
-        } => typed_hir_from_lowered_with_module_index_inner(
-            hir,
-            module_index,
-            entry_source_path,
-            pipeline,
-            policy,
-        ),
+        TypedHirResolution::ModuleIndex { module_index, entry_source_path } => {
+            typed_hir_from_lowered_with_module_index_inner(hir, module_index, entry_source_path, pipeline, policy)
+        }
         TypedHirResolution::Pass1(resolution_pass1) => {
             typed_hir_from_lowered_after_resolution_inner(hir, resolution_pass1, pipeline, policy)
         }
@@ -144,9 +117,7 @@ fn typed_hir_from_lowered_with_assembly_inner(
     let entry_source_path = assembly.map(|a| a.entry_unit().path.clone());
     let _lower_guard = enter_lower_span(entry_source_path.as_deref().map(Path::new));
     let resolve_ctx = lower_trace_context(entry_source_path.as_ref());
-    let dependency_hir_refs = assembly
-        .map(|a| a.dependency_hir_refs())
-        .unwrap_or_default();
+    let dependency_hir_refs = assembly.map(|a| a.dependency_hir_refs()).unwrap_or_default();
     let dependency_source_paths: Vec<std::path::PathBuf> = assembly
         .map(|a| {
             a.hir_units
@@ -170,20 +141,14 @@ fn typed_hir_from_lowered_with_assembly_inner(
         let _resolve_guard = enter_resolve_span(resolve_ctx);
         if let Some(assembly) = assembly {
             let resolve = if assembly.discovery == AssemblyDiscovery::ImportClosure {
-                assembly
-                    .module_index
-                    .resolve_assembly_closure(&hir, assembly)
+                assembly.module_index.resolve_assembly_closure(&hir, assembly)
             } else {
-                assembly
-                    .module_index
-                    .resolve_for_api_documentation(&hir, assembly)
+                assembly.module_index.resolve_for_api_documentation(&hir, assembly)
             };
-            resolve.ok_or(LowerResolveTypeError::Resolve(vec![
-                crate::resolve::ResolveError::UnknownModulePath {
-                    path: "<assembly>".to_string(),
-                    span: hir.span,
-                },
-            ]))
+            resolve.ok_or(LowerResolveTypeError::Resolve(vec![crate::resolve::ResolveError::UnknownModulePath {
+                path: "<assembly>".to_string(),
+                span: hir.span,
+            }]))
         } else {
             resolve_entry_hir(&hir, None, None)
         }
@@ -214,9 +179,7 @@ fn typed_hir_from_lowered_with_module_index_inner(
     let dependency_hir_refs: Vec<&Spanned<HirProgram>> = Vec::new();
     let resolution_pass1 = observe_phase_result(pipeline, phases::LOWER_RESOLVE_PASS1, || {
         let _resolve_guard = enter_resolve_span(resolve_ctx);
-        module_index
-            .resolve_entry_hir(&hir, entry_source_path.as_ref())
-            .map_err(LowerResolveTypeError::Resolve)
+        module_index.resolve_entry_hir(&hir, entry_source_path.as_ref()).map_err(LowerResolveTypeError::Resolve)
     })?;
     observe_phase_result(pipeline, phases::LOWER_NORMALIZE, || {
         normalize_program_with_resolution(&mut hir, Some(&resolution_pass1), &dependency_hir_refs)
@@ -225,9 +188,7 @@ fn typed_hir_from_lowered_with_module_index_inner(
     index_hir_program(&mut hir, None);
     let resolution = observe_phase_result(pipeline, phases::LOWER_RESOLVE, || {
         let _resolve_guard = enter_resolve_span(resolve_ctx);
-        module_index
-            .resolve_entry_hir(&hir, entry_source_path.as_ref())
-            .map_err(LowerResolveTypeError::Resolve)
+        module_index.resolve_entry_hir(&hir, entry_source_path.as_ref()).map_err(LowerResolveTypeError::Resolve)
     })?;
     type_check_lowered_hir(
         hir,
@@ -257,21 +218,9 @@ fn typed_hir_from_lowered_after_resolution_inner(
     })?;
     index_hir_program(&mut hir, None);
     let resolution = observe_phase_result(pipeline, phases::LOWER_RESOLVE, || {
-        resolve_program_traced(&hir, lower_trace_context(None))
-            .map_err(LowerResolveTypeError::Resolve)
+        resolve_program_traced(&hir, lower_trace_context(None)).map_err(LowerResolveTypeError::Resolve)
     })?;
-    type_check_lowered_hir(
-        hir,
-        &resolution,
-        &dependency_hir_refs,
-        None,
-        None,
-        policy,
-        None,
-        None,
-        None,
-        pipeline,
-    )
+    type_check_lowered_hir(hir, &resolution, &dependency_hir_refs, None, None, policy, None, None, None, pipeline)
 }
 
 fn type_check_lowered_hir(
@@ -284,10 +233,7 @@ fn type_check_lowered_hir(
     module_index: Option<&ModuleIndex>,
     assembly: Option<&ProgramAssembly>,
     prefetched_surfaces: Option<
-        &std::collections::HashMap<
-            std::path::PathBuf,
-            std::sync::Arc<crate::types::surface::UnitTypeSurface>,
-        >,
+        &std::collections::HashMap<std::path::PathBuf, std::sync::Arc<crate::types::surface::UnitTypeSurface>>,
     >,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> std::result::Result<(Spanned<HirProgram>, Resolution, TypeResult), LowerResolveTypeError> {
@@ -306,10 +252,7 @@ fn type_check_lowered_hir(
             progress,
         );
         if !type_errors.is_empty() {
-            Err(LowerResolveTypeError::Type {
-                errors: type_errors,
-                typed: Box::new(typed),
-            })
+            Err(LowerResolveTypeError::Type { errors: type_errors, typed: Box::new(typed) })
         } else {
             Ok((hir, resolution.clone(), typed))
         }
@@ -322,14 +265,9 @@ fn resolve_entry_hir(
     entry_source_path: Option<&std::path::PathBuf>,
 ) -> Result<Resolution, LowerResolveTypeError> {
     if let Some(assembly) = assembly {
-        assembly
-            .module_index
-            .resolve_entry_hir(hir, entry_source_path)
-            .map_err(LowerResolveTypeError::Resolve)
+        assembly.module_index.resolve_entry_hir(hir, entry_source_path).map_err(LowerResolveTypeError::Resolve)
     } else {
-        Resolver::new()
-            .resolve_program(hir)
-            .map_err(LowerResolveTypeError::Resolve)
+        Resolver::new().resolve_program(hir).map_err(LowerResolveTypeError::Resolve)
     }
 }
 
@@ -341,16 +279,9 @@ pub enum LowerResolveTypeError {
     #[error("Resolution failed\n{}", format_errors(.0))]
     Resolve(Vec<ResolveError>),
     #[error("Type checking failed\n{}", format_errors(.errors))]
-    Type {
-        errors: Vec<TypeError>,
-        typed: Box<TypeResult>,
-    },
+    Type { errors: Vec<TypeError>, typed: Box<TypeResult> },
 }
 
 fn format_errors<E: std::fmt::Display>(errors: &[E]) -> String {
-    errors
-        .iter()
-        .map(|e| format!("  - {e}"))
-        .collect::<Vec<_>>()
-        .join("\n")
+    errors.iter().map(|e| format!("  - {e}")).collect::<Vec<_>>().join("\n")
 }

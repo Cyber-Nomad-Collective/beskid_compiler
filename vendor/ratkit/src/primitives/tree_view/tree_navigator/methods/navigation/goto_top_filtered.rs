@@ -18,12 +18,8 @@ impl TreeNavigator {
     /// * `nodes` - The tree nodes.
     /// * `state` - The tree view state to update.
     /// * `matcher` - A function that takes node data and filter, returns true if matches.
-    pub fn goto_top_filtered<T, F>(
-        &self,
-        nodes: &[TreeNode<T>],
-        state: &mut TreeViewState,
-        matcher: F,
-    ) where
+    pub fn goto_top_filtered<T, F>(&self, nodes: &[TreeNode<T>], state: &mut TreeViewState, matcher: F)
+    where
         F: Fn(&T, &Option<String>) -> bool,
     {
         let visible_paths = get_visible_paths_filtered(nodes, state, matcher);

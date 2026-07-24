@@ -6,9 +6,7 @@ use crate::syntax::expressions::{Expression, MacroInvocation};
 use crate::syntax::items::{Node, Program};
 use crate::syntax::statements::{Block, Statement};
 
-use super::diagnostics::{
-    collect_residual_macro_diagnostics, diagnostic_from_kind, diagnostic_from_match_error,
-};
+use super::diagnostics::{collect_residual_macro_diagnostics, diagnostic_from_kind, diagnostic_from_match_error};
 use super::match_args::{MatchError, match_arguments};
 use super::registry::{MacroRegistry, macro_name_key};
 use super::substitute::{bindings_from_pairs, block_body_as_expression, substitute_block};
@@ -32,35 +30,16 @@ pub fn expand_once(
         .node
         .items
         .iter()
-        .flat_map(|item| {
-            expand_node(
-                item,
-                registry,
-                source_name,
-                source,
-                &mut changed,
-                &mut diagnostics,
-            )
-        })
+        .flat_map(|item| expand_node(item, registry, source_name, source, &mut changed, &mut diagnostics))
         .collect();
     (
-        Spanned::new(
-            Program {
-                items,
-                leading_docs: program.node.leading_docs.clone(),
-            },
-            program.span,
-        ),
+        Spanned::new(Program { items, leading_docs: program.node.leading_docs.clone() }, program.span),
         changed,
         diagnostics,
     )
 }
 
-fn registry_diags(
-    registry: &MacroRegistry,
-    source_name: &str,
-    source: &str,
-) -> Vec<SemanticDiagnostic> {
+fn registry_diags(registry: &MacroRegistry, source_name: &str, source: &str) -> Vec<SemanticDiagnostic> {
     registry
         .registry_issues
         .iter()
@@ -79,14 +58,7 @@ fn expand_node(
     match &item.node {
         Node::Function(f) => {
             let mut n = f.clone();
-            n.node.body = expand_block(
-                &f.node.body,
-                registry,
-                source_name,
-                source,
-                changed,
-                diagnostics,
-            );
+            n.node.body = expand_block(&f.node.body, registry, source_name, source, changed, diagnostics);
             vec![Spanned::new(Node::Function(n), item.span)]
         }
         Node::InlineModule(m) => {
@@ -137,14 +109,7 @@ fn expand_block(
                 }
             }
         }
-        statements.push(expand_statement_in_block(
-            stmt.clone(),
-            registry,
-            source_name,
-            source,
-            changed,
-            diagnostics,
-        ));
+        statements.push(expand_statement_in_block(stmt.clone(), registry, source_name, source, changed, diagnostics));
     }
     Spanned::new(Block { statements }, block.span)
 }
@@ -157,9 +122,7 @@ fn expand_statement_in_block(
     changed: &mut bool,
     diagnostics: &mut Vec<SemanticDiagnostic>,
 ) -> Spanned<Statement> {
-    map_statement(stmt, &mut |expr| {
-        expand_expression(expr, registry, source_name, source, changed, diagnostics)
-    })
+    map_statement(stmt, &mut |expr| expand_expression(expr, registry, source_name, source, changed, diagnostics))
 }
 
 fn expand_expression(
@@ -177,9 +140,7 @@ fn expand_expression(
                     *changed = true;
                     return expanded;
                 }
-                Err(err) => {
-                    diagnostics.push(diagnostic_from_match_error(source_name, source, &err))
-                }
+                Err(err) => diagnostics.push(diagnostic_from_match_error(source_name, source, &err)),
             }
         }
         mapped
@@ -191,12 +152,7 @@ fn try_expand_block_invocation(
     registry: &MacroRegistry,
 ) -> Result<Vec<Spanned<Statement>>, MatchError> {
     let name = macro_name_key(&inv.node.name);
-    let def = registry
-        .get(&name)
-        .ok_or_else(|| MatchError::UnknownMacro {
-            name: name.clone(),
-            span: inv.span,
-        })?;
+    let def = registry.get(&name).ok_or_else(|| MatchError::UnknownMacro { name: name.clone(), span: inv.span })?;
     let bindings = bindings_from_pairs(match_arguments(
         &inv.node.name,
         &def.node.parameters,
@@ -222,23 +178,14 @@ fn expand_invocation(
     registry: &MacroRegistry,
 ) -> Result<Spanned<Expression>, MatchError> {
     let name = macro_name_key(&inv.node.name);
-    let def = registry
-        .get(&name)
-        .ok_or_else(|| MatchError::UnknownMacro {
-            name: name.clone(),
-            span: inv.span,
-        })?;
+    let def = registry.get(&name).ok_or_else(|| MatchError::UnknownMacro { name: name.clone(), span: inv.span })?;
     let bindings = bindings_from_pairs(match_arguments(
         &inv.node.name,
         &def.node.parameters,
         &inv.node.arguments,
         inv.node.block.as_ref(),
     )?);
-    Ok(block_body_as_expression(
-        &def.node.body,
-        &bindings,
-        inv.span,
-    ))
+    Ok(block_body_as_expression(&def.node.body, &bindings, inv.span))
 }
 
 pub(crate) fn expand_program_with_diagnostics_impl(
@@ -257,11 +204,7 @@ pub(crate) fn expand_program_with_diagnostics_impl(
         diagnostics.extend(round);
         current = next;
         if !changed {
-            diagnostics.extend(collect_residual_macro_diagnostics(
-                source_name,
-                source,
-                &current,
-            ));
+            diagnostics.extend(collect_residual_macro_diagnostics(source_name, source, &current));
             return (current, diagnostics);
         }
     }
@@ -275,15 +218,9 @@ pub(crate) fn expand_program_with_diagnostics_impl(
             source_name,
             source,
             current.span,
-            crate::analysis::diagnostic_kinds::SemanticIssueKind::MacroExpansionDepthExceeded {
-                max_depth,
-            },
+            crate::analysis::diagnostic_kinds::SemanticIssueKind::MacroExpansionDepthExceeded { max_depth },
         ));
     }
-    diagnostics.extend(collect_residual_macro_diagnostics(
-        source_name,
-        source,
-        &current,
-    ));
+    diagnostics.extend(collect_residual_macro_diagnostics(source_name, source, &current));
     (current, diagnostics)
 }

@@ -14,10 +14,7 @@ pub(crate) fn get_filtered_visual_lines(
     width: usize,
 ) -> Vec<usize> {
     let filter_lower = filter_text.to_lowercase();
-    let elements = render_markdown_to_elements(
-        content,
-        collapse.is_section_collapsed(FRONTMATTER_SECTION_ID),
-    );
+    let elements = render_markdown_to_elements(content, collapse.is_section_collapsed(FRONTMATTER_SECTION_ID));
     let mut filtered_visual_lines: Vec<usize> = Vec::new();
     let mut visual_line_idx = 0;
 
@@ -107,26 +104,14 @@ fn text_segment_to_string(segment: &TextSegment) -> String {
 
 pub fn element_to_plain_text_for_filter(kind: &ElementKind) -> String {
     match kind {
-        ElementKind::Heading { text, .. } => text
-            .iter()
-            .map(text_segment_to_string)
-            .collect::<Vec<_>>()
-            .join(""),
-        ElementKind::Paragraph(segments) => segments
-            .iter()
-            .map(text_segment_to_string)
-            .collect::<Vec<_>>()
-            .join(""),
-        ElementKind::ListItem { content, .. } => content
-            .iter()
-            .map(text_segment_to_string)
-            .collect::<Vec<_>>()
-            .join(""),
-        ElementKind::Blockquote { content, .. } => content
-            .iter()
-            .map(text_segment_to_string)
-            .collect::<Vec<_>>()
-            .join(""),
+        ElementKind::Heading { text, .. } => text.iter().map(text_segment_to_string).collect::<Vec<_>>().join(""),
+        ElementKind::Paragraph(segments) => segments.iter().map(text_segment_to_string).collect::<Vec<_>>().join(""),
+        ElementKind::ListItem { content, .. } => {
+            content.iter().map(text_segment_to_string).collect::<Vec<_>>().join("")
+        }
+        ElementKind::Blockquote { content, .. } => {
+            content.iter().map(text_segment_to_string).collect::<Vec<_>>().join("")
+        }
         ElementKind::CodeBlockContent { content, .. } => content.clone(),
         ElementKind::TableRow { cells, .. } => cells.join(" | "),
         ElementKind::FrontmatterField { key, value, .. } => format!("{}: {}", key, value),

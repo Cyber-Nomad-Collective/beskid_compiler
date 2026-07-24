@@ -7,8 +7,8 @@ use crate::logging::clear_tui_log_buffer;
 use crate::pipeline::tui::log_tabs::{BUILD_LOG_TARGET, log_tab_for_phase_label};
 use crate::pipeline::tui::stage_focus::StageFocus;
 use crate::pipeline::tui::widgets::{
-    draw_context_bar, draw_pipeline_tree, draw_progress_footer, draw_stage_panel,
-    draw_tabbed_log_panel, init_session_logger,
+    draw_context_bar, draw_pipeline_tree, draw_progress_footer, draw_stage_panel, draw_tabbed_log_panel,
+    init_session_logger,
 };
 use crate::pipeline::tui::{TestRow, TestRowState};
 use crate::tui::effects::ShellEffect;
@@ -57,11 +57,7 @@ pub fn apply_pipeline_message(msg: &ShellMessage, state: &mut ShellState) {
             trace_phase(label, *depth, None, "phase start");
             expand_tree(state);
         }
-        ShellMessage::PhaseEnd {
-            depth,
-            label,
-            duration,
-        } => {
+        ShellMessage::PhaseEnd { depth, label, duration } => {
             state.tree.phase_end(*depth, label, duration);
             trace_phase(label, *depth, Some(duration.as_str()), "phase done");
             expand_tree(state);
@@ -69,12 +65,7 @@ pub fn apply_pipeline_message(msg: &ShellMessage, state: &mut ShellState) {
         ShellMessage::ActiveWork { done, total, label } => {
             state.last_work_unit = Some(format!("[{done}/{total}] {label}"));
         }
-        ShellMessage::WorkUnit {
-            depth,
-            done,
-            total,
-            label,
-        } => {
+        ShellMessage::WorkUnit { depth, done, total, label } => {
             state.tree.work_unit(*depth, *done, *total, label);
             tracing::trace!(
                 target: BUILD_LOG_TARGET,
@@ -86,14 +77,7 @@ pub fn apply_pipeline_message(msg: &ShellMessage, state: &mut ShellState) {
             );
             expand_tree(state);
         }
-        ShellMessage::SetProgress {
-            total_pos,
-            total_len,
-            total_label,
-            stage_pos,
-            stage_len,
-            stage_label,
-        } => {
+        ShellMessage::SetProgress { total_pos, total_len, total_label, stage_pos, stage_len, stage_label } => {
             state.pipeline.total_pos = *total_pos;
             state.pipeline.total_len = (*total_len).max(1);
             state.pipeline.total_label.clone_from(total_label);
@@ -215,11 +199,7 @@ fn seed_failure_logs(rows: &[TestRow]) {
 fn expand_tree(state: &mut ShellState) {
     state.tree_nodes = state.tree.tree_nodes();
     for path in state.tree.open_paths() {
-        let key = path
-            .iter()
-            .map(|index| index.to_string())
-            .collect::<Vec<_>>()
-            .join(".");
+        let key = path.iter().map(|index| index.to_string()).collect::<Vec<_>>().join(".");
         if state.expanded_tree_paths.insert(key) {
             state.tree_state.expand(path);
         }

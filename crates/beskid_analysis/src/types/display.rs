@@ -19,11 +19,7 @@ fn primitive_type_name(primitive: HirPrimitiveType) -> &'static str {
     }
 }
 
-fn named_type_label(
-    result: &TypeResult,
-    resolution: Option<&Resolution>,
-    item_id: ItemId,
-) -> String {
+fn named_type_label(result: &TypeResult, resolution: Option<&Resolution>, item_id: ItemId) -> String {
     if let Some(name) = result.named_type_names.get(&item_id) {
         return name.clone();
     }
@@ -36,11 +32,7 @@ fn named_type_label(
 }
 
 /// Format a checked [`TypeId`] for user-facing diagnostics.
-pub fn format_type_id(
-    result: &TypeResult,
-    resolution: Option<&Resolution>,
-    type_id: TypeId,
-) -> String {
+pub fn format_type_id(result: &TypeResult, resolution: Option<&Resolution>, type_id: TypeId) -> String {
     let Some(info) = result.types.get(type_id) else {
         return format!("type#{}", type_id.0);
     };
@@ -53,22 +45,12 @@ pub fn format_type_id(
             if args.is_empty() {
                 return base_name;
             }
-            let args = args
-                .iter()
-                .map(|arg| format_type_id(result, resolution, *arg))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let args = args.iter().map(|arg| format_type_id(result, resolution, *arg)).collect::<Vec<_>>().join(", ");
             format!("{base_name}<{args}>")
         }
-        TypeInfo::Function {
-            params,
-            return_type,
-        } => {
-            let params = params
-                .iter()
-                .map(|param| format_type_id(result, resolution, *param))
-                .collect::<Vec<_>>()
-                .join(", ");
+        TypeInfo::Function { params, return_type } => {
+            let params =
+                params.iter().map(|param| format_type_id(result, resolution, *param)).collect::<Vec<_>>().join(", ");
             let return_name = format_type_id(result, resolution, *return_type);
             format!("{return_name}({params})")
         }

@@ -32,17 +32,10 @@ pub enum AotError {
     LinkerUnavailable,
 
     #[error("[E4021] Link step failed (exit {status}): {command}{detail}")]
-    LinkFailed {
-        status: i32,
-        command: String,
-        detail: String,
-    },
+    LinkFailed { status: i32, command: String, detail: String },
 
     #[error("[E4022] Unsupported output kind for target {target}: {kind:?}")]
-    UnsupportedOutputKind {
-        target: String,
-        kind: BuildOutputKind,
-    },
+    UnsupportedOutputKind { target: String, kind: BuildOutputKind },
 
     #[error("[E4023] Unsupported linker strategy for target {target}: {message}")]
     UnsupportedLinkerStrategy { target: String, message: String },
@@ -68,8 +61,6 @@ pub enum AotError {
 
 impl From<cranelift_module::ModuleError> for AotError {
     fn from(value: cranelift_module::ModuleError) -> Self {
-        Self::ObjectModule {
-            message: value.to_string(),
-        }
+        Self::ObjectModule { message: value.to_string() }
     }
 }

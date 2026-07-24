@@ -4,9 +4,7 @@ use std::fmt;
 use crate::hir::{HirBlock, HirExpressionNode, HirProgram};
 use crate::resolve::Resolution;
 use crate::syntax::{SpanInfo, Spanned};
-use crate::types::try_desugar::{
-    TryDesugarTarget, collect_array_for_spans, try_desugar_targets_for_program,
-};
+use crate::types::try_desugar::{TryDesugarTarget, collect_array_for_spans, try_desugar_targets_for_program};
 
 use super::normalizable::Normalize;
 use super::{builders, builders::desugar_try_expression};
@@ -34,20 +32,15 @@ pub fn normalize_program_with_resolution(
     resolution: Option<&Resolution>,
     dependency_programs: &[&Spanned<HirProgram>],
 ) -> Result<(), Vec<HirNormalizeError>> {
-    let try_targets = resolution.map(|resolution| {
-        try_desugar_targets_for_program(resolution, program, dependency_programs)
-    });
+    let try_targets =
+        resolution.map(|resolution| try_desugar_targets_for_program(resolution, program, dependency_programs));
     let array_for_spans = match resolution {
         Some(resolution) => collect_array_for_spans(resolution, program, dependency_programs),
         None => HashSet::new(),
     };
     let mut normalizer = Normalizer::new(try_targets, array_for_spans);
     normalizer.visit_program(program);
-    if normalizer.errors.is_empty() {
-        Ok(())
-    } else {
-        Err(normalizer.errors)
-    }
+    if normalizer.errors.is_empty() { Ok(()) } else { Err(normalizer.errors) }
 }
 
 /// Visitor that applies normalization passes and accumulates [`HirNormalizeError`].
@@ -58,15 +51,8 @@ pub struct Normalizer {
 }
 
 impl Normalizer {
-    fn new(
-        try_targets: Option<HashMap<SpanInfo, TryDesugarTarget>>,
-        array_for_spans: HashSet<SpanInfo>,
-    ) -> Self {
-        Self {
-            errors: Vec::new(),
-            try_targets: try_targets.unwrap_or_default(),
-            array_for_spans,
-        }
+    fn new(try_targets: Option<HashMap<SpanInfo, TryDesugarTarget>>, array_for_spans: HashSet<SpanInfo>) -> Self {
+        Self { errors: Vec::new(), try_targets: try_targets.unwrap_or_default(), array_for_spans }
     }
 
     pub(crate) fn is_array_for_span(&self, span: SpanInfo) -> bool {
@@ -121,10 +107,8 @@ impl Normalizer {
         // Pipeline contract: syntax/HIR lowering may contain `TryExpression`; normalization
         // must desugar it so type/codegen backends only observe explicit control-flow.
         if matches!(expr.node, HirExpressionNode::TryExpression(_)) {
-            let original = std::mem::replace(
-                expr,
-                builders::hir_path_expr("__try_operand_placeholder_desugar", expr.span),
-            );
+            let original =
+                std::mem::replace(expr, builders::hir_path_expr("__try_operand_placeholder_desugar", expr.span));
             let HirExpressionNode::TryExpression(mut try_expr) = original.node else {
                 unreachable!("guarded by TryExpression match");
             };

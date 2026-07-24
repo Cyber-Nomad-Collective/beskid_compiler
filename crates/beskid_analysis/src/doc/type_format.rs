@@ -23,23 +23,12 @@ pub fn format_type(ty: &Spanned<Type>) -> String {
             PrimitiveType::Unit => "unit".to_string(),
             PrimitiveType::Never => "never".to_string(),
         },
-        Type::Complex(path) => path
-            .node
-            .segments
-            .iter()
-            .map(|segment| segment.node.name.node.name.clone())
-            .collect::<Vec<_>>()
-            .join("."),
+        Type::Complex(path) => {
+            path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>().join(".")
+        }
         Type::Array(inner) => format!("{}[]", format_type(inner)),
-        Type::Function {
-            return_type,
-            parameters,
-        } => {
-            let params = parameters
-                .iter()
-                .map(format_type)
-                .collect::<Vec<_>>()
-                .join(", ");
+        Type::Function { return_type, parameters } => {
+            let params = parameters.iter().map(format_type).collect::<Vec<_>>().join(", ");
             format!("{}({})", format_type(return_type), params)
         }
     }
@@ -50,32 +39,20 @@ fn type_kind_links_to_item(kind: ItemKind) -> bool {
 }
 
 /// Build a type annotation with optional cross-link to a resolved type item.
-pub fn type_annotation_for_type(
-    ty: &Spanned<Type>,
-    resolution: Option<&Resolution>,
-) -> ApiTypeAnnotation {
+pub fn type_annotation_for_type(ty: &Spanned<Type>, resolution: Option<&Resolution>) -> ApiTypeAnnotation {
     let display = format_type(ty);
     let ref_item_id = resolution.and_then(|res| {
-        let from_span =
-            res.tables
-                .resolved_types
-                .get(&ty.span)
-                .and_then(|resolved| match resolved {
-                    ResolvedType::Item(item_id) => res
-                        .items
-                        .get(item_id.0)
-                        .filter(|item| type_kind_links_to_item(item.kind))
-                        .map(|item| item.id.0),
-                    ResolvedType::Generic(_) => None,
-                });
+        let from_span = res.tables.resolved_types.get(&ty.span).and_then(|resolved| match resolved {
+            ResolvedType::Item(item_id) => {
+                res.items.get(item_id.0).filter(|item| type_kind_links_to_item(item.kind)).map(|item| item.id.0)
+            }
+            ResolvedType::Generic(_) => None,
+        });
         if from_span.is_some() {
             return from_span;
         }
         let index = type_ref_lookup_index(res);
         lookup_type_ref_id(&display, &index)
     });
-    ApiTypeAnnotation {
-        display,
-        ref_item_id,
-    }
+    ApiTypeAnnotation { display, ref_item_id }
 }

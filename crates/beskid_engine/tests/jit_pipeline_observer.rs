@@ -36,11 +36,9 @@ impl PipelineObserver for Recorder {
 #[test]
 fn jit_compile_emits_emit_work_units_and_finalize_phase() {
     let prefix = tempfile::tempdir().expect("exact kit prefix");
-    build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
-        .expect("publish exact native kit");
+    build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).expect("publish exact native kit");
     let target = host_runtime_target().expect("host target");
-    let mut engine = Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug)
-        .expect("load exact kit");
+    let mut engine = Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).expect("load exact kit");
 
     let src = r#"
 pub i64 Main() { return 0; }
@@ -49,17 +47,9 @@ pub i64 Main() { return 0; }
     let recorder = Recorder::default();
     let obs: &dyn PipelineObserver = &recorder;
 
-    engine
-        .compile_artifact_with_pipeline(&prepared.artifact, Some(obs))
-        .expect("compile");
+    engine.compile_artifact_with_pipeline(&prepared.artifact, Some(obs)).expect("compile");
 
     let events = recorder.0.lock().unwrap().clone();
-    assert!(
-        events.contains(&phases::JIT_EMIT),
-        "expected jit.emit work units, got {events:?}"
-    );
-    assert!(
-        events.contains(&phases::JIT_FINALIZE),
-        "expected jit.finalize phase, got {events:?}"
-    );
+    assert!(events.contains(&phases::JIT_EMIT), "expected jit.emit work units, got {events:?}");
+    assert!(events.contains(&phases::JIT_FINALIZE), "expected jit.finalize phase, got {events:?}");
 }

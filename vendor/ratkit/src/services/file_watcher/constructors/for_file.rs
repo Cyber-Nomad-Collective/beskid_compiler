@@ -21,9 +21,6 @@ impl FileWatcher {
     /// watcher.watch(Path::new("config.toml")).unwrap();
     /// ```
     pub fn for_file() -> Result<Self, notify::Error> {
-        Self::with_config(WatchConfig {
-            mode: WatchMode::File,
-            debounce_ms: 100,
-        })
+        Self::with_config(WatchConfig { mode: WatchMode::File, debounce_ms: 100 })
     }
 }

@@ -10,19 +10,11 @@ use crate::projects::{compiler_workspace_root, with_cwd_at_workspace_root};
 #[test]
 fn ansi_escape_resolves_under_corelib_test_assembly() {
     let root = compiler_workspace_root();
-    let entry =
-        root.join("corelib/beskid_corelib/tests/corelib_tests/src/console/AnsiEscapeTests.bd");
+    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/console/AnsiEscapeTests.bd");
     if !entry.is_file() {
         return;
     }
-    let project_root = entry
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
+    let project_root = entry.parent().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
     let source = fs::read_to_string(&entry).expect("read AnsiEscapeTests.bd");
 
     let resolved = with_cwd_at_workspace_root(&root, || {
@@ -45,8 +37,7 @@ fn ansi_escape_resolves_under_corelib_test_assembly() {
 
     assert!(
         assembly.units.iter().any(|unit| {
-            unit.path.to_string_lossy().contains("Ansi")
-                && unit.path.to_string_lossy().contains("Escape")
+            unit.path.to_string_lossy().contains("Ansi") && unit.path.to_string_lossy().contains("Escape")
         }),
         "assembly must include Ansi.Escape via import closure, got {} units",
         assembly.units.len()

@@ -18,11 +18,7 @@ pub struct DocumentLine {
 impl DocumentLine {
     /// Creates a rendered document line from spans.
     pub fn new(source_line: usize, spans: Vec<Span<'static>>, kind: DocumentLineKind) -> Self {
-        Self {
-            source_line,
-            spans,
-            kind,
-        }
+        Self { source_line, spans, kind }
     }
 
     /// Creates a plain text document line.
@@ -32,9 +28,6 @@ impl DocumentLine {
 
     /// Returns the unstyled line text.
     pub fn plain_text(&self) -> String {
-        self.spans
-            .iter()
-            .map(|span| span.content.as_ref())
-            .collect()
+        self.spans.iter().map(|span| span.content.as_ref()).collect()
     }
 }

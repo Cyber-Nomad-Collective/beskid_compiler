@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use abfall::{Heap, TypeDescriptor};
 use beskid_runtime::{
-    RuntimeRoot, alloc, clear_current_heap, clear_current_root, enter_runtime_scope, force_collect,
-    gc_bytes_allocated, gc_collect, gc_collect_if_needed, gc_external_root_count, gc_object_count,
-    gc_phase, gc_register_root, gc_root_handle, gc_unregister_root, gc_unroot_handle,
-    gc_write_barrier, leave_runtime_scope, set_current_heap, set_current_root, snapshot_gc,
+    RuntimeRoot, alloc, clear_current_heap, clear_current_root, enter_runtime_scope, force_collect, gc_bytes_allocated,
+    gc_collect, gc_collect_if_needed, gc_external_root_count, gc_object_count, gc_phase, gc_register_root,
+    gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier, leave_runtime_scope, set_current_heap,
+    set_current_root, snapshot_gc,
 };
 
 fn with_runtime_scope<R>(f: impl FnOnce(&Arc<Heap>, &mut RuntimeRoot) -> R) -> R {
@@ -35,10 +35,7 @@ fn alloc_without_roots_is_reclaimed() {
         let before_collect = heap.bytes_allocated();
         assert!(before_collect > 0);
         let after = heap.force_collect();
-        assert!(
-            after < before_collect,
-            "unrooted object should be reclaimed"
-        );
+        assert!(after < before_collect, "unrooted object should be reclaimed");
     });
 }
 
@@ -53,10 +50,7 @@ fn registered_root_and_handle_keep_object_alive() {
         let before = heap.bytes_allocated();
         heap.force_collect();
         let during = heap.bytes_allocated();
-        assert!(
-            during >= before,
-            "registered roots should keep payload alive"
-        );
+        assert!(during >= before, "registered roots should keep payload alive");
 
         gc_unroot_handle(handle);
         gc_unregister_root(&mut slot as *mut *mut u8);
@@ -93,10 +87,7 @@ fn write_barrier_marks_newly_linked_child_during_marking() {
 
         heap.sweep_for_tests();
         let after = heap.bytes_allocated();
-        assert!(
-            after >= before,
-            "child should survive when linked during marking with barrier"
-        );
+        assert!(after >= before, "child should survive when linked during marking with barrier");
 
         gc_unregister_root(&mut parent_slot as *mut *mut u8);
         heap.force_collect();

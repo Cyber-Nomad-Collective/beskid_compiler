@@ -66,21 +66,10 @@ fn test_command_runs_and_filters_test_items() {
     let cli = BeskidCliInvoker::new();
 
     let manifest = project_root.join("TestHarness.bproj");
-    let output = cli.run_in(
-        &project_root,
-        [
-            "test",
-            "--project",
-            manifest.to_str().expect("manifest path str"),
-        ],
-    );
+    let output = cli.run_in(&project_root, ["test", "--project", manifest.to_str().expect("manifest path str")]);
     assert_success(&output, "run test harness fixture");
     assert_output_contains(&output, "PASS Passes", "run test harness fixture");
-    assert_output_contains(
-        &output,
-        "SKIP Skipped: disabled in CI",
-        "run test harness fixture",
-    );
+    assert_output_contains(&output, "SKIP Skipped: disabled in CI", "run test harness fixture");
     assert_output_contains(&output, "PASS TaggedFast", "run test harness fixture");
     assert_output_contains(&output, "PASS TaggedSlow", "run test harness fixture");
     assert_output_contains(

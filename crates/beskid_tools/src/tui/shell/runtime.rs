@@ -15,9 +15,7 @@ use crate::tui::app::BeskidShellApp;
 use crate::tui::input::{InputAction, InputResult};
 use crate::tui::message::ShellMessage;
 use crate::tui::realm::shell_event::ShellRealmEvent;
-use crate::tui::realm::{
-    PipelineShellComponent, PipelineShellId, PipelineShellMsg, StderrTerminalAdapter,
-};
+use crate::tui::realm::{PipelineShellComponent, PipelineShellId, PipelineShellMsg, StderrTerminalAdapter};
 use crate::tui::shell::effects::{apply_effects, drain_pending_work};
 use crate::tui::shell::focus::{FocusTarget, OverlayKind, PaneFocus};
 use crate::tui::shell::interrupt::InterruptFlag;
@@ -30,17 +28,10 @@ const TICK: Duration = Duration::from_millis(80);
 pub enum RuntimeOp {
     Update(ShellMessage),
     UpdateAndAck(ShellMessage, Sender<()>),
-    SetOverlayVisible {
-        kind: OverlayKind,
-        visible: bool,
-        ack: Option<Sender<()>>,
-    },
+    SetOverlayVisible { kind: OverlayKind, visible: bool, ack: Option<Sender<()>> },
     Suspend(Sender<()>),
     Resume(Sender<()>),
-    WaitFocus {
-        target: NavTarget,
-        ack: Sender<()>,
-    },
+    WaitFocus { target: NavTarget, ack: Sender<()> },
     WaitDismiss(Sender<()>),
     Shutdown(Sender<()>),
 }
@@ -58,17 +49,10 @@ impl ShellRuntime {
         let (ready_tx, ready_rx) = mpsc::channel();
         let flag = interrupt.clone();
         let loop_tx = tx.clone();
-        let join = thread::Builder::new()
-            .name("beskid-tui".into())
-            .spawn(move || run_loop(rx, ready_tx, flag, loop_tx))?;
-        ready_rx
-            .recv()
-            .map_err(|_| io::Error::other("tui runtime failed to start"))??;
-        Ok(Self {
-            tx,
-            join: Some(join),
-            interrupt,
-        })
+        let join =
+            thread::Builder::new().name("beskid-tui".into()).spawn(move || run_loop(rx, ready_tx, flag, loop_tx))?;
+        ready_rx.recv().map_err(|_| io::Error::other("tui runtime failed to start"))??;
+        Ok(Self { tx, join: Some(join), interrupt })
     }
 
     pub fn interrupt_flag(&self) -> InterruptFlag {
@@ -76,9 +60,7 @@ impl ShellRuntime {
     }
 
     pub fn send(&self, op: RuntimeOp) -> io::Result<()> {
-        self.tx
-            .send(op)
-            .map_err(|_| io::Error::other("tui runtime channel closed"))
+        self.tx.send(op).map_err(|_| io::Error::other("tui runtime channel closed"))
     }
 
     pub fn send_update(&self, msg: ShellMessage) -> io::Result<()> {
@@ -94,9 +76,7 @@ impl ShellRuntime {
         }
         let (ack_tx, ack_rx) = mpsc::channel();
         self.send(build(ack_tx))?;
-        ack_rx
-            .recv()
-            .map_err(|_| io::Error::other("tui runtime wait interrupted"))?;
+        ack_rx.recv().map_err(|_| io::Error::other("tui runtime wait interrupted"))?;
         if self.interrupt.is_set() {
             return Err(io::Error::new(io::ErrorKind::Interrupted, "interrupted"));
         }
@@ -108,8 +88,7 @@ impl ShellRuntime {
         let _ = self.tx.send(RuntimeOp::Shutdown(ack_tx));
         if let Some(join) = self.join.take() {
             let _ = ack_rx.recv();
-            join.join()
-                .map_err(|_| io::Error::other("tui runtime panicked"))??;
+            join.join().map_err(|_| io::Error::other("tui runtime panicked"))??;
         }
         Ok(())
     }
@@ -131,19 +110,14 @@ fn run_loop(
         return Err(err);
     }
 
-    let listener = EventListenerCfg::default()
-        .crossterm_input_listener(Duration::from_millis(10), 3)
-        .tick_interval(TICK);
+    let listener =
+        EventListenerCfg::default().crossterm_input_listener(Duration::from_millis(10), 3).tick_interval(TICK);
 
     let mut application = Application::init(listener);
     let redraw_signal = RedrawSignal::new();
     let shell_component = PipelineShellComponent::new(BeskidShellApp::new(redraw_signal.clone()));
-    application
-        .mount(PipelineShellId::Root, Box::new(shell_component), Vec::new())
-        .map_err(runtime_err)?;
-    application
-        .active(&PipelineShellId::Root)
-        .map_err(runtime_err)?;
+    application.mount(PipelineShellId::Root, Box::new(shell_component), Vec::new()).map_err(runtime_err)?;
+    application.active(&PipelineShellId::Root).map_err(runtime_err)?;
 
     let mut terminal = StderrTerminalAdapter::new().map_err(runtime_err)?;
     terminal.enable_raw_mode().map_err(runtime_err)?;
@@ -151,10 +125,7 @@ fn run_loop(
     terminal.enable_mouse_capture().map_err(runtime_err)?;
 
     let size = terminal.raw().size().map_err(io::Error::other)?;
-    shell_mut(&mut application).handle_shell_event(ShellRealmEvent::Resize {
-        width: size.width,
-        height: size.height,
-    });
+    shell_mut(&mut application).handle_shell_event(ShellRealmEvent::Resize { width: size.width, height: size.height });
 
     let _ = ready.send(Ok(()));
 
@@ -168,9 +139,7 @@ fn run_loop(
 fn shell_mut(
     application: &mut Application<PipelineShellId, PipelineShellMsg, NoUserEvent>,
 ) -> &mut PipelineShellComponent {
-    let component = application
-        .get_component_mut(&PipelineShellId::Root)
-        .expect("pipeline shell mounted");
+    let component = application.get_component_mut(&PipelineShellId::Root).expect("pipeline shell mounted");
     PipelineShellComponent::as_any_mut(component)
 }
 
@@ -217,9 +186,7 @@ fn event_loop(
                                 OverlayKind::Pckg if !shell.app.state.pckg.catalog_loaded => {
                                     shell.app.state.pckg.pending_catalog_refresh = true;
                                 }
-                                OverlayKind::Templates
-                                    if !shell.app.state.templates.catalog_loaded =>
-                                {
+                                OverlayKind::Templates if !shell.app.state.templates.catalog_loaded => {
                                     shell.app.state.templates.pending_catalog_refresh = true;
                                 }
                                 _ => {}
@@ -251,10 +218,8 @@ fn event_loop(
                         let _ = application.unlock_ports();
                         init_session_logger();
                         let size = terminal.raw().size().map_err(io::Error::other)?;
-                        shell_mut(application).handle_shell_event(ShellRealmEvent::Resize {
-                            width: size.width,
-                            height: size.height,
-                        });
+                        shell_mut(application)
+                            .handle_shell_event(ShellRealmEvent::Resize { width: size.width, height: size.height });
                         suspended = false;
                         dirty = true;
                     }
@@ -274,10 +239,7 @@ fn event_loop(
                 RuntimeOp::WaitDismiss(ack) => {
                     {
                         let shell = shell_mut(application);
-                        shell
-                            .app
-                            .state
-                            .set_overlay_visible(OverlayKind::Summary, true);
+                        shell.app.state.set_overlay_visible(OverlayKind::Summary, true);
                         shell.app.state.focus_overlay(OverlayKind::Summary);
                         shell.app.state.sync_summary_explorer();
                     }
@@ -340,9 +302,7 @@ fn event_loop(
             }
 
             if last_tick.elapsed() >= TICK {
-                let effects = shell_mut(application)
-                    .app
-                    .apply_message(&ShellMessage::Tick);
+                let effects = shell_mut(application).app.apply_message(&ShellMessage::Tick);
                 apply_effects(effects, &tx, &mut shell_mut(application).app.state);
                 last_tick = Instant::now();
                 dirty = true;
@@ -350,11 +310,7 @@ fn event_loop(
 
             drain_pending_work(&tx, &mut shell_mut(application).app.state);
 
-            if shell_mut(application)
-                .app
-                .redraw_signal
-                .take_redraw_request()
-            {
+            if shell_mut(application).app.redraw_signal.take_redraw_request() {
                 dirty = true;
             }
         } else {
@@ -368,12 +324,7 @@ fn event_loop(
                 quitting = true;
                 dirty = true;
             } else {
-                resolve_waits(
-                    &mut pending_focus,
-                    &mut pending_dismiss,
-                    state,
-                    input_action,
-                );
+                resolve_waits(&mut pending_focus, &mut pending_dismiss, state, input_action);
             }
         }
 
@@ -401,9 +352,7 @@ fn apply_runtime_message(
     apply_effects(effects, tx, &mut shell.app.state);
 }
 
-fn redraw_signal_request(
-    application: &mut Application<PipelineShellId, PipelineShellMsg, NoUserEvent>,
-) {
+fn redraw_signal_request(application: &mut Application<PipelineShellId, PipelineShellMsg, NoUserEvent>) {
     shell_mut(application).app.redraw_signal.request_redraw();
 }
 

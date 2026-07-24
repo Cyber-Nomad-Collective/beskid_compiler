@@ -4,36 +4,30 @@ use std::time::Instant;
 use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
 use beskid_queries::{
-    CallLowering, ItemSignature, SemanticTypeId, SourceUnitId, call_lowering, child_nodes,
-    closure_call_target, closure_environment, closure_signature,
-    extern_contract_import_for_declaration, format_ast_node_key, generic_call_specialization,
-    item_abi_signature, item_name, node_kind, node_span, resolved_item, spawn_entry_validation,
+    CallLowering, ItemSignature, SemanticTypeId, SourceUnitId, call_lowering, child_nodes, closure_call_target,
+    closure_environment, closure_signature, extern_contract_import_for_declaration, format_ast_node_key,
+    generic_call_specialization, item_abi_signature, item_name, node_kind, node_span, resolved_item,
+    spawn_entry_validation,
 };
 use cranelift_codegen::ir::{AbiParam, InstBuilder};
 use cranelift_codegen::ir::{
-    Endianness, ExtFuncData, ExternalName, FuncRef, Function, GlobalValueData, Signature, Type,
-    Value, types,
+    Endianness, ExtFuncData, ExternalName, FuncRef, Function, GlobalValueData, Signature, Type, Value, types,
 };
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift_module::{
-    DataDescription, DataId, FuncId, Linkage, Module, ModuleError, ModuleResult,
-};
+use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module, ModuleError, ModuleResult};
 
-use crate::aggregate_static::{
-    ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticPlan, emit_aggregate_static_data,
-};
+use crate::aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticPlan, emit_aggregate_static_data};
 use crate::closure_static::{
-    ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
-    ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT, ClosureStaticPlan, emit_closure_static_data,
+    ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
+    ClosureStaticPlan, emit_closure_static_data,
 };
 use crate::lowering::descriptor::TypeDescriptorData;
 use crate::lowering::{CodegenArtifact, ExternImport};
 use crate::{
-    CodegenContext, CodegenInput, emit_isle_closure_lambda_entry,
-    emit_isle_expression_with_call_importer, emit_isle_item_with_services,
-    emit_isle_item_with_services_specialization,
+    CodegenContext, CodegenInput, emit_isle_closure_lambda_entry, emit_isle_expression_with_call_importer,
+    emit_isle_item_with_services, emit_isle_item_with_services_specialization,
 };
 
 const ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT: &str = "beskid_rt_v5_fiber_spawn_with_cancel_slot";
@@ -86,10 +80,7 @@ pub enum SyntaxModuleEmissionError {
     DuplicateSymbol(String),
 }
 
-fn emission_error(
-    input: &CodegenInput<'_>,
-    error: FunctionEmissionError,
-) -> SyntaxModuleEmissionError {
+fn emission_error(input: &CodegenInput<'_>, error: FunctionEmissionError) -> SyntaxModuleEmissionError {
     SyntaxModuleEmissionError::Emission(error.display_with_db(input.database()))
 }
 
@@ -109,21 +100,11 @@ pub fn lower_syntax_program(
     items: &[SyntaxModuleItem],
 ) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
     let started = Instant::now();
-    crate::isle_trace::event(|| {
-        format!(
-            "event=clif.begin items={} roots={}",
-            items.len(),
-            input.roots().len()
-        )
-    });
-    let items = match resolve_module_items(input, items)
-        .and_then(|items| expand_direct_spawn_items(input, items))
-    {
+    crate::isle_trace::event(|| format!("event=clif.begin items={} roots={}", items.len(), input.roots().len()));
+    let items = match resolve_module_items(input, items).and_then(|items| expand_direct_spawn_items(input, items)) {
         Ok(items) => items,
         Err(error) => {
-            crate::isle_trace::event(|| {
-                format!("event=isle.missing rule=module_item_resolution detail={error}")
-            });
+            crate::isle_trace::event(|| format!("event=isle.missing rule=module_item_resolution detail={error}"));
             return Err(error);
         }
     };
@@ -135,10 +116,9 @@ pub fn lower_syntax_program(
             artifact.functions.len(),
             artifact.extern_imports.len()
         ),
-        Err(error) => format!(
-            "event=clif.end outcome=error elapsed_ms={} detail={error}",
-            started.elapsed().as_millis()
-        ),
+        Err(error) => {
+            format!("event=clif.end outcome=error elapsed_ms={} detail={error}", started.elapsed().as_millis())
+        }
     });
     result
 }
@@ -156,20 +136,19 @@ fn expand_direct_spawn_items(
         let mut spawns = Vec::new();
         collect_spawn_nodes(db, items[cursor].key, &mut HashSet::new(), &mut spawns);
         for spawn in spawns {
-            let Some(validation) = spawn_entry_validation(db, spawn)
-                .map_err(|error| emission_verification(error.to_string()))?
+            let Some(validation) =
+                spawn_entry_validation(db, spawn).map_err(|error| emission_verification(error.to_string()))?
             else {
                 continue;
             };
             if !validation.is_zero_argument_entry
-                || node_kind(db, validation.target)
-                    .map_err(|error| emission_verification(error.to_string()))?
+                || node_kind(db, validation.target).map_err(|error| emission_verification(error.to_string()))?
                     != Some(beskid_queries::IndexedNodeKind::PathExpression)
             {
                 continue;
             }
-            let Some(target) = resolved_item(db, validation.target)
-                .map_err(|error| emission_verification(error.to_string()))?
+            let Some(target) =
+                resolved_item(db, validation.target).map_err(|error| emission_verification(error.to_string()))?
             else {
                 continue;
             };
@@ -208,13 +187,7 @@ fn syntax_item_symbol(input: &CodegenInput<'_>, key: AstNodeKey) -> Option<Strin
     let logical = unit
         .logical_name
         .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character
-            } else {
-                '_'
-            }
-        })
+        .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
         .collect::<String>();
     Some(format!("{name}#syntax_{logical}_{}", key.node.0))
 }
@@ -226,47 +199,26 @@ fn lower_resolved_syntax_program(
 ) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
     let mut symbols = HashMap::with_capacity(items.len());
     for item in items {
-        if symbols
-            .insert(item.callee.clone(), item.symbol.clone())
-            .is_some()
-        {
-            return Err(SyntaxModuleEmissionError::DuplicateSymbol(
-                item.symbol.clone(),
-            ));
+        if symbols.insert(item.callee.clone(), item.symbol.clone()).is_some() {
+            return Err(SyntaxModuleEmissionError::DuplicateSymbol(item.symbol.clone()));
         }
     }
     let runtime_intrinsics = runtime_intrinsic_symbols(input);
-    symbols.extend(
-        runtime_intrinsics
-            .iter()
-            .map(|(callee, symbol)| (callee.clone(), symbol.clone())),
-    );
+    symbols.extend(runtime_intrinsics.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
     let corelib_services = corelib_service_symbols(input, items);
-    symbols.extend(
-        corelib_services
-            .iter()
-            .map(|(callee, symbol)| (callee.clone(), symbol.clone())),
-    );
+    symbols.extend(corelib_services.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
     let extern_contracts = extern_contract_symbols(input, items);
-    symbols.extend(
-        extern_contracts
-            .iter()
-            .map(|(callee, symbol)| (callee.clone(), symbol.clone())),
-    );
+    symbols.extend(extern_contracts.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
 
     let trampolines = resolve_spawn_trampolines(input, isa, items, &symbols)?;
-    symbols.extend(trampolines.iter().map(|trampoline| {
-        (
-            DirectCallee::spawn_trampoline(trampoline.spawn),
-            trampoline.symbol.clone(),
-        )
-    }));
+    symbols.extend(
+        trampolines
+            .iter()
+            .map(|trampoline| (DirectCallee::spawn_trampoline(trampoline.spawn), trampoline.symbol.clone())),
+    );
 
     let mut context = CodegenContext::new();
-    let lambda_count = trampolines
-        .iter()
-        .filter(|trampoline| trampoline.lambda_body.is_some())
-        .count();
+    let lambda_count = trampolines.iter().filter(|trampoline| trampoline.lambda_body.is_some()).count();
     let mut functions = Vec::with_capacity(items.len() + trampolines.len() + lambda_count);
     for trampoline in &trampolines {
         if let Some(body) = trampoline.lambda_body {
@@ -275,30 +227,18 @@ fn lower_resolved_syntax_program(
                 .returns
                 .first()
                 .map(|parameter| parameter.value_type)
-                .ok_or_else(|| {
-                    emission_verification("spawned lambda entry must return an ABI value")
-                })?;
+                .ok_or_else(|| emission_verification("spawned lambda entry must return an ABI value"))?;
             let function = {
                 let mut importer = ArtifactCallImporter { symbols: &symbols };
                 if let Some(captures) = &trampoline.closure_captures {
-                    emit_isle_closure_lambda_entry(
-                        input,
-                        isa,
-                        body,
-                        result,
-                        captures,
-                        &mut importer,
-                    )
-                    .map_err(|error| emission_error(input, error))?
+                    emit_isle_closure_lambda_entry(input, isa, body, result, captures, &mut importer)
+                        .map_err(|error| emission_error(input, error))?
                 } else {
                     emit_isle_expression_with_call_importer(input, isa, body, result, &mut importer)
                         .map_err(|error| emission_error(input, error))?
                 }
             };
-            functions.push(crate::LoweredFunction {
-                name: trampoline.target_symbol.clone(),
-                function,
-            });
+            functions.push(crate::LoweredFunction { name: trampoline.target_symbol.clone(), function });
         }
         functions.push(crate::LoweredFunction {
             name: trampoline.symbol.clone(),
@@ -317,10 +257,7 @@ fn lower_resolved_syntax_program(
         });
         let function = {
             let mut importer = ArtifactCallImporter { symbols: &symbols };
-            let mut strings = ArtifactStringInterner {
-                context: &mut context,
-                pointer_type: isa.pointer_type(),
-            };
+            let mut strings = ArtifactStringInterner { context: &mut context, pointer_type: isa.pointer_type() };
             match &item.specialization {
                 Some(specialization) => emit_isle_item_with_services_specialization(
                     input,
@@ -330,18 +267,16 @@ fn lower_resolved_syntax_program(
                     &mut strings,
                     &mut importer,
                 ),
-                None => {
-                    emit_isle_item_with_services(input, isa, item.key, &mut strings, &mut importer)
-                }
+                None => emit_isle_item_with_services(input, isa, item.key, &mut strings, &mut importer),
             }
             .map_err(|error| {
                 crate::isle_trace::event(|| {
                     format!(
-                    "event=isle.missing rule=emit_item_statement item={} elapsed_ms={} detail={}",
-                    beskid_queries::format_ast_node_site(input.database(), item.key),
-                    started.elapsed().as_millis(),
-                    error.display_with_db(input.database()),
-                )
+                        "event=isle.missing rule=emit_item_statement item={} elapsed_ms={} detail={}",
+                        beskid_queries::format_ast_node_site(input.database(), item.key),
+                        started.elapsed().as_millis(),
+                        error.display_with_db(input.database()),
+                    )
                 });
                 emission_error(input, error)
             })?
@@ -353,54 +288,33 @@ fn lower_resolved_syntax_program(
                 started.elapsed().as_millis(),
             )
         });
-        functions.push(crate::LoweredFunction {
-            name: item.symbol.clone(),
-            function,
-        });
+        functions.push(crate::LoweredFunction { name: item.symbol.clone(), function });
     }
     let mut extern_imports = runtime_intrinsics
         .into_values()
         .chain(corelib_services.into_values())
         .chain((!trampolines.is_empty()).then_some(ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT.to_owned()))
-        .map(|symbol| ExternImport {
-            symbol,
-            abi: Some("C".into()),
-            library: None,
-        })
+        .map(|symbol| ExternImport { symbol, abi: Some("C".into()), library: None })
         .collect::<Vec<_>>();
     for import in extern_contract_imports(input, items) {
-        if !extern_imports
-            .iter()
-            .any(|existing| existing.symbol == import.symbol)
-        {
+        if !extern_imports.iter().any(|existing| existing.symbol == import.symbol) {
             extern_imports.push(import);
         }
     }
 
     let closure_static_plans = collect_closure_static_plans(input, items, &trampolines);
     if !closure_static_plans.is_empty() {
-        for symbol in [
-            ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
-            ABI_V5_CLOSURE_CAPTURE_STORE,
-            ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
-        ] {
-            if !extern_imports
-                .iter()
-                .any(|existing| existing.symbol == symbol)
-            {
-                extern_imports.push(ExternImport {
-                    symbol: symbol.to_owned(),
-                    abi: Some("C".into()),
-                    library: None,
-                });
+        for symbol in
+            [ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT]
+        {
+            if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
+                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
             }
         }
     }
     let aggregate_static_plans = collect_aggregate_static_plans(input, items);
     if !aggregate_static_plans.is_empty()
-        && !extern_imports
-            .iter()
-            .any(|existing| existing.symbol == ABI_V5_MANAGED_OBJECT_ALLOCATE)
+        && !extern_imports.iter().any(|existing| existing.symbol == ABI_V5_MANAGED_OBJECT_ALLOCATE)
     {
         extern_imports.push(ExternImport {
             symbol: ABI_V5_MANAGED_OBJECT_ALLOCATE.to_owned(),
@@ -428,10 +342,7 @@ fn collect_aggregate_static_plans(
     for item in items {
         collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
     }
-    nodes
-        .into_iter()
-        .filter_map(|key| input.aggregate_static_plan(key))
-        .collect()
+    nodes.into_iter().filter_map(|key| input.aggregate_static_plan(key)).collect()
 }
 
 /// Resolve source-proven zero-argument entries without ever re-entering HIR lowering.
@@ -454,8 +365,7 @@ fn collect_closure_static_plans(
     for trampoline in trampolines {
         if trampoline.closure_captures.is_some()
             && let Ok(Some(validation)) = spawn_entry_validation(db, trampoline.spawn)
-            && let Some(authority) =
-                input.closure_lowering_authority(trampoline.spawn, validation.target)
+            && let Some(authority) = input.closure_lowering_authority(trampoline.spawn, validation.target)
         {
             push_plan(authority.plan);
         }
@@ -510,20 +420,18 @@ fn resolve_spawn_trampolines(
     }
     let mut trampolines = Vec::new();
     for spawn in spawns {
-        let Some(validation) = spawn_entry_validation(db, spawn)
-            .map_err(|error| emission_verification(error.to_string()))?
+        let Some(validation) =
+            spawn_entry_validation(db, spawn).map_err(|error| emission_verification(error.to_string()))?
         else {
             continue;
         };
         if !validation.is_zero_argument_entry {
             continue;
         }
-        match node_kind(db, validation.target)
-            .map_err(|error| emission_verification(error.to_string()))?
-        {
+        match node_kind(db, validation.target).map_err(|error| emission_verification(error.to_string()))? {
             Some(beskid_queries::IndexedNodeKind::PathExpression) => {
-                let Some(target) = resolved_item(db, validation.target)
-                    .map_err(|error| emission_verification(error.to_string()))?
+                let Some(target) =
+                    resolved_item(db, validation.target).map_err(|error| emission_verification(error.to_string()))?
                 else {
                     continue;
                 };
@@ -559,9 +467,7 @@ fn resolve_spawn_trampolines(
                 let closure_captures = if environment.captures.is_empty() {
                     None
                 } else {
-                    let Some(authority) =
-                        input.closure_lowering_authority(spawn, validation.target)
-                    else {
+                    let Some(authority) = input.closure_lowering_authority(spawn, validation.target) else {
                         continue;
                     };
                     let Some(captures) = authority
@@ -597,14 +503,9 @@ fn resolve_spawn_trampolines(
                     continue;
                 }
                 if closure_captures.is_some() {
-                    signature
-                        .params
-                        .insert(0, AbiParam::new(isa.pointer_type()));
+                    signature.params.insert(0, AbiParam::new(isa.pointer_type()));
                 }
-                let target_symbol = format!(
-                    "__beskid_spawn_lambda_syntax_g{}_n{}",
-                    spawn.generation.0, spawn.node.0
-                );
+                let target_symbol = format!("__beskid_spawn_lambda_syntax_g{}_n{}", spawn.generation.0, spawn.node.0);
                 let symbol = spawn_trampoline_symbol(&target_symbol, spawn);
                 trampolines.push(SpawnTrampoline {
                     spawn,
@@ -626,11 +527,7 @@ fn spawn_trampoline_symbol(target_symbol: &str, spawn: AstNodeKey) -> String {
         "__beskid_spawn_entry_syntax_{}_g{}_n{}",
         target_symbol
             .chars()
-            .map(|character| if character.is_ascii_alphanumeric() {
-                character
-            } else {
-                '_'
-            })
+            .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
             .collect::<String>(),
         spawn.generation.0,
         spawn.node.0,
@@ -664,8 +561,7 @@ fn emit_spawn_trampoline(
     let mut signature = Signature::new(isa.default_call_conv());
     signature.params.push(AbiParam::new(pointer));
     signature.returns.push(AbiParam::new(types::I64));
-    let mut function =
-        Function::with_name_signature(cranelift_codegen::ir::UserFuncName::user(0, 0), signature);
+    let mut function = Function::with_name_signature(cranelift_codegen::ir::UserFuncName::user(0, 0), signature);
     let mut builder_context = FunctionBuilderContext::new();
     {
         let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
@@ -690,9 +586,7 @@ fn emit_spawn_trampoline(
         let result = match results.as_slice() {
             [] => builder.ins().iconst(types::I64, 0),
             [value] if builder.func.dfg.value_type(*value) == types::I64 => *value,
-            [value] if builder.func.dfg.value_type(*value).is_int() => {
-                builder.ins().sextend(types::I64, *value)
-            }
+            [value] if builder.func.dfg.value_type(*value).is_int() => builder.ins().sextend(types::I64, *value),
             _ => {
                 return Err(emission_verification(format!(
                     "spawn trampoline target `{}` must return unit or an integer ABI value",
@@ -704,10 +598,7 @@ fn emit_spawn_trampoline(
         builder.finalize();
     }
     verify_function(&function, isa.flags()).map_err(|error| {
-        emission_verification(format!(
-            "spawn trampoline `{}` verification failed: {error}",
-            trampoline.symbol
-        ))
+        emission_verification(format!("spawn trampoline `{}` verification failed: {error}", trampoline.symbol))
     })?;
     Ok(function)
 }
@@ -717,9 +608,7 @@ fn map_spawn_capture_type(isa: &dyn TargetIsa, semantic: SemanticTypeId) -> Opti
         SemanticTypeId::BOOL | SemanticTypeId::U8 => Some(types::I8),
         SemanticTypeId::I32 | SemanticTypeId::CHAR => Some(types::I32),
         SemanticTypeId::I64 => Some(types::I64),
-        SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING => {
-            Some(isa.pointer_type())
-        }
+        SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING => Some(isa.pointer_type()),
         SemanticTypeId::F64 => Some(types::F64),
         _ => None,
     }
@@ -731,9 +620,7 @@ fn spawn_target_signature(isa: &dyn TargetIsa, item: ItemSignature) -> Option<Si
             SemanticTypeId::BOOL | SemanticTypeId::U8 => types::I8,
             SemanticTypeId::I32 => types::I32,
             SemanticTypeId::I64 => types::I64,
-            SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING => {
-                isa.pointer_type()
-            }
+            SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING => isa.pointer_type(),
             SemanticTypeId::F64 => types::F64,
             SemanticTypeId::CHAR => types::I32,
             SemanticTypeId::UNIT | SemanticTypeId::NEVER => return None,
@@ -750,20 +637,14 @@ fn spawn_target_signature(isa: &dyn TargetIsa, item: ItemSignature) -> Option<Si
             .collect::<Option<Vec<_>>>()?,
     );
     if !matches!(item.result, SemanticTypeId::UNIT | SemanticTypeId::NEVER) {
-        signature
-            .returns
-            .push(AbiParam::new(map(isa, item.result)?));
+        signature.returns.push(AbiParam::new(map(isa, item.result)?));
     }
     Some(signature)
 }
 
 /// Trace only facts already read by the syntax-only lowering boundary.  This has no bearing on
 /// selection; it makes every unavailable fact explicit instead of making a HIR-era guess.
-fn trace_item_facts(
-    input: &CodegenInput<'_>,
-    item: AstNodeKey,
-    symbols: &HashMap<DirectCallee, String>,
-) {
+fn trace_item_facts(input: &CodegenInput<'_>, item: AstNodeKey, symbols: &HashMap<DirectCallee, String>) {
     if !crate::isle_trace::enabled() {
         return;
     }
@@ -782,11 +663,8 @@ fn trace_node_facts(
         return;
     }
     let node = trace_key(db, key);
-    let kind = node_kind(db, key)
-        .ok()
-        .flatten()
-        .map(|kind| format!("{kind:?}"))
-        .unwrap_or_else(|| "<missing>".to_owned());
+    let kind =
+        node_kind(db, key).ok().flatten().map(|kind| format!("{kind:?}")).unwrap_or_else(|| "<missing>".to_owned());
     let span = node_span(db, key)
         .ok()
         .flatten()
@@ -820,21 +698,14 @@ fn trace_node_facts(
                 ("Direct", Some(callee))
             }
             CallLowering::Dynamic => ("Dynamic", None),
-            CallLowering::Runtime(intrinsic) => (
-                "Runtime",
-                Some(DirectCallee::runtime_intrinsic(intrinsic.0)),
-            ),
-            CallLowering::CorelibService(service) => (
-                "CorelibService",
-                Some(DirectCallee::corelib_service(service.symbol)),
-            ),
+            CallLowering::Runtime(intrinsic) => ("Runtime", Some(DirectCallee::runtime_intrinsic(intrinsic.0))),
+            CallLowering::CorelibService(service) => {
+                ("CorelibService", Some(DirectCallee::corelib_service(service.symbol)))
+            }
         };
         match callee {
             Some(callee) => {
-                let import = symbols
-                    .get(&callee)
-                    .map(String::as_str)
-                    .unwrap_or("<missing>");
+                let import = symbols.get(&callee).map(String::as_str).unwrap_or("<missing>");
                 let callee_display = format_callee_for_trace(db, &callee);
                 crate::isle_trace::event(|| {
                     format!(
@@ -843,9 +714,7 @@ fn trace_node_facts(
                 });
             }
             None => crate::isle_trace::event(|| {
-                format!(
-                    "event=call.fact key={node} lowering={lowering_name} callee=<unavailable> module_import=<none>"
-                )
+                format!("event=call.fact key={node} lowering={lowering_name} callee=<unavailable> module_import=<none>")
             }),
         }
     }
@@ -856,12 +725,12 @@ fn trace_node_facts(
                 trace_node_facts(db, child, symbols, visited);
             }
         }
-        Ok(None) => crate::isle_trace::event(|| {
-            format!("event=isle.missing rule=child_nodes key={node} detail=unavailable")
-        }),
-        Err(error) => crate::isle_trace::event(|| {
-            format!("event=isle.missing rule=child_nodes key={node} detail={error}")
-        }),
+        Ok(None) => {
+            crate::isle_trace::event(|| format!("event=isle.missing rule=child_nodes key={node} detail=unavailable"))
+        }
+        Err(error) => {
+            crate::isle_trace::event(|| format!("event=isle.missing rule=child_nodes key={node} detail={error}"))
+        }
     }
 }
 
@@ -874,36 +743,22 @@ fn format_abi_identity(identity: &[u32]) -> String {
         return "[]".to_owned();
     }
     let (parameters, result) = identity.split_at(identity.len() - 1);
-    let parameters = parameters
-        .iter()
-        .copied()
-        .map(|id| SemanticTypeId(id).display_name())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let result = result
-        .first()
-        .copied()
-        .map(|id| SemanticTypeId(id).display_name())
-        .unwrap_or_else(|| "unit".to_owned());
+    let parameters =
+        parameters.iter().copied().map(|id| SemanticTypeId(id).display_name()).collect::<Vec<_>>().join(", ");
+    let result =
+        result.first().copied().map(|id| SemanticTypeId(id).display_name()).unwrap_or_else(|| "unit".to_owned());
     format!("[{parameters}]->{result}")
 }
 
 fn format_declaration_for_trace(db: &dyn beskid_queries::Db, key: AstNodeKey) -> String {
-    let name = item_name(db, key)
-        .ok()
-        .flatten()
-        .map(|name| name.to_string())
-        .unwrap_or_else(|| "<anon>".to_owned());
+    let name = item_name(db, key).ok().flatten().map(|name| name.to_string()).unwrap_or_else(|| "<anon>".to_owned());
     format!("{name}@{}", trace_key(db, key))
 }
 
 fn format_callee_for_trace(db: &dyn beskid_queries::Db, callee: &DirectCallee) -> String {
     match callee {
         DirectCallee::Item(key) => format!("Item({})", format_declaration_for_trace(db, *key)),
-        DirectCallee::SpecializedItem {
-            declaration,
-            abi_identity,
-        } => format!(
+        DirectCallee::SpecializedItem { declaration, abi_identity } => format!(
             "SpecializedItem({}, {})",
             format_declaration_for_trace(db, *declaration),
             format_abi_identity(abi_identity)
@@ -937,27 +792,20 @@ fn resolve_module_items(
             });
             continue;
         }
-        let kind =
-            node_kind(db, item.key).map_err(|error| emission_verification(error.to_string()))?;
+        let kind = node_kind(db, item.key).map_err(|error| emission_verification(error.to_string()))?;
         if kind != Some(beskid_queries::IndexedNodeKind::FunctionDefinition) {
             // Type and enum declarations carry source layout facts but have no executable
             // syntax body. They deliberately do not require a call-derived function ABI.
             continue;
         }
         let Some(signatures) = specializations.get(&item.key) else {
-            return Err(emission_verification(
-                "generic item has no call-derived ABI specialization",
-            ));
+            return Err(emission_verification("generic item has no call-derived ABI specialization"));
         };
         for signature in signatures {
             let identity = specialization_identity(signature);
             resolved.push(ResolvedSyntaxModuleItem {
                 key: item.key,
-                symbol: format!(
-                    "{}#generic_{}",
-                    item.symbol,
-                    specialization_mangle(signature)
-                ),
+                symbol: format!("{}#generic_{}", item.symbol, specialization_mangle(signature)),
                 callee: DirectCallee::specialized_item(item.key, identity),
                 specialization: Some(signature.clone()),
             });
@@ -971,19 +819,15 @@ fn collect_generic_call_specializations(
     key: AstNodeKey,
     specializations: &mut HashMap<AstNodeKey, Vec<ItemSignature>>,
 ) -> Result<(), SyntaxModuleEmissionError> {
-    if let Some(specialization) = generic_call_specialization(db, key)
-        .map_err(|error| emission_verification(error.to_string()))?
+    if let Some(specialization) =
+        generic_call_specialization(db, key).map_err(|error| emission_verification(error.to_string()))?
     {
-        let signatures = specializations
-            .entry(specialization.declaration)
-            .or_default();
+        let signatures = specializations.entry(specialization.declaration).or_default();
         if !signatures.contains(&specialization.signature) {
             signatures.push(specialization.signature);
         }
     }
-    if let Some(children) =
-        child_nodes(db, key).map_err(|error| emission_verification(error.to_string()))?
-    {
+    if let Some(children) = child_nodes(db, key).map_err(|error| emission_verification(error.to_string()))? {
         for child in children.iter().copied() {
             collect_generic_call_specializations(db, child, specializations)?;
         }
@@ -1002,11 +846,7 @@ fn specialization_identity(signature: &ItemSignature) -> std::sync::Arc<[u32]> {
 }
 
 fn specialization_mangle(signature: &ItemSignature) -> String {
-    specialization_identity(signature)
-        .iter()
-        .map(u32::to_string)
-        .collect::<Vec<_>>()
-        .join("_")
+    specialization_identity(signature).iter().map(u32::to_string).collect::<Vec<_>>().join("_")
 }
 
 /// Syntax-ISLE adapter over the existing artifact-owned literal pool.
@@ -1031,14 +871,11 @@ impl StringInterner for ArtifactStringInterner<'_> {
         });
         let bytes = builder.ins().global_value(self.pointer_type, global);
         let byte_len = builder.ins().iconst(self.pointer_type, text.len() as i64);
-        let route = beskid_abi::dispatch_route_for_symbol(beskid_abi::SYM_STR_NEW).ok_or(
-            beskid_isle::StringMaterializationError::MissingDispatchRoute(beskid_abi::SYM_STR_NEW),
-        )?;
+        let route = beskid_abi::dispatch_route_for_symbol(beskid_abi::SYM_STR_NEW)
+            .ok_or(beskid_isle::StringMaterializationError::MissingDispatchRoute(beskid_abi::SYM_STR_NEW))?;
         beskid_isle::emit_dispatch_call(builder, route, &[bytes, byte_len], true)
             .map_err(beskid_isle::StringMaterializationError::DispatchEmission)?
-            .ok_or(beskid_isle::StringMaterializationError::DispatchEmission(
-                "str_new dispatch returned no value",
-            ))
+            .ok_or(beskid_isle::StringMaterializationError::DispatchEmission("str_new dispatch returned no value"))
     }
 }
 
@@ -1055,12 +892,9 @@ fn runtime_intrinsic_symbols(input: &CodegenInput<'_>) -> HashMap<DirectCallee, 
                 .iter()
                 .enumerate()
                 .filter_map(|(index, intrinsic)| {
-                    u32::try_from(index).ok().map(|index| {
-                        (
-                            DirectCallee::runtime_intrinsic(index),
-                            intrinsic.symbol.clone(),
-                        )
-                    })
+                    u32::try_from(index)
+                        .ok()
+                        .map(|index| (DirectCallee::runtime_intrinsic(index), intrinsic.symbol.clone()))
                 })
                 .collect()
         })
@@ -1073,16 +907,9 @@ fn collect_extern_contract_callees(
     callees: &mut HashMap<DirectCallee, ExternImport>,
 ) {
     if let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, key)
-        && let Some((symbol, abi, library)) =
-            extern_contract_import_for_declaration(db, declaration)
+        && let Some((symbol, abi, library)) = extern_contract_import_for_declaration(db, declaration)
     {
-        callees
-            .entry(DirectCallee::item(declaration))
-            .or_insert(ExternImport {
-                symbol,
-                abi,
-                library,
-            });
+        callees.entry(DirectCallee::item(declaration)).or_insert(ExternImport { symbol, abi, library });
     }
     if let Ok(Some(children)) = child_nodes(db, key) {
         for child in children.iter().copied() {
@@ -1099,16 +926,10 @@ fn extern_contract_symbols(
     for item in items {
         collect_extern_contract_callees(input.database(), item.key, &mut callees);
     }
-    callees
-        .into_iter()
-        .map(|(callee, import)| (callee, import.symbol))
-        .collect()
+    callees.into_iter().map(|(callee, import)| (callee, import.symbol)).collect()
 }
 
-fn extern_contract_imports(
-    input: &CodegenInput<'_>,
-    items: &[ResolvedSyntaxModuleItem],
-) -> Vec<ExternImport> {
+fn extern_contract_imports(input: &CodegenInput<'_>, items: &[ResolvedSyntaxModuleItem]) -> Vec<ExternImport> {
     let mut callees = HashMap::new();
     for item in items {
         collect_extern_contract_callees(input.database(), item.key, &mut callees);
@@ -1134,20 +955,11 @@ fn corelib_service_symbols(
         .services()
         .iter()
         .filter(|service| callees.contains(&service.symbol))
-        .map(|service| {
-            (
-                DirectCallee::corelib_service(service.symbol),
-                service.symbol.to_owned(),
-            )
-        })
+        .map(|service| (DirectCallee::corelib_service(service.symbol), service.symbol.to_owned()))
         .collect()
 }
 
-fn collect_corelib_service_callees(
-    db: &dyn beskid_queries::Db,
-    key: AstNodeKey,
-    callees: &mut HashSet<&'static str>,
-) {
+fn collect_corelib_service_callees(db: &dyn beskid_queries::Db, key: AstNodeKey, callees: &mut HashSet<&'static str>) {
     if let Ok(Some(CallLowering::CorelibService(service))) = call_lowering(db, key) {
         callees.insert(service.symbol);
     }
@@ -1169,10 +981,7 @@ impl beskid_isle::CallImporter for ArtifactCallImporter<'_> {
         callee: DirectCallee,
         signature: &Signature,
     ) -> Result<FuncRef, beskid_isle::CallImportError> {
-        let symbol = self
-            .symbols
-            .get(&callee)
-            .ok_or(beskid_isle::CallImportError::UnknownCallee)?;
+        let symbol = self.symbols.get(&callee).ok_or(beskid_isle::CallImportError::UnknownCallee)?;
         let signature = builder.import_signature(signature.clone());
         Ok(builder.func.import_function(ExtFuncData {
             name: ExternalName::testcase(symbol.as_bytes()),
@@ -1204,13 +1013,9 @@ pub fn emit_syntax_program<M: Module>(
     let mut by_callee = HashMap::with_capacity(items.len());
     let mut by_symbol = HashMap::with_capacity(artifact.functions.len());
     for lowered in &artifact.functions {
-        let item_linkage = if lowered.name.starts_with("__beskid_spawn_entry_syntax_") {
-            Linkage::Local
-        } else {
-            linkage
-        };
-        let id =
-            module.declare_function(&lowered.name, item_linkage, &lowered.function.signature)?;
+        let item_linkage =
+            if lowered.name.starts_with("__beskid_spawn_entry_syntax_") { Linkage::Local } else { linkage };
+        let id = module.declare_function(&lowered.name, item_linkage, &lowered.function.signature)?;
         by_symbol.insert(lowered.name.clone(), id);
     }
     for item in &items {
@@ -1223,9 +1028,8 @@ pub fn emit_syntax_program<M: Module>(
         let id = by_symbol[&lowered.name];
         let mut context = module.make_context();
         context.func = lowered.function;
-        crate::cranelift_host::remap_testcase_externals(module, &mut context, &by_symbol).map_err(
-            |error| SyntaxModuleEmissionError::Module(ModuleError::Backend(error.into())),
-        )?;
+        crate::cranelift_host::remap_testcase_externals(module, &mut context, &by_symbol)
+            .map_err(|error| SyntaxModuleEmissionError::Module(ModuleError::Backend(error.into())))?;
         module.define_function(id, &mut context)?;
         module.clear_context(&mut context);
     }
@@ -1233,10 +1037,7 @@ pub fn emit_syntax_program<M: Module>(
 }
 
 /// Emit artifact-owned closure descriptor/pointer-map/allocation-request data.
-pub fn emit_closure_static_plans<M: Module>(
-    module: &mut M,
-    artifact: &CodegenArtifact,
-) -> ModuleResult<()> {
+pub fn emit_closure_static_plans<M: Module>(module: &mut M, artifact: &CodegenArtifact) -> ModuleResult<()> {
     for plan in &artifact.closure_static_plans {
         emit_closure_static_data(module, plan)?;
     }
@@ -1277,13 +1078,7 @@ pub fn emit_type_descriptors<M: Module>(
         let descriptor_ctx = build_descriptor_data(module, descriptor, offsets_id);
         module.define_data(descriptor_id, &descriptor_ctx)?;
 
-        handles.insert(
-            *type_id,
-            DescriptorHandles {
-                descriptor: descriptor_id,
-                offsets: offsets_id,
-            },
-        );
+        handles.insert(*type_id, DescriptorHandles { descriptor: descriptor_id, offsets: offsets_id });
     }
     Ok(handles)
 }
@@ -1332,26 +1127,9 @@ fn build_descriptor_data<M: Module>(
     let mut ctx = DataDescription::new();
     let mut bytes = Vec::new();
 
-    let _size_offset = push_usize(
-        &mut bytes,
-        descriptor.size,
-        ptr_size,
-        little_endian,
-        usize_align,
-    );
-    let _align_offset = push_usize(
-        &mut bytes,
-        descriptor.align,
-        ptr_size,
-        little_endian,
-        usize_align,
-    );
-    let _ptr_count_offset = push_u32(
-        &mut bytes,
-        descriptor.pointer_offsets.len() as u32,
-        little_endian,
-        u32_align,
-    );
+    let _size_offset = push_usize(&mut bytes, descriptor.size, ptr_size, little_endian, usize_align);
+    let _align_offset = push_usize(&mut bytes, descriptor.align, ptr_size, little_endian, usize_align);
+    let _ptr_count_offset = push_u32(&mut bytes, descriptor.pointer_offsets.len() as u32, little_endian, u32_align);
 
     pad_to_alignment(&mut bytes, usize_align);
     let ptr_offsets_offset = bytes.len();
@@ -1377,13 +1155,7 @@ fn write_usize(buf: &mut Vec<u8>, value: usize, ptr_size: u8, little_endian: boo
     }
 }
 
-fn push_usize(
-    buf: &mut Vec<u8>,
-    value: usize,
-    ptr_size: u8,
-    little_endian: bool,
-    align: usize,
-) -> usize {
+fn push_usize(buf: &mut Vec<u8>, value: usize, ptr_size: u8, little_endian: bool, align: usize) -> usize {
     pad_to_alignment(buf, align);
     let offset = buf.len();
     write_usize(buf, value, ptr_size, little_endian);

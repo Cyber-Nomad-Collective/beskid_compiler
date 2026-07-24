@@ -16,9 +16,7 @@ async fn returns_matching_local_candidate() {
     let response = server
         .completion(CompletionParams {
             text_document_position: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier {
-                    uri: doc_uri.clone(),
-                },
+                text_document: TextDocumentIdentifier { uri: doc_uri.clone() },
                 position: Position::new(3, 16),
             },
             work_done_progress_params: WorkDoneProgressParams::default(),
@@ -74,13 +72,7 @@ async fn ignores_stale_document_change_version() {
     let doc_uri = uri("file:///completion_stale_version_test.bd");
     open_sample_document(server, doc_uri.clone()).await;
 
-    change_document(
-        server,
-        doc_uri.clone(),
-        0,
-        "i32 Main() { return 0; }".to_string(),
-    )
-    .await;
+    change_document(server, doc_uri.clone(), 0, "i32 Main() { return 0; }".to_string()).await;
 
     let response = server
         .completion(CompletionParams {

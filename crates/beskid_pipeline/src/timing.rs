@@ -31,11 +31,7 @@ impl TimedPipelineObserver {
     /// Sum of selected phase durations.
     pub fn sum_millis(&self, phases: &[&'static str]) -> u128 {
         let totals = self.totals.lock().expect("timed pipeline totals");
-        phases
-            .iter()
-            .filter_map(|id| totals.get(id))
-            .map(|d| d.as_millis())
-            .sum()
+        phases.iter().filter_map(|id| totals.get(id)).map(|d| d.as_millis()).sum()
     }
 
     pub fn reset(&self) {
@@ -48,18 +44,10 @@ impl PipelineObserver for TimedPipelineObserver {
     fn on_event(&self, event: PipelineEvent) {
         match event {
             PipelineEvent::PhaseStart { id } => {
-                self.active
-                    .lock()
-                    .expect("timed pipeline active")
-                    .insert(id, Instant::now());
+                self.active.lock().expect("timed pipeline active").insert(id, Instant::now());
             }
             PipelineEvent::PhaseEnd { id } => {
-                let Some(started) = self
-                    .active
-                    .lock()
-                    .expect("timed pipeline active")
-                    .remove(&id)
-                else {
+                let Some(started) = self.active.lock().expect("timed pipeline active").remove(&id) else {
                     return;
                 };
                 let elapsed = started.elapsed();
@@ -86,11 +74,7 @@ mod tests {
         observe_phase(Some(&observer), "semantic", || {
             std::thread::sleep(Duration::from_millis(5));
         });
-        let millis = observer
-            .phase_millis()
-            .get("semantic")
-            .copied()
-            .unwrap_or(0);
+        let millis = observer.phase_millis().get("semantic").copied().unwrap_or(0);
         assert!(millis >= 4, "expected at least 4ms, got {millis}");
     }
 }

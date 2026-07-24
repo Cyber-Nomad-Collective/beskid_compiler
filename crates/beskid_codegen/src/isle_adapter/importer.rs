@@ -22,11 +22,7 @@ impl<M: Module> CallImporter for ItemModuleImporter<'_, M> {
         callee: DirectCallee,
         _signature: &Signature,
     ) -> Result<FuncRef, beskid_isle::CallImportError> {
-        let function = self
-            .functions
-            .get(&callee)
-            .copied()
-            .ok_or(beskid_isle::CallImportError::UnknownCallee)?;
+        let function = self.functions.get(&callee).copied().ok_or(beskid_isle::CallImportError::UnknownCallee)?;
         Ok(self.module.declare_func_in_func(function, builder.func))
     }
 }

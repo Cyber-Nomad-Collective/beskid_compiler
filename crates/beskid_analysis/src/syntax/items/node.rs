@@ -5,9 +5,9 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::InlineModule;
 use crate::syntax::{
-    AttributeDeclaration, ContractDefinition, EnumDefinition, ExtendTypeDefinition,
-    FunctionDefinition, HostDefinition, MacroDefinition, MethodDefinition, ModuleDeclaration,
-    SpanInfo, Spanned, TestDefinition, TypeDefinition, UseDeclaration,
+    AttributeDeclaration, ContractDefinition, EnumDefinition, ExtendTypeDefinition, FunctionDefinition, HostDefinition,
+    MacroDefinition, MethodDefinition, ModuleDeclaration, SpanInfo, Spanned, TestDefinition, TypeDefinition,
+    UseDeclaration,
 };
 
 use beskid_ast_derive::AstNode;
@@ -54,10 +54,7 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
 
     match pair.as_rule() {
         Rule::InnerItem => {
-            let inner = pair
-                .into_inner()
-                .next()
-                .ok_or(ParseError::missing(Rule::InnerItem))?;
+            let inner = pair.into_inner().next().ok_or(ParseError::missing(Rule::InnerItem))?;
             parse_node(inner)
         }
         Rule::FunctionDefinition => {
@@ -141,18 +138,12 @@ mod tests {
                 }
             }
         "#;
-        let pair = BeskidParser::parse(Rule::Program, src)
-            .expect("extend type should parse")
-            .next()
-            .expect("program pair");
+        let pair =
+            BeskidParser::parse(Rule::Program, src).expect("extend type should parse").next().expect("program pair");
         let program = Program::parse(pair).expect("extend type should build AST");
 
         let hir = lower_program(&program.clone().into());
-        assert_eq!(
-            hir.node.items.len(),
-            2,
-            "lowering should preserve the extend-type block as one top-level HIR item"
-        );
+        assert_eq!(hir.node.items.len(), 2, "lowering should preserve the extend-type block as one top-level HIR item");
 
         let formatted = format_program(&program).expect("extend type should format");
         assert!(formatted.contains("extend type Account"));
@@ -181,10 +172,7 @@ mod tests {
                 }
             }
         "#;
-        let pair = BeskidParser::parse(Rule::Program, src)
-            .expect("host should parse")
-            .next()
-            .expect("program pair");
+        let pair = BeskidParser::parse(Rule::Program, src).expect("host should parse").next().expect("program pair");
         let program = Program::parse(pair).expect("host should build AST");
         assert_eq!(program.node.items.len(), 1);
         let formatted = format_program(&program).expect("host should format");

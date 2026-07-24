@@ -7,8 +7,8 @@
 //! kind in order and surfaces per-contract outcomes.
 
 use beskid_analysis::mod_host::{
-    AnalyzerDiagnostic, AnalyzerSeverity, ModHostInput, ScriptedContractInvoker,
-    run_analyze_rewrite_with_invoker, run_through_generate,
+    AnalyzerDiagnostic, AnalyzerSeverity, ModHostInput, ScriptedContractInvoker, run_analyze_rewrite_with_invoker,
+    run_through_generate,
 };
 use beskid_analysis::services::parse_program_with_source_name;
 
@@ -58,10 +58,7 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
 
     // Generator contributions are captured in outcomes.
     assert_eq!(generated.generator_outcomes.len(), 1);
-    assert_eq!(
-        generated.generator_outcomes[0].type_id,
-        "SampleMod.SampleGenerate"
-    );
+    assert_eq!(generated.generator_outcomes[0].type_id, "SampleMod.SampleGenerate");
     let gen_items = &generated.generator_outcomes[0].typed_items;
     assert_eq!(gen_items.len(), 1);
     assert!(matches!(
@@ -74,9 +71,8 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
     );
 
     // Proceed through the semantic gate to analyze/rewrite.
-    let snapshot =
-        beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
-            .with_composition(&generated.session.composition_snapshot_or_default());
+    let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+        .with_composition(&generated.session.composition_snapshot_or_default());
     let analyze = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,
@@ -88,31 +84,19 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
     .expect("analyze/rewrite");
 
     // Analyzer dispatched with correct type_id and surface diagnostics.
-    assert_eq!(
-        analyze.analyzer_outcomes.len(),
-        1,
-        "expected exactly one analyzer outcome"
-    );
+    assert_eq!(analyze.analyzer_outcomes.len(), 1, "expected exactly one analyzer outcome");
     assert_eq!(
         analyze.analyzer_outcomes[0].type_id, "SampleMod.SampleAnalyze",
         "analyzer type_id must match registration"
     );
-    assert_eq!(
-        analyze.analyzer_outcomes[0].diagnostics.len(),
-        1,
-        "scripted analyzer diagnostic must surface"
-    );
+    assert_eq!(analyze.analyzer_outcomes[0].diagnostics.len(), 1, "scripted analyzer diagnostic must surface");
     assert_eq!(
         analyze.analyzer_outcomes[0].diagnostics[0].code, "COV0001",
         "diagnostic code must match scripted value"
     );
 
     // Rewriter dispatched after analyzer.
-    assert_eq!(
-        analyze.rewriter_outcomes.len(),
-        1,
-        "expected exactly one rewriter outcome"
-    );
+    assert_eq!(analyze.rewriter_outcomes.len(), 1, "expected exactly one rewriter outcome");
     assert_eq!(
         analyze.rewriter_outcomes[0].type_id, "SampleMod.SampleRewrite",
         "rewriter type_id must match registration"
@@ -135,14 +119,8 @@ fn multiple_generators_and_analyzers_dispatch_in_order() {
     let plan = workspace.compile_plan();
 
     let invoker = ScriptedContractInvoker::new()
-        .with_generator_contribution(
-            "SampleMod.GenOne",
-            vec!["pub fn from_gen_one() { return 1; }".to_owned()],
-        )
-        .with_generator_contribution(
-            "SampleMod.GenTwo",
-            vec!["pub fn from_gen_two() { return 2; }".to_owned()],
-        )
+        .with_generator_contribution("SampleMod.GenOne", vec!["pub fn from_gen_one() { return 1; }".to_owned()])
+        .with_generator_contribution("SampleMod.GenTwo", vec!["pub fn from_gen_two() { return 2; }".to_owned()])
         .with_analyzer_diagnostic(
             "SampleMod.CheckOne",
             vec![AnalyzerDiagnostic {
@@ -176,30 +154,20 @@ fn multiple_generators_and_analyzers_dispatch_in_order() {
 
     // Both generators produced outcomes with contributions.
     assert_eq!(generated.generator_outcomes.len(), 2);
-    let gen_type_ids: Vec<&str> = generated
-        .generator_outcomes
-        .iter()
-        .map(|o| o.type_id.as_str())
-        .collect();
+    let gen_type_ids: Vec<&str> = generated.generator_outcomes.iter().map(|o| o.type_id.as_str()).collect();
     assert!(gen_type_ids.contains(&"SampleMod.GenOne"));
     assert!(gen_type_ids.contains(&"SampleMod.GenTwo"));
 
-    let gen_one = generated
-        .generator_outcomes
-        .iter()
-        .find(|o| o.type_id == "SampleMod.GenOne")
-        .expect("GenOne outcome");
+    let gen_one =
+        generated.generator_outcomes.iter().find(|o| o.type_id == "SampleMod.GenOne").expect("GenOne outcome");
     assert_eq!(gen_one.typed_items.len(), 1);
     assert!(matches!(
         &gen_one.typed_items[0].node,
         beskid_analysis::syntax::Node::Function(f) if f.node.name.node.name == "from_gen_one"
     ));
 
-    let gen_two = generated
-        .generator_outcomes
-        .iter()
-        .find(|o| o.type_id == "SampleMod.GenTwo")
-        .expect("GenTwo outcome");
+    let gen_two =
+        generated.generator_outcomes.iter().find(|o| o.type_id == "SampleMod.GenTwo").expect("GenTwo outcome");
     assert_eq!(gen_two.typed_items.len(), 1);
     assert!(matches!(
         &gen_two.typed_items[0].node,
@@ -207,9 +175,8 @@ fn multiple_generators_and_analyzers_dispatch_in_order() {
     ));
 
     // Proceed through the semantic gate to analyze.
-    let snapshot =
-        beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
-            .with_composition(&generated.session.composition_snapshot_or_default());
+    let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+        .with_composition(&generated.session.composition_snapshot_or_default());
     let analyze = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,
@@ -222,11 +189,7 @@ fn multiple_generators_and_analyzers_dispatch_in_order() {
 
     // Both analyzers dispatched, each with one diagnostic.
     assert_eq!(analyze.analyzer_outcomes.len(), 2);
-    let check_ids: Vec<&str> = analyze
-        .analyzer_outcomes
-        .iter()
-        .map(|o| o.type_id.as_str())
-        .collect();
+    let check_ids: Vec<&str> = analyze.analyzer_outcomes.iter().map(|o| o.type_id.as_str()).collect();
     assert!(check_ids.contains(&"SampleMod.CheckOne"));
     assert!(check_ids.contains(&"SampleMod.CheckTwo"));
 

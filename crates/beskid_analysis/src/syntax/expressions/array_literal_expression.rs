@@ -16,17 +16,12 @@ pub struct ArrayLiteralExpression {
     pub elements: Vec<Spanned<Expression>>,
 }
 
-pub(crate) fn parse_array_literal_expression(
-    pair: Pair<Rule>,
-) -> Result<Spanned<Expression>, ParseError> {
+pub(crate) fn parse_array_literal_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
     let mut inner = pair.into_inner();
 
     let elements = if let Some(expr_list) = inner.next() {
-        expr_list
-            .into_inner()
-            .map(Expression::parse)
-            .collect::<Result<Vec<_>, _>>()?
+        expr_list.into_inner().map(Expression::parse).collect::<Result<Vec<_>, _>>()?
     } else {
         Vec::new()
     };

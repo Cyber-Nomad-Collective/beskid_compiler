@@ -103,11 +103,7 @@ impl CommandPaletteState {
                 PaletteAction::Redraw
             }
             KeyCode::Enter => {
-                if let Some(item) = self
-                    .filtered_items()
-                    .get(self.selected)
-                    .map(|item| (*item).clone())
-                {
+                if let Some(item) = self.filtered_items().get(self.selected).map(|item| (*item).clone()) {
                     return self.select_item(item);
                 }
                 PaletteAction::Redraw
@@ -173,20 +169,12 @@ impl CommandPaletteState {
         draw_backdrop(frame, terminal);
         let overlay = centered_rect(60, 70, terminal);
         frame.render_widget(Clear, overlay);
-        let [input_area, list_area, hint_area] = Layout::vertical([
-            Constraint::Length(3),
-            Constraint::Min(6),
-            Constraint::Length(2),
-        ])
-        .areas(overlay);
+        let [input_area, list_area, hint_area] =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(6), Constraint::Length(2)]).areas(overlay);
 
         let prompt = match self.mode {
             PaletteMode::Browsing => "Type to filter commands",
-            PaletteMode::Params => self
-                .pending
-                .as_ref()
-                .and_then(|p| p.args_hint())
-                .unwrap_or("Enter arguments"),
+            PaletteMode::Params => self.pending.as_ref().and_then(|p| p.args_hint()).unwrap_or("Enter arguments"),
         };
         let input_line = if self.filter.is_empty() {
             Line::from(Span::styled(prompt, Style::default().fg(Color::DarkGray)))
@@ -194,11 +182,7 @@ impl CommandPaletteState {
             Line::from(self.filter.as_str())
         };
         frame.render_widget(
-            Paragraph::new(input_line).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Command palette "),
-            ),
+            Paragraph::new(input_line).block(Block::default().borders(Borders::ALL).title(" Command palette ")),
             input_area,
         );
 
@@ -217,14 +201,8 @@ impl CommandPaletteState {
                 } else {
                     Style::default()
                 };
-                ListItem::new(format!(
-                    "{} [{}] {} — {}",
-                    item.icon(),
-                    kind,
-                    item.name(),
-                    item.description()
-                ))
-                .style(style)
+                ListItem::new(format!("{} [{}] {} — {}", item.icon(), kind, item.name(), item.description()))
+                    .style(style)
             })
             .collect();
         frame.render_widget(

@@ -307,17 +307,12 @@ impl ChatColors {
 
     /// Creates a [`Style`] for a highlighted (selected) item.
     pub fn highlighted(&self) -> Style {
-        Style::default()
-            .fg(self.text)
-            .bg(self.primary)
-            .add_modifier(Modifier::BOLD)
+        Style::default().fg(self.text).bg(self.primary).add_modifier(Modifier::BOLD)
     }
 
     /// Creates a [`Style`] for a disabled/muted item.
     pub fn disabled(&self) -> Style {
-        Style::default()
-            .fg(self.text_muted)
-            .add_modifier(Modifier::DIM)
+        Style::default().fg(self.text_muted).add_modifier(Modifier::DIM)
     }
 
     /// Creates a [`Style`] for diff added text.
@@ -352,9 +347,7 @@ impl ChatColors {
 
     /// Creates a complete diff removed style (foreground + background).
     pub fn diff_removed_full_style(&self) -> Style {
-        Style::default()
-            .fg(self.diff_removed)
-            .bg(self.diff_removed_bg)
+        Style::default().fg(self.diff_removed).bg(self.diff_removed_bg)
     }
 
     /// Creates a complete diff context style (foreground + background).
@@ -383,9 +376,7 @@ mod tests {
 
     #[test]
     fn test_builder_setters() {
-        let colors = ChatColors::default()
-            .with_primary(Color::Red)
-            .with_text(Color::Gray);
+        let colors = ChatColors::default().with_primary(Color::Red).with_text(Color::Gray);
         assert_eq!(colors.primary, Color::Red);
         assert_eq!(colors.text, Color::Gray);
     }

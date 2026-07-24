@@ -1,9 +1,8 @@
 use crate::hir::{
-    HirArrayLiteralExpression, HirAssignExpression, HirAssignOp, HirBinaryExpression,
-    HirBlockExpression, HirCallExpression, HirEnumConstructorExpression, HirEnumPattern,
-    HirExpressionNode, HirGroupedExpression, HirIndexExpression, HirLambdaExpression,
-    HirLambdaParameter, HirLiteral, HirLiteralExpression, HirMatchArm, HirMatchExpression,
-    HirMemberExpression, HirPathExpression, HirPattern, HirSpawnExpression,
+    HirArrayLiteralExpression, HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBlockExpression,
+    HirCallExpression, HirEnumConstructorExpression, HirEnumPattern, HirExpressionNode, HirGroupedExpression,
+    HirIndexExpression, HirLambdaExpression, HirLambdaParameter, HirLiteral, HirLiteralExpression, HirMatchArm,
+    HirMatchExpression, HirMemberExpression, HirPathExpression, HirPattern, HirSpawnExpression,
     HirStructLiteralExpression, HirStructLiteralField, HirTryExpression, HirUnaryExpression,
 };
 use crate::syntax::{self, Spanned};
@@ -15,53 +14,27 @@ impl Lowerable for Spanned<syntax::Expression> {
 
     fn lower(&self) -> Self::Output {
         let node = match &self.node {
-            syntax::Expression::Match(match_expr) => {
-                HirExpressionNode::MatchExpression(match_expr.lower())
-            }
-            syntax::Expression::Lambda(lambda_expr) => {
-                HirExpressionNode::LambdaExpression(lambda_expr.lower())
-            }
-            syntax::Expression::Assign(assign_expr) => {
-                HirExpressionNode::AssignExpression(assign_expr.lower())
-            }
-            syntax::Expression::Binary(binary_expr) => {
-                HirExpressionNode::BinaryExpression(binary_expr.lower())
-            }
-            syntax::Expression::Unary(unary_expr) => {
-                HirExpressionNode::UnaryExpression(unary_expr.lower())
-            }
-            syntax::Expression::Call(call_expr) => {
-                HirExpressionNode::CallExpression(call_expr.lower())
-            }
-            syntax::Expression::Member(member_expr) => {
-                HirExpressionNode::MemberExpression(member_expr.lower())
-            }
-            syntax::Expression::Literal(literal_expr) => {
-                HirExpressionNode::LiteralExpression(literal_expr.lower())
-            }
-            syntax::Expression::Path(path_expr) => {
-                HirExpressionNode::PathExpression(path_expr.lower())
-            }
+            syntax::Expression::Match(match_expr) => HirExpressionNode::MatchExpression(match_expr.lower()),
+            syntax::Expression::Lambda(lambda_expr) => HirExpressionNode::LambdaExpression(lambda_expr.lower()),
+            syntax::Expression::Assign(assign_expr) => HirExpressionNode::AssignExpression(assign_expr.lower()),
+            syntax::Expression::Binary(binary_expr) => HirExpressionNode::BinaryExpression(binary_expr.lower()),
+            syntax::Expression::Unary(unary_expr) => HirExpressionNode::UnaryExpression(unary_expr.lower()),
+            syntax::Expression::Call(call_expr) => HirExpressionNode::CallExpression(call_expr.lower()),
+            syntax::Expression::Member(member_expr) => HirExpressionNode::MemberExpression(member_expr.lower()),
+            syntax::Expression::Literal(literal_expr) => HirExpressionNode::LiteralExpression(literal_expr.lower()),
+            syntax::Expression::Path(path_expr) => HirExpressionNode::PathExpression(path_expr.lower()),
             syntax::Expression::StructLiteral(struct_expr) => {
                 HirExpressionNode::StructLiteralExpression(struct_expr.lower())
             }
             syntax::Expression::EnumConstructor(enum_expr) => {
                 HirExpressionNode::EnumConstructorExpression(enum_expr.lower())
             }
-            syntax::Expression::Block(block_expr) => {
-                HirExpressionNode::BlockExpression(block_expr.lower())
-            }
-            syntax::Expression::Grouped(grouped_expr) => {
-                HirExpressionNode::GroupedExpression(grouped_expr.lower())
-            }
+            syntax::Expression::Block(block_expr) => HirExpressionNode::BlockExpression(block_expr.lower()),
+            syntax::Expression::Grouped(grouped_expr) => HirExpressionNode::GroupedExpression(grouped_expr.lower()),
             syntax::Expression::Try(try_expr) => HirExpressionNode::TryExpression(try_expr.lower()),
-            syntax::Expression::Spawn(spawn_expr) => {
-                HirExpressionNode::SpawnExpression(spawn_expr.lower())
-            }
+            syntax::Expression::Spawn(spawn_expr) => HirExpressionNode::SpawnExpression(spawn_expr.lower()),
             syntax::Expression::MacroInvocation(m) => HirExpressionNode::MacroInvocation(m.clone()),
-            syntax::Expression::MacroMetavariable(m) => {
-                HirExpressionNode::MacroMetavariable(m.clone())
-            }
+            syntax::Expression::MacroMetavariable(m) => HirExpressionNode::MacroMetavariable(m.clone()),
             syntax::Expression::Index(node) => {
                 let hir = HirIndexExpression {
                     target: Box::new(node.node.target.lower()),
@@ -70,9 +43,8 @@ impl Lowerable for Spanned<syntax::Expression> {
                 HirExpressionNode::IndexExpression(Spanned::new(hir, node.span))
             }
             syntax::Expression::ArrayLiteral(node) => {
-                let hir = HirArrayLiteralExpression {
-                    elements: node.node.elements.iter().map(Lowerable::lower).collect(),
-                };
+                let hir =
+                    HirArrayLiteralExpression { elements: node.node.elements.iter().map(Lowerable::lower).collect() };
                 HirExpressionNode::ArrayLiteralExpression(Spanned::new(hir, node.span))
             }
             syntax::Expression::CodeString(code) => lower_code_string_expression(code),
@@ -89,25 +61,17 @@ fn lower_code_string_expression(code: &Spanned<syntax::CodeStringLiteral>) -> Hi
     let mut expr: Option<Spanned<HirExpressionNode>> = None;
     for segment in &code.node.segments {
         let part = match segment {
-            syntax::CodeStringSegment::Text(text) => {
-                HirExpressionNode::LiteralExpression(Spanned::new(
-                    HirLiteralExpression {
-                        literal: Spanned::new(HirLiteral::String(text.clone()), code.span),
-                    },
+            syntax::CodeStringSegment::Text(text) => HirExpressionNode::LiteralExpression(Spanned::new(
+                HirLiteralExpression { literal: Spanned::new(HirLiteral::String(text.clone()), code.span) },
+                code.span,
+            )),
+            syntax::CodeStringSegment::Hole(source) => match parse_expression_source("@code-hole", source) {
+                Ok(parsed) => parsed.lower().node,
+                Err(_) => HirExpressionNode::LiteralExpression(Spanned::new(
+                    HirLiteralExpression { literal: Spanned::new(HirLiteral::String(String::new()), code.span) },
                     code.span,
-                ))
-            }
-            syntax::CodeStringSegment::Hole(source) => {
-                match parse_expression_source("@code-hole", source) {
-                    Ok(parsed) => parsed.lower().node,
-                    Err(_) => HirExpressionNode::LiteralExpression(Spanned::new(
-                        HirLiteralExpression {
-                            literal: Spanned::new(HirLiteral::String(String::new()), code.span),
-                        },
-                        code.span,
-                    )),
-                }
-            }
+                )),
+            },
         };
         expr = Some(match expr {
             None => Spanned::new(part, code.span),
@@ -127,9 +91,7 @@ fn lower_code_string_expression(code: &Spanned<syntax::CodeStringLiteral>) -> Hi
     expr.unwrap_or_else(|| {
         Spanned::new(
             HirExpressionNode::LiteralExpression(Spanned::new(
-                HirLiteralExpression {
-                    literal: Spanned::new(HirLiteral::String(String::new()), code.span),
-                },
+                HirLiteralExpression { literal: Spanned::new(HirLiteral::String(String::new()), code.span) },
                 code.span,
             )),
             code.span,
@@ -142,12 +104,7 @@ impl Lowerable for Spanned<syntax::SpawnExpression> {
     type Output = Spanned<HirSpawnExpression>;
 
     fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirSpawnExpression {
-                callee: Box::new(self.node.callee.lower()),
-            },
-            self.span,
-        )
+        Spanned::new(HirSpawnExpression { callee: Box::new(self.node.callee.lower()) }, self.span)
     }
 }
 
@@ -156,10 +113,7 @@ impl Lowerable for Spanned<syntax::IndexExpression> {
 
     fn lower(&self) -> Self::Output {
         Spanned::new(
-            HirIndexExpression {
-                target: Box::new(self.node.target.lower()),
-                index: Box::new(self.node.index.lower()),
-            },
+            HirIndexExpression { target: Box::new(self.node.target.lower()), index: Box::new(self.node.index.lower()) },
             self.span,
         )
     }
@@ -170,9 +124,7 @@ impl Lowerable for Spanned<syntax::ArrayLiteralExpression> {
 
     fn lower(&self) -> Self::Output {
         Spanned::new(
-            HirArrayLiteralExpression {
-                elements: self.node.elements.iter().map(Lowerable::lower).collect(),
-            },
+            HirArrayLiteralExpression { elements: self.node.elements.iter().map(Lowerable::lower).collect() },
             self.span,
         )
     }
@@ -197,10 +149,7 @@ impl Lowerable for Spanned<syntax::LambdaParameter> {
 
     fn lower(&self) -> Self::Output {
         Spanned::new(
-            HirLambdaParameter {
-                name: self.node.name.lower(),
-                ty: self.node.ty.as_ref().map(Lowerable::lower),
-            },
+            HirLambdaParameter { name: self.node.name.lower(), ty: self.node.ty.as_ref().map(Lowerable::lower) },
             self.span,
         )
     }
@@ -290,13 +239,7 @@ impl Lowerable for Spanned<syntax::UnaryExpression> {
     type Output = Spanned<HirUnaryExpression>;
 
     fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirUnaryExpression {
-                op: self.node.op.lower(),
-                expr: Box::new(self.node.expr.lower()),
-            },
-            self.span,
-        )
+        Spanned::new(HirUnaryExpression { op: self.node.op.lower(), expr: Box::new(self.node.expr.lower()) }, self.span)
     }
 }
 
@@ -319,10 +262,7 @@ impl Lowerable for Spanned<syntax::MemberExpression> {
 
     fn lower(&self) -> Self::Output {
         Spanned::new(
-            HirMemberExpression {
-                target: Box::new(self.node.target.lower()),
-                member: self.node.member.lower(),
-            },
+            HirMemberExpression { target: Box::new(self.node.target.lower()), member: self.node.member.lower() },
             self.span,
         )
     }
@@ -332,12 +272,7 @@ impl Lowerable for Spanned<syntax::LiteralExpression> {
     type Output = Spanned<HirLiteralExpression>;
 
     fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirLiteralExpression {
-                literal: self.node.literal.lower(),
-            },
-            self.span,
-        )
+        Spanned::new(HirLiteralExpression { literal: self.node.literal.lower() }, self.span)
     }
 }
 
@@ -345,12 +280,7 @@ impl Lowerable for Spanned<syntax::PathExpression> {
     type Output = Spanned<HirPathExpression>;
 
     fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirPathExpression {
-                path: self.node.path.lower(),
-            },
-            self.span,
-        )
+        Spanned::new(HirPathExpression { path: self.node.path.lower() }, self.span)
     }
 }
 
@@ -387,12 +317,7 @@ impl Lowerable for Spanned<syntax::BlockExpression> {
     type Output = Spanned<HirBlockExpression>;
 
     fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirBlockExpression {
-                block: self.node.block.lower(),
-            },
-            self.span,
-        )
+        Spanned::new(HirBlockExpression { block: self.node.block.lower() }, self.span)
     }
 }
 
@@ -400,12 +325,7 @@ impl Lowerable for Spanned<syntax::GroupedExpression> {
     type Output = Spanned<HirGroupedExpression>;
 
     fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirGroupedExpression {
-                expr: Box::new(self.node.expr.lower()),
-            },
-            self.span,
-        )
+        Spanned::new(HirGroupedExpression { expr: Box::new(self.node.expr.lower()) }, self.span)
     }
 }
 
@@ -415,12 +335,7 @@ impl Lowerable for Spanned<syntax::TryExpression> {
     fn lower(&self) -> Self::Output {
         // Pipeline contract: lowering preserves explicit `TryExpression` shape so typing can
         // perform centralized validity checks before normalization desugars it to match control-flow.
-        Spanned::new(
-            HirTryExpression {
-                expr: Box::new(self.node.expr.lower()),
-            },
-            self.span,
-        )
+        Spanned::new(HirTryExpression { expr: Box::new(self.node.expr.lower()) }, self.span)
     }
 }
 
@@ -445,13 +360,7 @@ impl Lowerable for Spanned<syntax::StructLiteralField> {
     type Output = Spanned<HirStructLiteralField>;
 
     fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirStructLiteralField {
-                name: self.node.name.lower(),
-                value: self.node.value.lower(),
-            },
-            self.span,
-        )
+        Spanned::new(HirStructLiteralField { name: self.node.name.lower(), value: self.node.value.lower() }, self.span)
     }
 }
 

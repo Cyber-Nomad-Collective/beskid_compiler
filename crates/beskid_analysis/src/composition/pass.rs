@@ -40,9 +40,7 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
     let (launch_host, launch_span) = match collected.launches.as_slice() {
         [] => {
             if !collected.hosts.is_empty() {
-                issues.push(CompositionIssue::MissingLaunchHost {
-                    span: Some(input.program.span),
-                });
+                issues.push(CompositionIssue::MissingLaunchHost { span: Some(input.program.span) });
             }
             (String::new(), SpanInfo::default())
         }
@@ -71,10 +69,7 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
     let merged_scopes = merge_host_scopes(&host_chain, &collected.host_scopes);
     issues.extend(validate_scope_tree(&merged_scopes));
     for with_site in &collected.with_sites {
-        if !merged_scopes
-            .iter()
-            .any(|scope| scope.name == with_site.scope_name)
-        {
+        if !merged_scopes.iter().any(|scope| scope.name == with_site.scope_name) {
             issues.push(CompositionIssue::WithArgsMismatch {
                 scope_name: with_site.scope_name.clone(),
                 span: with_site.span,
@@ -82,22 +77,16 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
         }
     }
 
-    let (merged_registrations, merge_issues) = merge_host_registries(
-        &host_chain,
-        &collected.host_registries,
-        &collected.host_scopes,
-        &merged_scopes,
-    );
+    let (merged_registrations, merge_issues) =
+        merge_host_registries(&host_chain, &collected.host_registries, &collected.host_scopes, &merged_scopes);
     issues.extend(merge_issues);
 
     let scope_parents = scope_parent_map(&merged_scopes);
     let container = ServiceContainer::from_registrations(&merged_registrations);
     let requests = dependency_requests(&merged_registrations, &collected.type_inject_fields);
 
-    let registration_scope: HashMap<u32, _> = merged_registrations
-        .iter()
-        .map(|registration| (registration.id, registration.scope_id))
-        .collect();
+    let registration_scope: HashMap<u32, _> =
+        merged_registrations.iter().map(|registration| (registration.id, registration.scope_id)).collect();
 
     let mut edges = Vec::new();
     let mut plural_bindings = HashMap::new();
@@ -113,10 +102,8 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
                     edges.push((target.id, request.owner_registration_id));
                 }
                 if request.is_plural {
-                    plural_bindings.insert(
-                        request.owner_registration_id,
-                        targets.iter().map(|target| target.id).collect(),
-                    );
+                    plural_bindings
+                        .insert(request.owner_registration_id, targets.iter().map(|target| target.id).collect());
                 }
             }
             Err(issue) => issues.push(issue),
@@ -136,33 +123,17 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
         .map(|host| host.name.clone())
         .unwrap_or_else(|| resolve_host_key(&collected.hosts, &launch_host).unwrap_or(launch_host));
 
-    let scope_names = merged_scopes
-        .iter()
-        .map(|scope| (scope.id, scope.name.clone()))
-        .collect();
+    let scope_names = merged_scopes.iter().map(|scope| (scope.id, scope.name.clone())).collect();
     let snapshot = CompositionSnapshot {
         version: 1,
         launched_host,
-        launch_span: if launch_span == SpanInfo::default() {
-            None
-        } else {
-            Some(launch_span)
-        },
+        launch_span: if launch_span == SpanInfo::default() { None } else { Some(launch_span) },
         registrations: merged_registrations.clone(),
         scope_names,
     };
-    let plan = BindingPlan {
-        registration_order,
-        plural_bindings,
-        scope_parents,
-    };
+    let plan = BindingPlan { registration_order, plural_bindings, scope_parents };
 
-    CompositionResult {
-        plan,
-        snapshot,
-        issues,
-        dependency_edges: edges,
-    }
+    CompositionResult { plan, snapshot, issues, dependency_edges: edges }
 }
 
 #[cfg(test)]
@@ -188,10 +159,7 @@ i32 Main() {
         )
         .expect("composition source parses");
 
-        let result = resolve_composition(CompositionInput {
-            program: &program,
-            is_mod_project: false,
-        });
+        let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false });
 
         assert_eq!(result.snapshot.launched_host, "AppHost");
         assert!(result.issues.is_empty(), "issues: {:?}", result.issues);

@@ -13,9 +13,7 @@ impl<'a> Default for AstWalker<'a> {
 
 impl<'a> AstWalker<'a> {
     pub fn new() -> Self {
-        Self {
-            visitors: Vec::new(),
-        }
+        Self { visitors: Vec::new() }
     }
 
     pub fn with_visitor(mut self, visitor: Box<dyn Visit + 'a>) -> Self {

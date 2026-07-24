@@ -8,9 +8,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{
-    KeyCode, KeyEvent as CrosstermKeyEvent, KeyEventState, MouseEvent as CrosstermMouseEvent,
-};
+use crossterm::event::{KeyCode, KeyEvent as CrosstermKeyEvent, KeyEventState, MouseEvent as CrosstermMouseEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
@@ -18,12 +16,10 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
-use ratkit::prelude::{
-    run, CoordinatorAction, CoordinatorApp, CoordinatorEvent, LayoutResult, RunnerConfig,
-};
+use ratkit::prelude::{run, CoordinatorAction, CoordinatorApp, CoordinatorEvent, LayoutResult, RunnerConfig};
 use ratkit::widgets::markdown_preview::{
-    CacheState, CollapseState, DisplaySettings, DoubleClickState, ExpandableState, GitStatsState,
-    MarkdownEvent, MarkdownWidget, ScrollState, SelectionState, SourceState, VimState,
+    CacheState, CollapseState, DisplaySettings, DoubleClickState, ExpandableState, GitStatsState, MarkdownEvent,
+    MarkdownWidget, ScrollState, SelectionState, SourceState, VimState,
 };
 
 struct MarkdownPreviewDemo {
@@ -140,20 +136,14 @@ impl CoordinatorApp for MarkdownPreviewDemo {
 
                 if key.key_code == KeyCode::Char('q')
                     || (key.key_code == KeyCode::Char('c')
-                        && key
-                            .modifiers
-                            .contains(crossterm::event::KeyModifiers::CONTROL))
+                        && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL))
                 {
                     return Ok(CoordinatorAction::Quit);
                 }
 
                 if key.key_code == KeyCode::Char(']') {
                     let toc_visible = self.widget.toggle_toc();
-                    self.show_toast(if toc_visible {
-                        "TOC enabled"
-                    } else {
-                        "TOC disabled"
-                    });
+                    self.show_toast(if toc_visible { "TOC enabled" } else { "TOC disabled" });
                     return Ok(CoordinatorAction::Redraw);
                 }
 
@@ -207,9 +197,7 @@ impl CoordinatorApp for MarkdownPreviewDemo {
                 if let Some(copied_chars) = copied_chars {
                     self.show_toast(format!("Copied {} chars to clipboard", copied_chars));
                 }
-                if let Some((_line_number, _line_kind, content)) =
-                    self.widget.take_last_double_click()
-                {
+                if let Some((_line_number, _line_kind, content)) = self.widget.take_last_double_click() {
                     self.show_toast(content);
                 }
 
@@ -254,8 +242,7 @@ impl CoordinatorApp for MarkdownPreviewDemo {
             self.fps, self.redraws, self.mouse_x, self.mouse_y
         );
         frame.render_widget(
-            Paragraph::new(Line::from(dev_text))
-                .style(Style::default().fg(Color::Black).bg(Color::Cyan)),
+            Paragraph::new(Line::from(dev_text)).style(Style::default().fg(Color::Black).bg(Color::Cyan)),
             dev_bar_area,
         );
 
@@ -263,8 +250,7 @@ impl CoordinatorApp for MarkdownPreviewDemo {
 
         if let Some(message) = &self.toast_message {
             if markdown_area.height > 1 {
-                let toast_width =
-                    (message.chars().count() as u16 + 2).min(markdown_area.width.max(1));
+                let toast_width = (message.chars().count() as u16 + 2).min(markdown_area.width.max(1));
                 let toast_area = Rect {
                     x: markdown_area.x + markdown_area.width.saturating_sub(toast_width) / 2,
                     y: markdown_area.y + markdown_area.height.saturating_sub(2),
@@ -307,15 +293,7 @@ fn main() -> io::Result<()> {
     let frontmatter_collapsed = env::args().any(|arg| arg == "--frontmatter-collapsed");
     let startup_probe = env::args().any(|arg| arg == "--startup-probe");
     let markdown = load_demo_markdown()?;
-    let app = MarkdownPreviewDemo::new(
-        markdown,
-        frontmatter_collapsed,
-        startup_probe,
-        startup_started_at,
-    );
-    let config = RunnerConfig {
-        tick_rate: Duration::from_millis(250),
-        ..RunnerConfig::default()
-    };
+    let app = MarkdownPreviewDemo::new(markdown, frontmatter_collapsed, startup_probe, startup_started_at);
+    let config = RunnerConfig { tick_rate: Duration::from_millis(250), ..RunnerConfig::default() };
     run(app, config)
 }

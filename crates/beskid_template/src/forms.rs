@@ -9,9 +9,7 @@ pub fn apply_form(form_id: &str, input: &str) -> TemplateResult<String> {
         "upperCase" => Ok(input.to_ascii_uppercase()),
         "safeName" => Ok(safe_name(input)),
         "namespace" => Ok(namespace_from_name(input)),
-        other => Err(TemplateError::InvalidManifest(format!(
-            "unknown form id `{other}`"
-        ))),
+        other => Err(TemplateError::InvalidManifest(format!("unknown form id `{other}`"))),
     }
 }
 

@@ -14,9 +14,7 @@ pub fn replace_guids_in_text(
 ) -> TemplateResult<String> {
     let mut out = text.to_string();
     for guid in manifest_guids {
-        let replacement = mapping
-            .entry(guid.clone())
-            .or_insert_with(|| new_guid_matching_format(guid));
+        let replacement = mapping.entry(guid.clone()).or_insert_with(|| new_guid_matching_format(guid));
         out = replace_all_literal(&out, guid, replacement);
     }
     Ok(out)
@@ -61,8 +59,7 @@ pub fn scan_leftover_guid_patterns(text: &str, manifest_guids: &[String]) -> Tem
     verify_guids_replaced(text, manifest_guids)?;
     static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| {
-        Regex::new(r"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-            .expect("guid regex")
+        Regex::new(r"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}").expect("guid regex")
     });
     for guid in manifest_guids {
         let normalized = guid.trim_matches(|c| c == '{' || c == '}' || c == '(' || c == ')');
@@ -70,9 +67,7 @@ pub fn scan_leftover_guid_patterns(text: &str, manifest_guids: &[String]) -> Tem
             && text.contains(normalized)
             && text.contains(guid)
         {
-            return Err(TemplateError::GuidReplacement {
-                guid: mat.as_str().to_string(),
-            });
+            return Err(TemplateError::GuidReplacement { guid: mat.as_str().to_string() });
         }
     }
     Ok(())

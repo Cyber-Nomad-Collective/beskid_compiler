@@ -2,9 +2,7 @@
 
 use crate::lowering::types::pointer_type;
 use beskid_abi::{SYM_DYNAMIC_CELL_CREATE, SYM_DYNAMIC_MAP_AOT};
-use cranelift_codegen::ir::{
-    AbiParam, ExtFuncData, ExternalName, InstBuilder, Signature, Value, types,
-};
+use cranelift_codegen::ir::{AbiParam, ExtFuncData, ExternalName, InstBuilder, Signature, Value, types};
 use cranelift_codegen::isa::CallConv;
 use cranelift_frontend::FunctionBuilder;
 
@@ -32,17 +30,9 @@ fn import_builtin(
 
 /// Emit `dynamic_cell_create(shape_id, payload)` → `*DynamicCell`.
 #[allow(dead_code)] // Spec anchor until dynamic wrap/cast lowering wires this helper.
-pub(crate) fn emit_dynamic_cell_create(
-    builder: &mut FunctionBuilder,
-    shape_id: u32,
-    payload: Value,
-) -> Value {
-    let func_ref = import_builtin(
-        builder,
-        SYM_DYNAMIC_CELL_CREATE,
-        &[types::I64, pointer_type()],
-        Some(pointer_type()),
-    );
+pub(crate) fn emit_dynamic_cell_create(builder: &mut FunctionBuilder, shape_id: u32, payload: Value) -> Value {
+    let func_ref =
+        import_builtin(builder, SYM_DYNAMIC_CELL_CREATE, &[types::I64, pointer_type()], Some(pointer_type()));
     let shape_val = builder.ins().iconst(types::I64, i64::from(shape_id));
     let call = builder.ins().call(func_ref, &[shape_val, payload]);
     builder.inst_results(call)[0]
@@ -64,9 +54,7 @@ pub(crate) fn emit_dynamic_map_aot(
     );
     let src_shape_val = builder.ins().iconst(types::I64, i64::from(src_shape));
     let dst_shape_val = builder.ins().iconst(types::I64, i64::from(dst_shape));
-    let call = builder
-        .ins()
-        .call(func_ref, &[src_shape_val, dst_shape_val, src_ptr, dst_out]);
+    let call = builder.ins().call(func_ref, &[src_shape_val, dst_shape_val, src_ptr, dst_out]);
     builder.inst_results(call)[0]
 }
 
@@ -148,9 +136,6 @@ mod dynamic_clif_tests {
         builder.finalize();
 
         let clif = func.to_string();
-        assert!(
-            clif.contains("dynamic_cell_create"),
-            "expected dynamic_cell_create import in CLIF: {clif}"
-        );
+        assert!(clif.contains("dynamic_cell_create"), "expected dynamic_cell_create import in CLIF: {clif}");
     }
 }

@@ -20,12 +20,12 @@ use axum::{
 };
 use beskid_pckg_auth::verify_pckg_session;
 use beskid_pckg_community::{
-    BoardId, Comment, CommentId, CommunityError, CommunityService, NotificationPreference,
-    NotificationScope, Post, PostId, Principal, Profile, Role, Subject, VoteValue,
+    BoardId, Comment, CommentId, CommunityError, CommunityService, NotificationPreference, NotificationScope, Post,
+    PostId, Principal, Profile, Role, Subject, VoteValue,
 };
 use beskid_pckg_store::{
-    AdminRole, AsyncAdministrationRepository, AsyncCommunityRepository, CommunityStoreError,
-    SqlxCommunityRepository, SqlxPackageRepository,
+    AdminRole, AsyncAdministrationRepository, AsyncCommunityRepository, CommunityStoreError, SqlxCommunityRepository,
+    SqlxPackageRepository,
 };
 use serde::{Deserialize, Serialize};
 
@@ -112,10 +112,7 @@ impl CommunityState {
     pub fn grant_test_moderator(&self, subject: impl Into<String>) {
         match &self.moderation {
             ModerationBackend::InMemory(subjects) => {
-                subjects
-                    .lock()
-                    .expect("moderation service lock is not poisoned")
-                    .insert(subject.into());
+                subjects.lock().expect("moderation service lock is not poisoned").insert(subject.into());
             }
             ModerationBackend::Sqlx(_) => panic!("SQL-backed moderation cannot be seeded directly"),
         }
@@ -123,30 +120,18 @@ impl CommunityState {
 
     async fn can_moderate_board(&self, subject: &str, board_id: &str) -> bool {
         match &self.moderation {
-            ModerationBackend::InMemory(subjects) => subjects
-                .lock()
-                .expect("moderation service lock is not poisoned")
-                .contains(subject),
+            ModerationBackend::InMemory(subjects) => {
+                subjects.lock().expect("moderation service lock is not poisoned").contains(subject)
+            }
             ModerationBackend::Sqlx(repository) => {
-                if repository
-                    .roles_for_subject(subject)
-                    .await
-                    .is_ok_and(|roles| {
-                        roles.iter().any(|role| {
-                            matches!(role, AdminRole::Moderator | AdminRole::SuperAdmin)
-                        })
-                    })
-                {
+                if repository.roles_for_subject(subject).await.is_ok_and(|roles| {
+                    roles.iter().any(|role| matches!(role, AdminRole::Moderator | AdminRole::SuperAdmin))
+                }) {
                     return true;
                 }
-                repository
-                    .list_resource_permissions("board", board_id)
-                    .await
-                    .is_ok_and(|grants| {
-                        grants
-                            .iter()
-                            .any(|grant| grant.subject == subject && grant.capability == "moderate")
-                    })
+                repository.list_resource_permissions("board", board_id).await.is_ok_and(|grants| {
+                    grants.iter().any(|grant| grant.subject == subject && grant.capability == "moderate")
+                })
             }
         }
     }
@@ -171,29 +156,26 @@ impl CommunityState {
             return Ok(None);
         };
         match &self.backend {
-            CommunityBackend::InMemory(service) => Ok(service
-                .lock()
-                .expect("community service lock is not poisoned")
-                .profile(&subject)
-                .map(|profile| CatalogProfile {
-                    subject: profile.subject.as_str().to_owned(),
-                    display_name: profile.display_name.clone(),
-                    bio: profile.bio.clone(),
-                    social_links: profile.social_links.clone(),
-                    is_publisher_verified: profile.is_publisher_verified,
-                })),
-            CommunityBackend::Sqlx(repository) => {
-                repository.profile(subject.as_str()).await.map(|profile| {
-                    profile.map(|profile| CatalogProfile {
-                        subject: profile.subject,
-                        display_name: profile.display_name,
-                        bio: profile.bio,
-                        social_links: serde_json::from_str(&profile.social_links_json)
-                            .unwrap_or_default(),
+            CommunityBackend::InMemory(service) => {
+                Ok(service.lock().expect("community service lock is not poisoned").profile(&subject).map(|profile| {
+                    CatalogProfile {
+                        subject: profile.subject.as_str().to_owned(),
+                        display_name: profile.display_name.clone(),
+                        bio: profile.bio.clone(),
+                        social_links: profile.social_links.clone(),
                         is_publisher_verified: profile.is_publisher_verified,
-                    })
-                })
+                    }
+                }))
             }
+            CommunityBackend::Sqlx(repository) => repository.profile(subject.as_str()).await.map(|profile| {
+                profile.map(|profile| CatalogProfile {
+                    subject: profile.subject,
+                    display_name: profile.display_name,
+                    bio: profile.bio,
+                    social_links: serde_json::from_str(&profile.social_links_json).unwrap_or_default(),
+                    is_publisher_verified: profile.is_publisher_verified,
+                })
+            }),
         }
     }
 
@@ -212,59 +194,23 @@ pub fn router(state: CommunityState) -> Router {
         .route("/boards", get(list_boards))
         .route("/boards/{board_id}", get(get_board))
         .route("/boards/{board_id}/moderation/lock", post(set_board_locked))
-        .route(
-            "/boards/{board_id}/posts",
-            get(list_posts).post(create_post),
-        )
+        .route("/boards/{board_id}/posts", get(list_posts).post(create_post))
         .route("/boards/posts/{post_id}", get(get_post))
-        .route(
-            "/boards/posts/{post_id}/comments",
-            get(list_comments).post(create_comment),
-        )
-        .route(
-            "/publisher-follows/{publisher}/toggle",
-            post(toggle_publisher_follow),
-        )
-        .route(
-            "/publisher-follows/{publisher}/count",
-            get(get_publisher_follow_count),
-        )
-        .route(
-            "/publisher-follows/{publisher}/status",
-            get(get_publisher_follow_status),
-        )
-        .route(
-            "/package-follows/{package_id}/toggle",
-            post(toggle_package_follow),
-        )
-        .route(
-            "/package-follows/{package_id}/count",
-            get(get_package_follow_count),
-        )
-        .route(
-            "/package-follows/{package_id}/status",
-            get(get_package_follow_status),
-        )
+        .route("/boards/posts/{post_id}/comments", get(list_comments).post(create_comment))
+        .route("/publisher-follows/{publisher}/toggle", post(toggle_publisher_follow))
+        .route("/publisher-follows/{publisher}/count", get(get_publisher_follow_count))
+        .route("/publisher-follows/{publisher}/status", get(get_publisher_follow_status))
+        .route("/package-follows/{package_id}/toggle", post(toggle_package_follow))
+        .route("/package-follows/{package_id}/count", get(get_package_follow_count))
+        .route("/package-follows/{package_id}/status", get(get_package_follow_status))
         .route("/boards/posts/{post_id}/vote", post(vote_on_post))
         .route("/boards/comments/{comment_id}/vote", post(vote_on_comment))
         .route("/notifications", get(list_notifications))
-        .route(
-            "/notifications/{notification_id}/read",
-            post(mark_notification_read),
-        )
-        .route(
-            "/notifications/mark-all-read",
-            post(mark_all_notifications_read),
-        )
+        .route("/notifications/{notification_id}/read", post(mark_notification_read))
+        .route("/notifications/mark-all-read", post(mark_all_notifications_read))
         .route("/notifications/test", post(send_test_notification))
-        .route(
-            "/notifications/{notification_id}/actions",
-            post(execute_notification_action),
-        )
-        .route(
-            "/notification-preferences",
-            get(get_notification_preferences).put(update_notification_preferences),
-        )
+        .route("/notifications/{notification_id}/actions", post(execute_notification_action))
+        .route("/notification-preferences", get(get_notification_preferences).put(update_notification_preferences))
         .with_state(state)
 }
 
@@ -447,11 +393,7 @@ async fn list_boards(State(state): State<CommunityState>) -> Response {
             Ok(boards) => Json(
                 boards
                     .into_iter()
-                    .map(|board| BoardResponse {
-                        id: board.id,
-                        title: board.title,
-                        locked: board.locked,
-                    })
+                    .map(|board| BoardResponse { id: board.id, title: board.title, locked: board.locked })
                     .collect::<Vec<_>>(),
             )
             .into_response(),
@@ -470,21 +412,14 @@ async fn get_board(State(state): State<CommunityState>, Path(board_id): Path<Str
             .expect("community service lock is not poisoned")
             .board(&board_id_value)
             .map(|board| {
-                Json(BoardResponse {
-                    id: board_id.clone(),
-                    title: board.title.clone(),
-                    locked: board.locked,
-                })
-                .into_response()
+                Json(BoardResponse { id: board_id.clone(), title: board.title.clone(), locked: board.locked })
+                    .into_response()
             })
             .unwrap_or_else(not_found),
         CommunityBackend::Sqlx(repository) => match repository.board(&board_id).await {
-            Ok(Some(board)) => Json(BoardResponse {
-                id: board.id,
-                title: board.title,
-                locked: board.locked,
-            })
-            .into_response(),
+            Ok(Some(board)) => {
+                Json(BoardResponse { id: board.id, title: board.title, locked: board.locked }).into_response()
+            }
             Ok(None) => not_found(),
             Err(error) => store_error(error),
         },
@@ -501,18 +436,11 @@ async fn set_board_locked(
         Ok(principal) => principal,
         Err(response) => return response,
     };
-    let subject = principal
-        .subject()
-        .expect("authenticated principal has subject")
-        .as_str();
+    let subject = principal.subject().expect("authenticated principal has subject").as_str();
     if !state.can_moderate_board(subject, &board_id).await {
         return community_error(CommunityError::Forbidden);
     }
-    let message = if request.locked {
-        "Board locked."
-    } else {
-        "Board unlocked."
-    };
+    let message = if request.locked { "Board locked." } else { "Board unlocked." };
     match &state.backend {
         CommunityBackend::InMemory(service) => match BoardId::new(board_id).and_then(|id| {
             service
@@ -521,11 +449,7 @@ async fn set_board_locked(
                 .set_board_locked(&id, request.locked)
                 .map(|()| id)
         }) {
-            Ok(_) => Json(SetBoardLockedResponse {
-                success: true,
-                message,
-            })
-            .into_response(),
+            Ok(_) => Json(SetBoardLockedResponse { success: true, message }).into_response(),
             Err(error) => community_error(error),
         },
         CommunityBackend::Sqlx(repository) => {
@@ -538,11 +462,7 @@ async fn set_board_locked(
             board.locked = request.locked;
             board.updated_at_unix_seconds = now_unix_seconds();
             match repository.create_board(board).await {
-                Ok(_) => Json(SetBoardLockedResponse {
-                    success: true,
-                    message,
-                })
-                .into_response(),
+                Ok(_) => Json(SetBoardLockedResponse { success: true, message }).into_response(),
                 Err(error) => store_error(error),
             }
         }
@@ -555,9 +475,7 @@ async fn list_posts(State(state): State<CommunityState>, Path(board_id): Path<St
     };
     match &state.backend {
         CommunityBackend::InMemory(service) => {
-            let service = service
-                .lock()
-                .expect("community service lock is not poisoned");
+            let service = service.lock().expect("community service lock is not poisoned");
             if service.board(&board_id_value).is_none() {
                 return not_found();
             }
@@ -575,13 +493,7 @@ async fn list_posts(State(state): State<CommunityState>, Path(board_id): Path<St
             Ok(None) => not_found(),
             Err(error) => store_error(error),
             Ok(Some(_)) => match repository.posts_for_board(&board_id).await {
-                Ok(posts) => Json(
-                    posts
-                        .into_iter()
-                        .map(post_response_from_store)
-                        .collect::<Vec<_>>(),
-                )
-                .into_response(),
+                Ok(posts) => Json(posts.into_iter().map(post_response_from_store).collect::<Vec<_>>()).into_response(),
                 Err(error) => store_error(error),
             },
         },
@@ -608,39 +520,23 @@ async fn get_post(State(state): State<CommunityState>, Path(post_id): Path<PostI
     }
 }
 
-async fn list_comments(
-    State(state): State<CommunityState>,
-    Path(post_id): Path<PostId>,
-) -> Response {
+async fn list_comments(State(state): State<CommunityState>, Path(post_id): Path<PostId>) -> Response {
     match &state.backend {
         CommunityBackend::InMemory(service) => {
-            let service = service
-                .lock()
-                .expect("community service lock is not poisoned");
+            let service = service.lock().expect("community service lock is not poisoned");
             if service.post(post_id).is_none() {
                 return not_found();
             }
-            Json(
-                service
-                    .comments_for_post(post_id)
-                    .into_iter()
-                    .cloned()
-                    .map(CommentResponse::from)
-                    .collect::<Vec<_>>(),
-            )
-            .into_response()
+            Json(service.comments_for_post(post_id).into_iter().cloned().map(CommentResponse::from).collect::<Vec<_>>())
+                .into_response()
         }
         CommunityBackend::Sqlx(repository) => match repository.post(post_id as i64).await {
             Ok(None) => not_found(),
             Err(error) => store_error(error),
             Ok(Some(_)) => match repository.comments_for_post(post_id as i64).await {
-                Ok(comments) => Json(
-                    comments
-                        .into_iter()
-                        .map(comment_response_from_store)
-                        .collect::<Vec<_>>(),
-                )
-                .into_response(),
+                Ok(comments) => {
+                    Json(comments.into_iter().map(comment_response_from_store).collect::<Vec<_>>()).into_response()
+                }
                 Err(error) => store_error(error),
             },
         },
@@ -665,14 +561,12 @@ async fn get_profile(State(state): State<CommunityState>, Path(subject): Path<St
         return not_found();
     };
     match &state.backend {
-        CommunityBackend::InMemory(service) => match service
-            .lock()
-            .expect("community service lock is not poisoned")
-            .profile(&subject)
-        {
-            Some(profile) => Json(profile).into_response(),
-            None => not_found(),
-        },
+        CommunityBackend::InMemory(service) => {
+            match service.lock().expect("community service lock is not poisoned").profile(&subject) {
+                Some(profile) => Json(profile).into_response(),
+                None => not_found(),
+            }
+        }
         CommunityBackend::Sqlx(repository) => match repository.profile(subject.as_str()).await {
             Ok(Some(profile)) => Json(profile_response_from_store(profile)).into_response(),
             Ok(None) => not_found(),
@@ -686,18 +580,14 @@ async fn get_my_profile(State(state): State<CommunityState>, headers: HeaderMap)
         Ok(principal) => principal,
         Err(response) => return response,
     };
-    let subject = principal
-        .subject()
-        .expect("authenticated principal has subject");
+    let subject = principal.subject().expect("authenticated principal has subject");
     match &state.backend {
-        CommunityBackend::InMemory(service) => match service
-            .lock()
-            .expect("community service lock is not poisoned")
-            .profile(subject)
-        {
-            Some(profile) => Json(profile).into_response(),
-            None => not_found(),
-        },
+        CommunityBackend::InMemory(service) => {
+            match service.lock().expect("community service lock is not poisoned").profile(subject) {
+                Some(profile) => Json(profile).into_response(),
+                None => not_found(),
+            }
+        }
         CommunityBackend::Sqlx(repository) => match repository.profile(subject.as_str()).await {
             Ok(Some(profile)) => Json(profile_response_from_store(profile)).into_response(),
             Ok(None) => not_found(),
@@ -715,19 +605,13 @@ async fn update_my_profile(
         Ok(principal) => principal,
         Err(response) => return response,
     };
-    let subject = principal
-        .subject()
-        .expect("authenticated principal has subject")
-        .clone();
+    let subject = principal.subject().expect("authenticated principal has subject").clone();
     let mut profile = Profile::new(subject.clone(), request.display_name.clone());
     profile.bio = request.bio.clone();
     profile.social_links = request.social_links.clone();
     match &state.backend {
         CommunityBackend::InMemory(service) => {
-            service
-                .lock()
-                .expect("community service lock is not poisoned")
-                .upsert_profile(profile.clone());
+            service.lock().expect("community service lock is not poisoned").upsert_profile(profile.clone());
             Json(profile).into_response()
         }
         CommunityBackend::Sqlx(repository) => match repository
@@ -735,8 +619,7 @@ async fn update_my_profile(
                 subject: subject.as_str().to_owned(),
                 display_name: request.display_name,
                 bio: request.bio,
-                social_links_json: serde_json::to_string(&request.social_links)
-                    .unwrap_or_else(|_| "[]".into()),
+                social_links_json: serde_json::to_string(&request.social_links).unwrap_or_else(|_| "[]".into()),
                 is_publisher_verified: false,
                 updated_at_unix_seconds: now_unix_seconds(),
             })
@@ -767,58 +650,38 @@ async fn toggle_publisher_follow(
             .expect("community service lock is not poisoned")
             .toggle_publisher_follow(&principal, &publisher)
         {
-            Ok(result) => Json(FollowResponse {
-                is_following: result.is_following,
-                changed: result.changed,
-            })
-            .into_response(),
+            Ok(result) => {
+                Json(FollowResponse { is_following: result.is_following, changed: result.changed }).into_response()
+            }
             Err(error) => community_error(error),
         },
         CommunityBackend::Sqlx(repository) => match repository
             .toggle_publisher_follow(
-                principal
-                    .subject()
-                    .expect("authenticated principal has subject")
-                    .as_str(),
+                principal.subject().expect("authenticated principal has subject").as_str(),
                 publisher.as_str(),
                 now_unix_seconds(),
             )
             .await
         {
-            Ok(value) => Json(FollowResponse {
-                is_following: value,
-                changed: true,
-            })
-            .into_response(),
+            Ok(value) => Json(FollowResponse { is_following: value, changed: true }).into_response(),
             Err(error) => store_error(error),
         },
     }
 }
 
-async fn get_publisher_follow_count(
-    State(state): State<CommunityState>,
-    Path(publisher): Path<String>,
-) -> Response {
+async fn get_publisher_follow_count(State(state): State<CommunityState>, Path(publisher): Path<String>) -> Response {
     let Ok(publisher) = Subject::new(publisher) else {
         return not_found();
     };
     match &state.backend {
         CommunityBackend::InMemory(service) => Json(FollowCountResponse {
-            count: service
-                .lock()
-                .expect("community service lock is not poisoned")
-                .publisher_follow_count(&publisher),
+            count: service.lock().expect("community service lock is not poisoned").publisher_follow_count(&publisher),
         })
         .into_response(),
-        CommunityBackend::Sqlx(repository) => {
-            match repository.publisher_follow_count(publisher.as_str()).await {
-                Ok(count) => Json(FollowCountResponse {
-                    count: count as usize,
-                })
-                .into_response(),
-                Err(error) => store_error(error),
-            }
-        }
+        CommunityBackend::Sqlx(repository) => match repository.publisher_follow_count(publisher.as_str()).await {
+            Ok(count) => Json(FollowCountResponse { count: count as usize }).into_response(),
+            Err(error) => store_error(error),
+        },
     }
 }
 
@@ -837,10 +700,7 @@ async fn create_post(
         Ok(board_id) => board_id,
         Err(error) => return community_error(error),
     };
-    if let Some(message) = match state
-        .blocked_link_reason(&format!("{}\n{}", request.title, request.content))
-        .await
-    {
+    if let Some(message) = match state.blocked_link_reason(&format!("{}\n{}", request.title, request.content)).await {
         Ok(reason) => reason,
         Err(response) => return response,
     } {
@@ -852,20 +712,13 @@ async fn create_post(
             .expect("community service lock is not poisoned")
             .create_post(&principal, &board_id, request.title, request.content)
         {
-            Ok(post) => (
-                StatusCode::CREATED,
-                Json(PostResponse::from_post(post, board_id_value)),
-            )
-                .into_response(),
+            Ok(post) => (StatusCode::CREATED, Json(PostResponse::from_post(post, board_id_value))).into_response(),
             Err(error) => community_error(error),
         },
         CommunityBackend::Sqlx(repository) => match repository
             .create_post(
                 &board_id_value,
-                principal
-                    .subject()
-                    .expect("authenticated principal has subject")
-                    .as_str(),
+                principal.subject().expect("authenticated principal has subject").as_str(),
                 &request.title,
                 &request.content,
                 now_unix_seconds(),
@@ -898,35 +751,22 @@ async fn create_comment(
         CommunityBackend::InMemory(service) => match service
             .lock()
             .expect("community service lock is not poisoned")
-            .create_comment(
-                &principal,
-                post_id,
-                request.content,
-                request.parent_comment_id,
-            ) {
-            Ok(comment) => {
-                (StatusCode::CREATED, Json(CommentResponse::from(comment))).into_response()
-            }
+            .create_comment(&principal, post_id, request.content, request.parent_comment_id)
+        {
+            Ok(comment) => (StatusCode::CREATED, Json(CommentResponse::from(comment))).into_response(),
             Err(error) => community_error(error),
         },
         CommunityBackend::Sqlx(repository) => match repository
             .create_comment(
                 post_id as i64,
-                principal
-                    .subject()
-                    .expect("authenticated principal has subject")
-                    .as_str(),
+                principal.subject().expect("authenticated principal has subject").as_str(),
                 &request.content,
                 request.parent_comment_id.map(|id| id as i64),
                 now_unix_seconds(),
             )
             .await
         {
-            Ok(comment) => (
-                StatusCode::CREATED,
-                Json(comment_response_from_store(comment)),
-            )
-                .into_response(),
+            Ok(comment) => (StatusCode::CREATED, Json(comment_response_from_store(comment))).into_response(),
             Err(error) => store_error(error),
         },
     }
@@ -949,19 +789,13 @@ async fn vote_on_post(
             .expect("community service lock is not poisoned")
             .vote_on_post(&principal, post_id, vote)
         {
-            Ok(result) => Json(VoteResponse {
-                score: result.score,
-            })
-            .into_response(),
+            Ok(result) => Json(VoteResponse { score: result.score }).into_response(),
             Err(error) => community_error(error),
         },
         CommunityBackend::Sqlx(repository) => match repository
             .vote_on_post(
                 post_id as i64,
-                principal
-                    .subject()
-                    .expect("authenticated principal has subject")
-                    .as_str(),
+                principal.subject().expect("authenticated principal has subject").as_str(),
                 store_vote(request.value),
                 now_unix_seconds(),
             )
@@ -990,19 +824,13 @@ async fn vote_on_comment(
             .expect("community service lock is not poisoned")
             .vote_on_comment(&principal, comment_id, vote)
         {
-            Ok(result) => Json(VoteResponse {
-                score: result.score,
-            })
-            .into_response(),
+            Ok(result) => Json(VoteResponse { score: result.score }).into_response(),
             Err(error) => community_error(error),
         },
         CommunityBackend::Sqlx(repository) => match repository
             .vote_on_comment(
                 comment_id as i64,
-                principal
-                    .subject()
-                    .expect("authenticated principal has subject")
-                    .as_str(),
+                principal.subject().expect("authenticated principal has subject").as_str(),
                 store_vote(request.value),
                 now_unix_seconds(),
             )
@@ -1019,9 +847,7 @@ async fn list_notifications(State(state): State<CommunityState>, headers: Header
         Ok(principal) => principal,
         Err(response) => return response,
     };
-    let subject = principal
-        .subject()
-        .expect("authenticated principal has subject");
+    let subject = principal.subject().expect("authenticated principal has subject");
     match &state.backend {
         CommunityBackend::InMemory(service) => Json(
             service
@@ -1033,26 +859,24 @@ async fn list_notifications(State(state): State<CommunityState>, headers: Header
                 .collect::<Vec<_>>(),
         )
         .into_response(),
-        CommunityBackend::Sqlx(repository) => {
-            match repository.list_notifications(subject.as_str()).await {
-                Ok(notifications) => Json(
-                    notifications
-                        .into_iter()
-                        .map(|notification| NotificationResponse {
-                            id: notification.id,
-                            recipient: notification.recipient_subject,
-                            scope: notification.scope,
-                            actor: notification.actor_subject,
-                            post_id: notification.post_id,
-                            comment_id: notification.comment_id,
-                            is_read: notification.read_at_unix_seconds.is_some(),
-                        })
-                        .collect::<Vec<_>>(),
-                )
-                .into_response(),
-                Err(error) => store_error(error),
-            }
-        }
+        CommunityBackend::Sqlx(repository) => match repository.list_notifications(subject.as_str()).await {
+            Ok(notifications) => Json(
+                notifications
+                    .into_iter()
+                    .map(|notification| NotificationResponse {
+                        id: notification.id,
+                        recipient: notification.recipient_subject,
+                        scope: notification.scope,
+                        actor: notification.actor_subject,
+                        post_id: notification.post_id,
+                        comment_id: notification.comment_id,
+                        is_read: notification.read_at_unix_seconds.is_some(),
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .into_response(),
+            Err(error) => store_error(error),
+        },
     }
 }
 
@@ -1071,25 +895,16 @@ async fn update_notification_preferences(
     };
     match &state.backend {
         CommunityBackend::InMemory(service) => {
-            service
-                .lock()
-                .expect("community service lock is not poisoned")
-                .set_notification_preference(
-                    principal
-                        .subject()
-                        .expect("authenticated principal has subject")
-                        .clone(),
-                    memory_preference,
-                );
+            service.lock().expect("community service lock is not poisoned").set_notification_preference(
+                principal.subject().expect("authenticated principal has subject").clone(),
+                memory_preference,
+            );
             StatusCode::NO_CONTENT.into_response()
         }
         CommunityBackend::Sqlx(repository) => {
             match repository
                 .set_notification_preference(
-                    principal
-                        .subject()
-                        .expect("authenticated principal has subject")
-                        .as_str(),
+                    principal.subject().expect("authenticated principal has subject").as_str(),
                     store_preference,
                     now_unix_seconds(),
                 )
@@ -1107,13 +922,7 @@ async fn update_notification_preferences(
 #[allow(clippy::result_large_err)]
 fn notification_preferences(
     request: NotificationPreferenceRequest,
-) -> Result<
-    (
-        NotificationPreference,
-        beskid_pckg_store::CommunityNotificationPreference,
-    ),
-    Response,
-> {
+) -> Result<(NotificationPreference, beskid_pckg_store::CommunityNotificationPreference), Response> {
     let store_preference = if let Some(preferences) = request.preferences {
         beskid_pckg_store::CommunityNotificationPreference {
             system_enabled: preferences.system_enabled,
@@ -1124,18 +933,14 @@ fn notification_preferences(
         }
     } else {
         match request.mode {
-            Some(NotificationPreferenceMode::All) => {
-                beskid_pckg_store::CommunityNotificationPreference::default()
-            }
-            Some(NotificationPreferenceMode::MentionsOnly) => {
-                beskid_pckg_store::CommunityNotificationPreference {
-                    system_enabled: true,
-                    mention_enabled: true,
-                    reply_enabled: false,
-                    followed_publisher_post_enabled: false,
-                    moderation_enabled: false,
-                }
-            }
+            Some(NotificationPreferenceMode::All) => beskid_pckg_store::CommunityNotificationPreference::default(),
+            Some(NotificationPreferenceMode::MentionsOnly) => beskid_pckg_store::CommunityNotificationPreference {
+                system_enabled: true,
+                mention_enabled: true,
+                reply_enabled: false,
+                followed_publisher_post_enabled: false,
+                moderation_enabled: false,
+            },
             None => {
                 return Err((
                     StatusCode::BAD_REQUEST,
@@ -1161,19 +966,13 @@ fn notification_preferences(
     if store_preference.moderation_enabled {
         enabled.push(NotificationScope::Moderation);
     }
-    Ok((
-        NotificationPreference::from_enabled(enabled),
-        store_preference,
-    ))
+    Ok((NotificationPreference::from_enabled(enabled), store_preference))
 }
 
 // Axum responses intentionally carry the complete HTTP rejection payload here;
 // boxing it would only add allocation and dereferencing at every route boundary.
 #[allow(clippy::result_large_err)]
-fn authenticated_principal(
-    state: &CommunityState,
-    headers: &HeaderMap,
-) -> Result<Principal, Response> {
+fn authenticated_principal(state: &CommunityState, headers: &HeaderMap) -> Result<Principal, Response> {
     let Some(session_secret) = state.session_secret.as_deref() else {
         return Err(unauthorized());
     };
@@ -1216,48 +1015,31 @@ fn community_error(error: CommunityError) -> Response {
         CommunityError::BoardNotFound
         | CommunityError::PostNotFound
         | CommunityError::CommentNotFound
-        | CommunityError::NotificationNotFound => {
-            (StatusCode::NOT_FOUND, "community resource not found")
-        }
+        | CommunityError::NotificationNotFound => (StatusCode::NOT_FOUND, "community resource not found"),
         CommunityError::Forbidden | CommunityError::BoardLocked => {
             (StatusCode::FORBIDDEN, "community action is not permitted")
         }
-        CommunityError::SelfVote
-        | CommunityError::InvalidBoardId
-        | CommunityError::InvalidSubject => (StatusCode::BAD_REQUEST, "invalid community request"),
+        CommunityError::SelfVote | CommunityError::InvalidBoardId | CommunityError::InvalidSubject => {
+            (StatusCode::BAD_REQUEST, "invalid community request")
+        }
     };
     (status, Json(serde_json::json!({ "message": message }))).into_response()
 }
 
 fn unauthorized() -> Response {
-    (
-        StatusCode::UNAUTHORIZED,
-        Json(serde_json::json!({ "message": "authentication required" })),
-    )
-        .into_response()
+    (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "message": "authentication required" }))).into_response()
 }
 
 fn not_found() -> Response {
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({ "message": "community resource not found" })),
-    )
-        .into_response()
+    (StatusCode::NOT_FOUND, Json(serde_json::json!({ "message": "community resource not found" }))).into_response()
 }
 
 fn bad_request(message: &'static str) -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        Json(serde_json::json!({ "message": message })),
-    )
-        .into_response()
+    (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "message": message }))).into_response()
 }
 
 fn unavailable() -> Response {
-    (
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(serde_json::json!({ "message": "community safety policy unavailable" })),
-    )
+    (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({ "message": "community safety policy unavailable" })))
         .into_response()
 }
 
@@ -1292,9 +1074,7 @@ struct StoreProfileResponse {
     social_links: Vec<String>,
     is_publisher_verified: bool,
 }
-fn profile_response_from_store(
-    profile: beskid_pckg_store::CommunityProfile,
-) -> StoreProfileResponse {
+fn profile_response_from_store(profile: beskid_pckg_store::CommunityProfile) -> StoreProfileResponse {
     StoreProfileResponse {
         subject: profile.subject,
         display_name: profile.display_name,
@@ -1311,17 +1091,13 @@ fn store_error(error: CommunityStoreError) -> Response {
         | CommunityStoreError::NotificationNotFound
         | CommunityStoreError::ProfileNotFound => not_found(),
         CommunityStoreError::SelfVote => community_error(CommunityError::SelfVote),
-        _ => (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"message":"invalid community request"})),
-        )
-            .into_response(),
+        _ => {
+            (StatusCode::BAD_REQUEST, Json(serde_json::json!({"message":"invalid community request"}))).into_response()
+        }
     }
 }
 fn now_unix_seconds() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs() as i64)
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |duration| duration.as_secs() as i64)
 }
 
 async fn get_publisher_follow_status(
@@ -1356,52 +1132,30 @@ async fn toggle_package_follow(
             .expect("community service lock is not poisoned")
             .toggle_package_follow(&principal, package_id)
         {
-            Ok(result) => Json(FollowResponse {
-                is_following: result.is_following,
-                changed: result.changed,
-            })
-            .into_response(),
+            Ok(result) => {
+                Json(FollowResponse { is_following: result.is_following, changed: result.changed }).into_response()
+            }
             Err(error) => community_error(error),
         },
         CommunityBackend::Sqlx(repository) => {
-            let subject = principal
-                .subject()
-                .expect("authenticated principal has subject");
-            match repository
-                .toggle_package_follow(subject.as_str(), &package_id, now_unix_seconds())
-                .await
-            {
-                Ok(value) => Json(FollowResponse {
-                    is_following: value,
-                    changed: true,
-                })
-                .into_response(),
+            let subject = principal.subject().expect("authenticated principal has subject");
+            match repository.toggle_package_follow(subject.as_str(), &package_id, now_unix_seconds()).await {
+                Ok(value) => Json(FollowResponse { is_following: value, changed: true }).into_response(),
                 Err(error) => store_error(error),
             }
         }
     }
 }
-async fn get_package_follow_count(
-    State(state): State<CommunityState>,
-    Path(package_id): Path<String>,
-) -> Response {
+async fn get_package_follow_count(State(state): State<CommunityState>, Path(package_id): Path<String>) -> Response {
     match &state.backend {
         CommunityBackend::InMemory(service) => Json(FollowCountResponse {
-            count: service
-                .lock()
-                .expect("community service lock is not poisoned")
-                .package_follow_count(&package_id),
+            count: service.lock().expect("community service lock is not poisoned").package_follow_count(&package_id),
         })
         .into_response(),
-        CommunityBackend::Sqlx(repository) => {
-            match repository.package_follow_count(&package_id).await {
-                Ok(count) => Json(FollowCountResponse {
-                    count: count as usize,
-                })
-                .into_response(),
-                Err(error) => store_error(error),
-            }
-        }
+        CommunityBackend::Sqlx(repository) => match repository.package_follow_count(&package_id).await {
+            Ok(count) => Json(FollowCountResponse { count: count as usize }).into_response(),
+            Err(error) => store_error(error),
+        },
     }
 }
 async fn get_package_follow_status(
@@ -1413,51 +1167,39 @@ async fn get_package_follow_status(
         Ok(value) => value,
         Err(response) => return response,
     };
-    let subject = principal
-        .subject()
-        .expect("authenticated principal has subject");
+    let subject = principal.subject().expect("authenticated principal has subject");
     match &state.backend { CommunityBackend::InMemory(service)=>Json(serde_json::json!({"isFollowing":service.lock().expect("community service lock is not poisoned").is_following_package(subject,&package_id)})).into_response(), CommunityBackend::Sqlx(repository)=>match repository.is_following_package(subject.as_str(),&package_id).await {Ok(value)=>Json(serde_json::json!({"isFollowing":value})).into_response(),Err(error)=>store_error(error)} }
 }
-async fn get_notification_preferences(
-    State(state): State<CommunityState>,
-    headers: HeaderMap,
-) -> Response {
+async fn get_notification_preferences(State(state): State<CommunityState>, headers: HeaderMap) -> Response {
     let principal = match authenticated_principal(&state, &headers) {
         Ok(value) => value,
         Err(response) => return response,
     };
-    let subject = principal
-        .subject()
-        .expect("authenticated principal has subject");
+    let subject = principal.subject().expect("authenticated principal has subject");
     match &state.backend {
         CommunityBackend::InMemory(service) => {
-            let preference = service
-                .lock()
-                .expect("community service lock is not poisoned")
-                .notification_preference(subject);
+            let preference =
+                service.lock().expect("community service lock is not poisoned").notification_preference(subject);
             Json(NotificationPreferenceResponse {
                 system_enabled: preference.allows(NotificationScope::System),
                 mention_enabled: preference.allows(NotificationScope::Mention),
                 reply_enabled: preference.allows(NotificationScope::Reply),
-                followed_publisher_post_enabled: preference
-                    .allows(NotificationScope::FollowedPublisherPost),
+                followed_publisher_post_enabled: preference.allows(NotificationScope::FollowedPublisherPost),
                 moderation_enabled: preference.allows(NotificationScope::Moderation),
             })
             .into_response()
         }
-        CommunityBackend::Sqlx(repository) => {
-            match repository.notification_preference(subject.as_str()).await {
-                Ok(value) => Json(NotificationPreferenceResponse {
-                    system_enabled: value.system_enabled,
-                    mention_enabled: value.mention_enabled,
-                    reply_enabled: value.reply_enabled,
-                    followed_publisher_post_enabled: value.followed_publisher_post_enabled,
-                    moderation_enabled: value.moderation_enabled,
-                })
-                .into_response(),
-                Err(error) => store_error(error),
-            }
-        }
+        CommunityBackend::Sqlx(repository) => match repository.notification_preference(subject.as_str()).await {
+            Ok(value) => Json(NotificationPreferenceResponse {
+                system_enabled: value.system_enabled,
+                mention_enabled: value.mention_enabled,
+                reply_enabled: value.reply_enabled,
+                followed_publisher_post_enabled: value.followed_publisher_post_enabled,
+                moderation_enabled: value.moderation_enabled,
+            })
+            .into_response(),
+            Err(error) => store_error(error),
+        },
     }
 }
 async fn mark_notification_read(
@@ -1481,10 +1223,7 @@ async fn mark_notification_read(
         CommunityBackend::Sqlx(repository) => match repository
             .mark_notification_read(
                 notification_id as i64,
-                principal
-                    .subject()
-                    .expect("authenticated principal has subject")
-                    .as_str(),
+                principal.subject().expect("authenticated principal has subject").as_str(),
                 now_unix_seconds(),
             )
             .await
@@ -1495,10 +1234,7 @@ async fn mark_notification_read(
     }
 }
 
-async fn mark_all_notifications_read(
-    State(state): State<CommunityState>,
-    headers: HeaderMap,
-) -> Response {
+async fn mark_all_notifications_read(State(state): State<CommunityState>, headers: HeaderMap) -> Response {
     let principal = match authenticated_principal(&state, &headers) {
         Ok(value) => value,
         Err(response) => return response,
@@ -1514,10 +1250,7 @@ async fn mark_all_notifications_read(
         },
         CommunityBackend::Sqlx(repository) => match repository
             .mark_all_notifications_read(
-                principal
-                    .subject()
-                    .expect("authenticated principal has subject")
-                    .as_str(),
+                principal.subject().expect("authenticated principal has subject").as_str(),
                 now_unix_seconds(),
             )
             .await
@@ -1528,38 +1261,26 @@ async fn mark_all_notifications_read(
     }
 }
 
-async fn send_test_notification(
-    State(state): State<CommunityState>,
-    headers: HeaderMap,
-) -> Response {
+async fn send_test_notification(State(state): State<CommunityState>, headers: HeaderMap) -> Response {
     let principal = match authenticated_principal(&state, &headers) {
         Ok(value) => value,
         Err(response) => return response,
     };
     match &state.backend {
-        CommunityBackend::InMemory(service) => match service
-            .lock()
-            .expect("community service lock is not poisoned")
-            .create_test_notification(&principal)
-        {
-            Ok(id) => (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response(),
-            Err(error) => community_error(error),
-        },
+        CommunityBackend::InMemory(service) => {
+            match service.lock().expect("community service lock is not poisoned").create_test_notification(&principal) {
+                Ok(id) => (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response(),
+                Err(error) => community_error(error),
+            }
+        }
         CommunityBackend::Sqlx(repository) => match repository
             .create_test_notification(
-                principal
-                    .subject()
-                    .expect("authenticated principal has subject")
-                    .as_str(),
+                principal.subject().expect("authenticated principal has subject").as_str(),
                 now_unix_seconds(),
             )
             .await
         {
-            Ok(notification) => (
-                StatusCode::CREATED,
-                Json(serde_json::json!({"id": notification.id})),
-            )
-                .into_response(),
+            Ok(notification) => (StatusCode::CREATED, Json(serde_json::json!({"id": notification.id}))).into_response(),
             Err(error) => store_error(error),
         },
     }
@@ -1578,9 +1299,5 @@ async fn execute_notification_action(
         NotificationAction::MarkRead | NotificationAction::Dismiss => {}
     }
     let response = mark_notification_read(State(state), headers, Path(notification_id)).await;
-    if response.status().is_success() {
-        Json(serde_json::json!({"handled": true})).into_response()
-    } else {
-        response
-    }
+    if response.status().is_success() { Json(serde_json::json!({"handled": true})).into_response() } else { response }
 }

@@ -15,8 +15,7 @@ pub fn merge_host_scopes(
         let Some(scopes) = host_scopes.get(&host.name) else {
             continue;
         };
-        let local: HashMap<ScopeId, &CompositionScope> =
-            scopes.iter().map(|scope| (scope.id, scope)).collect();
+        let local: HashMap<ScopeId, &CompositionScope> = scopes.iter().map(|scope| (scope.id, scope)).collect();
 
         for scope in scopes {
             let parent_name = scope.parent.and_then(|parent_id| {
@@ -43,12 +42,7 @@ pub fn merge_host_scopes(
 
             by_name.insert(
                 scope.name.clone(),
-                CompositionScope {
-                    id: unified_id,
-                    name: scope.name.clone(),
-                    parent: unified_parent,
-                    span: scope.span,
-                },
+                CompositionScope { id: unified_id, name: scope.name.clone(), parent: unified_parent, span: scope.span },
             );
         }
     }

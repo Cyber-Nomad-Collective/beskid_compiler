@@ -5,8 +5,7 @@ use beskid_analysis::parsing::parsable::Parsable;
 use beskid_analysis::syntax::{EnumPath, PrimitiveType, Type};
 
 use crate::surface::ast::{
-    assert_path_segments, assert_type_complex_path, assert_type_primitive, parse_path_ast,
-    parse_type_ast,
+    assert_path_segments, assert_type_complex_path, assert_type_primitive, parse_path_ast, parse_type_ast,
 };
 use crate::surface::util::{assert_parse, assert_parse_fail, parse_pair};
 
@@ -27,10 +26,7 @@ fn function_type_parses_and_builds_ast() {
     assert_parse(Rule::FunctionType, "i64(i64, i64)");
     let ty = parse_type_ast("i64(i64, i64)");
     match &ty.node {
-        Type::Function {
-            return_type,
-            parameters,
-        } => {
+        Type::Function { return_type, parameters } => {
             assert_type_primitive(return_type, PrimitiveType::I64);
             assert_eq!(parameters.len(), 2);
         }
@@ -74,14 +70,7 @@ fn enum_path_parses_and_builds_ast() {
     assert_parse(Rule::EnumPath, "Option::Some");
     let pair = parse_pair(Rule::EnumPath, "Option::Some");
     let enum_path = EnumPath::parse(pair).expect("expected enum path");
-    assert_eq!(
-        enum_path.node.type_path.node.segments[0]
-            .node
-            .name
-            .node
-            .name,
-        "Option"
-    );
+    assert_eq!(enum_path.node.type_path.node.segments[0].node.name.node.name, "Option");
     assert_eq!(enum_path.node.variant.node.name, "Some");
 }
 
@@ -103,18 +92,12 @@ fn parses_type_definition() {
 
 #[test]
 fn parses_type_definition_with_conformances() {
-    assert_parse(
-        Rule::TypeDefinition,
-        "type User : Display, Clone { string name }",
-    );
+    assert_parse(Rule::TypeDefinition, "type User : Display, Clone { string name }");
 }
 
 #[test]
 fn rejects_type_definition_with_legacy_when_conformances() {
-    assert_parse_fail(
-        Rule::TypeDefinition,
-        "type User when Display, Clone { string name }",
-    );
+    assert_parse_fail(Rule::TypeDefinition, "type User when Display, Clone { string name }");
 }
 
 #[test]

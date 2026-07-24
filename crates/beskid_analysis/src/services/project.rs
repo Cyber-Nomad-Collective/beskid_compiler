@@ -11,10 +11,9 @@ use crate::analysis::diagnostics::MietteReportError;
 use crate::projects::{
     CompilePlan, PreparedProjectWorkspace, ProjectGraphBuildOptions, UnresolvedDependencyPolicy,
     WorkspacePrepareOptions, WorkspaceResolutionSummary, build_compile_plan_with_policy_and_graph,
-    discover_project_manifest_from_input_or_cwd, discover_project_manifest_in_dir,
-    discover_workspace_manifest_in_dir, is_project_manifest_path, is_workspace_manifest_path,
-    prepare_project_workspace_with_options, reject_legacy_manifest_path,
-    resolve_workspace_candidate_with_summary,
+    discover_project_manifest_from_input_or_cwd, discover_project_manifest_in_dir, discover_workspace_manifest_in_dir,
+    is_project_manifest_path, is_workspace_manifest_path, prepare_project_workspace_with_options,
+    reject_legacy_manifest_path, resolve_workspace_candidate_with_summary,
 };
 
 use super::diagnostics_emit::project_error_diagnostic;
@@ -57,10 +56,8 @@ pub fn resolve_project_with_policy(
 ) -> Result<ResolvedProject> {
     let mut workspace_summary: Option<WorkspaceResolutionSummary> = None;
 
-    let manifest_path = observe_phase_result(
-        pipeline,
-        RESOLVE_MANIFEST,
-        || -> Result<Option<PathBuf>, anyhow::Error> {
+    let manifest_path =
+        observe_phase_result(pipeline, RESOLVE_MANIFEST, || -> Result<Option<PathBuf>, anyhow::Error> {
             let explicit_manifest = project
                 .map(|path| resolve_project_manifest_path(path))
                 .or_else(|| input.and_then(|path| infer_manifest_from_input(path)));
@@ -71,11 +68,8 @@ pub fn resolve_project_with_policy(
             };
 
             if let Some(explicit) = explicit_manifest {
-                let (path, summary) = resolve_workspace_candidate_with_summary(
-                    &explicit,
-                    input.map(|p| p.as_path()),
-                    workspace_member,
-                )?;
+                let (path, summary) =
+                    resolve_workspace_candidate_with_summary(&explicit, input.map(|p| p.as_path()), workspace_member)?;
                 workspace_summary = summary;
                 Ok(Some(path))
             } else if let Some((path, summary)) = discovered_manifest {
@@ -84,8 +78,7 @@ pub fn resolve_project_with_policy(
             } else {
                 Ok(None)
             }
-        },
-    )?;
+        })?;
 
     let (compile_plan, prepared_workspace) = match &manifest_path {
         Some(manifest) => {
@@ -94,37 +87,28 @@ pub fn resolve_project_with_policy(
                 let graph_options = ProjectGraphBuildOptions {
                     workspace_member_for_meta_default: workspace_member.map(str::to_string),
                 };
-                build_compile_plan_with_policy_and_graph(
-                    manifest,
-                    target,
-                    unresolved_dependency_policy,
-                    graph_options,
-                )
-                .map_err(|err| {
-                    anyhow::Error::new(MietteReportError::new(project_error_diagnostic(
-                        &manifest.display().to_string(),
-                        &manifest_src,
-                        &err,
-                    )))
-                })
+                build_compile_plan_with_policy_and_graph(manifest, target, unresolved_dependency_policy, graph_options)
+                    .map_err(|err| {
+                        anyhow::Error::new(MietteReportError::new(project_error_diagnostic(
+                            &manifest.display().to_string(),
+                            &manifest_src,
+                            &err,
+                        )))
+                    })
             })?;
 
             observe_phase(pipeline, WORKSPACE_GRAPH_CHANGED, || {});
 
             let workspace = observe_phase_result(pipeline, WORKSPACE_MATERIALIZE, || {
                 let manifest_src = fs::read_to_string(&plan.manifest_path).unwrap_or_default();
-                prepare_project_workspace_with_options(
-                    &plan,
-                    WorkspacePrepareOptions { frozen, locked },
-                    pipeline,
-                )
-                .map_err(|err| {
-                    anyhow::Error::new(MietteReportError::new(project_error_diagnostic(
-                        &plan.manifest_path.display().to_string(),
-                        &manifest_src,
-                        &err,
-                    )))
-                })
+                prepare_project_workspace_with_options(&plan, WorkspacePrepareOptions { frozen, locked }, pipeline)
+                    .map_err(|err| {
+                        anyhow::Error::new(MietteReportError::new(project_error_diagnostic(
+                            &plan.manifest_path.display().to_string(),
+                            &manifest_src,
+                            &err,
+                        )))
+                    })
             })?;
 
             (Some(plan), Some(workspace))
@@ -132,11 +116,7 @@ pub fn resolve_project_with_policy(
         None => (None, None),
     };
 
-    Ok(ResolvedProject {
-        compile_plan,
-        prepared_workspace,
-        workspace_summary,
-    })
+    Ok(ResolvedProject { compile_plan, prepared_workspace, workspace_summary })
 }
 
 fn resolve_project_manifest_path(project: &Path) -> PathBuf {

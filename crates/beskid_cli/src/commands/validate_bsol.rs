@@ -26,34 +26,24 @@ pub struct ValidateBsolArgs {
 
 pub fn execute(args: ValidateBsolArgs) -> Result<()> {
     let source = match &args.path {
-        Some(path) => std::fs::read_to_string(path)
-            .with_context(|| format!("failed to read `{}`", path.display()))?,
+        Some(path) => std::fs::read_to_string(path).with_context(|| format!("failed to read `{}`", path.display()))?,
         None => {
             use std::io::Read;
             let mut buf = String::new();
-            std::io::stdin()
-                .read_to_string(&mut buf)
-                .context("failed to read stdin")?;
+            std::io::stdin().read_to_string(&mut buf).context("failed to read stdin")?;
             buf
         }
     };
 
-    let base_dir = args
-        .path
-        .as_ref()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .unwrap_or_else(|| PathBuf::from("."));
+    let base_dir =
+        args.path.as_ref().and_then(|p| p.parent().map(|d| d.to_path_buf())).unwrap_or_else(|| PathBuf::from("."));
 
     let mut session = AnalysisSession::new();
     if let Ok(cache) = std::env::var("BESKID_SCHEMA_CACHE") {
         session.add_schema_source(Box::new(PckgSchemaSource::new(cache)));
     }
-    let options = AnalysisOptions::for_profile(&args.profile)
-        .with_base_dir(base_dir)
-        .with_migrate(args.migrate);
-    session
-        .analyze_source(&source, &options)
-        .map_err(|err| anyhow::Error::msg(err.to_string()))?;
+    let options = AnalysisOptions::for_profile(&args.profile).with_base_dir(base_dir).with_migrate(args.migrate);
+    session.analyze_source(&source, &options).map_err(|err| anyhow::Error::msg(err.to_string()))?;
 
     eprintln!("ok: validated against profile `{}`", args.profile);
     Ok(())

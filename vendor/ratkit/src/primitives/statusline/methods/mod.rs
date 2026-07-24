@@ -4,26 +4,18 @@ use ratatui::style::Style;
 use ratatui::text::Span;
 use ratatui::widgets::Widget;
 
-use crate::primitives::statusline::{
-    OperationalMode, StatusLineStacked, StyledStatusLine, SLANT_BL_TR, SLANT_TL_BR,
-};
+use crate::primitives::statusline::{OperationalMode, StatusLineStacked, StyledStatusLine, SLANT_BL_TR, SLANT_TL_BR};
 
 impl<'a> Widget for StatusLineStacked<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let mut x_end = area.right();
         for (status, gap) in self.right.iter() {
             let width = status.width() as u16;
-            status.render(
-                Rect::new(x_end.saturating_sub(width), area.y, width, 1),
-                buf,
-            );
+            status.render(Rect::new(x_end.saturating_sub(width), area.y, width, 1), buf);
             x_end = x_end.saturating_sub(width);
 
             let width = gap.width() as u16;
-            gap.render(
-                Rect::new(x_end.saturating_sub(width), area.y, width, 1),
-                buf,
-            );
+            gap.render(Rect::new(x_end.saturating_sub(width), area.y, width, 1), buf);
             x_end = x_end.saturating_sub(width);
         }
 
@@ -38,19 +30,11 @@ impl<'a> Widget for StatusLineStacked<'a> {
             x_start += width;
         }
 
-        buf.set_style(
-            Rect::new(x_start, area.y, x_end.saturating_sub(x_start), 1),
-            self.style,
-        );
+        buf.set_style(Rect::new(x_start, area.y, x_end.saturating_sub(x_start), 1), self.style);
 
-        let center_width = x_end
-            .saturating_sub(x_start)
-            .saturating_sub(self.center_margin * 2);
+        let center_width = x_end.saturating_sub(x_start).saturating_sub(self.center_margin * 2);
 
-        self.center.render(
-            Rect::new(x_start + self.center_margin, area.y, center_width, 1),
-            buf,
-        );
+        self.center.render(Rect::new(x_start + self.center_margin, area.y, center_width, 1), buf);
     }
 }
 
@@ -88,29 +72,17 @@ impl<'a> StyledStatusLine<'a> {
                 .center_margin(1)
                 .center(self.center_text)
                 .end(
-                    Span::from(format!(
-                        "R[{}][{}µs] ",
-                        self.render_count, self.render_time_us
-                    ))
-                    .style(Style::new().fg(text_black).bg(color_info)),
+                    Span::from(format!("R[{}][{}µs] ", self.render_count, self.render_time_us))
+                        .style(Style::new().fg(text_black).bg(color_info)),
                     Span::from(SLANT_BL_TR).style(Style::new().fg(color_info).bg(color_dark)),
                 )
+                .end("", Span::from(SLANT_BL_TR).style(Style::new().fg(color_dark).bg(color_info)))
                 .end(
-                    "",
-                    Span::from(SLANT_BL_TR).style(Style::new().fg(color_dark).bg(color_info)),
-                )
-                .end(
-                    Span::from(format!(
-                        "E[{}][{}µs] ",
-                        self.event_count, self.event_time_us
-                    ))
-                    .style(Style::new().fg(text_black).bg(color_info)),
+                    Span::from(format!("E[{}][{}µs] ", self.event_count, self.event_time_us))
+                        .style(Style::new().fg(text_black).bg(color_info)),
                     Span::from(SLANT_BL_TR).style(Style::new().fg(color_info).bg(color_dark)),
                 )
-                .end(
-                    "",
-                    Span::from(SLANT_BL_TR).style(Style::new().fg(color_dark).bg(color_info)),
-                )
+                .end("", Span::from(SLANT_BL_TR).style(Style::new().fg(color_dark).bg(color_info)))
                 .end(
                     Span::from(format!("MSG[{}] ", self.message_count))
                         .style(Style::new().fg(text_black).bg(color_info)),
@@ -119,25 +91,17 @@ impl<'a> StyledStatusLine<'a> {
         } else {
             StatusLineStacked::new()
                 .style(Style::new().fg(Color::White).bg(color_dark))
-                .start_bare(
-                    Span::from(self.title).style(Style::new().fg(Color::White).bg(color_title)),
-                )
+                .start_bare(Span::from(self.title).style(Style::new().fg(Color::White).bg(color_title)))
                 .start_bare(Span::from(mode_str).style(Style::new().fg(text_black).bg(color_mode)))
                 .center_margin(1)
                 .center(self.center_text)
                 .end_bare(
-                    Span::from(format!(
-                        "R[{}][{}µs] ",
-                        self.render_count, self.render_time_us
-                    ))
-                    .style(Style::new().fg(text_black).bg(color_info)),
+                    Span::from(format!("R[{}][{}µs] ", self.render_count, self.render_time_us))
+                        .style(Style::new().fg(text_black).bg(color_info)),
                 )
                 .end_bare(
-                    Span::from(format!(
-                        "E[{}][{}µs] ",
-                        self.event_count, self.event_time_us
-                    ))
-                    .style(Style::new().fg(text_black).bg(color_info)),
+                    Span::from(format!("E[{}][{}µs] ", self.event_count, self.event_time_us))
+                        .style(Style::new().fg(text_black).bg(color_info)),
                 )
                 .end_bare(
                     Span::from(format!(" MSG[{}] ", self.message_count))

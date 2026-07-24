@@ -8,9 +8,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
-use crate::registry::{
-    RegistryConnectConfig, build_pckg_client, pckg_to_anyhow, pick_version, tokio_runtime,
-};
+use crate::registry::{RegistryConnectConfig, build_pckg_client, pckg_to_anyhow, pick_version, tokio_runtime};
 
 const TEMPLATE_MANIFEST_REL: &str = ".beskid/template.json";
 
@@ -64,8 +62,7 @@ struct TemplateManifestJson {
 }
 
 pub fn default_registry_config() -> RegistryConnectConfig {
-    let url =
-        std::env::var("BESKID_PCKG_URL").unwrap_or_else(|_| "https://pckg.beskid-lang.org".into());
+    let url = std::env::var("BESKID_PCKG_URL").unwrap_or_else(|_| "https://pckg.beskid-lang.org".into());
     let mut config = RegistryConnectConfig::new(url);
     if let Ok(token) = std::env::var("BESKID_PCKG_TOKEN")
         && !token.trim().is_empty()
@@ -98,10 +95,7 @@ pub fn list_installed_templates() -> Result<Vec<InstalledTemplateView>> {
         let snapshot: InstallSnapshot = serde_json::from_slice(&fs::read(&snapshot_path)?)?;
         let manifest = load_manifest(&path).ok();
         let short_name = snapshot.short_name.clone();
-        let name = manifest
-            .as_ref()
-            .map(|m| m.name.clone())
-            .unwrap_or_else(|| short_name.clone());
+        let name = manifest.as_ref().map(|m| m.name.clone()).unwrap_or_else(|| short_name.clone());
         rows.push(InstalledTemplateView {
             short_name,
             name,
@@ -114,47 +108,31 @@ pub fn list_installed_templates() -> Result<Vec<InstalledTemplateView>> {
     Ok(rows)
 }
 
-pub fn list_registry_templates(
-    config: &RegistryConnectConfig,
-) -> Result<Vec<RegistryTemplateView>> {
+pub fn list_registry_templates(config: &RegistryConnectConfig) -> Result<Vec<RegistryTemplateView>> {
     let client = build_pckg_client(config)?;
     let runtime = tokio_runtime()?;
-    let packages = runtime
-        .block_on(client.list_packages())
-        .map_err(pckg_to_anyhow)?;
+    let packages = runtime.block_on(client.list_packages()).map_err(pckg_to_anyhow)?;
     let mut rows = Vec::new();
     for pkg in packages {
         if !pkg.name.starts_with("beskid.templates.") {
             continue;
         }
-        rows.push(RegistryTemplateView {
-            package_id: pkg.name,
-            description: pkg.description,
-        });
+        rows.push(RegistryTemplateView { package_id: pkg.name, description: pkg.description });
     }
     rows.sort_by(|a, b| a.package_id.cmp(&b.package_id));
     Ok(rows)
 }
 
-pub fn install_registry_template(
-    config: &RegistryConnectConfig,
-    package_id: &str,
-) -> Result<TemplateInstallResult> {
+pub fn install_registry_template(config: &RegistryConnectConfig, package_id: &str) -> Result<TemplateInstallResult> {
     let client = build_pckg_client(config)?;
     let runtime = tokio_runtime()?;
-    let versions = runtime
-        .block_on(client.list_package_versions(package_id))
-        .map_err(pckg_to_anyhow)?;
+    let versions = runtime.block_on(client.list_package_versions(package_id)).map_err(pckg_to_anyhow)?;
     let chosen = pick_version(&versions, None)?;
-    let bytes = runtime
-        .block_on(client.download_package_version(package_id, &chosen.version))
-        .map_err(pckg_to_anyhow)?;
+    let bytes =
+        runtime.block_on(client.download_package_version(package_id, &chosen.version)).map_err(pckg_to_anyhow)?;
 
-    let extract_dir = std::env::temp_dir().join(format!(
-        "beskid-template-{}-{}",
-        package_id.replace('.', "_"),
-        chosen.version
-    ));
+    let extract_dir =
+        std::env::temp_dir().join(format!("beskid-template-{}-{}", package_id.replace('.', "_"), chosen.version));
     extract_bpk_to_dir(&bytes, &extract_dir)?;
     let manifest = load_manifest(&extract_dir)?;
 
@@ -168,10 +146,7 @@ pub fn install_registry_template(
         yanked: chosen.is_yanked,
     };
     let install_dir = install_from_tree(&extract_dir, &snapshot)?;
-    Ok(TemplateInstallResult {
-        short_name: manifest.short_name.clone(),
-        install_dir,
-    })
+    Ok(TemplateInstallResult { short_name: manifest.short_name.clone(), install_dir })
 }
 
 pub fn resolve_package_id(selector: &str) -> String {
@@ -188,23 +163,13 @@ fn installed_root() -> PathBuf {
     {
         return PathBuf::from(dir).join("templates").join("installed");
     }
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("beskid")
-        .join("templates")
-        .join("installed")
+    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("beskid").join("templates").join("installed")
 }
 
 fn install_dir_for_identity(identity: &str) -> PathBuf {
     let safe: String = identity
         .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
         .collect();
     installed_root().join(safe)
 }
@@ -281,9 +246,6 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
 
 fn chrono_lite_now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     format!("{secs}")
 }

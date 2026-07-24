@@ -22,10 +22,7 @@ pub(crate) struct EmbedQuery {
 /// The badge intentionally returns a neutral SVG for absent and private
 /// packages. This preserves README rendering while making private visibility
 /// indistinguishable from absence.
-pub(crate) async fn badge(
-    State(state): State<AppState>,
-    Query(query): Query<EmbedQuery>,
-) -> Response {
+pub(crate) async fn badge(State(state): State<AppState>, Query(query): Query<EmbedQuery>) -> Response {
     let Some(package) = public_package(&state, query.package.as_deref()).await else {
         return svg_response(not_found_badge());
     };
@@ -48,70 +45,42 @@ pub(crate) async fn card(
     let body = build_card(&origin, &package.name, latest.as_deref());
     let mut response = Response::new(body.into());
     *response.status_mut() = StatusCode::OK;
-    response.headers_mut().insert(
-        header::CONTENT_TYPE,
-        header::HeaderValue::from_static("text/html; charset=utf-8"),
-    );
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        header::HeaderValue::from_static(CACHE_CONTROL),
-    );
-    response.headers_mut().insert(
-        header::CONTENT_SECURITY_POLICY,
-        header::HeaderValue::from_static("frame-ancestors *"),
-    );
+    response.headers_mut().insert(header::CONTENT_TYPE, header::HeaderValue::from_static("text/html; charset=utf-8"));
+    response.headers_mut().insert(header::CACHE_CONTROL, header::HeaderValue::from_static(CACHE_CONTROL));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_SECURITY_POLICY, header::HeaderValue::from_static("frame-ancestors *"));
     response
 }
 
-async fn public_package(
-    state: &AppState,
-    name: Option<&str>,
-) -> Option<beskid_pckg_store::Package> {
+async fn public_package(state: &AppState, name: Option<&str>) -> Option<beskid_pckg_store::Package> {
     let name = name?.trim();
     if name.is_empty() {
         return None;
     }
-    state
-        .packages
-        .find_package(name)
-        .await
-        .ok()?
-        .filter(|package| package.is_public)
+    state.packages.find_package(name).await.ok()?.filter(|package| package.is_public)
 }
 
 async fn latest_version(state: &AppState, package_id: &str) -> Result<Option<String>, ()> {
-    let versions = state
-        .packages
-        .list_versions(package_id)
-        .await
-        .map_err(|_| ())?;
-    let records = versions
-        .iter()
-        .map(|version| ArtifactRecord::new(&version.version, version.is_yanked))
-        .collect::<Vec<_>>();
+    let versions = state.packages.list_versions(package_id).await.map_err(|_| ())?;
+    let records =
+        versions.iter().map(|version| ArtifactRecord::new(&version.version, version.is_yanked)).collect::<Vec<_>>();
     Ok(select_download(&records, "latest").map(|record| record.version.clone()))
 }
 
 fn svg_response(body: String) -> Response {
     let mut response = Response::new(body.into());
-    response.headers_mut().insert(
-        header::CONTENT_TYPE,
-        header::HeaderValue::from_static("image/svg+xml; charset=utf-8"),
-    );
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        header::HeaderValue::from_static(CACHE_CONTROL),
-    );
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, header::HeaderValue::from_static("image/svg+xml; charset=utf-8"));
+    response.headers_mut().insert(header::CACHE_CONTROL, header::HeaderValue::from_static(CACHE_CONTROL));
     response
 }
 
 fn html_not_found() -> Response {
     let mut response = Response::new(HTML_NOT_FOUND.into());
     *response.status_mut() = StatusCode::NOT_FOUND;
-    response.headers_mut().insert(
-        header::CONTENT_TYPE,
-        header::HeaderValue::from_static("text/html; charset=utf-8"),
-    );
+    response.headers_mut().insert(header::CONTENT_TYPE, header::HeaderValue::from_static("text/html; charset=utf-8"));
     response
 }
 
@@ -136,10 +105,7 @@ fn is_safe_host_byte(byte: u8) -> bool {
 }
 
 fn badge_url(origin: &str, name: &str) -> String {
-    format!(
-        "{origin}/api/embed/badge.svg?package={}",
-        percent_encode(name)
-    )
+    format!("{origin}/api/embed/badge.svg?package={}", percent_encode(name))
 }
 
 fn package_url(origin: &str, name: &str) -> String {
@@ -160,12 +126,7 @@ fn percent_encode(value: &str) -> String {
 }
 
 fn escape_html(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
+    value.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#39;")
 }
 
 fn build_card(origin: &str, name: &str, latest: Option<&str>) -> String {
@@ -199,8 +160,7 @@ fn build_badge_parts(right_text: &str, right_fill: &str) -> String {
     const PADDING: f64 = 10.0;
     const CHAR_WIDTH: f64 = 6.2;
     let left_width = (LEFT.chars().count() as f64 * CHAR_WIDTH + PADDING * 2.0).ceil() as usize;
-    let right_width =
-        (right_text.chars().count() as f64 * CHAR_WIDTH + PADDING * 2.0).ceil() as usize;
+    let right_width = (right_text.chars().count() as f64 * CHAR_WIDTH + PADDING * 2.0).ceil() as usize;
     let total_width = left_width + right_width;
     let text = escape_html(right_text);
     format!(

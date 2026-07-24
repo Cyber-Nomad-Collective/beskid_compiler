@@ -13,8 +13,7 @@ pub mod registry;
 pub mod scope;
 
 pub use container::{
-    ContainerError, DisposeHook, InitHook, InstanceFactory, InstancePtr, RegistrationRecord,
-    RuntimeContainer,
+    ContainerError, DisposeHook, InitHook, InstanceFactory, InstancePtr, RegistrationRecord, RuntimeContainer,
 };
 pub use registry::{Lifetime, RegistrationId, ScopeId};
 pub use scope::{ActiveScope, ScopeStack};

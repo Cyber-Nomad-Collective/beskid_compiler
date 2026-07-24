@@ -12,13 +12,6 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirLiteralExpression {
         node: &Spanned<Self>,
         ctx: &mut NodeLoweringContext<'_, '_>,
     ) -> Result<Self::Output, crate::errors::CodegenError> {
-        lower_literal(
-            &node.node.literal,
-            node.id,
-            ctx.type_result,
-            ctx.codegen,
-            ctx.builder,
-        )
-        .map(Some)
+        lower_literal(&node.node.literal, node.id, ctx.type_result, ctx.codegen, ctx.builder).map(Some)
     }
 }

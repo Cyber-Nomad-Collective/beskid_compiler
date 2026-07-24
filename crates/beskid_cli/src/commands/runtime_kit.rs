@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use beskid_tools::toolchain::runtime_kit::{
-    RuntimeKitBuildOptions, RuntimeKitMatrixBuildOptions, RuntimeKitProfile,
-    RuntimeKitProfileArtifacts, build, build_matrix, build_native_host,
+    RuntimeKitBuildOptions, RuntimeKitMatrixBuildOptions, RuntimeKitProfile, RuntimeKitProfileArtifacts, build,
+    build_matrix, build_native_host,
 };
 use clap::{Args, Subcommand, ValueEnum};
 
@@ -145,10 +145,7 @@ pub fn execute(args: RuntimeKitArgs) -> Result<()> {
         }
         RuntimeKitCommand::BuildNativeHost(args) => {
             let built = build_native_host(args.prefix, args.profile.into())?;
-            println!(
-                "Built native-host ABI-v5 runtime kit at {}",
-                built.root.display()
-            );
+            println!("Built native-host ABI-v5 runtime kit at {}", built.root.display());
         }
         RuntimeKitCommand::BuildMatrix(args) => {
             let built = build_matrix(RuntimeKitMatrixBuildOptions {

@@ -17,11 +17,7 @@ pub struct MacroMetavariable {
 impl Parsable for MacroMetavariable {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
-        let name = Identifier::parse(
-            pair.into_inner()
-                .next()
-                .ok_or(ParseError::missing(Rule::Identifier))?,
-        )?;
+        let name = Identifier::parse(pair.into_inner().next().ok_or(ParseError::missing(Rule::Identifier))?)?;
         Ok(Spanned::new(Self { name }, span))
     }
 }

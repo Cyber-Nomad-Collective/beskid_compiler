@@ -1,13 +1,12 @@
 use std::fs;
 
 use crate::test_harness::{
-    assert_same_canonical_path, temp_case_dir, write_project_manifest as write_manifest,
-    write_workspace_manifest,
+    assert_same_canonical_path, temp_case_dir, write_project_manifest as write_manifest, write_workspace_manifest,
 };
 use beskid_analysis::projects::{
     DependencySource, PROJECT_LOCK_FILE_NAME, ProjectError, TargetKind, UnresolvedDependencyPolicy,
-    WorkspacePrepareOptions, build_compile_plan, build_compile_plan_with_policy,
-    is_project_manifest_path, prepare_project_workspace, prepare_project_workspace_with_options,
+    WorkspacePrepareOptions, build_compile_plan, build_compile_plan_with_policy, is_project_manifest_path,
+    prepare_project_workspace, prepare_project_workspace_with_options,
 };
 
 use super::test_cwd::with_cwd_at_workspace_root;
@@ -88,9 +87,8 @@ registry "default" {
     );
 
     with_cwd_at_workspace_root(&dir, || {
-        let plan =
-            build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
-                .expect("warn policy should collect unresolved deps");
+        let plan = build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
+            .expect("warn policy should collect unresolved deps");
         assert_eq!(plan.unresolved_dependencies.len(), 1);
         assert_eq!(plan.unresolved_dependencies[0].dependency_name, "PkgCore");
         assert_eq!(plan.unresolved_dependencies[0].descriptor, "default@2.0.0");
@@ -192,9 +190,8 @@ target "App" {
 "#;
     let manifest_path = write_manifest(&dir, source);
 
-    let error = with_cwd_at_workspace_root(&dir, || {
-        build_compile_plan(&manifest_path, Some("Tests")).expect_err("must fail")
-    });
+    let error =
+        with_cwd_at_workspace_root(&dir, || build_compile_plan(&manifest_path, Some("Tests")).expect_err("must fail"));
     assert!(matches!(error, ProjectError::TargetNotFound(_)));
 
     let _ = fs::remove_dir_all(dir);
@@ -262,16 +259,8 @@ dependency "Core" {
     with_cwd_at_workspace_root(&root, || {
         let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
         assert!(plan.dependency_projects.len() >= 2);
-        assert!(
-            plan.dependency_projects
-                .iter()
-                .any(|dependency| dependency.dependency_name == "Util")
-        );
-        assert!(
-            plan.dependency_projects
-                .iter()
-                .any(|dependency| dependency.dependency_name == "Core")
-        );
+        assert!(plan.dependency_projects.iter().any(|dependency| dependency.dependency_name == "Util"));
+        assert!(plan.dependency_projects.iter().any(|dependency| dependency.dependency_name == "Core"));
     });
 
     let _ = fs::remove_dir_all(root);
@@ -376,10 +365,7 @@ dependency "Util" {
 
         let locked_result = prepare_project_workspace_with_options(
             &plan,
-            WorkspacePrepareOptions {
-                frozen: false,
-                locked: true,
-            },
+            WorkspacePrepareOptions { frozen: false, locked: true },
             None,
         );
         assert!(locked_result.is_ok());
@@ -443,17 +429,8 @@ dependency "Core" {
         assert!(lockfile_path.is_file());
         assert_same_canonical_path(&workspace.lockfile_path, &lockfile_path);
         assert!(!workspace.materialized_dependencies.is_empty());
-        assert!(
-            workspace
-                .materialized_dependencies
-                .iter()
-                .any(|dependency| dependency.dependency_name == "Core")
-        );
-        assert!(
-            workspace.materialized_dependencies[0]
-                .materialized_source_root
-                .is_dir()
-        );
+        assert!(workspace.materialized_dependencies.iter().any(|dependency| dependency.dependency_name == "Core"));
+        assert!(workspace.materialized_dependencies[0].materialized_source_root.is_dir());
         let lock_content = fs::read_to_string(&lockfile_path).expect("read lockfile");
         assert!(lock_content.contains("# Project.lock v1"));
         assert!(lock_content.contains("project_name=App"));
@@ -489,23 +466,9 @@ fn prepare_project_workspace_skips_obj_when_materializing_path_dependencies() {
     fs::create_dir_all(&app_dir).expect("create app dir");
     fs::create_dir_all(&core_dir).expect("create core dir");
     fs::create_dir_all(core_dir.join("obj").join("beskid").join("stale")).expect("stale obj");
-    fs::write(
-        core_dir
-            .join("obj")
-            .join("beskid")
-            .join("stale")
-            .join("junk.txt"),
-        "x",
-    )
-    .expect("stale obj file");
-    fs::create_dir_all(
-        core_dir
-            .join("tests")
-            .join("nested")
-            .join("obj")
-            .join("beskid"),
-    )
-    .expect("stale nested tests obj");
+    fs::write(core_dir.join("obj").join("beskid").join("stale").join("junk.txt"), "x").expect("stale obj file");
+    fs::create_dir_all(core_dir.join("tests").join("nested").join("obj").join("beskid"))
+        .expect("stale nested tests obj");
 
     write_manifest(
         &core_dir,
@@ -550,8 +513,7 @@ dependency "Core" {
     fs::create_dir_all(&deps_src_root).expect("create deps src root");
     let stale_materialized_core = deps_src_root.join("Core-stale");
     fs::create_dir_all(stale_materialized_core.join("obj")).expect("stale materialized obj");
-    fs::create_dir_all(stale_materialized_core.join("tests").join("nested"))
-        .expect("stale materialized tests");
+    fs::create_dir_all(stale_materialized_core.join("tests").join("nested")).expect("stale materialized tests");
 
     with_cwd_at_workspace_root(&root, || {
         let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
@@ -559,10 +521,7 @@ dependency "Core" {
 
         for entry in fs::read_dir(&deps_src_root).expect("read deps src dir") {
             let dependency_root = entry.expect("valid deps entry").path();
-            if dependency_root
-                .file_name()
-                .is_some_and(|name| name == "Core-stale")
-            {
+            if dependency_root.file_name().is_some_and(|name| name == "Core-stale") {
                 continue;
             }
             assert!(
@@ -607,13 +566,9 @@ dependency "Core" {
 "#;
     let app_manifest_path = write_manifest(&app_dir, app_manifest);
 
-    let error = with_cwd_at_workspace_root(&root, || {
-        build_compile_plan(&app_manifest_path, None).expect_err("must fail")
-    });
-    assert!(matches!(
-        error,
-        ProjectError::DependencyManifestNotFound { .. }
-    ));
+    let error =
+        with_cwd_at_workspace_root(&root, || build_compile_plan(&app_manifest_path, None).expect_err("must fail"));
+    assert!(matches!(error, ProjectError::DependencyManifestNotFound { .. }));
 
     let _ = fs::remove_dir_all(root);
 }
@@ -662,9 +617,8 @@ dependency "App" {
 "#;
     write_manifest(&core_dir, core_manifest);
 
-    let error = with_cwd_at_workspace_root(&root, || {
-        build_compile_plan(&app_manifest_path, None).expect_err("must fail")
-    });
+    let error =
+        with_cwd_at_workspace_root(&root, || build_compile_plan(&app_manifest_path, None).expect_err("must fail"));
     assert!(matches!(error, ProjectError::DependencyCycle(_)));
 
     let _ = fs::remove_dir_all(root);
@@ -761,11 +715,7 @@ target "App" {
         unsafe { std::env::set_var("BESKID_CORELIB_ROOT", &std_dir) };
         let plan = build_compile_plan(&app_manifest_path, None).expect("plan should build");
         assert!(plan.has_std_dependency);
-        assert!(
-            plan.dependency_projects
-                .iter()
-                .any(|dependency| dependency.dependency_name == "Std")
-        );
+        assert!(plan.dependency_projects.iter().any(|dependency| dependency.dependency_name == "Std"));
         unsafe { std::env::remove_var("BESKID_CORELIB_ROOT") };
     });
     let _ = fs::remove_dir_all(root);
@@ -794,15 +744,11 @@ dependency "RemoteStd" {
     let manifest_path = write_manifest(&dir, source);
 
     with_cwd_at_workspace_root(&dir, || {
-        let plan =
-            build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
-                .expect("warn policy should collect unresolved deps");
+        let plan = build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Warn)
+            .expect("warn policy should collect unresolved deps");
         assert_eq!(plan.unresolved_dependencies.len(), 1);
         assert_eq!(plan.unresolved_dependencies[0].dependency_name, "RemoteStd");
-        assert_eq!(
-            plan.unresolved_dependencies[0].descriptor,
-            "git@example.com/std.git@abc123"
-        );
+        assert_eq!(plan.unresolved_dependencies[0].descriptor, "git@example.com/std.git@abc123");
     });
 
     let _ = fs::remove_dir_all(dir);
@@ -834,10 +780,7 @@ dependency "PkgCore" {
         build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Error)
             .expect_err("strict mode must fail")
     });
-    assert!(matches!(
-        error,
-        ProjectError::UnresolvedExternalDependencies(_)
-    ));
+    assert!(matches!(error, ProjectError::UnresolvedExternalDependencies(_)));
     let message = error.to_string();
     assert!(message.contains("PkgCore"));
     assert!(message.contains("Git"));
@@ -868,15 +811,11 @@ dependency "PkgCore" {
     let manifest_path = write_manifest(&dir, source);
 
     with_cwd_at_workspace_root(&dir, || {
-        let plan =
-            build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Error)
-                .expect("registry dependencies should be kept for workspace materialization");
+        let plan = build_compile_plan_with_policy(&manifest_path, None, UnresolvedDependencyPolicy::Error)
+            .expect("registry dependencies should be kept for workspace materialization");
         assert_eq!(plan.unresolved_dependencies.len(), 1);
         assert_eq!(plan.unresolved_dependencies[0].dependency_name, "PkgCore");
-        assert_eq!(
-            plan.unresolved_dependencies[0].source,
-            DependencySource::Registry
-        );
+        assert_eq!(plan.unresolved_dependencies[0].source, DependencySource::Registry);
     });
 
     let _ = fs::remove_dir_all(dir);
@@ -926,9 +865,8 @@ dependency "App" {
 "#;
     write_manifest(&core_dir, core_manifest);
 
-    let error = with_cwd_at_workspace_root(&root, || {
-        build_compile_plan(&app_manifest_path, None).expect_err("must fail")
-    });
+    let error =
+        with_cwd_at_workspace_root(&root, || build_compile_plan(&app_manifest_path, None).expect_err("must fail"));
     let message = error.to_string();
     assert!(message.contains(" -> "));
 

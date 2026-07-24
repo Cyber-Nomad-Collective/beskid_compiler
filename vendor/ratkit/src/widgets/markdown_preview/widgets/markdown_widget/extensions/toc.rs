@@ -118,11 +118,7 @@ impl<'a> Toc<'a> {
     /// let toc = Toc::new(&toc_state);
     /// ```
     pub fn new(toc_state: &'a TocState) -> Self {
-        Self {
-            toc_state,
-            config: TocConfig::default(),
-            expanded: false,
-        }
+        Self { toc_state, config: TocConfig::default(), expanded: false }
     }
 
     /// Set whether the TOC is expanded.
@@ -182,12 +178,7 @@ impl<'a> Toc<'a> {
     /// # Returns
     ///
     /// Self for method chaining.
-    pub fn viewport(
-        self,
-        _scroll_offset: usize,
-        _viewport_height: usize,
-        _total_lines: usize,
-    ) -> Self {
+    pub fn viewport(self, _scroll_offset: usize, _viewport_height: usize, _total_lines: usize) -> Self {
         // These are now managed by TocState, this is a no-op for compatibility
         self
     }
@@ -237,10 +228,7 @@ impl TocConfig {
     /// let theme = AppTheme::default();
     /// let config = TocConfig::default().with_theme(&theme);
     /// ```
-    pub fn with_theme(
-        mut self,
-        theme: &crate::widgets::markdown_preview::services::theme::AppTheme,
-    ) -> Self {
+    pub fn with_theme(mut self, theme: &crate::widgets::markdown_preview::services::theme::AppTheme) -> Self {
         self.text_style = Style::default().fg(theme.text_muted);
         self.active_style = Style::default().fg(theme.primary);
         self.hover_style = Style::default().fg(theme.text).bg(theme.background_element);
@@ -455,13 +443,7 @@ impl<'a> Toc<'a> {
         if self.expanded {
             // Calculate content area based on actual entries rather than passed area height
             let content_area = get_expanded_content_area(area, &self.config, entries.len());
-            find_entry_at_position_expanded(
-                x,
-                y,
-                content_area,
-                entries,
-                self.toc_state.scroll_offset,
-            )
+            find_entry_at_position_expanded(x, y, content_area, entries, self.toc_state.scroll_offset)
         } else {
             find_entry_at_position_compact(y, area, &self.config, entries)
         }
@@ -485,12 +467,7 @@ impl<'a> Toc<'a> {
 /// # Returns
 ///
 /// The entry index at that position, or None if no entry is there.
-pub fn find_entry_at_position_compact(
-    y: u16,
-    area: Rect,
-    config: &TocConfig,
-    entries: &[TocEntry],
-) -> Option<usize> {
+pub fn find_entry_at_position_compact(y: u16, area: Rect, config: &TocConfig, entries: &[TocEntry]) -> Option<usize> {
     // Account for border in compact mode too
     let content_area = get_content_area(area, config);
 
@@ -643,9 +620,7 @@ impl<'a> Toc<'a> {
         let border_style = self.config.border_style.bg(bg);
         let title_style = self.config.title_style.bg(bg);
 
-        let pane = Pane::new("TOC")
-            .border_style(border_style)
-            .title_style(title_style);
+        let pane = Pane::new("TOC").border_style(border_style).title_style(title_style);
 
         let (content_area, _) = pane.render_block_in_buffer(area, buf);
         content_area
@@ -669,11 +644,7 @@ impl<'a> Toc<'a> {
         fill_background(buf, area, self.panel_background_style());
 
         // Draw border on top of background
-        let content_area = if self.config.show_border {
-            self.render_border(area, buf)
-        } else {
-            area
-        };
+        let content_area = if self.config.show_border { self.render_border(area, buf) } else { area };
 
         if content_area.width == 0 || content_area.height == 0 {
             return;
@@ -728,53 +699,46 @@ fn render_compact_lines(
     let canvas_height = (content_area.height as f64) * 4.0;
 
     // Two-pass rendering: non-active lines first, then active line
-    let canvas = Canvas::default()
-        .marker(Marker::Braille)
-        .x_bounds([0.0, canvas_width])
-        .y_bounds([0.0, canvas_height])
-        .paint(move |ctx| {
-            // Pass 1: Draw all non-active lines
-            for (idx, entry) in entries.iter().enumerate() {
-                if Some(idx) == active_index {
-                    continue;
+    let canvas =
+        Canvas::default().marker(Marker::Braille).x_bounds([0.0, canvas_width]).y_bounds([0.0, canvas_height]).paint(
+            move |ctx| {
+                // Pass 1: Draw all non-active lines
+                for (idx, entry) in entries.iter().enumerate() {
+                    if Some(idx) == active_index {
+                        continue;
+                    }
+
+                    let pixel_y = canvas_height - (idx as f64 * spacing);
+                    if pixel_y <= 0.0 {
+                        break;
+                    }
+
+                    let line_width = calculate_line_width(canvas_width, entry.level);
+                    let x_start = canvas_width - line_width;
+
+                    ctx.draw(&Line { x1: x_start, y1: pixel_y, x2: canvas_width, y2: pixel_y, color: normal_color });
                 }
 
-                let pixel_y = canvas_height - (idx as f64 * spacing);
-                if pixel_y <= 0.0 {
-                    break;
-                }
+                // Pass 2: Draw active line last so it wins shared cells
+                if let Some(active_idx) = active_index {
+                    if let Some(entry) = entries.get(active_idx) {
+                        let pixel_y = canvas_height - (active_idx as f64 * spacing);
+                        if pixel_y > 0.0 {
+                            let line_width = calculate_line_width(canvas_width, entry.level);
+                            let x_start = canvas_width - line_width;
 
-                let line_width = calculate_line_width(canvas_width, entry.level);
-                let x_start = canvas_width - line_width;
-
-                ctx.draw(&Line {
-                    x1: x_start,
-                    y1: pixel_y,
-                    x2: canvas_width,
-                    y2: pixel_y,
-                    color: normal_color,
-                });
-            }
-
-            // Pass 2: Draw active line last so it wins shared cells
-            if let Some(active_idx) = active_index {
-                if let Some(entry) = entries.get(active_idx) {
-                    let pixel_y = canvas_height - (active_idx as f64 * spacing);
-                    if pixel_y > 0.0 {
-                        let line_width = calculate_line_width(canvas_width, entry.level);
-                        let x_start = canvas_width - line_width;
-
-                        ctx.draw(&Line {
-                            x1: x_start,
-                            y1: pixel_y,
-                            x2: canvas_width,
-                            y2: pixel_y,
-                            color: active_color,
-                        });
+                            ctx.draw(&Line {
+                                x1: x_start,
+                                y1: pixel_y,
+                                x2: canvas_width,
+                                y2: pixel_y,
+                                color: active_color,
+                            });
+                        }
                     }
                 }
-            }
-        });
+            },
+        );
 
     canvas.render(content_area, buf);
 }
@@ -847,8 +811,7 @@ impl<'a> Toc<'a> {
                 (self.config.text_style, false)
             };
 
-            let is_active_or_hovered =
-                Some(entry_idx) == hovered_index || Some(entry_idx) == active_index;
+            let is_active_or_hovered = Some(entry_idx) == hovered_index || Some(entry_idx) == active_index;
             let accent_style = if is_active_or_hovered {
                 self.config.active_accent_style
             } else if self.config.style == TocStyle::Clerk {
@@ -912,19 +875,10 @@ impl<'a> Toc<'a> {
     ) {
         let line_x = area.x + line_offset;
         let border_x = area.x + line_offset;
-        let next_entry_depth = if entry_idx + 1 < total_entries {
-            Some(self.toc_state.entries[entry_idx + 1].level)
-        } else {
-            None
-        };
-        let prev_entry_idx = if entry_idx > start_idx {
-            Some(entry_idx - 1)
-        } else {
-            None
-        };
-        let prev_entry_depth = prev_entry_idx
-            .map(|idx| self.toc_state.entries[idx].level)
-            .unwrap_or(depth);
+        let next_entry_depth =
+            if entry_idx + 1 < total_entries { Some(self.toc_state.entries[entry_idx + 1].level) } else { None };
+        let prev_entry_idx = if entry_idx > start_idx { Some(entry_idx - 1) } else { None };
+        let prev_entry_depth = prev_entry_idx.map(|idx| self.toc_state.entries[idx].level).unwrap_or(depth);
 
         let upper_offset = get_line_offset(prev_entry_depth);
         let lower_offset = next_entry_depth.map(get_line_offset).unwrap_or(line_offset);
@@ -1129,9 +1083,7 @@ impl Default for TocConfig {
             text_style: Style::default().fg(Color::Rgb(160, 160, 160)),
             active_style: Style::default().fg(Color::Rgb(97, 175, 239)), // Blue
             hover_style: Style::default().fg(Color::White).bg(Color::Rgb(60, 60, 70)),
-            accent_style: Style::default()
-                .fg(Color::Rgb(160, 160, 160))
-                .add_modifier(ratatui::style::Modifier::DIM),
+            accent_style: Style::default().fg(Color::Rgb(160, 160, 160)).add_modifier(ratatui::style::Modifier::DIM),
             active_accent_style: Style::default().fg(Color::Rgb(97, 175, 239)),
             background_style: Style::default().bg(Color::Rgb(30, 32, 38)),
             line_style: Style::default().fg(Color::Rgb(120, 120, 130)),
@@ -1163,11 +1115,7 @@ impl<'a> Widget for Toc<'a> {
                 }
             }
 
-            let content_area = if self.config.show_border {
-                self.render_border(area, buf)
-            } else {
-                area
-            };
+            let content_area = if self.config.show_border { self.render_border(area, buf) } else { area };
             self.render_expanded(content_area, buf);
         } else {
             // Compact mode (not hovered): show horizontal lines
@@ -1194,9 +1142,7 @@ mod tests {
     #[test]
     fn compact_toc_renders_toc_title_in_border() {
         let toc_state = TocState::from_content("# Heading");
-        let toc = Toc::new(&toc_state)
-            .expanded(false)
-            .config(TocConfig::default());
+        let toc = Toc::new(&toc_state).expanded(false).config(TocConfig::default());
 
         let area = Rect::new(0, 0, 20, 6);
         let mut buf = Buffer::empty(area);
@@ -1204,9 +1150,6 @@ mod tests {
         toc.render(area, &mut buf);
 
         let top_row = row_text(&buf, area, area.y);
-        assert!(
-            top_row.contains("TOC"),
-            "expected TOC title in top border, got: {top_row:?}"
-        );
+        assert!(top_row.contains("TOC"), "expected TOC title in top border, got: {top_row:?}");
     }
 }

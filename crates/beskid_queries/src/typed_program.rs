@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use beskid_abi::runtime_source::{
-    CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability,
-    canonical_corelib_service_source_path, canonical_corelib_service_sources,
+    CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability, canonical_corelib_service_source_path,
+    canonical_corelib_service_sources,
 };
 use beskid_analysis::projects::SyntaxProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
@@ -77,31 +77,19 @@ pub fn build_typed_program(
         .units()
         .iter()
         .filter_map(|unit| {
-            beskid_analysis::projects::infer_logical_module_path(
-                unit,
-                assembly.roots(),
-                assembly.has_std_dependency(),
-            )
-            .map(|module_path| (module_path, SourceUnitId::new(db, unit.path.clone())))
+            beskid_analysis::projects::infer_logical_module_path(unit, assembly.roots(), assembly.has_std_dependency())
+                .map(|module_path| (module_path, SourceUnitId::new(db, unit.path.clone())))
         })
-        .fold(
-            std::collections::HashMap::<Vec<String>, Vec<SourceUnitId>>::new(),
-            |mut modules, (path, unit)| {
-                let units = modules.entry(path).or_default();
-                if !units.contains(&unit) {
-                    units.push(unit);
-                }
-                modules
-            },
-        );
-    let mut registry = db
-        .syntax_dependency_registry()
-        .lock()
-        .expect("syntax dependency registry");
+        .fold(std::collections::HashMap::<Vec<String>, Vec<SourceUnitId>>::new(), |mut modules, (path, unit)| {
+            let units = modules.entry(path).or_default();
+            if !units.contains(&unit) {
+                units.push(unit);
+            }
+            modules
+        });
+    let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     for (path, units) in &module_units {
-        registry
-            .modules
-            .insert((generation, path.clone()), units.clone());
+        registry.modules.insert((generation, path.clone()), units.clone());
     }
     for unit in assembly.units() {
         let unit_id = SourceUnitId::new(db, unit.path.clone());
@@ -130,8 +118,7 @@ pub fn build_typed_program(
                         path,
                         binding,
                         declaration.node.alias.is_some(),
-                        declaration.node.visibility.node
-                            == beskid_analysis::syntax::Visibility::Public,
+                        declaration.node.visibility.node == beskid_analysis::syntax::Visibility::Public,
                     ))
                 }
                 // An out-of-line `pub mod A.B;` is an assembled syntax dependency and a
@@ -151,8 +138,7 @@ pub fn build_typed_program(
                         path,
                         binding,
                         false,
-                        declaration.node.visibility.node
-                            == beskid_analysis::syntax::Visibility::Public,
+                        declaration.node.visibility.node == beskid_analysis::syntax::Visibility::Public,
                     ))
                 }
                 _ => None,
@@ -164,13 +150,7 @@ pub fn build_typed_program(
                         [target] => Some(*target),
                         _ => None,
                     })
-                    .map(|target| crate::db::SyntaxImport {
-                        path,
-                        binding,
-                        has_explicit_alias,
-                        target,
-                        public,
-                    })
+                    .map(|target| crate::db::SyntaxImport { path, binding, has_explicit_alias, target, public })
             })
             .collect();
         registry.imports.insert((unit_id, generation), imports);
@@ -206,13 +186,10 @@ pub fn build_canonical_corelib_syscall_typed_program(
         .collect::<Vec<_>>();
     let exact_corpus = actual.len() == expected.len()
         && actual.iter().all(|source| {
-            capability.authorizes_source(&source.logical_path)
-                && expected.iter().any(|expected| expected == source)
+            capability.authorizes_source(&source.logical_path) && expected.iter().any(|expected| expected == source)
         });
     if !exact_corpus {
-        return Err(SemanticError::new(
-            "syntax assembly is not the compiler-embedded Corelib syscall corpus",
-        ));
+        return Err(SemanticError::new("syntax assembly is not the compiler-embedded Corelib syscall corpus"));
     }
 
     let mut typed = build_typed_program(db, project, generation, assembly)?;
@@ -342,13 +319,10 @@ pub fn build_canonical_runtime_typed_program(
         .collect::<Vec<_>>();
     let exact_corpus = actual.len() == expected.len()
         && actual.iter().all(|source| {
-            capability.authorizes_source(&source.logical_path)
-                && expected.iter().any(|expected| expected == source)
+            capability.authorizes_source(&source.logical_path) && expected.iter().any(|expected| expected == source)
         });
     if !exact_corpus {
-        return Err(SemanticError::new(
-            "syntax assembly is not the compiler-embedded canonical runtime corpus",
-        ));
+        return Err(SemanticError::new("syntax assembly is not the compiler-embedded canonical runtime corpus"));
     }
 
     let mut typed = build_typed_program(db, project, generation, assembly)?;

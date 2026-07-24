@@ -26,12 +26,7 @@ impl<'a, T> Widget for &TreeView<'a, T> {
         let visible_height = area.height as usize;
 
         // Render visible items
-        for (i, (line, _)) in items
-            .iter()
-            .skip(state.offset)
-            .take(visible_height)
-            .enumerate()
-        {
+        for (i, (line, _)) in items.iter().skip(state.offset).take(visible_height).enumerate() {
             let y = area.y + i as u16;
             buf.set_line(area.x, y, line, area.width);
         }

@@ -33,14 +33,7 @@ fn format_golden_use_and_function() {
     let src = "use a.b;\npub i32 Main() { return 42; }\n";
     let p = parse_program(src).expect("parse");
     let out = format_program(&p).expect("format");
-    let expected = concat!(
-        "use A.B;\n",
-        "\n",
-        "pub i32 Main()\n",
-        "{\n",
-        "    return 42;\n",
-        "}\n",
-    );
+    let expected = concat!("use A.B;\n", "\n", "pub i32 Main()\n", "{\n", "    return 42;\n", "}\n",);
     assert_eq!(out, expected);
 }
 
@@ -78,14 +71,8 @@ fn format_if_condition_grouped_idempotent() {
     let once = format_program(&p).expect("format");
     let p2 = parse_program(&once).expect("re-parse");
     let twice = format_program(&p2).expect("re-format");
-    assert_eq!(
-        once, twice,
-        "grouped if condition must not accumulate extra parens"
-    );
-    assert!(
-        once.contains("if (") && once.contains("cond"),
-        "expected if header with condition, got:\n{once}"
-    );
+    assert_eq!(once, twice, "grouped if condition must not accumulate extra parens");
+    assert!(once.contains("if (") && once.contains("cond"), "expected if header with condition, got:\n{once}");
 }
 
 #[test]
@@ -111,10 +98,7 @@ fn format_binary_ops_emit_canonical_operators() {
         let src = format!("pub unit t() {{ let _ = {expr_src}; return; }}");
         let p = parse_program(&src).unwrap_or_else(|e| panic!("parse {op}: {e}"));
         let out = format_program(&p).unwrap_or_else(|e| panic!("format {op}: {e:?}"));
-        assert!(
-            out.contains(op),
-            "formatted output should contain operator `{op}`; got:\n{out}"
-        );
+        assert!(out.contains(op), "formatted output should contain operator `{op}`; got:\n{out}");
     }
 }
 
@@ -173,10 +157,7 @@ fn format_nullary_enum_constructor_without_parentheses() {
         out.contains("let x = E::None;"),
         "expected nullary enum constructor to format without parens, got:\n{out}"
     );
-    assert!(
-        !out.contains("E::None()"),
-        "expected formatter to drop redundant empty-call syntax, got:\n{out}"
-    );
+    assert!(!out.contains("E::None()"), "expected formatter to drop redundant empty-call syntax, got:\n{out}");
 }
 
 #[test]
@@ -188,53 +169,32 @@ fn fixture_corpus_is_stable_and_parse_preserving() {
     for path in &paths {
         let input = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
         let expected_path = path.with_file_name(
-            path.file_name()
-                .and_then(|n| n.to_str())
-                .expect("fixture name")
-                .replace(".input.bd", ".expected.bd"),
+            path.file_name().and_then(|n| n.to_str()).expect("fixture name").replace(".input.bd", ".expected.bd"),
         );
-        let expected = fs::read_to_string(&expected_path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", expected_path.display()));
+        let expected =
+            fs::read_to_string(&expected_path).unwrap_or_else(|e| panic!("read {}: {e}", expected_path.display()));
 
-        let original = parse_program(&input)
-            .unwrap_or_else(|e| panic!("fixture input parses {:?}: {e}", path));
-        let formatted = format_program(&original)
-            .unwrap_or_else(|e| panic!("fixture formats {:?}: {e:?}", path));
+        let original = parse_program(&input).unwrap_or_else(|e| panic!("fixture input parses {:?}: {e}", path));
+        let formatted = format_program(&original).unwrap_or_else(|e| panic!("fixture formats {:?}: {e:?}", path));
         if formatted != expected {
-            panic!(
-                "fixture golden mismatch for {:?}\n{}",
-                path,
-                first_mismatch_lines(&formatted, &expected)
-            );
+            panic!("fixture golden mismatch for {:?}\n{}", path, first_mismatch_lines(&formatted, &expected));
         }
 
-        let reparsed = parse_program(&formatted)
-            .unwrap_or_else(|e| panic!("formatted fixture reparses {:?}: {e}", path));
-        let reformatted = format_program(&reparsed)
-            .unwrap_or_else(|e| panic!("reformat formatted fixture {:?}: {e:?}", path));
+        let reparsed =
+            parse_program(&formatted).unwrap_or_else(|e| panic!("formatted fixture reparses {:?}: {e}", path));
+        let reformatted =
+            format_program(&reparsed).unwrap_or_else(|e| panic!("reformat formatted fixture {:?}: {e:?}", path));
         if reformatted != formatted {
-            panic!(
-                "fixture not idempotent for {:?}\n{}",
-                path,
-                first_mismatch_lines(&reformatted, &formatted)
-            );
+            panic!("fixture not idempotent for {:?}\n{}", path, first_mismatch_lines(&reformatted, &formatted));
         }
 
         let lhs_kinds = top_level_kinds_relaxed(&original.node.items);
         let rhs_kinds = top_level_kinds_relaxed(&reparsed.node.items);
-        assert_eq!(
-            lhs_kinds, rhs_kinds,
-            "top-level node sequence changed for {:?}",
-            path
-        );
+        assert_eq!(lhs_kinds, rhs_kinds, "top-level node sequence changed for {:?}", path);
 
         let c0 = program_statement_count(&original.node);
         let c1 = program_statement_count(&reparsed.node);
-        assert_eq!(
-            c0, c1,
-            "statement count changed for {:?} (before {c0}, after {c1})",
-            path
-        );
+        assert_eq!(c0, c1, "statement count changed for {:?} (before {c0}, after {c1})", path);
     }
 }
 
@@ -257,10 +217,7 @@ fn collect_input_fixtures_inner(dir: &Path, out: &mut Vec<PathBuf>) {
             collect_input_fixtures_inner(&p, out);
             continue;
         }
-        if p.file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.ends_with(".input.bd"))
-        {
+        if p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(".input.bd")) {
             out.push(p);
         }
     }
@@ -275,9 +232,7 @@ fn first_mismatch_lines(formatted: &str, expected: &str) -> String {
         let e = ea.get(i).copied().unwrap_or("<EOF>");
         if f != e {
             let line = i + 1;
-            return format!(
-                "first diff at 1-based line {line}:\n  formatted: {f:?}\n  expected:  {e:?}"
-            );
+            return format!("first diff at 1-based line {line}:\n  formatted: {f:?}\n  expected:  {e:?}");
         }
     }
     "(same lines but text differed — check trailing newline)".to_string()
@@ -307,31 +262,19 @@ fn top_level_kinds(items: &[beskid_analysis::syntax::Spanned<Node>]) -> Vec<&'st
 /// `impl` blocks parse as `Node::Method` items; the formatter may emit them as `function` items.
 /// Treat both as the same bucket for parse-preservation checks.
 fn top_level_kinds_relaxed(items: &[beskid_analysis::syntax::Spanned<Node>]) -> Vec<&'static str> {
-    top_level_kinds(items)
-        .into_iter()
-        .map(|k| if k == "method" { "function" } else { k })
-        .collect()
+    top_level_kinds(items).into_iter().map(|k| if k == "method" { "function" } else { k }).collect()
 }
 
 /// Counts `Statement` nodes in function / method / test bodies and nested control-flow blocks.
 fn program_statement_count(program: &Program) -> usize {
-    program
-        .items
-        .iter()
-        .map(|item| count_statements_in_node(&item.node))
-        .sum()
+    program.items.iter().map(|item| count_statements_in_node(&item.node)).sum()
 }
 
 fn count_statements_in_node(node: &Node) -> usize {
     match node {
         Node::Function(f) => count_block_statements(&f.node.body.node),
         Node::Method(m) => count_block_statements(&m.node.body.node),
-        Node::InlineModule(im) => im
-            .node
-            .items
-            .iter()
-            .map(|i| count_statements_in_node(&i.node))
-            .sum(),
+        Node::InlineModule(im) => im.node.items.iter().map(|i| count_statements_in_node(&i.node)).sum(),
         Node::TestDefinition(t) => count_statement_slice(&t.node.statements),
         _ => 0,
     }
@@ -342,10 +285,7 @@ fn count_block_statements(block: &Block) -> usize {
 }
 
 fn count_statement_slice(stmts: &[Spanned<Statement>]) -> usize {
-    stmts
-        .iter()
-        .map(|s| count_statement(&s.node))
-        .sum::<usize>()
+    stmts.iter().map(|s| count_statement(&s.node)).sum::<usize>()
 }
 
 fn count_statement(stmt: &Statement) -> usize {
@@ -356,9 +296,7 @@ fn count_statement(stmt: &Statement) -> usize {
                     .else_branch
                     .as_ref()
                     .map(|branch| match &branch.node {
-                        beskid_analysis::syntax::ElseBranch::Block(b) => {
-                            count_block_statements(&b.node)
-                        }
+                        beskid_analysis::syntax::ElseBranch::Block(b) => count_block_statements(&b.node),
                         beskid_analysis::syntax::ElseBranch::If(nested) => {
                             count_block_statements(&nested.node.then_block.node)
                                 + nested
@@ -379,12 +317,7 @@ fn count_statement(stmt: &Statement) -> usize {
         Statement::While(w) => count_block_statements(&w.node.body.node),
         Statement::For(f) => count_block_statements(&f.node.body.node),
         Statement::Let(l) => count_expr_blocks(&l.node.value.node),
-        Statement::Return(r) => r
-            .node
-            .value
-            .as_ref()
-            .map(|e| count_expr_blocks(&e.node))
-            .unwrap_or(0),
+        Statement::Return(r) => r.node.value.as_ref().map(|e| count_expr_blocks(&e.node)).unwrap_or(0),
         Statement::Expression(e) => count_expr_blocks(&e.node.expression.node),
         Statement::Break(_) | Statement::Continue(_) => 0,
         Statement::With(w) => count_block_statements(&w.node.body.node),
@@ -395,12 +328,7 @@ fn count_statement(stmt: &Statement) -> usize {
 fn count_expr_blocks(expr: &Expression) -> usize {
     match expr {
         Expression::Block(b) => count_block_statements(&b.node.block.node),
-        Expression::Match(m) => m
-            .node
-            .arms
-            .iter()
-            .map(|a| count_expr_blocks(&a.node.value.node))
-            .sum(),
+        Expression::Match(m) => m.node.arms.iter().map(|a| count_expr_blocks(&a.node.value.node)).sum(),
         Expression::Lambda(l) => match &l.node.body.node {
             Expression::Block(b) => count_block_statements(&b.node.block.node),
             other => count_expr_blocks(other),

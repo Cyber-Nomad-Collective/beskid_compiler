@@ -14,25 +14,12 @@ pub enum LibraryResolveError {
     UnknownProvider { provider: String, known: String },
 
     /// Provider does not support the requested host key.
-    #[error(
-        "provider `{provider}` does not support host `{host}` (provider host_key = `{provider_host}`)"
-    )]
-    HostUnsupported {
-        provider: String,
-        provider_host: String,
-        host: String,
-    },
+    #[error("provider `{provider}` does not support host `{host}` (provider host_key = `{provider_host}`)")]
+    HostUnsupported { provider: String, provider_host: String, host: String },
 
     /// Provider has no mapping for the requested logical library name.
-    #[error(
-        "provider `{provider}` (host = `{host}`) cannot resolve logical library `{logical}`: {detail}"
-    )]
-    UnknownLogicalName {
-        provider: String,
-        host: String,
-        logical: String,
-        detail: String,
-    },
+    #[error("provider `{provider}` (host = `{host}`) cannot resolve logical library `{logical}`: {detail}")]
+    UnknownLogicalName { provider: String, host: String, logical: String, detail: String },
 
     /// Logical library name is empty or otherwise invalid.
     #[error("logical library name `{logical}` is invalid: {detail}")]

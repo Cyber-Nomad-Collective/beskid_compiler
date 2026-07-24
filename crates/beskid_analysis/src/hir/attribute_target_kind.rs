@@ -43,9 +43,7 @@ impl AttributeTargetKind {
             "TypeDeclaration" | "TypeDefinition" => Some(Self::TypeDeclaration),
             "EnumDeclaration" => Some(Self::EnumDeclaration),
             "ContractDeclaration" => Some(Self::ContractDeclaration),
-            "ContractMethodDeclaration" | "ContractMethodSignature" => {
-                Some(Self::ContractMethodDeclaration)
-            }
+            "ContractMethodDeclaration" | "ContractMethodSignature" => Some(Self::ContractMethodDeclaration),
             "ModuleDeclaration" => Some(Self::ModuleDeclaration),
             "FunctionDeclaration" => Some(Self::FunctionDeclaration),
             "MethodDeclaration" | "MethodDefinition" => Some(Self::MethodDeclaration),

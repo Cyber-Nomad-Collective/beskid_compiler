@@ -23,9 +23,8 @@ use std::os::unix::fs::PermissionsExt;
 
 use crate::models::PackageVersionSummaryResponse;
 use crate::pack::{
-    PackProfile, PackProfileOverride, build_package_json, collect_pack_entries,
-    detect_pack_profile_with_override, strip_template_pack_excludes, strip_tool_pack_excludes,
-    zip_to_pckg_error,
+    PackProfile, PackProfileOverride, build_package_json, collect_pack_entries, detect_pack_profile_with_override,
+    strip_template_pack_excludes, strip_tool_pack_excludes, zip_to_pckg_error,
 };
 use crate::{PckgClient, PckgClientConfig, PckgError};
 
@@ -46,11 +45,7 @@ struct RepositoryAuthConfig {
 #[derive(Args, Debug, Clone)]
 pub struct PckgArgs {
     /// pckg server base URL.
-    #[arg(
-        long,
-        env = "BESKID_PCKG_URL",
-        default_value = "https://pckg.beskid-lang.org"
-    )]
+    #[arg(long, env = "BESKID_PCKG_URL", default_value = "https://pckg.beskid-lang.org")]
     pub base_url: String,
 
     /// Bearer token for authenticated endpoints.
@@ -123,11 +118,7 @@ fn bump_patch(base: Option<Version>) -> Result<Version, PckgError> {
 
 fn max_version(a: Option<&Version>, b: Option<&Version>) -> Option<Version> {
     match (a, b) {
-        (Some(left), Some(right)) => Some(if left >= right {
-            left.clone()
-        } else {
-            right.clone()
-        }),
+        (Some(left), Some(right)) => Some(if left >= right { left.clone() } else { right.clone() }),
         (Some(left), None) => Some(left.clone()),
         (None, Some(right)) => Some(right.clone()),
         (None, None) => None,
@@ -149,12 +140,11 @@ fn read_source_manifest_version(source: &Path) -> Result<Option<Version>, PckgEr
     }
 
     let content = fs::read_to_string(&manifest_path)?;
-    let value: serde_json::Value =
-        serde_json::from_str(&content).map_err(|source| PckgError::Api {
-            status: reqwest::StatusCode::BAD_REQUEST,
-            message: format!("failed to parse package.json: {source}"),
-            body: None,
-        })?;
+    let value: serde_json::Value = serde_json::from_str(&content).map_err(|source| PckgError::Api {
+        status: reqwest::StatusCode::BAD_REQUEST,
+        message: format!("failed to parse package.json: {source}"),
+        body: None,
+    })?;
 
     let Some(version_str) = value.get("version").and_then(serde_json::Value::as_str) else {
         return Ok(None);
@@ -178,12 +168,11 @@ fn read_stored_pack_version(source: &Path, args: &PackArgs) -> Result<Option<Ver
     }
 
     let content = fs::read_to_string(path)?;
-    let state: PackVersionState =
-        serde_json::from_str(&content).map_err(|source| PckgError::Api {
-            status: reqwest::StatusCode::BAD_REQUEST,
-            message: format!("failed to parse version state file: {source}"),
-            body: None,
-        })?;
+    let state: PackVersionState = serde_json::from_str(&content).map_err(|source| PckgError::Api {
+        status: reqwest::StatusCode::BAD_REQUEST,
+        message: format!("failed to parse version state file: {source}"),
+        body: None,
+    })?;
 
     let Some(version) = state.versions.get(&args.package) else {
         return Ok(None);
@@ -192,11 +181,7 @@ fn read_stored_pack_version(source: &Path, args: &PackArgs) -> Result<Option<Ver
     Ok(Some(parse_version(version)?))
 }
 
-fn persist_pack_version_state(
-    source: &Path,
-    args: &PackArgs,
-    version: &str,
-) -> Result<(), PckgError> {
+fn persist_pack_version_state(source: &Path, args: &PackArgs, version: &str) -> Result<(), PckgError> {
     let path = version_state_path(source, args);
     let mut state = if path.exists() {
         let content = fs::read_to_string(&path)?;
@@ -209,9 +194,7 @@ fn persist_pack_version_state(
         PackVersionState::default()
     };
 
-    state
-        .versions
-        .insert(args.package.clone(), version.to_string());
+    state.versions.insert(args.package.clone(), version.to_string());
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -404,15 +387,9 @@ pub fn execute(args: PckgArgs) -> Result<(), PckgError> {
 async fn execute_async(args: PckgArgs) -> Result<(), PckgError> {
     let args_for_client = args.clone();
     if args.verbose {
-        let auth = if args.api_key.is_some() || args.bearer_token.is_some() {
-            "cli-args"
-        } else {
-            "repositories.json-or-env"
-        };
-        eprintln!(
-            "[pckg] verbose: base_url={} auth_hint={auth}",
-            args.base_url.trim()
-        );
+        let auth =
+            if args.api_key.is_some() || args.bearer_token.is_some() { "cli-args" } else { "repositories.json-or-env" };
+        eprintln!("[pckg] verbose: base_url={} auth_hint={auth}", args.base_url.trim());
     }
 
     match args.command {
@@ -421,9 +398,7 @@ async fn execute_async(args: PckgArgs) -> Result<(), PckgError> {
             let client = build_client(&args_for_client)?;
             execute_publish(&client, upload_args, args_for_client.verbose).await
         }
-        PckgCommand::Configure(configure_args) => {
-            execute_configure(&args.config_file, &args.base_url, configure_args)
-        }
+        PckgCommand::Configure(configure_args) => execute_configure(&args.config_file, &args.base_url, configure_args),
         PckgCommand::List => {
             let client = build_client(&args_for_client)?;
             execute_list(&client).await
@@ -459,11 +434,7 @@ async fn execute_async(args: PckgArgs) -> Result<(), PckgError> {
     }
 }
 
-fn execute_configure(
-    config_path: &Path,
-    base_url: &str,
-    args: ConfigureArgs,
-) -> Result<(), PckgError> {
+fn execute_configure(config_path: &Path, base_url: &str, args: ConfigureArgs) -> Result<(), PckgError> {
     let repository_url = args.repository_url.as_deref().unwrap_or(base_url).trim();
 
     if args.api_key.trim().is_empty() {
@@ -508,12 +479,10 @@ fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
     if matches!(&profile, PackProfile::Library) {
         for (name, bytes) in &entries {
             if name == ".beskid/docs/api.json" {
-                let root = crate::api_doc::ApiDocRoot::from_json_slice(bytes).map_err(|e| {
-                    PckgError::Api {
-                        status: reqwest::StatusCode::BAD_REQUEST,
-                        message: format!("invalid `.beskid/docs/api.json` in package sources: {e}"),
-                        body: None,
-                    }
+                let root = crate::api_doc::ApiDocRoot::from_json_slice(bytes).map_err(|e| PckgError::Api {
+                    status: reqwest::StatusCode::BAD_REQUEST,
+                    message: format!("invalid `.beskid/docs/api.json` in package sources: {e}"),
+                    body: None,
                 })?;
                 crate::api_doc::validate_packed_api_doc(&root).map_err(|e| PckgError::Api {
                     status: reqwest::StatusCode::BAD_REQUEST,
@@ -530,37 +499,24 @@ fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
     for (name, content) in &entries {
         checksums.insert(name.clone(), sha256_hex(content));
     }
-    checksums.insert(
-        "package.json".to_string(),
-        sha256_hex(package_json.as_bytes()),
-    );
+    checksums.insert("package.json".to_string(), sha256_hex(package_json.as_bytes()));
 
-    let checksums_sha = checksums
-        .iter()
-        .map(|(path, digest)| format!("{digest}  {path}"))
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n";
+    let checksums_sha =
+        checksums.iter().map(|(path, digest)| format!("{digest}  {path}")).collect::<Vec<_>>().join("\n") + "\n";
 
     let file = fs::File::create(&output)?;
     let mut writer = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
     for (name, content) in entries {
-        writer
-            .start_file(name, options)
-            .map_err(zip_to_pckg_error)?;
+        writer.start_file(name, options).map_err(zip_to_pckg_error)?;
         writer.write_all(&content)?;
     }
 
-    writer
-        .start_file("package.json", options)
-        .map_err(zip_to_pckg_error)?;
+    writer.start_file("package.json", options).map_err(zip_to_pckg_error)?;
     writer.write_all(package_json.as_bytes())?;
 
-    writer
-        .start_file("checksums.sha256", options)
-        .map_err(zip_to_pckg_error)?;
+    writer.start_file("checksums.sha256", options).map_err(zip_to_pckg_error)?;
     writer.write_all(checksums_sha.as_bytes())?;
 
     writer.finish().map_err(zip_to_pckg_error)?;
@@ -572,35 +528,23 @@ fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
 }
 
 fn build_client(args: &PckgArgs) -> Result<PckgClient, PckgError> {
-    let mut config =
-        PckgClientConfig::new(&args.base_url)?.with_timeout(Duration::from_secs(args.timeout_secs));
+    let mut config = PckgClientConfig::new(&args.base_url)?.with_timeout(Duration::from_secs(args.timeout_secs));
 
     if let Some(token) = args.bearer_token.as_ref() {
         config = config.with_bearer_token(token.clone());
-    } else if let Some(api_key) = args.api_key.clone().or_else(|| {
-        read_saved_api_key(&args.config_file, &args.base_url)
-            .ok()
-            .flatten()
-    }) {
+    } else if let Some(api_key) =
+        args.api_key.clone().or_else(|| read_saved_api_key(&args.config_file, &args.base_url).ok().flatten())
+    {
         config = config.with_publisher_api_key(api_key.clone());
     }
 
     PckgClient::new(config)
 }
 
-fn save_repository_api_key(
-    config_path: &Path,
-    repository_url: &str,
-    api_key: &str,
-) -> Result<(), PckgError> {
+fn save_repository_api_key(config_path: &Path, repository_url: &str, api_key: &str) -> Result<(), PckgError> {
     let canonical_url = canonical_repository_url(repository_url)?;
     let mut config = load_repositories_config(config_path)?;
-    config.repositories.insert(
-        canonical_url,
-        RepositoryAuthConfig {
-            api_key: api_key.to_string(),
-        },
-    );
+    config.repositories.insert(canonical_url, RepositoryAuthConfig { api_key: api_key.to_string() });
 
     if let Some(parent) = config_path.parent()
         && !parent.as_os_str().is_empty()
@@ -655,12 +599,7 @@ fn load_repositories_config(config_path: &Path) -> Result<PckgRepositoriesConfig
             if let Some(legacy_key) = legacy_key {
                 let mut repositories = BTreeMap::new();
                 let default_repository = canonical_repository_url("https://pckg.beskid-lang.org")?;
-                repositories.insert(
-                    default_repository,
-                    RepositoryAuthConfig {
-                        api_key: legacy_key,
-                    },
-                );
+                repositories.insert(default_repository, RepositoryAuthConfig { api_key: legacy_key });
                 Ok(PckgRepositoriesConfig { repositories })
             } else {
                 Ok(PckgRepositoriesConfig::default())
@@ -683,29 +622,13 @@ fn canonical_repository_url(raw_url: &str) -> Result<String, PckgError> {
     Ok(url.to_string())
 }
 
-async fn execute_publish(
-    client: &PckgClient,
-    args: PublishArgs,
-    verbose: bool,
-) -> Result<(), PckgError> {
-    let artifact_name = args
-        .artifact
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("artifact.bpk")
-        .to_string();
+async fn execute_publish(client: &PckgClient, args: PublishArgs, verbose: bool) -> Result<(), PckgError> {
+    let artifact_name = args.artifact.file_name().and_then(|name| name.to_str()).unwrap_or("artifact.bpk").to_string();
 
     let artifact_path = &args.artifact;
-    let len = tokio::fs::metadata(artifact_path)
-        .await
-        .map_err(PckgError::Io)?
-        .len();
+    let len = tokio::fs::metadata(artifact_path).await.map_err(PckgError::Io)?.len();
 
-    let upload_progress = if io::stderr().is_terminal() && len > 0 {
-        Some(UploadProgress::new(len))
-    } else {
-        None
-    };
+    let upload_progress = if io::stderr().is_terminal() && len > 0 { Some(UploadProgress::new(len)) } else { None };
 
     if upload_progress.is_none() {
         eprintln!("Publishing package version...");
@@ -733,10 +656,7 @@ async fn execute_publish(
             println!("{}", response.message);
             println!("--- publish summary ---");
             println!("registry: {base}");
-            println!(
-                "request:  POST /api/packages/{}/publish",
-                args.package.trim()
-            );
+            println!("request:  POST /api/packages/{}/publish", args.package.trim());
             println!("package:  {}", args.package);
             if let Some(version) = &response.version {
                 println!("PCKG_PUBLISHED_VERSION={}", version.version);
@@ -746,10 +666,7 @@ async fn execute_publish(
                 println!("published_at_utc: {}", version.published_at_utc);
                 print_package_versions_table(std::slice::from_ref(version));
             } else {
-                println!(
-                    "version:  (not returned by registry — check `beskid pckg versions {}`)",
-                    args.package.trim()
-                );
+                println!("version:  (not returned by registry — check `beskid pckg versions {}`)", args.package.trim());
             }
             println!("------------------------");
             Ok(())
@@ -800,11 +717,7 @@ async fn execute_search(client: &PckgClient, args: SearchArgs) -> Result<(), Pck
     for item in items {
         println!(
             "{} [{}/{}] score={:.2} reviews={}",
-            item.package.name,
-            item.health.state,
-            item.health.sub_state,
-            item.health.score,
-            item.review_count
+            item.package.name, item.health.state, item.health.sub_state, item.health.score, item.review_count
         );
     }
     Ok(())
@@ -814,15 +727,9 @@ async fn execute_details(client: &PckgClient, args: DetailsArgs) -> Result<(), P
     let details = client.get_package_details(&args.id_or_name).await?;
     println!(
         "{} ({}) downloads={} dependents={}",
-        details.package.name,
-        details.package.category,
-        details.package.total_downloads,
-        details.dependents_count
+        details.package.name, details.package.category, details.package.total_downloads, details.dependents_count
     );
-    println!(
-        "health={}/{} score={:.2}",
-        details.health.state, details.health.sub_state, details.health.score
-    );
+    println!("health={}/{} score={:.2}", details.health.state, details.health.sub_state, details.health.score);
     if !details.dependencies.is_empty() {
         println!("dependencies:");
         for dep in details.dependencies {
@@ -849,34 +756,23 @@ async fn execute_versions(client: &PckgClient, args: VersionsArgs) -> Result<(),
 }
 
 async fn execute_download(client: &PckgClient, args: DownloadArgs) -> Result<(), PckgError> {
-    let bytes = client
-        .download_package_version(&args.package, &args.version)
-        .await?;
+    let bytes = client.download_package_version(&args.package, &args.version).await?;
     if let Some(parent) = args.output.parent() {
         fs::create_dir_all(parent)?;
     }
     fs::write(&args.output, bytes)?;
-    println!(
-        "Downloaded {} {} to {}",
-        args.package,
-        args.version,
-        args.output.display()
-    );
+    println!("Downloaded {} {} to {}", args.package, args.version, args.output.display());
     Ok(())
 }
 
 async fn execute_yank(client: &PckgClient, args: VersionActionArgs) -> Result<(), PckgError> {
-    let response = client
-        .yank_package_version(&args.package, &args.version)
-        .await?;
+    let response = client.yank_package_version(&args.package, &args.version).await?;
     println!("{}", response.message);
     Ok(())
 }
 
 async fn execute_unyank(client: &PckgClient, args: VersionActionArgs) -> Result<(), PckgError> {
-    let response = client
-        .unyank_package_version(&args.package, &args.version)
-        .await?;
+    let response = client.unyank_package_version(&args.package, &args.version).await?;
     println!("{}", response.message);
     Ok(())
 }
@@ -922,38 +818,17 @@ mod tests {
 
     #[test]
     fn pack_args_default_package_kind_is_auto() {
-        let args = parse(&[
-            "test-cli",
-            "pack",
-            "--package",
-            "demo",
-            "--output",
-            "/tmp/demo.bpk",
-        ]);
+        let args = parse(&["test-cli", "pack", "--package", "demo", "--output", "/tmp/demo.bpk"]);
         assert!(matches!(args.package_kind, PackArgsPackageKind::Auto));
-        assert!(matches!(
-            args.package_kind_override(),
-            PackProfileOverride::Auto
-        ));
+        assert!(matches!(args.package_kind_override(), PackProfileOverride::Auto));
     }
 
     #[test]
     fn pack_args_package_kind_tool_flag_parses() {
-        let args = parse(&[
-            "test-cli",
-            "pack",
-            "--package",
-            "demo",
-            "--output",
-            "/tmp/demo.bpk",
-            "--package-kind",
-            "tool",
-        ]);
+        let args =
+            parse(&["test-cli", "pack", "--package", "demo", "--output", "/tmp/demo.bpk", "--package-kind", "tool"]);
         assert!(matches!(args.package_kind, PackArgsPackageKind::Tool));
-        assert!(matches!(
-            args.package_kind_override(),
-            PackProfileOverride::Tool
-        ));
+        assert!(matches!(args.package_kind_override(), PackProfileOverride::Tool));
     }
 
     #[test]

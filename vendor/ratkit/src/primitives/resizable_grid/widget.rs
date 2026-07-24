@@ -135,12 +135,8 @@ impl ResizableGridWidget {
             state: ResizableGridWidgetState::default(),
             divider_width: 1,
             hit_threshold: 2,
-            hover_style: Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-            drag_style: Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+            hover_style: Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            drag_style: Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
             divider_style: Style::default(),
             block: None,
             show_pane_borders: true,
@@ -270,8 +266,7 @@ impl ResizableGridWidget {
         match mouse.kind {
             MouseEventKind::Moved => {
                 if self.state.dragging_divider.is_none() {
-                    self.state.hovered_divider =
-                        self.find_divider_at(mouse.column, mouse.row, area);
+                    self.state.hovered_divider = self.find_divider_at(mouse.column, mouse.row, area);
                 }
             }
             MouseEventKind::Down(MouseButton::Left) => {
@@ -304,9 +299,7 @@ impl ResizableGridWidget {
             let rect = divider.area();
             match divider.axis() {
                 SplitAxis::Vertical => {
-                    let divider_x = rect.x.saturating_add(
-                        ((rect.width as u32 * divider.ratio() as u32) / 100) as u16,
-                    );
+                    let divider_x = rect.x.saturating_add(((rect.width as u32 * divider.ratio() as u32) / 100) as u16);
                     let distance = divider_x.abs_diff(column);
                     if distance <= threshold
                         && column <= divider_x.saturating_add(threshold)
@@ -316,8 +309,7 @@ impl ResizableGridWidget {
                         let area_size = rect.width as u32 * rect.height as u32;
                         if best_match
                             .map(|(_, best_distance, best_area)| {
-                                distance < best_distance
-                                    || (distance == best_distance && area_size < best_area)
+                                distance < best_distance || (distance == best_distance && area_size < best_area)
                             })
                             .unwrap_or(true)
                         {
@@ -326,9 +318,7 @@ impl ResizableGridWidget {
                     }
                 }
                 SplitAxis::Horizontal => {
-                    let divider_y = rect.y.saturating_add(
-                        ((rect.height as u32 * divider.ratio() as u32) / 100) as u16,
-                    );
+                    let divider_y = rect.y.saturating_add(((rect.height as u32 * divider.ratio() as u32) / 100) as u16);
                     let distance = divider_y.abs_diff(row);
                     if distance <= threshold
                         && row <= divider_y.saturating_add(threshold)
@@ -338,8 +328,7 @@ impl ResizableGridWidget {
                         let area_size = rect.width as u32 * rect.height as u32;
                         if best_match
                             .map(|(_, best_distance, best_area)| {
-                                distance < best_distance
-                                    || (distance == best_distance && area_size < best_area)
+                                distance < best_distance || (distance == best_distance && area_size < best_area)
                             })
                             .unwrap_or(true)
                         {
@@ -359,9 +348,7 @@ impl ResizableGridWidget {
     /// resize_divider on the ResizableGrid.
     fn resize_divider(&mut self, split_index: usize, column: u16, row: u16, area: Rect) {
         let layouts = self.layout.layout_dividers(area);
-        let divider_layout = layouts
-            .iter()
-            .find(|divider| divider.split_index() == split_index);
+        let divider_layout = layouts.iter().find(|divider| divider.split_index() == split_index);
 
         if let Some(divider) = divider_layout {
             let rect = divider.area();
@@ -446,20 +433,13 @@ impl Widget for ResizableGridWidget {
 
 impl ResizableGridWidget {
     /// Render a visual overlay on the divider to indicate it's active.
-    fn render_divider_overlay(
-        &self,
-        divider: &SplitDividerLayout,
-        style: Style,
-        buf: &mut ratatui::buffer::Buffer,
-    ) {
+    fn render_divider_overlay(&self, divider: &SplitDividerLayout, style: Style, buf: &mut ratatui::buffer::Buffer) {
         let width = self.divider_width;
         let rect = divider.area();
 
         match divider.axis() {
             SplitAxis::Vertical => {
-                let divider_x = rect
-                    .x
-                    .saturating_add(((rect.width as u32 * divider.ratio() as u32) / 100) as u16);
+                let divider_x = rect.x.saturating_add(((rect.width as u32 * divider.ratio() as u32) / 100) as u16);
                 for y in rect.top()..rect.bottom() {
                     for dx in 0..width {
                         let x = divider_x.saturating_sub(dx);
@@ -471,9 +451,7 @@ impl ResizableGridWidget {
                 }
             }
             SplitAxis::Horizontal => {
-                let divider_y = rect
-                    .y
-                    .saturating_add(((rect.height as u32 * divider.ratio() as u32) / 100) as u16);
+                let divider_y = rect.y.saturating_add(((rect.height as u32 * divider.ratio() as u32) / 100) as u16);
                 for x in rect.left()..rect.right() {
                     for dy in 0..width {
                         let y = divider_y.saturating_sub(dy);

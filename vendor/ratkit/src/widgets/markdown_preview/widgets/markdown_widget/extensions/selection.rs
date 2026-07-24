@@ -60,9 +60,7 @@ pub fn handle_mouse_event(
 
     match event.kind {
         crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
-            handle_click(
-                relative_x, relative_y, width, content, scroll, collapse, expandable, cache,
-            )
+            handle_click(relative_x, relative_y, width, content, scroll, collapse, expandable, cache)
         }
         crossterm::event::MouseEventKind::ScrollUp => {
             scroll.scroll_up(5);
@@ -124,9 +122,7 @@ pub fn handle_mouse_event_with_double_click(
 
             if is_double {
                 // Double-click: return line info
-                if let Some(evt) =
-                    get_line_at_position(relative_y, width, content, scroll, collapse)
-                {
+                if let Some(evt) = get_line_at_position(relative_y, width, content, scroll, collapse) {
                     return (true, Some(evt));
                 }
             }
@@ -196,11 +192,7 @@ pub fn handle_click(
 
         if document_y >= line_idx && document_y < line_idx + line_count {
             match &element.kind {
-                ElementKind::Heading {
-                    section_id,
-                    collapsed: _,
-                    ..
-                } => {
+                ElementKind::Heading { section_id, collapsed: _, .. } => {
                     collapse.toggle_section(*section_id);
                     cache.invalidate();
                     return true;
@@ -243,11 +235,7 @@ pub fn handle_click(
 /// # Returns
 ///
 /// `true` if the element should be rendered.
-pub fn should_render_line(
-    element: &MarkdownElement,
-    _idx: usize,
-    collapse: &CollapseState,
-) -> bool {
+pub fn should_render_line(element: &MarkdownElement, _idx: usize, collapse: &CollapseState) -> bool {
     // Headings: visible unless a parent section is collapsed (hierarchical collapse)
     if let ElementKind::Heading { section_id, .. } = &element.kind {
         // Check if any parent section is collapsed
@@ -271,10 +259,7 @@ pub fn should_render_line(
     }
 
     // FrontmatterField and FrontmatterEnd are hidden when frontmatter is collapsed
-    if matches!(
-        element.kind,
-        ElementKind::FrontmatterField { .. } | ElementKind::FrontmatterEnd
-    ) {
+    if matches!(element.kind, ElementKind::FrontmatterField { .. } | ElementKind::FrontmatterEnd) {
         // Frontmatter uses section_id 0 for collapse state
         if collapse.is_section_collapsed(0) {
             return false;

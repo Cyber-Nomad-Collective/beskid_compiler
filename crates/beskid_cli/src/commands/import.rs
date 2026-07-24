@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use beskid_analysis::external_library::{
-    ExternalLibraryRegistry, LibraryResolution, LibraryResolveError, current_host_key,
-    default_registry, merge_resolution_into_manifest_source,
+    ExternalLibraryRegistry, LibraryResolution, LibraryResolveError, current_host_key, default_registry,
+    merge_resolution_into_manifest_source,
 };
 use beskid_analysis::projects::{
     discover_project_manifest_from_input_or_cwd, parse_manifest as parse_project_manifest,
@@ -60,8 +60,8 @@ pub fn execute(args: ImportArgs) -> Result<()> {
 /// block of `Project.proj`. Idempotent: re-running the same import is a no-op on disk.
 pub fn execute_lib(args: LibArgs) -> Result<()> {
     let registry = default_registry();
-    let resolution = resolve_with_registry(&registry, &args.provider, &args.logical)
-        .map_err(library_resolve_error_to_anyhow)?;
+    let resolution =
+        resolve_with_registry(&registry, &args.provider, &args.logical).map_err(library_resolve_error_to_anyhow)?;
 
     println!(
         "import: resolved `{}` via provider `{}` (host `{}`):",
@@ -80,53 +80,29 @@ pub fn execute_lib(args: LibArgs) -> Result<()> {
     }
 
     let manifest_path = resolve_manifest_path(args.project.as_deref())?;
-    let source = fs::read_to_string(&manifest_path).with_context(|| {
-        format!(
-            "failed to read project manifest at {}",
-            manifest_path.display()
-        )
-    })?;
+    let source = fs::read_to_string(&manifest_path)
+        .with_context(|| format!("failed to read project manifest at {}", manifest_path.display()))?;
 
     let existing = parse_project_manifest(&source)
-        .with_context(|| {
-            format!(
-                "failed to parse project manifest at {}",
-                manifest_path.display()
-            )
-        })?
+        .with_context(|| format!("failed to parse project manifest at {}", manifest_path.display()))?
         .link;
 
     let outcome = merge_resolution_into_manifest_source(&source, existing.as_ref(), &resolution);
 
     if outcome.updated_source != source {
-        fs::write(&manifest_path, &outcome.updated_source).with_context(|| {
-            format!(
-                "failed to write updated project manifest at {}",
-                manifest_path.display()
-            )
-        })?;
+        fs::write(&manifest_path, &outcome.updated_source)
+            .with_context(|| format!("failed to write updated project manifest at {}", manifest_path.display()))?;
         println!("import: updated link block in {}", manifest_path.display());
         if !outcome.added_libraries.is_empty() {
-            println!(
-                "import: added libraries: {}",
-                outcome.added_libraries.join(", ")
-            );
+            println!("import: added libraries: {}", outcome.added_libraries.join(", "));
         }
         if !outcome.added_search_paths.is_empty() {
-            let rendered = outcome
-                .added_search_paths
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
+            let rendered =
+                outcome.added_search_paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ");
             println!("import: added search paths: {rendered}");
         }
     } else {
-        println!(
-            "import: `{}` already present in {} (no-op)",
-            args.logical,
-            manifest_path.display()
-        );
+        println!("import: `{}` already present in {} (no-op)", args.logical, manifest_path.display());
     }
 
     Ok(())
@@ -151,10 +127,7 @@ fn resolve_manifest_path(explicit: Option<&Path>) -> Result<PathBuf> {
     if let Some(path) = explicit {
         let candidate = expand_to_project_manifest(path)?;
         if !candidate.is_file() {
-            bail!(
-                "project manifest not found at {} (expected a `.bproj` manifest)",
-                candidate.display()
-            );
+            bail!("project manifest not found at {} (expected a `.bproj` manifest)", candidate.display());
         }
         return Ok(candidate);
     }
@@ -164,9 +137,7 @@ fn resolve_manifest_path(explicit: Option<&Path>) -> Result<PathBuf> {
         Some((manifest_path, _)) => Ok(manifest_path),
         None => Err(anyhow!(
             "no `.bproj` manifest found from {}; pass --project or run inside a project directory",
-            env::current_dir()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| "<cwd unavailable>".to_string())
+            env::current_dir().map(|p| p.display().to_string()).unwrap_or_else(|_| "<cwd unavailable>".to_string())
         )),
     }
 }

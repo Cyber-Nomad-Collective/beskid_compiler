@@ -39,9 +39,7 @@ async fn invalidate_and_set_document_do_not_panic_concurrently() {
     assert_eq!(doc.version, 1);
     assert_eq!(doc.text, expected_text);
     assert!(
-        doc.syntax_documentation
-            .iter()
-            .any(|fact| fact.name == "Main")
+        doc.syntax_documentation.iter().any(|fact| fact.name == "Main")
             || !doc.syntax_diagnostics.is_empty()
             || doc.syntax_completion.is_some()
             || !doc.syntax_symbols.is_empty(),

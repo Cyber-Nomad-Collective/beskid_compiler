@@ -17,14 +17,10 @@ const INPUTS: &[&str] = &[
 ];
 
 fn main() {
-    let manifest_dir = PathBuf::from(
-        std::env::var_os("CARGO_MANIFEST_DIR").expect("Cargo must set CARGO_MANIFEST_DIR"),
-    );
+    let manifest_dir =
+        PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("Cargo must set CARGO_MANIFEST_DIR"));
     let isle_dir = manifest_dir.join("isle");
-    let inputs = INPUTS
-        .iter()
-        .map(|name| isle_dir.join(name))
-        .collect::<Vec<_>>();
+    let inputs = INPUTS.iter().map(|name| isle_dir.join(name)).collect::<Vec<_>>();
 
     for input in &inputs {
         println!("cargo:rerun-if-changed={}", input.display());

@@ -5,15 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use beskid_analysis::projects::{discover_project_file, discover_workspace_file};
 
 fn temp_case_dir(name: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time ok")
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!(
-        "beskid_projects_discovery_{name}_{}_{}",
-        std::process::id(),
-        nanos
-    ));
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).expect("time ok").as_nanos();
+    let dir = std::env::temp_dir().join(format!("beskid_projects_discovery_{name}_{}_{}", std::process::id(), nanos));
     fs::create_dir_all(&dir).expect("create temp dir");
     dir
 }

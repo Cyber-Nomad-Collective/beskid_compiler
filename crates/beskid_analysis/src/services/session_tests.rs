@@ -5,12 +5,10 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::projects::{
-    AssemblyDiscovery, CompilePlan, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly,
-    RootEntry, Target, TargetKind,
+    AssemblyDiscovery, CompilePlan, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, Target,
+    TargetKind,
 };
-use crate::services::entry_session::{
-    get_or_insert_assembly, invalidate_project, update_semantic_snapshot,
-};
+use crate::services::entry_session::{get_or_insert_assembly, invalidate_project, update_semantic_snapshot};
 use crate::services::session::{
     SemanticSnapshot, SessionFingerprint, cached_compilation_session, cached_semantic_snapshot,
 };
@@ -42,13 +40,7 @@ fn test_plan(lock_bytes: Option<&[u8]>) -> (CompilePlan, SessionFingerprint, Pat
         target: Target {
             name: "main".to_string(),
             kind: TargetKind::App,
-            entry: Some(
-                entry_path
-                    .strip_prefix(&root)
-                    .expect("entry under root")
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
+            entry: Some(entry_path.strip_prefix(&root).expect("entry under root").to_string_lossy().into_owned()),
         },
         dependency_projects: Vec::new(),
         unresolved_dependencies: Vec::new(),
@@ -61,10 +53,7 @@ fn test_plan(lock_bytes: Option<&[u8]>) -> (CompilePlan, SessionFingerprint, Pat
 fn empty_assembly(plan: &CompilePlan) -> ProgramAssembly {
     ProgramAssembly {
         roots: EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: plan.source_root.clone(),
-            },
+            host: RootEntry { dependency_name: None, source_root: plan.source_root.clone() },
             dependencies: Vec::new(),
         },
         units: std::sync::Arc::new(Vec::new()),
@@ -96,10 +85,7 @@ fn registry_invalidates_on_lockfile_change() {
     let _guard = REGISTRY_TEST_LOCK.lock().expect("registry test lock");
     let (plan_a, fp_a, root, entry_path) = test_plan(Some(b"lock-a"));
     get_or_insert_assembly(fp_a.clone(), empty_assembly(&plan_a));
-    update_semantic_snapshot(
-        &fp_a,
-        SemanticSnapshot::from_diagnostics(&[], 1, "semantic"),
-    );
+    update_semantic_snapshot(&fp_a, SemanticSnapshot::from_diagnostics(&[], 1, "semantic"));
     assert!(cached_semantic_snapshot(&fp_a).is_some());
 
     std::fs::write(root.join("Project.lock"), b"lock-b").expect("rewrite lock");

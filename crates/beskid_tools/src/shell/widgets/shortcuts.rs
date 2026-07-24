@@ -16,11 +16,7 @@ pub struct ShortcutsWidget;
 
 impl BeskidWidget for ShortcutsWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: "shell.shortcuts",
-            title: "Shortcuts",
-            icon: "?",
-        }
+        WidgetMeta { id: "shell.shortcuts", title: "Shortcuts", icon: "?" }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {
@@ -33,9 +29,7 @@ impl BeskidWidget for ShortcutsWidget {
 
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
         let bindings = &*ctx.key_bindings;
-        let click_style = Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::UNDERLINED);
+        let click_style = Style::default().fg(Color::Cyan).add_modifier(Modifier::UNDERLINED);
         let mut lines = vec![
             Line::from(Span::styled("Global", Style::default().fg(Color::Yellow))),
             Line::from(vec![
@@ -53,10 +47,7 @@ impl BeskidWidget for ShortcutsWidget {
                 Span::styled(bindings.label_for("quit"), click_style),
                 Span::raw("  quit"),
             ]),
-            Line::from(Span::styled(
-                "  Settings → Shortcuts tab to rebind",
-                Style::default().fg(Color::DarkGray),
-            )),
+            Line::from(Span::styled("  Settings → Shortcuts tab to rebind", Style::default().fg(Color::DarkGray))),
             Line::from(""),
         ];
         for cmd in builtin_contextual_commands(ctx.scope) {
@@ -64,15 +55,11 @@ impl BeskidWidget for ShortcutsWidget {
                 lines.push(Line::from(format!("  {}  {}", c.icon, c.name)));
             }
         }
-        let [title_area, body] =
-            Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(area);
+        let [title_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(area);
         frame.render_widget(Paragraph::new(title_line("Shortcuts")), title_area);
         frame.render_widget(Paragraph::new(lines), body);
-        ctx.shortcut_clicks
-            .add_row(body, 1, ShortcutClickAction::OpenPalette);
-        ctx.shortcut_clicks
-            .add_row(body, 2, ShortcutClickAction::ToggleHelp);
-        ctx.shortcut_clicks
-            .add_row(body, 3, ShortcutClickAction::Quit);
+        ctx.shortcut_clicks.add_row(body, 1, ShortcutClickAction::OpenPalette);
+        ctx.shortcut_clicks.add_row(body, 2, ShortcutClickAction::ToggleHelp);
+        ctx.shortcut_clicks.add_row(body, 3, ShortcutClickAction::Quit);
     }
 }

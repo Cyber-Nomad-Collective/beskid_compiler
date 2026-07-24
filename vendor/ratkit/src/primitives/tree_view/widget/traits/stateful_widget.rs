@@ -32,14 +32,8 @@ impl<'a, T> StatefulWidget for TreeView<'a, T> {
         let has_filter = state.filter.as_ref().is_some_and(|f| !f.is_empty());
         let show_filter_line = self.show_filter_ui && (filter_mode || has_filter);
 
-        let tree_area = if show_filter_line && area.height > 1 {
-            Rect {
-                height: area.height - 1,
-                ..area
-            }
-        } else {
-            area
-        };
+        let tree_area =
+            if show_filter_line && area.height > 1 { Rect { height: area.height - 1, ..area } } else { area };
 
         let items = self.flatten_tree(state);
         let visible_height = tree_area.height as usize;
@@ -54,12 +48,7 @@ impl<'a, T> StatefulWidget for TreeView<'a, T> {
             }
         }
 
-        for (i, (line, path)) in items
-            .iter()
-            .skip(state.offset)
-            .take(visible_height)
-            .enumerate()
-        {
+        for (i, (line, path)) in items.iter().skip(state.offset).take(visible_height).enumerate() {
             let y = tree_area.y + i as u16;
 
             let is_selected = state.selected_path.as_ref() == Some(path);
@@ -86,19 +75,9 @@ impl<'a, T> TreeView<'a, T> {
         let cursor = if state.filter_mode { "_" } else { "" };
 
         let line = Line::from(vec![
-            ratatui::text::Span::styled(
-                "/ ",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            ratatui::text::Span::styled("/ ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             ratatui::text::Span::styled(filter_text, Style::default().fg(Color::White)),
-            ratatui::text::Span::styled(
-                cursor,
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            ),
+            ratatui::text::Span::styled(cursor, Style::default().fg(Color::Yellow).add_modifier(Modifier::SLOW_BLINK)),
         ]);
 
         let bg_style = Style::default().bg(Color::DarkGray);

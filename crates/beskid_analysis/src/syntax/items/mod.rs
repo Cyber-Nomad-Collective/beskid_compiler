@@ -23,9 +23,7 @@ pub mod test_definition;
 pub mod type_definition;
 pub mod use_declaration;
 
-pub use attribute::{
-    Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget,
-};
+pub use attribute::{Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget};
 pub use contract_definition::ContractDefinition;
 pub use contract_embedding::ContractEmbedding;
 pub use contract_method_signature::ContractMethodSignature;
@@ -35,8 +33,8 @@ pub use enum_variant::EnumVariant;
 pub use extend_type::ExtendTypeDefinition;
 pub use function_definition::FunctionDefinition;
 pub use host_definition::{
-    HostBodyItem, HostDefinition, InjectQualifier, LaunchStatement, RegistrationLifetime,
-    RegistryBlock, RegistryEntry, ScopeDefinition, ScopeHook, ScopeHookKind, WithStatement,
+    HostBodyItem, HostDefinition, InjectQualifier, LaunchStatement, RegistrationLifetime, RegistryBlock, RegistryEntry,
+    ScopeDefinition, ScopeHook, ScopeHookKind, WithStatement,
 };
 pub use inline_module::InlineModule;
 pub use macro_definition::{MacroDefinition, MacroFragmentKind, MacroParameter};
@@ -44,8 +42,6 @@ pub use method_definition::MethodDefinition;
 pub use module_declaration::ModuleDeclaration;
 pub use node::Node;
 pub use program::Program;
-pub use test_definition::{
-    TestDefinition, TestMetaSection, TestMetadataEntry, TestSkipEntry, TestSkipSection,
-};
+pub use test_definition::{TestDefinition, TestMetaSection, TestMetadataEntry, TestSkipEntry, TestSkipSection};
 pub use type_definition::TypeDefinition;
 pub use use_declaration::UseDeclaration;

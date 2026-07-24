@@ -34,15 +34,10 @@ pub(crate) fn precheck_checker<'a>(
     let entry_path = root.join("entry");
     let entry_surface = Arc::new(build_unit_type_surface(entry, resolution, &entry_path));
 
-    let dependency_surfaces = programs[..programs.len().saturating_sub(1)]
-        .iter()
-        .enumerate()
-        .map(|(index, program)| {
+    let dependency_surfaces =
+        programs[..programs.len().saturating_sub(1)].iter().enumerate().map(|(index, program)| {
             let path = root.join(format!("dep_{index}"));
-            (
-                path.clone(),
-                Arc::new(build_unit_type_surface(program, resolution, &path)),
-            )
+            (path.clone(), Arc::new(build_unit_type_surface(program, resolution, &path)))
         });
 
     let (merged_types, merged) = merge_unit_surfaces_with_types(dependency_surfaces, entry_surface);
@@ -55,23 +50,12 @@ pub(crate) fn precheck_checker<'a>(
 
 impl<'a> TypeChecker<'a> {
     /// Infer `Result`-shaped enum metadata for a `?` operand.
-    pub fn try_desugar_target_for_operand(
-        &mut self,
-        operand: &Spanned<HirExpressionNode>,
-    ) -> Option<TryDesugarTarget> {
+    pub fn try_desugar_target_for_operand(&mut self, operand: &Spanned<HirExpressionNode>) -> Option<TryDesugarTarget> {
         let target_type = self.infer_expression_type(operand)?;
         let item_id = self.item_for_type_id(target_type)?;
-        let type_name = self
-            .resolution
-            .items
-            .iter()
-            .find(|info| info.id == item_id)
-            .map(|info| info.name.clone())?;
+        let type_name = self.resolution.items.iter().find(|info| info.id == item_id).map(|info| info.name.clone())?;
         let ok_variant = self.variant_display_name(item_id, "Ok")?;
-        Some(TryDesugarTarget {
-            type_name,
-            ok_variant,
-        })
+        Some(TryDesugarTarget { type_name, ok_variant })
     }
 
     /// True when the iterable expression type is `T[]`.
@@ -83,10 +67,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     /// Spans of `?` operands that are not a `Result`-shaped enum.
-    pub fn invalid_try_expression_spans(
-        resolution: &'a Resolution,
-        entry: &Spanned<HirProgram>,
-    ) -> Vec<SpanInfo> {
+    pub fn invalid_try_expression_spans(resolution: &'a Resolution, entry: &Spanned<HirProgram>) -> Vec<SpanInfo> {
         let programs: Vec<&Spanned<HirProgram>> = vec![entry];
         let mut checker = precheck_checker(resolution, &programs);
         let mut spans = Vec::new();
@@ -133,11 +114,7 @@ fn collect_invalid_try_targets(
     }
 }
 
-fn collect_invalid_try_targets_item(
-    checker: &mut TypeChecker<'_>,
-    item: &Spanned<HirItem>,
-    spans: &mut Vec<SpanInfo>,
-) {
+fn collect_invalid_try_targets_item(checker: &mut TypeChecker<'_>, item: &Spanned<HirItem>, spans: &mut Vec<SpanInfo>) {
     match &item.node {
         HirItem::FunctionDefinition(def) => {
             collect_invalid_try_targets_in_block(checker, &def.node.body, spans);
@@ -178,9 +155,7 @@ fn collect_invalid_try_targets_in_expression(
     spans: &mut Vec<SpanInfo>,
 ) {
     if let HirExpressionNode::TryExpression(try_expr) = &expr.node
-        && checker
-            .try_desugar_target_for_operand(&try_expr.node.expr)
-            .is_none()
+        && checker.try_desugar_target_for_operand(&try_expr.node.expr).is_none()
     {
         spans.push(expr.span);
     }
@@ -311,21 +286,13 @@ fn collect_try_targets_in_expression(
     }
 }
 
-fn collect_array_fors(
-    checker: &mut TypeChecker<'_>,
-    program: &Spanned<HirProgram>,
-    set: &mut HashSet<SpanInfo>,
-) {
+fn collect_array_fors(checker: &mut TypeChecker<'_>, program: &Spanned<HirProgram>, set: &mut HashSet<SpanInfo>) {
     for item in &program.node.items {
         collect_array_fors_item(checker, item, set);
     }
 }
 
-fn collect_array_fors_item(
-    checker: &mut TypeChecker<'_>,
-    item: &Spanned<HirItem>,
-    set: &mut HashSet<SpanInfo>,
-) {
+fn collect_array_fors_item(checker: &mut TypeChecker<'_>, item: &Spanned<HirItem>, set: &mut HashSet<SpanInfo>) {
     match &item.node {
         HirItem::FunctionDefinition(def) => {
             collect_array_fors_in_block(checker, &def.node.body, set);

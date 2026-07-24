@@ -1,6 +1,6 @@
 use crate::hir::{
-    HirBinaryOp, HirEnumPath, HirField, HirFieldKind, HirIdentifier, HirParameter, HirPath,
-    HirPathSegment, HirPrimitiveType, HirRangeExpression, HirType, HirUnaryOp, HirVisibility,
+    HirBinaryOp, HirEnumPath, HirField, HirFieldKind, HirIdentifier, HirParameter, HirPath, HirPathSegment,
+    HirPrimitiveType, HirRangeExpression, HirType, HirUnaryOp, HirVisibility,
 };
 use crate::syntax::{self, Spanned};
 
@@ -15,10 +15,7 @@ impl Lowerable for Spanned<syntax::Type> {
             syntax::Type::Primitive(primitive) => HirType::Primitive(primitive.lower()),
             syntax::Type::Complex(path) => HirType::Complex(path.lower()),
             syntax::Type::Array(inner) => HirType::Array(Box::new(inner.lower())),
-            syntax::Type::Function {
-                return_type,
-                parameters,
-            } => HirType::Function {
+            syntax::Type::Function { return_type, parameters } => HirType::Function {
                 return_type: Box::new(return_type.lower()),
                 parameters: parameters.iter().map(Lowerable::lower).collect(),
             },
@@ -55,11 +52,7 @@ impl Lowerable for Spanned<syntax::Parameter> {
 
     fn lower(&self) -> Self::Output {
         Spanned::new(
-            HirParameter {
-                mutable: self.node.mutable,
-                name: self.node.name.lower(),
-                ty: self.node.ty.lower(),
-            },
+            HirParameter { mutable: self.node.mutable, name: self.node.name.lower(), ty: self.node.ty.lower() },
             self.span,
         )
     }
@@ -69,13 +62,7 @@ impl Lowerable for Spanned<syntax::RangeExpression> {
     type Output = Spanned<HirRangeExpression>;
 
     fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirRangeExpression {
-                start: self.node.start.lower(),
-                end: self.node.end.lower(),
-            },
-            self.span,
-        )
+        Spanned::new(HirRangeExpression { start: self.node.start.lower(), end: self.node.end.lower() }, self.span)
     }
 }
 
@@ -97,12 +84,7 @@ impl Lowerable for Spanned<syntax::Identifier> {
     type Output = Spanned<HirIdentifier>;
 
     fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirIdentifier {
-                name: self.node.name.clone(),
-            },
-            self.span,
-        )
+        Spanned::new(HirIdentifier { name: self.node.name.clone() }, self.span)
     }
 }
 
@@ -110,12 +92,7 @@ impl Lowerable for Spanned<syntax::Path> {
     type Output = Spanned<HirPath>;
 
     fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirPath {
-                segments: self.node.segments.iter().map(Lowerable::lower).collect(),
-            },
-            self.span,
-        )
+        Spanned::new(HirPath { segments: self.node.segments.iter().map(Lowerable::lower).collect() }, self.span)
     }
 }
 
@@ -138,10 +115,7 @@ impl Lowerable for Spanned<syntax::EnumPath> {
 
     fn lower(&self) -> Self::Output {
         Spanned::new(
-            HirEnumPath {
-                type_path: self.node.type_path.lower(),
-                variant: self.node.variant.lower(),
-            },
+            HirEnumPath { type_path: self.node.type_path.lower(), variant: self.node.variant.lower() },
             self.span,
         )
     }

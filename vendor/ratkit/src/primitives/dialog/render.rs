@@ -30,12 +30,8 @@ impl Widget for DialogWidget<'_, '_> {
         let dialog_x = (area.width.saturating_sub(dialog_width)) / 2;
         let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
 
-        let dialog_area = Rect {
-            x: area.x + dialog_x,
-            y: area.y + dialog_y,
-            width: dialog_width,
-            height: dialog_height,
-        };
+        let dialog_area =
+            Rect { x: area.x + dialog_x, y: area.y + dialog_y, width: dialog_width, height: dialog_height };
 
         if let Some((offset_x, offset_y, shadow_style)) = shadow_spec(self.dialog.shadow) {
             let shadow_area = Rect {
@@ -45,9 +41,7 @@ impl Widget for DialogWidget<'_, '_> {
                 height: dialog_area.height,
             };
             if shadow_area.width > 0 && shadow_area.height > 0 {
-                Paragraph::new("")
-                    .style(shadow_style)
-                    .render(shadow_area, buf);
+                Paragraph::new("").style(shadow_style).render(shadow_area, buf);
             }
         }
 
@@ -71,11 +65,8 @@ impl Widget for DialogWidget<'_, '_> {
         let inner = block.inner(dialog_area);
         block.render(dialog_area, buf);
 
-        let content_inner = inset_rect(
-            inner,
-            self.dialog.content_padding.horizontal,
-            self.dialog.content_padding.vertical,
-        );
+        let content_inner =
+            inset_rect(inner, self.dialog.content_padding.horizontal, self.dialog.content_padding.vertical);
 
         let has_actions = !self.dialog.buttons.is_empty();
         let actions_height = if has_actions {
@@ -94,10 +85,7 @@ impl Widget for DialogWidget<'_, '_> {
             crate::primitives::dialog::types::DialogFooter::Text(_) => 1,
         };
 
-        let body_height = content_inner
-            .height
-            .saturating_sub(actions_height)
-            .saturating_sub(footer_height);
+        let body_height = content_inner.height.saturating_sub(actions_height).saturating_sub(footer_height);
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -118,9 +106,7 @@ impl Widget for DialogWidget<'_, '_> {
             if self.dialog.title_inside {
                 lines.push(Line::from(vec![Span::styled(
                     self.dialog.title,
-                    Style::default()
-                        .add_modifier(Modifier::BOLD)
-                        .fg(self.dialog.get_border_color()),
+                    Style::default().add_modifier(Modifier::BOLD).fg(self.dialog.get_border_color()),
                 )]));
                 lines.push(Line::from(""));
             }
@@ -129,9 +115,7 @@ impl Widget for DialogWidget<'_, '_> {
                 lines.push(Line::from(line));
             }
 
-            let mut message = Paragraph::new(lines)
-                .style(self.dialog.style)
-                .alignment(self.dialog.message_alignment);
+            let mut message = Paragraph::new(lines).style(self.dialog.style).alignment(self.dialog.message_alignment);
 
             match self.dialog.wrap {
                 crate::primitives::dialog::types::DialogWrap::WordTrim => {
@@ -160,46 +144,23 @@ impl Widget for DialogWidget<'_, '_> {
             }
         }
 
-        if let crate::primitives::dialog::types::DialogFooter::Text(footer_text) =
-            self.dialog.footer
-        {
+        if let crate::primitives::dialog::types::DialogFooter::Text(footer_text) = self.dialog.footer {
             let footer_area = chunks[2];
-            let footer = Paragraph::new(Line::from(vec![Span::styled(
-                footer_text,
-                self.dialog.footer_style,
-            )]))
-            .alignment(self.dialog.footer_alignment);
+            let footer = Paragraph::new(Line::from(vec![Span::styled(footer_text, self.dialog.footer_style)]))
+                .alignment(self.dialog.footer_alignment);
             footer.render(footer_area, buf);
         }
     }
 }
 
-fn shadow_spec(
-    shadow: crate::primitives::dialog::types::DialogShadow,
-) -> Option<(u16, u16, Style)> {
+fn shadow_spec(shadow: crate::primitives::dialog::types::DialogShadow) -> Option<(u16, u16, Style)> {
     use crate::primitives::dialog::types::DialogShadow;
     match shadow {
         DialogShadow::None => None,
-        DialogShadow::Soft => Some((
-            1,
-            1,
-            Style::default().bg(ratatui::style::Color::Rgb(16, 16, 16)),
-        )),
-        DialogShadow::Medium => Some((
-            1,
-            1,
-            Style::default().bg(ratatui::style::Color::Rgb(10, 10, 10)),
-        )),
-        DialogShadow::Strong => Some((
-            2,
-            1,
-            Style::default().bg(ratatui::style::Color::Rgb(0, 0, 0)),
-        )),
-        DialogShadow::Custom {
-            offset_x,
-            offset_y,
-            style,
-        } => Some((offset_x, offset_y, style)),
+        DialogShadow::Soft => Some((1, 1, Style::default().bg(ratatui::style::Color::Rgb(16, 16, 16)))),
+        DialogShadow::Medium => Some((1, 1, Style::default().bg(ratatui::style::Color::Rgb(10, 10, 10)))),
+        DialogShadow::Strong => Some((2, 1, Style::default().bg(ratatui::style::Color::Rgb(0, 0, 0)))),
+        DialogShadow::Custom { offset_x, offset_y, style } => Some((offset_x, offset_y, style)),
     }
 }
 
@@ -219,39 +180,22 @@ fn render_horizontal_actions(dialog: &mut Dialog<'_>, area: Rect, buf: &mut Buff
         return;
     }
 
-    let total_button_width: usize = dialog
-        .buttons
-        .iter()
-        .map(|b| UnicodeWidthStr::width(*b) + 2)
-        .sum::<usize>()
+    let total_button_width: usize = dialog.buttons.iter().map(|b| UnicodeWidthStr::width(*b) + 2).sum::<usize>()
         + dialog.buttons.len().saturating_sub(1) * 2;
     let row_y = area.y;
 
     let start_x = match dialog.actions_alignment {
         Alignment::Left => area.x,
-        Alignment::Right => area
-            .x
-            .saturating_add(area.width.saturating_sub(total_button_width as u16)),
-        Alignment::Center => area
-            .x
-            .saturating_add(area.width.saturating_sub(total_button_width as u16) / 2),
+        Alignment::Right => area.x.saturating_add(area.width.saturating_sub(total_button_width as u16)),
+        Alignment::Center => area.x.saturating_add(area.width.saturating_sub(total_button_width as u16) / 2),
     };
 
     let mut x = start_x;
     for (idx, button_text) in dialog.buttons.iter().enumerate() {
         let button_width = (UnicodeWidthStr::width(*button_text) + 2) as u16;
-        let style = if idx == dialog.selected_button {
-            dialog.button_selected_style
-        } else {
-            dialog.button_style
-        };
+        let style = if idx == dialog.selected_button { dialog.button_selected_style } else { dialog.button_style };
 
-        let button_area = Rect {
-            x,
-            y: row_y,
-            width: button_width,
-            height: 1,
-        };
+        let button_area = Rect { x, y: row_y, width: button_width, height: 1 };
         dialog.button_areas.push(button_area);
 
         let button_line = Line::from(vec![Span::styled(format!(" {} ", button_text), style)]);
@@ -266,37 +210,18 @@ fn render_vertical_actions(dialog: &mut Dialog<'_>, area: Rect, buf: &mut Buffer
         return;
     }
 
-    for (row, (idx, button_text)) in dialog
-        .buttons
-        .iter()
-        .enumerate()
-        .take(area.height as usize)
-        .enumerate()
-    {
+    for (row, (idx, button_text)) in dialog.buttons.iter().enumerate().take(area.height as usize).enumerate() {
         let y = area.y + row as u16;
         let button_width = (UnicodeWidthStr::width(*button_text) + 2) as u16;
-        let style = if idx == dialog.selected_button {
-            dialog.button_selected_style
-        } else {
-            dialog.button_style
-        };
+        let style = if idx == dialog.selected_button { dialog.button_selected_style } else { dialog.button_style };
 
         let x = match dialog.actions_alignment {
             Alignment::Left => area.x,
-            Alignment::Right => area
-                .x
-                .saturating_add(area.width.saturating_sub(button_width)),
-            Alignment::Center => area
-                .x
-                .saturating_add(area.width.saturating_sub(button_width) / 2),
+            Alignment::Right => area.x.saturating_add(area.width.saturating_sub(button_width)),
+            Alignment::Center => area.x.saturating_add(area.width.saturating_sub(button_width) / 2),
         };
 
-        let button_area = Rect {
-            x,
-            y,
-            width: button_width,
-            height: 1,
-        };
+        let button_area = Rect { x, y, width: button_width, height: 1 };
         dialog.button_areas.push(button_area);
 
         let button_line = Line::from(vec![Span::styled(format!(" {} ", button_text), style)]);

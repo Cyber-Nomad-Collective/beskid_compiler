@@ -29,12 +29,8 @@ pub fn expand_program_with_diagnostics(
     source_name: &str,
     source: &str,
 ) -> MacroExpansionOutcome {
-    let (program, diagnostics) =
-        expand::expand_program_with_diagnostics_impl(program, max_depth, source_name, source);
-    MacroExpansionOutcome {
-        program,
-        diagnostics,
-    }
+    let (program, diagnostics) = expand::expand_program_with_diagnostics_impl(program, max_depth, source_name, source);
+    MacroExpansionOutcome { program, diagnostics }
 }
 
 pub fn run_macro_expand(
@@ -51,12 +47,7 @@ pub fn run_macro_expand_with_diagnostics(
     source: &str,
 ) -> Result<MacroExpansionOutcome> {
     observe_phase_result(pipeline, MACRO_EXPAND, || {
-        Ok(expand_program_with_diagnostics(
-            program,
-            DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
-            source_name,
-            source,
-        ))
+        Ok(expand_program_with_diagnostics(program, DEFAULT_MAX_MACRO_EXPANSION_DEPTH, source_name, source))
     })
 }
 
@@ -72,11 +63,8 @@ mod tests {
     #[test]
     fn duplicate_macro_name_emits_e1907() {
         let source = "macro dup (expression x) { $x; }\nmacro dup (expression y) { $y; }\n";
-        let registry = MacroRegistry::from_program(
-            &parse_program_with_source_name("M.bd", source)
-                .expect("parse")
-                .node,
-        );
+        let registry =
+            MacroRegistry::from_program(&parse_program_with_source_name("M.bd", source).expect("parse").node);
         assert!(registry.registry_issues.iter().any(|(_, k)| matches!(
             k,
             SemanticIssueKind::MacroAmbiguousName { name } if name == "dup"
@@ -92,12 +80,7 @@ mod tests {
             "Main.bd",
             source,
         );
-        assert!(
-            outcome
-                .diagnostics
-                .iter()
-                .any(|d| d.code.as_deref() == Some("E1901"))
-        );
+        assert!(outcome.diagnostics.iter().any(|d| d.code.as_deref() == Some("E1901")));
     }
 
     #[test]
@@ -116,8 +99,7 @@ unit Main() { let x = twice!(1); return; }
             .iter()
             .find_map(|i| match &i.node {
                 crate::syntax::items::Node::Function(f) => {
-                    if let crate::syntax::Statement::Let(ls) = &f.node.body.node.statements[0].node
-                    {
+                    if let crate::syntax::Statement::Let(ls) = &f.node.body.node.statements[0].node {
                         Some(ls.node.value.clone())
                     } else {
                         None
@@ -141,24 +123,11 @@ unit Main() { let x = twice!(1); return; }
 
         use super::match_args::match_arguments;
 
-        let name = Spanned::new(
-            Identifier {
-                name: "twice".to_string(),
-            },
-            crate::syntax::SpanInfo::default(),
-        );
+        let name = Spanned::new(Identifier { name: "twice".to_string() }, crate::syntax::SpanInfo::default());
         let param = Spanned::new(
             MacroParameter {
-                kind: Spanned::new(
-                    MacroFragmentKind::Expression,
-                    crate::syntax::SpanInfo::default(),
-                ),
-                name: Spanned::new(
-                    Identifier {
-                        name: "value".to_string(),
-                    },
-                    crate::syntax::SpanInfo::default(),
-                ),
+                kind: Spanned::new(MacroFragmentKind::Expression, crate::syntax::SpanInfo::default()),
+                name: Spanned::new(Identifier { name: "value".to_string() }, crate::syntax::SpanInfo::default()),
             },
             crate::syntax::SpanInfo::default(),
         );
@@ -169,8 +138,7 @@ unit Main() { let x = twice!(1); return; }
             .iter()
             .find_map(|item| match &item.node {
                 crate::syntax::items::Node::Function(f) => {
-                    if let crate::syntax::Statement::Let(ls) = &f.node.body.node.statements[0].node
-                    {
+                    if let crate::syntax::Statement::Let(ls) = &f.node.body.node.statements[0].node {
                         Some(ls.node.value.clone())
                     } else {
                         None

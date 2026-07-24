@@ -25,19 +25,11 @@ pub(crate) fn merge_generated_syntax(
             let snapshot = materialize_snapshot(&merged, GENERATION_ID);
             let pipeline = SdkSyntaxPipeline::from_ops(
                 &snapshot,
-                SdkNodeRef {
-                    syntax_generation_id: GENERATION_ID,
-                    node_id: snapshot.root_id(),
-                },
-                QueryBounds {
-                    max_nodes: 0,
-                    max_depth: 0,
-                },
+                SdkNodeRef { syntax_generation_id: GENERATION_ID, node_id: snapshot.root_id() },
+                QueryBounds { max_nodes: 0, max_depth: 0 },
                 generated.pipeline_ops.clone(),
             );
-            pipeline
-                .validate()
-                .map_err(|err| anyhow::anyhow!("failed to validate mod pipeline ops: {err:?}"))?;
+            pipeline.validate().map_err(|err| anyhow::anyhow!("failed to validate mod pipeline ops: {err:?}"))?;
             pipeline.ordered_ops()
         };
         for op in ops {

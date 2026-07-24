@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{
-    DependencySource, ProjectLockDependencyEntry, is_workspace_manifest_path,
-    load_project_lock_dependencies, parse_manifest, plan_entry_path,
+    DependencySource, ProjectLockDependencyEntry, is_workspace_manifest_path, load_project_lock_dependencies,
+    parse_manifest, plan_entry_path,
 };
 use beskid_graph::{GraphKind, graph_tooling_payload};
 use beskid_queries::{GraphFetchRequest, get_graph_document, get_graph_document_simple};
@@ -25,15 +25,12 @@ pub(crate) fn get_graph(
     let manifest_path = super::manifest_path_from_uri(project_uri)?;
     let workspace_manifest = resolve_workspace_manifest(&manifest_path, kind, workspace_uri)?;
     let mut entry_path = entry_uri.and_then(|uri| {
-        crate::workspace_scan::path_from_uri_string(uri)
-            .map(|p| if p.is_file() { p } else { p.join("Main.bd") })
+        crate::workspace_scan::path_from_uri_string(uri).map(|p| if p.is_file() { p } else { p.join("Main.bd") })
     });
     let mut compile_plan = None;
 
-    if matches!(
-        kind,
-        GraphKind::ModuleTree | GraphKind::ImportClosure | GraphKind::HostComposition
-    ) && !is_workspace_manifest_path(&manifest_path)
+    if matches!(kind, GraphKind::ModuleTree | GraphKind::ImportClosure | GraphKind::HostComposition)
+        && !is_workspace_manifest_path(&manifest_path)
         && let Some(ctx) = CompilationContext::try_for_analysis_path(&manifest_path, None)
         && let Some(plan) = ctx.compile_plan.clone()
     {
@@ -99,26 +96,12 @@ pub(crate) fn get_project_dependencies(project_uri: &str) -> Result<Value> {
 
     let project_root = manifest_path.parent().ok_or_else(missing_args)?;
     let lock_entries = load_project_lock_dependencies(project_root).unwrap_or_default();
-    let locked = lock_entries
-        .iter()
-        .map(serialize_lock_entry)
-        .collect::<Vec<_>>();
+    let locked = lock_entries.iter().map(serialize_lock_entry).collect::<Vec<_>>();
 
-    let declared_names: HashSet<&str> = manifest
-        .dependencies
-        .iter()
-        .map(|dep| dep.name.as_str())
-        .collect();
+    let declared_names: HashSet<&str> = manifest.dependencies.iter().map(|dep| dep.name.as_str()).collect();
     let locked_names: HashSet<&str> = lock_entries.iter().map(|entry| entry.name()).collect();
-    let mut unresolved: Vec<Value> = declared_names
-        .difference(&locked_names)
-        .map(|name| json!(name))
-        .collect();
-    unresolved.sort_by(|left, right| {
-        left.as_str()
-            .unwrap_or_default()
-            .cmp(right.as_str().unwrap_or_default())
-    });
+    let mut unresolved: Vec<Value> = declared_names.difference(&locked_names).map(|name| json!(name)).collect();
+    unresolved.sort_by(|left, right| left.as_str().unwrap_or_default().cmp(right.as_str().unwrap_or_default()));
 
     Ok(json!({
         "projectUri": project_uri,
@@ -149,16 +132,10 @@ fn dependency_source_str(source: DependencySource) -> &'static str {
 }
 
 pub(crate) fn graph_kind_from_args(arguments: Option<&[Value]>) -> GraphKind {
-    let Some(obj) = arguments
-        .and_then(|args| args.first())
-        .and_then(Value::as_object)
-    else {
+    let Some(obj) = arguments.and_then(|args| args.first()).and_then(Value::as_object) else {
         return GraphKind::ProjectDeps;
     };
-    obj.get("kind")
-        .and_then(Value::as_str)
-        .and_then(GraphKind::parse)
-        .unwrap_or(GraphKind::ProjectDeps)
+    obj.get("kind").and_then(Value::as_str).and_then(GraphKind::parse).unwrap_or(GraphKind::ProjectDeps)
 }
 
 pub(crate) fn optional_uri_arg(arguments: Option<&[Value]>, key: &str) -> Option<String> {

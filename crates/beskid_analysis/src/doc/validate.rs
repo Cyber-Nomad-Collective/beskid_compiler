@@ -8,8 +8,7 @@ use crate::analysis::diagnostics::make_diagnostic;
 use crate::doc::callable::callable_signatures_for_span;
 use crate::doc::refs::ref_path_resolves;
 use crate::doc::{
-    enum_variant_names_for_span, flatten_leading_docs, generic_param_names_for_span,
-    parse_doc_body_pairs,
+    enum_variant_names_for_span, flatten_leading_docs, generic_param_names_for_span, parse_doc_body_pairs,
 };
 use crate::doc_comment_parser::Rule as DocSyntaxRule;
 use crate::resolve::Resolution;
@@ -48,11 +47,7 @@ fn first_ident(pair: &pest::iterators::Pair<'_, DocSyntaxRule>) -> String {
 }
 
 fn inner_text(pair: &pest::iterators::Pair<'_, DocSyntaxRule>, rule: DocSyntaxRule) -> String {
-    pair.clone()
-        .into_inner()
-        .find(|p| p.as_rule() == rule)
-        .map(|p| p.as_str().trim().to_string())
-        .unwrap_or_default()
+    pair.clone().into_inner().find(|p| p.as_rule() == rule).map(|p| p.as_str().trim().to_string()).unwrap_or_default()
 }
 
 /// Documentation-only diagnostics (stable codes `W161x` / `W162x`). Requires successful name resolution.
@@ -85,10 +80,8 @@ pub fn collect_doc_diagnostics(
         let pieces_vec: Vec<_> = pieces_iter.collect();
 
         let callable = callable_signatures_for_span(program, item.span);
-        let supports_arg_returns = matches!(
-            item.kind,
-            ItemKind::Function | ItemKind::Method | ItemKind::ContractMethodSignature
-        );
+        let supports_arg_returns =
+            matches!(item.kind, ItemKind::Function | ItemKind::Method | ItemKind::ContractMethodSignature);
 
         let variant_names = enum_variant_names_for_span(program, item.span);
         let generic_names = generic_param_names_for_span(program, item.span);
@@ -331,31 +324,13 @@ pub fn collect_doc_diagnostics(
             );
         }
         if bad_variant_directive {
-            push_issue(
-                &mut out,
-                source_name,
-                source,
-                doc_span(&leading),
-                SemanticIssueKind::DocVariantOnNonEnum,
-            );
+            push_issue(&mut out, source_name, source, doc_span(&leading), SemanticIssueKind::DocVariantOnNonEnum);
         }
         if bad_par_directive {
-            push_issue(
-                &mut out,
-                source_name,
-                source,
-                doc_span(&leading),
-                SemanticIssueKind::DocParWithoutGenerics,
-            );
+            push_issue(&mut out, source_name, source, doc_span(&leading), SemanticIssueKind::DocParWithoutGenerics);
         }
     }
 
-    out.sort_by(|a, b| {
-        a.span
-            .offset()
-            .cmp(&b.span.offset())
-            .then(a.code.cmp(&b.code))
-            .then(a.message.cmp(&b.message))
-    });
+    out.sort_by(|a, b| a.span.offset().cmp(&b.span.offset()).then(a.code.cmp(&b.code)).then(a.message.cmp(&b.message)));
     out
 }

@@ -5,9 +5,9 @@
 //! marshaling reads live session fingerprints.
 
 use beskid_abi::{
-    BeskidStr, ModCatalog, ModCollectRequest, ModCollectTargetSet, ModCompilation,
-    ModContractRegistration, ModContractRegistrationSlice, ModGenerationRequest, ModPackage,
-    ModPackageSlice, ModStrSlice, ModWorkspace, ModWorkspaceMember, ModWorkspaceMemberSlice,
+    BeskidStr, ModCatalog, ModCollectRequest, ModCollectTargetSet, ModCompilation, ModContractRegistration,
+    ModContractRegistrationSlice, ModGenerationRequest, ModPackage, ModPackageSlice, ModStrSlice, ModWorkspace,
+    ModWorkspaceMember, ModWorkspaceMemberSlice,
 };
 
 use super::types::{LoadedModArtifact, ModHostInput};
@@ -40,14 +40,7 @@ impl ModInvocationContext {
         let compilation = arena.compilation(input, target_triple);
         let workspace = arena.workspace(input, loaded);
         let mods = arena.catalog(loaded);
-        Self {
-            collect_request: ModCollectRequest {
-                compilation,
-                workspace,
-                mods,
-            },
-            arena,
-        }
+        Self { collect_request: ModCollectRequest { compilation, workspace, mods }, arena }
     }
 
     /// Empty context for tests and pre-plan invocations.
@@ -67,10 +60,7 @@ impl ModInvocationContext {
 
     /// `GenerationRequest` ABI view with the supplied target ids.
     pub fn generation_request(&mut self, target_ids: &[String]) -> ModGenerationRequest {
-        self.arena.generation_targets = target_ids
-            .iter()
-            .map(|target| self.arena.intern(target))
-            .collect();
+        self.arena.generation_targets = target_ids.iter().map(|target| self.arena.intern(target)).collect();
         ModGenerationRequest {
             context: self.collect_request,
             targets: ModCollectTargetSet {
@@ -84,16 +74,9 @@ impl ModInvocationContext {
 }
 
 impl ContextArena {
-    fn compilation(
-        &mut self,
-        input: &ModHostInput<'_>,
-        target_triple: Option<&str>,
-    ) -> ModCompilation {
+    fn compilation(&mut self, input: &ModHostInput<'_>, target_triple: Option<&str>) -> ModCompilation {
         let (active_project_name, active_project_root) = match input.compile_plan {
-            Some(plan) => (
-                self.intern(&plan.project_name),
-                self.intern_path(&plan.project_root),
-            ),
+            Some(plan) => (self.intern(&plan.project_name), self.intern_path(&plan.project_root)),
             None => (self.intern(""), self.intern("")),
         };
         ModCompilation {
@@ -106,11 +89,7 @@ impl ContextArena {
         }
     }
 
-    fn workspace(
-        &mut self,
-        input: &ModHostInput<'_>,
-        loaded: &[LoadedModArtifact],
-    ) -> ModWorkspace {
+    fn workspace(&mut self, input: &ModHostInput<'_>, loaded: &[LoadedModArtifact]) -> ModWorkspace {
         let root_path = match input.compile_plan {
             Some(plan) => self.intern_path(&plan.project_root),
             None => self.intern(""),
@@ -151,15 +130,11 @@ impl ContextArena {
 
         for artifact in loaded {
             let descriptor = artifact.descriptor.as_ref();
-            let package_id = descriptor
-                .map(|value| value.package_id.as_str())
-                .unwrap_or(artifact.discovered.project_name.as_str());
-            let package_version = descriptor
-                .and_then(|value| value.package_version.as_deref())
-                .unwrap_or("");
-            let descriptor_path = descriptor
-                .map(|value| self.intern_path(&value.sidecar_path()))
-                .unwrap_or_else(|| self.intern(""));
+            let package_id =
+                descriptor.map(|value| value.package_id.as_str()).unwrap_or(artifact.discovered.project_name.as_str());
+            let package_version = descriptor.and_then(|value| value.package_version.as_deref()).unwrap_or("");
+            let descriptor_path =
+                descriptor.map(|value| self.intern_path(&value.sidecar_path())).unwrap_or_else(|| self.intern(""));
 
             let capability_strings = artifact
                 .discovered
@@ -168,10 +143,7 @@ impl ContextArena {
                 .and_then(|section| section.capabilities.as_ref())
                 .cloned()
                 .unwrap_or_default();
-            let capabilities = capability_strings
-                .iter()
-                .map(|cap| self.intern(cap))
-                .collect::<Vec<_>>();
+            let capabilities = capability_strings.iter().map(|cap| self.intern(cap)).collect::<Vec<_>>();
             let registrations = artifact
                 .registrations
                 .iter()
@@ -191,14 +163,8 @@ impl ContextArena {
 
             self.package_capabilities.push(capabilities);
             self.package_registrations.push(registrations);
-            let capabilities = self
-                .package_capabilities
-                .last()
-                .expect("package capabilities");
-            let registrations = self
-                .package_registrations
-                .last()
-                .expect("package registrations");
+            let capabilities = self.package_capabilities.last().expect("package capabilities");
+            let registrations = self.package_registrations.last().expect("package registrations");
             self.package_rows.push(ModPackage {
                 package_id,
                 package_version,
@@ -207,32 +173,18 @@ impl ContextArena {
                 source_root,
                 manifest_path,
                 descriptor_path,
-                capabilities: ModStrSlice {
-                    items: capabilities.as_ptr(),
-                    len: capabilities.len(),
-                },
-                registrations: ModContractRegistrationSlice {
-                    items: registrations.as_ptr(),
-                    len: registrations.len(),
-                },
+                capabilities: ModStrSlice { items: capabilities.as_ptr(), len: capabilities.len() },
+                registrations: ModContractRegistrationSlice { items: registrations.as_ptr(), len: registrations.len() },
             });
         }
 
-        ModCatalog {
-            packages: ModPackageSlice {
-                items: self.package_rows.as_ptr(),
-                len: self.package_rows.len(),
-            },
-        }
+        ModCatalog { packages: ModPackageSlice { items: self.package_rows.as_ptr(), len: self.package_rows.len() } }
     }
 
     fn intern(&mut self, value: &str) -> BeskidStr {
         self.strings.push(value.to_owned());
         let stored = self.strings.last().expect("interned string");
-        BeskidStr {
-            ptr: stored.as_ptr(),
-            len: stored.len(),
-        }
+        BeskidStr { ptr: stored.as_ptr(), len: stored.len() }
     }
 
     fn intern_path(&mut self, path: &std::path::Path) -> BeskidStr {
@@ -256,11 +208,7 @@ mod tests {
             manifest_path: PathBuf::from("/ws/host/Host.bproj"),
             project_name: "Host".to_owned(),
             source_root: PathBuf::from("/ws/host/Src"),
-            target: Target {
-                name: "Host".to_owned(),
-                kind: TargetKind::App,
-                entry: Some("Main.bd".to_owned()),
-            },
+            target: Target { name: "Host".to_owned(), kind: TargetKind::App, entry: Some("Main.bd".to_owned()) },
             dependency_projects: vec![ResolvedDependencyProject {
                 dependency_name: "moda".to_owned(),
                 manifest_path: PathBuf::from("/ws/ModA/ModA.bproj"),

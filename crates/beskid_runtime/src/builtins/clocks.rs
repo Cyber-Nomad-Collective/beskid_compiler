@@ -4,10 +4,7 @@
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn clock_realtime_nanos() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as i64)
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as i64).unwrap_or(0)
 }
 
 /// Monotonic nanoseconds (best effort).

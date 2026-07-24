@@ -59,14 +59,8 @@ fn write_fd_bytes(fd: i64, bytes: &[u8]) -> i64 {
         return 0;
     }
     match fd {
-        1 => std::io::stdout()
-            .write(bytes)
-            .map(|n| n as i64)
-            .unwrap_or(-1),
-        2 => std::io::stderr()
-            .write(bytes)
-            .map(|n| n as i64)
-            .unwrap_or(-1),
+        1 => std::io::stdout().write(bytes).map(|n| n as i64).unwrap_or(-1),
+        2 => std::io::stderr().write(bytes).map(|n| n as i64).unwrap_or(-1),
         _ => -1,
     }
 }

@@ -8,15 +8,11 @@ mod roots;
 mod unit_builder;
 mod unit_cache;
 
-pub use discovery::{
-    module_path_exists_on_disk, module_path_to_relative_path, resolve_module_file,
-};
+pub use discovery::{module_path_exists_on_disk, module_path_to_relative_path, resolve_module_file};
 pub use hir_units::{UnitHir, build_hir_units, reindex_hir_units_in_place};
 pub(crate) use loader::assemble_program;
 pub use loader::assemble_program_with_materializer;
-pub use loader::{
-    AssemblyError, UnitMaterializer, assembly_options_for_plan, assembly_options_for_prepare,
-};
+pub use loader::{AssemblyError, UnitMaterializer, assembly_options_for_plan, assembly_options_for_prepare};
 pub use module_index::{ModuleIndex, infer_logical_module_path};
 pub use roots::{
     EffectiveCompilationRoots, RootEntry, effective_roots_for_plan, effective_roots_from_lockfile,
@@ -24,8 +20,8 @@ pub use roots::{
 };
 pub use unit_builder::UnitBuilder;
 pub use unit_cache::{
-    UnitCacheStats, cache_root_for_project, disk_cache_stats, ensure_manifest,
-    unit_content_fingerprint, unit_fingerprint,
+    UnitCacheStats, cache_root_for_project, disk_cache_stats, ensure_manifest, unit_content_fingerprint,
+    unit_fingerprint,
 };
 
 use std::path::PathBuf;
@@ -128,10 +124,7 @@ impl SyntaxProgramAssembly {
         &self.trusted_corelib_service_paths
     }
 
-    pub(crate) fn set_trusted_corelib_service_paths_for_project_assembly(
-        &mut self,
-        paths: Arc<[PathBuf]>,
-    ) {
+    pub(crate) fn set_trusted_corelib_service_paths_for_project_assembly(&mut self, paths: Arc<[PathBuf]>) {
         self.trusted_corelib_service_paths = paths;
     }
 
@@ -163,10 +156,7 @@ impl std::fmt::Debug for ProgramAssembly {
             .field("entry_index", &self.entry_index)
             .field("discovery", &self.discovery)
             .field("has_std_dependency", &self.has_std_dependency)
-            .field(
-                "trusted_corelib_service_paths",
-                &self.trusted_corelib_service_paths.len(),
-            )
+            .field("trusted_corelib_service_paths", &self.trusted_corelib_service_paths.len())
             .finish()
     }
 }
@@ -207,19 +197,12 @@ impl ProgramAssembly {
 
     /// Rebind the entry unit when reusing a workspace-wide assembly for another target file.
     pub fn with_entry_at(&self, entry_path: &std::path::Path) -> Option<Self> {
-        let target = entry_path
-            .canonicalize()
-            .unwrap_or_else(|_| entry_path.to_path_buf());
-        let entry_index = self.units.iter().position(|unit| {
-            unit.path
-                .canonicalize()
-                .unwrap_or_else(|_| unit.path.clone())
-                == target
-        })?;
-        Some(Self {
-            entry_index,
-            ..self.clone()
-        })
+        let target = entry_path.canonicalize().unwrap_or_else(|_| entry_path.to_path_buf());
+        let entry_index = self
+            .units
+            .iter()
+            .position(|unit| unit.path.canonicalize().unwrap_or_else(|_| unit.path.clone()) == target)?;
+        Some(Self { entry_index, ..self.clone() })
     }
 
     pub fn module_roots(&self) -> Vec<PathBuf> {

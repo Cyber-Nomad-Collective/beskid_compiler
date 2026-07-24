@@ -5,8 +5,7 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::parse_helpers::{
-    parse_attributes, parse_identifier_list, parse_parameter_list_with_docs,
-    parse_visibility_or_default,
+    parse_attributes, parse_identifier_list, parse_parameter_list_with_docs, parse_visibility_or_default,
 };
 use crate::syntax::{Attribute, Block, Identifier, Parameter, SpanInfo, Spanned, Type, Visibility};
 
@@ -39,9 +38,7 @@ impl Parsable for FunctionDefinition {
         let mut inner = pair.clone().into_inner().peekable();
         let attributes = parse_attributes(&mut inner)?;
         let visibility = parse_visibility_or_default(&pair, &mut inner)?;
-        let return_type = Some(Type::parse(
-            inner.next().ok_or(ParseError::missing(Rule::BeskidType))?,
-        )?);
+        let return_type = Some(Type::parse(inner.next().ok_or(ParseError::missing(Rule::BeskidType))?)?);
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
 
         let mut generics = Vec::new();

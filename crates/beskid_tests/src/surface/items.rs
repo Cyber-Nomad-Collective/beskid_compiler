@@ -2,8 +2,8 @@ use beskid_analysis::Rule;
 use beskid_analysis::syntax::{ContractNode, EnumVariant, FieldKind, Node, Type, Visibility};
 
 use crate::surface::ast::{
-    assert_expression_path_segments, assert_path_segments, assert_type_complex_path,
-    assert_type_primitive, parse_node_ast, parse_program_ast,
+    assert_expression_path_segments, assert_path_segments, assert_type_complex_path, assert_type_primitive,
+    parse_node_ast, parse_program_ast,
 };
 use crate::surface::util::{assert_parse, assert_parse_fail};
 
@@ -17,10 +17,7 @@ fn assert_string_literal_expression(
     let beskid_analysis::syntax::Literal::String(raw) = &literal.node.literal.node else {
         panic!("expected string literal");
     };
-    let value = raw
-        .strip_prefix('"')
-        .and_then(|trimmed| trimmed.strip_suffix('"'))
-        .unwrap_or(raw);
+    let value = raw.strip_prefix('"').and_then(|trimmed| trimmed.strip_suffix('"')).unwrap_or(raw);
     assert_eq!(value, expected);
 }
 
@@ -39,18 +36,9 @@ fn function_definition_parses_and_builds_ast() {
             assert_eq!(function.node.parameters.len(), 2);
             assert_eq!(function.node.parameters[0].node.name.node.name, "a");
             assert_eq!(function.node.parameters[1].node.name.node.name, "b");
-            assert!(matches!(
-                function.node.parameters[0].node.ty.node,
-                Type::Primitive(_)
-            ));
-            assert!(matches!(
-                function.node.parameters[1].node.ty.node,
-                Type::Primitive(_)
-            ));
-            assert!(matches!(
-                function.node.return_type.as_ref().map(|ty| &ty.node),
-                Some(Type::Primitive(_))
-            ));
+            assert!(matches!(function.node.parameters[0].node.ty.node, Type::Primitive(_)));
+            assert!(matches!(function.node.parameters[1].node.ty.node, Type::Primitive(_)));
+            assert!(matches!(function.node.return_type.as_ref().map(|ty| &ty.node), Some(Type::Primitive(_))));
             assert_eq!(function.node.body.node.statements.len(), 1);
             match &function.node.body.node.statements[0].node {
                 beskid_analysis::syntax::Statement::Return(ret) => {
@@ -111,10 +99,7 @@ fn parses_method_with_primitive_receiver_ast() {
     let node = &program.node.items[0];
     match &node.node {
         Node::Method(method) => {
-            assert_type_primitive(
-                &method.node.receiver_type,
-                beskid_analysis::syntax::PrimitiveType::I32,
-            );
+            assert_type_primitive(&method.node.receiver_type, beskid_analysis::syntax::PrimitiveType::I32);
             assert_eq!(method.node.name.node.name, "zero");
         }
         _ => panic!("expected method definition"),
@@ -123,10 +108,7 @@ fn parses_method_with_primitive_receiver_ast() {
 
 #[test]
 fn rejects_legacy_method_declaration_ast() {
-    assert_parse_fail(
-        beskid_analysis::Rule::Program,
-        "i32 Point.len(self: Point) { return 0; }",
-    );
+    assert_parse_fail(beskid_analysis::Rule::Program, "i32 Point.len(self: Point) { return 0; }");
 }
 
 #[test]
@@ -140,14 +122,8 @@ fn parses_type_definition_ast() {
             assert_eq!(ty.node.fields.len(), 2);
             assert_eq!(ty.node.fields[0].node.name.node.name, "name");
             assert_eq!(ty.node.fields[1].node.name.node.name, "age");
-            assert_type_primitive(
-                &ty.node.fields[0].node.ty,
-                beskid_analysis::syntax::PrimitiveType::String,
-            );
-            assert_type_primitive(
-                &ty.node.fields[1].node.ty,
-                beskid_analysis::syntax::PrimitiveType::I32,
-            );
+            assert_type_primitive(&ty.node.fields[0].node.ty, beskid_analysis::syntax::PrimitiveType::String);
+            assert_type_primitive(&ty.node.fields[1].node.ty, beskid_analysis::syntax::PrimitiveType::I32);
         }
         _ => panic!("expected type definition"),
     }
@@ -188,10 +164,7 @@ fn parses_arrow_function_type_annotation_ast() {
 
     match &node.node {
         Node::TypeDefinition(ty) => match &ty.node.fields[0].node.ty.node {
-            Type::Function {
-                return_type,
-                parameters,
-            } => {
+            Type::Function { return_type, parameters } => {
                 assert_eq!(parameters.len(), 2);
                 assert_type_primitive(&parameters[0], beskid_analysis::syntax::PrimitiveType::I64);
                 assert_type_primitive(&parameters[1], beskid_analysis::syntax::PrimitiveType::I64);
@@ -236,10 +209,7 @@ fn parses_contract_definition_ast() {
                     assert_eq!(signature.node.parameters[0].node.name.node.name, "p");
                     match &signature.node.parameters[0].node.ty.node {
                         Type::Array(inner) => {
-                            assert_type_primitive(
-                                inner,
-                                beskid_analysis::syntax::PrimitiveType::U8,
-                            );
+                            assert_type_primitive(inner, beskid_analysis::syntax::PrimitiveType::U8);
                         }
                         _ => panic!("expected array type"),
                     }
@@ -279,9 +249,7 @@ fn parses_module_and_use_declarations() {
 
 #[test]
 fn parses_contract_definition_extern_attribute_ast() {
-    let node = parse_node_ast(
-        "[Extern(Abi: \"C\", Library: \"libc\")] contract Reader { i32 read(u8[] p); }",
-    );
+    let node = parse_node_ast("[Extern(Abi: \"C\", Library: \"libc\")] contract Reader { i32 read(u8[] p); }");
 
     match &node.node {
         Node::ContractDefinition(contract) => {
@@ -329,23 +297,14 @@ fn parses_attribute_declaration_ast() {
             assert_eq!(declaration.node.visibility.node, Visibility::Public);
             assert_eq!(declaration.node.name.node.name, "Builder");
             assert_eq!(declaration.node.targets.len(), 2);
-            assert_eq!(
-                declaration.node.targets[0].node.name.node.name,
-                "TypeDeclaration"
-            );
-            assert_eq!(
-                declaration.node.targets[1].node.name.node.name,
-                "MethodDeclaration"
-            );
+            assert_eq!(declaration.node.targets[0].node.name.node.name, "TypeDeclaration");
+            assert_eq!(declaration.node.targets[1].node.name.node.name, "MethodDeclaration");
             assert_eq!(declaration.node.parameters.len(), 2);
 
             let first = &declaration.node.parameters[0].node;
             assert_eq!(first.name.node.name, "suffix");
             assert!(first.default_value.is_some());
-            assert_string_literal_expression(
-                first.default_value.as_ref().expect("default"),
-                "Factory",
-            );
+            assert_string_literal_expression(first.default_value.as_ref().expect("default"), "Factory");
 
             let second = &declaration.node.parameters[1].node;
             assert_eq!(second.name.node.name, "enabled");
@@ -355,20 +314,13 @@ fn parses_attribute_declaration_ast() {
             else {
                 panic!("expected literal expression");
             };
-            assert!(matches!(
-                literal.node.literal.node,
-                beskid_analysis::syntax::Literal::Bool(true)
-            ));
+            assert!(matches!(literal.node.literal.node, beskid_analysis::syntax::Literal::Bool(true)));
         }
         _ => panic!("expected attribute declaration"),
     }
 }
 
-fn assert_enum_variant(
-    variant: &beskid_analysis::syntax::Spanned<EnumVariant>,
-    name: &str,
-    fields_len: usize,
-) {
+fn assert_enum_variant(variant: &beskid_analysis::syntax::Spanned<EnumVariant>, name: &str, fields_len: usize) {
     assert_eq!(variant.node.name.node.name, name);
     assert_eq!(variant.node.fields.len(), fields_len);
     if fields_len > 0 {
@@ -408,8 +360,5 @@ fn rejects_legacy_parameter_syntax() {
 
 #[test]
 fn rejects_legacy_function_parameter_syntax() {
-    assert_parse_fail(
-        Rule::FunctionDefinition,
-        "i32 add(a: i32, b: i32) { return a + b; }",
-    );
+    assert_parse_fail(Rule::FunctionDefinition, "i32 add(a: i32, b: i32) { return a + b; }");
 }

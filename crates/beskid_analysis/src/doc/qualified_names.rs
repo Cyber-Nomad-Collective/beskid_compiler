@@ -9,11 +9,7 @@ use crate::resolve::{ModuleGraph, Resolution};
 
 /// Short label for UI (last `::` segment of the resolver name).
 pub fn display_name_for_item(item: &ItemInfo) -> String {
-    item.name
-        .rsplit("::")
-        .next()
-        .unwrap_or(item.name.as_str())
-        .to_string()
+    item.name.rsplit("::").next().unwrap_or(item.name.as_str()).to_string()
 }
 
 /// Logical module path segments for a root item (empty for members).
@@ -36,27 +32,16 @@ fn join_path_segments(segments: &[String]) -> String {
     segments.join("::")
 }
 
-fn legacy_qualified_name(
-    item: &ItemInfo,
-    resolution: &Resolution,
-    cache: &HashMap<usize, String>,
-) -> String {
+fn legacy_qualified_name(item: &ItemInfo, resolution: &Resolution, cache: &HashMap<usize, String>) -> String {
     if let Some(parent_id) = item.parent_id {
-        let parent_qn = cache
-            .get(&parent_id.0)
-            .cloned()
-            .unwrap_or_else(|| resolution.items[parent_id.0].name.clone());
+        let parent_qn = cache.get(&parent_id.0).cloned().unwrap_or_else(|| resolution.items[parent_id.0].name.clone());
         return format!("{}::{}", parent_qn, display_name_for_item(item));
     }
     let module_path = module_path_for_item(item, &resolution.module_graph);
     if module_path.is_empty() {
         item.name.clone()
     } else {
-        format!(
-            "{}::{}",
-            join_path_segments(&module_path),
-            display_name_for_item(item)
-        )
+        format!("{}::{}", join_path_segments(&module_path), display_name_for_item(item))
     }
 }
 
@@ -64,8 +49,7 @@ fn legacy_qualified_name(
 pub fn qualified_names_for_items(resolution: &Resolution) -> HashMap<usize, String> {
     let mut out = HashMap::new();
     for item in &resolution.items {
-        let qn = qualified_name(resolution, item.id)
-            .unwrap_or_else(|| legacy_qualified_name(item, resolution, &out));
+        let qn = qualified_name(resolution, item.id).unwrap_or_else(|| legacy_qualified_name(item, resolution, &out));
         out.insert(item.id.0, qn);
     }
     out
@@ -118,10 +102,7 @@ pub fn lookup_type_ref_id(path: &str, index: &HashMap<String, usize>) -> Option<
         return Some(id);
     }
     let suffix = format!("::{path}");
-    index
-        .iter()
-        .find(|(key, _)| key.ends_with(&suffix) || key.as_str() == path)
-        .map(|(_, id)| *id)
+    index.iter().find(|(key, _)| key.ends_with(&suffix) || key.as_str() == path).map(|(_, id)| *id)
 }
 
 #[cfg(test)]
@@ -131,8 +112,8 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::resolve::{
-        ExportKind, ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution, ResolutionTables,
-        SymbolQualifier, SymbolRegistry, SymbolShape,
+        ExportKind, ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution, ResolutionTables, SymbolQualifier,
+        SymbolRegistry, SymbolShape,
     };
     use crate::syntax::SpanInfo;
 

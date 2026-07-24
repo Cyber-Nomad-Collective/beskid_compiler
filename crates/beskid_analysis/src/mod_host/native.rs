@@ -12,8 +12,8 @@ use tracing::debug;
 use beskid_abi::{ModCollectRequest, ModGenerationRequest};
 
 use super::invoker::{
-    AnalyzerOutcome, CollectorOutcome, ContractInvocationError, ContractInvoker, GeneratorOutcome,
-    RewriterOutcome, StubContractInvoker,
+    AnalyzerOutcome, CollectorOutcome, ContractInvocationError, ContractInvoker, GeneratorOutcome, RewriterOutcome,
+    StubContractInvoker,
 };
 use super::types::ContractRegistration;
 
@@ -26,11 +26,7 @@ pub struct NativeContractInvoker {
 
 impl NativeContractInvoker {
     pub fn new(object_paths: Vec<PathBuf>) -> Self {
-        Self {
-            object_paths,
-            inner: StubContractInvoker::new(),
-            opened: Mutex::new(Vec::new()),
-        }
+        Self { object_paths, inner: StubContractInvoker::new(), opened: Mutex::new(Vec::new()) }
     }
 
     pub fn invocations(&self) -> Vec<super::invoker::InvocationKind> {
@@ -62,9 +58,7 @@ impl NativeContractInvoker {
 }
 
 fn is_relocatable_object(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| matches!(ext, "o" | "obj"))
+    path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| matches!(ext, "o" | "obj"))
 }
 
 impl ContractInvoker for NativeContractInvoker {

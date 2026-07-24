@@ -5,12 +5,10 @@
 
 use std::path::Path;
 
-use crate::abi_v5::{
-    AbiManifestV5, RuntimeIntrinsic, SourceUnit, canonical_runtime_package, canonical_source_hash,
-};
+use crate::abi_v5::{AbiManifestV5, RuntimeIntrinsic, SourceUnit, canonical_runtime_package, canonical_source_hash};
 use crate::runtime_kit::{
-    BuildProfile, ResolvedRuntimeKit, RuntimeKitBuildError, RuntimeKitBuildRequest,
-    RuntimeKitResolutionError, build_runtime_kit, resolve_installed_runtime_kit,
+    BuildProfile, ResolvedRuntimeKit, RuntimeKitBuildError, RuntimeKitBuildRequest, RuntimeKitResolutionError,
+    build_runtime_kit, resolve_installed_runtime_kit,
 };
 
 pub const CANONICAL_BOOTSTRAP_SOURCE_PATH: &str = "src/Runtime/Bootstrap.bd";
@@ -40,163 +38,76 @@ pub const CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH: &str = "Core/Output/Output.bd
 /// Canonical Foundation error helper eligible to import the panic runtime service.
 pub const CANONICAL_FOUNDATION_ERROR_SOURCE_PATH: &str = "Core/Error/Error.bd";
 
-const CANONICAL_BOOTSTRAP_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Bootstrap.bd"
-));
-const CANONICAL_GC_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Mem/Gc.bd"
-));
-const CANONICAL_STRINGS_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Data/Strings.bd"
-));
-const CANONICAL_COLLECTIONS_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Data/Collections.bd"
-));
-const CANONICAL_FIBER_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Fiber/Fiber.bd"
-));
-const CANONICAL_SCHEDULER_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Fiber/Scheduler.bd"
-));
-const CANONICAL_CHANNEL_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Sync/Channel.bd"
-));
-const CANONICAL_MUTEX_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Sync/Mutex.bd"
-));
-const CANONICAL_WAITGROUP_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Sync/WaitGroup.bd"
-));
-const CANONICAL_HUB_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/PubSub/Hub.bd"
-));
-const CANONICAL_EVENTS_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/PubSub/Events.bd"
-));
-const CANONICAL_DYNAMIC_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Dynamic/Dynamic.bd"
-));
-const CANONICAL_CLOCKS_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Host/Clocks.bd"
-));
-const CANONICAL_PROCESS_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Host/Process.bd"
-));
-const CANONICAL_COMPOSITION_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Host/Composition.bd"
-));
-const CANONICAL_CALLBACKS_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Host/Callbacks.bd"
-));
-const CANONICAL_SYSCALLS_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../runtime/beskid/src/Runtime/Io/Syscalls.bd"
-));
+const CANONICAL_BOOTSTRAP_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Bootstrap.bd"));
+const CANONICAL_GC_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc.bd"));
+const CANONICAL_STRINGS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Data/Strings.bd"));
+const CANONICAL_COLLECTIONS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Data/Collections.bd"));
+const CANONICAL_FIBER_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Fiber.bd"));
+const CANONICAL_SCHEDULER_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler.bd"));
+const CANONICAL_CHANNEL_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Sync/Channel.bd"));
+const CANONICAL_MUTEX_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Sync/Mutex.bd"));
+const CANONICAL_WAITGROUP_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Sync/WaitGroup.bd"));
+const CANONICAL_HUB_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/PubSub/Hub.bd"));
+const CANONICAL_EVENTS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/PubSub/Events.bd"));
+const CANONICAL_DYNAMIC_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Dynamic/Dynamic.bd"));
+const CANONICAL_CLOCKS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Host/Clocks.bd"));
+const CANONICAL_PROCESS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Host/Process.bd"));
+const CANONICAL_COMPOSITION_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Host/Composition.bd"));
+const CANONICAL_CALLBACKS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Host/Callbacks.bd"));
+const CANONICAL_SYSCALLS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Io/Syscalls.bd"));
 
-const CANONICAL_CORELIB_SYSCALL_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../corelib/packages/foundation/src/Core/Syscall/Syscall.bd"
-));
-const CANONICAL_FOUNDATION_ASSERT_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../corelib/packages/foundation/src/Testing/Assert.bd"
-));
-const CANONICAL_FOUNDATION_OUTPUT_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../corelib/packages/foundation/src/Core/Output/Output.bd"
-));
-const CANONICAL_FOUNDATION_ERROR_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../corelib/packages/foundation/src/Core/Error/Error.bd"
-));
+const CANONICAL_CORELIB_SYSCALL_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Syscall/Syscall.bd"));
+const CANONICAL_FOUNDATION_ASSERT_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Testing/Assert.bd"));
+const CANONICAL_FOUNDATION_OUTPUT_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Output/Output.bd"));
+const CANONICAL_FOUNDATION_ERROR_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Error/Error.bd"));
 
 /// The runtime source corpus built into this compiler version.
 pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
     vec![
-        SourceUnit {
-            logical_path: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(),
-            source: CANONICAL_BOOTSTRAP_SOURCE.into(),
-        },
-        SourceUnit {
-            logical_path: CANONICAL_GC_SOURCE_PATH.into(),
-            source: CANONICAL_GC_SOURCE.into(),
-        },
-        SourceUnit {
-            logical_path: CANONICAL_STRINGS_SOURCE_PATH.into(),
-            source: CANONICAL_STRINGS_SOURCE.into(),
-        },
+        SourceUnit { logical_path: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(), source: CANONICAL_BOOTSTRAP_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_GC_SOURCE_PATH.into(), source: CANONICAL_GC_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_STRINGS_SOURCE_PATH.into(), source: CANONICAL_STRINGS_SOURCE.into() },
         SourceUnit {
             logical_path: CANONICAL_COLLECTIONS_SOURCE_PATH.into(),
             source: CANONICAL_COLLECTIONS_SOURCE.into(),
         },
-        SourceUnit {
-            logical_path: CANONICAL_FIBER_SOURCE_PATH.into(),
-            source: CANONICAL_FIBER_SOURCE.into(),
-        },
-        SourceUnit {
-            logical_path: CANONICAL_SCHEDULER_SOURCE_PATH.into(),
-            source: CANONICAL_SCHEDULER_SOURCE.into(),
-        },
-        SourceUnit {
-            logical_path: CANONICAL_CHANNEL_SOURCE_PATH.into(),
-            source: CANONICAL_CHANNEL_SOURCE.into(),
-        },
-        SourceUnit {
-            logical_path: CANONICAL_MUTEX_SOURCE_PATH.into(),
-            source: CANONICAL_MUTEX_SOURCE.into(),
-        },
-        SourceUnit {
-            logical_path: CANONICAL_WAITGROUP_SOURCE_PATH.into(),
-            source: CANONICAL_WAITGROUP_SOURCE.into(),
-        },
-        SourceUnit {
-            logical_path: CANONICAL_HUB_SOURCE_PATH.into(),
-            source: CANONICAL_HUB_SOURCE.into(),
-        },
-        SourceUnit {
-            logical_path: CANONICAL_EVENTS_SOURCE_PATH.into(),
-            source: CANONICAL_EVENTS_SOURCE.into(),
-        },
-        SourceUnit {
-            logical_path: CANONICAL_DYNAMIC_SOURCE_PATH.into(),
-            source: CANONICAL_DYNAMIC_SOURCE.into(),
-        },
-        SourceUnit {
-            logical_path: CANONICAL_CLOCKS_SOURCE_PATH.into(),
-            source: CANONICAL_CLOCKS_SOURCE.into(),
-        },
-        SourceUnit {
-            logical_path: CANONICAL_PROCESS_SOURCE_PATH.into(),
-            source: CANONICAL_PROCESS_SOURCE.into(),
-        },
+        SourceUnit { logical_path: CANONICAL_FIBER_SOURCE_PATH.into(), source: CANONICAL_FIBER_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_SCHEDULER_SOURCE_PATH.into(), source: CANONICAL_SCHEDULER_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_CHANNEL_SOURCE_PATH.into(), source: CANONICAL_CHANNEL_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_MUTEX_SOURCE_PATH.into(), source: CANONICAL_MUTEX_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_WAITGROUP_SOURCE_PATH.into(), source: CANONICAL_WAITGROUP_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_HUB_SOURCE_PATH.into(), source: CANONICAL_HUB_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_EVENTS_SOURCE_PATH.into(), source: CANONICAL_EVENTS_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_DYNAMIC_SOURCE_PATH.into(), source: CANONICAL_DYNAMIC_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_CLOCKS_SOURCE_PATH.into(), source: CANONICAL_CLOCKS_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_PROCESS_SOURCE_PATH.into(), source: CANONICAL_PROCESS_SOURCE.into() },
         SourceUnit {
             logical_path: CANONICAL_COMPOSITION_SOURCE_PATH.into(),
             source: CANONICAL_COMPOSITION_SOURCE.into(),
         },
-        SourceUnit {
-            logical_path: CANONICAL_CALLBACKS_SOURCE_PATH.into(),
-            source: CANONICAL_CALLBACKS_SOURCE.into(),
-        },
-        SourceUnit {
-            logical_path: CANONICAL_SYSCALLS_SOURCE_PATH.into(),
-            source: CANONICAL_SYSCALLS_SOURCE.into(),
-        },
+        SourceUnit { logical_path: CANONICAL_CALLBACKS_SOURCE_PATH.into(), source: CANONICAL_CALLBACKS_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_SYSCALLS_SOURCE_PATH.into(), source: CANONICAL_SYSCALLS_SOURCE.into() },
     ]
 }
 
@@ -245,9 +156,7 @@ pub fn canonical_corelib_service_source_path(logical_path: &str) -> Option<std::
         _ => return None,
     };
     Some(normalize_lexically(
-        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../corelib/packages/foundation/src")
-            .join(relative),
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/packages/foundation/src").join(relative),
     ))
 }
 
@@ -296,21 +205,9 @@ const CORELIB_SERVICES: &[CorelibService] = &[
         symbol: "syscall_read_bytes",
         source_path: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
     },
-    CorelibService {
-        name: "__panic_str",
-        symbol: "panic_str",
-        source_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
-    },
-    CorelibService {
-        name: "__panic_str",
-        symbol: "panic_str",
-        source_path: CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH,
-    },
-    CorelibService {
-        name: "__panic_str",
-        symbol: "panic_str",
-        source_path: CANONICAL_FOUNDATION_ERROR_SOURCE_PATH,
-    },
+    CorelibService { name: "__panic_str", symbol: "panic_str", source_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH },
+    CorelibService { name: "__panic_str", symbol: "panic_str", source_path: CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH },
+    CorelibService { name: "__panic_str", symbol: "panic_str", source_path: CANONICAL_FOUNDATION_ERROR_SOURCE_PATH },
 ];
 
 /// A compiler-owned proof that a node belongs to the exact canonical runtime corpus.
@@ -329,9 +226,7 @@ impl CanonicalRuntimeProof {
 
     /// Check a logical path against the exact corpus validated when this proof was minted.
     pub fn authorizes_source(&self, logical_path: &str) -> bool {
-        self.source_paths
-            .iter()
-            .any(|candidate| candidate == logical_path)
+        self.source_paths.iter().any(|candidate| candidate == logical_path)
     }
 }
 
@@ -360,9 +255,7 @@ impl CorelibServiceProof {
     }
 
     pub fn authorizes_source(&self, logical_path: &str) -> bool {
-        self.source_paths
-            .iter()
-            .any(|candidate| candidate == logical_path)
+        self.source_paths.iter().any(|candidate| candidate == logical_path)
     }
 }
 
@@ -401,17 +294,11 @@ impl RuntimeIntrinsicCapability {
         self.proof.authorizes_source(logical_path)
     }
 
-    pub fn intrinsic_for_source(
-        &self,
-        logical_path: &str,
-        name: &str,
-    ) -> Option<&RuntimeIntrinsic> {
+    pub fn intrinsic_for_source(&self, logical_path: &str, name: &str) -> Option<&RuntimeIntrinsic> {
         if !self.authorizes_source(logical_path) {
             return None;
         }
-        self.intrinsics
-            .iter()
-            .find(|intrinsic| intrinsic.name == name)
+        self.intrinsics.iter().find(|intrinsic| intrinsic.name == name)
     }
 }
 
@@ -452,8 +339,7 @@ pub fn build_canonical_runtime_kit(
 
 /// Hash of the corpus embedded in this compiler and eligible for ABI-v5 runtime authority.
 pub fn canonical_runtime_source_hash() -> String {
-    canonical_source_hash(&canonical_runtime_sources())
-        .expect("embedded runtime source paths are unique")
+    canonical_source_hash(&canonical_runtime_sources()).expect("embedded runtime source paths are unique")
 }
 
 /// Resolve a validated installed kit whose source corpus exactly matches this compiler.
@@ -462,14 +348,10 @@ pub fn resolve_canonical_runtime_kit(
     target: &crate::abi_v5::TargetMetadata,
     profile: BuildProfile,
 ) -> Result<ResolvedRuntimeKit, CanonicalRuntimeKitError> {
-    let kit = resolve_installed_runtime_kit(prefix, target, profile)
-        .map_err(CanonicalRuntimeKitError::Resolution)?;
+    let kit = resolve_installed_runtime_kit(prefix, target, profile).map_err(CanonicalRuntimeKitError::Resolution)?;
     let compiler = canonical_runtime_source_hash();
     if kit.metadata.source_hash != compiler {
-        return Err(CanonicalRuntimeKitError::SourceHashMismatch {
-            compiler,
-            kit: kit.metadata.source_hash,
-        });
+        return Err(CanonicalRuntimeKitError::SourceHashMismatch { compiler, kit: kit.metadata.source_hash });
     }
     Ok(kit)
 }
@@ -482,27 +364,21 @@ pub fn prove_canonical_runtime_corpus(
     sources: &[SourceUnit],
     manifest: &AbiManifestV5,
 ) -> Result<CanonicalRuntimeProof, RuntimeCapabilityError> {
-    manifest
-        .validate()
-        .map_err(|_| RuntimeCapabilityError::InvalidManifest)?;
+    manifest.validate().map_err(|_| RuntimeCapabilityError::InvalidManifest)?;
     if manifest.trusted_runtime_package.as_ref() != Some(&canonical_runtime_package()) {
         return Err(RuntimeCapabilityError::InvalidManifest);
     }
 
     let expected_sources = canonical_runtime_sources();
     let expected_hash = canonical_runtime_source_hash();
-    let actual_hash =
-        canonical_source_hash(sources).map_err(|_| RuntimeCapabilityError::SourceSetMismatch)?;
+    let actual_hash = canonical_source_hash(sources).map_err(|_| RuntimeCapabilityError::SourceSetMismatch)?;
     if sources.len() != expected_sources.len() || actual_hash != expected_hash {
         return Err(RuntimeCapabilityError::SourceSetMismatch);
     }
 
     Ok(CanonicalRuntimeProof {
         source_hash: expected_hash,
-        source_paths: expected_sources
-            .into_iter()
-            .map(|unit| unit.logical_path)
-            .collect(),
+        source_paths: expected_sources.into_iter().map(|unit| unit.logical_path).collect(),
     })
 }
 
@@ -514,10 +390,7 @@ pub fn canonical_runtime_intrinsic_capability(
     manifest: &AbiManifestV5,
 ) -> Result<RuntimeIntrinsicCapability, RuntimeCapabilityError> {
     let proof = prove_canonical_runtime_corpus(&canonical_runtime_sources(), manifest)?;
-    Ok(RuntimeIntrinsicCapability {
-        proof,
-        intrinsics: manifest.trusted_runtime_intrinsics.clone(),
-    })
+    Ok(RuntimeIntrinsicCapability { proof, intrinsics: manifest.trusted_runtime_intrinsics.clone() })
 }
 
 /// Mint the distinct Corelib syscall service capability from the compiler-embedded source.
@@ -528,15 +401,12 @@ pub fn canonical_runtime_intrinsic_capability(
 pub fn canonical_corelib_service_capability(
     manifest: &AbiManifestV5,
 ) -> Result<CorelibServiceCapability, RuntimeCapabilityError> {
-    manifest
-        .validate()
-        .map_err(|_| RuntimeCapabilityError::InvalidManifest)?;
+    manifest.validate().map_err(|_| RuntimeCapabilityError::InvalidManifest)?;
     if manifest.trusted_runtime_package.as_ref() != Some(&canonical_runtime_package()) {
         return Err(RuntimeCapabilityError::InvalidManifest);
     }
     let sources = canonical_corelib_service_sources();
-    let source_hash =
-        canonical_source_hash(&sources).map_err(|_| RuntimeCapabilityError::SourceSetMismatch)?;
+    let source_hash = canonical_source_hash(&sources).map_err(|_| RuntimeCapabilityError::SourceSetMismatch)?;
     Ok(CorelibServiceCapability {
         proof: CorelibServiceProof {
             source_hash,

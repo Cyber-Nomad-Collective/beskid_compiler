@@ -1,7 +1,7 @@
 use crate::support::runtime::with_runtime_scope;
 use beskid_runtime::{
-    alloc, enter_runtime_scope, gc_register_root, gc_root_handle, gc_unregister_root,
-    gc_write_barrier, leave_runtime_scope, snapshot_gc,
+    alloc, enter_runtime_scope, gc_register_root, gc_root_handle, gc_unregister_root, gc_write_barrier,
+    leave_runtime_scope, snapshot_gc,
 };
 
 #[test]
@@ -26,10 +26,7 @@ fn runtime_alloc_panics_without_runtime_scope() {
     let result = std::panic::catch_unwind(|| {
         let _ = alloc(8, std::ptr::null());
     });
-    assert!(
-        result.is_err(),
-        "expected alloc to panic without runtime scope"
-    );
+    assert!(result.is_err(), "expected alloc to panic without runtime scope");
 }
 
 #[test]
@@ -37,10 +34,7 @@ fn runtime_root_handle_panics_without_runtime_scope() {
     let result = std::panic::catch_unwind(|| {
         let _ = gc_root_handle(std::ptr::null_mut());
     });
-    assert!(
-        result.is_err(),
-        "expected gc_root_handle to panic without runtime scope"
-    );
+    assert!(result.is_err(), "expected gc_root_handle to panic without runtime scope");
 }
 
 #[test]
@@ -64,9 +58,6 @@ fn runtime_scope_exposes_gc_snapshot() {
         assert_eq!(snapshot.bytes_allocated, heap.bytes_allocated());
         assert_eq!(snapshot.object_count, heap.allocation_count());
         assert_eq!(snapshot.phase as usize, beskid_runtime::gc_phase());
-        assert_eq!(
-            snapshot.external_root_count,
-            beskid_runtime::gc_external_root_count()
-        );
+        assert_eq!(snapshot.external_root_count, beskid_runtime::gc_external_root_count());
     });
 }

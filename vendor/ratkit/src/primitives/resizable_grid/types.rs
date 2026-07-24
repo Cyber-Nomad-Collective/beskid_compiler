@@ -23,10 +23,7 @@ pub enum SplitAxis {
 ///
 /// This type was used in the legacy `resizable_split` module. New code
 /// should use [`SplitAxis`] directly.
-#[deprecated(
-    since = "0.1.0",
-    note = "Use `SplitAxis` instead. This type will be removed in a future version."
-)]
+#[deprecated(since = "0.1.0", note = "Use `SplitAxis` instead. This type will be removed in a future version.")]
 pub use SplitAxis as SplitDirection;
 
 /// Identifier for panes managed by a `SplitLayout` or `ResizableGrid`.

@@ -22,13 +22,10 @@ pub fn extract_bpk_to_dir(bytes: &[u8], dest: &Path) -> TemplateResult<PathBuf> 
     fs::create_dir_all(dest)?;
 
     let cursor = std::io::Cursor::new(bytes);
-    let mut archive = ZipArchive::new(cursor)
-        .map_err(|e| TemplateError::Internal(format!("invalid .bpk zip: {e}")))?;
+    let mut archive = ZipArchive::new(cursor).map_err(|e| TemplateError::Internal(format!("invalid .bpk zip: {e}")))?;
 
     for i in 0..archive.len() {
-        let mut file = archive
-            .by_index(i)
-            .map_err(|e| TemplateError::Internal(e.to_string()))?;
+        let mut file = archive.by_index(i).map_err(|e| TemplateError::Internal(e.to_string()))?;
         let name = file.name().to_string();
         if name.ends_with('/') {
             continue;
@@ -52,16 +49,11 @@ pub fn verify_template_package(root: &Path) -> TemplateResult<()> {
         let text = fs::read_to_string(&package_json)?;
         let parsed: PackageJson = serde_json::from_str(&text)?;
         if parsed.package_kind.as_deref() != Some("template") {
-            return Err(TemplateError::NotTemplatePackage {
-                package_id: root.display().to_string(),
-            });
+            return Err(TemplateError::NotTemplatePackage { package_id: root.display().to_string() });
         }
     }
     if !root.join(TEMPLATE_MANIFEST_REL).is_file() {
-        return Err(TemplateError::InvalidManifest(format!(
-            "missing {}",
-            TEMPLATE_MANIFEST_REL
-        )));
+        return Err(TemplateError::InvalidManifest(format!("missing {}", TEMPLATE_MANIFEST_REL)));
     }
     Ok(())
 }

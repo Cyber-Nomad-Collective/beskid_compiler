@@ -7,32 +7,25 @@ use semver::Version;
 
 use beskid_tools::prompt::{confirm_overwrite, confirm_yanked};
 use beskid_tools::registry::{
-    RegistryConnectConfig, build_pckg_client, is_network_error, latest_non_yanked, pckg_to_anyhow,
-    pick_version, tokio_runtime,
+    RegistryConnectConfig, build_pckg_client, is_network_error, latest_non_yanked, pckg_to_anyhow, pick_version,
+    tokio_runtime,
 };
 
 use crate::{
-    GitTemplateRef, InstallSnapshot, InstallSource, InstantiateOptions, InstantiateResult,
-    RegistryIndexEntry, SymbolCollectOptions, TemplateManifest, TemplateOutputKind,
-    clone_or_update, collect_symbol_values, extract_bpk_to_dir, find_installed_by_short_name,
-    install_from_tree, list_installed, load_manifest_from_template_root, load_registry_index,
-    resolve_package_id, save_registry_index, stdin_is_interactive, uninstall_by_short_name,
+    GitTemplateRef, InstallSnapshot, InstallSource, InstantiateOptions, InstantiateResult, RegistryIndexEntry,
+    SymbolCollectOptions, TemplateManifest, TemplateOutputKind, clone_or_update, collect_symbol_values,
+    extract_bpk_to_dir, find_installed_by_short_name, install_from_tree, list_installed,
+    load_manifest_from_template_root, load_registry_index, resolve_package_id, save_registry_index,
+    stdin_is_interactive, uninstall_by_short_name,
 };
 
 /// How a template is selected for install or instantiate.
 #[derive(Debug, Clone)]
 pub enum TemplateSelector {
     ShortName(String),
-    Package {
-        id: String,
-        version: Option<String>,
-    },
+    Package { id: String, version: Option<String> },
     Path(PathBuf),
-    Git {
-        url: String,
-        git_ref: Option<String>,
-        subpath: Option<String>,
-    },
+    Git { url: String, git_ref: Option<String>, subpath: Option<String> },
 }
 
 /// Request for `beskid new list`.
@@ -123,19 +116,13 @@ pub fn list_templates(request: ListTemplatesRequest) -> Result<ListTemplatesOutp
 
     for (snap, path) in list_installed()? {
         let manifest = load_manifest_from_template_root(&path).ok();
-        let kind = manifest
-            .as_ref()
-            .map(|m| m.output_kind())
-            .unwrap_or(TemplateOutputKind::Project);
+        let kind = manifest.as_ref().map(|m| m.output_kind()).unwrap_or(TemplateOutputKind::Project);
         if request.kind_filter.is_some_and(|filter| filter != kind) {
             continue;
         }
         output.installed.push(InstalledTemplateRow {
             short_name: snap.short_name.clone(),
-            name: manifest
-                .as_ref()
-                .map(|m| m.name.clone())
-                .unwrap_or_else(|| snap.short_name.clone()),
+            name: manifest.as_ref().map(|m| m.name.clone()).unwrap_or_else(|| snap.short_name.clone()),
             identity: snap.identity.clone(),
             kind,
             package_id: snap.package_id.clone(),
@@ -153,10 +140,7 @@ pub fn list_templates(request: ListTemplatesRequest) -> Result<ListTemplatesOutp
             if !pkg.name.starts_with("beskid.templates.") {
                 continue;
             }
-            output.registry.push(RegistryTemplateRow {
-                package_id: pkg.name,
-                description: pkg.description,
-            });
+            output.registry.push(RegistryTemplateRow { package_id: pkg.name, description: pkg.description });
         }
     }
 
@@ -183,11 +167,7 @@ pub fn uninstall_template(request: UninstallTemplateRequest) -> Result<Uninstall
 
 /// Instantiate a template into an output directory.
 pub fn instantiate_template(request: InstantiateTemplateRequest) -> Result<InstantiateResult> {
-    if stdin_is_interactive()
-        && request.output.exists()
-        && !request.force
-        && !confirm_overwrite(&request.output)?
-    {
+    if stdin_is_interactive() && request.output.exists() && !request.force && !confirm_overwrite(&request.output)? {
         anyhow::bail!("cancelled");
     }
 
@@ -231,8 +211,7 @@ fn resolve_install_source(request: &InstallTemplateRequest) -> Result<(PathBuf, 
     let installed_at = chrono_lite_now();
 
     if let Some(path) = &request.path {
-        let path =
-            std::fs::canonicalize(path).with_context(|| format!("path {}", path.display()))?;
+        let path = std::fs::canonicalize(path).with_context(|| format!("path {}", path.display()))?;
         let manifest = load_manifest_from_template_root(&path).map_err(|e| anyhow!("{e}"))?;
         let snapshot = InstallSnapshot {
             identity: manifest.identity.clone(),
@@ -295,22 +274,13 @@ fn resolve_template_for_instantiate(
 ) -> Result<ResolvedTemplateForInstantiate> {
     match selector {
         TemplateSelector::Path(path) => {
-            let path =
-                std::fs::canonicalize(path).with_context(|| format!("path {}", path.display()))?;
+            let path = std::fs::canonicalize(path).with_context(|| format!("path {}", path.display()))?;
             let manifest = load_manifest_from_template_root(&path).map_err(|e| anyhow!("{e}"))?;
             Ok((path, manifest, None))
         }
-        TemplateSelector::Git {
-            url,
-            git_ref,
-            subpath,
-        } => {
+        TemplateSelector::Git { url, git_ref, subpath } => {
             let root = clone_or_update(
-                &GitTemplateRef {
-                    url: url.clone(),
-                    git_ref: git_ref.clone(),
-                    subpath: subpath.clone(),
-                },
+                &GitTemplateRef { url: url.clone(), git_ref: git_ref.clone(), subpath: subpath.clone() },
                 false,
             )
             .map_err(|e| anyhow!("{e}"))?;
@@ -318,32 +288,23 @@ fn resolve_template_for_instantiate(
             Ok((root, manifest, None))
         }
         TemplateSelector::Package { id, version } => {
-            let (root, resolved, yanked) =
-                fetch_registry_template(registry, id, version.as_deref())?;
+            let (root, resolved, yanked) = fetch_registry_template(registry, id, version.as_deref())?;
             let manifest = load_manifest_from_template_root(&root).map_err(|e| anyhow!("{e}"))?;
             Ok((root, manifest, Some((id.clone(), resolved, yanked))))
         }
         TemplateSelector::ShortName(short) => {
-            if let Some((snap, path)) =
-                find_installed_by_short_name(short).map_err(|e| anyhow!("{e}"))?
-            {
-                let manifest =
-                    load_manifest_from_template_root(&path).map_err(|e| anyhow!("{e}"))?;
-                let meta = snap
-                    .package_id
-                    .clone()
-                    .zip(snap.resolved_version.clone())
-                    .map(|(id, ver)| (id, ver, snap.yanked));
+            if let Some((snap, path)) = find_installed_by_short_name(short).map_err(|e| anyhow!("{e}"))? {
+                let manifest = load_manifest_from_template_root(&path).map_err(|e| anyhow!("{e}"))?;
+                let meta =
+                    snap.package_id.clone().zip(snap.resolved_version.clone()).map(|(id, ver)| (id, ver, snap.yanked));
                 return Ok((path, manifest, meta));
             }
 
-            let package_id = resolve_package_id(short)
-                .map(str::to_string)
-                .ok_or_else(|| anyhow!("unknown short name `{short}`"))?;
+            let package_id =
+                resolve_package_id(short).map(str::to_string).ok_or_else(|| anyhow!("unknown short name `{short}`"))?;
             match fetch_registry_template(registry, &package_id, None) {
                 Ok((root, version, yanked)) => {
-                    let manifest =
-                        load_manifest_from_template_root(&root).map_err(|e| anyhow!("{e}"))?;
+                    let manifest = load_manifest_from_template_root(&root).map_err(|e| anyhow!("{e}"))?;
                     let snapshot = InstallSnapshot {
                         identity: manifest.identity.clone(),
                         short_name: manifest.short_name.clone(),
@@ -355,13 +316,12 @@ fn resolve_template_for_instantiate(
                         yanked,
                     };
                     let installed = install_from_tree(&root, snapshot).unwrap_or(root);
-                    let manifest =
-                        load_manifest_from_template_root(&installed).map_err(|e| anyhow!("{e}"))?;
+                    let manifest = load_manifest_from_template_root(&installed).map_err(|e| anyhow!("{e}"))?;
                     Ok((installed, manifest, Some((package_id, version, yanked))))
                 }
-                Err(e) if is_network_error(&e) => Err(anyhow!(
-                    "template `{short}` is not installed and registry is unreachable: {e}"
-                )),
+                Err(e) if is_network_error(&e) => {
+                    Err(anyhow!("template `{short}` is not installed and registry is unreachable: {e}"))
+                }
                 Err(e) => Err(e),
             }
         }
@@ -375,21 +335,15 @@ fn fetch_registry_template(
 ) -> Result<(PathBuf, String, bool)> {
     let client = build_pckg_client(registry)?;
     let runtime = tokio_runtime()?;
-    let versions = runtime
-        .block_on(client.list_package_versions(package_id))
-        .map_err(pckg_to_anyhow)?;
+    let versions = runtime.block_on(client.list_package_versions(package_id)).map_err(pckg_to_anyhow)?;
 
     let chosen = pick_version(&versions, version)?;
     let yanked = chosen.is_yanked;
-    let bytes = runtime
-        .block_on(client.download_package_version(package_id, &chosen.version))
-        .map_err(pckg_to_anyhow)?;
+    let bytes =
+        runtime.block_on(client.download_package_version(package_id, &chosen.version)).map_err(pckg_to_anyhow)?;
 
-    let extract_dir = std::env::temp_dir().join(format!(
-        "beskid-template-{}-{}",
-        package_id.replace('.', "_"),
-        chosen.version
-    ));
+    let extract_dir =
+        std::env::temp_dir().join(format!("beskid-template-{}-{}", package_id.replace('.', "_"), chosen.version));
     extract_bpk_to_dir(&bytes, &extract_dir).map_err(|e| anyhow!("{e}"))?;
     update_registry_index(package_id, &chosen.version)?;
     Ok((extract_dir, chosen.version.clone(), yanked))
@@ -451,9 +405,7 @@ fn resolve_install_package_id(input: &str) -> Result<String> {
     if input.contains('.') {
         Ok(input.to_string())
     } else {
-        resolve_package_id(input)
-            .map(str::to_string)
-            .ok_or_else(|| anyhow!("unknown short name `{input}`"))
+        resolve_package_id(input).map(str::to_string).ok_or_else(|| anyhow!("unknown short name `{input}`"))
     }
 }
 
@@ -461,10 +413,7 @@ fn update_registry_index(package_id: &str, version: &str) -> Result<()> {
     let mut index = load_registry_index();
     index.packages.insert(
         package_id.to_string(),
-        RegistryIndexEntry {
-            latest_version: version.to_string(),
-            checked_at: chrono_lite_now(),
-        },
+        RegistryIndexEntry { latest_version: version.to_string(), checked_at: chrono_lite_now() },
     );
     save_registry_index(&index).map_err(|e| anyhow!("{e}"))?;
     Ok(())
@@ -472,10 +421,7 @@ fn update_registry_index(package_id: &str, version: &str) -> Result<()> {
 
 fn chrono_lite_now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     secs.to_string()
 }
 

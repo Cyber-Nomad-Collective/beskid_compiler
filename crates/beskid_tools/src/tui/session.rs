@@ -35,36 +35,20 @@ pub struct ShellSession {
 impl ShellSession {
     pub fn try_open(interactive: bool) -> io::Result<Self> {
         if !interactive {
-            return Ok(Self {
-                runtime: None,
-                attached: None,
-                interrupt: InterruptFlag::new(),
-            });
+            return Ok(Self { runtime: None, attached: None, interrupt: InterruptFlag::new() });
         }
         let runtime = ShellRuntime::spawn()?;
         let interrupt = runtime.interrupt_flag();
-        Ok(Self {
-            runtime: Some(runtime),
-            attached: None,
-            interrupt,
-        })
+        Ok(Self { runtime: Some(runtime), attached: None, interrupt })
     }
 
     /// Attach to an existing hi-shell message channel instead of spawning a nested runtime.
     pub fn try_attach(tx: Sender<RuntimeOp>) -> Self {
-        Self {
-            runtime: None,
-            attached: Some(tx),
-            interrupt: InterruptFlag::new(),
-        }
+        Self { runtime: None, attached: Some(tx), interrupt: InterruptFlag::new() }
     }
 
     pub fn try_open_plain() -> Self {
-        Self {
-            runtime: None,
-            attached: None,
-            interrupt: InterruptFlag::new(),
-        }
+        Self { runtime: None, attached: None, interrupt: InterruptFlag::new() }
     }
 
     pub fn interrupted(&self) -> bool {
@@ -80,10 +64,7 @@ impl ShellSession {
     }
 
     pub fn tree_phase_start(&self, depth: usize, label: impl Into<String>) -> io::Result<()> {
-        self.dispatch(ShellMessage::PhaseStart {
-            depth,
-            label: label.into(),
-        })
+        self.dispatch(ShellMessage::PhaseStart { depth, label: label.into() })
     }
 
     pub fn tree_phase_end(
@@ -92,39 +73,15 @@ impl ShellSession {
         label: impl Into<String>,
         duration: impl Into<String>,
     ) -> io::Result<()> {
-        self.dispatch(ShellMessage::PhaseEnd {
-            depth,
-            label: label.into(),
-            duration: duration.into(),
-        })
+        self.dispatch(ShellMessage::PhaseEnd { depth, label: label.into(), duration: duration.into() })
     }
 
-    pub fn tree_work_unit(
-        &self,
-        depth: usize,
-        done: u64,
-        total: u64,
-        label: impl Into<String>,
-    ) -> io::Result<()> {
-        self.dispatch(ShellMessage::WorkUnit {
-            depth,
-            done,
-            total,
-            label: label.into(),
-        })
+    pub fn tree_work_unit(&self, depth: usize, done: u64, total: u64, label: impl Into<String>) -> io::Result<()> {
+        self.dispatch(ShellMessage::WorkUnit { depth, done, total, label: label.into() })
     }
 
-    pub fn active_work_unit(
-        &self,
-        done: u64,
-        total: u64,
-        label: impl Into<String>,
-    ) -> io::Result<()> {
-        self.dispatch(ShellMessage::ActiveWork {
-            done,
-            total,
-            label: label.into(),
-        })
+    pub fn active_work_unit(&self, done: u64, total: u64, label: impl Into<String>) -> io::Result<()> {
+        self.dispatch(ShellMessage::ActiveWork { done, total, label: label.into() })
     }
 
     pub fn set_pipeline_progress(
@@ -147,25 +104,15 @@ impl ShellSession {
     }
 
     pub fn begin_tests(&self, title: impl Into<String>, rows: Vec<TestRow>) -> io::Result<()> {
-        self.dispatch_sync(ShellMessage::BeginTests {
-            title: title.into(),
-            rows,
-        })
+        self.dispatch_sync(ShellMessage::BeginTests { title: title.into(), rows })
     }
 
     pub fn update_test_rows(&self, rows: Vec<TestRow>) -> io::Result<()> {
         self.dispatch(ShellMessage::UpdateTestRows(rows))
     }
 
-    pub fn show_test_report(
-        &self,
-        summary: TestReportSummary,
-        title: impl Into<String>,
-    ) -> io::Result<()> {
-        self.dispatch(ShellMessage::ShowTestReport {
-            summary,
-            title: title.into(),
-        })
+    pub fn show_test_report(&self, summary: TestReportSummary, title: impl Into<String>) -> io::Result<()> {
+        self.dispatch(ShellMessage::ShowTestReport { summary, title: title.into() })
     }
 
     pub fn stage_summary(&self, summary: CommandSummary) -> io::Result<()> {
@@ -256,23 +203,13 @@ impl ShellSession {
     fn set_overlay_visible(&self, kind: OverlayKind, visible: bool) -> io::Result<()> {
         if let Some(runtime) = &self.runtime {
             let (ack_tx, ack_rx) = std::sync::mpsc::channel();
-            runtime.send(RuntimeOp::SetOverlayVisible {
-                kind,
-                visible,
-                ack: Some(ack_tx),
-            })?;
-            ack_rx
-                .recv()
-                .map_err(|_| io::Error::other("tui overlay update interrupted"))?;
+            runtime.send(RuntimeOp::SetOverlayVisible { kind, visible, ack: Some(ack_tx) })?;
+            ack_rx.recv().map_err(|_| io::Error::other("tui overlay update interrupted"))?;
             return Ok(());
         }
         if let Some(tx) = &self.attached {
-            tx.send(RuntimeOp::SetOverlayVisible {
-                kind,
-                visible,
-                ack: None,
-            })
-            .map_err(|_| io::Error::other("hi shell message channel closed"))?;
+            tx.send(RuntimeOp::SetOverlayVisible { kind, visible, ack: None })
+                .map_err(|_| io::Error::other("hi shell message channel closed"))?;
         }
         Ok(())
     }
@@ -281,8 +218,7 @@ impl ShellSession {
         if let Some(runtime) = &self.runtime {
             runtime.send_update(msg)?;
         } else if let Some(tx) = &self.attached {
-            tx.send(RuntimeOp::Update(msg))
-                .map_err(|_| io::Error::other("hi shell message channel closed"))?;
+            tx.send(RuntimeOp::Update(msg)).map_err(|_| io::Error::other("hi shell message channel closed"))?;
         }
         Ok(())
     }
@@ -291,9 +227,7 @@ impl ShellSession {
         if let Some(runtime) = &self.runtime {
             let (ack_tx, ack_rx) = std::sync::mpsc::channel();
             runtime.send(RuntimeOp::UpdateAndAck(msg, ack_tx))?;
-            ack_rx
-                .recv()
-                .map_err(|_| io::Error::other("tui runtime update interrupted"))?;
+            ack_rx.recv().map_err(|_| io::Error::other("tui runtime update interrupted"))?;
             return Ok(());
         }
         self.dispatch(msg)

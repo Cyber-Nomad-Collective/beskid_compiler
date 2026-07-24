@@ -19,21 +19,14 @@ where
 
     for item_with_docs in pairs {
         if item_with_docs.as_rule() != Rule::ItemWithDocs {
-            return Err(ParseError::unexpected_rule(
-                item_with_docs,
-                Some(Rule::ItemWithDocs),
-            ));
+            return Err(ParseError::unexpected_rule(item_with_docs, Some(Rule::ItemWithDocs)));
         }
 
         let mut inner = item_with_docs.into_inner();
-        let first = inner
-            .next()
-            .ok_or_else(|| ParseError::missing(Rule::ItemWithDocs))?;
+        let first = inner.next().ok_or_else(|| ParseError::missing(Rule::ItemWithDocs))?;
         let (doc_opt, item_pair) = if first.as_rule() == Rule::DocRun {
             let d = leading_doc_from_doc_run(&first);
-            let itemp = inner
-                .next()
-                .ok_or_else(|| ParseError::missing(Rule::InnerItem))?;
+            let itemp = inner.next().ok_or_else(|| ParseError::missing(Rule::InnerItem))?;
             (Some(d), itemp)
         } else {
             (None, first)

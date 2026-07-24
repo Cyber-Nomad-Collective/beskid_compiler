@@ -11,27 +11,19 @@ use std::path::PathBuf;
 use tokio::fs;
 
 /// Setup Android cross-compilation environment
-pub async fn setup(
-    target_config: &TargetConfig,
-    args: &Args,
-    host: &HostPlatform,
-) -> Result<CrossEnv> {
+pub async fn setup(target_config: &TargetConfig, args: &Args, host: &HostPlatform) -> Result<CrossEnv> {
     let arch = target_config.arch;
     let rust_target = target_config.target;
 
-    let ndk_dir = args
-        .cross_compiler_dir
-        .join(format!("android-ndk-{}-{}", host.os, args.ndk_version));
+    let ndk_dir = args.cross_compiler_dir.join(format!("android-ndk-{}-{}", host.os, args.ndk_version));
 
     // Use nested joins to ensure native path separators on Windows
     let prebuilt_dir = ndk_dir.join("toolchains").join("llvm").join("prebuilt");
 
     // Download NDK if not present
     if !ndk_dir.exists() {
-        let ndk_url = format!(
-            "https://dl.google.com/android/repository/android-ndk-{}-{}.zip",
-            args.ndk_version, host.os
-        );
+        let ndk_url =
+            format!("https://dl.google.com/android/repository/android-ndk-{}-{}.zip", args.ndk_version, host.os);
 
         download_and_extract(
             &ndk_url,
@@ -81,10 +73,7 @@ pub async fn setup(
     let clang_ext = if host.is_windows() { ".cmd" } else { "" };
     env.set_cc(format!("{clang_prefix}-clang{clang_ext}"));
     env.set_cxx(format!("{clang_prefix}-clang++{clang_ext}"));
-    env.set_ar(format!(
-        "llvm-ar{}",
-        if host.is_windows() { ".exe" } else { "" }
-    ));
+    env.set_ar(format!("llvm-ar{}", if host.is_windows() { ".exe" } else { "" }));
     env.set_linker(format!("{clang_prefix}-clang{clang_ext}"));
     env.add_path(&clang_base_dir);
 
@@ -92,10 +81,7 @@ pub async fn setup(
     // Use nested joins to ensure native path separators on Windows
     let wrapper_toolchain_dir = ndk_dir.join("build").join("cmake").join("wrappers");
     let wrapper_toolchain_file = wrapper_toolchain_dir.join(format!("android-{android_abi}.cmake"));
-    let ndk_toolchain_file = ndk_dir
-        .join("build")
-        .join("cmake")
-        .join("android.toolchain.cmake");
+    let ndk_toolchain_file = ndk_dir.join("build").join("cmake").join("android.toolchain.cmake");
 
     if !wrapper_toolchain_file.exists() {
         fs::create_dir_all(&wrapper_toolchain_dir).await?;
@@ -124,18 +110,11 @@ include("{}")
 
     // Set LIBCLANG_PATH for bindgen
     let ndk_llvm_base = clang_base_dir.parent().unwrap_or(&clang_base_dir);
-    let libclang_name = if host.is_windows() {
-        "libclang.dll"
-    } else {
-        "libclang.so"
-    };
+    let libclang_name = if host.is_windows() { "libclang.dll" } else { "libclang.so" };
 
     // Check common library directories for libclang
-    let lib_candidates = [
-        ndk_llvm_base.join("lib"),
-        ndk_llvm_base.join("lib64"),
-        ndk_llvm_base.join("musl").join("lib"),
-    ];
+    let lib_candidates =
+        [ndk_llvm_base.join("lib"), ndk_llvm_base.join("lib64"), ndk_llvm_base.join("musl").join("lib")];
     for libclang_path in &lib_candidates {
         if libclang_path.join(libclang_name).exists() {
             env.set_env("LIBCLANG_PATH", libclang_path.display().to_string());
@@ -143,10 +122,7 @@ include("{}")
         }
     }
 
-    color::log_success(&format!(
-        "Configured Android toolchain for {}",
-        color::yellow(rust_target)
-    ));
+    color::log_success(&format!("Configured Android toolchain for {}", color::yellow(rust_target)));
 
     Ok(env)
 }
@@ -164,10 +140,7 @@ async fn find_prebuilt_bin_dir(prebuilt_dir: &PathBuf, host: &HostPlatform) -> R
         ]
     } else {
         // Linux/Windows: typically os-x86_64
-        vec![
-            format!("{}-{}", host.os, host.arch),
-            format!("{}-x86_64", host.os),
-        ]
+        vec![format!("{}-{}", host.os, host.arch), format!("{}-x86_64", host.os)]
     };
 
     for candidate in &candidates {
@@ -188,7 +161,5 @@ async fn find_prebuilt_bin_dir(prebuilt_dir: &PathBuf, host: &HostPlatform) -> R
         }
     }
 
-    Err(CrossError::CompilerNotFound {
-        path: prebuilt_dir.clone(),
-    })
+    Err(CrossError::CompilerNotFound { path: prebuilt_dir.clone() })
 }

@@ -1,9 +1,7 @@
 use super::*;
 
 pub(super) fn align_to(value: u32, alignment: u32) -> Option<u32> {
-    value
-        .checked_add(alignment.checked_sub(1)?)
-        .map(|value| value / alignment * alignment)
+    value.checked_add(alignment.checked_sub(1)?).map(|value| value / alignment * alignment)
 }
 
 pub(super) fn semantic_type_for_runtime_intrinsic(
@@ -24,10 +22,7 @@ pub(super) fn semantic_type_for_runtime_intrinsic(
     })
 }
 
-pub(super) fn signature_for_item(
-    isa: &dyn TargetIsa,
-    item: ItemSignature,
-) -> Option<beskid_isle::Signature> {
+pub(super) fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Option<beskid_isle::Signature> {
     let emitter = FunctionEmitter::new(isa);
     let parameters = item
         .parameters
@@ -57,12 +52,7 @@ pub(super) fn signature_for_runtime_intrinsic(
     intrinsic: &beskid_abi::abi_v5::RuntimeIntrinsic,
 ) -> Option<beskid_isle::Signature> {
     let emitter = FunctionEmitter::new(isa);
-    let parameters = intrinsic
-        .params
-        .iter()
-        .copied()
-        .map(|ty| map_abi_type(isa, ty))
-        .collect::<Option<Vec<_>>>()?;
+    let parameters = intrinsic.params.iter().copied().map(|ty| map_abi_type(isa, ty)).collect::<Option<Vec<_>>>()?;
     let returns = if intrinsic.noreturn || intrinsic.result == beskid_abi::abi_v5::AbiType::Void {
         Vec::new()
     } else {
@@ -135,10 +125,7 @@ pub(super) fn map_scalar_type(semantic: SemanticTypeId) -> Option<Type> {
 }
 
 pub(super) fn map_signature_type(isa: &dyn TargetIsa, semantic: SemanticTypeId) -> Option<Type> {
-    if matches!(
-        semantic,
-        SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING
-    ) {
+    if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING) {
         Some(isa.pointer_type())
     } else {
         map_scalar_type(semantic)
@@ -169,14 +156,8 @@ mod tests {
         for (name, expected) in [
             ("memory_copy", RuntimeIntrinsicKind::MemoryCopy),
             ("memory_set", RuntimeIntrinsicKind::MemorySet),
-            (
-                "native_word_from_pointer",
-                RuntimeIntrinsicKind::NativeWordFromPointer,
-            ),
-            (
-                "pointer_from_native_word",
-                RuntimeIntrinsicKind::PointerFromNativeWord,
-            ),
+            ("native_word_from_pointer", RuntimeIntrinsicKind::NativeWordFromPointer),
+            ("pointer_from_native_word", RuntimeIntrinsicKind::PointerFromNativeWord),
             ("pointer_add", RuntimeIntrinsicKind::PointerAdd),
             ("raw_word_load", RuntimeIntrinsicKind::RawWordLoad),
             ("raw_word_store", RuntimeIntrinsicKind::RawWordStore),
@@ -184,9 +165,7 @@ mod tests {
             ("raw_byte_store", RuntimeIntrinsicKind::RawByteStore),
         ] {
             assert_eq!(
-                beskid_isle::classify_syntax_node_kind(
-                    beskid_queries::IndexedNodeKind::CallExpression
-                ),
+                beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::CallExpression),
                 beskid_isle::SyntaxNodeClassification::IsleLowered(NodeKind::CallExpression),
             );
             assert_eq!(runtime_intrinsic_kind_for_name(name), Some(expected));

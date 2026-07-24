@@ -5,9 +5,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::Args;
 
-use beskid_tools::shell::{
-    NavRegistrar, ShellHost, ShellScope, ToolSettingsRegistrar, WidgetRegistrar,
-};
+use beskid_tools::shell::{NavRegistrar, ShellHost, ShellScope, ToolSettingsRegistrar, WidgetRegistrar};
 
 #[derive(Args, Debug)]
 pub struct HiArgs {
@@ -25,20 +23,12 @@ pub fn execute(
     nav_registrars: &[NavRegistrar],
     settings_registrars: &[ToolSettingsRegistrar],
 ) -> Result<()> {
-    let start = args
-        .path
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let start = args.path.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let scope = ShellScope::resolve_cwd(&start);
     if args.plain {
         println!("beskid hi scope: {}", scope.label());
         return Ok(());
     }
-    ShellHost::run_hi_blocking(
-        scope,
-        false,
-        widget_registrars,
-        nav_registrars,
-        settings_registrars,
-    )?;
+    ShellHost::run_hi_blocking(scope, false, widget_registrars, nav_registrars, settings_registrars)?;
     Ok(())
 }

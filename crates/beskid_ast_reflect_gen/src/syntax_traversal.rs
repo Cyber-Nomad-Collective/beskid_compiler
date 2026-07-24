@@ -65,9 +65,7 @@ fn field_has_ast_skip(attrs: &[Attribute]) -> bool {
 }
 
 /// Load `#[ast]` child slots from Rust syntax sources (authoritative over shape-only mirrors).
-pub fn collect_traversal_entries(
-    analysis_src: &Path,
-) -> Result<Vec<TraversalTypeEntry>, std::io::Error> {
+pub fn collect_traversal_entries(analysis_src: &Path) -> Result<Vec<TraversalTypeEntry>, std::io::Error> {
     let files = crate::syntax_helpers::load_syntax_files(analysis_src)?;
     let mut out = Vec::new();
     for (rel, file) in &files {
@@ -105,9 +103,7 @@ fn traversal_entry_from_item(item: &Item, source_rel_path: &str) -> Option<Trave
                 match &v.fields {
                     Fields::Named(nf) => {
                         for f in &nf.named {
-                            if let Some(slot) =
-                                field_to_slot(f, &format!("{vname}::{}", f.ident.as_ref()?))
-                            {
+                            if let Some(slot) = field_to_slot(f, &format!("{vname}::{}", f.ident.as_ref()?)) {
                                 slots.push(slot);
                             }
                         }
@@ -141,13 +137,7 @@ fn struct_traversal_slots(fields: &Fields, type_name: &str) -> Vec<TraversalSlot
             .named
             .iter()
             .filter_map(|f| {
-                field_to_slot(
-                    f,
-                    &f.ident
-                        .as_ref()
-                        .map(|i| i.to_string())
-                        .unwrap_or_else(|| "field".into()),
-                )
+                field_to_slot(f, &f.ident.as_ref().map(|i| i.to_string()).unwrap_or_else(|| "field".into()))
             })
             .collect(),
         Fields::Unnamed(unnamed) => unnamed
@@ -165,19 +155,10 @@ fn field_to_slot(f: &syn::Field, rust_field: &str) -> Option<TraversalSlot> {
         return None;
     }
     let role = parse_ast_field_role(&f.attrs)?;
-    let field_key = f
-        .ident
-        .as_ref()
-        .map(|i| i.to_string())
-        .unwrap_or_else(|| rust_field.to_string());
+    let field_key = f.ident.as_ref().map(|i| i.to_string()).unwrap_or_else(|| rust_field.to_string());
     let beskid_field = crate::emit_idents::rust_snake_to_beskid_field_camel(field_key.as_str());
     let beskid_ty = type_name_for_manifest(&f.ty);
-    Some(TraversalSlot {
-        rust_field: rust_field.to_string(),
-        beskid_field,
-        beskid_ty,
-        role,
-    })
+    Some(TraversalSlot { rust_field: rust_field.to_string(), beskid_field, beskid_ty, role })
 }
 
 fn type_name_for_manifest(ty: &syn::Type) -> String {
@@ -199,8 +180,7 @@ pub fn emit_node_kind_bd(reflect_rs: &Path) -> Result<String, std::io::Error> {
     let kinds = reflect_sdk_node_kind_names(reflect_rs)?;
     let mut lines = vec![
         format!("{BANNER}"),
-        "/// Classification tokens for syntax query (mirrors `beskid_analysis::query::NodeKind`)."
-            .into(),
+        "/// Classification tokens for syntax query (mirrors `beskid_analysis::query::NodeKind`).".into(),
         format!("pub enum NodeKind"),
         "{".into(),
     ];
@@ -343,36 +323,19 @@ pub fn emit_traversal_sdk(
     reflect_rs: &Path,
 ) -> Result<BTreeSet<String>, std::io::Error> {
     let entries = collect_traversal_entries(analysis_src)?;
-    let names: BTreeSet<String> = [
-        "Node",
-        "NodeRef",
-        "NodeSpan",
-        "NodeKind",
-        "NodeList",
-        "TraversalManifest",
-        "Descendants",
-        "Visit",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect();
+    let names: BTreeSet<String> =
+        ["Node", "NodeRef", "NodeSpan", "NodeKind", "NodeList", "TraversalManifest", "Descendants", "Visit"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
 
     fs::write(nodes_dir.join("Node.bd"), emit_node_contract_bd())?;
     fs::write(nodes_dir.join("NodeRef.bd"), emit_node_ref_bd())?;
     fs::write(nodes_dir.join("NodeSpan.bd"), emit_node_span_bd())?;
-    fs::write(
-        nodes_dir.join("NodeKind.bd"),
-        emit_node_kind_bd(reflect_rs)?,
-    )?;
+    fs::write(nodes_dir.join("NodeKind.bd"), emit_node_kind_bd(reflect_rs)?)?;
     fs::write(nodes_dir.join("NodeList.bd"), emit_node_list_bd())?;
-    fs::write(
-        nodes_dir.join("TraversalManifest.bd"),
-        emit_traversal_manifest_bd(&entries),
-    )?;
-    fs::write(
-        nodes_dir.join("Descendants.bd"),
-        emit_descendants_contract_bd(),
-    )?;
+    fs::write(nodes_dir.join("TraversalManifest.bd"), emit_traversal_manifest_bd(&entries))?;
+    fs::write(nodes_dir.join("Descendants.bd"), emit_descendants_contract_bd())?;
     fs::write(nodes_dir.join("Visit.bd"), emit_visit_contract_bd())?;
 
     Ok(names)
@@ -391,9 +354,7 @@ pub fn emit_query_as_projections(inventory: &[String]) -> String {
         if is_host_only_type(name) || SKIP_AS_PROJECTION.contains(&name.as_str()) {
             continue;
         }
-        lines.push(format!(
-            "pub Option<{name}> As{name}(Beskid.Syntax.Nodes.NodeRef node);"
-        ));
+        lines.push(format!("pub Option<{name}> As{name}(Beskid.Syntax.Nodes.NodeRef node);"));
     }
     lines.join("\n") + "\n"
 }

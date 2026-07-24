@@ -103,21 +103,13 @@ fn terminal_width() -> usize {
 /// Format a key-value pair for configuration display
 #[must_use]
 pub fn format_config(key: &str, value: &str) -> String {
-    format!(
-        "  {}: {}",
-        key.bright_cyan().bold(),
-        value.bright_yellow().bold()
-    )
+    format!("  {}: {}", key.bright_cyan().bold(), value.bright_yellow().bold())
 }
 
 /// Format environment variable for display
 #[must_use]
 pub fn format_env(key: &str, value: &str) -> String {
-    format!(
-        "  {}={}",
-        key.bright_cyan().bold(),
-        value.bright_yellow().bold()
-    )
+    format!("  {}={}", key.bright_cyan().bold(), value.bright_yellow().bold())
 }
 
 /// Format a command for display

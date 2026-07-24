@@ -22,9 +22,7 @@ pub async fn setup_qemu_runner(
         return Ok(());
     };
 
-    let qemu_dir = args
-        .cross_compiler_dir
-        .join(format!("qemu-user-static-{}", args.qemu_version));
+    let qemu_dir = args.cross_compiler_dir.join(format!("qemu-user-static-{}", args.qemu_version));
 
     let qemu_path = qemu_dir.join(qemu_binary);
 
@@ -33,8 +31,7 @@ pub async fn setup_qemu_runner(
         let host_platform = host.download_platform();
         let download_url = format!(
             "https://github.com/zijiren233/qemu-user-static/releases/download/{}/qemu-user-static-{}-musl.tgz",
-            args.qemu_version,
-            host_platform
+            args.qemu_version, host_platform
         );
         download_and_extract(&download_url, &qemu_dir, None, args.github_proxy.as_deref()).await?;
     }
@@ -82,18 +79,14 @@ pub async fn setup_docker_qemu_runner(
     };
 
     // Download QEMU for Linux (to run inside Docker container)
-    let qemu_dir = args.cross_compiler_dir.join(format!(
-        "qemu-user-static-{}-linux-{}",
-        args.qemu_version, host.arch
-    ));
+    let qemu_dir = args.cross_compiler_dir.join(format!("qemu-user-static-{}-linux-{}", args.qemu_version, host.arch));
 
     let qemu_path = qemu_dir.join(qemu_binary);
 
     if !qemu_path.exists() {
         let download_url = format!(
             "https://github.com/zijiren233/qemu-user-static/releases/download/{}/qemu-user-static-linux-{}-musl.tgz",
-            args.qemu_version,
-            host.arch
+            args.qemu_version, host.arch
         );
         download_and_extract(&download_url, &qemu_dir, None, args.github_proxy.as_deref()).await?;
     }
@@ -103,16 +96,10 @@ pub async fn setup_docker_qemu_runner(
     }
 
     // Select Docker image based on libc type
-    let docker_image = if libc == "musl" {
-        "alpine:latest"
-    } else {
-        "ubuntu:latest"
-    };
+    let docker_image = if libc == "musl" { "alpine:latest" } else { "ubuntu:latest" };
 
     // Create runner script
-    let runner_script =
-        args.cross_compiler_dir
-            .join(format!("docker-qemu-runner-{}-{}.sh", arch.as_str(), libc));
+    let runner_script = args.cross_compiler_dir.join(format!("docker-qemu-runner-{}-{}.sh", arch.as_str(), libc));
 
     let sysroot = compiler_dir.join(bin_prefix);
 
@@ -201,20 +188,12 @@ docker exec "$CONTAINER_ID" /usr/bin/$QEMU_BINARY -L /sysroot /tmp/$BINARY_NAME 
 pub fn setup_wine_runner(env: &mut CrossEnv, rust_target: &str) {
     if which::which("wine").is_ok() {
         env.set_runner("wine");
-        color::log_success(&format!(
-            "Configured Wine runner for {}",
-            color::yellow(rust_target)
-        ));
+        color::log_success(&format!("Configured Wine runner for {}", color::yellow(rust_target)));
     }
 }
 
 /// Setup Rosetta runner for `x86_64` Darwin binaries on ARM Darwin hosts
-pub fn setup_rosetta_runner(
-    env: &mut CrossEnv,
-    arch: Arch,
-    rust_target: &str,
-    host: &HostPlatform,
-) {
+pub fn setup_rosetta_runner(env: &mut CrossEnv, arch: Arch, rust_target: &str, host: &HostPlatform) {
     // Only setup Rosetta on Darwin hosts
     if !host.is_darwin() {
         return;
@@ -235,8 +214,5 @@ pub fn setup_rosetta_runner(
     }
 
     env.set_runner("arch -x86_64");
-    color::log_success(&format!(
-        "Configured Rosetta runner for {}",
-        color::yellow(rust_target)
-    ));
+    color::log_success(&format!("Configured Rosetta runner for {}", color::yellow(rust_target)));
 }

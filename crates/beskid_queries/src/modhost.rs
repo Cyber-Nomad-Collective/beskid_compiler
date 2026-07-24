@@ -45,12 +45,8 @@ pub fn mod_collect_target_fingerprint(
     let source_name = entry.path(db).display().to_string();
     let source = entry.text(db).clone();
     let compile_plan = compile_plan_for_session(db, project);
-    let native_invoker = compile_plan
-        .as_ref()
-        .and_then(|plan| native_invoker_for_plan(plan, None).ok().flatten());
-    let invoker_ref = native_invoker
-        .as_ref()
-        .map(|invoker| invoker as &dyn beskid_analysis::mod_host::ContractInvoker);
+    let native_invoker = compile_plan.as_ref().and_then(|plan| native_invoker_for_plan(plan, None).ok().flatten());
+    let invoker_ref = native_invoker.as_ref().map(|invoker| invoker as &dyn beskid_analysis::mod_host::ContractInvoker);
     collect_mod_target_fingerprint(&ModHostInput {
         compile_plan: compile_plan.as_ref(),
         source_name: &source_name,
@@ -96,27 +92,16 @@ pub fn mod_generate(
     capability_set: CapabilitySetId,
     collect_targets: String,
 ) -> u64 {
-    let _ = mod_generate_fingerprint(
-        db,
-        project,
-        entry,
-        syntax_gen,
-        manifest_gen,
-        capability_set,
-        collect_targets.clone(),
-    );
+    let _ =
+        mod_generate_fingerprint(db, project, entry, syntax_gen, manifest_gen, capability_set, collect_targets.clone());
     record_query_miss();
     let source_name = entry.path(db).display().to_string();
     let source = entry.text(db).clone();
-    let program = beskid_analysis::services::parse_program_with_source_name(&source_name, &source)
-        .expect("entry parse");
+    let program =
+        beskid_analysis::services::parse_program_with_source_name(&source_name, &source).expect("entry parse");
     let compile_plan = compile_plan_for_session(db, project);
-    let native_invoker = compile_plan
-        .as_ref()
-        .and_then(|plan| native_invoker_for_plan(plan, None).ok().flatten());
-    let invoker_ref = native_invoker
-        .as_ref()
-        .map(|invoker| invoker as &dyn beskid_analysis::mod_host::ContractInvoker);
+    let native_invoker = compile_plan.as_ref().and_then(|plan| native_invoker_for_plan(plan, None).ok().flatten());
+    let invoker_ref = native_invoker.as_ref().map(|invoker| invoker as &dyn beskid_analysis::mod_host::ContractInvoker);
     let generated = run_through_generate(
         program,
         &ModHostInput {
@@ -132,10 +117,7 @@ pub fn mod_generate(
     generated.program.node.items.len() as u64
 }
 
-fn compile_plan_for_session(
-    db: &dyn Db,
-    project: ProjectSession,
-) -> Option<beskid_analysis::projects::CompilePlan> {
+fn compile_plan_for_session(db: &dyn Db, project: ProjectSession) -> Option<beskid_analysis::projects::CompilePlan> {
     let root = project.project_root(db);
     let manifest_path = discover_project_manifest_in_dir(&root).ok()??;
     build_compile_plan(&manifest_path, None).ok()

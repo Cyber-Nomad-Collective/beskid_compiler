@@ -1,22 +1,17 @@
 use std::fs;
 
 use crate::projects::fixture_harness::{
-    corelib_mvp_fixture, corelib_tests_project_root, resolve_corelib_tests_entry,
-    shared_corelib_mvp_assembly, with_large_test_stack, with_project_test_env,
+    corelib_mvp_fixture, corelib_tests_project_root, resolve_corelib_tests_entry, shared_corelib_mvp_assembly,
+    with_large_test_stack, with_project_test_env,
 };
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 use beskid_analysis::Severity;
 use beskid_analysis::projects::build_compile_plan;
 use beskid_analysis::services::lower_normalize_resolve_type_spanned_with_assembly;
-use beskid_analysis::services::{
-    analyze_file_in_project, analyze_source_in_project, parse_program, resolve_input,
-};
+use beskid_analysis::services::{analyze_file_in_project, analyze_source_in_project, parse_program, resolve_input};
 use beskid_queries::{program_assembly, with_db};
 
-use super::{
-    compiler_sdk_src, corelib_root, corelib_workspace_root, foundation_src,
-    stratified_corelib_parse_samples,
-};
+use super::{compiler_sdk_src, corelib_root, corelib_workspace_root, foundation_src, stratified_corelib_parse_samples};
 
 /// Linux CI runners use a smaller default thread stack than macOS; corelib lowering needs more headroom.
 // with_large_test_stack lives in fixture_harness
@@ -39,27 +34,20 @@ fn checked_in_corelib_sources_parse_as_beskid_programs() {
 
     for relative in stratified_corelib_parse_samples() {
         let path = root.join(relative);
-        let source = fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
-        parse_program(&source).unwrap_or_else(|err| {
-            panic!(
-                "corelib source should parse {}\nparse error: {err:#}",
-                path.display()
-            )
-        });
+        let source = fs::read_to_string(&path).unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
+        parse_program(&source)
+            .unwrap_or_else(|err| panic!("corelib source should parse {}\nparse error: {err:#}", path.display()));
     }
 }
 
 #[test]
 fn checked_in_corelib_syscall_file_does_not_report_module_resolution_false_positives() {
     with_project_test_env(&corelib_mvp_fixture(), || {
-        let diagnostics = analyze_file_in_project(&corelib_mvp_fixture().join("Src/Main.bd"))
-            .expect("analyze corelib_mvp entry");
+        let diagnostics =
+            analyze_file_in_project(&corelib_mvp_fixture().join("Src/Main.bd")).expect("analyze corelib_mvp entry");
 
         assert!(
-            diagnostics
-                .iter()
-                .all(|diag| !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108"))),
+            diagnostics.iter().all(|diag| !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108"))),
             "corelib_mvp entry should not emit module-path false positives: {diagnostics:#?}"
         );
     });
@@ -72,19 +60,11 @@ fn checked_in_corelib_sources_do_not_emit_error_diagnostics_in_project_context()
         let root = corelib_workspace_root();
         let relative = "packages/foundation/src/Core/Results/Results.bd";
         let path = root.join(relative);
-        let source = fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
-        let diagnostics = analyze_source_in_project(&path, &source)
-            .unwrap_or_else(|_| panic!("analyze {}", path.display()));
-        let errors: Vec<_> = diagnostics
-            .into_iter()
-            .filter(|diag| matches!(diag.severity, Severity::Error))
-            .collect();
-        assert!(
-            errors.is_empty(),
-            "expected no error diagnostics for {} but got: {errors:#?}",
-            path.display()
-        );
+        let source = fs::read_to_string(&path).unwrap_or_else(|_| panic!("read corelib source {}", path.display()));
+        let diagnostics =
+            analyze_source_in_project(&path, &source).unwrap_or_else(|_| panic!("analyze {}", path.display()));
+        let errors: Vec<_> = diagnostics.into_iter().filter(|diag| matches!(diag.severity, Severity::Error)).collect();
+        assert!(errors.is_empty(), "expected no error diagnostics for {} but got: {errors:#?}", path.display());
     });
 }
 
@@ -179,13 +159,10 @@ fn corelib_mvp_fixture_entry_does_not_emit_module_resolution_false_positives() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let fixture_main = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
-        let diagnostics =
-            analyze_file_in_project(&fixture_main).expect("analyze corelib_mvp fixture");
+        let diagnostics = analyze_file_in_project(&fixture_main).expect("analyze corelib_mvp fixture");
 
         assert!(
-            diagnostics
-                .iter()
-                .all(|diag| !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108"))),
+            diagnostics.iter().all(|diag| !matches!(diag.code.as_deref(), Some("E1105") | Some("E1108"))),
             "corelib_mvp fixture should not emit module-path false positives: {diagnostics:#?}"
         );
     });
@@ -195,8 +172,8 @@ fn corelib_mvp_fixture_entry_does_not_emit_module_resolution_false_positives() {
 fn checked_in_corelib_aggregate_entry_is_workspace_placeholder() {
     with_cwd_at_workspace_root(&compiler_workspace_root(), || {
         let project = corelib_root();
-        let resolved = resolve_input(None, Some(&project), None, None, false, false)
-            .expect("resolve corelib aggregate project");
+        let resolved =
+            resolve_input(None, Some(&project), None, None, false, false).expect("resolve corelib aggregate project");
         let plan = resolved.compile_plan.expect("compile plan");
         assert_eq!(plan.target.name, "__aggregate__");
         assert!(plan.target.entry.is_none());
@@ -212,8 +189,8 @@ fn checked_in_compiler_sdk_syntax_parses_as_beskid_program() {
 
 #[test]
 fn checked_in_compiler_sdk_syntax_exports_node_inventory() {
-    let syntax = fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax.bd"))
-        .expect("read compiler-sdk syntax facade");
+    let syntax =
+        fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax.bd")).expect("read compiler-sdk syntax facade");
     assert!(
         syntax.contains("pub mod Beskid.Syntax.Nodes;"),
         "compiler-sdk syntax facade should export Beskid.Syntax.Nodes"
@@ -237,8 +214,7 @@ fn checked_in_compiler_sdk_collect_parses_with_named_enum_payloads() {
 
 #[test]
 fn checked_in_compiler_sdk_emitter_hub_exports_split_modules() {
-    let hub = fs::read_to_string(compiler_sdk_src().join("Beskid/Compiler/Emitter.bd"))
-        .expect("read Emitter hub");
+    let hub = fs::read_to_string(compiler_sdk_src().join("Beskid/Compiler/Emitter.bd")).expect("read Emitter hub");
     for needle in [
         "pub mod Beskid.Compiler.Emitter.Nodes",
         "pub mod Beskid.Compiler.Emitter.Contracts",
@@ -253,18 +229,14 @@ fn checked_in_compiler_sdk_emitter_hub_exports_split_modules() {
 
 #[test]
 fn checked_in_compiler_sdk_emitter_contribution_helpers_exist() {
-    let contribution =
-        fs::read_to_string(compiler_sdk_src().join("Beskid/Compiler/Emitter/Contribution.bd"))
-            .expect("read Emitter.Contribution");
+    let contribution = fs::read_to_string(compiler_sdk_src().join("Beskid/Compiler/Emitter/Contribution.bd"))
+        .expect("read Emitter.Contribution");
     for needle in [
         "pub GeneratedSyntaxContribution Empty()",
         "pub GeneratedSyntaxContribution AppendCode(",
         "pub CodeContribution CodeOutput(",
     ] {
-        assert!(
-            contribution.contains(needle),
-            "Emitter.Contribution missing `{needle}`"
-        );
+        assert!(contribution.contains(needle), "Emitter.Contribution missing `{needle}`");
     }
     parse_program(&contribution).expect("Emitter.Contribution should parse");
 }
@@ -281,38 +253,20 @@ fn checked_in_compiler_sdk_collect_declares_mod_contracts() {
         "pub contract Rewriter",
         "pub contract AttributeGenerator",
     ] {
-        assert!(
-            collect.contains(contract_name),
-            "Collect facade missing {contract_name}"
-        );
+        assert!(collect.contains(contract_name), "Collect facade missing {contract_name}");
     }
-    for method_shape in [
-        "Collect(",
-        "Generate(",
-        "Analyze(",
-        "Rewrite(TSourceNode sourceNode)",
-        "Attributes(",
-    ] {
-        assert!(
-            collect.contains(method_shape),
-            "Collect facade missing method shape {method_shape}"
-        );
+    for method_shape in ["Collect(", "Generate(", "Analyze(", "Rewrite(TSourceNode sourceNode)", "Attributes("] {
+        assert!(collect.contains(method_shape), "Collect facade missing method shape {method_shape}");
     }
 }
 
 #[test]
 fn checked_in_corelib_mvp_modules_reference_runtime_backed_symbols() {
-    let results_mod = fs::read_to_string(foundation_src().join("Core/Results/Results.bd"))
-        .expect("read Core.Results");
-    let string_mod = fs::read_to_string(foundation_src().join("Core/String/String.bd"))
-        .expect("read Core.String");
-    let output_mod = fs::read_to_string(foundation_src().join("Core/Output/Output.bd"))
-        .expect("read Core.Output");
+    let results_mod = fs::read_to_string(foundation_src().join("Core/Results/Results.bd")).expect("read Core.Results");
+    let string_mod = fs::read_to_string(foundation_src().join("Core/String/String.bd")).expect("read Core.String");
+    let output_mod = fs::read_to_string(foundation_src().join("Core/Output/Output.bd")).expect("read Core.Output");
 
-    assert!(
-        results_mod.contains("pub enum Result"),
-        "Core.Results should define Result enum"
-    );
+    assert!(results_mod.contains("pub enum Result"), "Core.Results should define Result enum");
     assert!(
         results_mod.contains("Ok(") && results_mod.contains("Error("),
         "Core.Results should expose Ok/Error variants"
@@ -321,34 +275,17 @@ fn checked_in_corelib_mvp_modules_reference_runtime_backed_symbols() {
         results_mod.contains("pub bool IsOk") && results_mod.contains("pub bool IsError"),
         "Core.Results should expose Ok/Error predicates"
     );
-    assert!(
-        string_mod.contains("__str_len"),
-        "Core.String should use __str_len runtime builtin"
-    );
-    let array_mod =
-        fs::read_to_string(foundation_src().join("Collections/Array.bd")).expect("read Array");
-    assert!(
-        array_mod.contains("__array_len"),
-        "Collections.Array should use __array_len for slice length"
-    );
-    assert!(
-        !output_mod.contains("__sys_print"),
-        "Core.Output must not reference purged __sys_print builtins"
-    );
+    assert!(string_mod.contains("__str_len"), "Core.String should use __str_len runtime builtin");
+    let array_mod = fs::read_to_string(foundation_src().join("Collections/Array.bd")).expect("read Array");
+    assert!(array_mod.contains("__array_len"), "Collections.Array should use __array_len for slice length");
+    assert!(!output_mod.contains("__sys_print"), "Core.Output must not reference purged __sys_print builtins");
     assert!(
         output_mod.contains("Core.Syscall.WriteWith") && output_mod.contains("WriteLine"),
         "Core.Output should route through Core.Syscall.WriteWith and expose WriteLine"
     );
-    let syscall_mod = fs::read_to_string(foundation_src().join("Core/Syscall/Syscall.bd"))
-        .expect("read Core.Syscall");
-    assert!(
-        syscall_mod.contains("__syscall_write"),
-        "Core.Syscall should call __syscall_write builtin"
-    );
-    assert!(
-        syscall_mod.contains("__syscall_read"),
-        "Core.Syscall should call __syscall_read builtin"
-    );
+    let syscall_mod = fs::read_to_string(foundation_src().join("Core/Syscall/Syscall.bd")).expect("read Core.Syscall");
+    assert!(syscall_mod.contains("__syscall_write"), "Core.Syscall should call __syscall_write builtin");
+    assert!(syscall_mod.contains("__syscall_read"), "Core.Syscall should call __syscall_read builtin");
 }
 
 #[test]
@@ -367,10 +304,9 @@ fn checked_in_corelib_compiler_sdk_exports_version_tokens() {
 
 #[test]
 fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
-    let query = fs::read_to_string(compiler_sdk_src().join("Beskid/Compiler/Query.bd"))
-        .expect("read Beskid.Compiler.Query");
-    let syntax = fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax.bd"))
-        .expect("read Beskid.Syntax");
+    let query =
+        fs::read_to_string(compiler_sdk_src().join("Beskid/Compiler/Query.bd")).expect("read Beskid.Compiler.Query");
+    let syntax = fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax.bd")).expect("read Beskid.Syntax");
     let node_contract = fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax/Nodes/Node.bd"))
         .expect("read Beskid.Syntax.Nodes.Node");
     let node_span = fs::read_to_string(compiler_sdk_src().join("Beskid/Syntax/Nodes/NodeSpan.bd"))
@@ -382,18 +318,9 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
         query.contains(r#"return "0.4.0";"#),
         "Query facade version should be 0.4.0 after span + pipeline expansion"
     );
-    assert!(
-        syntax.contains(r#"return "0.4.0";"#),
-        "Syntax facade version should be 0.4.0"
-    );
-    assert!(
-        !query.contains("pub type ReflectStub"),
-        "Query facade must not declare ReflectStub placeholders"
-    );
-    assert!(
-        !query.contains("ReflectSdk"),
-        "Query facade must not use legacy ReflectSdk* tokens"
-    );
+    assert!(syntax.contains(r#"return "0.4.0";"#), "Syntax facade version should be 0.4.0");
+    assert!(!query.contains("pub type ReflectStub"), "Query facade must not declare ReflectStub placeholders");
+    assert!(!query.contains("ReflectSdk"), "Query facade must not use legacy ReflectSdk* tokens");
     assert!(
         node_contract.contains("pub contract Node"),
         "syntax navigation surface must be the Node contract, not an item enum"
@@ -410,10 +337,7 @@ fn checked_in_compiler_sdk_query_facade_contract_first_nodes() {
         node_contract.contains("Beskid.Syntax.Nodes.NodeSpan Span();"),
         "Node contract should expose span metadata"
     );
-    assert!(
-        node_span.contains("pub type NodeSpan"),
-        "NodeSpan contract type should be generated"
-    );
+    assert!(node_span.contains("pub type NodeSpan"), "NodeSpan contract type should be generated");
     for api in [
         "pub SyntaxQuery At(",
         "pub SyntaxQuery AtProgram(",
@@ -473,13 +397,9 @@ fn checked_in_corelib_beskid_test_sources_parse() {
         root.join("tests/corelib_tests/src/console/RenderContextTests.bd"),
     ];
     for path in test_files {
-        let source = fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("read corelib test source {}", path.display()));
-        parse_program(&source).unwrap_or_else(|err| {
-            panic!(
-                "corelib test source should parse {}\nparse error: {err:#}",
-                path.display()
-            )
-        });
+        let source =
+            fs::read_to_string(&path).unwrap_or_else(|_| panic!("read corelib test source {}", path.display()));
+        parse_program(&source)
+            .unwrap_or_else(|err| panic!("corelib test source should parse {}\nparse error: {err:#}", path.display()));
     }
 }

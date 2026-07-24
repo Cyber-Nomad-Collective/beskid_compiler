@@ -5,11 +5,7 @@ use crate::parser::Rule;
 use super::{RepairCandidate, next_token_start, skip_ws};
 
 /// Generate separator insertion repairs near the Pest error locus.
-pub fn repairs(
-    source: &str,
-    error_pos: usize,
-    _parse_error: &pest::error::Error<Rule>,
-) -> Vec<RepairCandidate> {
+pub fn repairs(source: &str, error_pos: usize, _parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
     let mut candidates = Vec::new();
     let bytes = source.as_bytes();
 
@@ -27,12 +23,7 @@ pub fn repairs(
 
     if let Some(next_token_pos) = next_token_start(source, error_pos) {
         if next_token_pos > 0 {
-            candidates.push(RepairCandidate::insert(
-                next_token_pos,
-                ";",
-                "inserted semicolon before next token",
-                21,
-            ));
+            candidates.push(RepairCandidate::insert(next_token_pos, ";", "inserted semicolon before next token", 21));
         }
 
         comma_before_peer(source, next_token_pos, &mut candidates);
@@ -45,12 +36,7 @@ pub fn repairs(
 
     let trimmed_len = source.trim_end().len();
     if trimmed_len > 0 && !source[..trimmed_len].ends_with(';') {
-        candidates.push(RepairCandidate::insert(
-            trimmed_len,
-            ";",
-            "inserted missing semicolon at end of file",
-            30,
-        ));
+        candidates.push(RepairCandidate::insert(trimmed_len, ";", "inserted missing semicolon at end of file", 30));
     }
 
     candidates
@@ -63,12 +49,7 @@ fn comma_before_peer(source: &str, next_token_pos: usize, out: &mut Vec<RepairCa
     if !prev_token_looks_like_list_element_end(source, next_token_pos) {
         return;
     }
-    out.push(RepairCandidate::insert(
-        next_token_pos,
-        ",",
-        "inserted comma before next list element",
-        22,
-    ));
+    out.push(RepairCandidate::insert(next_token_pos, ",", "inserted comma before next list element", 22));
 }
 
 fn colon_after_identifier(source: &str, next_token_pos: usize, out: &mut Vec<RepairCandidate>) {
@@ -85,10 +66,7 @@ fn colon_after_identifier(source: &str, next_token_pos: usize, out: &mut Vec<Rep
     if !looks_like_type_or_expression_start(source, next_token_pos) {
         return;
     }
-    if matches!(
-        source.as_bytes().get(next_token_pos),
-        Some(b'=' | b',' | b';' | b')' | b']' | b'}')
-    ) {
+    if matches!(source.as_bytes().get(next_token_pos), Some(b'=' | b',' | b';' | b')' | b']' | b'}')) {
         return;
     }
     out.push(RepairCandidate::insert(
@@ -116,12 +94,7 @@ fn fat_arrow_before_body(source: &str, next_token_pos: usize, out: &mut Vec<Repa
         return;
     }
 
-    out.push(RepairCandidate::insert(
-        next_token_pos,
-        "=>",
-        "inserted fat arrow before expression body",
-        28,
-    ));
+    out.push(RepairCandidate::insert(next_token_pos, "=>", "inserted fat arrow before expression body", 28));
 }
 
 fn double_colon_enum_path(source: &str, error_pos: usize, out: &mut Vec<RepairCandidate>) {
@@ -140,12 +113,7 @@ fn double_colon_enum_path(source: &str, error_pos: usize, out: &mut Vec<RepairCa
     if ident_span_at(source, next).is_none() {
         return;
     }
-    out.push(RepairCandidate::insert(
-        gap,
-        "::",
-        "inserted path separator between enum path segments",
-        31,
-    ));
+    out.push(RepairCandidate::insert(gap, "::", "inserted path separator between enum path segments", 31));
 }
 
 fn dot_member_access(source: &str, error_pos: usize, out: &mut Vec<RepairCandidate>) {
@@ -167,12 +135,7 @@ fn dot_member_access(source: &str, error_pos: usize, out: &mut Vec<RepairCandida
         return;
     }
 
-    out.push(RepairCandidate::insert(
-        gap,
-        ".",
-        "inserted member access dot between path segments",
-        33,
-    ));
+    out.push(RepairCandidate::insert(gap, ".", "inserted member access dot between path segments", 33));
 }
 
 fn prev_token_looks_like_list_element_end(source: &str, before: usize) -> bool {
@@ -202,9 +165,8 @@ fn looks_like_type_or_expression_start(source: &str, pos: usize) -> bool {
 }
 
 fn looks_like_type_keyword(source: &str, pos: usize) -> bool {
-    const KEYWORDS: &[&str] = &[
-        "bool", "i32", "i64", "u8", "pointer", "word", "f64", "char", "string", "unit", "never",
-    ];
+    const KEYWORDS: &[&str] =
+        &["bool", "i32", "i64", "u8", "pointer", "word", "f64", "char", "string", "unit", "never"];
     KEYWORDS.iter().any(|kw| {
         source.as_bytes().get(pos..pos + kw.len()) == Some(kw.as_bytes())
             && !has_ident_continue_at(source.as_bytes(), pos + kw.len())
@@ -216,10 +178,8 @@ fn looks_like_expression_start(source: &str, pos: usize) -> bool {
         return false;
     }
     let b = source.as_bytes()[pos];
-    matches!(
-        b,
-        b'(' | b'[' | b'{' | b'<' | b'-' | b'!' | b'"' | b'\'' | b'_' | b'@'
-    ) || b.is_ascii_digit()
+    matches!(b, b'(' | b'[' | b'{' | b'<' | b'-' | b'!' | b'"' | b'\'' | b'_' | b'@')
+        || b.is_ascii_digit()
         || is_ident_start(b)
 }
 

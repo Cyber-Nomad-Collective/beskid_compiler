@@ -33,17 +33,7 @@ pub fn render_document_lines(
     local_scroll.ensure_current_visible(area.height as usize);
 
     for (row, line_index) in local_scroll.visible_range(area.height as usize).enumerate() {
-        render_line(
-            area,
-            buf,
-            lines,
-            line_index,
-            row,
-            gutter_width,
-            &local_scroll,
-            display,
-            selection,
-        );
+        render_line(area, buf, lines, line_index, row, gutter_width, &local_scroll, display, selection);
     }
 }
 
@@ -66,22 +56,10 @@ fn render_line(
     let is_current = line_index == scroll.current_line_index();
     let is_selected = is_line_selected(selection, line_index);
     let row_style = line_style(is_current, is_selected, display);
-    buf.set_style(
-        Rect {
-            y,
-            height: 1,
-            ..area
-        },
-        row_style,
-    );
+    buf.set_style(Rect { y, height: 1, ..area }, row_style);
     render_gutter(area.x, y, gutter_width, line_index, scroll, display, buf);
     let line = line_with_background(document_line, row_style);
-    buf.set_line(
-        area.x + gutter_width as u16,
-        y,
-        &line,
-        area.width.saturating_sub(gutter_width as u16),
-    );
+    buf.set_line(area.x + gutter_width as u16, y, &line, area.width.saturating_sub(gutter_width as u16));
 }
 
 /// Returns the row background style for a rendered line.

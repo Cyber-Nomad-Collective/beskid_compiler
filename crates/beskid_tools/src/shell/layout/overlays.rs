@@ -42,9 +42,7 @@ pub fn overlay_rect_for(kind: &str, area: Rect) -> Rect {
         OVERLAY_SUMMARY => overlay_rect(area, OVERLAY_SUMMARY_W, OVERLAY_SUMMARY_H),
         OVERLAY_PCKG => overlay_rect(area, OVERLAY_PCKG_W, OVERLAY_PCKG_H),
         OVERLAY_TEMPLATES => overlay_rect(area, OVERLAY_TEMPLATES_W, OVERLAY_TEMPLATES_H),
-        OVERLAY_COMPILE_DEBUG => {
-            overlay_rect(area, OVERLAY_COMPILE_DEBUG_W, OVERLAY_COMPILE_DEBUG_H)
-        }
+        OVERLAY_COMPILE_DEBUG => overlay_rect(area, OVERLAY_COMPILE_DEBUG_W, OVERLAY_COMPILE_DEBUG_H),
         OVERLAY_GRAPH => overlay_rect(area, OVERLAY_GRAPH_W, OVERLAY_GRAPH_H),
         OVERLAY_SETTINGS => overlay_rect(area, OVERLAY_SETTINGS_W, OVERLAY_SETTINGS_H),
         OVERLAY_ANALYSIS => overlay_rect(area, OVERLAY_ANALYSIS_W, OVERLAY_ANALYSIS_H),

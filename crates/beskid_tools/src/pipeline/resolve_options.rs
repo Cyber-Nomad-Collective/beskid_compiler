@@ -28,15 +28,7 @@ impl<'a> CliResolveOptions<'a> {
         locked: bool,
         plain: bool,
     ) -> Self {
-        Self {
-            input,
-            project,
-            target,
-            workspace_member,
-            frozen,
-            locked,
-            plain,
-        }
+        Self { input, project, target, workspace_member, frozen, locked, plain }
     }
 }
 

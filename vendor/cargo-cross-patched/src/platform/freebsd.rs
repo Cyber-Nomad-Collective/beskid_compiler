@@ -8,24 +8,14 @@ use crate::error::{CrossError, Result};
 use crate::platform::{setup_cmake, setup_cross_compile_prefix, setup_generic_cmake_toolchain};
 
 /// Setup FreeBSD cross-compilation environment
-pub async fn setup(
-    target_config: &TargetConfig,
-    args: &Args,
-    host: &HostPlatform,
-) -> Result<CrossEnv> {
+pub async fn setup(target_config: &TargetConfig, args: &Args, host: &HostPlatform) -> Result<CrossEnv> {
     let arch = target_config.arch;
     let rust_target = target_config.target;
     let freebsd_version = &args.freebsd_version;
 
     // Validate architecture
-    if !matches!(
-        arch,
-        Arch::X86_64 | Arch::Aarch64 | Arch::Powerpc64 | Arch::Powerpc64le | Arch::Riscv64
-    ) {
-        return Err(CrossError::UnsupportedArchitecture {
-            arch: arch.as_str().to_string(),
-            os: "freebsd".to_string(),
-        });
+    if !matches!(arch, Arch::X86_64 | Arch::Aarch64 | Arch::Powerpc64 | Arch::Powerpc64le | Arch::Riscv64) {
+        return Err(CrossError::UnsupportedArchitecture { arch: arch.as_str().to_string(), os: "freebsd".to_string() });
     }
 
     let bin_prefix = format!("{}-unknown-freebsd{}", arch.as_str(), freebsd_version);
@@ -34,10 +24,7 @@ pub async fn setup(
     // Add .exe extension on Windows
     let exe_ext = if host.is_windows() { ".exe" } else { "" };
     let gcc_name = format!("{bin_prefix}-gcc{exe_ext}");
-    let compiler_dir = args.cross_compiler_dir.join(format!(
-        "{}-{}",
-        cross_compiler_name, args.cross_make_version
-    ));
+    let compiler_dir = args.cross_compiler_dir.join(format!("{}-{}", cross_compiler_name, args.cross_make_version));
 
     // Download compiler if not present
     let gcc_path = compiler_dir.join("bin").join(&gcc_name);
@@ -55,13 +42,8 @@ pub async fn setup(
             "https://github.com/zijiren233/cross-make/releases/download/{}-{}/{}{}",
             args.cross_make_version, host_platform, cross_compiler_name, extension
         );
-        crate::download::download_and_extract(
-            &download_url,
-            &compiler_dir,
-            format_hint,
-            args.github_proxy.as_deref(),
-        )
-        .await?;
+        crate::download::download_and_extract(&download_url, &compiler_dir, format_hint, args.github_proxy.as_deref())
+            .await?;
     }
 
     let mut env = CrossEnv::new();

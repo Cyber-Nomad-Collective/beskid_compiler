@@ -110,9 +110,7 @@ impl ScrollState {
     /// Returns true when the current line is inside the viewport.
     pub fn is_current_line_visible(&self) -> bool {
         let first_visible = self.effective_offset().saturating_add(1);
-        let last_visible = self
-            .effective_offset()
-            .saturating_add(self.viewport_height.max(1));
+        let last_visible = self.effective_offset().saturating_add(self.viewport_height.max(1));
         self.current_line >= first_visible && self.current_line <= last_visible
     }
     /// Returns the maximum valid zero-based viewport offset.
@@ -134,9 +132,7 @@ impl ScrollState {
     }
     /// Returns the zero-based effective viewport offset.
     pub fn effective_offset(&self) -> usize {
-        self.scroll_offset
-            .max(self.offset)
-            .min(self.max_scroll_offset())
+        self.scroll_offset.max(self.offset).min(self.max_scroll_offset())
     }
     /// Sets both public offset aliases.
     pub fn set_offset(&mut self, offset: usize) {
@@ -164,9 +160,7 @@ impl ScrollState {
         if current < first_visible.saturating_add(SCROLL_MARGIN) {
             offset = current.saturating_sub(SCROLL_MARGIN);
         } else if current > last_visible.saturating_sub(SCROLL_MARGIN) {
-            offset = current
-                .saturating_add(SCROLL_MARGIN)
-                .saturating_sub(viewport_height.saturating_sub(1));
+            offset = current.saturating_add(SCROLL_MARGIN).saturating_sub(viewport_height.saturating_sub(1));
         }
         self.set_offset(offset);
     }

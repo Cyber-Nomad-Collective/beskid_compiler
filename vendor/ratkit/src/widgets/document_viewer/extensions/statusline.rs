@@ -21,12 +21,7 @@ pub fn render_statusline(area: Rect, buf: &mut Buffer, text: &str) {
     let position_fg = Color::Black;
     let statusline = StatusLineStacked::new()
         .start(
-            Span::from(" NORMAL ").style(
-                Style::new()
-                    .fg(mode_fg)
-                    .bg(mode_bg)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            Span::from(" NORMAL ").style(Style::new().fg(mode_fg).bg(mode_bg).add_modifier(Modifier::BOLD)),
             Span::from(SLANT_TL_BR).style(Style::new().fg(mode_bg).bg(file_bg)),
         )
         .end(

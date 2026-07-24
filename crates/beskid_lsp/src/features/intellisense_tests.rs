@@ -1,9 +1,7 @@
 #[cfg(test)]
 mod tests {
     use beskid_analysis::projects::AssemblyDiscovery;
-    use beskid_analysis::services::{
-        PrepareOptions, parse_program_with_source_name, resolve_input,
-    };
+    use beskid_analysis::services::{PrepareOptions, parse_program_with_source_name, resolve_input};
     use beskid_queries::{BeskidDatabase, configure_db_for_project, entry_resolution_with_db};
     use std::path::PathBuf;
     use std::str::FromStr;
@@ -12,9 +10,7 @@ mod tests {
     use crate::features::{completion, definition, hover, references, signature_help};
     use crate::position::position_to_offset;
     use crate::session::lifecycle::build_document;
-    use crate::session::store::{
-        Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxHover, SyntaxSymbol,
-    };
+    use crate::session::store::{Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxHover, SyntaxSymbol};
     use crate::workspace_scan::path_to_uri;
 
     struct CorelibMvpFixture {
@@ -41,21 +37,12 @@ mod tests {
     }
 
     fn corelib_mvp_paths() -> CorelibMvpFixture {
-        let main_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
+        let main_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
         let source = std::fs::read_to_string(&main_path).expect("read Main.bd");
-        let project_root = main_path
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("fixture root")
-            .to_path_buf();
+        let project_root = main_path.parent().and_then(|p| p.parent()).expect("fixture root").to_path_buf();
         let uri = path_to_uri(&main_path).expect("file uri");
-        CorelibMvpFixture {
-            main_path,
-            project_root,
-            source,
-            uri,
-        }
+        CorelibMvpFixture { main_path, project_root, source, uri }
     }
 
     #[test]
@@ -64,13 +51,10 @@ mod tests {
 
         use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
         use beskid_analysis::projects::{
-            AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit,
-            SyntaxProgramAssembly,
+            AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
         };
         use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
-        use beskid_queries::{
-            AstNodeKey, ProjectSession, SourceUnitId, SyntaxGenerationId, build_typed_program,
-        };
+        use beskid_queries::{AstNodeKey, ProjectSession, SourceUnitId, SyntaxGenerationId, build_typed_program};
 
         let root = PathBuf::from("/tmp/intellisense-completion/src");
         let main_path = root.join("Main.bd");
@@ -78,21 +62,16 @@ mod tests {
         let main_source = "use Std.Core.Output;\ni32 Main() { return Output.Write; }";
         let output_source = "pub i32 WriteLine() { return 1; }";
         let main_program = expand_program(
-            parse_program_with_source_name(main_path.to_str().unwrap(), main_source)
-                .expect("main parses"),
+            parse_program_with_source_name(main_path.to_str().unwrap(), main_source).expect("main parses"),
             DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
         );
         let output_program = expand_program(
-            parse_program_with_source_name(output_path.to_str().unwrap(), output_source)
-                .expect("output parses"),
+            parse_program_with_source_name(output_path.to_str().unwrap(), output_source).expect("output parses"),
             DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
         );
         let assembly = Arc::new(SyntaxProgramAssembly::new(
             EffectiveCompilationRoots {
-                host: RootEntry {
-                    dependency_name: None,
-                    source_root: root.clone(),
-                },
+                host: RootEntry { dependency_name: None, source_root: root.clone() },
                 dependencies: Vec::new(),
             },
             Arc::new(vec![
@@ -130,10 +109,7 @@ mod tests {
         let anchor = AstNodeKey {
             unit: main_unit,
             generation,
-            node: index
-                .ids_of_kind(NodeKind::Program)
-                .next()
-                .expect("program node"),
+            node: index.ids_of_kind(NodeKind::Program).next().expect("program node"),
         };
         // Document carries no legacy analysis snapshot; completion uses syntax_completion only.
         let doc = Document {
@@ -147,8 +123,7 @@ mod tests {
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
         };
-        let offset =
-            main_source.find("Output.Write").expect("member prefix") + "Output.Write".len();
+        let offset = main_source.find("Output.Write").expect("member prefix") + "Output.Write".len();
         let response = completion::handler::handle_completion(
             &db,
             &Uri::from_str("file:///tmp/intellisense-completion/src/Main.bd").expect("uri"),
@@ -177,8 +152,7 @@ mod tests {
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
-        let response =
-            definition::handler::handle_definition(&uri, &doc, offset).expect("syntax definition");
+        let response = definition::handler::handle_definition(&uri, &doc, offset).expect("syntax definition");
         let GotoDefinitionResponse::Scalar(location) = response else {
             panic!("expected scalar definition from syntax facts");
         };
@@ -210,8 +184,7 @@ mod tests {
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
         };
-        let response =
-            definition::handler::handle_definition(&uri, &doc, 22).expect("syntax fact definition");
+        let response = definition::handler::handle_definition(&uri, &doc, 22).expect("syntax fact definition");
         let GotoDefinitionResponse::Scalar(location) = response else {
             panic!("expected scalar definition");
         };
@@ -240,8 +213,7 @@ mod tests {
             syntax_diagnostics: Vec::new(),
         };
 
-        let response = definition::handler::handle_definition(&uri, &doc, 6)
-            .expect("syntax symbol definition");
+        let response = definition::handler::handle_definition(&uri, &doc, 6).expect("syntax symbol definition");
         let GotoDefinitionResponse::Scalar(location) = response else {
             panic!("expected scalar definition");
         };
@@ -298,13 +270,12 @@ mod tests {
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
         };
-        let documentation =
-            crate::commands::symbol_documentation::documentation_uri_for_document(&doc, 22)
-                .expect("syntax documentation URL");
+        let documentation = crate::commands::symbol_documentation::documentation_uri_for_document(&doc, 22)
+            .expect("syntax documentation URL");
         assert!(documentation.contains("helper"));
         let call_offset = source.find("helper(").expect("helper call") + "helper(".len();
-        let signature = signature_help::handler::handle_signature_help(&uri, &doc, call_offset)
-            .expect("syntax signature help");
+        let signature =
+            signature_help::handler::handle_signature_help(&uri, &doc, call_offset).expect("syntax signature help");
         assert_eq!(signature.signatures[0].label, "**function** `helper`");
     }
 
@@ -320,15 +291,11 @@ mod tests {
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");
         assert!(
-            doc.syntax_hovers
-                .iter()
-                .any(|hover| hover.markdown.contains("WriteLine"))
-                || doc.syntax_definitions.iter().any(|definition| {
-                    definition
-                        .declaration_path
-                        .to_string_lossy()
-                        .contains("Output")
-                }),
+            doc.syntax_hovers.iter().any(|hover| hover.markdown.contains("WriteLine"))
+                || doc
+                    .syntax_definitions
+                    .iter()
+                    .any(|definition| { definition.declaration_path.to_string_lossy().contains("Output") }),
             "lifecycle build_document should attach syntax facts for WriteLine"
         );
     }
@@ -354,25 +321,15 @@ mod tests {
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();
-            let resolved = resolve_input(
-                Some(&fixture.main_path),
-                Some(&fixture.project_root),
-                None,
-                None,
-                false,
-                false,
-            )
-            .expect("resolve");
-            let project_root = fixture
-                .project_root
-                .canonicalize()
-                .unwrap_or_else(|_| fixture.project_root.clone());
+            let resolved =
+                resolve_input(Some(&fixture.main_path), Some(&fixture.project_root), None, None, false, false)
+                    .expect("resolve");
+            let project_root = fixture.project_root.canonicalize().unwrap_or_else(|_| fixture.project_root.clone());
             configure_db_for_project(&project_root);
             let mut db = BeskidDatabase::with_persistence(&project_root);
             let mut options = PrepareOptions::default();
             options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
-            let shared =
-                entry_resolution_with_db(&mut db, &resolved, &options).expect("entry resolution");
+            let shared = entry_resolution_with_db(&mut db, &resolved, &options).expect("entry resolution");
             assert!(
                 shared.items.iter().any(|item| item.name == "WriteLine"),
                 "entry_resolution_with_db should expose dependency WriteLine"
@@ -392,17 +349,9 @@ mod tests {
         let doc = build_document(&state, &uri, 1, fixture.source.clone()).await;
         std::env::set_current_dir(previous).expect("restore cwd");
         let offset = fixture.source.find("WriteLine").expect("WriteLine");
-        let locations = references::handler::handle_references(
-            &uri,
-            &doc,
-            offset,
-            true,
-            Some(fixture.main_path.as_path()),
-        );
-        assert!(
-            !locations.is_empty(),
-            "syntax references must resolve WriteLine without Document.analysis"
-        );
+        let locations =
+            references::handler::handle_references(&uri, &doc, offset, true, Some(fixture.main_path.as_path()));
+        assert!(!locations.is_empty(), "syntax references must resolve WriteLine without Document.analysis");
         assert!(
             locations.iter().any(|location| {
                 location.uri.to_string().contains("Output")
@@ -410,10 +359,7 @@ mod tests {
                     || location.uri == uri
             }),
             "expected Output/System or entry reference, got {:?}",
-            locations
-                .iter()
-                .map(|l| l.uri.to_string())
-                .collect::<Vec<_>>()
+            locations.iter().map(|l| l.uri.to_string()).collect::<Vec<_>>()
         );
     }
 
@@ -440,25 +386,15 @@ mod tests {
         let Hover { range, .. } = hover;
         let range = range.expect("hover range");
         assert!(
-            syntax_hover
-                .location_path
-                .to_string_lossy()
-                .contains("Output")
+            syntax_hover.location_path.to_string_lossy().contains("Output")
                 || syntax_hover.markdown.contains("WriteLine"),
             "hover target should preserve the resolved WriteLine declaration"
         );
-        let dependency_source =
-            std::fs::read_to_string(&syntax_hover.location_path).expect("read dependency source");
+        let dependency_source = std::fs::read_to_string(&syntax_hover.location_path).expect("read dependency source");
         let start = position_to_offset(&dependency_source, range.start);
         let end = position_to_offset(&dependency_source, range.end);
-        assert!(
-            start < end,
-            "hover range should be non-empty in dependency file"
-        );
+        assert!(start < end, "hover range should be non-empty in dependency file");
         let snippet = &dependency_source[start..end];
-        assert!(
-            snippet.contains("WriteLine"),
-            "hover range should cover WriteLine in dependency, got `{snippet}`"
-        );
+        assert!(snippet.contains("WriteLine"), "hover range should cover WriteLine in dependency, got `{snippet}`");
     }
 }

@@ -9,9 +9,7 @@ struct Cli {
 }
 
 fn main() {
-    if let Err(error) = execute(UpArgs {
-        command: Cli::parse().command,
-    }) {
+    if let Err(error) = execute(UpArgs { command: Cli::parse().command }) {
         eprintln!("beskid-up: {error}");
         std::process::exit(1);
     }

@@ -35,29 +35,19 @@ impl Write for GatedStderr {
 
 fn default_filter(log_cranelift: bool) -> String {
     let base = "info,beskid_pipeline=info,beskid_tools=info,beskid_queries=info,salsa=warn";
-    if log_cranelift {
-        base.to_string()
-    } else {
-        format!("{base},{CRANELIFT_QUIET}")
-    }
+    if log_cranelift { base.to_string() } else { format!("{base},{CRANELIFT_QUIET}") }
 }
 
 /// Install the global [`tracing`] subscriber (once per process).
 ///
 /// When `RUST_LOG` is unset, Cranelift crates default to `warn` unless `log_cranelift` is true.
 pub fn init(log_cranelift: bool) {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default_filter(log_cranelift)));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter(log_cranelift)));
 
     tracing_subscriber::registry()
         .with(filter)
         .with(tui_logger::TuiTracingSubscriberLayer)
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_writer(|| GatedStderr)
-                .with_target(true)
-                .without_time(),
-        )
+        .with(tracing_subscriber::fmt::layer().with_writer(|| GatedStderr).with_target(true).without_time())
         .init();
 
     let _ = tracing_log::LogTracer::init();

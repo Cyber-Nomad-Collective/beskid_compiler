@@ -32,18 +32,11 @@ pub fn parse_program_with_source_name(source_name: &str, source: &str) -> Result
 }
 
 /// Parse with diagnostics collected from strict and recovered parsing attempts.
-pub fn parse_program_with_source_name_and_diagnostics(
-    source_name: &str,
-    source: &str,
-) -> Result<ParsedProgram> {
+pub fn parse_program_with_source_name_and_diagnostics(source_name: &str, source: &str) -> Result<ParsedProgram> {
     let strict_result = parse_program_strict(source_name, source);
     let strict_error = match strict_result {
         Ok(program) => {
-            return Ok(ParsedProgram {
-                program,
-                diagnostics: Vec::new(),
-                recovered: false,
-            });
+            return Ok(ParsedProgram { program, diagnostics: Vec::new(), recovered: false });
         }
         Err(err) => {
             if BeskidParser::parse(Rule::Program, source).is_ok() {
@@ -59,9 +52,7 @@ pub fn parse_program_with_source_name_and_diagnostics(
     };
     let fallback = pest_error_diagnostic(source_name, source, &parse_error);
 
-    for (candidate_source, mut parse_diagnostics) in
-        collect_repair_candidates(source_name, source, &parse_error)
-    {
+    for (candidate_source, mut parse_diagnostics) in collect_repair_candidates(source_name, source, &parse_error) {
         if let Ok(program) = parse_program_strict(source_name, &candidate_source) {
             if candidate_source == source {
                 parse_diagnostics.clear();
@@ -83,20 +74,11 @@ fn parse_program_strict(source_name: &str, source: &str) -> Result<Spanned<Progr
         anyhow!(MietteReportError::new(diagnostic))
     })?;
     let pair = pairs.next().ok_or_else(|| {
-        let end = if source.is_empty() {
-            0
-        } else {
-            1.min(source.len())
-        };
+        let end = if source.is_empty() { 0 } else { 1.min(source.len()) };
         let diagnostic = make_diagnostic(
             source_name,
             source,
-            crate::syntax::SpanInfo {
-                start: 0,
-                end,
-                line_col_start: (1, 1),
-                line_col_end: (1, 1),
-            },
+            crate::syntax::SpanInfo { start: 0, end, line_col_start: (1, 1), line_col_end: (1, 1) },
             "no program found in source",
             "empty program",
             None,
@@ -112,10 +94,7 @@ fn parse_program_strict(source_name: &str, source: &str) -> Result<Spanned<Progr
 }
 
 /// Parse a single expression subtree (used by `code` literal `@{}` holes).
-pub fn parse_expression_source(
-    source_name: &str,
-    source: &str,
-) -> Result<Spanned<crate::syntax::Expression>> {
+pub fn parse_expression_source(source_name: &str, source: &str) -> Result<Spanned<crate::syntax::Expression>> {
     let mut pairs = BeskidParser::parse(Rule::Expression, source.trim()).map_err(|err| {
         let diagnostic = pest_error_diagnostic(source_name, source, &err);
         anyhow!(MietteReportError::new(diagnostic))

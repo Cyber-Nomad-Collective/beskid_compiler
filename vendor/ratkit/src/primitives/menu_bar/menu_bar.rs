@@ -20,15 +20,7 @@ pub struct MenuItem {
 
 impl MenuItem {
     pub fn new(name: impl Into<String>, value: usize) -> Self {
-        Self {
-            name: name.into(),
-            icon: None,
-            value,
-            selected: false,
-            hovered: false,
-            area: None,
-            action: None,
-        }
+        Self { name: name.into(), icon: None, value, selected: false, hovered: false, area: None, action: None }
     }
 
     pub fn with_icon(name: impl Into<String>, icon: impl Into<String>, value: usize) -> Self {
@@ -43,11 +35,7 @@ impl MenuItem {
         }
     }
 
-    pub fn with_action(
-        name: impl Into<String>,
-        value: usize,
-        action: impl FnOnce() + Send + 'static,
-    ) -> Self {
+    pub fn with_action(name: impl Into<String>, value: usize, action: impl FnOnce() + Send + 'static) -> Self {
         Self {
             name: name.into(),
             icon: None,
@@ -100,13 +88,9 @@ impl MenuBar {
             items,
             area: None,
             normal_style: Style::default().fg(Color::White),
-            selected_style: Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            selected_style: Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
             hover_style: Style::default().fg(Color::Cyan),
-            selected_hover_style: Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            selected_hover_style: Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
         }
     }
 
@@ -140,35 +124,24 @@ impl MenuBar {
     #[cfg(feature = "theme")]
     pub fn with_theme(mut self, theme: &AppTheme) -> Self {
         self.normal_style = Style::default().fg(theme.text);
-        self.selected_style = Style::default()
-            .fg(theme.primary)
-            .add_modifier(Modifier::BOLD);
+        self.selected_style = Style::default().fg(theme.primary).add_modifier(Modifier::BOLD);
         self.hover_style = Style::default().fg(theme.secondary);
-        self.selected_hover_style = Style::default()
-            .fg(theme.primary)
-            .add_modifier(Modifier::BOLD);
+        self.selected_hover_style = Style::default().fg(theme.primary).add_modifier(Modifier::BOLD);
         self
     }
 
     #[cfg(feature = "theme")]
     pub fn apply_theme(&mut self, theme: &AppTheme) {
         self.normal_style = Style::default().fg(theme.text);
-        self.selected_style = Style::default()
-            .fg(theme.primary)
-            .add_modifier(Modifier::BOLD);
+        self.selected_style = Style::default().fg(theme.primary).add_modifier(Modifier::BOLD);
         self.hover_style = Style::default().fg(theme.secondary);
-        self.selected_hover_style = Style::default()
-            .fg(theme.primary)
-            .add_modifier(Modifier::BOLD);
+        self.selected_hover_style = Style::default().fg(theme.primary).add_modifier(Modifier::BOLD);
     }
 
     pub fn update_hover(&mut self, column: u16, row: u16) {
         for item in &mut self.items {
             item.hovered = if let Some(area) = item.area {
-                column >= area.x
-                    && column < area.x + area.width
-                    && row >= area.y
-                    && row < area.y + area.height
+                column >= area.x && column < area.x + area.width && row >= area.y && row < area.y + area.height
             } else {
                 false
             };
@@ -178,11 +151,7 @@ impl MenuBar {
     pub fn handle_click(&mut self, column: u16, row: u16) -> Option<usize> {
         let clicked_index = self.items.iter().enumerate().find_map(|(i, item)| {
             if let Some(area) = item.area {
-                if column >= area.x
-                    && column < area.x + area.width
-                    && row >= area.y
-                    && row < area.y + area.height
-                {
+                if column >= area.x && column < area.x + area.width && row >= area.y && row < area.y + area.height {
                     return Some(i);
                 }
             }
@@ -201,11 +170,7 @@ impl MenuBar {
     pub fn handle_mouse(&mut self, column: u16, row: u16) -> WidgetEvent {
         let clicked_index = self.items.iter().enumerate().find_map(|(i, item)| {
             if let Some(area) = item.area {
-                if column >= area.x
-                    && column < area.x + area.width
-                    && row >= area.y
-                    && row < area.y + area.height
-                {
+                if column >= area.x && column < area.x + area.width && row >= area.y && row < area.y + area.height {
                     return Some(i);
                 }
             }
@@ -217,10 +182,7 @@ impl MenuBar {
             for (i, item) in self.items.iter_mut().enumerate() {
                 item.selected = i == clicked;
             }
-            return WidgetEvent::MenuSelected {
-                index: clicked,
-                action,
-            };
+            return WidgetEvent::MenuSelected { index: clicked, action };
         }
 
         WidgetEvent::None
@@ -245,18 +207,12 @@ impl MenuBar {
             return;
         }
 
-        let button_group_area = Rect {
-            x: area.x + left_offset,
-            y: area.y,
-            width: available_width,
-            height: area.height,
-        };
+        let button_group_area =
+            Rect { x: area.x + left_offset, y: area.y, width: available_width, height: area.height };
 
         self.area = Some(button_group_area);
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded);
+        let block = Block::default().borders(Borders::ALL).border_type(BorderType::Rounded);
 
         let inner_area = block.inner(button_group_area);
         frame.render_widget(block, button_group_area);
@@ -275,12 +231,7 @@ impl MenuBar {
 
             let actual_item_width = item_width.min(available_width);
 
-            let item_area = Rect {
-                x: x_offset,
-                y: inner_area.y,
-                width: actual_item_width,
-                height: inner_area.height,
-            };
+            let item_area = Rect { x: x_offset, y: inner_area.y, width: actual_item_width, height: inner_area.height };
 
             item.area = Some(item_area);
 
@@ -292,10 +243,7 @@ impl MenuBar {
             };
 
             let display_label = if actual_item_width < item_width {
-                label
-                    .chars()
-                    .take(actual_item_width as usize)
-                    .collect::<String>()
+                label.chars().take(actual_item_width as usize).collect::<String>()
             } else {
                 label
             };
@@ -305,12 +253,7 @@ impl MenuBar {
             x_offset += actual_item_width;
 
             if i < button_count - 1 && x_offset + 3 <= inner_area.x + inner_area.width {
-                let separator_area = Rect {
-                    x: x_offset,
-                    y: inner_area.y,
-                    width: 3,
-                    height: inner_area.height,
-                };
+                let separator_area = Rect { x: x_offset, y: inner_area.y, width: 3, height: inner_area.height };
                 let separator = Paragraph::new(" │ ");
                 frame.render_widget(separator, separator_area);
                 x_offset += 3;
@@ -319,11 +262,7 @@ impl MenuBar {
     }
 
     pub fn render_centered(&mut self, frame: &mut Frame, area: Rect) {
-        let total_chars: usize = self
-            .items
-            .iter()
-            .map(|item| display_width(&item.display_label()) + 4)
-            .sum();
+        let total_chars: usize = self.items.iter().map(|item| display_width(&item.display_label()) + 4).sum();
         let needed_width = total_chars as u16;
 
         let chunks = Layout::default()

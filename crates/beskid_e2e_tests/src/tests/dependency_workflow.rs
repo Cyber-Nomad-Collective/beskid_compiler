@@ -1,9 +1,7 @@
 use std::time::Duration;
 use std::{fs, path::Path};
 
-use crate::harness::assertions::{
-    assert_exit_code, assert_file_exists, assert_output_contains, assert_success,
-};
+use crate::harness::assertions::{assert_exit_code, assert_file_exists, assert_output_contains, assert_success};
 use crate::harness::cli::BeskidCliInvoker;
 use crate::harness::process::run_binary;
 use crate::harness::workspace::E2eWorkspace;
@@ -25,11 +23,7 @@ fn fetch_lock_update_then_build_and_run_project_with_path_dependency() {
         "app",
     ]);
     assert_success(&fetch, "fetch dependency workflow fixture");
-    assert_output_contains(
-        &fetch,
-        "Dependencies resolved and materialized",
-        "fetch dependency workflow fixture",
-    );
+    assert_output_contains(&fetch, "Dependencies resolved and materialized", "fetch dependency workflow fixture");
 
     let update = cli.run([
         "update",
@@ -53,11 +47,7 @@ fn fetch_lock_update_then_build_and_run_project_with_path_dependency() {
         "app",
     ]);
     assert_success(&lock, "lock dependency workflow fixture");
-    assert_output_contains(
-        &lock,
-        "Project.lock synchronized",
-        "lock dependency workflow fixture",
-    );
+    assert_output_contains(&lock, "Project.lock synchronized", "lock dependency workflow fixture");
 
     assert_file_exists(&workspace.join("app/Project.lock"), "project lockfile");
     let deps_src = workspace.join("app/obj/beskid/deps/src");
@@ -97,11 +87,7 @@ fn count_project_manifests(root: &Path) -> usize {
             count += count_project_manifests(&path);
             continue;
         }
-        if path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name == "Project.proj")
-        {
+        if path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name == "Project.proj") {
             count += 1;
         }
     }

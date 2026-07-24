@@ -126,9 +126,8 @@ impl AotBuildRequest {
     ) -> Self {
         let profile = BuildProfile::Debug;
         let runtime = (output_kind != BuildOutputKind::ObjectOnly).then(|| {
-            crate::bundled::default_runtime_strategy(profile, None).unwrap_or_else(|err| {
-                panic!("with_defaults requires an exact installed ABI-v5 runtime kit: {err}")
-            })
+            crate::bundled::default_runtime_strategy(profile, None)
+                .unwrap_or_else(|err| panic!("with_defaults requires an exact installed ABI-v5 runtime kit: {err}"))
         });
         Self {
             artifact,
@@ -186,9 +185,7 @@ pub fn require_canonical_host_emit_authority() -> AotResult<CanonicalHostEmitAut
     let manifest = AbiManifestV5::canonical_runtime(target);
     prove_canonical_runtime_corpus(&canonical_runtime_sources(), &manifest).map_err(|error| {
         AotError::InvalidRequest {
-            message: format!(
-                "canonical host emit authority requires the embedded ABI-v5 runtime corpus: {error:?}"
-            ),
+            message: format!("canonical host emit authority requires the embedded ABI-v5 runtime corpus: {error:?}"),
         }
     })?;
     Ok(CanonicalHostEmitAuthority { _private: () })
@@ -206,10 +203,8 @@ pub fn emit_host_context_library_pair(
     name: &str,
 ) -> AotResult<NativeLibraryPair> {
     let target = host_runtime_target()?;
-    std::fs::create_dir_all(&output_dir).map_err(|err| AotError::Io {
-        path: output_dir.clone(),
-        message: err.to_string(),
-    })?;
+    std::fs::create_dir_all(&output_dir)
+        .map_err(|err| AotError::Io { path: output_dir.clone(), message: err.to_string() })?;
     let context_object = compile_context_assembly(&target, &output_dir, name)?;
     let target_triple = target.triple.as_str().to_owned();
     let context_symbols = AbiManifestV5::canonical_runtime(target)
@@ -240,10 +235,8 @@ pub fn emit_host_platform_library_pair(
 ) -> AotResult<NativeLibraryPair> {
     let target = host_runtime_target()?;
     let artifact = crate::prepared_syntax::lower_canonical_runtime_prepared_syntax(target.clone())?;
-    std::fs::create_dir_all(&output_dir).map_err(|err| AotError::Io {
-        path: output_dir.clone(),
-        message: err.to_string(),
-    })?;
+    std::fs::create_dir_all(&output_dir)
+        .map_err(|err| AotError::Io { path: output_dir.clone(), message: err.to_string() })?;
     let context_object = compile_context_assembly(&target, &output_dir, name)?;
     let platform_objects = compile_platform_objects(&target, &output_dir, name)?;
     let target_triple = target.triple.as_str().to_owned();
@@ -264,9 +257,7 @@ pub fn emit_host_platform_library_pair(
         name,
         Some(target_triple),
         provenance_symbols,
-        std::iter::once(context_object)
-            .chain(platform_objects)
-            .collect(),
+        std::iter::once(context_object).chain(platform_objects).collect(),
     )
 }
 
@@ -279,10 +270,8 @@ fn emit_library_pair_with_objects(
     additional_object_paths: Vec<PathBuf>,
 ) -> AotResult<NativeLibraryPair> {
     let target = detect_target(target_triple.as_deref())?;
-    std::fs::create_dir_all(&output_dir).map_err(|err| AotError::Io {
-        path: output_dir.clone(),
-        message: err.to_string(),
-    })?;
+    std::fs::create_dir_all(&output_dir)
+        .map_err(|err| AotError::Io { path: output_dir.clone(), message: err.to_string() })?;
     let object_path = output_dir.join(format!("{name}.{}", target.object_ext));
     let request = AotBuildRequest {
         artifact,
@@ -306,20 +295,11 @@ fn emit_library_pair_with_objects(
     linked_exports.extend(exported_symbols.iter().cloned());
     linked_exports.sort();
     linked_exports.dedup();
-    let static_library = output_dir.join(crate::target::output_filename(
-        name,
-        BuildOutputKind::StaticLib,
-        &target,
-    ));
-    let shared_library = output_dir.join(crate::target::output_filename(
-        name,
-        BuildOutputKind::SharedLib,
-        &target,
-    ));
-    for (output_kind, output_path) in [
-        (BuildOutputKind::StaticLib, &static_library),
-        (BuildOutputKind::SharedLib, &shared_library),
-    ] {
+    let static_library = output_dir.join(crate::target::output_filename(name, BuildOutputKind::StaticLib, &target));
+    let shared_library = output_dir.join(crate::target::output_filename(name, BuildOutputKind::SharedLib, &target));
+    for (output_kind, output_path) in
+        [(BuildOutputKind::StaticLib, &static_library), (BuildOutputKind::SharedLib, &shared_library)]
+    {
         link(&LinkRequest {
             target_triple: target_triple.clone(),
             output_kind,
@@ -342,82 +322,41 @@ fn emit_library_pair_with_objects(
     provenance_symbols.dedup();
     Ok(NativeLibraryPair {
         static_library,
-        shared_import_library: target
-            .triple
-            .contains("windows")
-            .then(|| output_dir.join(format!("{name}_import.lib"))),
+        shared_import_library: target.triple.contains("windows").then(|| output_dir.join(format!("{name}_import.lib"))),
         shared_library,
         provenance_symbols,
     })
 }
 
 fn host_runtime_target() -> AotResult<TargetMetadata> {
-    beskid_abi::runtime_kit::host_runtime_target().map_err(|error| {
-        AotError::UnsupportedLinkerStrategy {
-            target: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
-            message: format!(
-                "canonical context assembly is only available for supported native ABI-v5 hosts ({error})"
-            ),
-        }
+    beskid_abi::runtime_kit::host_runtime_target().map_err(|error| AotError::UnsupportedLinkerStrategy {
+        target: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
+        message: format!("canonical context assembly is only available for supported native ABI-v5 hosts ({error})"),
     })
 }
 
-fn compile_context_assembly(
-    target: &TargetMetadata,
-    output_dir: &std::path::Path,
-    name: &str,
-) -> AotResult<PathBuf> {
-    let assembly_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../beskid_abi/assembly")
-        .join(target.triple.as_str());
-    let source = assembly_root.join(if target.triple.as_str().contains("windows") {
-        "context.asm"
-    } else {
-        "context.S"
-    });
-    let include = output_dir.join(format!(
-        "beskid_runtime_abi_v5_{}.inc",
-        target.triple.as_str().replace('-', "_")
-    ));
+fn compile_context_assembly(target: &TargetMetadata, output_dir: &std::path::Path, name: &str) -> AotResult<PathBuf> {
+    let assembly_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/assembly").join(target.triple.as_str());
+    let source =
+        assembly_root.join(if target.triple.as_str().contains("windows") { "context.asm" } else { "context.S" });
+    let include = output_dir.join(format!("beskid_runtime_abi_v5_{}.inc", target.triple.as_str().replace('-', "_")));
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
-    let rendered =
-        render_runtime_asm_include(&manifest).map_err(|err| AotError::InvalidRequest {
-            message: format!("{err:?}"),
-        })?;
-    std::fs::write(&include, rendered).map_err(|err| AotError::Io {
-        path: include.clone(),
-        message: err.to_string(),
-    })?;
-    let object = output_dir.join(format!(
-        "{name}.context.{}",
-        if target.triple.as_str().contains("windows") {
-            "obj"
-        } else {
-            "o"
-        }
-    ));
+    let rendered = render_runtime_asm_include(&manifest)
+        .map_err(|err| AotError::InvalidRequest { message: format!("{err:?}") })?;
+    std::fs::write(&include, rendered)
+        .map_err(|err| AotError::Io { path: include.clone(), message: err.to_string() })?;
+    let object = output_dir
+        .join(format!("{name}.context.{}", if target.triple.as_str().contains("windows") { "obj" } else { "o" }));
 
-    let mut command = if target.triple.as_str().contains("windows") {
-        Command::new("llvm-ml")
-    } else {
-        Command::new("clang")
-    };
+    let mut command =
+        if target.triple.as_str().contains("windows") { Command::new("llvm-ml") } else { Command::new("clang") };
     if target.triple.as_str() == "x86_64-unknown-linux-gnu" {
         command.args(["-target", "x86_64-unknown-linux-gnu", "-c"]);
-        command
-            .arg(&source)
-            .arg("-I")
-            .arg(output_dir)
-            .arg("-o")
-            .arg(&object);
+        command.arg(&source).arg("-I").arg(output_dir).arg("-o").arg(&object);
     } else if target.triple.as_str() == "aarch64-apple-darwin" {
         command.args(["-c", "-arch", "arm64"]);
-        command
-            .arg(&source)
-            .arg("-I")
-            .arg(output_dir)
-            .arg("-o")
-            .arg(&object);
+        command.arg(&source).arg("-I").arg(output_dir).arg("-o").arg(&object);
     } else if target.triple.as_str() == "x86_64-pc-windows-msvc" {
         command.args(["--m64", "/c", "/X", "/Fo"]);
         command.arg(&object).arg("/I").arg(output_dir).arg(&source);
@@ -444,9 +383,8 @@ fn compile_platform_objects(
     name: &str,
 ) -> AotResult<Vec<PathBuf>> {
     let plan = platform_object_plan(target.triple.as_str())?;
-    let assembly_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../beskid_abi/assembly")
-        .join(target.triple.as_str());
+    let assembly_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/assembly").join(target.triple.as_str());
     let source = assembly_root.join(plan.assembly_source);
     let tls_source = assembly_root.join(plan.tls_source);
     let object = output_dir.join(format!("{name}.platform.{}", plan.object_extension));
@@ -519,33 +457,17 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
                 assembly_args: vec!["-c".into(), "-arch".into(), "arm64".into()],
                 assembly_output_before_source: false,
                 tls_program: "clang",
-                tls_args: vec![
-                    "-std=c11".into(),
-                    "-c".into(),
-                    "-arch".into(),
-                    "arm64".into(),
-                ],
+                tls_args: vec!["-std=c11".into(), "-c".into(), "-arch".into(), "arm64".into()],
                 object_extension: "o",
             }),
             (Arch::X86_64, Os::Linux) => Ok(PlatformObjectPlan {
                 assembly_source: "platform.S",
                 tls_source: "platform_tls.c",
                 assembly_program: "clang",
-                assembly_args: vec![
-                    "-target".into(),
-                    target.to_owned(),
-                    "-fPIC".into(),
-                    "-c".into(),
-                ],
+                assembly_args: vec!["-target".into(), target.to_owned(), "-fPIC".into(), "-c".into()],
                 assembly_output_before_source: false,
                 tls_program: "clang",
-                tls_args: vec![
-                    "-target".into(),
-                    target.to_owned(),
-                    "-std=c11".into(),
-                    "-fPIC".into(),
-                    "-c".into(),
-                ],
+                tls_args: vec!["-target".into(), target.to_owned(), "-std=c11".into(), "-fPIC".into(), "-c".into()],
                 object_extension: "o",
             }),
             (Arch::X86_64, Os::Windows) => Ok(PlatformObjectPlan {
@@ -578,11 +500,7 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
             assembly_args: vec!["--m64".into(), "/c".into(), "/X".into(), "/Fo".into()],
             assembly_output_before_source: true,
             tls_program: "clang",
-            tls_args: vec![
-                "--target=x86_64-pc-windows-msvc".into(),
-                "-std=c11".into(),
-                "-c".into(),
-            ],
+            tls_args: vec!["--target=x86_64-pc-windows-msvc".into(), "-std=c11".into(), "-c".into()],
             object_extension: "obj",
         }),
         _ => Err(AotError::UnsupportedLinkerStrategy {
@@ -605,10 +523,7 @@ mod platform_object_tests {
         assert_eq!(plan.assembly_program, "llvm-ml");
         assert_eq!(plan.assembly_args, vec!["--m64", "/c", "/X", "/Fo"]);
         assert_eq!(plan.tls_program, "clang");
-        assert_eq!(
-            plan.tls_args,
-            vec!["--target=x86_64-pc-windows-msvc", "-std=c11", "-c"]
-        );
+        assert_eq!(plan.tls_args, vec!["--target=x86_64-pc-windows-msvc", "-std=c11", "-c"]);
         assert_eq!(plan.object_extension, "obj");
     }
 }
@@ -642,20 +557,14 @@ pub const DEFAULT_ENTRYPOINT: &str = "Main";
 
 /// Beskid entrypoint name mapped to the native C link symbol for executable output.
 pub fn native_link_entrypoint(beskid_entrypoint: &str) -> &str {
-    if beskid_entrypoint == DEFAULT_ENTRYPOINT {
-        "main"
-    } else {
-        beskid_entrypoint
-    }
+    if beskid_entrypoint == DEFAULT_ENTRYPOINT { "main" } else { beskid_entrypoint }
 }
 
 /// Normalize CLI-style entrypoint: non-empty string or default [`DEFAULT_ENTRYPOINT`].
 pub fn resolve_entrypoint(entrypoint: Option<String>) -> AotResult<String> {
     if let Some(entrypoint) = entrypoint {
         if entrypoint.trim().is_empty() {
-            return Err(AotError::InvalidRequest {
-                message: "entrypoint must not be empty".to_owned(),
-            });
+            return Err(AotError::InvalidRequest { message: "entrypoint must not be empty".to_owned() });
         }
         return Ok(entrypoint);
     }
@@ -697,22 +606,14 @@ pub fn build(req: AotBuildRequest) -> AotResult<AotBuildResult> {
 
 fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageResult> {
     let target = detect_target(req.target_triple.as_deref())?;
-    let object_path = req
-        .object_path
-        .clone()
-        .unwrap_or_else(|| req.output_path.with_extension(target.object_ext));
+    let object_path = req.object_path.clone().unwrap_or_else(|| req.output_path.with_extension(target.object_ext));
 
     let exports = req.artifact.exports.clone();
     let all_symbols = req
         .artifact
         .functions
         .iter()
-        .map(|function| {
-            beskid_codegen::lowering::expressions::export::object_link_symbol(
-                &function.name,
-                &exports,
-            )
-        })
+        .map(|function| beskid_codegen::lowering::expressions::export::object_link_symbol(&function.name, &exports))
         .collect::<Vec<_>>();
     let export_table = ExportTable::from_artifact(&req.artifact);
     let export_policy = export_table.resolve_export_policy(&req.export_policy);
@@ -727,43 +628,28 @@ fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageResult> {
 
     object_module.finalize_to_path(&object_path)?;
 
-    Ok(ObjectStageResult {
-        object_path,
-        exported_symbols,
-    })
+    Ok(ObjectStageResult { object_path, exported_symbols })
 }
 
 fn ensure_entrypoint_exported(req: &AotBuildRequest, exported_symbols: &[String]) -> AotResult<()> {
     let native = native_link_entrypoint(&req.entrypoint);
-    if exported_symbols
-        .iter()
-        .any(|sym| symbol_matches_entrypoint(sym, &req.entrypoint, native))
-    {
+    if exported_symbols.iter().any(|sym| symbol_matches_entrypoint(sym, &req.entrypoint, native)) {
         return Ok(());
     }
 
-    Err(AotError::MissingEntrypoint {
-        symbol: req.entrypoint.clone(),
-    })
+    Err(AotError::MissingEntrypoint { symbol: req.entrypoint.clone() })
 }
 
 fn symbol_matches_entrypoint(symbol: &str, entrypoint: &str, native: &str) -> bool {
     symbol == entrypoint
         || symbol == native
-        || symbol
-            .strip_prefix(entrypoint)
-            .is_some_and(|suffix| suffix.starts_with('#'))
+        || symbol.strip_prefix(entrypoint).is_some_and(|suffix| suffix.starts_with('#'))
 }
 
 fn prepare_runtime_stage(req: &AotBuildRequest) -> AotResult<crate::runtime::RuntimeArtifact> {
     let obs = req.pipeline.as_deref();
     observe_phase_result(obs, AOT_RUNTIME, || {
-        prepare_runtime(&RuntimeBuildRequest {
-            kit: req
-                .runtime
-                .clone()
-                .expect("validated linked output runtime kit"),
-        })
+        prepare_runtime(&RuntimeBuildRequest { kit: req.runtime.clone().expect("validated linked output runtime kit") })
     })
 }
 
@@ -801,9 +687,7 @@ fn validate_request(req: &AotBuildRequest) -> AotResult<()> {
         });
     }
     if requires_entrypoint(req.output_kind) && req.entrypoint.trim().is_empty() {
-        return Err(AotError::InvalidRequest {
-            message: "entrypoint must not be empty".to_owned(),
-        });
+        return Err(AotError::InvalidRequest { message: "entrypoint must not be empty".to_owned() });
     }
     if req.output_kind != BuildOutputKind::ObjectOnly && req.runtime.is_none() {
         return Err(AotError::InvalidRequest {
@@ -832,17 +716,11 @@ fn canonical_logical_name(logical: &str) -> String {
     stripped_suffix.to_string()
 }
 
-fn validate_extern_libraries(
-    artifact: &CodegenArtifact,
-    external_libraries: &[String],
-) -> AotResult<()> {
+fn validate_extern_libraries(artifact: &CodegenArtifact, external_libraries: &[String]) -> AotResult<()> {
     if artifact.extern_imports.is_empty() {
         return Ok(());
     }
-    let available: HashSet<String> = external_libraries
-        .iter()
-        .map(|name| canonical_logical_name(name))
-        .collect();
+    let available: HashSet<String> = external_libraries.iter().map(|name| canonical_logical_name(name)).collect();
     for import in &artifact.extern_imports {
         let Some(library) = import.library.as_deref() else {
             continue;
@@ -861,14 +739,10 @@ fn validate_extern_libraries(
 fn apply_export_policy(symbols: Vec<String>, policy: &ExportPolicy) -> Vec<String> {
     match policy {
         ExportPolicy::AllDefined => symbols,
-        ExportPolicy::PublicOnly => symbols
-            .into_iter()
-            .filter(|name| !name.starts_with("__"))
-            .collect(),
-        ExportPolicy::Explicit(expected) => symbols
-            .into_iter()
-            .filter(|name| expected.iter().any(|wanted| wanted == name))
-            .collect(),
+        ExportPolicy::PublicOnly => symbols.into_iter().filter(|name| !name.starts_with("__")).collect(),
+        ExportPolicy::Explicit(expected) => {
+            symbols.into_iter().filter(|name| expected.iter().any(|wanted| wanted == name)).collect()
+        }
     }
 }
 

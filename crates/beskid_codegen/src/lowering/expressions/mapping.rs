@@ -36,9 +36,7 @@ pub fn lower_aot_object_mapping(
     require_mapping_eligible(span, resolution, type_result, src_item, dst_item)?;
     let src_shape = shape_id_for_item(src_item);
     let dst_shape = shape_id_for_item(dst_item);
-    Ok(emit_dynamic_map_aot(
-        builder, src_shape, dst_shape, src_ptr, dst_out,
-    ))
+    Ok(emit_dynamic_map_aot(builder, src_shape, dst_shape, src_ptr, dst_out))
 }
 
 #[cfg(test)]
@@ -90,9 +88,6 @@ mod dynamic_mapping_tests {
         builder.finalize();
 
         let clif = func.to_string();
-        assert!(
-            clif.contains("dynamic_map_aot"),
-            "expected dynamic_map_aot import in CLIF: {clif}"
-        );
+        assert!(clif.contains("dynamic_map_aot"), "expected dynamic_map_aot import in CLIF: {clif}");
     }
 }

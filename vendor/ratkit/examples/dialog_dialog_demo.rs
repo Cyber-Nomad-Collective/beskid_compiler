@@ -8,12 +8,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget, Wrap};
 use ratatui::{buffer::Buffer, Frame};
 use ratkit::primitives::dialog::{
-    Dialog, DialogAction, DialogActionsLayout, DialogBodyRenderer, DialogModalMode, DialogShadow,
-    DialogWidget, DialogWrap,
+    Dialog, DialogAction, DialogActionsLayout, DialogBodyRenderer, DialogModalMode, DialogShadow, DialogWidget,
+    DialogWrap,
 };
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct MenuState {
     items: Vec<&'static str>,
@@ -70,10 +68,8 @@ impl DialogBodyRenderer for SelectMenuBody {
         .wrap(Wrap { trim: true });
         intro.render(chunks[0], buf);
 
-        let menu_block = Block::default()
-            .title(" Reason ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray));
+        let menu_block =
+            Block::default().title(" Reason ").borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray));
         let menu_inner = menu_block.inner(chunks[1]);
         menu_block.render(chunks[1], buf);
 
@@ -86,10 +82,7 @@ impl DialogBodyRenderer for SelectMenuBody {
 
             let is_selected = idx == state.selected;
             let style = if is_selected {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
+                Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
             };

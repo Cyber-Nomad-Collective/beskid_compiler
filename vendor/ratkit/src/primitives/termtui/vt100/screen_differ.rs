@@ -50,10 +50,7 @@ impl ScreenDiffer {
         for y in 0..size.height {
             for x in 0..size.width {
                 let offset = (size.width * y + x) as usize;
-                let cell = view
-                    .get_cell(Pos { col: x, row: y })
-                    .cloned()
-                    .unwrap_or_default();
+                let cell = view.get_cell(Pos { col: x, row: y }).cloned().unwrap_or_default();
 
                 let mut sep = {
                     let mut first = true;
@@ -119,11 +116,7 @@ impl ScreenDiffer {
                         self.pos = pos;
                     }
 
-                    let c = if cell.width() > 0 {
-                        cell.contents()
-                    } else {
-                        " "
-                    };
+                    let c = if cell.width() > 0 { cell.contents() } else { " " };
                     write!(w, "{}", c)?;
                     self.pos.col = (size.width - 1).min(self.pos.col + c.width() as u16);
                     prev[offset] = cell;
@@ -166,16 +159,11 @@ impl ScreenDiffer {
 
 impl BufferView for Vec<Vec<Cell>> {
     fn size(&self) -> Size {
-        Size {
-            height: self.len() as u16,
-            width: self.get(0).map_or(0, |row| row.len() as u16),
-        }
+        Size { height: self.len() as u16, width: self.get(0).map_or(0, |row| row.len() as u16) }
     }
 
     fn get_cell(&self, pos: Pos) -> Option<&Cell> {
-        self.get(pos.row as usize)
-            .map(|row| row.get(pos.col as usize))
-            .flatten()
+        self.get(pos.row as usize).map(|row| row.get(pos.col as usize)).flatten()
     }
 
     fn get_cursor_pos(&self) -> Option<Pos> {
@@ -213,10 +201,7 @@ mod tests {
 
     #[test]
     fn basic() {
-        let attrs = Attrs {
-            fgcolor: Color::Idx(4),
-            ..Default::default()
-        };
+        let attrs = Attrs { fgcolor: Color::Idx(4), ..Default::default() };
 
         let mut differ = ScreenDiffer::new();
         let mut out = String::new();

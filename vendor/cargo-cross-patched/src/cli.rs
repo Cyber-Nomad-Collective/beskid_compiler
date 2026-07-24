@@ -1,12 +1,10 @@
 //! Command-line argument parsing for cargo-cross using clap
 
 use crate::config::{
-    self, supported_freebsd_versions_str, supported_glibc_versions_str,
-    supported_iphone_sdk_versions_str, supported_macos_sdk_versions_str,
-    DEFAULT_CROSS_MAKE_VERSION, DEFAULT_FREEBSD_VERSION, DEFAULT_GLIBC_VERSION,
-    DEFAULT_IPHONE_SDK_VERSION, DEFAULT_MACOS_SDK_VERSION, DEFAULT_NDK_VERSION,
-    DEFAULT_QEMU_VERSION, SUPPORTED_FREEBSD_VERSIONS, SUPPORTED_GLIBC_VERSIONS,
-    SUPPORTED_IPHONE_SDK_VERSIONS, SUPPORTED_MACOS_SDK_VERSIONS,
+    self, supported_freebsd_versions_str, supported_glibc_versions_str, supported_iphone_sdk_versions_str,
+    supported_macos_sdk_versions_str, DEFAULT_CROSS_MAKE_VERSION, DEFAULT_FREEBSD_VERSION, DEFAULT_GLIBC_VERSION,
+    DEFAULT_IPHONE_SDK_VERSION, DEFAULT_MACOS_SDK_VERSION, DEFAULT_NDK_VERSION, DEFAULT_QEMU_VERSION,
+    SUPPORTED_FREEBSD_VERSIONS, SUPPORTED_GLIBC_VERSIONS, SUPPORTED_IPHONE_SDK_VERSIONS, SUPPORTED_MACOS_SDK_VERSIONS,
 };
 use crate::error::{CrossError, Result};
 use clap::builder::styling::{AnsiColor, Effects, Styles};
@@ -208,11 +206,7 @@ pub struct SetupCliArgs {
     pub build: BuildArgs,
 
     /// Initialize target runner variables when preparing the environment
-    #[arg(
-        long,
-        env = "INIT_RUNNER",
-        help = "Initialize target runner variables for the setup environment"
-    )]
+    #[arg(long, env = "INIT_RUNNER", help = "Initialize target runner variables for the setup environment")]
     pub init_runner: bool,
 
     /// Output format
@@ -238,11 +232,7 @@ pub struct ExecCliArgs {
     pub build: BuildArgs,
 
     /// Initialize target runner variables before executing the command
-    #[arg(
-        long,
-        env = "INIT_RUNNER",
-        help = "Initialize target runner variables for the exec environment"
-    )]
+    #[arg(long, env = "INIT_RUNNER", help = "Initialize target runner variables for the exec environment")]
     pub init_runner: bool,
 }
 
@@ -308,12 +298,7 @@ may be enabled with package-name/feature-name syntax. May be specified multiple 
     pub no_default_features: bool,
 
     /// Activate all available features of all selected packages
-    #[arg(
-        long,
-        env = "ALL_FEATURES",
-        conflicts_with = "features",
-        help_heading = "Feature Selection"
-    )]
+    #[arg(long, env = "ALL_FEATURES", conflicts_with = "features", help_heading = "Feature Selection")]
     pub all_features: bool,
 
     // ===== Profile =====
@@ -357,12 +342,7 @@ and supports common Unix glob patterns like *, ?, and []."
     pub package: Option<String>,
 
     /// Build all members in the workspace
-    #[arg(
-        long,
-        visible_alias = "all",
-        env = "BUILD_WORKSPACE",
-        help_heading = "Package Selection"
-    )]
+    #[arg(long, visible_alias = "all", env = "BUILD_WORKSPACE", help_heading = "Package Selection")]
     pub workspace: bool,
 
     /// Exclude packages from the build (must be used with --workspace)
@@ -411,11 +391,7 @@ and supports common Unix glob patterns."
     pub example_target: Option<String>,
 
     /// Build all example targets
-    #[arg(
-        long = "examples",
-        env = "BUILD_EXAMPLES",
-        help_heading = "Package Selection"
-    )]
+    #[arg(long = "examples", env = "BUILD_EXAMPLES", help_heading = "Package Selection")]
     pub build_examples: bool,
 
     /// Build only the specified test target
@@ -465,11 +441,7 @@ includes the library and binaries built as benchmarks, and bench targets."
     pub build_benches: bool,
 
     /// Build all targets (equivalent to --lib --bins --tests --benches --examples)
-    #[arg(
-        long = "all-targets",
-        env = "BUILD_ALL_TARGETS",
-        help_heading = "Package Selection"
-    )]
+    #[arg(long = "all-targets", env = "BUILD_ALL_TARGETS", help_heading = "Package Selection")]
     pub build_all_targets: bool,
 
     /// Path to Cargo.toml
@@ -765,30 +737,15 @@ Enable sccache direct mode. Caches based on source file content directly, bypass
 
     // ===== CC Crate Options =====
     /// Disable CC crate default compiler flags
-    #[arg(
-        long,
-        env = "CRATE_CC_NO_DEFAULTS",
-        hide = true,
-        help_heading = "CC Crate Options"
-    )]
+    #[arg(long, env = "CRATE_CC_NO_DEFAULTS", hide = true, help_heading = "CC Crate Options")]
     pub cc_no_defaults: bool,
 
     /// Use shell-escaped flags for CC crate
-    #[arg(
-        long,
-        env = "CC_SHELL_ESCAPED_FLAGS",
-        hide = true,
-        help_heading = "CC Crate Options"
-    )]
+    #[arg(long, env = "CC_SHELL_ESCAPED_FLAGS", hide = true, help_heading = "CC Crate Options")]
     pub cc_shell_escaped_flags: bool,
 
     /// Enable CC crate debug output
-    #[arg(
-        long,
-        env = "CC_ENABLE_DEBUG_OUTPUT",
-        hide = true,
-        help_heading = "CC Crate Options"
-    )]
+    #[arg(long, env = "CC_ENABLE_DEBUG_OUTPUT", hide = true, help_heading = "CC Crate Options")]
     pub cc_enable_debug: bool,
 
     // ===== Build Options =====
@@ -857,12 +814,7 @@ Valid: true, macro, diagnostics, object, all, none (default: false)"
     pub cargo_trim_paths: Option<String>,
 
     /// Disable metadata embedding (requires nightly)
-    #[arg(
-        long,
-        env = "NO_EMBED_METADATA",
-        hide = true,
-        help_heading = "Build Options"
-    )]
+    #[arg(long, env = "NO_EMBED_METADATA", hide = true, help_heading = "Build Options")]
     pub no_embed_metadata: bool,
 
     /// Set `RUSTC_BOOTSTRAP` for using nightly features on stable
@@ -1255,10 +1207,8 @@ impl std::ops::DerefMut for Args {
 impl Args {
     /// Create Args from `BuildArgs` and Command
     fn from_build_args(b: BuildArgs, command: Command, toolchain: Option<String>) -> Result<Self> {
-        let cross_compiler_dir = b
-            .cross_compiler_dir
-            .clone()
-            .unwrap_or_else(|| std::env::temp_dir().join("rust-cross-compiler"));
+        let cross_compiler_dir =
+            b.cross_compiler_dir.clone().unwrap_or_else(|| std::env::temp_dir().join("rust-cross-compiler"));
         let targets = expand_target_list(&b.targets)?;
 
         Ok(Self {
@@ -1292,10 +1242,7 @@ pub enum ParseResult {
 /// Clap's `env = "VAR"` attribute treats empty strings as valid values, which causes
 /// parsing errors for `PathBuf` and other types that don't accept empty strings.
 fn sanitize_clap_env() {
-    let empty_vars: Vec<_> = std::env::vars()
-        .filter(|(_, v)| v.is_empty())
-        .map(|(k, _)| k)
-        .collect();
+    let empty_vars: Vec<_> = std::env::vars().filter(|(_, v)| v.is_empty()).map(|(k, _)| k).collect();
 
     for var in empty_vars {
         std::env::remove_var(&var);
@@ -1349,21 +1296,11 @@ pub fn parse_args_from(args: Vec<String>) -> Result<ParseResult> {
 
         if let Some(canonical_name) = canonical_cargo_command_name(&command_name) {
             if !help_or_version_requested {
-                return parse_cargo_command_args(
-                    &command_name,
-                    canonical_name,
-                    remaining_args,
-                    toolchain,
-                );
+                return parse_cargo_command_args(&command_name, canonical_name, remaining_args, toolchain);
             }
         }
         if should_parse_as_external_cargo_command(&command_name) {
-            return parse_cargo_command_args(
-                &command_name,
-                &command_name,
-                remaining_args,
-                toolchain,
-            );
+            return parse_cargo_command_args(&command_name, &command_name, remaining_args, toolchain);
         }
     }
 
@@ -1375,9 +1312,7 @@ pub fn parse_args_from(args: Vec<String>) -> Result<ParseResult> {
 
     // Try to parse with clap using modified command
     let cli = match cmd.try_get_matches_from(&args) {
-        Ok(matches) => {
-            Cli::from_arg_matches(&matches).map_err(|e| CrossError::ClapError(e.to_string()))?
-        }
+        Ok(matches) => Cli::from_arg_matches(&matches).map_err(|e| CrossError::ClapError(e.to_string()))?,
         Err(e) => {
             // For help/version/missing subcommand, let clap print and exit
             if matches!(
@@ -1428,10 +1363,8 @@ EXAMPLES:\n    \
          Supported: {}",
         supported_glibc_versions_str()
     );
-    let freebsd_help = format!(
-        "Specify FreeBSD version for FreeBSD targets. Supported: {}",
-        supported_freebsd_versions_str()
-    );
+    let freebsd_help =
+        format!("Specify FreeBSD version for FreeBSD targets. Supported: {}", supported_freebsd_versions_str());
     let iphone_sdk_help = format!(
         "Specify iPhone SDK version for iOS targets. On Linux: uses pre-built SDK from releases.\n\
          On macOS: uses installed Xcode SDK. Supported on Linux: {}",
@@ -1454,9 +1387,7 @@ EXAMPLES:\n    \
         let macos_sdk_help = macos_sdk_help.clone();
         cmd = cmd.mut_subcommand(*subcmd_name, |subcmd| {
             subcmd
-                .override_usage(format!(
-                    "{prog} [+toolchain] {subcmd_name} [OPTIONS] [-- <PASSTHROUGH_ARGS>...]"
-                ))
+                .override_usage(format!("{prog} [+toolchain] {subcmd_name} [OPTIONS] [-- <PASSTHROUGH_ARGS>...]"))
                 .mut_arg("glibc_version", |arg| arg.long_help(glibc_help))
                 .mut_arg("freebsd_version", |arg| arg.long_help(freebsd_help))
                 .mut_arg("iphone_sdk_version", |arg| arg.long_help(iphone_sdk_help))
@@ -1472,8 +1403,7 @@ fn should_parse_as_external_cargo_command(command_name: &str) -> bool {
         return false;
     }
 
-    canonical_cargo_command_name(command_name).is_none()
-        && is_supported_external_cargo_command(command_name)
+    canonical_cargo_command_name(command_name).is_none() && is_supported_external_cargo_command(command_name)
 }
 
 fn canonical_cargo_command_name(command_name: &str) -> Option<&'static str> {
@@ -1505,13 +1435,11 @@ fn parse_cargo_command_args(
 
     let cmd = build_external_cargo_command_with_dynamic_help(display_name);
     let cli = match cmd.try_get_matches_from(&clap_args) {
-        Ok(matches) => ExternalCargoCli::from_arg_matches(&matches)
-            .map_err(|e| CrossError::ClapError(e.to_string()))?,
+        Ok(matches) => {
+            ExternalCargoCli::from_arg_matches(&matches).map_err(|e| CrossError::ClapError(e.to_string()))?
+        }
         Err(e) => {
-            if matches!(
-                e.kind(),
-                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
-            ) {
+            if matches!(e.kind(), clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion) {
                 e.exit();
             }
             return Err(CrossError::ClapError(e.render().to_string()));
@@ -1599,9 +1527,7 @@ fn preprocess_cargo_args(args: Vec<String>) -> Vec<String> {
     processed
 }
 
-fn known_arg_maps(
-    command: &clap::Command,
-) -> (HashMap<String, KnownArgSpec>, HashMap<char, KnownArgSpec>) {
+fn known_arg_maps(command: &clap::Command) -> (HashMap<String, KnownArgSpec>, HashMap<char, KnownArgSpec>) {
     let mut long_args = HashMap::new();
     let mut short_args = HashMap::new();
 
@@ -1611,12 +1537,8 @@ fn known_arg_maps(
         }
 
         let (takes_value, min_values, max_values) = infer_arg_value_shape(arg);
-        let spec = KnownArgSpec {
-            takes_value,
-            min_values,
-            max_values,
-            allow_hyphen_values: arg.is_allow_hyphen_values_set(),
-        };
+        let spec =
+            KnownArgSpec { takes_value, min_values, max_values, allow_hyphen_values: arg.is_allow_hyphen_values_set() };
 
         if let Some(long) = arg.get_long() {
             long_args.insert(long.to_string(), spec);
@@ -1657,25 +1579,17 @@ fn infer_arg_value_shape(arg: &clap::Arg) -> (bool, usize, usize) {
     }
 }
 
-fn classify_known_long_arg(
-    token: &str,
-    long_args: &HashMap<String, KnownArgSpec>,
-) -> Option<KnownArgSpec> {
+fn classify_known_long_arg(token: &str, long_args: &HashMap<String, KnownArgSpec>) -> Option<KnownArgSpec> {
     if !token.starts_with("--") || token == "--" {
         return None;
     }
 
-    let name = token
-        .trim_start_matches("--")
-        .split_once('=')
-        .map_or_else(|| token.trim_start_matches("--"), |(name, _)| name);
+    let name =
+        token.trim_start_matches("--").split_once('=').map_or_else(|| token.trim_start_matches("--"), |(name, _)| name);
     long_args.get(name).copied()
 }
 
-fn classify_known_short_arg(
-    token: &str,
-    short_args: &HashMap<char, KnownArgSpec>,
-) -> Option<KnownArgSpec> {
+fn classify_known_short_arg(token: &str, short_args: &HashMap<char, KnownArgSpec>) -> Option<KnownArgSpec> {
     if !token.starts_with('-') || token.starts_with("--") || token == "-" {
         return None;
     }
@@ -1689,10 +1603,7 @@ fn classify_known_short_arg(
         return Some(spec);
     }
 
-    if rest
-        .chars()
-        .all(|short| short_args.get(&short).is_some_and(|arg| !arg.takes_value))
-    {
+    if rest.chars().all(|short| short_args.get(&short).is_some_and(|arg| !arg.takes_value)) {
         return Some(spec);
     }
 
@@ -1704,11 +1615,7 @@ fn needs_following_value(token: &str, spec: KnownArgSpec) -> Option<KnownArgSpec
         return None;
     }
 
-    let has_inline_value = if token.starts_with("--") {
-        token.contains('=')
-    } else {
-        token.len() > 2
-    };
+    let has_inline_value = if token.starts_with("--") { token.contains('=') } else { token.len() > 2 };
 
     if has_inline_value {
         None
@@ -1761,9 +1668,7 @@ EXAMPLES:\n    \
     );
 
     ExternalCargoCli::command()
-        .override_usage(format!(
-            "{prog} [+toolchain] {command_name} [OPTIONS] [-- <PASSTHROUGH_ARGS>...]"
-        ))
+        .override_usage(format!("{prog} [+toolchain] {command_name} [OPTIONS] [-- <PASSTHROUGH_ARGS>...]"))
         .after_help(after_help)
 }
 
@@ -1797,19 +1702,14 @@ fn process_cli(cli: Cli, toolchain: Option<String>) -> Result<ParseResult> {
             let args = finalize_args(setup.build, Command::setup(), toolchain)?;
             let mut args = args;
             args.init_runner = setup.init_runner;
-            Ok(ParseResult::Setup(Box::new(SetupArgs {
-                args,
-                format: setup.format,
-            })))
+            Ok(ParseResult::Setup(Box::new(SetupArgs { args, format: setup.format })))
         }
         CliCommand::Exec(exec) => {
             let mut build = exec.build;
             populate_env_arg_fallbacks(&mut build);
             let command = std::mem::take(&mut build.passthrough_args);
             if command.is_empty() {
-                return Err(CrossError::InvalidArgument(
-                    "exec requires a command after `--`".to_string(),
-                ));
+                return Err(CrossError::InvalidArgument("exec requires a command after `--`".to_string()));
             }
             let args = finalize_args(build, Command::exec(), toolchain)?;
             let mut args = args;
@@ -1830,10 +1730,7 @@ fn is_glob_pattern(s: &str) -> bool {
 fn validate_target_triple(target: &str) -> Result<()> {
     for c in target.chars() {
         if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_' {
-            return Err(CrossError::InvalidTargetTriple {
-                target: target.to_string(),
-                char: c,
-            });
+            return Err(CrossError::InvalidTargetTriple { target: target.to_string(), char: c });
         }
     }
     Ok(())
@@ -1853,9 +1750,7 @@ fn expand_target_list(targets: &[String]) -> Result<Vec<String>> {
             if expanded.is_empty() {
                 // If it was a glob pattern that matched nothing, error
                 if is_glob_pattern(part) {
-                    return Err(CrossError::NoMatchingTargets {
-                        pattern: part.to_string(),
-                    });
+                    return Err(CrossError::NoMatchingTargets { pattern: part.to_string() });
                 }
                 // Not a glob pattern, validate and use as-is
                 validate_target_triple(part)?;
@@ -1875,22 +1770,14 @@ fn expand_target_list(targets: &[String]) -> Result<Vec<String>> {
     Ok(result)
 }
 
-fn finalize_args(
-    mut build_args: BuildArgs,
-    command: Command,
-    toolchain: Option<String>,
-) -> Result<Args> {
+fn finalize_args(mut build_args: BuildArgs, command: Command, toolchain: Option<String>) -> Result<Args> {
     // Handle --release flag: set profile to "release"
     if build_args.release {
         build_args.profile = "release".to_string();
     }
 
     // Handle build_std: empty string means disabled (from env var "false")
-    if build_args
-        .build_std
-        .as_ref()
-        .is_some_and(std::string::String::is_empty)
-    {
+    if build_args.build_std.as_ref().is_some_and(std::string::String::is_empty) {
         build_args.build_std = None;
     }
 
@@ -1963,9 +1850,7 @@ fn parse_env_args(env_name: &str) -> Option<Vec<String>> {
 fn validate_versions(args: &Args) -> Result<()> {
     // Only validate glibc version if it's specified (non-empty)
     // Empty string means use default version, which is valid for both gnu and musl targets
-    if !args.glibc_version.is_empty()
-        && !SUPPORTED_GLIBC_VERSIONS.contains(&args.glibc_version.as_str())
-    {
+    if !args.glibc_version.is_empty() && !SUPPORTED_GLIBC_VERSIONS.contains(&args.glibc_version.as_str()) {
         return Err(CrossError::UnsupportedGlibcVersion {
             version: args.glibc_version.clone(),
             supported: SUPPORTED_GLIBC_VERSIONS.join(", "),
@@ -1973,17 +1858,14 @@ fn validate_versions(args: &Args) -> Result<()> {
     }
 
     let host = config::HostPlatform::detect();
-    if !host.is_darwin()
-        && !SUPPORTED_IPHONE_SDK_VERSIONS.contains(&args.iphone_sdk_version.as_str())
-    {
+    if !host.is_darwin() && !SUPPORTED_IPHONE_SDK_VERSIONS.contains(&args.iphone_sdk_version.as_str()) {
         return Err(CrossError::UnsupportedIphoneSdkVersion {
             version: args.iphone_sdk_version.clone(),
             supported: SUPPORTED_IPHONE_SDK_VERSIONS.join(", "),
         });
     }
 
-    if !host.is_darwin() && !SUPPORTED_MACOS_SDK_VERSIONS.contains(&args.macos_sdk_version.as_str())
-    {
+    if !host.is_darwin() && !SUPPORTED_MACOS_SDK_VERSIONS.contains(&args.macos_sdk_version.as_str()) {
         return Err(CrossError::UnsupportedMacosSdkVersion {
             version: args.macos_sdk_version.clone(),
             supported: SUPPORTED_MACOS_SDK_VERSIONS.join(", "),
@@ -2027,10 +1909,7 @@ pub fn print_all_targets(format: OutputFormat) {
     // Output to GITHUB_OUTPUT if running in GitHub Actions
     if let Ok(github_output) = std::env::var("GITHUB_OUTPUT") {
         let json_array = serde_json::to_string(&targets).unwrap_or_else(|_| "[]".to_string());
-        if let Ok(mut file) = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&github_output)
-        {
+        if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(&github_output) {
             use std::io::Write;
             let _ = writeln!(file, "all-targets={json_array}");
         }
@@ -2114,10 +1993,7 @@ mod tests {
         .unwrap();
         assert!(args.workspace);
         assert!(args.build_all_targets);
-        assert_eq!(
-            args.cargo_args,
-            vec!["--fix".to_string(), "--allow-dirty".to_string()]
-        );
+        assert_eq!(args.cargo_args, vec!["--fix".to_string(), "--allow-dirty".to_string()]);
         assert_eq!(args.targets, vec!["x86_64-pc-windows-msvc"]);
     }
 
@@ -2135,15 +2011,8 @@ mod tests {
 
     #[test]
     fn test_parse_external_command_unknown_cargo_flags() {
-        let args = parse(&[
-            "cargo-cross",
-            "doc",
-            "--workspace",
-            "--open",
-            "--target",
-            "x86_64-unknown-linux-musl",
-        ])
-        .unwrap();
+        let args =
+            parse(&["cargo-cross", "doc", "--workspace", "--open", "--target", "x86_64-unknown-linux-musl"]).unwrap();
         assert_eq!(args.command, Command::new("doc"));
         assert!(args.workspace);
         assert_eq!(args.cargo_args, vec!["--open".to_string()]);
@@ -2152,67 +2021,37 @@ mod tests {
 
     #[test]
     fn test_parse_setup_command() {
-        let args =
-            parse_setup(&["cargo-cross", "setup", "-t", "x86_64-unknown-linux-musl"]).unwrap();
+        let args = parse_setup(&["cargo-cross", "setup", "-t", "x86_64-unknown-linux-musl"]).unwrap();
         assert_eq!(args.args.command, Command::setup());
         assert_eq!(args.format, SetupOutputFormat::Auto);
     }
 
     #[test]
     fn test_parse_setup_command_explicit_format() {
-        let args = parse_setup(&[
-            "cargo-cross",
-            "setup",
-            "-t",
-            "x86_64-unknown-linux-musl",
-            "--format",
-            "fish",
-        ])
-        .unwrap();
+        let args =
+            parse_setup(&["cargo-cross", "setup", "-t", "x86_64-unknown-linux-musl", "--format", "fish"]).unwrap();
         assert_eq!(args.format, SetupOutputFormat::Fish);
     }
 
     #[test]
     fn test_parse_setup_command_init_runner() {
-        let args = parse_setup(&[
-            "cargo-cross",
-            "setup",
-            "--init-runner",
-            "-t",
-            "x86_64-unknown-linux-musl",
-        ])
-        .unwrap();
+        let args = parse_setup(&["cargo-cross", "setup", "--init-runner", "-t", "x86_64-unknown-linux-musl"]).unwrap();
         assert!(args.args.init_runner);
     }
 
     #[test]
     fn test_parse_exec_command() {
-        let args = parse_exec(&[
-            "cargo-cross",
-            "exec",
-            "-t",
-            "x86_64-unknown-linux-musl",
-            "--",
-            "env",
-            "FOO=bar",
-        ])
-        .unwrap();
+        let args =
+            parse_exec(&["cargo-cross", "exec", "-t", "x86_64-unknown-linux-musl", "--", "env", "FOO=bar"]).unwrap();
         assert_eq!(args.args.command, Command::exec());
         assert_eq!(args.command, vec!["env", "FOO=bar"]);
     }
 
     #[test]
     fn test_parse_exec_command_init_runner() {
-        let args = parse_exec(&[
-            "cargo-cross",
-            "exec",
-            "--init-runner",
-            "-t",
-            "x86_64-unknown-linux-musl",
-            "--",
-            "env",
-        ])
-        .unwrap();
+        let args =
+            parse_exec(&["cargo-cross", "exec", "--init-runner", "-t", "x86_64-unknown-linux-musl", "--", "env"])
+                .unwrap();
         assert!(args.args.init_runner);
         assert_eq!(args.command, vec!["env"]);
     }
@@ -2251,17 +2090,9 @@ mod tests {
 
     #[test]
     fn test_parse_multiple_targets() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "-t",
-            "x86_64-unknown-linux-musl,aarch64-unknown-linux-musl",
-        ])
-        .unwrap();
-        assert_eq!(
-            args.targets,
-            vec!["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"]
-        );
+        let args =
+            parse(&["cargo-cross", "build", "-t", "x86_64-unknown-linux-musl,aarch64-unknown-linux-musl"]).unwrap();
+        assert_eq!(args.targets, vec!["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"]);
     }
 
     #[test]
@@ -2384,12 +2215,8 @@ mod tests {
 
     #[test]
     fn test_targets_json_format() {
-        let args: Vec<String> = vec![
-            "cargo-cross".to_string(),
-            "targets".to_string(),
-            "--format".to_string(),
-            "json".to_string(),
-        ];
+        let args: Vec<String> =
+            vec!["cargo-cross".to_string(), "targets".to_string(), "--format".to_string(), "json".to_string()];
         match parse_args_from(args).unwrap() {
             ParseResult::ShowTargets(format) => {
                 assert_eq!(format, OutputFormat::Json);
@@ -2400,12 +2227,8 @@ mod tests {
 
     #[test]
     fn test_targets_plain_format() {
-        let args: Vec<String> = vec![
-            "cargo-cross".to_string(),
-            "targets".to_string(),
-            "-f".to_string(),
-            "plain".to_string(),
-        ];
+        let args: Vec<String> =
+            vec!["cargo-cross".to_string(), "targets".to_string(), "-f".to_string(), "plain".to_string()];
         match parse_args_from(args).unwrap() {
             ParseResult::ShowTargets(format) => {
                 assert_eq!(format, OutputFormat::Plain);
@@ -2423,14 +2246,7 @@ mod tests {
 
     #[test]
     fn test_parse_toolchain_with_target() {
-        let args = parse(&[
-            "cargo-cross",
-            "+nightly",
-            "build",
-            "-t",
-            "x86_64-unknown-linux-musl",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "+nightly", "build", "-t", "x86_64-unknown-linux-musl"]).unwrap();
         assert_eq!(args.toolchain, Some("nightly".to_string()));
         assert_eq!(args.targets, vec!["x86_64-unknown-linux-musl"]);
     }
@@ -2487,16 +2303,8 @@ mod tests {
 
     #[test]
     fn test_equals_syntax_manifest_path() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--manifest-path=/path/to/Cargo.toml",
-        ])
-        .unwrap();
-        assert_eq!(
-            args.manifest_path,
-            Some(PathBuf::from("/path/to/Cargo.toml"))
-        );
+        let args = parse(&["cargo-cross", "build", "--manifest-path=/path/to/Cargo.toml"]).unwrap();
+        assert_eq!(args.manifest_path, Some(PathBuf::from("/path/to/Cargo.toml")));
     }
 
     #[test]
@@ -2513,14 +2321,8 @@ mod tests {
 
     #[test]
     fn test_equals_syntax_cc_cxx_ar() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--cc=/usr/bin/gcc",
-            "--cxx=/usr/bin/g++",
-            "--ar=/usr/bin/ar",
-        ])
-        .unwrap();
+        let args =
+            parse(&["cargo-cross", "build", "--cc=/usr/bin/gcc", "--cxx=/usr/bin/g++", "--ar=/usr/bin/ar"]).unwrap();
         assert_eq!(args.cc, Some(PathBuf::from("/usr/bin/gcc")));
         assert_eq!(args.cxx, Some(PathBuf::from("/usr/bin/g++")));
         assert_eq!(args.ar, Some(PathBuf::from("/usr/bin/ar")));
@@ -2552,16 +2354,8 @@ mod tests {
 
     #[test]
     fn test_equals_syntax_github_proxy() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--github-proxy=https://mirror.example.com/",
-        ])
-        .unwrap();
-        assert_eq!(
-            args.github_proxy,
-            Some("https://mirror.example.com/".to_string())
-        );
+        let args = parse(&["cargo-cross", "build", "--github-proxy=https://mirror.example.com/"]).unwrap();
+        assert_eq!(args.github_proxy, Some("https://mirror.example.com/".to_string()));
     }
 
     #[test]
@@ -2646,29 +2440,14 @@ mod tests {
 
     #[test]
     fn test_mixed_crt_static_then_flag() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--crt-static",
-            "true",
-            "--no-default-features",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "--crt-static", "true", "--no-default-features"]).unwrap();
         assert_eq!(args.crt_static, Some(true));
         assert!(args.no_default_features);
     }
 
     #[test]
     fn test_mixed_crt_static_then_short_option() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--crt-static",
-            "false",
-            "-F",
-            "serde",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "--crt-static", "false", "-F", "serde"]).unwrap();
         assert_eq!(args.crt_static, Some(false));
         assert_eq!(args.features, Some("serde".to_string()));
     }
@@ -2693,14 +2472,7 @@ mod tests {
 
     #[test]
     fn test_mixed_flag_then_crt_static() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--no-default-features",
-            "--crt-static",
-            "true",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "--no-default-features", "--crt-static", "true"]).unwrap();
         assert!(args.no_default_features);
         assert_eq!(args.crt_static, Some(true));
     }
@@ -2810,15 +2582,7 @@ mod tests {
 
     #[test]
     fn test_verbose_mixed_with_options() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "-v",
-            "-t",
-            "x86_64-unknown-linux-musl",
-            "-v",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "-v", "-t", "x86_64-unknown-linux-musl", "-v"]).unwrap();
         assert_eq!(args.verbose_level, 2);
         assert_eq!(args.targets, vec!["x86_64-unknown-linux-musl"]);
     }
@@ -2846,14 +2610,7 @@ mod tests {
 
     #[test]
     fn test_timings_followed_by_option() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--timings",
-            "-t",
-            "x86_64-unknown-linux-musl",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "--timings", "-t", "x86_64-unknown-linux-musl"]).unwrap();
         assert_eq!(args.timings, Some("true".to_string()));
         assert_eq!(args.targets, vec!["x86_64-unknown-linux-musl"]);
     }
@@ -2877,29 +2634,16 @@ mod tests {
 
     #[test]
     fn test_multiple_targets_repeated_option() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "-t",
-            "x86_64-unknown-linux-musl",
-            "-t",
-            "aarch64-unknown-linux-musl",
-        ])
-        .unwrap();
+        let args =
+            parse(&["cargo-cross", "build", "-t", "x86_64-unknown-linux-musl", "-t", "aarch64-unknown-linux-musl"])
+                .unwrap();
         assert_eq!(args.targets.len(), 2);
     }
 
     #[test]
     fn test_multiple_rustflags() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--rustflag",
-            "-C opt-level=3",
-            "--rustflag",
-            "-C lto=thin",
-        ])
-        .unwrap();
+        let args =
+            parse(&["cargo-cross", "build", "--rustflag", "-C opt-level=3", "--rustflag", "-C lto=thin"]).unwrap();
         assert_eq!(args.rustflags.len(), 2);
         assert_eq!(args.rustflags[0], "-C opt-level=3");
         assert_eq!(args.rustflags[1], "-C lto=thin");
@@ -2907,29 +2651,14 @@ mod tests {
 
     #[test]
     fn test_multiple_config_flags() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--config",
-            "build.jobs=4",
-            "--config",
-            "profile.release.lto=true",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "--config", "build.jobs=4", "--config", "profile.release.lto=true"])
+            .unwrap();
         assert_eq!(args.cargo_config.len(), 2);
     }
 
     #[test]
     fn test_multiple_z_flags() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "-Z",
-            "build-std",
-            "-Z",
-            "unstable-options",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "-Z", "build-std", "-Z", "unstable-options"]).unwrap();
         assert_eq!(args.cargo_z_flags.len(), 2);
     }
 
@@ -2963,18 +2692,8 @@ mod tests {
 
     #[test]
     fn test_passthrough_multiple() {
-        let args = parse(&[
-            "cargo-cross",
-            "test",
-            "--",
-            "--nocapture",
-            "--test-threads=1",
-        ])
-        .unwrap();
-        assert_eq!(
-            args.passthrough_args,
-            vec!["--nocapture", "--test-threads=1"]
-        );
+        let args = parse(&["cargo-cross", "test", "--", "--nocapture", "--test-threads=1"]).unwrap();
+        assert_eq!(args.passthrough_args, vec!["--nocapture", "--test-threads=1"]);
     }
 
     #[test]
@@ -3006,13 +2725,7 @@ mod tests {
 
     #[test]
     fn test_alias_targets() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--targets",
-            "x86_64-unknown-linux-musl",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "--targets", "x86_64-unknown-linux-musl"]).unwrap();
         assert_eq!(args.targets, vec!["x86_64-unknown-linux-musl"]);
     }
 
@@ -3119,10 +2832,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(args.build_std, Some("core,alloc".to_string()));
-        assert_eq!(
-            args.build_std_features,
-            Some("panic_immediate_abort".to_string())
-        );
+        assert_eq!(args.build_std_features, Some("panic_immediate_abort".to_string()));
     }
 
     // Conflicts relationship tests
@@ -3141,13 +2851,7 @@ mod tests {
 
     #[test]
     fn test_conflicts_features_all_features() {
-        let result = parse(&[
-            "cargo-cross",
-            "build",
-            "--features",
-            "foo",
-            "--all-features",
-        ]);
+        let result = parse(&["cargo-cross", "build", "--features", "foo", "--all-features"]);
         assert!(result.is_err());
     }
 
@@ -3160,14 +2864,7 @@ mod tests {
     #[test]
     fn test_linker_with_no_toolchain_setup() {
         // --linker and --no-toolchain-setup can be used together
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--linker",
-            "/usr/bin/ld",
-            "--no-toolchain-setup",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "--linker", "/usr/bin/ld", "--no-toolchain-setup"]).unwrap();
         assert!(args.no_toolchain_setup);
         assert_eq!(args.linker, Some(PathBuf::from("/usr/bin/ld")));
     }
@@ -3223,31 +2920,18 @@ mod tests {
         .unwrap();
         assert_eq!(args.targets.len(), 2);
         assert_eq!(args.build_std, Some("core,alloc".to_string()));
-        assert_eq!(
-            args.build_std_features,
-            Some("panic_immediate_abort".to_string())
-        );
+        assert_eq!(args.build_std_features, Some("panic_immediate_abort".to_string()));
         assert_eq!(args.verbose_level, 2);
     }
 
     #[test]
     fn test_real_world_test_with_passthrough() {
-        let args = parse(&[
-            "cargo-cross",
-            "test",
-            "-t",
-            "x86_64-unknown-linux-musl",
-            "--",
-            "--nocapture",
-            "--test-threads=1",
-        ])
-        .unwrap();
+        let args =
+            parse(&["cargo-cross", "test", "-t", "x86_64-unknown-linux-musl", "--", "--nocapture", "--test-threads=1"])
+                .unwrap();
         assert_eq!(args.command, Command::test());
         assert_eq!(args.targets, vec!["x86_64-unknown-linux-musl"]);
-        assert_eq!(
-            args.passthrough_args,
-            vec!["--nocapture", "--test-threads=1"]
-        );
+        assert_eq!(args.passthrough_args, vec!["--nocapture", "--test-threads=1"]);
     }
 
     #[test]
@@ -3316,17 +3000,8 @@ mod tests {
 
     #[test]
     fn test_edge_case_equals_in_value() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--config",
-            "build.rustflags=['-C', 'opt-level=3']",
-        ])
-        .unwrap();
-        assert_eq!(
-            args.cargo_config,
-            vec!["build.rustflags=['-C', 'opt-level=3']"]
-        );
+        let args = parse(&["cargo-cross", "build", "--config", "build.rustflags=['-C', 'opt-level=3']"]).unwrap();
+        assert_eq!(args.cargo_config, vec!["build.rustflags=['-C', 'opt-level=3']"]);
     }
 
     #[test]
@@ -3337,13 +3012,7 @@ mod tests {
 
     #[test]
     fn test_edge_case_target_with_numbers() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "-t",
-            "armv7-unknown-linux-musleabihf",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "-t", "armv7-unknown-linux-musleabihf"]).unwrap();
         assert_eq!(args.targets, vec!["armv7-unknown-linux-musleabihf"]);
     }
 
@@ -3399,31 +3068,15 @@ mod tests {
 
     #[test]
     fn test_edge_case_directory_option() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "-C",
-            "/path/to/project",
-            "-t",
-            "x86_64-unknown-linux-musl",
-        ])
-        .unwrap();
+        let args =
+            parse(&["cargo-cross", "build", "-C", "/path/to/project", "-t", "x86_64-unknown-linux-musl"]).unwrap();
         assert_eq!(args.cargo_cwd, Some(PathBuf::from("/path/to/project")));
     }
 
     #[test]
     fn test_edge_case_manifest_path() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--manifest-path",
-            "/path/to/Cargo.toml",
-        ])
-        .unwrap();
-        assert_eq!(
-            args.manifest_path,
-            Some(PathBuf::from("/path/to/Cargo.toml"))
-        );
+        let args = parse(&["cargo-cross", "build", "--manifest-path", "/path/to/Cargo.toml"]).unwrap();
+        assert_eq!(args.manifest_path, Some(PathBuf::from("/path/to/Cargo.toml")));
     }
 
     // Cargo cross invocation style tests
@@ -3448,12 +3101,8 @@ mod tests {
 
     #[test]
     fn test_cargo_cross_style_with_toolchain() {
-        let args: Vec<String> = vec![
-            "cargo-cross".to_string(),
-            "cross".to_string(),
-            "+nightly".to_string(),
-            "build".to_string(),
-        ];
+        let args: Vec<String> =
+            vec!["cargo-cross".to_string(), "cross".to_string(), "+nightly".to_string(), "build".to_string()];
         match parse_args_from(args).unwrap() {
             ParseResult::Build(args) => {
                 assert_eq!(args.toolchain, Some("nightly".to_string()));
@@ -3465,11 +3114,7 @@ mod tests {
 
     #[test]
     fn test_cargo_cross_style_targets() {
-        let args: Vec<String> = vec![
-            "cargo-cross".to_string(),
-            "cross".to_string(),
-            "targets".to_string(),
-        ];
+        let args: Vec<String> = vec!["cargo-cross".to_string(), "cross".to_string(), "targets".to_string()];
         match parse_args_from(args).unwrap() {
             ParseResult::ShowTargets(_) => {}
             _ => panic!("expected ShowTargets"),
@@ -3480,32 +3125,14 @@ mod tests {
 
     #[test]
     fn test_github_proxy_mirror_alias() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--github-proxy-mirror",
-            "https://mirror.example.com/",
-        ])
-        .unwrap();
-        assert_eq!(
-            args.github_proxy,
-            Some("https://mirror.example.com/".to_string())
-        );
+        let args = parse(&["cargo-cross", "build", "--github-proxy-mirror", "https://mirror.example.com/"]).unwrap();
+        assert_eq!(args.github_proxy, Some("https://mirror.example.com/".to_string()));
     }
 
     #[test]
     fn test_github_proxy_original() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--github-proxy",
-            "https://proxy.example.com/",
-        ])
-        .unwrap();
-        assert_eq!(
-            args.github_proxy,
-            Some("https://proxy.example.com/".to_string())
-        );
+        let args = parse(&["cargo-cross", "build", "--github-proxy", "https://proxy.example.com/"]).unwrap();
+        assert_eq!(args.github_proxy, Some("https://proxy.example.com/".to_string()));
     }
 
     #[test]
@@ -3567,15 +3194,7 @@ mod tests {
 
     #[test]
     fn test_cargo_args_multiple() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "--cargo-args",
-            "--verbose",
-            "--cargo-args",
-            "--locked",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "--cargo-args", "--verbose", "--cargo-args", "--locked"]).unwrap();
         assert_eq!(args.cargo_args, vec!["--verbose", "--locked"]);
     }
 
@@ -3595,9 +3214,7 @@ mod tests {
     fn test_glob_pattern_matches_target() {
         // x86_64*unknown-linux-musl matches x86_64-unknown-linux-musl (glob * matches -)
         let args = parse(&["cargo-cross", "build", "-t", "x86_64*unknown-linux-musl"]).unwrap();
-        assert!(args
-            .targets
-            .contains(&"x86_64-unknown-linux-musl".to_string()));
+        assert!(args.targets.contains(&"x86_64-unknown-linux-musl".to_string()));
     }
 
     #[test]
@@ -3645,13 +3262,7 @@ mod tests {
 
     #[test]
     fn test_valid_target_triple_with_numbers() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "-t",
-            "armv7-unknown-linux-gnueabihf",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "-t", "armv7-unknown-linux-gnueabihf"]).unwrap();
         assert_eq!(args.targets, vec!["armv7-unknown-linux-gnueabihf"]);
     }
 
@@ -3733,15 +3344,8 @@ mod tests {
 
     #[test]
     fn test_short_concat_multiple() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "-tx86_64-unknown-linux-musl",
-            "-Ffoo,bar",
-            "-j8",
-            "-pmypkg",
-        ])
-        .unwrap();
+        let args =
+            parse(&["cargo-cross", "build", "-tx86_64-unknown-linux-musl", "-Ffoo,bar", "-j8", "-pmypkg"]).unwrap();
         assert_eq!(args.targets, vec!["x86_64-unknown-linux-musl"]);
         assert_eq!(args.features, Some("foo,bar".to_string()));
         assert_eq!(args.jobs, Some("8".to_string()));
@@ -3750,15 +3354,7 @@ mod tests {
 
     #[test]
     fn test_short_concat_mixed_with_space() {
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "-j4",
-            "-t",
-            "x86_64-unknown-linux-musl",
-            "-Fbar",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "-j4", "-t", "x86_64-unknown-linux-musl", "-Fbar"]).unwrap();
         assert_eq!(args.jobs, Some("4".to_string()));
         assert_eq!(args.targets, vec!["x86_64-unknown-linux-musl"]);
         assert_eq!(args.features, Some("bar".to_string()));
@@ -3785,62 +3381,33 @@ mod tests {
     fn test_parse_env_args_simple() {
         std::env::set_var("TEST_PARSE_ENV_ARGS_SIMPLE", "--verbose --locked");
         let result = parse_env_args("TEST_PARSE_ENV_ARGS_SIMPLE");
-        assert_eq!(
-            result,
-            Some(vec!["--verbose".to_string(), "--locked".to_string()])
-        );
+        assert_eq!(result, Some(vec!["--verbose".to_string(), "--locked".to_string()]));
         std::env::remove_var("TEST_PARSE_ENV_ARGS_SIMPLE");
     }
 
     #[test]
     fn test_parse_env_args_with_single_quotes() {
-        std::env::set_var(
-            "TEST_PARSE_ENV_ARGS_SINGLE_QUOTES",
-            "--config 'build.jobs=4' --verbose",
-        );
+        std::env::set_var("TEST_PARSE_ENV_ARGS_SINGLE_QUOTES", "--config 'build.jobs=4' --verbose");
         let result = parse_env_args("TEST_PARSE_ENV_ARGS_SINGLE_QUOTES");
-        assert_eq!(
-            result,
-            Some(vec![
-                "--config".to_string(),
-                "build.jobs=4".to_string(),
-                "--verbose".to_string()
-            ])
-        );
+        assert_eq!(result, Some(vec!["--config".to_string(), "build.jobs=4".to_string(), "--verbose".to_string()]));
         std::env::remove_var("TEST_PARSE_ENV_ARGS_SINGLE_QUOTES");
     }
 
     #[test]
     fn test_parse_env_args_with_double_quotes() {
-        std::env::set_var(
-            "TEST_PARSE_ENV_ARGS_DOUBLE_QUOTES",
-            "--message-format \"json with spaces\"",
-        );
+        std::env::set_var("TEST_PARSE_ENV_ARGS_DOUBLE_QUOTES", "--message-format \"json with spaces\"");
         let result = parse_env_args("TEST_PARSE_ENV_ARGS_DOUBLE_QUOTES");
-        assert_eq!(
-            result,
-            Some(vec![
-                "--message-format".to_string(),
-                "json with spaces".to_string()
-            ])
-        );
+        assert_eq!(result, Some(vec!["--message-format".to_string(), "json with spaces".to_string()]));
         std::env::remove_var("TEST_PARSE_ENV_ARGS_DOUBLE_QUOTES");
     }
 
     #[test]
     fn test_parse_env_args_complex() {
-        std::env::set_var(
-            "TEST_PARSE_ENV_ARGS_COMPLEX",
-            "--config 'key=\"value with spaces\"' --verbose",
-        );
+        std::env::set_var("TEST_PARSE_ENV_ARGS_COMPLEX", "--config 'key=\"value with spaces\"' --verbose");
         let result = parse_env_args("TEST_PARSE_ENV_ARGS_COMPLEX");
         assert_eq!(
             result,
-            Some(vec![
-                "--config".to_string(),
-                "key=\"value with spaces\"".to_string(),
-                "--verbose".to_string()
-            ])
+            Some(vec!["--config".to_string(), "key=\"value with spaces\"".to_string(), "--verbose".to_string()])
         );
         std::env::remove_var("TEST_PARSE_ENV_ARGS_COMPLEX");
     }
@@ -3856,13 +3423,7 @@ mod tests {
     #[test]
     fn test_musl_target_with_default_glibc() {
         // musl targets should work with default (empty) glibc version
-        let args = parse(&[
-            "cargo-cross",
-            "build",
-            "-t",
-            "aarch64_be-unknown-linux-musl",
-        ])
-        .unwrap();
+        let args = parse(&["cargo-cross", "build", "-t", "aarch64_be-unknown-linux-musl"]).unwrap();
         assert_eq!(args.targets, vec!["aarch64_be-unknown-linux-musl"]);
         assert_eq!(args.glibc_version, ""); // default is empty string
     }

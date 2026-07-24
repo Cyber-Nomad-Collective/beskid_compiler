@@ -37,11 +37,7 @@ pub enum DialogShadow {
     Soft,
     Medium,
     Strong,
-    Custom {
-        offset_x: u16,
-        offset_y: u16,
-        style: Style,
-    },
+    Custom { offset_x: u16, offset_y: u16, style: Style },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,10 +48,7 @@ pub struct DialogPadding {
 
 impl Default for DialogPadding {
     fn default() -> Self {
-        Self {
-            horizontal: 1,
-            vertical: 0,
-        }
+        Self { horizontal: 1, vertical: 0 }
     }
 }
 
@@ -77,20 +70,8 @@ pub struct DialogKeymap {
 impl Default for DialogKeymap {
     fn default() -> Self {
         Self {
-            next: vec![
-                KeyCode::Tab,
-                KeyCode::Right,
-                KeyCode::Down,
-                KeyCode::Char('j'),
-                KeyCode::Char('l'),
-            ],
-            previous: vec![
-                KeyCode::BackTab,
-                KeyCode::Left,
-                KeyCode::Up,
-                KeyCode::Char('k'),
-                KeyCode::Char('h'),
-            ],
+            next: vec![KeyCode::Tab, KeyCode::Right, KeyCode::Down, KeyCode::Char('j'), KeyCode::Char('l')],
+            previous: vec![KeyCode::BackTab, KeyCode::Left, KeyCode::Up, KeyCode::Char('k'), KeyCode::Char('h')],
             confirm: vec![KeyCode::Enter, KeyCode::Char(' ')],
             cancel: vec![KeyCode::Esc],
             close: vec![KeyCode::Char('q')],
@@ -114,17 +95,11 @@ pub struct DialogEventResult {
 
 impl DialogEventResult {
     pub fn ignored() -> Self {
-        Self {
-            consumed: false,
-            action: None,
-        }
+        Self { consumed: false, action: None }
     }
 
     pub fn consumed(action: Option<DialogAction>) -> Self {
-        Self {
-            consumed: true,
-            action,
-        }
+        Self { consumed: true, action }
     }
 }
 

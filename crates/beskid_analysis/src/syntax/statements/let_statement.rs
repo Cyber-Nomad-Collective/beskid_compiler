@@ -24,10 +24,7 @@ impl Parsable for LetStatement {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
         if pair.as_rule() == Rule::LetStatement {
-            let inner = pair
-                .into_inner()
-                .next()
-                .ok_or(ParseError::missing(Rule::LetStatement))?;
+            let inner = pair.into_inner().next().ok_or(ParseError::missing(Rule::LetStatement))?;
             let parsed = Self::parse(inner)?;
             return Ok(Spanned::new(parsed.node, span));
         }
@@ -35,8 +32,7 @@ impl Parsable for LetStatement {
         let rule = pair.as_rule();
         let error_pair = pair.clone();
         let mut inner = pair.into_inner();
-        let (mut mutable, mut name_pair, mut value_pair, mut type_annotation) =
-            (false, None, None, None);
+        let (mut mutable, mut name_pair, mut value_pair, mut type_annotation) = (false, None, None, None);
 
         match rule {
             Rule::TypedLetStatement => {
@@ -56,10 +52,7 @@ impl Parsable for LetStatement {
                     .ok_or(ParseError::missing(Rule::LetKeyword))?;
             }
             _ => {
-                return Err(ParseError::unexpected_rule(
-                    error_pair,
-                    Some(Rule::LetStatement),
-                ));
+                return Err(ParseError::unexpected_rule(error_pair, Some(Rule::LetStatement)));
             }
         }
 
@@ -81,14 +74,6 @@ impl Parsable for LetStatement {
         let name = Identifier::parse(name_pair.ok_or(ParseError::missing(Rule::Identifier))?)?;
         let value = Expression::parse(value_pair.ok_or(ParseError::missing(Rule::Expression))?)?;
 
-        Ok(Spanned::new(
-            Self {
-                mutable,
-                name,
-                type_annotation,
-                value,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { mutable, name, type_annotation, value }, span))
     }
 }

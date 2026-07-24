@@ -1,7 +1,6 @@
 use crate::hir::{
-    HirCallExpression, HirEnumPath, HirEnumPattern, HirExpressionNode, HirIdentifier, HirLiteral,
-    HirLiteralExpression, HirMatchArm, HirMatchExpression, HirPath, HirPathExpression,
-    HirPathSegment, HirPattern, HirTryExpression,
+    HirCallExpression, HirEnumPath, HirEnumPattern, HirExpressionNode, HirIdentifier, HirLiteral, HirLiteralExpression,
+    HirMatchArm, HirMatchExpression, HirPath, HirPathExpression, HirPathSegment, HirPattern, HirTryExpression,
 };
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::try_desugar::TryDesugarTarget;
@@ -20,10 +19,7 @@ pub(super) fn hir_path_expr(name: &str, span: SpanInfo) -> Spanned<HirExpression
                 path: Spanned::new(
                     HirPath {
                         segments: vec![Spanned::new(
-                            HirPathSegment {
-                                name: hir_identifier(name, span),
-                                type_args: Vec::new(),
-                            },
+                            HirPathSegment { name: hir_identifier(name, span), type_args: Vec::new() },
                             span,
                         )],
                     },
@@ -41,9 +37,8 @@ pub(super) fn desugar_try_expression(
     parent_span: SpanInfo,
     target: Option<&TryDesugarTarget>,
 ) -> Spanned<HirExpressionNode> {
-    let (type_name, ok_variant) = target
-        .map(|t| (t.type_name.as_str(), t.ok_variant.as_str()))
-        .unwrap_or(("Result", "Ok"));
+    let (type_name, ok_variant) =
+        target.map(|t| (t.type_name.as_str(), t.ok_variant.as_str())).unwrap_or(("Result", "Ok"));
     let ok_binding_span = offset_span(parent_span, TRY_OK_BINDING_OFFSET);
     let ok_pattern_span = offset_span(parent_span, TRY_OK_PATTERN_OFFSET);
     let wildcard_arm_span = offset_span(parent_span, TRY_ERR_ARM_OFFSET);
@@ -73,10 +68,7 @@ pub(super) fn desugar_try_expression(
                             },
                             ok_pattern_span,
                         ),
-                        items: vec![Spanned::new(
-                            HirPattern::Identifier(ok_binding.clone()),
-                            ok_binding_span,
-                        )],
+                        items: vec![Spanned::new(HirPattern::Identifier(ok_binding.clone()), ok_binding_span)],
                     },
                     ok_pattern_span,
                 )),
@@ -99,10 +91,7 @@ pub(super) fn desugar_try_expression(
 
     Spanned::new(
         HirExpressionNode::MatchExpression(Spanned::new(
-            HirMatchExpression {
-                scrutinee: try_expr.node.expr,
-                arms: vec![ok_arm, err_arm],
-            },
+            HirMatchExpression { scrutinee: try_expr.node.expr, arms: vec![ok_arm, err_arm] },
             match_span,
         )),
         match_span,
@@ -126,10 +115,7 @@ fn hir_panic_call_expr(span: SpanInfo) -> Spanned<HirExpressionNode> {
     Spanned::new(
         HirExpressionNode::CallExpression(Spanned::new(
             HirCallExpression {
-                callee: Box::new(hir_path_expr(
-                    "__panic_str",
-                    offset_span(span, TRY_PANIC_CALLEE_OFFSET),
-                )),
+                callee: Box::new(hir_path_expr("__panic_str", offset_span(span, TRY_PANIC_CALLEE_OFFSET))),
                 args: vec![Spanned::new(
                     HirExpressionNode::LiteralExpression(Spanned::new(
                         HirLiteralExpression {

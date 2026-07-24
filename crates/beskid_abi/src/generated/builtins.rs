@@ -4,213 +4,61 @@ use crate::abi_types::{AbiParamKind, AbiReturnKind, BuiltinFnSpec};
 use crate::generated::symbols::{
     SYM_ABI_VERSION, SYM_ALLOC, SYM_BESKID_REGISTER_CALLBACKS, SYM_BESKID_REGISTER_HANDLERS,
     SYM_COMPOSITION_BIND_PLURAL, SYM_COMPOSITION_CONTAINER_CREATE, SYM_COMPOSITION_CONTAINER_DROP,
-    SYM_COMPOSITION_LAUNCH, SYM_COMPOSITION_REGISTER, SYM_COMPOSITION_RESOLVE,
-    SYM_COMPOSITION_RESOLVE_PLURAL, SYM_COMPOSITION_SCOPE_DEPTH, SYM_COMPOSITION_SCOPE_ENTER,
-    SYM_COMPOSITION_SCOPE_LEAVE, SYM_COMPOSITION_SHUTDOWN, SYM_DYNAMIC_CAST_CHECKED,
-    SYM_DYNAMIC_CELL_CREATE, SYM_DYNAMIC_CELL_WRAP, SYM_DYNAMIC_MAP_AOT, SYM_DYNAMIC_MAP_FALLBACK,
-    SYM_DYNAMIC_OBJECT_ALLOC, SYM_FIBER_YIELD, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE,
+    SYM_COMPOSITION_LAUNCH, SYM_COMPOSITION_REGISTER, SYM_COMPOSITION_RESOLVE, SYM_COMPOSITION_RESOLVE_PLURAL,
+    SYM_COMPOSITION_SCOPE_DEPTH, SYM_COMPOSITION_SCOPE_ENTER, SYM_COMPOSITION_SCOPE_LEAVE, SYM_COMPOSITION_SHUTDOWN,
+    SYM_DYNAMIC_CAST_CHECKED, SYM_DYNAMIC_CELL_CREATE, SYM_DYNAMIC_CELL_WRAP, SYM_DYNAMIC_MAP_AOT,
+    SYM_DYNAMIC_MAP_FALLBACK, SYM_DYNAMIC_OBJECT_ALLOC, SYM_FIBER_YIELD, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE,
     SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_INTEROP_DISPATCH_I64,
-    SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC,
-    SYM_PANIC_STR, SYM_RUNTIME_PREEMPT_CHECK,
+    SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC, SYM_PANIC_STR,
+    SYM_RUNTIME_PREEMPT_CHECK,
 };
 
 const EMPTY: [AbiParamKind; 0] = [];
 const I64_ONLY: [AbiParamKind; 1] = [AbiParamKind::I64];
 const PARAMS_0: [AbiParamKind; 2] = [AbiParamKind::I64, AbiParamKind::Ptr];
 const PARAMS_1: [AbiParamKind; 3] = [AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::I64];
-const PARAMS_2: [AbiParamKind; 4] = [
-    AbiParamKind::Ptr,
-    AbiParamKind::I64,
-    AbiParamKind::Ptr,
-    AbiParamKind::I64,
-];
-const PARAMS_3: [AbiParamKind; 4] = [
-    AbiParamKind::Ptr,
-    AbiParamKind::I64,
-    AbiParamKind::I64,
-    AbiParamKind::I64,
-];
+const PARAMS_2: [AbiParamKind; 4] = [AbiParamKind::Ptr, AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::I64];
+const PARAMS_3: [AbiParamKind; 4] = [AbiParamKind::Ptr, AbiParamKind::I64, AbiParamKind::I64, AbiParamKind::I64];
 const PARAMS_4: [AbiParamKind; 2] = [AbiParamKind::Ptr, AbiParamKind::I64];
-const PARAMS_5: [AbiParamKind; 4] = [
-    AbiParamKind::I64,
-    AbiParamKind::I64,
-    AbiParamKind::Ptr,
-    AbiParamKind::Ptr,
-];
+const PARAMS_5: [AbiParamKind; 4] = [AbiParamKind::I64, AbiParamKind::I64, AbiParamKind::Ptr, AbiParamKind::Ptr];
 const PARAMS_6: [AbiParamKind; 3] = [AbiParamKind::Ptr, AbiParamKind::I64, AbiParamKind::Ptr];
 const PTR_ONLY: [AbiParamKind; 1] = [AbiParamKind::Ptr];
 const PTR_PTR: [AbiParamKind; 2] = [AbiParamKind::Ptr, AbiParamKind::Ptr];
 
 /// Kernel direct imports and interop dispatch entrypoints (ABI v4).
 pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
-    BuiltinFnSpec {
-        symbol: SYM_ALLOC,
-        params: &PARAMS_0,
-        returns: AbiReturnKind::Ptr,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_BESKID_REGISTER_CALLBACKS,
-        params: &PARAMS_1,
-        returns: AbiReturnKind::I32,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_BESKID_REGISTER_HANDLERS,
-        params: &PARAMS_1,
-        returns: AbiReturnKind::I32,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_ABI_VERSION,
-        params: &EMPTY,
-        returns: AbiReturnKind::I64,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_COMPOSITION_BIND_PLURAL,
-        params: &PARAMS_2,
-        returns: AbiReturnKind::I32,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_COMPOSITION_CONTAINER_CREATE,
-        params: &EMPTY,
-        returns: AbiReturnKind::Ptr,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_COMPOSITION_CONTAINER_DROP,
-        params: &PTR_ONLY,
-        returns: AbiReturnKind::Void,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_COMPOSITION_LAUNCH,
-        params: &PTR_ONLY,
-        returns: AbiReturnKind::I32,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_COMPOSITION_REGISTER,
-        params: &PARAMS_3,
-        returns: AbiReturnKind::I32,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_COMPOSITION_RESOLVE,
-        params: &PARAMS_4,
-        returns: AbiReturnKind::Ptr,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_COMPOSITION_RESOLVE_PLURAL,
-        params: &PARAMS_2,
-        returns: AbiReturnKind::I64,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_COMPOSITION_SCOPE_DEPTH,
-        params: &PTR_ONLY,
-        returns: AbiReturnKind::I64,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_COMPOSITION_SCOPE_ENTER,
-        params: &PARAMS_4,
-        returns: AbiReturnKind::I32,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_COMPOSITION_SCOPE_LEAVE,
-        params: &PARAMS_4,
-        returns: AbiReturnKind::I32,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_COMPOSITION_SHUTDOWN,
-        params: &PTR_ONLY,
-        returns: AbiReturnKind::I32,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_DYNAMIC_CAST_CHECKED,
-        params: &PARAMS_4,
-        returns: AbiReturnKind::I32,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_DYNAMIC_CELL_CREATE,
-        params: &PARAMS_0,
-        returns: AbiReturnKind::Ptr,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_DYNAMIC_CELL_WRAP,
-        params: &PARAMS_0,
-        returns: AbiReturnKind::Ptr,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_DYNAMIC_MAP_AOT,
-        params: &PARAMS_5,
-        returns: AbiReturnKind::I32,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_DYNAMIC_MAP_FALLBACK,
-        params: &PARAMS_6,
-        returns: AbiReturnKind::I32,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_DYNAMIC_OBJECT_ALLOC,
-        params: &PTR_ONLY,
-        returns: AbiReturnKind::Ptr,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_FIBER_YIELD,
-        params: &EMPTY,
-        returns: AbiReturnKind::Void,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_GC_REGISTER_ROOT,
-        params: &PTR_ONLY,
-        returns: AbiReturnKind::Void,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_GC_ROOT_HANDLE,
-        params: &PTR_ONLY,
-        returns: AbiReturnKind::I64,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_GC_UNREGISTER_ROOT,
-        params: &PTR_ONLY,
-        returns: AbiReturnKind::Void,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_GC_UNROOT_HANDLE,
-        params: &I64_ONLY,
-        returns: AbiReturnKind::Void,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_GC_WRITE_BARRIER,
-        params: &PTR_PTR,
-        returns: AbiReturnKind::Void,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_INTEROP_DISPATCH_PTR,
-        params: &PTR_ONLY,
-        returns: AbiReturnKind::Ptr,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_INTEROP_DISPATCH_UNIT,
-        params: &PTR_ONLY,
-        returns: AbiReturnKind::Void,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_INTEROP_DISPATCH_USIZE,
-        params: &PTR_ONLY,
-        returns: AbiReturnKind::I64,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_INTEROP_DISPATCH_I64,
-        params: &PTR_ONLY,
-        returns: AbiReturnKind::I64,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_PANIC,
-        params: &PTR_PTR,
-        returns: AbiReturnKind::Never,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_PANIC_STR,
-        params: &PTR_ONLY,
-        returns: AbiReturnKind::Never,
-    },
-    BuiltinFnSpec {
-        symbol: SYM_RUNTIME_PREEMPT_CHECK,
-        params: &EMPTY,
-        returns: AbiReturnKind::Void,
-    },
+    BuiltinFnSpec { symbol: SYM_ALLOC, params: &PARAMS_0, returns: AbiReturnKind::Ptr },
+    BuiltinFnSpec { symbol: SYM_BESKID_REGISTER_CALLBACKS, params: &PARAMS_1, returns: AbiReturnKind::I32 },
+    BuiltinFnSpec { symbol: SYM_BESKID_REGISTER_HANDLERS, params: &PARAMS_1, returns: AbiReturnKind::I32 },
+    BuiltinFnSpec { symbol: SYM_ABI_VERSION, params: &EMPTY, returns: AbiReturnKind::I64 },
+    BuiltinFnSpec { symbol: SYM_COMPOSITION_BIND_PLURAL, params: &PARAMS_2, returns: AbiReturnKind::I32 },
+    BuiltinFnSpec { symbol: SYM_COMPOSITION_CONTAINER_CREATE, params: &EMPTY, returns: AbiReturnKind::Ptr },
+    BuiltinFnSpec { symbol: SYM_COMPOSITION_CONTAINER_DROP, params: &PTR_ONLY, returns: AbiReturnKind::Void },
+    BuiltinFnSpec { symbol: SYM_COMPOSITION_LAUNCH, params: &PTR_ONLY, returns: AbiReturnKind::I32 },
+    BuiltinFnSpec { symbol: SYM_COMPOSITION_REGISTER, params: &PARAMS_3, returns: AbiReturnKind::I32 },
+    BuiltinFnSpec { symbol: SYM_COMPOSITION_RESOLVE, params: &PARAMS_4, returns: AbiReturnKind::Ptr },
+    BuiltinFnSpec { symbol: SYM_COMPOSITION_RESOLVE_PLURAL, params: &PARAMS_2, returns: AbiReturnKind::I64 },
+    BuiltinFnSpec { symbol: SYM_COMPOSITION_SCOPE_DEPTH, params: &PTR_ONLY, returns: AbiReturnKind::I64 },
+    BuiltinFnSpec { symbol: SYM_COMPOSITION_SCOPE_ENTER, params: &PARAMS_4, returns: AbiReturnKind::I32 },
+    BuiltinFnSpec { symbol: SYM_COMPOSITION_SCOPE_LEAVE, params: &PARAMS_4, returns: AbiReturnKind::I32 },
+    BuiltinFnSpec { symbol: SYM_COMPOSITION_SHUTDOWN, params: &PTR_ONLY, returns: AbiReturnKind::I32 },
+    BuiltinFnSpec { symbol: SYM_DYNAMIC_CAST_CHECKED, params: &PARAMS_4, returns: AbiReturnKind::I32 },
+    BuiltinFnSpec { symbol: SYM_DYNAMIC_CELL_CREATE, params: &PARAMS_0, returns: AbiReturnKind::Ptr },
+    BuiltinFnSpec { symbol: SYM_DYNAMIC_CELL_WRAP, params: &PARAMS_0, returns: AbiReturnKind::Ptr },
+    BuiltinFnSpec { symbol: SYM_DYNAMIC_MAP_AOT, params: &PARAMS_5, returns: AbiReturnKind::I32 },
+    BuiltinFnSpec { symbol: SYM_DYNAMIC_MAP_FALLBACK, params: &PARAMS_6, returns: AbiReturnKind::I32 },
+    BuiltinFnSpec { symbol: SYM_DYNAMIC_OBJECT_ALLOC, params: &PTR_ONLY, returns: AbiReturnKind::Ptr },
+    BuiltinFnSpec { symbol: SYM_FIBER_YIELD, params: &EMPTY, returns: AbiReturnKind::Void },
+    BuiltinFnSpec { symbol: SYM_GC_REGISTER_ROOT, params: &PTR_ONLY, returns: AbiReturnKind::Void },
+    BuiltinFnSpec { symbol: SYM_GC_ROOT_HANDLE, params: &PTR_ONLY, returns: AbiReturnKind::I64 },
+    BuiltinFnSpec { symbol: SYM_GC_UNREGISTER_ROOT, params: &PTR_ONLY, returns: AbiReturnKind::Void },
+    BuiltinFnSpec { symbol: SYM_GC_UNROOT_HANDLE, params: &I64_ONLY, returns: AbiReturnKind::Void },
+    BuiltinFnSpec { symbol: SYM_GC_WRITE_BARRIER, params: &PTR_PTR, returns: AbiReturnKind::Void },
+    BuiltinFnSpec { symbol: SYM_INTEROP_DISPATCH_PTR, params: &PTR_ONLY, returns: AbiReturnKind::Ptr },
+    BuiltinFnSpec { symbol: SYM_INTEROP_DISPATCH_UNIT, params: &PTR_ONLY, returns: AbiReturnKind::Void },
+    BuiltinFnSpec { symbol: SYM_INTEROP_DISPATCH_USIZE, params: &PTR_ONLY, returns: AbiReturnKind::I64 },
+    BuiltinFnSpec { symbol: SYM_INTEROP_DISPATCH_I64, params: &PTR_ONLY, returns: AbiReturnKind::I64 },
+    BuiltinFnSpec { symbol: SYM_PANIC, params: &PTR_PTR, returns: AbiReturnKind::Never },
+    BuiltinFnSpec { symbol: SYM_PANIC_STR, params: &PTR_ONLY, returns: AbiReturnKind::Never },
+    BuiltinFnSpec { symbol: SYM_RUNTIME_PREEMPT_CHECK, params: &EMPTY, returns: AbiReturnKind::Void },
 ];

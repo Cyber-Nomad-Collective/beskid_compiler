@@ -3,12 +3,7 @@ use beskid_analysis::resolve::{ItemId, ItemKind};
 use beskid_codegen::{mapping_pair_eligible, require_mapping_eligible, shape_id_for_item};
 
 fn struct_item_ids(resolution: &beskid_analysis::resolve::Resolution) -> Vec<ItemId> {
-    resolution
-        .items
-        .iter()
-        .filter(|item| item.kind == ItemKind::Type)
-        .map(|item| item.id)
-        .collect()
+    resolution.items.iter().filter(|item| item.kind == ItemKind::Type).map(|item| item.id).collect()
 }
 
 #[test]
@@ -33,18 +28,10 @@ fn dynamic_require_mapping_eligible_returns_structured_error() {
     let source = "type Source { string name } type Target { i64 id } i64 Main() { return 0; }";
     let (_, resolution, typed) = lower_resolve_type(source);
     let ids = struct_item_ids(&resolution);
-    let span = beskid_analysis::syntax::SpanInfo {
-        start: 0,
-        end: 1,
-        line_col_start: (1, 1),
-        line_col_end: (1, 2),
-    };
+    let span = beskid_analysis::syntax::SpanInfo { start: 0, end: 1, line_col_start: (1, 1), line_col_end: (1, 2) };
     let err = require_mapping_eligible(span, &resolution, &typed, ids[0], ids[1])
         .expect_err("expected ineligible mapping error");
-    assert!(
-        format!("{err}").contains("Source"),
-        "expected source type name in error: {err}"
-    );
+    assert!(format!("{err}").contains("Source"), "expected source type name in error: {err}");
 }
 
 #[test]

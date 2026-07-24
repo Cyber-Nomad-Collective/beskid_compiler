@@ -13,9 +13,7 @@ impl<'a> Default for HirWalker<'a> {
 
 impl<'a> HirWalker<'a> {
     pub fn new() -> Self {
-        Self {
-            visitors: Vec::new(),
-        }
+        Self { visitors: Vec::new() }
     }
 
     pub fn with_visitor(mut self, visitor: Box<dyn HirVisit + 'a>) -> Self {

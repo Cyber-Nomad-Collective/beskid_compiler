@@ -6,22 +6,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use syn::{GenericArgument, PathArguments, Type, Visibility};
 
 /// Relative directories under `crates/beskid_analysis/src` scanned for syntax surface types.
-pub const SYNTAX_SCAN_SUBDIRS: &[&str] = &[
-    "syntax/items",
-    "syntax/types",
-    "syntax/expressions",
-    "syntax/statements",
-    "syntax/common",
-];
+pub const SYNTAX_SCAN_SUBDIRS: &[&str] =
+    &["syntax/items", "syntax/types", "syntax/expressions", "syntax/statements", "syntax/common"];
 
 /// Files excluded from scanning (no `pub struct` / `pub enum` surface definitions).
-pub const SYNTAX_SCAN_SKIP_FILES: &[&str] = &[
-    "mod.rs",
-    "parse_helpers.rs",
-    "doc_attached_items.rs",
-    "span.rs",
-    "impl_block.rs",
-];
+pub const SYNTAX_SCAN_SKIP_FILES: &[&str] =
+    &["mod.rs", "parse_helpers.rs", "doc_attached_items.rs", "span.rs", "impl_block.rs"];
 
 /// Module prefix for emitted node modules (under compiler-sdk `src/`).
 pub const SYNTAX_NODES_MODULE_PREFIX: &str = "Beskid.Syntax.Nodes";
@@ -253,10 +243,7 @@ fn walk_item(item: &syn::Item, decl_names: &BTreeSet<String>, needs: &mut BTreeS
     }
 }
 
-fn collect_rs_files(
-    dir: &std::path::Path,
-    out: &mut Vec<std::path::PathBuf>,
-) -> std::io::Result<()> {
+fn collect_rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) -> std::io::Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let p = entry?.path();
         if p.is_dir() {
@@ -269,9 +256,7 @@ fn collect_rs_files(
 }
 
 /// Load and parse all syntax surface `.rs` files (same roots as [`crate::syntax_nodes`]).
-pub fn load_syntax_files(
-    analysis_src: &std::path::Path,
-) -> Result<Vec<(String, syn::File)>, std::io::Error> {
+pub fn load_syntax_files(analysis_src: &std::path::Path) -> Result<Vec<(String, syn::File)>, std::io::Error> {
     let mut files = Vec::new();
     for sub in SYNTAX_SCAN_SUBDIRS {
         let dir = analysis_src.join(sub);
@@ -294,12 +279,8 @@ pub fn load_syntax_files(
             .map(|s| s.replace('\\', "/"))
             .unwrap_or_else(|| name.to_string());
         let src = std::fs::read_to_string(&path)?;
-        let file = syn::parse_file(&src).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("{}: {e}", path.display()),
-            )
-        })?;
+        let file = syn::parse_file(&src)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{}: {e}", path.display())))?;
         out.push((rel_path, file));
     }
     Ok(out)
@@ -310,14 +291,10 @@ pub fn decl_names_from_files(files: &[(String, syn::File)]) -> BTreeSet<String> 
     for (_, file) in files {
         for item in &file.items {
             match item {
-                syn::Item::Struct(s)
-                    if matches!(s.vis, Visibility::Public(_)) && s.generics.params.is_empty() =>
-                {
+                syn::Item::Struct(s) if matches!(s.vis, Visibility::Public(_)) && s.generics.params.is_empty() => {
                     names.insert(s.ident.to_string());
                 }
-                syn::Item::Enum(e)
-                    if matches!(e.vis, Visibility::Public(_)) && e.generics.params.is_empty() =>
-                {
+                syn::Item::Enum(e) if matches!(e.vis, Visibility::Public(_)) && e.generics.params.is_empty() => {
                     names.insert(e.ident.to_string());
                 }
                 _ => {}
@@ -327,10 +304,7 @@ pub fn decl_names_from_files(files: &[(String, syn::File)]) -> BTreeSet<String> 
     names
 }
 
-fn discover_raw_needs(
-    files: &[(String, syn::File)],
-    decl_names: &BTreeSet<String>,
-) -> BTreeSet<RawNeed> {
+fn discover_raw_needs(files: &[(String, syn::File)], decl_names: &BTreeSet<String>) -> BTreeSet<RawNeed> {
     let mut needs = BTreeSet::new();
     for (_, file) in files {
         for item in &file.items {
@@ -340,10 +314,7 @@ fn discover_raw_needs(
     needs
 }
 
-fn resolve_optional_payload_path(
-    inner_key: &str,
-    list_by_element: &BTreeMap<String, String>,
-) -> String {
+fn resolve_optional_payload_path(inner_key: &str, list_by_element: &BTreeMap<String, String>) -> String {
     for fullp in list_by_element.values() {
         if fullp.rsplit('.').next() == Some(inner_key) {
             return fullp.clone();
@@ -353,23 +324,12 @@ fn resolve_optional_payload_path(
 }
 
 fn helper_emit_order(helper_names: &BTreeSet<String>) -> Vec<String> {
-    let mut lists: Vec<_> = helper_names
-        .iter()
-        .filter(|n| n.ends_with("List"))
-        .cloned()
-        .collect();
+    let mut lists: Vec<_> = helper_names.iter().filter(|n| n.ends_with("List")).cloned().collect();
     lists.sort();
-    let mut opts: Vec<_> = helper_names
-        .iter()
-        .filter(|n| n.starts_with("Optional") || n.starts_with("SdkOptional"))
-        .cloned()
-        .collect();
+    let mut opts: Vec<_> =
+        helper_names.iter().filter(|n| n.starts_with("Optional") || n.starts_with("SdkOptional")).cloned().collect();
     opts.sort();
-    let mut rest: Vec<_> = helper_names
-        .iter()
-        .filter(|n| !lists.contains(n) && !opts.contains(n))
-        .cloned()
-        .collect();
+    let mut rest: Vec<_> = helper_names.iter().filter(|n| !lists.contains(n) && !opts.contains(n)).cloned().collect();
     rest.sort();
     let mut out = lists;
     out.extend(opts);

@@ -6,8 +6,7 @@ use crate::tui::effects::ShellEffect;
 use crate::tui::input::{InputEvent, InputResult};
 use crate::tui::message::ShellMessage;
 use crate::tui::screens::{
-    compile_debug_overlay, pckg_overlay, pipeline_compile, summary_overlay, templates_overlay,
-    tests_overlay,
+    compile_debug_overlay, pckg_overlay, pipeline_compile, summary_overlay, templates_overlay, tests_overlay,
 };
 use crate::tui::shell::focus::{FocusTarget, OverlayKind};
 use crate::tui::shell::state::ShellState;

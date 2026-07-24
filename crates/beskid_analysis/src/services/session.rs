@@ -17,19 +17,10 @@ pub struct SessionFingerprint {
 
 impl SessionFingerprint {
     pub fn for_entry(plan: &crate::projects::CompilePlan, entry_path: &Path) -> Self {
-        let project_root = plan
-            .project_root
-            .canonicalize()
-            .unwrap_or_else(|_| plan.project_root.clone());
-        let entry_canonical = entry_path
-            .canonicalize()
-            .unwrap_or_else(|_| entry_path.to_path_buf());
+        let project_root = plan.project_root.canonicalize().unwrap_or_else(|_| plan.project_root.clone());
+        let entry_canonical = entry_path.canonicalize().unwrap_or_else(|_| entry_path.to_path_buf());
         let lockfile_digest = lockfile_digest_for_plan(plan);
-        Self {
-            project_root,
-            entry_canonical,
-            lockfile_digest,
-        }
+        Self { project_root, entry_canonical, lockfile_digest }
     }
 }
 
@@ -95,11 +86,7 @@ impl SemanticSnapshot {
         self
     }
 
-    pub fn with_typed_resolution(
-        mut self,
-        resolution_fingerprint: u64,
-        typed_fingerprint: u64,
-    ) -> Self {
+    pub fn with_typed_resolution(mut self, resolution_fingerprint: u64, typed_fingerprint: u64) -> Self {
         self.resolution_fingerprint = resolution_fingerprint;
         self.typed_fingerprint = typed_fingerprint;
         self.staged_through = "executable";
@@ -137,10 +124,7 @@ fn fingerprint_diagnostics(diagnostics: &[crate::analysis::SemanticDiagnostic]) 
 }
 
 /// Register assembly for an entry (see [`super::entry_session::get_or_insert_assembly`]).
-pub fn session_for_assembly(
-    fingerprint: SessionFingerprint,
-    assembly: ProgramAssembly,
-) -> Arc<CompilationSession> {
+pub fn session_for_assembly(fingerprint: SessionFingerprint, assembly: ProgramAssembly) -> Arc<CompilationSession> {
     super::entry_session::get_or_insert_assembly(fingerprint, assembly)
 }
 
@@ -164,8 +148,6 @@ pub fn cached_semantic_snapshot(fingerprint: &SessionFingerprint) -> Option<Sema
 }
 
 /// Lookup the full compilation session for an entry fingerprint.
-pub fn cached_compilation_session(
-    fingerprint: &SessionFingerprint,
-) -> Option<Arc<CompilationSession>> {
+pub fn cached_compilation_session(fingerprint: &SessionFingerprint) -> Option<Arc<CompilationSession>> {
     super::entry_session::cached_compilation_session(fingerprint)
 }

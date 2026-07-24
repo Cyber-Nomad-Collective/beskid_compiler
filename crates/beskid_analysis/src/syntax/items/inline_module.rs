@@ -33,25 +33,12 @@ impl Parsable for InlineModule {
         let attributes = parse_attributes(&mut inner)?;
         let visibility = parse_visibility_or_default(&pair, &mut inner)?;
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
-        let (items, leading_docs) =
-            if let Some(body) = inner.find(|p| p.as_rule() == Rule::InlineModuleBody) {
-                parse_doc_attached_items(
-                    body.into_inner()
-                        .filter(|p| p.as_rule() == Rule::ItemWithDocs),
-                )?
-            } else {
-                (Vec::new(), Vec::new())
-            };
+        let (items, leading_docs) = if let Some(body) = inner.find(|p| p.as_rule() == Rule::InlineModuleBody) {
+            parse_doc_attached_items(body.into_inner().filter(|p| p.as_rule() == Rule::ItemWithDocs))?
+        } else {
+            (Vec::new(), Vec::new())
+        };
 
-        Ok(Spanned::new(
-            Self {
-                attributes,
-                visibility,
-                name,
-                items,
-                leading_docs,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { attributes, visibility, name, items, leading_docs }, span))
     }
 }

@@ -7,9 +7,7 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
-use ratkit::prelude::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::prelude::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 use ratkit::widgets::{Button, Pane};
 
 struct RatkitDemo {
@@ -18,9 +16,7 @@ struct RatkitDemo {
 
 impl RatkitDemo {
     fn new() -> Self {
-        Self {
-            button: Button::new("Run"),
-        }
+        Self { button: Button::new("Run") }
     }
 }
 
@@ -36,10 +32,8 @@ impl CoordinatorApp for RatkitDemo {
 
     fn on_draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
-        let pane = Pane::new("ratkit")
-            .with_icon("◎")
-            .with_uniform_padding(1)
-            .border_style(Style::default().fg(Color::Cyan));
+        let pane =
+            Pane::new("ratkit").with_icon("◎").with_uniform_padding(1).border_style(Style::default().fg(Color::Cyan));
 
         let button_line = self.button.render_with_title(area, "ratkit demo");
         let content = vec![

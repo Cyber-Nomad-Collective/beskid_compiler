@@ -18,9 +18,7 @@ pub struct VimState {
 impl VimState {
     /// Create a new vim state with defaults.
     pub fn new() -> Self {
-        Self {
-            pending_g_time: None,
-        }
+        Self { pending_g_time: None }
     }
 }
 

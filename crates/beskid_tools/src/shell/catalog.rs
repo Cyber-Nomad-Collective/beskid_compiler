@@ -135,11 +135,7 @@ fn append_nav_palette(
             action: item.action.clone(),
         }));
     }
-    let mut children: Vec<_> = registry
-        .children_of(&item.id)
-        .into_iter()
-        .cloned()
-        .collect();
+    let mut children: Vec<_> = registry.children_of(&item.id).into_iter().cloned().collect();
     children.sort_by_key(|child| child.order);
     for child in children {
         append_nav_palette(out, registry, &child, path.clone());
@@ -194,30 +190,9 @@ pub fn builtin_workflow_commands() -> Vec<CommandItem> {
 
 pub fn builtin_contextual_commands(scope: &ShellScope) -> Vec<CommandItem> {
     let mut out = vec![
-        contextual(
-            "ctx.palette",
-            "Command palette",
-            "Open command palette",
-            "⌘",
-            None,
-            None,
-        ),
-        contextual(
-            "ctx.pckg",
-            "Browse packages",
-            "Open pckg browser",
-            "📦",
-            None,
-            Some("pckg.browser"),
-        ),
-        contextual(
-            "ctx.templates",
-            "New project",
-            "Open template picker",
-            "＋",
-            None,
-            Some("templates.picker"),
-        ),
+        contextual("ctx.palette", "Command palette", "Open command palette", "⌘", None, None),
+        contextual("ctx.pckg", "Browse packages", "Open pckg browser", "📦", None, Some("pckg.browser")),
+        contextual("ctx.templates", "New project", "Open template picker", "＋", None, Some("templates.picker")),
         contextual(
             "ctx.open_workspace",
             "Open workspace",
@@ -226,22 +201,8 @@ pub fn builtin_contextual_commands(scope: &ShellScope) -> Vec<CommandItem> {
             None,
             None,
         ),
-        contextual(
-            "ctx.open_project",
-            "Open project",
-            "Pick a project (.bproj) to scope the shell",
-            "▣",
-            None,
-            None,
-        ),
-        contextual(
-            "ctx.layout_edit",
-            "Layout edit",
-            "Toggle layout editor",
-            "▦",
-            None,
-            None,
-        ),
+        contextual("ctx.open_project", "Open project", "Pick a project (.bproj) to scope the shell", "▣", None, None),
+        contextual("ctx.layout_edit", "Layout edit", "Toggle layout editor", "▦", None, None),
     ];
     match scope {
         ShellScope::Workspace { .. } | ShellScope::Project { .. } => {
@@ -253,14 +214,7 @@ pub fn builtin_contextual_commands(scope: &ShellScope) -> Vec<CommandItem> {
                 None,
                 Some("graph.deps"),
             ));
-            out.push(contextual(
-                "ctx.tests",
-                "Run tests",
-                "Run tests in scope",
-                "✓",
-                None,
-                Some("tests.runner"),
-            ));
+            out.push(contextual("ctx.tests", "Run tests", "Run tests in scope", "✓", None, Some("tests.runner")));
             out.push(contextual(
                 "ctx.analyze",
                 "Analyze",
@@ -312,14 +266,7 @@ pub fn layout_editor_commands(edit_active: bool) -> Vec<CommandItem> {
             Some("<widget>"),
             None,
         )),
-        CommandItem::Contextual(contextual(
-            "layout.remove",
-            "Remove panel",
-            "Remove focused panel",
-            "−",
-            None,
-            None,
-        )),
+        CommandItem::Contextual(contextual("layout.remove", "Remove panel", "Remove focused panel", "−", None, None)),
         CommandItem::Contextual(contextual(
             "layout.wrap_col",
             "Wrap column",
@@ -336,14 +283,7 @@ pub fn layout_editor_commands(edit_active: bool) -> Vec<CommandItem> {
             None,
             None,
         )),
-        CommandItem::Contextual(contextual(
-            "layout.tabs",
-            "Convert tabs",
-            "Convert layout to tabs",
-            "⊞",
-            None,
-            None,
-        )),
+        CommandItem::Contextual(contextual("layout.tabs", "Convert tabs", "Convert layout to tabs", "⊞", None, None)),
         CommandItem::Contextual(contextual(
             "layout.stack",
             "Convert stack",
@@ -360,14 +300,7 @@ pub fn layout_editor_commands(edit_active: bool) -> Vec<CommandItem> {
             Some("<widget>"),
             None,
         )),
-        CommandItem::Contextual(contextual(
-            "layout.save",
-            "Save layout",
-            "Save board to scope path",
-            "💾",
-            None,
-            None,
-        )),
+        CommandItem::Contextual(contextual("layout.save", "Save layout", "Save board to scope path", "💾", None, None)),
         CommandItem::Contextual(contextual(
             "layout.reset",
             "Reset layout",
@@ -401,14 +334,7 @@ fn contextual(
     args_hint: Option<&'static str>,
     widget_id: Option<&'static str>,
 ) -> ContextualCommand {
-    ContextualCommand {
-        id,
-        name,
-        description,
-        icon,
-        args_hint,
-        widget_id,
-    }
+    ContextualCommand { id, name, description, icon, args_hint, widget_id }
 }
 
 #[cfg(test)]

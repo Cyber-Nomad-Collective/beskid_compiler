@@ -28,9 +28,7 @@ pub struct GcCell<T> {
 impl<T: Trace + Copy> GcCell<T> {
     #[inline]
     pub fn new(value: T) -> Self {
-        Self {
-            value: UnsafeCell::new(value),
-        }
+        Self { value: UnsafeCell::new(value) }
     }
 
     pub fn get(&self) -> T {
@@ -109,27 +107,18 @@ mod tests {
         // marking (partial marking step for test)
         ctx.heap().try_mark_full();
 
-        assert!(
-            unsafe { &*value2_unrooted.header_ptr() }.is_white(),
-            "Value2 should still be white here"
-        );
+        assert!(unsafe { &*value2_unrooted.header_ptr() }.is_white(), "Value2 should still be white here");
 
         // Mutation during marking - write barrier should shade value2
         cell_ptr.set(value2_unrooted);
 
-        assert!(
-            !unsafe { &*value2_unrooted.header_ptr() }.is_white(),
-            "Value2 is now gray after write barrier"
-        );
+        assert!(!unsafe { &*value2_unrooted.header_ptr() }.is_white(), "Value2 is now gray after write barrier");
 
         // Finish with sweeping
         ctx.heap().sweep_and_finish();
 
         let new_allocated = ctx.heap().bytes_allocated();
-        assert_eq!(
-            new_allocated, old_allocated,
-            "No allocations should be freed"
-        );
+        assert_eq!(new_allocated, old_allocated, "No allocations should be freed");
 
         assert_eq!(unsafe { *value2_unrooted.as_ptr() }, 20);
     }

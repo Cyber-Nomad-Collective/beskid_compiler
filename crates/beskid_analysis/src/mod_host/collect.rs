@@ -11,10 +11,8 @@ use super::types::{CollectedContracts, ContractRegistration, LoadedModArtifact, 
 /// this fingerprint (target added, removed, or identity delta) invalidates
 /// `mod.generate` and optional disk materialization.
 pub fn capture_target_fingerprint(outcomes: &[CollectorOutcome]) -> String {
-    let mut tokens: Vec<String> = outcomes
-        .iter()
-        .flat_map(|outcome| outcome.narrowed_targets.iter().cloned())
-        .collect();
+    let mut tokens: Vec<String> =
+        outcomes.iter().flat_map(|outcome| outcome.narrowed_targets.iter().cloned()).collect();
     tokens.sort();
     tokens.dedup();
     tokens.join("|")
@@ -52,10 +50,7 @@ pub(crate) fn collect_contracts(
             }
         }
 
-        Ok(CollectedContracts {
-            registrations,
-            outcomes,
-        })
+        Ok(CollectedContracts { registrations, outcomes })
     })
 }
 
@@ -70,24 +65,12 @@ mod tests {
     #[test]
     fn capture_target_fingerprint_is_order_independent() {
         let left = capture_target_fingerprint(&[
-            CollectorOutcome {
-                type_id: "A".into(),
-                narrowed_targets: vec!["t2".into(), "t1".into()],
-            },
-            CollectorOutcome {
-                type_id: "B".into(),
-                narrowed_targets: vec!["t1".into()],
-            },
+            CollectorOutcome { type_id: "A".into(), narrowed_targets: vec!["t2".into(), "t1".into()] },
+            CollectorOutcome { type_id: "B".into(), narrowed_targets: vec!["t1".into()] },
         ]);
         let right = capture_target_fingerprint(&[
-            CollectorOutcome {
-                type_id: "B".into(),
-                narrowed_targets: vec!["t1".into()],
-            },
-            CollectorOutcome {
-                type_id: "A".into(),
-                narrowed_targets: vec!["t1".into(), "t2".into()],
-            },
+            CollectorOutcome { type_id: "B".into(), narrowed_targets: vec!["t1".into()] },
+            CollectorOutcome { type_id: "A".into(), narrowed_targets: vec!["t1".into(), "t2".into()] },
         ]);
         assert_eq!(left, "t1|t2");
         assert_eq!(left, right);

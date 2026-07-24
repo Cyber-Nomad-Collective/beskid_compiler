@@ -37,23 +37,13 @@ impl Parsable for MacroInvocation {
                     }
                 }
                 Rule::MacroInvocationBlock => {
-                    let block_pair = item
-                        .into_inner()
-                        .next()
-                        .ok_or(ParseError::missing(Rule::Block))?;
+                    let block_pair = item.into_inner().next().ok_or(ParseError::missing(Rule::Block))?;
                     block = Some(Block::parse(block_pair)?);
                 }
                 _ => {}
             }
         }
 
-        Ok(Spanned::new(
-            Self {
-                name,
-                arguments,
-                block,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { name, arguments, block }, span))
     }
 }

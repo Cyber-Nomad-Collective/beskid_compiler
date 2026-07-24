@@ -25,18 +25,13 @@ fn active_tab_index(state: &ShellState) -> usize {
 }
 
 pub fn draw_context_bar(frame: &mut Frame, area: Rect, state: &ShellState, focus: StageFocus) {
-    let [top_row, status_row] =
-        Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(area);
+    let [top_row, status_row] = Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(area);
 
     let titles = mode_tab_titles();
     let tabs = Tabs::new(titles)
         .block(Block::default().borders(Borders::TOP | Borders::LEFT | Borders::RIGHT))
         .style(Style::default().fg(Color::DarkGray))
-        .highlight_style(
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        )
+        .highlight_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
         .select(active_tab_index(state))
         .divider(symbols::DOT)
         .padding("·", "·");
@@ -60,12 +55,7 @@ pub fn draw_context_bar(frame: &mut Frame, area: Rect, state: &ShellState, focus
     };
 
     let mut spans = vec![
-        Span::styled(
-            "Beskid",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Span::styled("Beskid", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw(" · "),
         Span::styled(focus.title(), Style::default().fg(Color::Yellow)),
         Span::raw(" · "),
@@ -78,32 +68,21 @@ pub fn draw_context_bar(frame: &mut Frame, area: Rect, state: &ShellState, focus
     }
 
     spans.push(Span::raw(" · "));
-    spans.push(Span::styled(
-        format!("focus:{}", state.pane_focus.label()),
-        Style::default().fg(Color::DarkGray),
-    ));
+    spans.push(Span::styled(format!("focus:{}", state.pane_focus.label()), Style::default().fg(Color::DarkGray)));
 
     if let Some(hint) = state.navigation_hint() {
         spans.push(Span::raw(" · "));
         spans.push(Span::styled(hint, Style::default().fg(Color::Green)));
     } else if state.shell_mode == crate::tui::shell::pane_state::ShellMode::ProjectWizard {
         spans.push(Span::raw(" · "));
-        spans.push(Span::styled(
-            "[4] packages · [5] templates · i install · q quit",
-            Style::default().fg(Color::Green),
-        ));
+        spans
+            .push(Span::styled("[4] packages · [5] templates · i install · q quit", Style::default().fg(Color::Green)));
     } else {
         spans.push(Span::raw(" · "));
-        spans.push(Span::styled(
-            "[4] pckg · [5] new project",
-            Style::default().fg(Color::DarkGray),
-        ));
+        spans.push(Span::styled("[4] pckg · [5] new project", Style::default().fg(Color::DarkGray)));
     }
 
-    let widget = Paragraph::new(Line::from(spans)).block(
-        Block::default()
-            .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM)
-            .title(" "),
-    );
+    let widget = Paragraph::new(Line::from(spans))
+        .block(Block::default().borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM).title(" "));
     frame.render_widget(widget, text_area);
 }

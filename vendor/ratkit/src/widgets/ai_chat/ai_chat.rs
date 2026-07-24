@@ -52,9 +52,7 @@ impl AIChat {
             messages: MessageStore::new(),
             input: InputState::new(),
             is_loading: false,
-            user_message_style: Style::default()
-                .fg(Color::LightCyan)
-                .add_modifier(Modifier::BOLD),
+            user_message_style: Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD),
             ai_message_style: Style::default().fg(Color::White),
             input_style: Style::default().fg(Color::White),
             input_prompt: "You: ".to_string(),
@@ -84,11 +82,7 @@ impl AIChat {
     /// Get filtered commands matching the current command input.
     pub fn filtered_commands(&self) -> Vec<String> {
         let command_lower = self.input.command().to_lowercase();
-        self.commands
-            .iter()
-            .filter(|c| c.to_lowercase().starts_with(&format!("/{}", command_lower)))
-            .cloned()
-            .collect()
+        self.commands.iter().filter(|c| c.to_lowercase().starts_with(&format!("/{}", command_lower))).cloned().collect()
     }
 
     /// Get selected command index.
@@ -225,10 +219,7 @@ impl AIChat {
     }
 
     fn render_messages(&self, frame: &mut Frame, area: Rect) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .title(" Chat ");
+        let block = Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Chat ");
 
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -249,16 +240,8 @@ impl AIChat {
             let mut content = vec![Span::styled(prefix, style)];
 
             if !msg.attachments.is_empty() {
-                let files_str = msg
-                    .attachments
-                    .iter()
-                    .map(|f| format!("@{}", f))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                content.push(Span::styled(
-                    format!("[{}] ", files_str),
-                    TuiStyle::default().fg(Color::Yellow),
-                ));
+                let files_str = msg.attachments.iter().map(|f| format!("@{}", f)).collect::<Vec<_>>().join(", ");
+                content.push(Span::styled(format!("[{}] ", files_str), TuiStyle::default().fg(Color::Yellow)));
             }
 
             content.push(Span::raw(&msg.content));
@@ -274,9 +257,7 @@ impl AIChat {
             ])));
         }
 
-        let list = List::new(items)
-            .block(Block::default())
-            .style(TuiStyle::default());
+        let list = List::new(items).block(Block::default()).style(TuiStyle::default());
 
         frame.render_widget(list, inner);
     }
@@ -303,9 +284,8 @@ impl AIChat {
         let prompt = &self.input_prompt;
         let cursor_pos = prompt.len() + self.input.cursor();
 
-        let paragraph = Paragraph::new(format!("{}{}", prompt, input_text))
-            .style(self.input_style)
-            .block(Block::default());
+        let paragraph =
+            Paragraph::new(format!("{}{}", prompt, input_text)).style(self.input_style).block(Block::default());
 
         frame.render_widget(paragraph, area);
 
@@ -335,22 +315,14 @@ impl AIChat {
         let popup_width = 40.min(input_area.width);
         let popup_x = input_area.x;
 
-        let popup_area = Rect {
-            x: popup_x,
-            y: popup_y,
-            width: popup_width,
-            height: popup_height,
-        };
+        let popup_area = Rect { x: popup_x, y: popup_y, width: popup_width, height: popup_height };
 
         let items: Vec<ListItem> = filtered
             .iter()
             .enumerate()
             .map(|(i, file)| {
                 let style = if i == self.input.selected_file_index() {
-                    TuiStyle::default()
-                        .bg(Color::Blue)
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD)
+                    TuiStyle::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
                 } else {
                     TuiStyle::default().fg(Color::White).bg(Color::Black)
                 };
@@ -387,22 +359,14 @@ impl AIChat {
         let popup_width = 40.min(input_area.width);
         let popup_x = input_area.x;
 
-        let popup_area = Rect {
-            x: popup_x,
-            y: popup_y,
-            width: popup_width,
-            height: popup_height,
-        };
+        let popup_area = Rect { x: popup_x, y: popup_y, width: popup_width, height: popup_height };
 
         let items: Vec<ListItem> = filtered
             .iter()
             .enumerate()
             .map(|(i, cmd)| {
                 let style = if i == self.selected_command_index() {
-                    TuiStyle::default()
-                        .bg(Color::Blue)
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD)
+                    TuiStyle::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
                 } else {
                     TuiStyle::default().fg(Color::White).bg(Color::Black)
                 };

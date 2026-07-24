@@ -19,10 +19,7 @@ pub struct ActiveScope {
 
 impl ActiveScope {
     pub fn new(id: ScopeId) -> Self {
-        Self {
-            id,
-            instance_order: Vec::new(),
-        }
+        Self { id, instance_order: Vec::new() }
     }
 
     /// Record that `registration` has been instantiated within this scope. Idempotent on a

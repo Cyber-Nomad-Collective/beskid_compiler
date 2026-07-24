@@ -228,11 +228,7 @@ impl PackageContractFixture {
         versions: Vec<PackageVersionSummaryResponse>,
         health: PackageHealthSnapshotResponse,
     ) -> Self {
-        Self {
-            package,
-            versions,
-            health,
-        }
+        Self { package, versions, health }
     }
 
     pub fn detail_for(&self, subject: Option<&str>) -> Option<PackageDetailsResponse> {
@@ -251,11 +247,7 @@ impl PackageContractFixture {
         })
     }
 
-    pub fn download_for(
-        &self,
-        subject: Option<&str>,
-        requested_version: &str,
-    ) -> Option<PackageDownloadContract> {
+    pub fn download_for(&self, subject: Option<&str>, requested_version: &str) -> Option<PackageDownloadContract> {
         if !self.is_visible_to(subject) {
             return None;
         }
@@ -263,17 +255,12 @@ impl PackageContractFixture {
         let version = if requested_version == "latest" {
             self.latest_active()
         } else {
-            self.versions
-                .iter()
-                .find(|version| version.version == requested_version && !version.is_yanked)
+            self.versions.iter().find(|version| version.version == requested_version && !version.is_yanked)
         }?;
 
         Some(PackageDownloadContract {
             content_type: "application/zip".to_owned(),
-            content_disposition: format!(
-                "attachment; filename={}-{}.bpk",
-                self.package.name, version.version
-            ),
+            content_disposition: format!("attachment; filename={}-{}.bpk", self.package.name, version.version),
             version: version.clone(),
         })
     }

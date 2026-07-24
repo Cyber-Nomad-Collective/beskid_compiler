@@ -55,20 +55,11 @@ pub struct CommandSummary {
 
 impl CommandSummary {
     pub fn plain(title: impl Into<String>, headline: impl Into<String>) -> Self {
-        Self {
-            title: title.into(),
-            headline: headline.into(),
-            stats: Vec::new(),
-            slices: Vec::new(),
-        }
+        Self { title: title.into(), headline: headline.into(), stats: Vec::new(), slices: Vec::new() }
     }
 
     pub fn with_stat(mut self, label: impl Into<String>, value: impl Into<String>) -> Self {
-        self.stats.push(SummaryStat {
-            label: label.into(),
-            value: value.into(),
-            color: None,
-        });
+        self.stats.push(SummaryStat { label: label.into(), value: value.into(), color: None });
         self
     }
 }
@@ -120,11 +111,7 @@ impl TestReportSummary {
             });
         }
         if slices.is_empty() {
-            slices.push(SummarySlice {
-                label: "empty".into(),
-                percent: 100.0,
-                color: Color::DarkGray,
-            });
+            slices.push(SummarySlice { label: "empty".into(), percent: 100.0, color: Color::DarkGray });
         }
         CommandSummary {
             title: title.clone(),
@@ -133,21 +120,9 @@ impl TestReportSummary {
                 self.passed, self.failed, self.skipped, self.filtered_out
             ),
             stats: vec![
-                SummaryStat {
-                    label: "passed".into(),
-                    value: self.passed.to_string(),
-                    color: Some(Color::Green),
-                },
-                SummaryStat {
-                    label: "failed".into(),
-                    value: self.failed.to_string(),
-                    color: Some(Color::Red),
-                },
-                SummaryStat {
-                    label: "skipped".into(),
-                    value: self.skipped.to_string(),
-                    color: Some(Color::Blue),
-                },
+                SummaryStat { label: "passed".into(), value: self.passed.to_string(), color: Some(Color::Green) },
+                SummaryStat { label: "failed".into(), value: self.failed.to_string(), color: Some(Color::Red) },
+                SummaryStat { label: "skipped".into(), value: self.skipped.to_string(), color: Some(Color::Blue) },
                 SummaryStat {
                     label: "filtered".into(),
                     value: self.filtered_out.to_string(),

@@ -12,17 +12,15 @@ use beskid_abi::{
 };
 use beskid_analysis::{
     projects::{
-        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit,
-        SyntaxProgramAssembly,
+        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
     },
     services::{FrontEndTypedResult, parse_program_with_source_name},
 };
 use beskid_isle::AstNodeKey;
 use beskid_queries::{
-    BeskidDatabase, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
-    build_canonical_runtime_typed_program, build_typed_program_with_corelib_syscall_services,
-    child_nodes, item_body, item_export_symbol, item_name, item_signature, node_kind,
-    project_session_for_syntax_assembly, reachable_items,
+    BeskidDatabase, SemanticTypeId, SourceUnitId, SyntaxGenerationId, build_canonical_runtime_typed_program,
+    build_typed_program_with_corelib_syscall_services, child_nodes, item_body, item_export_symbol, item_name,
+    item_signature, node_kind, project_session_for_syntax_assembly, reachable_items,
 };
 use cranelift_codegen::isa::TargetIsa;
 
@@ -47,19 +45,14 @@ pub fn lower_canonical_runtime_prepared_syntax(
         .into_iter()
         .find(|unit| unit.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
         .ok_or_else(|| anyhow::anyhow!("canonical Bootstrap source is missing"))?;
-    let root_dir =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime/beskid");
+    let root_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime/beskid");
     let source_path = root_dir.join(&source.logical_path);
-    let program =
-        parse_program_with_source_name(source_path.to_str().unwrap_or_default(), &source.source)
-            .map_err(|error| anyhow::anyhow!("canonical runtime parse failed: {error}"))?;
+    let program = parse_program_with_source_name(source_path.to_str().unwrap_or_default(), &source.source)
+        .map_err(|error| anyhow::anyhow!("canonical runtime parse failed: {error}"))?;
     let generation = SyntaxGenerationId(1);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: root_dir,
-            },
+            host: RootEntry { dependency_name: None, source_root: root_dir },
             dependencies: Vec::new(),
         },
         Arc::new(vec![SourceUnit {
@@ -73,37 +66,22 @@ pub fn lower_canonical_runtime_prepared_syntax(
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let project = project_session_for_syntax_assembly(
-        db,
-        &assembly,
-        "beskid-runtime-native",
-        "canonical-runtime",
-    )
-    .map_err(|error| anyhow::anyhow!("canonical runtime session preparation failed: {error}"))?;
+    let project = project_session_for_syntax_assembly(db, &assembly, "beskid-runtime-native", "canonical-runtime")
+        .map_err(|error| anyhow::anyhow!("canonical runtime session preparation failed: {error}"))?;
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
-    let capability = canonical_runtime_intrinsic_capability(&manifest).map_err(|error| {
-        anyhow::anyhow!("canonical runtime intrinsic capability unavailable: {error:?}")
-    })?;
-    let typed =
-        build_canonical_runtime_typed_program(db, project, generation, assembly, capability)
-            .map_err(|error| {
-                anyhow::anyhow!("canonical runtime syntax preparation failed: {error}")
-            })?;
-    let root = AstNodeKey {
-        unit: SourceUnitId::new(db, source_path),
-        generation,
-        node: beskid_queries::AstNodeId(0),
-    };
+    let capability = canonical_runtime_intrinsic_capability(&manifest)
+        .map_err(|error| anyhow::anyhow!("canonical runtime intrinsic capability unavailable: {error:?}"))?;
+    let typed = build_canonical_runtime_typed_program(db, project, generation, assembly, capability)
+        .map_err(|error| anyhow::anyhow!("canonical runtime syntax preparation failed: {error}"))?;
+    let root = AstNodeKey { unit: SourceUnitId::new(db, source_path), generation, node: beskid_queries::AstNodeId(0) };
     let input = CodegenInput::new(db, typed, Arc::from([root]), target, manifest)
         .map_err(|error| anyhow::anyhow!("canonical runtime CodegenInput failed: {error}"))?;
     let mut items = Vec::new();
     for key in function_definitions(input.database(), root) {
-        let export = item_export_symbol(input.database(), key).map_err(|error| {
-            anyhow::anyhow!("canonical runtime export validation failed: {error}")
-        })?;
-        let symbol = export
-            .map(|symbol| symbol.0.to_string())
-            .or_else(|| syntax_item_symbol(input.database(), &input, key));
+        let export = item_export_symbol(input.database(), key)
+            .map_err(|error| anyhow::anyhow!("canonical runtime export validation failed: {error}"))?;
+        let symbol =
+            export.map(|symbol| symbol.0.to_string()).or_else(|| syntax_item_symbol(input.database(), &input, key));
         if let Some(symbol) = symbol {
             items.push(SyntaxModuleItem { key, symbol });
         }
@@ -147,25 +125,14 @@ pub fn lower_syntax_assembly_entrypoint(
 ) -> Result<PreparedSyntaxEntrypoint> {
     let entry_path = assembly.entry_unit().path.clone();
     let generation = SyntaxGenerationId(1);
-    let project = project_session_for_syntax_assembly(
-        db,
-        &assembly,
-        "syntax-codegen",
-        "prepared-frontend",
-    )
-    .map_err(|error| anyhow::anyhow!("syntax program session preparation failed: {error}"))?;
+    let project = project_session_for_syntax_assembly(db, &assembly, "syntax-codegen", "prepared-frontend")
+        .map_err(|error| anyhow::anyhow!("syntax program session preparation failed: {error}"))?;
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
-    let capability = canonical_corelib_syscall_service_capability(&manifest).map_err(|error| {
-        anyhow::anyhow!("Corelib syscall service capability unavailable: {error:?}")
-    })?;
-    let typed = build_typed_program_with_corelib_syscall_services(
-        db,
-        project,
-        generation,
-        Arc::clone(&assembly),
-        capability,
-    )
-    .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
+    let capability = canonical_corelib_syscall_service_capability(&manifest)
+        .map_err(|error| anyhow::anyhow!("Corelib syscall service capability unavailable: {error:?}"))?;
+    let typed =
+        build_typed_program_with_corelib_syscall_services(db, project, generation, Arc::clone(&assembly), capability)
+            .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
         .units()
         .iter()
@@ -177,13 +144,10 @@ pub fn lower_syntax_assembly_entrypoint(
         .collect::<Vec<_>>();
     let input = CodegenInput::new(db, typed, Arc::from(roots), target.clone(), manifest)
         .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?;
-    let entry_root = AstNodeKey {
-        unit: SourceUnitId::new(db, entry_path),
-        generation,
-        node: beskid_queries::AstNodeId(0),
-    };
-    let entry = find_entrypoint(db, &input, entrypoint)
-        .ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
+    let entry_root =
+        AstNodeKey { unit: SourceUnitId::new(db, entry_path), generation, node: beskid_queries::AstNodeId(0) };
+    let entry =
+        find_entrypoint(db, &input, entrypoint).ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
     crate::isle_trace::event(|| {
         format!(
             "event=entry.selected entrypoint={entrypoint} key={}#g{}:n{}",
@@ -204,21 +168,14 @@ pub fn lower_syntax_assembly_entrypoint(
     let items = reachable
         .iter()
         .copied()
-        .map(|key| {
-            syntax_item_symbol(db, &input, key).map(|symbol| SyntaxModuleItem { key, symbol })
-        })
+        .map(|key| syntax_item_symbol(db, &input, key).map(|symbol| SyntaxModuleItem { key, symbol }))
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| anyhow::anyhow!("reachable item is not a syntax function or test"))?;
-    let symbol = syntax_item_symbol(db, &input, entry).ok_or_else(|| {
-        anyhow::anyhow!("entrypoint `{entrypoint}` is not a syntax function or test")
-    })?;
+    let symbol = syntax_item_symbol(db, &input, entry)
+        .ok_or_else(|| anyhow::anyhow!("entrypoint `{entrypoint}` is not a syntax function or test"))?;
     let artifact = lower_syntax_program(&input, isa, &items)
         .map_err(|error| anyhow::anyhow!("syntax ISLE lowering failed: {error}"))?;
-    Ok(PreparedSyntaxEntrypoint {
-        artifact,
-        symbol,
-        return_type: signature.result,
-    })
+    Ok(PreparedSyntaxEntrypoint { artifact, symbol, return_type: signature.result })
 }
 
 /// Lower every executable function and method in a prepared frontend snapshot.
@@ -235,25 +192,14 @@ pub fn lower_prepared_syntax_module(
 ) -> Result<CodegenArtifact> {
     let assembly = Arc::new(front.syntax_assembly());
     let generation = SyntaxGenerationId(1);
-    let project = project_session_for_syntax_assembly(
-        db,
-        &assembly,
-        "syntax-codegen",
-        "prepared-frontend",
-    )
-    .map_err(|error| anyhow::anyhow!("syntax program session preparation failed: {error}"))?;
+    let project = project_session_for_syntax_assembly(db, &assembly, "syntax-codegen", "prepared-frontend")
+        .map_err(|error| anyhow::anyhow!("syntax program session preparation failed: {error}"))?;
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
-    let capability = canonical_corelib_syscall_service_capability(&manifest).map_err(|error| {
-        anyhow::anyhow!("Corelib syscall service capability unavailable: {error:?}")
-    })?;
-    let typed = build_typed_program_with_corelib_syscall_services(
-        db,
-        project,
-        generation,
-        Arc::clone(&assembly),
-        capability,
-    )
-    .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
+    let capability = canonical_corelib_syscall_service_capability(&manifest)
+        .map_err(|error| anyhow::anyhow!("Corelib syscall service capability unavailable: {error:?}"))?;
+    let typed =
+        build_typed_program_with_corelib_syscall_services(db, project, generation, Arc::clone(&assembly), capability)
+            .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
         .units()
         .iter()
@@ -271,10 +217,7 @@ pub fn lower_prepared_syntax_module(
         .copied()
         .flat_map(|root| function_definitions(input.database(), root))
         .filter(|key| item_body(input.database(), *key).ok().flatten().is_some())
-        .map(|key| {
-            syntax_item_symbol(input.database(), &input, key)
-                .map(|symbol| SyntaxModuleItem { key, symbol })
-        })
+        .map(|key| syntax_item_symbol(input.database(), &input, key).map(|symbol| SyntaxModuleItem { key, symbol }))
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| anyhow::anyhow!("prepared syntax module contains an unnamed item"))?;
     if items.is_empty() {
@@ -292,10 +235,7 @@ pub fn lower_prepared_syntax_module(
 /// keyed by the semantic item itself. Keeping this mapping at the prepared-syntax boundary lets
 /// every production syntax module artifact carry the same interop surface as canonical runtime
 /// lowering without reconstructing retired HIR state.
-fn syntax_export_entries(
-    db: &dyn beskid_queries::Db,
-    items: &[SyntaxModuleItem],
-) -> Result<Vec<ExportEntry>> {
+fn syntax_export_entries(db: &dyn beskid_queries::Db, items: &[SyntaxModuleItem]) -> Result<Vec<ExportEntry>> {
     let mut exports = Vec::new();
     for item in items {
         let export = item_export_symbol(db, item.key)
@@ -315,35 +255,18 @@ fn syntax_export_entries(
     Ok(exports)
 }
 
-fn find_entrypoint(
-    db: &BeskidDatabase,
-    input: &CodegenInput<'_>,
-    entrypoint: &str,
-) -> Option<AstNodeKey> {
-    input
-        .roots()
-        .iter()
-        .copied()
-        .find_map(|root| find_item(db, root, entrypoint))
+fn find_entrypoint(db: &BeskidDatabase, input: &CodegenInput<'_>, entrypoint: &str) -> Option<AstNodeKey> {
+    input.roots().iter().copied().find_map(|root| find_item(db, root, entrypoint))
 }
 
 fn find_item(db: &BeskidDatabase, key: AstNodeKey, entrypoint: &str) -> Option<AstNodeKey> {
     if item_name(db, key).ok().flatten().as_deref() == Some(entrypoint) {
         return Some(key);
     }
-    child_nodes(db, key)
-        .ok()
-        .flatten()?
-        .iter()
-        .copied()
-        .find_map(|child| find_item(db, child, entrypoint))
+    child_nodes(db, key).ok().flatten()?.iter().copied().find_map(|child| find_item(db, child, entrypoint))
 }
 
-fn syntax_item_symbol(
-    db: &dyn beskid_queries::Db,
-    input: &CodegenInput<'_>,
-    key: AstNodeKey,
-) -> Option<String> {
+fn syntax_item_symbol(db: &dyn beskid_queries::Db, input: &CodegenInput<'_>, key: AstNodeKey) -> Option<String> {
     let name = item_name(db, key).ok().flatten()?;
     let unit = input
         .typed_program()
@@ -354,13 +277,7 @@ fn syntax_item_symbol(
     let logical = unit
         .logical_name
         .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character
-            } else {
-                '_'
-            }
-        })
+        .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
         .collect::<String>();
     Some(format!("{name}#syntax_{logical}_{}", key.node.0))
 }
@@ -369,10 +286,7 @@ fn function_definitions(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Vec<Ast
     let mut items = Vec::new();
     if matches!(
         node_kind(db, key).ok().flatten(),
-        Some(
-            beskid_queries::IndexedNodeKind::FunctionDefinition
-                | beskid_queries::IndexedNodeKind::MethodDefinition
-        )
+        Some(beskid_queries::IndexedNodeKind::FunctionDefinition | beskid_queries::IndexedNodeKind::MethodDefinition)
     ) {
         items.push(key);
     }

@@ -65,10 +65,7 @@ pub extern "C-unwind" fn beskid_register_callbacks(
 /// `symbol_id` is stored alongside `beskid_fn_ptr` so the shared trampoline can resolve the
 /// concrete target from [`CallbackTableEntry`] rows registered via [`beskid_register_callbacks`].
 pub fn install_callback_trampoline(beskid_fn_ptr: *const u8, symbol_id: u32) -> *const u8 {
-    trampoline_targets()
-        .lock()
-        .expect("trampoline targets")
-        .insert(symbol_id, TrampolineTarget(beskid_fn_ptr));
+    trampoline_targets().lock().expect("trampoline targets").insert(symbol_id, TrampolineTarget(beskid_fn_ptr));
     trampoline_for_i64_fn as *const u8
 }
 
@@ -84,10 +81,7 @@ extern "C-unwind" fn trampoline_for_i64_fn() -> i64 {
 
     let trampoline_ptr = trampoline_for_i64_fn as *const u8;
     let table = callback_table().lock().expect("callback table");
-    let entry = table
-        .iter()
-        .find(|entry| entry.fn_ptr == trampoline_ptr)
-        .or_else(|| table.first());
+    let entry = table.iter().find(|entry| entry.fn_ptr == trampoline_ptr).or_else(|| table.first());
     let Some(entry) = entry else {
         return 0;
     };

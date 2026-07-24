@@ -68,22 +68,13 @@ impl Parsable for MacroParameter {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner();
-        let kind_pair = inner
-            .next()
-            .ok_or(ParseError::missing(Rule::MacroFragmentKind))?;
+        let kind_pair = inner.next().ok_or(ParseError::missing(Rule::MacroFragmentKind))?;
         let kind_str = kind_pair.as_str();
         let kind_span = SpanInfo::from_span(&kind_pair.as_span());
-        let kind = MacroFragmentKind::from_keyword(kind_str).ok_or_else(|| {
-            ParseError::unexpected_rule(kind_pair.clone(), Some(Rule::MacroFragmentKind))
-        })?;
+        let kind = MacroFragmentKind::from_keyword(kind_str)
+            .ok_or_else(|| ParseError::unexpected_rule(kind_pair.clone(), Some(Rule::MacroFragmentKind)))?;
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
-        Ok(Spanned::new(
-            Self {
-                kind: Spanned::new(kind, kind_span),
-                name,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { kind: Spanned::new(kind, kind_span), name }, span))
     }
 }
 
@@ -111,14 +102,6 @@ impl Parsable for MacroDefinition {
         }
 
         let body = body.ok_or(ParseError::missing(Rule::Block))?;
-        Ok(Spanned::new(
-            Self {
-                visibility,
-                name,
-                parameters,
-                body,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { visibility, name, parameters, body }, span))
     }
 }

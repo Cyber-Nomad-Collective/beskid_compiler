@@ -11,17 +11,9 @@ pub struct TreeGlyphs {
 impl TreeGlyphs {
     pub fn for_plain(plain: bool) -> Self {
         if plain {
-            Self {
-                branch: "|- ",
-                indent: "|  ",
-                continuation: "|  ",
-            }
+            Self { branch: "|- ", indent: "|  ", continuation: "|  " }
         } else {
-            Self {
-                branch: "├─ ",
-                indent: "│  ",
-                continuation: "│  ",
-            }
+            Self { branch: "├─ ", indent: "│  ", continuation: "│  " }
         }
     }
 }
@@ -54,20 +46,12 @@ fn tree_continuation_prefix(depth: usize, plain: bool) -> String {
 }
 
 pub fn format_phase_start(depth: usize, plain: bool, label: &str) -> String {
-    if depth == 0 {
-        label.to_owned()
-    } else {
-        format!("{}{label}", tree_line_prefix(depth, plain))
-    }
+    if depth == 0 { label.to_owned() } else { format!("{}{label}", tree_line_prefix(depth, plain)) }
 }
 
 pub fn format_phase_end(depth: usize, plain: bool, label: &str, duration: &str) -> String {
     let text = format!("{label} ({duration})");
-    if depth == 0 {
-        text
-    } else {
-        format!("{}{text}", tree_continuation_prefix(depth, plain))
-    }
+    if depth == 0 { text } else { format!("{}{text}", tree_continuation_prefix(depth, plain)) }
 }
 
 pub fn format_work_unit(depth: usize, plain: bool, done: u64, total: u64, label: &str) -> String {

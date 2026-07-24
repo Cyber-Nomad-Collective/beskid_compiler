@@ -87,25 +87,16 @@ impl ContainerError {
 impl std::fmt::Display for ContainerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ContainerError::ScopeMismatch { expected, actual } => write!(
-                f,
-                "composition: scope_leave({expected}) did not match active scope {actual}"
-            ),
-            ContainerError::NoActiveScope => {
-                f.write_str("composition: scope_leave called with empty stack")
+            ContainerError::ScopeMismatch { expected, actual } => {
+                write!(f, "composition: scope_leave({expected}) did not match active scope {actual}")
             }
-            ContainerError::NotLaunched => {
-                f.write_str("composition: scope_enter called before launch")
-            }
+            ContainerError::NoActiveScope => f.write_str("composition: scope_leave called with empty stack"),
+            ContainerError::NotLaunched => f.write_str("composition: scope_enter called before launch"),
             ContainerError::UnknownRegistration(id) => {
                 write!(f, "composition: unknown registration {id}")
             }
-            ContainerError::AlreadyLaunched => {
-                f.write_str("composition: launch called on an already-active container")
-            }
-            ContainerError::NotActive => {
-                f.write_str("composition: container is not active (call launch first)")
-            }
+            ContainerError::AlreadyLaunched => f.write_str("composition: launch called on an already-active container"),
+            ContainerError::NotActive => f.write_str("composition: container is not active (call launch first)"),
         }
     }
 }
@@ -185,12 +176,7 @@ impl RuntimeContainer {
             if !needs_eager {
                 continue;
             }
-            if self
-                .registrations
-                .get(&id)
-                .and_then(|r| r.factory.as_ref())
-                .is_some()
-            {
+            if self.registrations.get(&id).and_then(|r| r.factory.as_ref()).is_some() {
                 let ptr = self.create_instance(id)?;
                 singletons.push(ptr);
             }
@@ -228,15 +214,9 @@ impl RuntimeContainer {
         if frame.id != expected {
             // restore + report mismatch
             self.stack.push(frame.id);
-            return Err(ContainerError::ScopeMismatch {
-                expected,
-                actual: frame.id,
-            });
+            return Err(ContainerError::ScopeMismatch { expected, actual: frame.id });
         }
-        let scope_key = self
-            .active_scope_keys
-            .pop()
-            .expect("scope key stack parallel to scope stack");
+        let scope_key = self.active_scope_keys.pop().expect("scope key stack parallel to scope stack");
         // dispose in reverse registration order
         for id in frame.instance_order.into_iter().rev() {
             let instance_key = (scope_key, id);
@@ -275,10 +255,7 @@ impl RuntimeContainer {
     /// Resolve a plural inject site for `owner`. Returns the bound targets in their original
     /// registration order; each target is resolved with the same lifetime rules as
     /// [`resolve`](Self::resolve).
-    pub fn resolve_plural(
-        &mut self,
-        owner: RegistrationId,
-    ) -> Result<Vec<InstancePtr>, ContainerError> {
+    pub fn resolve_plural(&mut self, owner: RegistrationId) -> Result<Vec<InstancePtr>, ContainerError> {
         if !self.launched {
             return Err(ContainerError::NotActive);
         }
@@ -313,10 +290,7 @@ impl RuntimeContainer {
 
     fn create_instance(&mut self, id: RegistrationId) -> Result<InstancePtr, ContainerError> {
         let (lifetime, _scope) = {
-            let record = self
-                .registrations
-                .get(&id)
-                .ok_or(ContainerError::UnknownRegistration(id))?;
+            let record = self.registrations.get(&id).ok_or(ContainerError::UnknownRegistration(id))?;
             (record.lifetime, record.scope)
         };
 
@@ -335,11 +309,7 @@ impl RuntimeContainer {
                 Ok(ptr)
             }
             Lifetime::Scoped => {
-                let frame_idx = self
-                    .stack
-                    .depth()
-                    .checked_sub(1)
-                    .ok_or(ContainerError::NoActiveScope)?;
+                let frame_idx = self.stack.depth().checked_sub(1).ok_or(ContainerError::NoActiveScope)?;
                 let scope_key = self.active_scope_keys[frame_idx];
                 let key = (scope_key, id);
                 if let Some(ptr) = self.scoped_instances.get(&key) {
@@ -364,15 +334,8 @@ impl RuntimeContainer {
 
     fn invoke_factory(&mut self, id: RegistrationId) -> InstancePtr {
         // Temporarily take the factory out so we can pass `&mut self` to the closure.
-        let mut taken = self
-            .registrations
-            .get_mut(&id)
-            .and_then(|r| r.factory.take());
-        let ptr = if let Some(factory) = taken.as_mut() {
-            factory(self)
-        } else {
-            std::ptr::null_mut()
-        };
+        let mut taken = self.registrations.get_mut(&id).and_then(|r| r.factory.take());
+        let ptr = if let Some(factory) = taken.as_mut() { factory(self) } else { std::ptr::null_mut() };
         if let Some(record) = self.registrations.get_mut(&id) {
             record.factory = taken;
         }

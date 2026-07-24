@@ -56,9 +56,7 @@ impl ApiKeyIdentity {
     /// Keeps the persisted/wire-compatible string list while giving route adapters a
     /// typed scope check.
     pub fn has_scope(&self, scope: ApiKeyScope) -> bool {
-        self.scopes
-            .iter()
-            .any(|candidate| candidate.eq_ignore_ascii_case(scope.as_str()))
+        self.scopes.iter().any(|candidate| candidate.eq_ignore_ascii_case(scope.as_str()))
     }
 }
 
@@ -96,10 +94,7 @@ pub struct Principal {
 }
 
 impl Principal {
-    pub fn from_auth_hub(
-        identity: AuthHubIdentity,
-        roles: impl IntoIterator<Item = SubjectRole>,
-    ) -> Self {
+    pub fn from_auth_hub(identity: AuthHubIdentity, roles: impl IntoIterator<Item = SubjectRole>) -> Self {
         Self::from_subject(identity.subject, roles)
     }
 
@@ -107,14 +102,8 @@ impl Principal {
         Self::from_subject(identity.subject, [SubjectRole::User])
     }
 
-    pub fn from_subject(
-        subject: impl Into<String>,
-        roles: impl IntoIterator<Item = SubjectRole>,
-    ) -> Self {
-        Self {
-            subject: subject.into(),
-            roles: roles.into_iter().collect(),
-        }
+    pub fn from_subject(subject: impl Into<String>, roles: impl IntoIterator<Item = SubjectRole>) -> Self {
+        Self { subject: subject.into(), roles: roles.into_iter().collect() }
     }
 
     pub fn subject(&self) -> &str {
@@ -151,10 +140,7 @@ pub struct PermissionGrant {
 
 impl PermissionGrant {
     pub fn new(subject: impl Into<String>, action: ResourceAction) -> Self {
-        Self {
-            subject: subject.into(),
-            action,
-        }
+        Self { subject: subject.into(), action }
     }
 
     fn permits(&self, principal: &Principal, action: ResourceAction) -> bool {
@@ -198,11 +184,8 @@ pub fn authorize_resource_access(
 
     let is_owner = principal.subject == owner_subject;
     let is_super_admin = principal.has_role(SubjectRole::SuperAdmin);
-    let is_global_moderator =
-        action == ResourceAction::Moderate && principal.has_role(SubjectRole::Moderator);
-    let has_explicit_grant = grants
-        .into_iter()
-        .any(|grant| grant.permits(principal, action));
+    let is_global_moderator = action == ResourceAction::Moderate && principal.has_role(SubjectRole::Moderator);
+    let has_explicit_grant = grants.into_iter().any(|grant| grant.permits(principal, action));
 
     if is_owner || is_super_admin || is_global_moderator || has_explicit_grant {
         return Ok(());
@@ -242,17 +225,9 @@ pub trait ApiKeyVerifier: Send + Sync {
 
     /// Verifies a raw pckg API key through the injected persistence adapter, then
     /// enforces the operation's typed scope at the boundary.
-    fn verify_scoped(
-        &self,
-        raw_key: &str,
-        required_scope: ApiKeyScope,
-    ) -> Result<ApiKeyIdentity, AuthError> {
+    fn verify_scoped(&self, raw_key: &str, required_scope: ApiKeyScope) -> Result<ApiKeyIdentity, AuthError> {
         let identity = self.verify(raw_key)?;
-        if identity.has_scope(required_scope) {
-            Ok(identity)
-        } else {
-            Err(AuthError::InsufficientScope)
-        }
+        if identity.has_scope(required_scope) { Ok(identity) } else { Err(AuthError::InsufficientScope) }
     }
 }
 
@@ -305,30 +280,16 @@ impl AuthHubHandoffVerifier for Hs256AuthHubHandoffVerifier {
             return Err(AuthError::Rejected);
         }
 
-        Ok(AuthHubIdentity {
-            subject: claims.subject,
-            github_login: claims.login,
-            hub_session_id: claims.sid,
-        })
+        Ok(AuthHubIdentity { subject: claims.subject, github_login: claims.login, hub_session_id: claims.sid })
     }
 }
 
-pub fn sign_auth_hub_handoff(
-    claims: &AuthHubHandoffClaims,
-    service_token: &str,
-) -> Result<String, AuthError> {
-    encode(
-        &Header::new(Algorithm::HS256),
-        claims,
-        &EncodingKey::from_secret(service_token.as_bytes()),
-    )
-    .map_err(|_| AuthError::Rejected)
+pub fn sign_auth_hub_handoff(claims: &AuthHubHandoffClaims, service_token: &str) -> Result<String, AuthError> {
+    encode(&Header::new(Algorithm::HS256), claims, &EncodingKey::from_secret(service_token.as_bytes()))
+        .map_err(|_| AuthError::Rejected)
 }
 
-pub fn issue_pckg_session(
-    identity: &AuthHubIdentity,
-    session_secret: &str,
-) -> Result<String, AuthError> {
+pub fn issue_pckg_session(identity: &AuthHubIdentity, session_secret: &str) -> Result<String, AuthError> {
     let expires_at = SystemTime::now()
         .checked_add(Duration::from_secs(8 * 60 * 60))
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
@@ -340,18 +301,11 @@ pub fn issue_pckg_session(
         hub_session_id: identity.hub_session_id.clone(),
         expires_at,
     };
-    encode(
-        &Header::new(Algorithm::HS256),
-        &claims,
-        &EncodingKey::from_secret(session_secret.as_bytes()),
-    )
-    .map_err(|_| AuthError::Rejected)
+    encode(&Header::new(Algorithm::HS256), &claims, &EncodingKey::from_secret(session_secret.as_bytes()))
+        .map_err(|_| AuthError::Rejected)
 }
 
-pub fn verify_pckg_session(
-    session_token: &str,
-    session_secret: &str,
-) -> Result<AuthHubIdentity, AuthError> {
+pub fn verify_pckg_session(session_token: &str, session_secret: &str) -> Result<AuthHubIdentity, AuthError> {
     let claims = decode::<PckgSessionClaims>(
         session_token,
         &DecodingKey::from_secret(session_secret.as_bytes()),

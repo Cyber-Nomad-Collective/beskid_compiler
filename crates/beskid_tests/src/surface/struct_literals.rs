@@ -10,10 +10,7 @@ fn parses_struct_literal_expression() {
 #[test]
 fn parses_struct_literal_with_nullary_enum_constructor_field() {
     assert_parse(Rule::StructLiteralExpression, "Foo { x: Option::None }");
-    assert_parse(
-        Rule::StructLiteralExpression,
-        "QueryState<T> { count: 0, first: Option::None }",
-    );
+    assert_parse(Rule::StructLiteralExpression, "QueryState<T> { count: 0, first: Option::None }");
 }
 
 #[test]
@@ -23,10 +20,7 @@ fn rejects_struct_literal_without_fields() {
 
 #[test]
 fn rejects_struct_literal_without_comma_between_fields() {
-    assert_parse_fail(
-        Rule::StructLiteralExpression,
-        "User { name: \"Ada\" age: 37 }",
-    );
+    assert_parse_fail(Rule::StructLiteralExpression, "User { name: \"Ada\" age: 37 }");
 }
 
 #[test]

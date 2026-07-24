@@ -59,11 +59,7 @@ impl ExternalLibrary for PosixProvider {
     }
 }
 
-fn resolve_c_posix(
-    provider: &str,
-    host: &str,
-    logical: &str,
-) -> Result<Vec<String>, LibraryResolveError> {
+fn resolve_c_posix(provider: &str, host: &str, logical: &str) -> Result<Vec<String>, LibraryResolveError> {
     let logical_trimmed = logical.trim();
     if logical_trimmed.is_empty() {
         return Err(LibraryResolveError::InvalidLogicalName {
@@ -94,10 +90,7 @@ fn resolve_c_posix(
         provider: provider.to_string(),
         host: host.to_string(),
         logical: logical.to_string(),
-        detail: format!(
-            "v0.3 closed registry only ships C / POSIX names (known: {})",
-            known_logical_names_csv()
-        ),
+        detail: format!("v0.3 closed registry only ships C / POSIX names (known: {})", known_logical_names_csv()),
     })
 }
 
@@ -150,11 +143,7 @@ fn canonical_logical_name(logical: &str) -> String {
 }
 
 fn known_logical_names_csv() -> String {
-    C_POSIX_LOGICAL_NAMES
-        .iter()
-        .map(|(name, _)| *name)
-        .collect::<Vec<&str>>()
-        .join(", ")
+    C_POSIX_LOGICAL_NAMES.iter().map(|(name, _)| *name).collect::<Vec<&str>>().join(", ")
 }
 
 fn is_link_short_name_char(c: char) -> bool {
@@ -177,18 +166,13 @@ mod tests {
     fn c_posix_provider_canonicalizes_extensions() {
         let provider = CPosixProvider;
         assert_eq!(provider.resolve_link_args("libc.so").unwrap(), vec!["-lc"]);
-        assert_eq!(
-            provider.resolve_link_args("libpthread.dylib").unwrap(),
-            vec!["-lpthread"]
-        );
+        assert_eq!(provider.resolve_link_args("libpthread.dylib").unwrap(), vec!["-lpthread"]);
     }
 
     #[test]
     fn c_posix_provider_rejects_unknown_logical() {
         let provider = CPosixProvider;
-        let err = provider
-            .resolve_link_args("totally-not-a-real-libname")
-            .expect_err("unknown name");
+        let err = provider.resolve_link_args("totally-not-a-real-libname").expect_err("unknown name");
         match err {
             LibraryResolveError::UnknownLogicalName { provider, .. } => {
                 assert_eq!(provider, "c-posix");
@@ -206,9 +190,7 @@ mod tests {
     #[test]
     fn c_posix_provider_passthrough_for_paths() {
         let provider = CPosixProvider;
-        let args = provider
-            .resolve_link_args("/usr/lib/libfoo.so")
-            .expect("path passthrough");
+        let args = provider.resolve_link_args("/usr/lib/libfoo.so").expect("path passthrough");
         assert_eq!(args, vec!["/usr/lib/libfoo.so"]);
         let paths = provider.resolve_search_paths("/usr/lib/libfoo.so");
         assert_eq!(paths, vec![PathBuf::from("/usr/lib")]);
@@ -218,9 +200,6 @@ mod tests {
     fn empty_logical_rejected() {
         let provider = CPosixProvider;
         let err = provider.resolve_link_args("  ").expect_err("empty");
-        assert!(matches!(
-            err,
-            LibraryResolveError::InvalidLogicalName { .. }
-        ));
+        assert!(matches!(err, LibraryResolveError::InvalidLogicalName { .. }));
     }
 }

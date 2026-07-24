@@ -8,9 +8,7 @@
 //! Container pointers handed back to generated code are stable for the lifetime of one
 //! `launch` / `shutdown` pair.
 
-use crate::composition::{
-    ContainerError, Lifetime, RegistrationId, RegistrationRecord, RuntimeContainer, ScopeId,
-};
+use crate::composition::{ContainerError, Lifetime, RegistrationId, RegistrationRecord, RuntimeContainer, ScopeId};
 
 const ABI_OK: i32 = 0;
 const NULL_INSTANCE: *mut std::ffi::c_void = std::ptr::null_mut();
@@ -85,11 +83,7 @@ pub extern "C-unwind" fn composition_bind_plural(
     let Some(container) = container_from_ptr(container) else {
         return ContainerError::ABI_NOT_ACTIVE;
     };
-    let len = if targets_len < 0 {
-        0
-    } else {
-        targets_len as usize
-    };
+    let len = if targets_len < 0 { 0 } else { targets_len as usize };
     let slice: &[u32] = if len == 0 || targets.is_null() {
         &[]
     } else {
@@ -130,10 +124,7 @@ pub extern "C-unwind" fn composition_shutdown(container: *mut RuntimeContainer) 
 
 /// Push a new active scope on top of the container's scope stack.
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn composition_scope_enter(
-    container: *mut RuntimeContainer,
-    scope_id: u32,
-) -> i32 {
+pub extern "C-unwind" fn composition_scope_enter(container: *mut RuntimeContainer, scope_id: u32) -> i32 {
     let Some(container) = container_from_ptr(container) else {
         return ContainerError::ABI_NOT_ACTIVE;
     };
@@ -145,10 +136,7 @@ pub extern "C-unwind" fn composition_scope_enter(
 
 /// Pop the active scope, running every `dispose` hook in reverse registration order.
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn composition_scope_leave(
-    container: *mut RuntimeContainer,
-    scope_id: u32,
-) -> i32 {
+pub extern "C-unwind" fn composition_scope_leave(container: *mut RuntimeContainer, scope_id: u32) -> i32 {
     let Some(container) = container_from_ptr(container) else {
         return ContainerError::ABI_NOT_ACTIVE;
     };
@@ -190,11 +178,7 @@ pub extern "C-unwind" fn composition_resolve_plural(
         Ok(values) => values,
         Err(_) => return -1,
     };
-    let capacity = if out_capacity < 0 {
-        0
-    } else {
-        out_capacity as usize
-    };
+    let capacity = if out_capacity < 0 { 0 } else { out_capacity as usize };
     if !out.is_null() && capacity > 0 {
         let to_copy = capacity.min(instances.len());
         // SAFETY: the caller guarantees `out` points to valid, aligned memory with room for

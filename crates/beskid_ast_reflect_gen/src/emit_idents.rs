@@ -67,11 +67,7 @@ fn reserved_keyword_prefix_conflict(lower: &str) -> bool {
 
 pub fn escape_beskid_ident(raw: &str) -> String {
     let lower = raw.to_ascii_lowercase();
-    if reserved_keyword_prefix_conflict(&lower) {
-        format!("_{raw}")
-    } else {
-        raw.to_string()
-    }
+    if reserved_keyword_prefix_conflict(&lower) { format!("_{raw}") } else { raw.to_string() }
 }
 
 /// Rust `snake_case` (or synthetic `field_0` / `variant_field_0`) to **lowerCamelCase** for Mod SDK
@@ -117,18 +113,12 @@ mod tests {
 
     #[test]
     fn camel_case_return_type() {
-        assert_eq!(
-            rust_snake_to_beskid_field_camel("return_type"),
-            "returnType"
-        );
+        assert_eq!(rust_snake_to_beskid_field_camel("return_type"), "returnType");
     }
 
     #[test]
     fn camel_case_contract_name() {
-        assert_eq!(
-            rust_snake_to_beskid_field_camel("contract_name"),
-            "contractName"
-        );
+        assert_eq!(rust_snake_to_beskid_field_camel("contract_name"), "contractName");
     }
 
     #[test]
@@ -140,10 +130,7 @@ mod tests {
     #[test]
     fn camel_field_index_placeholders() {
         assert_eq!(rust_snake_to_beskid_field_camel("field_0"), "field0");
-        assert_eq!(
-            rust_snake_to_beskid_field_camel("variant_field_1"),
-            "variantField1"
-        );
+        assert_eq!(rust_snake_to_beskid_field_camel("variant_field_1"), "variantField1");
     }
 
     #[test]

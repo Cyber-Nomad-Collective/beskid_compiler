@@ -3,9 +3,7 @@
 use beskid_analysis::mod_host::{ModHostInput, ScriptedContractInvoker, run_through_generate};
 use beskid_analysis::services::parse_program_with_source_name;
 
-use super::fixture::{
-    ModFixtureWorkspace, program_contains_function, typed_items_contain_function,
-};
+use super::fixture::{ModFixtureWorkspace, program_contains_function, typed_items_contain_function};
 
 #[test]
 fn typed_generator_items_merge_into_host_program() {
@@ -38,10 +36,7 @@ fn typed_generator_items_merge_into_host_program() {
     .expect("typed merge generate");
 
     assert_eq!(generated.generator_outcomes.len(), 1);
-    assert!(typed_items_contain_function(
-        &generated.generator_outcomes[0].typed_items,
-        "typed_merge_marker"
-    ));
+    assert!(typed_items_contain_function(&generated.generator_outcomes[0].typed_items, "typed_merge_marker"));
     assert!(
         program_contains_function(&generated.program, "typed_merge_marker"),
         "host program must include merged typed item"

@@ -70,10 +70,7 @@ impl<'a, 'b, T> TreeViewRef<'a, 'b, T> {
                 let custom_line = (ctx.render_fn)(&node.data, &node_state);
 
                 // Prepend indent and expansion icon
-                let mut spans = vec![
-                    Span::raw(indent),
-                    Span::styled(format!("{} ", expansion_icon), ctx.icon_style),
-                ];
+                let mut spans = vec![Span::raw(indent), Span::styled(format!("{} ", expansion_icon), ctx.icon_style)];
                 spans.extend(custom_line.spans);
 
                 items.push((Line::from(spans), path.clone()));

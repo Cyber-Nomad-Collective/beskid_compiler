@@ -42,19 +42,12 @@ impl HiShellComponent {
 }
 
 impl tuirealm::component::Component for HiShellComponent {
-    fn view(
-        &mut self,
-        frame: &mut tuirealm::ratatui::Frame,
-        area: tuirealm::ratatui::layout::Rect,
-    ) {
+    fn view(&mut self, frame: &mut tuirealm::ratatui::Frame, area: tuirealm::ratatui::layout::Rect) {
         self.app.set_frame_area(area);
         self.app.draw_shell(frame);
     }
 
-    fn query<'a>(
-        &'a self,
-        _attr: tuirealm::props::Attribute,
-    ) -> Option<tuirealm::props::QueryResult<'a>> {
+    fn query<'a>(&'a self, _attr: tuirealm::props::Attribute) -> Option<tuirealm::props::QueryResult<'a>> {
         None
     }
 
@@ -78,44 +71,24 @@ impl tuirealm::component::AppComponent<HiShellMsg, NoUserEvent> for HiShellCompo
 
 /// Run the hi shell until quit (stderr alternate screen).
 pub fn run_hi(app: HiShellApp) -> io::Result<()> {
-    let listener = EventListenerCfg::default()
-        .crossterm_input_listener(Duration::from_millis(10), 3)
-        .tick_interval(TICK);
+    let listener =
+        EventListenerCfg::default().crossterm_input_listener(Duration::from_millis(10), 3).tick_interval(TICK);
 
     let mut application = Application::init(listener);
     application
-        .mount(
-            HiShellId::Root,
-            Box::new(HiShellComponent { app }),
-            Vec::new(),
-        )
+        .mount(HiShellId::Root, Box::new(HiShellComponent { app }), Vec::new())
         .map_err(|err| io::Error::other(err.to_string()))?;
-    application
-        .active(&HiShellId::Root)
-        .map_err(|err| io::Error::other(err.to_string()))?;
+    application.active(&HiShellId::Root).map_err(|err| io::Error::other(err.to_string()))?;
 
-    let mut terminal =
-        StderrTerminalAdapter::new().map_err(|err| io::Error::other(err.to_string()))?;
-    terminal
-        .enable_raw_mode()
-        .map_err(|err| io::Error::other(err.to_string()))?;
-    terminal
-        .enter_alternate_screen()
-        .map_err(|err| io::Error::other(err.to_string()))?;
-    terminal
-        .enable_mouse_capture()
-        .map_err(|err| io::Error::other(err.to_string()))?;
+    let mut terminal = StderrTerminalAdapter::new().map_err(|err| io::Error::other(err.to_string()))?;
+    terminal.enable_raw_mode().map_err(|err| io::Error::other(err.to_string()))?;
+    terminal.enter_alternate_screen().map_err(|err| io::Error::other(err.to_string()))?;
+    terminal.enable_mouse_capture().map_err(|err| io::Error::other(err.to_string()))?;
 
     let size = terminal.raw().size().map_err(io::Error::other)?;
     if let Some(component) = application.get_component_mut(&HiShellId::Root) {
-        let inner = component
-            .as_any_mut()
-            .downcast_mut::<HiShellComponent>()
-            .expect("hi shell component");
-        let _ = inner.handle_shell_event(ShellRealmEvent::Resize {
-            width: size.width,
-            height: size.height,
-        });
+        let inner = component.as_any_mut().downcast_mut::<HiShellComponent>().expect("hi shell component");
+        let _ = inner.handle_shell_event(ShellRealmEvent::Resize { width: size.width, height: size.height });
     }
 
     let mut quitting = false;
@@ -136,10 +109,7 @@ pub fn run_hi(app: HiShellApp) -> io::Result<()> {
         }
 
         if let Some(component) = application.get_component_mut(&HiShellId::Root) {
-            let inner = component
-                .as_any_mut()
-                .downcast_mut::<HiShellComponent>()
-                .expect("hi shell component");
+            let inner = component.as_any_mut().downcast_mut::<HiShellComponent>().expect("hi shell component");
 
             // Poll workflow engine for events
             let events = inner.app.workflow_engine.drain_events();
@@ -158,22 +128,14 @@ pub fn run_hi(app: HiShellApp) -> io::Result<()> {
                     WorkflowEvent::StageCompleted(_stage) => {
                         inner.app.shell_state.compile_complete = true;
                         // Trigger compile complete message
-                        let _ =
-                            inner
-                                .app
-                                .msg_tx
-                                .send(crate::tui::shell::runtime::RuntimeOp::Update(
-                                    crate::tui::message::ShellMessage::CompileComplete,
-                                ));
+                        let _ = inner.app.msg_tx.send(crate::tui::shell::runtime::RuntimeOp::Update(
+                            crate::tui::message::ShellMessage::CompileComplete,
+                        ));
                     }
                     WorkflowEvent::StageFailed(_stage, err) => {
-                        let _ =
-                            inner
-                                .app
-                                .msg_tx
-                                .send(crate::tui::shell::runtime::RuntimeOp::Update(
-                                    crate::tui::message::ShellMessage::PushLog(err.clone()),
-                                ));
+                        let _ = inner.app.msg_tx.send(crate::tui::shell::runtime::RuntimeOp::Update(
+                            crate::tui::message::ShellMessage::PushLog(err.clone()),
+                        ));
                     }
                     WorkflowEvent::Cancelled => {
                         // Stage was cancelled
@@ -194,8 +156,6 @@ pub fn run_hi(app: HiShellApp) -> io::Result<()> {
         }
     }
 
-    terminal
-        .restore()
-        .map_err(|err| io::Error::other(err.to_string()))?;
+    terminal.restore().map_err(|err| io::Error::other(err.to_string()))?;
     Ok(())
 }

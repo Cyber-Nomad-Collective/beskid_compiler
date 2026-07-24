@@ -3,9 +3,7 @@
 use beskid_analysis::doc::DocRefLinkContext;
 use beskid_analysis::doc_comment_parser::DocSyntaxParser;
 use beskid_analysis::doc_comment_parser::Rule as DocRule;
-use beskid_analysis::hir::{
-    AstProgram, HirProgram, lower_program as lower_hir_program, normalize_program,
-};
+use beskid_analysis::hir::{AstProgram, HirProgram, lower_program as lower_hir_program, normalize_program};
 use beskid_analysis::resolve::{ItemKind, Resolution, Resolver};
 use beskid_analysis::services::{build_document_analysis, hover_at_offset, parse_program};
 use beskid_analysis::syntax::Spanned;
@@ -44,14 +42,8 @@ fn doc_body_grammar_splits_arg_and_returns() {
         })
         .map(|p| (p.as_rule(), p.as_str().to_string()))
         .collect();
-    assert!(
-        debug.iter().any(|(r, _)| *r == DocRule::ArgTag),
-        "expected ArgTag in {debug:?}"
-    );
-    assert!(
-        debug.iter().any(|(r, _)| *r == DocRule::ReturnsTag),
-        "expected ReturnsTag in {debug:?}"
-    );
+    assert!(debug.iter().any(|(r, _)| *r == DocRule::ArgTag), "expected ArgTag in {debug:?}");
+    assert!(debug.iter().any(|(r, _)| *r == DocRule::ReturnsTag), "expected ReturnsTag in {debug:?}");
 }
 
 #[test]
@@ -68,14 +60,8 @@ fn doc_body_grammar_splits_variant_and_par_tags() {
         })
         .map(|p| (p.as_rule(), p.as_str().to_string()))
         .collect();
-    assert!(
-        debug.iter().any(|(r, _)| *r == DocRule::VariantTag),
-        "expected VariantTag in {debug:?}"
-    );
-    assert!(
-        debug.iter().any(|(r, _)| *r == DocRule::ParTag),
-        "expected ParTag in {debug:?}"
-    );
+    assert!(debug.iter().any(|(r, _)| *r == DocRule::VariantTag), "expected VariantTag in {debug:?}");
+    assert!(debug.iter().any(|(r, _)| *r == DocRule::ParTag), "expected ParTag in {debug:?}");
 }
 
 #[ignore = "doc/hover resolution fixtures need refreshed analysis facts after syntax-ISLE cutover"]
@@ -86,9 +72,7 @@ fn doc_diagnostics_unknown_variant_name() {
     let snap = build_document_analysis(&program, "t.bd", src, None);
     assert!(snap.resolution.is_some());
     assert!(
-        snap.doc_diagnostics
-            .iter()
-            .any(|d| d.code.as_deref() == Some("W1621")),
+        snap.doc_diagnostics.iter().any(|d| d.code.as_deref() == Some("W1621")),
         "expected W1621, got {:?}",
         snap.doc_diagnostics
     );
@@ -102,9 +86,7 @@ fn doc_diagnostics_variant_on_type_is_wrong_placement() {
     let snap = build_document_analysis(&program, "t.bd", src, None);
     assert!(snap.resolution.is_some());
     assert!(
-        snap.doc_diagnostics
-            .iter()
-            .any(|d| d.code.as_deref() == Some("W1620")),
+        snap.doc_diagnostics.iter().any(|d| d.code.as_deref() == Some("W1620")),
         "expected W1620, got {:?}",
         snap.doc_diagnostics
     );
@@ -118,9 +100,7 @@ fn doc_diagnostics_par_without_generics_on_function() {
     let snap = build_document_analysis(&program, "t.bd", src, None);
     assert!(snap.resolution.is_some());
     assert!(
-        snap.doc_diagnostics
-            .iter()
-            .any(|d| d.code.as_deref() == Some("W1623")),
+        snap.doc_diagnostics.iter().any(|d| d.code.as_deref() == Some("W1623")),
         "expected W1623, got {:?}",
         snap.doc_diagnostics
     );
@@ -129,15 +109,12 @@ fn doc_diagnostics_par_without_generics_on_function() {
 #[ignore = "doc/hover resolution fixtures need refreshed analysis facts after syntax-ISLE cutover"]
 #[test]
 fn doc_diagnostics_flag_unknown_arg_name() {
-    let src =
-        "/// @arg(nope) bad\ni64 Sum(\n    i64 left,\n    i64 right\n) { return left + right; }\n";
+    let src = "/// @arg(nope) bad\ni64 Sum(\n    i64 left,\n    i64 right\n) { return left + right; }\n";
     let program = parse_program(src).unwrap();
     let snap = build_document_analysis(&program, "t.bd", src, None);
     assert!(snap.resolution.is_some(), "resolution should succeed");
     assert!(
-        snap.doc_diagnostics
-            .iter()
-            .any(|d| d.code.as_deref() == Some("W1610")),
+        snap.doc_diagnostics.iter().any(|d| d.code.as_deref() == Some("W1610")),
         "expected W1610, got {:?}",
         snap.doc_diagnostics
     );
@@ -269,14 +246,8 @@ unit Main() { return 42; }
         .filter_map(|slot| slot.as_ref().map(|d| d.markdown.as_str()))
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(
-        blob.contains("/docs/demo-pkg%401.0.0/api/"),
-        "expected pckg docs link, got {blob:?}"
-    );
-    assert!(
-        blob.contains("](") && blob.contains("main"),
-        "expected markdown link mentioning main, got {blob:?}"
-    );
+    assert!(blob.contains("/docs/demo-pkg%401.0.0/api/"), "expected pckg docs link, got {blob:?}");
+    assert!(blob.contains("](") && blob.contains("main"), "expected markdown link mentioning main, got {blob:?}");
 }
 
 fn resolve_program_for_test(src: &str) -> Resolution {
@@ -308,23 +279,11 @@ i64 Add(i64 a, i64 b) { return a + b; }
         .find(|i| i.kind == ItemKind::Type && i.name.ends_with("Box"))
         .map(|i| i.id)
         .expect("type Box");
-    let field = resolution
-        .items
-        .iter()
-        .find(|i| i.kind == ItemKind::Field && i.name.contains("value"))
-        .expect("field value");
+    let field =
+        resolution.items.iter().find(|i| i.kind == ItemKind::Field && i.name.contains("value")).expect("field value");
     assert_eq!(field.parent_id, Some(type_id));
 
-    let enum_id = resolution
-        .items
-        .iter()
-        .find(|i| i.kind == ItemKind::Enum)
-        .map(|i| i.id)
-        .expect("enum");
-    let variant = resolution
-        .items
-        .iter()
-        .find(|i| i.kind == ItemKind::EnumVariant)
-        .expect("enum variant");
+    let enum_id = resolution.items.iter().find(|i| i.kind == ItemKind::Enum).map(|i| i.id).expect("enum");
+    let variant = resolution.items.iter().find(|i| i.kind == ItemKind::EnumVariant).expect("enum variant");
     assert_eq!(variant.parent_id, Some(enum_id));
 }

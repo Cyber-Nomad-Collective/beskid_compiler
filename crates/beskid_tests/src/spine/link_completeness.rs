@@ -8,17 +8,15 @@ use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan};
 use beskid_codegen::linking::{FunctionDefIndex, LinkPlan};
 use beskid_codegen::lowering::lower_program_with_assembly_for_entrypoint;
 use beskid_codegen::validate_artifact;
-use beskid_queries::{
-    compile_front_end_from_resolved_input, configure_db_for_project, program_assembly, with_db,
-};
+use beskid_queries::{compile_front_end_from_resolved_input, configure_db_for_project, program_assembly, with_db};
 
 use crate::projects::with_cwd;
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
 
 #[cfg(feature = "slow")]
 use crate::projects::fixture_harness::{
-    corelib_tests_project_root, lower_corelib_tests_entrypoint,
-    resolve_corelib_tests_entry_with_assembly, with_project_test_env,
+    corelib_tests_project_root, lower_corelib_tests_entrypoint, resolve_corelib_tests_entry_with_assembly,
+    with_project_test_env,
 };
 #[cfg(feature = "slow")]
 use beskid_codegen::LinkSymbol;
@@ -61,8 +59,7 @@ i32 Main() {
     with_cwd(&root, || {
         let ctx = CompilationContext::try_for_analysis_path(&entry, None).expect("context");
         let plan = ctx.compile_plan.clone().expect("plan");
-        let resolved =
-            resolved_input_from_plan(entry.clone(), source.to_string(), plan.clone(), None, None);
+        let resolved = resolved_input_from_plan(entry.clone(), source.to_string(), plan.clone(), None, None);
         configure_db_for_project(&root);
         let assembly = with_db(|db| {
             program_assembly(
@@ -71,17 +68,13 @@ i32 Main() {
                 resolved.prepared_workspace.as_ref(),
                 &entry,
                 Some(source),
-                &AssemblyOptions {
-                    discovery: AssemblyDiscovery::ImportClosure,
-                    ..Default::default()
-                },
+                &AssemblyOptions { discovery: AssemblyDiscovery::ImportClosure, ..Default::default() },
             )
         })
         .expect("assemble");
 
         let front =
-            compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None)
-                .expect("front end");
+            compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None).expect("front end");
 
         let def_index = FunctionDefIndex::build(&front.resolution, &assembly.hir_units);
         let link_plan = LinkPlan::build_for_entrypoint(
@@ -92,10 +85,7 @@ i32 Main() {
             &front.typed,
             &def_index,
         );
-        assert!(
-            !link_plan.entries.is_empty(),
-            "temp project should expose a main entry"
-        );
+        assert!(!link_plan.entries.is_empty(), "temp project should expose a main entry");
 
         let artifact = lower_program_with_assembly_for_entrypoint(
             &front.hir,
@@ -120,10 +110,7 @@ fn corelib_assert_equal_i64_link_plan_validates() {
         let resolved = resolve_corelib_tests_entry_with_assembly("collections/ArrayTests.bd");
         let front = compile_front_end_from_resolved_input(
             &resolved,
-            FrontEndOptions {
-                with_semantic_diagnostics: false,
-                ..Default::default()
-            },
+            FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
             None,
         )
         .expect("front-end");
@@ -132,20 +119,12 @@ fn corelib_assert_equal_i64_link_plan_validates() {
         let def_index = FunctionDefIndex::build(&front.resolution, &assembly.hir_units);
         let link_plan = LinkPlan::build(&front.hir, &front.resolution, &front.typed, &def_index);
         assert!(
-            link_plan
-                .emitted_symbol_names(&front.resolution)
-                .iter()
-                .any(|name| name.contains("Equal")),
+            link_plan.emitted_symbol_names(&front.resolution).iter().any(|name| name.contains("Equal")),
             "link plan should reach Testing.Assert.Equal"
         );
 
-        let artifact = lower_program_with_assembly(
-            &front.hir,
-            &front.resolution,
-            &front.typed,
-            Some(assembly),
-        )
-        .expect("lower corelib array tests");
+        let artifact = lower_program_with_assembly(&front.hir, &front.resolution, &front.typed, Some(assembly))
+            .expect("lower corelib array tests");
 
         let names: Vec<&str> = artifact.functions.iter().map(|f| f.name.as_str()).collect();
         assert!(
@@ -165,10 +144,7 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
         let resolved = resolve_corelib_tests_entry_with_assembly("console/AnsiEscapeTests.bd");
         let front = compile_front_end_from_resolved_input(
             &resolved,
-            FrontEndOptions {
-                with_semantic_diagnostics: false,
-                ..Default::default()
-            },
+            FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
             None,
         )
         .expect("front-end");
@@ -192,20 +168,11 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
                 LinkSymbol::Function { item, .. } | LinkSymbol::Method { item, .. } => {
                     beskid_analysis::resolve::qualified_name(&front.resolution, *item)
                 }
-                LinkSymbol::Test { item, .. } => {
-                    beskid_analysis::resolve::qualified_name(&front.resolution, *item)
-                }
+                LinkSymbol::Test { item, .. } => beskid_analysis::resolve::qualified_name(&front.resolution, *item),
             })
             .collect();
 
-        for needle in [
-            "ShouldEmitAnsi",
-            "ProbeStdout",
-            "IntoSequence",
-            "WhenEnabled",
-            "IsAtty",
-            "Esc",
-        ] {
+        for needle in ["ShouldEmitAnsi", "ProbeStdout", "IntoSequence", "WhenEnabled", "IsAtty", "Esc"] {
             assert!(
                 reachable.iter().any(|name| name.contains(needle)),
                 "link plan should reach `{needle}`, have: {reachable:?}"
@@ -217,15 +184,9 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
                 .resolution
                 .items
                 .iter()
-                .filter(|info| {
-                    info.name.contains(needle)
-                        && info.kind == beskid_analysis::resolve::ItemKind::Function
-                })
+                .filter(|info| info.name.contains(needle) && info.kind == beskid_analysis::resolve::ItemKind::Function)
                 .collect();
-            assert!(
-                !items.is_empty(),
-                "expected function item for {needle}, have none"
-            );
+            assert!(!items.is_empty(), "expected function item for {needle}, have none");
             for info in &items {
                 assert!(
                     front.typed.function_signatures.contains_key(&info.id),
@@ -248,9 +209,9 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
 
         for symbol in link_plan.callees.iter().chain(link_plan.entries.iter()) {
             let item = match symbol {
-                LinkSymbol::Function { item, .. }
-                | LinkSymbol::Method { item, .. }
-                | LinkSymbol::Test { item, .. } => *item,
+                LinkSymbol::Function { item, .. } | LinkSymbol::Method { item, .. } | LinkSymbol::Test { item, .. } => {
+                    *item
+                }
             };
             assert!(
                 front.typed.function_signatures.contains_key(&item),
@@ -275,15 +236,13 @@ fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home()
 #[cfg(feature = "slow")]
 #[test]
 fn ansi_csi_bold_red_link_plan_validates() {
-    let artifact =
-        lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
+    let artifact = lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
     validate_artifact(&artifact).expect("ansi_csi_bold_red link plan must validate");
 }
 
 #[cfg(feature = "slow")]
 #[test]
 fn dump_ansi_csi_bold_red_clif() {
-    let artifact =
-        lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
+    let artifact = lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
     println!("{}", beskid_codegen::render_clif(&artifact));
 }

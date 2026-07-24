@@ -14,15 +14,10 @@ static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 impl TempDir {
     fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let sequence = TEMP_DIR_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "beskid-aarch64-context-{}-{nonce}-{sequence}",
-            std::process::id(),
-        ));
+        let path =
+            std::env::temp_dir().join(format!("beskid-aarch64-context-{}-{nonce}-{sequence}", std::process::id(),));
         fs::create_dir_all(&path).unwrap();
         Self(path)
     }
@@ -35,10 +30,7 @@ impl Drop for TempDir {
 }
 
 fn target() -> TargetMetadata {
-    TargetMetadata::supported()
-        .into_iter()
-        .find(|target| target.triple.as_str() == "aarch64-apple-darwin")
-        .unwrap()
+    TargetMetadata::supported().into_iter().find(|target| target.triple.as_str() == "aarch64-apple-darwin").unwrap()
 }
 
 fn source() -> PathBuf {
@@ -56,11 +48,7 @@ fn prepare_include(temp: &Path) {
 
 fn run(command: &mut Command) {
     let output = command.output().unwrap();
-    assert!(
-        output.status.success(),
-        "command failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert!(output.status.success(), "command failed: {}", String::from_utf8_lossy(&output.stderr));
 }
 
 #[test]
@@ -76,44 +64,21 @@ fn object_exports_exactly_the_manifest_approved_symbols_and_saves_the_full_conte
         .arg("-o")
         .arg(&object));
 
-    let output = Command::new("nm")
-        .args(["-gj"])
-        .arg(&object)
-        .output()
-        .unwrap();
+    let output = Command::new("nm").args(["-gj"]).arg(&object).output().unwrap();
     assert!(output.status.success());
-    let mut symbols = String::from_utf8(output.stdout)
-        .unwrap()
-        .lines()
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
+    let mut symbols = String::from_utf8(output.stdout).unwrap().lines().map(str::to_owned).collect::<Vec<_>>();
     symbols.sort();
-    assert_eq!(
-        symbols,
-        [
-            "_beskid_arch_v5_context_init".to_owned(),
-            "_beskid_arch_v5_context_switch".to_owned(),
-        ]
-    );
+    assert_eq!(symbols, ["_beskid_arch_v5_context_init".to_owned(), "_beskid_arch_v5_context_switch".to_owned(),]);
 
     let source = fs::read_to_string(source()).unwrap();
     for register in [
-        "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "d8",
-        "d9", "d10", "d11", "d12", "d13", "d14", "d15",
+        "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "d8", "d9", "d10", "d11",
+        "d12", "d13", "d14", "d15",
     ] {
-        assert!(
-            source.contains(&format!("stp {register},"))
-                || source.contains(&format!(", {register},"))
-        );
-        assert!(
-            source.contains(&format!("ldp {register},"))
-                || source.contains(&format!(", {register},"))
-        );
+        assert!(source.contains(&format!("stp {register},")) || source.contains(&format!(", {register},")));
+        assert!(source.contains(&format!("ldp {register},")) || source.contains(&format!(", {register},")));
     }
-    assert!(
-        !source.contains(".cfi_"),
-        "context switching must not advertise unwind"
-    );
+    assert!(!source.contains(".cfi_"), "context switching must not advertise unwind");
 }
 
 #[test]

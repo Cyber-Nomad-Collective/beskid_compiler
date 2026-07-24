@@ -1,39 +1,33 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-#[cfg(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "macos", target_arch = "aarch64"),
-))]
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, canonical_corelib_service_capability,
-    canonical_corelib_service_source_path, canonical_corelib_syscall_service_capability,
-    canonical_corelib_syscall_sources, canonical_runtime_intrinsic_capability,
-    canonical_runtime_sources,
+    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
+    canonical_corelib_service_capability, canonical_corelib_service_source_path,
+    canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources,
+    canonical_runtime_intrinsic_capability, canonical_runtime_sources,
 };
 use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry,
-    SourceUnit, SyntaxProgramAssembly,
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
+    SyntaxProgramAssembly,
 };
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_codegen::{
-    CodegenInput, ItemModuleImporter, emit_closure_static_data, emit_isle_expression,
-    emit_isle_item, emit_isle_item_with_call_importer,
+    CodegenInput, ItemModuleImporter, emit_closure_static_data, emit_isle_expression, emit_isle_item,
+    emit_isle_item_with_call_importer,
     module_emission::{SyntaxModuleItem, emit_syntax_program, lower_syntax_program},
 };
 use beskid_isle::{DirectCallee, FunctionEmitter, NodeFacts};
 use beskid_queries::{
-    AstNodeId, AstNodeKey, BeskidDatabase, CastIntent, Db, ProjectSession, SourceUnitId,
-    SyntaxGenerationId, aggregate_field_access, build_canonical_corelib_syscall_typed_program,
-    build_canonical_runtime_typed_program, build_typed_program,
-    build_typed_program_with_corelib_services, call_abi_signature, call_lowering, child_nodes,
-    closure_environment, enum_constructor, enum_layout, enum_match, format_ast_node_site,
-    item_body, item_name, literal_fact, mutable_local_assignment, node_kind, node_type,
-    spawn_target, test_statement_nodes,
+    AstNodeId, AstNodeKey, BeskidDatabase, CastIntent, Db, ProjectSession, SourceUnitId, SyntaxGenerationId,
+    aggregate_field_access, build_canonical_corelib_syscall_typed_program, build_canonical_runtime_typed_program,
+    build_typed_program, build_typed_program_with_corelib_services, call_abi_signature, call_lowering, child_nodes,
+    closure_environment, enum_constructor, enum_layout, enum_match, format_ast_node_site, item_body, item_name,
+    literal_fact, mutable_local_assignment, node_kind, node_type, spawn_target, test_statement_nodes,
 };
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::isa;
@@ -41,10 +35,7 @@ use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
 
-#[cfg(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "macos", target_arch = "aarch64"),
-))]
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
 unsafe extern "C" fn test_system_allocate(size: usize, alignment: usize) -> *mut u8 {
     let Ok(layout) = std::alloc::Layout::from_size_align(size, alignment) else {
         return std::ptr::null_mut();
@@ -54,16 +45,10 @@ unsafe extern "C" fn test_system_allocate(size: usize, alignment: usize) -> *mut
     unsafe { std::alloc::alloc_zeroed(layout) }
 }
 
-#[cfg(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "macos", target_arch = "aarch64"),
-))]
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
 static TEST_CURRENT_TLS: AtomicUsize = AtomicUsize::new(0);
 
-#[cfg(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "macos", target_arch = "aarch64"),
-))]
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
 unsafe extern "C" fn test_tls_get() -> *mut u8 {
     TEST_CURRENT_TLS.load(Ordering::SeqCst) as *mut u8
 }
@@ -75,61 +60,33 @@ fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
     let source_path = directory.join("Main.bd");
     let source = "i32 Main() { return 42; }";
     std::fs::write(&source_path, source).expect("source");
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source)
-        .expect("parse source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source).expect("parse source");
     let entry = SourceUnitId::new(&db, source_path.clone());
-    let project = ProjectSession::new(
-        &db,
-        directory.clone(),
-        source_path.clone(),
-        "App".into(),
-        "lock".into(),
-    );
+    let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
     let generation = SyntaxGenerationId(1);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory,
-            },
+            host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit {
-            logical_name: "Main".into(),
-            path: source_path,
-            source: source.into(),
-            program,
-        }]),
+        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed =
-        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let literal = find_integer_literal(&db, root).expect("integer literal key");
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
-    let input = CodegenInput::new(
-        &db,
-        typed,
-        Arc::from([root]),
-        target.clone(),
-        AbiManifestV5::canonical_runtime(target),
-    )
-    .expect("generation-safe input");
+    let input =
+        CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
+            .expect("generation-safe input");
     let flags = settings::Flags::new(settings::builder());
-    let isa = isa::lookup_by_name("x86_64")
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = isa::lookup_by_name("x86_64").expect("host ISA").finish(flags).expect("host flags");
 
     let function = emit_isle_expression(&input, isa.as_ref(), literal, types::I32)
         .expect("parsed expression lowers through generated ISLE");
@@ -139,8 +96,7 @@ fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
 
 #[test]
 fn parsed_multi_function_assembly_verification_error_identifies_the_originating_item_site() {
-    let (input, isa, root) =
-        item_fixture_with_root("i32 Sibling() { return 1; } i32 Failing() { 2; }");
+    let (input, isa, root) = item_fixture_with_root("i32 Sibling() { return 1; } i32 Failing() { 2; }");
     let db = input.database();
     let items = find_function_definitions(db, root);
     let sibling = items[0];
@@ -150,14 +106,8 @@ fn parsed_multi_function_assembly_verification_error_identifies_the_originating_
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: sibling,
-                symbol: "Sibling".into(),
-            },
-            SyntaxModuleItem {
-                key: failing,
-                symbol: "Failing".into(),
-            },
+            SyntaxModuleItem { key: sibling, symbol: "Sibling".into() },
+            SyntaxModuleItem { key: failing, symbol: "Failing".into() },
         ],
     )
     .expect_err("the failing item must be rejected through module emission");
@@ -169,10 +119,7 @@ fn parsed_multi_function_assembly_verification_error_identifies_the_originating_
     assert_eq!(first, repeated);
     assert!(first.contains(&failing_site), "{first}");
     assert!(!first.contains(&sibling_site), "{first}");
-    assert!(
-        first.contains("syntax ISLE emission failed: Verification("),
-        "{first}"
-    );
+    assert!(first.contains("syntax ISLE emission failed: Verification("), "{first}");
     assert!(first.contains("FunctionDefinition@"), "{first}");
 }
 
@@ -180,29 +127,16 @@ fn parsed_multi_function_assembly_verification_error_identifies_the_originating_
 fn parsed_statement_final_block_error_identifies_the_originating_body_site() {
     let (input, isa, root) = item_fixture_with_root("unit Main() { 2; }");
     let db = input.database();
-    let body = find_node(
-        db,
-        root,
-        beskid_queries::IndexedNodeKind::ExpressionStatement,
-    )
-    .expect("expression statement");
+    let body = find_node(db, root, beskid_queries::IndexedNodeKind::ExpressionStatement).expect("expression statement");
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
     let emitter = FunctionEmitter::new(isa.as_ref());
 
     let error = emitter
-        .emit_statement(
-            UserFuncName::user(0, 100),
-            emitter.signature([], [types::I32]),
-            &facts,
-            body,
-        )
+        .emit_statement(UserFuncName::user(0, 100), emitter.signature([], [types::I32]), &facts, body)
         .expect_err("non-unit fallthrough must fail final-block verification");
     let rendered = error.display_with_db(db);
 
-    assert!(
-        rendered.contains(&format_ast_node_site(db, body)),
-        "{rendered}"
-    );
+    assert!(rendered.contains(&format_ast_node_site(db, body)), "{rendered}");
     assert!(rendered.contains("ExpressionStatement@"), "{rendered}");
 }
 
@@ -211,27 +145,16 @@ fn parsed_parameter_materialization_error_identifies_the_originating_item_site()
     let (input, isa, root) = item_fixture_with_root("i32 Main(i32 value) { return value; }");
     let db = input.database();
     let item = find_function_definition(db, root).expect("function item");
-    let body = item_body(db, item)
-        .expect("body query")
-        .expect("function body");
+    let body = item_body(db, item).expect("body query").expect("function body");
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
     let emitter = FunctionEmitter::new(isa.as_ref());
 
     let error = emitter
-        .emit_item_statement(
-            UserFuncName::user(0, 101),
-            emitter.signature([], [types::I32]),
-            &facts,
-            item,
-            body,
-        )
+        .emit_item_statement(UserFuncName::user(0, 101), emitter.signature([], [types::I32]), &facts, item, body)
         .expect_err("missing incoming parameter must fail materialization");
     let rendered = error.display_with_db(db);
 
-    assert!(
-        rendered.contains(&format_ast_node_site(db, item)),
-        "{rendered}"
-    );
+    assert!(rendered.contains(&format_ast_node_site(db, item)), "{rendered}");
     assert!(rendered.contains("FunctionDefinition@"), "{rendered}");
 }
 
@@ -240,12 +163,8 @@ fn unsupported_typed_operation_reports_deterministic_span_bearing_missing_rule()
     let (input, isa, root) = item_fixture_with_root(
         "i32 Main(i32 outer) { let task = spawn ((i32 inner) => outer + inner); return outer; }",
     );
-    let spawn = find_node(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::SpawnExpression,
-    )
-    .expect("spawn expression");
+    let spawn =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::SpawnExpression).expect("spawn expression");
 
     let error = emit_isle_expression(&input, isa.as_ref(), spawn, types::I64)
         .expect_err("unsupported spawn must not route around generated ISLE");
@@ -259,15 +178,10 @@ fn unsupported_typed_operation_reports_deterministic_span_bearing_missing_rule()
 
 #[test]
 fn unsupported_lambda_reports_deterministic_span_bearing_missing_rule() {
-    let (input, isa, root) = item_fixture_with_root(
-        "i32 Main(i32 outer) { let add = (i32 inner) => outer + inner; return outer; }",
-    );
-    let lambda = find_node(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::LambdaExpression,
-    )
-    .expect("lambda expression");
+    let (input, isa, root) =
+        item_fixture_with_root("i32 Main(i32 outer) { let add = (i32 inner) => outer + inner; return outer; }");
+    let lambda = find_node(input.database(), root, beskid_queries::IndexedNodeKind::LambdaExpression)
+        .expect("lambda expression");
 
     assert_eq!(
         beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::LambdaExpression),
@@ -288,12 +202,8 @@ fn unsupported_lambda_reports_deterministic_span_bearing_missing_rule() {
 fn unsupported_code_string_reports_deterministic_span_bearing_missing_rule() {
     let (input, isa, root) =
         item_fixture_with_root("i32 Main() { code ```beskid\nlet generated = 1;\n```; return 0; }");
-    let code_string = find_node(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::CodeStringLiteral,
-    )
-    .expect("code string literal");
+    let code_string = find_node(input.database(), root, beskid_queries::IndexedNodeKind::CodeStringLiteral)
+        .expect("code string literal");
 
     let error = emit_isle_expression(&input, isa.as_ref(), code_string, types::I64)
         .expect_err("code strings must not route around generated ISLE");
@@ -345,46 +255,14 @@ i32 Main() {
 "#;
 
     for (source, kind, construct) in [
-        (
-            HOST_COMPOSITION_SOURCE,
-            beskid_queries::IndexedNodeKind::HostDefinition,
-            "HostDefinition@",
-        ),
-        (
-            HOST_COMPOSITION_SOURCE,
-            beskid_queries::IndexedNodeKind::RegistryBlock,
-            "RegistryBlock@",
-        ),
-        (
-            HOST_COMPOSITION_SOURCE,
-            beskid_queries::IndexedNodeKind::RegistryEntry,
-            "RegistryEntry@",
-        ),
-        (
-            HOST_COMPOSITION_SOURCE,
-            beskid_queries::IndexedNodeKind::ScopeDefinition,
-            "ScopeDefinition@",
-        ),
-        (
-            HOST_COMPOSITION_SOURCE,
-            beskid_queries::IndexedNodeKind::ScopeHook,
-            "ScopeHook@",
-        ),
-        (
-            HOST_COMPOSITION_SOURCE,
-            beskid_queries::IndexedNodeKind::WithStatement,
-            "WithStatement@",
-        ),
-        (
-            HOST_COMPOSITION_SOURCE,
-            beskid_queries::IndexedNodeKind::LaunchStatement,
-            "LaunchStatement@",
-        ),
-        (
-            TRY_SOURCE,
-            beskid_queries::IndexedNodeKind::TryExpression,
-            "TryExpression@",
-        ),
+        (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::HostDefinition, "HostDefinition@"),
+        (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::RegistryBlock, "RegistryBlock@"),
+        (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::RegistryEntry, "RegistryEntry@"),
+        (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::ScopeDefinition, "ScopeDefinition@"),
+        (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::ScopeHook, "ScopeHook@"),
+        (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::WithStatement, "WithStatement@"),
+        (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::LaunchStatement, "LaunchStatement@"),
+        (TRY_SOURCE, beskid_queries::IndexedNodeKind::TryExpression, "TryExpression@"),
     ] {
         assert_eq!(
             beskid_isle::classify_syntax_node_kind(kind),
@@ -393,8 +271,7 @@ i32 Main() {
         );
 
         let (input, isa, root) = item_fixture_with_root(source);
-        let node = find_node(input.database(), root, kind)
-            .unwrap_or_else(|| panic!("expected syntax node {kind:?}"));
+        let node = find_node(input.database(), root, kind).unwrap_or_else(|| panic!("expected syntax node {kind:?}"));
 
         let error = emit_isle_expression(&input, isa.as_ref(), node, types::I64)
             .expect_err("unsupported typed operations must not route around generated ISLE");
@@ -403,28 +280,18 @@ i32 Main() {
 
         assert_eq!(first, repeated, "{kind:?}");
         assert!(first.contains("MissingRuleOrFact"), "{kind:?}: {first}");
-        assert!(
-            first.contains(construct),
-            "{kind:?}: expected construct {construct} in {first}"
-        );
+        assert!(first.contains(construct), "{kind:?}: expected construct {construct} in {first}");
     }
 }
 
 #[test]
 fn cast_facts_are_independent_of_the_shared_literal_syntax_classification() {
     let (input, _isa, root) = item_fixture_with_root("unit Main() { i64 widenedLiteral = 1; }");
-    let literal = find_node(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::Literal,
-    )
-    .expect("typed literal");
+    let literal = find_node(input.database(), root, beskid_queries::IndexedNodeKind::Literal).expect("typed literal");
 
     assert_eq!(
         beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::Literal),
-        beskid_isle::SyntaxNodeClassification::IsleLowered(
-            beskid_isle::NodeKind::LiteralExpression,
-        )
+        beskid_isle::SyntaxNodeClassification::IsleLowered(beskid_isle::NodeKind::LiteralExpression,)
     );
     assert_eq!(
         beskid_queries::cast_intents(input.database(), literal).expect("cast-intent query"),
@@ -440,24 +307,12 @@ fn closure_captures_and_spawn_target_are_independent_semantic_facts() {
     let (input, _isa, root) = item_fixture_with_root(
         "i32 Main(i32 outer) { let task = spawn ((i32 inner) => outer + inner); return outer; }",
     );
-    let lambda = find_node(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::LambdaExpression,
-    )
-    .expect("lambda expression");
-    let spawn = find_node(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::SpawnExpression,
-    )
-    .expect("spawn expression");
-    let closure = closure_environment(input.database(), lambda)
-        .expect("closure query")
-        .expect("closure facts");
-    let target = spawn_target(input.database(), spawn)
-        .expect("spawn query")
-        .expect("spawn facts");
+    let lambda = find_node(input.database(), root, beskid_queries::IndexedNodeKind::LambdaExpression)
+        .expect("lambda expression");
+    let spawn =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::SpawnExpression).expect("spawn expression");
+    let closure = closure_environment(input.database(), lambda).expect("closure query").expect("closure facts");
+    let target = spawn_target(input.database(), spawn).expect("spawn query").expect("spawn facts");
     let function = find_function_definition(input.database(), root).expect("function definition");
 
     assert_eq!(
@@ -485,72 +340,39 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
     let mut db = BeskidDatabase::default();
     let directory = tempfile::tempdir().expect("project").keep();
     let source_path = directory.join("Main.bd");
-    let source =
-        "i32 Main() { let point = Point { x: 1, y: 2 }; return 0; } type Point { i32 x, i32 y }";
+    let source = "i32 Main() { let point = Point { x: 1, y: 2 }; return 0; } type Point { i32 x, i32 y }";
     std::fs::write(&source_path, source).expect("source");
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source)
-        .expect("parse source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source).expect("parse source");
     let entry = SourceUnitId::new(&db, source_path.clone());
-    let project = ProjectSession::new(
-        &db,
-        directory.clone(),
-        source_path.clone(),
-        "App".into(),
-        "lock".into(),
-    );
+    let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
     let generation = SyntaxGenerationId(1);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory,
-            },
+            host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit {
-            logical_name: "Main".into(),
-            path: source_path,
-            source: source.into(),
-            program,
-        }]),
+        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed =
-        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
-    let literal = find_node(
-        &db,
-        root,
-        beskid_queries::IndexedNodeKind::StructLiteralExpression,
-    )
-    .expect("struct literal");
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
+    let literal =
+        find_node(&db, root, beskid_queries::IndexedNodeKind::StructLiteralExpression).expect("struct literal");
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
-    let input = CodegenInput::new(
-        &db,
-        typed,
-        Arc::from([root]),
-        target.clone(),
-        AbiManifestV5::canonical_runtime(target),
-    )
-    .expect("input");
+    let input =
+        CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
+            .expect("input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    assert!(
-        input.aggregate_static_plan(literal).is_some(),
-        "aggregate static plan"
-    );
+    assert!(input.aggregate_static_plan(literal).is_some(), "aggregate static plan");
     let function = emit_isle_expression(&input, isa.as_ref(), literal, isa.pointer_type())
         .expect("aggregate literal lowers through syntax facts");
     let clif = function.display().to_string();
@@ -558,10 +380,7 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
         clif.contains("beskid_rt_v5_managed_object_allocate"),
         "aggregate literals must allocate through the canonical managed-object ABI: {clif}"
     );
-    assert!(
-        !clif.contains("stack_store"),
-        "aggregate literals must not return escaped stack storage: {clif}"
-    );
+    assert!(!clif.contains("stack_store"), "aggregate literals must not return escaped stack storage: {clif}");
 }
 
 #[test]
@@ -571,61 +390,32 @@ fn parsed_enum_constructor_uses_source_layout_without_hir() {
     let source_path = directory.join("Main.bd");
     let source = "enum Choice { None(), Some(i32 value) } i32 Main() { Choice choice = Choice::Some(7); return 0; }";
     std::fs::write(&source_path, source).expect("source");
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source)
-        .expect("parse source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source).expect("parse source");
     let entry = SourceUnitId::new(&db, source_path.clone());
-    let project = ProjectSession::new(
-        &db,
-        directory.clone(),
-        source_path.clone(),
-        "App".into(),
-        "lock".into(),
-    );
+    let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
     let generation = SyntaxGenerationId(1);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory,
-            },
+            host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit {
-            logical_name: "Main".into(),
-            path: source_path,
-            source: source.into(),
-            program,
-        }]),
+        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed =
-        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
-    let constructor = find_node(
-        &db,
-        root,
-        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
-    )
-    .expect("enum constructor");
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
+    let constructor =
+        find_node(&db, root, beskid_queries::IndexedNodeKind::EnumConstructorExpression).expect("enum constructor");
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
-    let input = CodegenInput::new(
-        &db,
-        typed,
-        Arc::from([root]),
-        target.clone(),
-        AbiManifestV5::canonical_runtime(target),
-    )
-    .expect("input");
+    let input =
+        CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
+            .expect("input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
@@ -644,12 +434,8 @@ fn parsed_generic_enum_constructor_uses_concrete_source_layout_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
         "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<i64, SyscallError> result = Result<i64, SyscallError>::Ok(7_i64); return 0; }",
     );
-    let constructor = find_node(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
-    )
-    .expect("generic enum constructor");
+    let constructor = find_node(input.database(), root, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
+        .expect("generic enum constructor");
 
     let function = emit_isle_expression(&input, isa.as_ref(), constructor, isa.pointer_type())
         .expect("generic enum constructor lowers from its concrete use-site layout");
@@ -665,12 +451,8 @@ fn parsed_nullary_enum_constructor_uses_source_layout_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
         "enum Choice { None(), Some(i32 value) } i32 Main() { Choice choice = Choice::None(); return 0; }",
     );
-    let constructor = find_node(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
-    )
-    .expect("enum constructor");
+    let constructor = find_node(input.database(), root, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
+        .expect("enum constructor");
 
     let function = emit_isle_expression(&input, isa.as_ref(), constructor, isa.pointer_type())
         .expect("nullary enum constructor lowers through syntax facts");
@@ -685,22 +467,10 @@ fn parsed_enum_match_uses_source_arms_without_hir() {
     let (input, isa, root) = item_fixture_with_root(
         "enum Choice { None(), Some() } i32 Main() { return match Choice::Some() { Choice::None() => 1, Choice::Some() => 2, }; }",
     );
-    let expression = find_node(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::MatchExpression,
-    )
-    .expect("enum match");
-    assert!(
-        enum_match(input.database(), expression)
-            .expect("enum match query")
-            .is_some(),
-        "source match facts"
-    );
-    assert_eq!(
-        node_type(input.database(), expression).expect("match type"),
-        Some(beskid_queries::SemanticTypeId::I32)
-    );
+    let expression =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::MatchExpression).expect("enum match");
+    assert!(enum_match(input.database(), expression).expect("enum match query").is_some(), "source match facts");
+    assert_eq!(node_type(input.database(), expression).expect("match type"), Some(beskid_queries::SemanticTypeId::I32));
     let function = emit_isle_expression(&input, isa.as_ref(), expression, types::I32)
         .expect("enum match lowers through syntax facts");
 
@@ -714,16 +484,10 @@ fn parsed_generic_enum_match_uses_explicit_scrutinee_layout_without_hir() {
     let (input, isa, item) = item_fixture(
         "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } i64 Main() { Result<i64, string> value = Result<i64, string>::Ok(7_i64); return match value { Result::Ok(_) => 1_i64, Result::Error(_) => 0_i64, }; }",
     );
-    let expression = find_node(
-        input.database(),
-        item,
-        beskid_queries::IndexedNodeKind::MatchExpression,
-    )
-    .expect("generic enum match");
+    let expression = find_node(input.database(), item, beskid_queries::IndexedNodeKind::MatchExpression)
+        .expect("generic enum match");
     assert!(
-        enum_match(input.database(), expression)
-            .expect("generic enum match query")
-            .is_some(),
+        enum_match(input.database(), expression).expect("generic enum match query").is_some(),
         "generic match semantic facts"
     );
 
@@ -740,14 +504,11 @@ fn generic_enum_constructor_without_context_remains_unavailable() {
     let (input, _isa, root) = item_fixture_with_root(
         "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } enum SyscallError { InvalidFd(i64 fd) } unit Main() { Result::Error(SyscallError::InvalidFd(1_i64)); return; }",
     );
-    let constructor = find_nodes_of_kind(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
-    )
-    .into_iter()
-    .find(|key| enum_constructor(input.database(), *key).is_err())
-    .expect("genericless Result::Error constructor");
+    let constructor =
+        find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
+            .into_iter()
+            .find(|key| enum_constructor(input.database(), *key).is_err())
+            .expect("genericless Result::Error constructor");
     let error = enum_constructor(input.database(), constructor)
         .expect_err("uncontextualized generic enum constructor must remain unavailable");
     assert!(error.is_unavailable(), "{error:?}");
@@ -758,18 +519,13 @@ fn generic_enum_constructor_uses_its_explicit_typed_let_context() {
     let (input, _isa, root) = item_fixture_with_root(
         "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } unit Main() { Result<i64, i64> result = Result::Error(7_i64); return; }",
     );
-    let constructor = find_nodes_of_kind(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
-    )
-    .into_iter()
-    .next()
-    .expect("Result::Error constructor");
+    let constructor =
+        find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
+            .into_iter()
+            .next()
+            .expect("Result::Error constructor");
     assert!(
-        enum_constructor(input.database(), constructor)
-            .expect("typed-let constructor query")
-            .is_some(),
+        enum_constructor(input.database(), constructor).expect("typed-let constructor query").is_some(),
         "explicit typed-let context must supply the generic Result arguments"
     );
 }
@@ -779,42 +535,32 @@ fn generic_enum_constructor_uses_its_declared_return_context() {
     let (input, _isa, root) = item_fixture_with_root(
         "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<i64, i64> Main() { return Result::Error(7_i64); }",
     );
-    let constructor = find_nodes_of_kind(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
-    )
-    .into_iter()
-    .next()
-    .expect("Result::Error constructor");
+    let constructor =
+        find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
+            .into_iter()
+            .next()
+            .expect("Result::Error constructor");
     assert!(
-        enum_constructor(input.database(), constructor)
-            .expect("declared-return constructor query")
-            .is_some(),
+        enum_constructor(input.database(), constructor).expect("declared-return constructor query").is_some(),
         "declared return context must supply the generic Result arguments"
     );
 }
 
 fn assert_enum_match_shape_remains_unavailable(source: &str) {
     let (input, _isa, root) = item_fixture_with_root(source);
-    let expression = find_node(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::MatchExpression,
-    )
-    .expect("match expression");
-    let error = enum_match(input.database(), expression)
-        .expect_err("unsupported enum-match shape must remain unavailable");
+    let expression =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::MatchExpression).expect("match expression");
+    let error =
+        enum_match(input.database(), expression).expect_err("unsupported enum-match shape must remain unavailable");
     assert!(error.is_unavailable(), "{error:?}");
 }
 
 #[test]
 fn nominal_enum_parameter_materializes_as_a_pointer_local_slot() {
-    let (input, isa, item) = item_fixture(
-        "enum StandardStream { Stdin, Stdout, Stderr } unit Main(StandardStream stream) { return; }",
-    );
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .expect("a nominal parameter must materialize as an emitter local");
+    let (input, isa, item) =
+        item_fixture("enum StandardStream { Stdin, Stdout, Stderr } unit Main(StandardStream stream) { return; }");
+    let function =
+        emit_isle_item(&input, isa.as_ref(), item).expect("a nominal parameter must materialize as an emitter local");
 
     assert_eq!(
         function.signature.params[0].value_type,
@@ -873,10 +619,9 @@ fn parsed_test_definition_with_result_match_binding_lowers_without_hir() {
     let test_item = find_test_definition(input.database(), root).expect("test item");
     let function = match emit_isle_item(&input, isa.as_ref(), test_item) {
         Ok(function) => function,
-        Err(error) => panic!(
-            "TestDefinition with Ok(written) match must lower: {}",
-            error.display_with_db(input.database())
-        ),
+        Err(error) => {
+            panic!("TestDefinition with Ok(written) match must lower: {}", error.display_with_db(input.database()))
+        }
     };
     let clif = function.display().to_string();
     assert!(clif.contains("load.i32"), "{clif}");
@@ -905,10 +650,9 @@ fn parsed_generic_result_match_arm_uses_bound_payload_in_comparison_without_hir(
     );
     let function = match emit_isle_item(&input, isa.as_ref(), item) {
         Ok(function) => function,
-        Err(error) => panic!(
-            "bound payload comparison inside match arm must lower: {}",
-            error.display_with_db(input.database())
-        ),
+        Err(error) => {
+            panic!("bound payload comparison inside match arm must lower: {}", error.display_with_db(input.database()))
+        }
     };
     let clif = function.display().to_string();
     assert!(clif.contains("icmp"), "{clif}");
@@ -936,15 +680,9 @@ fn parsed_generic_enum_match_statement_lowers_empty_unit_blocks_without_hir() {
     let (input, isa, item) = item_fixture(
         "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } unit Main() { Result<i64, string> result = Result<i64, string>::Ok(7_i64); match result { Result::Ok(_) => {}, Result::Error(_) => {}, }; return; }",
     );
-    let body = item_body(input.database(), item)
-        .expect("item body query")
-        .expect("item body");
+    let body = item_body(input.database(), item).expect("item body query").expect("item body");
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
-    assert_eq!(
-        facts.statement_count(body),
-        Some(3),
-        "function body statements"
-    );
+    assert_eq!(facts.statement_count(body), Some(3), "function body statements");
 
     let function = match emit_isle_item(&input, isa.as_ref(), item) {
         Ok(function) => function,
@@ -993,13 +731,8 @@ fn parsed_generic_enum_match_statement_lowers_direct_unit_call_arms_without_hir(
 
     let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
     let signature = cranelift_codegen::ir::Signature::new(isa.default_call_conv());
-    let imported = module
-        .declare_function("Fail", Linkage::Import, &signature)
-        .expect("declare imported unit callee");
-    let mut importer = ItemModuleImporter::new(
-        &mut module,
-        HashMap::from([(DirectCallee::item(fail), imported)]),
-    );
+    let imported = module.declare_function("Fail", Linkage::Import, &signature).expect("declare imported unit callee");
+    let mut importer = ItemModuleImporter::new(&mut module, HashMap::from([(DirectCallee::item(fail), imported)]));
 
     let function = emit_isle_item_with_call_importer(&input, isa.as_ref(), main, &mut importer)
         .expect("direct unit call arm lowers through the match statement path");
@@ -1014,64 +747,36 @@ fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
     let source_path = directory.join("Main.bd");
     let source = "i32 Main() { return 42; }";
     std::fs::write(&source_path, source).expect("source");
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source)
-        .expect("parse source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source).expect("parse source");
     let entry = SourceUnitId::new(&db, source_path.clone());
-    let project = ProjectSession::new(
-        &db,
-        directory.clone(),
-        source_path.clone(),
-        "App".into(),
-        "lock".into(),
-    );
+    let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
     let generation = SyntaxGenerationId(1);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory,
-            },
+            host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit {
-            logical_name: "Main".into(),
-            path: source_path,
-            source: source.into(),
-            program,
-        }]),
+        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed =
-        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let item = find_function_definition(&db, root).expect("function key");
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
-    let input = CodegenInput::new(
-        &db,
-        typed,
-        Arc::from([root]),
-        target.clone(),
-        AbiManifestV5::canonical_runtime(target),
-    )
-    .expect("generation-safe input");
+    let input =
+        CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
+            .expect("generation-safe input");
     let flags = settings::Flags::new(settings::builder());
-    let isa = isa::lookup_by_name("x86_64")
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = isa::lookup_by_name("x86_64").expect("host ISA").finish(flags).expect("host flags");
 
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .expect("parsed function body lowers through generated ISLE");
+    let function =
+        emit_isle_item(&input, isa.as_ref(), item).expect("parsed function body lowers through generated ISLE");
 
     let clif = function.display().to_string();
     assert!(clif.contains("iconst.i32 42"), "{clif}");
@@ -1082,8 +787,7 @@ fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
 fn parsed_u8_comparison_coerces_integer_literals_without_hir() {
     let (input, isa, item) = item_fixture("bool Main(u8 b) { return b > 57; }");
 
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .expect("u8 comparisons lower through syntax facts");
+    let function = emit_isle_item(&input, isa.as_ref(), item).expect("u8 comparisons lower through syntax facts");
     let clif = function.display().to_string();
     assert!(clif.contains("iconst.i8 57"), "{clif}");
 }
@@ -1092,8 +796,8 @@ fn parsed_u8_comparison_coerces_integer_literals_without_hir() {
 fn parsed_mixed_u8_i64_arithmetic_coerces_the_u8_operand_without_hir() {
     let (input, isa, item) = item_fixture("i64 Main(u8 b, i64 acc) { return acc + (b - 48); }");
 
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .expect("mixed-width arithmetic lowers through syntax facts");
+    let function =
+        emit_isle_item(&input, isa.as_ref(), item).expect("mixed-width arithmetic lowers through syntax facts");
     let clif = function.display().to_string();
     assert!(clif.contains("uextend.i64"), "{clif}");
     assert!(clif.contains("iadd"), "{clif}");
@@ -1101,25 +805,18 @@ fn parsed_mixed_u8_i64_arithmetic_coerces_the_u8_operand_without_hir() {
 
 #[test]
 fn parsed_nominal_parameter_field_read_lowers_without_hir() {
-    let (input, isa, root) = item_fixture_with_root(
-        "type Style { i64 code } bool Main(Style chain) { return chain.code == 0; }",
-    );
+    let (input, isa, root) =
+        item_fixture_with_root("type Style { i64 code } bool Main(Style chain) { return chain.code == 0; }");
     let item = find_function_definition(input.database(), root).expect("main item");
-    let field = find_node(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::PathExpression,
-    )
-    .expect("field expression");
+    let field =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::PathExpression).expect("field expression");
     assert!(
-        aggregate_field_access(input.database(), field)
-            .expect("field query")
-            .is_some(),
+        aggregate_field_access(input.database(), field).expect("field query").is_some(),
         "field access syntax fact"
     );
 
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .expect("nominal parameter field read lowers through syntax facts");
+    let function =
+        emit_isle_item(&input, isa.as_ref(), item).expect("nominal parameter field read lowers through syntax facts");
     let clif = function.display().to_string();
     assert!(clif.contains("load.i64"), "{clif}");
 }
@@ -1129,19 +826,15 @@ fn parsed_test_item_emits_verified_isle_clif_without_lowerable() {
     let (input, isa, root) = item_fixture_with_root("test Smoke { return; }");
     let item = find_test_definition(input.database(), root).expect("test item key");
 
-    let statements = test_statement_nodes(input.database(), item)
-        .expect("test statement query")
-        .expect("test statement nodes");
+    let statements =
+        test_statement_nodes(input.database(), item).expect("test statement query").expect("test statement nodes");
     assert_eq!(statements.len(), 1);
     assert_eq!(
-        node_kind(input.database(), statements[0])
-            .expect("statement kind")
-            .expect("statement node"),
+        node_kind(input.database(), statements[0]).expect("statement kind").expect("statement node"),
         beskid_queries::IndexedNodeKind::ReturnStatement
     );
 
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .expect("parsed test item lowers through generated ISLE");
+    let function = emit_isle_item(&input, isa.as_ref(), item).expect("parsed test item lowers through generated ISLE");
 
     assert!(function.display().to_string().contains("return"));
 }
@@ -1153,64 +846,35 @@ fn parsed_local_read_emits_verified_isle_clif_without_lowerable() {
     let source_path = directory.join("Main.bd");
     let source = "i32 Main() { i32 answer = 42; return answer; }";
     std::fs::write(&source_path, source).expect("source");
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source)
-        .expect("parse source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source).expect("parse source");
     let entry = SourceUnitId::new(&db, source_path.clone());
-    let project = ProjectSession::new(
-        &db,
-        directory.clone(),
-        source_path.clone(),
-        "App".into(),
-        "lock".into(),
-    );
+    let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
     let generation = SyntaxGenerationId(1);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory,
-            },
+            host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit {
-            logical_name: "Main".into(),
-            path: source_path,
-            source: source.into(),
-            program,
-        }]),
+        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed =
-        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let item = find_function_definition(&db, root).expect("function key");
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
-    let input = CodegenInput::new(
-        &db,
-        typed,
-        Arc::from([root]),
-        target.clone(),
-        AbiManifestV5::canonical_runtime(target),
-    )
-    .expect("generation-safe input");
+    let input =
+        CodegenInput::new(&db, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
+            .expect("generation-safe input");
     let flags = settings::Flags::new(settings::builder());
-    let isa = isa::lookup_by_name("x86_64")
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = isa::lookup_by_name("x86_64").expect("host ISA").finish(flags).expect("host flags");
 
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .expect("parsed local read lowers through generated ISLE");
+    let function = emit_isle_item(&input, isa.as_ref(), item).expect("parsed local read lowers through generated ISLE");
 
     assert!(function.display().to_string().contains("iconst.i32 42"));
 }
@@ -1219,8 +883,8 @@ fn parsed_local_read_emits_verified_isle_clif_without_lowerable() {
 fn parsed_parameter_read_materializes_the_generation_safe_local_slot() {
     let (input, isa, item) = item_fixture("i32 Identity(i32 value) { return value; }");
 
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .expect("parsed parameter read lowers through generated ISLE");
+    let function =
+        emit_isle_item(&input, isa.as_ref(), item).expect("parsed parameter read lowers through generated ISLE");
     let clif = function.display().to_string();
     assert!(clif.contains("function u0:0(i32) -> i32"), "{clif}");
     assert!(clif.contains("return v0"), "{clif}");
@@ -1228,24 +892,19 @@ fn parsed_parameter_read_materializes_the_generation_safe_local_slot() {
 
 #[test]
 fn parsed_zero_capture_immediate_lambda_call_lowers_without_a_runtime_closure() {
-    let (input, isa, root) =
-        item_fixture_with_root("i32 Main() { return ((i32 value) => value + 1)(41); }");
+    let (input, isa, root) = item_fixture_with_root("i32 Main() { return ((i32 value) => value + 1)(41); }");
     let db = input.database();
     let item = find_function_definition(db, root).expect("Main item");
-    let call = find_node(db, root, beskid_queries::IndexedNodeKind::CallExpression)
-        .expect("immediate lambda call");
-    let target = beskid_queries::closure_call_target(db, call)
-        .expect("closure call target")
-        .expect("immediate lambda target");
+    let call = find_node(db, root, beskid_queries::IndexedNodeKind::CallExpression).expect("immediate lambda call");
+    let target =
+        beskid_queries::closure_call_target(db, call).expect("closure call target").expect("immediate lambda target");
     let environment = beskid_queries::closure_environment(db, target.lambda)
         .expect("closure environment")
         .expect("lambda environment");
     assert!(environment.captures.is_empty());
     assert_eq!(environment.parameters.len(), 1);
     assert!(
-        beskid_queries::local_slot(db, environment.parameters[0])
-            .expect("lambda parameter slot query")
-            .is_some(),
+        beskid_queries::local_slot(db, environment.parameters[0]).expect("lambda parameter slot query").is_some(),
         "lambda parameter must have a generation-safe local slot"
     );
 
@@ -1261,41 +920,23 @@ fn closure_static_plan_is_generation_bound_and_never_claims_tls_or_root_frame_au
     let (input, _isa, root) = item_fixture_with_root(
         "i32 Main(i32 count, string label) { let scalar = () => count; let pointer = () => label; return scalar(); }",
     );
-    let lambdas = find_nodes_of_kind(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::LambdaExpression,
-    );
+    let lambdas = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::LambdaExpression);
     assert_eq!(lambdas.len(), 2, "fixture must retain both capture shapes");
 
-    let scalar = input
-        .closure_static_plan(lambdas[0])
-        .expect("current scalar capture receives a static descriptor plan");
-    assert_eq!(
-        scalar.descriptor_symbol,
-        "__beskid_closure_descriptor_u0_g21_n20"
-    );
-    assert_eq!(
-        scalar.pointer_map_symbol,
-        "__beskid_closure_pointer_map_u0_g21_n20"
-    );
-    assert_eq!(
-        scalar.allocation_request_symbol,
-        "__beskid_closure_allocation_request_u0_g21_n20"
-    );
-    assert_eq!(
-        scalar.object_size, 24,
-        "16-byte header plus aligned i32 field"
-    );
+    let scalar =
+        input.closure_static_plan(lambdas[0]).expect("current scalar capture receives a static descriptor plan");
+    assert_eq!(scalar.descriptor_symbol, "__beskid_closure_descriptor_u0_g21_n20");
+    assert_eq!(scalar.pointer_map_symbol, "__beskid_closure_pointer_map_u0_g21_n20");
+    assert_eq!(scalar.allocation_request_symbol, "__beskid_closure_allocation_request_u0_g21_n20");
+    assert_eq!(scalar.object_size, 24, "16-byte header plus aligned i32 field");
     assert_eq!(scalar.object_alignment, 8);
     assert!(scalar.pointer_map_offsets.is_empty());
     assert_eq!(scalar.captures.len(), 1);
     assert_eq!(scalar.captures[0].pointer_map_index, None);
     assert!(scalar.runtime_root_context().is_none());
 
-    let pointer = input
-        .closure_static_plan(lambdas[1])
-        .expect("current pointer capture receives a static descriptor plan");
+    let pointer =
+        input.closure_static_plan(lambdas[1]).expect("current pointer capture receives a static descriptor plan");
     assert_eq!(pointer.object_size, 24, "16-byte header plus pointer field");
     assert_eq!(pointer.object_alignment, 8);
     assert_eq!(pointer.pointer_map_offsets.as_ref(), &[16]);
@@ -1304,20 +945,14 @@ fn closure_static_plan_is_generation_bound_and_never_claims_tls_or_root_frame_au
     assert_eq!(pointer.captures[0].pointer_map_index, Some(0));
     assert!(pointer.runtime_root_context().is_none());
 
-    let mut static_module =
-        JITModule::new(JITBuilder::new(default_libcall_names()).expect("JIT builder"));
+    let mut static_module = JITModule::new(JITBuilder::new(default_libcall_names()).expect("JIT builder"));
     let data = emit_closure_static_data(&mut static_module, &pointer)
         .expect("static descriptor/request data materializes without runtime imports");
     assert_ne!(data.descriptor, data.pointer_map);
     assert_ne!(data.descriptor, data.allocation_request);
-    static_module
-        .finalize_definitions()
-        .expect("static closure data needs no root-helper or TLS relocation");
+    static_module.finalize_definitions().expect("static closure data needs no root-helper or TLS relocation");
 
-    let stale = AstNodeKey {
-        generation: SyntaxGenerationId(lambdas[1].generation.0 + 1),
-        ..lambdas[1]
-    };
+    let stale = AstNodeKey { generation: SyntaxGenerationId(lambdas[1].generation.0 + 1), ..lambdas[1] };
     assert!(
         input.closure_static_plan(stale).is_none(),
         "a stale syntax identity cannot receive static allocation authority"
@@ -1326,15 +961,10 @@ fn closure_static_plan_is_generation_bound_and_never_claims_tls_or_root_frame_au
 
 #[test]
 fn closure_static_plan_rejects_stack_reference_captures() {
-    let (input, _isa, root) = item_fixture_with_root(
-        "i32 Main(i32 count) { let mut mutable = count; return (() => mutable)(); }",
-    );
-    let lambda = find_definition_of_kind(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::LambdaExpression,
-    )
-    .expect("capturing lambda");
+    let (input, _isa, root) =
+        item_fixture_with_root("i32 Main(i32 count) { let mut mutable = count; return (() => mutable)(); }");
+    let lambda = find_definition_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::LambdaExpression)
+        .expect("capturing lambda");
 
     assert!(
         input.closure_static_plan(lambda).is_none(),
@@ -1344,37 +974,27 @@ fn closure_static_plan_rejects_stack_reference_captures() {
 
 #[test]
 fn parsed_capturing_immediate_lambda_call_lowers_through_abi_v5_closure_environment() {
-    let (input, isa, item) =
-        item_fixture("i32 Main(i32 outer) { return ((i32 value) => outer + value)(41); }");
+    let (input, isa, item) = item_fixture("i32 Main(i32 outer) { return ((i32 value) => outer + value)(41); }");
     let db = input.database();
-    let call = find_node(db, item, beskid_queries::IndexedNodeKind::CallExpression)
-        .expect("immediate lambda call");
+    let call = find_node(db, item, beskid_queries::IndexedNodeKind::CallExpression).expect("immediate lambda call");
     let target = beskid_queries::closure_call_target(db, call)
         .expect("closure call target query")
         .expect("immediate lambda target");
-    let environment = beskid_queries::closure_environment(db, target.lambda)
-        .expect("environment query")
-        .expect("lambda environment");
+    let environment =
+        beskid_queries::closure_environment(db, target.lambda).expect("environment query").expect("lambda environment");
     assert_eq!(environment.captures.len(), 1);
-    let authority = input
-        .closure_lowering_authority(call, target.lambda)
-        .expect("capturing call must receive closure authority");
+    let authority =
+        input.closure_lowering_authority(call, target.lambda).expect("capturing call must receive closure authority");
     assert_eq!(authority.plan.captures.len(), 1);
-    assert_eq!(
-        authority.plan.captures[0].capture.slot.index,
-        environment.captures[0].slot.index
-    );
+    assert_eq!(authority.plan.captures[0].capture.slot.index, environment.captures[0].slot.index);
     let outer_decl = environment.captures[0].declaration;
-    let outer_slot = beskid_queries::local_slot(db, outer_decl)
-        .expect("outer slot query")
-        .expect("outer parameter slot");
+    let outer_slot =
+        beskid_queries::local_slot(db, outer_decl).expect("outer slot query").expect("outer parameter slot");
     assert_eq!(
         outer_slot.index, environment.captures[0].slot.index,
         "capture slot must match the outer parameter local slot"
     );
-    let params = beskid_queries::item_abi_signature(db, item)
-        .expect("item abi")
-        .expect("main signature");
+    let params = beskid_queries::item_abi_signature(db, item).expect("item abi").expect("main signature");
     assert_eq!(params.parameters.len(), 1);
 
     let function = match emit_isle_item(&input, isa.as_ref(), item) {
@@ -1385,57 +1005,34 @@ fn parsed_capturing_immediate_lambda_call_lowers_through_abi_v5_closure_environm
         ),
     };
     let clif = function.display().to_string();
-    assert!(
-        clif.contains("beskid_rt_v5_closure_environment_allocate"),
-        "{clif}"
-    );
-    assert!(
-        clif.contains("beskid_rt_v5_closure_environment_root_current"),
-        "{clif}"
-    );
-    assert!(
-        clif.contains("__beskid_closure_allocation_request_"),
-        "{clif}"
-    );
+    assert!(clif.contains("beskid_rt_v5_closure_environment_allocate"), "{clif}");
+    assert!(clif.contains("beskid_rt_v5_closure_environment_root_current"), "{clif}");
+    assert!(clif.contains("__beskid_closure_allocation_request_"), "{clif}");
     assert!(!clif.contains("interop_dispatch_"), "{clif}");
     assert!(clif.contains("iadd"), "{clif}");
 }
 
 #[test]
 fn closure_lowering_authority_reserves_root_slot_without_tls_pointer() {
-    let (input, _isa, root) =
-        item_fixture_with_root("i32 Main(i32 outer) { return (() => outer)(); }");
-    let call = find_node(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::CallExpression,
-    )
-    .expect("immediate call");
-    let lambda = find_definition_of_kind(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::LambdaExpression,
-    )
-    .expect("capturing lambda");
-    let authority = input
-        .closure_lowering_authority(call, lambda)
-        .expect("current transferable capture receives root authority");
-    assert_eq!(
-        authority.root.root_helper,
-        "beskid_rt_v5_closure_environment_root_current"
-    );
+    let (input, _isa, root) = item_fixture_with_root("i32 Main(i32 outer) { return (() => outer)(); }");
+    let call =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::CallExpression).expect("immediate call");
+    let lambda = find_definition_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::LambdaExpression)
+        .expect("capturing lambda");
+    let authority =
+        input.closure_lowering_authority(call, lambda).expect("current transferable capture receives root authority");
+    assert_eq!(authority.root.root_helper, "beskid_rt_v5_closure_environment_root_current");
     assert!(authority.plan.runtime_root_context().is_none());
     assert!(authority.root.slot_index < 64);
 }
 
 #[test]
 fn parsed_mutable_range_accumulator_exposes_local_write_syntax_facts() {
-    let (input, _isa, root) = item_fixture_with_root(
-        "i32 Main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }",
-    );
+    let (input, _isa, root) =
+        item_fixture_with_root("i32 Main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }");
     let db = input.database();
-    let assignment = find_node(db, root, beskid_queries::IndexedNodeKind::AssignExpression)
-        .expect("parsed accumulator assignment");
+    let assignment =
+        find_node(db, root, beskid_queries::IndexedNodeKind::AssignExpression).expect("parsed accumulator assignment");
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
 
     let target = facts.child(assignment, 0).expect("assignment target fact");
@@ -1452,10 +1049,7 @@ fn parsed_mutable_range_accumulator_exposes_local_write_syntax_facts() {
     );
     assert_eq!(
         facts.mutable_local_assignment_slot(assignment),
-        Some(beskid_isle::LocalSlotId {
-            owner_node: slot.owner.node.0,
-            index: slot.index,
-        })
+        Some(beskid_isle::LocalSlotId { owner_node: slot.owner.node.0, index: slot.index })
     );
 }
 
@@ -1482,10 +1076,7 @@ fn parsed_mutable_string_local_exposes_local_write_syntax_facts() {
     );
     assert_eq!(
         facts.mutable_local_assignment_slot(assignment),
-        Some(beskid_isle::LocalSlotId {
-            owner_node: slot.owner.node.0,
-            index: slot.index,
-        })
+        Some(beskid_isle::LocalSlotId { owner_node: slot.owner.node.0, index: slot.index })
     );
 }
 
@@ -1493,8 +1084,7 @@ fn parsed_mutable_string_local_exposes_local_write_syntax_facts() {
 fn parsed_pointer_signature_uses_the_target_pointer_type_without_hir() {
     let (input, isa, item) = item_fixture("pointer Echo(pointer value) { return value; }");
 
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .expect("pointer syntax lowers through generated ISLE");
+    let function = emit_isle_item(&input, isa.as_ref(), item).expect("pointer syntax lowers through generated ISLE");
     let clif = function.display().to_string();
     assert!(clif.contains("function u0:0(i64) -> i64"), "{clif}");
     assert!(clif.contains("return v0"), "{clif}");
@@ -1513,37 +1103,31 @@ fn parsed_generic_nominal_aggregate_uses_its_source_proven_pointer_abi_signature
         .copied()
         .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Create"))
         .expect("Create");
-    let main = items
-        .iter()
-        .copied()
-        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Main"))
-        .expect("Main");
+    let main =
+        items.iter().copied().find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Main")).expect("Main");
     assert_eq!(
         beskid_queries::item_abi_signature(db, create).expect("generic item ABI query"),
         None,
         "generic factories must not expose a fixed item ABI"
     );
     let call = find_call_expression(db, main).expect("Create call");
-    let signature = call_abi_signature(db, call)
-        .expect("specialized call ABI query")
-        .expect("Create<i64> specialization");
+    let signature =
+        call_abi_signature(db, call).expect("specialized call ABI query").expect("Create<i64> specialization");
     assert_eq!(signature.result, beskid_queries::SemanticTypeId::POINTER);
     let _ = isa;
 }
 
 #[test]
 fn parsed_direct_call_uses_explicit_item_module_importer() {
-    let (input, isa, root) = item_fixture_with_root(
-        "i32 AddOne(i32 value) { return value; } i32 Main() { return AddOne(41); }",
-    );
+    let (input, isa, root) =
+        item_fixture_with_root("i32 AddOne(i32 value) { return value; } i32 Main() { return AddOne(41); }");
     let db = input.database();
     let items = find_function_definitions(db, root);
     let callee = items[0];
     let caller = items[1];
     let call = find_call_expression(db, caller).expect("call syntax key");
-    let beskid_queries::CallLowering::Direct(declaration) = call_lowering(db, call)
-        .expect("direct-call query")
-        .expect("direct call")
+    let beskid_queries::CallLowering::Direct(declaration) =
+        call_lowering(db, call).expect("direct-call query").expect("direct call")
     else {
         panic!("expected a syntax-resolved direct call");
     };
@@ -1551,13 +1135,10 @@ fn parsed_direct_call_uses_explicit_item_module_importer() {
 
     let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
     let signature = function_signature(isa.as_ref(), types::I32, [types::I32]);
-    let imported = module
-        .declare_function("AddOne", Linkage::Import, &signature)
-        .expect("declare imported syntax item");
-    let mut importer = ItemModuleImporter::new(
-        &mut module,
-        HashMap::from([(beskid_isle::DirectCallee::item(declaration), imported)]),
-    );
+    let imported =
+        module.declare_function("AddOne", Linkage::Import, &signature).expect("declare imported syntax item");
+    let mut importer =
+        ItemModuleImporter::new(&mut module, HashMap::from([(beskid_isle::DirectCallee::item(declaration), imported)]));
 
     let function = emit_isle_item_with_call_importer(&input, isa.as_ref(), caller, &mut importer)
         .expect("parsed direct call lowers through explicit module import");
@@ -1573,25 +1154,20 @@ fn canonical_corelib_service_call_imports_its_distinct_abi_symbol() {
         .into_iter()
         .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Read"))
         .expect("Core.Syscall Read source item");
-    let call = find_corelib_service_call(input.database(), read, "__syscall_read")
-        .expect("__syscall_read call");
+    let call = find_corelib_service_call(input.database(), read, "__syscall_read").expect("__syscall_read call");
     let service = DirectCallee::corelib_service("syscall_read");
     let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
     let signature = function_signature(isa.as_ref(), isa.pointer_type(), [types::I64, types::I64]);
     let imported = module
         .declare_function("syscall_read", Linkage::Import, &signature)
         .expect("declare the exact Corelib service import");
-    let mut importer =
-        ItemModuleImporter::new(&mut module, HashMap::from([(service.clone(), imported)]));
+    let mut importer = ItemModuleImporter::new(&mut module, HashMap::from([(service.clone(), imported)]));
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
     assert_eq!(facts.direct_callee(call), Some(service.clone()));
     assert_eq!(
         call_abi_signature(input.database(), call).expect("Corelib service ABI fact"),
         Some(beskid_queries::ItemSignature {
-            parameters: Arc::from([
-                beskid_queries::SemanticTypeId::I64,
-                beskid_queries::SemanticTypeId::I64,
-            ]),
+            parameters: Arc::from([beskid_queries::SemanticTypeId::I64, beskid_queries::SemanticTypeId::I64,]),
             result: beskid_queries::SemanticTypeId::STRING,
         })
     );
@@ -1631,8 +1207,7 @@ fn materialized_foundation_syscall_facade_imports_its_authorized_write_service()
     let imported = module
         .declare_function("syscall_write", Linkage::Import, &signature)
         .expect("declare materialized Corelib service import");
-    let mut importer =
-        ItemModuleImporter::new(&mut module, HashMap::from([(service.clone(), imported)]));
+    let mut importer = ItemModuleImporter::new(&mut module, HashMap::from([(service.clone(), imported)]));
     let service_facts = CorelibServiceImportFacts::new(input.database(), service);
     let function = FunctionEmitter::new(isa.as_ref())
         .emit_expression_with_call_importer(
@@ -1654,9 +1229,7 @@ fn canonical_foundation_assert_trigger_failure_lowers_only_the_panic_service() {
     let (input, isa, root) = canonical_foundation_assert_fixture();
     let trigger_failure = find_function_definitions(input.database(), root)
         .into_iter()
-        .find(|key| {
-            item_name(input.database(), *key).ok().flatten().as_deref() == Some("trigger_failure")
-        })
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("trigger_failure"))
         .expect("canonical Assert trigger_failure");
     let call = find_corelib_service_call(input.database(), trigger_failure, "__panic_str")
         .expect("canonical Assert panic call");
@@ -1669,18 +1242,12 @@ fn canonical_foundation_assert_trigger_failure_lowers_only_the_panic_service() {
     let artifact = lower_syntax_program(
         &input,
         isa.as_ref(),
-        &[SyntaxModuleItem {
-            key: trigger_failure,
-            symbol: "trigger_failure".into(),
-        }],
+        &[SyntaxModuleItem { key: trigger_failure, symbol: "trigger_failure".into() }],
     )
     .expect("canonical Assert lowers through syntax ISLE");
     let imports = &artifact.extern_imports;
     assert_eq!(
-        imports
-            .iter()
-            .map(|import| import.symbol.as_str())
-            .collect::<Vec<_>>(),
+        imports.iter().map(|import| import.symbol.as_str()).collect::<Vec<_>>(),
         vec!["panic_str"],
         "only the reachable authorized panic service may be emitted"
     );
@@ -1693,8 +1260,8 @@ fn canonical_foundation_output_panic_call_has_the_authorized_direct_never_abi() 
         .into_iter()
         .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Write"))
         .expect("canonical Core.Output Write source item");
-    let call = find_corelib_service_call(input.database(), write, "__panic_str")
-        .expect("canonical Core.Output panic call");
+    let call =
+        find_corelib_service_call(input.database(), write, "__panic_str").expect("canonical Core.Output panic call");
 
     assert!(matches!(
         call_lowering(input.database(), call).expect("Core.Output panic lowering"),
@@ -1722,8 +1289,8 @@ fn canonical_foundation_error_panic_call_has_the_authorized_direct_never_abi() {
         .into_iter()
         .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Write"))
         .expect("canonical Core.Error Write source item");
-    let call = find_corelib_service_call(input.database(), write, "__panic_str")
-        .expect("canonical Core.Error panic call");
+    let call =
+        find_corelib_service_call(input.database(), write, "__panic_str").expect("canonical Core.Error panic call");
 
     assert!(matches!(
         call_lowering(input.database(), call).expect("Core.Error panic lowering"),
@@ -1761,11 +1328,7 @@ fn canonical_foundation_output_write_body_exposes_executable_block_statements() 
         Some(beskid_isle::NodeKind::BlockExpression),
         "an ordinary function body must use the shared executable-block lowering kind"
     );
-    assert_eq!(
-        facts.statement_count(body),
-        Some(5),
-        "the body cursor must enumerate unwrapped executable statements"
-    );
+    assert_eq!(facts.statement_count(body), Some(5), "the body cursor must enumerate unwrapped executable statements");
 }
 
 #[test]
@@ -1776,8 +1339,7 @@ fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
     let descriptor_path = root.join("Core/Syscall/Descriptor.bd");
     let stream_path = root.join("Core/Syscall/StandardStream.bd");
     let main_source = "use Core.Syscall.Descriptor;\nuse Core.Syscall.StandardStream;\nunit Main() { StandardStream stream = StandardStream::Stdout(); Descriptor descriptor = Descriptor::Standard(stream); return; }";
-    let descriptor_source =
-        "pub enum Descriptor { Standard(Core.Syscall.StandardStream stream), Raw(i64 fd), }";
+    let descriptor_source = "pub enum Descriptor { Standard(Core.Syscall.StandardStream stream), Raw(i64 fd), }";
     let stream_source = "pub enum StandardStream { Stdin, Stdout, Stderr, }";
     let units = [
         (main_path.clone(), main_source),
@@ -1798,10 +1360,7 @@ fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
     let project = ProjectSession::new(&db, root.clone(), main_path, "App".into(), "lock".into());
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: root,
-            },
+            host: RootEntry { dependency_name: None, source_root: root },
             dependencies: Vec::new(),
         },
         Arc::from(units),
@@ -1811,27 +1370,13 @@ fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
         false,
     ));
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
-    let constructors = find_nodes_of_kind(
-        &db,
-        root,
-        beskid_queries::IndexedNodeKind::EnumConstructorExpression,
-    );
-    assert_eq!(
-        constructors.len(),
-        2,
-        "one StandardStream and one Descriptor constructor"
-    );
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
+    let constructors = find_nodes_of_kind(&db, root, beskid_queries::IndexedNodeKind::EnumConstructorExpression);
+    assert_eq!(constructors.len(), 2, "one StandardStream and one Descriptor constructor");
     let descriptor = constructors[1];
 
     assert!(
-        enum_layout(&db, descriptor)
-            .expect("enum layout query")
-            .is_some(),
+        enum_layout(&db, descriptor).expect("enum layout query").is_some(),
         "an imported single-payload enum constructor must carry its declaration layout"
     );
 }
@@ -1842,40 +1387,28 @@ fn imported_nullary_enum_constructor_lowers_from_an_ordinary_function_block() {
     let project_root = tempfile::tempdir().expect("project").keep();
     let main_path = project_root.join("Main.bd");
     let stream_path = project_root.join("Core/Syscall/StandardStream.bd");
-    let main_source = "use Core.Syscall.StandardStream; unit Main() { StandardStream stream = StandardStream::Stdout(); return; }";
+    let main_source =
+        "use Core.Syscall.StandardStream; unit Main() { StandardStream stream = StandardStream::Stdout(); return; }";
     let stream_source = "pub enum StandardStream { Stdin, Stdout, Stderr, }";
-    std::fs::create_dir_all(stream_path.parent().expect("stream parent"))
-        .expect("create stream source directory");
+    std::fs::create_dir_all(stream_path.parent().expect("stream parent")).expect("create stream source directory");
     std::fs::write(&main_path, main_source).expect("write main source");
     std::fs::write(&stream_path, stream_source).expect("write stream source");
-    let units = [
-        (main_path.clone(), main_source),
-        (stream_path, stream_source),
-    ]
-    .into_iter()
-    .map(|(path, source)| SourceUnit {
-        logical_name: path.display().to_string(),
-        program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
-            .expect("parse source"),
-        path,
-        source: source.into(),
-    })
-    .collect::<Vec<_>>();
+    let units = [(main_path.clone(), main_source), (stream_path, stream_source)]
+        .into_iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
+                .expect("parse source"),
+            path,
+            source: source.into(),
+        })
+        .collect::<Vec<_>>();
     let entry = SourceUnitId::new(&*db, main_path.clone());
     let generation = SyntaxGenerationId(145);
-    let project = ProjectSession::new(
-        &*db,
-        project_root.clone(),
-        main_path,
-        "App".into(),
-        "lock".into(),
-    );
+    let project = ProjectSession::new(&*db, project_root.clone(), main_path, "App".into(), "lock".into());
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: project_root,
-            },
+            host: RootEntry { dependency_name: None, source_root: project_root },
             dependencies: Vec::new(),
         },
         Arc::from(units),
@@ -1884,26 +1417,16 @@ fn imported_nullary_enum_constructor_lowers_from_an_ordinary_function_block() {
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed =
-        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
     let leaked: &'static BeskidDatabase = Box::leak(db);
-    let input = CodegenInput::new(
-        leaked,
-        typed,
-        Arc::from([root]),
-        target.clone(),
-        AbiManifestV5::canonical_runtime(target),
-    )
-    .expect("generation-safe imported enum input");
+    let input =
+        CodegenInput::new(leaked, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
+            .expect("generation-safe imported enum input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
@@ -1929,35 +1452,22 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
     std::fs::write(&main_path, main_source).expect("write main source");
     std::fs::write(&descriptor_path, descriptor_source).expect("write descriptor source");
     std::fs::write(&stream_path, stream_source).expect("write stream source");
-    let units = [
-        (main_path.clone(), main_source),
-        (descriptor_path, descriptor_source),
-        (stream_path, stream_source),
-    ]
-    .into_iter()
-    .map(|(path, source)| SourceUnit {
-        logical_name: path.display().to_string(),
-        program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
-            .expect("parse source"),
-        path,
-        source: source.into(),
-    })
-    .collect::<Vec<_>>();
+    let units = [(main_path.clone(), main_source), (descriptor_path, descriptor_source), (stream_path, stream_source)]
+        .into_iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
+                .expect("parse source"),
+            path,
+            source: source.into(),
+        })
+        .collect::<Vec<_>>();
     let entry = SourceUnitId::new(&*db, main_path.clone());
     let generation = SyntaxGenerationId(146);
-    let project = ProjectSession::new(
-        &*db,
-        project_root.clone(),
-        main_path,
-        "App".into(),
-        "lock".into(),
-    );
+    let project = ProjectSession::new(&*db, project_root.clone(), main_path, "App".into(), "lock".into());
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: project_root,
-            },
+            host: RootEntry { dependency_name: None, source_root: project_root },
             dependencies: Vec::new(),
         },
         Arc::from(units),
@@ -1966,35 +1476,24 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed =
-        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
     let leaked: &'static BeskidDatabase = Box::leak(db);
-    let input = CodegenInput::new(
-        leaked,
-        typed,
-        Arc::from([root]),
-        target.clone(),
-        AbiManifestV5::canonical_runtime(target),
-    )
-    .expect("generation-safe imported enum input");
+    let input =
+        CodegenInput::new(leaked, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
+            .expect("generation-safe imported enum input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
     let main = find_function_definition(input.database(), root).expect("Main item");
     let call = find_call_expression(input.database(), main).expect("WriteWith call");
-    let beskid_queries::CallLowering::Direct(declaration) = call_lowering(input.database(), call)
-        .expect("WriteWith call lowering")
-        .expect("direct WriteWith call")
+    let beskid_queries::CallLowering::Direct(declaration) =
+        call_lowering(input.database(), call).expect("WriteWith call lowering").expect("direct WriteWith call")
     else {
         panic!("WriteWith must be a direct imported call");
     };
@@ -2002,22 +1501,13 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: main,
-                symbol: "Main".into(),
-            },
-            SyntaxModuleItem {
-                key: declaration,
-                symbol: "WriteWith".into(),
-            },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+            SyntaxModuleItem { key: declaration, symbol: "WriteWith".into() },
         ],
     )
     .expect("module artifact services lower imported Result WriteWith and string data");
-    let main_function = artifact
-        .functions
-        .iter()
-        .find(|function| function.name == "Main")
-        .expect("Main function in artifact");
+    let main_function =
+        artifact.functions.iter().find(|function| function.name == "Main").expect("Main function in artifact");
     let clif = main_function.function.display().to_string();
     assert!(clif.contains("call"), "{clif}");
     assert!(clif.contains("br_table"), "{clif}");
@@ -2025,15 +1515,10 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
 
 #[test]
 fn unknown_qualified_payload_type_remains_unavailable_to_isle() {
-    let (input, _isa, root) = item_fixture_with_root(
-        "enum Envelope { Item(Core.Missing value), } unit Main() { return; }",
-    );
-    let definition = find_definition_of_kind(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::EnumDefinition,
-    )
-    .expect("Envelope definition");
+    let (input, _isa, root) =
+        item_fixture_with_root("enum Envelope { Item(Core.Missing value), } unit Main() { return; }");
+    let definition = find_definition_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::EnumDefinition)
+        .expect("Envelope definition");
 
     assert!(
         enum_layout(input.database(), definition).is_err(),
@@ -2044,9 +1529,7 @@ fn unknown_qualified_payload_type_remains_unavailable_to_isle() {
 #[test]
 fn user_copy_of_foundation_output_cannot_import_the_panic_service() {
     let mut db = BeskidDatabase::default();
-    let workspace = tempfile::tempdir()
-        .expect("user lookalike workspace")
-        .keep();
+    let workspace = tempfile::tempdir().expect("user lookalike workspace").keep();
     let source_path = workspace.join("Core/Output/Output.bd");
     std::fs::create_dir_all(source_path.parent().expect("user lookalike output parent"))
         .expect("create user lookalike output parent");
@@ -2059,28 +1542,15 @@ fn user_copy_of_foundation_output_cannot_import_the_panic_service() {
     let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source)
         .expect("parse user lookalike Output source");
     let entry = SourceUnitId::new(&db, source_path.clone());
-    let project = ProjectSession::new(
-        &db,
-        workspace.clone(),
-        source_path.clone(),
-        "user-output-copy".into(),
-        "untrusted".into(),
-    );
+    let project =
+        ProjectSession::new(&db, workspace.clone(), source_path.clone(), "user-output-copy".into(), "untrusted".into());
     let generation = SyntaxGenerationId(97);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: workspace,
-            },
+            host: RootEntry { dependency_name: None, source_root: workspace },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit {
-            logical_name: "Core/Output/Output.bd".into(),
-            path: source_path,
-            source,
-            program,
-        }]),
+        Arc::new(vec![SourceUnit { logical_name: "Core/Output/Output.bd".into(), path: source_path, source, program }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -2103,11 +1573,7 @@ fn user_copy_of_foundation_output_cannot_import_the_panic_service() {
         typed.corelib_service_capability.is_none(),
         "an untrusted physical path must not attach compiler Corelib authority"
     );
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let write = find_function_definitions(&db, root)
         .into_iter()
         .find(|key| item_name(&db, *key).ok().flatten().as_deref() == Some("Write"))
@@ -2123,45 +1589,26 @@ fn canonical_foundation_assert_public_helpers_lower_through_syntax_isle() {
     let (input, isa, root) = canonical_foundation_assert_fixture();
     // Non-generic helpers and their direct callees. Contains stays out: it pulls Core.String.
     // Equal is exercised below with an explicit call-derived i64 specialization.
-    let items = [
-        "trigger_failure",
-        "Fail",
-        "fail_with_because",
-        "True",
-        "False",
-    ];
+    let items = ["trigger_failure", "Fail", "fail_with_because", "True", "False"];
     let mut module_items = Vec::new();
     for name in items {
         let key = find_function_definitions(input.database(), root)
             .into_iter()
             .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some(name))
             .unwrap_or_else(|| panic!("canonical Assert {name}"));
-        module_items.push(SyntaxModuleItem {
-            key,
-            symbol: name.into(),
-        });
+        module_items.push(SyntaxModuleItem { key, symbol: name.into() });
     }
     let artifact = lower_syntax_program(&input, isa.as_ref(), &module_items)
         .expect("canonical Assert helpers lower through syntax ISLE");
     for name in items {
         assert!(
-            artifact
-                .functions
-                .iter()
-                .any(|function| function.name == name),
+            artifact.functions.iter().any(|function| function.name == name),
             "expected CLIF for {name}, got {:?}",
-            artifact
-                .functions
-                .iter()
-                .map(|function| function.name.as_str())
-                .collect::<Vec<_>>()
+            artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>()
         );
     }
     assert!(
-        artifact
-            .extern_imports
-            .iter()
-            .any(|import| import.symbol == "panic_str"),
+        artifact.extern_imports.iter().any(|import| import.symbol == "panic_str"),
         "Assert helpers must still import authorized panic_str"
     );
 }
@@ -2169,9 +1616,8 @@ fn canonical_foundation_assert_public_helpers_lower_through_syntax_isle() {
 #[test]
 fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle() {
     let mut db = Box::new(BeskidDatabase::default());
-    let assert_path =
-        canonical_corelib_service_source_path(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
-            .expect("compiler-owned Assert path");
+    let assert_path = canonical_corelib_service_source_path(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
+        .expect("compiler-owned Assert path");
     let assert_source = beskid_abi::runtime_source::canonical_corelib_service_sources()
         .into_iter()
         .find(|source| source.logical_path == CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
@@ -2183,18 +1629,12 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
     std::fs::write(&main_path, main_source).expect("main source");
     // Prefer the compiler-owned Assert identity so panic_str authority remains available.
     let assert_program =
-        parse_program_with_source_name(assert_path.to_str().unwrap(), &assert_source)
-            .expect("assert parse");
-    let main_program = parse_program_with_source_name(main_path.to_str().unwrap(), main_source)
-        .expect("main parse");
+        parse_program_with_source_name(assert_path.to_str().unwrap(), &assert_source).expect("assert parse");
+    let main_program = parse_program_with_source_name(main_path.to_str().unwrap(), main_source).expect("main parse");
     let main_unit = SourceUnitId::new(&*db, main_path.clone());
     let assert_unit = SourceUnitId::new(&*db, assert_path.clone());
     let generation = SyntaxGenerationId(97);
-    let source_root = assert_path
-        .ancestors()
-        .nth(2)
-        .expect("foundation src")
-        .to_path_buf();
+    let source_root = assert_path.ancestors().nth(2).expect("foundation src").to_path_buf();
     let project = ProjectSession::new(
         &*db,
         source_root.clone(),
@@ -2203,13 +1643,7 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
         "assert-equal-specialization".into(),
     );
     let assembly = Arc::new(SyntaxProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root,
-            },
-            dependencies: Vec::new(),
-        },
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
         Arc::new(vec![
             SourceUnit {
                 logical_name: "Main".into(),
@@ -2242,25 +1676,11 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
         canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
     )
     .expect("typed Assert+Main program");
-    let main_root = AstNodeKey {
-        unit: main_unit,
-        generation,
-        node: AstNodeId(0),
-    };
-    let assert_root = AstNodeKey {
-        unit: assert_unit,
-        generation,
-        node: AstNodeId(0),
-    };
+    let main_root = AstNodeKey { unit: main_unit, generation, node: AstNodeId(0) };
+    let assert_root = AstNodeKey { unit: assert_unit, generation, node: AstNodeId(0) };
     let leaked: &'static BeskidDatabase = Box::leak(db);
-    let input = CodegenInput::new(
-        leaked,
-        typed,
-        Arc::from([main_root, assert_root]),
-        target,
-        manifest,
-    )
-    .expect("generation-safe input");
+    let input = CodegenInput::new(leaked, typed, Arc::from([main_root, assert_root]), target, manifest)
+        .expect("generation-safe input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
@@ -2278,43 +1698,31 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
             .into_iter()
             .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some(name))
             .unwrap_or_else(|| panic!("expected {name}"));
-        module_items.push(SyntaxModuleItem {
-            key,
-            symbol: name.into(),
-        });
+        module_items.push(SyntaxModuleItem { key, symbol: name.into() });
     }
     let artifact = lower_syntax_program(&input, isa.as_ref(), &module_items)
         .expect("Assert.Equal specialization lowers through syntax ISLE");
     assert!(
-        artifact
-            .functions
-            .iter()
-            .any(|function| function.name.starts_with("Equal#generic_")),
+        artifact.functions.iter().any(|function| function.name.starts_with("Equal#generic_")),
         "expected specialized Equal CLIF, got {:?}",
-        artifact
-            .functions
-            .iter()
-            .map(|function| function.name.as_str())
-            .collect::<Vec<_>>()
+        artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn canonical_foundation_string_len_lowers_through_syntax_isle() {
     let mut db = Box::new(BeskidDatabase::default());
-    let foundation_src =
-        canonical_corelib_service_source_path(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
-            .expect("compiler-owned Assert path")
-            .parent()
-            .expect("Testing/")
-            .parent()
-            .expect("foundation src")
-            .to_path_buf();
+    let foundation_src = canonical_corelib_service_source_path(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
+        .expect("compiler-owned Assert path")
+        .parent()
+        .expect("Testing/")
+        .parent()
+        .expect("foundation src")
+        .to_path_buf();
     let source_path = foundation_src.join("Core/String/String.bd");
     let source = std::fs::read_to_string(&source_path).expect("read Core.String");
     let source_root = foundation_src;
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source)
-        .expect("parse Core.String");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source).expect("parse Core.String");
     let entry = SourceUnitId::new(&*db, source_path.clone());
     let project = ProjectSession::new(
         &*db,
@@ -2325,19 +1733,8 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
     );
     let generation = SyntaxGenerationId(96);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root,
-            },
-            dependencies: Vec::new(),
-        },
-        Arc::new(vec![SourceUnit {
-            logical_name: "Core/String/String.bd".into(),
-            path: source_path,
-            source,
-            program,
-        }]),
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
+        Arc::new(vec![SourceUnit { logical_name: "Core/String/String.bd".into(), path: source_path, source, program }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -2348,13 +1745,8 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
-    let typed = build_typed_program(&mut db, project, generation, assembly)
-        .expect("typed Core.String program");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed Core.String program");
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
         .expect("generation-safe Core.String input");
@@ -2372,29 +1764,14 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
         let module_items = if name == "IsEmpty" {
             let len = find_function_definitions(input.database(), root)
                 .into_iter()
-                .find(|key| {
-                    item_name(input.database(), *key).ok().flatten().as_deref() == Some("Len")
-                })
+                .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Len"))
                 .expect("Core.String Len");
-            vec![
-                SyntaxModuleItem {
-                    key: len,
-                    symbol: "Len".into(),
-                },
-                SyntaxModuleItem {
-                    key,
-                    symbol: name.into(),
-                },
-            ]
+            vec![SyntaxModuleItem { key: len, symbol: "Len".into() }, SyntaxModuleItem { key, symbol: name.into() }]
         } else {
-            vec![SyntaxModuleItem {
-                key,
-                symbol: name.into(),
-            }]
+            vec![SyntaxModuleItem { key, symbol: name.into() }]
         };
-        lower_syntax_program(&input, isa.as_ref(), &module_items).unwrap_or_else(|error| {
-            panic!("Core.String {name} lowers through syntax ISLE: {error:?}")
-        });
+        lower_syntax_program(&input, isa.as_ref(), &module_items)
+            .unwrap_or_else(|error| panic!("Core.String {name} lowers through syntax ISLE: {error:?}"));
     }
 }
 
@@ -2405,22 +1782,16 @@ fn copied_foundation_assert_source_cannot_receive_panic_authority() {
         .into_iter()
         .find(|source| source.logical_path == CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
         .expect("embedded Foundation Assert source");
-    let directory = tempfile::tempdir()
-        .expect("copied Foundation project")
-        .keep();
+    let directory = tempfile::tempdir().expect("copied Foundation project").keep();
     let source_path = directory.join(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH);
-    std::fs::create_dir_all(source_path.parent().expect("Assert parent"))
-        .expect("create copied Assert parent");
+    std::fs::create_dir_all(source_path.parent().expect("Assert parent")).expect("create copied Assert parent");
     std::fs::write(&source_path, &source.source).expect("write copied Assert source");
     let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
         .expect("parse copied Foundation Assert source");
     let generation = SyntaxGenerationId(95);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory.clone(),
-            },
+            host: RootEntry { dependency_name: None, source_root: directory.clone() },
             dependencies: Vec::new(),
         },
         Arc::new(vec![SourceUnit {
@@ -2439,13 +1810,8 @@ fn copied_foundation_assert_source_cannot_receive_panic_authority() {
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
     let manifest = AbiManifestV5::canonical_runtime(target);
-    let project = ProjectSession::new(
-        &db,
-        directory,
-        source_path.clone(),
-        "copied-foundation".into(),
-        "copied-assert".into(),
-    );
+    let project =
+        ProjectSession::new(&db, directory, source_path.clone(), "copied-foundation".into(), "copied-assert".into());
     let typed = build_typed_program_with_corelib_services(
         &mut db,
         project,
@@ -2458,11 +1824,7 @@ fn copied_foundation_assert_source_cannot_receive_panic_authority() {
 
     let trigger_failure = SyntaxIndex::from_program(&program, generation)
         .ids_of_kind(NodeKind::CallExpression)
-        .map(|node| AstNodeKey {
-            unit: SourceUnitId::new(&db, source_path.clone()),
-            generation,
-            node,
-        })
+        .map(|node| AstNodeKey { unit: SourceUnitId::new(&db, source_path.clone()), generation, node })
         .find(|key| {
             call_lowering(&db, *key)
                 .ok()
@@ -2484,15 +1846,11 @@ fn symlinked_foundation_assert_source_cannot_receive_panic_authority() {
         .into_iter()
         .find(|source| source.logical_path == CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
         .expect("embedded Foundation Assert source");
-    let directory = tempfile::tempdir()
-        .expect("symlinked Foundation project")
-        .keep();
+    let directory = tempfile::tempdir().expect("symlinked Foundation project").keep();
     let source_path = directory.join(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH);
-    std::fs::create_dir_all(source_path.parent().expect("Assert parent"))
-        .expect("create symlinked Assert parent");
-    let compiler_owned_path =
-        canonical_corelib_service_source_path(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
-            .expect("compiler-owned Assert path");
+    std::fs::create_dir_all(source_path.parent().expect("Assert parent")).expect("create symlinked Assert parent");
+    let compiler_owned_path = canonical_corelib_service_source_path(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
+        .expect("compiler-owned Assert path");
     std::os::unix::fs::symlink(&compiler_owned_path, &source_path)
         .expect("link compiler-owned Assert source into user project");
     let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
@@ -2500,10 +1858,7 @@ fn symlinked_foundation_assert_source_cannot_receive_panic_authority() {
     let generation = SyntaxGenerationId(96);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory.clone(),
-            },
+            host: RootEntry { dependency_name: None, source_root: directory.clone() },
             dependencies: Vec::new(),
         },
         Arc::new(vec![SourceUnit {
@@ -2541,11 +1896,7 @@ fn symlinked_foundation_assert_source_cannot_receive_panic_authority() {
 
     let trigger_failure = SyntaxIndex::from_program(&program, generation)
         .ids_of_kind(NodeKind::CallExpression)
-        .map(|node| AstNodeKey {
-            unit: SourceUnitId::new(&db, source_path.clone()),
-            generation,
-            node,
-        })
+        .map(|node| AstNodeKey { unit: SourceUnitId::new(&db, source_path.clone()), generation, node })
         .find(|key| {
             call_lowering(&db, *key)
                 .ok()
@@ -2561,8 +1912,7 @@ fn symlinked_foundation_assert_source_cannot_receive_panic_authority() {
 
 #[test]
 fn ordinary_syscall_spelling_cannot_request_a_corelib_service_import() {
-    let (input, _isa, root) =
-        item_fixture_with_root("i64 Main() { return __syscall_write(1, \"application\"); }");
+    let (input, _isa, root) = item_fixture_with_root("i64 Main() { return __syscall_write(1, \"application\"); }");
     let main = find_function_definition(input.database(), root).expect("application Main");
     let call = find_call_expression(input.database(), main).expect("application syscall spelling");
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
@@ -2571,9 +1921,8 @@ fn ordinary_syscall_spelling_cannot_request_a_corelib_service_import() {
 
 #[test]
 fn parsed_program_declares_then_imports_syntax_items_without_hir() {
-    let (input, isa, root) = item_fixture_with_root(
-        "i32 AddOne(i32 value) { return value; } i32 Main() { return AddOne(41); }",
-    );
+    let (input, isa, root) =
+        item_fixture_with_root("i32 AddOne(i32 value) { return value; } i32 Main() { return AddOne(41); }");
     let db = input.database();
     let items = find_function_definitions(db, root);
     let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
@@ -2582,14 +1931,8 @@ fn parsed_program_declares_then_imports_syntax_items_without_hir() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: items[0],
-                symbol: "AddOne".into(),
-            },
-            SyntaxModuleItem {
-                key: items[1],
-                symbol: "Main".into(),
-            },
+            SyntaxModuleItem { key: items[0], symbol: "AddOne".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
         ],
         Linkage::Export,
     )
@@ -2597,48 +1940,32 @@ fn parsed_program_declares_then_imports_syntax_items_without_hir() {
     assert_eq!(declared.len(), 2);
     assert_eq!(
         module.get_name("AddOne"),
-        Some(cranelift_module::FuncOrDataId::Func(
-            declared[&beskid_isle::DirectCallee::item(items[0])]
-        ))
+        Some(cranelift_module::FuncOrDataId::Func(declared[&beskid_isle::DirectCallee::item(items[0])]))
     );
     assert_eq!(
         module.get_name("Main"),
-        Some(cranelift_module::FuncOrDataId::Func(
-            declared[&beskid_isle::DirectCallee::item(items[1])]
-        ))
+        Some(cranelift_module::FuncOrDataId::Func(declared[&beskid_isle::DirectCallee::item(items[1])]))
     );
 }
 
 #[test]
 fn parsed_program_lowers_to_backend_artifact_without_hir() {
-    let (input, isa, root) = item_fixture_with_root(
-        "i32 AddOne(i32 value) { return value; } i32 Main() { return AddOne(41); }",
-    );
+    let (input, isa, root) =
+        item_fixture_with_root("i32 AddOne(i32 value) { return value; } i32 Main() { return AddOne(41); }");
     let items = find_function_definitions(input.database(), root);
     let artifact = lower_syntax_program(
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: items[0],
-                symbol: "AddOne".into(),
-            },
-            SyntaxModuleItem {
-                key: items[1],
-                symbol: "Main".into(),
-            },
+            SyntaxModuleItem { key: items[0], symbol: "AddOne".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
         ],
     )
     .expect("syntax items lower into a normal backend artifact");
 
     assert_eq!(artifact.functions.len(), 2);
-    beskid_codegen::validate_artifact(&artifact)
-        .expect("direct syntax calls resolve against artifact definitions");
-    let main = artifact
-        .functions
-        .iter()
-        .find(|function| function.name == "Main")
-        .expect("Main artifact function");
+    beskid_codegen::validate_artifact(&artifact).expect("direct syntax calls resolve against artifact definitions");
+    let main = artifact.functions.iter().find(|function| function.name == "Main").expect("Main artifact function");
     assert!(main.function.display().to_string().contains("call"));
 }
 
@@ -2647,46 +1974,25 @@ fn parsed_syntax_program_omits_uncalled_generic_enum_declarations() {
     let (input, isa, root) = item_fixture_with_root(
         "type Box<T> { T value } enum Option<T> { Some(T value), None } i32 Main() { return 0; }",
     );
-    let boxed = find_definition_of_kind(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::TypeDefinition,
-    )
-    .expect("generic type declaration");
-    let option = find_definition_of_kind(
-        input.database(),
-        root,
-        beskid_queries::IndexedNodeKind::EnumDefinition,
-    )
-    .expect("generic enum declaration");
+    let boxed = find_definition_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::TypeDefinition)
+        .expect("generic type declaration");
+    let option = find_definition_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::EnumDefinition)
+        .expect("generic enum declaration");
     let main = find_function_definitions(input.database(), root)[0];
 
     let artifact = lower_syntax_program(
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: boxed,
-                symbol: "Box".into(),
-            },
-            SyntaxModuleItem {
-                key: option,
-                symbol: "Option".into(),
-            },
-            SyntaxModuleItem {
-                key: main,
-                symbol: "Main".into(),
-            },
+            SyntaxModuleItem { key: boxed, symbol: "Box".into() },
+            SyntaxModuleItem { key: option, symbol: "Option".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
         ],
     )
     .expect("generic declarations without executable bodies are omitted");
 
     assert_eq!(
-        artifact
-            .functions
-            .iter()
-            .map(|function| function.name.as_str())
-            .collect::<Vec<_>>(),
+        artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>(),
         ["Main"],
         "only executable syntax items enter the artifact",
     );
@@ -2702,8 +2008,8 @@ fn parsed_struct_literal_method_call_uses_receiver_abi_without_hir() {
         .into_iter()
         .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Main"))
         .expect("Main source item");
-    let method = find_node(db, root, beskid_queries::IndexedNodeKind::MethodDefinition)
-        .expect("inline method source item");
+    let method =
+        find_node(db, root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("inline method source item");
     assert_eq!(
         beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::MethodDefinition),
         beskid_isle::SyntaxNodeClassification::IsleLowered(beskid_isle::NodeKind::MethodDefinition),
@@ -2716,9 +2022,8 @@ fn parsed_struct_literal_method_call_uses_receiver_abi_without_hir() {
         "adapter must surface MethodDefinition as an IsleLowered item kind"
     );
     let call = find_call_expression(db, main).expect("method call syntax");
-    let beskid_queries::CallLowering::Direct(declaration) = call_lowering(db, call)
-        .expect("method call query")
-        .expect("method call lowering")
+    let beskid_queries::CallLowering::Direct(declaration) =
+        call_lowering(db, call).expect("method call query").expect("method call lowering")
     else {
         panic!("struct literal method call must resolve to its exact syntax declaration");
     };
@@ -2728,25 +2033,14 @@ fn parsed_struct_literal_method_call_uses_receiver_abi_without_hir() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: method,
-                symbol: "Point_Ping".into(),
-            },
-            SyntaxModuleItem {
-                key: main,
-                symbol: "Main".into(),
-            },
+            SyntaxModuleItem { key: method, symbol: "Point_Ping".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
         ],
     )
     .expect("syntax-only module lowering supports the method receiver ABI");
 
-    beskid_codegen::validate_artifact(&artifact)
-        .expect("method call imports the exact syntax method declaration");
-    let main = artifact
-        .functions
-        .iter()
-        .find(|function| function.name == "Main")
-        .expect("Main artifact function");
+    beskid_codegen::validate_artifact(&artifact).expect("method call imports the exact syntax method declaration");
+    let main = artifact.functions.iter().find(|function| function.name == "Main").expect("Main artifact function");
     assert!(main.function.display().to_string().contains("call"));
 }
 
@@ -2760,37 +2054,24 @@ fn parsed_nominal_parameter_method_call_uses_receiver_abi_without_hir() {
         .into_iter()
         .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Main"))
         .expect("Main source item");
-    let method = find_node(db, root, beskid_queries::IndexedNodeKind::MethodDefinition)
-        .expect("inline method source item");
+    let method =
+        find_node(db, root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("inline method source item");
     let call = find_call_expression(db, main).expect("method call syntax");
-    assert_eq!(
-        call_lowering(db, call).expect("method call query"),
-        Some(beskid_queries::CallLowering::Direct(method))
-    );
+    assert_eq!(call_lowering(db, call).expect("method call query"), Some(beskid_queries::CallLowering::Direct(method)));
 
     let artifact = lower_syntax_program(
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: method,
-                symbol: "Point_Ping".into(),
-            },
-            SyntaxModuleItem {
-                key: main,
-                symbol: "Main".into(),
-            },
+            SyntaxModuleItem { key: method, symbol: "Point_Ping".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
         ],
     )
     .expect("syntax-only module lowering supports an explicit nominal receiver ABI");
 
     beskid_codegen::validate_artifact(&artifact)
         .expect("nominal receiver call imports its exact syntax method declaration");
-    let main = artifact
-        .functions
-        .iter()
-        .find(|function| function.name == "Main")
-        .expect("Main artifact function");
+    let main = artifact.functions.iter().find(|function| function.name == "Main").expect("Main artifact function");
     assert!(main.function.display().to_string().contains("call"));
 }
 
@@ -2804,26 +2085,16 @@ fn parsed_program_specializes_an_inferred_generic_call_without_hir() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: items[0],
-                symbol: "Equal".into(),
-            },
-            SyntaxModuleItem {
-                key: items[1],
-                symbol: "Main".into(),
-            },
+            SyntaxModuleItem { key: items[0], symbol: "Equal".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
         ],
     )
     .expect("syntax module specializes inferred generic calls through exact ABI facts");
 
-    beskid_codegen::validate_artifact(&artifact)
-        .expect("the generic call imports its specialized item identity");
+    beskid_codegen::validate_artifact(&artifact).expect("the generic call imports its specialized item identity");
     assert_eq!(artifact.functions.len(), 2);
     assert!(
-        artifact
-            .functions
-            .iter()
-            .any(|function| function.name.starts_with("Equal#generic_")),
+        artifact.functions.iter().any(|function| function.name.starts_with("Equal#generic_")),
         "generic source items must use a mangled specialization identity"
     );
 }
@@ -2838,14 +2109,8 @@ fn parsed_program_specializes_generic_string_not_equal_as_content_comparison() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: items[0],
-                symbol: "NotEqual".into(),
-            },
-            SyntaxModuleItem {
-                key: items[1],
-                symbol: "Main".into(),
-            },
+            SyntaxModuleItem { key: items[0], symbol: "NotEqual".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
         ],
     )
     .expect("generic string != lowers through its exact specialization");
@@ -2856,10 +2121,7 @@ fn parsed_program_specializes_generic_string_not_equal_as_content_comparison() {
         .find(|function| function.name.starts_with("NotEqual#generic_"))
         .expect("specialized NotEqual<string> function");
     let clif = not_equal.function.display().to_string();
-    assert!(
-        clif.contains("iconst.i32 42"),
-        "NotEqual<string> must dispatch through str_eq tag 42: {clif}"
-    );
+    assert!(clif.contains("iconst.i32 42"), "NotEqual<string> must dispatch through str_eq tag 42: {clif}");
     assert!(
         !clif.contains("icmp eq v0, v1") && !clif.contains("icmp ne v0, v1"),
         "NotEqual<string> must not compare raw string pointers: {clif}"
@@ -2887,14 +2149,8 @@ fn parsed_program_keeps_generic_nominal_pointer_equal_as_identity_comparison() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: equal,
-                symbol: "Equal".into(),
-            },
-            SyntaxModuleItem {
-                key: main,
-                symbol: "Main".into(),
-            },
+            SyntaxModuleItem { key: equal, symbol: "Equal".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
         ],
     )
     .expect("generic nominal pointer equality lowers through its exact specialization");
@@ -2905,14 +2161,8 @@ fn parsed_program_keeps_generic_nominal_pointer_equal_as_identity_comparison() {
         .find(|function| function.name.starts_with("Equal#generic_"))
         .expect("specialized Equal<Box<i64>> function");
     let clif = equal.function.display().to_string();
-    assert!(
-        !clif.contains("iconst.i32 42"),
-        "nominal POINTER specialization must not dispatch through str_eq: {clif}"
-    );
-    assert!(
-        clif.contains("icmp eq v0, v1"),
-        "nominal POINTER specialization must retain identity equality: {clif}"
-    );
+    assert!(!clif.contains("iconst.i32 42"), "nominal POINTER specialization must not dispatch through str_eq: {clif}");
+    assert!(clif.contains("icmp eq v0, v1"), "nominal POINTER specialization must retain identity equality: {clif}");
 }
 
 #[test]
@@ -2933,23 +2183,14 @@ fn parsed_program_specializes_zero_argument_generic_factory_without_hir() {
         .copied()
         .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Main"))
         .expect("Main");
-    assert_eq!(
-        beskid_queries::item_abi_signature(input.database(), create).expect("generic item ABI"),
-        None
-    );
+    assert_eq!(beskid_queries::item_abi_signature(input.database(), create).expect("generic item ABI"), None);
 
     let artifact = lower_syntax_program(
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: create,
-                symbol: "Create".into(),
-            },
-            SyntaxModuleItem {
-                key: main,
-                symbol: "Main".into(),
-            },
+            SyntaxModuleItem { key: create, symbol: "Create".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
         ],
     )
     .expect("zero-argument generic factories specialize through call-derived ABI identity");
@@ -2957,10 +2198,7 @@ fn parsed_program_specializes_zero_argument_generic_factory_without_hir() {
     beskid_codegen::validate_artifact(&artifact)
         .expect("specialized factory imports must resolve against module declarations");
     assert!(
-        artifact
-            .functions
-            .iter()
-            .any(|function| function.name.starts_with("Create#generic_")),
+        artifact.functions.iter().any(|function| function.name.starts_with("Create#generic_")),
         "generic factory must emit a mangled specialization, not a bare Item identity"
     );
 }
@@ -2984,34 +2222,18 @@ fn parsed_test_program_specializes_is_ok_and_binds_match_payload_without_hir() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: is_ok,
-                symbol: "IsOk".into(),
-            },
-            SyntaxModuleItem {
-                key: true_fn,
-                symbol: "True".into(),
-            },
-            SyntaxModuleItem {
-                key: test,
-                symbol: "sample".into(),
-            },
+            SyntaxModuleItem { key: is_ok, symbol: "IsOk".into() },
+            SyntaxModuleItem { key: true_fn, symbol: "True".into() },
+            SyntaxModuleItem { key: test, symbol: "sample".into() },
         ],
     ) {
         Ok(artifact) => artifact,
         Err(error) => panic!("SyscallWrite-shaped IsOk + Ok(written) test must lower: {error:?}"),
     };
     assert!(
-        artifact
-            .functions
-            .iter()
-            .any(|function| function.name.starts_with("IsOk#generic_")),
+        artifact.functions.iter().any(|function| function.name.starts_with("IsOk#generic_")),
         "IsOk must specialize: {:?}",
-        artifact
-            .functions
-            .iter()
-            .map(|function| &function.name)
-            .collect::<Vec<_>>(),
+        artifact.functions.iter().map(|function| &function.name).collect::<Vec<_>>(),
     );
 }
 
@@ -3026,23 +2248,14 @@ fn parsed_test_program_specializes_a_generic_call_without_hir() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: generic,
-                symbol: "Equal".into(),
-            },
-            SyntaxModuleItem {
-                key: test,
-                symbol: "Main".into(),
-            },
+            SyntaxModuleItem { key: generic, symbol: "Equal".into() },
+            SyntaxModuleItem { key: test, symbol: "Main".into() },
         ],
     )
     .expect("test-body generic calls produce exact syntax ABI specializations");
 
     assert!(
-        artifact
-            .functions
-            .iter()
-            .any(|function| function.name.starts_with("Equal#generic_")),
+        artifact.functions.iter().any(|function| function.name.starts_with("Equal#generic_")),
         "test-body generic calls must emit their exact specialization",
     );
 }
@@ -3071,18 +2284,9 @@ fn parsed_test_program_lowers_a_bare_i64_generic_argument_without_hir() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: items[0],
-                symbol: "Position".into(),
-            },
-            SyntaxModuleItem {
-                key: items[1],
-                symbol: "Equal".into(),
-            },
-            SyntaxModuleItem {
-                key: test,
-                symbol: "Main".into(),
-            },
+            SyntaxModuleItem { key: items[0], symbol: "Position".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Equal".into() },
+            SyntaxModuleItem { key: test, symbol: "Main".into() },
         ],
     )
     .expect("syntax lowering keeps the generic literal at the specialized ABI width");
@@ -3103,34 +2307,22 @@ fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
     let directory = tempfile::tempdir().expect("project").keep();
     let main_path = directory.join("Main.bd");
     let assert_path = directory.join("Testing/Assert.bd");
-    let main_source =
-        "use Testing.Assert; test Main { Assert.Equal(\"same\", \"same\", \"because\"); }";
-    let assert_source = "pub unit Equal<T>(T actual, T expected, string because) { if actual == expected { return; } return; }";
-    std::fs::create_dir_all(assert_path.parent().expect("Testing directory"))
-        .expect("Testing directory");
+    let main_source = "use Testing.Assert; test Main { Assert.Equal(\"same\", \"same\", \"because\"); }";
+    let assert_source =
+        "pub unit Equal<T>(T actual, T expected, string because) { if actual == expected { return; } return; }";
+    std::fs::create_dir_all(assert_path.parent().expect("Testing directory")).expect("Testing directory");
     std::fs::write(&main_path, main_source).expect("main source");
     std::fs::write(&assert_path, assert_source).expect("assert source");
-    let main_program = parse_program_with_source_name(main_path.to_str().unwrap(), main_source)
-        .expect("main parse");
+    let main_program = parse_program_with_source_name(main_path.to_str().unwrap(), main_source).expect("main parse");
     let assert_program =
-        parse_program_with_source_name(assert_path.to_str().unwrap(), assert_source)
-            .expect("assert parse");
+        parse_program_with_source_name(assert_path.to_str().unwrap(), assert_source).expect("assert parse");
     let main_unit = SourceUnitId::new(&*db, main_path.clone());
     let assert_unit = SourceUnitId::new(&*db, assert_path.clone());
     let generation = SyntaxGenerationId(22);
-    let project = ProjectSession::new(
-        &*db,
-        directory.clone(),
-        main_path.clone(),
-        "App".into(),
-        "lock".into(),
-    );
+    let project = ProjectSession::new(&*db, directory.clone(), main_path.clone(), "App".into(), "lock".into());
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory,
-            },
+            host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
         },
         Arc::new(vec![
@@ -3152,18 +2344,9 @@ fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed =
-        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
-    let main_root = AstNodeKey {
-        unit: main_unit,
-        generation,
-        node: AstNodeId(0),
-    };
-    let assert_root = AstNodeKey {
-        unit: assert_unit,
-        generation,
-        node: AstNodeId(0),
-    };
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_root = AstNodeKey { unit: main_unit, generation, node: AstNodeId(0) };
+    let assert_root = AstNodeKey { unit: assert_unit, generation, node: AstNodeId(0) };
     let generic = find_function_definition(&*db, assert_root).expect("generic function");
     let test = find_test_definition(&*db, main_root).expect("test item");
     let target = TargetMetadata::supported()
@@ -3188,23 +2371,14 @@ fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: generic,
-                symbol: "Equal".into(),
-            },
-            SyntaxModuleItem {
-                key: test,
-                symbol: "Main".into(),
-            },
+            SyntaxModuleItem { key: generic, symbol: "Equal".into() },
+            SyntaxModuleItem { key: test, symbol: "Main".into() },
         ],
     )
     .expect("qualified generic calls produce exact syntax ABI specializations");
 
     assert!(
-        artifact
-            .functions
-            .iter()
-            .any(|function| function.name.starts_with("Equal#generic_")),
+        artifact.functions.iter().any(|function| function.name.starts_with("Equal#generic_")),
         "qualified generic calls must emit their exact specialization",
     );
     let equal = artifact
@@ -3213,56 +2387,31 @@ fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
         .find(|function| function.name.starts_with("Equal#generic_"))
         .expect("specialized imported Assert.Equal function");
     let clif = equal.function.display().to_string();
-    assert!(
-        clif.contains("iconst.i32 42"),
-        "Assert.Equal<string> must dispatch through str_eq tag 42: {clif}"
-    );
-    assert!(
-        !clif.contains("icmp eq"),
-        "Assert.Equal<string> must not compare raw string pointers: {clif}"
-    );
+    assert!(clif.contains("iconst.i32 42"), "Assert.Equal<string> must dispatch through str_eq tag 42: {clif}");
+    assert!(!clif.contains("icmp eq"), "Assert.Equal<string> must not compare raw string pointers: {clif}");
 }
 
 #[test]
 fn parsed_syntax_program_uses_the_existing_artifact_string_pool() {
     let (input, isa, root) = item_fixture_with_root("unit Main() { \"Beskid\"; return; }");
     let main = find_function_definitions(input.database(), root)[0];
-    let artifact = lower_syntax_program(
-        &input,
-        isa.as_ref(),
-        &[SyntaxModuleItem {
-            key: main,
-            symbol: "Main".into(),
-        }],
-    )
-    .expect("syntax item with a string literal lowers through the artifact pool");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("syntax item with a string literal lowers through the artifact pool");
 
     assert_eq!(artifact.string_literals.len(), 1);
-    assert!(
-        artifact
-            .string_literals
-            .values()
-            .any(|bytes| bytes.as_slice() == b"Beskid")
-    );
+    assert!(artifact.string_literals.values().any(|bytes| bytes.as_slice() == b"Beskid"));
 }
 
 #[test]
 fn parsed_syntax_string_literal_materializes_runtime_string_abi() {
     let (input, isa, root) = item_fixture_with_root("string Main() { return \"ééé\"; }");
     let main = find_function_definitions(input.database(), root)[0];
-    let artifact = lower_syntax_program(
-        &input,
-        isa.as_ref(),
-        &[SyntaxModuleItem {
-            key: main,
-            symbol: "Main".into(),
-        }],
-    )
-    .expect("syntax string literal lowers through runtime ABI materialization");
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("syntax string literal lowers through runtime ABI materialization");
 
     let clif = artifact.functions[0].function.display().to_string();
-    let str_new = beskid_abi::dispatch_route_for_symbol(beskid_abi::SYM_STR_NEW)
-        .expect("generated str_new dispatch route");
+    let str_new =
+        beskid_abi::dispatch_route_for_symbol(beskid_abi::SYM_STR_NEW).expect("generated str_new dispatch route");
     assert_eq!(str_new.tag, beskid_abi::TAG_STR_NEW);
     assert!(
         clif.contains("interop_dispatch_ptr"),
@@ -3276,22 +2425,16 @@ fn parsed_syntax_string_literal_materializes_runtime_string_abi() {
         .lines()
         .find_map(|line| {
             let line = line.trim();
-            line.contains(" = iconst.i64 6")
-                .then(|| line.split_once(" = ").map(|(value, _)| value))?
+            line.contains(" = iconst.i64 6").then(|| line.split_once(" = ").map(|(value, _)| value))?
         })
         .expect("three UTF-8 e-acute scalars must materialize as six bytes");
     assert!(
-        clif.lines().any(
-            |line| line.trim().starts_with(&format!("store {byte_len}, ")) && line.contains("+24")
-        ),
+        clif.lines().any(|line| line.trim().starts_with(&format!("store {byte_len}, ")) && line.contains("+24")),
         "UTF-8 byte length must occupy str_new's second payload slot: {clif}",
     );
     let dispatch_ref = clif
         .lines()
-        .find_map(|line| {
-            line.contains("%interop_dispatch_ptr")
-                .then(|| line.split_whitespace().next())?
-        })
+        .find_map(|line| line.contains("%interop_dispatch_ptr").then(|| line.split_whitespace().next())?)
         .expect("pointer dispatch function reference");
     let dispatch_result = clif
         .lines()
@@ -3302,8 +2445,7 @@ fn parsed_syntax_string_literal_materializes_runtime_string_abi() {
         })
         .expect("str_new pointer dispatch result");
     assert!(
-        clif.lines()
-            .any(|line| line.trim() == format!("return {dispatch_result}")),
+        clif.lines().any(|line| line.trim() == format!("return {dispatch_result}")),
         "the raw literal pointer must not escape instead of the str_new result: {clif}",
     );
 }
@@ -3316,23 +2458,13 @@ fn parsed_syntax_program_emits_imported_unit_calls_as_statements() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: items[0],
-                symbol: "Assert".into(),
-            },
-            SyntaxModuleItem {
-                key: items[1],
-                symbol: "Main".into(),
-            },
+            SyntaxModuleItem { key: items[0], symbol: "Assert".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
         ],
     )
     .expect("syntax program with a unit call lowers through its statement rule");
 
-    let main = artifact
-        .functions
-        .iter()
-        .find(|function| function.name == "Main")
-        .expect("Main function");
+    let main = artifact.functions.iter().find(|function| function.name == "Main").expect("Main function");
     assert!(main.function.display().to_string().contains("call"));
 }
 
@@ -3361,10 +2493,7 @@ fn canonical_runtime_test_assembly(
     (
         Arc::new(SyntaxProgramAssembly::new(
             EffectiveCompilationRoots {
-                host: RootEntry {
-                    dependency_name: None,
-                    source_root: directory.to_path_buf(),
-                },
+                host: RootEntry { dependency_name: None, source_root: directory.to_path_buf() },
                 dependencies: Vec::new(),
             },
             Arc::new(source_units),
@@ -3403,39 +2532,25 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
         canonical_runtime_intrinsic_capability(&manifest).expect("compiler authority"),
     )
     .expect("canonical runtime syntax facts");
-    let root = AstNodeKey {
-        unit: SourceUnitId::new(&*db, source_path),
-        generation,
-        node: AstNodeId(0),
-    };
+    let root = AstNodeKey { unit: SourceUnitId::new(&*db, source_path), generation, node: AstNodeId(0) };
     let leaked: &'static BeskidDatabase = Box::leak(db);
-    let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
-        .expect("canonical runtime codegen input");
+    let input =
+        CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest).expect("canonical runtime codegen input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
     let items = find_function_definitions(input.database(), root);
-    let selected = [
-        "NativePointer",
-        "SystemAllocate",
-        "RootFramePrevious",
-        "RootFrame",
-    ];
+    let selected = ["NativePointer", "SystemAllocate", "RootFramePrevious", "RootFrame"];
     let module_items = selected
         .into_iter()
         .map(|name| {
             let key = items
                 .iter()
                 .copied()
-                .find(|key| {
-                    item_name(input.database(), *key).ok().flatten().as_deref() == Some(name)
-                })
+                .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some(name))
                 .unwrap_or_else(|| panic!("canonical helper {name}"));
-            SyntaxModuleItem {
-                key,
-                symbol: name.into(),
-            }
+            SyntaxModuleItem { key, symbol: name.into() }
         })
         .collect::<Vec<_>>();
 
@@ -3445,28 +2560,15 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
     beskid_codegen::validate_artifact(&artifact)
         .expect("canonical helper imports are declared by the manifest authority");
     let imports = beskid_codegen::referenced_extern_imports(&artifact);
+    assert!(imports.iter().any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_system_allocate"));
+    let root_frame =
+        artifact.functions.iter().find(|function| function.name == "RootFrame").expect("RootFrame helper is lowered");
     assert!(
-        imports
-            .iter()
-            .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_system_allocate")
-    );
-    let root_frame = artifact
-        .functions
-        .iter()
-        .find(|function| function.name == "RootFrame")
-        .expect("RootFrame helper is lowered");
-    assert!(
-        root_frame
-            .function
-            .display()
-            .to_string()
-            .contains("load.i64"),
+        root_frame.function.display().to_string().contains("load.i64"),
         "manifest-authorized raw_word_load is lowered inline through ISLE"
     );
     assert!(
-        !imports
-            .iter()
-            .any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_raw_word_load"),
+        !imports.iter().any(|entry| entry.symbol == "beskid_rt_v5_intrinsic_raw_word_load"),
         "the inline load must not retain an unnecessary ABI import"
     );
     assert!(
@@ -3477,38 +2579,25 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
         !imports.iter().any(|entry| {
             matches!(
                 entry.symbol.as_str(),
-                "beskid_rt_v5_intrinsic_pointer_from_native_word"
-                    | "beskid_rt_v5_intrinsic_pointer_add"
+                "beskid_rt_v5_intrinsic_pointer_from_native_word" | "beskid_rt_v5_intrinsic_pointer_add"
             )
         }),
         "inline pointer conversions and arithmetic must not retain ABI imports"
     );
     assert_eq!(
-        imports
-            .iter()
-            .map(|entry| entry.symbol.as_str())
-            .collect::<Vec<_>>(),
+        imports.iter().map(|entry| entry.symbol.as_str()).collect::<Vec<_>>(),
         ["beskid_rt_v5_intrinsic_system_allocate"],
         "only the still-external allocation primitive remains imported"
     );
 
     let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
-    let declared = emit_syntax_program(
-        &mut module,
-        &input,
-        isa.as_ref(),
-        &module_items,
-        Linkage::Export,
-    )
-    .expect("canonical runtime helpers define through the production module emitter");
+    let declared = emit_syntax_program(&mut module, &input, isa.as_ref(), &module_items, Linkage::Export)
+        .expect("canonical runtime helpers define through the production module emitter");
     assert_eq!(declared.len(), module_items.len());
 }
 
 #[test]
-#[cfg(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "macos", target_arch = "aarch64"),
-))]
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
 fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_closed() {
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("runtime project").keep();
@@ -3521,16 +2610,8 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         "lock".into(),
     );
     let generation = SyntaxGenerationId(32);
-    let host_triple = if cfg!(target_os = "macos") {
-        "aarch64-apple-darwin"
-    } else {
-        "x86_64-unknown-linux-gnu"
-    };
-    let host_isa_name = if cfg!(target_os = "macos") {
-        "aarch64"
-    } else {
-        "x86_64"
-    };
+    let host_triple = if cfg!(target_os = "macos") { "aarch64-apple-darwin" } else { "x86_64-unknown-linux-gnu" };
+    let host_isa_name = if cfg!(target_os = "macos") { "aarch64" } else { "x86_64" };
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == host_triple)
@@ -3544,14 +2625,10 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         canonical_runtime_intrinsic_capability(&manifest).expect("compiler authority"),
     )
     .expect("canonical runtime syntax facts");
-    let root = AstNodeKey {
-        unit: SourceUnitId::new(&*db, source_path),
-        generation,
-        node: AstNodeId(0),
-    };
+    let root = AstNodeKey { unit: SourceUnitId::new(&*db, source_path), generation, node: AstNodeId(0) };
     let leaked: &'static BeskidDatabase = Box::leak(db);
-    let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
-        .expect("canonical runtime codegen input");
+    let input =
+        CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest).expect("canonical runtime codegen input");
     let isa = isa::lookup_by_name(host_isa_name)
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
@@ -3589,34 +2666,18 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
             let key = items
                 .iter()
                 .copied()
-                .find(|key| {
-                    item_name(input.database(), *key).ok().flatten().as_deref() == Some(name)
-                })
+                .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some(name))
                 .unwrap_or_else(|| panic!("canonical helper {name}"));
-            SyntaxModuleItem {
-                key,
-                symbol: name.into(),
-            }
+            SyntaxModuleItem { key, symbol: name.into() }
         })
         .collect::<Vec<_>>();
     let mut builder = JITBuilder::with_isa(isa.clone(), default_libcall_names());
-    builder.symbol(
-        "beskid_rt_v5_intrinsic_system_allocate",
-        test_system_allocate as *const u8,
-    );
+    builder.symbol("beskid_rt_v5_intrinsic_system_allocate", test_system_allocate as *const u8);
     builder.symbol("beskid_rt_v5_intrinsic_tls_get", test_tls_get as *const u8);
     let mut module = JITModule::new(builder);
-    let declared = emit_syntax_program(
-        &mut module,
-        &input,
-        isa.as_ref(),
-        &module_items,
-        Linkage::Export,
-    )
-    .expect("closure descriptor helpers lower through the production module emitter");
-    module
-        .finalize_definitions()
-        .expect("finalize closure helpers");
+    let declared = emit_syntax_program(&mut module, &input, isa.as_ref(), &module_items, Linkage::Export)
+        .expect("closure descriptor helpers lower through the production module emitter");
+    module.finalize_definitions().expect("finalize closure helpers");
 
     let validate = module.get_finalized_function(
         *declared
@@ -3624,8 +2685,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
                 *items
                     .iter()
                     .find(|key| {
-                        item_name(input.database(), **key).ok().flatten().as_deref()
-                            == Some("ValidateTypeDescriptor")
+                        item_name(input.database(), **key).ok().flatten().as_deref() == Some("ValidateTypeDescriptor")
                     })
                     .expect("ValidateTypeDescriptor item"),
             ))
@@ -3637,8 +2697,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
                 *items
                     .iter()
                     .find(|key| {
-                        item_name(input.database(), **key).ok().flatten().as_deref()
-                            == Some("RootClosureEnvironment")
+                        item_name(input.database(), **key).ok().flatten().as_deref() == Some("RootClosureEnvironment")
                     })
                     .expect("RootClosureEnvironment item"),
             ))
@@ -3675,10 +2734,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
             .get(&DirectCallee::item(
                 *items
                     .iter()
-                    .find(|key| {
-                        item_name(input.database(), **key).ok().flatten().as_deref()
-                            == Some("AllocateObject")
-                    })
+                    .find(|key| item_name(input.database(), **key).ok().flatten().as_deref() == Some("AllocateObject"))
                     .expect("AllocateObject item"),
             ))
             .expect("AllocateObject declaration"),
@@ -3690,67 +2746,32 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         unsafe { std::mem::transmute(root_environment_current) };
     let allocate_environment: extern "C" fn(*const usize) -> *mut u8 =
         unsafe { std::mem::transmute(allocate_environment) };
-    let allocate_object: extern "C" fn(*const usize) -> *mut u8 =
-        unsafe { std::mem::transmute(allocate_object) };
+    let allocate_object: extern "C" fn(*const usize) -> *mut u8 = unsafe { std::mem::transmute(allocate_object) };
 
     let mut pointer_map = [16usize];
     let mut descriptor = [32usize, 8, pointer_map.as_mut_ptr() as usize, 1, 0];
-    assert_eq!(
-        validate(descriptor.as_ptr()),
-        1,
-        "valid descriptor is accepted"
-    );
+    assert_eq!(validate(descriptor.as_ptr()), 1, "valid descriptor is accepted");
 
     pointer_map[0] = 17;
-    assert_eq!(
-        validate(descriptor.as_ptr()),
-        0,
-        "unaligned pointer offset is rejected"
-    );
+    assert_eq!(validate(descriptor.as_ptr()), 0, "unaligned pointer offset is rejected");
     pointer_map[0] = usize::MAX;
-    assert_eq!(
-        validate(descriptor.as_ptr()),
-        0,
-        "overflowing pointer end is rejected"
-    );
+    assert_eq!(validate(descriptor.as_ptr()), 0, "overflowing pointer end is rejected");
     // Restored through the descriptor pointer map; keep the write observable to rustc.
     pointer_map[0] = std::hint::black_box(16);
     descriptor[1] = 24;
-    assert_eq!(
-        validate(descriptor.as_ptr()),
-        0,
-        "non-power-of-two alignment is rejected"
-    );
-    assert_eq!(
-        validate(std::ptr::null()),
-        0,
-        "null descriptor is rejected before dereference"
-    );
+    assert_eq!(validate(descriptor.as_ptr()), 0, "non-power-of-two alignment is rejected");
+    assert_eq!(validate(std::ptr::null()), 0, "null descriptor is rejected before dereference");
 
     pointer_map[0] = 16;
-    assert_eq!(
-        pointer_map[0], 16,
-        "restore valid pointer offset before allocate"
-    );
+    assert_eq!(pointer_map[0], 16, "restore valid pointer offset before allocate");
     descriptor[1] = 8;
-    assert_eq!(
-        validate(descriptor.as_ptr()),
-        1,
-        "restored descriptor is accepted before allocate"
-    );
+    assert_eq!(validate(descriptor.as_ptr()), 1, "restored descriptor is accepted before allocate");
     let request = [32usize, 8, descriptor.as_mut_ptr() as usize];
     let object = allocate_object(request.as_ptr());
-    assert!(
-        !object.is_null(),
-        "valid managed request allocates an object"
-    );
+    assert!(!object.is_null(), "valid managed request allocates an object");
     let object_header = object as *const usize;
     assert_eq!(unsafe { *object_header }, descriptor.as_mut_ptr() as usize);
-    assert_eq!(
-        unsafe { *object_header.add(1) },
-        0,
-        "managed allocation clears the GC word"
-    );
+    assert_eq!(unsafe { *object_header.add(1) }, 0, "managed allocation clears the GC word");
     let mismatched_size = [40usize, 8, descriptor.as_mut_ptr() as usize];
     assert!(
         allocate_object(mismatched_size.as_ptr()).is_null(),
@@ -3762,42 +2783,25 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         "managed allocation rejects an alignment that differs from its descriptor"
     );
     let missing_descriptor = [32usize, 8, 0];
-    assert!(
-        allocate_object(missing_descriptor.as_ptr()).is_null(),
-        "managed allocation rejects a null descriptor"
-    );
+    assert!(allocate_object(missing_descriptor.as_ptr()).is_null(), "managed allocation rejects a null descriptor");
     assert!(
         allocate_environment(std::ptr::null()).is_null(),
         "null allocation request fails closed before dereference"
     );
     let environment = allocate_environment(request.as_ptr());
-    assert!(
-        !environment.is_null(),
-        "valid request allocates a closure environment"
-    );
+    assert!(!environment.is_null(), "valid request allocates a closure environment");
     let header = environment as *const usize;
     assert_eq!(unsafe { *header }, descriptor.as_mut_ptr() as usize);
-    assert_eq!(
-        unsafe { *header.add(1) },
-        0,
-        "allocation clears the GC word"
-    );
+    assert_eq!(unsafe { *header.add(1) }, 0, "allocation clears the GC word");
 
     let mut slots = [0usize];
     let mut frame = [0usize, slots.as_mut_ptr() as usize, 1];
     let mut tls = [0usize, frame.as_mut_ptr() as usize, 0, 1];
     assert_eq!(root_environment(tls.as_mut_ptr(), 0, environment), 1);
-    assert_eq!(
-        slots[0], environment as usize,
-        "valid environment is rooted in its slot"
-    );
+    assert_eq!(slots[0], environment as usize, "valid environment is rooted in its slot");
     slots[0] = 0;
     TEST_CURRENT_TLS.store(0, Ordering::SeqCst);
-    assert_eq!(
-        root_environment_current(0, environment),
-        0,
-        "missing current TLS fails closed without a root write"
-    );
+    assert_eq!(root_environment_current(0, environment), 0, "missing current TLS fails closed without a root write");
     assert_eq!(slots[0], 0);
     TEST_CURRENT_TLS.store(tls.as_mut_ptr() as usize, Ordering::SeqCst);
     assert_eq!(
@@ -3809,28 +2813,17 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     TEST_CURRENT_TLS.store(0, Ordering::SeqCst);
 }
 
-fn item_fixture(
-    source: &str,
-) -> (
-    CodegenInput<'static>,
-    Arc<dyn cranelift_codegen::isa::TargetIsa>,
-    AstNodeKey,
-) {
+fn item_fixture(source: &str) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let (input, isa, root) = item_fixture_with_root(source);
     let item = find_function_definition(input.database(), root).expect("function key");
     (input, isa, item)
 }
 
-fn canonical_corelib_syscall_fixture() -> (
-    CodegenInput<'static>,
-    Arc<dyn cranelift_codegen::isa::TargetIsa>,
-    AstNodeKey,
-) {
+fn canonical_corelib_syscall_fixture() -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey)
+{
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("Corelib syscall project").keep();
-    let source = canonical_corelib_syscall_sources()
-        .pop()
-        .expect("embedded Core.Syscall source");
+    let source = canonical_corelib_syscall_sources().pop().expect("embedded Core.Syscall source");
     let source_path = directory.join("Syscall.bd");
     std::fs::write(&source_path, &source.source).expect("write embedded Core.Syscall source");
     let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
@@ -3846,10 +2839,7 @@ fn canonical_corelib_syscall_fixture() -> (
     let generation = SyntaxGenerationId(92);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory,
-            },
+            host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
         },
         Arc::new(vec![SourceUnit {
@@ -3876,14 +2866,10 @@ fn canonical_corelib_syscall_fixture() -> (
         canonical_corelib_syscall_service_capability(&manifest).expect("Corelib service authority"),
     )
     .expect("exact embedded Core.Syscall source receives service authority");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let leaked: &'static BeskidDatabase = Box::leak(db);
-    let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
-        .expect("generation-safe Corelib input");
+    let input =
+        CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest).expect("generation-safe Corelib input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
@@ -3891,18 +2877,11 @@ fn canonical_corelib_syscall_fixture() -> (
     (input, isa, root)
 }
 
-fn materialized_corelib_syscall_fixture() -> (
-    CodegenInput<'static>,
-    Arc<dyn cranelift_codegen::isa::TargetIsa>,
-    AstNodeKey,
-) {
+fn materialized_corelib_syscall_fixture()
+-> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let mut db = Box::new(BeskidDatabase::default());
-    let directory = tempfile::tempdir()
-        .expect("materialized Corelib syscall project")
-        .keep();
-    let source = canonical_corelib_syscall_sources()
-        .pop()
-        .expect("embedded Core.Syscall source");
+    let directory = tempfile::tempdir().expect("materialized Corelib syscall project").keep();
+    let source = canonical_corelib_syscall_sources().pop().expect("embedded Core.Syscall source");
     let source_path = directory.join("obj/beskid/deps/src/foundation/Core/Syscall/Syscall.bd");
     std::fs::create_dir_all(source_path.parent().expect("materialized syscall parent"))
         .expect("create materialized syscall parent");
@@ -3920,10 +2899,7 @@ fn materialized_corelib_syscall_fixture() -> (
     let generation = SyntaxGenerationId(97);
     let assembly = ProgramAssembly {
         roots: EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory.clone(),
-            },
+            host: RootEntry { dependency_name: None, source_root: directory.clone() },
             dependencies: vec![RootEntry {
                 dependency_name: Some("corelib_foundation".into()),
                 source_root: directory.join("obj/beskid/deps/src/foundation"),
@@ -3956,11 +2932,7 @@ fn materialized_corelib_syscall_fixture() -> (
         canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
     )
     .expect("loader-proven materialized Core.Syscall receives service authority");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
         .expect("generation-safe materialized Corelib input");
@@ -3971,24 +2943,16 @@ fn materialized_corelib_syscall_fixture() -> (
     (input, isa, root)
 }
 
-fn canonical_foundation_assert_fixture() -> (
-    CodegenInput<'static>,
-    Arc<dyn cranelift_codegen::isa::TargetIsa>,
-    AstNodeKey,
-) {
+fn canonical_foundation_assert_fixture()
+-> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let mut db = Box::new(BeskidDatabase::default());
     let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
         .into_iter()
         .find(|source| source.logical_path == CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
         .expect("embedded Foundation Assert source");
-    let source_path =
-        canonical_corelib_service_source_path(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
-            .expect("compiler-owned Assert path");
-    let source_root = source_path
-        .ancestors()
-        .nth(2)
-        .expect("foundation source root")
-        .to_path_buf();
+    let source_path = canonical_corelib_service_source_path(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
+        .expect("compiler-owned Assert path");
+    let source_root = source_path.ancestors().nth(2).expect("foundation source root").to_path_buf();
     let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
         .expect("parse embedded Foundation Assert source");
     let entry = SourceUnitId::new(&*db, source_path.clone());
@@ -4001,13 +2965,7 @@ fn canonical_foundation_assert_fixture() -> (
     );
     let generation = SyntaxGenerationId(94);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root,
-            },
-            dependencies: Vec::new(),
-        },
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
             path: source_path,
@@ -4032,11 +2990,7 @@ fn canonical_foundation_assert_fixture() -> (
         canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
     )
     .expect("compiler-owned Assert source receives service authority");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
         .expect("generation-safe Foundation Assert input");
@@ -4047,41 +3001,26 @@ fn canonical_foundation_assert_fixture() -> (
     (input, isa, root)
 }
 
-fn canonical_foundation_output_fixture() -> (
-    CodegenInput<'static>,
-    Arc<dyn cranelift_codegen::isa::TargetIsa>,
-    AstNodeKey,
-) {
+fn canonical_foundation_output_fixture()
+-> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     canonical_foundation_service_fixture("Core/Output/Output.bd")
 }
 
-fn canonical_foundation_error_fixture() -> (
-    CodegenInput<'static>,
-    Arc<dyn cranelift_codegen::isa::TargetIsa>,
-    AstNodeKey,
-) {
+fn canonical_foundation_error_fixture()
+-> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     canonical_foundation_service_fixture("Core/Error/Error.bd")
 }
 
 fn canonical_foundation_service_fixture(
     source_relative_path: &str,
-) -> (
-    CodegenInput<'static>,
-    Arc<dyn cranelift_codegen::isa::TargetIsa>,
-    AstNodeKey,
-) {
+) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let mut db = Box::new(BeskidDatabase::default());
     let source_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corelib/packages/foundation/src")
         .join(source_relative_path);
-    let source_path =
-        std::fs::canonicalize(&source_path).expect("canonical Foundation service path");
+    let source_path = std::fs::canonicalize(&source_path).expect("canonical Foundation service path");
     let source = std::fs::read_to_string(&source_path).expect("embedded Foundation service source");
-    let source_root = source_path
-        .ancestors()
-        .nth(3)
-        .expect("foundation source root")
-        .to_path_buf();
+    let source_root = source_path.ancestors().nth(3).expect("foundation source root").to_path_buf();
     let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source)
         .expect("parse embedded Foundation Output source");
     let entry = SourceUnitId::new(&*db, source_path.clone());
@@ -4094,19 +3033,8 @@ fn canonical_foundation_service_fixture(
     );
     let generation = SyntaxGenerationId(96);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root,
-            },
-            dependencies: Vec::new(),
-        },
-        Arc::new(vec![SourceUnit {
-            logical_name: source_relative_path.into(),
-            path: source_path,
-            source,
-            program,
-        }]),
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
+        Arc::new(vec![SourceUnit { logical_name: source_relative_path.into(), path: source_path, source, program }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -4125,11 +3053,7 @@ fn canonical_foundation_service_fixture(
         canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
     )
     .expect("compiler-owned Foundation service source parses without broadening authority");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
         .expect("generation-safe Foundation service input");
@@ -4142,65 +3066,36 @@ fn canonical_foundation_service_fixture(
 
 fn item_fixture_with_root(
     source: &str,
-) -> (
-    CodegenInput<'static>,
-    Arc<dyn cranelift_codegen::isa::TargetIsa>,
-    AstNodeKey,
-) {
+) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("project").keep();
     let source_path = directory.join("Main.bd");
     std::fs::write(&source_path, source).expect("source");
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source)
-        .expect("parse source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), source).expect("parse source");
     let entry = SourceUnitId::new(&*db, source_path.clone());
-    let project = ProjectSession::new(
-        &*db,
-        directory.clone(),
-        source_path.clone(),
-        "App".into(),
-        "lock".into(),
-    );
+    let project = ProjectSession::new(&*db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
     let generation = SyntaxGenerationId(21);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: directory,
-            },
+            host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit {
-            logical_name: "Main".into(),
-            path: source_path,
-            source: source.into(),
-            program,
-        }]),
+        Arc::new(vec![SourceUnit { logical_name: "Main".into(), path: source_path, source: source.into(), program }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
     ));
-    let typed =
-        build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
-    let root = AstNodeKey {
-        unit: entry,
-        generation,
-        node: AstNodeId(0),
-    };
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
     let leaked: &'static BeskidDatabase = Box::leak(db);
-    let input = CodegenInput::new(
-        leaked,
-        typed,
-        Arc::from([root]),
-        target.clone(),
-        AbiManifestV5::canonical_runtime(target),
-    )
-    .expect("generation-safe input");
+    let input =
+        CodegenInput::new(leaked, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
+            .expect("generation-safe input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
@@ -4214,22 +3109,14 @@ fn function_signature(
     parameters: impl IntoIterator<Item = cranelift_codegen::ir::Type>,
 ) -> cranelift_codegen::ir::Signature {
     let mut signature = cranelift_codegen::ir::Signature::new(isa.default_call_conv());
-    signature.params.extend(
-        parameters
-            .into_iter()
-            .map(cranelift_codegen::ir::AbiParam::new),
-    );
-    signature
-        .returns
-        .push(cranelift_codegen::ir::AbiParam::new(result));
+    signature.params.extend(parameters.into_iter().map(cranelift_codegen::ir::AbiParam::new));
+    signature.returns.push(cranelift_codegen::ir::AbiParam::new(result));
     signature
 }
 
 fn find_function_definitions(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Vec<AstNodeKey> {
     let mut found = Vec::new();
-    if node_kind(db, key).ok().flatten()
-        == Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
-    {
+    if node_kind(db, key).ok().flatten() == Some(beskid_queries::IndexedNodeKind::FunctionDefinition) {
         found.push(key);
     }
     if let Some(children) = child_nodes(db, key).ok().flatten() {
@@ -4248,12 +3135,7 @@ fn find_definition_of_kind(
     if node_kind(db, key).ok().flatten() == Some(expected) {
         return Some(key);
     }
-    child_nodes(db, key)
-        .ok()
-        .flatten()?
-        .iter()
-        .copied()
-        .find_map(|child| find_definition_of_kind(db, child, expected))
+    child_nodes(db, key).ok().flatten()?.iter().copied().find_map(|child| find_definition_of_kind(db, child, expected))
 }
 
 fn find_nodes_of_kind(
@@ -4277,19 +3159,10 @@ fn find_call_expression(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Option<
     if node_kind(db, key).ok().flatten() == Some(beskid_queries::IndexedNodeKind::CallExpression) {
         return Some(key);
     }
-    child_nodes(db, key)
-        .ok()
-        .flatten()?
-        .iter()
-        .copied()
-        .find_map(|child| find_call_expression(db, child))
+    child_nodes(db, key).ok().flatten()?.iter().copied().find_map(|child| find_call_expression(db, child))
 }
 
-fn find_corelib_service_call(
-    db: &dyn beskid_queries::Db,
-    key: AstNodeKey,
-    expected_name: &str,
-) -> Option<AstNodeKey> {
+fn find_corelib_service_call(db: &dyn beskid_queries::Db, key: AstNodeKey, expected_name: &str) -> Option<AstNodeKey> {
     if matches!(
         call_lowering(db, key).ok().flatten(),
         Some(beskid_queries::CallLowering::CorelibService(service)) if service.name == expected_name
@@ -4316,21 +3189,9 @@ impl CorelibServiceImportFacts {
         let unit = SourceUnitId::new(db, std::path::PathBuf::from("/tmp/CorelibService.bd"));
         let generation = SyntaxGenerationId(93);
         Self {
-            call: AstNodeKey {
-                unit,
-                generation,
-                node: AstNodeId(1),
-            },
-            fd: AstNodeKey {
-                unit,
-                generation,
-                node: AstNodeId(2),
-            },
-            limit: AstNodeKey {
-                unit,
-                generation,
-                node: AstNodeId(3),
-            },
+            call: AstNodeKey { unit, generation, node: AstNodeId(1) },
+            fd: AstNodeKey { unit, generation, node: AstNodeId(2) },
+            limit: AstNodeKey { unit, generation, node: AstNodeId(3) },
             service,
         }
     }
@@ -4340,10 +3201,7 @@ impl NodeFacts for CorelibServiceImportFacts {
     fn node_kind(&self, key: AstNodeKey) -> Option<beskid_isle::NodeKind> {
         (key == self.call)
             .then_some(beskid_isle::NodeKind::CallExpression)
-            .or_else(|| {
-                (key == self.fd || key == self.limit)
-                    .then_some(beskid_isle::NodeKind::LiteralExpression)
-            })
+            .or_else(|| (key == self.fd || key == self.limit).then_some(beskid_isle::NodeKind::LiteralExpression))
     }
 
     fn literal_kind(&self, key: AstNodeKey) -> Option<beskid_isle::LiteralKind> {
@@ -4355,17 +3213,11 @@ impl NodeFacts for CorelibServiceImportFacts {
     }
 
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
-        (key == self.fd)
-            .then_some(0)
-            .or_else(|| (key == self.limit).then_some(16))
+        (key == self.fd).then_some(0).or_else(|| (key == self.limit).then_some(16))
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
-        if key == self.call {
-            Some(types::I64)
-        } else {
-            (key == self.fd || key == self.limit).then_some(types::I64)
-        }
+        if key == self.call { Some(types::I64) } else { (key == self.fd || key == self.limit).then_some(types::I64) }
     }
 
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
@@ -4389,35 +3241,18 @@ impl NodeFacts for CorelibServiceImportFacts {
 }
 
 fn find_function_definition(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Option<AstNodeKey> {
-    if node_kind(db, key)
-        .ok()
-        .flatten()
-        .is_some_and(|kind| kind == beskid_queries::IndexedNodeKind::FunctionDefinition)
+    if node_kind(db, key).ok().flatten().is_some_and(|kind| kind == beskid_queries::IndexedNodeKind::FunctionDefinition)
     {
         return Some(key);
     }
-    child_nodes(db, key)
-        .ok()
-        .flatten()?
-        .iter()
-        .copied()
-        .find_map(|child| find_function_definition(db, child))
+    child_nodes(db, key).ok().flatten()?.iter().copied().find_map(|child| find_function_definition(db, child))
 }
 
 fn find_test_definition(db: &dyn beskid_queries::Db, key: AstNodeKey) -> Option<AstNodeKey> {
-    if node_kind(db, key)
-        .ok()
-        .flatten()
-        .is_some_and(|kind| kind == beskid_queries::IndexedNodeKind::TestDefinition)
-    {
+    if node_kind(db, key).ok().flatten().is_some_and(|kind| kind == beskid_queries::IndexedNodeKind::TestDefinition) {
         return Some(key);
     }
-    child_nodes(db, key)
-        .ok()
-        .flatten()?
-        .iter()
-        .copied()
-        .find_map(|child| find_test_definition(db, child))
+    child_nodes(db, key).ok().flatten()?.iter().copied().find_map(|child| find_test_definition(db, child))
 }
 
 fn find_integer_literal(db: &BeskidDatabase, key: AstNodeKey) -> Option<AstNodeKey> {
@@ -4428,27 +3263,14 @@ fn find_integer_literal(db: &BeskidDatabase, key: AstNodeKey) -> Option<AstNodeK
     {
         return Some(key);
     }
-    child_nodes(db, key)
-        .ok()
-        .flatten()?
-        .iter()
-        .copied()
-        .find_map(|child| find_integer_literal(db, child))
+    child_nodes(db, key).ok().flatten()?.iter().copied().find_map(|child| find_integer_literal(db, child))
 }
 
-fn find_node(
-    db: &dyn Db,
-    key: AstNodeKey,
-    expected: beskid_queries::IndexedNodeKind,
-) -> Option<AstNodeKey> {
+fn find_node(db: &dyn Db, key: AstNodeKey, expected: beskid_queries::IndexedNodeKind) -> Option<AstNodeKey> {
     if node_kind(db, key).ok().flatten() == Some(expected) {
         return Some(key);
     }
-    child_nodes(db, key)
-        .ok()
-        .flatten()?
-        .iter()
-        .find_map(|child| find_node(db, *child, expected))
+    child_nodes(db, key).ok().flatten()?.iter().find_map(|child| find_node(db, *child, expected))
 }
 
 #[test]
@@ -4458,10 +3280,7 @@ fn cyb137_bound_payload_compare_unsuffixed_integer_must_lower() {
     );
     let function = match emit_isle_item(&input, isa.as_ref(), item) {
         Ok(function) => function,
-        Err(error) => panic!(
-            "CYB-137 unsuffixed compare must lower: {}",
-            error.display_with_db(input.database())
-        ),
+        Err(error) => panic!("CYB-137 unsuffixed compare must lower: {}", error.display_with_db(input.database())),
     };
     let clif = function.display().to_string();
     assert!(clif.contains("icmp"), "{clif}");
@@ -4486,34 +3305,18 @@ fn cyb137_assert_true_is_ok_then_bound_payload_match_must_lower() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: is_ok,
-                symbol: "IsOk".into(),
-            },
-            SyntaxModuleItem {
-                key: true_fn,
-                symbol: "True".into(),
-            },
-            SyntaxModuleItem {
-                key: test,
-                symbol: "sample".into(),
-            },
+            SyntaxModuleItem { key: is_ok, symbol: "IsOk".into() },
+            SyntaxModuleItem { key: true_fn, symbol: "True".into() },
+            SyntaxModuleItem { key: test, symbol: "sample".into() },
         ],
     ) {
         Ok(artifact) => artifact,
         Err(error) => panic!("CYB-137 SyscallWrite-shaped fixture must lower: {error:?}"),
     };
     assert!(
-        artifact
-            .functions
-            .iter()
-            .any(|f| f.name.starts_with("IsOk#generic_")),
+        artifact.functions.iter().any(|f| f.name.starts_with("IsOk#generic_")),
         "IsOk specialization missing: {:?}",
-        artifact
-            .functions
-            .iter()
-            .map(|f| &f.name)
-            .collect::<Vec<_>>(),
+        artifact.functions.iter().map(|f| &f.name).collect::<Vec<_>>(),
     );
 }
 
@@ -4535,21 +3338,12 @@ fn cyb169_enum_return_i64_main_must_lower() {
         &input,
         isa.as_ref(),
         &[
-            SyntaxModuleItem {
-                key: main,
-                symbol: "Main".into(),
-            },
-            SyntaxModuleItem {
-                key: make_ok,
-                symbol: "MakeOk".into(),
-            },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+            SyntaxModuleItem { key: make_ok, symbol: "MakeOk".into() },
         ],
     ) {
         Ok(artifact) => artifact,
         Err(error) => panic!("CYB-169 enum return with i64 Main must lower: {error:?}"),
     };
-    assert!(
-        artifact.functions.iter().any(|f| f.name.contains("Main")),
-        "Main missing from artifact"
-    );
+    assert!(artifact.functions.iter().any(|f| f.name.contains("Main")), "Main missing from artifact");
 }

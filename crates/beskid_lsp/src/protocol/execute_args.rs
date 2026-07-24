@@ -33,22 +33,12 @@ pub fn required_uri_arg(arguments: &Option<Vec<Value>>, key: &str) -> Result<Str
 
 /// Trimmed non-empty string field from a command argument object.
 pub fn non_empty_str_arg<'a>(args: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
+    args.get(key).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty())
 }
 
 #[cfg(test)]
-const FORBIDDEN_RESPONSE_KEYS: &[&str] = &[
-    "apiKey",
-    "api_key",
-    "token",
-    "secret",
-    "password",
-    "authorization",
-    "bearer",
-];
+const FORBIDDEN_RESPONSE_KEYS: &[&str] =
+    &["apiKey", "api_key", "token", "secret", "password", "authorization", "bearer"];
 
 /// Keys that must never appear in LSP execute-command JSON responses (recursive).
 #[cfg(test)]
@@ -65,10 +55,7 @@ fn collect_forbidden_keys(value: &Value, found: &mut Vec<String>) {
     match value {
         Value::Object(map) => {
             for (key, child) in map {
-                if FORBIDDEN_RESPONSE_KEYS
-                    .iter()
-                    .any(|f| key.eq_ignore_ascii_case(f))
-                {
+                if FORBIDDEN_RESPONSE_KEYS.iter().any(|f| key.eq_ignore_ascii_case(f)) {
                     found.push(key.clone());
                 }
                 collect_forbidden_keys(child, found);

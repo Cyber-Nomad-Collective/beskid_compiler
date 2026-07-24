@@ -18,9 +18,7 @@ pub fn render(
     app_theme: Option<&crate::widgets::markdown_preview::services::theme::AppTheme>,
     show_collapse_indicator: bool,
 ) -> Vec<Line<'static>> {
-    let icon = HEADING_ICONS
-        .get(level.saturating_sub(1) as usize)
-        .unwrap_or(&"# ");
+    let icon = HEADING_ICONS.get(level.saturating_sub(1) as usize).unwrap_or(&"# ");
 
     // Always use level-specific colors for visual hierarchy
     // The original design has distinct colors per heading level
@@ -38,19 +36,13 @@ pub fn render(
     // Only show collapse indicator if enabled
     if show_collapse_indicator {
         let collapse_indicator = if collapsed { "\u{25b6}" } else { "\u{25bc}" };
-        spans.push(Span::styled(
-            collapse_indicator.to_string(),
-            Style::default().fg(fg).bg(bg),
-        ));
+        spans.push(Span::styled(collapse_indicator.to_string(), Style::default().fg(fg).bg(bg)));
     }
 
     // Indentation with background
     spans.push(Span::styled(indent, Style::default().bg(bg)));
     // Icon with heading style
-    spans.push(Span::styled(
-        icon.to_string(),
-        Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
-    ));
+    spans.push(Span::styled(icon.to_string(), Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD)));
 
     for segment in text {
         spans.push(render_text_segment(segment, Style::default().fg(fg).bg(bg)));

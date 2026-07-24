@@ -24,12 +24,7 @@ pub fn render_toasts(frame: &mut Frame, toasts: &ToastManager) {
         let toast_y = y_offset.saturating_sub(TOAST_HEIGHT);
         let toast_x = area.width.saturating_sub(TOAST_WIDTH + TOAST_MARGIN);
 
-        let toast_area = Rect {
-            x: toast_x,
-            y: toast_y,
-            width: TOAST_WIDTH,
-            height: TOAST_HEIGHT,
-        };
+        let toast_area = Rect { x: toast_x, y: toast_y, width: TOAST_WIDTH, height: TOAST_HEIGHT };
 
         if toast_y == 0 || toast_x == 0 {
             break;
@@ -42,10 +37,7 @@ pub fn render_toasts(frame: &mut Frame, toasts: &ToastManager) {
 
         let text = Line::from(vec![
             Span::raw("  "),
-            Span::styled(
-                icon,
-                Style::default().fg(color).add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(icon, Style::default().fg(color).add_modifier(Modifier::BOLD)),
             Span::raw("  "),
             Span::raw(&toast.message),
             Span::raw(" "),
@@ -56,10 +48,7 @@ pub fn render_toasts(frame: &mut Frame, toasts: &ToastManager) {
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(color));
 
-        let paragraph = Paragraph::new(text)
-            .block(block)
-            .alignment(Alignment::Left)
-            .wrap(Wrap { trim: true });
+        let paragraph = Paragraph::new(text).block(block).alignment(Alignment::Left).wrap(Wrap { trim: true });
 
         frame.render_widget(paragraph, toast_area);
 

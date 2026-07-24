@@ -22,21 +22,12 @@ pub(crate) fn parse_call_expression(
 ) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
     let args = if let Some(arg_list) = pair.into_inner().next() {
-        arg_list
-            .into_inner()
-            .map(Expression::parse)
-            .collect::<Result<Vec<_>, _>>()?
+        arg_list.into_inner().map(Expression::parse).collect::<Result<Vec<_>, _>>()?
     } else {
         Vec::new()
     };
 
-    let call = Spanned::new(
-        CallExpression {
-            callee: Box::new(callee),
-            args,
-        },
-        span,
-    );
+    let call = Spanned::new(CallExpression { callee: Box::new(callee), args }, span);
 
     Ok(Spanned::new(Expression::Call(call), span))
 }

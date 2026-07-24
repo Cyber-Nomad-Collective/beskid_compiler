@@ -1,10 +1,9 @@
 use crate::hir::{
-    ExpressionNode, HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBinaryOp, HirBlock,
-    HirBlockExpression, HirBreakStatement, HirCallExpression, HirEnumPath, HirEnumPattern,
-    HirExpressionStatement, HirForStatement, HirGroupedExpression, HirIdentifier,
-    HirIndexExpression, HirLetStatement, HirLiteral, HirLiteralExpression, HirMatchArm,
-    HirMatchExpression, HirMemberExpression, HirPath, HirPathExpression, HirPathSegment,
-    HirPattern, HirStatementNode, HirWhileStatement, StatementNode,
+    ExpressionNode, HirAssignExpression, HirAssignOp, HirBinaryExpression, HirBinaryOp, HirBlock, HirBlockExpression,
+    HirBreakStatement, HirCallExpression, HirEnumPath, HirEnumPattern, HirExpressionStatement, HirForStatement,
+    HirGroupedExpression, HirIdentifier, HirIndexExpression, HirLetStatement, HirLiteral, HirLiteralExpression,
+    HirMatchArm, HirMatchExpression, HirMemberExpression, HirPath, HirPathExpression, HirPathSegment, HirPattern,
+    HirStatementNode, HirWhileStatement, StatementNode,
 };
 use crate::syntax::Spanned;
 
@@ -32,29 +31,15 @@ impl Normalize for Spanned<HirForStatement> {
 
 fn normalize_range_fast_path(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<HirStatementNode>> {
     let span = for_stmt.span;
-    let (iterator, iterable, body) = (
-        for_stmt.node.iterator,
-        for_stmt.node.iterable,
-        for_stmt.node.body,
-    );
+    let (iterator, iterable, body) = (for_stmt.node.iterator, for_stmt.node.iterable, for_stmt.node.body);
     let (start, end, range_span) = into_range_bounds(iterable);
     let iterator_name = iterator.clone();
     let end_span = shifted_span(span, 1);
-    let end_binding_name = Spanned::new(
-        HirIdentifier {
-            name: format!("__for_end_{}", span.start),
-        },
-        end_span,
-    );
+    let end_binding_name = Spanned::new(HirIdentifier { name: format!("__for_end_{}", span.start) }, end_span);
 
     let init_iterator = Spanned::new(
         StatementNode::LetStatement(Spanned::new(
-            HirLetStatement {
-                mutable: true,
-                name: iterator_name.clone(),
-                type_annotation: None,
-                value: start,
-            },
+            HirLetStatement { mutable: true, name: iterator_name.clone(), type_annotation: None, value: start },
             span,
         )),
         span,
@@ -62,12 +47,7 @@ fn normalize_range_fast_path(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<
 
     let init_end = Spanned::new(
         StatementNode::LetStatement(Spanned::new(
-            HirLetStatement {
-                mutable: false,
-                name: end_binding_name.clone(),
-                type_annotation: None,
-                value: end,
-            },
+            HirLetStatement { mutable: false, name: end_binding_name.clone(), type_annotation: None, value: end },
             span,
         )),
         span,
@@ -119,13 +99,7 @@ fn normalize_range_fast_path(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<
     while_body.node.statements.push(increment);
 
     let while_stmt = Spanned::new(
-        StatementNode::WhileStatement(Spanned::new(
-            HirWhileStatement {
-                condition,
-                body: while_body,
-            },
-            span,
-        )),
+        StatementNode::WhileStatement(Spanned::new(HirWhileStatement { condition, body: while_body }, span)),
         span,
     );
 
@@ -134,47 +108,23 @@ fn normalize_range_fast_path(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<
 
 fn normalize_array_fast_path(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<HirStatementNode>> {
     let span = for_stmt.span;
-    let (iterator, iterable, body) = (
-        for_stmt.node.iterator,
-        for_stmt.node.iterable,
-        for_stmt.node.body,
-    );
+    let (iterator, iterable, body) = (for_stmt.node.iterator, for_stmt.node.iterable, for_stmt.node.body);
     let array_span = shifted_span(span, 1);
     let index_span = shifted_span(span, 2);
     let len_span = shifted_span(span, 3);
     let array_len_call_span = shifted_span(span, 4);
 
-    let array_name = Spanned::new(
-        HirIdentifier {
-            name: format!("__iter_array_{}", span.start),
-        },
-        array_span,
-    );
+    let array_name = Spanned::new(HirIdentifier { name: format!("__iter_array_{}", span.start) }, array_span);
     let init_array = Spanned::new(
         StatementNode::LetStatement(Spanned::new(
-            HirLetStatement {
-                mutable: false,
-                name: array_name.clone(),
-                type_annotation: None,
-                value: iterable,
-            },
+            HirLetStatement { mutable: false, name: array_name.clone(), type_annotation: None, value: iterable },
             span,
         )),
         span,
     );
 
-    let index_name = Spanned::new(
-        HirIdentifier {
-            name: format!("__iter_index_{}", span.start),
-        },
-        index_span,
-    );
-    let len_name = Spanned::new(
-        HirIdentifier {
-            name: format!("__iter_len_{}", span.start),
-        },
-        len_span,
-    );
+    let index_name = Spanned::new(HirIdentifier { name: format!("__iter_index_{}", span.start) }, index_span);
+    let len_name = Spanned::new(HirIdentifier { name: format!("__iter_len_{}", span.start) }, len_span);
 
     let init_index = Spanned::new(
         StatementNode::LetStatement(Spanned::new(
@@ -201,12 +151,7 @@ fn normalize_array_fast_path(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<
     );
     let init_len = Spanned::new(
         StatementNode::LetStatement(Spanned::new(
-            HirLetStatement {
-                mutable: false,
-                name: len_name.clone(),
-                type_annotation: None,
-                value: array_len_expr,
-            },
+            HirLetStatement { mutable: false, name: len_name.clone(), type_annotation: None, value: array_len_expr },
             span,
         )),
         span,
@@ -226,10 +171,7 @@ fn normalize_array_fast_path(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<
 
     let element_expr = Spanned::new(
         ExpressionNode::IndexExpression(Spanned::new(
-            HirIndexExpression {
-                target: Box::new(path_expr(&array_name)),
-                index: Box::new(path_expr(&index_name)),
-            },
+            HirIndexExpression { target: Box::new(path_expr(&array_name)), index: Box::new(path_expr(&index_name)) },
             index_span,
         )),
         index_span,
@@ -237,12 +179,7 @@ fn normalize_array_fast_path(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<
 
     let item_binding = Spanned::new(
         StatementNode::LetStatement(Spanned::new(
-            HirLetStatement {
-                mutable: false,
-                name: iterator.clone(),
-                type_annotation: None,
-                value: element_expr,
-            },
+            HirLetStatement { mutable: false, name: iterator.clone(), type_annotation: None, value: element_expr },
             span,
         )),
         span,
@@ -278,40 +215,23 @@ fn normalize_array_fast_path(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<
         span,
     );
 
-    let mut while_body = Spanned::new(
-        HirBlock {
-            statements: vec![item_binding],
-        },
-        span,
-    );
+    let mut while_body = Spanned::new(HirBlock { statements: vec![item_binding] }, span);
     for stmt in body.node.statements {
         while_body.node.statements.push(stmt);
     }
     while_body.node.statements.push(increment);
 
     let while_stmt = Spanned::new(
-        StatementNode::WhileStatement(Spanned::new(
-            HirWhileStatement {
-                condition,
-                body: while_body,
-            },
-            span,
-        )),
+        StatementNode::WhileStatement(Spanned::new(HirWhileStatement { condition, body: while_body }, span)),
         span,
     );
 
     vec![init_array, init_index, init_len, while_stmt]
 }
 
-fn normalize_generic_iterable(
-    for_stmt: Spanned<HirForStatement>,
-) -> Vec<Spanned<HirStatementNode>> {
+fn normalize_generic_iterable(for_stmt: Spanned<HirForStatement>) -> Vec<Spanned<HirStatementNode>> {
     let span = for_stmt.span;
-    let (iterator, iterable, body) = (
-        for_stmt.node.iterator,
-        for_stmt.node.iterable,
-        for_stmt.node.body,
-    );
+    let (iterator, iterable, body) = (for_stmt.node.iterator, for_stmt.node.iterable, for_stmt.node.body);
     let iter_span = shifted_span(span, 1);
     let next_span = shifted_span(span, 2);
     let next_member_span = shifted_span(span, 3);
@@ -319,27 +239,12 @@ fn normalize_generic_iterable(
     let some_arm_span = shifted_span(span, 5);
     let none_arm_span = shifted_span(span, 6);
     let match_span = shifted_span(span, 7);
-    let iter_name = Spanned::new(
-        HirIdentifier {
-            name: format!("__for_iter_{}", span.start),
-        },
-        iter_span,
-    );
-    let next_name = Spanned::new(
-        HirIdentifier {
-            name: format!("__for_next_{}", span.start),
-        },
-        next_span,
-    );
+    let iter_name = Spanned::new(HirIdentifier { name: format!("__for_iter_{}", span.start) }, iter_span);
+    let next_name = Spanned::new(HirIdentifier { name: format!("__for_next_{}", span.start) }, next_span);
 
     let init_iter = Spanned::new(
         StatementNode::LetStatement(Spanned::new(
-            HirLetStatement {
-                mutable: true,
-                name: iter_name.clone(),
-                type_annotation: None,
-                value: iterable,
-            },
+            HirLetStatement { mutable: true, name: iter_name.clone(), type_annotation: None, value: iterable },
             span,
         )),
         span,
@@ -352,12 +257,7 @@ fn normalize_generic_iterable(
                     ExpressionNode::MemberExpression(Spanned::new(
                         HirMemberExpression {
                             target: Box::new(path_expr(&iter_name)),
-                            member: Spanned::new(
-                                HirIdentifier {
-                                    name: "Next".to_string(),
-                                },
-                                next_member_span,
-                            ),
+                            member: Spanned::new(HirIdentifier { name: "Next".to_string() }, next_member_span),
                         },
                         next_member_span,
                     )),
@@ -372,12 +272,7 @@ fn normalize_generic_iterable(
 
     let next_let = Spanned::new(
         StatementNode::LetStatement(Spanned::new(
-            HirLetStatement {
-                mutable: false,
-                name: next_name.clone(),
-                type_annotation: None,
-                value: next_call,
-            },
+            HirLetStatement { mutable: false, name: next_name.clone(), type_annotation: None, value: next_call },
             span,
         )),
         span,
@@ -395,9 +290,7 @@ fn normalize_generic_iterable(
                                         segments: vec![Spanned::new(
                                             HirPathSegment {
                                                 name: Spanned::new(
-                                                    HirIdentifier {
-                                                        name: "Option".to_string(),
-                                                    },
+                                                    HirIdentifier { name: "Option".to_string() },
                                                     some_arm_span,
                                                 ),
                                                 type_args: Vec::new(),
@@ -407,19 +300,11 @@ fn normalize_generic_iterable(
                                     },
                                     some_arm_span,
                                 ),
-                                variant: Spanned::new(
-                                    HirIdentifier {
-                                        name: "Some".to_string(),
-                                    },
-                                    some_arm_span,
-                                ),
+                                variant: Spanned::new(HirIdentifier { name: "Some".to_string() }, some_arm_span),
                             },
                             some_arm_span,
                         ),
-                        items: vec![Spanned::new(
-                            HirPattern::Identifier(iterator.clone()),
-                            iterator.span,
-                        )],
+                        items: vec![Spanned::new(HirPattern::Identifier(iterator.clone()), iterator.span)],
                     },
                     some_arm_span,
                 )),
@@ -443,9 +328,7 @@ fn normalize_generic_iterable(
                                         segments: vec![Spanned::new(
                                             HirPathSegment {
                                                 name: Spanned::new(
-                                                    HirIdentifier {
-                                                        name: "Option".to_string(),
-                                                    },
+                                                    HirIdentifier { name: "Option".to_string() },
                                                     none_arm_span,
                                                 ),
                                                 type_args: Vec::new(),
@@ -455,12 +338,7 @@ fn normalize_generic_iterable(
                                     },
                                     none_arm_span,
                                 ),
-                                variant: Spanned::new(
-                                    HirIdentifier {
-                                        name: "None".to_string(),
-                                    },
-                                    none_arm_span,
-                                ),
+                                variant: Spanned::new(HirIdentifier { name: "None".to_string() }, none_arm_span),
                             },
                             none_arm_span,
                         ),
@@ -510,12 +388,7 @@ fn normalize_generic_iterable(
         StatementNode::WhileStatement(Spanned::new(
             HirWhileStatement {
                 condition: bool_literal(true, loop_condition_span),
-                body: Spanned::new(
-                    HirBlock {
-                        statements: vec![next_let, match_stmt],
-                    },
-                    span,
-                ),
+                body: Spanned::new(HirBlock { statements: vec![next_let, match_stmt] }, span),
             },
             span,
         )),
@@ -547,28 +420,16 @@ fn into_range_bounds(
     match iterable.node {
         ExpressionNode::CallExpression(call) => {
             let mut args = call.node.args.into_iter();
-            let start = args
-                .next()
-                .expect("range fast path requires two arguments (start)");
-            let end = args
-                .next()
-                .expect("range fast path requires two arguments (end)");
+            let start = args.next().expect("range fast path requires two arguments (start)");
+            let end = args.next().expect("range fast path requires two arguments (end)");
             (start, end, call.span)
         }
         _ => panic!("range fast path expected call expression"),
     }
 }
 
-fn path_expr_str(
-    name: &str,
-    span: crate::syntax::SpanInfo,
-) -> Spanned<ExpressionNode<crate::hir::HirPhase>> {
-    let ident = Spanned::new(
-        HirIdentifier {
-            name: name.to_string(),
-        },
-        span,
-    );
+fn path_expr_str(name: &str, span: crate::syntax::SpanInfo) -> Spanned<ExpressionNode<crate::hir::HirPhase>> {
+    let ident = Spanned::new(HirIdentifier { name: name.to_string() }, span);
     path_expr(&ident)
 }
 
@@ -579,10 +440,7 @@ fn path_expr(name: &Spanned<HirIdentifier>) -> Spanned<ExpressionNode<crate::hir
                 path: Spanned::new(
                     HirPath {
                         segments: vec![Spanned::new(
-                            HirPathSegment {
-                                name: name.clone(),
-                                type_args: Vec::new(),
-                            },
+                            HirPathSegment { name: name.clone(), type_args: Vec::new() },
                             name.span,
                         )],
                     },
@@ -595,15 +453,10 @@ fn path_expr(name: &Spanned<HirIdentifier>) -> Spanned<ExpressionNode<crate::hir
     )
 }
 
-fn int_literal(
-    value: &str,
-    span: crate::syntax::SpanInfo,
-) -> Spanned<ExpressionNode<crate::hir::HirPhase>> {
+fn int_literal(value: &str, span: crate::syntax::SpanInfo) -> Spanned<ExpressionNode<crate::hir::HirPhase>> {
     Spanned::new(
         ExpressionNode::LiteralExpression(Spanned::new(
-            HirLiteralExpression {
-                literal: Spanned::new(HirLiteral::Integer(value.to_string()), span),
-            },
+            HirLiteralExpression { literal: Spanned::new(HirLiteral::Integer(value.to_string()), span) },
             span,
         )),
         span,
@@ -613,26 +466,15 @@ fn int_literal(
 fn shifted_span(mut span: crate::syntax::SpanInfo, delta: usize) -> crate::syntax::SpanInfo {
     span.start = span.start.saturating_add(delta);
     span.end = span.end.saturating_add(delta);
-    span.line_col_start = (
-        span.line_col_start.0,
-        span.line_col_start.1.saturating_add(delta),
-    );
-    span.line_col_end = (
-        span.line_col_end.0,
-        span.line_col_end.1.saturating_add(delta),
-    );
+    span.line_col_start = (span.line_col_start.0, span.line_col_start.1.saturating_add(delta));
+    span.line_col_end = (span.line_col_end.0, span.line_col_end.1.saturating_add(delta));
     span
 }
 
-fn bool_literal(
-    value: bool,
-    span: crate::syntax::SpanInfo,
-) -> Spanned<ExpressionNode<crate::hir::HirPhase>> {
+fn bool_literal(value: bool, span: crate::syntax::SpanInfo) -> Spanned<ExpressionNode<crate::hir::HirPhase>> {
     Spanned::new(
         ExpressionNode::LiteralExpression(Spanned::new(
-            HirLiteralExpression {
-                literal: Spanned::new(HirLiteral::Bool(value), span),
-            },
+            HirLiteralExpression { literal: Spanned::new(HirLiteral::Bool(value), span) },
             span,
         )),
         span,
@@ -647,10 +489,7 @@ fn block_expr(
         ExpressionNode::GroupedExpression(Spanned::new(
             HirGroupedExpression {
                 expr: Box::new(Spanned::new(
-                    ExpressionNode::BlockExpression(Spanned::new(
-                        HirBlockExpression { block },
-                        span,
-                    )),
+                    ExpressionNode::BlockExpression(Spanned::new(HirBlockExpression { block }, span)),
                     span,
                 )),
             },

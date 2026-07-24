@@ -71,11 +71,7 @@ impl Grid {
             let start = if i == 0 { low_x } else { 0 };
 
             let width: i32 = row.cols().into();
-            let width = if i == lines_len - 1 {
-                width.min(high_x + 1)
-            } else {
-                width
-            };
+            let width = if i == lines_len - 1 { width.min(high_x + 1) } else { width };
             let width = width - start;
 
             row.write_contents(&mut contents, start as u16, width as u16, false);
@@ -183,9 +179,7 @@ impl Grid {
             self.scroll_top = 0;
         }
 
-        self.used_rows = u16::try_from(self.rows.len())
-            .unwrap_or_default()
-            .min(self.size.height);
+        self.used_rows = u16::try_from(self.rows.len()).unwrap_or_default().min(self.size.height);
         while self.rows.len() < self.size.height.into() {
             self.rows.push_back(self.new_row());
         }
@@ -269,8 +263,7 @@ impl Grid {
 
     pub fn drawing_cell_mut(&mut self, pos: Pos) -> Option<&mut Cell> {
         self.used_rows = self.used_rows.max(pos.row + 1);
-        self.drawing_row_mut(pos.row)
-            .and_then(|r| r.get_mut(pos.col))
+        self.drawing_row_mut(pos.row).and_then(|r| r.get_mut(pos.col))
     }
 
     pub fn scrollback_len(&self) -> usize {
@@ -366,8 +359,7 @@ impl Grid {
         let row0 = self.row0();
         for _ in 0..count {
             self.rows.remove(row0 + usize::from(self.scroll_bottom));
-            self.rows
-                .insert(row0 + usize::from(self.pos.row), self.new_row());
+            self.rows.insert(row0 + usize::from(self.pos.row), self.new_row());
             // self.scroll_bottom is maintained to always be a valid row
             self.rows[row0 + usize::from(self.scroll_bottom)].wrap(false);
         }
@@ -377,8 +369,7 @@ impl Grid {
         let row0 = self.row0();
         for _ in 0..(count.min(self.size.height - self.pos.row)) {
             let row = Row::new_with_attrs(self.size.width, blank_attrs);
-            self.rows
-                .insert(row0 + usize::from(self.scroll_bottom) + 1, row);
+            self.rows.insert(row0 + usize::from(self.scroll_bottom) + 1, row);
             self.rows.remove(row0 + usize::from(self.pos.row));
         }
     }
@@ -386,8 +377,7 @@ impl Grid {
     pub fn scroll_up(&mut self, count: u16) {
         for _ in 0..(count.min(self.size.height - self.scroll_top)) {
             let row0 = self.row0();
-            self.rows
-                .insert(row0 + usize::from(self.scroll_bottom) + 1, self.new_row());
+            self.rows.insert(row0 + usize::from(self.scroll_bottom) + 1, self.new_row());
             let removed = self.rows.remove(row0 + usize::from(self.scroll_top));
             if self.scrollback_len > 0 && !self.scroll_region_active() {
                 if let Some(removed) = removed {
@@ -397,8 +387,8 @@ impl Grid {
                     self.rows.pop_front();
                 }
                 if self.scrollback_offset > 0 {
-                    self.scrollback_offset = (self.rows.len() - self.size.height as usize)
-                        .min(self.scrollback_offset + 1);
+                    self.scrollback_offset =
+                        (self.rows.len() - self.size.height as usize).min(self.scrollback_offset + 1);
                 }
             }
         }
@@ -408,8 +398,7 @@ impl Grid {
         for _ in 0..count {
             let row0 = self.row0();
             self.rows.remove(row0 + usize::from(self.scroll_bottom));
-            self.rows
-                .insert(row0 + usize::from(self.scroll_top), self.new_row());
+            self.rows.insert(row0 + usize::from(self.scroll_top), self.new_row());
             // self.scroll_bottom is maintained to always be a valid row
             self.rows[row0 + usize::from(self.scroll_bottom)].wrap(false);
         }
@@ -531,11 +520,7 @@ impl Grid {
     }
 
     fn row_clamp_bottom(&mut self, limit_to_scroll_region: bool) -> u16 {
-        let bottom = if limit_to_scroll_region {
-            self.scroll_bottom
-        } else {
-            self.size.height - 1
-        };
+        let bottom = if limit_to_scroll_region { self.scroll_bottom } else { self.size.height - 1 };
         if self.pos.row > bottom {
             let rows = self.pos.row - bottom;
             self.pos.row = bottom;
@@ -558,9 +543,7 @@ impl Grid {
     }
 
     pub(crate) fn is_wide_continuation(&self, pos: Pos) -> bool {
-        self.rows
-            .get(self.row0() + pos.row as usize)
-            .is_some_and(|r| r.is_wide_continuation(pos.col))
+        self.rows.get(self.row0() + pos.row as usize).is_some_and(|r| r.is_wide_continuation(pos.col))
     }
 }
 
@@ -581,12 +564,7 @@ struct BorderChars {
 impl Grid {
     pub fn area(&self) -> Rect {
         let size = self.size();
-        Rect {
-            x: 0,
-            y: 0,
-            width: size.width,
-            height: size.height,
-        }
+        Rect { x: 0, y: 0, width: size.width, height: size.height }
     }
 
     pub fn draw_block(&mut self, area: Rect, type_: BorderType, attrs: Attrs) {
@@ -595,22 +573,8 @@ impl Grid {
         }
 
         let chars = match type_ {
-            BorderType::Thick => BorderChars {
-                tl: '┏',
-                tr: '┓',
-                br: '┛',
-                bl: '┗',
-                hor: '━',
-                ver: '┃',
-            },
-            BorderType::Plain => BorderChars {
-                tl: '┌',
-                tr: '┐',
-                br: '┘',
-                bl: '└',
-                hor: '─',
-                ver: '│',
-            },
+            BorderType::Thick => BorderChars { tl: '┏', tr: '┓', br: '┛', bl: '┗', hor: '━', ver: '┃' },
+            BorderType::Plain => BorderChars { tl: '┌', tr: '┐', br: '┘', bl: '└', hor: '─', ver: '│' },
         };
 
         for y in [area.y, area.y + area.height - 1] {
@@ -627,28 +591,16 @@ impl Grid {
                 }
             }
         }
-        if let Some(cell) = self.drawing_cell_mut(Pos {
-            col: area.x,
-            row: area.y,
-        }) {
+        if let Some(cell) = self.drawing_cell_mut(Pos { col: area.x, row: area.y }) {
             cell.set(chars.tl, Attrs::default());
         }
-        if let Some(cell) = self.drawing_cell_mut(Pos {
-            col: area.x + area.width - 1,
-            row: area.y,
-        }) {
+        if let Some(cell) = self.drawing_cell_mut(Pos { col: area.x + area.width - 1, row: area.y }) {
             cell.set(chars.tr, Attrs::default());
         }
-        if let Some(cell) = self.drawing_cell_mut(Pos {
-            col: area.x + area.width - 1,
-            row: area.y + area.height - 1,
-        }) {
+        if let Some(cell) = self.drawing_cell_mut(Pos { col: area.x + area.width - 1, row: area.y + area.height - 1 }) {
             cell.set(chars.br, Attrs::default());
         }
-        if let Some(cell) = self.drawing_cell_mut(Pos {
-            col: area.x,
-            row: area.y + area.height - 1,
-        }) {
+        if let Some(cell) = self.drawing_cell_mut(Pos { col: area.x, row: area.y + area.height - 1 }) {
             cell.set(chars.bl, Attrs::default());
         }
     }
@@ -656,10 +608,7 @@ impl Grid {
     pub fn draw_text(&mut self, area: Rect, text: &str, attrs: Attrs) -> Rect {
         let mut x = area.x;
         for g in text.graphemes(true) {
-            if let Some(cell) = self.drawing_cell_mut(Pos {
-                col: x,
-                row: area.y,
-            }) {
+            if let Some(cell) = self.drawing_cell_mut(Pos { col: x, row: area.y }) {
                 let w = g.width() as u16;
                 if x + w - area.x <= area.width {
                     cell.set_str(g);
@@ -670,12 +619,7 @@ impl Grid {
                 }
             }
         }
-        Rect {
-            x: area.x,
-            y: area.y,
-            width: x - area.x,
-            height: 1,
-        }
+        Rect { x: area.x, y: area.y, width: x - area.x, height: 1 }
     }
 
     pub fn fill_area(&mut self, area: Rect, c: char, attrs: Attrs) {
@@ -705,21 +649,13 @@ pub struct Rect {
 
 impl Rect {
     pub fn new(x: u16, y: u16, width: u16, height: u16) -> Self {
-        Rect {
-            x,
-            y,
-            width,
-            height,
-        }
+        Rect { x, y, width, height }
     }
 }
 
 impl Rect {
     pub fn size(&self) -> Size {
-        Size {
-            height: self.height,
-            width: self.width,
-        }
+        Size { height: self.height, width: self.width }
     }
 
     pub fn right(&self) -> u16 {
@@ -743,64 +679,39 @@ impl Rect {
 
     pub fn split_h(self, len: u16) -> (Self, Self) {
         let len = len.min(self.height);
-        let top = Rect {
-            height: len,
-            ..self
-        };
-        let bot = Rect {
-            y: self.y + len,
-            height: self.height - len,
-            ..self
-        };
+        let top = Rect { height: len, ..self };
+        let bot = Rect { y: self.y + len, height: self.height - len, ..self };
         (top, bot)
     }
 
     pub fn split_v(self, len: u16) -> (Self, Self) {
         let len = len.min(self.width);
         let left = Rect { width: len, ..self };
-        let right = Rect {
-            x: self.x + len,
-            width: self.width - len,
-            ..self
-        };
+        let right = Rect { x: self.x + len, width: self.width - len, ..self };
         (left, right)
     }
 
     pub fn move_left(self, offset: i32) -> Self {
         let offset = offset.min(self.width as i32);
-        Rect {
-            x: (self.x as i32 + offset) as u16,
-            width: (self.width as i32 - offset) as u16,
-            ..self
-        }
+        Rect { x: (self.x as i32 + offset) as u16, width: (self.width as i32 - offset) as u16, ..self }
     }
 
     #[allow(dead_code)]
     pub fn move_right(self, offset: i32) -> Self {
         let offset = offset.max(-(self.width as i32));
-        Rect {
-            width: (self.width as i32 + offset) as u16,
-            ..self
-        }
+        Rect { width: (self.width as i32 + offset) as u16, ..self }
     }
 
     #[allow(dead_code)]
     pub fn move_top(self, offset: i32) -> Self {
         let offset = offset.min(self.height as i32);
-        Rect {
-            y: (self.y as i32 + offset) as u16,
-            height: (self.height as i32 - offset) as u16,
-            ..self
-        }
+        Rect { y: (self.y as i32 + offset) as u16, height: (self.height as i32 - offset) as u16, ..self }
     }
 
     #[allow(dead_code)]
     pub fn move_bottom(self, offset: i32) -> Self {
         let offset = offset.max(-(self.height as i32));
-        Rect {
-            height: (self.height as i32 + offset) as u16,
-            ..self
-        }
+        Rect { height: (self.height as i32 + offset) as u16, ..self }
     }
 }
 
@@ -814,33 +725,18 @@ pub struct Margin {
 
 impl From<u16> for Margin {
     fn from(n: u16) -> Self {
-        Margin {
-            top: n,
-            right: n,
-            bottom: n,
-            left: n,
-        }
+        Margin { top: n, right: n, bottom: n, left: n }
     }
 }
 
 impl From<(u16, u16)> for Margin {
     fn from((ver, hor): (u16, u16)) -> Self {
-        Margin {
-            top: ver,
-            right: hor,
-            bottom: ver,
-            left: hor,
-        }
+        Margin { top: ver, right: hor, bottom: ver, left: hor }
     }
 }
 
 impl From<(u16, u16, u16, u16)> for Margin {
     fn from((top, right, bottom, left): (u16, u16, u16, u16)) -> Self {
-        Margin {
-            top,
-            right,
-            bottom,
-            left,
-        }
+        Margin { top, right, bottom, left }
     }
 }

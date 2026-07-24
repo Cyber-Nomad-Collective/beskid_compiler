@@ -9,16 +9,10 @@ pub struct E2eWorkspace {
 impl E2eWorkspace {
     pub fn from_fixture(name: &str) -> Self {
         let fixture_root = fixture_root(name);
-        assert!(
-            fixture_root.is_dir(),
-            "fixture does not exist: {}",
-            fixture_root.display()
-        );
+        assert!(fixture_root.is_dir(), "fixture does not exist: {}", fixture_root.display());
 
-        let tempdir = tempfile::Builder::new()
-            .prefix(&format!("beskid_e2e_{name}_"))
-            .tempdir()
-            .expect("create e2e temp dir");
+        let tempdir =
+            tempfile::Builder::new().prefix(&format!("beskid_e2e_{name}_")).tempdir().expect("create e2e temp dir");
 
         copy_dir_recursive(&fixture_root, tempdir.path());
         Self { root: tempdir }
@@ -53,11 +47,7 @@ fn copy_dir_recursive(source: &Path, destination: &Path) {
             copy_dir_recursive(&src_path, &dest_path);
         } else {
             fs::copy(&src_path, &dest_path).unwrap_or_else(|error| {
-                panic!(
-                    "copy fixture file {} -> {} failed: {error}",
-                    src_path.display(),
-                    dest_path.display()
-                );
+                panic!("copy fixture file {} -> {} failed: {error}", src_path.display(), dest_path.display());
             });
         }
     }

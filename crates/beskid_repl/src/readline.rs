@@ -17,10 +17,7 @@ pub struct StdioInput {
 
 impl StdioInput {
     pub fn new() -> Self {
-        Self {
-            reader: io::stdin().lock(),
-            tty: io::stdin().is_terminal(),
-        }
+        Self { reader: io::stdin().lock(), tty: io::stdin().is_terminal() }
     }
 }
 
@@ -56,9 +53,7 @@ pub struct BufferInput<'a> {
 
 impl<'a> BufferInput<'a> {
     pub fn new(lines: &'a [String]) -> Self {
-        Self {
-            lines: lines.iter(),
-        }
+        Self { lines: lines.iter() }
     }
 }
 
@@ -74,10 +69,7 @@ impl ReplInput for BufferInput<'_> {
 
 pub fn run_loop(session: &mut ReplSession, input: &mut dyn ReplInput) -> io::Result<()> {
     if input.is_tty() {
-        writeln!(
-            io::stdout(),
-            "Beskid REPL (v1 snippets). Commands: :quit, :reset, :type <expr>"
-        )?;
+        writeln!(io::stdout(), "Beskid REPL (v1 snippets). Commands: :quit, :reset, :type <expr>")?;
     }
 
     while let Some(line) = input.read_line("beskid> ")? {
@@ -115,18 +107,14 @@ fn handle_line(session: &mut ReplSession, line: &str) -> LineAction {
     match session.eval(line) {
         EvalOutcome::Value(value) => LineAction::Print(value),
         EvalOutcome::Unit => LineAction::Print("ok".to_string()),
-        EvalOutcome::Type(_) => {
-            LineAction::PrintError(":type is a command, not an expression".into())
-        }
+        EvalOutcome::Type(_) => LineAction::PrintError(":type is a command, not an expression".into()),
         EvalOutcome::Error(error) => LineAction::PrintError(error),
     }
 }
 
 fn handle_command(session: &mut ReplSession, command: &str) -> LineAction {
-    let (name, rest) = command
-        .split_once(char::is_whitespace)
-        .map(|(name, rest)| (name, rest.trim()))
-        .unwrap_or((command, ""));
+    let (name, rest) =
+        command.split_once(char::is_whitespace).map(|(name, rest)| (name, rest.trim())).unwrap_or((command, ""));
 
     match name {
         "quit" | "q" | "exit" => LineAction::Quit,
@@ -144,9 +132,7 @@ fn handle_command(session: &mut ReplSession, command: &str) -> LineAction {
                 other => LineAction::PrintError(format!("unexpected outcome: {other:?}")),
             }
         }
-        "help" | "h" | "?" => {
-            LineAction::Print("commands: :quit, :reset, :type <snippet>".to_string())
-        }
+        "help" | "h" | "?" => LineAction::Print("commands: :quit, :reset, :type <snippet>".to_string()),
         other => LineAction::PrintError(format!("unknown command `{other}`")),
     }
 }
@@ -164,8 +150,7 @@ mod tests {
         static PREFIX: OnceLock<std::path::PathBuf> = OnceLock::new();
         PREFIX.get_or_init(|| {
             let prefix = tempfile::tempdir().expect("exact kit prefix").keep();
-            build_native_host(prefix.clone(), RuntimeKitProfile::Debug)
-                .expect("publish exact native kit");
+            build_native_host(prefix.clone(), RuntimeKitProfile::Debug).expect("publish exact native kit");
             prefix
         })
     }
@@ -173,8 +158,7 @@ mod tests {
     fn exact_kit_session() -> ReplSession {
         let target = host_runtime_target().expect("host target");
         let engine =
-            Engine::with_runtime_kit(shared_exact_kit_prefix(), target, BuildProfile::Debug)
-                .expect("load exact kit");
+            Engine::with_runtime_kit(shared_exact_kit_prefix(), target, BuildProfile::Debug).expect("load exact kit");
         ReplSession::from_engine(engine)
     }
 
@@ -198,10 +182,7 @@ mod tests {
     fn reset_command_clears_session() {
         let mut session = exact_kit_session();
         assert_eq!(session.eval("1 + 1"), EvalOutcome::Value("2".to_string()));
-        assert!(matches!(
-            handle_line(&mut session, ":reset"),
-            LineAction::Print(_)
-        ));
+        assert!(matches!(handle_line(&mut session, ":reset"), LineAction::Print(_)));
         assert_eq!(session.eval("3 + 4"), EvalOutcome::Value("7".to_string()));
     }
 

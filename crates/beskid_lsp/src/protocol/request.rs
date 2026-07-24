@@ -24,17 +24,10 @@ pub async fn snapshot_request(
     let uri = request.text_document.uri;
     let document = snapshot_document(state, &uri).await?;
     let offset = position_to_offset(&document.text, request.position);
-    Some(DocumentRequestSnapshot {
-        uri,
-        document,
-        offset,
-    })
+    Some(DocumentRequestSnapshot { uri, document, offset })
 }
 
-pub async fn snapshot_lsp_request<P>(
-    state: &RwLock<State>,
-    request: P,
-) -> Option<DocumentRequestSnapshot>
+pub async fn snapshot_lsp_request<P>(state: &RwLock<State>, request: P) -> Option<DocumentRequestSnapshot>
 where
     P: IntoTextDocumentPosition,
 {

@@ -47,8 +47,7 @@ pub fn composition_diagnostics_for_program(
     source_name: &str,
     source: &str,
 ) -> anyhow::Result<Vec<SemanticDiagnostic>> {
-    let generated =
-        prepare_program_for_composition(program.clone(), compile_plan, source_name, source)?;
+    let generated = prepare_program_for_composition(program.clone(), compile_plan, source_name, source)?;
     let composition_result = resolve_program_composition(&generated.program, compile_plan);
     Ok(composition_result_to_diagnostics(
         &composition_result,
@@ -73,8 +72,7 @@ pub fn composition_result_to_diagnostics(
         .collect::<Vec<_>>();
 
     if plan.is_some_and(|compile_plan| {
-        lib_project_rejects_launch(compile_plan.target.kind)
-            && !composition.snapshot.launched_host.is_empty()
+        lib_project_rejects_launch(compile_plan.target.kind) && !composition.snapshot.launched_host.is_empty()
     }) {
         let kind = SemanticIssueKind::CompositionLaunchInLibProject;
         diagnostics.push(make_diagnostic(
@@ -112,14 +110,9 @@ fn composition_issue_to_diagnostic(
     }
 
     let (span, message, label, help) = match issue {
-        CompositionIssue::UnknownRegistrationId {
-            registration_id,
-            span,
-        } => (
+        CompositionIssue::UnknownRegistrationId { registration_id, span } => (
             span.unwrap_or(program_span),
-            format!(
-                "composition produced unknown registration id `{registration_id}` while building dependency graph"
-            ),
+            format!("composition produced unknown registration id `{registration_id}` while building dependency graph"),
             "invalid composition registration id",
             Some("check host/scope overrides and registration dependencies".to_string()),
         ),

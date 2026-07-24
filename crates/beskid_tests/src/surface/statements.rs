@@ -4,9 +4,7 @@ use beskid_analysis::Rule;
 use beskid_analysis::parsing::parsable::Parsable;
 use beskid_analysis::syntax::{Block, Statement};
 
-use crate::surface::ast::{
-    assert_expression_integer, assert_expression_path_segments, parse_statement_ast,
-};
+use crate::surface::ast::{assert_expression_integer, assert_expression_path_segments, parse_statement_ast};
 use crate::surface::util::{assert_parse, assert_parse_fail, parse_pair};
 
 #[test]
@@ -66,14 +64,8 @@ fn rejects_return_without_semicolon() {
 fn break_and_continue_parses_and_build_ast() {
     assert_parse(Rule::BreakStatement, "break;");
     assert_parse(Rule::ContinueStatement, "continue;");
-    assert!(matches!(
-        parse_statement_ast(Rule::BreakStatement, "break;").node,
-        Statement::Break(_)
-    ));
-    assert!(matches!(
-        parse_statement_ast(Rule::ContinueStatement, "continue;").node,
-        Statement::Continue(_)
-    ));
+    assert!(matches!(parse_statement_ast(Rule::BreakStatement, "break;").node, Statement::Break(_)));
+    assert!(matches!(parse_statement_ast(Rule::ContinueStatement, "continue;").node, Statement::Continue(_)));
 }
 
 #[test]
@@ -88,10 +80,7 @@ fn rejects_continue_without_semicolon() {
 
 #[test]
 fn parses_if_statement_ast() {
-    let statement = parse_statement_ast(
-        Rule::IfStatement,
-        "if cond { return 1; } else { return 2; }",
-    );
+    let statement = parse_statement_ast(Rule::IfStatement, "if cond { return 1; } else { return 2; }");
     match &statement.node {
         Statement::If(if_stmt) => {
             assert_expression_path_segments(&if_stmt.node.condition, &["cond"]);
@@ -134,10 +123,7 @@ fn expression_statement_parses_and_builds_ast() {
     match &statement.node {
         Statement::Expression(expr_stmt) => match &expr_stmt.node.expression.node {
             beskid_analysis::syntax::Expression::Call(call) => {
-                assert!(matches!(
-                    call.node.callee.node,
-                    beskid_analysis::syntax::Expression::Path(_)
-                ));
+                assert!(matches!(call.node.callee.node, beskid_analysis::syntax::Expression::Path(_)));
             }
             _ => panic!("expected call expression"),
         },

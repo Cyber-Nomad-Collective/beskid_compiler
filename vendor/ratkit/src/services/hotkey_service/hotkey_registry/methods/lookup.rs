@@ -36,9 +36,7 @@ impl HotkeyRegistry {
                 KeyCode::Char(c) => hotkey.key.to_lowercase() == c.to_string().to_lowercase(),
                 KeyCode::Tab => hotkey.key.to_lowercase() == "tab",
                 KeyCode::Enter => hotkey.key.to_lowercase() == "enter",
-                KeyCode::Esc => {
-                    hotkey.key.to_lowercase() == "escape" || hotkey.key.to_lowercase() == "esc"
-                }
+                KeyCode::Esc => hotkey.key.to_lowercase() == "escape" || hotkey.key.to_lowercase() == "esc",
                 KeyCode::Up => hotkey.key.to_lowercase() == "up",
                 KeyCode::Down => hotkey.key.to_lowercase() == "down",
                 KeyCode::Left => hotkey.key.to_lowercase() == "left",
@@ -114,9 +112,6 @@ impl HotkeyRegistry {
     /// assert_eq!(global.len(), 1);
     /// ```
     pub fn get_global(&self) -> Vec<&Hotkey> {
-        self.hotkeys
-            .iter()
-            .filter(|h| matches!(h.scope, HotkeyScope::Global))
-            .collect()
+        self.hotkeys.iter().filter(|h| matches!(h.scope, HotkeyScope::Global)).collect()
     }
 }

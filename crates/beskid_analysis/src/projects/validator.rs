@@ -3,18 +3,12 @@ use std::path::{Component, Path};
 
 use crate::projects::error::ProjectError;
 use crate::projects::model::{
-    DependencySource, ProjectKind, ProjectLinkSection, ProjectManifest, TargetKind,
-    WorkspaceManifest,
+    DependencySource, ProjectKind, ProjectLinkSection, ProjectManifest, TargetKind, WorkspaceManifest,
 };
 
 /// Closed capability names accepted in `project.mod.capabilities` (compiler-mod host bridge).
-pub const MOD_CAPABILITY_NAMES: &[&str] = &[
-    "emit_syntax",
-    "read_project_sources",
-    "query_semantic_snapshot",
-    "extern_ffi",
-    "rewrite_syntax",
-];
+pub const MOD_CAPABILITY_NAMES: &[&str] =
+    &["emit_syntax", "read_project_sources", "query_semantic_snapshot", "extern_ffi", "rewrite_syntax"];
 
 const MOD_ARTIFACT_POLICIES: &[&str] = &["reuse", "rebuild", "clean_rebuild"];
 
@@ -29,14 +23,10 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
         ));
     }
     if manifest.project.name.trim().is_empty() {
-        return Err(ProjectError::Validation(
-            "`name` is required in the project root block".to_string(),
-        ));
+        return Err(ProjectError::Validation("`name` is required in the project root block".to_string()));
     }
     if manifest.project.version.trim().is_empty() {
-        return Err(ProjectError::Validation(
-            "`version` is required in the project root block".to_string(),
-        ));
+        return Err(ProjectError::Validation("`version` is required in the project root block".to_string()));
     }
 
     match manifest.project.kind {
@@ -64,9 +54,7 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
             ));
         }
         ProjectKind::Host | ProjectKind::Template if manifest.project.root.trim().is_empty() => {
-            return Err(ProjectError::Validation(
-                "`root` cannot be empty for host or template projects".to_string(),
-            ));
+            return Err(ProjectError::Validation("`root` cannot be empty for host or template projects".to_string()));
         }
         ProjectKind::Mod if !manifest.targets.is_empty() => {
             return Err(ProjectError::meta_contract(
@@ -96,9 +84,7 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
             if let Some(schemas) = &manifest.project.schemas_section
                 && schemas.exports.is_empty()
             {
-                return Err(ProjectError::Validation(
-                    "`schemas` must declare at least one `export` block".to_string(),
-                ));
+                return Err(ProjectError::Validation("`schemas` must declare at least one `export` block".to_string()));
             }
         }
         _ => {}
@@ -107,10 +93,7 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
     let mut target_names = HashSet::new();
     for target in &manifest.targets {
         if !target_names.insert(target.name.clone()) {
-            return Err(ProjectError::Validation(format!(
-                "duplicate target label `{}`",
-                target.name
-            )));
+            return Err(ProjectError::Validation(format!("duplicate target label `{}`", target.name)));
         }
         match (target.kind, target.entry.as_deref()) {
             (TargetKind::Lib, None) | (TargetKind::Lib, Some("")) => {}
@@ -149,9 +132,7 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
         {
             return Err(ProjectError::meta_contract(
                 "E1805",
-                format!(
-                    "unknown `project.mod.artifactPolicy` `{policy}` (expected reuse, rebuild, or clean_rebuild)"
-                ),
+                format!("unknown `project.mod.artifactPolicy` `{policy}` (expected reuse, rebuild, or clean_rebuild)"),
             ));
         }
         if let Some(outputs) = &mod_section.generated_outputs {
@@ -163,11 +144,7 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                     ));
                 }
                 let root = Path::new(output.resolved_root());
-                if root.is_absolute()
-                    || root
-                        .components()
-                        .any(|component| matches!(component, Component::ParentDir))
-                {
+                if root.is_absolute() || root.components().any(|component| matches!(component, Component::ParentDir)) {
                     return Err(ProjectError::meta_contract(
                         "E1806",
                         format!(
@@ -187,10 +164,7 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
     let mut dependency_names = HashSet::new();
     for dependency in &manifest.dependencies {
         if !dependency_names.insert(dependency.name.clone()) {
-            return Err(ProjectError::Validation(format!(
-                "duplicate dependency label `{}`",
-                dependency.name
-            )));
+            return Err(ProjectError::Validation(format!("duplicate dependency label `{}`", dependency.name)));
         }
 
         match dependency.source {
@@ -198,13 +172,7 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                 if dependency.name.eq_ignore_ascii_case("Std") {
                     continue;
                 }
-                if dependency
-                    .path
-                    .as_deref()
-                    .map(str::trim)
-                    .unwrap_or("")
-                    .is_empty()
-                {
+                if dependency.path.as_deref().map(str::trim).unwrap_or("").is_empty() {
                     return Err(ProjectError::Validation(format!(
                         "dependency `{}` with source = path requires `path`",
                         dependency.name
@@ -212,25 +180,13 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                 }
             }
             DependencySource::Git => {
-                if dependency
-                    .url
-                    .as_deref()
-                    .map(str::trim)
-                    .unwrap_or("")
-                    .is_empty()
-                {
+                if dependency.url.as_deref().map(str::trim).unwrap_or("").is_empty() {
                     return Err(ProjectError::Validation(format!(
                         "dependency `{}` with source = git requires `url`",
                         dependency.name
                     )));
                 }
-                if dependency
-                    .rev
-                    .as_deref()
-                    .map(str::trim)
-                    .unwrap_or("")
-                    .is_empty()
-                {
+                if dependency.rev.as_deref().map(str::trim).unwrap_or("").is_empty() {
                     return Err(ProjectError::Validation(format!(
                         "dependency `{}` with source = git requires `rev`",
                         dependency.name
@@ -238,13 +194,7 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
                 }
             }
             DependencySource::Registry => {
-                if dependency
-                    .version
-                    .as_deref()
-                    .map(str::trim)
-                    .unwrap_or("")
-                    .is_empty()
-                {
+                if dependency.version.as_deref().map(str::trim).unwrap_or("").is_empty() {
                     return Err(ProjectError::Validation(format!(
                         "dependency `{}` with source = registry requires `version`",
                         dependency.name
@@ -263,18 +213,12 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
 /// - **E1892**: empty entry inside any list field.
 /// - **E1893**: duplicate library name.
 fn validate_link_section(link: &ProjectLinkSection) -> Result<(), ProjectError> {
-    let lists: [(&str, &[String]); 3] = [
-        ("libraries", &link.libraries),
-        ("searchPaths", &link.search_paths),
-        ("extraArgs", &link.extra_args),
-    ];
+    let lists: [(&str, &[String]); 3] =
+        [("libraries", &link.libraries), ("searchPaths", &link.search_paths), ("extraArgs", &link.extra_args)];
     for (field_name, values) in lists {
         for value in values {
             if value.trim().is_empty() {
-                return Err(ProjectError::meta_contract(
-                    "E1892",
-                    format!("`link.{field_name}` contains empty entry"),
-                ));
+                return Err(ProjectError::meta_contract("E1892", format!("`link.{field_name}` contains empty entry")));
             }
         }
     }
@@ -282,34 +226,21 @@ fn validate_link_section(link: &ProjectLinkSection) -> Result<(), ProjectError> 
     let mut seen: HashSet<String> = HashSet::new();
     for library in &link.libraries {
         if !seen.insert(library.clone()) {
-            return Err(ProjectError::meta_contract(
-                "E1893",
-                format!("duplicate `link.libraries` entry `{library}`"),
-            ));
+            return Err(ProjectError::meta_contract("E1893", format!("duplicate `link.libraries` entry `{library}`")));
         }
     }
 
     Ok(())
 }
 
-fn validate_relative_workspace_path(
-    path_value: &str,
-    field_name: &str,
-) -> Result<(), ProjectError> {
+fn validate_relative_workspace_path(path_value: &str, field_name: &str) -> Result<(), ProjectError> {
     let path = Path::new(path_value);
     if path.is_absolute() {
-        return Err(ProjectError::Validation(format!(
-            "{field_name} must be relative: `{path_value}`"
-        )));
+        return Err(ProjectError::Validation(format!("{field_name} must be relative: `{path_value}`")));
     }
 
-    if path
-        .components()
-        .any(|component| matches!(component, Component::ParentDir))
-    {
-        return Err(ProjectError::Validation(format!(
-            "{field_name} cannot escape workspace root: `{path_value}`"
-        )));
+    if path.components().any(|component| matches!(component, Component::ParentDir)) {
+        return Err(ProjectError::Validation(format!("{field_name} cannot escape workspace root: `{path_value}`")));
     }
 
     Ok(())
@@ -317,15 +248,11 @@ fn validate_relative_workspace_path(
 
 pub fn validate_workspace_manifest(manifest: &WorkspaceManifest) -> Result<(), ProjectError> {
     if manifest.workspace.name.trim().is_empty() {
-        return Err(ProjectError::Validation(
-            "`workspace.name` is required".to_string(),
-        ));
+        return Err(ProjectError::Validation("`workspace.name` is required".to_string()));
     }
     let resolver = manifest.workspace.resolver.trim();
     if resolver.is_empty() {
-        return Err(ProjectError::Validation(
-            "`workspace.resolver` cannot be empty".to_string(),
-        ));
+        return Err(ProjectError::Validation("`workspace.resolver` cannot be empty".to_string()));
     }
     if resolver != "v1" {
         return Err(ProjectError::Validation(format!(
@@ -336,17 +263,11 @@ pub fn validate_workspace_manifest(manifest: &WorkspaceManifest) -> Result<(), P
     let mut member_names = HashSet::new();
     for member in &manifest.members {
         if !member_names.insert(member.name.clone()) {
-            return Err(ProjectError::Validation(format!(
-                "duplicate member label `{}`",
-                member.name
-            )));
+            return Err(ProjectError::Validation(format!("duplicate member label `{}`", member.name)));
         }
 
         if member.path.trim().is_empty() {
-            return Err(ProjectError::Validation(format!(
-                "member `{}` requires non-empty `path`",
-                member.name
-            )));
+            return Err(ProjectError::Validation(format!("member `{}` requires non-empty `path`", member.name)));
         }
 
         validate_relative_workspace_path(&member.path, "member path")?;
@@ -372,17 +293,11 @@ pub fn validate_workspace_manifest(manifest: &WorkspaceManifest) -> Result<(), P
     let mut registry_names = HashSet::new();
     for registry in &manifest.registries {
         if !registry_names.insert(registry.name.clone()) {
-            return Err(ProjectError::Validation(format!(
-                "duplicate registry label `{}`",
-                registry.name
-            )));
+            return Err(ProjectError::Validation(format!("duplicate registry label `{}`", registry.name)));
         }
 
         if registry.url.trim().is_empty() {
-            return Err(ProjectError::Validation(format!(
-                "registry `{}` requires non-empty `url`",
-                registry.name
-            )));
+            return Err(ProjectError::Validation(format!("registry `{}` requires non-empty `url`", registry.name)));
         }
     }
 
@@ -392,18 +307,11 @@ pub fn validate_workspace_manifest(manifest: &WorkspaceManifest) -> Result<(), P
 fn validate_relative_entry_path(entry: &str) -> Result<(), ProjectError> {
     let path = Path::new(entry);
     if path.is_absolute() {
-        return Err(ProjectError::Validation(format!(
-            "target entry path must be relative: `{entry}`"
-        )));
+        return Err(ProjectError::Validation(format!("target entry path must be relative: `{entry}`")));
     }
 
-    if path
-        .components()
-        .any(|component| matches!(component, Component::ParentDir))
-    {
-        return Err(ProjectError::Validation(format!(
-            "target entry path cannot escape source root: `{entry}`"
-        )));
+    if path.components().any(|component| matches!(component, Component::ParentDir)) {
+        return Err(ProjectError::Validation(format!("target entry path cannot escape source root: `{entry}`")));
     }
 
     Ok(())

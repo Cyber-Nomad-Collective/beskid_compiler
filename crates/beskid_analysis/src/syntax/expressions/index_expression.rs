@@ -23,19 +23,10 @@ pub(crate) fn parse_index_expression(
     pair: Pair<Rule>,
 ) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
-    let index_pair = pair
-        .into_inner()
-        .next()
-        .ok_or(ParseError::missing(Rule::Expression))?;
+    let index_pair = pair.into_inner().next().ok_or(ParseError::missing(Rule::Expression))?;
     let index = Expression::parse(index_pair)?;
 
-    let index_expr = Spanned::new(
-        IndexExpression {
-            target: Box::new(target),
-            index: Box::new(index),
-        },
-        span,
-    );
+    let index_expr = Spanned::new(IndexExpression { target: Box::new(target), index: Box::new(index) }, span);
 
     Ok(Spanned::new(Expression::Index(index_expr), span))
 }

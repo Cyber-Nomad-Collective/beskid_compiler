@@ -17,13 +17,10 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use beskid_pckg_artifacts::{
-    PackageArtifactStore, PublishRequest, ValidatedArtifact, validate_package_artifact,
-};
+use beskid_pckg_artifacts::{PackageArtifactStore, PublishRequest, ValidatedArtifact, validate_package_artifact};
 use beskid_pckg_store::{
-    AdminRole, AsyncAdministrationRepository, AsyncPackageReviewRepository, NewPackage,
-    PackageReviewQueueError, PackageReviewRequest, PublishOutcome, StoreError,
-    WorkspacePublishReservation,
+    AdminRole, AsyncAdministrationRepository, AsyncPackageReviewRepository, NewPackage, PackageReviewQueueError,
+    PackageReviewRequest, PublishOutcome, StoreError, WorkspacePublishReservation,
 };
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -141,25 +138,13 @@ pub(crate) async fn submit_review_request(
             Err(_) => return unavailable(),
         }
     } else {
-        state
-            .reviews
-            .memory
-            .lock()
-            .expect("review queue mutex is not poisoned")
-            .push(review.clone());
+        state.reviews.memory.lock().expect("review queue mutex is not poisoned").push(review.clone());
         review
     };
-    (
-        StatusCode::CREATED,
-        Json(review_response(saved, package.name)),
-    )
-        .into_response()
+    (StatusCode::CREATED, Json(review_response(saved, package.name))).into_response()
 }
 
-pub(crate) async fn list_review_queue(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
+pub(crate) async fn list_review_queue(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(subject) = authenticated_subject(&state, &headers) else {
         return crate::unauthorized_response();
     };
@@ -193,11 +178,7 @@ pub(crate) async fn review_action(
     let Some(existing) = find_review(&state, &review_id).await else {
         return not_found();
     };
-    let package = match state
-        .packages
-        .find_package_by_id(&existing.package_id)
-        .await
-    {
+    let package = match state.packages.find_package_by_id(&existing.package_id).await {
         Ok(Some(package)) => package,
         Ok(None) => return not_found(),
         Err(_) => return unavailable(),
@@ -208,30 +189,18 @@ pub(crate) async fn review_action(
     let Some(status) = canonical_action(&request.action) else {
         return bad_request("action must be approved, needs_changes, or rejected");
     };
-    let notes = request
-        .notes
-        .and_then(|notes| (!notes.trim().is_empty()).then(|| notes.trim().to_owned()));
-    if notes
-        .as_ref()
-        .is_some_and(|notes| notes.len() > MAX_REVIEW_TEXT_BYTES)
-    {
+    let notes = request.notes.and_then(|notes| (!notes.trim().is_empty()).then(|| notes.trim().to_owned()));
+    if notes.as_ref().is_some_and(|notes| notes.len() > MAX_REVIEW_TEXT_BYTES) {
         return bad_request("review notes must be at most 4000 bytes");
     }
     let updated = if let Some(repository) = &state.api_keys {
-        match repository
-            .action_package_review(&review_id, status, &subject, notes, now_unix_seconds())
-            .await
-        {
+        match repository.action_package_review(&review_id, status, &subject, notes, now_unix_seconds()).await {
             Ok(review) => review,
             Err(PackageReviewQueueError::NotFound) => return not_found(),
             Err(_) => return unavailable(),
         }
     } else {
-        let mut reviews = state
-            .reviews
-            .memory
-            .lock()
-            .expect("review queue mutex is not poisoned");
+        let mut reviews = state.reviews.memory.lock().expect("review queue mutex is not poisoned");
         let Some(review) = reviews.iter_mut().find(|review| review.id == review_id) else {
             return not_found();
         };
@@ -272,28 +241,19 @@ pub(crate) async fn publish_workspace(
             }
             Ok(None) => None,
             Err(_) => {
-                return workspace_failure(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "package persistence is unavailable",
-                );
+                return workspace_failure(StatusCode::SERVICE_UNAVAILABLE, "package persistence is unavailable");
             }
         };
         let versions = match existing.as_ref() {
             Some(package) => match state.packages.list_versions(&package.id).await {
                 Ok(versions) => versions,
                 Err(_) => {
-                    return workspace_failure(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "package persistence is unavailable",
-                    );
+                    return workspace_failure(StatusCode::SERVICE_UNAVAILABLE, "package persistence is unavailable");
                 }
             },
             None => Vec::new(),
         };
-        let version = next_version(
-            versions.iter().map(|version| version.version.as_str()),
-            version_bump,
-        );
+        let version = next_version(versions.iter().map(|version| version.version.as_str()), version_bump);
         let artifact = match build_member_artifact(&workspace, member, &version) {
             Ok(artifact) => artifact,
             Err(message) => return workspace_failure(StatusCode::BAD_REQUEST, message),
@@ -301,20 +261,14 @@ pub(crate) async fn publish_workspace(
         let validated = match validate_package_artifact(&artifact, &member.package_name, &version) {
             Ok(validated) => validated,
             Err(_) => {
-                return workspace_failure(
-                    StatusCode::BAD_REQUEST,
-                    "workspace member artifact could not be validated",
-                );
+                return workspace_failure(StatusCode::BAD_REQUEST, "workspace member artifact could not be validated");
             }
         };
         prepared.push(PreparedWorkspaceMember {
             member_id: member.member_id.clone(),
             package_name: member.package_name.clone(),
             package: NewPackage {
-                id: existing
-                    .as_ref()
-                    .map(|package| package.id.clone())
-                    .unwrap_or_else(|| Uuid::new_v4().to_string()),
+                id: existing.as_ref().map(|package| package.id.clone()).unwrap_or_else(|| Uuid::new_v4().to_string()),
                 name: member.package_name.clone(),
                 owner_subject: subject.clone(),
                 is_public: true,
@@ -331,10 +285,9 @@ pub(crate) async fn publish_workspace(
     let mut staged_new_keys: Vec<String> = Vec::new();
     let mut reservations = Vec::with_capacity(prepared.len());
     for member in &prepared {
-        let staged = state.artifacts.save_staged(PublishRequest {
-            validated: member.validated.clone(),
-            bytes: &member.artifact,
-        });
+        let staged = state
+            .artifacts
+            .save_staged(PublishRequest { validated: member.validated.clone(), bytes: &member.artifact });
         let (stored, created) = match staged {
             Ok(stored) => stored,
             Err(_) => {
@@ -365,28 +318,19 @@ pub(crate) async fn publish_workspace(
             for key in staged_new_keys {
                 let _ = state.artifacts.delete(&key);
             }
-            return workspace_failure(
-                StatusCode::CONFLICT,
-                "workspace package version is immutable",
-            );
+            return workspace_failure(StatusCode::CONFLICT, "workspace package version is immutable");
         }
         Err(StoreError::PackageOwnershipConflict) => {
             for key in staged_new_keys {
                 let _ = state.artifacts.delete(&key);
             }
-            return workspace_failure(
-                StatusCode::FORBIDDEN,
-                "workspace member package is owned by another publisher",
-            );
+            return workspace_failure(StatusCode::FORBIDDEN, "workspace member package is owned by another publisher");
         }
         Err(_) => {
             for key in staged_new_keys {
                 let _ = state.artifacts.delete(&key);
             }
-            return workspace_failure(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "package persistence is unavailable",
-            );
+            return workspace_failure(StatusCode::SERVICE_UNAVAILABLE, "package persistence is unavailable");
         }
     };
     let mut published = Vec::with_capacity(outcomes.len());
@@ -415,21 +359,12 @@ async fn all_reviews(state: &AppState) -> Result<Vec<PackageReviewRequest>, ()> 
     if let Some(repository) = &state.api_keys {
         repository.list_package_reviews().await.map_err(|_| ())
     } else {
-        Ok(state
-            .reviews
-            .memory
-            .lock()
-            .expect("review queue mutex is not poisoned")
-            .clone())
+        Ok(state.reviews.memory.lock().expect("review queue mutex is not poisoned").clone())
     }
 }
 
 async fn find_review(state: &AppState, id: &str) -> Option<PackageReviewRequest> {
-    all_reviews(state)
-        .await
-        .ok()?
-        .into_iter()
-        .find(|review| review.id == id)
+    all_reviews(state).await.ok()?.into_iter().find(|review| review.id == id)
 }
 
 async fn can_moderate(state: &AppState, subject: &str, owner: &str, package_id: &str) -> bool {
@@ -442,11 +377,7 @@ async fn can_moderate(state: &AppState, subject: &str, owner: &str, package_id: 
     if repository
         .roles_for_subject(subject)
         .await
-        .map(|roles| {
-            roles
-                .iter()
-                .any(|role| matches!(role, AdminRole::Moderator | AdminRole::SuperAdmin))
-        })
+        .map(|roles| roles.iter().any(|role| matches!(role, AdminRole::Moderator | AdminRole::SuperAdmin)))
         .unwrap_or(false)
     {
         return true;
@@ -454,11 +385,7 @@ async fn can_moderate(state: &AppState, subject: &str, owner: &str, package_id: 
     repository
         .list_resource_permissions("package", package_id)
         .await
-        .map(|grants| {
-            grants
-                .iter()
-                .any(|grant| grant.subject == subject && grant.capability == "moderate")
-        })
+        .map(|grants| grants.iter().any(|grant| grant.subject == subject && grant.capability == "moderate"))
         .unwrap_or(false)
 }
 
@@ -489,30 +416,17 @@ fn valid_review_text(value: &str) -> bool {
     !value.trim().is_empty() && value.trim() == value && value.len() <= MAX_REVIEW_TEXT_BYTES
 }
 fn rfc3339(seconds: i64) -> String {
-    chrono::DateTime::from_timestamp(seconds, 0)
-        .expect("timestamp is valid")
-        .to_rfc3339()
+    chrono::DateTime::from_timestamp(seconds, 0).expect("timestamp is valid").to_rfc3339()
 }
 fn not_found() -> Response {
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({"message":"package review not found"})),
-    )
-        .into_response()
+    (StatusCode::NOT_FOUND, Json(serde_json::json!({"message":"package review not found"}))).into_response()
 }
 fn unavailable() -> Response {
-    (
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(serde_json::json!({"message":"review persistence is unavailable"})),
-    )
+    (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"message":"review persistence is unavailable"})))
         .into_response()
 }
 fn bad_request(message: &'static str) -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        Json(serde_json::json!({"message":message})),
-    )
-        .into_response()
+    (StatusCode::BAD_REQUEST, Json(serde_json::json!({"message":message}))).into_response()
 }
 fn workspace_failure(status: StatusCode, message: impl Into<String>) -> Response {
     (
@@ -527,55 +441,35 @@ fn workspace_failure(status: StatusCode, message: impl Into<String>) -> Response
         .into_response()
 }
 
-async fn multipart_artifact(
-    request: axum::extract::Request,
-) -> Result<(Vec<u8>, VersionBump), &'static str> {
+async fn multipart_artifact(request: axum::extract::Request) -> Result<(Vec<u8>, VersionBump), &'static str> {
     let content_type = request
         .headers()
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .ok_or("Expected multipart form payload.")?;
-    let boundary =
-        multer::parse_boundary(content_type).map_err(|_| "Expected multipart form payload.")?;
-    let constraints = multer::Constraints::new()
-        .allowed_fields(vec!["artifact", "versionBump"])
-        .size_limit(
-            multer::SizeLimit::new()
-                .whole_stream(MAX_WORKSPACE_BYTES as u64)
-                .for_field("artifact", MAX_WORKSPACE_BYTES as u64),
-        );
-    let mut form = multer::Multipart::with_constraints(
-        request.into_body().into_data_stream(),
-        boundary,
-        constraints,
+    let boundary = multer::parse_boundary(content_type).map_err(|_| "Expected multipart form payload.")?;
+    let constraints = multer::Constraints::new().allowed_fields(vec!["artifact", "versionBump"]).size_limit(
+        multer::SizeLimit::new()
+            .whole_stream(MAX_WORKSPACE_BYTES as u64)
+            .for_field("artifact", MAX_WORKSPACE_BYTES as u64),
     );
+    let mut form = multer::Multipart::with_constraints(request.into_body().into_data_stream(), boundary, constraints);
     let mut artifact = None;
     let mut version_bump = VersionBump::Patch;
-    while let Some(field) = form
-        .next_field()
-        .await
-        .map_err(|_| "Invalid workspace multipart payload.")?
-    {
+    while let Some(field) = form.next_field().await.map_err(|_| "Invalid workspace multipart payload.")? {
         let name = field.name().unwrap_or_default().to_owned();
-        let bytes = field
-            .bytes()
-            .await
-            .map_err(|_| "Invalid workspace multipart payload.")?;
+        let bytes = field.bytes().await.map_err(|_| "Invalid workspace multipart payload.")?;
         if name == "artifact" && artifact.is_none() {
             artifact = Some(bytes.to_vec());
         } else if name == "versionBump" {
-            version_bump = match std::str::from_utf8(&bytes)
-                .ok()
-                .map(str::trim)
-                .unwrap_or_default()
-                .to_ascii_lowercase()
-                .as_str()
-            {
-                "" | "patch" => VersionBump::Patch,
-                "minor" => VersionBump::Minor,
-                "major" => VersionBump::Major,
-                _ => return Err("versionBump must be patch, minor, or major."),
-            };
+            version_bump =
+                match std::str::from_utf8(&bytes).ok().map(str::trim).unwrap_or_default().to_ascii_lowercase().as_str()
+                {
+                    "" | "patch" => VersionBump::Patch,
+                    "minor" => VersionBump::Minor,
+                    "major" => VersionBump::Major,
+                    _ => return Err("versionBump must be patch, minor, or major."),
+                };
         } else if name != "versionBump" {
             return Err("Invalid workspace multipart payload.");
         }
@@ -598,17 +492,15 @@ struct WorkspaceMember {
 }
 
 fn parse_workspace(bytes: &[u8]) -> Result<Workspace, &'static str> {
-    let mut archive = ZipArchive::new(Cursor::new(bytes))
-        .map_err(|_| "Workspace bundle is not a valid ZIP archive.")?;
+    let mut archive =
+        ZipArchive::new(Cursor::new(bytes)).map_err(|_| "Workspace bundle is not a valid ZIP archive.")?;
     if !(1..=10_000).contains(&archive.len()) {
         return Err("Workspace bundle is empty or too large.");
     }
     let mut entries = BTreeMap::new();
     let mut uncompressed_bytes = 0_u64;
     for index in 0..archive.len() {
-        let mut entry = archive
-            .by_index(index)
-            .map_err(|_| "Workspace bundle is not a valid ZIP archive.")?;
+        let mut entry = archive.by_index(index).map_err(|_| "Workspace bundle is not a valid ZIP archive.")?;
         if entry.is_dir() {
             continue;
         }
@@ -623,31 +515,22 @@ fn parse_workspace(bytes: &[u8]) -> Result<Workspace, &'static str> {
         let path = entry.name().replace('\\', "/");
         if path.is_empty()
             || path.starts_with('/')
-            || path
-                .split('/')
-                .any(|part| part.is_empty() || matches!(part, "." | ".."))
+            || path.split('/').any(|part| part.is_empty() || matches!(part, "." | ".."))
         {
             return Err("Workspace bundle contains an unsafe entry path.");
         }
         let mut contents = Vec::with_capacity(entry_size as usize);
-        entry
-            .read_to_end(&mut contents)
-            .map_err(|_| "Workspace bundle could not be read.")?;
+        entry.read_to_end(&mut contents).map_err(|_| "Workspace bundle could not be read.")?;
         if entries.insert(path, contents).is_some() {
             return Err("Workspace bundle contains duplicate entries.");
         }
     }
-    let project = std::str::from_utf8(
-        entries
-            .get("Workspace.proj")
-            .ok_or("Workspace bundle is missing 'Workspace.proj'.")?,
-    )
-    .map_err(|_| "Workspace.proj must be UTF-8.")?;
-    let name =
-        quoted_assignment(project, "name").ok_or("Workspace.proj is missing a workspace name.")?;
-    let configured = entries
-        .get("workspace.package.json")
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok());
+    let project =
+        std::str::from_utf8(entries.get("Workspace.proj").ok_or("Workspace bundle is missing 'Workspace.proj'.")?)
+            .map_err(|_| "Workspace.proj must be UTF-8.")?;
+    let name = quoted_assignment(project, "name").ok_or("Workspace.proj is missing a workspace name.")?;
+    let configured =
+        entries.get("workspace.package.json").and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok());
     let mut members = Vec::new();
     let lines = project.lines().collect::<Vec<_>>();
     for (index, line) in lines.iter().enumerate() {
@@ -666,17 +549,10 @@ fn parse_workspace(bytes: &[u8]) -> Result<Workspace, &'static str> {
                 break;
             }
         }
-        let relative_path = quoted_assignment(&member_block, "path")
-            .ok_or("Workspace member is missing its path.")?;
+        let relative_path = quoted_assignment(&member_block, "path").ok_or("Workspace member is missing its path.")?;
         let package_name = configured
             .as_ref()
-            .and_then(|value| {
-                value
-                    .get("members")?
-                    .get(member_id)?
-                    .get("package")?
-                    .as_str()
-            })
+            .and_then(|value| value.get("members")?.get(member_id)?.get("package")?.as_str())
             .map(str::to_owned)
             .or_else(|| {
                 entries
@@ -688,33 +564,19 @@ fn parse_workspace(bytes: &[u8]) -> Result<Workspace, &'static str> {
         if relative_path.contains("..") || package_name.trim().is_empty() {
             return Err("Workspace member is invalid.");
         }
-        members.push(WorkspaceMember {
-            member_id: member_id.to_owned(),
-            relative_path,
-            package_name,
-        });
+        members.push(WorkspaceMember { member_id: member_id.to_owned(), relative_path, package_name });
     }
     if members.is_empty() {
         return Err("Workspace bundle has no members.");
     }
-    Ok(Workspace {
-        name,
-        entries,
-        members,
-    })
+    Ok(Workspace { name, entries, members })
 }
 
 fn quoted_assignment(contents: &str, key: &str) -> Option<String> {
     contents.lines().find_map(|line| {
         let line = line.trim();
-        let rest = line
-            .strip_prefix(key)?
-            .trim_start()
-            .strip_prefix('=')?
-            .trim();
-        rest.strip_prefix('"')?
-            .split_once('"')
-            .map(|(value, _)| value.to_owned())
+        let rest = line.strip_prefix(key)?.trim_start().strip_prefix('=')?.trim();
+        rest.strip_prefix('"')?.split_once('"').map(|(value, _)| value.to_owned())
     })
 }
 
@@ -738,8 +600,7 @@ fn build_member_artifact(
             entries.insert(path.to_owned(), bytes.clone());
         }
     }
-    if !entries.contains_key("Project.proj") || !entries.keys().any(|path| path.starts_with("src/"))
-    {
+    if !entries.contains_key("Project.proj") || !entries.keys().any(|path| path.starts_with("src/")) {
         return Err("Workspace member must include Project.proj and source files.");
     }
     entries.insert("package.json".to_owned(), serde_json::to_vec(&serde_json::json!({"schema":"beskid.package.v1","id":member.package_name,"version":version,"packageKind":"library","dependencies":[]})).expect("JSON serialization succeeds"));
@@ -756,11 +617,9 @@ fn build_member_artifact(
         for (path, bytes) in entries {
             zip.start_file(path, SimpleFileOptions::default())
                 .map_err(|_| "Workspace artifact could not be created.")?;
-            zip.write_all(&bytes)
-                .map_err(|_| "Workspace artifact could not be created.")?;
+            zip.write_all(&bytes).map_err(|_| "Workspace artifact could not be created.")?;
         }
-        zip.finish()
-            .map_err(|_| "Workspace artifact could not be created.")?;
+        zip.finish().map_err(|_| "Workspace artifact could not be created.")?;
     }
     Ok(output.into_inner())
 }
@@ -778,9 +637,5 @@ fn next_version<'a>(versions: impl Iterator<Item = &'a str>, bump: VersionBump) 
 }
 fn parse_version(value: &str) -> Option<(u64, u64, u64)> {
     let mut parts = value.split('.');
-    Some((
-        parts.next()?.parse().ok()?,
-        parts.next()?.parse().ok()?,
-        parts.next()?.parse().ok()?,
-    ))
+    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
 }

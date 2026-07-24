@@ -12,10 +12,7 @@ pub enum Type {
     #[ast(child)]
     Array(Box<Spanned<Type>>),
     #[ast(children)]
-    Function {
-        return_type: Box<Spanned<Type>>,
-        parameters: Vec<Spanned<Type>>,
-    },
+    Function { return_type: Box<Spanned<Type>>, parameters: Vec<Spanned<Type>> },
 }
 
 impl crate::parsing::parsable::Parsable for Type {
@@ -26,78 +23,52 @@ impl crate::parsing::parsable::Parsable for Type {
 
         let node = match pair.as_rule() {
             crate::parser::Rule::BeskidType => {
-                let inner =
-                    pair.into_inner()
-                        .next()
-                        .ok_or(crate::parsing::error::ParseError::missing(
-                            crate::parser::Rule::TypeName,
-                        ))?;
+                let inner = pair
+                    .into_inner()
+                    .next()
+                    .ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::TypeName))?;
                 let inner_type = Self::parse(inner)?;
                 return Ok(crate::syntax::Spanned::new(inner_type.node, span));
             }
             crate::parser::Rule::FunctionType => {
                 let mut inner = pair.into_inner();
                 let return_type =
-                    inner
-                        .next()
-                        .ok_or(crate::parsing::error::ParseError::missing(
-                            crate::parser::Rule::TypeName,
-                        ))?;
+                    inner.next().ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::TypeName))?;
                 let return_type = Self::parse(return_type)?;
 
                 let parameters = inner
                     .next()
-                    .map(
-                        |list| -> Result<Vec<Spanned<Type>>, crate::parsing::error::ParseError> {
-                            list.into_inner().map(Self::parse).collect()
-                        },
-                    )
+                    .map(|list| -> Result<Vec<Spanned<Type>>, crate::parsing::error::ParseError> {
+                        list.into_inner().map(Self::parse).collect()
+                    })
                     .transpose()?
                     .unwrap_or_default();
 
-                Self::Function {
-                    return_type: Box::new(return_type),
-                    parameters,
-                }
+                Self::Function { return_type: Box::new(return_type), parameters }
             }
             crate::parser::Rule::ArrowFunctionType => {
                 let mut inner = pair.into_inner();
-                let first = inner
-                    .next()
-                    .ok_or(crate::parsing::error::ParseError::missing(
-                        crate::parser::Rule::BeskidType,
-                    ))?;
+                let first =
+                    inner.next().ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::BeskidType))?;
 
-                let (parameters, return_type_pair) =
-                    if first.as_rule() == crate::parser::Rule::BeskidTypeList {
-                        let parameters = first
-                            .into_inner()
-                            .map(Self::parse)
-                            .collect::<Result<Vec<_>, _>>()?;
-                        let return_type_pair =
-                            inner
-                                .next()
-                                .ok_or(crate::parsing::error::ParseError::missing(
-                                    crate::parser::Rule::BeskidType,
-                                ))?;
-                        (parameters, return_type_pair)
-                    } else {
-                        (Vec::new(), first)
-                    };
+                let (parameters, return_type_pair) = if first.as_rule() == crate::parser::Rule::BeskidTypeList {
+                    let parameters = first.into_inner().map(Self::parse).collect::<Result<Vec<_>, _>>()?;
+                    let return_type_pair = inner
+                        .next()
+                        .ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::BeskidType))?;
+                    (parameters, return_type_pair)
+                } else {
+                    (Vec::new(), first)
+                };
 
                 let return_type = Self::parse(return_type_pair)?;
-                Self::Function {
-                    return_type: Box::new(return_type),
-                    parameters,
-                }
+                Self::Function { return_type: Box::new(return_type), parameters }
             }
             crate::parser::Rule::TypeName => {
                 let mut inner = pair.into_inner();
                 let first = inner
                     .next()
-                    .ok_or(crate::parsing::error::ParseError::missing(
-                        crate::parser::Rule::PrimitiveType,
-                    ))?;
+                    .ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::PrimitiveType))?;
 
                 match first.as_rule() {
                     crate::parser::Rule::PrimitiveType => {
@@ -118,11 +89,8 @@ impl crate::parsing::parsable::Parsable for Type {
             }
             crate::parser::Rule::ArrayType => {
                 let mut inner = pair.into_inner();
-                let type_name = inner
-                    .next()
-                    .ok_or(crate::parsing::error::ParseError::missing(
-                        crate::parser::Rule::TypeName,
-                    ))?;
+                let type_name =
+                    inner.next().ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::TypeName))?;
                 let inner_type = Self::parse(type_name)?;
                 Self::Array(Box::new(inner_type))
             }

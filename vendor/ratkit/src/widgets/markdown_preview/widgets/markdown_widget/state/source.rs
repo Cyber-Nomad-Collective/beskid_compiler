@@ -38,12 +38,7 @@ impl Clone for SourceState {
 impl SourceState {
     /// Create a new source state with no source.
     pub fn new() -> Self {
-        Self {
-            source: None,
-            line_count: 0,
-            watcher: None,
-            watch_path: None,
-        }
+        Self { source: None, line_count: 0, watcher: None, watch_path: None }
     }
 }
 
@@ -160,11 +155,8 @@ impl SourceState {
         self.source = Some(source);
         self.watch_path = Some(path.as_ref().to_path_buf());
 
-        let mut watcher = FileWatcher::for_file()
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
-        watcher
-            .watch(path.as_ref())
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+        let mut watcher = FileWatcher::for_file().map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+        watcher.watch(path.as_ref()).map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
         self.watcher = Some(watcher);
         Ok(())
     }

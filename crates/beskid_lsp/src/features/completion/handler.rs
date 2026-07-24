@@ -1,33 +1,23 @@
 use beskid_queries::{BeskidDatabase, CompletionContext, completion_candidates};
-use tower_lsp_server::ls_types::{
-    CompletionItem, CompletionResponse, CompletionTextEdit, TextEdit, Uri,
-};
+use tower_lsp_server::ls_types::{CompletionItem, CompletionResponse, CompletionTextEdit, TextEdit, Uri};
 
 use crate::features::project_manifest::api as project_manifest;
 use crate::position::offset_range_to_lsp;
 use crate::session::store::Document;
 
 /// Completion items at `offset`, including manifest-aware suggestions for `.bproj`/`.bws` buffers.
-pub fn handle_completion(
-    db: &BeskidDatabase,
-    uri: &Uri,
-    doc: &Document,
-    offset: usize,
-) -> CompletionResponse {
+pub fn handle_completion(db: &BeskidDatabase, uri: &Uri, doc: &Document, offset: usize) -> CompletionResponse {
     let prefix = project_manifest::completion_prefix_at_offset(&doc.text, offset).to_lowercase();
 
     if project_manifest::is_manifest_uri(uri) {
-        if let Some(mut items) = project_manifest::manifest_enum_completion_items(&doc.text, offset)
-        {
+        if let Some(mut items) = project_manifest::manifest_enum_completion_items(&doc.text, offset) {
             items.sort_by(|left, right| left.label.cmp(&right.label));
             return CompletionResponse::Array(items);
         }
 
         let mut items: Vec<CompletionItem> = project_manifest::manifest_keyword_completions(uri)
             .iter()
-            .filter(|(label, _, _)| {
-                prefix.is_empty() || label.to_lowercase().starts_with(prefix.as_str())
-            })
+            .filter(|(label, _, _)| prefix.is_empty() || label.to_lowercase().starts_with(prefix.as_str()))
             .map(|(label, kind, detail)| CompletionItem {
                 label: (*label).to_string(),
                 kind: Some(*kind),
@@ -53,19 +43,13 @@ pub fn handle_completion(
         .map(|(_context, candidates)| {
             candidates
                 .iter()
-                .filter(|candidate| {
-                    prefix.is_empty() || candidate.label.to_lowercase().starts_with(prefix.as_str())
-                })
+                .filter(|candidate| prefix.is_empty() || candidate.label.to_lowercase().starts_with(prefix.as_str()))
                 .map(|candidate| CompletionItem {
                     label: candidate.label.to_string(),
                     kind: Some(syntax_completion_kind_to_lsp(candidate.kind)),
                     detail: candidate.detail.as_ref().map(ToString::to_string),
                     text_edit: Some(CompletionTextEdit::Edit(TextEdit {
-                        range: offset_range_to_lsp(
-                            &doc.text,
-                            candidate.replacement_start,
-                            candidate.replacement_end,
-                        ),
+                        range: offset_range_to_lsp(&doc.text, candidate.replacement_start, candidate.replacement_end),
                         new_text: candidate.label.to_string(),
                     })),
                     ..CompletionItem::default()
@@ -101,35 +85,19 @@ fn completion_context(text: &str, offset: usize) -> Option<CompletionContext> {
         }
         replacement_end += ch.len_utf8();
     }
-    Some(CompletionContext {
-        cursor: offset,
-        replacement_start,
-        replacement_end,
-    })
+    Some(CompletionContext { cursor: offset, replacement_start, replacement_end })
 }
 
 fn syntax_completion_kind_to_lsp(
     kind: beskid_queries::CompletionKind,
 ) -> tower_lsp_server::ls_types::CompletionItemKind {
     match kind {
-        beskid_queries::CompletionKind::Function => {
-            tower_lsp_server::ls_types::CompletionItemKind::FUNCTION
-        }
-        beskid_queries::CompletionKind::Module => {
-            tower_lsp_server::ls_types::CompletionItemKind::MODULE
-        }
-        beskid_queries::CompletionKind::Variable => {
-            tower_lsp_server::ls_types::CompletionItemKind::VARIABLE
-        }
-        beskid_queries::CompletionKind::Type => {
-            tower_lsp_server::ls_types::CompletionItemKind::STRUCT
-        }
-        beskid_queries::CompletionKind::Method => {
-            tower_lsp_server::ls_types::CompletionItemKind::METHOD
-        }
-        beskid_queries::CompletionKind::Field => {
-            tower_lsp_server::ls_types::CompletionItemKind::FIELD
-        }
+        beskid_queries::CompletionKind::Function => tower_lsp_server::ls_types::CompletionItemKind::FUNCTION,
+        beskid_queries::CompletionKind::Module => tower_lsp_server::ls_types::CompletionItemKind::MODULE,
+        beskid_queries::CompletionKind::Variable => tower_lsp_server::ls_types::CompletionItemKind::VARIABLE,
+        beskid_queries::CompletionKind::Type => tower_lsp_server::ls_types::CompletionItemKind::STRUCT,
+        beskid_queries::CompletionKind::Method => tower_lsp_server::ls_types::CompletionItemKind::METHOD,
+        beskid_queries::CompletionKind::Field => tower_lsp_server::ls_types::CompletionItemKind::FIELD,
     }
 }
 
@@ -141,14 +109,12 @@ mod tests {
 
     use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
     use beskid_analysis::projects::{
-        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit,
-        SyntaxProgramAssembly,
+        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
     };
     use beskid_analysis::services::parse_program;
     use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
     use beskid_queries::{
-        AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
-        build_typed_program,
+        AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId, build_typed_program,
     };
     use tower_lsp_server::ls_types::Uri;
 
@@ -169,23 +135,13 @@ mod tests {
         );
         let generation = SyntaxGenerationId(1);
         db.ensure_file_text(unit.path(&db).clone(), source.to_string());
-        db.ensure_syntax_unit(project, unit, generation)
-            .expect("syntax registration");
+        db.ensure_syntax_unit(project, unit, generation).expect("syntax registration");
         let index = SyntaxIndex::from_program(
-            &expand_program(
-                parse_program(source).expect("parse"),
-                DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
-            ),
+            &expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
             generation,
         );
-        let anchor = AstNodeKey {
-            unit,
-            generation,
-            node: index
-                .ids_of_kind(NodeKind::Program)
-                .next()
-                .expect("program node"),
-        };
+        let anchor =
+            AstNodeKey { unit, generation, node: index.ids_of_kind(NodeKind::Program).next().expect("program node") };
         let doc = Document {
             version: 1,
             text: source.to_string(),
@@ -198,12 +154,8 @@ mod tests {
             syntax_diagnostics: Vec::new(),
         };
         let offset = source.find("Zeb;").expect("completion prefix") + 3;
-        let response = handle_completion(
-            &db,
-            &Uri::from_str("file:///tmp/completion/Main.bd").expect("uri"),
-            &doc,
-            offset,
-        );
+        let response =
+            handle_completion(&db, &Uri::from_str("file:///tmp/completion/Main.bd").expect("uri"), &doc, offset);
         let tower_lsp_server::ls_types::CompletionResponse::Array(items) = response else {
             panic!("expected completion array");
         };
@@ -217,20 +169,13 @@ mod tests {
         let tools_path = root.join("Lib/Tools.bd");
         let main_source = "use Lib.Tools;\ni32 Main() { return Tools.Hel; }";
         let tools_source = "i32 Helper() { return 1; }";
-        let main_program = expand_program(
-            parse_program(main_source).expect("main parses"),
-            DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
-        );
-        let tools_program = expand_program(
-            parse_program(tools_source).expect("tools parse"),
-            DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
-        );
+        let main_program =
+            expand_program(parse_program(main_source).expect("main parses"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+        let tools_program =
+            expand_program(parse_program(tools_source).expect("tools parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
         let assembly = Arc::new(SyntaxProgramAssembly::new(
             EffectiveCompilationRoots {
-                host: RootEntry {
-                    dependency_name: None,
-                    source_root: root.clone(),
-                },
+                host: RootEntry { dependency_name: None, source_root: root.clone() },
                 dependencies: Vec::new(),
             },
             Arc::new(vec![
@@ -268,10 +213,7 @@ mod tests {
         let anchor = AstNodeKey {
             unit: main_unit,
             generation,
-            node: index
-                .ids_of_kind(NodeKind::Program)
-                .next()
-                .expect("program node"),
+            node: index.ids_of_kind(NodeKind::Program).next().expect("program node"),
         };
         let doc = Document {
             version: 1,
@@ -294,20 +236,14 @@ mod tests {
         let tower_lsp_server::ls_types::CompletionResponse::Array(items) = response else {
             panic!("expected completion array");
         };
-        let helper = items
-            .iter()
-            .find(|item| item.label == "Helper")
-            .expect("imported member candidate");
-        let Some(tower_lsp_server::ls_types::CompletionTextEdit::Edit(edit)) = &helper.text_edit
-        else {
+        let helper = items.iter().find(|item| item.label == "Helper").expect("imported member candidate");
+        let Some(tower_lsp_server::ls_types::CompletionTextEdit::Edit(edit)) = &helper.text_edit else {
             panic!("expected replacement edit");
         };
         assert_eq!(edit.new_text, "Helper");
         assert_eq!(
             edit.range.start.character,
-            (main_source.find("Hel").expect("prefix")
-                - main_source.rfind('\n').expect("line break")
-                - 1) as u32
+            (main_source.find("Hel").expect("prefix") - main_source.rfind('\n').expect("line break") - 1) as u32
         );
     }
 }

@@ -106,9 +106,6 @@ fn get_builtin_theme_json(name: &str) -> Result<&'static str, String> {
         "vercel" => Ok(include_str!("../themes/vercel.json")),
         "vesper" => Ok(include_str!("../themes/vesper.json")),
         "zenburn" => Ok(include_str!("../themes/zenburn.json")),
-        _ => Err(format!(
-            "Unknown builtin theme: '{}'. Available themes: {:?}",
-            name, BUILTIN_THEMES
-        )),
+        _ => Err(format!("Unknown builtin theme: '{}'. Available themes: {:?}", name, BUILTIN_THEMES)),
     }
 }

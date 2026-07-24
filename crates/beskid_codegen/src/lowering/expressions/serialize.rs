@@ -14,11 +14,7 @@ use crate::errors::CodegenError;
 pub const DYNAMIC_TYPE_NAME: &str = "dynamic";
 
 fn item_name(resolution: &Resolution, item_id: ItemId) -> Option<&str> {
-    resolution
-        .items
-        .iter()
-        .find(|item| item.id == item_id)
-        .map(|item| item.name.as_str())
+    resolution.items.iter().find(|item| item.id == item_id).map(|item| item.name.as_str())
 }
 
 fn is_serializable_field_type(type_result: &TypeResult, field_type: TypeId) -> bool {
@@ -42,17 +38,11 @@ fn is_serializable_struct_by_item(type_result: &TypeResult, item_id: ItemId) -> 
     let Some(fields) = type_result.struct_fields_ordered.get(&item_id) else {
         return false;
     };
-    fields
-        .iter()
-        .all(|(_, field_type)| is_serializable_field_type(type_result, *field_type))
+    fields.iter().all(|(_, field_type)| is_serializable_field_type(type_result, *field_type))
 }
 
 /// Whether `item_id` names a struct eligible for `[Serialize]`-style mapping (structural stand-in).
-pub fn is_serializable_struct(
-    resolution: &Resolution,
-    type_result: &TypeResult,
-    item_id: ItemId,
-) -> bool {
+pub fn is_serializable_struct(resolution: &Resolution, type_result: &TypeResult, item_id: ItemId) -> bool {
     let Some(info) = resolution.items.iter().find(|item| item.id == item_id) else {
         return false;
     };
@@ -63,15 +53,8 @@ pub fn is_serializable_struct(
 }
 
 /// Deterministic identity mapping when field names and types align in declaration order.
-pub fn mapping_pair_eligible(
-    resolution: &Resolution,
-    type_result: &TypeResult,
-    src: ItemId,
-    dst: ItemId,
-) -> bool {
-    if !is_serializable_struct(resolution, type_result, src)
-        || !is_serializable_struct(resolution, type_result, dst)
-    {
+pub fn mapping_pair_eligible(resolution: &Resolution, type_result: &TypeResult, src: ItemId, dst: ItemId) -> bool {
+    if !is_serializable_struct(resolution, type_result, src) || !is_serializable_struct(resolution, type_result, dst) {
         return false;
     }
     let Some(src_fields) = type_result.struct_fields_ordered.get(&src) else {

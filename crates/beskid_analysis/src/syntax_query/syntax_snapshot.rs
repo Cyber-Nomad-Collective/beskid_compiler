@@ -41,16 +41,8 @@ impl<'a> SyntaxSnapshot<'a> {
         let mut entries = Vec::new();
         let mut ptr_to_id = HashMap::new();
         index_subtree(root, None, &mut entries, &mut ptr_to_id);
-        let root_id = ptr_to_id
-            .get(&node_ptr(root))
-            .copied()
-            .expect("root indexed");
-        Self {
-            generation_id,
-            root_id,
-            entries,
-            ptr_to_id,
-        }
+        let root_id = ptr_to_id.get(&node_ptr(root)).copied().expect("root indexed");
+        Self { generation_id, root_id, entries, ptr_to_id }
     }
 
     pub fn generation_id(&self) -> u64 {
@@ -74,10 +66,7 @@ impl<'a> SyntaxSnapshot<'a> {
     }
 
     pub fn stable_id(&self, node: DynNodeRef<'a>) -> Option<SyntaxNodeId> {
-        self.id_of(node).map(|node_id| SyntaxNodeId {
-            generation_id: self.generation_id,
-            node_id,
-        })
+        self.id_of(node).map(|node_id| SyntaxNodeId { generation_id: self.generation_id, node_id })
     }
 
     pub fn node_at(&self, node_id: u32) -> Option<DynNodeRef<'a>> {
@@ -129,12 +118,7 @@ fn index_subtree<'a>(
 ) {
     let node_id = entries.len() as u32;
     ptr_to_id.insert(node_ptr(node), node_id);
-    entries.push(SnapshotEntry {
-        node,
-        parent_id,
-        kind: node.node_kind(),
-        span: node.span(),
-    });
+    entries.push(SnapshotEntry { node, parent_id, kind: node.node_kind(), span: node.span() });
     node.children(|child| index_subtree(child, Some(node_id), entries, ptr_to_id));
 }
 

@@ -31,12 +31,7 @@ pub struct CodeViewerPanel {
 
 impl Default for CodeViewerPanel {
     fn default() -> Self {
-        Self {
-            editor: None,
-            source_path: None,
-            fallback_title: "source".into(),
-            last_area: Rect::default(),
-        }
+        Self { editor: None, source_path: None, fallback_title: "source".into(), last_area: Rect::default() }
     }
 }
 
@@ -48,8 +43,7 @@ impl CodeViewerPanel {
     }
 
     pub fn load_file(&mut self, path: &Path, highlight_line: Option<usize>) -> Result<()> {
-        let text =
-            std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+        let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
         let lang = get_lang(&path.to_string_lossy());
         let mut editor = Editor::new(&lang, &text, vesper())?;
         editor.show_line_numbers(true);
@@ -84,12 +78,7 @@ impl CodeViewerPanel {
             editor.remove_marks();
             return;
         }
-        editor.set_marks(
-            regions
-                .iter()
-                .map(|region| (region.start_byte, region.end_byte, region.color))
-                .collect(),
-        );
+        editor.set_marks(regions.iter().map(|region| (region.start_byte, region.end_byte, region.color)).collect());
     }
 
     pub fn highlight_line(&mut self, line: usize, color: &'static str) {
@@ -126,9 +115,7 @@ impl CodeViewerPanel {
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, title: Option<&str>) {
         self.last_area = area;
         let label = title.unwrap_or_else(|| self.title());
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(format!(" {label} "));
+        let block = Block::default().borders(Borders::ALL).title(format!(" {label} "));
         let inner = block.inner(area);
         frame.render_widget(block, area);
         if inner.width < 2 || inner.height < 2 {
@@ -152,11 +139,7 @@ fn highlight_line_region(editor: &mut Editor, line: usize, color: &'static str) 
         return;
     }
     let start_char = code.line_to_char(line_idx);
-    let end_char = if line_idx + 1 < code.len_lines() {
-        code.line_to_char(line_idx + 1)
-    } else {
-        code.len_chars()
-    };
+    let end_char = if line_idx + 1 < code.len_lines() { code.line_to_char(line_idx + 1) } else { code.len_chars() };
     let start_byte = code.char_to_byte(start_char);
     let end_byte = code.char_to_byte(end_char);
     editor.set_marks(vec![(start_byte, end_byte, color)]);
@@ -165,9 +148,7 @@ fn highlight_line_region(editor: &mut Editor, line: usize, color: &'static str) 
 fn scroll_to_line(editor: &mut Editor, line: usize) {
     let line_idx = line.saturating_sub(1);
     editor.set_offset_y(line_idx.saturating_sub(2));
-    let cursor = editor
-        .code_ref()
-        .line_to_char(line_idx.min(editor.code_ref().len_lines().saturating_sub(1)));
+    let cursor = editor.code_ref().line_to_char(line_idx.min(editor.code_ref().len_lines().saturating_sub(1)));
     editor.set_cursor(cursor);
     editor.fit_cursor();
 }

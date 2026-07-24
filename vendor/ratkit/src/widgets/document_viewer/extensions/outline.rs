@@ -37,13 +37,7 @@ pub fn render_outline(
 }
 
 /// Returns the outline entry index under a terminal coordinate.
-pub fn outline_entry_at_position(
-    x: u16,
-    y: u16,
-    area: Rect,
-    outline_len: usize,
-    hovered: bool,
-) -> Option<usize> {
+pub fn outline_entry_at_position(x: u16, y: u16, area: Rect, outline_len: usize, hovered: bool) -> Option<usize> {
     let toc_area = outline_overlay_area(area, outline_len, hovered)?;
     let inner = outline_inner_area(toc_area);
     if x < inner.x || x >= inner.x + inner.width || y < inner.y || y >= inner.y + inner.height {
@@ -65,20 +59,12 @@ pub fn outline_overlay_area(area: Rect, item_count: usize, hovered: bool) -> Opt
     };
     let wanted_height = if hovered { item_count as u16 + 2 } else { 4 };
     let height = wanted_height.clamp(4, area.height.saturating_sub(1));
-    Some(Rect {
-        x: area.x + area.width.saturating_sub(width + 2),
-        y: area.y + 1,
-        width,
-        height,
-    })
+    Some(Rect { x: area.x + area.width.saturating_sub(width + 2), y: area.y + 1, width, height })
 }
 
 /// Returns the content area inside a TOC block.
 fn outline_inner_area(area: Rect) -> Rect {
-    Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .inner(area)
+    Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).inner(area)
 }
 
 /// Renders the outline block chrome.
@@ -119,13 +105,7 @@ fn render_expanded_entries(
         } else {
             Style::default().fg(TEXT_FG).bg(PANEL_BG)
         };
-        buf.set_stringn(
-            area.x,
-            area.y + row as u16,
-            text,
-            area.width as usize,
-            style,
-        );
+        buf.set_stringn(area.x, area.y + row as u16, text, area.width as usize, style);
     }
 }
 

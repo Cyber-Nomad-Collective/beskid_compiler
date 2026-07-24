@@ -41,11 +41,7 @@ mod tests {
         let mut doc = "old".to_string();
         apply_document_changes(
             &mut doc,
-            vec![TextDocumentContentChangeEvent {
-                range: None,
-                range_length: None,
-                text: "new".to_string(),
-            }],
+            vec![TextDocumentContentChangeEvent { range: None, range_length: None, text: "new".to_string() }],
         );
         assert_eq!(doc, "new");
     }

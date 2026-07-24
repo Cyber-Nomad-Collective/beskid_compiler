@@ -1,6 +1,4 @@
-use beskid_analysis::hir::{
-    HirExpressionNode, HirItem, HirLegalityError, HirStatementNode, validate_hir_program,
-};
+use beskid_analysis::hir::{HirExpressionNode, HirItem, HirLegalityError, HirStatementNode, validate_hir_program};
 
 use crate::support::pipeline::lower_resolve as lower_and_resolve;
 
@@ -9,10 +7,7 @@ fn legality_passes_for_valid_program() {
     let (hir, resolution) = lower_and_resolve("unit Main() { i64 x = 1; i64 y = x; return; }");
 
     let errors = validate_hir_program(&hir, &resolution);
-    assert!(
-        errors.is_empty(),
-        "expected no legality errors, got: {errors:?}"
-    );
+    assert!(errors.is_empty(), "expected no legality errors, got: {errors:?}");
 }
 
 #[test]
@@ -29,24 +24,18 @@ fn legality_reports_unresolved_value_path_when_resolution_entry_missing() {
         })
         .expect("expected main function");
 
-    let HirStatementNode::LetStatement(second_let) = &main_fn.node.body.node.statements[1].node
-    else {
+    let HirStatementNode::LetStatement(second_let) = &main_fn.node.body.node.statements[1].node else {
         panic!("expected second let statement");
     };
     let HirExpressionNode::PathExpression(path_expr) = &second_let.node.value.node else {
         panic!("expected second let value to be a path expression");
     };
 
-    resolution
-        .tables
-        .resolved_values
-        .remove(&path_expr.node.path.span);
+    resolution.tables.resolved_values.remove(&path_expr.node.path.span);
 
     let errors = validate_hir_program(&hir, &resolution);
     assert!(
-        errors
-            .iter()
-            .any(|error| matches!(error, HirLegalityError::UnresolvedValuePath { .. })),
+        errors.iter().any(|error| matches!(error, HirLegalityError::UnresolvedValuePath { .. })),
         "expected unresolved value-path legality error, got: {errors:?}"
     );
 }
@@ -58,9 +47,7 @@ fn legality_reports_invalid_span_invariants() {
 
     let errors = validate_hir_program(&hir, &resolution);
     assert!(
-        errors
-            .iter()
-            .any(|error| matches!(error, HirLegalityError::InvalidSpan { .. })),
+        errors.iter().any(|error| matches!(error, HirLegalityError::InvalidSpan { .. })),
         "expected invalid-span legality error, got: {errors:?}"
     );
 }
@@ -72,9 +59,7 @@ fn legality_reports_unknown_attribute_target_kind() {
 
     let errors = validate_hir_program(&hir, &resolution);
     assert!(
-        errors
-            .iter()
-            .any(|error| matches!(error, HirLegalityError::UnknownAttributeTarget { .. })),
+        errors.iter().any(|error| matches!(error, HirLegalityError::UnknownAttributeTarget { .. })),
         "expected unknown attribute-target legality error, got: {errors:?}"
     );
 }
@@ -86,9 +71,7 @@ fn legality_reports_duplicate_attribute_targets() {
 
     let errors = validate_hir_program(&hir, &resolution);
     assert!(
-        errors
-            .iter()
-            .any(|error| matches!(error, HirLegalityError::DuplicateAttributeTarget { .. })),
+        errors.iter().any(|error| matches!(error, HirLegalityError::DuplicateAttributeTarget { .. })),
         "expected duplicate attribute-target legality error, got: {errors:?}"
     );
 }
@@ -100,9 +83,7 @@ fn legality_reports_attribute_target_not_allowed() {
 
     let errors = validate_hir_program(&hir, &resolution);
     assert!(
-        errors
-            .iter()
-            .any(|error| matches!(error, HirLegalityError::AttributeTargetNotAllowed { .. })),
+        errors.iter().any(|error| matches!(error, HirLegalityError::AttributeTargetNotAllowed { .. })),
         "expected attribute-target-not-allowed legality error, got: {errors:?}"
     );
 }
@@ -114,9 +95,7 @@ fn legality_reports_attribute_target_not_allowed_on_contract() {
 
     let errors = validate_hir_program(&hir, &resolution);
     assert!(
-        errors
-            .iter()
-            .any(|error| matches!(error, HirLegalityError::AttributeTargetNotAllowed { .. })),
+        errors.iter().any(|error| matches!(error, HirLegalityError::AttributeTargetNotAllowed { .. })),
         "expected contract attribute-target-not-allowed legality error, got: {errors:?}"
     );
 }
@@ -128,9 +107,7 @@ fn legality_reports_attribute_target_not_allowed_on_inline_module() {
 
     let errors = validate_hir_program(&hir, &resolution);
     assert!(
-        errors
-            .iter()
-            .any(|error| matches!(error, HirLegalityError::AttributeTargetNotAllowed { .. })),
+        errors.iter().any(|error| matches!(error, HirLegalityError::AttributeTargetNotAllowed { .. })),
         "expected inline-module attribute-target-not-allowed legality error, got: {errors:?}"
     );
 }
@@ -142,9 +119,7 @@ fn legality_allows_attribute_when_target_matches_module_and_contract() {
 
     let errors = validate_hir_program(&hir, &resolution);
     assert!(
-        !errors
-            .iter()
-            .any(|error| matches!(error, HirLegalityError::AttributeTargetNotAllowed { .. })),
+        !errors.iter().any(|error| matches!(error, HirLegalityError::AttributeTargetNotAllowed { .. })),
         "expected no attribute-target-not-allowed legality error, got: {errors:?}"
     );
 }
@@ -156,9 +131,7 @@ fn legality_allows_attribute_without_target_list() {
 
     let errors = validate_hir_program(&hir, &resolution);
     assert!(
-        !errors
-            .iter()
-            .any(|error| matches!(error, HirLegalityError::AttributeTargetNotAllowed { .. })),
+        !errors.iter().any(|error| matches!(error, HirLegalityError::AttributeTargetNotAllowed { .. })),
         "expected unconstrained attribute declaration to allow all targets, got: {errors:?}"
     );
 }
@@ -168,28 +141,14 @@ fn legality_resolution_registers_declared_type_conformances() {
     let source = "contract Service { unit run(); } type Worker : Service { i64 id }";
     let (_hir, resolution) = lower_and_resolve(source);
 
-    let worker_id = resolution
-        .items
-        .iter()
-        .find(|item| item.name == "Worker")
-        .map(|item| item.id)
-        .expect("expected Worker item");
-    let service_id = resolution
-        .items
-        .iter()
-        .find(|item| item.name == "Service")
-        .map(|item| item.id)
-        .expect("expected Service item");
+    let worker_id =
+        resolution.items.iter().find(|item| item.name == "Worker").map(|item| item.id).expect("expected Worker item");
+    let service_id =
+        resolution.items.iter().find(|item| item.name == "Service").map(|item| item.id).expect("expected Service item");
 
-    let conformances = resolution
-        .tables
-        .type_conformances
-        .get(&worker_id)
-        .expect("expected worker conformance entry");
+    let conformances = resolution.tables.type_conformances.get(&worker_id).expect("expected worker conformance entry");
     assert!(
-        conformances
-            .iter()
-            .any(|(contract_id, _)| *contract_id == service_id),
+        conformances.iter().any(|(contract_id, _)| *contract_id == service_id),
         "expected Worker to conform to Service, got: {conformances:?}"
     );
 }

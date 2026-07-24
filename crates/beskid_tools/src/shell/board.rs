@@ -121,34 +121,18 @@ impl BoardLayout {
 
     pub fn resolve_rects(&self, area: Rect) -> BoardRects {
         let chrome_h = 1u16;
-        let [header, body, log, footer_main] = Layout::vertical([
-            Constraint::Length(4),
-            Constraint::Min(0),
-            Constraint::Length(8),
-            Constraint::Length(5),
-        ])
-        .areas(area);
-        let [stage, detail] =
-            Layout::horizontal([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)]).areas(body);
-        let footer = Rect {
-            height: footer_main.height.saturating_sub(chrome_h),
-            ..footer_main
-        };
+        let [header, body, log, footer_main] =
+            Layout::vertical([Constraint::Length(4), Constraint::Min(0), Constraint::Length(8), Constraint::Length(5)])
+                .areas(area);
+        let [stage, detail] = Layout::horizontal([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)]).areas(body);
+        let footer = Rect { height: footer_main.height.saturating_sub(chrome_h), ..footer_main };
         let chrome = Rect {
             y: footer_main.y + footer.height,
             height: chrome_h.min(footer_main.height),
             x: footer_main.x,
             width: footer_main.width,
         };
-        BoardRects {
-            header,
-            stage,
-            detail,
-            log,
-            footer,
-            chrome,
-            full: area,
-        }
+        BoardRects { header, stage, detail, log, footer, chrome, full: area }
     }
 
     pub fn rect_for_region(&self, rects: &BoardRects, region: BoardRegion) -> Rect {
@@ -184,32 +168,20 @@ fn lower_board(doc: ValidatedDocument) -> Result<BoardLayout, String> {
         }
     }
 
-    Ok(BoardLayout {
-        name,
-        title,
-        scope_hint,
-        tiles,
-        splits,
-    })
+    Ok(BoardLayout { name, title, scope_hint, tiles, splits })
 }
 
 fn lower_tile(block: &ValidatedBlock) -> Result<BoardTile, String> {
-    let widget = block.fields.get("widget").cloned().ok_or_else(|| {
-        format!(
-            "tile `{}` missing widget",
-            block.label.as_deref().unwrap_or("?")
-        )
-    })?;
+    let widget = block
+        .fields
+        .get("widget")
+        .cloned()
+        .ok_or_else(|| format!("tile `{}` missing widget", block.label.as_deref().unwrap_or("?")))?;
     let region = block
         .fields
         .get("region")
         .and_then(|r| BoardRegion::from_str(r))
-        .ok_or_else(|| {
-            format!(
-                "tile `{}` has invalid region",
-                block.label.as_deref().unwrap_or("?")
-            )
-        })?;
+        .ok_or_else(|| format!("tile `{}` has invalid region", block.label.as_deref().unwrap_or("?")))?;
     Ok(BoardTile {
         id: block.label.clone().unwrap_or_else(|| widget.clone()),
         widget,
@@ -226,30 +198,15 @@ fn lower_split(block: &ValidatedBlock) -> Result<BoardSplit, String> {
         Some("horizontal") => SplitAxis::Horizontal,
         Some("vertical") => SplitAxis::Vertical,
         _ => {
-            return Err(format!(
-                "split `{}` missing axis",
-                block.label.as_deref().unwrap_or("?")
-            ));
+            return Err(format!("split `{}` missing axis", block.label.as_deref().unwrap_or("?")));
         }
     };
     Ok(BoardSplit {
         id: block.label.clone().unwrap_or_else(|| "split".into()),
         axis,
-        ratio: block
-            .fields
-            .get("ratio")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(50),
-        first: block
-            .fields
-            .get("first")
-            .cloned()
-            .ok_or_else(|| "split missing first".to_string())?,
-        second: block
-            .fields
-            .get("second")
-            .cloned()
-            .ok_or_else(|| "split missing second".to_string())?,
+        ratio: block.fields.get("ratio").and_then(|v| v.parse().ok()).unwrap_or(50),
+        first: block.fields.get("first").cloned().ok_or_else(|| "split missing first".to_string())?,
+        second: block.fields.get("second").cloned().ok_or_else(|| "split missing second".to_string())?,
     })
 }
 

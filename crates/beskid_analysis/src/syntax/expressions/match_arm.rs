@@ -29,10 +29,7 @@ impl Parsable for MatchArm {
         for item in inner {
             match item.as_rule() {
                 Rule::MatchGuard => {
-                    let expr_pair = item
-                        .into_inner()
-                        .next()
-                        .ok_or(ParseError::missing(Rule::Expression))?;
+                    let expr_pair = item.into_inner().next().ok_or(ParseError::missing(Rule::Expression))?;
                     guard = Some(Expression::parse(expr_pair)?);
                 }
                 Rule::Expression => value_pair = Some(item),
@@ -42,13 +39,6 @@ impl Parsable for MatchArm {
 
         let value = Expression::parse(value_pair.ok_or(ParseError::missing(Rule::Expression))?)?;
 
-        Ok(Spanned::new(
-            Self {
-                pattern,
-                guard,
-                value,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { pattern, guard, value }, span))
     }
 }

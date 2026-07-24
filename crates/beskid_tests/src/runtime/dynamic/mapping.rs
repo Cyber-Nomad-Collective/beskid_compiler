@@ -23,18 +23,7 @@ fn register_identity_mapping() {
     register_mapping(
         SRC_SHAPE,
         DST_SHAPE,
-        vec![
-            FieldStep {
-                src_offset: 0,
-                dst_offset: 0,
-                size: 8,
-            },
-            FieldStep {
-                src_offset: 8,
-                dst_offset: 8,
-                size: 4,
-            },
-        ],
+        vec![FieldStep { src_offset: 0, dst_offset: 0, size: 8 }, FieldStep { src_offset: 8, dst_offset: 8, size: 4 }],
     );
 }
 
@@ -46,14 +35,8 @@ fn dynamic_aot_mapping_copies_fields_in_declaration_order() {
     let src = SourceShape { id: 99, flags: 7 };
     let mut dst = TargetShape { id: 0, flags: 0 };
 
-    let status = unsafe {
-        map_objects_aot(
-            SRC_SHAPE,
-            DST_SHAPE,
-            (&raw const src) as *const u8,
-            (&raw mut dst) as *mut u8,
-        )
-    };
+    let status =
+        unsafe { map_objects_aot(SRC_SHAPE, DST_SHAPE, (&raw const src) as *const u8, (&raw mut dst) as *mut u8) };
     assert_eq!(status, DYNAMIC_OK);
     assert_eq!(dst.id, 99);
     assert_eq!(dst.flags, 7);

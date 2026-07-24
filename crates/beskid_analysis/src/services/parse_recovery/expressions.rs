@@ -19,11 +19,7 @@ const PRI_ENUM_CTOR_CLOSE: u8 = 71;
 const PRI_PATTERN_CLOSE: u8 = 72;
 
 /// Generate expression- and pattern-oriented repairs near the Pest error locus.
-pub fn repairs(
-    source: &str,
-    error_pos: usize,
-    _parse_error: &pest::error::Error<Rule>,
-) -> Vec<RepairCandidate> {
+pub fn repairs(source: &str, error_pos: usize, _parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
     let mut candidates = Vec::new();
     let error_pos = error_pos.min(source.len());
     let insert_at = recovery_insert_pos(source, error_pos);
@@ -41,12 +37,7 @@ fn recovery_insert_pos(source: &str, error_pos: usize) -> usize {
     next_token_start(source, error_pos).unwrap_or_else(|| source.trim_end().len())
 }
 
-fn match_repairs(
-    source: &str,
-    error_pos: usize,
-    insert_at: usize,
-    candidates: &mut Vec<RepairCandidate>,
-) {
+fn match_repairs(source: &str, error_pos: usize, insert_at: usize, candidates: &mut Vec<RepairCandidate>) {
     let Some(match_brace) = find_match_block_brace(source, error_pos) else {
         return;
     };
@@ -81,12 +72,7 @@ fn match_repairs(
     }
 }
 
-fn lambda_repairs(
-    source: &str,
-    error_pos: usize,
-    insert_at: usize,
-    candidates: &mut Vec<RepairCandidate>,
-) {
+fn lambda_repairs(source: &str, error_pos: usize, insert_at: usize, candidates: &mut Vec<RepairCandidate>) {
     if !lambda_missing_body(source, error_pos) {
         return;
     }
@@ -99,24 +85,14 @@ fn lambda_repairs(
     ));
 }
 
-fn struct_literal_repairs(
-    source: &str,
-    error_pos: usize,
-    insert_at: usize,
-    candidates: &mut Vec<RepairCandidate>,
-) {
+fn struct_literal_repairs(source: &str, error_pos: usize, insert_at: usize, candidates: &mut Vec<RepairCandidate>) {
     let Some(struct_brace) = find_struct_literal_brace(source, error_pos) else {
         return;
     };
 
     let (_, _, brace, _) = unbalanced_delimiters(source, error_pos);
     if brace > 0 {
-        candidates.push(RepairCandidate::insert(
-            insert_at,
-            "}",
-            "closed incomplete struct literal",
-            PRI_STRUCT_CLOSE,
-        ));
+        candidates.push(RepairCandidate::insert(insert_at, "}", "closed incomplete struct literal", PRI_STRUCT_CLOSE));
     }
 
     if struct_field_needs_comma(source, struct_brace, error_pos) {
@@ -147,33 +123,18 @@ fn struct_literal_repairs(
     }
 }
 
-fn array_literal_repairs(
-    source: &str,
-    error_pos: usize,
-    insert_at: usize,
-    candidates: &mut Vec<RepairCandidate>,
-) {
+fn array_literal_repairs(source: &str, error_pos: usize, insert_at: usize, candidates: &mut Vec<RepairCandidate>) {
     if !inside_unclosed_array_literal(source, error_pos) {
         return;
     }
 
     let (paren, bracket, _, _) = unbalanced_delimiters(source, error_pos);
     if bracket > 0 && paren >= 0 {
-        candidates.push(RepairCandidate::insert(
-            insert_at,
-            "]",
-            "closed incomplete array literal",
-            PRI_ARRAY_CLOSE,
-        ));
+        candidates.push(RepairCandidate::insert(insert_at, "]", "closed incomplete array literal", PRI_ARRAY_CLOSE));
     }
 }
 
-fn paren_expression_repairs(
-    source: &str,
-    error_pos: usize,
-    insert_at: usize,
-    candidates: &mut Vec<RepairCandidate>,
-) {
+fn paren_expression_repairs(source: &str, error_pos: usize, insert_at: usize, candidates: &mut Vec<RepairCandidate>) {
     let (paren, _, _, _) = unbalanced_delimiters(source, error_pos);
     if paren <= 0 {
         return;
@@ -265,13 +226,7 @@ fn skip_balanced_token(source: &str, pos: usize, limit: usize) -> Option<usize> 
     }
 }
 
-fn skip_balanced_delim(
-    source: &str,
-    open_pos: usize,
-    limit: usize,
-    open: u8,
-    close: u8,
-) -> Option<usize> {
+fn skip_balanced_delim(source: &str, open_pos: usize, limit: usize, open: u8, close: u8) -> Option<usize> {
     let bytes = source.as_bytes();
     let mut depth = 0i32;
     let mut i = open_pos;
@@ -357,11 +312,7 @@ fn match_arm_arrow_pos(source: &str, match_brace: usize, error_pos: usize) -> us
 
 fn current_match_arm_start(source: &str, match_brace: usize, error_pos: usize) -> usize {
     let slice = &source[match_brace + 1..error_pos.min(source.len())];
-    if let Some(comma) = slice.rfind(',') {
-        match_brace + 1 + comma + 1
-    } else {
-        match_brace + 1
-    }
+    if let Some(comma) = slice.rfind(',') { match_brace + 1 + comma + 1 } else { match_brace + 1 }
 }
 
 fn arm_segment_looks_like_pattern(segment: &str) -> bool {
@@ -372,9 +323,7 @@ fn arm_segment_looks_like_pattern(segment: &str) -> bool {
     if trimmed.starts_with('_') {
         return true;
     }
-    trimmed
-        .chars()
-        .any(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':' || c == '.' || c == '(')
+    trimmed.chars().any(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':' || c == '.' || c == '(')
 }
 
 fn trailing_incomplete_match_arm(source: &str, match_brace: usize, error_pos: usize) -> bool {
@@ -481,20 +430,13 @@ fn struct_field_needs_colon(source: &str, struct_brace: usize, error_pos: usize)
     if segment.is_empty() || segment.contains(':') {
         return None;
     }
-    if !segment
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
+    if !segment.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return None;
     }
     Some(error_pos.min(source.len()))
 }
 
-fn struct_field_missing_value_after_colon(
-    source: &str,
-    struct_brace: usize,
-    error_pos: usize,
-) -> bool {
+fn struct_field_missing_value_after_colon(source: &str, struct_brace: usize, error_pos: usize) -> bool {
     let field_start = current_struct_field_start(source, struct_brace, error_pos);
     let segment = source[field_start..error_pos].trim();
     if !segment.ends_with(':') {
@@ -505,11 +447,7 @@ fn struct_field_missing_value_after_colon(
 
 fn current_struct_field_start(source: &str, struct_brace: usize, error_pos: usize) -> usize {
     let slice = &source[struct_brace + 1..error_pos.min(source.len())];
-    if let Some(comma) = slice.rfind(',') {
-        struct_brace + 1 + comma + 1
-    } else {
-        struct_brace + 1
-    }
+    if let Some(comma) = slice.rfind(',') { struct_brace + 1 + comma + 1 } else { struct_brace + 1 }
 }
 
 fn inside_unclosed_array_literal(source: &str, error_pos: usize) -> bool {
@@ -586,9 +524,7 @@ fn inside_call_argument_list(source: &str, error_pos: usize) -> bool {
         return false;
     };
     let prefix = prefix_before(source, open);
-    is_identifier_part(source.as_bytes(), open.saturating_sub(1))
-        || prefix.ends_with('!')
-        || prefix.ends_with("spawn")
+    is_identifier_part(source.as_bytes(), open.saturating_sub(1)) || prefix.ends_with('!') || prefix.ends_with("spawn")
 }
 
 fn find_unclosed_paren_before(source: &str, error_pos: usize) -> Option<usize> {
@@ -662,15 +598,11 @@ fn find_keyword_backward(source: &str, through: usize, keyword: &str) -> Option<
 }
 
 fn is_identifier_start(bytes: &[u8], pos: usize) -> bool {
-    bytes
-        .get(pos)
-        .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+    bytes.get(pos).is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
 }
 
 fn is_identifier_part(bytes: &[u8], pos: usize) -> bool {
-    bytes
-        .get(pos)
-        .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
+    bytes.get(pos).is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
 }
 
 fn skip_identifier(source: &str, pos: usize) -> usize {

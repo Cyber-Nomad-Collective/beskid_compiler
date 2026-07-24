@@ -1,9 +1,7 @@
 use crate::widgets::markdown_preview::widgets::markdown_widget::extensions::selection::should_render_line;
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::events::MarkdownEvent;
 use crate::widgets::markdown_preview::widgets::markdown_widget::widget::features::filter::element_to_plain_text_for_filter;
-use crate::widgets::markdown_preview::widgets::markdown_widget::widget::{
-    MarkdownWidget, MarkdownWidgetMode,
-};
+use crate::widgets::markdown_preview::widgets::markdown_widget::widget::{MarkdownWidget, MarkdownWidgetMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 impl<'a> MarkdownWidget<'a> {
@@ -50,9 +48,7 @@ impl<'a> MarkdownWidget<'a> {
         if key.code == KeyCode::Char('g') {
             if self.vim.check_pending_gg() {
                 self.scroll.scroll_to_top();
-                return MarkdownEvent::FocusedLine {
-                    line: self.scroll.current_line,
-                };
+                return MarkdownEvent::FocusedLine { line: self.scroll.current_line };
             }
             self.vim.set_pending_g();
             return MarkdownEvent::None;
@@ -65,22 +61,15 @@ impl<'a> MarkdownWidget<'a> {
                 self.filter_mode = true;
                 self.filter = Some(String::new());
                 self.mode = MarkdownWidgetMode::Filter;
-                MarkdownEvent::FilterModeChanged {
-                    active: true,
-                    filter: String::new(),
-                }
+                MarkdownEvent::FilterModeChanged { active: true, filter: String::new() }
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 self.scroll.line_down();
-                MarkdownEvent::FocusedLine {
-                    line: self.scroll.current_line,
-                }
+                MarkdownEvent::FocusedLine { line: self.scroll.current_line }
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.scroll.line_up();
-                MarkdownEvent::FocusedLine {
-                    line: self.scroll.current_line,
-                }
+                MarkdownEvent::FocusedLine { line: self.scroll.current_line }
             }
             KeyCode::PageDown => {
                 let old_offset = self.scroll.scroll_offset;
@@ -100,15 +89,11 @@ impl<'a> MarkdownWidget<'a> {
             }
             KeyCode::Home => {
                 self.scroll.scroll_to_top();
-                MarkdownEvent::FocusedLine {
-                    line: self.scroll.current_line,
-                }
+                MarkdownEvent::FocusedLine { line: self.scroll.current_line }
             }
             KeyCode::End | KeyCode::Char('G') => {
                 self.scroll.scroll_to_bottom();
-                MarkdownEvent::FocusedLine {
-                    line: self.scroll.current_line,
-                }
+                MarkdownEvent::FocusedLine { line: self.scroll.current_line }
             }
             _ => MarkdownEvent::None,
         }
@@ -120,10 +105,7 @@ impl<'a> MarkdownWidget<'a> {
             KeyCode::Backspace => {
                 if let Some(filter) = &mut self.filter {
                     filter.pop();
-                    return MarkdownEvent::FilterModeChanged {
-                        active: true,
-                        filter: filter.clone(),
-                    };
+                    return MarkdownEvent::FilterModeChanged { active: true, filter: filter.clone() };
                 }
                 MarkdownEvent::None
             }
@@ -133,9 +115,7 @@ impl<'a> MarkdownWidget<'a> {
                 if let Some(line) = next_line {
                     self.scroll.current_line = line;
                 }
-                MarkdownEvent::FocusedLine {
-                    line: self.scroll.current_line,
-                }
+                MarkdownEvent::FocusedLine { line: self.scroll.current_line }
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 let filter = self.filter.clone().unwrap_or_default();
@@ -143,9 +123,7 @@ impl<'a> MarkdownWidget<'a> {
                 if let Some(line) = prev_line {
                     self.scroll.current_line = line;
                 }
-                MarkdownEvent::FocusedLine {
-                    line: self.scroll.current_line,
-                }
+                MarkdownEvent::FocusedLine { line: self.scroll.current_line }
             }
             KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let filter = self.filter.clone().unwrap_or_default();
@@ -153,9 +131,7 @@ impl<'a> MarkdownWidget<'a> {
                 if let Some(line) = next_line {
                     self.scroll.current_line = line;
                 }
-                MarkdownEvent::FocusedLine {
-                    line: self.scroll.current_line,
-                }
+                MarkdownEvent::FocusedLine { line: self.scroll.current_line }
             }
             KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let filter = self.filter.clone().unwrap_or_default();
@@ -163,17 +139,12 @@ impl<'a> MarkdownWidget<'a> {
                 if let Some(line) = prev_line {
                     self.scroll.current_line = line;
                 }
-                MarkdownEvent::FocusedLine {
-                    line: self.scroll.current_line,
-                }
+                MarkdownEvent::FocusedLine { line: self.scroll.current_line }
             }
             KeyCode::Char(c) => {
                 if let Some(filter) = &mut self.filter {
                     filter.push(c);
-                    return MarkdownEvent::FilterModeChanged {
-                        active: true,
-                        filter: filter.clone(),
-                    };
+                    return MarkdownEvent::FilterModeChanged { active: true, filter: filter.clone() };
                 }
                 MarkdownEvent::None
             }

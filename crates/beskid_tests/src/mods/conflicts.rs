@@ -38,8 +38,7 @@ fn duplicate_registration_in_one_artifact_emits_e1829() {
         Ok(_) => panic!("duplicate (contractId, typeId) registration must abort scheduling"),
         Err(err) => err,
     };
-    let diagnostics = extract_mod_host_diagnostics(&err)
-        .expect("mod host diagnostics surfaced through anyhow chain");
+    let diagnostics = extract_mod_host_diagnostics(&err).expect("mod host diagnostics surfaced through anyhow chain");
     assert!(diagnostics.codes().contains(&"E1829"));
 }
 

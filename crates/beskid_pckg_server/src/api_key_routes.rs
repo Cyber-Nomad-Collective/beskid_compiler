@@ -48,9 +48,7 @@ pub(crate) async fn list_api_keys(State(state): State<AppState>, headers: Header
         return unavailable();
     };
     match repository.list_api_keys(&subject).await {
-        Ok(keys) => {
-            Json(keys.into_iter().map(api_key_response).collect::<Vec<_>>()).into_response()
-        }
+        Ok(keys) => Json(keys.into_iter().map(api_key_response).collect::<Vec<_>>()).into_response(),
         Err(_) => unavailable(),
     }
 }
@@ -85,14 +83,10 @@ pub(crate) async fn create_api_key(
         })
         .await
     {
-        Ok(key) => (
-            StatusCode::CREATED,
-            Json(CreatedApiKeyResponse {
-                key: api_key_response(key),
-                plain_text_key: token,
-            }),
-        )
-            .into_response(),
+        Ok(key) => {
+            (StatusCode::CREATED, Json(CreatedApiKeyResponse { key: api_key_response(key), plain_text_key: token }))
+                .into_response()
+        }
         Err(_) => bad_request("invalid API key request"),
     }
 }
@@ -111,11 +105,7 @@ pub(crate) async fn revoke_api_key(
     match repository.revoke_api_key(&id, &subject, now()).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         // Preserve ownership: unknown, malformed, and foreign ids are all hidden.
-        Ok(false) | Err(_) => (
-            StatusCode::NOT_FOUND,
-            Json(ApiErrorResponse::new("API key not found")),
-        )
-            .into_response(),
+        Ok(false) | Err(_) => (StatusCode::NOT_FOUND, Json(ApiErrorResponse::new("API key not found"))).into_response(),
     }
 }
 
@@ -130,9 +120,7 @@ fn api_key_response(key: beskid_pckg_store::ApiKey) -> ApiKeyResponse {
     }
 }
 fn rfc3339(unix_seconds: i64) -> String {
-    chrono::DateTime::from_timestamp(unix_seconds, 0)
-        .expect("repository timestamps are valid")
-        .to_rfc3339()
+    chrono::DateTime::from_timestamp(unix_seconds, 0).expect("repository timestamps are valid").to_rfc3339()
 }
 fn normalized_scopes(scopes: Vec<String>) -> Option<Vec<String>> {
     let mut result = Vec::new();
@@ -156,18 +144,9 @@ fn now() -> i64 {
         .as_secs() as i64
 }
 fn bad_request(message: &'static str) -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        Json(ApiErrorResponse::new(message)),
-    )
-        .into_response()
+    (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new(message))).into_response()
 }
 fn unavailable() -> Response {
-    (
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(ApiErrorResponse::new(
-            "API-key persistence is not configured",
-        )),
-    )
+    (StatusCode::SERVICE_UNAVAILABLE, Json(ApiErrorResponse::new("API-key persistence is not configured")))
         .into_response()
 }

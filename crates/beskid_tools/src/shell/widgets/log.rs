@@ -13,11 +13,7 @@ pub struct LogWidget;
 
 impl BeskidWidget for LogWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: "shell.log",
-            title: "Log",
-            icon: "≡",
-        }
+        WidgetMeta { id: "shell.log", title: "Log", icon: "≡" }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {
@@ -37,11 +33,7 @@ pub struct LogPanelWidget;
 
 impl BeskidWidget for LogPanelWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: "pipeline.log",
-            title: "Build log",
-            icon: "≡",
-        }
+        WidgetMeta { id: "pipeline.log", title: "Build log", icon: "≡" }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {
@@ -59,18 +51,8 @@ impl BeskidWidget for LogPanelWidget {
 
 fn render_log_panel(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
     if ctx.scope.is_user() && !ctx.shell_state.pipeline_active() {
-        frame.render_widget(
-            Paragraph::new(ShellScope::no_project_lines(
-                &ctx.key_bindings.palette_hint(),
-            )),
-            area,
-        );
+        frame.render_widget(Paragraph::new(ShellScope::no_project_lines(&ctx.key_bindings.palette_hint())), area);
         return;
     }
-    draw_tabbed_log_panel(
-        frame,
-        area,
-        ctx.shell_state.log_tab,
-        &mut ctx.shell_state.log_states,
-    );
+    draw_tabbed_log_panel(frame, area, ctx.shell_state.log_tab, &mut ctx.shell_state.log_states);
 }

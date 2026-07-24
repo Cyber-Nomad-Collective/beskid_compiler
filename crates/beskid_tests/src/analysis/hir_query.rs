@@ -1,6 +1,5 @@
 use beskid_analysis::hir::{
-    AstProgram, HirContractMethodSignature, HirExpressionNode, HirMethodDefinition, HirProgram,
-    HirType, lower_program,
+    AstProgram, HirContractMethodSignature, HirExpressionNode, HirMethodDefinition, HirProgram, HirType, lower_program,
 };
 use beskid_analysis::syntax::Spanned;
 use beskid_analysis::syntax_query::{HirNodeKind, HirQuery};
@@ -23,9 +22,8 @@ fn hir_query_descendants_counts_nodes() {
 #[test]
 fn hir_query_of_type_finds_contract_signatures() {
     let hir = parse_hir("contract Storage { unit put(string key); unit get(); }");
-    let signatures: Vec<&HirContractMethodSignature> = HirQuery::from(&hir.node)
-        .of::<HirContractMethodSignature>()
-        .collect();
+    let signatures: Vec<&HirContractMethodSignature> =
+        HirQuery::from(&hir.node).of::<HirContractMethodSignature>().collect();
 
     assert_eq!(signatures.len(), 2);
     assert_eq!(signatures[0].name.node.name, "put");
@@ -36,9 +34,7 @@ fn hir_query_of_type_finds_contract_signatures() {
 fn hir_query_filter_typed_finds_match_expressions() {
     let hir = parse_hir("i32 Main() { return match 1 { 1 => 10, _ => 20, }; }");
     let match_exprs: Vec<&HirExpressionNode> = HirQuery::from(&hir.node)
-        .filter_typed::<HirExpressionNode>(|expr| {
-            matches!(expr, HirExpressionNode::MatchExpression(_))
-        })
+        .filter_typed::<HirExpressionNode>(|expr| matches!(expr, HirExpressionNode::MatchExpression(_)))
         .collect();
 
     assert_eq!(match_exprs.len(), 1);
@@ -47,9 +43,8 @@ fn hir_query_filter_typed_finds_match_expressions() {
 #[test]
 fn hir_query_filter_by_kind_finds_functions() {
     let hir = parse_hir("i32 Main() { return 1; } i32 other() { return 2; }");
-    let functions: Vec<_> = HirQuery::from(&hir.node)
-        .filter(|node| node.node_kind() == HirNodeKind::FunctionDefinition)
-        .collect();
+    let functions: Vec<_> =
+        HirQuery::from(&hir.node).filter(|node| node.node_kind() == HirNodeKind::FunctionDefinition).collect();
 
     assert_eq!(functions.len(), 2);
 }
@@ -70,9 +65,7 @@ fn lowering_flattens_impl_methods_into_hir_method_definitions() {
         "type Counter { i64 value } impl Counter { i64 Get() { return this.value; } unit Set(i64 x) { this.value = x; } }",
     );
 
-    let methods: Vec<&HirMethodDefinition> = HirQuery::from(&hir.node)
-        .of::<HirMethodDefinition>()
-        .collect();
+    let methods: Vec<&HirMethodDefinition> = HirQuery::from(&hir.node).of::<HirMethodDefinition>().collect();
     assert_eq!(methods.len(), 2);
     assert_eq!(methods[0].name.node.name, "Get");
     assert_eq!(methods[1].name.node.name, "Set");

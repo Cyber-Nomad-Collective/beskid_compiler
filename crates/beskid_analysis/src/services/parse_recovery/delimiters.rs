@@ -5,11 +5,7 @@ use crate::parser::Rule;
 use super::{RepairCandidate, skip_ws, unbalanced_delimiters};
 
 /// Generate delimiter close/open repairs near the Pest error locus.
-pub fn repairs(
-    source: &str,
-    error_pos: usize,
-    _parse_error: &pest::error::Error<Rule>,
-) -> Vec<RepairCandidate> {
+pub fn repairs(source: &str, error_pos: usize, _parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
     let mut candidates = Vec::new();
     let error_pos = error_pos.min(source.len());
     let insert_at = delimiter_insert_pos(source, error_pos);
@@ -17,36 +13,16 @@ pub fn repairs(
     let (paren, bracket, brace, angle) = unbalanced_delimiters(source, error_pos);
 
     if paren > 0 {
-        candidates.push(RepairCandidate::insert(
-            insert_at,
-            ")",
-            "inserted missing closing parenthesis",
-            10,
-        ));
+        candidates.push(RepairCandidate::insert(insert_at, ")", "inserted missing closing parenthesis", 10));
     }
     if bracket > 0 {
-        candidates.push(RepairCandidate::insert(
-            insert_at,
-            "]",
-            "inserted missing closing bracket",
-            11,
-        ));
+        candidates.push(RepairCandidate::insert(insert_at, "]", "inserted missing closing bracket", 11));
     }
     if brace > 0 {
-        candidates.push(RepairCandidate::insert(
-            insert_at,
-            "}",
-            "inserted missing closing brace",
-            12,
-        ));
+        candidates.push(RepairCandidate::insert(insert_at, "}", "inserted missing closing brace", 12));
     }
     if angle > 0 {
-        candidates.push(RepairCandidate::insert(
-            insert_at,
-            ">",
-            "inserted missing closing angle bracket",
-            13,
-        ));
+        candidates.push(RepairCandidate::insert(insert_at, ">", "inserted missing closing angle bracket", 13));
     }
 
     let boundary = skip_ws(source, error_pos);
@@ -68,15 +44,7 @@ pub fn repairs(
         "removed extra closing bracket",
         15,
     );
-    maybe_delete_extra_closer(
-        &mut candidates,
-        source,
-        error_pos,
-        b'}',
-        brace < 0,
-        "removed extra closing brace",
-        16,
-    );
+    maybe_delete_extra_closer(&mut candidates, source, error_pos, b'}', brace < 0, "removed extra closing brace", 16);
     maybe_delete_extra_closer(
         &mut candidates,
         source,
@@ -126,21 +94,11 @@ pub fn repairs(
     }
 
     if unclosed_string_before(source, error_pos) {
-        candidates.push(RepairCandidate::insert(
-            insert_at,
-            "\"",
-            "inserted missing closing string quote",
-            18,
-        ));
+        candidates.push(RepairCandidate::insert(insert_at, "\"", "inserted missing closing string quote", 18));
     }
 
     if has_unclosed_code_fence(source) {
-        candidates.push(RepairCandidate::insert(
-            source.len(),
-            "\n```\n",
-            "inserted missing code fence closer",
-            19,
-        ));
+        candidates.push(RepairCandidate::insert(source.len(), "\n```\n", "inserted missing code fence closer", 19));
     }
 
     candidates
@@ -148,11 +106,7 @@ pub fn repairs(
 
 fn delimiter_insert_pos(source: &str, error_pos: usize) -> usize {
     let pos = skip_ws(source, error_pos);
-    if pos >= source.len() {
-        source.len()
-    } else {
-        pos
-    }
+    if pos >= source.len() { source.len() } else { pos }
 }
 
 fn maybe_delete_extra_closer(

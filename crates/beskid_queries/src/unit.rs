@@ -28,12 +28,7 @@ fn unit_source_fingerprint(db: &dyn Db, path: &std::path::Path) -> String {
 
 /// Import paths for a unit (tracked via file text + grammar).
 #[salsa::tracked]
-pub fn unit_imports(
-    db: &dyn Db,
-    project: ProjectSession,
-    grammar: GrammarRevision,
-    path: PathBuf,
-) -> Vec<String> {
+pub fn unit_imports(db: &dyn Db, project: ProjectSession, grammar: GrammarRevision, path: PathBuf) -> Vec<String> {
     let _ = (project, grammar);
     let display_path = path.display().to_string();
     let text = resolve_unit_text(db, &path);
@@ -67,22 +62,10 @@ pub fn parse_and_expand_unit_tracked(
 pub fn parse_and_expand_unit(db: &dyn Db, project: ProjectSession, path: PathBuf) -> SourceUnit {
     let grammar = grammar_for(db);
     let content_fp = unit_source_fingerprint(db, &path);
-    let cache_hit = db
-        .unit_cache()
-        .lock()
-        .expect("unit cache")
-        .source_units
-        .contains_key(&content_fp);
+    let cache_hit = db.unit_cache().lock().expect("unit cache").source_units.contains_key(&content_fp);
     trace_query("parse_and_expand_unit", cache_hit);
     let _ = parse_and_expand_unit_tracked(db, project, grammar, path.clone(), content_fp.clone());
-    db.unit_cache()
-        .lock()
-        .expect("unit cache")
-        .source_units
-        .get(&content_fp)
-        .expect("parsed unit")
-        .as_ref()
-        .clone()
+    db.unit_cache().lock().expect("unit cache").source_units.get(&content_fp).expect("parsed unit").as_ref().clone()
 }
 
 /// Parsed source unit using caller-provided source (parallel-safe; no file registry write).
@@ -93,13 +76,7 @@ pub fn parse_and_expand_unit_with_source(
     text: &str,
 ) -> SourceUnit {
     let content_fp = fingerprint(&path, text);
-    if let Some(cached) = db
-        .unit_cache()
-        .lock()
-        .expect("unit cache")
-        .source_units
-        .get(&content_fp)
-    {
+    if let Some(cached) = db.unit_cache().lock().expect("unit cache").source_units.get(&content_fp) {
         trace_query("parse_and_expand_unit_with_source", true);
         return (**cached).clone();
     }
@@ -108,40 +85,19 @@ pub fn parse_and_expand_unit_with_source(
 }
 
 fn materialize_parsed_unit(db: &dyn Db, path: &std::path::Path, content_fp: &str) {
-    if db
-        .unit_cache()
-        .lock()
-        .expect("unit cache")
-        .source_units
-        .contains_key(content_fp)
-    {
+    if db.unit_cache().lock().expect("unit cache").source_units.contains_key(content_fp) {
         return;
     }
     let text = resolve_unit_text(db, path);
     materialize_parsed_unit_from_text(db, path, &text, content_fp);
 }
 
-fn materialize_parsed_unit_from_text(
-    db: &dyn Db,
-    path: &std::path::Path,
-    text: &str,
-    content_fp: &str,
-) -> SourceUnit {
+fn materialize_parsed_unit_from_text(db: &dyn Db, path: &std::path::Path, text: &str, content_fp: &str) -> SourceUnit {
     let logical_name = path.display().to_string();
-    let program = parse_program_with_source_name(&logical_name, text)
-        .map(expand_syntax_for_assembly)
-        .expect("unit must parse");
-    let unit = SourceUnit {
-        logical_name,
-        path: path.to_path_buf(),
-        source: text.to_string(),
-        program,
-    };
-    db.unit_cache()
-        .lock()
-        .expect("unit cache")
-        .source_units
-        .insert(content_fp.to_string(), Arc::new(unit.clone()));
+    let program =
+        parse_program_with_source_name(&logical_name, text).map(expand_syntax_for_assembly).expect("unit must parse");
+    let unit = SourceUnit { logical_name, path: path.to_path_buf(), source: text.to_string(), program };
+    db.unit_cache().lock().expect("unit cache").source_units.insert(content_fp.to_string(), Arc::new(unit.clone()));
     unit
 }
 
@@ -151,12 +107,7 @@ fn grammar_for(db: &dyn Db) -> GrammarRevision {
 
 fn resolve_unit_text(db: &dyn Db, path: &std::path::Path) -> String {
     let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    if let Some(file) = db
-        .file_registry()
-        .lock()
-        .expect("file registry")
-        .get(&canonical)
-    {
+    if let Some(file) = db.file_registry().lock().expect("file registry").get(&canonical) {
         trace_query_with_reason("resolve_unit_text", true, Some("file_registry"));
         return file.text(db).clone();
     }
@@ -176,16 +127,9 @@ fn import_paths_from_source(source: &str) -> Vec<String> {
             continue;
         }
         if let Some(rest) = trimmed.strip_prefix("use ") {
-            let without_comment = rest
-                .split("//")
-                .next()
-                .unwrap_or(rest)
-                .trim_end_matches(';')
-                .trim();
-            let import_path = without_comment
-                .split_once(" as ")
-                .map(|(path, _)| path.trim())
-                .unwrap_or(without_comment);
+            let without_comment = rest.split("//").next().unwrap_or(rest).trim_end_matches(';').trim();
+            let import_path =
+                without_comment.split_once(" as ").map(|(path, _)| path.trim()).unwrap_or(without_comment);
             if !import_path.is_empty() {
                 paths.push(import_path.to_string());
             }

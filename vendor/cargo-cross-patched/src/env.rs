@@ -165,30 +165,19 @@ impl CrossEnv {
 
         // Set linker (Cargo uses uppercase)
         if let Some(ref linker) = self.linker {
-            env.insert(
-                format!("CARGO_TARGET_{target_upper}_LINKER"),
-                linker.clone(),
-            );
+            env.insert(format!("CARGO_TARGET_{target_upper}_LINKER"), linker.clone());
         }
 
         // Set runner (Cargo uses uppercase)
         if let Some(ref runner) = self.runner {
-            env.insert(
-                format!("CARGO_TARGET_{target_upper}_RUNNER"),
-                runner.clone(),
-            );
+            env.insert(format!("CARGO_TARGET_{target_upper}_RUNNER"), runner.clone());
         }
 
         // Build PATH
         if !self.path.is_empty() {
             let sep = host.path_separator();
             let current_path = std::env::var("PATH").unwrap_or_default();
-            let new_path = self
-                .path
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect::<Vec<_>>()
-                .join(sep);
+            let new_path = self.path.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(sep);
             env.insert("PATH".to_string(), format!("{new_path}{sep}{current_path}"));
         }
 
@@ -200,18 +189,9 @@ impl CrossEnv {
         // Build library path
         if !self.library_path.is_empty() {
             let sep = host.path_separator();
-            let lib_path = self
-                .library_path
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect::<Vec<_>>()
-                .join(sep);
+            let lib_path = self.library_path.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(sep);
 
-            let lib_var = if host.is_darwin() {
-                "DYLD_LIBRARY_PATH"
-            } else {
-                "LD_LIBRARY_PATH"
-            };
+            let lib_var = if host.is_darwin() { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" };
 
             let current = std::env::var(lib_var).unwrap_or_default();
             if current.is_empty() {
@@ -278,12 +258,7 @@ pub fn set_gcc_lib_paths(env: &mut CrossEnv, compiler_dir: &Path, target_prefix:
 }
 
 /// Setup `BINDGEN_EXTRA_CLANG_ARGS` and related environment variables for cross-compilation sysroot
-pub fn setup_sysroot_env(
-    env: &mut CrossEnv,
-    compiler_dir: &Path,
-    bin_prefix: &str,
-    rust_target: &str,
-) {
+pub fn setup_sysroot_env(env: &mut CrossEnv, compiler_dir: &Path, bin_prefix: &str, rust_target: &str) {
     let sysroot = compiler_dir.join(bin_prefix);
     if !sysroot.exists() {
         return;
@@ -317,10 +292,7 @@ pub fn setup_sysroot_env(
         clang_args.push(format!("-I{}", include.display()));
     }
 
-    env.set_env(
-        format!("BINDGEN_EXTRA_CLANG_ARGS_{target_underscores}"),
-        clang_args.join(" "),
-    );
+    env.set_env(format!("BINDGEN_EXTRA_CLANG_ARGS_{target_underscores}"), clang_args.join(" "));
 }
 
 /// Get standard build-std crates configuration
@@ -370,18 +342,9 @@ mod tests {
         let host = HostPlatform::detect();
         let vars = env.build_env("aarch64-unknown-linux-gnu", &host);
 
-        assert_eq!(
-            vars.get("CC_aarch64_unknown_linux_gnu"),
-            Some(&"aarch64-linux-gnu-gcc".to_string())
-        );
-        assert_eq!(
-            vars.get("CXX_aarch64_unknown_linux_gnu"),
-            Some(&"aarch64-linux-gnu-g++".to_string())
-        );
-        assert_eq!(
-            vars.get("AR_aarch64_unknown_linux_gnu"),
-            Some(&"aarch64-linux-gnu-ar".to_string())
-        );
+        assert_eq!(vars.get("CC_aarch64_unknown_linux_gnu"), Some(&"aarch64-linux-gnu-gcc".to_string()));
+        assert_eq!(vars.get("CXX_aarch64_unknown_linux_gnu"), Some(&"aarch64-linux-gnu-g++".to_string()));
+        assert_eq!(vars.get("AR_aarch64_unknown_linux_gnu"), Some(&"aarch64-linux-gnu-ar".to_string()));
         assert!(!vars.contains_key("CC"));
         assert!(!vars.contains_key("CXX"));
         assert!(!vars.contains_key("AR"));

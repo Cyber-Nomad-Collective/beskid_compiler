@@ -1,8 +1,8 @@
 //! Generation-bound documentation facts derived from expanded syntax (no HIR / Resolution).
 
 use beskid_analysis::doc::{
-    DocCommentEdit, LeadingDocComment, callable_signatures_for_span, enum_variant_names_for_span,
-    flatten_leading_docs, generic_param_names_for_span,
+    DocCommentEdit, LeadingDocComment, callable_signatures_for_span, enum_variant_names_for_span, flatten_leading_docs,
+    generic_param_names_for_span,
 };
 use beskid_analysis::syntax::{Node, Program, SpanInfo, Spanned};
 
@@ -114,9 +114,7 @@ fn collect_from_items(
             }
             Node::ContractDefinition(contract) => {
                 for contract_item in &contract.node.items {
-                    if let beskid_analysis::syntax::ContractNode::MethodSignature(sig) =
-                        &contract_item.node
-                    {
+                    if let beskid_analysis::syntax::ContractNode::MethodSignature(sig) = &contract_item.node {
                         push_fact(
                             out,
                             leading,
@@ -142,16 +140,9 @@ fn push_fact(
     name: String,
     kind: SyntaxDocumentationKind,
 ) {
-    let leading_doc = leading
-        .iter()
-        .find(|(item_span, _)| *item_span == span)
-        .and_then(|(_, doc)| doc.clone());
+    let leading_doc = leading.iter().find(|(item_span, _)| *item_span == span).and_then(|(_, doc)| doc.clone());
     let (leading_doc_start, leading_doc_end, leading_summary) = match leading_doc.as_ref() {
-        Some(doc) => (
-            Some(doc.span.start),
-            Some(doc.span.end),
-            first_summary_line(Some(doc)),
-        ),
+        Some(doc) => (Some(doc.span.start), Some(doc.span.end), first_summary_line(Some(doc))),
         None => (None, None, None),
     };
 
@@ -194,13 +185,8 @@ pub fn complete_shape_from_program(program: &Program, facts: &mut [SyntaxDocumen
 }
 
 /// Build facts for a source buffer (parse must succeed).
-pub fn syntax_documentation_facts_for_source(
-    source_name: &str,
-    source: &str,
-) -> Vec<SyntaxDocumentationFact> {
-    let Ok(program) =
-        beskid_analysis::services::parse_program_with_source_name(source_name, source)
-    else {
+pub fn syntax_documentation_facts_for_source(source_name: &str, source: &str) -> Vec<SyntaxDocumentationFact> {
+    let Ok(program) = beskid_analysis::services::parse_program_with_source_name(source_name, source) else {
         return Vec::new();
     };
     let mut facts = syntax_documentation_facts_for_program(&program.node);
@@ -209,38 +195,21 @@ pub fn syntax_documentation_facts_for_source(
 }
 
 /// Propose a documentation edit from generation-bound syntax facts at `offset`.
-pub fn doc_comment_edit_from_syntax_facts(
-    facts: &[SyntaxDocumentationFact],
-    offset: usize,
-) -> Option<DocCommentEdit> {
+pub fn doc_comment_edit_from_syntax_facts(facts: &[SyntaxDocumentationFact], offset: usize) -> Option<DocCommentEdit> {
     let fact = facts
         .iter()
         .filter(|fact| fact.declaration_start() <= offset && offset < fact.declaration_end())
-        .min_by_key(|fact| {
-            fact.declaration_end()
-                .saturating_sub(fact.declaration_start())
-        })?;
+        .min_by_key(|fact| fact.declaration_end().saturating_sub(fact.declaration_start()))?;
     let stub = build_stub(fact)?;
     match (fact.leading_doc_start, fact.leading_doc_end) {
-        (Some(start), Some(end)) => Some(DocCommentEdit::Replace {
-            start,
-            end,
-            text: stub,
-        }),
-        _ => Some(DocCommentEdit::Insert {
-            at: fact.declaration_start(),
-            text: stub,
-        }),
+        (Some(start), Some(end)) => Some(DocCommentEdit::Replace { start, end, text: stub }),
+        _ => Some(DocCommentEdit::Insert { at: fact.declaration_start(), text: stub }),
     }
 }
 
 fn first_summary_line(existing: Option<&LeadingDocComment>) -> Option<String> {
     let doc = existing?;
-    let line = doc
-        .normalized_source
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())?;
+    let line = doc.normalized_source.lines().map(str::trim).find(|line| !line.is_empty())?;
     if line.starts_with('@') {
         return None;
     }
@@ -248,10 +217,7 @@ fn first_summary_line(existing: Option<&LeadingDocComment>) -> Option<String> {
 }
 
 fn build_stub(fact: &SyntaxDocumentationFact) -> Option<String> {
-    let summary = fact
-        .leading_summary
-        .clone()
-        .unwrap_or_else(|| "TODO: Summary.".to_string());
+    let summary = fact.leading_summary.clone().unwrap_or_else(|| "TODO: Summary.".to_string());
     let mut out = String::new();
     out.push_str("/// ");
     out.push_str(&summary);
@@ -299,20 +265,14 @@ fn build_stub(fact: &SyntaxDocumentationFact) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        SyntaxDocumentationKind, doc_comment_edit_from_syntax_facts,
-        syntax_documentation_facts_for_source,
-    };
+    use super::{SyntaxDocumentationKind, doc_comment_edit_from_syntax_facts, syntax_documentation_facts_for_source};
     use beskid_analysis::doc::DocCommentEdit;
 
     #[test]
     fn documentation_facts_bind_to_current_buffer_declarations() {
         let source = "i32 Before() { return 0; }\n\ni32 Current(i32 value) { return value; }";
         let facts = syntax_documentation_facts_for_source("/tmp/docs.bd", source);
-        let current = facts
-            .iter()
-            .find(|fact| fact.name == "Current")
-            .expect("Current fact");
+        let current = facts.iter().find(|fact| fact.name == "Current").expect("Current fact");
         assert_eq!(current.kind, SyntaxDocumentationKind::Function);
         assert_eq!(current.param_names, vec!["value".to_string()]);
         assert!(!current.returns_unit);

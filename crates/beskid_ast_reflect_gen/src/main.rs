@@ -116,10 +116,7 @@ fn run_emit_syntax_sdk(raw: &[OsString], flag_idx: usize) -> std::process::ExitC
     };
     let analysis_src = ws.join("crates/beskid_analysis/src");
     if !analysis_src.is_dir() {
-        eprintln!(
-            "error: analysis sources not found at {}",
-            analysis_src.display()
-        );
+        eprintln!("error: analysis sources not found at {}", analysis_src.display());
         return std::process::ExitCode::from(1);
     }
     match emit_syntax_sdk(&sdk_path, &analysis_src) {

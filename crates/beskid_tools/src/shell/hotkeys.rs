@@ -19,32 +19,18 @@ impl Default for ShellHotkeys {
 impl ShellHotkeys {
     pub fn from_bindings(bindings: &ShortcutBindings) -> Self {
         let mut registry = HotkeyRegistry::new();
+        registry
+            .register(Hotkey::new(leak_static(&bindings.palette_hint()), "Command palette").scope(HotkeyScope::Global));
         registry.register(
-            Hotkey::new(leak_static(&bindings.palette_hint()), "Command palette")
-                .scope(HotkeyScope::Global),
+            Hotkey::new(leak_static(&bindings.label_for("help")), "Shortcut help").scope(HotkeyScope::Global),
         );
-        registry.register(
-            Hotkey::new(leak_static(&bindings.label_for("help")), "Shortcut help")
-                .scope(HotkeyScope::Global),
-        );
-        registry.register(
-            Hotkey::new(leak_static(&bindings.label_for("quit")), "Quit")
-                .scope(HotkeyScope::Global),
-        );
-        Self {
-            registry,
-            active_scope: HotkeyScope::Global,
-        }
+        registry.register(Hotkey::new(leak_static(&bindings.label_for("quit")), "Quit").scope(HotkeyScope::Global));
+        Self { registry, active_scope: HotkeyScope::Global }
     }
 
     pub fn rebuild_from_bindings(&mut self, bindings: &ShortcutBindings) {
-        let widget_hotkeys: Vec<Hotkey> = self
-            .registry
-            .get_hotkeys()
-            .iter()
-            .filter(|hk| !matches!(hk.scope, HotkeyScope::Global))
-            .cloned()
-            .collect();
+        let widget_hotkeys: Vec<Hotkey> =
+            self.registry.get_hotkeys().iter().filter(|hk| !matches!(hk.scope, HotkeyScope::Global)).cloned().collect();
         *self = Self::from_bindings(bindings);
         for hk in widget_hotkeys {
             self.registry.register(hk);
@@ -121,10 +107,8 @@ mod tests {
     #[test]
     fn footer_reflects_rebound_palette_label() {
         let mut bindings = ShortcutBindings::platform_defaults();
-        bindings.palette = super::super::key_bindings::KeyChord {
-            code: KeyCode::Char('k'),
-            modifiers: KeyModifiers::CONTROL,
-        };
+        bindings.palette =
+            super::super::key_bindings::KeyChord { code: KeyCode::Char('k'), modifiers: KeyModifiers::CONTROL };
         let hotkeys = ShellHotkeys::from_bindings(&bindings);
         let palette = hotkeys
             .footer_items(None)

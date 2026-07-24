@@ -33,37 +33,20 @@ fn mappings() -> &'static Mutex<ShapeMappingTable> {
 
 /// Register or replace a shape description (tests and host init).
 pub fn register_shape(shape_id: u32, object_size: usize) {
-    shapes().lock().expect("shape table lock").insert(
-        shape_id,
-        ShapeEntry {
-            shape_id,
-            object_size,
-        },
-    );
+    shapes().lock().expect("shape table lock").insert(shape_id, ShapeEntry { shape_id, object_size });
 }
 
 /// Register a deterministic field mapping from `src_shape` to `dst_shape`.
 pub fn register_mapping(src_shape: u32, dst_shape: u32, steps: Vec<FieldStep>) {
-    mappings()
-        .lock()
-        .expect("mapping table lock")
-        .insert((src_shape, dst_shape), steps);
+    mappings().lock().expect("mapping table lock").insert((src_shape, dst_shape), steps);
 }
 
 pub fn shape_object_size(shape_id: u32) -> Option<usize> {
-    shapes()
-        .lock()
-        .expect("shape table lock")
-        .get(&shape_id)
-        .map(|entry| entry.object_size)
+    shapes().lock().expect("shape table lock").get(&shape_id).map(|entry| entry.object_size)
 }
 
 pub fn mapping_steps(src_shape: u32, dst_shape: u32) -> Option<Vec<FieldStep>> {
-    mappings()
-        .lock()
-        .expect("mapping table lock")
-        .get(&(src_shape, dst_shape))
-        .cloned()
+    mappings().lock().expect("mapping table lock").get(&(src_shape, dst_shape)).cloned()
 }
 
 /// Reset tables (unit tests only).

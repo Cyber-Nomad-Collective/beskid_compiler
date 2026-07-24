@@ -1,6 +1,6 @@
 use tower_lsp_server::ls_types::{
-    CompletionParams, GotoDefinitionParams, HoverParams, ReferenceParams, RenameParams,
-    SignatureHelpParams, TextDocumentPositionParams,
+    CompletionParams, GotoDefinitionParams, HoverParams, ReferenceParams, RenameParams, SignatureHelpParams,
+    TextDocumentPositionParams,
 };
 
 pub trait IntoTextDocumentPosition {

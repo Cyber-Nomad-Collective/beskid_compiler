@@ -33,9 +33,7 @@ pub use assign_expression::{AssignExpression, AssignOp};
 pub use binary_expression::{BinaryExpression, BinaryOp};
 pub use block_expression::BlockExpression;
 pub use call_expression::CallExpression;
-pub use code_string::{
-    CodeStringLiteral, CodeStringSegment, materialize_code_segments, parse_plain_code_body,
-};
+pub use code_string::{CodeStringLiteral, CodeStringSegment, materialize_code_segments, parse_plain_code_body};
 pub use enum_constructor_expression::EnumConstructorExpression;
 pub use expression::Expression;
 pub use grouped_expression::GroupedExpression;
@@ -52,8 +50,8 @@ pub use path_expression::PathExpression;
 pub use pattern::{EnumPattern, Pattern};
 pub use spawn_expression::SpawnExpression;
 pub use string_decode::{
-    StringLiteralPart, decode_string_literal_token, split_string_literal_parts,
-    split_string_literal_token, try_decode_string_literal, try_decode_string_literal_token,
+    StringLiteralPart, decode_string_literal_token, split_string_literal_parts, split_string_literal_token,
+    try_decode_string_literal, try_decode_string_literal_token,
 };
 pub use struct_literal_expression::StructLiteralExpression;
 pub use struct_literal_field::StructLiteralField;

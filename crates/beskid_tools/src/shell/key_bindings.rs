@@ -34,12 +34,7 @@ pub const BINDABLE_ACTIONS: &[BindableAction] = &[
         description: "Toggle footer shortcut overlay",
         config_key: "bind_help",
     },
-    BindableAction {
-        id: "quit",
-        label: "Quit",
-        description: "Exit beskid hi",
-        config_key: "bind_quit",
-    },
+    BindableAction { id: "quit", label: "Quit", description: "Exit beskid hi", config_key: "bind_quit" },
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,20 +46,11 @@ pub struct ShortcutBindings {
 
 impl ShortcutBindings {
     pub fn platform_defaults() -> Self {
-        let palette = KeyChord {
-            code: KeyCode::Char('p'),
-            modifiers: KeyModifiers::CONTROL,
-        };
+        let palette = KeyChord { code: KeyCode::Char('p'), modifiers: KeyModifiers::CONTROL };
         Self {
             palette,
-            help: KeyChord {
-                code: KeyCode::Char('?'),
-                modifiers: KeyModifiers::NONE,
-            },
-            quit: KeyChord {
-                code: KeyCode::Char('q'),
-                modifiers: KeyModifiers::NONE,
-            },
+            help: KeyChord { code: KeyCode::Char('?'), modifiers: KeyModifiers::NONE },
+            quit: KeyChord { code: KeyCode::Char('q'), modifiers: KeyModifiers::NONE },
         }
     }
 
@@ -130,12 +116,7 @@ impl ShortcutBindings {
     }
 }
 
-fn load_chord(
-    config: &ToolsConfig,
-    registry: &ToolSettingsRegistry,
-    key: &str,
-    default: KeyChord,
-) -> KeyChord {
+fn load_chord(config: &ToolsConfig, registry: &ToolSettingsRegistry, key: &str, default: KeyChord) -> KeyChord {
     let raw = get_value(config, registry, TOOL_ID, key);
     if raw.is_empty() {
         return default;
@@ -152,16 +133,12 @@ pub fn chord_from_key(key: &KeyEvent) -> KeyChord {
     KeyChord {
         code: key.code,
         modifiers: key.modifiers
-            & (KeyModifiers::CONTROL
-                | KeyModifiers::ALT
-                | KeyModifiers::SHIFT
-                | KeyModifiers::SUPER),
+            & (KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT | KeyModifiers::SUPER),
     }
 }
 
 pub fn chord_matches(chord: &KeyChord, key: &KeyEvent) -> bool {
-    let mods = key.modifiers
-        & (KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT | KeyModifiers::SUPER);
+    let mods = key.modifiers & (KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT | KeyModifiers::SUPER);
     chord.code == key.code && chord.modifiers == mods
 }
 
@@ -271,9 +248,7 @@ fn token_to_code(token: &str) -> Result<KeyCode, String> {
             Ok(KeyCode::Char(c))
         }
         s if s.starts_with('f') && s.len() > 1 => {
-            let n: u8 = s[1..]
-                .parse()
-                .map_err(|_| format!("invalid function key `{s}`"))?;
+            let n: u8 = s[1..].parse().map_err(|_| format!("invalid function key `{s}`"))?;
             Ok(KeyCode::F(n))
         }
         other => Err(format!("unknown key `{other}`")),
@@ -307,20 +282,12 @@ mod tests {
     use crossterm::event::KeyEventKind;
 
     fn key(modifiers: KeyModifiers, code: KeyCode) -> KeyEvent {
-        KeyEvent {
-            code,
-            modifiers,
-            kind: KeyEventKind::Press,
-            state: crossterm::event::KeyEventState::NONE,
-        }
+        KeyEvent { code, modifiers, kind: KeyEventKind::Press, state: crossterm::event::KeyEventState::NONE }
     }
 
     #[test]
     fn parse_encode_roundtrip() {
-        let chord = KeyChord {
-            code: KeyCode::Char('p'),
-            modifiers: KeyModifiers::CONTROL,
-        };
+        let chord = KeyChord { code: KeyCode::Char('p'), modifiers: KeyModifiers::CONTROL };
         let encoded = encode_chord(chord);
         assert_eq!(encoded, "ctrl+p");
         assert_eq!(parse_chord(&encoded).unwrap(), chord);
@@ -337,10 +304,7 @@ mod tests {
         let registry = ToolSettingsRegistry::with_builtins();
         let mut config = ToolsConfig::default();
         let mut bindings = ShortcutBindings::platform_defaults();
-        bindings.help = KeyChord {
-            code: KeyCode::Char('h'),
-            modifiers: KeyModifiers::CONTROL,
-        };
+        bindings.help = KeyChord { code: KeyCode::Char('h'), modifiers: KeyModifiers::CONTROL };
         bindings.save(&mut config);
         let loaded = ShortcutBindings::load(&config, &registry);
         assert_eq!(loaded.help, bindings.help);

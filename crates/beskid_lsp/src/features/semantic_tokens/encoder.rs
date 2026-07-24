@@ -1,7 +1,5 @@
 use beskid_analysis::services::AnalysisSymbolKind;
-use tower_lsp_server::ls_types::{
-    SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend,
-};
+use tower_lsp_server::ls_types::{SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend};
 
 const TOKEN_TYPE_FUNCTION: u32 = 0;
 const TOKEN_TYPE_METHOD: u32 = 1;
@@ -35,10 +33,7 @@ pub fn semantic_token_legend() -> SemanticTokensLegend {
     }
 }
 
-fn push_semantic_symbol_tokens(
-    symbols: &[crate::session::store::SyntaxSymbol],
-    out: &mut Vec<SemanticTokenCandidate>,
-) {
+fn push_semantic_symbol_tokens(symbols: &[crate::session::store::SyntaxSymbol], out: &mut Vec<SemanticTokenCandidate>) {
     for symbol in symbols {
         let token_type = match symbol.kind {
             AnalysisSymbolKind::Function => TOKEN_TYPE_FUNCTION,
@@ -104,11 +99,7 @@ pub fn build_semantic_tokens(
         }
 
         let delta_line = start.line.saturating_sub(prev_line);
-        let delta_start = if delta_line == 0 {
-            start.character.saturating_sub(prev_char)
-        } else {
-            start.character
-        };
+        let delta_start = if delta_line == 0 { start.character.saturating_sub(prev_char) } else { start.character };
 
         tokens.push(SemanticToken {
             delta_line,
@@ -139,18 +130,8 @@ mod tests {
         let tokens = build_semantic_tokens(
             text,
             &[
-                SyntaxSymbol {
-                    name: "first".into(),
-                    kind: AnalysisSymbolKind::Function,
-                    start: 3,
-                    end: 8,
-                },
-                SyntaxSymbol {
-                    name: "Second".into(),
-                    kind: AnalysisSymbolKind::Type,
-                    start: 21,
-                    end: 27,
-                },
+                SyntaxSymbol { name: "first".into(), kind: AnalysisSymbolKind::Function, start: 3, end: 8 },
+                SyntaxSymbol { name: "Second".into(), kind: AnalysisSymbolKind::Type, start: 21, end: 27 },
             ],
             offset_to_position,
         );

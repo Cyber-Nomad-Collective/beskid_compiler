@@ -16,11 +16,7 @@ fn test_query_descendants_count() {
 
     // Program -> Node -> FunctionDefinition -> Visibility, Identifier, Block -> Statement (Let) -> ...
     let count = query.descendants().count();
-    assert!(
-        count > 10,
-        "Expected many nodes in descendants, got {}",
-        count
-    );
+    assert!(count > 10, "Expected many nodes in descendants, got {}", count);
 }
 
 #[test]
@@ -52,8 +48,7 @@ fn test_query_filter_typed() {
     let program = parse_program_ast(input);
     let query = Query::from(&program.node);
 
-    let mutable_lets: Vec<&LetStatement> =
-        query.filter_typed::<LetStatement>(|l| l.mutable).collect();
+    let mutable_lets: Vec<&LetStatement> = query.filter_typed::<LetStatement>(|l| l.mutable).collect();
     assert_eq!(mutable_lets.len(), 1);
     assert_eq!(mutable_lets[0].name.node.name, "y");
 }
@@ -68,9 +63,7 @@ fn test_query_find_first() {
     let program = parse_program_ast(input);
     let query = Query::from(&program.node);
 
-    let first_ident = query
-        .find_first::<Identifier>()
-        .expect("Expected at least one identifier");
+    let first_ident = query.find_first::<Identifier>().expect("Expected at least one identifier");
     assert_eq!(first_ident.name, "Main");
 }
 
@@ -116,9 +109,8 @@ fn test_complex_traversal() {
     let query = Query::from(&program.node);
 
     // Find all i32 types
-    let i32_types: Vec<&PrimitiveType> = query
-        .filter_typed::<PrimitiveType>(|t| matches!(t, PrimitiveType::I32))
-        .collect();
+    let i32_types: Vec<&PrimitiveType> =
+        query.filter_typed::<PrimitiveType>(|t| matches!(t, PrimitiveType::I32)).collect();
     // 1 in method param, 1 in method return, 1 in main let annotation
     assert_eq!(i32_types.len(), 3);
 }
@@ -150,9 +142,7 @@ fn test_ast_walker() {
     }
 
     let names = Rc::new(RefCell::new(Vec::new()));
-    let collector = IdentCollector {
-        names: names.clone(),
-    };
+    let collector = IdentCollector { names: names.clone() };
     let mut walker = AstWalker::new().with_visitor(Box::new(collector));
     walker.walk(NodeRef::from(&program.node));
 

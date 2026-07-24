@@ -52,12 +52,7 @@ impl ClientLogFilter {
 }
 
 /// Send `message` to the client when `filter` allows this `msg` severity.
-pub async fn client_log(
-    client: &Client,
-    filter: ClientLogFilter,
-    msg: MessageType,
-    message: String,
-) {
+pub async fn client_log(client: &Client, filter: ClientLogFilter, msg: MessageType, message: String) {
     if filter.allows(msg) {
         client.log_message(msg, message).await;
     }

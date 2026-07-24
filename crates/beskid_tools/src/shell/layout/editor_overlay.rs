@@ -86,13 +86,7 @@ impl LayoutEditorOverlay {
         }
     }
 
-    fn bump_selected(
-        &mut self,
-        tab: LayoutOverlayTab,
-        delta: usize,
-        _doc: &BoardV2Doc,
-        structure_len: usize,
-    ) {
+    fn bump_selected(&mut self, tab: LayoutOverlayTab, delta: usize, _doc: &BoardV2Doc, structure_len: usize) {
         match tab {
             LayoutOverlayTab::Templates => {
                 let n = LAYOUT_TEMPLATES.len();
@@ -187,31 +181,17 @@ impl LayoutEditorOverlay {
             .map(|(i, tab)| {
                 let num = format!("{}:", i + 1);
                 let style = if *tab == editor.overlay_tab {
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD)
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::DarkGray)
                 };
-                Line::from(vec![
-                    Span::styled(num, style),
-                    Span::styled(tab.label(), style),
-                ])
+                Line::from(vec![Span::styled(num, style), Span::styled(tab.label(), style)])
             })
             .collect();
         let tabs = Tabs::new(tab_titles)
-            .select(
-                LayoutOverlayTab::ALL
-                    .iter()
-                    .position(|t| *t == editor.overlay_tab)
-                    .unwrap_or(0),
-            )
+            .select(LayoutOverlayTab::ALL.iter().position(|t| *t == editor.overlay_tab).unwrap_or(0))
             .style(Style::default().fg(Color::DarkGray))
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            );
+            .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
 
         let hotkeys = &[
             hotkey("w", "hide drawer"),
@@ -222,25 +202,14 @@ impl LayoutEditorOverlay {
             hotkey("Esc", "exit edit"),
         ];
         render_overlay_panel(frame, drawer, " Layout editor ", hotkeys, |body, f| {
-            let [tab_area, list_area, detail_area] = Layout::vertical([
-                Constraint::Length(2),
-                Constraint::Min(6),
-                Constraint::Length(4),
-            ])
-            .areas(body);
-            f.render_widget(
-                tabs.block(Block::default().borders(Borders::BOTTOM)),
-                tab_area,
-            );
+            let [tab_area, list_area, detail_area] =
+                Layout::vertical([Constraint::Length(2), Constraint::Min(6), Constraint::Length(4)]).areas(body);
+            f.render_widget(tabs.block(Block::default().borders(Borders::BOTTOM)), tab_area);
             match editor.overlay_tab {
                 LayoutOverlayTab::Templates => self.render_templates(list_area, detail_area, f),
-                LayoutOverlayTab::Widgets => {
-                    self.render_widgets(list_area, detail_area, f, descriptors)
-                }
+                LayoutOverlayTab::Widgets => self.render_widgets(list_area, detail_area, f, descriptors),
                 LayoutOverlayTab::Layouts => self.render_layouts(list_area, detail_area, f),
-                LayoutOverlayTab::Structure => {
-                    self.render_structure(list_area, detail_area, f, doc)
-                }
+                LayoutOverlayTab::Structure => self.render_structure(list_area, detail_area, f, doc),
             }
         });
     }
@@ -258,29 +227,16 @@ impl LayoutEditorOverlay {
                 ListItem::new(format!("{} — {}", t.title, t.id)).style(style)
             })
             .collect();
-        frame.render_widget(
-            List::new(items).block(Block::default().borders(Borders::ALL).title(" Templates ")),
-            list,
-        );
+        frame.render_widget(List::new(items).block(Block::default().borders(Borders::ALL).title(" Templates ")), list);
         if let Some(t) = LAYOUT_TEMPLATES.get(self.template_selected) {
             frame.render_widget(
-                Paragraph::new(t.description).block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(" Description "),
-                ),
+                Paragraph::new(t.description).block(Block::default().borders(Borders::ALL).title(" Description ")),
                 detail,
             );
         }
     }
 
-    fn render_widgets(
-        &self,
-        list: Rect,
-        detail: Rect,
-        frame: &mut Frame,
-        descriptors: &[WidgetDescriptor],
-    ) {
+    fn render_widgets(&self, list: Rect, detail: Rect, frame: &mut Frame, descriptors: &[WidgetDescriptor]) {
         let items: Vec<ListItem> = descriptors
             .iter()
             .enumerate()
@@ -293,17 +249,11 @@ impl LayoutEditorOverlay {
                 ListItem::new(format!("{} {} — {}", d.icon, d.title, d.id)).style(style)
             })
             .collect();
-        frame.render_widget(
-            List::new(items).block(Block::default().borders(Borders::ALL).title(" Widgets ")),
-            list,
-        );
+        frame.render_widget(List::new(items).block(Block::default().borders(Borders::ALL).title(" Widgets ")), list);
         if let Some(d) = descriptors.get(self.widget_selected) {
             frame.render_widget(
-                Paragraph::new(d.description).block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(format!(" {} ", d.id)),
-                ),
+                Paragraph::new(d.description)
+                    .block(Block::default().borders(Borders::ALL).title(format!(" {} ", d.id))),
                 detail,
             );
         }
@@ -322,20 +272,13 @@ impl LayoutEditorOverlay {
                     } else {
                         Style::default()
                     };
-                    let label = path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("board.bsol");
+                    let label = path.file_name().and_then(|n| n.to_str()).unwrap_or("board.bsol");
                     ListItem::new(format!("{label}  {}", path.display())).style(style)
                 })
                 .collect()
         };
         frame.render_widget(
-            List::new(items).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Saved layouts "),
-            ),
+            List::new(items).block(Block::default().borders(Borders::ALL).title(" Saved layouts ")),
             list,
         );
         let hint = if let Some(path) = self.saved_boards.get(self.layout_selected) {
@@ -343,10 +286,7 @@ impl LayoutEditorOverlay {
         } else {
             "Save a layout to ~/.beskid/data/boards/ or scope .beskid/board.bsol".into()
         };
-        frame.render_widget(
-            Paragraph::new(hint).block(Block::default().borders(Borders::ALL).title(" Hint ")),
-            detail,
-        );
+        frame.render_widget(Paragraph::new(hint).block(Block::default().borders(Borders::ALL).title(" Hint ")), detail);
     }
 
     fn render_structure(&self, list: Rect, detail: Rect, frame: &mut Frame, doc: &BoardV2Doc) {
@@ -364,18 +304,14 @@ impl LayoutEditorOverlay {
                 ListItem::new(format!("{indent}{label} ({id})")).style(style)
             })
             .collect();
-        frame.render_widget(
-            List::new(items).block(Block::default().borders(Borders::ALL).title(" Structure ")),
-            list,
-        );
+        frame.render_widget(List::new(items).block(Block::default().borders(Borders::ALL).title(" Structure ")), list);
         let detail_text = flat
             .get(self.structure_selected)
             .and_then(|(_, id, _)| doc.node(id))
             .map(node_detail)
             .unwrap_or_else(|| "Select a node".into());
         frame.render_widget(
-            Paragraph::new(detail_text)
-                .block(Block::default().borders(Borders::ALL).title(" Node ")),
+            Paragraph::new(detail_text).block(Block::default().borders(Borders::ALL).title(" Node ")),
             detail,
         );
     }
@@ -393,11 +329,8 @@ pub enum LayoutOverlayAction {
 }
 
 fn right_drawer_rect(percent_x: u16, area: Rect) -> Rect {
-    let chunks = Layout::horizontal([
-        Constraint::Percentage(100 - percent_x),
-        Constraint::Percentage(percent_x),
-    ])
-    .split(area);
+    let chunks =
+        Layout::horizontal([Constraint::Percentage(100 - percent_x), Constraint::Percentage(percent_x)]).split(area);
     chunks[1]
 }
 
@@ -413,12 +346,7 @@ fn list_saved_boards(scope: &ShellScope) -> Vec<PathBuf> {
     {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_file()
-                && path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|e| e == "bsol")
-            {
+            if path.is_file() && path.extension().and_then(|e| e.to_str()).is_some_and(|e| e == "bsol") {
                 paths.push(path);
             }
         }

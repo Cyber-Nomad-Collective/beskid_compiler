@@ -7,9 +7,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::primitives::toast::{render_toasts, ToastManager};
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct ToastDemo {
     toasts: ToastManager,
@@ -17,9 +15,7 @@ struct ToastDemo {
 
 impl ToastDemo {
     fn new() -> Self {
-        Self {
-            toasts: ToastManager::new(),
-        }
+        Self { toasts: ToastManager::new() }
     }
 }
 

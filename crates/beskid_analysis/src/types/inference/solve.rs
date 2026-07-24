@@ -32,20 +32,12 @@ pub fn solve_constraints(
     }
 
     if passes >= MAX_PASSES && changed {
-        state.errors.push(TypeError::UnknownValueType {
-            span: fallback_span,
-        });
+        state.errors.push(TypeError::UnknownValueType { span: fallback_span });
     }
 
     state.check_ambiguity(&set, fallback_span);
 
-    if state.errors.is_empty() {
-        Ok(InferenceResult {
-            bindings: state.bindings,
-        })
-    } else {
-        Err(state.errors)
-    }
+    if state.errors.is_empty() { Ok(InferenceResult { bindings: state.bindings }) } else { Err(state.errors) }
 }
 
 struct SolverState<'a> {
@@ -56,11 +48,7 @@ struct SolverState<'a> {
 
 impl<'a> SolverState<'a> {
     fn new(table: &'a TypeTable) -> Self {
-        Self {
-            table,
-            bindings: HashMap::new(),
-            errors: Vec::new(),
-        }
+        Self { table, bindings: HashMap::new(), errors: Vec::new() }
     }
 
     fn apply(&mut self, constraint: &Constraint, env: &TypeEnv<'_>) -> bool {
@@ -72,18 +60,12 @@ impl<'a> SolverState<'a> {
             Constraint::Equal { var, ty, span } => self.bind_var(*var, *ty, *span),
             Constraint::EqualVar { left, right, span } => self.unify_vars(*left, *right, *span),
             Constraint::IsNumeric { var, span, .. } => self.check_numeric(*var, *span),
-            Constraint::ApplyGeneric {
-                callee,
-                arg_types,
-                result_vars,
-                span,
-            } => self.apply_generic(env, *callee, arg_types, result_vars, *span),
-            Constraint::VariantOf {
-                var,
-                enum_item,
-                variant,
-                span,
-            } => self.check_variant_of(env, *var, *enum_item, variant, *span),
+            Constraint::ApplyGeneric { callee, arg_types, result_vars, span } => {
+                self.apply_generic(env, *callee, arg_types, result_vars, *span)
+            }
+            Constraint::VariantOf { var, enum_item, variant, span } => {
+                self.check_variant_of(env, *var, *enum_item, variant, *span)
+            }
         }
     }
 
@@ -165,13 +147,9 @@ impl<'a> SolverState<'a> {
             return false;
         };
 
-        let Some(inferred) = infer_generic_args_from_call_types(
-            self.table,
-            generic_items,
-            function_signatures,
-            callee,
-            arg_types,
-        ) else {
+        let Some(inferred) =
+            infer_generic_args_from_call_types(self.table, generic_items, function_signatures, callee, arg_types)
+        else {
             self.errors.push(TypeError::MissingTypeArguments { span });
             return false;
         };
@@ -208,10 +186,7 @@ impl<'a> SolverState<'a> {
             return false;
         };
         if !variants.contains_key(variant) {
-            self.errors.push(TypeError::UnknownEnumVariant {
-                span,
-                name: variant.to_string(),
-            });
+            self.errors.push(TypeError::UnknownEnumVariant { span, name: variant.to_string() });
             return false;
         }
 
@@ -226,23 +201,13 @@ impl<'a> SolverState<'a> {
         self.bind_var(var, enum_type, span)
     }
 
-    fn verify_enum_binding(
-        &mut self,
-        bound: TypeId,
-        enum_item: ItemId,
-        env: &TypeEnv<'_>,
-        span: SpanInfo,
-    ) -> bool {
+    fn verify_enum_binding(&mut self, bound: TypeId, enum_item: ItemId, env: &TypeEnv<'_>, span: SpanInfo) -> bool {
         let expected = env.named_type(enum_item);
         match self.table.get(bound) {
             Some(TypeInfo::Named(item)) if *item == enum_item => false,
             Some(TypeInfo::Applied { base, .. }) if *base == enum_item => false,
             _ => {
-                self.errors.push(TypeError::TypeMismatch {
-                    span,
-                    expected: expected.unwrap_or(bound),
-                    actual: bound,
-                });
+                self.errors.push(TypeError::TypeMismatch { span, expected: expected.unwrap_or(bound), actual: bound });
                 false
             }
         }
@@ -254,10 +219,8 @@ impl<'a> SolverState<'a> {
             if self.resolve(*var).is_some() || !reported.insert(*var) {
                 continue;
             }
-            let (span, name) =
-                ambiguity_site(set, *var).unwrap_or((fallback_span, var.0.to_string()));
-            self.errors
-                .push(TypeError::MissingTypeAnnotation { span, name });
+            let (span, name) = ambiguity_site(set, *var).unwrap_or((fallback_span, var.0.to_string()));
+            self.errors.push(TypeError::MissingTypeAnnotation { span, name });
         }
     }
 }
@@ -265,14 +228,10 @@ impl<'a> SolverState<'a> {
 fn ambiguity_site(set: &ConstraintSet, var: TypeVar) -> Option<(SpanInfo, String)> {
     for constraint in set.iter() {
         match constraint {
-            Constraint::IsNumeric {
-                var: candidate,
-                span,
-                name,
-            } if *candidate == var => return Some((*span, name.clone())),
-            Constraint::ApplyGeneric {
-                result_vars, span, ..
-            } if result_vars.contains(&var) => {
+            Constraint::IsNumeric { var: candidate, span, name } if *candidate == var => {
+                return Some((*span, name.clone()));
+            }
+            Constraint::ApplyGeneric { result_vars, span, .. } if result_vars.contains(&var) => {
                 return Some((*span, format!("T{}", var.0)));
             }
             _ => {}

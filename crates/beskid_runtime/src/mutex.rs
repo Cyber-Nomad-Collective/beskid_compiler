@@ -16,8 +16,7 @@ struct MutexInner {
 
 static MUTEXES: LazySlotMap<MutexInner> = LazySlotMap::new(None);
 
-fn mutex_table()
--> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, MutexInner>>> {
+fn mutex_table() -> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, MutexInner>>> {
     lock_lazy_slot_map(&MUTEXES, "mutex table lock")
 }
 
@@ -28,11 +27,7 @@ fn key_to_id(key: slotmap::DefaultKey) -> MutexId {
 pub fn mutex_create() -> MutexId {
     let mut guard = mutex_table();
     let map = guard.as_mut().expect("mutex map");
-    let key = map.insert(MutexInner {
-        locked: false,
-        owner: None,
-        waiters: Vec::new(),
-    });
+    let key = map.insert(MutexInner { locked: false, owner: None, waiters: Vec::new() });
     key_to_id(key)
 }
 

@@ -35,11 +35,7 @@ fn detect_c_compiler() -> String {
     }
 
     let host = HostPlatform::detect();
-    if host.is_windows() {
-        "cl".to_owned()
-    } else {
-        "cc".to_owned()
-    }
+    if host.is_windows() { "cl".to_owned() } else { "cc".to_owned() }
 }
 
 fn append_static_archive(cmd: &mut Command, target: &str, archive: &std::path::Path) {
@@ -107,10 +103,7 @@ pub struct LinkResult {
 /// Link or merge into `req.output_path` using the host toolchain (see module docs for platform notes).
 pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
     if !req.object_path.exists() {
-        return Err(AotError::Io {
-            path: req.object_path.clone(),
-            message: "object file does not exist".to_owned(),
-        });
+        return Err(AotError::Io { path: req.object_path.clone(), message: "object file does not exist".to_owned() });
     }
     for object_path in &req.additional_object_paths {
         if !object_path.exists() {
@@ -123,16 +116,12 @@ pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
     if let Some(runtime_staticlib) = &req.runtime_staticlib
         && !runtime_staticlib.exists()
     {
-        return Err(AotError::RuntimeArchiveMissing {
-            path: runtime_staticlib.clone(),
-        });
+        return Err(AotError::RuntimeArchiveMissing { path: runtime_staticlib.clone() });
     }
 
     if let Some(parent) = req.output_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| AotError::Io {
-            path: parent.to_path_buf(),
-            message: err.to_string(),
-        })?;
+        std::fs::create_dir_all(parent)
+            .map_err(|err| AotError::Io { path: parent.to_path_buf(), message: err.to_string() })?;
     }
 
     if req.output_kind == BuildOutputKind::StaticLib {
@@ -141,20 +130,13 @@ pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
 
     if req.output_kind == BuildOutputKind::Exe && req.entrypoint_symbol != "main" {
         return Err(AotError::UnsupportedLinkerStrategy {
-            target: req
-                .target_triple
-                .clone()
-                .unwrap_or_else(|| std::env::consts::OS.to_owned()),
+            target: req.target_triple.clone().unwrap_or_else(|| std::env::consts::OS.to_owned()),
             message: "executable output currently requires entrypoint symbol `main`".to_owned(),
         });
     }
 
     let compiler = detect_c_compiler();
-    let target = req
-        .target_triple
-        .as_deref()
-        .unwrap_or(std::env::consts::OS)
-        .to_ascii_lowercase();
+    let target = req.target_triple.as_deref().unwrap_or(std::env::consts::OS).to_ascii_lowercase();
     if target.contains("windows") {
         return link_windows(req, &target);
     }
@@ -204,11 +186,7 @@ pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
 }
 
 fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
-    let target = req
-        .target_triple
-        .as_deref()
-        .unwrap_or(std::env::consts::OS)
-        .to_ascii_lowercase();
+    let target = req.target_triple.as_deref().unwrap_or(std::env::consts::OS).to_ascii_lowercase();
 
     if target.contains("windows") {
         return archive_static_windows(req);
@@ -216,8 +194,7 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
 
     // macOS ships BSD `ar`, which does not implement GNU binutils MRI scripts (`ar -M`).
     // Xcode's `libtool -static` is the supported way to merge a static archive with objects.
-    let is_apple_host_style =
-        target.contains("darwin") || target.contains("apple") || target.contains("macos");
+    let is_apple_host_style = target.contains("darwin") || target.contains("apple") || target.contains("macos");
     if is_apple_host_style {
         return archive_static_libtool(req);
     }
@@ -233,30 +210,19 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
         if !output.status.success() {
             return Err(AotError::LinkFailed {
                 status: output.status.code().unwrap_or(-1),
-                command: format!(
-                    "ar crs {} {}",
-                    req.output_path.display(),
-                    req.object_path.display()
-                ),
+                command: format!("ar crs {} {}", req.output_path.display(), req.object_path.display()),
                 detail: format_link_detail(&output),
             });
         }
         return Ok(LinkResult {
             output_path: req.output_path.clone(),
             exported_symbols: req.exported_symbols.clone(),
-            command_line: format!(
-                "ar crs {} {}",
-                req.output_path.display(),
-                req.object_path.display()
-            ),
+            command_line: format!("ar crs {} {}", req.output_path.display(), req.object_path.display()),
         });
     }
 
     let script_path = req.output_path.with_extension("mri");
-    let runtime_lib = req
-        .runtime_staticlib
-        .as_ref()
-        .expect("runtime checked above");
+    let runtime_lib = req.runtime_staticlib.as_ref().expect("runtime checked above");
     let mut script = format!(
         "CREATE {}\nADDLIB {}\nADDMOD {}\n",
         req.output_path.display(),
@@ -267,23 +233,17 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
         script.push_str(&format!("ADDMOD {}\n", object.display()));
     }
     script.push_str("SAVE\nEND\n");
-    std::fs::write(&script_path, script).map_err(|err| AotError::Io {
-        path: script_path.clone(),
-        message: err.to_string(),
-    })?;
+    std::fs::write(&script_path, script)
+        .map_err(|err| AotError::Io { path: script_path.clone(), message: err.to_string() })?;
 
     let mut shell_command = Command::new("sh");
-    shell_command
-        .arg("-c")
-        .arg(format!("ar -M < {}", script_path.to_string_lossy()));
+    shell_command.arg("-c").arg(format!("ar -M < {}", script_path.to_string_lossy()));
 
     if req.verbose {
         eprintln!("[aot] archive command: {:?}", shell_command);
     }
 
-    let output = shell_command
-        .output()
-        .map_err(|_| AotError::LinkerUnavailable)?;
+    let output = shell_command.output().map_err(|_| AotError::LinkerUnavailable)?;
     if !output.status.success() {
         return Err(AotError::LinkFailed {
             status: output.status.code().unwrap_or(-1),
@@ -292,10 +252,7 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
         });
     }
 
-    let ranlib_out = Command::new("ranlib")
-        .arg(&req.output_path)
-        .output()
-        .map_err(|_| AotError::LinkerUnavailable)?;
+    let ranlib_out = Command::new("ranlib").arg(&req.output_path).output().map_err(|_| AotError::LinkerUnavailable)?;
     if !ranlib_out.status.success() {
         return Err(AotError::LinkFailed {
             status: ranlib_out.status.code().unwrap_or(-1),
@@ -306,20 +263,13 @@ fn archive_static(req: &LinkRequest) -> AotResult<LinkResult> {
 
     Ok(LinkResult {
         output_path: req.output_path.clone(),
-        command_line: format!(
-            "ar -M < {} && ranlib {}",
-            script_path.display(),
-            req.output_path.display()
-        ),
+        command_line: format!("ar -M < {} && ranlib {}", script_path.display(), req.output_path.display()),
         exported_symbols: req.exported_symbols.clone(),
     })
 }
 
 fn windows_import_library_path(shared_library: &Path) -> PathBuf {
-    let stem = shared_library
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("beskid_runtime");
+    let stem = shared_library.file_stem().and_then(|stem| stem.to_str()).unwrap_or("beskid_runtime");
     shared_library.with_file_name(format!("{stem}_import.lib"))
 }
 
@@ -380,10 +330,7 @@ fn windows_link_command(req: &LinkRequest, target: &str) -> AotResult<Command> {
     if req.output_kind == BuildOutputKind::SharedLib {
         cmd.arg("/DLL");
         cmd.arg("/NOENTRY");
-        cmd.arg(format!(
-            "/IMPLIB:{}",
-            windows_import_library_path(&req.output_path).display()
-        ));
+        cmd.arg(format!("/IMPLIB:{}", windows_import_library_path(&req.output_path).display()));
     }
     cmd.arg(&req.object_path);
     cmd.args(&req.additional_object_paths);
@@ -414,31 +361,19 @@ fn archive_static_libtool(req: &LinkRequest) -> AotResult<LinkResult> {
         if !output.status.success() {
             return Err(AotError::LinkFailed {
                 status: output.status.code().unwrap_or(-1),
-                command: format!(
-                    "libtool -static -o {} {}",
-                    req.output_path.display(),
-                    req.object_path.display()
-                ),
+                command: format!("libtool -static -o {} {}", req.output_path.display(), req.object_path.display()),
                 detail: format_link_detail(&output),
             });
         }
         return Ok(LinkResult {
             output_path: req.output_path.clone(),
-            command_line: format!(
-                "libtool -static -o {} {}",
-                req.output_path.display(),
-                req.object_path.display()
-            ),
+            command_line: format!("libtool -static -o {} {}", req.output_path.display(), req.object_path.display()),
             exported_symbols: req.exported_symbols.clone(),
         });
     }
-    let runtime_lib = req
-        .runtime_staticlib
-        .as_ref()
-        .ok_or_else(|| AotError::InvalidRequest {
-            message: "static archive output requires runtime archive unless standalone object-only mode is used"
-                .to_owned(),
-        })?;
+    let runtime_lib = req.runtime_staticlib.as_ref().ok_or_else(|| AotError::InvalidRequest {
+        message: "static archive output requires runtime archive unless standalone object-only mode is used".to_owned(),
+    })?;
 
     let mut cmd = Command::new("libtool");
     cmd.arg("-static");
@@ -465,10 +400,7 @@ fn archive_static_libtool(req: &LinkRequest) -> AotResult<LinkResult> {
         });
     }
 
-    let ranlib_out = Command::new("ranlib")
-        .arg(&req.output_path)
-        .output()
-        .map_err(|_| AotError::LinkerUnavailable)?;
+    let ranlib_out = Command::new("ranlib").arg(&req.output_path).output().map_err(|_| AotError::LinkerUnavailable)?;
     if !ranlib_out.status.success() {
         return Err(AotError::LinkFailed {
             status: ranlib_out.status.code().unwrap_or(-1),
@@ -490,11 +422,7 @@ fn archive_static_libtool(req: &LinkRequest) -> AotResult<LinkResult> {
     })
 }
 
-fn append_library_search_paths(
-    req: &LinkRequest,
-    target: &str,
-    cmd: &mut Command,
-) -> AotResult<()> {
+fn append_library_search_paths(req: &LinkRequest, target: &str, cmd: &mut Command) -> AotResult<()> {
     if req.library_search_paths.is_empty() {
         return Ok(());
     }
@@ -546,10 +474,8 @@ fn append_export_policy_flags(req: &LinkRequest, target: &str, cmd: &mut Command
             script.push_str(&format!("    {symbol};\n"));
         }
         script.push_str("  local: *;\n};\n");
-        std::fs::write(&script_path, script).map_err(|err| AotError::Io {
-            path: script_path.clone(),
-            message: err.to_string(),
-        })?;
+        std::fs::write(&script_path, script)
+            .map_err(|err| AotError::Io { path: script_path.clone(), message: err.to_string() })?;
         cmd.arg(format!("-Wl,--version-script={}", script_path.display()));
         return Ok(());
     }
@@ -578,9 +504,7 @@ fn append_export_policy_flags(req: &LinkRequest, target: &str, cmd: &mut Command
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use super::{
-        BuildOutputKind, LinkMode, LinkRequest, windows_import_library_path, windows_link_command,
-    };
+    use super::{BuildOutputKind, LinkMode, LinkRequest, windows_import_library_path, windows_link_command};
 
     #[test]
     fn derives_a_stable_windows_import_library_name_from_the_shared_dll() {
@@ -611,10 +535,7 @@ mod tests {
             "x86_64-pc-windows-msvc",
         )
         .expect("build Windows link command");
-        let arguments = command
-            .get_args()
-            .map(|argument| argument.to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
+        let arguments = command.get_args().map(|argument| argument.to_string_lossy().into_owned()).collect::<Vec<_>>();
 
         assert_eq!(command.get_program(), "link");
         for required in [
@@ -626,15 +547,10 @@ mod tests {
             "/LIBPATH:sdk/lib",
             "kernel32.lib",
         ] {
-            assert!(
-                arguments.iter().any(|argument| argument == required),
-                "missing {required}: {arguments:?}"
-            );
+            assert!(arguments.iter().any(|argument| argument == required), "missing {required}: {arguments:?}");
         }
         assert!(
-            !arguments
-                .iter()
-                .any(|argument| argument == "-shared" || argument.starts_with("-Wl,")),
+            !arguments.iter().any(|argument| argument == "-shared" || argument.starts_with("-Wl,")),
             "Windows link command leaked Unix linker flags: {arguments:?}"
         );
     }

@@ -7,16 +7,10 @@ mod tests {
     #[test]
     fn initialize_advertises_project_explorer_commands() {
         let init = initialize_result();
-        let provider = init
-            .capabilities
-            .execute_command_provider
-            .expect("execute commands");
+        let provider = init.capabilities.execute_command_provider.expect("execute commands");
         let advertised = provider.commands;
         for expected in PROJECT_EXPLORER_COMMANDS {
-            assert!(
-                advertised.iter().any(|c| c == *expected),
-                "missing advertised command {expected}"
-            );
+            assert!(advertised.iter().any(|c| c == *expected), "missing advertised command {expected}");
         }
     }
 
@@ -26,9 +20,6 @@ mod tests {
         let workspace = init.capabilities.workspace.expect("workspace caps");
         let folders = workspace.workspace_folders.expect("folder support");
         assert_eq!(folders.supported, Some(true));
-        assert!(matches!(
-            folders.change_notifications,
-            Some(OneOf::Left(true))
-        ));
+        assert!(matches!(folders.change_notifications, Some(OneOf::Left(true))));
     }
 }

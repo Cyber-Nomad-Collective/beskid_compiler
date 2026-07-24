@@ -25,11 +25,7 @@ pub struct ModuleGraph {
 
 impl ModuleGraph {
     pub fn new_root() -> Self {
-        let mut graph = Self {
-            modules: Vec::new(),
-            path_map: HashMap::new(),
-            root: ModuleId(0),
-        };
+        let mut graph = Self { modules: Vec::new(), path_map: HashMap::new(), root: ModuleId(0) };
         let root = graph.intern_module(Vec::new(), None);
         graph.root = root;
         graph

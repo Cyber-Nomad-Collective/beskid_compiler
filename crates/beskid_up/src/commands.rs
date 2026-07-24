@@ -40,9 +40,7 @@ pub fn execute(args: UpArgs) -> Result<(), UpError> {
     match args.command {
         UpCommand::Check => {
             let manifest = env::var("BESKID_RELEASE_MANIFEST_URL").map_err(|_| {
-                UpError::InvalidManifest(
-                    "BESKID_RELEASE_MANIFEST_URL is not configured for this installation".into(),
-                )
+                UpError::InvalidManifest("BESKID_RELEASE_MANIFEST_URL is not configured for this installation".into())
             })?;
             println!("release manifest: {manifest}");
         }
@@ -70,8 +68,7 @@ fn direct_install_root() -> Result<std::path::PathBuf, UpError> {
     if let Some(root) = env::var_os("BESKID_HOME") {
         return Ok(root.into());
     }
-    let home = env::var_os("HOME").ok_or_else(|| {
-        UpError::InvalidManifest("set BESKID_HOME when HOME is unavailable".into())
-    })?;
+    let home = env::var_os("HOME")
+        .ok_or_else(|| UpError::InvalidManifest("set BESKID_HOME when HOME is unavailable".into()))?;
     Ok(std::path::PathBuf::from(home).join(".local/share/beskid"))
 }

@@ -18,11 +18,7 @@ pub struct GraphWidget;
 
 impl BeskidWidget for GraphWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: "graph.deps",
-            title: "Dependency graph",
-            icon: "◎",
-        }
+        WidgetMeta { id: "graph.deps", title: "Dependency graph", icon: "◎" }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {
@@ -53,17 +49,11 @@ impl BeskidWidget for GraphWidget {
 }
 
 pub fn draw_graph_deps_panel(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
-    let [title_area, body] =
-        Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(area);
+    let [title_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(area);
     frame.render_widget(Paragraph::new(title_line("Dependency graph")), title_area);
 
     if ctx.scope.is_user() {
-        frame.render_widget(
-            Paragraph::new(ShellScope::no_project_lines(
-                &ctx.key_bindings.palette_hint(),
-            )),
-            body,
-        );
+        frame.render_widget(Paragraph::new(ShellScope::no_project_lines(&ctx.key_bindings.palette_hint())), body);
         return;
     }
 
@@ -84,10 +74,7 @@ pub fn draw_graph_deps_panel(area: Rect, frame: &mut Frame, ctx: &mut WidgetCont
             Line::from("Run `graph` from the command palette to explore workspace dependencies.")
         },
         Line::from(""),
-        Line::from(Span::styled(
-            format!("{palette_hint} → graph"),
-            Style::default().fg(Color::DarkGray),
-        )),
+        Line::from(Span::styled(format!("{palette_hint} → graph"), Style::default().fg(Color::DarkGray))),
     ];
     frame.render_widget(Paragraph::new(lines), body);
 }
@@ -96,11 +83,7 @@ pub struct GraphCompileWidget;
 
 impl BeskidWidget for GraphCompileWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: "graph.compile",
-            title: "Compile graph",
-            icon: "◈",
-        }
+        WidgetMeta { id: "graph.compile", title: "Compile graph", icon: "◈" }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {
@@ -113,12 +96,7 @@ impl BeskidWidget for GraphCompileWidget {
 
     fn render(&self, area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
         if ctx.scope.is_user() {
-            frame.render_widget(
-                Paragraph::new(ShellScope::no_project_lines(
-                    &ctx.key_bindings.palette_hint(),
-                )),
-                area,
-            );
+            frame.render_widget(Paragraph::new(ShellScope::no_project_lines(&ctx.key_bindings.palette_hint())), area);
             return;
         }
 
@@ -132,13 +110,7 @@ impl BeskidWidget for GraphCompileWidget {
         }
 
         let focus = StageFocus::from_shell_state(ctx.shell_state);
-        draw_pipeline_tree(
-            frame,
-            area,
-            &ctx.shell_state.tree_nodes,
-            &mut ctx.shell_state.tree_state,
-            focus.title(),
-        );
+        draw_pipeline_tree(frame, area, &ctx.shell_state.tree_nodes, &mut ctx.shell_state.tree_state, focus.title());
     }
 }
 

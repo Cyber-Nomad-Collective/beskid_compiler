@@ -11,9 +11,7 @@ use crate::shell::scope::ShellScope;
 use panes::runtime::LayoutRuntime;
 
 fn focused_kind_locked(runtime: &LayoutRuntime) -> bool {
-    runtime
-        .focused_kind_arc()
-        .is_some_and(|k| is_layout_locked_widget(k.as_ref()))
+    runtime.focused_kind_arc().is_some_and(|k| is_layout_locked_widget(k.as_ref()))
 }
 
 const AUTOSAVE_DEBOUNCE: Duration = Duration::from_millis(500);
@@ -28,12 +26,7 @@ pub enum LayoutOverlayTab {
 }
 
 impl LayoutOverlayTab {
-    pub const ALL: [Self; 4] = [
-        Self::Templates,
-        Self::Widgets,
-        Self::Layouts,
-        Self::Structure,
-    ];
+    pub const ALL: [Self; 4] = [Self::Templates, Self::Widgets, Self::Layouts, Self::Structure];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -95,13 +88,7 @@ pub struct HiLayoutState {
 impl HiLayoutState {
     pub fn new(doc: BoardV2Doc, runtime: LayoutRuntime, pages: PagesDoc) -> Self {
         let active_page_id = pages.default_page.clone();
-        Self {
-            doc,
-            runtime,
-            pages,
-            active_page_id,
-            editor: LayoutEditorState::default(),
-        }
+        Self { doc, runtime, pages, active_page_id, editor: LayoutEditorState::default() }
     }
 
     pub fn title(&self) -> &str {
@@ -235,11 +222,7 @@ impl HiLayoutState {
                     self.doc.nodes.insert(
                         wrapper_id.clone(),
                         BoardNode {
-                            kind: if cmd == LayoutEditCommand::WrapCol {
-                                NodeKind::Col
-                            } else {
-                                NodeKind::Row
-                            },
+                            kind: if cmd == LayoutEditCommand::WrapCol { NodeKind::Col } else { NodeKind::Row },
                             children: vec![panel_id],
                             grow: Some(1),
                             ..BoardNode::default()
@@ -285,12 +268,7 @@ impl HiLayoutState {
     }
 
     fn convert_strategy(&mut self, kind: NodeKind) -> Result<(), String> {
-        let widgets: Vec<String> = self
-            .doc
-            .nodes
-            .values()
-            .filter_map(|n| n.widget.clone())
-            .collect();
+        let widgets: Vec<String> = self.doc.nodes.values().filter_map(|n| n.widget.clone()).collect();
         if widgets.is_empty() {
             return Ok(());
         }
@@ -301,34 +279,19 @@ impl HiLayoutState {
                 let id = format!("tab_{i}");
                 self.doc.nodes.insert(
                     id.clone(),
-                    BoardNode {
-                        kind: NodeKind::Panel,
-                        widget: Some(w.clone()),
-                        grow: Some(1),
-                        ..BoardNode::default()
-                    },
+                    BoardNode { kind: NodeKind::Panel, widget: Some(w.clone()), grow: Some(1), ..BoardNode::default() },
                 );
                 id
             })
             .collect();
         self.doc.root = "root".into();
-        self.doc.nodes.insert(
-            "root".into(),
-            BoardNode {
-                kind,
-                children,
-                ..BoardNode::default()
-            },
-        );
+        self.doc.nodes.insert("root".into(), BoardNode { kind, children, ..BoardNode::default() });
         self.rebuild_runtime()?;
         self.mark_dirty();
         Ok(())
     }
 
-    pub fn layout_palette_commands(
-        &self,
-        _registry: &WidgetRegistry,
-    ) -> Vec<super::super::catalog::CommandItem> {
+    pub fn layout_palette_commands(&self, _registry: &WidgetRegistry) -> Vec<super::super::catalog::CommandItem> {
         super::super::catalog::layout_editor_commands(self.editor.active)
     }
 }

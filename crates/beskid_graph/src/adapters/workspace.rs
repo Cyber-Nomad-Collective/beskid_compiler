@@ -9,24 +9,13 @@ use crate::model::{GraphDocument, GraphKind, GraphNodeKind, NodeMetadata};
 use crate::render::{GraphError, render_document};
 
 /// Member project graphs keyed by member display name.
-pub fn from_workspace(
-    workspace_name: &str,
-    members: &[(String, ProjectGraph)],
-) -> Result<GraphDocument, GraphError> {
+pub fn from_workspace(workspace_name: &str, members: &[(String, ProjectGraph)]) -> Result<GraphDocument, GraphError> {
     if members.is_empty() {
-        return Ok(GraphDocument::empty(
-            GraphKind::Workspace,
-            "workspace has no members",
-        ));
+        return Ok(GraphDocument::empty(GraphKind::Workspace, "workspace has no members"));
     }
 
     let mut builder = SpecBuilder::new(GraphKind::Workspace);
-    let workspace_id = builder.add_node(
-        workspace_name,
-        GraphNodeKind::Root,
-        Some("app"),
-        NodeMetadata::default(),
-    );
+    let workspace_id = builder.add_node(workspace_name, GraphNodeKind::Root, Some("app"), NodeMetadata::default());
 
     let mut member_roots: HashMap<String, String> = HashMap::new();
     for (member_name, graph) in members {
@@ -44,11 +33,10 @@ pub fn from_workspace(
             GraphNodeKind::WorkspaceMember,
             Some("lib"),
             NodeMetadata {
-                uri: graph.root_manifest_path.to_str().and_then(|s| {
-                    Path::new(s)
-                        .parent()
-                        .and_then(super::super::compose::path_to_uri)
-                }),
+                uri: graph
+                    .root_manifest_path
+                    .to_str()
+                    .and_then(|s| Path::new(s).parent().and_then(super::super::compose::path_to_uri)),
                 project_name: Some(member_name.clone()),
                 ..Default::default()
             },

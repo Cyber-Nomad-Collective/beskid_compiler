@@ -1,8 +1,7 @@
 //! Keyboard and mouse routing for the unified shell.
 
 use crossterm::event::{
-    KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton, MouseEvent,
-    MouseEventKind,
+    KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use ratatui::layout::Position;
 
@@ -32,8 +31,7 @@ pub fn handle_base_input(event: &InputEvent, state: &mut ShellState) -> InputRes
 
 pub fn handle_tests_overlay_input(event: &InputEvent, state: &mut ShellState) -> InputResult {
     if let InputEvent::Key(key) = event {
-        if key.kind == KeyEventKind::Press && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
-        {
+        if key.kind == KeyEventKind::Press && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc) {
             return InputResult::CloseOverlay;
         }
         if key.kind == KeyEventKind::Press
@@ -57,11 +55,8 @@ pub fn handle_tests_overlay_input(event: &InputEvent, state: &mut ShellState) ->
                     return InputResult::Handled;
                 }
                 KeyCode::Down if state.overlay_panel_focus == OverlayPanelFocus::Code => {
-                    let height = state
-                        .layout_rects
-                        .tests_overlay
-                        .map(|rect| rect.height.saturating_sub(2))
-                        .unwrap_or(8);
+                    let height =
+                        state.layout_rects.tests_overlay.map(|rect| rect.height.saturating_sub(2)).unwrap_or(8);
                     state.code_viewer.scroll_down(height);
                     return InputResult::Handled;
                 }
@@ -112,11 +107,7 @@ pub fn handle_summary_overlay_input(event: &InputEvent, state: &mut ShellState) 
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char(' ') | KeyCode::Enter => {
                 let exit = state.advance_once();
-                return if exit == Some(NavTarget::Exit) {
-                    InputResult::Advance
-                } else {
-                    InputResult::Handled
-                };
+                return if exit == Some(NavTarget::Exit) { InputResult::Advance } else { InputResult::Handled };
             }
             KeyCode::Tab | KeyCode::BackTab => {
                 state.overlay_panel_focus = match state.overlay_panel_focus {
@@ -130,11 +121,7 @@ pub fn handle_summary_overlay_input(event: &InputEvent, state: &mut ShellState) 
                 return InputResult::Handled;
             }
             KeyCode::Down if state.overlay_panel_focus == OverlayPanelFocus::Code => {
-                let height = state
-                    .layout_rects
-                    .summary_overlay
-                    .map(|rect| rect.height.saturating_sub(10))
-                    .unwrap_or(8);
+                let height = state.layout_rects.summary_overlay.map(|rect| rect.height.saturating_sub(10)).unwrap_or(8);
                 state.code_viewer.scroll_down(height);
                 return InputResult::Handled;
             }
@@ -311,12 +298,7 @@ fn handle_mouse(state: &mut ShellState, mouse: MouseEvent) -> InputAction {
         state.focus = FocusTarget::Base(pane);
     }
     if state.pane_focus == PaneFocus::Detail {
-        tree_click_at(
-            state.layout_rects.detail,
-            mouse,
-            &state.tree_nodes,
-            &mut state.tree_state,
-        );
+        tree_click_at(state.layout_rects.detail, mouse, &state.tree_nodes, &mut state.tree_state);
         return InputAction::Redraw;
     }
     if let Some(kind) = overlay_at(state, position) {
@@ -374,66 +356,41 @@ fn pane_at(state: &ShellState, position: Position) -> Option<PaneFocus> {
 
 fn overlay_at(state: &ShellState, position: Position) -> Option<OverlayKind> {
     if state.overlay_visible(OverlayKind::Tests)
-        && state
-            .layout_rects
-            .tests_overlay
-            .is_some_and(|r| r.contains(position))
+        && state.layout_rects.tests_overlay.is_some_and(|r| r.contains(position))
     {
         return Some(OverlayKind::Tests);
     }
     if state.overlay_visible(OverlayKind::Summary)
-        && state
-            .layout_rects
-            .summary_overlay
-            .is_some_and(|r| r.contains(position))
+        && state.layout_rects.summary_overlay.is_some_and(|r| r.contains(position))
     {
         return Some(OverlayKind::Summary);
     }
-    if state.overlay_visible(OverlayKind::Pckg)
-        && state
-            .layout_rects
-            .pckg_overlay
-            .is_some_and(|r| r.contains(position))
+    if state.overlay_visible(OverlayKind::Pckg) && state.layout_rects.pckg_overlay.is_some_and(|r| r.contains(position))
     {
         return Some(OverlayKind::Pckg);
     }
     if state.overlay_visible(OverlayKind::Templates)
-        && state
-            .layout_rects
-            .templates_overlay
-            .is_some_and(|r| r.contains(position))
+        && state.layout_rects.templates_overlay.is_some_and(|r| r.contains(position))
     {
         return Some(OverlayKind::Templates);
     }
     if state.overlay_visible(OverlayKind::CompileDebug)
-        && state
-            .layout_rects
-            .compile_debug_overlay
-            .is_some_and(|r| r.contains(position))
+        && state.layout_rects.compile_debug_overlay.is_some_and(|r| r.contains(position))
     {
         return Some(OverlayKind::CompileDebug);
     }
     if state.overlay_visible(OverlayKind::Graph)
-        && state
-            .layout_rects
-            .graph_overlay
-            .is_some_and(|r| r.contains(position))
+        && state.layout_rects.graph_overlay.is_some_and(|r| r.contains(position))
     {
         return Some(OverlayKind::Graph);
     }
     if state.overlay_visible(OverlayKind::Settings)
-        && state
-            .layout_rects
-            .settings_overlay
-            .is_some_and(|r| r.contains(position))
+        && state.layout_rects.settings_overlay.is_some_and(|r| r.contains(position))
     {
         return Some(OverlayKind::Settings);
     }
     if state.overlay_visible(OverlayKind::Analysis)
-        && state
-            .layout_rects
-            .analysis_overlay
-            .is_some_and(|r| r.contains(position))
+        && state.layout_rects.analysis_overlay.is_some_and(|r| r.contains(position))
     {
         return Some(OverlayKind::Analysis);
     }
@@ -447,14 +404,7 @@ fn scroll_active_log(state: &mut ShellState, event: LogScrollEvent) {
 
 fn route_vertical(state: &mut ShellState, up: bool) {
     match state.pane_focus {
-        PaneFocus::Log => scroll_active_log(
-            state,
-            if up {
-                LogScrollEvent::LineUp
-            } else {
-                LogScrollEvent::LineDown
-            },
-        ),
+        PaneFocus::Log => scroll_active_log(state, if up { LogScrollEvent::LineUp } else { LogScrollEvent::LineDown }),
         PaneFocus::Detail => route_tree_key(state, up),
         _ => {}
     }
@@ -462,11 +412,7 @@ fn route_vertical(state: &mut ShellState, up: bool) {
 
 fn route_horizontal(state: &mut ShellState, left: bool) {
     if state.pane_focus == PaneFocus::Log {
-        state.log_tab = if left {
-            state.log_tab.prev()
-        } else {
-            state.log_tab.next()
-        };
+        state.log_tab = if left { state.log_tab.prev() } else { state.log_tab.next() };
         return;
     }
     if state.pane_focus == PaneFocus::Detail {
@@ -476,32 +422,14 @@ fn route_horizontal(state: &mut ShellState, left: bool) {
 
 fn route_tree_key(state: &mut ShellState, down: bool) {
     let code = if down { KeyCode::Down } else { KeyCode::Up };
-    let key = KeyEvent {
-        code,
-        modifiers: KeyModifiers::NONE,
-        kind: KeyEventKind::Press,
-        state: KeyEventState::NONE,
-    };
-    state
-        .tree_navigator
-        .handle_key_event(key, &state.tree_nodes, &mut state.tree_state);
+    let key = KeyEvent { code, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: KeyEventState::NONE };
+    state.tree_navigator.handle_key_event(key, &state.tree_nodes, &mut state.tree_state);
 }
 
 fn route_tree_horizontal(state: &mut ShellState, expand: bool) {
-    let code = if expand {
-        KeyCode::Right
-    } else {
-        KeyCode::Left
-    };
-    let key = KeyEvent {
-        code,
-        modifiers: KeyModifiers::NONE,
-        kind: KeyEventKind::Press,
-        state: KeyEventState::NONE,
-    };
-    state
-        .tree_navigator
-        .handle_key_event(key, &state.tree_nodes, &mut state.tree_state);
+    let code = if expand { KeyCode::Right } else { KeyCode::Left };
+    let key = KeyEvent { code, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: KeyEventState::NONE };
+    state.tree_navigator.handle_key_event(key, &state.tree_nodes, &mut state.tree_state);
 }
 
 fn scroll_tree(state: &mut ShellState, up: bool, amount: usize) {
@@ -516,11 +444,7 @@ fn step_list_selection(state: &mut ShellState, delta: i32) {
     if state.test_rows.is_empty() {
         return;
     }
-    let current = state
-        .test_list_state
-        .selected()
-        .unwrap_or(0)
-        .min(state.test_rows.len().saturating_sub(1));
+    let current = state.test_list_state.selected().unwrap_or(0).min(state.test_rows.len().saturating_sub(1));
     let next = if delta < 0 {
         current.saturating_sub(delta.unsigned_abs() as usize)
     } else {
@@ -557,11 +481,7 @@ pub fn handle_pckg_overlay_input(event: &InputEvent, state: &mut ShellState) -> 
                 return InputResult::Handled;
             }
             KeyCode::Down if state.overlay_panel_focus == OverlayPanelFocus::Code => {
-                let height = state
-                    .layout_rects
-                    .pckg_overlay
-                    .map(|rect| rect.height.saturating_sub(8))
-                    .unwrap_or(8);
+                let height = state.layout_rects.pckg_overlay.map(|rect| rect.height.saturating_sub(8)).unwrap_or(8);
                 state.code_viewer.scroll_down(height);
                 return InputResult::Handled;
             }
@@ -649,12 +569,7 @@ fn step_pckg_selection(state: &mut ShellState, delta: i32) {
     if state.pckg.packages.is_empty() {
         return;
     }
-    let current = state
-        .pckg
-        .list_state
-        .selected()
-        .unwrap_or(0)
-        .min(state.pckg.packages.len().saturating_sub(1));
+    let current = state.pckg.list_state.selected().unwrap_or(0).min(state.pckg.packages.len().saturating_sub(1));
     let next = if delta < 0 {
         current.saturating_sub(delta.unsigned_abs() as usize)
     } else {
@@ -671,12 +586,7 @@ fn step_template_selection(state: &mut ShellState, delta: i32) {
     if row_count == 0 {
         return;
     }
-    let current = state
-        .templates
-        .list_state
-        .selected()
-        .unwrap_or(0)
-        .min(row_count.saturating_sub(1));
+    let current = state.templates.list_state.selected().unwrap_or(0).min(row_count.saturating_sub(1));
     let next = if delta < 0 {
         current.saturating_sub(delta.unsigned_abs() as usize)
     } else {
@@ -688,17 +598,11 @@ fn step_template_selection(state: &mut ShellState, delta: i32) {
 
 fn queue_template_install(state: &mut ShellState) {
     let package_id = match state.templates.tab {
-        crate::tui::shell::pane_state::TemplateListTab::Registry => {
-            state.templates.selected_package_id()
-        }
-        crate::tui::shell::pane_state::TemplateListTab::Installed => {
-            state.templates.selected_package_id().or_else(|| {
-                state
-                    .templates
-                    .selected_short_name()
-                    .map(crate::tui::panes::template_ops::resolve_package_id)
-            })
-        }
+        crate::tui::shell::pane_state::TemplateListTab::Registry => state.templates.selected_package_id(),
+        crate::tui::shell::pane_state::TemplateListTab::Installed => state
+            .templates
+            .selected_package_id()
+            .or_else(|| state.templates.selected_short_name().map(crate::tui::panes::template_ops::resolve_package_id)),
     };
     if let Some(package_id) = package_id {
         state.templates.pending_install = Some(package_id);
@@ -706,11 +610,7 @@ fn queue_template_install(state: &mut ShellState) {
     }
 }
 
-fn list_row_index(
-    area: ratatui::layout::Rect,
-    position: Position,
-    row_count: usize,
-) -> Option<usize> {
+fn list_row_index(area: ratatui::layout::Rect, position: Position, row_count: usize) -> Option<usize> {
     if row_count == 0 || !area.contains(position) {
         return None;
     }
@@ -725,12 +625,7 @@ mod tests {
     use crossterm::event::{KeyEvent, KeyEventState};
 
     fn press(code: KeyCode) -> KeyEvent {
-        KeyEvent {
-            code,
-            modifiers: KeyModifiers::NONE,
-            kind: KeyEventKind::Press,
-            state: KeyEventState::NONE,
-        }
+        KeyEvent { code, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: KeyEventState::NONE }
     }
 
     #[test]
@@ -745,10 +640,7 @@ mod tests {
 
     #[test]
     fn log_tab_keys_switch_stream() {
-        let mut state = ShellState {
-            pane_focus: PaneFocus::Log,
-            ..Default::default()
-        };
+        let mut state = ShellState { pane_focus: PaneFocus::Log, ..Default::default() };
         handle_key(&mut state, press(KeyCode::Char('s')));
         assert_eq!(state.log_tab, LogTab::Semantic);
         handle_key(&mut state, press(KeyCode::Char('b')));
@@ -770,10 +662,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(pane_at(&state, Position::new(5, 5)), Some(PaneFocus::Stage));
-        assert_eq!(
-            pane_at(&state, Position::new(50, 5)),
-            Some(PaneFocus::Detail)
-        );
+        assert_eq!(pane_at(&state, Position::new(50, 5)), Some(PaneFocus::Detail));
         assert_eq!(pane_at(&state, Position::new(5, 14)), Some(PaneFocus::Log));
     }
 }

@@ -41,21 +41,11 @@ pub struct RepairCandidate {
 
 impl RepairCandidate {
     pub fn insert(position: usize, text: &'static str, reason: &'static str, priority: u8) -> Self {
-        Self {
-            position,
-            kind: RepairKind::Insert { text },
-            reason,
-            priority,
-        }
+        Self { position, kind: RepairKind::Insert { text }, reason, priority }
     }
 
     pub fn delete(position: usize, len: usize, reason: &'static str, priority: u8) -> Self {
-        Self {
-            position,
-            kind: RepairKind::Delete { len },
-            reason,
-            priority,
-        }
+        Self { position, kind: RepairKind::Delete { len }, reason, priority }
     }
 }
 
@@ -227,10 +217,7 @@ pub fn collect_repair_candidates(
     repairs.extend(expressions::repairs(source, error_pos, parse_error));
 
     repairs.sort_by(|a, b| {
-        a.priority
-            .cmp(&b.priority)
-            .then_with(|| a.position.cmp(&b.position))
-            .then_with(|| a.reason.cmp(b.reason))
+        a.priority.cmp(&b.priority).then_with(|| a.position.cmp(&b.position)).then_with(|| a.reason.cmp(b.reason))
     });
 
     let mut out: Vec<(String, Vec<SemanticDiagnostic>)> = Vec::new();

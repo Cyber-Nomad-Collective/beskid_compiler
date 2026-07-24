@@ -62,10 +62,7 @@ fn manual_collection() {
     drop(_ptr4);
     drop(_ptr5);
 
-    println!(
-        "  After drops (before GC): {} allocations",
-        ctx.heap().allocation_count()
-    );
+    println!("  After drops (before GC): {} allocations", ctx.heap().allocation_count());
 
     // Manually trigger collection
     ctx.collect();

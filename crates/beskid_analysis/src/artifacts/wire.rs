@@ -14,10 +14,7 @@ pub fn decode_syntax_program(bytes: &[u8]) -> Result<Spanned<Program>, PostcardE
     postcard::from_bytes(bytes)
 }
 
-pub fn source_unit_snapshot(
-    unit: &SourceUnit,
-    imports: &[String],
-) -> Result<AstUnitSnapshot, PostcardError> {
+pub fn source_unit_snapshot(unit: &SourceUnit, imports: &[String]) -> Result<AstUnitSnapshot, PostcardError> {
     let fp = content_fingerprint(&unit.source);
     let program_wire = encode_syntax_program(&unit.program)?;
     Ok(AstUnitSnapshot::new(
@@ -34,10 +31,7 @@ pub fn source_unit_snapshot(
     ))
 }
 
-pub fn source_unit_from_ast_snapshot(
-    snapshot: &AstUnitSnapshot,
-    source: &str,
-) -> Result<SourceUnit, PostcardError> {
+pub fn source_unit_from_ast_snapshot(snapshot: &AstUnitSnapshot, source: &str) -> Result<SourceUnit, PostcardError> {
     let program = decode_syntax_program(&snapshot.program_wire)?;
     Ok(SourceUnit {
         logical_name: snapshot.meta.logical_name.clone(),

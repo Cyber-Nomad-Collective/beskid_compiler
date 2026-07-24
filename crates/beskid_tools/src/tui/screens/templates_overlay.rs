@@ -17,10 +17,7 @@ use crate::tui::shell::state::ShellState;
 pub fn update(msg: &ShellMessage, state: &mut ShellState) -> Vec<ShellEffect> {
     let mut effects = Vec::new();
     match msg {
-        ShellMessage::SetOverlayVisible {
-            kind: OverlayKind::Templates,
-            visible: true,
-        }
+        ShellMessage::SetOverlayVisible { kind: OverlayKind::Templates, visible: true }
         | ShellMessage::EnterProjectWizard => {
             state.shell_mode = ShellMode::ProjectWizard;
             state.set_overlay_visible(OverlayKind::Templates, true);
@@ -29,17 +26,13 @@ pub fn update(msg: &ShellMessage, state: &mut ShellState) -> Vec<ShellEffect> {
                 effects.push(ShellEffect::FetchTemplates);
             }
         }
-        ShellMessage::TemplatesLoaded {
-            installed,
-            registry,
-        } => {
+        ShellMessage::TemplatesLoaded { installed, registry } => {
             state.templates.loading = false;
             state.templates.catalog_loaded = true;
             state.templates.error = None;
             state.templates.installed.clone_from(installed);
             state.templates.registry.clone_from(registry);
-            if state.templates.active_rows() > 0 && state.templates.list_state.selected().is_none()
-            {
+            if state.templates.active_rows() > 0 && state.templates.list_state.selected().is_none() {
                 state.templates.list_state.select(Some(0));
             }
             state.sync_template_detail_viewer();
@@ -48,10 +41,7 @@ pub fn update(msg: &ShellMessage, state: &mut ShellState) -> Vec<ShellEffect> {
             state.templates.loading = false;
             state.templates.error = Some(error.clone());
         }
-        ShellMessage::TemplateInstallDone {
-            short_name,
-            package_id,
-        } => {
+        ShellMessage::TemplateInstallDone { short_name, package_id } => {
             state.templates.installing = false;
             state.templates.status = Some(format!("Installed `{short_name}` from `{package_id}`"));
             effects.push(ShellEffect::FetchTemplates);
@@ -86,18 +76,10 @@ fn draw_tabs(frame: &mut Frame, area: Rect, state: &ShellState) {
         TemplateListTab::Registry => 1,
     };
     let tabs = Tabs::new(titles)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" New project "),
-        )
+        .block(Block::default().borders(Borders::ALL).title(" New project "))
         .select(selected)
         .style(Style::default().fg(Color::DarkGray))
-        .highlight_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        );
+        .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
     frame.render_widget(tabs, area);
 }
 
@@ -108,17 +90,10 @@ fn draw_template_list(frame: &mut Frame, area: Rect, state: &mut ShellState) {
             .installed
             .iter()
             .map(|row| {
-                let version = row
-                    .version
-                    .as_deref()
-                    .map(|v| format!("@{v}"))
-                    .unwrap_or_default();
+                let version = row.version.as_deref().map(|v| format!("@{v}")).unwrap_or_default();
                 let yanked = if row.yanked { " [yanked]" } else { "" };
                 ListItem::new(Line::from(vec![
-                    Span::styled(
-                        row.short_name.as_str(),
-                        Style::default().add_modifier(Modifier::BOLD),
-                    ),
+                    Span::styled(row.short_name.as_str(), Style::default().add_modifier(Modifier::BOLD)),
                     Span::raw(format!("  {}{}", version, yanked)),
                 ]))
             })
@@ -128,10 +103,7 @@ fn draw_template_list(frame: &mut Frame, area: Rect, state: &mut ShellState) {
             .registry
             .iter()
             .map(|row| {
-                ListItem::new(Line::from(vec![Span::styled(
-                    row.package_id.as_str(),
-                    Style::default().fg(Color::Cyan),
-                )]))
+                ListItem::new(Line::from(vec![Span::styled(row.package_id.as_str(), Style::default().fg(Color::Cyan))]))
             })
             .collect(),
     };

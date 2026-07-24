@@ -2,8 +2,7 @@ use std::fs;
 
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
 use beskid_analysis::projects::{
-    UnresolvedDependencyKind, build_project_graph, collect_dependency_projects,
-    collect_unresolved_dependencies,
+    UnresolvedDependencyKind, build_project_graph, collect_dependency_projects, collect_unresolved_dependencies,
 };
 
 use super::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
@@ -40,10 +39,8 @@ dependency "PkgCore" {
         let unresolved = collect_unresolved_dependencies(&graph);
         assert_eq!(unresolved.len(), 2);
 
-        let git = unresolved
-            .iter()
-            .find(|note| note.kind == UnresolvedDependencyKind::Git)
-            .expect("git unresolved dep");
+        let git =
+            unresolved.iter().find(|note| note.kind == UnresolvedDependencyKind::Git).expect("git unresolved dep");
         assert_eq!(git.dependency_name, "RemoteStd");
         assert_eq!(git.descriptor, "git@example.com/std.git@abc123");
 

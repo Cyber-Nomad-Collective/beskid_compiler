@@ -1,12 +1,8 @@
 use ratatui::layout::Rect;
 use ratatui::widgets::{Block, Borders};
 use ratatui::Frame;
-use ratkit::primitives::resizable_grid::{
-    ResizableGrid, ResizableGridWidget, ResizableGridWidgetState,
-};
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::primitives::resizable_grid::{ResizableGrid, ResizableGridWidget, ResizableGridWidgetState};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct ResizableGridDemo {
     layout: ResizableGrid,
@@ -23,11 +19,7 @@ impl ResizableGridDemo {
         let _ = layout.resize_divider(0, 60);
         let _ = layout.resize_divider(bottom_pane, 40);
 
-        Self {
-            layout,
-            state: ResizableGridWidgetState::default(),
-            last_area: Rect::default(),
-        }
+        Self { layout, state: ResizableGridWidgetState::default(), last_area: Rect::default() }
     }
 
     fn handle_mouse(&mut self, mouse: ratkit::MouseEvent) {
@@ -47,9 +39,7 @@ impl ResizableGridDemo {
 impl CoordinatorApp for ResizableGridDemo {
     fn on_event(&mut self, event: CoordinatorEvent) -> ratkit::LayoutResult<CoordinatorAction> {
         match event {
-            CoordinatorEvent::Keyboard(keyboard)
-                if keyboard.key_code == crossterm::event::KeyCode::Char('q') =>
-            {
+            CoordinatorEvent::Keyboard(keyboard) if keyboard.key_code == crossterm::event::KeyCode::Char('q') => {
                 Ok(CoordinatorAction::Quit)
             }
             CoordinatorEvent::Mouse(mouse) => {
@@ -62,9 +52,7 @@ impl CoordinatorApp for ResizableGridDemo {
 
     fn on_draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(" Resizable Grid ");
+        let block = Block::default().borders(Borders::ALL).title(" Resizable Grid ");
         let inner = block.inner(area);
         self.last_area = inner;
         frame.render_widget(block, area);

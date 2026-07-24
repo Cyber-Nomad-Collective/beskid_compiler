@@ -36,7 +36,5 @@ pub(crate) fn read_string_path(value: *const BeskidStr) -> String {
         panic!("null string data");
     }
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
-    std::str::from_utf8(bytes)
-        .unwrap_or_else(|_| panic!("invalid utf-8 path"))
-        .to_string()
+    std::str::from_utf8(bytes).unwrap_or_else(|_| panic!("invalid utf-8 path")).to_string()
 }

@@ -30,12 +30,7 @@ pub struct CompactDivider {
 impl CompactDivider {
     /// Create a new compact divider.
     pub fn new() -> Self {
-        Self {
-            indicator: "· · ·".to_string(),
-            hidden_count: None,
-            expandable: true,
-            focused: false,
-        }
+        Self { indicator: "· · ·".to_string(), hidden_count: None, expandable: true, focused: false }
     }
 
     /// Create a divider with hidden message count.
@@ -77,15 +72,10 @@ impl CompactDivider {
         };
 
         // Draw left border in muted color
-        buf.get_mut(area.x, area.y)
-            .set_style(Style::default().fg(colors.text_muted));
+        buf.get_mut(area.x, area.y).set_style(Style::default().fg(colors.text_muted));
 
         // Fill background
-        let bg_color = if self.focused {
-            colors.background_element
-        } else {
-            colors.background_panel
-        };
+        let bg_color = if self.focused { colors.background_element } else { colors.background_panel };
         for x in (area.x + 1)..(area.x + area.width) {
             buf.get_mut(x, area.y).set_bg(bg_color);
         }
@@ -104,41 +94,24 @@ impl CompactDivider {
                 format!(" {} {} hidden ", self.indicator, count)
             }
         } else if self.expandable {
-            format!(
-                " {} {} ",
-                if self.focused { "▶" } else { "▸" },
-                self.indicator
-            )
+            format!(" {} {} ", if self.focused { "▶" } else { "▸" }, self.indicator)
         } else {
             format!(" {} ", self.indicator)
         };
 
         // Determine style based on state
         let text_style = if self.focused {
-            Style::default()
-                .fg(colors.primary)
-                .add_modifier(Modifier::BOLD)
+            Style::default().fg(colors.primary).add_modifier(Modifier::BOLD)
         } else {
-            Style::default()
-                .fg(colors.text_muted)
-                .add_modifier(Modifier::DIM)
+            Style::default().fg(colors.text_muted).add_modifier(Modifier::DIM)
         };
 
         // Center the text horizontally
         let text_width = display_text.chars().count() as u16;
-        let x_offset = if content_area.width > text_width {
-            (content_area.width - text_width) / 2
-        } else {
-            0
-        };
+        let x_offset = if content_area.width > text_width { (content_area.width - text_width) / 2 } else { 0 };
 
         let span = Span::styled(display_text, text_style);
-        buf.set_span(
-            content_area.x + x_offset,
-            area.y,
-            &span,
-            text_width.min(content_area.width),
-        );
+        buf.set_span(content_area.x + x_offset, area.y, &span, text_width.min(content_area.width));
     }
 }
 
@@ -248,11 +221,8 @@ mod tests {
 
     #[test]
     fn test_compact_divider_builder() {
-        let divider = CompactDivider::new()
-            .with_hidden_count(3)
-            .expandable(true)
-            .focused(true)
-            .indicator("---".to_string());
+        let divider =
+            CompactDivider::new().with_hidden_count(3).expandable(true).focused(true).indicator("---".to_string());
 
         assert_eq!(divider.hidden_count, Some(3));
         assert!(divider.expandable);
@@ -270,10 +240,7 @@ mod tests {
 
     #[test]
     fn test_compact_divider_renderer() {
-        let renderer = CompactDividerRenderer::new()
-            .hidden_count(10)
-            .expandable(true)
-            .focused(true);
+        let renderer = CompactDividerRenderer::new().hidden_count(10).expandable(true).focused(true);
 
         assert!(renderer.expandable);
         assert_eq!(renderer.hidden_count, Some(10));

@@ -5,18 +5,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::hir::HirProgram;
-use crate::resolve::{
-    ItemId, ItemInfo, ModuleGraph, Resolution, ResolveResult, Resolver, SymbolId, SymbolRegistry,
-};
+use crate::resolve::{ItemId, ItemInfo, ModuleGraph, Resolution, ResolveResult, Resolver, SymbolId, SymbolRegistry};
 use crate::syntax::{Program, Spanned};
 
 use super::SourceUnit;
 use super::discovery::resolve_module_file;
 use super::hir_units::UnitHir;
-use super::loader::{
-    import_paths_from_source_full, module_paths_from_qualified_references,
-    parent_module_import_path,
-};
+use super::loader::{import_paths_from_source_full, module_paths_from_qualified_references, parent_module_import_path};
 use super::roots::EffectiveCompilationRoots;
 use crate::projects::CompilePlan;
 
@@ -68,10 +63,7 @@ impl ModuleIndex {
     /// Lowered HIR for a prefetch-only path (when present).
     pub fn prefetched_hir(&self, path: &Path) -> Option<&Spanned<HirProgram>> {
         let key = normalize_assembly_path(path);
-        self.prefetched_hir
-            .get(&key)
-            .or_else(|| self.prefetched_hir.get(path))
-            .map(|hir| hir.as_ref())
+        self.prefetched_hir.get(&key).or_else(|| self.prefetched_hir.get(path)).map(|hir| hir.as_ref())
     }
 
     pub fn module_graph(&self) -> &ModuleGraph {
@@ -115,15 +107,8 @@ impl ModuleIndex {
                 .iter()
                 .map(|dep| (dep.dependency_name.clone(), dep.project_name.clone()))
                 .collect();
-            resolver.set_declaring_package(package_for_unit(
-                unit,
-                roots,
-                &plan.project_name,
-                &dep_packages,
-            ));
-            if let Some(module_path) =
-                infer_logical_module_path(unit, roots, plan.has_std_dependency)
-            {
+            resolver.set_declaring_package(package_for_unit(unit, roots, &plan.project_name, &dep_packages));
+            if let Some(module_path) = infer_logical_module_path(unit, roots, plan.has_std_dependency) {
                 resolver.collect_program_in_module(hir, &module_path, Some(&unit.path));
             } else {
                 resolver.set_current_source_path(Some(unit.path.clone()));
@@ -136,10 +121,7 @@ impl ModuleIndex {
             .iter()
             .map(|dep| (dep.dependency_name.clone(), dep.project_name.clone()))
             .collect();
-        let unit_paths: HashSet<PathBuf> = units
-            .iter()
-            .map(|unit| normalize_assembly_path(&unit.path))
-            .collect();
+        let unit_paths: HashSet<PathBuf> = units.iter().map(|unit| normalize_assembly_path(&unit.path)).collect();
         let mut prefetched_paths = Vec::new();
         let mut prefetched_hir = HashMap::new();
         if prefetch_dependency_roots {
@@ -174,8 +156,7 @@ impl ModuleIndex {
             );
         }
 
-        let (items, module_graph, builtin_items, symbols, by_symbol) =
-            resolver.into_prefetch_parts();
+        let (items, module_graph, builtin_items, symbols, by_symbol) = resolver.into_prefetch_parts();
         prefetch_span.record("prefetched_paths", prefetched_paths.len() as u64);
         Self {
             items,
@@ -267,11 +248,8 @@ impl ModuleIndex {
         assembly: &super::ProgramAssembly,
     ) -> Option<Resolution> {
         let entry_source_path = assembly.entry_unit().path.clone();
-        let entry_module_path = infer_logical_module_path(
-            assembly.entry_unit(),
-            &assembly.roots,
-            assembly.has_std_dependency,
-        );
+        let entry_module_path =
+            infer_logical_module_path(assembly.entry_unit(), &assembly.roots, assembly.has_std_dependency);
 
         let mut resolver = Resolver::with_module_prefetch(
             self.items.clone(),
@@ -283,10 +261,8 @@ impl ModuleIndex {
         resolver.set_declaring_package(self.entry_project_name.clone());
         resolver.set_current_source_path(Some(entry_source_path.clone()));
         resolver.collect_program(entry_hir);
-        let mut resolution = resolver.resolve_collected_program_for_api_documentation(
-            entry_hir,
-            entry_module_path.as_deref(),
-        );
+        let mut resolution =
+            resolver.resolve_collected_program_for_api_documentation(entry_hir, entry_module_path.as_deref());
 
         for (index, unit_hir) in assembly.hir_units.iter().enumerate() {
             if index == assembly.entry_index {
@@ -295,8 +271,7 @@ impl ModuleIndex {
             let Some(unit) = assembly.units.get(index) else {
                 continue;
             };
-            let module_path =
-                infer_logical_module_path(unit, &assembly.roots, assembly.has_std_dependency);
+            let module_path = infer_logical_module_path(unit, &assembly.roots, assembly.has_std_dependency);
             let mut unit_resolver = Resolver::with_module_prefetch(
                 self.items.clone(),
                 self.module_graph.clone(),
@@ -316,13 +291,9 @@ impl ModuleIndex {
             } else {
                 unit_resolver.collect_program(&unit_hir.hir);
             }
-            let unit_resolution = unit_resolver.resolve_collected_program_for_api_documentation(
-                &unit_hir.hir,
-                module_path.as_deref(),
-            );
-            resolution
-                .tables
-                .merge_from(&unit_resolution.tables, unit_hir.path.clone());
+            let unit_resolution =
+                unit_resolver.resolve_collected_program_for_api_documentation(&unit_hir.hir, module_path.as_deref());
+            resolution.tables.merge_from(&unit_resolution.tables, unit_hir.path.clone());
         }
 
         self.merge_prefetched_path_resolutions(&mut resolution, assembly);
@@ -340,17 +311,9 @@ impl ModuleIndex {
     }
 
     /// Resolve locals and value tables for prefetch-only sources not in the assembly closure.
-    fn merge_prefetched_path_resolutions(
-        &self,
-        resolution: &mut Resolution,
-        assembly: &super::ProgramAssembly,
-    ) {
+    fn merge_prefetched_path_resolutions(&self, resolution: &mut Resolution, assembly: &super::ProgramAssembly) {
         for path in &self.prefetched_paths {
-            if assembly
-                .hir_units
-                .iter()
-                .any(|unit| crate::paths::same_file(&unit.path, path))
-            {
+            if assembly.hir_units.iter().any(|unit| crate::paths::same_file(&unit.path, path)) {
                 continue;
             }
             let Some(hir) = self.prefetched_hir(path) else {
@@ -379,8 +342,8 @@ impl ModuleIndex {
             } else {
                 unit_resolver.collect_program(hir);
             }
-            let unit_resolution = unit_resolver
-                .resolve_collected_program_for_api_documentation(hir, module_path.as_deref());
+            let unit_resolution =
+                unit_resolver.resolve_collected_program_for_api_documentation(hir, module_path.as_deref());
             resolution.tables.merge_from(&unit_resolution.tables, key);
         }
         resolution.rebuild_span_index();
@@ -407,17 +370,13 @@ fn declaring_package_for_prefetched_path(
     entry_project_name.to_string()
 }
 
-fn prefetched_module_path_for_file(
-    path: &Path,
-    assembly: &super::ProgramAssembly,
-) -> Option<Vec<String>> {
+fn prefetched_module_path_for_file(path: &Path, assembly: &super::ProgramAssembly) -> Option<Vec<String>> {
     if path.starts_with(&assembly.roots.host.source_root) {
         return module_path_from_file_suffix(path, assembly.has_std_dependency);
     }
     for dep in &assembly.roots.dependencies {
         if path.starts_with(&dep.source_root) {
-            if let Some(segments) = module_path_from_file_suffix(path, assembly.has_std_dependency)
-            {
+            if let Some(segments) = module_path_from_file_suffix(path, assembly.has_std_dependency) {
                 return Some(segments);
             }
             let Ok(rel) = path.strip_prefix(&dep.source_root) else {
@@ -533,22 +492,20 @@ fn collect_prefetched_import_closure(
     let mut seen_imports = HashSet::new();
     let mut seen_paths = HashSet::new();
 
-    let enqueue_import =
-        |queue: &mut VecDeque<String>, seen: &mut HashSet<String>, import: String| {
-            if seen.insert(import.clone()) {
-                queue.push_back(import);
-            }
-        };
+    let enqueue_import = |queue: &mut VecDeque<String>, seen: &mut HashSet<String>, import: String| {
+        if seen.insert(import.clone()) {
+            queue.push_back(import);
+        }
+    };
 
-    let enqueue_module_paths =
-        |queue: &mut VecDeque<String>, seen: &mut HashSet<String>, source: &str| {
-            for import_path in import_paths_from_source_full(source) {
-                enqueue_import(queue, seen, import_path);
-            }
-            for module_path in module_paths_from_qualified_references(source) {
-                enqueue_import(queue, seen, module_path);
-            }
-        };
+    let enqueue_module_paths = |queue: &mut VecDeque<String>, seen: &mut HashSet<String>, source: &str| {
+        for import_path in import_paths_from_source_full(source) {
+            enqueue_import(queue, seen, import_path);
+        }
+        for module_path in module_paths_from_qualified_references(source) {
+            enqueue_import(queue, seen, module_path);
+        }
+    };
 
     for unit in units {
         enqueue_module_paths(&mut queue, &mut seen_imports, &unit.source);
@@ -568,12 +525,8 @@ fn collect_prefetched_import_closure(
         if !path_in_dependency_roots(&path, roots) {
             continue;
         }
-        let declaring_package = declaring_package_for_dependency_path(
-            &path,
-            roots,
-            dependency_packages,
-            &plan.project_name,
-        );
+        let declaring_package =
+            declaring_package_for_dependency_path(&path, roots, dependency_packages, &plan.project_name);
         let Ok(source) = std::fs::read_to_string(&path) else {
             continue;
         };
@@ -594,11 +547,7 @@ fn collect_prefetched_import_closure(
 fn path_in_dependency_roots(path: &Path, roots: &EffectiveCompilationRoots) -> bool {
     roots.dependencies.iter().any(|dep| {
         path.starts_with(&dep.source_root)
-            || path
-                .canonicalize()
-                .ok()
-                .zip(dep.source_root.canonicalize().ok())
-                .is_some_and(|(a, b)| a.starts_with(b))
+            || path.canonicalize().ok().zip(dep.source_root.canonicalize().ok()).is_some_and(|(a, b)| a.starts_with(b))
     })
 }
 
@@ -768,10 +717,7 @@ fn module_path_from_generated_suffix(path: &Path, has_std_dependency: bool) -> O
     }
 }
 
-fn module_path_from_src_suffix(
-    path: &std::path::Path,
-    has_std_dependency: bool,
-) -> Option<Vec<String>> {
+fn module_path_from_src_suffix(path: &std::path::Path, has_std_dependency: bool) -> Option<Vec<String>> {
     let path_str = path.to_string_lossy();
     let marker = "/src/";
     let idx = path_str.find(marker)?;
@@ -809,12 +755,7 @@ mod tests {
                 Path::new("/packages/corelib/.generated/Core/Text/Regex/Generated.g.bd"),
                 false,
             ),
-            Some(vec![
-                "Core".to_string(),
-                "Text".to_string(),
-                "Regex".to_string(),
-                "Generated".to_string(),
-            ])
+            Some(vec!["Core".to_string(), "Text".to_string(), "Regex".to_string(), "Generated".to_string(),])
         );
     }
 }

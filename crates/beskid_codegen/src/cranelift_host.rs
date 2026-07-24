@@ -123,10 +123,7 @@ pub fn declare_referenced_builtin_imports<M: Module>(
 }
 
 /// Ensure `sig` uses only pointer-sized integers and a small allowlist of scalar types permitted for extern FFI.
-pub fn validate_ffi_signature(
-    sig: &Signature,
-    pointer: cranelift_codegen::ir::Type,
-) -> Result<(), String> {
+pub fn validate_ffi_signature(sig: &Signature, pointer: cranelift_codegen::ir::Type) -> Result<(), String> {
     let check_ty = |ty: cranelift_codegen::ir::Type| -> bool {
         ty == pointer || ty == types::I64 || ty == types::I32 || ty == types::I8 || ty == types::F64
     };
@@ -158,14 +155,11 @@ pub fn collect_validated_extern_signatures<M: Module>(
                 let symbol = String::from_utf8_lossy(name.raw()).to_string();
                 if artifact.extern_imports.iter().any(|e| e.symbol == symbol) {
                     let sig = ctx_probe.func.dfg.signatures[ext_func.signature].clone();
-                    validate_ffi_signature(&sig, pointer).map_err(|msg| {
-                        format!("extern signature not allowed for {symbol}: {msg}")
-                    })?;
+                    validate_ffi_signature(&sig, pointer)
+                        .map_err(|msg| format!("extern signature not allowed for {symbol}: {msg}"))?;
                     if let Some(prev) = extern_sigs.get(&symbol) {
                         if prev != &sig {
-                            return Err(format!(
-                                "extern signature mismatch for {symbol} across callsites"
-                            ));
+                            return Err(format!("extern signature mismatch for {symbol} across callsites"));
                         }
                     } else {
                         extern_sigs.insert(symbol, sig);
@@ -185,9 +179,7 @@ pub fn declare_user_functions<M: Module>(
     linkage: Linkage,
     func_ids: &mut HashMap<String, FuncId>,
 ) -> Result<Vec<String>, ModuleError> {
-    declare_user_functions_with_link_symbols(module, artifact, linkage, func_ids, |name| {
-        name.to_string()
-    })
+    declare_user_functions_with_link_symbols(module, artifact, linkage, func_ids, |name| name.to_string())
 }
 
 /// Like [`declare_user_functions`], but allows renaming symbols at the object boundary (AOT `Main` → `main`).
@@ -198,13 +190,7 @@ pub fn declare_user_functions_with_link_symbols<M: Module>(
     func_ids: &mut HashMap<String, FuncId>,
     link_symbol: impl Fn(&str) -> String,
 ) -> Result<Vec<String>, ModuleError> {
-    declare_user_functions_with_link_symbols_and_linkage(
-        module,
-        artifact,
-        func_ids,
-        link_symbol,
-        |_| linkage,
-    )
+    declare_user_functions_with_link_symbols_and_linkage(module, artifact, func_ids, link_symbol, |_| linkage)
 }
 
 /// Like [`declare_user_functions_with_link_symbols`], but chooses linkage per emitted object
@@ -237,15 +223,13 @@ pub fn declare_validated_extern_imports<M: Module>(
     artifact: &CodegenArtifact,
     func_ids: &mut HashMap<String, FuncId>,
 ) -> Result<(), ExternDeclarationError> {
-    let extern_sigs = collect_validated_extern_signatures(module, artifact)
-        .map_err(ExternDeclarationError::InvalidSignature)?;
+    let extern_sigs =
+        collect_validated_extern_signatures(module, artifact).map_err(ExternDeclarationError::InvalidSignature)?;
     for (symbol, sig) in &extern_sigs {
         if func_ids.contains_key(symbol) {
             continue;
         }
-        let id = module
-            .declare_function(symbol, Linkage::Import, sig)
-            .map_err(ExternDeclarationError::Module)?;
+        let id = module.declare_function(symbol, Linkage::Import, sig).map_err(ExternDeclarationError::Module)?;
         func_ids.insert(symbol.clone(), id);
     }
     Ok(())
@@ -266,14 +250,9 @@ pub fn remap_testcase_externals<M: Module>(
         func_remaps.push((func_ref, symbol));
     }
     for (func_ref, symbol) in func_remaps {
-        let func_id = func_ids
-            .get(&symbol)
-            .copied()
-            .ok_or_else(|| HostError::MissingSymbol(symbol.clone()))?;
-        let user_ref = ctx.func.declare_imported_user_function(UserExternalName {
-            namespace: 0,
-            index: func_id.as_u32(),
-        });
+        let func_id = func_ids.get(&symbol).copied().ok_or_else(|| HostError::MissingSymbol(symbol.clone()))?;
+        let user_ref =
+            ctx.func.declare_imported_user_function(UserExternalName { namespace: 0, index: func_id.as_u32() });
         ctx.func.dfg.ext_funcs[func_ref].name = ExternalName::user(user_ref);
     }
 
@@ -289,19 +268,13 @@ pub fn remap_testcase_externals<M: Module>(
         data_remaps.push((gv, symbol));
     }
     for (gv, symbol) in data_remaps {
-        let id = module
-            .get_name(&symbol)
-            .ok_or_else(|| HostError::MissingSymbol(symbol.clone()))?;
+        let id = module.get_name(&symbol).ok_or_else(|| HostError::MissingSymbol(symbol.clone()))?;
         let FuncOrDataId::Data(data_id) = id else {
             return Err(HostError::MissingSymbol(symbol));
         };
-        let user_ref = ctx.func.declare_imported_user_function(UserExternalName {
-            namespace: 1,
-            index: data_id.as_u32(),
-        });
-        let cranelift_codegen::ir::GlobalValueData::Symbol { name, .. } =
-            &mut ctx.func.global_values[gv]
-        else {
+        let user_ref =
+            ctx.func.declare_imported_user_function(UserExternalName { namespace: 1, index: data_id.as_u32() });
+        let cranelift_codegen::ir::GlobalValueData::Symbol { name, .. } = &mut ctx.func.global_values[gv] else {
             return Err(HostError::InvalidGlobalValue);
         };
         *name = ExternalName::user(user_ref);

@@ -18,16 +18,15 @@ use crate::widgets::markdown_preview::widgets::markdown_widget::extensions::toc:
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::events::MarkdownEvent;
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::types::GitStats;
 use crate::widgets::markdown_preview::widgets::markdown_widget::state::{
-    CacheState, CollapseState, DisplaySettings, DoubleClickState, ExpandableState, GitStatsState,
-    ScrollState, SelectionState, SourceState, TocState, VimState,
+    CacheState, CollapseState, DisplaySettings, DoubleClickState, ExpandableState, GitStatsState, ScrollState,
+    SelectionState, SourceState, TocState, VimState,
 };
 use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
 
 pub(crate) const FRONTMATTER_SECTION_ID: usize = 0;
 pub(crate) const CURRENT_LINE_BG: ratatui::style::Color = ratatui::style::Color::Rgb(38, 52, 63);
-pub(crate) const CURRENT_LINE_DRAG_BG: ratatui::style::Color =
-    ratatui::style::Color::Rgb(70, 80, 100);
+pub(crate) const CURRENT_LINE_DRAG_BG: ratatui::style::Color = ratatui::style::Color::Rgb(70, 80, 100);
 
 pub struct MarkdownWidget<'a> {
     pub(crate) content: String,

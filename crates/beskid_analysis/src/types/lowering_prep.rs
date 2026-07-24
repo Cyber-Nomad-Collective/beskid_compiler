@@ -4,19 +4,17 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::hir::{
-    HirBlock, HirCallExpression, HirElseBranch, HirExpressionNode, HirIfStatement, HirItem,
-    HirMatchExpression, HirMethodDefinition, HirPattern, HirPrimitiveType, HirProgram,
-    HirStatementNode, HirStructLiteralExpression, HirType,
+    HirBlock, HirCallExpression, HirElseBranch, HirExpressionNode, HirIfStatement, HirItem, HirMatchExpression,
+    HirMethodDefinition, HirPattern, HirPrimitiveType, HirProgram, HirStatementNode, HirStructLiteralExpression,
+    HirType,
 };
 use crate::paths;
-use crate::resolve::{
-    HirNodeId, ItemId, LocalId, Resolution, ResolvedType, ResolvedValue, canonical_item_id,
-};
+use crate::resolve::{HirNodeId, ItemId, LocalId, Resolution, ResolvedType, ResolvedValue, canonical_item_id};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::path_value::{
     PathTypeEnv, field_type_on_receiver, first_field_segment_name, generic_mapping_for_type_id,
-    method_name_from_path_callee, named_item_id, receiver_type_for_path_callee,
-    resolve_path_base_local, struct_fields_for_item,
+    method_name_from_path_callee, named_item_id, receiver_type_for_path_callee, resolve_path_base_local,
+    struct_fields_for_item,
 };
 use crate::types::result::{CallLoweringKind, FunctionSignature, MethodReceiverSource};
 use crate::types::{TypeId, TypeInfo, TypeTable};
@@ -69,9 +67,7 @@ impl LoweringPrep {
     }
 
     pub fn cast_intents_for_node(&self, node_id: HirNodeId) -> impl Iterator<Item = &CastIntent> {
-        self.cast_intents
-            .iter()
-            .filter(move |intent| intent.node_id == node_id)
+        self.cast_intents.iter().filter(move |intent| intent.node_id == node_id)
     }
 
     /// Walk typed HIR and populate call kinds and cast intents (no type inference).
@@ -121,11 +117,7 @@ impl<'a> PrepWalker<'a> {
     fn finish(mut self) -> LoweringPrep {
         self.prep.cast_intents.sort_by_key(|intent| {
             (
-                intent
-                    .source_path
-                    .as_ref()
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
+                intent.source_path.as_ref().map(|path| path.to_string_lossy().into_owned()).unwrap_or_default(),
                 intent.node_id.0,
                 intent.span.start,
                 intent.span.end,
@@ -155,27 +147,27 @@ impl<'a> PrepWalker<'a> {
         self.prep.call_kinds.insert(node_id, kind);
     }
 
-    fn record_numeric_cast(
-        &mut self,
-        node_id: HirNodeId,
-        span: SpanInfo,
-        expected: TypeId,
-        actual: TypeId,
-    ) {
+    fn record_numeric_cast(&mut self, node_id: HirNodeId, span: SpanInfo, expected: TypeId, actual: TypeId) {
         if types_compatible_without_cast(self.surfaces.types, self.resolution, expected, actual) {
             return;
         }
         if !is_numeric(self.surfaces.types, expected) || !is_numeric(self.surfaces.types, actual) {
             return;
         }
-        if self.prep.cast_intents.iter().any(|intent| {
-            intent.node_id == node_id && intent.from == actual && intent.to == expected
-        }) {
+        if self
+            .prep
+            .cast_intents
+            .iter()
+            .any(|intent| intent.node_id == node_id && intent.from == actual && intent.to == expected)
+        {
             return;
         }
-        if self.prep.cast_intents.iter().any(|intent| {
-            intent.node_id == node_id && intent.from == expected && intent.to == actual
-        }) {
+        if self
+            .prep
+            .cast_intents
+            .iter()
+            .any(|intent| intent.node_id == node_id && intent.from == expected && intent.to == actual)
+        {
             return;
         }
         self.prep.cast_intents.push(CastIntent {
@@ -188,14 +180,9 @@ impl<'a> PrepWalker<'a> {
     }
 
     fn resolved_value_at(&self, span: SpanInfo) -> Option<ResolvedValue> {
-        let value = self
-            .resolution
-            .tables
-            .resolved_value_at(span, self.current_source_path.as_ref())?;
+        let value = self.resolution.tables.resolved_value_at(span, self.current_source_path.as_ref())?;
         Some(match value {
-            ResolvedValue::Item(item_id) => {
-                ResolvedValue::Item(canonical_item_id(self.resolution, item_id))
-            }
+            ResolvedValue::Item(item_id) => ResolvedValue::Item(canonical_item_id(self.resolution, item_id)),
             other => other,
         })
     }
@@ -203,23 +190,12 @@ impl<'a> PrepWalker<'a> {
     fn item_id_for_span(&self, span: SpanInfo) -> Option<ItemId> {
         if let Some(path) = &self.current_source_path
             && let Some(info) = self.resolution.items.iter().find(|info| {
-                info.span == span
-                    && info
-                        .source_path
-                        .as_ref()
-                        .is_some_and(|source| paths::same_file(source, path))
+                info.span == span && info.source_path.as_ref().is_some_and(|source| paths::same_file(source, path))
             })
         {
             return Some(info.id);
         }
-        match self
-            .resolution
-            .items
-            .iter()
-            .filter(|info| info.span == span)
-            .collect::<Vec<_>>()
-            .as_slice()
-        {
+        match self.resolution.items.iter().filter(|info| info.span == span).collect::<Vec<_>>().as_slice() {
             [single] => Some(single.id),
             _ => None,
         }
@@ -231,12 +207,7 @@ impl<'a> PrepWalker<'a> {
             .function_signatures
             .get(&item_id)
             .map(|s| s.return_type)
-            .or_else(|| {
-                self.surfaces
-                    .method_function_signatures
-                    .get(&item_id)
-                    .map(|s| s.return_type)
-            })
+            .or_else(|| self.surfaces.method_function_signatures.get(&item_id).map(|s| s.return_type))
     }
 
     fn method_item_for_receiver(&self, receiver_type: TypeId, method_name: &str) -> Option<ItemId> {
@@ -248,11 +219,7 @@ impl<'a> PrepWalker<'a> {
             .map(|item| canonical_item_id(self.resolution, item))
     }
 
-    fn method_dispatch_signature(
-        &self,
-        method_item_id: ItemId,
-        receiver_type: TypeId,
-    ) -> Option<FunctionSignature> {
+    fn method_dispatch_signature(&self, method_item_id: ItemId, receiver_type: TypeId) -> Option<FunctionSignature> {
         let signature = self
             .surfaces
             .method_function_signatures
@@ -264,21 +231,13 @@ impl<'a> PrepWalker<'a> {
             return Some(signature);
         }
         Some(FunctionSignature {
-            params: signature
-                .params
-                .iter()
-                .map(|p| substitute_type_id(self.surfaces, *p, &mapping))
-                .collect(),
+            params: signature.params.iter().map(|p| substitute_type_id(self.surfaces, *p, &mapping)).collect(),
             return_type: substitute_type_id(self.surfaces, signature.return_type, &mapping),
         })
     }
 
     fn named_type_id(&self, item_id: ItemId) -> Option<TypeId> {
-        self.surfaces
-            .named_types
-            .get(&item_id)
-            .copied()
-            .or_else(|| find_named_type(self.surfaces.types, item_id))
+        self.surfaces.named_types.get(&item_id).copied().or_else(|| find_named_type(self.surfaces.types, item_id))
     }
 
     fn type_id_for_hir_type(&self, ty: &Spanned<HirType>) -> Option<TypeId> {
@@ -287,9 +246,7 @@ impl<'a> PrepWalker<'a> {
             HirType::Complex(path) => {
                 if path.node.segments.len() == 1
                     && path.node.segments[0].node.type_args.is_empty()
-                    && let Some(id) = self
-                        .generic_params
-                        .get(&path.node.segments[0].node.name.node.name)
+                    && let Some(id) = self.generic_params.get(&path.node.segments[0].node.name.node.name)
                 {
                     return Some(*id);
                 }
@@ -299,25 +256,17 @@ impl<'a> PrepWalker<'a> {
                 let inner_id = self.type_id_for_hir_type(inner)?;
                 self.surfaces.types.find_array_of(inner_id)
             }
-            HirType::Function {
-                return_type,
-                parameters,
-            } => {
+            HirType::Function { return_type, parameters } => {
                 let ret = self.type_id_for_hir_type(return_type)?;
-                let params = parameters
-                    .iter()
-                    .map(|p| self.type_id_for_hir_type(p))
-                    .collect::<Option<Vec<_>>>()?;
+                let params = parameters.iter().map(|p| self.type_id_for_hir_type(p)).collect::<Option<Vec<_>>>()?;
                 lookup_function_type(self.surfaces.types, &params, ret)
             }
         }
     }
 
     fn type_id_for_type_path(&self, path: &Spanned<crate::hir::HirPath>) -> Option<TypeId> {
-        let ResolvedType::Item(item_id) = self
-            .resolution
-            .tables
-            .resolved_type_at(path.span, self.current_source_path.as_ref())?
+        let ResolvedType::Item(item_id) =
+            self.resolution.tables.resolved_type_at(path.span, self.current_source_path.as_ref())?
         else {
             return None;
         };
@@ -327,12 +276,7 @@ impl<'a> PrepWalker<'a> {
         if last.node.type_args.is_empty() {
             return Some(base);
         }
-        let args = last
-            .node
-            .type_args
-            .iter()
-            .map(|a| self.type_id_for_hir_type(a))
-            .collect::<Option<Vec<_>>>()?;
+        let args = last.node.type_args.iter().map(|a| self.type_id_for_hir_type(a)).collect::<Option<Vec<_>>>()?;
         find_applied_type(self.surfaces.types, item_id, &args)
     }
 
@@ -400,10 +344,7 @@ impl<'a> PrepWalker<'a> {
     fn with_source_path_from_item(&mut self, span: SpanInfo, f: impl FnOnce(&mut Self)) {
         let prev = self.current_source_path.clone();
         if let Some(info) = self.resolution.items.iter().find(|i| i.span == span) {
-            self.current_source_path = info
-                .source_path
-                .as_ref()
-                .map(|p| paths::unit_path_key(p.as_path()));
+            self.current_source_path = info.source_path.as_ref().map(|p| paths::unit_path_key(p.as_path()));
         }
         f(self);
         self.current_source_path = prev;
@@ -427,12 +368,7 @@ impl<'a> PrepWalker<'a> {
                     self.walk_expression(&let_stmt.node.value);
                     self.contextual_expected_type = prev;
                     if let (Some(e), Some(a)) = (expected, self.expr_type(&let_stmt.node.value)) {
-                        self.record_numeric_cast(
-                            let_stmt.node.value.id,
-                            let_stmt.node.name.span,
-                            e,
-                            a,
-                        );
+                        self.record_numeric_cast(let_stmt.node.value.id, let_stmt.node.name.span, e, a);
                     }
                 } else {
                     self.walk_expression(&let_stmt.node.value);
@@ -488,22 +424,14 @@ impl<'a> PrepWalker<'a> {
             HirExpressionNode::AssignExpression(a) => {
                 self.walk_expression(&a.node.target);
                 self.walk_expression(&a.node.value);
-                if let (Some(t), Some(v)) = (
-                    self.expr_type(&a.node.target),
-                    self.expr_type(&a.node.value),
-                ) {
+                if let (Some(t), Some(v)) = (self.expr_type(&a.node.target), self.expr_type(&a.node.value)) {
                     self.record_numeric_cast(expr.id, expr.span, t, v);
                 }
             }
             HirExpressionNode::LambdaExpression(l) => {
-                let sig = self.contextual_expected_type.and_then(|id| {
-                    match self.surfaces.types.get(id)? {
-                        TypeInfo::Function {
-                            params,
-                            return_type,
-                        } => Some((params.clone(), *return_type)),
-                        _ => None,
-                    }
+                let sig = self.contextual_expected_type.and_then(|id| match self.surfaces.types.get(id)? {
+                    TypeInfo::Function { params, return_type } => Some((params.clone(), *return_type)),
+                    _ => None,
                 });
                 self.walk_expression(&l.node.body);
                 if let (Some((_, er)), Some(rt)) = (sig.as_ref(), self.expr_type(&l.node.body)) {
@@ -546,15 +474,8 @@ impl<'a> PrepWalker<'a> {
         }
     }
 
-    fn prep_struct_literal_casts(
-        &mut self,
-        expr_id: HirNodeId,
-        lit: &Spanned<HirStructLiteralExpression>,
-    ) {
-        let Some(type_id) = self
-            .node_type(expr_id)
-            .or_else(|| self.type_id_for_type_path(&lit.node.path))
-        else {
+    fn prep_struct_literal_casts(&mut self, expr_id: HirNodeId, lit: &Spanned<HirStructLiteralExpression>) {
+        let Some(type_id) = self.node_type(expr_id).or_else(|| self.type_id_for_type_path(&lit.node.path)) else {
             return;
         };
         let Some(item_id) = named_item_id(&self.surfaces.path_env(), type_id) else {
@@ -562,12 +483,9 @@ impl<'a> PrepWalker<'a> {
         };
         let mapping = generic_mapping_for_type_id(&self.surfaces.path_env(), type_id);
         let path_env = self.surfaces.path_env();
-        let Some(fields) = struct_fields_for_item(
-            &path_env,
-            self.resolution,
-            item_id,
-            self.current_source_path.as_ref(),
-        ) else {
+        let Some(fields) =
+            struct_fields_for_item(&path_env, self.resolution, item_id, self.current_source_path.as_ref())
+        else {
             return;
         };
         for field in &lit.node.fields {
@@ -575,33 +493,22 @@ impl<'a> PrepWalker<'a> {
             let Some((_, expected)) = fields.iter().find(|(n, _)| n.as_str() == name) else {
                 continue;
             };
-            let expected = if mapping.is_empty() {
-                *expected
-            } else {
-                substitute_type_id(self.surfaces, *expected, &mapping)
-            };
+            let expected =
+                if mapping.is_empty() { *expected } else { substitute_type_id(self.surfaces, *expected, &mapping) };
             if let Some(actual) = self.expr_type(&field.node.value) {
-                self.record_numeric_cast(
-                    field.node.value.id,
-                    field.node.value.span,
-                    expected,
-                    actual,
-                );
+                self.record_numeric_cast(field.node.value.id, field.node.value.span, expected, actual);
             }
         }
     }
 
     fn prep_enum_ctor_casts(&mut self, ctor: &Spanned<crate::hir::HirEnumConstructorExpression>) {
-        let Some(type_id) = self
-            .resolution
-            .tables
-            .resolved_type_at(ctor.node.path.span, self.current_source_path.as_ref())
-            .and_then(|r| match r {
-                ResolvedType::Item(id) => {
-                    self.named_type_id(canonical_item_id(self.resolution, id))
-                }
-                _ => None,
-            })
+        let Some(type_id) =
+            self.resolution.tables.resolved_type_at(ctor.node.path.span, self.current_source_path.as_ref()).and_then(
+                |r| match r {
+                    ResolvedType::Item(id) => self.named_type_id(canonical_item_id(self.resolution, id)),
+                    _ => None,
+                },
+            )
         else {
             return;
         };
@@ -619,9 +526,7 @@ impl<'a> PrepWalker<'a> {
                 if mapping.is_empty() {
                     fs.clone()
                 } else {
-                    fs.iter()
-                        .map(|f| substitute_type_id(self.surfaces, *f, &mapping))
-                        .collect()
+                    fs.iter().map(|f| substitute_type_id(self.surfaces, *f, &mapping)).collect()
                 }
             })
         else {
@@ -675,9 +580,7 @@ impl<'a> PrepWalker<'a> {
                     .tables
                     .resolved_type_at(ep.node.path.span, self.current_source_path.as_ref())
                     .and_then(|r| match r {
-                        ResolvedType::Item(id) => {
-                            self.named_type_id(canonical_item_id(self.resolution, id))
-                        }
+                        ResolvedType::Item(id) => self.named_type_id(canonical_item_id(self.resolution, id)),
                         _ => None,
                     })
                 {
@@ -730,10 +633,7 @@ impl<'a> PrepWalker<'a> {
                     return;
                 }
                 if let Some(cid) = named_item_id(&self.surfaces.path_env(), recv)
-                    && let Some(sig) = self
-                        .surfaces
-                        .contract_signatures
-                        .get(&(cid, method.to_string()))
+                    && let Some(sig) = self.surfaces.contract_signatures.get(&(cid, method.to_string()))
                 {
                     self.record_call_kind(
                         call_id,
@@ -750,10 +650,7 @@ impl<'a> PrepWalker<'a> {
             if segs.len() >= 2
                 && let Some(ResolvedValue::Item(cid)) = self.resolved_value_at(path.node.path.span)
                 && let Some(method) = method_name_from_path_callee(segs)
-                && let Some(sig) = self
-                    .surfaces
-                    .contract_signatures
-                    .get(&(cid, method.to_string()))
+                && let Some(sig) = self.surfaces.contract_signatures.get(&(cid, method.to_string()))
                 && let Some(recv) = self.named_type_id(cid)
             {
                 self.record_call_kind(
@@ -772,10 +669,8 @@ impl<'a> PrepWalker<'a> {
         if let HirExpressionNode::MemberExpression(mem) = &call.node.callee.node {
             if let HirExpressionNode::PathExpression(path) = &mem.node.target.node
                 && let Some(ResolvedValue::Item(cid)) = self.resolved_value_at(path.node.path.span)
-                && let Some(sig) = self
-                    .surfaces
-                    .contract_signatures
-                    .get(&(cid, mem.node.member.node.name.as_str().to_string()))
+                && let Some(sig) =
+                    self.surfaces.contract_signatures.get(&(cid, mem.node.member.node.name.as_str().to_string()))
                 && let Some(recv) = self.named_type_id(cid)
             {
                 self.record_call_kind(
@@ -806,10 +701,7 @@ impl<'a> PrepWalker<'a> {
                     return;
                 }
                 if let Some(cid) = named_item_id(&self.surfaces.path_env(), recv)
-                    && let Some(sig) = self
-                        .surfaces
-                        .contract_signatures
-                        .get(&(cid, method.to_string()))
+                    && let Some(sig) = self.surfaces.contract_signatures.get(&(cid, method.to_string()))
                 {
                     self.record_call_kind(
                         call_id,
@@ -882,10 +774,7 @@ impl<'a> PrepWalker<'a> {
             }
             _ => return None,
         };
-        self.surfaces
-            .struct_event_fields
-            .get(&item)
-            .and_then(|f| f.get(&field))?;
+        self.surfaces.struct_event_fields.get(&item).and_then(|f| f.get(&field))?;
         field_type_on_receiver(
             self.resolution,
             &self.surfaces.path_env(),
@@ -893,10 +782,7 @@ impl<'a> PrepWalker<'a> {
             &field,
             self.current_source_path.as_ref(),
         )?;
-        Some(CallLoweringKind::EventInvoke {
-            receiver_source: src,
-            receiver_type: recv,
-        })
+        Some(CallLoweringKind::EventInvoke { receiver_source: src, receiver_type: recv })
     }
 }
 
@@ -908,10 +794,7 @@ fn substitute_type_id(
     match surfaces.types.get(type_id).cloned() {
         Some(TypeInfo::GenericParam(n)) => mapping.get(&n).copied().unwrap_or(type_id),
         Some(TypeInfo::Applied { base, args }) => {
-            let new_args: Vec<TypeId> = args
-                .iter()
-                .map(|a| substitute_type_id(surfaces, *a, mapping))
-                .collect();
+            let new_args: Vec<TypeId> = args.iter().map(|a| substitute_type_id(surfaces, *a, mapping)).collect();
             if new_args == args {
                 type_id
             } else {
@@ -920,11 +803,7 @@ fn substitute_type_id(
         }
         Some(TypeInfo::Array(el)) => {
             let sub = substitute_type_id(surfaces, el, mapping);
-            if sub == el {
-                type_id
-            } else {
-                surfaces.types.find_array_of(sub).unwrap_or(type_id)
-            }
+            if sub == el { type_id } else { surfaces.types.find_array_of(sub).unwrap_or(type_id) }
         }
         _ => type_id,
     }
@@ -944,63 +823,47 @@ fn lookup_function_type(types: &TypeTable, params: &[TypeId], ret: TypeId) -> Op
 }
 
 fn find_named_type(types: &TypeTable, item: ItemId) -> Option<TypeId> {
-    (0..types.len())
-        .map(TypeId)
-        .find(|id| matches!(types.get(*id), Some(TypeInfo::Named(i)) if *i == item))
+    (0..types.len()).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::Named(i)) if *i == item))
 }
 
 fn find_generic_param(types: &TypeTable, name: &str) -> Option<TypeId> {
-    (0..types.len())
-        .map(TypeId)
-        .find(|id| matches!(types.get(*id), Some(TypeInfo::GenericParam(n)) if n == name))
+    (0..types.len()).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::GenericParam(n)) if n == name))
 }
 
 fn find_applied_type(types: &TypeTable, base: ItemId, args: &[TypeId]) -> Option<TypeId> {
-    (0..types.len()).map(TypeId).find(|id| matches!(types.get(*id), Some(TypeInfo::Applied { base: b, args: a, }) if *b == base && a == args))
+    (0..types.len())
+        .map(TypeId)
+        .find(|id| matches!(types.get(*id), Some(TypeInfo::Applied { base: b, args: a, }) if *b == base && a == args))
 }
 
 fn is_numeric(types: &TypeTable, id: TypeId) -> bool {
     matches!(
         types.get(id),
         Some(TypeInfo::Primitive(
-            HirPrimitiveType::I32
-                | HirPrimitiveType::I64
-                | HirPrimitiveType::U8
-                | HirPrimitiveType::F64
+            HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8 | HirPrimitiveType::F64
         ))
     )
 }
 
 fn is_never(types: &TypeTable, id: TypeId) -> bool {
-    matches!(
-        types.get(id),
-        Some(TypeInfo::Primitive(HirPrimitiveType::Never))
-    )
+    matches!(types.get(id), Some(TypeInfo::Primitive(HirPrimitiveType::Never)))
 }
 
-fn types_compatible_without_cast(
-    types: &TypeTable,
-    resolution: &Resolution,
-    expected: TypeId,
-    actual: TypeId,
-) -> bool {
+fn types_compatible_without_cast(types: &TypeTable, resolution: &Resolution, expected: TypeId, actual: TypeId) -> bool {
     if expected == actual || is_never(types, expected) || is_never(types, actual) {
         return true;
     }
-    if let (Some(TypeInfo::Primitive(a)), Some(TypeInfo::Primitive(b))) =
-        (types.get(expected), types.get(actual))
+    if let (Some(TypeInfo::Primitive(a)), Some(TypeInfo::Primitive(b))) = (types.get(expected), types.get(actual))
         && a == b
     {
         return true;
     }
-    if let (Some(TypeInfo::Array(a)), Some(TypeInfo::Array(b))) =
-        (types.get(expected), types.get(actual))
+    if let (Some(TypeInfo::Array(a)), Some(TypeInfo::Array(b))) = (types.get(expected), types.get(actual))
         && a == b
     {
         return true;
     }
-    if let (Some(TypeInfo::Fiber(a)), Some(TypeInfo::Fiber(b))) =
-        (types.get(expected), types.get(actual))
+    if let (Some(TypeInfo::Fiber(a)), Some(TypeInfo::Fiber(b))) = (types.get(expected), types.get(actual))
         && a == b
     {
         return true;
@@ -1009,10 +872,7 @@ fn types_compatible_without_cast(
         && let Some(TypeInfo::Applied { base, args }) = types.get(expected)
         && args.len() == 1
         && args[0] == *p
-        && resolution
-            .items
-            .get(base.0)
-            .is_some_and(|i| i.name == "Fiber" || i.name.ends_with("::Fiber"))
+        && resolution.items.get(base.0).is_some_and(|i| i.name == "Fiber" || i.name.ends_with("::Fiber"))
     {
         return true;
     }
@@ -1022,8 +882,7 @@ fn types_compatible_without_cast(
         struct_fields_ordered: &HashMap::new(),
         generic_items: &HashMap::new(),
     };
-    named_item_id(&env, expected).is_some()
-        && named_item_id(&env, expected) == named_item_id(&env, actual)
+    named_item_id(&env, expected).is_some() && named_item_id(&env, expected) == named_item_id(&env, actual)
 }
 
 fn literal_type_id(types: &TypeTable, lit: &crate::hir::HirLiteral) -> Option<TypeId> {
@@ -1043,21 +902,12 @@ mod tests {
     use crate::resolve::{HirNodeId, ModuleGraph};
 
     fn span(start: usize, end: usize) -> SpanInfo {
-        SpanInfo {
-            start,
-            end,
-            ..SpanInfo::default()
-        }
+        SpanInfo { start, end, ..SpanInfo::default() }
     }
 
     fn table() -> TypeTable {
         let mut t = TypeTable::new();
-        for p in [
-            HirPrimitiveType::I32,
-            HirPrimitiveType::I64,
-            HirPrimitiveType::Unit,
-            HirPrimitiveType::Never,
-        ] {
+        for p in [HirPrimitiveType::I32, HirPrimitiveType::I64, HirPrimitiveType::Unit, HirPrimitiveType::Never] {
             t.intern(TypeInfo::Primitive(p));
         }
         t

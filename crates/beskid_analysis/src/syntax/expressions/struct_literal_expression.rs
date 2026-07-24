@@ -16,17 +16,12 @@ pub struct StructLiteralExpression {
     pub fields: Vec<Spanned<StructLiteralField>>,
 }
 
-pub(crate) fn parse_struct_literal_expression(
-    pair: Pair<Rule>,
-) -> Result<Spanned<Expression>, ParseError> {
+pub(crate) fn parse_struct_literal_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
     let mut inner = pair.into_inner();
     let path = Path::parse(inner.next().ok_or(ParseError::missing(Rule::Path))?)?;
     let fields = if let Some(field_list) = inner.next() {
-        field_list
-            .into_inner()
-            .map(StructLiteralField::parse)
-            .collect::<Result<Vec<_>, _>>()?
+        field_list.into_inner().map(StructLiteralField::parse).collect::<Result<Vec<_>, _>>()?
     } else {
         Vec::new()
     };

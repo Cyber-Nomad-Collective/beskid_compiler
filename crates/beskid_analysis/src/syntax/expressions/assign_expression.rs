@@ -26,31 +26,17 @@ pub struct AssignExpression {
     pub value: Box<Spanned<Expression>>,
 }
 
-pub(crate) fn parse_assignment_expression(
-    pair: Pair<Rule>,
-) -> Result<Spanned<Expression>, ParseError> {
+pub(crate) fn parse_assignment_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
     let mut inner = pair.into_inner();
-    let target = Expression::parse(
-        inner
-            .next()
-            .ok_or(ParseError::missing(Rule::LogicalOrExpression))?,
-    )?;
+    let target = Expression::parse(inner.next().ok_or(ParseError::missing(Rule::LogicalOrExpression))?)?;
 
     if let Some(operator_pair) = inner.next() {
         let operator = parse_assign_op(operator_pair)?;
-        let value_pair = inner
-            .next()
-            .ok_or(ParseError::missing(Rule::AssignmentExpression))?;
+        let value_pair = inner.next().ok_or(ParseError::missing(Rule::AssignmentExpression))?;
         let value = Expression::parse(value_pair)?;
-        let assign = Spanned::new(
-            AssignExpression {
-                target: Box::new(target),
-                op: operator,
-                value: Box::new(value),
-            },
-            span,
-        );
+        let assign =
+            Spanned::new(AssignExpression { target: Box::new(target), op: operator, value: Box::new(value) }, span);
         Ok(Spanned::new(Expression::Assign(assign), span))
     } else {
         Ok(Spanned::new(target.node, span))
@@ -65,17 +51,11 @@ fn parse_assign_op(pair: Pair<Rule>) -> Result<Spanned<AssignOp>, ParseError> {
             "+=" => AssignOp::AddAssign,
             "-=" => AssignOp::SubAssign,
             _ => {
-                return Err(ParseError::unexpected_rule(
-                    pair,
-                    Some(Rule::AssignmentOperator),
-                ));
+                return Err(ParseError::unexpected_rule(pair, Some(Rule::AssignmentOperator)));
             }
         },
         _ => {
-            return Err(ParseError::unexpected_rule(
-                pair,
-                Some(Rule::AssignmentOperator),
-            ));
+            return Err(ParseError::unexpected_rule(pair, Some(Rule::AssignmentOperator)));
         }
     };
     Ok(Spanned::new(node, span))

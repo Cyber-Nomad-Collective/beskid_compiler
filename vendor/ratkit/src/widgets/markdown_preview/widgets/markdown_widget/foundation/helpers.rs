@@ -43,14 +43,10 @@ pub fn element_to_plain_text(kind: &ElementKind) -> String {
         ElementKind::CodeBlockHeader { language, .. } => format!("```{}", language),
         ElementKind::CodeBlockContent { content, .. } => content.clone(),
         ElementKind::TableRow { cells, .. } => cells.join(" | "),
-        ElementKind::Frontmatter { fields, .. } => fields
-            .iter()
-            .map(|(k, v)| format!("{}: {}", k, v))
-            .collect::<Vec<_>>()
-            .join(", "),
-        ElementKind::FrontmatterStart { context_id, .. } => {
-            context_id.clone().unwrap_or_else(|| "---".to_string())
+        ElementKind::Frontmatter { fields, .. } => {
+            fields.iter().map(|(k, v)| format!("{}: {}", k, v)).collect::<Vec<_>>().join(", ")
         }
+        ElementKind::FrontmatterStart { context_id, .. } => context_id.clone().unwrap_or_else(|| "---".to_string()),
         ElementKind::FrontmatterField { key, value } => format!("{}: {}", key, value),
         ElementKind::FrontmatterEnd => "---".to_string(),
         _ => String::new(),
@@ -58,9 +54,7 @@ pub fn element_to_plain_text(kind: &ElementKind) -> String {
 }
 
 /// Get line information at a given screen position.
-use crate::widgets::markdown_preview::widgets::markdown_widget::state::{
-    CollapseState, ScrollState,
-};
+use crate::widgets::markdown_preview::widgets::markdown_widget::state::{CollapseState, ScrollState};
 
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::events::MarkdownDoubleClickEvent;
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::parser::render_markdown_to_elements;
@@ -71,14 +65,7 @@ fn element_kind_to_string(kind: &ElementKind) -> String {
         ElementKind::Heading { level, .. } => format!("Heading (H{})", level),
         ElementKind::HeadingBorder { .. } => "Heading Border".to_string(),
         ElementKind::CodeBlockHeader { language, .. } => {
-            format!(
-                "Code Block Header ({})",
-                if language.is_empty() {
-                    "text"
-                } else {
-                    language
-                }
-            )
+            format!("Code Block Header ({})", if language.is_empty() { "text" } else { language })
         }
         ElementKind::CodeBlockContent { .. } => "Code Block Content".to_string(),
         ElementKind::CodeBlockBorder { .. } => "Code Block Border".to_string(),
@@ -135,10 +122,7 @@ fn should_render_line(element: &MarkdownElement, _idx: usize, collapse: &Collaps
     }
 
     // FrontmatterField and FrontmatterEnd are hidden when frontmatter is collapsed
-    if matches!(
-        element.kind,
-        ElementKind::FrontmatterField { .. } | ElementKind::FrontmatterEnd
-    ) {
+    if matches!(element.kind, ElementKind::FrontmatterField { .. } | ElementKind::FrontmatterEnd) {
         // Frontmatter uses section_id 0 for collapse state
         if collapse.is_section_collapsed(0) {
             return false;
@@ -195,11 +179,7 @@ pub fn get_line_at_position(
             let line_kind = element_kind_to_string(&element.kind);
             let text_content = element_to_plain_text(&element.kind);
 
-            return Some(MarkdownDoubleClickEvent {
-                line_number: logical_line_num,
-                line_kind,
-                content: text_content,
-            });
+            return Some(MarkdownDoubleClickEvent { line_number: logical_line_num, line_kind, content: text_content });
         }
 
         visual_line_idx += line_count;

@@ -13,13 +13,11 @@
 use std::sync::Mutex;
 
 use beskid_analysis::mod_host::{
-    AnalyzerDiagnostic, AnalyzerSeverity, InvocationKind, ModHostInput, ScriptedContractInvoker,
-    StubContractInvoker, run_analyze_rewrite_with_invoker, run_through_generate,
+    AnalyzerDiagnostic, AnalyzerSeverity, InvocationKind, ModHostInput, ScriptedContractInvoker, StubContractInvoker,
+    run_analyze_rewrite_with_invoker, run_through_generate,
 };
 use beskid_analysis::services::parse_program_with_source_name;
-use beskid_pipeline::phases::{
-    MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE,
-};
+use beskid_pipeline::phases::{MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE};
 use beskid_pipeline::{PipelineEvent, PipelineObserver};
 
 use super::fixture::ModFixtureWorkspace;
@@ -69,22 +67,15 @@ fn sample_mod_dispatches_all_four_contract_kinds_through_invoker() {
 
     assert_eq!(generated.session.loaded_descriptor_count(), 1);
     assert_eq!(generated.collector_outcomes.len(), 1);
-    assert_eq!(
-        generated.collector_outcomes[0].type_id,
-        "SampleMod.SampleCollect"
-    );
+    assert_eq!(generated.collector_outcomes[0].type_id, "SampleMod.SampleCollect");
     assert_eq!(generated.generator_outcomes.len(), 2);
-    let generator_type_ids: Vec<&str> = generated
-        .generator_outcomes
-        .iter()
-        .map(|outcome| outcome.type_id.as_str())
-        .collect();
+    let generator_type_ids: Vec<&str> =
+        generated.generator_outcomes.iter().map(|outcome| outcome.type_id.as_str()).collect();
     assert!(generator_type_ids.contains(&"SampleMod.SampleGenerate"));
     assert!(generator_type_ids.contains(&"SampleMod.SampleAttribute"));
 
-    let snapshot =
-        beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
-            .with_composition(&generated.session.composition_snapshot_or_default());
+    let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+        .with_composition(&generated.session.composition_snapshot_or_default());
     let analyze = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,
@@ -96,22 +87,12 @@ fn sample_mod_dispatches_all_four_contract_kinds_through_invoker() {
     .expect("mod host analyze rewrite");
 
     assert_eq!(analyze.analyzer_outcomes.len(), 1);
-    assert_eq!(
-        analyze.analyzer_outcomes[0].type_id,
-        "SampleMod.SampleAnalyze"
-    );
+    assert_eq!(analyze.analyzer_outcomes[0].type_id, "SampleMod.SampleAnalyze");
     assert_eq!(analyze.rewriter_outcomes.len(), 1);
-    assert_eq!(
-        analyze.rewriter_outcomes[0].type_id,
-        "SampleMod.SampleRewrite"
-    );
+    assert_eq!(analyze.rewriter_outcomes[0].type_id, "SampleMod.SampleRewrite");
 
     let invocations = invoker.invocations();
-    assert_eq!(
-        invocations.len(),
-        5,
-        "collector + generator + attribute generator + analyzer + rewriter"
-    );
+    assert_eq!(invocations.len(), 5, "collector + generator + attribute generator + analyzer + rewriter");
     let kinds: Vec<&str> = invocations
         .iter()
         .map(|inv| match inv {
@@ -123,28 +104,14 @@ fn sample_mod_dispatches_all_four_contract_kinds_through_invoker() {
         .collect();
     assert_eq!(
         kinds,
-        vec![
-            "collector",
-            "generator",
-            "generator",
-            "analyzer",
-            "rewriter"
-        ],
+        vec!["collector", "generator", "generator", "analyzer", "rewriter"],
         "host must dispatch contracts in canonical order"
     );
 
     let events = pipeline.phase_starts();
     assert_subsequence(
         &events,
-        &[
-            MACRO_EXPAND,
-            MOD_LOAD,
-            MOD_COLLECT,
-            MOD_GENERATE,
-            MACRO_EXPAND,
-            MOD_ANALYZE,
-            MOD_REWRITE,
-        ],
+        &[MACRO_EXPAND, MOD_LOAD, MOD_COLLECT, MOD_GENERATE, MACRO_EXPAND, MOD_ANALYZE, MOD_REWRITE],
     );
 }
 
@@ -194,9 +161,8 @@ fn scripted_invoker_surfaces_analyzer_diagnostics_to_outcomes() {
         beskid_analysis::syntax::Node::Function(f) if f.node.name.node.name == "sample_synthetic_marker"
     ));
 
-    let snapshot =
-        beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
-            .with_composition(&generated.session.composition_snapshot_or_default());
+    let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+        .with_composition(&generated.session.composition_snapshot_or_default());
     let analyze = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,
@@ -224,9 +190,5 @@ fn assert_subsequence(events: &[&'static str], expected: &[&'static str]) {
             cursor += 1;
         }
     }
-    assert_eq!(
-        cursor,
-        expected.len(),
-        "expected phase subsequence {expected:?} in observed events {events:?}"
-    );
+    assert_eq!(cursor, expected.len(), "expected phase subsequence {expected:?} in observed events {events:?}");
 }

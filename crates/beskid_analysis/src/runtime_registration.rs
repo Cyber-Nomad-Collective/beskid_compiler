@@ -4,26 +4,19 @@ include!("generated/runtime_handlers.inc.rs");
 
 /// Look up a language handler spec by its Beskid handler path segments.
 pub fn runtime_handler_for_path(path: &[String]) -> Option<&'static RuntimeHandlerSpec> {
-    RUNTIME_HANDLER_SPECS
-        .iter()
-        .find(|spec| path_matches(spec.handler_path, path))
+    RUNTIME_HANDLER_SPECS.iter().find(|spec| path_matches(spec.handler_path, path))
 }
 
 /// Validate that a `[Runtime(DispatchTag: …)]` tag matches the manifest row for `dispatch_key`.
 pub fn validate_runtime_handler_tag(dispatch_key: &str, tag: u32) -> bool {
-    RUNTIME_HANDLER_SPECS
-        .iter()
-        .any(|spec| spec.dispatch_key == dispatch_key && spec.tag == tag)
+    RUNTIME_HANDLER_SPECS.iter().any(|spec| spec.dispatch_key == dispatch_key && spec.tag == tag)
 }
 
 fn path_matches(expected: &[&str], actual: &[String]) -> bool {
     if expected.len() != actual.len() {
         return false;
     }
-    expected
-        .iter()
-        .zip(actual.iter())
-        .all(|(left, right)| *left == right)
+    expected.iter().zip(actual.iter()).all(|(left, right)| *left == right)
 }
 
 /// Manifest return group label for `[Runtime(Returns: …)]` legality checks.
@@ -46,20 +39,10 @@ mod tests {
         assert!(validate_runtime_handler_tag("bytes_compare", 0));
         assert!(validate_runtime_handler_tag("bytes_get", 1));
         assert!(validate_runtime_handler_tag("str_eq", 42));
-        let path = vec![
-            "Runtime".to_string(),
-            "Handlers".to_string(),
-            "Bytes".to_string(),
-            "Compare".to_string(),
-        ];
+        let path = vec!["Runtime".to_string(), "Handlers".to_string(), "Bytes".to_string(), "Compare".to_string()];
         let spec = runtime_handler_for_path(&path).expect("bytes handler path");
         assert_eq!(spec.dispatch_key, "bytes_compare");
-        let get_path = vec![
-            "Runtime".to_string(),
-            "Handlers".to_string(),
-            "Bytes".to_string(),
-            "Get".to_string(),
-        ];
+        let get_path = vec!["Runtime".to_string(), "Handlers".to_string(), "Bytes".to_string(), "Get".to_string()];
         let get_spec = runtime_handler_for_path(&get_path).expect("bytes_get handler path");
         assert_eq!(get_spec.dispatch_key, "bytes_get");
     }

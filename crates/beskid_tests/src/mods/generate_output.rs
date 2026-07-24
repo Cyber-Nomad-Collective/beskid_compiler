@@ -27,14 +27,10 @@ fn write_code_generate_output_honors_layout_manifest() {
         None,
         &package,
         &layout,
-        &[CodeGenerateOutput {
-            module_path: String::new(),
-            body: "pub i64 Demo() { return 1; }".into(),
-        }],
+        &[CodeGenerateOutput { module_path: String::new(), body: "pub i64 Demo() { return 1; }".into() }],
     )
     .expect("write");
-    let written = fs::read_to_string(package.join(".generated/Core/Text/Regex/Generated.g.bd"))
-        .expect("read");
+    let written = fs::read_to_string(package.join(".generated/Core/Text/Regex/Generated.g.bd")).expect("read");
     assert!(written.starts_with("// layout test\n"));
     assert!(written.contains("pub i64 Demo()"));
     let _ = fs::remove_dir_all(package);
@@ -68,9 +64,6 @@ fn write_typed_generate_output_honors_layout_manifest() {
 }
 
 fn unique_temp_dir(prefix: &str) -> PathBuf {
-    let id = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("time")
-        .as_nanos();
+    let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("time").as_nanos();
     std::env::temp_dir().join(format!("{prefix}_{id}"))
 }

@@ -8,9 +8,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::services::repo_watcher::RepoWatcher;
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct RepoWatcherDemo {
     watcher: RepoWatcher,
@@ -19,17 +17,11 @@ struct RepoWatcherDemo {
 
 impl RepoWatcherDemo {
     fn new() -> io::Result<Self> {
-        let mut watcher =
-            RepoWatcher::new().map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        let mut watcher = RepoWatcher::new().map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
         let path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        watcher
-            .watch(&path)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        watcher.watch(&path).map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
 
-        Ok(Self {
-            watcher,
-            last_summary: "No repo changes yet".to_string(),
-        })
+        Ok(Self { watcher, last_summary: "No repo changes yet".to_string() })
     }
 }
 
@@ -67,11 +59,7 @@ impl CoordinatorApp for RepoWatcherDemo {
             Line::from(self.last_summary.clone()),
             Line::from("Press q to quit"),
         ])
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" RepoWatcher "),
-        );
+        .block(Block::default().borders(Borders::ALL).title(" RepoWatcher "));
         frame.render_widget(body, area);
     }
 }

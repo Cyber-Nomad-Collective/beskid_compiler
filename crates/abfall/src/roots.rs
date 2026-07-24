@@ -24,9 +24,7 @@ impl ExternalRootSet {
         if ptr_addr.is_null() {
             return;
         }
-        self.registered_roots
-            .lock()
-            .retain(|entry| *entry != ptr_addr);
+        self.registered_roots.lock().retain(|entry| *entry != ptr_addr);
     }
 
     pub fn push_handle(&self, ptr: *mut u8) -> u64 {
@@ -79,12 +77,7 @@ impl ExternalRootSet {
 
     pub fn root_count(&self) -> usize {
         let registered = self.registered_roots.lock().len();
-        let handles = self
-            .handles
-            .lock()
-            .iter()
-            .filter(|ptr| !ptr.is_null())
-            .count();
+        let handles = self.handles.lock().iter().filter(|ptr| !ptr.is_null()).count();
         registered + handles
     }
 }

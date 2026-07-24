@@ -16,14 +16,12 @@ mod validate;
 
 pub use api_signatures::{apply_signature_to_item, build_item_signature};
 pub use api_snapshot::{
-    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
-    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, API_JSON_SCHEMA_VERSION_GRAPH_V3, ApiDocItem, ApiDocRoot,
-    ApiDocumentationPointer, ApiGenericParameterDoc, ApiItemSignature, ApiLocation,
-    ApiParameterDoc, ApiSymbolKey, ApiTypeAnnotation, ItemDocArgument, ItemDocStructured,
+    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION, API_JSON_SCHEMA_VERSION_BEFORE_GRAPH,
+    API_JSON_SCHEMA_VERSION_GRAPH_V3, ApiDocItem, ApiDocRoot, ApiDocumentationPointer, ApiGenericParameterDoc,
+    ApiItemSignature, ApiLocation, ApiParameterDoc, ApiSymbolKey, ApiTypeAnnotation, ItemDocArgument,
+    ItemDocStructured,
 };
-pub use api_tier::{
-    TIER_STANDARD, TIER_SUPPORTED, TIER_UNSTABLE, parse_tier_directive, resolve_item_tiers,
-};
+pub use api_tier::{TIER_STANDARD, TIER_SUPPORTED, TIER_UNSTABLE, parse_tier_directive, resolve_item_tiers};
 pub use callable::callable_signatures_for_span;
 pub use edit::{DocCommentEdit, doc_comment_edit_for_offset};
 pub use graph_link::{
@@ -82,12 +80,8 @@ pub fn build_item_docs_markdown(
             continue;
         }
         let md = render_doc_body(&leading.normalized_source, resolution, item, docs_ref_links);
-        let structured =
-            extract_structured_doc(&leading.normalized_source, Some(resolution), docs_ref_links);
-        out[item.id.0] = Some(ResolvedDoc {
-            markdown: md,
-            structured,
-        });
+        let structured = extract_structured_doc(&leading.normalized_source, Some(resolution), docs_ref_links);
+        out[item.id.0] = Some(ResolvedDoc { markdown: md, structured });
     }
     out
 }
@@ -191,19 +185,11 @@ fn render_doc_body(
             _ => {}
         }
     }
-    if out.is_empty() {
-        body.to_string()
-    } else {
-        out
-    }
+    if out.is_empty() { body.to_string() } else { out }
 }
 
 fn inner_text(pair: &Pair<'_, DocSyntaxRule>, rule: DocSyntaxRule) -> String {
-    pair.clone()
-        .into_inner()
-        .find(|p| p.as_rule() == rule)
-        .map(|p| p.as_str().trim().to_string())
-        .unwrap_or_default()
+    pair.clone().into_inner().find(|p| p.as_rule() == rule).map(|p| p.as_str().trim().to_string()).unwrap_or_default()
 }
 
 fn first_ident(pair: &Pair<'_, DocSyntaxRule>) -> String {
@@ -215,11 +201,7 @@ fn first_ident(pair: &Pair<'_, DocSyntaxRule>) -> String {
 }
 
 fn first_rule_text(pair: &Pair<'_, DocSyntaxRule>, rule: DocSyntaxRule) -> String {
-    pair.clone()
-        .into_inner()
-        .find(|p| p.as_rule() == rule)
-        .map(|p| p.as_str().to_string())
-        .unwrap_or_default()
+    pair.clone().into_inner().find(|p| p.as_rule() == rule).map(|p| p.as_str().to_string()).unwrap_or_default()
 }
 
 fn arg_body_after_close(pair: &Pair<'_, DocSyntaxRule>) -> String {
@@ -227,10 +209,7 @@ fn arg_body_after_close(pair: &Pair<'_, DocSyntaxRule>) -> String {
 }
 
 fn closing_paren_suffix_rest(pair: &Pair<'_, DocSyntaxRule>, suffix: DocSyntaxRule) -> String {
-    first_rule_text(pair, suffix)
-        .trim_start_matches(')')
-        .trim()
-        .to_string()
+    first_rule_text(pair, suffix).trim_start_matches(')').trim().to_string()
 }
 
 /// Merge leading `///` docs from all compilation units into `item_docs` (assembly-backed doc runs).
@@ -239,8 +218,7 @@ pub fn build_item_docs_for_resolution(
     programs: &[(&Path, &Program)],
     docs_ref_links: Option<&DocRefLinkContext>,
 ) -> Vec<Option<ResolvedDoc>> {
-    let mut caches: HashMap<std::path::PathBuf, HashMap<(usize, usize), LeadingDocComment>> =
-        HashMap::new();
+    let mut caches: HashMap<std::path::PathBuf, HashMap<(usize, usize), LeadingDocComment>> = HashMap::new();
     for (path, program) in programs {
         let mut by_span = HashMap::new();
         for (span, doc_opt) in flatten_leading_docs(program) {
@@ -253,10 +231,7 @@ pub fn build_item_docs_for_resolution(
 
     let mut out: Vec<Option<ResolvedDoc>> = vec![None; resolution.items.len()];
     for item in &resolution.items {
-        let lookup_path = item
-            .source_path
-            .as_deref()
-            .or_else(|| programs.first().map(|(p, _)| *p));
+        let lookup_path = item.source_path.as_deref().or_else(|| programs.first().map(|(p, _)| *p));
         let Some(path) = lookup_path else {
             continue;
         };
@@ -271,12 +246,8 @@ pub fn build_item_docs_for_resolution(
             continue;
         }
         let md = render_doc_body(&leading.normalized_source, resolution, item, docs_ref_links);
-        let structured =
-            extract_structured_doc(&leading.normalized_source, Some(resolution), docs_ref_links);
-        out[item.id.0] = Some(ResolvedDoc {
-            markdown: md,
-            structured,
-        });
+        let structured = extract_structured_doc(&leading.normalized_source, Some(resolution), docs_ref_links);
+        out[item.id.0] = Some(ResolvedDoc { markdown: md, structured });
     }
     out
 }
@@ -316,10 +287,7 @@ fn extract_structured_doc(
                 let name = first_ident(&piece);
                 let rest = arg_body_after_close(&piece);
                 if !name.is_empty() {
-                    arguments.push(ItemDocArgument {
-                        name,
-                        markdown: rest.trim().to_string(),
-                    });
+                    arguments.push(ItemDocArgument { name, markdown: rest.trim().to_string() });
                 }
             }
             DocSyntaxRule::ReturnsTag => {
@@ -330,20 +298,14 @@ fn extract_structured_doc(
                 let name = first_ident(&piece);
                 let rest = closing_paren_suffix_rest(&piece, DocSyntaxRule::VariantSuffix);
                 if !name.is_empty() {
-                    enum_variants.push(ItemDocArgument {
-                        name,
-                        markdown: rest.trim().to_string(),
-                    });
+                    enum_variants.push(ItemDocArgument { name, markdown: rest.trim().to_string() });
                 }
             }
             DocSyntaxRule::ParTag => {
                 let name = first_ident(&piece);
                 let rest = closing_paren_suffix_rest(&piece, DocSyntaxRule::ParSuffix);
                 if !name.is_empty() {
-                    type_parameters.push(ItemDocArgument {
-                        name,
-                        markdown: rest.trim().to_string(),
-                    });
+                    type_parameters.push(ItemDocArgument { name, markdown: rest.trim().to_string() });
                 }
             }
             DocSyntaxRule::UnknownDirective => {
@@ -353,11 +315,7 @@ fn extract_structured_doc(
         }
     }
     let summary_trim = summary.trim();
-    let summary_markdown = if summary_trim.is_empty() {
-        None
-    } else {
-        Some(summary_trim.to_string())
-    };
+    let summary_markdown = if summary_trim.is_empty() { None } else { Some(summary_trim.to_string()) };
     if summary_markdown.is_none()
         && returns_markdown.is_none()
         && arguments.is_empty()
@@ -366,13 +324,7 @@ fn extract_structured_doc(
     {
         None
     } else {
-        Some(ItemDocStructured {
-            summary_markdown,
-            returns_markdown,
-            arguments,
-            enum_variants,
-            type_parameters,
-        })
+        Some(ItemDocStructured { summary_markdown, returns_markdown, arguments, enum_variants, type_parameters })
     }
 }
 
@@ -398,12 +350,8 @@ fn walk_item_doc(
         Node::TypeDefinition(def) => walk_type_docs(def, out),
         Node::EnumDefinition(def) => walk_enum_docs(def, out),
         Node::ContractDefinition(def) => walk_contract_docs(def, out),
-        Node::Function(def) => {
-            walk_parameter_docs(&def.node.parameters, &def.node.parameter_docs, out)
-        }
-        Node::Method(def) => {
-            walk_parameter_docs(&def.node.parameters, &def.node.parameter_docs, out)
-        }
+        Node::Function(def) => walk_parameter_docs(&def.node.parameters, &def.node.parameter_docs, out),
+        Node::Method(def) => walk_parameter_docs(&def.node.parameters, &def.node.parameter_docs, out),
         Node::ExtendTypeDefinition(def) => {
             for (index, method) in def.node.methods.iter().enumerate() {
                 let docs = def.node.method_docs.get(index).cloned().flatten();
@@ -452,12 +400,7 @@ fn walk_enum_docs(
     out: &mut Vec<(SpanInfo, Option<LeadingDocComment>)>,
 ) {
     for (variant_idx, variant) in enum_definition.node.variants.iter().enumerate() {
-        let variant_doc = enum_definition
-            .node
-            .variant_docs
-            .get(variant_idx)
-            .cloned()
-            .flatten();
+        let variant_doc = enum_definition.node.variant_docs.get(variant_idx).cloned().flatten();
         out.push((variant.span, variant_doc));
         for (field_idx, field) in variant.node.fields.iter().enumerate() {
             let field_doc = variant.node.field_docs.get(field_idx).cloned().flatten();
@@ -471,19 +414,10 @@ fn walk_contract_docs(
     out: &mut Vec<(SpanInfo, Option<LeadingDocComment>)>,
 ) {
     for (idx, item) in contract_definition.node.items.iter().enumerate() {
-        let node_doc = contract_definition
-            .node
-            .item_docs
-            .get(idx)
-            .cloned()
-            .flatten();
+        let node_doc = contract_definition.node.item_docs.get(idx).cloned().flatten();
         out.push((item.span, node_doc));
         if let crate::syntax::ContractNode::MethodSignature(signature) = &item.node {
-            walk_parameter_docs(
-                &signature.node.parameters,
-                &signature.node.parameter_docs,
-                out,
-            );
+            walk_parameter_docs(&signature.node.parameters, &signature.node.parameter_docs, out);
         }
     }
 }
@@ -493,20 +427,13 @@ fn walk_statement_docs(
     out: &mut Vec<(SpanInfo, Option<LeadingDocComment>)>,
 ) {
     for (idx, statement) in test_definition.node.statements.iter().enumerate() {
-        let doc = test_definition
-            .node
-            .statement_docs
-            .get(idx)
-            .cloned()
-            .flatten();
+        let doc = test_definition.node.statement_docs.get(idx).cloned().flatten();
         out.push((statement.span, doc));
     }
 }
 
 /// Extract span + normalized text from a Pest `DocRun` pair.
-pub fn leading_doc_from_doc_run(
-    pair: &pest::iterators::Pair<crate::parser::Rule>,
-) -> LeadingDocComment {
+pub fn leading_doc_from_doc_run(pair: &pest::iterators::Pair<crate::parser::Rule>) -> LeadingDocComment {
     debug_assert_eq!(pair.as_rule(), crate::parser::Rule::DocRun);
     let span = SpanInfo::from_span(&pair.as_span());
     let mut lines = Vec::new();
@@ -531,10 +458,7 @@ pub fn leading_doc_from_doc_run(
             lines.push(rest.to_string());
         }
     }
-    LeadingDocComment {
-        span,
-        normalized_source: lines.join("\n"),
-    }
+    LeadingDocComment { span, normalized_source: lines.join("\n") }
 }
 
 pub(crate) fn parse_doc_body_pairs<'a>(
@@ -556,8 +480,7 @@ mod structured_doc_tests {
 
     #[test]
     fn parses_arg_returns_and_variant_tags() {
-        let body =
-            "Summary line.\n@arg(x) param docs\n@returns return text\n@variant(Blue) blue tone";
+        let body = "Summary line.\n@arg(x) param docs\n@returns return text\n@variant(Blue) blue tone";
         let doc = extract_structured_doc(body, None, None).expect("structured doc");
         assert_eq!(doc.summary_markdown.as_deref(), Some("Summary line."));
         assert_eq!(doc.returns_markdown.as_deref(), Some("return text"));
@@ -572,9 +495,7 @@ mod structured_doc_tests {
         let body = "See @ref(Widget::value) for details.";
         let doc = extract_structured_doc(body, None, None).expect("structured doc");
         assert!(
-            doc.summary_markdown
-                .as_deref()
-                .is_some_and(|s| s.contains("@ref(Widget::value)")),
+            doc.summary_markdown.as_deref().is_some_and(|s| s.contains("@ref(Widget::value)")),
             "{:?}",
             doc.summary_markdown
         );

@@ -22,12 +22,8 @@ pub fn discover_workspace_resolution_rules(
         return Ok(None);
     };
 
-    let workspace_source = std::fs::read_to_string(&workspace_manifest_path).map_err(|source| {
-        ProjectError::ReadManifest {
-            path: workspace_manifest_path.clone(),
-            source,
-        }
-    })?;
+    let workspace_source = std::fs::read_to_string(&workspace_manifest_path)
+        .map_err(|source| ProjectError::ReadManifest { path: workspace_manifest_path.clone(), source })?;
 
     let workspace_manifest = parse_workspace_manifest(&workspace_source)?;
     validate_workspace_manifest(&workspace_manifest)?;

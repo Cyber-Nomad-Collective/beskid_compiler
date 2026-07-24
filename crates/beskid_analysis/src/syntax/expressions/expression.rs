@@ -84,10 +84,7 @@ pub(crate) fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, 
 
     match pair.as_rule() {
         Rule::Expression => {
-            let inner = pair
-                .into_inner()
-                .next()
-                .ok_or(ParseError::missing(Rule::AssignmentExpression))?;
+            let inner = pair.into_inner().next().ok_or(ParseError::missing(Rule::AssignmentExpression))?;
             let inner_expr = parse_expression(inner)?;
             Ok(Spanned::new(inner_expr.node, span))
         }
@@ -101,17 +98,11 @@ pub(crate) fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, 
         | Rule::AdditionExpression
         | Rule::MultiplicationExpression => parse_binary_expression(pair),
         Rule::UnaryExpression => {
-            let inner = pair
-                .into_inner()
-                .next()
-                .ok_or(ParseError::missing(Rule::UnaryExpression))?;
+            let inner = pair.into_inner().next().ok_or(ParseError::missing(Rule::UnaryExpression))?;
             match inner.as_rule() {
                 Rule::SpawnUnary => parse_spawn_unary(inner),
                 Rule::PrefixUnary => parse_prefix_unary_expression(inner),
-                _ => Err(ParseError::unexpected_rule(
-                    inner,
-                    Some(Rule::UnaryExpression),
-                )),
+                _ => Err(ParseError::unexpected_rule(inner, Some(Rule::UnaryExpression))),
             }
         }
         Rule::SpawnUnary => parse_spawn_unary(pair),
@@ -142,26 +133,17 @@ pub(crate) fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, 
 }
 
 /// Parses a postfix chain: calls, member access, and `?` try wrapping.
-pub(crate) fn parse_postfix_expression(
-    pair: Pair<Rule>,
-) -> Result<Spanned<Expression>, ParseError> {
+pub(crate) fn parse_postfix_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
     let input = pair.as_span().get_input();
     let mut inner = pair.into_inner();
-    let primary = parse_primary_expression(
-        inner
-            .next()
-            .ok_or(ParseError::missing(Rule::PrimaryExpression))?,
-    )?;
+    let primary = parse_primary_expression(inner.next().ok_or(ParseError::missing(Rule::PrimaryExpression))?)?;
     let mut expr = primary;
 
     for op_pair in inner {
         let end = op_pair.as_span().end();
         let operator = match op_pair.as_rule() {
-            Rule::PostfixOperator => op_pair
-                .into_inner()
-                .next()
-                .ok_or(ParseError::missing(Rule::PostfixOperator))?,
+            Rule::PostfixOperator => op_pair.into_inner().next().ok_or(ParseError::missing(Rule::PostfixOperator))?,
             _ => op_pair,
         };
 
@@ -171,19 +153,14 @@ pub(crate) fn parse_postfix_expression(
             Rule::SubscriptOperator => parse_index_expression(expr, operator)?,
             Rule::TryOperator => {
                 let expr_span = expr.span;
-                let try_node = TryExpression {
-                    expr: Box::new(expr),
-                };
-                Spanned::new(
-                    Expression::Try(Spanned::new(try_node, expr_span)),
-                    expr_span,
-                )
+                let try_node = TryExpression { expr: Box::new(expr) };
+                Spanned::new(Expression::Try(Spanned::new(try_node, expr_span)), expr_span)
             }
             _ => return Err(ParseError::unexpected_rule(operator, None)),
         };
 
-        let node_span = span_from_bounds(input, expr.span.start, end)
-            .ok_or(ParseError::missing(Rule::PostfixExpression))?;
+        let node_span =
+            span_from_bounds(input, expr.span.start, end).ok_or(ParseError::missing(Rule::PostfixExpression))?;
         expr = Spanned::new(expr.node, node_span);
     }
 
@@ -191,12 +168,7 @@ pub(crate) fn parse_postfix_expression(
 }
 
 /// Parses the innermost `PrimaryExpression` / delegate to nested expression rules.
-pub(crate) fn parse_primary_expression(
-    pair: Pair<Rule>,
-) -> Result<Spanned<Expression>, ParseError> {
-    let inner = pair
-        .into_inner()
-        .next()
-        .ok_or(ParseError::missing(Rule::Expression))?;
+pub(crate) fn parse_primary_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
+    let inner = pair.into_inner().next().ok_or(ParseError::missing(Rule::Expression))?;
     parse_expression(inner)
 }

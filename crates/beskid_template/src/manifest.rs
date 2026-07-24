@@ -187,10 +187,7 @@ fn default_true() -> bool {
 }
 
 pub fn resolve_package_id(short_name: &str) -> Option<&'static str> {
-    SHORT_NAME_PACKAGES
-        .iter()
-        .find(|(sn, _)| *sn == short_name)
-        .map(|(_, id)| *id)
+    SHORT_NAME_PACKAGES.iter().find(|(sn, _)| *sn == short_name).map(|(_, id)| *id)
 }
 
 pub fn load_manifest_from_path(path: &Path) -> TemplateResult<TemplateManifest> {
@@ -216,18 +213,11 @@ fn validate_and_convert(raw: RawManifest) -> TemplateResult<TemplateManifest> {
     }
 
     if raw.identity.trim().is_empty() || raw.short_name.trim().is_empty() {
-        return Err(TemplateError::InvalidManifest(
-            "`identity` and `shortName` are required".to_string(),
-        ));
+        return Err(TemplateError::InvalidManifest("`identity` and `shortName` are required".to_string()));
     }
 
     let tags = TemplateTags {
-        template_type: raw
-            .tags
-            .and_then(|t| t.template_type)
-            .as_deref()
-            .map(parse_template_type)
-            .transpose()?,
+        template_type: raw.tags.and_then(|t| t.template_type).as_deref().map(parse_template_type).transpose()?,
     };
 
     let symbols = raw
@@ -247,14 +237,8 @@ fn validate_and_convert(raw: RawManifest) -> TemplateResult<TemplateManifest> {
         })
         .collect::<TemplateResult<BTreeMap<_, _>>>()?;
 
-    let post_actions = raw
-        .post_actions
-        .into_iter()
-        .map(|a| TemplatePostAction {
-            action_id: a.action_id,
-            args: a.args,
-        })
-        .collect();
+    let post_actions =
+        raw.post_actions.into_iter().map(|a| TemplatePostAction { action_id: a.action_id, args: a.args }).collect();
 
     Ok(TemplateManifest {
         schema: raw.schema,
@@ -281,9 +265,7 @@ fn parse_template_type(value: &str) -> TemplateResult<TemplateOutputKind> {
         "project" => Ok(TemplateOutputKind::Project),
         "workspace" => Ok(TemplateOutputKind::Workspace),
         "item" => Ok(TemplateOutputKind::Item),
-        other => Err(TemplateError::InvalidManifest(format!(
-            "unsupported tags.type `{other}`"
-        ))),
+        other => Err(TemplateError::InvalidManifest(format!("unsupported tags.type `{other}`"))),
     }
 }
 
@@ -294,18 +276,12 @@ fn parse_symbol(id: &str, raw: RawSymbol) -> TemplateResult<TemplateSymbol> {
         "bool" => SymbolType::Bool,
         "integer" => SymbolType::Integer,
         other => {
-            return Err(TemplateError::InvalidManifest(format!(
-                "symbol `{id}` has unsupported type `{other}`"
-            )));
+            return Err(TemplateError::InvalidManifest(format!("symbol `{id}` has unsupported type `{other}`")));
         }
     };
 
-    if matches!(symbol_type, SymbolType::Choice)
-        && raw.choices.as_ref().is_none_or(|c| c.is_empty())
-    {
-        return Err(TemplateError::InvalidManifest(format!(
-            "symbol `{id}` of type choice requires `choices`"
-        )));
+    if matches!(symbol_type, SymbolType::Choice) && raw.choices.as_ref().is_none_or(|c| c.is_empty()) {
+        return Err(TemplateError::InvalidManifest(format!("symbol `{id}` of type choice requires `choices`")));
     }
 
     let default_value = raw.default_value.map(value_to_string);
@@ -336,11 +312,7 @@ fn convert_source(raw: RawSource) -> TemplateSource {
     TemplateSource {
         source: raw.source,
         target: raw.target,
-        include: if raw.include.is_empty() {
-            default_include()
-        } else {
-            raw.include
-        },
+        include: if raw.include.is_empty() { default_include() } else { raw.include },
         exclude,
         copy_only: raw.copy_only,
         rename: raw.rename,
@@ -360,9 +332,7 @@ pub fn default_exclude_patterns() -> Vec<String> {
 
 impl TemplateManifest {
     pub fn output_kind(&self) -> TemplateOutputKind {
-        self.tags
-            .template_type
-            .unwrap_or(TemplateOutputKind::Project)
+        self.tags.template_type.unwrap_or(TemplateOutputKind::Project)
     }
 
     pub fn primary_name_symbol_id(&self) -> &str {

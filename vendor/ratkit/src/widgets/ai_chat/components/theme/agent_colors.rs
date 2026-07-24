@@ -102,11 +102,7 @@ pub struct AgentColorScheme {
 impl AgentColorScheme {
     /// Creates a new agent color scheme.
     pub const fn new(border: Color, icon: Color, background_tint: Color) -> Self {
-        Self {
-            border,
-            icon,
-            background_tint,
-        }
+        Self { border, icon, background_tint }
     }
 
     /// Creates a [`Style`] with the border color as foreground.
@@ -335,16 +331,8 @@ mod tests {
     #[test]
     fn test_builder_pattern() {
         let colors = AgentColors::default()
-            .with_code(AgentColorScheme::new(
-                Color::Red,
-                Color::LightRed,
-                Color::Rgb(60, 30, 30),
-            ))
-            .with_browse(AgentColorScheme::new(
-                Color::Cyan,
-                Color::Cyan,
-                Color::Rgb(30, 60, 60),
-            ));
+            .with_code(AgentColorScheme::new(Color::Red, Color::LightRed, Color::Rgb(60, 30, 30)))
+            .with_browse(AgentColorScheme::new(Color::Cyan, Color::Cyan, Color::Rgb(30, 60, 60)));
         assert_eq!(colors.code.border, Color::Red);
         assert_eq!(colors.browse.border, Color::Cyan);
     }

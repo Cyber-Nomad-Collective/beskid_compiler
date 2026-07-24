@@ -12,13 +12,11 @@ pub const LEGACY_PROJECT_FILE_NAME: &str = "Project.proj";
 pub const LEGACY_WORKSPACE_FILE_NAME: &str = "Workspace.proj";
 
 pub fn is_project_manifest_path(path: &Path) -> bool {
-    path.extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("bproj"))
+    path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bproj"))
 }
 
 pub fn is_workspace_manifest_path(path: &Path) -> bool {
-    path.extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("bws"))
+    path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bws"))
 }
 
 pub fn reject_legacy_manifest_path(path: &Path) -> Result<(), ProjectError> {
@@ -52,15 +50,9 @@ pub fn discover_project_manifest_in_dir(dir: &Path) -> Result<Option<PathBuf>, P
     }
 
     let mut matches = Vec::new();
-    let entries = fs::read_dir(dir).map_err(|source| ProjectError::ReadManifest {
-        path: dir.to_path_buf(),
-        source,
-    })?;
+    let entries = fs::read_dir(dir).map_err(|source| ProjectError::ReadManifest { path: dir.to_path_buf(), source })?;
     for entry in entries {
-        let entry = entry.map_err(|source| ProjectError::ReadManifest {
-            path: dir.to_path_buf(),
-            source,
-        })?;
+        let entry = entry.map_err(|source| ProjectError::ReadManifest { path: dir.to_path_buf(), source })?;
         let path = entry.path();
         if path.is_file() && is_project_manifest_path(&path) {
             matches.push(path);
@@ -73,11 +65,7 @@ pub fn discover_project_manifest_in_dir(dir: &Path) -> Result<Option<PathBuf>, P
         many => Err(ProjectError::Validation(format!(
             "directory `{}` contains multiple `.bproj` manifests ({})",
             dir.display(),
-            many.iter()
-                .filter_map(|p| p.file_name())
-                .map(|n| n.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(", ")
+            many.iter().filter_map(|p| p.file_name()).map(|n| n.to_string_lossy()).collect::<Vec<_>>().join(", ")
         ))),
     }
 }
@@ -90,15 +78,9 @@ pub fn discover_workspace_manifest_in_dir(dir: &Path) -> Result<Option<PathBuf>,
     }
 
     let mut matches = Vec::new();
-    let entries = fs::read_dir(dir).map_err(|source| ProjectError::ReadManifest {
-        path: dir.to_path_buf(),
-        source,
-    })?;
+    let entries = fs::read_dir(dir).map_err(|source| ProjectError::ReadManifest { path: dir.to_path_buf(), source })?;
     for entry in entries {
-        let entry = entry.map_err(|source| ProjectError::ReadManifest {
-            path: dir.to_path_buf(),
-            source,
-        })?;
+        let entry = entry.map_err(|source| ProjectError::ReadManifest { path: dir.to_path_buf(), source })?;
         let path = entry.path();
         if path.is_file() && is_workspace_manifest_path(&path) {
             matches.push(path);
@@ -111,21 +93,13 @@ pub fn discover_workspace_manifest_in_dir(dir: &Path) -> Result<Option<PathBuf>,
         many => Err(ProjectError::Validation(format!(
             "directory `{}` contains multiple `.bws` workspace manifests ({})",
             dir.display(),
-            many.iter()
-                .filter_map(|p| p.file_name())
-                .map(|n| n.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(", ")
+            many.iter().filter_map(|p| p.file_name()).map(|n| n.to_string_lossy()).collect::<Vec<_>>().join(", ")
         ))),
     }
 }
 
 pub fn discover_project_file(start: &Path) -> Option<PathBuf> {
-    let start_dir = if start.is_dir() {
-        start.to_path_buf()
-    } else {
-        start.parent()?.to_path_buf()
-    };
+    let start_dir = if start.is_dir() { start.to_path_buf() } else { start.parent()?.to_path_buf() };
 
     let mut current = start_dir;
     loop {
@@ -154,17 +128,8 @@ pub fn discover_workspace_file(start: &Path) -> Option<PathBuf> {
 /// Default max depth when searching child directories for a unique manifest.
 pub const DEFAULT_DESCENDANT_SEARCH_DEPTH: usize = 6;
 
-const SKIP_DESCENDANT_DIRS: &[&str] = &[
-    ".git",
-    ".beskid",
-    ".cargo",
-    ".generated",
-    "build",
-    "dist",
-    "node_modules",
-    "target",
-    "vendor",
-];
+const SKIP_DESCENDANT_DIRS: &[&str] =
+    &[".git", ".beskid", ".cargo", ".generated", "build", "dist", "node_modules", "target", "vendor"];
 
 /// Search downward from `start` when ancestor lookup finds nothing (e.g. repo root above `corelib/`).
 pub fn discover_workspace_file_descendant(start: &Path, max_depth: usize) -> Option<PathBuf> {
@@ -181,11 +146,7 @@ pub fn discover_project_file_descendant(start: &Path, max_depth: usize) -> Optio
 }
 
 fn start_directory(start: &Path) -> Option<PathBuf> {
-    if start.is_dir() {
-        Some(start.to_path_buf())
-    } else {
-        start.parent().map(Path::to_path_buf)
-    }
+    if start.is_dir() { Some(start.to_path_buf()) } else { start.parent().map(Path::to_path_buf) }
 }
 
 fn collect_manifests_bfs(root: &Path, max_depth: usize) -> (Vec<PathBuf>, Vec<PathBuf>) {
@@ -265,10 +226,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_root(label: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time")
-            .as_nanos();
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
         let path = std::env::temp_dir().join(format!("beskid-discovery-{label}-{nanos}"));
         fs::create_dir_all(&path).expect("mkdir");
         path
@@ -281,12 +239,8 @@ mod tests {
         fs::create_dir_all(&corelib).expect("mkdir");
         fs::write(corelib.join("CoreLib.bws"), "workspace \"CoreLib\" {}").expect("write");
 
-        let found = discover_workspace_file_descendant(&repo, DEFAULT_DESCENDANT_SEARCH_DEPTH)
-            .expect("workspace");
-        assert_eq!(
-            found.file_name().and_then(|n| n.to_str()),
-            Some("CoreLib.bws")
-        );
+        let found = discover_workspace_file_descendant(&repo, DEFAULT_DESCENDANT_SEARCH_DEPTH).expect("workspace");
+        assert_eq!(found.file_name().and_then(|n| n.to_str()), Some("CoreLib.bws"));
         let _ = fs::remove_dir_all(&repo);
     }
 
@@ -299,10 +253,7 @@ mod tests {
         fs::write(child.join("Child.bws"), "workspace \"Child\" {}").expect("write");
 
         let found = discover_workspace_file(&child.join("src")).expect("workspace");
-        assert_eq!(
-            found.file_name().and_then(|n| n.to_str()),
-            Some("Child.bws")
-        );
+        assert_eq!(found.file_name().and_then(|n| n.to_str()), Some("Child.bws"));
         let _ = fs::remove_dir_all(&root);
     }
 

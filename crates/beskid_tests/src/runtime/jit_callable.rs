@@ -43,8 +43,5 @@ fn aot_callable_char_return_maps_to_exit_code() {
 fn aot_callable_string_return_executes_successfully() {
     aot_compile_only("string Main() { return \"hello\"; }");
     let exit_code = run_main_exit_code("string Main() { return \"hello\"; }");
-    assert_ne!(
-        exit_code, 0,
-        "expected non-zero exit code for pointer-like string return"
-    );
+    assert_ne!(exit_code, 0, "expected non-zero exit code for pointer-like string return");
 }

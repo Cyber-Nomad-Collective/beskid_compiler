@@ -5,9 +5,7 @@ use std::sync::atomic::Ordering;
 use crate::fiber::Yielder;
 use crate::status::{FIBER_JOIN_CANCELLED, FIBER_JOIN_OK, FIBER_JOIN_PANICKED};
 
-use super::state::{
-    FiberKey, FiberState, JoinOutcome, JoinSnapshot, Scheduler, key_to_id, wake_fiber_immediate,
-};
+use super::state::{FiberKey, FiberState, JoinOutcome, JoinSnapshot, Scheduler, key_to_id, wake_fiber_immediate};
 
 thread_local! {
     static SCHEDULER: RefCell<Option<Scheduler>> = const { RefCell::new(None) };
@@ -132,8 +130,7 @@ pub(super) fn set_fiber_state(key: FiberKey, state: FiberState) {
 }
 
 pub(super) fn apply_pending_states(s: &mut Scheduler) {
-    let updates: Vec<(FiberKey, FiberState)> =
-        PENDING_STATE.with(|p| p.borrow_mut().drain(..).collect());
+    let updates: Vec<(FiberKey, FiberState)> = PENDING_STATE.with(|p| p.borrow_mut().drain(..).collect());
     for (key, state) in updates {
         if let Some(f) = s.fibers.get_mut(key) {
             f.state = state;

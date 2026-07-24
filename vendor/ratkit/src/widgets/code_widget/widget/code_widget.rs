@@ -9,9 +9,7 @@ use crate::widgets::{
         parser::{detect_language, extract_symbol_outline, highlight_code_lines},
         state::CodeState,
     },
-    document_viewer::{
-        handle_viewer_key, handle_viewer_mouse, DocumentViewerWidget, RenderedDocument,
-    },
+    document_viewer::{handle_viewer_key, handle_viewer_mouse, DocumentViewerWidget, RenderedDocument},
 };
 
 use super::{
@@ -61,19 +59,14 @@ impl CodeWidget {
     /// Applies keyboard input to code-widget state.
     pub fn handle_key(&self, key: KeyEvent, state: &mut CodeState) -> CodeEvent {
         if matches!(key.code, KeyCode::Char('y')) {
-            return state
-                .copy_selection()
-                .map(|text| CodeEvent::Copied { text })
-                .unwrap_or(CodeEvent::None);
+            return state.copy_selection().map(|text| CodeEvent::Copied { text }).unwrap_or(CodeEvent::None);
         }
 
         let before = state.scroll.current_line;
         if handle_viewer_key(key, &mut state.scroll, &mut state.vim) {
             if before != state.scroll.current_line {
                 state.selection.clear();
-                CodeEvent::Navigated {
-                    line: state.scroll.current_line,
-                }
+                CodeEvent::Navigated { line: state.scroll.current_line }
             } else {
                 CodeEvent::None
             }
@@ -95,36 +88,22 @@ impl CodeWidget {
     }
 
     /// Applies mouse input to the outline TOC overlay.
-    fn handle_outline_mouse(
-        &self,
-        event: MouseEvent,
-        area: Rect,
-        state: &mut CodeState,
-    ) -> Option<CodeEvent> {
+    fn handle_outline_mouse(&self, event: MouseEvent, area: Rect, state: &mut CodeState) -> Option<CodeEvent> {
         if !self.display_for_render(state).show_outline || state.outline.is_empty() {
             return None;
         }
         let content_area = viewer_content_area(area);
         match event.kind {
             MouseEventKind::Moved => Some(handle_outline_hover(event, content_area, state)),
-            MouseEventKind::Down(MouseButton::Left) => {
-                handle_outline_click(event, content_area, state)
-            }
+            MouseEventKind::Down(MouseButton::Left) => handle_outline_click(event, content_area, state),
             _ => None,
         }
     }
 
     /// Builds the normalized document for the current state.
     fn build_document(&self, state: &mut CodeState) -> RenderedDocument {
-        let override_language = self
-            .language_override
-            .as_deref()
-            .or(state.language_override());
-        let language = detect_language(
-            state.source.source_path(),
-            state.source.content(),
-            override_language,
-        );
+        let override_language = self.language_override.as_deref().or(state.language_override());
+        let language = detect_language(state.source.source_path(), state.source.content(), override_language);
         let display = self.display_for_render(state);
         let content = state.source.content().to_string();
         state.remember_render_cache(&content, &display, &language);
@@ -139,10 +118,7 @@ impl CodeWidget {
     }
 
     /// Applies render-specific display overrides.
-    fn display_for_render(
-        &self,
-        state: &CodeState,
-    ) -> crate::widgets::document_viewer::DisplaySettings {
+    fn display_for_render(&self, state: &CodeState) -> crate::widgets::document_viewer::DisplaySettings {
         let mut display = state.display.clone();
         if let Some(show) = self.show_line_numbers {
             display.show_line_numbers = show;

@@ -18,11 +18,7 @@ pub struct AnalysisWidget;
 
 impl BeskidWidget for AnalysisWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: "analysis.diagnostics",
-            title: "Build Report",
-            icon: "\u{25c7}",
-        }
+        WidgetMeta { id: "analysis.diagnostics", title: "Build Report", icon: "\u{25c7}" }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {
@@ -53,17 +49,11 @@ impl BeskidWidget for AnalysisWidget {
 }
 
 pub fn draw_build_report(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<'_>) {
-    let [title_area, body] =
-        Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(area);
+    let [title_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(area);
     frame.render_widget(Paragraph::new(title_line("Build Report")), title_area);
 
     if ctx.scope.is_user() {
-        frame.render_widget(
-            Paragraph::new(ShellScope::no_project_lines(
-                &ctx.key_bindings.palette_hint(),
-            )),
-            body,
-        );
+        frame.render_widget(Paragraph::new(ShellScope::no_project_lines(&ctx.key_bindings.palette_hint())), body);
         return;
     }
 
@@ -71,10 +61,7 @@ pub fn draw_build_report(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<
     let state = &ctx.shell_state;
 
     if state.compile_complete {
-        lines.push(Line::from(Span::styled(
-            "\u{2714} Build complete",
-            Style::default().fg(Color::Green),
-        )));
+        lines.push(Line::from(Span::styled("\u{2714} Build complete", Style::default().fg(Color::Green))));
         lines.push(Line::from(""));
 
         // Severity summary
@@ -83,21 +70,13 @@ pub fn draw_build_report(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<
                 Span::styled("Errors: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     counts.errors.to_string(),
-                    Style::default().fg(if counts.errors > 0 {
-                        Color::Red
-                    } else {
-                        Color::Green
-                    }),
+                    Style::default().fg(if counts.errors > 0 { Color::Red } else { Color::Green }),
                 ),
                 Span::raw("   "),
                 Span::styled("Warnings: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     counts.warnings.to_string(),
-                    Style::default().fg(if counts.warnings > 0 {
-                        Color::Yellow
-                    } else {
-                        Color::Green
-                    }),
+                    Style::default().fg(if counts.warnings > 0 { Color::Yellow } else { Color::Green }),
                 ),
                 Span::raw("   "),
                 Span::styled("Notes: ", Style::default().fg(Color::DarkGray)),
@@ -127,10 +106,7 @@ pub fn draw_build_report(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<
         // Test results
         if !state.test_rows.is_empty() {
             lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
-                "Tests:",
-                Style::default().fg(Color::DarkGray),
-            )));
+            lines.push(Line::from(Span::styled("Tests:", Style::default().fg(Color::DarkGray))));
             for row in state.test_rows.iter().take(20) {
                 let (icon, color) = match row.state {
                     crate::pipeline::tui::TestRowState::Passed => ("✔", Color::Green),
@@ -156,18 +132,14 @@ pub fn draw_build_report(area: Rect, frame: &mut Frame, ctx: &mut WidgetContext<
     } else {
         lines.push(Line::from("○ Idle — run a build or test to see results"));
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            "Open the command palette to start.",
-            Style::default().fg(Color::DarkGray),
-        )));
+        lines
+            .push(Line::from(Span::styled("Open the command palette to start.", Style::default().fg(Color::DarkGray))));
     }
 
     frame.render_widget(Paragraph::new(lines), body);
 }
 
-fn severity_counts_from_summary(
-    summary: &crate::pipeline::tui::CommandSummary,
-) -> Option<SeverityCounts> {
+fn severity_counts_from_summary(summary: &crate::pipeline::tui::CommandSummary) -> Option<SeverityCounts> {
     if summary.stats.is_empty() {
         return None;
     }
@@ -194,7 +166,6 @@ fn severity_counts_from_summary(
 }
 
 pub fn open_analysis(ctx: &mut WidgetContext<'_>) {
-    ctx.shell_state
-        .set_overlay_visible(OverlayKind::Analysis, true);
+    ctx.shell_state.set_overlay_visible(OverlayKind::Analysis, true);
     ctx.shell_state.focus_overlay(OverlayKind::Analysis);
 }

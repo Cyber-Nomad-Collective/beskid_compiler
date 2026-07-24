@@ -20,21 +20,15 @@ pub struct TuiSession {
 
 impl TuiSession {
     pub fn try_open(interactive: bool) -> io::Result<Self> {
-        Ok(Self {
-            inner: ShellSession::try_open(interactive)?,
-        })
+        Ok(Self { inner: ShellSession::try_open(interactive)? })
     }
 
     pub fn try_open_plain() -> Self {
-        Self {
-            inner: ShellSession::try_open_plain(),
-        }
+        Self { inner: ShellSession::try_open_plain() }
     }
 
     pub fn try_attach(tx: Sender<RuntimeOp>) -> Self {
-        Self {
-            inner: ShellSession::try_attach(tx),
-        }
+        Self { inner: ShellSession::try_attach(tx) }
     }
 
     pub fn is_active(&self) -> bool {
@@ -58,22 +52,11 @@ impl TuiSession {
         self.inner.tree_phase_end(depth, label, duration)
     }
 
-    pub fn tree_work_unit(
-        &self,
-        depth: usize,
-        done: u64,
-        total: u64,
-        label: impl Into<String>,
-    ) -> io::Result<()> {
+    pub fn tree_work_unit(&self, depth: usize, done: u64, total: u64, label: impl Into<String>) -> io::Result<()> {
         self.inner.tree_work_unit(depth, done, total, label)
     }
 
-    pub fn active_work_unit(
-        &self,
-        done: u64,
-        total: u64,
-        label: impl Into<String>,
-    ) -> io::Result<()> {
+    pub fn active_work_unit(&self, done: u64, total: u64, label: impl Into<String>) -> io::Result<()> {
         self.inner.active_work_unit(done, total, label)
     }
 
@@ -86,14 +69,7 @@ impl TuiSession {
         stage_len: u64,
         stage_label: impl Into<String>,
     ) -> io::Result<()> {
-        self.inner.set_pipeline_progress(
-            total_pos,
-            total_len,
-            total_label,
-            stage_pos,
-            stage_len,
-            stage_label,
-        )
+        self.inner.set_pipeline_progress(total_pos, total_len, total_label, stage_pos, stage_len, stage_label)
     }
 
     pub fn begin_tests(&self, title: impl Into<String>, rows: Vec<TestRow>) -> io::Result<()> {
@@ -104,11 +80,7 @@ impl TuiSession {
         self.inner.update_test_rows(rows)
     }
 
-    pub fn show_test_report(
-        &self,
-        summary: TestReportSummary,
-        title: impl Into<String>,
-    ) -> io::Result<()> {
+    pub fn show_test_report(&self, summary: TestReportSummary, title: impl Into<String>) -> io::Result<()> {
         self.inner.show_test_report(summary, title)
     }
 

@@ -40,11 +40,7 @@ impl Default for FocusManager {
 
 impl FocusManager {
     pub fn new() -> Self {
-        Self {
-            registry: ElementRegistry::new(),
-            focus_stack: VecDeque::new(),
-            captured_by: None,
-        }
+        Self { registry: ElementRegistry::new(), focus_stack: VecDeque::new(), captured_by: None }
     }
 
     pub fn registry(&self) -> &ElementRegistry {
@@ -151,11 +147,8 @@ impl FocusManager {
 
         let current = self.focused();
 
-        let current_index = if let Some(id) = current {
-            focusable.iter().position(|(elem_id, _)| elem_id == &id)
-        } else {
-            None
-        };
+        let current_index =
+            if let Some(id) = current { focusable.iter().position(|(elem_id, _)| elem_id == &id) } else { None };
 
         let next_index = match current_index {
             Some(index) => (index + 1) % focusable.len(),
@@ -175,11 +168,8 @@ impl FocusManager {
 
         let current = self.focused();
 
-        let current_index = if let Some(id) = current {
-            focusable.iter().position(|(elem_id, _)| elem_id == &id)
-        } else {
-            None
-        };
+        let current_index =
+            if let Some(id) = current { focusable.iter().position(|(elem_id, _)| elem_id == &id) } else { None };
 
         let prev_index = match current_index {
             Some(index) => {
@@ -224,10 +214,7 @@ impl FocusManager {
         debug!("Focus released: previous = {:?}", previous);
 
         if !self.focus_stack.is_empty() {
-            debug!(
-                "Focused on next element in stack: {:?}",
-                self.focus_stack.front()
-            );
+            debug!("Focused on next element in stack: {:?}", self.focus_stack.front());
         } else if !self.registry.focusable_elements().is_empty() {
             let focusable = self.registry.focusable_elements();
             let next_id = focusable.first().map(|(id, _)| *id).unwrap();
@@ -238,11 +225,7 @@ impl FocusManager {
         Ok(())
     }
 
-    fn notify_focus_change(
-        &mut self,
-        previous: Option<ElementId>,
-        current: Option<ElementId>,
-    ) -> LayoutResult<()> {
+    fn notify_focus_change(&mut self, previous: Option<ElementId>, current: Option<ElementId>) -> LayoutResult<()> {
         if let Some(id) = previous {
             if let Ok(element) = self.registry.get_strong_ref(id) {
                 element.on_focus_loss();
@@ -320,11 +303,7 @@ mod tests {
         FocusManager::new()
     }
 
-    fn register_focusable(
-        manager: &mut FocusManager,
-        id: ElementId,
-        region: Region,
-    ) -> Arc<DummyElement> {
+    fn register_focusable(manager: &mut FocusManager, id: ElementId, region: Region) -> Arc<DummyElement> {
         let metadata = crate::types::ElementMetadata::new(id, region).with_focusable(true);
 
         let element = Arc::new(DummyElement::new(id));

@@ -18,9 +18,7 @@ pub struct LiteralExpression {
     pub literal: Spanned<Literal>,
 }
 
-pub(crate) fn parse_literal_expression(
-    pair: Pair<Rule>,
-) -> Result<Spanned<Expression>, ParseError> {
+pub(crate) fn parse_literal_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
     let input = pair.as_span().get_input();
     let span = SpanInfo::from_span(&pair.as_span());
     let literal = Literal::parse(pair)?;
@@ -36,16 +34,9 @@ pub(crate) fn parse_literal_expression(
     Ok(Spanned::new(Expression::Literal(literal_expr), span))
 }
 
-fn try_desugar_interpolated_string(
-    source: &str,
-    input: &str,
-    literal_span: SpanInfo,
-) -> Option<Spanned<Expression>> {
+fn try_desugar_interpolated_string(source: &str, input: &str, literal_span: SpanInfo) -> Option<Spanned<Expression>> {
     let parts = split_string_literal_parts(source, input, literal_span).ok()?;
-    if !parts
-        .iter()
-        .any(|part| matches!(part, StringLiteralPart::RuntimeInterpolation { .. }))
-    {
+    if !parts.iter().any(|part| matches!(part, StringLiteralPart::RuntimeInterpolation { .. })) {
         return None;
     }
 
@@ -55,10 +46,7 @@ fn try_desugar_interpolated_string(
             StringLiteralPart::Text { value, span } => {
                 interpolation_parts.push(InterpolationPart::Text { text: value, span });
             }
-            StringLiteralPart::RuntimeInterpolation {
-                expression_source: _,
-                span,
-            } => {
+            StringLiteralPart::RuntimeInterpolation { expression_source: _, span } => {
                 let expression = parse_interpolation_expression(input, span)?;
                 interpolation_parts.push(InterpolationPart::Expr(expression));
             }
@@ -73,13 +61,7 @@ fn build_interpolated_expression(parts: Vec<InterpolationPart>) -> Option<Spanne
         1 => match parts.into_iter().next()? {
             InterpolationPart::Expr(expression) => {
                 let span = expression.span;
-                vec![
-                    InterpolationPart::Text {
-                        text: String::new(),
-                        span,
-                    },
-                    InterpolationPart::Expr(expression),
-                ]
+                vec![InterpolationPart::Text { text: String::new(), span }, InterpolationPart::Expr(expression)]
             }
             other => vec![other],
         },
@@ -97,11 +79,7 @@ fn build_interpolated_expression(parts: Vec<InterpolationPart>) -> Option<Spanne
         };
         let op = Spanned::new(crate::syntax::BinaryOp::Add, acc.span);
         let binary = Spanned::new(
-            crate::syntax::BinaryExpression {
-                left: Box::new(acc),
-                op,
-                right: Box::new(next),
-            },
+            crate::syntax::BinaryExpression { left: Box::new(acc), op, right: Box::new(next) },
             combined_span,
         );
         acc = Spanned::new(Expression::Binary(binary), combined_span);
@@ -123,10 +101,7 @@ fn part_to_expression(part: InterpolationPart) -> Spanned<Expression> {
     }
 }
 
-fn parse_interpolation_expression(
-    source: &str,
-    expr_span: SpanInfo,
-) -> Option<Spanned<Expression>> {
+fn parse_interpolation_expression(source: &str, expr_span: SpanInfo) -> Option<Spanned<Expression>> {
     let expr_source = source.get(expr_span.start..expr_span.end)?;
     let mut pairs = BeskidParser::parse(Rule::Expression, expr_source).ok()?;
     let pair = pairs.next()?;
@@ -245,9 +220,7 @@ fn remap_expression_spans(expression: &mut Spanned<Expression>, offset: usize, s
                 remap_expression_spans(element, offset, source);
             }
         }
-        Expression::MacroInvocation(_)
-        | Expression::MacroMetavariable(_)
-        | Expression::CodeString(_) => {}
+        Expression::MacroInvocation(_) | Expression::MacroMetavariable(_) | Expression::CodeString(_) => {}
     }
 }
 
@@ -269,10 +242,7 @@ fn remap_type_spans(ty: &mut Spanned<crate::syntax::Type>, offset: usize, source
         crate::syntax::Type::Array(inner) => {
             remap_type_spans(inner, offset, source);
         }
-        crate::syntax::Type::Function {
-            return_type,
-            parameters,
-        } => {
+        crate::syntax::Type::Function { return_type, parameters } => {
             remap_type_spans(return_type, offset, source);
             for parameter in parameters {
                 remap_type_spans(parameter, offset, source);
@@ -305,11 +275,7 @@ fn remap_pattern_spans(pattern: &mut Spanned<crate::syntax::Pattern>, offset: us
     }
 }
 
-fn remap_else_branch_spans(
-    else_branch: &mut Spanned<crate::syntax::ElseBranch>,
-    offset: usize,
-    source: &str,
-) {
+fn remap_else_branch_spans(else_branch: &mut Spanned<crate::syntax::ElseBranch>, offset: usize, source: &str) {
     else_branch.span = remap_span(else_branch.span, offset, source);
     match &mut else_branch.node {
         crate::syntax::ElseBranch::Block(block) => remap_block_spans(block, offset, source),
@@ -331,11 +297,7 @@ fn remap_block_spans(block: &mut Spanned<crate::syntax::Block>, offset: usize, s
     }
 }
 
-fn remap_statement_spans(
-    statement: &mut Spanned<crate::syntax::Statement>,
-    offset: usize,
-    source: &str,
-) {
+fn remap_statement_spans(statement: &mut Spanned<crate::syntax::Statement>, offset: usize, source: &str) {
     statement.span = remap_span(statement.span, offset, source);
     use crate::syntax::Statement;
     match &mut statement.node {

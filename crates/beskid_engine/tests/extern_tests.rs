@@ -19,18 +19,10 @@ pub contract C {
 pub i64 Main() { return 0; }
 "#;
     let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
-    assert!(
-        prepared
-            .artifact
-            .extern_imports
-            .iter()
-            .any(|e| e.symbol == "write" && e.library.as_deref() == Some(LIBC))
-    );
+    assert!(prepared.artifact.extern_imports.iter().any(|e| e.symbol == "write" && e.library.as_deref() == Some(LIBC)));
 
     let mut engine = Engine::new();
-    engine
-        .compile_artifact(&prepared.artifact)
-        .expect("compile with extern_dlopen");
+    engine.compile_artifact(&prepared.artifact).expect("compile with extern_dlopen");
     Ok(())
 }
 
@@ -48,9 +40,7 @@ pub i64 Main() { return C.getpid(); }
 "#;
     let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
     let mut engine = Engine::new();
-    engine
-        .compile_artifact(&prepared.artifact)
-        .expect("compile via process-linked libc symbols");
+    engine.compile_artifact(&prepared.artifact).expect("compile via process-linked libc symbols");
     Ok(())
 }
 
@@ -68,9 +58,7 @@ pub i64 Main() { return C.no_such_symbol(); }
 "#;
     let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
     let mut engine = Engine::new();
-    let err = engine
-        .compile_artifact(&prepared.artifact)
-        .expect_err("missing symbol should error");
+    let err = engine.compile_artifact(&prepared.artifact).expect_err("missing symbol should error");
     let msg = format!("{:?}", err);
     assert!(msg.contains("dlsym("));
     Ok(())
@@ -89,9 +77,7 @@ pub i64 Main() { return C.getpid(); }
 "#;
     let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
     let mut engine = Engine::new();
-    engine
-        .compile_artifact(&prepared.artifact)
-        .expect("compile extern call");
+    engine.compile_artifact(&prepared.artifact).expect("compile extern call");
     let main_ptr = unsafe { engine.entrypoint_ptr(&prepared.symbol).unwrap() };
     let fun: extern "C" fn() -> i64 = unsafe { std::mem::transmute(main_ptr) };
     let pid = fun();
@@ -112,9 +98,7 @@ pub i64 Main() { return C.no_such_symbol(); }
 "#;
     let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
     let mut engine = Engine::new();
-    let err = engine
-        .compile_artifact(&prepared.artifact)
-        .expect_err("missing symbol should error");
+    let err = engine.compile_artifact(&prepared.artifact).expect_err("missing symbol should error");
     let msg = format!("{:?}", err);
     assert!(msg.contains("dlsym("));
     Ok(())
@@ -133,9 +117,7 @@ pub i64 Main() { return C.getpid(); }
 "#;
     let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
     let mut engine = Engine::new();
-    let err = engine
-        .compile_artifact(&prepared.artifact)
-        .expect_err("missing library should error");
+    let err = engine.compile_artifact(&prepared.artifact).expect_err("missing library should error");
     let msg = format!("{:?}", err);
     assert!(msg.contains("dlopen("));
     Ok(())

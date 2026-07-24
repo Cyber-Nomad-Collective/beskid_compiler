@@ -10,9 +10,7 @@ use crate::compose::{SpecBuilder, path_to_uri, style_class_for_project_kind, sty
 use crate::model::{GraphDocument, GraphKind, GraphNodeKind, NodeMetadata};
 use crate::render::render_document;
 
-pub fn from_project_graph(
-    graph: &ProjectGraph,
-) -> Result<GraphDocument, crate::render::GraphError> {
+pub fn from_project_graph(graph: &ProjectGraph) -> Result<GraphDocument, crate::render::GraphError> {
     let mut builder = SpecBuilder::new(GraphKind::ProjectDeps);
     let mut index_to_id: HashMap<NodeIndex, String> = HashMap::new();
 
@@ -38,10 +36,7 @@ pub fn from_project_graph(
             "corelib (stdlib)",
             GraphNodeKind::PathDependency,
             Some("lib"),
-            NodeMetadata {
-                project_name: Some("corelib".to_owned()),
-                ..Default::default()
-            },
+            NodeMetadata { project_name: Some("corelib".to_owned()), ..Default::default() },
         );
         if let Some(root_id) = index_to_id.get(&graph.root) {
             builder.add_edge(root_id, &corelib_id, Some("Std".to_owned()), None);
@@ -74,12 +69,7 @@ pub fn from_project_graph(
 
 fn node_props(node: &ProjectGraphNode) -> (String, GraphNodeKind, &'static str, NodeMetadata) {
     match node {
-        ProjectGraphNode::RootProject {
-            manifest_path,
-            project_name,
-            project_kind,
-            ..
-        } => (
+        ProjectGraphNode::RootProject { manifest_path, project_name, project_kind, .. } => (
             project_name.clone(),
             GraphNodeKind::Root,
             style_class_for_project_kind(*project_kind),
@@ -90,11 +80,7 @@ fn node_props(node: &ProjectGraphNode) -> (String, GraphNodeKind, &'static str, 
             },
         ),
         ProjectGraphNode::ResolvedPathDependency {
-            dependency_name,
-            manifest_path,
-            project_name,
-            project_kind,
-            ..
+            dependency_name, manifest_path, project_name, project_kind, ..
         } => (
             dependency_display_label(project_name, dependency_name),
             GraphNodeKind::PathDependency,
@@ -106,29 +92,17 @@ fn node_props(node: &ProjectGraphNode) -> (String, GraphNodeKind, &'static str, 
                 ..Default::default()
             },
         ),
-        ProjectGraphNode::UnresolvedGitDependency {
-            dependency_name, ..
-        } => (
+        ProjectGraphNode::UnresolvedGitDependency { dependency_name, .. } => (
             format!("{dependency_name} (git)"),
             GraphNodeKind::GitDependency,
             style_unresolved(),
-            NodeMetadata {
-                dependency_name: Some(dependency_name.clone()),
-                unresolved: true,
-                ..Default::default()
-            },
+            NodeMetadata { dependency_name: Some(dependency_name.clone()), unresolved: true, ..Default::default() },
         ),
-        ProjectGraphNode::UnresolvedRegistryDependency {
-            dependency_name, ..
-        } => (
+        ProjectGraphNode::UnresolvedRegistryDependency { dependency_name, .. } => (
             format!("{dependency_name} (registry)"),
             GraphNodeKind::RegistryDependency,
             style_unresolved(),
-            NodeMetadata {
-                dependency_name: Some(dependency_name.clone()),
-                unresolved: true,
-                ..Default::default()
-            },
+            NodeMetadata { dependency_name: Some(dependency_name.clone()), unresolved: true, ..Default::default() },
         ),
     }
 }
@@ -148,17 +122,14 @@ mod tests {
 
     #[test]
     fn dependency_label_omits_redundant_pair() {
-        assert_eq!(
-            dependency_display_label("corelib_foundation", "corelib_foundation"),
-            "corelib_foundation"
-        );
+        assert_eq!(dependency_display_label("corelib_foundation", "corelib_foundation"), "corelib_foundation");
         assert_eq!(dependency_display_label("app", "corelib"), "app (corelib)");
     }
 
     #[test]
     fn project_graph_renders_mermaid() {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../beskid_tests/fixtures/projects/simple_app/Project.proj");
+        let manifest =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../beskid_tests/fixtures/projects/simple_app/Project.proj");
         if !manifest.is_file() {
             return;
         }

@@ -54,13 +54,7 @@ impl SelectionState {
     pub fn get_selected_text(&self) -> Option<String> {
         let (start, end) = self.get_selection()?;
         let lines = self.frozen_lines.as_ref()?;
-        Some(extract_text_from_lines(
-            lines,
-            start.x as usize,
-            start.y as usize,
-            end.x as usize,
-            end.y as usize,
-        ))
+        Some(extract_text_from_lines(lines, start.x as usize, start.y as usize, end.x as usize, end.y as usize))
     }
 
     /// Returns normalized visual selection bounds.
@@ -138,17 +132,9 @@ fn extract_text_from_lines(
         if row_idx < start_y || row_idx > end_y {
             continue;
         }
-        let line_text: String = line
-            .spans
-            .iter()
-            .map(|span| span.content.as_ref())
-            .collect();
+        let line_text: String = line.spans.iter().map(|span| span.content.as_ref()).collect();
         let col_start = if row_idx == start_y { start_x } else { 0 };
-        let col_end = if row_idx == end_y {
-            end_x.saturating_add(1)
-        } else {
-            line_text.chars().count()
-        };
+        let col_end = if row_idx == end_y { end_x.saturating_add(1) } else { line_text.chars().count() };
         let chars: Vec<char> = line_text.chars().collect();
         let actual_start = col_start.min(chars.len());
         let actual_end = col_end.min(chars.len());

@@ -82,8 +82,7 @@ pub fn collect_member_items(item: &Spanned<HirItem>, parent_name: &str) -> Vec<M
             for node in &def.node.items {
                 match &node.node {
                     HirContractNode::MethodSignature(signature) => {
-                        let method_name =
-                            format!("{}::{}", parent_name, signature.node.name.node.name);
+                        let method_name = format!("{}::{}", parent_name, signature.node.name.node.name);
                         out.push(MemberItemSpec {
                             name: method_name.clone(),
                             kind: ItemKind::ContractMethodSignature,

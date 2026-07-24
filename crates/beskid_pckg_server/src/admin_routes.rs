@@ -8,8 +8,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use beskid_pckg_store::{
-    AdminRole, AdminRoleAssignment, AsyncAdministrationRepository, PackageReviewDecision,
-    PublisherVerification, ResourcePermissionGrant,
+    AdminRole, AdminRoleAssignment, AsyncAdministrationRepository, PackageReviewDecision, PublisherVerification,
+    ResourcePermissionGrant,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -88,11 +88,7 @@ pub(crate) async fn list_users(State(state): State<AppState>, headers: HeaderMap
     let mut users = BTreeMap::<String, (BTreeSet<String>, bool)>::new();
     for role in roles {
         let subject = role.subject.clone();
-        users
-            .entry(subject)
-            .or_default()
-            .0
-            .insert(role_response(role).role);
+        users.entry(subject).or_default().0.insert(role_response(role).role);
     }
     for verification in verifications {
         users.entry(verification.subject).or_default().1 = verification.is_verified;
@@ -104,13 +100,11 @@ pub(crate) async fn list_users(State(state): State<AppState>, headers: HeaderMap
                 github_login: subject.clone(),
                 subject,
                 roles: std::iter::once("Member".to_owned())
-                    .chain(roles.into_iter().map(|role| {
-                        if role == "moderator" {
-                            "Moderator".to_owned()
-                        } else {
-                            "SuperAdmin".to_owned()
-                        }
-                    }))
+                    .chain(
+                        roles.into_iter().map(|role| {
+                            if role == "moderator" { "Moderator".to_owned() } else { "SuperAdmin".to_owned() }
+                        }),
+                    )
                     .collect(),
                 publisher_verified,
             })
@@ -143,10 +137,7 @@ pub(crate) async fn update_user(
             _ => return bad_request("invalid role"),
         }
     }
-    if repository
-        .replace_admin_roles(&target, roles.clone(), &actor, now())
-        .await
-        .is_err()
+    if repository.replace_admin_roles(&target, roles.clone(), &actor, now()).await.is_err()
         || repository
             .set_publisher_verification(PublisherVerification {
                 subject: target.clone(),
@@ -210,12 +201,8 @@ pub(crate) async fn grant_role(
         "superadmin" => AdminRole::SuperAdmin,
         _ => return bad_request("role must be moderator or superadmin"),
     };
-    let assignment = AdminRoleAssignment {
-        subject: target,
-        role,
-        granted_by_subject: actor,
-        granted_at_unix_seconds: now(),
-    };
+    let assignment =
+        AdminRoleAssignment { subject: target, role, granted_by_subject: actor, granted_at_unix_seconds: now() };
     match repository.grant_admin_role(assignment).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(_) => bad_request("invalid role grant"),
@@ -246,16 +233,12 @@ pub(crate) async fn set_publisher_verification(
         })
         .await
     {
-        Ok(()) => Json(serde_json::json!({"subject": target, "isVerified": request.verified}))
-            .into_response(),
+        Ok(()) => Json(serde_json::json!({"subject": target, "isVerified": request.verified})).into_response(),
         Err(_) => bad_request("invalid publisher subject"),
     }
 }
 
-pub(crate) async fn list_permissions(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
+pub(crate) async fn list_permissions(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(actor) = authenticated_subject(&state, &headers) else {
         return unauthorized_response();
     };
@@ -266,13 +249,7 @@ pub(crate) async fn list_permissions(
         return forbidden();
     }
     match repository.list_all_resource_permissions().await {
-        Ok(grants) => Json(
-            grants
-                .into_iter()
-                .map(permission_response)
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
+        Ok(grants) => Json(grants.into_iter().map(permission_response).collect::<Vec<_>>()).into_response(),
         Err(_) => bad_request("invalid resource"),
     }
 }
@@ -338,20 +315,12 @@ pub(crate) async fn review_package_version(
     if !can_moderate(&*repository, &actor, &package.owner_subject, &package.id).await {
         return not_found();
     }
-    if !matches!(
-        request.decision.as_str(),
-        "approved" | "rejected" | "yanked" | "unyanked"
-    ) {
+    if !matches!(request.decision.as_str(), "approved" | "rejected" | "yanked" | "unyanked") {
         return bad_request("invalid review decision");
     }
     if matches!(request.decision.as_str(), "yanked" | "unyanked") {
         let yanked = request.decision == "yanked";
-        if state
-            .packages
-            .set_yanked(&package.id, &version, yanked, now())
-            .await
-            .is_err()
-        {
+        if state.packages.set_yanked(&package.id, &version, yanked, now()).await.is_err() {
             return not_found();
         }
     }
@@ -372,11 +341,7 @@ pub(crate) async fn review_package_version(
 }
 
 async fn is_super_admin(repository: &dyn AsyncAdministrationRepository, subject: &str) -> bool {
-    repository
-        .roles_for_subject(subject)
-        .await
-        .map(|roles| roles.contains(&AdminRole::SuperAdmin))
-        .unwrap_or(false)
+    repository.roles_for_subject(subject).await.map(|roles| roles.contains(&AdminRole::SuperAdmin)).unwrap_or(false)
 }
 async fn can_moderate(
     repository: &dyn AsyncAdministrationRepository,
@@ -390,11 +355,7 @@ async fn can_moderate(
     if repository
         .roles_for_subject(subject)
         .await
-        .map(|roles| {
-            roles
-                .iter()
-                .any(|role| matches!(role, AdminRole::Moderator | AdminRole::SuperAdmin))
-        })
+        .map(|roles| roles.iter().any(|role| matches!(role, AdminRole::Moderator | AdminRole::SuperAdmin)))
         .unwrap_or(false)
     {
         return true;
@@ -402,11 +363,7 @@ async fn can_moderate(
     repository
         .list_resource_permissions("package", package_id)
         .await
-        .map(|grants| {
-            grants
-                .iter()
-                .any(|grant| grant.subject == subject && grant.capability == "moderate")
-        })
+        .map(|grants| grants.iter().any(|grant| grant.subject == subject && grant.capability == "moderate"))
         .unwrap_or(false)
 }
 fn role_response(value: AdminRoleAssignment) -> RoleResponse {
@@ -430,9 +387,7 @@ fn permission_response(value: ResourcePermissionGrant) -> PermissionResponse {
     }
 }
 fn rfc3339(value: i64) -> String {
-    chrono::DateTime::from_timestamp(value, 0)
-        .expect("timestamps are valid")
-        .to_rfc3339()
+    chrono::DateTime::from_timestamp(value, 0).expect("timestamps are valid").to_rfc3339()
 }
 fn now() -> i64 {
     std::time::SystemTime::now()
@@ -441,25 +396,13 @@ fn now() -> i64 {
         .as_secs() as i64
 }
 fn forbidden() -> Response {
-    (
-        StatusCode::FORBIDDEN,
-        Json(serde_json::json!({"message":"administrator access required"})),
-    )
-        .into_response()
+    (StatusCode::FORBIDDEN, Json(serde_json::json!({"message":"administrator access required"}))).into_response()
 }
 fn not_found() -> Response {
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({"message":"package not found"})),
-    )
-        .into_response()
+    (StatusCode::NOT_FOUND, Json(serde_json::json!({"message":"package not found"}))).into_response()
 }
 fn bad_request(message: &'static str) -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        Json(serde_json::json!({"message":message})),
-    )
-        .into_response()
+    (StatusCode::BAD_REQUEST, Json(serde_json::json!({"message":message}))).into_response()
 }
 fn unavailable() -> Response {
     (

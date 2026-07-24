@@ -9,9 +9,7 @@ use crate::syntax::items::parse_helpers::{
     parse_attributes, parse_doc_attached_list, parse_doc_attached_with, parse_identifier_list,
     parse_visibility_or_default,
 };
-use crate::syntax::{
-    Attribute, Field, Identifier, Path, PathSegment, SpanInfo, Spanned, Type, Visibility,
-};
+use crate::syntax::{Attribute, Field, Identifier, Path, PathSegment, SpanInfo, Spanned, Type, Visibility};
 
 use beskid_ast_derive::AstNode;
 
@@ -50,10 +48,7 @@ fn receiver_type_for_definition(
                 Type::Complex(Spanned::new(
                     Path {
                         segments: vec![Spanned::new(
-                            PathSegment {
-                                name: generic.clone(),
-                                type_args: Vec::new(),
-                            },
+                            PathSegment { name: generic.clone(), type_args: Vec::new() },
                             generic.span,
                         )],
                     },
@@ -65,15 +60,7 @@ fn receiver_type_for_definition(
         .collect();
     Spanned::new(
         Type::Complex(Spanned::new(
-            Path {
-                segments: vec![Spanned::new(
-                    PathSegment {
-                        name: name.clone(),
-                        type_args,
-                    },
-                    name.span,
-                )],
-            },
+            Path { segments: vec![Spanned::new(PathSegment { name: name.clone(), type_args }, name.span)] },
             span,
         )),
         span,
@@ -99,39 +86,24 @@ impl Parsable for TypeDefinition {
             match item.as_rule() {
                 Rule::GenericParameters => generics = parse_identifier_list(item)?,
                 Rule::TypeConformanceList => {
-                    let path_list = item
-                        .into_inner()
-                        .next()
-                        .ok_or(ParseError::missing(Rule::PathList))?;
-                    conformances = path_list
-                        .into_inner()
-                        .map(Path::parse)
-                        .collect::<Result<Vec<_>, _>>()?
+                    let path_list = item.into_inner().next().ok_or(ParseError::missing(Rule::PathList))?;
+                    conformances = path_list.into_inner().map(Path::parse).collect::<Result<Vec<_>, _>>()?
                 }
                 Rule::TypeBody => {
                     let receiver_type = receiver_type_for_definition(&name, &generics, span);
                     for member in item.into_inner() {
                         match member.as_rule() {
                             Rule::TypeFieldList => {
-                                let (parsed_fields, parsed_docs) = parse_doc_attached_list(
-                                    member,
-                                    Rule::FieldWithDocs,
-                                    Rule::Field,
-                                )?;
+                                let (parsed_fields, parsed_docs) =
+                                    parse_doc_attached_list(member, Rule::FieldWithDocs, Rule::Field)?;
                                 fields = parsed_fields;
                                 field_docs = parsed_docs;
                             }
                             Rule::ImplMethodWithDocs => {
-                                let (doc_opt, method) = parse_doc_attached_with(
-                                    member,
-                                    Rule::ImplMethodWithDocs,
-                                    |inner_pair| {
-                                        MethodDefinition::parse_with_receiver(
-                                            inner_pair,
-                                            receiver_type.clone(),
-                                        )
-                                    },
-                                )?;
+                                let (doc_opt, method) =
+                                    parse_doc_attached_with(member, Rule::ImplMethodWithDocs, |inner_pair| {
+                                        MethodDefinition::parse_with_receiver(inner_pair, receiver_type.clone())
+                                    })?;
                                 methods.push(method);
                                 method_docs.push(doc_opt);
                             }
@@ -146,17 +118,7 @@ impl Parsable for TypeDefinition {
         debug_assert_eq!(methods.len(), method_docs.len());
 
         Ok(Spanned::new(
-            Self {
-                attributes,
-                visibility,
-                name,
-                generics,
-                conformances,
-                fields,
-                field_docs,
-                methods,
-                method_docs,
-            },
+            Self { attributes, visibility, name, generics, conformances, fields, field_docs, methods, method_docs },
             span,
         ))
     }

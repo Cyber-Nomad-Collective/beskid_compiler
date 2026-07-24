@@ -8,9 +8,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::services::file_watcher::FileWatcher;
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct FileWatcherDemo {
     watcher: FileWatcher,
@@ -19,17 +17,11 @@ struct FileWatcherDemo {
 
 impl FileWatcherDemo {
     fn new() -> io::Result<Self> {
-        let mut watcher = FileWatcher::for_directory()
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        let mut watcher = FileWatcher::for_directory().map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
         let path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        watcher
-            .watch(&path)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        watcher.watch(&path).map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
 
-        Ok(Self {
-            watcher,
-            last_change: "No changes yet".to_string(),
-        })
+        Ok(Self { watcher, last_change: "No changes yet".to_string() })
     }
 }
 
@@ -63,11 +55,7 @@ impl CoordinatorApp for FileWatcherDemo {
             Line::from(self.last_change.clone()),
             Line::from("Press q to quit"),
         ])
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" FileWatcher "),
-        );
+        .block(Block::default().borders(Borders::ALL).title(" FileWatcher "));
         frame.render_widget(body, area);
     }
 }

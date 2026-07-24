@@ -10,9 +10,7 @@ use walkdir::WalkDir;
 use crate::error::{TemplateError, TemplateResult};
 use crate::guids::{replace_guids_in_text, scan_leftover_guid_patterns, verify_guids_replaced};
 use crate::manifest::{TEMPLATE_MANIFEST_REL, TemplateManifest};
-use crate::substitute::{
-    apply_source_name, ensure_no_placeholders_remain, substitute_path_component, substitute_text,
-};
+use crate::substitute::{apply_source_name, ensure_no_placeholders_remain, substitute_path_component, substitute_text};
 
 #[derive(Debug, Clone)]
 pub struct SourceWritePlan {
@@ -45,18 +43,14 @@ pub fn plan_source_writes(
         let exclude = build_glob_set(&block.exclude)?;
         let copy_only = build_glob_set(&block.copy_only)?;
 
-        for entry in WalkDir::new(&source_root)
-            .into_iter()
-            .filter_map(Result::ok)
-        {
+        for entry in WalkDir::new(&source_root).into_iter().filter_map(Result::ok) {
             let path = entry.path();
             if !path.is_file() {
                 continue;
             }
 
-            let rel = path
-                .strip_prefix(&source_root)
-                .map_err(|_| TemplateError::Internal("strip_prefix failed".into()))?;
+            let rel =
+                path.strip_prefix(&source_root).map_err(|_| TemplateError::Internal("strip_prefix failed".into()))?;
             let rel_str = rel.to_string_lossy().replace('\\', "/");
             if rel_str.ends_with(TEMPLATE_MANIFEST_REL) {
                 continue;
@@ -66,8 +60,7 @@ pub fn plan_source_writes(
                 continue;
             }
 
-            let mut target_rel =
-                substitute_path_component(block.target.trim_start_matches("./"), values);
+            let mut target_rel = substitute_path_component(block.target.trim_start_matches("./"), values);
             if target_rel == "." || target_rel.is_empty() {
                 target_rel = String::new();
             }
@@ -77,10 +70,7 @@ pub fn plan_source_writes(
             }
             out_rel = output_root.join(out_rel);
 
-            let rel_for_plan = out_rel
-                .strip_prefix(output_root)
-                .unwrap_or(&out_rel)
-                .to_path_buf();
+            let rel_for_plan = out_rel.strip_prefix(output_root).unwrap_or(&out_rel).to_path_buf();
 
             let bytes = fs::read(path)?;
             let process_text = !copy_only.is_match(&rel_str) && is_probably_text(&bytes);
@@ -101,21 +91,14 @@ pub fn plan_source_writes(
                 bytes
             };
 
-            plans.push(SourceWritePlan {
-                relative_output: rel_for_plan,
-                bytes: content,
-            });
+            plans.push(SourceWritePlan { relative_output: rel_for_plan, bytes: content });
         }
     }
 
     Ok(plans)
 }
 
-pub fn apply_write_plans(
-    output_root: &Path,
-    plans: &[SourceWritePlan],
-    force: bool,
-) -> TemplateResult<()> {
+pub fn apply_write_plans(output_root: &Path, plans: &[SourceWritePlan], force: bool) -> TemplateResult<()> {
     for plan in plans {
         let dest = output_root.join(&plan.relative_output);
         if let Some(parent) = dest.parent() {
@@ -132,14 +115,11 @@ pub fn apply_write_plans(
 fn build_glob_set(patterns: &[String]) -> TemplateResult<GlobSet> {
     let mut builder = GlobSetBuilder::new();
     for pattern in patterns {
-        let glob = Glob::new(pattern).map_err(|e| {
-            TemplateError::InvalidManifest(format!("invalid glob `{pattern}`: {e}"))
-        })?;
+        let glob =
+            Glob::new(pattern).map_err(|e| TemplateError::InvalidManifest(format!("invalid glob `{pattern}`: {e}")))?;
         builder.add(glob);
     }
-    builder
-        .build()
-        .map_err(|e| TemplateError::Internal(e.to_string()))
+    builder.build().map_err(|e| TemplateError::Internal(e.to_string()))
 }
 
 fn is_probably_text(bytes: &[u8]) -> bool {
@@ -158,9 +138,7 @@ pub fn normalize_output_path(path: &Path) -> TemplateResult<PathBuf> {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {
-                return Err(TemplateError::InvalidManifest(
-                    "output path cannot contain `..`".to_string(),
-                ));
+                return Err(TemplateError::InvalidManifest("output path cannot contain `..`".to_string()));
             }
             Component::Normal(part) => normalized.push(part),
             Component::RootDir | Component::Prefix(_) => normalized.push(component.as_os_str()),

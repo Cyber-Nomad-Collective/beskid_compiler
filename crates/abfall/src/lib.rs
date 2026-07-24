@@ -77,10 +77,7 @@ mod tests {
         use std::thread;
 
         // Create a heap with concurrent collection and low threshold
-        let opts = heap::GcOptions {
-            min_threshold_bytes: 1024,
-            ..GcOptions::DEFAULT
-        };
+        let opts = heap::GcOptions { min_threshold_bytes: 1024, ..GcOptions::DEFAULT };
         let ctx = GcContext::with_options(opts);
         let heap = Arc::clone(ctx.heap());
 
@@ -123,16 +120,10 @@ mod tests {
 
         // Verify memory was reclaimed (should be close to initial)
         let final_bytes = heap.bytes_allocated();
-        println!(
-            "Initial: {}, Peak: {}, Final: {}",
-            initial_bytes, peak_bytes, final_bytes
-        );
+        println!("Initial: {}, Peak: {}, Final: {}", initial_bytes, peak_bytes, final_bytes);
 
         // Final should be much less than peak (most temporary objects collected)
-        assert!(
-            final_bytes < peak_bytes / 2,
-            "GC should have reclaimed significant memory"
-        );
+        assert!(final_bytes < peak_bytes / 2, "GC should have reclaimed significant memory");
     }
 
     #[test]

@@ -17,10 +17,7 @@ fn recover_poisoned_database(
     inner
 }
 
-pub async fn with_compilation_db<R>(
-    state: &RwLock<State>,
-    f: impl FnOnce(&mut BeskidDatabase) -> R,
-) -> R {
+pub async fn with_compilation_db<R>(state: &RwLock<State>, f: impl FnOnce(&mut BeskidDatabase) -> R) -> R {
     with_compilation_db_mut_state(state, |db, _write| f(db)).await
 }
 

@@ -6,11 +6,7 @@ use crate::session::store::Document;
 use crate::workspace_scan::{path_to_uri, uri_to_path};
 
 /// Go-to-definition for Beskid sources or manifest dependency path targets.
-pub fn handle_definition(
-    uri: &Uri,
-    doc: &Document,
-    offset: usize,
-) -> Option<GotoDefinitionResponse> {
+pub fn handle_definition(uri: &Uri, doc: &Document, offset: usize) -> Option<GotoDefinitionResponse> {
     if project_manifest::is_manifest_uri(uri) {
         let location = project_manifest::dependency_path_location(uri, &doc.text, offset)?;
         return Some(GotoDefinitionResponse::Scalar(location));
@@ -20,14 +16,8 @@ pub fn handle_definition(
     if let Some(definition) = doc
         .syntax_definitions
         .iter()
-        .filter(|definition| {
-            definition.reference_start <= offset && offset <= definition.reference_end
-        })
-        .min_by_key(|definition| {
-            definition
-                .reference_end
-                .saturating_sub(definition.reference_start)
-        })
+        .filter(|definition| definition.reference_start <= offset && offset <= definition.reference_end)
+        .min_by_key(|definition| definition.reference_end.saturating_sub(definition.reference_start))
     {
         let target_uri = path_to_uri(&definition.declaration_path).unwrap_or_else(|| uri.clone());
         return Some(GotoDefinitionResponse::Scalar(Location {
@@ -47,13 +37,10 @@ pub fn handle_definition(
     // Declaration navigation is a self-targeting syntax fact.  Keep it separate from the
     // resolved-reference table above because declarations do not need name resolution, but do
     // not fall back to the optional HIR analysis snapshot.
-    doc.syntax_symbols
-        .iter()
-        .find(|symbol| offset_in_range(offset, symbol.start, symbol.end))
-        .map(|symbol| {
-            GotoDefinitionResponse::Scalar(Location {
-                uri: uri.clone(),
-                range: offset_range_to_lsp(&doc.text, symbol.start, symbol.end),
-            })
+    doc.syntax_symbols.iter().find(|symbol| offset_in_range(offset, symbol.start, symbol.end)).map(|symbol| {
+        GotoDefinitionResponse::Scalar(Location {
+            uri: uri.clone(),
+            range: offset_range_to_lsp(&doc.text, symbol.start, symbol.end),
         })
+    })
 }

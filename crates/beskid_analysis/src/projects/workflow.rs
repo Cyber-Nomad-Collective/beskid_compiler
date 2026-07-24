@@ -8,8 +8,8 @@ use std::path::Path;
 use beskid_pipeline::{
     PipelineObserver, observe_phase_result,
     phases::{
-        WORKSPACE_MATERIALIZE_LOCAL, WORKSPACE_MATERIALIZE_LOCKFILE,
-        WORKSPACE_MATERIALIZE_PATH_DEPS, WORKSPACE_MATERIALIZE_REGISTRY,
+        WORKSPACE_MATERIALIZE_LOCAL, WORKSPACE_MATERIALIZE_LOCKFILE, WORKSPACE_MATERIALIZE_PATH_DEPS,
+        WORKSPACE_MATERIALIZE_REGISTRY,
     },
     report_progress,
 };
@@ -20,8 +20,7 @@ use crate::projects::error::ProjectError;
 use crate::projects::graph::WorkspaceResolutionRules;
 use crate::projects::graph::builder::discover_workspace_resolution_rules;
 use crate::projects::model::{
-    CompilePlan, DependencySource, MaterializedDependencyProject, PreparedProjectWorkspace,
-    UnresolvedDependencyNote,
+    CompilePlan, DependencySource, MaterializedDependencyProject, PreparedProjectWorkspace, UnresolvedDependencyNote,
 };
 
 pub const PROJECT_LOCK_FILE_NAME: &str = "Project.lock";
@@ -101,9 +100,9 @@ impl ProjectLockDependencyEntry {
         let mut registry = None;
 
         for part in line.split(';') {
-            let (key, value) = part.split_once('=').ok_or_else(|| {
-                ProjectError::Validation(format!("invalid lockfile dependency field `{part}`"))
-            })?;
+            let (key, value) = part
+                .split_once('=')
+                .ok_or_else(|| ProjectError::Validation(format!("invalid lockfile dependency field `{part}`")))?;
             match key {
                 "name" => name = Some(value.to_string()),
                 "manifest" => manifest = Some(value.to_string()),
@@ -118,24 +117,17 @@ impl ProjectLockDependencyEntry {
         }
 
         Ok(Self {
-            name: name.ok_or_else(|| {
-                ProjectError::Validation("lockfile dependency entry missing `name`".to_string())
-            })?,
-            manifest: manifest.ok_or_else(|| {
-                ProjectError::Validation("lockfile dependency entry missing `manifest`".to_string())
-            })?,
-            project: project.ok_or_else(|| {
-                ProjectError::Validation("lockfile dependency entry missing `project`".to_string())
-            })?,
+            name: name
+                .ok_or_else(|| ProjectError::Validation("lockfile dependency entry missing `name`".to_string()))?,
+            manifest: manifest
+                .ok_or_else(|| ProjectError::Validation("lockfile dependency entry missing `manifest`".to_string()))?,
+            project: project
+                .ok_or_else(|| ProjectError::Validation("lockfile dependency entry missing `project`".to_string()))?,
             source_root: source_root.ok_or_else(|| {
-                ProjectError::Validation(
-                    "lockfile dependency entry missing `source_root`".to_string(),
-                )
+                ProjectError::Validation("lockfile dependency entry missing `source_root`".to_string())
             })?,
             materialized_root: materialized_root.ok_or_else(|| {
-                ProjectError::Validation(
-                    "lockfile dependency entry missing `materialized_root`".to_string(),
-                )
+                ProjectError::Validation("lockfile dependency entry missing `materialized_root`".to_string())
             })?,
             resolved_version,
             artifact_digest,
@@ -166,9 +158,7 @@ impl ProjectLockfileV1 {
         let mut lines = content.lines();
         let header = lines.next().unwrap_or_default();
         if header.trim() != PROJECT_LOCK_HEADER_V1 {
-            return Err(ProjectError::Validation(
-                "lockfile header must be `# Project.lock v1`".to_string(),
-            ));
+            return Err(ProjectError::Validation("lockfile header must be `# Project.lock v1`".to_string()));
         }
 
         let mut root_manifest = None;
@@ -199,28 +189,20 @@ impl ProjectLockfileV1 {
                     dependencies.push(ProjectLockDependencyEntry::parse_v1_line(entry)?);
                     continue;
                 }
-                return Err(ProjectError::Validation(format!(
-                    "invalid lockfile dependency line `{line}`"
-                )));
+                return Err(ProjectError::Validation(format!("invalid lockfile dependency line `{line}`")));
             }
 
-            return Err(ProjectError::Validation(format!(
-                "invalid lockfile line `{line}`"
-            )));
+            return Err(ProjectError::Validation(format!("invalid lockfile line `{line}`")));
         }
 
         let mut parsed = Self {
-            root_manifest: root_manifest.ok_or_else(|| {
-                ProjectError::Validation("lockfile missing `root_manifest`".to_string())
-            })?,
-            project_name: project_name.ok_or_else(|| {
-                ProjectError::Validation("lockfile missing `project_name`".to_string())
-            })?,
+            root_manifest: root_manifest
+                .ok_or_else(|| ProjectError::Validation("lockfile missing `root_manifest`".to_string()))?,
+            project_name: project_name
+                .ok_or_else(|| ProjectError::Validation("lockfile missing `project_name`".to_string()))?,
             dependencies,
         };
-        parsed
-            .dependencies
-            .sort_by_key(ProjectLockDependencyEntry::to_v1_line);
+        parsed.dependencies.sort_by_key(ProjectLockDependencyEntry::to_v1_line);
         Ok(parsed)
     }
 
@@ -245,16 +227,13 @@ impl ProjectLockfileV1 {
 }
 
 /// Load dependency lines from `project_root/Project.lock` when the file exists.
-pub fn load_project_lock_dependencies(
-    project_root: &Path,
-) -> Result<Vec<ProjectLockDependencyEntry>, ProjectError> {
+pub fn load_project_lock_dependencies(project_root: &Path) -> Result<Vec<ProjectLockDependencyEntry>, ProjectError> {
     let lock_path = project_root.join(PROJECT_LOCK_FILE_NAME);
     if !lock_path.is_file() {
         return Ok(Vec::new());
     }
-    let content = fs::read_to_string(&lock_path).map_err(|e| {
-        ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display()))
-    })?;
+    let content = fs::read_to_string(&lock_path)
+        .map_err(|e| ProjectError::Validation(format!("failed to read {}: {e}", lock_path.display())))?;
     Ok(ProjectLockfileV1::parse_v1(&content)?.dependencies)
 }
 
@@ -264,9 +243,7 @@ pub struct WorkspacePrepareOptions {
     pub locked: bool,
 }
 
-pub fn prepare_project_workspace(
-    plan: &CompilePlan,
-) -> Result<PreparedProjectWorkspace, ProjectError> {
+pub fn prepare_project_workspace(plan: &CompilePlan) -> Result<PreparedProjectWorkspace, ProjectError> {
     prepare_project_workspace_with_options(plan, WorkspacePrepareOptions::default(), None)
 }
 
@@ -275,17 +252,10 @@ pub fn prepare_project_workspace_with_options(
     options: WorkspacePrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<PreparedProjectWorkspace, ProjectError> {
-    let deps_root = plan
-        .project_root
-        .join("obj")
-        .join("beskid")
-        .join("deps")
-        .join("src");
+    let deps_root = plan.project_root.join("obj").join("beskid").join("deps").join("src");
     let root_materialized_project = plan.project_root.join("obj").join("beskid").join("root");
-    fs::create_dir_all(&deps_root).map_err(|source| ProjectError::MaterializationCreateDir {
-        path: deps_root.clone(),
-        source,
-    })?;
+    fs::create_dir_all(&deps_root)
+        .map_err(|source| ProjectError::MaterializationCreateDir { path: deps_root.clone(), source })?;
 
     let workspace_rules = discover_workspace_resolution_rules(&plan.manifest_path)?;
 
@@ -297,13 +267,7 @@ pub fn prepare_project_workspace_with_options(
     let materialized_source_root = root_materialized_project.join(&source_segment);
     observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_LOCAL, || {
         copy_directory_when_newer(&plan.source_root, &materialized_source_root)?;
-        report_progress(
-            pipeline,
-            WORKSPACE_MATERIALIZE_LOCAL,
-            1,
-            1,
-            source_segment.clone(),
-        );
+        report_progress(pipeline, WORKSPACE_MATERIALIZE_LOCAL, 1, 1, source_segment.clone());
         Ok(())
     })?;
 
@@ -313,10 +277,8 @@ pub fn prepare_project_workspace_with_options(
     let path_deps_total = plan.dependency_projects.len() as u64;
     observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_PATH_DEPS, || {
         for (index, dependency) in plan.dependency_projects.iter().enumerate() {
-            let materialized_root = deps_root.join(materialized_dependency_id(
-                &dependency.project_name,
-                &dependency.manifest_path,
-            ));
+            let materialized_root =
+                deps_root.join(materialized_dependency_id(&dependency.project_name, &dependency.manifest_path));
             copy_directory_when_newer(&dependency.project_root, &materialized_root)?;
 
             report_progress(
@@ -353,11 +315,8 @@ pub fn prepare_project_workspace_with_options(
         Ok::<(), ProjectError>(())
     })?;
 
-    let registry_deps: Vec<_> = plan
-        .unresolved_dependencies
-        .iter()
-        .filter(|x| x.source == DependencySource::Registry)
-        .collect();
+    let registry_deps: Vec<_> =
+        plan.unresolved_dependencies.iter().filter(|x| x.source == DependencySource::Registry).collect();
     let registry_deps_total = registry_deps.len() as u64;
     observe_phase_result(pipeline, WORKSPACE_MATERIALIZE_REGISTRY, || {
         for (index, unresolved) in registry_deps.iter().enumerate() {
@@ -405,17 +364,12 @@ fn sync_project_lockfile(
     }
 
     if lock_path.is_file() {
-        let existing =
-            fs::read_to_string(&lock_path).map_err(|source| ProjectError::LockfileRead {
-                path: lock_path.clone(),
-                source,
-            })?;
+        let existing = fs::read_to_string(&lock_path)
+            .map_err(|source| ProjectError::LockfileRead { path: lock_path.clone(), source })?;
         let existing_matches = if existing == expected_content {
             true
         } else {
-            ProjectLockfileV1::parse_v1(&existing)
-                .map(|parsed| parsed == expected_lockfile)
-                .unwrap_or(false)
+            ProjectLockfileV1::parse_v1(&existing).map(|parsed| parsed == expected_lockfile).unwrap_or(false)
         };
 
         if existing_matches {
@@ -427,18 +381,14 @@ fn sync_project_lockfile(
         }
 
         if options.locked {
-            return Err(ProjectError::LockfileOutOfDate {
-                project: plan.project_name.clone(),
-            });
+            return Err(ProjectError::LockfileOutOfDate { project: plan.project_name.clone() });
         }
     } else if options.frozen {
         return Err(ProjectError::LockfileFrozenMode);
     }
 
-    fs::write(&lock_path, expected_content).map_err(|source| ProjectError::LockfileWrite {
-        path: lock_path.clone(),
-        source,
-    })?;
+    fs::write(&lock_path, expected_content)
+        .map_err(|source| ProjectError::LockfileWrite { path: lock_path.clone(), source })?;
 
     Ok(lock_path)
 }
@@ -448,28 +398,19 @@ fn should_skip_materialized_subdir(name: Option<&str>) -> bool {
 }
 
 fn copy_directory_when_newer(source: &Path, destination: &Path) -> Result<(), ProjectError> {
-    fs::create_dir_all(destination).map_err(|source| ProjectError::MaterializationCreateDir {
-        path: destination.to_path_buf(),
-        source,
-    })?;
+    fs::create_dir_all(destination)
+        .map_err(|source| ProjectError::MaterializationCreateDir { path: destination.to_path_buf(), source })?;
 
-    for entry in fs::read_dir(source).map_err(|err| ProjectError::MaterializationReadDir {
-        path: source.to_path_buf(),
-        source: err,
-    })? {
-        let entry = entry.map_err(|err| ProjectError::MaterializationReadDir {
-            path: source.to_path_buf(),
-            source: err,
-        })?;
+    for entry in fs::read_dir(source)
+        .map_err(|err| ProjectError::MaterializationReadDir { path: source.to_path_buf(), source: err })?
+    {
+        let entry =
+            entry.map_err(|err| ProjectError::MaterializationReadDir { path: source.to_path_buf(), source: err })?;
         let entry_path = entry.path();
         let destination_path = destination.join(entry.file_name());
-        let file_type =
-            entry
-                .file_type()
-                .map_err(|source| ProjectError::MaterializationMetadata {
-                    path: entry_path.clone(),
-                    source,
-                })?;
+        let file_type = entry
+            .file_type()
+            .map_err(|source| ProjectError::MaterializationMetadata { path: entry_path.clone(), source })?;
 
         if file_type.is_dir() {
             if should_skip_materialized_subdir(entry.file_name().to_str()) {
@@ -491,33 +432,19 @@ fn copy_file_when_newer(source: &Path, destination: &Path) -> Result<(), Project
     let should_copy = if destination.is_file() {
         let source_modified = fs::metadata(source)
             .and_then(|metadata| metadata.modified())
-            .map_err(|err| ProjectError::MaterializationMetadata {
-                path: source.to_path_buf(),
-                source: err,
-            })?;
+            .map_err(|err| ProjectError::MaterializationMetadata { path: source.to_path_buf(), source: err })?;
         let destination_modified = fs::metadata(destination)
             .and_then(|metadata| metadata.modified())
-            .map_err(|source| ProjectError::MaterializationMetadata {
-                path: destination.to_path_buf(),
-                source,
-            })?;
-        if source_modified > destination_modified {
-            true
-        } else {
-            !file_contents_equal(source, destination)?
-        }
+            .map_err(|source| ProjectError::MaterializationMetadata { path: destination.to_path_buf(), source })?;
+        if source_modified > destination_modified { true } else { !file_contents_equal(source, destination)? }
     } else {
         true
     };
 
     if should_copy {
         if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent).map_err(|source| {
-                ProjectError::MaterializationCreateDir {
-                    path: parent.to_path_buf(),
-                    source,
-                }
-            })?;
+            fs::create_dir_all(parent)
+                .map_err(|source| ProjectError::MaterializationCreateDir { path: parent.to_path_buf(), source })?;
         }
         fs::copy(source, destination).map_err(|err| ProjectError::MaterializationCopy {
             from: source.to_path_buf(),
@@ -530,15 +457,10 @@ fn copy_file_when_newer(source: &Path, destination: &Path) -> Result<(), Project
 }
 
 fn file_contents_equal(source: &Path, destination: &Path) -> Result<bool, ProjectError> {
-    let source_bytes = fs::read(source).map_err(|err| ProjectError::MaterializationMetadata {
-        path: source.to_path_buf(),
-        source: err,
-    })?;
-    let destination_bytes =
-        fs::read(destination).map_err(|err| ProjectError::MaterializationMetadata {
-            path: destination.to_path_buf(),
-            source: err,
-        })?;
+    let source_bytes = fs::read(source)
+        .map_err(|err| ProjectError::MaterializationMetadata { path: source.to_path_buf(), source: err })?;
+    let destination_bytes = fs::read(destination)
+        .map_err(|err| ProjectError::MaterializationMetadata { path: destination.to_path_buf(), source: err })?;
     Ok(source_bytes == destination_bytes)
 }
 
@@ -558,11 +480,7 @@ fn sanitize_segment(value: &str) -> String {
             result.push('_');
         }
     }
-    if result.is_empty() {
-        "dependency".to_string()
-    } else {
-        result
-    }
+    if result.is_empty() { "dependency".to_string() } else { result }
 }
 
 fn materialize_registry_dependency(
@@ -572,10 +490,7 @@ fn materialize_registry_dependency(
 ) -> Result<Option<(ProjectLockDependencyEntry, MaterializedDependencyProject)>, ProjectError> {
     let (registry_alias, requested_version) = parse_registry_descriptor(&unresolved.descriptor);
     let base_url = resolve_registry_base_url(workspace_rules, registry_alias.as_deref());
-    let versions_url = format!(
-        "{}/api/packages/{}/versions",
-        base_url, unresolved.dependency_name
-    );
+    let versions_url = format!("{}/api/packages/{}/versions", base_url, unresolved.dependency_name);
     let versions_json = match http_get_text(&versions_url) {
         Ok(value) => value,
         Err(_) => return Ok(None),
@@ -591,41 +506,23 @@ fn materialize_registry_dependency(
     let selected = versions
         .iter()
         .find(|item| {
-            !item
-                .get("isYanked")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
+            !item.get("isYanked").and_then(Value::as_bool).unwrap_or(false)
                 && requested_version
                     .as_deref()
                     .is_none_or(|req| item.get("version").and_then(Value::as_str) == Some(req))
         })
-        .or_else(|| {
-            versions.iter().find(|item| {
-                !item
-                    .get("isYanked")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-            })
-        })
+        .or_else(|| versions.iter().find(|item| !item.get("isYanked").and_then(Value::as_bool).unwrap_or(false)))
         .ok_or_else(|| {
-            ProjectError::Validation(format!(
-                "registry package {} has no active versions",
-                unresolved.dependency_name
-            ))
+            ProjectError::Validation(format!("registry package {} has no active versions", unresolved.dependency_name))
         })?;
 
-    let selected_version = selected
-        .get("version")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
+    let selected_version = selected.get("version").and_then(Value::as_str).map(ToOwned::to_owned);
     let Some(selected_version) = selected_version else {
         return Ok(None);
     };
 
-    let download_url = format!(
-        "{}/api/packages/{}/versions/{}/download",
-        base_url, unresolved.dependency_name, selected_version
-    );
+    let download_url =
+        format!("{}/api/packages/{}/versions/{}/download", base_url, unresolved.dependency_name, selected_version);
     let artifact = match http_get_bytes(&download_url) {
         Ok(value) => value,
         Err(_) => return Ok(None),
@@ -636,22 +533,17 @@ fn materialize_registry_dependency(
         sanitize_segment(&unresolved.dependency_name),
         sanitize_segment(&selected_version)
     ));
-    fs::create_dir_all(&materialized_root).map_err(|source| {
-        ProjectError::MaterializationCreateDir {
-            path: materialized_root.clone(),
-            source,
-        }
-    })?;
+    fs::create_dir_all(&materialized_root)
+        .map_err(|source| ProjectError::MaterializationCreateDir { path: materialized_root.clone(), source })?;
     extract_zip_to_dir(&artifact, &materialized_root)?;
 
     let manifest_path =
-        crate::projects::discovery::discover_project_manifest_in_dir(&materialized_root)?
-            .ok_or_else(|| {
-                ProjectError::Validation(format!(
-                    "registry artifact for {}:{} missing a `.bproj` manifest",
-                    unresolved.dependency_name, selected_version
-                ))
-            })?;
+        crate::projects::discovery::discover_project_manifest_in_dir(&materialized_root)?.ok_or_else(|| {
+            ProjectError::Validation(format!(
+                "registry artifact for {}:{} missing a `.bproj` manifest",
+                unresolved.dependency_name, selected_version
+            ))
+        })?;
 
     let materialized_source_root = if materialized_root.join("src").is_dir() {
         materialized_root.join("src")
@@ -698,9 +590,7 @@ fn resolve_registry_base_url(
     {
         return url.trim_end_matches('/').to_string();
     }
-    "https://pckg.beskid-lang.org"
-        .trim_end_matches('/')
-        .to_string()
+    "https://pckg.beskid-lang.org".trim_end_matches('/').to_string()
 }
 
 fn parse_registry_descriptor(descriptor: &str) -> (Option<String>, Option<String>) {
@@ -708,62 +598,47 @@ fn parse_registry_descriptor(descriptor: &str) -> (Option<String>, Option<String
         if left.trim().is_empty() {
             return (None, Some(right.trim().to_string()));
         }
-        return (
-            Some(left.trim().to_string()),
-            Some(right.trim().to_string()),
-        );
+        return (Some(left.trim().to_string()), Some(right.trim().to_string()));
     }
     let trimmed = descriptor.trim();
-    if trimmed.is_empty() {
-        (None, None)
-    } else {
-        (None, Some(trimmed.to_string()))
-    }
+    if trimmed.is_empty() { (None, None) } else { (None, Some(trimmed.to_string())) }
 }
 
 fn http_get_text(url: &str) -> Result<String, ProjectError> {
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .build()
-        .map_err(|err| {
-            ProjectError::Validation(format!("failed to build registry client: {err}"))
-        })?;
-    let response = client.get(url).send().map_err(|err| {
-        ProjectError::Validation(format!("registry request failed for {url}: {err}"))
-    })?;
+        .map_err(|err| ProjectError::Validation(format!("failed to build registry client: {err}")))?;
+    let response = client
+        .get(url)
+        .send()
+        .map_err(|err| ProjectError::Validation(format!("registry request failed for {url}: {err}")))?;
     let status = response.status();
     if !status.is_success() {
-        return Err(ProjectError::Validation(format!(
-            "registry request failed for {url} with status {status}"
-        )));
+        return Err(ProjectError::Validation(format!("registry request failed for {url} with status {status}")));
     }
-    response.text().map_err(|err| {
-        ProjectError::Validation(format!(
-            "failed to read registry response from {url}: {err}"
-        ))
-    })
+    response
+        .text()
+        .map_err(|err| ProjectError::Validation(format!("failed to read registry response from {url}: {err}")))
 }
 
 fn http_get_bytes(url: &str) -> Result<Vec<u8>, ProjectError> {
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .build()
-        .map_err(|err| {
-            ProjectError::Validation(format!("failed to build registry client: {err}"))
-        })?;
-    let mut response = client.get(url).send().map_err(|err| {
-        ProjectError::Validation(format!("registry request failed for {url}: {err}"))
-    })?;
+        .map_err(|err| ProjectError::Validation(format!("failed to build registry client: {err}")))?;
+    let mut response = client
+        .get(url)
+        .send()
+        .map_err(|err| ProjectError::Validation(format!("registry request failed for {url}: {err}")))?;
     let status = response.status();
     if !status.is_success() {
-        return Err(ProjectError::Validation(format!(
-            "registry request failed for {url} with status {status}"
-        )));
+        return Err(ProjectError::Validation(format!("registry request failed for {url} with status {status}")));
     }
     let mut buffer = Vec::new();
-    response.read_to_end(&mut buffer).map_err(|err| {
-        ProjectError::Validation(format!("failed to read bytes from {url}: {err}"))
-    })?;
+    response
+        .read_to_end(&mut buffer)
+        .map_err(|err| ProjectError::Validation(format!("failed to read bytes from {url}: {err}")))?;
     Ok(buffer)
 }
 
@@ -772,44 +647,33 @@ fn extract_zip_to_dir(bytes: &[u8], output_dir: &Path) -> Result<(), ProjectErro
     let mut archive = ZipArchive::new(reader)
         .map_err(|err| ProjectError::Validation(format!("invalid registry artifact ZIP: {err}")))?;
     for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(|err| {
-            ProjectError::Validation(format!("failed to read registry artifact entry: {err}"))
-        })?;
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|err| ProjectError::Validation(format!("failed to read registry artifact entry: {err}")))?;
         let Some(path) = entry.enclosed_name() else {
             continue;
         };
         let target = output_dir.join(path);
         if entry.is_dir() {
-            fs::create_dir_all(&target).map_err(|source| {
-                ProjectError::MaterializationCreateDir {
-                    path: target,
-                    source,
-                }
-            })?;
+            fs::create_dir_all(&target)
+                .map_err(|source| ProjectError::MaterializationCreateDir { path: target, source })?;
             continue;
         }
 
         if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent).map_err(|source| {
-                ProjectError::MaterializationCreateDir {
-                    path: parent.to_path_buf(),
-                    source,
-                }
-            })?;
+            fs::create_dir_all(parent)
+                .map_err(|source| ProjectError::MaterializationCreateDir { path: parent.to_path_buf(), source })?;
         }
 
-        let mut file =
-            fs::File::create(&target).map_err(|source| ProjectError::MaterializationCopy {
-                from: output_dir.to_path_buf(),
-                to: target.clone(),
-                source,
-            })?;
-        std::io::copy(&mut entry, &mut file).map_err(|source| {
-            ProjectError::MaterializationCopy {
-                from: output_dir.to_path_buf(),
-                to: target,
-                source,
-            }
+        let mut file = fs::File::create(&target).map_err(|source| ProjectError::MaterializationCopy {
+            from: output_dir.to_path_buf(),
+            to: target.clone(),
+            source,
+        })?;
+        std::io::copy(&mut entry, &mut file).map_err(|source| ProjectError::MaterializationCopy {
+            from: output_dir.to_path_buf(),
+            to: target,
+            source,
         })?;
     }
 

@@ -22,27 +22,21 @@ pub fn collect_unresolved_dependencies(graph: &ProjectGraph) -> Vec<UnresolvedDe
         .graph()
         .node_weights()
         .filter_map(|node| match node {
-            ProjectGraphNode::UnresolvedGitDependency {
-                dependency_name,
-                url,
-                rev,
-            } => Some(UnresolvedDependency {
+            ProjectGraphNode::UnresolvedGitDependency { dependency_name, url, rev } => Some(UnresolvedDependency {
                 dependency_name: dependency_name.clone(),
                 kind: UnresolvedDependencyKind::Git,
                 descriptor: format!("{url}@{rev}"),
             }),
-            ProjectGraphNode::UnresolvedRegistryDependency {
-                dependency_name,
-                version,
-                registry,
-            } => Some(UnresolvedDependency {
-                dependency_name: dependency_name.clone(),
-                kind: UnresolvedDependencyKind::Registry,
-                descriptor: registry
-                    .as_ref()
-                    .map(|registry| format!("{registry}@{version}"))
-                    .unwrap_or_else(|| version.clone()),
-            }),
+            ProjectGraphNode::UnresolvedRegistryDependency { dependency_name, version, registry } => {
+                Some(UnresolvedDependency {
+                    dependency_name: dependency_name.clone(),
+                    kind: UnresolvedDependencyKind::Registry,
+                    descriptor: registry
+                        .as_ref()
+                        .map(|registry| format!("{registry}@{version}"))
+                        .unwrap_or_else(|| version.clone()),
+                })
+            }
             _ => None,
         })
         .collect()
@@ -72,25 +66,16 @@ fn collect_dependency_projects_from_node(
     children.sort_by(|left, right| left.0.cmp(&right.0));
 
     for (_, child) in children {
-        let child_kind = graph
-            .dag
-            .graph()
-            .node_weight(child)
-            .and_then(|node| match node {
-                ProjectGraphNode::ResolvedPathDependency { project_kind, .. } => {
-                    Some(*project_kind)
-                }
-                _ => None,
-            });
+        let child_kind = graph.dag.graph().node_weight(child).and_then(|node| match node {
+            ProjectGraphNode::ResolvedPathDependency { project_kind, .. } => Some(*project_kind),
+            _ => None,
+        });
 
         if !visited.insert(child) {
             continue;
         }
 
-        if !matches!(
-            child_kind,
-            Some(ProjectKind::Template) | Some(ProjectKind::Bsol)
-        ) {
+        if !matches!(child_kind, Some(ProjectKind::Template) | Some(ProjectKind::Bsol)) {
             collect_dependency_projects_from_node(graph, child, visited, output);
         }
 

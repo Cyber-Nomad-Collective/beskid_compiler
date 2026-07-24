@@ -5,10 +5,9 @@
 //! the ABI surface required by the new lowering exists.
 
 use beskid_abi::{
-    BUILTIN_SPECS, SYM_COMPOSITION_BIND_PLURAL, SYM_COMPOSITION_CONTAINER_CREATE,
-    SYM_COMPOSITION_CONTAINER_DROP, SYM_COMPOSITION_LAUNCH, SYM_COMPOSITION_REGISTER,
-    SYM_COMPOSITION_RESOLVE, SYM_COMPOSITION_RESOLVE_PLURAL, SYM_COMPOSITION_SCOPE_DEPTH,
-    SYM_COMPOSITION_SCOPE_ENTER, SYM_COMPOSITION_SCOPE_LEAVE, SYM_COMPOSITION_SHUTDOWN,
+    BUILTIN_SPECS, SYM_COMPOSITION_BIND_PLURAL, SYM_COMPOSITION_CONTAINER_CREATE, SYM_COMPOSITION_CONTAINER_DROP,
+    SYM_COMPOSITION_LAUNCH, SYM_COMPOSITION_REGISTER, SYM_COMPOSITION_RESOLVE, SYM_COMPOSITION_RESOLVE_PLURAL,
+    SYM_COMPOSITION_SCOPE_DEPTH, SYM_COMPOSITION_SCOPE_ENTER, SYM_COMPOSITION_SCOPE_LEAVE, SYM_COMPOSITION_SHUTDOWN,
 };
 use beskid_codegen::lowering::composition::with_statement::scope_id_from_name;
 use beskid_codegen::lowering::composition_policy::RUNTIME_CONTAINER_LOWERING_ENABLED;
@@ -16,10 +15,7 @@ use beskid_codegen::lowering::composition_policy::RUNTIME_CONTAINER_LOWERING_ENA
 #[test]
 #[allow(clippy::assertions_on_constants)]
 fn runtime_container_lowering_gate_is_on() {
-    assert!(
-        RUNTIME_CONTAINER_LOWERING_ENABLED,
-        "v0.3 ships with native DI lowering enabled"
-    );
+    assert!(RUNTIME_CONTAINER_LOWERING_ENABLED, "v0.3 ships with native DI lowering enabled");
 }
 
 #[test]
@@ -38,14 +34,8 @@ fn composition_builtin_symbols_are_registered() {
         SYM_COMPOSITION_SCOPE_DEPTH,
     ];
     for sym in required {
-        assert!(
-            BUILTIN_SPECS.iter().any(|spec| spec.symbol == sym),
-            "BUILTIN_SPECS must list {sym}",
-        );
-        assert!(
-            beskid_abi::RUNTIME_EXPORT_SYMBOLS.contains(&sym),
-            "RUNTIME_EXPORT_SYMBOLS must list {sym}",
-        );
+        assert!(BUILTIN_SPECS.iter().any(|spec| spec.symbol == sym), "BUILTIN_SPECS must list {sym}",);
+        assert!(beskid_abi::RUNTIME_EXPORT_SYMBOLS.contains(&sym), "RUNTIME_EXPORT_SYMBOLS must list {sym}",);
     }
 }
 

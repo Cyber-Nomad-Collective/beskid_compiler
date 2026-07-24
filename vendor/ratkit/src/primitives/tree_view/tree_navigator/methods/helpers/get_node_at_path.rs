@@ -14,11 +14,7 @@ impl TreeNavigator {
     /// # Returns
     ///
     /// A reference to the node at the path, or `None` if not found.
-    pub(crate) fn get_node_at_path<'a, T>(
-        &self,
-        nodes: &'a [TreeNode<T>],
-        path: &[usize],
-    ) -> Option<&'a TreeNode<T>> {
+    pub(crate) fn get_node_at_path<'a, T>(&self, nodes: &'a [TreeNode<T>], path: &[usize]) -> Option<&'a TreeNode<T>> {
         if path.is_empty() {
             return None;
         }

@@ -40,20 +40,13 @@ async fn community_mutations_require_an_auth_hub_session() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(
-        json(response).await,
-        serde_json::json!({"message": "authentication required"})
-    );
+    assert_eq!(json(response).await, serde_json::json!({"message": "authentication required"}));
 }
 
 #[tokio::test]
 async fn authenticated_session_can_create_a_board_post() {
     let state = community_routes::CommunityState::with_session_secret("test-session-secret");
-    state
-        .service()
-        .lock()
-        .unwrap()
-        .add_board(Board::new(BoardId::new("general").unwrap(), "General"));
+    state.service().lock().unwrap().add_board(Board::new(BoardId::new("general").unwrap(), "General"));
 
     let response = community_routes::router(state)
         .oneshot(
@@ -83,11 +76,7 @@ async fn authenticated_session_can_create_a_board_post() {
 #[tokio::test]
 async fn only_a_moderator_can_lock_and_unlock_a_board() {
     let state = community_routes::CommunityState::with_session_secret("test-session-secret");
-    state
-        .service()
-        .lock()
-        .unwrap()
-        .add_board(Board::new(BoardId::new("general").unwrap(), "General"));
+    state.service().lock().unwrap().add_board(Board::new(BoardId::new("general").unwrap(), "General"));
 
     let app = community_routes::router(state.clone());
     let member = app
@@ -116,10 +105,7 @@ async fn only_a_moderator_can_lock_and_unlock_a_board() {
         .await
         .unwrap();
     assert_eq!(locked.status(), StatusCode::OK);
-    assert_eq!(
-        json(locked).await,
-        serde_json::json!({"success":true,"message":"Board locked."})
-    );
+    assert_eq!(json(locked).await, serde_json::json!({"success":true,"message":"Board locked."}));
 
     let blocked = app
         .clone()
@@ -145,10 +131,7 @@ async fn only_a_moderator_can_lock_and_unlock_a_board() {
         .await
         .unwrap();
     assert_eq!(unlocked.status(), StatusCode::OK);
-    assert_eq!(
-        json(unlocked).await,
-        serde_json::json!({"success":true,"message":"Board unlocked."})
-    );
+    assert_eq!(json(unlocked).await, serde_json::json!({"success":true,"message":"Board unlocked."}));
 }
 
 #[tokio::test]
@@ -158,10 +141,7 @@ async fn auth_hub_session_reads_its_own_profile_without_exposing_another_subject
         .service()
         .lock()
         .unwrap()
-        .upsert_profile(beskid_pckg_community::Profile::new(
-            Subject::new("github:1").unwrap(),
-            "Octocat",
-        ));
+        .upsert_profile(beskid_pckg_community::Profile::new(Subject::new("github:1").unwrap(), "Octocat"));
 
     let response = community_routes::router(state)
         .oneshot(
@@ -194,18 +174,11 @@ async fn publisher_follow_count_is_public_but_follower_identity_is_not_disclosed
         .service()
         .lock()
         .unwrap()
-        .toggle_publisher_follow(
-            &Principal::auth_hub(Subject::new("github:1").unwrap(), [Role::User]),
-            &publisher,
-        )
+        .toggle_publisher_follow(&Principal::auth_hub(Subject::new("github:1").unwrap(), [Role::User]), &publisher)
         .unwrap();
 
     let response = community_routes::router(state)
-        .oneshot(
-            Request::get("/publisher-follows/github:9/count")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::get("/publisher-follows/github:9/count").body(Body::empty()).unwrap())
         .await
         .unwrap();
 
@@ -215,20 +188,13 @@ async fn publisher_follow_count_is_public_but_follower_identity_is_not_disclosed
 
 #[tokio::test]
 async fn notification_actions_and_bulk_read_are_recipient_scoped() {
-    let app = community_routes::router(community_routes::CommunityState::with_session_secret(
-        "test-session-secret",
-    ));
+    let app = community_routes::router(community_routes::CommunityState::with_session_secret("test-session-secret"));
     let owner_cookie = authenticated_cookie("github:1");
     let other_cookie = authenticated_cookie("github:2");
 
     let created = app
         .clone()
-        .oneshot(
-            Request::post("/notifications/test")
-                .header("cookie", &owner_cookie)
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::post("/notifications/test").header("cookie", &owner_cookie).body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(created.status(), StatusCode::CREATED);
@@ -250,10 +216,7 @@ async fn notification_actions_and_bulk_read_are_recipient_scoped() {
     let marked = app
         .clone()
         .oneshot(
-            Request::post("/notifications/mark-all-read")
-                .header("cookie", &owner_cookie)
-                .body(Body::empty())
-                .unwrap(),
+            Request::post("/notifications/mark-all-read").header("cookie", &owner_cookie).body(Body::empty()).unwrap(),
         )
         .await
         .unwrap();
@@ -261,12 +224,7 @@ async fn notification_actions_and_bulk_read_are_recipient_scoped() {
     assert_eq!(json(marked).await, serde_json::json!({"updated": 1}));
 
     let notifications = app
-        .oneshot(
-            Request::get("/notifications")
-                .header("cookie", &owner_cookie)
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::get("/notifications").header("cookie", &owner_cookie).body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(notifications.status(), StatusCode::OK);
@@ -286,9 +244,7 @@ async fn notification_actions_and_bulk_read_are_recipient_scoped() {
 
 #[tokio::test]
 async fn typed_notification_preferences_round_trip_for_authenticated_subject() {
-    let app = community_routes::router(community_routes::CommunityState::with_session_secret(
-        "test-session-secret",
-    ));
+    let app = community_routes::router(community_routes::CommunityState::with_session_secret("test-session-secret"));
     let cookie = authenticated_cookie("github:1");
     let updated = app
         .clone()
@@ -306,12 +262,7 @@ async fn typed_notification_preferences_round_trip_for_authenticated_subject() {
     assert_eq!(updated.status(), StatusCode::NO_CONTENT);
 
     let preferences = app
-        .oneshot(
-            Request::get("/notification-preferences")
-                .header("cookie", &cookie)
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::get("/notification-preferences").header("cookie", &cookie).body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(preferences.status(), StatusCode::OK);

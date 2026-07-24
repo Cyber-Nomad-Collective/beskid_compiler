@@ -19,10 +19,7 @@ pub struct Principal {
 
 impl Principal {
     pub fn new(subject: impl Into<String>, roles: impl IntoIterator<Item = Role>) -> Self {
-        Self {
-            subject: subject.into(),
-            roles: roles.into_iter().collect(),
-        }
+        Self { subject: subject.into(), roles: roles.into_iter().collect() }
     }
 
     pub fn subject(&self) -> &str {
@@ -42,11 +39,7 @@ pub enum AuthorizationDecision {
 
 /// C# administration endpoints uniformly require the SuperAdmin role.
 pub fn authorize_administration(principal: &Principal) -> AuthorizationDecision {
-    if principal.has_role(Role::SuperAdmin) {
-        AuthorizationDecision::Allowed
-    } else {
-        AuthorizationDecision::Denied
-    }
+    if principal.has_role(Role::SuperAdmin) { AuthorizationDecision::Allowed } else { AuthorizationDecision::Denied }
 }
 
 /// Publisher state owned by pckg, keyed solely by the Auth Hub subject.
@@ -61,17 +54,11 @@ pub struct PublisherProfile {
 
 impl PublisherProfile {
     pub fn unverified(subject: impl Into<String>) -> Self {
-        Self {
-            subject: subject.into(),
-            is_verified: false,
-        }
+        Self { subject: subject.into(), is_verified: false }
     }
 
     pub fn verified(subject: impl Into<String>) -> Self {
-        Self {
-            subject: subject.into(),
-            is_verified: true,
-        }
+        Self { subject: subject.into(), is_verified: true }
     }
 
     pub fn subject(&self) -> &str {
@@ -126,17 +113,11 @@ pub struct Resource {
 
 impl Resource {
     pub fn package(id: impl Into<String>) -> Self {
-        Self {
-            kind: ResourceKind::Package,
-            id: id.into(),
-        }
+        Self { kind: ResourceKind::Package, id: id.into() }
     }
 
     pub fn board(id: impl Into<String>) -> Self {
-        Self {
-            kind: ResourceKind::Board,
-            id: id.into(),
-        }
+        Self { kind: ResourceKind::Board, id: id.into() }
     }
 
     pub fn kind(&self) -> ResourceKind {
@@ -249,8 +230,7 @@ pub fn authorize_package_moderation(
     }
 }
 
-pub const BLOCKED_LINK_REASON: &str =
-    "This content contains a link that is not allowed on this registry.";
+pub const BLOCKED_LINK_REASON: &str = "This content contains a link that is not allowed on this registry.";
 const MAX_BLOCKED_LINK_PATTERN_LENGTH: usize = 512;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -295,8 +275,7 @@ impl BlockedLinkPatterns {
         let mut seen = BTreeSet::new();
         let mut normalized = Vec::new();
         for value in patterns {
-            let pattern =
-                BlockedLinkPattern::new(value).map_err(BlockedLinkPatternsError::Invalid)?;
+            let pattern = BlockedLinkPattern::new(value).map_err(BlockedLinkPatternsError::Invalid)?;
             if !seen.insert(pattern.0.to_ascii_lowercase()) {
                 return Err(BlockedLinkPatternsError::Duplicate);
             }
@@ -313,11 +292,7 @@ impl BlockedLinkPatterns {
     pub fn block_reason(&self, text: impl AsRef<str>) -> Option<&'static str> {
         let text = text.as_ref();
         for segment in url_like_segments(text) {
-            if self
-                .0
-                .iter()
-                .any(|pattern| contains_ascii_case_insensitive(segment, pattern.as_str()))
-            {
+            if self.0.iter().any(|pattern| contains_ascii_case_insensitive(segment, pattern.as_str())) {
                 return Some(BLOCKED_LINK_REASON);
             }
         }
@@ -326,19 +301,15 @@ impl BlockedLinkPatterns {
 }
 
 fn url_like_segments(text: &str) -> impl Iterator<Item = &str> {
-    text.split(|character: char| {
-        character.is_whitespace() || matches!(character, '"' | '\'' | '<' | '>' | '(' | ')')
-    })
-    .filter(|segment| {
-        let lower = segment.to_ascii_lowercase();
-        lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("www.")
-    })
+    text.split(|character: char| character.is_whitespace() || matches!(character, '"' | '\'' | '<' | '>' | '(' | ')'))
+        .filter(|segment| {
+            let lower = segment.to_ascii_lowercase();
+            lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("www.")
+        })
 }
 
 fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
-    haystack
-        .to_ascii_lowercase()
-        .contains(&needle.to_ascii_lowercase())
+    haystack.to_ascii_lowercase().contains(&needle.to_ascii_lowercase())
 }
 
 /// Activity data is intentionally storage-neutral; adapters supply stable sequence IDs.
@@ -357,12 +328,7 @@ impl RegistryActivityEntry {
         action: impl Into<String>,
         message: impl Into<String>,
     ) -> Self {
-        Self {
-            sequence,
-            occurred_at_unix_seconds,
-            action: action.into(),
-            message: message.into(),
-        }
+        Self { sequence, occurred_at_unix_seconds, action: action.into(), message: message.into() }
     }
 
     pub fn sequence(&self) -> u64 {
@@ -385,10 +351,7 @@ impl RegistryActivityLog {
 
     pub fn with_capacity(capacity: usize) -> Self {
         assert!(capacity > 0, "registry activity capacity must be positive");
-        Self {
-            entries: Vec::new(),
-            capacity,
-        }
+        Self { entries: Vec::new(), capacity }
     }
 
     pub fn append(&mut self, entry: RegistryActivityEntry) {
@@ -455,13 +418,7 @@ impl NotificationPreference {
         send_email: bool,
         include_in_spotlight: bool,
     ) -> Self {
-        Self {
-            user_id: user_id.into(),
-            notification_type,
-            scope: scope.normalized(),
-            send_email,
-            include_in_spotlight,
-        }
+        Self { user_id: user_id.into(), notification_type, scope: scope.normalized(), send_email, include_in_spotlight }
     }
 
     pub fn user_subject(&self) -> &str {
@@ -512,10 +469,7 @@ pub struct NotificationDeliveryDecision {
 
 impl NotificationDeliveryDecision {
     pub const fn new(send_email: bool, include_in_spotlight: bool) -> Self {
-        Self {
-            send_email,
-            include_in_spotlight,
-        }
+        Self { send_email, include_in_spotlight }
     }
 }
 
@@ -528,24 +482,16 @@ pub fn notification_delivery_decision(
 ) -> NotificationDeliveryDecision {
     let scope = scope.normalized();
     let exact = preferences.iter().find(|preference| {
-        preference.user_id == user_id
-            && preference.notification_type == notification_type
-            && preference.scope == scope
+        preference.user_id == user_id && preference.notification_type == notification_type && preference.scope == scope
     });
     let global = preferences.iter().find(|preference| {
         preference.user_id == user_id
             && preference.notification_type == notification_type
             && preference.scope == NotificationScope::Global
     });
-    exact.or(global).map_or(
-        NotificationDeliveryDecision::new(false, false),
-        |preference| {
-            NotificationDeliveryDecision::new(
-                preference.send_email,
-                preference.include_in_spotlight,
-            )
-        },
-    )
+    exact.or(global).map_or(NotificationDeliveryDecision::new(false, false), |preference| {
+        NotificationDeliveryDecision::new(preference.send_email, preference.include_in_spotlight)
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -557,17 +503,8 @@ pub struct Notification {
 }
 
 impl Notification {
-    pub fn unread(
-        id: impl Into<String>,
-        user_id: impl Into<String>,
-        notification_type: NotificationType,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            user_id: user_id.into(),
-            notification_type,
-            is_read: false,
-        }
+    pub fn unread(id: impl Into<String>, user_id: impl Into<String>, notification_type: NotificationType) -> Self {
+        Self { id: id.into(), user_id: user_id.into(), notification_type, is_read: false }
     }
 }
 
@@ -578,10 +515,7 @@ pub enum NotificationReadDecision {
     MarkedRead,
 }
 
-pub fn mark_notification_read(
-    notification: &Notification,
-    requester_id: &str,
-) -> NotificationReadDecision {
+pub fn mark_notification_read(notification: &Notification, requester_id: &str) -> NotificationReadDecision {
     if notification.user_id != requester_id {
         NotificationReadDecision::NotFound
     } else if notification.is_read {
@@ -627,23 +561,13 @@ pub enum ConfigValidationError {
 
 impl OperationsConfig {
     pub fn for_test() -> Self {
-        Self {
-            require_structured_api_doc: true,
-            ..Self::default()
-        }
+        Self { require_structured_api_doc: true, ..Self::default() }
     }
 
     /// Validates the operational configuration before adapters bind network or secret clients.
     pub fn validate(&self) -> Result<(), ConfigValidationError> {
-        let captcha_values = [
-            &self.captcha.site_key,
-            &self.captcha.project_id,
-            &self.captcha.api_key,
-        ];
-        let configured_captcha_values = captcha_values
-            .iter()
-            .filter(|value| is_present(value))
-            .count();
+        let captcha_values = [&self.captcha.site_key, &self.captcha.project_id, &self.captcha.api_key];
+        let configured_captcha_values = captcha_values.iter().filter(|value| is_present(value)).count();
         if configured_captcha_values != 0 && configured_captcha_values != captcha_values.len() {
             return Err(ConfigValidationError::IncompleteCaptcha);
         }
@@ -653,14 +577,10 @@ impl OperationsConfig {
         if is_present(&self.auth_hub.service_token) != is_present(&self.session_secret) {
             return Err(ConfigValidationError::IncompleteAuthHubSession);
         }
-        if is_present(&self.auth_hub.hub_public_url)
-            && !is_http_url(self.auth_hub.hub_public_url.as_deref().unwrap())
-        {
+        if is_present(&self.auth_hub.hub_public_url) && !is_http_url(self.auth_hub.hub_public_url.as_deref().unwrap()) {
             return Err(ConfigValidationError::InvalidHubPublicUrl);
         }
-        if is_present(&self.auth_hub.public_url)
-            && !is_http_url(self.auth_hub.public_url.as_deref().unwrap())
-        {
+        if is_present(&self.auth_hub.public_url) && !is_http_url(self.auth_hub.public_url.as_deref().unwrap()) {
             return Err(ConfigValidationError::InvalidPublicUrl);
         }
         Ok(())
@@ -668,9 +588,7 @@ impl OperationsConfig {
 }
 
 fn is_present(value: &Option<String>) -> bool {
-    value
-        .as_deref()
-        .is_some_and(|value| !value.trim().is_empty())
+    value.as_deref().is_some_and(|value| !value.trim().is_empty())
 }
 
 fn is_http_url(value: &str) -> bool {
@@ -696,22 +614,15 @@ mod tests {
 
     #[test]
     fn blocked_links_match_url_segments_case_insensitively() {
-        let patterns =
-            BlockedLinkPatterns::from_patterns(["spam.example"]).expect("a usable blocked pattern");
+        let patterns = BlockedLinkPatterns::from_patterns(["spam.example"]).expect("a usable blocked pattern");
 
-        assert_eq!(
-            patterns.block_reason("See HTTPS://SPAM.EXAMPLE/offer."),
-            Some(BLOCKED_LINK_REASON)
-        );
+        assert_eq!(patterns.block_reason("See HTTPS://SPAM.EXAMPLE/offer."), Some(BLOCKED_LINK_REASON));
         assert_eq!(patterns.block_reason("spam.example without a URL"), None);
     }
 
     #[test]
     fn blocked_link_patterns_are_trimmed_and_reject_duplicates() {
-        assert_eq!(
-            BlockedLinkPattern::new("   ").unwrap_err(),
-            BlockedLinkPatternError::Empty
-        );
+        assert_eq!(BlockedLinkPattern::new("   ").unwrap_err(), BlockedLinkPatternError::Empty);
         assert_eq!(
             BlockedLinkPatterns::from_patterns(["spam.example", " SPAM.EXAMPLE "]).unwrap_err(),
             BlockedLinkPatternsError::Duplicate
@@ -722,12 +633,7 @@ mod tests {
     fn activity_log_retains_the_newest_500_entries() {
         let mut log = RegistryActivityLog::legacy_compatible();
         for sequence in 0..501 {
-            log.append(RegistryActivityEntry::new(
-                sequence,
-                sequence as i64,
-                "publish",
-                "done",
-            ));
+            log.append(RegistryActivityEntry::new(sequence, sequence as i64, "publish", "done"));
         }
 
         assert_eq!(log.entries().len(), 500);
@@ -770,24 +676,15 @@ mod tests {
     fn marking_a_notification_read_requires_recipient_ownership() {
         let notification = Notification::unread("notice-1", "owner", NotificationType::System);
 
-        assert_eq!(
-            mark_notification_read(&notification, "other"),
-            NotificationReadDecision::NotFound
-        );
-        assert_eq!(
-            mark_notification_read(&notification, "owner"),
-            NotificationReadDecision::MarkedRead
-        );
+        assert_eq!(mark_notification_read(&notification, "other"), NotificationReadDecision::NotFound);
+        assert_eq!(mark_notification_read(&notification, "owner"), NotificationReadDecision::MarkedRead);
     }
 
     #[test]
     fn startup_configuration_requires_complete_captcha_and_auth_secrets() {
         let mut config = OperationsConfig::for_test();
         config.captcha.site_key = Some("site".into());
-        assert_eq!(
-            config.validate().unwrap_err(),
-            ConfigValidationError::IncompleteCaptcha
-        );
+        assert_eq!(config.validate().unwrap_err(), ConfigValidationError::IncompleteCaptcha);
 
         config.captcha.project_id = Some("project".into());
         config.captcha.api_key = Some("api".into());
@@ -802,10 +699,7 @@ mod tests {
         let member = Principal::new("github:42", [Role::User]);
         let administrator = Principal::new("github:1", [Role::SuperAdmin]);
 
-        assert_eq!(
-            decide_publisher_verification(&member, &publisher, true),
-            PublisherVerificationDecision::Denied
-        );
+        assert_eq!(decide_publisher_verification(&member, &publisher, true), PublisherVerificationDecision::Denied);
         assert_eq!(
             decide_publisher_verification(&administrator, &publisher, true),
             PublisherVerificationDecision::Updated(PublisherProfile::verified("github:42"))
@@ -816,13 +710,9 @@ mod tests {
     fn package_owner_or_granted_moderator_can_moderate_a_package() {
         let owner = Principal::new("github:42", [Role::User]);
         let collaborator = Principal::new("github:43", [Role::User]);
-        let permission =
-            ResourcePermission::moderate("github:43", Resource::package("pkg-1"), "github:1", 1);
+        let permission = ResourcePermission::moderate("github:43", Resource::package("pkg-1"), "github:1", 1);
 
-        assert_eq!(
-            authorize_package_moderation(&owner, "github:42", "pkg-1", &[]),
-            AuthorizationDecision::Allowed
-        );
+        assert_eq!(authorize_package_moderation(&owner, "github:42", "pkg-1", &[]), AuthorizationDecision::Allowed);
         assert_eq!(
             authorize_package_moderation(&collaborator, "github:42", "pkg-1", &[permission]),
             AuthorizationDecision::Allowed
@@ -839,10 +729,7 @@ mod tests {
             PermissionGrantDecision::AlreadyGranted
         );
         assert!(matches!(
-            decide_permission_grant(
-                &[],
-                ResourcePermission::moderate("github:42", resource, "github:1", 1)
-            ),
+            decide_permission_grant(&[], ResourcePermission::moderate("github:42", resource, "github:1", 1)),
             PermissionGrantDecision::Granted(_)
         ));
     }
@@ -851,13 +738,8 @@ mod tests {
     fn administrative_notification_preference_changes_only_affect_the_target_subject() {
         let administrator = Principal::new("github:1", [Role::SuperAdmin]);
         let member = Principal::new("github:42", [Role::User]);
-        let requested = NotificationPreference::new(
-            "github:42",
-            NotificationType::System,
-            NotificationScope::Global,
-            true,
-            true,
-        );
+        let requested =
+            NotificationPreference::new("github:42", NotificationType::System, NotificationScope::Global, true, true);
 
         assert_eq!(
             decide_administrative_notification_preference(&member, requested.clone()),

@@ -20,8 +20,7 @@ use ratatui::{
 };
 
 use crate::core::{
-    CoordinatorApp, KeyboardEvent, MouseEvent, ResizeEvent, Runner, RunnerAction, RunnerConfig,
-    RunnerEvent, TickEvent,
+    CoordinatorApp, KeyboardEvent, MouseEvent, ResizeEvent, Runner, RunnerAction, RunnerConfig, RunnerEvent, TickEvent,
 };
 
 /// Run a coordinator application with the ratkit core runtime.
@@ -57,24 +56,14 @@ pub fn run<A: CoordinatorApp>(app: A, config: RunnerConfig) -> io::Result<()> {
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(
-        stdout,
-        EnterAlternateScreen,
-        EnableMouseCapture,
-        Print("\x1b[?1006h\x1b[?1003h")
-    )?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, Print("\x1b[?1006h\x1b[?1003h"))?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let result = run_loop(&mut terminal, app, config, false);
 
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture,
-        Print("\x1b[?1003l\x1b[?1006l")
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, Print("\x1b[?1003l\x1b[?1006l"))?;
     terminal.show_cursor()?;
 
     result
@@ -86,24 +75,14 @@ pub fn run_with_diagnostics<A: CoordinatorApp>(app: A, config: RunnerConfig) -> 
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(
-        stdout,
-        EnterAlternateScreen,
-        EnableMouseCapture,
-        Print("\x1b[?1006h\x1b[?1003h")
-    )?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, Print("\x1b[?1006h\x1b[?1003h"))?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let result = run_loop(&mut terminal, app, config, true);
 
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture,
-        Print("\x1b[?1003l\x1b[?1006l")
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, Print("\x1b[?1003l\x1b[?1006l"))?;
     terminal.show_cursor()?;
 
     result
@@ -118,10 +97,7 @@ fn run_loop<A: CoordinatorApp>(
     let mut runner = Runner::new(app).with_config(config);
     let size = terminal.size()?;
     runner
-        .handle_event(RunnerEvent::Resize(ResizeEvent::new(
-            size.width,
-            size.height,
-        )))
+        .handle_event(RunnerEvent::Resize(ResizeEvent::new(size.width, size.height)))
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
     let mut last_tick = Instant::now();
     let tick_rate = config.tick_rate;
@@ -153,9 +129,8 @@ fn run_loop<A: CoordinatorApp>(
 
             let runner_event = convert_event(crossterm_event);
 
-            let action = runner
-                .handle_event(runner_event)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            let action =
+                runner.handle_event(runner_event).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
             match action {
                 RunnerAction::Quit => return Ok(()),
@@ -176,9 +151,8 @@ fn run_loop<A: CoordinatorApp>(
         if last_tick.elapsed() >= tick_rate {
             tick_count += 1;
             let tick_event = RunnerEvent::Tick(TickEvent::new(tick_count));
-            let action = runner
-                .handle_event(tick_event)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            let action =
+                runner.handle_event(tick_event).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
             match action {
                 RunnerAction::Quit => return Ok(()),
@@ -220,18 +194,10 @@ fn convert_event(event: Event) -> RunnerEvent {
 
 fn draw_fps(frame: &mut Frame, fps: u16, redraws: u64, mouse: (u16, u16)) {
     let area = frame.area();
-    let text = format!(
-        "FPS {:>3} | Redraws {} | Mouse {},{}",
-        fps, redraws, mouse.0, mouse.1
-    );
+    let text = format!("FPS {:>3} | Redraws {} | Mouse {},{}", fps, redraws, mouse.0, mouse.1);
     let width = text.len() as u16 + 2;
     let x = area.x + area.width.saturating_sub(width);
-    let rect = Rect {
-        x,
-        y: area.y,
-        width,
-        height: 1,
-    };
+    let rect = Rect { x, y: area.y, width, height: 1 };
     let line = Line::from(format!(" {} ", text));
     let style = Style::default().fg(Color::DarkGray);
     frame.render_widget(Paragraph::new(line).style(style), rect);
@@ -241,12 +207,7 @@ fn install_panic_hook() {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         let _ = disable_raw_mode();
-        let _ = execute!(
-            io::stdout(),
-            LeaveAlternateScreen,
-            DisableMouseCapture,
-            Print("\x1b[?1003l\x1b[?1006l")
-        );
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture, Print("\x1b[?1003l\x1b[?1006l"));
         let _ = execute!(io::stdout(), Show);
         original_hook(panic_info);
     }));

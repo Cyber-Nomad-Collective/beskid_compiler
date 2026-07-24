@@ -1,6 +1,4 @@
-use tower_lsp_server::ls_types::{
-    Documentation, MarkupContent, MarkupKind, SignatureHelp, SignatureInformation, Uri,
-};
+use tower_lsp_server::ls_types::{Documentation, MarkupContent, MarkupKind, SignatureHelp, SignatureInformation, Uri};
 
 use crate::features::project_manifest::api as project_manifest;
 use crate::session::store::Document;
@@ -11,20 +9,13 @@ pub fn handle_signature_help(uri: &Uri, doc: &Document, offset: usize) -> Option
         return None;
     }
     let (start, end) = callee_span_before_open_paren(&doc.text, offset)?;
-    let mid = start
-        .saturating_add((end.saturating_sub(start)) / 2)
-        .min(doc.text.len());
+    let mid = start.saturating_add((end.saturating_sub(start)) / 2).min(doc.text.len());
     let hover = doc
         .syntax_hovers
         .iter()
         .filter(|hover| hover.reference_start <= mid && mid <= hover.reference_end)
         .min_by_key(|hover| hover.reference_end.saturating_sub(hover.reference_start))?;
-    let label = hover
-        .markdown
-        .lines()
-        .next()
-        .unwrap_or(&hover.markdown)
-        .to_string();
+    let label = hover.markdown.lines().next().unwrap_or(&hover.markdown).to_string();
     Some(SignatureHelp {
         signatures: vec![SignatureInformation {
             label,

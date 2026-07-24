@@ -24,10 +24,7 @@ pub fn handle_inlay_hints(uri: &Uri, doc: &Document, _params: &InlayHintParams) 
         })
         .collect();
     hints.sort_by(|a, b| {
-        a.position
-            .line
-            .cmp(&b.position.line)
-            .then_with(|| a.position.character.cmp(&b.position.character))
+        a.position.line.cmp(&b.position.line).then_with(|| a.position.character.cmp(&b.position.character))
     });
     hints
 }
@@ -50,11 +47,7 @@ mod tests {
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
             syntax_completion: None,
-            syntax_inlay_hints: vec![SyntaxInlayHint {
-                start: 25,
-                end: 30,
-                type_label: "i32".to_string(),
-            }],
+            syntax_inlay_hints: vec![SyntaxInlayHint { start: 25, end: 30, type_label: "i32".to_string() }],
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
         };

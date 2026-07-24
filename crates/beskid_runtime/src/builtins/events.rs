@@ -8,11 +8,7 @@ pub struct EventState {
 /// Subscribe a handler to an event, allocating the state on first use.
 /// Panics if capacity is 0 or exceeded; returns new length.
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn event_subscribe(
-    event_slot: *mut *mut EventState,
-    handler: *mut u8,
-    capacity: usize,
-) -> usize {
+pub extern "C-unwind" fn event_subscribe(event_slot: *mut *mut EventState, handler: *mut u8, capacity: usize) -> usize {
     if event_slot.is_null() {
         panic!("null event slot");
     }
@@ -26,10 +22,7 @@ pub extern "C-unwind" fn event_subscribe(
     unsafe {
         let state_ptr = *event_slot;
         let state = if state_ptr.is_null() {
-            let boxed = Box::new(EventState {
-                handlers: Vec::with_capacity(capacity),
-                capacity,
-            });
+            let boxed = Box::new(EventState { handlers: Vec::with_capacity(capacity), capacity });
             let raw = Box::into_raw(boxed);
             *event_slot = raw;
             &mut *raw
@@ -45,8 +38,7 @@ pub extern "C-unwind" fn event_subscribe(
         {
             use crate::gc::with_current_root;
             with_current_root(|root| {
-                root.runtime_state.event_subscribe_calls =
-                    root.runtime_state.event_subscribe_calls.saturating_add(1);
+                root.runtime_state.event_subscribe_calls = root.runtime_state.event_subscribe_calls.saturating_add(1);
             });
         }
         state.handlers.len()
@@ -55,10 +47,7 @@ pub extern "C-unwind" fn event_subscribe(
 
 /// Unsubscribe first matching handler; returns 1 if removed, 0 otherwise.
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn event_unsubscribe_first(
-    event_slot: *mut *mut EventState,
-    handler: *mut u8,
-) -> usize {
+pub extern "C-unwind" fn event_unsubscribe_first(event_slot: *mut *mut EventState, handler: *mut u8) -> usize {
     if event_slot.is_null() {
         return 0;
     }
@@ -72,11 +61,7 @@ pub extern "C-unwind" fn event_unsubscribe_first(
             return 0;
         }
         let state = &mut *state_ptr;
-        if let Some(idx) = state
-            .handlers
-            .iter()
-            .position(|candidate| *candidate == handler)
-        {
+        if let Some(idx) = state.handlers.iter().position(|candidate| *candidate == handler) {
             state.handlers.remove(idx);
             #[cfg(feature = "metrics")]
             {
@@ -114,8 +99,7 @@ pub extern "C-unwind" fn event_get_handler(state: *mut EventState, idx: usize) -
     if !result.is_null() {
         use crate::gc::with_current_root;
         with_current_root(|root| {
-            root.runtime_state.event_get_handler_calls =
-                root.runtime_state.event_get_handler_calls.saturating_add(1);
+            root.runtime_state.event_get_handler_calls = root.runtime_state.event_get_handler_calls.saturating_add(1);
         });
     }
     result

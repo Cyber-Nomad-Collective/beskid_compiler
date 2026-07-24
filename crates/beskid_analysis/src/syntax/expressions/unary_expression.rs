@@ -24,43 +24,28 @@ pub enum UnaryOp {
     Not,
 }
 
-pub(crate) fn parse_prefix_unary_expression(
-    pair: Pair<Rule>,
-) -> Result<Spanned<Expression>, ParseError> {
+pub(crate) fn parse_prefix_unary_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
     let input = pair.as_span().get_input();
     let mut inner = pair.into_inner();
-    let postfix = super::expression::parse_postfix_expression(
-        inner
-            .next()
-            .ok_or(ParseError::missing(Rule::PostfixExpression))?,
-    )?;
+    let postfix =
+        super::expression::parse_postfix_expression(inner.next().ok_or(ParseError::missing(Rule::PostfixExpression))?)?;
 
     let prefix_text = &input[span.start..postfix.span.start];
     let ops = parse_unary_ops(input, span.start, prefix_text)?;
 
     let mut expr = postfix;
     for op in ops.into_iter().rev() {
-        let node_span = span_from_bounds(input, op.span.start, expr.span.end)
-            .ok_or(ParseError::missing(Rule::UnaryExpression))?;
-        let unary = Spanned::new(
-            UnaryExpression {
-                op,
-                expr: Box::new(expr),
-            },
-            node_span,
-        );
+        let node_span =
+            span_from_bounds(input, op.span.start, expr.span.end).ok_or(ParseError::missing(Rule::UnaryExpression))?;
+        let unary = Spanned::new(UnaryExpression { op, expr: Box::new(expr) }, node_span);
         expr = Spanned::new(Expression::Unary(unary), node_span);
     }
 
     Ok(Spanned::new(expr.node, span))
 }
 
-fn parse_unary_ops(
-    input: &str,
-    base_start: usize,
-    prefix: &str,
-) -> Result<Vec<Spanned<UnaryOp>>, ParseError> {
+fn parse_unary_ops(input: &str, base_start: usize, prefix: &str) -> Result<Vec<Spanned<UnaryOp>>, ParseError> {
     let mut ops = Vec::new();
     for (offset, ch) in prefix.char_indices() {
         let op = match ch {
@@ -70,8 +55,7 @@ fn parse_unary_ops(
         };
         let start = base_start + offset;
         let end = start + ch.len_utf8();
-        let span =
-            Span::new(input, start, end).ok_or(ParseError::missing(Rule::UnaryExpression))?;
+        let span = Span::new(input, start, end).ok_or(ParseError::missing(Rule::UnaryExpression))?;
         ops.push(Spanned::new(op, SpanInfo::from_span(&span)));
     }
 

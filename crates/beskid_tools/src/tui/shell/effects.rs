@@ -60,11 +60,7 @@ fn spawn_pckg_catalog(tx: Sender<RuntimeOp>, state: &ShellState) {
     let config = state.templates.registry_config.clone();
     let query = state.pckg.search_query.clone();
     thread::spawn(move || {
-        let result = if query.trim().is_empty() {
-            fetch_packages(&config)
-        } else {
-            search_packages(&config, &query)
-        };
+        let result = if query.trim().is_empty() { fetch_packages(&config) } else { search_packages(&config, &query) };
         let msg = match result {
             Ok(packages) => ShellMessage::PckgCatalogLoaded(packages),
             Err(error) => ShellMessage::PckgCatalogFailed(error.to_string()),
@@ -89,13 +85,8 @@ fn spawn_templates_catalog(tx: Sender<RuntimeOp>, state: &ShellState) {
     let config = state.templates.registry_config.clone();
     thread::spawn(move || {
         let msg = match (list_installed_templates(), list_registry_templates(&config)) {
-            (Ok(installed), Ok(registry)) => ShellMessage::TemplatesLoaded {
-                installed,
-                registry,
-            },
-            (Err(error), _) | (_, Err(error)) => {
-                ShellMessage::TemplatesLoadFailed(error.to_string())
-            }
+            (Ok(installed), Ok(registry)) => ShellMessage::TemplatesLoaded { installed, registry },
+            (Err(error), _) | (_, Err(error)) => ShellMessage::TemplatesLoadFailed(error.to_string()),
         };
         let _ = tx.send(RuntimeOp::Update(msg));
     });
@@ -107,14 +98,8 @@ fn spawn_template_install(tx: Sender<RuntimeOp>, state: &mut ShellState, package
     let resolved = resolve_package_id(&package_id);
     thread::spawn(move || {
         let msg = match install_registry_template(&config, &resolved) {
-            Ok(result) => ShellMessage::TemplateInstallDone {
-                short_name: result.short_name,
-                package_id: resolved,
-            },
-            Err(error) => ShellMessage::TemplateInstallFailed {
-                package_id: resolved,
-                error: error.to_string(),
-            },
+            Ok(result) => ShellMessage::TemplateInstallDone { short_name: result.short_name, package_id: resolved },
+            Err(error) => ShellMessage::TemplateInstallFailed { package_id: resolved, error: error.to_string() },
         };
         let _ = tx.send(RuntimeOp::Update(msg));
     });

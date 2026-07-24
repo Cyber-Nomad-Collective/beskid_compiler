@@ -43,9 +43,7 @@ fn corelib_workspace_candidates(manifest_dir: &Path) -> Vec<PathBuf> {
         // Allow override to point at either workspace root or legacy beskid_corelib only.
         if has_corelib_workspace_manifest(&p) {
             candidates.push(p);
-        } else if p.file_name().is_some_and(|n| n == "beskid_corelib")
-            && discover_project_manifest_in_embed_dir(&p)
-        {
+        } else if p.file_name().is_some_and(|n| n == "beskid_corelib") && discover_project_manifest_in_embed_dir(&p) {
             if let Some(parent) = p.parent() {
                 candidates.push(parent.to_path_buf());
             }
@@ -68,10 +66,7 @@ fn discover_workspace_manifest_in_embed_dir(dir: &Path) -> bool {
     };
     entries.filter_map(Result::ok).any(|entry| {
         let path = entry.path();
-        path.is_file()
-            && path
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("bws"))
+        path.is_file() && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bws"))
     })
 }
 
@@ -81,10 +76,7 @@ fn discover_project_manifest_in_embed_dir(dir: &Path) -> bool {
     };
     entries.filter_map(Result::ok).any(|entry| {
         let path = entry.path();
-        path.is_file()
-            && path
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("bproj"))
+        path.is_file() && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bproj"))
     })
 }
 
@@ -93,20 +85,13 @@ fn copy_corelib_workspace_for_embed(src_workspace: &Path, dst: &Path) -> std::io
     if let Ok(entries) = std::fs::read_dir(src_workspace) {
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
-            if path.is_file()
-                && path
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("bws"))
-            {
+            if path.is_file() && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bws")) {
                 std::fs::copy(&path, dst.join(entry.file_name()))?;
             }
         }
     }
     copy_dir_for_embed(&src_workspace.join("packages"), &dst.join("packages"))?;
-    copy_dir_for_embed(
-        &src_workspace.join("beskid_corelib"),
-        &dst.join("beskid_corelib"),
-    )?;
+    copy_dir_for_embed(&src_workspace.join("beskid_corelib"), &dst.join("beskid_corelib"))?;
     Ok(())
 }
 

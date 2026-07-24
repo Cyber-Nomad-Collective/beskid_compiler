@@ -3,8 +3,8 @@
 use std::fs;
 
 use beskid_analysis::projects::{
-    MOD_CAPABILITY_NAMES, ProjectGraphNode, ProjectKind, TargetKind, build_compile_plan,
-    build_project_graph, parse_manifest,
+    MOD_CAPABILITY_NAMES, ProjectGraphNode, ProjectKind, TargetKind, build_compile_plan, build_project_graph,
+    parse_manifest,
 };
 
 use crate::test_harness::{temp_case_dir, write_project_manifest as write_manifest};
@@ -30,13 +30,7 @@ serialization_mod {
     assert!(m.targets.is_empty());
     let mod_section = m.project.mod_section.as_ref().expect("mod section");
     assert_eq!(mod_section.max_generator_rounds, Some(6));
-    assert_eq!(
-        mod_section.capabilities,
-        Some(vec![
-            "read_project_sources".to_string(),
-            "emit_syntax".to_string()
-        ])
-    );
+    assert_eq!(mod_section.capabilities, Some(vec!["read_project_sources".to_string(), "emit_syntax".to_string()]));
     assert_eq!(mod_section.artifact_policy.as_deref(), Some("reuse"));
     assert_eq!(mod_section.resolved_max_generator_rounds(), 6);
 }
@@ -145,11 +139,7 @@ MyMod {
         let graph = build_project_graph(&manifest_path).expect("graph");
         let mut mod_nodes = 0usize;
         for node in graph.dag.graph().node_weights() {
-            if let ProjectGraphNode::ResolvedPathDependency {
-                project_name,
-                project_kind,
-                ..
-            } = node
+            if let ProjectGraphNode::ResolvedPathDependency { project_name, project_kind, .. } = node
                 && project_name == "MyMod"
             {
                 assert_eq!(*project_kind, ProjectKind::Mod);
@@ -273,10 +263,7 @@ m {
 "#;
     let m = parse_manifest(src).expect("artifactPolicy = clean_rebuild");
     let mod_section = m.project.mod_section.expect("mod section");
-    assert_eq!(
-        mod_section.artifact_policy.as_deref(),
-        Some("clean_rebuild")
-    );
+    assert_eq!(mod_section.artifact_policy.as_deref(), Some("clean_rebuild"));
 }
 
 #[test]

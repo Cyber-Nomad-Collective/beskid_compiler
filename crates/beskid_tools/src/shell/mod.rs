@@ -41,8 +41,8 @@ pub use host::WidgetRegistrar;
 pub use hotkeys::ShellHotkeys;
 pub use input::ShellInput;
 pub use key_bindings::{
-    BINDABLE_ACTIONS, BindableAction, KeyChord, ShortcutBindings, chord_from_key, display_chord,
-    encode_chord, parse_chord,
+    BINDABLE_ACTIONS, BindableAction, KeyChord, ShortcutBindings, chord_from_key, display_chord, encode_chord,
+    parse_chord,
 };
 pub use layers::ShellLayer;
 pub use layout::{BoardV2Doc, HiLayoutState, LayoutEditCommand, PagesDoc, switch_page};
@@ -53,8 +53,8 @@ pub use registry::WidgetRegistry;
 pub use scope::{ShellScope, user_board_path, user_data_dir, user_pages_path};
 pub use settings::{
     BUILTIN_SETTINGS, SettingKind, ToolSettingDescriptor, ToolSettingsPage, ToolSettingsRegistrar,
-    ToolSettingsRegistry, ToolsConfig, emit_config, get_value, load_config, parse_config,
-    save_config, save_path_for_scope, scope_config_path, set_value, user_config_path,
+    ToolSettingsRegistry, ToolsConfig, emit_config, get_value, load_config, parse_config, save_config,
+    save_path_for_scope, scope_config_path, set_value, user_config_path,
 };
 pub use shortcut_clicks::{ShortcutClickAction, ShortcutClickTargets};
 pub use widget::{BeskidWidget, ShellAction, WidgetMeta};

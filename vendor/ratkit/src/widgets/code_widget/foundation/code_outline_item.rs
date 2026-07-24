@@ -17,18 +17,8 @@ pub struct CodeOutlineItem {
 
 impl CodeOutlineItem {
     /// Creates a code outline item.
-    pub fn new(
-        name: impl Into<String>,
-        line: usize,
-        level: usize,
-        kind: impl Into<String>,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            line,
-            level,
-            kind: kind.into(),
-        }
+    pub fn new(name: impl Into<String>, line: usize, level: usize, kind: impl Into<String>) -> Self {
+        Self { name: name.into(), line, level, kind: kind.into() }
     }
 
     /// Converts the code outline item into the shared outline model.

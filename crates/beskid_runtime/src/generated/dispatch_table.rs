@@ -3,24 +3,21 @@
 
 use beskid_abi::BeskidStr;
 use beskid_abi::{
-    TAG_ARRAY_LEN, TAG_ARRAY_NEW, TAG_BYTES_COMPARE, TAG_BYTES_COPY, TAG_BYTES_FROM_STR,
-    TAG_BYTES_GET, TAG_BYTES_SET, TAG_CHANNEL_CLOSE, TAG_CHANNEL_CREATE, TAG_CHANNEL_RECEIVE_PTR,
-    TAG_CHANNEL_RECEIVE_STATUS, TAG_CHANNEL_RECEIVE_VALUE, TAG_CHANNEL_SEND, TAG_CHANNEL_SEND_PTR,
-    TAG_CHANNEL_TRY_RECEIVE, TAG_CHANNEL_TRY_RECEIVE_PTR, TAG_CHANNEL_TRY_SEND,
-    TAG_CHANNEL_TRY_SEND_PTR, TAG_CLOCK_MONOTONIC_NANOS, TAG_CLOCK_REALTIME_NANOS, TAG_ENV_GET,
-    TAG_ENV_GETCWD, TAG_ENV_SET, TAG_EVENT_GET_HANDLER, TAG_EVENT_LEN, TAG_EVENT_SUBSCRIBE,
-    TAG_EVENT_UNSUBSCRIBE_FIRST, TAG_FIBER_CANCEL, TAG_FIBER_CURRENT_ID, TAG_FIBER_DETACH,
-    TAG_FIBER_JOIN_STATUS, TAG_FIBER_JOIN_VALUE, TAG_FIBER_NOW_MILLIS, TAG_FIBER_PROCESSOR_COUNT,
-    TAG_FIBER_SPAWN, TAG_FIBER_SPAWN_WITH_CANCEL_SLOT, TAG_FS_DELETE, TAG_FS_EXISTS, TAG_FS_MKDIR,
-    TAG_FS_READ_TEXT, TAG_FS_WRITE_TEXT, TAG_GC_BYTES_ALLOCATED, TAG_GC_COLLECT,
-    TAG_GC_COLLECT_IF_NEEDED, TAG_GC_EXTERNAL_ROOT_COUNT, TAG_GC_OBJECT_COUNT, TAG_GC_PHASE,
-    TAG_HUB_CREATE, TAG_HUB_REGISTER, TAG_HUB_UNREGISTER, TAG_HUB_WAIT_RECEIVE_INDEX,
-    TAG_HUB_WAIT_RECEIVE_STATUS, TAG_HUB_WAIT_RECEIVE_VALUE, TAG_MUTEX_CREATE, TAG_MUTEX_LOCK,
-    TAG_MUTEX_TRY_LOCK, TAG_MUTEX_UNLOCK, TAG_PROCESS_EXIT, TAG_PROCESS_GETPID, TAG_STR_CONCAT,
-    TAG_STR_EQ, TAG_STR_FROM_BYTES_UTF8, TAG_STR_FROM_I64, TAG_STR_LEN, TAG_STR_NEW, TAG_STR_SLICE,
-    TAG_SYSCALL_READ, TAG_SYSCALL_READ_BYTES, TAG_SYSCALL_WRITE, TAG_SYSCALL_WRITE_BYTES,
-    TAG_TEST_BYTES_LEN, TAG_TEST_BYTES_PTR, TAG_TTY_WINSIZE, TAG_WAIT_GROUP_ADD,
-    TAG_WAIT_GROUP_CREATE, TAG_WAIT_GROUP_DONE, TAG_WAIT_GROUP_WAIT,
+    TAG_ARRAY_LEN, TAG_ARRAY_NEW, TAG_BYTES_COMPARE, TAG_BYTES_COPY, TAG_BYTES_FROM_STR, TAG_BYTES_GET, TAG_BYTES_SET,
+    TAG_CHANNEL_CLOSE, TAG_CHANNEL_CREATE, TAG_CHANNEL_RECEIVE_PTR, TAG_CHANNEL_RECEIVE_STATUS,
+    TAG_CHANNEL_RECEIVE_VALUE, TAG_CHANNEL_SEND, TAG_CHANNEL_SEND_PTR, TAG_CHANNEL_TRY_RECEIVE,
+    TAG_CHANNEL_TRY_RECEIVE_PTR, TAG_CHANNEL_TRY_SEND, TAG_CHANNEL_TRY_SEND_PTR, TAG_CLOCK_MONOTONIC_NANOS,
+    TAG_CLOCK_REALTIME_NANOS, TAG_ENV_GET, TAG_ENV_GETCWD, TAG_ENV_SET, TAG_EVENT_GET_HANDLER, TAG_EVENT_LEN,
+    TAG_EVENT_SUBSCRIBE, TAG_EVENT_UNSUBSCRIBE_FIRST, TAG_FIBER_CANCEL, TAG_FIBER_CURRENT_ID, TAG_FIBER_DETACH,
+    TAG_FIBER_JOIN_STATUS, TAG_FIBER_JOIN_VALUE, TAG_FIBER_NOW_MILLIS, TAG_FIBER_PROCESSOR_COUNT, TAG_FIBER_SPAWN,
+    TAG_FIBER_SPAWN_WITH_CANCEL_SLOT, TAG_FS_DELETE, TAG_FS_EXISTS, TAG_FS_MKDIR, TAG_FS_READ_TEXT, TAG_FS_WRITE_TEXT,
+    TAG_GC_BYTES_ALLOCATED, TAG_GC_COLLECT, TAG_GC_COLLECT_IF_NEEDED, TAG_GC_EXTERNAL_ROOT_COUNT, TAG_GC_OBJECT_COUNT,
+    TAG_GC_PHASE, TAG_HUB_CREATE, TAG_HUB_REGISTER, TAG_HUB_UNREGISTER, TAG_HUB_WAIT_RECEIVE_INDEX,
+    TAG_HUB_WAIT_RECEIVE_STATUS, TAG_HUB_WAIT_RECEIVE_VALUE, TAG_MUTEX_CREATE, TAG_MUTEX_LOCK, TAG_MUTEX_TRY_LOCK,
+    TAG_MUTEX_UNLOCK, TAG_PROCESS_EXIT, TAG_PROCESS_GETPID, TAG_STR_CONCAT, TAG_STR_EQ, TAG_STR_FROM_BYTES_UTF8,
+    TAG_STR_FROM_I64, TAG_STR_LEN, TAG_STR_NEW, TAG_STR_SLICE, TAG_SYSCALL_READ, TAG_SYSCALL_READ_BYTES,
+    TAG_SYSCALL_WRITE, TAG_SYSCALL_WRITE_BYTES, TAG_TEST_BYTES_LEN, TAG_TEST_BYTES_PTR, TAG_TTY_WINSIZE,
+    TAG_WAIT_GROUP_ADD, TAG_WAIT_GROUP_CREATE, TAG_WAIT_GROUP_DONE, TAG_WAIT_GROUP_WAIT,
 };
 
 /// Dispatch return group `usize` (registration group id `0`).
@@ -91,10 +88,7 @@ pub unsafe fn dispatch_usize(tag: i32, enum_ptr: *const u8) -> Option<usize> {
             unsafe {
                 let p0 = *(enum_ptr.add(16) as *const u64);
                 let p1 = *(enum_ptr.add(24) as *const *const u8);
-                crate::builtins::syscall_write_bytes(
-                    p0 as i64,
-                    p1 as *const beskid_abi::BeskidArray,
-                )
+                crate::builtins::syscall_write_bytes(p0 as i64, p1 as *const beskid_abi::BeskidArray)
             }
         } as usize),
         _ => None,
@@ -131,11 +125,7 @@ pub unsafe fn dispatch_ptr(tag: i32, enum_ptr: *const u8) -> Option<*mut u8> {
                 let p0 = *(enum_ptr.add(16) as *const *const u8);
                 let p1 = *(enum_ptr.add(24) as *const u64);
                 let p2 = *(enum_ptr.add(32) as *const u64);
-                crate::builtins::bytes_set(
-                    p0 as *const beskid_abi::BeskidArray,
-                    p1 as i64,
-                    p2 as i64,
-                )
+                crate::builtins::bytes_set(p0 as *const beskid_abi::BeskidArray, p1 as i64, p2 as i64)
             }
         } as *mut u8),
         TAG_ENV_GET => crate::interop::register::trap_missing_host_handler(tag),
@@ -485,21 +475,14 @@ pub unsafe fn dispatch_i64(tag: i32, enum_ptr: *const u8) -> Option<i64> {
             unsafe {
                 let p0 = *(enum_ptr.add(16) as *const *const u8);
                 let p1 = *(enum_ptr.add(24) as *const *const u8);
-                crate::builtins::event_subscribe(
-                    p0 as *mut *mut crate::builtins::EventState,
-                    p1 as *mut u8,
-                    256,
-                )
+                crate::builtins::event_subscribe(p0 as *mut *mut crate::builtins::EventState, p1 as *mut u8, 256)
             }
         } as i64),
         TAG_EVENT_UNSUBSCRIBE_FIRST => Some({
             unsafe {
                 let p0 = *(enum_ptr.add(16) as *const *const u8);
                 let p1 = *(enum_ptr.add(24) as *const *const u8);
-                crate::builtins::event_unsubscribe_first(
-                    p0 as *mut *mut crate::builtins::EventState,
-                    p1 as *mut u8,
-                )
+                crate::builtins::event_unsubscribe_first(p0 as *mut *mut crate::builtins::EventState, p1 as *mut u8)
             }
         } as i64),
         TAG_EVENT_LEN => Some({
@@ -512,10 +495,7 @@ pub unsafe fn dispatch_i64(tag: i32, enum_ptr: *const u8) -> Option<i64> {
             unsafe {
                 let p0 = *(enum_ptr.add(16) as *const *const u8);
                 let p1 = *(enum_ptr.add(24) as *const u64);
-                crate::builtins::event_get_handler(
-                    p0 as *mut crate::builtins::EventState,
-                    p1 as usize,
-                )
+                crate::builtins::event_get_handler(p0 as *mut crate::builtins::EventState, p1 as usize)
             }
         } as i64),
         _ => None,

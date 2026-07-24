@@ -20,48 +20,27 @@ pub enum PckgError {
     RuntimeInit(String),
 
     #[error("API request failed with status {status}: {message}")]
-    Api {
-        status: StatusCode,
-        message: String,
-        body: Option<String>,
-    },
+    Api { status: StatusCode, message: String, body: Option<String> },
 
     /// HTTP 2xx with a JSON body indicating `success: false` (server or proxy contract).
     #[error("API reported failure: {message}")]
-    LogicalFailure {
-        message: String,
-        body: Option<String>,
-    },
+    LogicalFailure { message: String, body: Option<String> },
 }
 
 impl PckgError {
     pub(crate) fn logical_failure(message: impl Into<String>, body: Option<String>) -> Self {
-        Self::LogicalFailure {
-            message: message.into(),
-            body,
-        }
+        Self::LogicalFailure { message: message.into(), body }
     }
 
     pub(crate) fn from_api_error(status: StatusCode, body: String) -> Self {
-        let message = extract_api_message(&body).unwrap_or_else(|| {
-            status
-                .canonical_reason()
-                .unwrap_or("request failed")
-                .to_string()
-        });
+        let message = extract_api_message(&body)
+            .unwrap_or_else(|| status.canonical_reason().unwrap_or("request failed").to_string());
 
-        Self::Api {
-            status,
-            message,
-            body: Some(body),
-        }
+        Self::Api { status, message, body: Some(body) }
     }
 }
 
 fn extract_api_message(body: &str) -> Option<String> {
     let value = serde_json::from_str::<Value>(body).ok()?;
-    value
-        .get("message")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
+    value.get("message").and_then(Value::as_str).map(ToOwned::to_owned)
 }

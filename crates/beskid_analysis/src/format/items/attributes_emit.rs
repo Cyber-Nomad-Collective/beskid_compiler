@@ -1,8 +1,5 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
-use crate::syntax::{
-    Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget,
-    Spanned,
-};
+use crate::syntax::{Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget, Spanned};
 use std::fmt::Write;
 
 impl Emit for AttributeArgument {

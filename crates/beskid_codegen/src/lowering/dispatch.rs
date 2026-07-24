@@ -27,9 +27,6 @@ pub(crate) fn emit_dispatch_call(
     beskid_isle::emit_dispatch_call(builder, route, args, returns_value)
 }
 
-pub(crate) fn emit_str_from_i64_dispatch(
-    builder: &mut FunctionBuilder,
-    value: Value,
-) -> Result<Value, &'static str> {
+pub(crate) fn emit_str_from_i64_dispatch(builder: &mut FunctionBuilder, value: Value) -> Result<Value, &'static str> {
     beskid_isle::emit_str_from_i64_dispatch(builder, value)
 }

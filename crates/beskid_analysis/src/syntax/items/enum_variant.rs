@@ -32,13 +32,6 @@ impl Parsable for EnumVariant {
         };
         debug_assert_eq!(fields.len(), field_docs.len());
 
-        Ok(Spanned::new(
-            Self {
-                name,
-                fields,
-                field_docs,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { name, fields, field_docs }, span))
     }
 }

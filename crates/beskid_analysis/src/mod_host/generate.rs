@@ -5,8 +5,7 @@ use super::context::ModInvocationContext;
 use super::invoker::{ContractInvoker, GeneratorOutcome};
 use super::query_bridge::PipelineOp;
 use super::types::{
-    CollectedContracts, ContractRegistration, GeneratedSyntax, LoadedModArtifact, ModHostInput,
-    ProgramItem,
+    CollectedContracts, ContractRegistration, GeneratedSyntax, LoadedModArtifact, ModHostInput, ProgramItem,
 };
 
 /// Maximum generator rounds allowed across all loaded mod artifacts.
@@ -36,11 +35,8 @@ pub(crate) fn run_generators(
         let mut typed_items: Vec<crate::syntax::Spanned<ProgramItem>> = Vec::new();
         let pipeline_ops: Vec<PipelineOp> = Vec::new();
         let mut context = ModInvocationContext::build(input, loaded);
-        let target_ids: Vec<String> = collected
-            .outcomes
-            .iter()
-            .flat_map(|outcome| outcome.narrowed_targets.iter().cloned())
-            .collect();
+        let target_ids: Vec<String> =
+            collected.outcomes.iter().flat_map(|outcome| outcome.narrowed_targets.iter().cloned()).collect();
         let generation_request = context.generation_request(&target_ids);
 
         for artifact in loaded {
@@ -65,17 +61,10 @@ pub(crate) fn run_generators(
         });
         registrations.dedup();
 
-        Ok(GeneratedSyntax {
-            registrations,
-            typed_items,
-            pipeline_ops,
-            text_contributions: Vec::new(),
-            outcomes,
-        })
+        Ok(GeneratedSyntax { registrations, typed_items, pipeline_ops, text_contributions: Vec::new(), outcomes })
     })
 }
 
 pub(crate) fn is_generate_registration(registration: &ContractRegistration) -> bool {
-    registration.contract_id.ends_with(".Generator")
-        || registration.contract_id.ends_with(".AttributeGenerator")
+    registration.contract_id.ends_with(".Generator") || registration.contract_id.ends_with(".AttributeGenerator")
 }

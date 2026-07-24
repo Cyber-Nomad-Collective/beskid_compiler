@@ -30,13 +30,8 @@ impl Button {
             text: text.into(),
             area: None,
             hovered: false,
-            normal_style: Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-            hover_style: Style::default()
-                .fg(Color::Black)
-                .bg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            normal_style: Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            hover_style: Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD),
         }
     }
 
@@ -76,10 +71,7 @@ impl Button {
 
     pub fn is_clicked(&self, column: u16, row: u16) -> bool {
         if let Some(area) = self.area {
-            column >= area.x
-                && column < area.x + area.width
-                && row >= area.y
-                && row < area.y + area.height
+            column >= area.x && column < area.x + area.width && row >= area.y && row < area.y + area.height
         } else {
             false
         }
@@ -95,46 +87,22 @@ impl Button {
         let button_x = panel_area.x + panel_area.width.saturating_sub(button_width + 2);
         let button_y = panel_area.y;
 
-        let area = Rect {
-            x: button_x,
-            y: button_y,
-            width: button_width,
-            height: 1,
-        };
+        let area = Rect { x: button_x, y: button_y, width: button_width, height: 1 };
 
-        let style = if self.hovered {
-            self.hover_style
-        } else {
-            self.normal_style
-        };
+        let style = if self.hovered { self.hover_style } else { self.normal_style };
 
         (Span::styled(button_text, style), area)
     }
 
-    pub fn render_at_offset(
-        &self,
-        panel_area: Rect,
-        offset_from_right: u16,
-    ) -> (Span<'static>, Rect) {
+    pub fn render_at_offset(&self, panel_area: Rect, offset_from_right: u16) -> (Span<'static>, Rect) {
         let button_text = format!(" [{}] ", self.text);
         let button_width = button_text.len() as u16;
-        let button_x = panel_area
-            .x
-            .saturating_sub(offset_from_right + button_width + 2);
+        let button_x = panel_area.x.saturating_sub(offset_from_right + button_width + 2);
         let button_y = panel_area.y;
 
-        let area = Rect {
-            x: button_x,
-            y: button_y,
-            width: button_width,
-            height: 1,
-        };
+        let area = Rect { x: button_x, y: button_y, width: button_width, height: 1 };
 
-        let style = if self.hovered {
-            self.hover_style
-        } else {
-            self.normal_style
-        };
+        let style = if self.hovered { self.hover_style } else { self.normal_style };
 
         (Span::styled(button_text, style), area)
     }

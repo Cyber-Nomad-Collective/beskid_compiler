@@ -16,10 +16,7 @@ use crate::tui::shell::state::ShellState;
 pub fn update(msg: &ShellMessage, state: &mut ShellState) -> Vec<ShellEffect> {
     let mut effects = Vec::new();
     match msg {
-        ShellMessage::SetOverlayVisible {
-            kind: OverlayKind::Pckg,
-            visible: true,
-        } => {
+        ShellMessage::SetOverlayVisible { kind: OverlayKind::Pckg, visible: true } => {
             state.set_overlay_visible(OverlayKind::Pckg, true);
             state.focus_overlay(OverlayKind::Pckg);
             if !state.pckg.catalog_loaded && !state.pckg.loading {
@@ -82,10 +79,7 @@ fn draw_package_list(frame: &mut Frame, area: Rect, state: &mut ShellState) {
         .iter()
         .map(|pkg| {
             ListItem::new(Line::from(vec![
-                Span::styled(
-                    pkg.name.as_str(),
-                    Style::default().add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(pkg.name.as_str(), Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw("  "),
                 Span::styled(pkg.category.as_str(), Style::default().fg(Color::DarkGray)),
             ]))
@@ -99,26 +93,19 @@ fn draw_package_list(frame: &mut Frame, area: Rect, state: &mut ShellState) {
 
 fn draw_detail_pane(frame: &mut Frame, area: Rect, state: &mut ShellState) {
     let Some(detail) = state.pckg.detail.as_ref() else {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(" Package details ");
+        let block = Block::default().borders(Borders::ALL).title(" Package details ");
         let text = if state.pckg.detail_loading {
             "Loading details…"
         } else {
             "Select a package to view details and readme."
         };
-        frame.render_widget(
-            Paragraph::new(text).style(Style::default().fg(Color::DarkGray)),
-            block.inner(area),
-        );
+        frame.render_widget(Paragraph::new(text).style(Style::default().fg(Color::DarkGray)), block.inner(area));
         frame.render_widget(block, area);
         return;
     };
 
     let [meta, readme] = Layout::vertical([Constraint::Length(6), Constraint::Min(4)]).areas(area);
-    let meta_block = Block::default()
-        .borders(Borders::ALL)
-        .title(format!(" {} ", detail.package.name));
+    let meta_block = Block::default().borders(Borders::ALL).title(format!(" {} ", detail.package.name));
     let version_count = detail.versions.len();
     let meta_lines = vec![
         Line::from(detail.package.description.as_str()),

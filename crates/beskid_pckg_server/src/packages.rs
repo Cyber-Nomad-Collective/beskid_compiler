@@ -8,8 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use beskid_pckg_artifacts::{
-    ArtifactRecord, PackageArtifactStore, PublishRequest, select_download,
-    validate_package_artifact,
+    ArtifactRecord, PackageArtifactStore, PublishRequest, select_download, validate_package_artifact,
 };
 use beskid_pckg_contract::{
     ApiErrorResponse, PackageDetailsResponse, PackageHealthSnapshotResponse, PackageSearchResponse,
@@ -17,8 +16,8 @@ use beskid_pckg_contract::{
     PublishPackageVersionRequest, UpsertPackageRequest,
 };
 use beskid_pckg_store::{
-    NewPackage, NewRegistryActivity, Package, PackageCommunityReview, PackageVersion,
-    PublishOutcome, PublishVersion, StoreError,
+    NewPackage, NewRegistryActivity, Package, PackageCommunityReview, PackageVersion, PublishOutcome, PublishVersion,
+    StoreError,
 };
 
 use crate::{AppState, authenticated_subject};
@@ -70,17 +69,11 @@ impl ListQuery {
     }
 
     fn offset(&self) -> i64 {
-        self.offset
-            .unwrap_or_else(|| self.page.unwrap_or(0).max(0).saturating_mul(self.limit()))
-            .max(0)
+        self.offset.unwrap_or_else(|| self.page.unwrap_or(0).max(0).saturating_mul(self.limit())).max(0)
     }
 
     fn query(&self) -> Option<String> {
-        self.q
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_ascii_lowercase)
+        self.q.as_deref().map(str::trim).filter(|value| !value.is_empty()).map(str::to_ascii_lowercase)
     }
 
     fn requests_current_owner(&self) -> bool {
@@ -99,11 +92,7 @@ pub async fn list_packages(
     if query.requests_current_owner() && subject.is_none() {
         return crate::unauthorized_response();
     }
-    let packages = match state
-        .packages
-        .list_packages(query.limit(), query.offset())
-        .await
-    {
+    let packages = match state.packages.list_packages(query.limit(), query.offset()).await {
         Ok(packages) => packages,
         Err(_) => return package_storage_failure(),
     };
@@ -117,11 +106,7 @@ pub async fn list_packages(
                 package.is_public || subject.as_deref() == Some(&package.owner_subject)
             }
         })
-        .filter(|package| {
-            needle
-                .as_ref()
-                .is_none_or(|needle| package.name.to_ascii_lowercase().contains(needle))
-        })
+        .filter(|package| needle.as_ref().is_none_or(|needle| package.name.to_ascii_lowercase().contains(needle)))
         .map(|package| package_summary(&package))
         .collect::<Vec<_>>();
     Json(summaries).into_response()
@@ -135,11 +120,7 @@ pub async fn search_packages(
     Query(query): Query<ListQuery>,
 ) -> Response {
     let subject = authenticated_subject(&state, &headers);
-    let packages = match state
-        .packages
-        .list_packages(query.limit(), query.offset())
-        .await
-    {
+    let packages = match state.packages.list_packages(query.limit(), query.offset()).await {
         Ok(packages) => packages,
         Err(_) => return package_storage_failure(),
     };
@@ -147,16 +128,8 @@ pub async fn search_packages(
     let results = packages
         .into_iter()
         .filter(|package| package.is_public || subject.as_deref() == Some(&package.owner_subject))
-        .filter(|package| {
-            needle
-                .as_ref()
-                .is_none_or(|needle| package.name.to_ascii_lowercase().contains(needle))
-        })
-        .map(|package| PackageSearchResponse {
-            package: package_summary(&package),
-            review_count: 0,
-            health: health(),
-        })
+        .filter(|package| needle.as_ref().is_none_or(|needle| package.name.to_ascii_lowercase().contains(needle)))
+        .map(|package| PackageSearchResponse { package: package_summary(&package), review_count: 0, health: health() })
         .collect::<Vec<_>>();
     Json(results).into_response()
 }
@@ -194,10 +167,7 @@ pub async fn list_publishers(State(state): State<AppState>) -> Response {
 /// Public packages owned by a profile-backed Auth Hub subject. A missing
 /// profile is indistinguishable from a missing publisher, avoiding leakage of
 /// package owner subjects which have not opted into the directory.
-pub async fn publisher_packages(
-    State(state): State<AppState>,
-    Path(subject): Path<String>,
-) -> Response {
+pub async fn publisher_packages(State(state): State<AppState>, Path(subject): Path<String>) -> Response {
     if !is_github_subject(&subject) {
         return package_not_found();
     }
@@ -221,9 +191,7 @@ pub async fn publisher_packages(
 }
 
 fn is_github_subject(subject: &str) -> bool {
-    subject
-        .strip_prefix("github:")
-        .is_some_and(|id| !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
+    subject.strip_prefix("github:").is_some_and(|id| !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 pub async fn package_detail(
@@ -243,8 +211,8 @@ pub async fn package_detail(
             Err(_) => return package_storage_failure(),
         },
     };
-    let Some(package) = package
-        .filter(|package| package.is_public || subject.as_deref() == Some(&package.owner_subject))
+    let Some(package) =
+        package.filter(|package| package.is_public || subject.as_deref() == Some(&package.owner_subject))
     else {
         return package_not_found();
     };
@@ -256,10 +224,7 @@ pub async fn package_detail(
     let latest_version = latest_non_yanked(&versions).map(|version| version.version.clone());
     Json(PackageDetailsResponse {
         package: package_summary(&package),
-        versions: versions
-            .iter()
-            .map(|version| version_summary(&package, version))
-            .collect(),
+        versions: versions.iter().map(|version| version_summary(&package, version)).collect(),
         dependencies: Vec::new(),
         dependents_count: 0,
         readme: None,
@@ -269,28 +234,13 @@ pub async fn package_detail(
     .into_response()
 }
 
-pub async fn list_community_reviews(
-    State(state): State<AppState>,
-    Path(name): Path<String>,
-) -> Response {
-    let Some(package) = state
-        .packages
-        .find_package(&name)
-        .await
-        .ok()
-        .flatten()
-        .filter(|package| package.is_public)
+pub async fn list_community_reviews(State(state): State<AppState>, Path(name): Path<String>) -> Response {
+    let Some(package) = state.packages.find_package(&name).await.ok().flatten().filter(|package| package.is_public)
     else {
         return package_not_found();
     };
     match state.packages.community_reviews(&package.id).await {
-        Ok(reviews) => Json(
-            reviews
-                .into_iter()
-                .map(community_review_response)
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
+        Ok(reviews) => Json(reviews.into_iter().map(community_review_response).collect::<Vec<_>>()).into_response(),
         Err(_) => package_storage_failure(),
     }
 }
@@ -304,23 +254,12 @@ pub async fn create_community_review(
     let Some(subject) = authenticated_subject(&state, &headers) else {
         return crate::unauthorized_response();
     };
-    let Some(package) = state
-        .packages
-        .find_package(&name)
-        .await
-        .ok()
-        .flatten()
-        .filter(|package| package.is_public)
+    let Some(package) = state.packages.find_package(&name).await.ok().flatten().filter(|package| package.is_public)
     else {
         return package_not_found();
     };
     if !(1..=5).contains(&request.rating) || request.comment.trim().is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ApiErrorResponse::new(
-                "rating must be 1-5 and comment is required",
-            )),
-        )
+        return (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("rating must be 1-5 and comment is required")))
             .into_response();
     }
     match state.operations.block_reason(&request.comment).await {
@@ -341,14 +280,8 @@ pub async fn create_community_review(
         updated_at_unix_seconds: now,
     };
     match state.packages.upsert_community_review(review).await {
-        Ok(review) => {
-            (StatusCode::CREATED, Json(community_review_response(review))).into_response()
-        }
-        Err(_) => (
-            StatusCode::BAD_REQUEST,
-            Json(ApiErrorResponse::new("invalid community review")),
-        )
-            .into_response(),
+        Ok(review) => (StatusCode::CREATED, Json(community_review_response(review))).into_response(),
+        Err(_) => (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid community review"))).into_response(),
     }
 }
 
@@ -365,11 +298,7 @@ fn community_review_response(review: PackageCommunityReview) -> CommunityReviewR
 /// Lists version summaries without forcing clients to download the full package
 /// detail document. Private packages deliberately remain indistinguishable from
 /// absent packages for unauthenticated and non-owner callers.
-pub async fn list_versions(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(name): Path<String>,
-) -> Response {
+pub async fn list_versions(State(state): State<AppState>, headers: HeaderMap, Path(name): Path<String>) -> Response {
     let subject = authenticated_subject(&state, &headers);
     let package = match state.packages.find_package(&name).await {
         Ok(Some(package)) => package,
@@ -380,13 +309,9 @@ pub async fn list_versions(
         return package_not_found();
     }
     match state.packages.list_versions(&package.id).await {
-        Ok(versions) => Json(
-            versions
-                .iter()
-                .map(|version| version_summary(&package, version))
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
+        Ok(versions) => {
+            Json(versions.iter().map(|version| version_summary(&package, version)).collect::<Vec<_>>()).into_response()
+        }
         Err(_) => package_storage_failure(),
     }
 }
@@ -401,11 +326,7 @@ struct DeletePackageResponse {
 /// Deletes a package only for its Auth Hub owner. The storage boundary commits
 /// first; artifact cleanup is best-effort afterwards because it cannot safely
 /// be part of a PostgreSQL transaction.
-pub async fn delete_package(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(name): Path<String>,
-) -> Response {
+pub async fn delete_package(State(state): State<AppState>, headers: HeaderMap, Path(name): Path<String>) -> Response {
     let Some(subject) = authenticated_subject(&state, &headers) else {
         return crate::unauthorized_response();
     };
@@ -425,11 +346,7 @@ pub async fn delete_package(
     for version in removed {
         let _ = state.artifacts.delete(&version.storage_key);
     }
-    Json(DeletePackageResponse {
-        success: true,
-        message: "package deleted".to_owned(),
-    })
-    .into_response()
+    Json(DeletePackageResponse { success: true, message: "package deleted".to_owned() }).into_response()
 }
 
 pub async fn upsert_package(
@@ -452,16 +369,10 @@ pub async fn upsert_package(
         .await
     {
         Ok(package) => (StatusCode::CREATED, Json(package_summary(&package))).into_response(),
-        Err(StoreError::PackageAlreadyExists) => (
-            StatusCode::CONFLICT,
-            Json(ApiErrorResponse::new("package already exists")),
-        )
-            .into_response(),
-        Err(_) => (
-            StatusCode::BAD_REQUEST,
-            Json(ApiErrorResponse::new("invalid package request")),
-        )
-            .into_response(),
+        Err(StoreError::PackageAlreadyExists) => {
+            (StatusCode::CONFLICT, Json(ApiErrorResponse::new("package already exists"))).into_response()
+        }
+        Err(_) => (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid package request"))).into_response(),
     }
 }
 
@@ -486,10 +397,7 @@ pub async fn publish_version(
     {
         Some(request) => request,
         None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ApiErrorResponse::new("invalid package version request")),
-            )
+            return (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid package version request")))
                 .into_response();
         }
     };
@@ -516,12 +424,7 @@ async fn publish_version_metadata(
         return package_not_found();
     }
     let (Some(version), Some(checksum_sha256)) = (request.version, request.checksum_sha256) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ApiErrorResponse::new(
-                "version and checksumSha256 are required",
-            )),
-        )
+        return (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("version and checksumSha256 are required")))
             .into_response();
     };
     match state
@@ -538,44 +441,26 @@ async fn publish_version_metadata(
         .await
     {
         Ok(PublishOutcome::Created(version)) => {
-            let _ =
-                record_publish_activity(&state, &subject, &package.name, &version.version).await;
-            (
-                StatusCode::CREATED,
-                Json(version_summary(&package, &version)),
-            )
-                .into_response()
+            let _ = record_publish_activity(&state, &subject, &package.name, &version.version).await;
+            (StatusCode::CREATED, Json(version_summary(&package, &version))).into_response()
         }
         Ok(PublishOutcome::AlreadyExists(version)) => {
             (StatusCode::OK, Json(version_summary(&package, &version))).into_response()
         }
-        Err(StoreError::VersionImmutable) => (
-            StatusCode::CONFLICT,
-            Json(ApiErrorResponse::new("package version is immutable")),
-        )
-            .into_response(),
-        Err(_) => (
-            StatusCode::BAD_REQUEST,
-            Json(ApiErrorResponse::new("invalid package version request")),
-        )
-            .into_response(),
+        Err(StoreError::VersionImmutable) => {
+            (StatusCode::CONFLICT, Json(ApiErrorResponse::new("package version is immutable"))).into_response()
+        }
+        Err(_) => {
+            (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid package version request"))).into_response()
+        }
     }
 }
 
-async fn publish_multipart_version(
-    state: AppState,
-    headers: HeaderMap,
-    name: String,
-    request: Request,
-) -> Response {
+async fn publish_multipart_version(state: AppState, headers: HeaderMap, name: String, request: Request) -> Response {
     let Some(subject) = authenticated_subject(&state, &headers) else {
         return crate::unauthorized_response();
     };
-    let content_type = match request
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-    {
+    let content_type = match request.headers().get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok()) {
         Some(content_type) => content_type,
         None => return invalid_publish_form(),
     };
@@ -583,20 +468,15 @@ async fn publish_multipart_version(
         Ok(boundary) => boundary,
         Err(_) => return invalid_publish_form(),
     };
-    let constraints = multer::Constraints::new()
-        .allowed_fields(vec!["version", "checksumSha256", "artifact"])
-        .size_limit(
+    let constraints =
+        multer::Constraints::new().allowed_fields(vec!["version", "checksumSha256", "artifact"]).size_limit(
             multer::SizeLimit::new()
                 .whole_stream(64 * 1024 * 1024)
                 .per_field(64 * 1024 * 1024)
                 .for_field("version", 128)
                 .for_field("checksumSha256", 128),
         );
-    let mut form = multer::Multipart::with_constraints(
-        request.into_body().into_data_stream(),
-        boundary,
-        constraints,
-    );
+    let mut form = multer::Multipart::with_constraints(request.into_body().into_data_stream(), boundary, constraints);
     let mut version = None;
     let mut checksum = None;
     let mut artifact = None;
@@ -612,12 +492,8 @@ async fn publish_multipart_version(
             Err(_) => return invalid_publish_form(),
         };
         match name.as_deref() {
-            Some("version") if version.is_none() => {
-                version = String::from_utf8(bytes.to_vec()).ok()
-            }
-            Some("checksumSha256") if checksum.is_none() => {
-                checksum = String::from_utf8(bytes.to_vec()).ok()
-            }
+            Some("version") if version.is_none() => version = String::from_utf8(bytes.to_vec()).ok(),
+            Some("checksumSha256") if checksum.is_none() => checksum = String::from_utf8(bytes.to_vec()).ok(),
             Some("artifact") if artifact.is_none() => artifact = Some(bytes),
             _ => return invalid_publish_form(),
         }
@@ -626,28 +502,16 @@ async fn publish_multipart_version(
         return invalid_publish_form();
     };
     let validated = match validate_package_artifact(&artifact, &name, &version) {
-        Ok(validated)
-            if validated
-                .checksum_sha256
-                .eq_ignore_ascii_case(checksum.trim()) =>
-        {
-            validated
-        }
+        Ok(validated) if validated.checksum_sha256.eq_ignore_ascii_case(checksum.trim()) => validated,
         Ok(_) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(ApiErrorResponse::new(
-                    "artifact checksum does not match checksumSha256",
-                )),
+                Json(ApiErrorResponse::new("artifact checksum does not match checksumSha256")),
             )
                 .into_response();
         }
         Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ApiErrorResponse::new("invalid package artifact")),
-            )
-                .into_response();
+            return (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid package artifact"))).into_response();
         }
     };
     persist_uploaded_artifact(state, subject, name, version, artifact, validated).await
@@ -676,37 +540,17 @@ async fn persist_uploaded_artifact(
         Err(_) => return package_storage_failure(),
     };
     if let Some(existing) = existing {
-        if !existing
-            .checksum_sha256
-            .eq_ignore_ascii_case(&validated.checksum_sha256)
-        {
-            return (
-                StatusCode::CONFLICT,
-                Json(ApiErrorResponse::new("package version is immutable")),
-            )
-                .into_response();
+        if !existing.checksum_sha256.eq_ignore_ascii_case(&validated.checksum_sha256) {
+            return (StatusCode::CONFLICT, Json(ApiErrorResponse::new("package version is immutable"))).into_response();
         }
-        if !matches!(
-            state
-                .artifacts
-                .verify(&existing.storage_key, &existing.checksum_sha256),
-            Ok(true)
-        ) && state
-            .artifacts
-            .save(PublishRequest {
-                validated,
-                bytes: &bytes,
-            })
-            .is_err()
+        if !matches!(state.artifacts.verify(&existing.storage_key, &existing.checksum_sha256), Ok(true))
+            && state.artifacts.save(PublishRequest { validated, bytes: &bytes }).is_err()
         {
             return artifact_storage_failure();
         }
         return (StatusCode::OK, Json(version_summary(&package, &existing))).into_response();
     }
-    let stored = match state.artifacts.save(PublishRequest {
-        validated,
-        bytes: &bytes,
-    }) {
+    let stored = match state.artifacts.save(PublishRequest { validated, bytes: &bytes }) {
         Ok(stored) => stored,
         Err(_) => return artifact_storage_failure(),
     };
@@ -724,54 +568,34 @@ async fn persist_uploaded_artifact(
         .await
     {
         Ok(PublishOutcome::Created(version)) => {
-            let _ =
-                record_publish_activity(&state, &subject, &package.name, &version.version).await;
-            (
-                StatusCode::CREATED,
-                Json(version_summary(&package, &version)),
-            )
-                .into_response()
+            let _ = record_publish_activity(&state, &subject, &package.name, &version.version).await;
+            (StatusCode::CREATED, Json(version_summary(&package, &version))).into_response()
         }
         Ok(PublishOutcome::AlreadyExists(version)) => {
             (StatusCode::OK, Json(version_summary(&package, &version))).into_response()
         }
-        Err(StoreError::VersionImmutable) => (
-            StatusCode::CONFLICT,
-            Json(ApiErrorResponse::new("package version is immutable")),
-        )
-            .into_response(),
-        Err(_) => (
-            StatusCode::BAD_REQUEST,
-            Json(ApiErrorResponse::new("invalid package version request")),
-        )
-            .into_response(),
+        Err(StoreError::VersionImmutable) => {
+            (StatusCode::CONFLICT, Json(ApiErrorResponse::new("package version is immutable"))).into_response()
+        }
+        Err(_) => {
+            (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid package version request"))).into_response()
+        }
     }
 }
 
 fn invalid_publish_form() -> Response {
     (
         StatusCode::BAD_REQUEST,
-        Json(ApiErrorResponse::new(
-            "multipart publish requires version, checksumSha256, and artifact",
-        )),
+        Json(ApiErrorResponse::new("multipart publish requires version, checksumSha256, and artifact")),
     )
         .into_response()
 }
 
 fn artifact_storage_failure() -> Response {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(ApiErrorResponse::new("artifact storage failed")),
-    )
-        .into_response()
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiErrorResponse::new("artifact storage failed"))).into_response()
 }
 
-async fn record_publish_activity(
-    state: &AppState,
-    subject: &str,
-    package_name: &str,
-    version: &str,
-) -> Result<(), ()> {
+async fn record_publish_activity(state: &AppState, subject: &str, package_name: &str, version: &str) -> Result<(), ()> {
     state
         .operations
         .append_activity(NewRegistryActivity {
@@ -790,11 +614,7 @@ async fn record_publish_activity(
 }
 
 fn package_storage_failure() -> Response {
-    (
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(ApiErrorResponse::new("package storage unavailable")),
-    )
-        .into_response()
+    (StatusCode::SERVICE_UNAVAILABLE, Json(ApiErrorResponse::new("package storage unavailable"))).into_response()
 }
 
 /// Publishes a validated `.bpk` artifact as a raw request body.
@@ -815,11 +635,7 @@ pub async fn upload_artifact(
     let validated = match validate_package_artifact(&bytes, &name, &version) {
         Ok(validated) => validated,
         Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ApiErrorResponse::new("invalid package artifact")),
-            )
-                .into_response();
+            return (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid package artifact"))).into_response();
         }
     };
     persist_uploaded_artifact(state, subject, name, version, bytes, validated).await
@@ -855,11 +671,7 @@ pub async fn download_artifact(
     } else {
         version
     };
-    let stored_version = match state
-        .packages
-        .find_version(&package.id, &resolved_version)
-        .await
-    {
+    let stored_version = match state.packages.find_version(&package.id, &resolved_version).await {
         Ok(version) => version,
         Err(_) => return package_storage_failure(),
     };
@@ -869,42 +681,28 @@ pub async fn download_artifact(
     if version.is_yanked {
         return package_not_found();
     }
-    match state
-        .artifacts
-        .verify(&version.storage_key, &version.checksum_sha256)
-    {
+    match state.artifacts.verify(&version.storage_key, &version.checksum_sha256) {
         Ok(true) => {}
         Ok(false) | Err(_) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(ApiErrorResponse::new("package artifact not found")),
-            )
-                .into_response();
+            return (StatusCode::NOT_FOUND, Json(ApiErrorResponse::new("package artifact not found"))).into_response();
         }
     }
     let bytes = match state.artifacts.open(&version.storage_key) {
         Ok(bytes) => bytes,
         Err(_) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(ApiErrorResponse::new("package artifact not found")),
-            )
-                .into_response();
+            return (StatusCode::NOT_FOUND, Json(ApiErrorResponse::new("package artifact not found"))).into_response();
         }
     };
     let mut response = Body::from(bytes).into_response();
-    response.headers_mut().insert(
-        header::CONTENT_TYPE,
-        header::HeaderValue::from_static("application/vnd.beskid.package"),
-    );
-    response.headers_mut().insert(
-        header::CONTENT_DISPOSITION,
-        header::HeaderValue::from_static("attachment; filename=package.bpk"),
-    );
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, header::HeaderValue::from_static("application/vnd.beskid.package"));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_DISPOSITION, header::HeaderValue::from_static("attachment; filename=package.bpk"));
     response.headers_mut().insert(
         "x-checksum-sha256",
-        header::HeaderValue::from_str(&version.checksum_sha256)
-            .expect("validated checksum is a valid response header"),
+        header::HeaderValue::from_str(&version.checksum_sha256).expect("validated checksum is a valid response header"),
     );
     let _ = package;
     response
@@ -946,35 +744,21 @@ async fn set_yanked(
     if package.owner_subject != subject {
         return package_not_found();
     }
-    match state
-        .packages
-        .set_yanked(&package.id, &version, yanked, now())
-        .await
-    {
+    match state.packages.set_yanked(&package.id, &version, yanked, now()).await {
         Ok(version) => Json(PackageVersionLifecycleResponse {
             success: true,
-            message: if yanked {
-                "version yanked"
-            } else {
-                "version unyanked"
-            }
-            .to_owned(),
+            message: if yanked { "version yanked" } else { "version unyanked" }.to_owned(),
             version: Some(version_summary(&package, &version)),
         })
         .into_response(),
         Err(StoreError::VersionNotFound) => package_not_found(),
-        Err(StoreError::VersionAlreadyYanked | StoreError::VersionNotYanked) => (
-            StatusCode::CONFLICT,
-            Json(ApiErrorResponse::new(
-                "version already has requested lifecycle state",
-            )),
-        )
-            .into_response(),
-        Err(_) => (
-            StatusCode::BAD_REQUEST,
-            Json(ApiErrorResponse::new("invalid version lifecycle request")),
-        )
-            .into_response(),
+        Err(StoreError::VersionAlreadyYanked | StoreError::VersionNotYanked) => {
+            (StatusCode::CONFLICT, Json(ApiErrorResponse::new("version already has requested lifecycle state")))
+                .into_response()
+        }
+        Err(_) => {
+            (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid version lifecycle request"))).into_response()
+        }
     }
 }
 
@@ -1017,14 +801,10 @@ fn version_summary(package: &Package, version: &PackageVersion) -> PackageVersio
 }
 
 fn latest_non_yanked(versions: &[PackageVersion]) -> Option<&PackageVersion> {
-    let records = versions
-        .iter()
-        .map(|version| ArtifactRecord::new(&version.version, version.is_yanked))
-        .collect::<Vec<_>>();
+    let records =
+        versions.iter().map(|version| ArtifactRecord::new(&version.version, version.is_yanked)).collect::<Vec<_>>();
     let selected = select_download(&records, "latest")?;
-    versions
-        .iter()
-        .find(|version| version.version == selected.version)
+    versions.iter().find(|version| version.version == selected.version)
 }
 
 fn health() -> PackageHealthSnapshotResponse {
@@ -1048,18 +828,12 @@ fn health() -> PackageHealthSnapshotResponse {
 }
 
 fn package_not_found() -> axum::response::Response {
-    (
-        StatusCode::NOT_FOUND,
-        Json(ApiErrorResponse::new("package not found")),
-    )
-        .into_response()
+    (StatusCode::NOT_FOUND, Json(ApiErrorResponse::new("package not found"))).into_response()
 }
 
 fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("clock is after Unix epoch")
-        .as_secs() as i64
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("clock is after Unix epoch").as_secs()
+        as i64
 }
 fn timestamp(seconds: i64) -> String {
     time::OffsetDateTime::from_unix_timestamp(seconds)

@@ -6,11 +6,7 @@ use ratatui::text::Span;
 
 use crate::primitives::button::widget::Button;
 
-pub fn render_title_with_buttons(
-    panel_area: Rect,
-    title: &str,
-    buttons: &mut [&mut Button],
-) -> Line<'static> {
+pub fn render_title_with_buttons(panel_area: Rect, title: &str, buttons: &mut [&mut Button]) -> Line<'static> {
     let mut spans = vec![Span::raw(title.to_string())];
 
     let mut offset = 0u16;

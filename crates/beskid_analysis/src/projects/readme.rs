@@ -3,9 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::projects::discovery::{
-    discover_project_manifest_in_dir, discover_workspace_manifest_in_dir,
-};
+use crate::projects::discovery::{discover_project_manifest_in_dir, discover_workspace_manifest_in_dir};
 use crate::projects::error::ProjectError;
 use crate::projects::model::{ProjectManifest, WorkspaceManifest};
 use crate::projects::parser::{parse_manifest, parse_workspace_manifest};
@@ -29,50 +27,28 @@ pub fn resolve_readme_relative_path(explicit: Option<&str>, package_root: &Path)
     None
 }
 
-pub fn resolve_readme_from_project_manifest(
-    package_root: &Path,
-    manifest: &ProjectManifest,
-) -> Option<String> {
+pub fn resolve_readme_from_project_manifest(package_root: &Path, manifest: &ProjectManifest) -> Option<String> {
     resolve_readme_relative_path(manifest.project.readme.as_deref(), package_root)
 }
 
-pub fn resolve_readme_from_workspace_manifest(
-    package_root: &Path,
-    _manifest: &WorkspaceManifest,
-) -> Option<String> {
+pub fn resolve_readme_from_workspace_manifest(package_root: &Path, _manifest: &WorkspaceManifest) -> Option<String> {
     resolve_readme_relative_path(None, package_root)
 }
 
 /// Discover readme settings for a package directory (project manifest preferred over workspace).
-pub fn discover_readme_for_package_root(
-    package_root: &Path,
-) -> Result<Option<String>, ProjectError> {
+pub fn discover_readme_for_package_root(package_root: &Path) -> Result<Option<String>, ProjectError> {
     if let Some(project_manifest_path) = discover_project_manifest_in_dir(package_root)? {
-        let source = fs::read_to_string(&project_manifest_path).map_err(|source| {
-            ProjectError::ReadManifest {
-                path: project_manifest_path.clone(),
-                source,
-            }
-        })?;
+        let source = fs::read_to_string(&project_manifest_path)
+            .map_err(|source| ProjectError::ReadManifest { path: project_manifest_path.clone(), source })?;
         let manifest = parse_manifest(&source)?;
-        return Ok(resolve_readme_from_project_manifest(
-            package_root,
-            &manifest,
-        ));
+        return Ok(resolve_readme_from_project_manifest(package_root, &manifest));
     }
 
     if let Some(workspace_manifest_path) = discover_workspace_manifest_in_dir(package_root)? {
-        let source = fs::read_to_string(&workspace_manifest_path).map_err(|source| {
-            ProjectError::ReadManifest {
-                path: workspace_manifest_path.clone(),
-                source,
-            }
-        })?;
+        let source = fs::read_to_string(&workspace_manifest_path)
+            .map_err(|source| ProjectError::ReadManifest { path: workspace_manifest_path.clone(), source })?;
         let manifest = parse_workspace_manifest(&source)?;
-        return Ok(resolve_readme_from_workspace_manifest(
-            package_root,
-            &manifest,
-        ));
+        return Ok(resolve_readme_from_workspace_manifest(package_root, &manifest));
     }
 
     Ok(resolve_readme_relative_path(None, package_root))

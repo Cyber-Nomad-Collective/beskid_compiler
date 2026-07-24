@@ -49,8 +49,7 @@ impl GcVTable {
             unsafe {
                 // Calculate GcBox pointer from header pointer using offset
                 // SAFETY: GcBox is repr(C) so header is at offset 0
-                let gc_box_ptr = (ptr as *const u8).sub(std::mem::offset_of!(GcBox<T>, header))
-                    as *const GcBox<T>;
+                let gc_box_ptr = (ptr as *const u8).sub(std::mem::offset_of!(GcBox<T>, header)) as *const GcBox<T>;
 
                 let data = &(*gc_box_ptr).data;
                 data.trace(tracer);
@@ -61,8 +60,7 @@ impl GcVTable {
             unsafe {
                 // Calculate GcBox pointer from header pointer using offset
                 // SAFETY: GcBox is repr(C) so header is at offset 0
-                let gc_box_ptr =
-                    (ptr as *mut u8).sub(std::mem::offset_of!(GcBox<T>, header)) as *mut GcBox<T>;
+                let gc_box_ptr = (ptr as *mut u8).sub(std::mem::offset_of!(GcBox<T>, header)) as *mut GcBox<T>;
 
                 let _box = Box::from_raw(gc_box_ptr);
                 // Box drops T here
@@ -70,11 +68,7 @@ impl GcVTable {
         }
 
         Self {
-            trace: if T::NO_TRACE {
-                trace_noop
-            } else {
-                trace_impl::<T>
-            },
+            trace: if T::NO_TRACE { trace_noop } else { trace_impl::<T> },
             drop: drop_impl::<T>,
             layout: Layout::new::<GcBox<T>>(),
         }
@@ -101,21 +95,15 @@ impl GcHeader {
     #[inline]
     fn new(vtable: &'static GcVTable, rooted: bool) -> Self {
         let word = if rooted { ROOT_COUNT_ONE } else { 0 };
-        Self {
-            header_word: AtomicUsize::new(word),
-            next: AtomicPtr::new(null_mut()),
-            vtable,
-        }
+        Self { header_word: AtomicUsize::new(word), next: AtomicPtr::new(null_mut()), vtable }
     }
 
     pub fn inc_root(&self) {
-        self.header_word
-            .fetch_add(ROOT_COUNT_ONE, Ordering::Relaxed);
+        self.header_word.fetch_add(ROOT_COUNT_ONE, Ordering::Relaxed);
     }
 
     pub fn dec_root(&self) {
-        self.header_word
-            .fetch_sub(ROOT_COUNT_ONE, Ordering::Relaxed);
+        self.header_word.fetch_sub(ROOT_COUNT_ONE, Ordering::Relaxed);
     }
 
     pub fn is_root(&self) -> bool {
@@ -134,12 +122,7 @@ impl GcHeader {
                 return false;
             }
             let new = (current & !COLOR_MASK) | GRAY_BITS;
-            match self.header_word.compare_exchange_weak(
-                current,
-                new,
-                Ordering::SeqCst,
-                Ordering::Acquire,
-            ) {
+            match self.header_word.compare_exchange_weak(current, new, Ordering::SeqCst, Ordering::Acquire) {
                 Ok(_) => return true,
                 Err(actual) => current = actual,
             }
@@ -150,12 +133,7 @@ impl GcHeader {
         let mut current = self.header_word.load(Ordering::Acquire);
         loop {
             let new = (current & !COLOR_MASK) | BLACK_BITS;
-            match self.header_word.compare_exchange_weak(
-                current,
-                new,
-                Ordering::Release,
-                Ordering::Acquire,
-            ) {
+            match self.header_word.compare_exchange_weak(current, new, Ordering::Release, Ordering::Acquire) {
                 Ok(_) => break,
                 Err(actual) => current = actual,
             }
@@ -189,10 +167,7 @@ impl<T: Trace> GcBox<T> {
 
     /// Allocate a new `GcBox` and choose initial rooted state.
     pub(crate) fn new_with_root(data: T, rooted: bool) -> NonNull<GcBox<T>> {
-        let gc_box = Box::new(GcBox {
-            header: GcHeader::new(&Self::VTABLE, rooted),
-            data,
-        });
+        let gc_box = Box::new(GcBox { header: GcHeader::new(&Self::VTABLE, rooted), data });
 
         // Leak the box to get a raw pointer
         NonNull::from(Box::leak(gc_box))

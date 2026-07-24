@@ -9,14 +9,8 @@ pub fn uri(path: &str) -> Uri {
 }
 
 pub fn sample_source() -> String {
-    [
-        "i32 Main() {",
-        "    mut i32 value = 1;",
-        "    mut i32 total = value + value;",
-        "    return value;",
-        "}",
-    ]
-    .join("\n")
+    ["i32 Main() {", "    mut i32 value = 1;", "    mut i32 total = value + value;", "    return value;", "}"]
+        .join("\n")
 }
 
 pub fn semantic_tokens_params(uri: Uri) -> SemanticTokensParams {
@@ -31,12 +25,7 @@ pub async fn open_document(server: &Backend, uri: Uri, language_id: &str, text: 
     server.signal_workspace_ready_for_tests().await;
     server
         .did_open(DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri,
-                language_id: language_id.to_string(),
-                version: 1,
-                text,
-            },
+            text_document: TextDocumentItem { uri, language_id: language_id.to_string(), version: 1, text },
         })
         .await;
 }
@@ -45,11 +34,7 @@ pub async fn change_document(server: &Backend, uri: Uri, version: i32, text: Str
     server
         .did_change(DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier { uri, version },
-            content_changes: vec![TextDocumentContentChangeEvent {
-                range: None,
-                range_length: None,
-                text,
-            }],
+            content_changes: vec![TextDocumentContentChangeEvent { range: None, range_length: None, text }],
         })
         .await;
 }

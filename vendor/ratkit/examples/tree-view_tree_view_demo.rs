@@ -7,9 +7,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::primitives::tree_view::{TreeNavigator, TreeNode, TreeView, TreeViewState};
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct TreeViewDemo {
     nodes: Vec<TreeNode<&'static str>>,
@@ -25,31 +23,26 @@ impl TreeViewDemo {
                 vec![
                     TreeNode::new("lib.rs"),
                     TreeNode::new("main.rs"),
-                    TreeNode::with_children(
-                        "widgets",
-                        vec![TreeNode::new("button.rs"), TreeNode::new("dialog.rs")],
-                    ),
+                    TreeNode::with_children("widgets", vec![TreeNode::new("button.rs"), TreeNode::new("dialog.rs")]),
                 ],
             ),
             TreeNode::with_children("tests", vec![TreeNode::new("smoke.rs")]),
         ];
 
-        Self {
-            nodes,
-            state: TreeViewState::new(),
-            navigator: TreeNavigator::new(),
-        }
+        Self { nodes, state: TreeViewState::new(), navigator: TreeNavigator::new() }
     }
 
     fn build_tree(&self) -> TreeView<'static, &'static str> {
         TreeView::new(self.nodes.clone())
-            .render_fn(|data, state| {
-                if state.is_selected {
-                    Line::from(format!("> {}", data))
-                } else {
-                    Line::from(*data)
-                }
-            })
+            .render_fn(
+                |data, state| {
+                    if state.is_selected {
+                        Line::from(format!("> {}", data))
+                    } else {
+                        Line::from(*data)
+                    }
+                },
+            )
             .highlight_style(Style::default().bg(Color::DarkGray))
             .block(Block::default().borders(Borders::ALL).title(" Tree View "))
             .with_filter_ui(true)

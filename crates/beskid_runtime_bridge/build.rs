@@ -6,7 +6,6 @@ fn main() {
 
     let source = std::fs::read_to_string(&manifest_path)
         .unwrap_or_else(|err| panic!("beskid_runtime_bridge build: read ABI-v5 manifest: {err}"));
-    beskid_manifest::load_v5_manifest_source(&source).unwrap_or_else(|err| {
-        panic!("beskid_runtime_bridge build: validate ABI-v5 manifest: {err}")
-    });
+    beskid_manifest::load_v5_manifest_source(&source)
+        .unwrap_or_else(|err| panic!("beskid_runtime_bridge build: validate ABI-v5 manifest: {err}"));
 }

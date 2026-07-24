@@ -5,11 +5,7 @@ use serde_json::{Value, json};
 use crate::model::{GraphDocument, GraphKind, GraphNodeSummary};
 
 /// Build the canonical tooling payload for `beskid.getGraph`.
-pub fn graph_tooling_payload(
-    doc: &GraphDocument,
-    kind: GraphKind,
-    focused_project_uri: &str,
-) -> Value {
+pub fn graph_tooling_payload(doc: &GraphDocument, kind: GraphKind, focused_project_uri: &str) -> Value {
     let warnings: Vec<Value> = doc
         .spec
         .warnings
@@ -50,8 +46,7 @@ fn node_summary_json(node: &GraphNodeSummary) -> Value {
 mod tests {
     use super::*;
     use crate::model::{
-        GraphDocument, GraphKind, GraphMetadata, GraphNodeSummary, GraphSpec, GraphWarning,
-        GraphWarningCode,
+        GraphDocument, GraphKind, GraphMetadata, GraphNodeSummary, GraphSpec, GraphWarning, GraphWarningCode,
     };
 
     #[test]
@@ -63,10 +58,7 @@ mod tests {
                 nodes: Vec::new(),
                 edges: Vec::new(),
                 subgraphs: Vec::new(),
-                warnings: vec![GraphWarning {
-                    code: GraphWarningCode::Unresolved,
-                    message: "missing-pkg".to_owned(),
-                }],
+                warnings: vec![GraphWarning { code: GraphWarningCode::Unresolved, message: "missing-pkg".to_owned() }],
             },
             mermaid: "flowchart LR\n  n0[root]".to_owned(),
             revision: "abc123".to_owned(),
@@ -82,15 +74,11 @@ mod tests {
             },
         };
 
-        let payload =
-            graph_tooling_payload(&doc, GraphKind::ProjectDeps, "file:///demo/demo.bproj");
+        let payload = graph_tooling_payload(&doc, GraphKind::ProjectDeps, "file:///demo/demo.bproj");
         assert_eq!(payload["kind"], "projectDeps");
         assert_eq!(payload["revision"], "abc123");
         assert!(payload["mermaid"].as_str().unwrap().contains("flowchart"));
-        assert_eq!(
-            payload["metadata"]["focusedProjectUri"],
-            "file:///demo/demo.bproj"
-        );
+        assert_eq!(payload["metadata"]["focusedProjectUri"], "file:///demo/demo.bproj");
         assert_eq!(payload["metadata"]["nodes"][0]["kind"], "root");
         assert_eq!(payload["warnings"][0]["code"], "unresolved");
     }

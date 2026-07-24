@@ -21,10 +21,7 @@ struct TypeDiagnosticCase {
 }
 
 fn diagnostic_codes(diagnostics: &[SemanticDiagnostic]) -> HashSet<String> {
-    diagnostics
-        .iter()
-        .filter_map(|diag| diag.code.clone())
-        .collect()
+    diagnostics.iter().filter_map(|diag| diag.code.clone()).collect()
 }
 
 fn prepare_diagnostics(source: &str) -> Vec<SemanticDiagnostic> {
@@ -50,17 +47,12 @@ target "app" {
     fs::write(&entry, source).expect("write source");
 
     let diagnostics = with_cwd(&root, || {
-        let plan =
-            beskid_analysis::services::compile_plan_for_input_path(&entry).expect("compile plan");
-        let resolved =
-            resolved_input_from_plan(entry.clone(), source.to_string(), plan, None, None);
+        let plan = beskid_analysis::services::compile_plan_for_input_path(&entry).expect("compile plan");
+        let resolved = resolved_input_from_plan(entry.clone(), source.to_string(), plan, None, None);
         let (_, diagnostics) = prepare_compilation_diagnostics(
             &resolved,
             PrepareOptions {
-                front_end: FrontEndOptions {
-                    with_semantic_diagnostics: true,
-                    ..Default::default()
-                },
+                front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                 ..Default::default()
             },
             None,
@@ -80,20 +72,12 @@ fn prepare_diagnostic_codes(source: &str) -> HashSet<String> {
 fn assert_type_diagnostic_case(case: &TypeDiagnosticCase) {
     let codes = prepare_diagnostic_codes(case.source);
     for expected in case.expected_codes {
-        assert!(
-            codes.contains(*expected),
-            "{}: expected diagnostic code {expected}, got {codes:?}",
-            case.name
-        );
+        assert!(codes.contains(*expected), "{}: expected diagnostic code {expected}, got {codes:?}", case.name);
     }
 }
 
 const LOWER_TYPE_ERROR_CASES: &[TypeDiagnosticCase] = &[
-    TypeDiagnosticCase {
-        name: "type_mismatch",
-        source: "unit Main() { bool x = 1; }",
-        expected_codes: &["E1206"],
-    },
+    TypeDiagnosticCase { name: "type_mismatch", source: "unit Main() { bool x = 1; }", expected_codes: &["E1206"] },
     TypeDiagnosticCase {
         name: "invalid_member_target",
         source: "unit Main() { i64 x = 1; i64 y = x.foo; }",
@@ -136,14 +120,9 @@ fn prepare_spine_emits_lower_type_error_codes() {
 #[test]
 fn prepare_spine_formats_lower_type_mismatches_with_source_type_names() {
     let diagnostics = prepare_diagnostics("unit Main() { bool x = 1; }");
-    let messages = diagnostics
-        .iter()
-        .map(|diagnostic| diagnostic.message.as_str())
-        .collect::<Vec<_>>();
+    let messages = diagnostics.iter().map(|diagnostic| diagnostic.message.as_str()).collect::<Vec<_>>();
     assert!(
-        messages
-            .iter()
-            .any(|message| message.contains("expected bool, got i32")),
+        messages.iter().any(|message| message.contains("expected bool, got i32")),
         "expected named primitive type mismatch, got {messages:?}"
     );
     assert!(

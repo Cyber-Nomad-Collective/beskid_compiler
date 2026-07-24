@@ -93,22 +93,14 @@ impl fmt::Debug for WidgetEvent {
                 write!(f, "WidgetEvent::Selected {{ path: {:?} }}", path)
             }
             WidgetEvent::Toggled { path, expanded } => {
-                write!(
-                    f,
-                    "WidgetEvent::Toggled {{ path: {:?}, expanded: {} }}",
-                    path, expanded
-                )
+                write!(f, "WidgetEvent::Toggled {{ path: {:?}, expanded: {} }}", path, expanded)
             }
-            WidgetEvent::Scrolled { offset, direction } => write!(
-                f,
-                "WidgetEvent::Scrolled {{ offset: {}, direction: {} }}",
-                offset, direction
-            ),
-            WidgetEvent::FilterModeChanged { active, filter } => write!(
-                f,
-                "WidgetEvent::FilterModeChanged {{ active: {}, filter: {:?} }}",
-                active, filter
-            ),
+            WidgetEvent::Scrolled { offset, direction } => {
+                write!(f, "WidgetEvent::Scrolled {{ offset: {}, direction: {} }}", offset, direction)
+            }
+            WidgetEvent::FilterModeChanged { active, filter } => {
+                write!(f, "WidgetEvent::FilterModeChanged {{ active: {}, filter: {:?} }}", active, filter)
+            }
             WidgetEvent::FilterModeExited { path } => {
                 write!(f, "WidgetEvent::FilterModeExited {{ path: {:?} }}", path)
             }

@@ -23,16 +23,11 @@ const DEFAULT_EVENT_CAPACITY: i64 = 8;
 impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
     type Output = Option<Value>;
 
-    fn lower(
-        node: &Spanned<Self>,
-        ctx: &mut NodeLoweringContext<'_, '_>,
-    ) -> Result<Self::Output, CodegenError> {
+    fn lower(node: &Spanned<Self>, ctx: &mut NodeLoweringContext<'_, '_>) -> Result<Self::Output, CodegenError> {
         let target = resolve_assign_target(node, ctx)?;
 
-        let value = lower_node(&node.node.value, ctx)?.ok_or(CodegenError::UnsupportedNode {
-            span: node.node.value.span,
-            node: "unit-valued assignment",
-        })?;
+        let value = lower_node(&node.node.value, ctx)?
+            .ok_or(CodegenError::UnsupportedNode { span: node.node.value.span, node: "unit-valued assignment" })?;
 
         let expected_type = target.expected_type;
         let actual_type = ctx.require_expr_type_for_node(&node.node.value)?;
@@ -50,36 +45,20 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
             HirAssignOp::Assign => match target.kind {
                 AssignTargetKind::Local { .. } => value,
                 AssignTargetKind::EventMember { field_addr, .. } => {
-                    store_typed_value(
-                        ctx.builder,
-                        pointer_type(),
-                        value,
-                        field_addr,
-                        MemFlags::new(),
-                    );
+                    store_typed_value(ctx.builder, pointer_type(), value, field_addr, MemFlags::new());
                     value
                 }
-                AssignTargetKind::IndexElement {
-                    array_handle,
-                    index,
-                    elem_type,
-                } => {
+                AssignTargetKind::IndexElement { array_handle, index, elem_type } => {
                     store_at_index(node.span, array_handle, index, elem_type, value, ctx)?;
                     value
                 }
             },
             HirAssignOp::AddAssign | HirAssignOp::SubAssign => {
-                if let AssignTargetKind::EventMember {
-                    field_addr,
-                    capacity,
-                } = target.kind
-                {
+                if let AssignTargetKind::EventMember { field_addr, capacity } = target.kind {
                     match node.node.op.node {
                         HirAssignOp::AddAssign => {
-                            let cap_value = ctx
-                                .builder
-                                .ins()
-                                .iconst(pointer_type(), capacity.unwrap_or(DEFAULT_EVENT_CAPACITY));
+                            let cap_value =
+                                ctx.builder.ins().iconst(pointer_type(), capacity.unwrap_or(DEFAULT_EVENT_CAPACITY));
                             call_event_subscribe(ctx, node.span, field_addr, value, cap_value);
                             return Ok(Some(value));
                         }
@@ -92,12 +71,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
                 }
 
                 // Compound assignment for IndexElement: load current, apply op, store back
-                if let AssignTargetKind::IndexElement {
-                    array_handle,
-                    index,
-                    elem_type,
-                } = target.kind
-                {
+                if let AssignTargetKind::IndexElement { array_handle, index, elem_type } = target.kind {
                     let current = load_at_index(node.span, array_handle, index, elem_type, ctx)?;
                     let current_type = elem_type;
                     let is_string = matches!(
@@ -145,8 +119,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
 
                 let var = match target.kind {
                     AssignTargetKind::Local { var } => var,
-                    AssignTargetKind::EventMember { .. }
-                    | AssignTargetKind::IndexElement { .. } => {
+                    AssignTargetKind::EventMember { .. } | AssignTargetKind::IndexElement { .. } => {
                         unreachable!("handled above")
                     }
                 };
@@ -162,20 +135,14 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
                 let is_numeric = matches!(
                     ctx.type_result.types.get(expected_type),
                     Some(TypeInfo::Primitive(
-                        HirPrimitiveType::I32
-                            | HirPrimitiveType::I64
-                            | HirPrimitiveType::U8
-                            | HirPrimitiveType::F64
+                        HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8 | HirPrimitiveType::F64
                     ))
                 );
 
                 if node.node.op.node == HirAssignOp::AddAssign && is_string {
                     lower_string_concat(current, value, ctx, node.span)?
                 } else if !is_numeric {
-                    return Err(CodegenError::UnsupportedNode {
-                        span: node.span,
-                        node: "compound assignment type",
-                    });
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "compound assignment type" });
                 } else if is_float {
                     match node.node.op.node {
                         HirAssignOp::AddAssign => ctx.builder.ins().fadd(current, value),
@@ -201,18 +168,9 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirAssignExpression {
 
 #[derive(Clone, Copy)]
 enum AssignTargetKind {
-    Local {
-        var: cranelift_frontend::Variable,
-    },
-    EventMember {
-        field_addr: Value,
-        capacity: Option<i64>,
-    },
-    IndexElement {
-        array_handle: Value,
-        index: Value,
-        elem_type: TypeId,
-    },
+    Local { var: cranelift_frontend::Variable },
+    EventMember { field_addr: Value, capacity: Option<i64> },
+    IndexElement { array_handle: Value, index: Value, elem_type: TypeId },
 }
 
 #[derive(Clone, Copy)]
@@ -234,14 +192,9 @@ fn resolve_assign_target(
                     node: "empty assignment target path",
                 });
             }
-            let resolved = resolved_value_at(
-                ctx.resolution,
-                path_expr.node.path.span,
-                ctx.codegen.current_source_path.as_ref(),
-            )
-            .ok_or(CodegenError::MissingResolvedValue {
-                span: path_expr.node.path.span,
-            })?;
+            let resolved =
+                resolved_value_at(ctx.resolution, path_expr.node.path.span, ctx.codegen.current_source_path.as_ref())
+                    .ok_or(CodegenError::MissingResolvedValue { span: path_expr.node.path.span })?;
             let ResolvedValue::Local(local_id) = resolved else {
                 return Err(CodegenError::UnsupportedNode {
                     span: path_expr.node.path.span,
@@ -250,33 +203,30 @@ fn resolve_assign_target(
             };
 
             if segments.len() == 1 {
-                let var = ctx.state.locals.get(&local_id).copied().ok_or(
-                    CodegenError::InvalidLocalBinding {
-                        span: path_expr.node.path.span,
-                    },
-                )?;
-                let expected_type = local_type_id(ctx.type_result, ctx.state, local_id).ok_or(
-                    CodegenError::MissingLocalType {
-                        span: path_expr.node.path.span,
-                    },
-                )?;
-                return Ok(AssignTarget {
-                    kind: AssignTargetKind::Local { var },
-                    expected_type,
-                });
+                let var = ctx
+                    .state
+                    .locals
+                    .get(&local_id)
+                    .copied()
+                    .ok_or(CodegenError::InvalidLocalBinding { span: path_expr.node.path.span })?;
+                let expected_type = local_type_id(ctx.type_result, ctx.state, local_id)
+                    .ok_or(CodegenError::MissingLocalType { span: path_expr.node.path.span })?;
+                return Ok(AssignTarget { kind: AssignTargetKind::Local { var }, expected_type });
             }
 
             if segments.len() >= 2 {
-                let receiver_var = ctx.state.locals.get(&local_id).copied().ok_or(
-                    CodegenError::InvalidLocalBinding {
-                        span: path_expr.node.path.span,
-                    },
-                )?;
-                let receiver_type = ctx.type_result.local_types.get(&local_id).copied().ok_or(
-                    CodegenError::MissingLocalType {
-                        span: path_expr.node.path.span,
-                    },
-                )?;
+                let receiver_var = ctx
+                    .state
+                    .locals
+                    .get(&local_id)
+                    .copied()
+                    .ok_or(CodegenError::InvalidLocalBinding { span: path_expr.node.path.span })?;
+                let receiver_type = ctx
+                    .type_result
+                    .local_types
+                    .get(&local_id)
+                    .copied()
+                    .ok_or(CodegenError::MissingLocalType { span: path_expr.node.path.span })?;
                 let field_name = segments
                     .last()
                     .ok_or(CodegenError::UnsupportedNode {
@@ -295,27 +245,16 @@ fn resolve_assign_target(
                 } else {
                     load_path_field_chain(ctx, receiver_ptr, receiver_type, middle)?
                 };
-                return resolve_event_member_target(
-                    node.span,
-                    receiver_ptr,
-                    receiver_type,
-                    field_name,
-                    ctx,
-                );
+                return resolve_event_member_target(node.span, receiver_ptr, receiver_type, field_name, ctx);
             }
 
-            Err(CodegenError::UnsupportedNode {
-                span: node.node.target.span,
-                node: "multi-segment assignment target",
-            })
+            Err(CodegenError::UnsupportedNode { span: node.node.target.span, node: "multi-segment assignment target" })
         }
         HirExpressionNode::MemberExpression(member_expr) => {
-            let receiver_ptr = lower_node(&member_expr.node.target, ctx)?.ok_or(
-                CodegenError::UnsupportedNode {
-                    span: member_expr.node.target.span,
-                    node: "unit-valued assignment receiver",
-                },
-            )?;
+            let receiver_ptr = lower_node(&member_expr.node.target, ctx)?.ok_or(CodegenError::UnsupportedNode {
+                span: member_expr.node.target.span,
+                node: "unit-valued assignment receiver",
+            })?;
             let receiver_type = ctx.require_expr_type_for_node(&member_expr.node.target)?;
             resolve_event_member_target(
                 node.span,
@@ -327,16 +266,12 @@ fn resolve_assign_target(
         }
         HirExpressionNode::IndexExpression(index_expr) => {
             // arr[i] = value  →  resolve the array handle, index, and element type
-            let array_handle =
-                lower_node(&index_expr.node.target, ctx)?.ok_or(CodegenError::UnsupportedNode {
-                    span: index_expr.node.target.span,
-                    node: "unit-valued index target",
-                })?;
-            let index =
-                lower_node(&index_expr.node.index, ctx)?.ok_or(CodegenError::UnsupportedNode {
-                    span: index_expr.node.index.span,
-                    node: "unit-valued index",
-                })?;
+            let array_handle = lower_node(&index_expr.node.target, ctx)?.ok_or(CodegenError::UnsupportedNode {
+                span: index_expr.node.target.span,
+                node: "unit-valued index target",
+            })?;
+            let index = lower_node(&index_expr.node.index, ctx)?
+                .ok_or(CodegenError::UnsupportedNode { span: index_expr.node.index.span, node: "unit-valued index" })?;
             let target_type = ctx.require_expr_type_for_node(&index_expr.node.target)?;
             let elem_type = match ctx.type_result.types.get(target_type) {
                 Some(TypeInfo::Array(elem)) => *elem,
@@ -367,18 +302,11 @@ fn resolve_assign_target(
             };
 
             Ok(AssignTarget {
-                kind: AssignTargetKind::IndexElement {
-                    array_handle,
-                    index,
-                    elem_type,
-                },
+                kind: AssignTargetKind::IndexElement { array_handle, index, elem_type },
                 expected_type: elem_type,
             })
         }
-        _ => Err(CodegenError::UnsupportedNode {
-            span: node.node.target.span,
-            node: "unsupported assignment target",
-        }),
+        _ => Err(CodegenError::UnsupportedNode { span: node.node.target.span, node: "unsupported assignment target" }),
     }
 }
 
@@ -389,45 +317,25 @@ fn load_path_field_chain(
     segments: &[Spanned<beskid_analysis::hir::HirPathSegment>],
 ) -> Result<(Value, TypeId), CodegenError> {
     for segment in segments {
-        let item_id =
-            struct_item_id(ctx.type_result, current_type).ok_or(CodegenError::UnsupportedNode {
-                span: segment.span,
-                node: "member target type",
-            })?;
-        let offsets = struct_field_offsets(
-            ctx.resolution,
-            ctx.type_result,
-            item_id,
-            ctx.codegen.current_source_path.as_ref(),
-        )
-        .ok_or(CodegenError::UnsupportedNode {
-            span: segment.span,
-            node: "member offsets",
-        })?;
+        let item_id = struct_item_id(ctx.type_result, current_type)
+            .ok_or(CodegenError::UnsupportedNode { span: segment.span, node: "member target type" })?;
+        let offsets =
+            struct_field_offsets(ctx.resolution, ctx.type_result, item_id, ctx.codegen.current_source_path.as_ref())
+                .ok_or(CodegenError::UnsupportedNode { span: segment.span, node: "member offsets" })?;
         let field_name = segment.node.name.node.name.as_str();
         let offset = offsets
             .get(field_name)
             .copied()
-            .ok_or(CodegenError::UnsupportedNode {
-                span: segment.span,
-                node: "member offset",
-            })?;
+            .ok_or(CodegenError::UnsupportedNode { span: segment.span, node: "member offset" })?;
         let field_type = ctx
             .type_result
             .struct_fields_ordered
             .get(&item_id)
             .and_then(|fields| fields.iter().find(|(name, _)| name == field_name))
             .map(|(_, ty)| *ty)
-            .ok_or(CodegenError::UnsupportedNode {
-                span: segment.span,
-                node: "member field type",
-            })?;
-        let clif_ty = map_type_id_to_clif(ctx.type_result, field_type).ok_or(
-            CodegenError::UnsupportedNode {
-                span: segment.span,
-                node: "member field clif type",
-            },
-        )?;
+            .ok_or(CodegenError::UnsupportedNode { span: segment.span, node: "member field type" })?;
+        let clif_ty = map_type_id_to_clif(ctx.type_result, field_type)
+            .ok_or(CodegenError::UnsupportedNode { span: segment.span, node: "member field clif type" })?;
         let offset_val = ctx.builder.ins().iconst(pointer_type(), offset as i64);
         let addr = ctx.builder.ins().iadd(value, offset_val);
         value = ctx.builder.ins().load(clif_ty, MemFlags::new(), addr, 0);
@@ -446,57 +354,33 @@ fn resolve_event_member_target(
     let item_id = match ctx.type_result.types.get(receiver_type) {
         Some(TypeInfo::Named(item_id)) => *item_id,
         _ => {
-            return Err(CodegenError::UnsupportedNode {
-                span,
-                node: "event assignment receiver type",
-            });
+            return Err(CodegenError::UnsupportedNode { span, node: "event assignment receiver type" });
         }
     };
-    let offsets = struct_field_offsets(
-        ctx.resolution,
-        ctx.type_result,
-        item_id,
-        ctx.codegen.current_source_path.as_ref(),
-    )
-    .ok_or(CodegenError::UnsupportedNode {
-        span,
-        node: "event assignment offsets",
-    })?;
+    let offsets =
+        struct_field_offsets(ctx.resolution, ctx.type_result, item_id, ctx.codegen.current_source_path.as_ref())
+            .ok_or(CodegenError::UnsupportedNode { span, node: "event assignment offsets" })?;
     let offset = offsets
         .get(field_name)
         .copied()
-        .ok_or(CodegenError::UnsupportedNode {
-            span,
-            node: "event assignment field offset",
-        })?;
+        .ok_or(CodegenError::UnsupportedNode { span, node: "event assignment field offset" })?;
     let expected_type = ctx
         .type_result
         .struct_fields_ordered
         .get(&item_id)
         .and_then(|fields| fields.iter().find(|(name, _)| name == field_name))
         .map(|(_, ty)| *ty)
-        .ok_or(CodegenError::UnsupportedNode {
-            span,
-            node: "event assignment field type",
-        })?;
+        .ok_or(CodegenError::UnsupportedNode { span, node: "event assignment field type" })?;
     let event_fields = struct_event_fields(ctx.type_result);
-    let capacity = event_fields
-        .get(&item_id)
-        .and_then(|fields| fields.get(field_name));
+    let capacity = event_fields.get(&item_id).and_then(|fields| fields.get(field_name));
     let Some(capacity) = capacity else {
-        return Err(CodegenError::UnsupportedNode {
-            span,
-            node: "non-event member assignment target",
-        });
+        return Err(CodegenError::UnsupportedNode { span, node: "non-event member assignment target" });
     };
     let offset_val = ctx.builder.ins().iconst(pointer_type(), offset as i64);
     let field_addr = ctx.builder.ins().iadd(receiver_ptr, offset_val);
 
     Ok(AssignTarget {
-        kind: AssignTargetKind::EventMember {
-            field_addr,
-            capacity: capacity.map(|value| value as i64),
-        },
+        kind: AssignTargetKind::EventMember { field_addr, capacity: capacity.map(|value| value as i64) },
         expected_type,
     })
 }
@@ -510,41 +394,25 @@ fn load_at_index(
     elem_type: TypeId,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Value, CodegenError> {
-    let ptr = ctx
-        .builder
-        .ins()
-        .load(pointer_type(), MemFlags::new(), array_handle, 0);
-    let len = ctx
-        .builder
-        .ins()
-        .load(pointer_type(), MemFlags::new(), array_handle, 8);
+    let ptr = ctx.builder.ins().load(pointer_type(), MemFlags::new(), array_handle, 0);
+    let len = ctx.builder.ins().load(pointer_type(), MemFlags::new(), array_handle, 8);
 
     // Bounds check
-    let out_of_bounds = ctx
-        .builder
-        .ins()
-        .icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
-    ctx.builder
-        .ins()
-        .trapnz(out_of_bounds, TrapCode::unwrap_user(2));
+    let out_of_bounds = ctx.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
+    ctx.builder.ins().trapnz(out_of_bounds, TrapCode::unwrap_user(2));
 
     // Compute element size
-    let layout = ctx.codegen.type_layout(ctx.type_result, elem_type).ok_or(
-        CodegenError::UnsupportedNode {
-            span,
-            node: "array element layout for index write",
-        },
-    )?;
+    let layout = ctx
+        .codegen
+        .type_layout(ctx.type_result, elem_type)
+        .ok_or(CodegenError::UnsupportedNode { span, node: "array element layout for index write" })?;
     let elem_size_val = ctx.builder.ins().iconst(pointer_type(), layout.size as i64);
 
     let offset = ctx.builder.ins().imul(index, elem_size_val);
     let addr = ctx.builder.ins().iadd(ptr, offset);
 
-    let clif_ty =
-        map_type_id_to_clif(ctx.type_result, elem_type).ok_or(CodegenError::UnsupportedNode {
-            span,
-            node: "array element clif type for index write",
-        })?;
+    let clif_ty = map_type_id_to_clif(ctx.type_result, elem_type)
+        .ok_or(CodegenError::UnsupportedNode { span, node: "array element clif type for index write" })?;
     let value = ctx.builder.ins().load(clif_ty, MemFlags::new(), addr, 0);
 
     Ok(value)
@@ -559,31 +427,18 @@ fn store_at_index(
     value: Value,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<(), CodegenError> {
-    let ptr = ctx
-        .builder
-        .ins()
-        .load(pointer_type(), MemFlags::new(), array_handle, 0);
-    let len = ctx
-        .builder
-        .ins()
-        .load(pointer_type(), MemFlags::new(), array_handle, 8);
+    let ptr = ctx.builder.ins().load(pointer_type(), MemFlags::new(), array_handle, 0);
+    let len = ctx.builder.ins().load(pointer_type(), MemFlags::new(), array_handle, 8);
 
     // Bounds check
-    let out_of_bounds = ctx
-        .builder
-        .ins()
-        .icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
-    ctx.builder
-        .ins()
-        .trapnz(out_of_bounds, TrapCode::unwrap_user(2));
+    let out_of_bounds = ctx.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
+    ctx.builder.ins().trapnz(out_of_bounds, TrapCode::unwrap_user(2));
 
     // Compute element size
-    let layout = ctx.codegen.type_layout(ctx.type_result, elem_type).ok_or(
-        CodegenError::UnsupportedNode {
-            span,
-            node: "array element layout for index store",
-        },
-    )?;
+    let layout = ctx
+        .codegen
+        .type_layout(ctx.type_result, elem_type)
+        .ok_or(CodegenError::UnsupportedNode { span, node: "array element layout for index store" })?;
     let elem_size_val = ctx.builder.ins().iconst(pointer_type(), layout.size as i64);
 
     let offset = ctx.builder.ins().imul(index, elem_size_val);
@@ -594,11 +449,8 @@ fn store_at_index(
         call_write_barrier(ctx, array_handle, value);
     }
 
-    let clif_ty =
-        map_type_id_to_clif(ctx.type_result, elem_type).ok_or(CodegenError::UnsupportedNode {
-            span,
-            node: "array element clif type for index store",
-        })?;
+    let clif_ty = map_type_id_to_clif(ctx.type_result, elem_type)
+        .ok_or(CodegenError::UnsupportedNode { span, node: "array element clif type for index store" })?;
     store_typed_value(ctx.builder, clif_ty, value, addr, MemFlags::new());
 
     Ok(())
@@ -613,10 +465,7 @@ fn call_event_subscribe(
 ) {
     let _ = crate::lowering::dispatch::lower_dispatch_builtin_call(
         span,
-        beskid_abi::DispatchRoute {
-            tag: beskid_abi::TAG_EVENT_SUBSCRIBE,
-            group: beskid_abi::DispatchReturnGroup::I64,
-        },
+        beskid_abi::DispatchRoute { tag: beskid_abi::TAG_EVENT_SUBSCRIBE, group: beskid_abi::DispatchReturnGroup::I64 },
         &[field_addr, handler, capacity],
         false,
         ctx,
@@ -647,15 +496,12 @@ fn call_write_barrier(ctx: &mut NodeLoweringContext<'_, '_>, dst_obj: Value, val
     signature.params.push(AbiParam::new(pointer_type()));
     signature.params.push(AbiParam::new(pointer_type()));
     let sig_ref = ctx.builder.func.import_signature(signature);
-    let func_ref = ctx
-        .builder
-        .func
-        .import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("gc_write_barrier"),
-            signature: sig_ref,
-            colocated: false,
-            patchable: false,
-        });
+    let func_ref = ctx.builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
+        name: ExternalName::testcase("gc_write_barrier"),
+        signature: sig_ref,
+        colocated: false,
+        patchable: false,
+    });
     ctx.builder.ins().call(func_ref, &[dst_obj, value_ptr]);
 }
 
@@ -665,12 +511,8 @@ fn lower_string_concat(
     ctx: &mut NodeLoweringContext<'_, '_>,
     span: beskid_analysis::syntax::SpanInfo,
 ) -> Result<Value, CodegenError> {
-    let route = dispatch_route_for_symbol("str_concat")
-        .ok_or(CodegenError::MissingSymbol("str_concat dispatch route"))?;
-    lower_dispatch_builtin_call(span, route, &[left, right], true, ctx)?.ok_or(
-        CodegenError::UnsupportedNode {
-            span,
-            node: "string concat result",
-        },
-    )
+    let route =
+        dispatch_route_for_symbol("str_concat").ok_or(CodegenError::MissingSymbol("str_concat dispatch route"))?;
+    lower_dispatch_builtin_call(span, route, &[left, right], true, ctx)?
+        .ok_or(CodegenError::UnsupportedNode { span, node: "string concat result" })
 }

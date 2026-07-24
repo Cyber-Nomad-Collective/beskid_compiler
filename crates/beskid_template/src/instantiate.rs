@@ -31,10 +31,7 @@ pub struct InstantiateResult {
     pub project_root: Option<PathBuf>,
 }
 
-pub fn instantiate(
-    manifest: &TemplateManifest,
-    options: &InstantiateOptions,
-) -> TemplateResult<InstantiateResult> {
+pub fn instantiate(manifest: &TemplateManifest, options: &InstantiateOptions) -> TemplateResult<InstantiateResult> {
     let values = collect_symbol_values(manifest, &options.symbol_options)?;
     let substitution = build_substitution_map(manifest, &values)?;
     let output_kind = manifest.output_kind();
@@ -42,14 +39,9 @@ pub fn instantiate(
     let output_root = resolve_output_root(output_kind, options, manifest)?;
 
     if output_root.exists() {
-        let non_empty = fs::read_dir(&output_root)
-            .ok()
-            .map(|mut rd| rd.next().is_some())
-            .unwrap_or(false);
+        let non_empty = fs::read_dir(&output_root).ok().map(|mut rd| rd.next().is_some()).unwrap_or(false);
         if non_empty && !options.force {
-            return Err(TemplateError::OutputConflict {
-                path: output_root.clone(),
-            });
+            return Err(TemplateError::OutputConflict { path: output_root.clone() });
         }
     } else {
         fs::create_dir_all(&output_root)?;
@@ -58,13 +50,7 @@ pub fn instantiate(
     validate_item_template(output_kind, &output_root, options)?;
 
     let mut guids_map = std::collections::HashMap::new();
-    let plans = plan_source_writes(
-        &options.template_root,
-        manifest,
-        &output_root,
-        &substitution,
-        &mut guids_map,
-    )?;
+    let plans = plan_source_writes(&options.template_root, manifest, &output_root, &substitution, &mut guids_map)?;
 
     if output_kind == TemplateOutputKind::Item {
         validate_item_outputs(&plans, &output_root, options)?;
@@ -93,11 +79,7 @@ pub fn instantiate(
 
     Ok(InstantiateResult {
         output_root: output_root.clone(),
-        workspace_root: if output_kind == TemplateOutputKind::Workspace {
-            Some(output_root.clone())
-        } else {
-            None
-        },
+        workspace_root: if output_kind == TemplateOutputKind::Workspace { Some(output_root.clone()) } else { None },
         project_root: if output_kind == TemplateOutputKind::Project {
             Some(output_root.clone())
         } else {
@@ -145,9 +127,7 @@ fn validate_item_template(
     };
 
     if !output_root.starts_with(&host_root) {
-        return Err(TemplateError::ItemOutsideProject {
-            path: output_root.to_path_buf(),
-        });
+        return Err(TemplateError::ItemOutsideProject { path: output_root.to_path_buf() });
     }
     Ok(())
 }
@@ -161,8 +141,7 @@ fn validate_item_outputs(
         let rel = plan.relative_output.to_string_lossy();
         if rel.ends_with(".bproj") && !options.allow_project_manifest {
             return Err(TemplateError::InvalidManifest(
-                "item template cannot write a `.bproj` manifest without --allow-project-manifest"
-                    .to_string(),
+                "item template cannot write a `.bproj` manifest without --allow-project-manifest".to_string(),
             ));
         }
     }
@@ -173,11 +152,7 @@ fn validate_item_outputs(
 fn find_project_root(start: &Path) -> Option<PathBuf> {
     let mut current = start.to_path_buf();
     loop {
-        if beskid_analysis::projects::discover_project_manifest_in_dir(&current)
-            .ok()
-            .flatten()
-            .is_some()
-        {
+        if beskid_analysis::projects::discover_project_manifest_in_dir(&current).ok().flatten().is_some() {
             return Some(current);
         }
         if !current.pop() {
@@ -204,9 +179,7 @@ fn ensure_no_corelib_opt_out(output_root: &Path) -> TemplateResult<()> {
     let text = fs::read_to_string(&manifest)?;
     for flag in ["noCorelib", "useCorelib: false", "useCorelib=false"] {
         if text.contains(flag) {
-            return Err(TemplateError::InvalidManifest(
-                "templates must not emit corelib opt-out flags".to_string(),
-            ));
+            return Err(TemplateError::InvalidManifest("templates must not emit corelib opt-out flags".to_string()));
         }
     }
     Ok(())
@@ -214,9 +187,7 @@ fn ensure_no_corelib_opt_out(output_root: &Path) -> TemplateResult<()> {
 
 pub fn fixture_manifest(short_name: &str, template_type: TemplateOutputKind) -> TemplateManifest {
     use crate::manifest::{SymbolType, TEMPLATE_SCHEMA};
-    use crate::manifest::{
-        TemplateManifest, TemplatePostAction, TemplateSource, TemplateSymbol, TemplateTags,
-    };
+    use crate::manifest::{TemplateManifest, TemplatePostAction, TemplateSource, TemplateSymbol, TemplateTags};
 
     TemplateManifest {
         schema: TEMPLATE_SCHEMA.to_string(),
@@ -226,9 +197,7 @@ pub fn fixture_manifest(short_name: &str, template_type: TemplateOutputKind) -> 
         author: None,
         description: None,
         classifications: None,
-        tags: TemplateTags {
-            template_type: Some(template_type),
-        },
+        tags: TemplateTags { template_type: Some(template_type) },
         source_name: Some("MyApp".to_string()),
         name_symbol: None,
         symbols: BTreeMap::from([(
@@ -253,10 +222,7 @@ pub fn fixture_manifest(short_name: &str, template_type: TemplateOutputKind) -> 
         }],
         guids: vec![],
         forms: BTreeMap::new(),
-        post_actions: vec![TemplatePostAction {
-            action_id: "beskidLock".to_string(),
-            args: serde_json::json!({}),
-        }],
+        post_actions: vec![TemplatePostAction { action_id: "beskidLock".to_string(), args: serde_json::json!({}) }],
         prefer_interactive: false,
     }
 }

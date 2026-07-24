@@ -12,10 +12,7 @@ pub fn from_composition(
     edges: &[(u32, u32)],
 ) -> Result<GraphDocument, crate::render::GraphError> {
     if snapshot.launched_host.is_empty() {
-        return Ok(GraphDocument::empty(
-            GraphKind::HostComposition,
-            "no host in entry program",
-        ));
+        return Ok(GraphDocument::empty(GraphKind::HostComposition, "no host in entry program"));
     }
 
     let mut builder = SpecBuilder::new(GraphKind::HostComposition);
@@ -55,17 +52,11 @@ pub fn from_composition(
     render_document(builder.build(), None)
 }
 
-fn registration_label(
-    registration: &Registration,
-    scope_names: &HashMap<ScopeId, String>,
-) -> String {
+fn registration_label(registration: &Registration, scope_names: &HashMap<ScopeId, String>) -> String {
     let key = match &registration.key {
         RegistrationKey::Contract(name) => name.clone(),
         RegistrationKey::SelfType(name) => format!("self:{name}"),
     };
-    let scope = scope_names
-        .get(&registration.scope_id)
-        .map(String::as_str)
-        .unwrap_or("global");
+    let scope = scope_names.get(&registration.scope_id).map(String::as_str).unwrap_or("global");
     format!("{key} [{scope}]")
 }

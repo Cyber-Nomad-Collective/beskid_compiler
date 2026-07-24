@@ -6,8 +6,7 @@ use crossterm::event::{
 };
 use tuirealm::event::{
     Event, Key, KeyEvent as RealmKeyEvent, KeyModifiers as RealmKeyModifiers, MediaKeyCode,
-    MouseButton as RealmMouseButton, MouseEvent as RealmMouseEvent,
-    MouseEventKind as RealmMouseKind, NoUserEvent,
+    MouseButton as RealmMouseButton, MouseEvent as RealmMouseEvent, MouseEventKind as RealmMouseKind, NoUserEvent,
 };
 
 use crate::tui::input::InputEvent;
@@ -30,16 +29,9 @@ pub enum ShellOutcome {
 
 pub fn shell_event_from_realm(event: &Event<NoUserEvent>) -> Option<ShellRealmEvent> {
     match event {
-        Event::Keyboard(key) => Some(ShellRealmEvent::Input(InputEvent::Key(
-            realm_key_to_crossterm(key),
-        ))),
-        Event::Mouse(mouse) => Some(ShellRealmEvent::Input(InputEvent::Mouse(
-            realm_mouse_to_crossterm(mouse),
-        ))),
-        Event::WindowResize(width, height) => Some(ShellRealmEvent::Resize {
-            width: *width,
-            height: *height,
-        }),
+        Event::Keyboard(key) => Some(ShellRealmEvent::Input(InputEvent::Key(realm_key_to_crossterm(key)))),
+        Event::Mouse(mouse) => Some(ShellRealmEvent::Input(InputEvent::Mouse(realm_mouse_to_crossterm(mouse)))),
+        Event::WindowResize(width, height) => Some(ShellRealmEvent::Resize { width: *width, height: *height }),
         Event::Tick => Some(ShellRealmEvent::Tick),
         _ => None,
     }

@@ -7,9 +7,7 @@ use slotmap::Key;
 use crate::channel::{self, ChannelId};
 use crate::scheduler;
 use crate::slot_table::{LazySlotMap, lock_lazy_slot_map};
-use crate::status::{
-    STATUS_CANCELLED, STATUS_HUB_EMPTY, STATUS_HUB_LIMIT, STATUS_HUB_NOT_FOUND, STATUS_OK,
-};
+use crate::status::{STATUS_CANCELLED, STATUS_HUB_EMPTY, STATUS_HUB_LIMIT, STATUS_HUB_NOT_FOUND, STATUS_OK};
 
 pub const HUB_MAX_REGISTRATIONS: usize = 256;
 
@@ -28,8 +26,7 @@ struct HubInner {
 
 static HUBS: LazySlotMap<HubInner> = LazySlotMap::new(None);
 
-fn hubs() -> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, HubInner>>>
-{
+fn hubs() -> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, HubInner>>> {
     lock_lazy_slot_map(&HUBS, "hub table lock")
 }
 
@@ -40,10 +37,7 @@ fn key_to_id(key: slotmap::DefaultKey) -> HubId {
 pub fn hub_create() -> HubId {
     let mut guard = hubs();
     let map = guard.as_mut().expect("hub map");
-    let key = map.insert(HubInner {
-        entries: Vec::new(),
-        round_robin_cursor: 0,
-    });
+    let key = map.insert(HubInner { entries: Vec::new(), round_robin_cursor: 0 });
     key_to_id(key)
 }
 
@@ -60,10 +54,7 @@ pub fn hub_register(hub_id: HubId, index: i64, channel_id: ChannelId) -> i64 {
     if let Some(pos) = hub.entries.iter().position(|e| e.index == index) {
         hub.entries[pos].channel = channel_id;
     } else {
-        hub.entries.push(HubEntry {
-            index,
-            channel: channel_id,
-        });
+        hub.entries.push(HubEntry { index, channel: channel_id });
     }
     STATUS_OK
 }
@@ -99,21 +90,11 @@ pub fn hub_wait_receive_status(hub_id: HubId) -> i64 {
 }
 
 pub fn hub_wait_receive_index(hub_id: HubId) -> i64 {
-    HUB_LAST_RECEIVE
-        .with(|cell| {
-            cell.borrow()
-                .and_then(|(id, index, _)| (id == hub_id).then_some(index))
-        })
-        .unwrap_or(0)
+    HUB_LAST_RECEIVE.with(|cell| cell.borrow().and_then(|(id, index, _)| (id == hub_id).then_some(index))).unwrap_or(0)
 }
 
 pub fn hub_wait_receive_value(hub_id: HubId) -> i64 {
-    HUB_LAST_RECEIVE
-        .with(|cell| {
-            cell.borrow()
-                .and_then(|(id, _, value)| (id == hub_id).then_some(value))
-        })
-        .unwrap_or(0)
+    HUB_LAST_RECEIVE.with(|cell| cell.borrow().and_then(|(id, _, value)| (id == hub_id).then_some(value))).unwrap_or(0)
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]

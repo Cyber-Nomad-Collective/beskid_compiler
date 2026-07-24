@@ -12,9 +12,6 @@ pub struct CodeLine {
 impl CodeLine {
     /// Creates a source line model.
     pub fn new(number: usize, text: impl Into<String>) -> Self {
-        Self {
-            number,
-            text: text.into(),
-        }
+        Self { number, text: text.into() }
     }
 }

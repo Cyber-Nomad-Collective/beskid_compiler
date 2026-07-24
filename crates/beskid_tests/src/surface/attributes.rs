@@ -11,10 +11,7 @@ fn parses_attribute_declaration() {
 
 #[test]
 fn parses_public_attribute_declaration() {
-    assert_parse(
-        Rule::AttributeDeclaration,
-        "pub attribute Extern { Abi: string, Library: string = \"libc\" }",
-    );
+    assert_parse(Rule::AttributeDeclaration, "pub attribute Extern { Abi: string, Library: string = \"libc\" }");
 }
 
 #[test]
@@ -27,10 +24,7 @@ fn parses_attribute_declaration_with_targets() {
 
 #[test]
 fn parses_attribute_application_with_typed_argument_values() {
-    assert_parse(
-        Rule::ContractDefinition,
-        "[Extern(Abi: \"C\", Enabled: true)] contract Reader { unit read(); }",
-    );
+    assert_parse(Rule::ContractDefinition, "[Extern(Abi: \"C\", Enabled: true)] contract Reader { unit read(); }");
 }
 
 #[test]

@@ -19,10 +19,8 @@ pub fn build_graph(
 ) -> Result<RegistrationDag, CompositionIssue> {
     let mut dag: RegistrationDag = Dag::new();
     let mut node_by_registration = HashMap::new();
-    let span_by_id: HashMap<u32, _> = registrations
-        .iter()
-        .map(|registration| (registration.id, registration.span))
-        .collect();
+    let span_by_id: HashMap<u32, _> =
+        registrations.iter().map(|registration| (registration.id, registration.span)).collect();
 
     for registration in registrations {
         let node = dag.add_node(registration.clone());
@@ -31,16 +29,11 @@ pub fn build_graph(
 
     for (from, to) in dependencies {
         let from_node = node_by_registration.get(from).copied().ok_or_else(|| {
-            CompositionIssue::UnknownRegistrationId {
-                registration_id: *from,
-                span: span_by_id.get(from).copied(),
-            }
+            CompositionIssue::UnknownRegistrationId { registration_id: *from, span: span_by_id.get(from).copied() }
         })?;
-        let to_node = node_by_registration.get(to).copied().ok_or_else(|| {
-            CompositionIssue::UnknownRegistrationId {
-                registration_id: *to,
-                span: span_by_id.get(to).copied(),
-            }
+        let to_node = node_by_registration.get(to).copied().ok_or_else(|| CompositionIssue::UnknownRegistrationId {
+            registration_id: *to,
+            span: span_by_id.get(to).copied(),
         })?;
         if creates_cycle(&dag, from_node, to_node) {
             return Err(CompositionIssue::DependencyCycle {

@@ -1,54 +1,34 @@
 use std::fs;
 
-use super::{
-    corelib_root, corelib_workspace_root, expected_corelib_workspace_sources, foundation_src,
-};
+use super::{corelib_root, corelib_workspace_root, expected_corelib_workspace_sources, foundation_src};
 
 #[test]
 fn checked_in_corelib_template_has_manifest() {
     let template_root = corelib_root();
     let manifest = template_root.join("corelib.bproj");
 
-    assert!(
-        manifest.is_file(),
-        "missing corelib manifest: {}",
-        manifest.display()
-    );
+    assert!(manifest.is_file(), "missing corelib manifest: {}", manifest.display());
 }
 
 #[test]
 fn checked_in_corelib_template_is_resolved_from_corelib_submodule() {
     let root = corelib_root();
-    assert!(
-        root.ends_with("beskid_corelib"),
-        "expected beskid_corelib directory, got {}",
-        root.display()
-    );
+    assert!(root.ends_with("beskid_corelib"), "expected beskid_corelib directory, got {}", root.display());
 }
 
 #[test]
 fn checked_in_corelib_workspace_declares_workspace_manifest() {
     let ws = corelib_workspace_root().join("CoreLib.bws");
-    assert!(
-        ws.is_file(),
-        "missing corelib workspace manifest: {}",
-        ws.display()
-    );
+    assert!(ws.is_file(), "missing corelib workspace manifest: {}", ws.display());
     let raw = std::fs::read_to_string(&ws).expect("read CoreLib.bws");
-    assert!(
-        raw.contains("workspace {"),
-        "CoreLib.bws should open a workspace block"
-    );
+    assert!(raw.contains("workspace {"), "CoreLib.bws should open a workspace block");
 }
 
 #[test]
 fn checked_in_corelib_template_declares_corelib_project_name() {
     let root = corelib_root();
     let manifest = std::fs::read_to_string(root.join("corelib.bproj")).expect("read manifest");
-    assert!(
-        manifest.contains("name = \"corelib\""),
-        "expected corelib package identity in corelib.bproj"
-    );
+    assert!(manifest.contains("name = \"corelib\""), "expected corelib package identity in corelib.bproj");
 }
 
 #[test]
@@ -57,22 +37,14 @@ fn checked_in_corelib_template_has_mvp_module_files() {
 
     for relative in expected_corelib_workspace_sources() {
         let path = root.join(relative);
-        assert!(
-            path.is_file(),
-            "missing corelib source file: {}",
-            path.display()
-        );
+        assert!(path.is_file(), "missing corelib source file: {}", path.display());
     }
 }
 
 #[test]
 fn compiler_sdk_syntax_node_files_track_inventory() {
     let inv_path = super::compiler_sdk_src().join("Beskid/Syntax/Nodes/_inventory.txt");
-    assert!(
-        inv_path.is_file(),
-        "missing syntax node inventory: {}",
-        inv_path.display()
-    );
+    assert!(inv_path.is_file(), "missing syntax node inventory: {}", inv_path.display());
     let raw = fs::read_to_string(&inv_path).expect("read _inventory.txt");
     let nodes_dir = inv_path.parent().expect("Nodes dir");
     for line in raw.lines() {
@@ -81,11 +53,7 @@ fn compiler_sdk_syntax_node_files_track_inventory() {
             continue;
         }
         let node_file = nodes_dir.join(format!("{name}.bd"));
-        assert!(
-            node_file.is_file(),
-            "inventory lists {name} but missing {}",
-            node_file.display()
-        );
+        assert!(node_file.is_file(), "inventory lists {name} but missing {}", node_file.display());
     }
 }
 
@@ -99,21 +67,14 @@ fn compiler_sdk_syntax_inventory_excludes_removed_meta_definition() {
         "MetaDefinition was removed from the syntax SDK inventory"
     );
     assert!(
-        !inv_path
-            .parent()
-            .expect("Nodes dir")
-            .join("MetaDefinition.bd")
-            .exists(),
+        !inv_path.parent().expect("Nodes dir").join("MetaDefinition.bd").exists(),
         "MetaDefinition syntax node mirror should not be checked in"
     );
 }
 
 #[test]
 fn checked_in_corelib_foundation_package_has_manifest() {
-    let p = foundation_src()
-        .parent()
-        .expect("src")
-        .join("corelib_foundation.bproj");
+    let p = foundation_src().parent().expect("src").join("corelib_foundation.bproj");
     assert!(p.is_file(), "missing foundation manifest: {}", p.display());
 }
 
@@ -124,33 +85,16 @@ fn checked_in_corelib_template_has_beskid_tests_project() {
     let write_tests = root.join("tests/corelib_tests/src/system/SyscallWriteTests.bd");
     let api_tests = root.join("tests/corelib_tests/src/system/SyscallApiTests.bd");
     let ergonomics_tests = root.join("tests/corelib_tests/src/system/SyscallErgonomicsTests.bd");
-    assert!(
-        tests_project.is_file(),
-        "missing corelib tests project manifest: {}",
-        tests_project.display()
-    );
-    assert!(
-        write_tests.is_file(),
-        "missing syscall write tests: {}",
-        write_tests.display()
-    );
-    assert!(
-        api_tests.is_file(),
-        "missing syscall api tests: {}",
-        api_tests.display()
-    );
-    assert!(
-        ergonomics_tests.is_file(),
-        "missing syscall ergonomics tests: {}",
-        ergonomics_tests.display()
-    );
+    assert!(tests_project.is_file(), "missing corelib tests project manifest: {}", tests_project.display());
+    assert!(write_tests.is_file(), "missing syscall write tests: {}", write_tests.display());
+    assert!(api_tests.is_file(), "missing syscall api tests: {}", api_tests.display());
+    assert!(ergonomics_tests.is_file(), "missing syscall ergonomics tests: {}", ergonomics_tests.display());
 }
 
 #[test]
 fn checked_in_corelib_tests_project_uses_unique_name_and_declares_targets() {
-    let manifest =
-        std::fs::read_to_string(corelib_root().join("tests/corelib_tests/corelib_tests.bproj"))
-            .expect("read corelib_tests.bproj");
+    let manifest = std::fs::read_to_string(corelib_root().join("tests/corelib_tests/corelib_tests.bproj"))
+        .expect("read corelib_tests.bproj");
     assert!(
         manifest.contains("name = \"corelib_tests\""),
         "corelib test harness must use project name corelib_tests (not corelib) to avoid recursive obj/ paths"
@@ -234,9 +178,7 @@ fn checked_in_corelib_tests_project_uses_unique_name_and_declares_targets() {
 fn corelib_collections_sources_carry_api_shape_tier_directives() {
     let collections_root = super::foundation_src().join("Collections");
     let mut missing: Vec<String> = Vec::new();
-    for file in [
-        "Array.bd", "List.bd", "Map.bd", "Set.bd", "Queue.bd", "Stack.bd",
-    ] {
+    for file in ["Array.bd", "List.bd", "Map.bd", "Set.bd", "Queue.bd", "Stack.bd"] {
         let path = collections_root.join(file);
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|_| panic!("read corelib collection source {}", path.display()));
@@ -244,10 +186,7 @@ fn corelib_collections_sources_carry_api_shape_tier_directives() {
             missing.push(file.to_string());
         }
     }
-    assert!(
-        missing.is_empty(),
-        "corelib collection sources without @tier(...) directive: {missing:?}"
-    );
+    assert!(missing.is_empty(), "corelib collection sources without @tier(...) directive: {missing:?}");
 }
 
 #[test]
@@ -264,54 +203,31 @@ fn corelib_core_os_streams_carry_api_shape_tier_directives() {
         "Time/Time.bd",
     ] {
         let path = core_root.join(file);
-        let text = std::fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("read corelib Core OS source {}", path.display()));
+        let text =
+            std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("read corelib Core OS source {}", path.display()));
         if !text.contains("@tier(") {
             missing.push(file.to_string());
         }
     }
-    assert!(
-        missing.is_empty(),
-        "corelib Core.* OS sources without @tier(...) directive: {missing:?}"
-    );
+    assert!(missing.is_empty(), "corelib Core.* OS sources without @tier(...) directive: {missing:?}");
 }
 
 #[test]
 fn checked_in_generated_regex_parsers_use_pascal_case_callables() {
     let generated = super::foundation_root().join(".generated/Core/Text/Regex/Generated.g.bd");
     let text = fs::read_to_string(&generated).expect("read Generated.g.bd");
-    assert!(
-        text.contains("ParseDigit"),
-        "Generated.g.bd should expose PascalCase ParseDigit"
-    );
-    assert!(
-        !text.contains("Parse_digit"),
-        "Generated.g.bd must not emit snake_case callables (PARSER-005)"
-    );
-    assert!(
-        !text.contains("choice_0"),
-        "Generated.g.bd must use camelCase locals (choice0 not choice_0)"
-    );
+    assert!(text.contains("ParseDigit"), "Generated.g.bd should expose PascalCase ParseDigit");
+    assert!(!text.contains("Parse_digit"), "Generated.g.bd must not emit snake_case callables (PARSER-005)");
+    assert!(!text.contains("choice_0"), "Generated.g.bd must use camelCase locals (choice0 not choice_0)");
 }
 
 #[test]
 fn checked_in_corelib_parser_subdirectory_exists() {
     let parser_root = super::foundation_src().join("Core/Text/Parser");
-    for file in [
-        "Literals.bd",
-        "Combine.bd",
-        "Cardinality.bd",
-        "Flow.bd",
-        "Context.bd",
-        "Terms.bd",
-        "Coordination.bd",
-    ] {
+    for file in ["Literals.bd", "Combine.bd", "Cardinality.bd", "Flow.bd", "Context.bd", "Terms.bd", "Coordination.bd"]
+    {
         let path = parser_root.join(file);
-        assert!(
-            path.is_file(),
-            "missing parser submodule: {}",
-            path.display()
-        );
+        assert!(path.is_file(), "missing parser submodule: {}", path.display());
     }
     let pest_root = super::foundation_src().join("Core/Text/Pest");
     for file in ["Names.bd", "Grammar.bd", "Expr.bd", "Emit.bd"] {
@@ -319,17 +235,9 @@ fn checked_in_corelib_parser_subdirectory_exists() {
         assert!(path.is_file(), "missing pest submodule: {}", path.display());
     }
     let casing = super::foundation_src().join("Core/Text/Casing.bd");
-    assert!(
-        casing.is_file(),
-        "missing Core.Text.Casing hub: {}",
-        casing.display()
-    );
+    assert!(casing.is_file(), "missing Core.Text.Casing hub: {}", casing.display());
     let pest_hub = super::foundation_src().join("Core/Text/Pest.bd");
-    assert!(
-        pest_hub.is_file(),
-        "missing Core.Text.Pest hub: {}",
-        pest_hub.display()
-    );
+    assert!(pest_hub.is_file(), "missing Core.Text.Pest hub: {}", pest_hub.display());
 }
 
 #[test]
@@ -385,15 +293,9 @@ fn checked_in_corelib_tier_metadata_round_trips_through_api_json() {
     assert_eq!(items[4].tier, None);
 
     let serialized = serde_json::to_string(&items[0]).expect("serialize item");
-    assert!(
-        serialized.contains("\"tier\":\"standard\""),
-        "tier must serialize as camelCase lowercase: {serialized}"
-    );
+    assert!(serialized.contains("\"tier\":\"standard\""), "tier must serialize as camelCase lowercase: {serialized}");
     let omitted = serde_json::to_string(&items[4]).expect("serialize untiered item");
-    assert!(
-        !omitted.contains("\"tier\""),
-        "tier field must be omitted when None: {omitted}"
-    );
+    assert!(!omitted.contains("\"tier\""), "tier field must be omitted when None: {omitted}");
 }
 
 #[test]

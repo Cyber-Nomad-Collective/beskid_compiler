@@ -137,14 +137,8 @@ impl Screen {
     }
 
     pub(crate) fn set_size(&mut self, rows: u16, cols: u16) {
-        self.grid.set_size(Size {
-            height: rows,
-            width: cols,
-        });
-        self.alternate_grid.set_size(Size {
-            height: rows,
-            width: cols,
-        });
+        self.grid.set_size(Size { height: rows, width: cols });
+        self.alternate_grid.set_size(Size { height: rows, width: cols });
     }
 
     /// Returns the current size of the terminal.
@@ -195,13 +189,8 @@ impl Screen {
     /// Returns the `Cell` object at the given location in the terminal, if it
     /// exists.
     #[must_use]
-    pub fn cell(
-        &self,
-        row: u16,
-        col: u16,
-    ) -> Option<&crate::primitives::termtui::vt100::cell::Cell> {
-        self.grid()
-            .visible_cell(crate::primitives::termtui::vt100::grid::Pos { row, col })
+    pub fn cell(&self, row: u16, col: u16) -> Option<&crate::primitives::termtui::vt100::cell::Cell> {
+        self.grid().visible_cell(crate::primitives::termtui::vt100::grid::Pos { row, col })
     }
 
     #[must_use]
@@ -322,10 +311,7 @@ impl Screen {
         // cells, which i really don't want to do).
         let mut wrap = false;
         if pos.col > size.width - width {
-            let last_cell_pos = crate::primitives::termtui::vt100::grid::Pos {
-                row: pos.row,
-                col: size.width - 1,
-            };
+            let last_cell_pos = crate::primitives::termtui::vt100::grid::Pos { row: pos.row, col: size.width - 1 };
             let last_cell = self
                 .grid()
                 .drawing_cell(last_cell_pos)
@@ -342,15 +328,9 @@ impl Screen {
 
         if width == 0 {
             if pos.col > 0 {
-                let prev_cell_pos = crate::primitives::termtui::vt100::grid::Pos {
-                    row: pos.row,
-                    col: pos.col - 1,
-                };
+                let prev_cell_pos = crate::primitives::termtui::vt100::grid::Pos { row: pos.row, col: pos.col - 1 };
                 let prev_cell_pos = if self.grid().is_wide_continuation(prev_cell_pos) {
-                    crate::primitives::termtui::vt100::grid::Pos {
-                        row: pos.row,
-                        col: pos.col - 2,
-                    }
+                    crate::primitives::termtui::vt100::grid::Pos { row: pos.row, col: pos.col - 2 }
                 } else {
                     prev_cell_pos
                 };
@@ -374,15 +354,10 @@ impl Screen {
                     // checked for pos.row > 0.
                     .unwrap();
                 if prev_row.wrapped() {
-                    let prev_cell_pos = crate::primitives::termtui::vt100::grid::Pos {
-                        row: pos.row - 1,
-                        col: size.width - 1,
-                    };
+                    let prev_cell_pos =
+                        crate::primitives::termtui::vt100::grid::Pos { row: pos.row - 1, col: size.width - 1 };
                     let prev_cell_pos = if self.grid().is_wide_continuation(prev_cell_pos) {
-                        crate::primitives::termtui::vt100::grid::Pos {
-                            row: pos.row - 1,
-                            col: size.width - 2,
-                        }
+                        crate::primitives::termtui::vt100::grid::Pos { row: pos.row - 1, col: size.width - 2 }
                     } else {
                         prev_cell_pos
                     };
@@ -405,10 +380,7 @@ impl Screen {
             if self.grid().is_wide_continuation(pos) {
                 let prev_cell = self
                     .grid_mut()
-                    .drawing_cell_mut(crate::primitives::termtui::vt100::grid::Pos {
-                        row: pos.row,
-                        col: pos.col - 1,
-                    })
+                    .drawing_cell_mut(crate::primitives::termtui::vt100::grid::Pos { row: pos.row, col: pos.col - 1 })
                     // pos.row is valid because we assume self.grid().pos() to
                     // always have a valid row value. pos.col is valid because
                     // we called col_wrap() immediately before this, which
@@ -430,12 +402,9 @@ impl Screen {
                 .unwrap()
                 .is_wide()
             {
-                if let Some(next_cell) =
-                    self.grid_mut()
-                        .drawing_cell_mut(crate::primitives::termtui::vt100::grid::Pos {
-                            row: pos.row,
-                            col: pos.col + 1,
-                        })
+                if let Some(next_cell) = self
+                    .grid_mut()
+                    .drawing_cell_mut(crate::primitives::termtui::vt100::grid::Pos { row: pos.row, col: pos.col + 1 })
                 {
                     next_cell.set(' ', attrs);
                 }
@@ -466,10 +435,7 @@ impl Screen {
                     .unwrap()
                     .is_wide()
                 {
-                    let next_next_pos = crate::primitives::termtui::vt100::grid::Pos {
-                        row: pos.row,
-                        col: pos.col + 1,
-                    };
+                    let next_next_pos = crate::primitives::termtui::vt100::grid::Pos { row: pos.row, col: pos.col + 1 };
                     let next_next_cell = self
                         .grid_mut()
                         .drawing_cell_mut(next_next_pos)
@@ -716,10 +682,7 @@ impl Screen {
                                     }
                                 }
                                 _ => {
-                                    log::warn!(
-                                        "Ignored nF: ESC {}",
-                                        String::from_utf8_lossy(&buf[start - 1..pos]),
-                                    );
+                                    log::warn!("Ignored nF: ESC {}", String::from_utf8_lossy(&buf[start - 1..pos]),);
                                 }
                             }
                         }
@@ -876,19 +839,10 @@ impl Screen {
         self.feed_buf.drain(0..consumed);
     }
 
-    fn process_csi(
-        &mut self,
-        events: &mut Vec<VtEvent>,
-        params: &str,
-        intermediate: &str,
-        final_: u8,
-    ) {
+    fn process_csi(&mut self, events: &mut Vec<VtEvent>, params: &str, intermediate: &str, final_: u8) {
         let full_params = params;
-        let (pref, bare_params) = if params.starts_with(['<', '=', '>', '?']) {
-            (&params[..1], &params[1..])
-        } else {
-            ("", params)
-        };
+        let (pref, bare_params) =
+            if params.starts_with(['<', '=', '>', '?']) { (&params[..1], &params[1..]) } else { ("", params) };
         match (pref, bare_params, intermediate, final_) {
             ("?", _, "", b'J') => {
                 // DECSED - Selective Erase Display
@@ -958,8 +912,7 @@ impl Screen {
                 let mut params = params.split(';');
                 let row = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
                 let col = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
-                self.grid_mut()
-                    .set_pos(crate::primitives::termtui::vt100::grid::Pos { row, col });
+                self.grid_mut().set_pos(crate::primitives::termtui::vt100::grid::Pos { row, col });
             }
             ("", _, "", b'J') => {
                 // ED - Erase Display
@@ -1042,8 +995,7 @@ impl Screen {
                 let mut params = params.split(';');
                 let y = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
                 let x = params.next().unwrap_or("1").parse().unwrap_or(1).max(1) - 1;
-                self.grid_mut()
-                    .set_pos(crate::primitives::termtui::vt100::grid::Pos { row: y, col: x });
+                self.grid_mut().set_pos(crate::primitives::termtui::vt100::grid::Pos { row: y, col: x });
             }
             ("", _, "", b'`') => {
                 // HPA - Horizontal Position Absolute
@@ -1052,18 +1004,10 @@ impl Screen {
                 self.grid_mut().col_set(column);
             }
             ("", _, "", b'm') => {
-                let params: Vec<&str> = if params.is_empty() {
-                    vec!["0"]
-                } else {
-                    params.split(';').collect()
-                };
+                let params: Vec<&str> = if params.is_empty() { vec!["0"] } else { params.split(';').collect() };
                 let mut idx = 0;
                 while idx < params.len() {
-                    let param = if params[idx].is_empty() {
-                        0
-                    } else {
-                        params[idx].parse().unwrap_or(0)
-                    };
+                    let param = if params[idx].is_empty() { 0 } else { params[idx].parse().unwrap_or(0) };
                     match param {
                         0 => {
                             // Reset
@@ -1281,8 +1225,7 @@ impl Screen {
                         // CPR - Request Cursor Position Report
                         // https://terminalguide.namepad.de/seq/csi_sn-6/
                         let pos = self.grid().pos();
-                        let s =
-                            compact_str::format_compact!("\x1b[{};{}R", pos.row + 1, pos.col + 1);
+                        let s = compact_str::format_compact!("\x1b[{};{}R", pos.row + 1, pos.col + 1);
                         events.push(VtEvent::Reply(s));
                     }
                     n => {
@@ -1318,12 +1261,7 @@ impl Screen {
 }
 
 fn csi_todo(params: &str, intermediate: &str, final_: u8) {
-    log::warn!(
-        "CSI not implemented: ESC [ {} {} {}",
-        params,
-        intermediate,
-        final_ as char
-    );
+    log::warn!("CSI not implemented: ESC [ {} {} {}", params, intermediate, final_ as char);
 }
 
 fn parse_sgr_color(params: &[&str]) -> (Option<Color>, usize) {

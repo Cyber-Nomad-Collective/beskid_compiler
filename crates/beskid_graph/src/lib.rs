@@ -7,13 +7,11 @@ mod payload;
 mod render;
 mod validate;
 
-pub use adapters::{
-    from_composition, from_import_closure, from_module_graph, from_project_graph, from_workspace,
-};
+pub use adapters::{from_composition, from_import_closure, from_module_graph, from_project_graph, from_workspace};
 pub use compose::SpecBuilder;
 pub use model::{
-    GraphDocument, GraphEdge, GraphKind, GraphMetadata, GraphNode, GraphNodeKind, GraphSpec,
-    GraphSubgraph, GraphWarning, GraphWarningCode, NodeMetadata,
+    GraphDocument, GraphEdge, GraphKind, GraphMetadata, GraphNode, GraphNodeKind, GraphSpec, GraphSubgraph,
+    GraphWarning, GraphWarningCode, NodeMetadata,
 };
 pub use payload::graph_tooling_payload;
 pub use render::{GraphError, render_document, render_flowchart};

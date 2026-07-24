@@ -96,16 +96,8 @@ target "lib" {
             manifest_path: host.join("Host.bproj"),
             project_name: "Host".to_owned(),
             source_root: host.join("Src"),
-            target: Target {
-                name: "main".to_owned(),
-                kind: TargetKind::App,
-                entry: Some("Main.bd".to_owned()),
-            },
-            dependency_projects: vec![
-                dependency("Lib", &lib),
-                dependency("ModA", &mod_a),
-                dependency("ModA", &mod_a),
-            ],
+            target: Target { name: "main".to_owned(), kind: TargetKind::App, entry: Some("Main.bd".to_owned()) },
+            dependency_projects: vec![dependency("Lib", &lib), dependency("ModA", &mod_a), dependency("ModA", &mod_a)],
             unresolved_dependencies: Vec::new(),
             has_std_dependency: false,
         };
@@ -139,10 +131,7 @@ target "lib" {
     }
 
     fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
-        let id = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time")
-            .as_nanos();
+        let id = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
         std::env::temp_dir().join(format!("{prefix}_{id}"))
     }
 }

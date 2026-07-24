@@ -1,7 +1,6 @@
 use crate::support::runtime::with_runtime_scope;
 use beskid_runtime::{
-    alloc, gc_bytes_allocated, gc_collect, gc_external_root_count, gc_object_count, gc_phase,
-    snapshot_gc,
+    alloc, gc_bytes_allocated, gc_collect, gc_external_root_count, gc_object_count, gc_phase, snapshot_gc,
 };
 
 #[test]

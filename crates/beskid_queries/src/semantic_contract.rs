@@ -50,25 +50,15 @@ pub fn format_ast_node_key(db: &dyn Db, key: AstNodeKey) -> String {
 /// still actionable without requiring a second query at the call site.
 pub fn format_ast_node_site(db: &dyn Db, key: AstNodeKey) -> String {
     let label = format_ast_node_key(db, key);
-    let construct = node_kind(db, key)
-        .ok()
-        .flatten()
-        .map(|kind| format!("{kind:?}"))
-        .unwrap_or_else(|| "Unknown".to_owned());
-    let range = node_span(db, key)
-        .ok()
-        .flatten()
-        .map(format_source_span_range)
-        .unwrap_or_else(|| "?:?-?:?".to_owned());
+    let construct =
+        node_kind(db, key).ok().flatten().map(|kind| format!("{kind:?}")).unwrap_or_else(|| "Unknown".to_owned());
+    let range = node_span(db, key).ok().flatten().map(format_source_span_range).unwrap_or_else(|| "?:?-?:?".to_owned());
     format!("{label} {construct}@{range}")
 }
 
 /// Format a source span as `line:col-line:col` (1-based endpoints).
 pub fn format_source_span_range(span: SourceSpan) -> String {
-    format!(
-        "{}:{}-{}:{}",
-        span.line_col_start.0, span.line_col_start.1, span.line_col_end.0, span.line_col_end.1
-    )
+    format!("{}:{}-{}:{}", span.line_col_start.0, span.line_col_start.1, span.line_col_end.0, span.line_col_end.1)
 }
 
 #[cfg(test)]
@@ -77,12 +67,7 @@ mod ast_node_site_format_tests {
 
     #[test]
     fn formats_line_column_range() {
-        let span = SourceSpan {
-            start: 100,
-            end: 140,
-            line_col_start: (52, 5),
-            line_col_end: (55, 6),
-        };
+        let span = SourceSpan { start: 100, end: 140, line_col_start: (52, 5), line_col_end: (55, 6) };
         assert_eq!(format_source_span_range(span), "52:5-55:6");
     }
 }
@@ -91,9 +76,7 @@ fn normalized_source_path(path: &Path) -> PathBuf {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {
-        std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join(path)
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join(path)
     };
     let mut ancestor = absolute.clone();
     let mut suffix = Vec::<OsString>::new();
@@ -130,8 +113,7 @@ pub struct TypedProgram {
     pub runtime_intrinsic_capability: Option<Arc<RuntimeIntrinsicCapability>>,
     /// Present only for the exact compiler-embedded Corelib syscall facade. This is intentionally
     /// separate from canonical runtime intrinsic authority.
-    pub corelib_service_capability:
-        Option<Arc<beskid_abi::runtime_source::CorelibServiceCapability>>,
+    pub corelib_service_capability: Option<Arc<beskid_abi::runtime_source::CorelibServiceCapability>>,
 }
 
 /// Authoritative Salsa input for the current syntax generation of one source unit.
@@ -146,8 +128,7 @@ pub struct SyntaxUnitInput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxUnitRevision {
     pub(crate) generation: SyntaxGenerationId,
-    pub(crate) expanded_program:
-        Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
+    pub(crate) expanded_program: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
     pub(crate) syntax_index: Arc<beskid_analysis::syntax_query::SyntaxIndex>,
     pub(crate) source_fingerprint: Arc<str>,
     pub(crate) tree_fingerprint: Arc<str>,
@@ -167,10 +148,7 @@ impl SyntaxUnitInput {
         &self.revision(db).expanded_program
     }
 
-    pub(crate) fn syntax_index(
-        self,
-        db: &dyn Db,
-    ) -> &Arc<beskid_analysis::syntax_query::SyntaxIndex> {
+    pub(crate) fn syntax_index(self, db: &dyn Db) -> &Arc<beskid_analysis::syntax_query::SyntaxIndex> {
         &self.revision(db).syntax_index
     }
 
@@ -694,39 +672,19 @@ pub struct SemanticError {
 impl SemanticError {
     pub(crate) fn new(message: impl Into<Arc<str>>) -> Self {
         let message = message.into();
-        Self {
-            diagnostics: Arc::from([Arc::clone(&message)]),
-            message,
-            unavailable: false,
-        }
+        Self { diagnostics: Arc::from([Arc::clone(&message)]), message, unavailable: false }
     }
 
     pub(crate) fn from_diagnostics(messages: impl IntoIterator<Item = String>) -> Self {
-        let diagnostics = messages
-            .into_iter()
-            .map(Arc::<str>::from)
-            .collect::<Vec<_>>();
-        let message = diagnostics
-            .iter()
-            .map(AsRef::as_ref)
-            .collect::<Vec<_>>()
-            .join("\n");
-        Self {
-            message: Arc::from(message),
-            diagnostics: diagnostics.into(),
-            unavailable: false,
-        }
+        let diagnostics = messages.into_iter().map(Arc::<str>::from).collect::<Vec<_>>();
+        let message = diagnostics.iter().map(AsRef::as_ref).collect::<Vec<_>>().join("\n");
+        Self { message: Arc::from(message), diagnostics: diagnostics.into(), unavailable: false }
     }
 
     pub fn unavailable(query: &str) -> Self {
-        let message = Arc::<str>::from(format!(
-            "semantic query `{query}` is unavailable until its AST/Salsa port is complete"
-        ));
-        Self {
-            diagnostics: Arc::from([Arc::clone(&message)]),
-            message,
-            unavailable: true,
-        }
+        let message =
+            Arc::<str>::from(format!("semantic query `{query}` is unavailable until its AST/Salsa port is complete"));
+        Self { diagnostics: Arc::from([Arc::clone(&message)]), message, unavailable: true }
     }
 
     pub fn is_unavailable(&self) -> bool {
@@ -752,11 +710,7 @@ fn with_registered_syntax<T>(
 }
 
 #[salsa::tracked]
-fn resolved_item_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<ResolvedItem> {
+fn resolved_item_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<ResolvedItem> {
     with_node(db, syntax, key, |program, index, node| {
         let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
         resolve_item_declaration(db, program, index, key, &path.path.node)
@@ -774,11 +728,7 @@ fn resolve_item_declaration(
     // A generic receiver remains an exact module/type namespace fact: `Channel<i64>.Create`
     // names the `Create` item imported from `Concurrency.Channel`.  Only a generic terminal
     // callee would require unimplemented function monomorphization.
-    if path
-        .segments
-        .last()
-        .is_some_and(|segment| !segment.node.type_args.is_empty())
-    {
+    if path.segments.last().is_some_and(|segment| !segment.node.type_args.is_empty()) {
         return None;
     }
     resolve_item_declaration_candidate(db, program, index, key, path)
@@ -804,10 +754,7 @@ fn resolve_item_declaration_candidate(
             .or_else(|| unique_function_in_unit(db, key.unit, key.generation, name))
             .or_else(|| unique_imported_function(db, key, name));
     }
-    let module_path = module_path
-        .iter()
-        .map(|segment| segment.node.name.node.name.clone())
-        .collect::<Vec<_>>();
+    let module_path = module_path.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
     let Some(target_unit) = resolve_qualified_module_unit(db, key, &module_path) else {
         return resolve_type_qualified_imported_function(db, key, path);
     };
@@ -816,11 +763,7 @@ fn resolve_item_declaration_candidate(
 
 /// Resolve a qualified module path from an exact current import and, when required, explicit
 /// public child-module edges. Private imports remain available only inside their owner.
-fn resolve_qualified_module_unit(
-    db: &dyn Db,
-    key: AstNodeKey,
-    module_path: &[String],
-) -> Option<SourceUnitId> {
+fn resolve_qualified_module_unit(db: &dyn Db, key: AstNodeKey, module_path: &[String]) -> Option<SourceUnitId> {
     let initial = db
         .syntax_dependency_registry()
         .lock()
@@ -828,9 +771,7 @@ fn resolve_qualified_module_unit(
         .imports
         .get(&(key.unit, key.generation))?
         .iter()
-        .filter_map(|import| {
-            import_path_prefix_len(import, module_path).map(|consumed| (import.target, consumed))
-        })
+        .filter_map(|import| import_path_prefix_len(import, module_path).map(|consumed| (import.target, consumed)))
         .collect::<Vec<_>>();
 
     let mut resolved = Vec::new();
@@ -851,9 +792,7 @@ fn resolve_qualified_module_unit(
             pending.extend(
                 public_module_routes(db, current, key.generation)
                     .into_iter()
-                    .filter_map(|(binding, child)| {
-                        (binding == *segment).then_some((child, consumed + 1))
-                    }),
+                    .filter_map(|(binding, child)| (binding == *segment).then_some((child, consumed + 1))),
             );
         }
     }
@@ -863,24 +802,15 @@ fn resolve_qualified_module_unit(
     Some(*unit)
 }
 
-fn import_path_prefix_len(
-    import: &crate::db::SyntaxImport,
-    module_path: &[String],
-) -> Option<usize> {
+fn import_path_prefix_len(import: &crate::db::SyntaxImport, module_path: &[String]) -> Option<usize> {
     // A source unit owns only the names bound by its own `use` declarations. Original import
     // paths may be used only for an unaliased import, where the terminal path segment is that
     // binding, and only for the target module itself. Registry suffixes or child routes would
     // bypass aliases and make visibility order-dependent.
-    module_path
-        .first()
-        .filter(|segment| import.binding == **segment)
-        .map(|_| 1)
-        .or_else(|| {
-            (!import.has_explicit_alias
-                && import.binding == *import.path.last()?
-                && module_path == import.path.as_slice())
+    module_path.first().filter(|segment| import.binding == **segment).map(|_| 1).or_else(|| {
+        (!import.has_explicit_alias && import.binding == *import.path.last()? && module_path == import.path.as_slice())
             .then_some(import.path.len())
-        })
+    })
 }
 
 /// Return public routes with their bindings: a target may be re-exported under multiple aliases.
@@ -913,10 +843,7 @@ fn resolve_type_qualified_imported_function(
 ) -> Option<AstNodeKey> {
     let (function, module_path) = path.segments.split_last()?;
     let (type_segment, import_path) = module_path.split_last()?;
-    let import_path = import_path
-        .iter()
-        .map(|segment| segment.node.name.node.name.clone())
-        .collect::<Vec<_>>();
+    let import_path = import_path.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
     let target_unit = resolve_qualified_module_unit(db, key, &import_path)?;
     unique_exported_type_in_unit(
         db,
@@ -925,12 +852,7 @@ fn resolve_type_qualified_imported_function(
         &type_segment.node.name.node.name,
         type_segment.node.type_args.len(),
     )?;
-    unique_exported_function_in_unit(
-        db,
-        target_unit,
-        key.generation,
-        &function.node.name.node.name,
-    )
+    unique_exported_function_in_unit(db, target_unit, key.generation, &function.node.name.node.name)
 }
 
 /// Resolve a public module member through its defining syntax unit or an explicit public
@@ -960,20 +882,16 @@ fn unique_exported_function_in_unit(
     Some(*candidate)
 }
 
-fn public_reexport_units(
-    db: &dyn Db,
-    unit: SourceUnitId,
-    generation: SyntaxGenerationId,
-) -> Vec<SourceUnitId> {
-    public_module_routes(db, unit, generation)
-        .into_iter()
-        .map(|(_, target)| target)
-        .fold(Vec::new(), |mut targets, target| {
+fn public_reexport_units(db: &dyn Db, unit: SourceUnitId, generation: SyntaxGenerationId) -> Vec<SourceUnitId> {
+    public_module_routes(db, unit, generation).into_iter().map(|(_, target)| target).fold(
+        Vec::new(),
+        |mut targets, target| {
             if !targets.contains(&target) {
                 targets.push(target);
             }
             targets
-        })
+        },
+    )
 }
 
 fn unique_public_function_in_unit(
@@ -1003,11 +921,7 @@ fn unique_public_function_in_unit(
     let [node] = candidates.as_slice() else {
         return None;
     };
-    Some(AstNodeKey {
-        unit,
-        generation,
-        node: *node,
-    })
+    Some(AstNodeKey { unit, generation, node: *node })
 }
 
 /// Resolve an exact function name only when the syntax unit has one unambiguous definition.
@@ -1037,11 +951,7 @@ fn unique_function_in_unit(
     let [node] = candidates.as_slice() else {
         return None;
     };
-    Some(AstNodeKey {
-        unit,
-        generation,
-        node: *node,
-    })
+    Some(AstNodeKey { unit, generation, node: *node })
 }
 
 /// Resolve an unqualified imported function only when its assembled import targets provide one
@@ -1095,10 +1005,7 @@ fn resolve_unqualified_item_declaration(
             .collect::<Vec<_>>();
         match candidates.as_slice() {
             [declaration] => {
-                return Some(AstNodeKey {
-                    node: *declaration,
-                    ..key
-                });
+                return Some(AstNodeKey { node: *declaration, ..key });
             }
             [] => {}
             _ => return None,
@@ -1114,8 +1021,7 @@ fn module_scope(
     nearest_ancestor(index, node, |kind| {
         matches!(
             kind,
-            beskid_analysis::syntax_query::NodeKind::InlineModule
-                | beskid_analysis::syntax_query::NodeKind::Program
+            beskid_analysis::syntax_query::NodeKind::InlineModule | beskid_analysis::syntax_query::NodeKind::Program
         )
     })
 }
@@ -1128,11 +1034,7 @@ fn outer_module_scope(
 }
 
 #[salsa::tracked]
-fn resolved_local_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<ResolvedLocal> {
+fn resolved_local_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<ResolvedLocal> {
     with_node(db, syntax, key, |program, index, node| {
         let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
         let [segment] = path.path.node.segments.as_slice() else {
@@ -1141,27 +1043,13 @@ fn resolved_local_tracked(
         if !segment.node.type_args.is_empty() {
             return None;
         }
-        let declaration = resolve_lexical_declaration(
-            program,
-            index,
-            key.node,
-            segment.node.name.node.name.as_str(),
-        )?;
-        Some(ResolvedLocal {
-            declaration: AstNodeKey {
-                node: declaration,
-                ..key
-            },
-        })
+        let declaration = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())?;
+        Some(ResolvedLocal { declaration: AstNodeKey { node: declaration, ..key } })
     })
 }
 
 #[salsa::tracked]
-fn local_slot_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<LocalSlot> {
+fn local_slot_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<LocalSlot> {
     with_node(db, syntax, key, |_program, index, node| {
         node.of::<beskid_analysis::syntax::Identifier>()?;
         local_slot_for_declaration(index, key)
@@ -1177,10 +1065,7 @@ fn mutable_local_assignment_tracked(
 ) -> SemanticQueryResult<MutableLocalAssignment> {
     with_node(db, syntax, key, |program, index, node| {
         let assignment = node.of::<beskid_analysis::syntax::AssignExpression>()?;
-        if !matches!(
-            assignment.op.node,
-            beskid_analysis::syntax::AssignOp::Assign
-        ) {
+        if !matches!(assignment.op.node, beskid_analysis::syntax::AssignOp::Assign) {
             return None;
         }
         let beskid_analysis::syntax::Expression::Path(path) = &assignment.target.node else {
@@ -1192,19 +1077,11 @@ fn mutable_local_assignment_tracked(
         if !segment.node.type_args.is_empty() {
             return None;
         }
-        let declaration = resolve_lexical_declaration(
-            program,
-            index,
-            key.node,
-            segment.node.name.node.name.as_str(),
-        )?;
+        let declaration = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())?;
         if !local_declaration_is_mutable(program, index, declaration) {
             return Some(Err(SemanticError::unavailable("mutable_local_assignment")));
         }
-        let declaration = AstNodeKey {
-            node: declaration,
-            ..key
-        };
+        let declaration = AstNodeKey { node: declaration, ..key };
         let slot = local_slot_for_declaration(index, declaration)?;
         Some(slot.map(|slot| MutableLocalAssignment { declaration, slot }))
     })?
@@ -1222,10 +1099,7 @@ fn local_slot_for_declaration(
         .position(|declaration| declaration == key.node)?;
     Some(
         u32::try_from(slot)
-            .map(|index| LocalSlot {
-                owner: AstNodeKey { node: owner, ..key },
-                index,
-            })
+            .map(|index| LocalSlot { owner: AstNodeKey { node: owner, ..key }, index })
             .map_err(|_| SemanticError::unavailable("local_slot")),
     )
 }
@@ -1267,11 +1141,8 @@ fn local_declaration_is_mutable(
     let Some(node) = index.node_at(program, parent) else {
         return false;
     };
-    node.of::<beskid_analysis::syntax::LetStatement>()
-        .is_some_and(|binding| binding.mutable)
-        || node
-            .of::<beskid_analysis::syntax::Parameter>()
-            .is_some_and(|parameter| parameter.mutable)
+    node.of::<beskid_analysis::syntax::LetStatement>().is_some_and(|binding| binding.mutable)
+        || node.of::<beskid_analysis::syntax::Parameter>().is_some_and(|parameter| parameter.mutable)
 }
 
 fn resolve_lexical_declaration(
@@ -1282,9 +1153,8 @@ fn resolve_lexical_declaration(
 ) -> Option<beskid_analysis::syntax::AstNodeId> {
     let mut best: Option<(usize, u32, beskid_analysis::syntax::AstNodeId)> = None;
     for declaration in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::Identifier) {
-        let Some(identifier) = index
-            .node_at(program, declaration)
-            .and_then(|node| node.of::<beskid_analysis::syntax::Identifier>())
+        let Some(identifier) =
+            index.node_at(program, declaration).and_then(|node| node.of::<beskid_analysis::syntax::Identifier>())
         else {
             continue;
         };
@@ -1325,35 +1195,27 @@ fn local_declaration_scope(
             })
             .filter(|scope| is_ancestor(index, *scope, reference))
         }
-        beskid_analysis::syntax_query::NodeKind::Parameter => {
-            nearest_ancestor(index, parent, |kind| {
-                matches!(
-                    kind,
-                    beskid_analysis::syntax_query::NodeKind::FunctionDefinition
-                        | beskid_analysis::syntax_query::NodeKind::MethodDefinition
-                )
-            })
-            .filter(|scope| is_ancestor(index, *scope, reference))
-        }
+        beskid_analysis::syntax_query::NodeKind::Parameter => nearest_ancestor(index, parent, |kind| {
+            matches!(
+                kind,
+                beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                    | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+            )
+        })
+        .filter(|scope| is_ancestor(index, *scope, reference)),
         beskid_analysis::syntax_query::NodeKind::LambdaParameter => {
-            nearest_ancestor(index, parent, |kind| {
-                kind == beskid_analysis::syntax_query::NodeKind::LambdaExpression
-            })
-            .filter(|scope| is_ancestor(index, *scope, reference))
+            nearest_ancestor(index, parent, |kind| kind == beskid_analysis::syntax_query::NodeKind::LambdaExpression)
+                .filter(|scope| is_ancestor(index, *scope, reference))
         }
         beskid_analysis::syntax_query::NodeKind::ForStatement => index
             .children(parent)?
             .iter()
             .copied()
-            .find(|child| {
-                index.kind(*child) == Some(beskid_analysis::syntax_query::NodeKind::Block)
-            })
+            .find(|child| index.kind(*child) == Some(beskid_analysis::syntax_query::NodeKind::Block))
             .filter(|scope| is_ancestor(index, *scope, reference)),
         beskid_analysis::syntax_query::NodeKind::Pattern => {
-            nearest_ancestor(index, parent, |kind| {
-                kind == beskid_analysis::syntax_query::NodeKind::MatchArm
-            })
-            .filter(|scope| is_ancestor(index, *scope, reference))
+            nearest_ancestor(index, parent, |kind| kind == beskid_analysis::syntax_query::NodeKind::MatchArm)
+                .filter(|scope| is_ancestor(index, *scope, reference))
         }
         _ => None,
     }
@@ -1407,21 +1269,12 @@ fn ancestor_distance(
 }
 
 #[salsa::tracked]
-fn node_type_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<SemanticTypeId> {
+fn node_type_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
-            return Some(abi_type_for_binary_expression(
-                db, program, index, key, binary,
-            ));
+            return Some(abi_type_for_binary_expression(db, program, index, key, binary));
         }
-        if node
-            .of::<beskid_analysis::syntax::CallExpression>()
-            .is_some()
-        {
+        if node.of::<beskid_analysis::syntax::CallExpression>().is_some() {
             match call_lowering(db, key) {
                 Ok(Some(CallLowering::Direct(_))) => (),
                 Ok(Some(_) | None) => return Some(Err(SemanticError::unavailable("node_type"))),
@@ -1429,19 +1282,14 @@ fn node_type_tracked(
             };
             return Some(
                 call_abi_signature(db, key)
-                    .and_then(|signature| {
-                        signature.ok_or_else(|| SemanticError::unavailable("node_type"))
-                    })
+                    .and_then(|signature| signature.ok_or_else(|| SemanticError::unavailable("node_type")))
                     .map(|signature| signature.result),
             );
         }
         if let Some(binding_type) = pattern_binding_semantic_type(db, program, index, key, node) {
             return Some(binding_type);
         }
-        if node
-            .of::<beskid_analysis::syntax::MatchExpression>()
-            .is_some()
-            && matches!(enum_match(db, key), Ok(Some(_)))
+        if node.of::<beskid_analysis::syntax::MatchExpression>().is_some() && matches!(enum_match(db, key), Ok(Some(_)))
         {
             return Some(enum_match_result_semantic_type(db, key));
         }
@@ -1450,19 +1298,12 @@ fn node_type_tracked(
     .transpose()
 }
 
-fn enum_match_result_semantic_type(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> Result<SemanticTypeId, SemanticError> {
+fn enum_match_result_semantic_type(db: &dyn Db, key: AstNodeKey) -> Result<SemanticTypeId, SemanticError> {
     let fact = enum_match(db, key)?.ok_or_else(|| SemanticError::unavailable("node_type"))?;
     let mut result = None;
     for arm in fact.arms.iter() {
-        let arm_type =
-            node_type(db, arm.body)?.ok_or_else(|| SemanticError::unavailable("node_type"))?;
-        if result
-            .replace(arm_type)
-            .is_some_and(|previous| previous != arm_type)
-        {
+        let arm_type = node_type(db, arm.body)?.ok_or_else(|| SemanticError::unavailable("node_type"))?;
+        if result.replace(arm_type).is_some_and(|previous| previous != arm_type) {
             return Err(SemanticError::unavailable("node_type"));
         }
     }
@@ -1483,12 +1324,7 @@ fn pattern_binding_semantic_type(
     if !segment.node.type_args.is_empty() {
         return None;
     }
-    let declaration = resolve_lexical_declaration(
-        program,
-        index,
-        key.node,
-        segment.node.name.node.name.as_str(),
-    )?;
+    let declaration = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())?;
     let binding = match pattern_binding_fact(db, index, key, declaration)? {
         Ok(binding) => binding,
         Err(error) => return Some(Err(error)),
@@ -1505,24 +1341,16 @@ fn pattern_binding_fact(
     key: AstNodeKey,
     declaration: beskid_analysis::syntax::AstNodeId,
 ) -> Option<Result<EnumMatchBindingFact, SemanticError>> {
-    if index.kind(parent_node(index, declaration)?)?
-        != beskid_analysis::syntax_query::NodeKind::Pattern
-    {
+    if index.kind(parent_node(index, declaration)?)? != beskid_analysis::syntax_query::NodeKind::Pattern {
         return None;
     }
-    let arm = nearest_ancestor(index, declaration, |kind| {
-        kind == beskid_analysis::syntax_query::NodeKind::MatchArm
-    })?;
-    let outer_match = nearest_ancestor(index, arm, |kind| {
-        kind == beskid_analysis::syntax_query::NodeKind::MatchExpression
-    })?;
+    let arm = nearest_ancestor(index, declaration, |kind| kind == beskid_analysis::syntax_query::NodeKind::MatchArm)?;
+    let outer_match =
+        nearest_ancestor(index, arm, |kind| kind == beskid_analysis::syntax_query::NodeKind::MatchExpression)?;
     if outer_match == key.node {
         return None;
     }
-    let outer_match = AstNodeKey {
-        node: outer_match,
-        ..key
-    };
+    let outer_match = AstNodeKey { node: outer_match, ..key };
     let fact = match enum_match(db, outer_match) {
         Ok(Some(fact)) => fact,
         Ok(None) | Err(_) => return Some(Err(SemanticError::unavailable("pattern_binding"))),
@@ -1548,12 +1376,7 @@ fn semantic_type_for_node(
         return Some(Ok(semantic_type_for_literal(&literal.literal.node)));
     }
     if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
-        return Some(semantic_type_for_local_path(
-            program,
-            index,
-            reference,
-            &path.path.node,
-        ));
+        return Some(semantic_type_for_local_path(program, index, reference, &path.path.node));
     }
     if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
         return Some(semantic_type_for_binary_operands(
@@ -1568,27 +1391,18 @@ fn semantic_type_for_node(
     if let Some(match_expression) = node.of::<beskid_analysis::syntax::MatchExpression>() {
         let mut result = None;
         for arm in &match_expression.arms {
-            let arm_type =
-                match semantic_type_for_expression(program, index, reference, &arm.node.value.node)
-                {
-                    Ok(arm_type) => arm_type,
-                    Err(error) => return Some(Err(error)),
-                };
-            if result
-                .replace(arm_type)
-                .is_some_and(|previous| previous != arm_type)
-            {
+            let arm_type = match semantic_type_for_expression(program, index, reference, &arm.node.value.node) {
+                Ok(arm_type) => arm_type,
+                Err(error) => return Some(Err(error)),
+            };
+            if result.replace(arm_type).is_some_and(|previous| previous != arm_type) {
                 return Some(Err(SemanticError::unavailable("node_type")));
             }
         }
-        return result
-            .map(Ok)
-            .or_else(|| Some(Err(SemanticError::unavailable("node_type"))));
+        return result.map(Ok).or_else(|| Some(Err(SemanticError::unavailable("node_type"))));
     }
     if let Some(expression) = node.of::<beskid_analysis::syntax::Expression>() {
-        return Some(semantic_type_for_expression(
-            program, index, reference, expression,
-        ));
+        return Some(semantic_type_for_expression(program, index, reference, expression));
     }
     if let Some(syntax_type) = node.of::<beskid_analysis::syntax::Type>() {
         return Some(semantic_type_from_syntax(syntax_type));
@@ -1639,9 +1453,7 @@ fn semantic_type_for_binary_operands(
     let right = semantic_type_for_expression(program, index, reference, right)?;
     use beskid_analysis::syntax::BinaryOp;
     match op {
-        BinaryOp::Or | BinaryOp::And
-            if left == SemanticTypeId::BOOL && right == SemanticTypeId::BOOL =>
-        {
+        BinaryOp::Or | BinaryOp::And if left == SemanticTypeId::BOOL && right == SemanticTypeId::BOOL => {
             Ok(SemanticTypeId::BOOL)
         }
         BinaryOp::IdentityEq
@@ -1680,15 +1492,9 @@ fn semantic_type_for_local_path(
     if !segment.node.type_args.is_empty() {
         return Err(SemanticError::unavailable("node_type"));
     }
-    let declaration = resolve_lexical_declaration(
-        program,
-        index,
-        reference,
-        segment.node.name.node.name.as_str(),
-    )
-    .ok_or_else(|| SemanticError::unavailable("node_type"))?;
-    local_declaration_type(program, index, declaration)
-        .unwrap_or_else(|| Err(SemanticError::unavailable("node_type")))
+    let declaration = resolve_lexical_declaration(program, index, reference, segment.node.name.node.name.as_str())
+        .ok_or_else(|| SemanticError::unavailable("node_type"))?;
+    local_declaration_type(program, index, declaration).unwrap_or_else(|| Err(SemanticError::unavailable("node_type")))
 }
 
 fn local_declaration_type(
@@ -1702,30 +1508,26 @@ fn local_declaration_type(
             .node_at(program, parent)?
             .of::<beskid_analysis::syntax::Parameter>()
             .map(|parameter| semantic_type_from_syntax(&parameter.ty.node)),
-        beskid_analysis::syntax_query::NodeKind::LambdaParameter => index
-            .node_at(program, parent)?
-            .of::<beskid_analysis::syntax::LambdaParameter>()
-            .map(|parameter| {
+        beskid_analysis::syntax_query::NodeKind::LambdaParameter => {
+            index.node_at(program, parent)?.of::<beskid_analysis::syntax::LambdaParameter>().map(|parameter| {
                 parameter.ty.as_ref().map_or_else(
                     || Err(SemanticError::unavailable("node_type")),
                     |syntax_type| semantic_type_from_syntax(&syntax_type.node),
                 )
-            }),
-        beskid_analysis::syntax_query::NodeKind::LetStatement => index
-            .node_at(program, parent)?
-            .of::<beskid_analysis::syntax::LetStatement>()
-            .map(|statement| {
+            })
+        }
+        beskid_analysis::syntax_query::NodeKind::LetStatement => {
+            index.node_at(program, parent)?.of::<beskid_analysis::syntax::LetStatement>().map(|statement| {
                 statement.type_annotation.as_ref().map_or_else(
                     || semantic_type_for_expression(program, index, parent, &statement.value.node),
                     |syntax_type| semantic_type_from_syntax(&syntax_type.node),
                 )
-            }),
+            })
+        }
         beskid_analysis::syntax_query::NodeKind::ForStatement => index
             .node_at(program, parent)?
             .of::<beskid_analysis::syntax::ForStatement>()
-            .map(|statement| {
-                element_type_for_for_iterable(program, index, parent, &statement.iterable.node)
-            }),
+            .map(|statement| element_type_for_for_iterable(program, index, parent, &statement.iterable.node)),
         _ => None,
     }
 }
@@ -1756,15 +1558,9 @@ fn element_type_for_for_iterable(
 
 fn semantic_type_for_literal(literal: &beskid_analysis::syntax::Literal) -> SemanticTypeId {
     match literal {
-        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i32") => {
-            SemanticTypeId::I32
-        }
-        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i64") => {
-            SemanticTypeId::I64
-        }
-        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_u8") => {
-            SemanticTypeId::U8
-        }
+        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i32") => SemanticTypeId::I32,
+        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i64") => SemanticTypeId::I64,
+        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_u8") => SemanticTypeId::U8,
         beskid_analysis::syntax::Literal::Integer(_) => SemanticTypeId::I32,
         beskid_analysis::syntax::Literal::Float(_) => SemanticTypeId::F64,
         beskid_analysis::syntax::Literal::String(_) => SemanticTypeId::STRING,
@@ -1774,15 +1570,9 @@ fn semantic_type_for_literal(literal: &beskid_analysis::syntax::Literal) -> Sema
 }
 
 #[salsa::tracked]
-fn call_lowering_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<CallLowering> {
-    with_node(db, syntax, key, |program, index, node| {
-        call_lowering_for_node(db, program, index, key, node)
-    })?
-    .transpose()
+fn call_lowering_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<CallLowering> {
+    with_node(db, syntax, key, |program, index, node| call_lowering_for_node(db, program, index, key, node))?
+        .transpose()
 }
 
 #[salsa::tracked]
@@ -1810,13 +1600,9 @@ fn call_arguments_tracked(
             ) else {
                 return Some(Err(SemanticError::unavailable("call_arguments")));
             };
-            arguments.push(AstNodeKey {
-                node: normalized_expression_node(index, receiver),
-                ..key
-            });
+            arguments.push(AstNodeKey { node: normalized_expression_node(index, receiver), ..key });
         } else if let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node
-            && nominal_local_member_receiver(db, program, index, key, &path.node.path.node)
-                .is_some()
+            && nominal_local_member_receiver(db, program, index, key, &path.node.path.node).is_some()
         {
             let Some(callee) = index.direct_child_id(
                 program,
@@ -1825,21 +1611,14 @@ fn call_arguments_tracked(
             ) else {
                 return Some(Err(SemanticError::unavailable("call_arguments")));
             };
-            arguments.push(AstNodeKey {
-                node: normalized_expression_node(index, callee),
-                ..key
-            });
+            arguments.push(AstNodeKey { node: normalized_expression_node(index, callee), ..key });
         }
         let explicit = match call
             .args
             .iter()
             .map(|argument| {
                 index
-                    .direct_child_id(
-                        program,
-                        key.node,
-                        beskid_analysis::syntax_query::DynNodeRef::from(argument),
-                    )
+                    .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
                     .map(|node| AstNodeKey { node, ..key })
                     .ok_or_else(|| SemanticError::unavailable("call_arguments"))
             })
@@ -1855,11 +1634,7 @@ fn call_arguments_tracked(
 }
 
 #[salsa::tracked]
-fn range_for_fact_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<RangeForFact> {
+fn range_for_fact_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<RangeForFact> {
     with_node(db, syntax, key, |program, index, node| {
         let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
         let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
@@ -1874,25 +1649,11 @@ fn range_for_fact_tracked(
         let [start, end] = call.args.as_slice() else {
             return Some(Err(SemanticError::unavailable("range_for_fact")));
         };
-        let start = index.direct_child_id(
-            program,
-            key.node,
-            beskid_analysis::syntax_query::DynNodeRef::from(start),
-        )?;
-        let end = index.direct_child_id(
-            program,
-            key.node,
-            beskid_analysis::syntax_query::DynNodeRef::from(end),
-        )?;
+        let start = index.direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(start))?;
+        let end = index.direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(end))?;
         Some(Ok(RangeForFact {
-            start: AstNodeKey {
-                node: normalized_expression_node(index, start),
-                ..key
-            },
-            end: AstNodeKey {
-                node: normalized_expression_node(index, end),
-                ..key
-            },
+            start: AstNodeKey { node: normalized_expression_node(index, start), ..key },
+            end: AstNodeKey { node: normalized_expression_node(index, end), ..key },
         }))
     })?
     .transpose()
@@ -1912,13 +1673,9 @@ fn for_iterator_fact_tracked(
             beskid_analysis::syntax_query::DynNodeRef::from(&statement.iterator),
         )?;
         match element_type_for_for_iterable(program, index, key.node, &statement.iterable.node) {
-            Ok(element_type) => Some(Ok(ForIteratorFact {
-                declaration: AstNodeKey {
-                    node: declaration,
-                    ..key
-                },
-                element_type,
-            })),
+            Ok(element_type) => {
+                Some(Ok(ForIteratorFact { declaration: AstNodeKey { node: declaration, ..key }, element_type }))
+            }
             Err(error) => Some(Err(error)),
         }
     })?
@@ -1941,21 +1698,12 @@ fn call_lowering_for_node(
                 Err(SemanticError::unavailable("generic_receiver_instantiation"))
             } else if let Some(service) = corelib_service_for(db, key, path) {
                 Ok(CallLowering::CorelibService(service))
-            } else if let Some((declaration, _)) =
-                nominal_local_member_receiver(db, program, index, key, path)
-            {
+            } else if let Some((declaration, _)) = nominal_local_member_receiver(db, program, index, key, path) {
                 Ok(CallLowering::Direct(declaration))
-            } else if path
-                .segments
-                .iter()
-                .any(|segment| !segment.node.type_args.is_empty())
-            {
-                if let Some(instantiation) =
-                    generic_call_instantiation_for_node(db, program, index, key, path)
-                {
+            } else if path.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
+                if let Some(instantiation) = generic_call_instantiation_for_node(db, program, index, key, path) {
                     Ok(CallLowering::Direct(instantiation.declaration))
-                } else if let Some(declaration) =
-                    resolve_item_declaration_candidate(db, program, index, key, path)
+                } else if let Some(declaration) = resolve_item_declaration_candidate(db, program, index, key, path)
                     && generic_call_uses_parameter_type_arguments(db, key, declaration, path)
                 {
                     Ok(CallLowering::Direct(declaration))
@@ -1964,32 +1712,21 @@ fn call_lowering_for_node(
                 } else {
                     Err(SemanticError::unavailable("generic_call_instantiation"))
                 }
-            } else if let Some(declaration) =
-                resolve_item_declaration(db, program, index, key, path)
-            {
+            } else if let Some(declaration) = resolve_item_declaration(db, program, index, key, path) {
                 if function_declares_generics(db, declaration) && call.args.is_empty() {
                     Err(SemanticError::unavailable("generic_call_instantiation"))
                 } else {
                     Ok(CallLowering::Direct(declaration))
                 }
             } else if imported_call_receiver_exists(db, key, path)
-                || (path
-                    .segments
-                    .iter()
-                    .all(|segment| segment.node.type_args.is_empty())
+                || (path.segments.iter().all(|segment| segment.node.type_args.is_empty())
                     && beskid_analysis::builtins::builtin_for_path(
-                        &path
-                            .segments
-                            .iter()
-                            .map(|segment| segment.node.name.node.name.clone())
-                            .collect::<Vec<_>>(),
+                        &path.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>(),
                     )
                     .is_some())
             {
                 Ok(CallLowering::Dynamic)
-            } else if let Some(declaration) =
-                resolve_local_extern_contract_method(program, index, key, path)
-            {
+            } else if let Some(declaration) = resolve_local_extern_contract_method(program, index, key, path) {
                 Ok(CallLowering::Direct(declaration))
             } else {
                 Err(SemanticError::unavailable("call_lowering"))
@@ -2000,11 +1737,9 @@ fn call_lowering_for_node(
             // Extern/contract members and other receivers without a syntax method
             // declaration remain Dynamic rather than unavailable, matching Path
             // import/builtin fallback so production JIT/AOT can emit the call.
-            Ok(
-                method_declaration_for_member_receiver(db, program, index, key, call, member)
-                    .map(CallLowering::Direct)
-                    .unwrap_or(CallLowering::Dynamic),
-            )
+            Ok(method_declaration_for_member_receiver(db, program, index, key, call, member)
+                .map(CallLowering::Direct)
+                .unwrap_or(CallLowering::Dynamic))
         }
         _ => Err(SemanticError::unavailable("call_lowering")),
     })
@@ -2036,10 +1771,7 @@ fn resolve_local_extern_contract_method(
                 .and_then(|node| node.of::<beskid_analysis::syntax::ContractDefinition>())
                 .is_some_and(|contract| {
                     contract.name.node.name == contract_name
-                        && contract
-                            .attributes
-                            .iter()
-                            .any(|attribute| attribute.node.name.node.name == "Extern")
+                        && contract.attributes.iter().any(|attribute| attribute.node.name.node.name == "Extern")
                 })
         })
         .collect::<Vec<_>>();
@@ -2059,9 +1791,7 @@ fn resolve_local_extern_contract_method(
                     under_contract = true;
                     break;
                 }
-                parent = index
-                    .metadata_for(key.generation, parent_id)
-                    .and_then(|node| node.parent);
+                parent = index.metadata_for(key.generation, parent_id).and_then(|node| node.parent);
             }
             under_contract
                 && index
@@ -2073,11 +1803,7 @@ fn resolve_local_extern_contract_method(
     let [method_id] = methods.as_slice() else {
         return None;
     };
-    Some(AstNodeKey {
-        unit: key.unit,
-        generation: key.generation,
-        node: *method_id,
-    })
+    Some(AstNodeKey { unit: key.unit, generation: key.generation, node: *method_id })
 }
 
 /// Return Extern import metadata for a [`ContractMethodSignature`] declaration key.
@@ -2088,43 +1814,30 @@ pub fn extern_contract_import_for_declaration(
     let syntax = db.syntax_unit(declaration.unit)?;
     let program = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
-    let method = index
-        .node_at(program, declaration.node)?
-        .of::<beskid_analysis::syntax::ContractMethodSignature>()?;
-    let mut parent = index
-        .metadata_for(declaration.generation, declaration.node)?
-        .parent;
+    let method = index.node_at(program, declaration.node)?.of::<beskid_analysis::syntax::ContractMethodSignature>()?;
+    let mut parent = index.metadata_for(declaration.generation, declaration.node)?.parent;
     let mut contract = None;
     while let Some(parent_id) = parent {
-        if let Some(definition) = index
-            .node_at(program, parent_id)
-            .and_then(|node| node.of::<beskid_analysis::syntax::ContractDefinition>())
+        if let Some(definition) =
+            index.node_at(program, parent_id).and_then(|node| node.of::<beskid_analysis::syntax::ContractDefinition>())
         {
             contract = Some(definition);
             break;
         }
-        parent = index
-            .metadata_for(declaration.generation, parent_id)
-            .and_then(|node| node.parent);
+        parent = index.metadata_for(declaration.generation, parent_id).and_then(|node| node.parent);
     }
     let contract = contract?;
-    let extern_attr = contract
-        .attributes
-        .iter()
-        .find(|attribute| attribute.node.name.node.name == "Extern")?;
+    let extern_attr = contract.attributes.iter().find(|attribute| attribute.node.name.node.name == "Extern")?;
     let mut abi = None;
     let mut library = None;
     for argument in &extern_attr.node.arguments {
         let value = match &argument.node.value.node {
-            beskid_analysis::syntax::Expression::Literal(literal) => {
-                match &literal.node.literal.node {
-                    beskid_analysis::syntax::Literal::String(raw) => raw
-                        .strip_prefix('"')
-                        .and_then(|value| value.strip_suffix('"'))
-                        .map(str::to_owned),
-                    _ => None,
+            beskid_analysis::syntax::Expression::Literal(literal) => match &literal.node.literal.node {
+                beskid_analysis::syntax::Literal::String(raw) => {
+                    raw.strip_prefix('"').and_then(|value| value.strip_suffix('"')).map(str::to_owned)
                 }
-            }
+                _ => None,
+            },
             _ => None,
         };
         match argument.node.name.node.name.as_str() {
@@ -2159,31 +1872,19 @@ fn method_declaration_for_member_receiver(
         callee,
         beskid_analysis::syntax_query::DynNodeRef::from(member.node.target.as_ref()),
     )?;
-    let receiver = AstNodeKey {
-        node: normalized_expression_node(index, receiver),
-        ..key
-    };
-    let declaration = aggregate_literal_declaration(db, receiver)
-        .ok()
-        .flatten()
-        .or_else(|| {
-            let receiver_node = index.node_at(program, receiver.node)?;
-            let path = receiver_node.of::<beskid_analysis::syntax::PathExpression>()?;
-            let [segment] = path.path.node.segments.as_slice() else {
-                return None;
-            };
-            if !segment.node.type_args.is_empty() {
-                return None;
-            }
-            nominal_local_receiver_declaration(
-                db,
-                program,
-                index,
-                key,
-                segment.node.name.node.name.as_str(),
-            )
+    let receiver = AstNodeKey { node: normalized_expression_node(index, receiver), ..key };
+    let declaration = aggregate_literal_declaration(db, receiver).ok().flatten().or_else(|| {
+        let receiver_node = index.node_at(program, receiver.node)?;
+        let path = receiver_node.of::<beskid_analysis::syntax::PathExpression>()?;
+        let [segment] = path.path.node.segments.as_slice() else {
+            return None;
+        };
+        if !segment.node.type_args.is_empty() {
+            return None;
+        }
+        nominal_local_receiver_declaration(db, program, index, key, segment.node.name.node.name.as_str())
             .map(|(declaration, _)| declaration)
-        })?;
+    })?;
     unique_nominal_method_declaration(db, declaration, &member.node.member.node.name)
 }
 
@@ -2203,15 +1904,9 @@ fn nominal_local_member_receiver(
     if !receiver.node.type_args.is_empty() || !member.node.type_args.is_empty() {
         return None;
     }
-    let (declaration, receiver) = nominal_local_receiver_declaration(
-        db,
-        program,
-        index,
-        key,
-        receiver.node.name.node.name.as_str(),
-    )?;
-    unique_nominal_method_declaration(db, declaration, &member.node.name.node.name)
-        .map(|method| (method, receiver))
+    let (declaration, receiver) =
+        nominal_local_receiver_declaration(db, program, index, key, receiver.node.name.node.name.as_str())?;
+    unique_nominal_method_declaration(db, declaration, &member.node.name.node.name).map(|method| (method, receiver))
 }
 
 #[salsa::tracked]
@@ -2222,17 +1917,12 @@ fn nominal_member_receiver_tracked(
 ) -> SemanticQueryResult<AstNodeKey> {
     with_node(db, syntax, key, |program, index, node| {
         let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
-        nominal_local_member_receiver(db, program, index, key, &path.path.node)
-            .map(|(_, receiver)| Ok(receiver))
+        nominal_local_member_receiver(db, program, index, key, &path.path.node).map(|(_, receiver)| Ok(receiver))
     })?
     .transpose()
 }
 
-fn unique_nominal_method_declaration(
-    db: &dyn Db,
-    declaration: AstNodeKey,
-    method_name: &str,
-) -> Option<AstNodeKey> {
+fn unique_nominal_method_declaration(db: &dyn Db, declaration: AstNodeKey, method_name: &str) -> Option<AstNodeKey> {
     let declaration_syntax = db.syntax_unit(declaration.unit)?;
     let declaration_program = declaration_syntax.expanded_program(db);
     let declaration_index = declaration_syntax.syntax_index(db);
@@ -2249,22 +1939,14 @@ fn unique_nominal_method_declaration(
                 .and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
                 .is_some_and(|method| method.name.node.name == method_name)
         })
-        .map(|node| AstNodeKey {
-            unit: declaration.unit,
-            generation: declaration.generation,
-            node,
-        })
+        .map(|node| AstNodeKey { unit: declaration.unit, generation: declaration.generation, node })
         .collect::<Vec<_>>();
     (methods.len() == 1).then(|| methods[0])
 }
 
 /// Resolve a legacy syscall spelling only when its current source unit was admitted by the
 /// compiler-minted Corelib service constructor. The same builtins remain dynamic everywhere else.
-fn corelib_service_for(
-    db: &dyn Db,
-    key: AstNodeKey,
-    path: &beskid_analysis::syntax::Path,
-) -> Option<CorelibService> {
+fn corelib_service_for(db: &dyn Db, key: AstNodeKey, path: &beskid_analysis::syntax::Path) -> Option<CorelibService> {
     let [segment] = path.segments.as_slice() else {
         return None;
     };
@@ -2319,18 +2001,14 @@ fn generic_call_specialization_tracked(
             }
         };
         let declaration_syntax = db.syntax_unit(declaration.unit)?;
-        let declaration_node = declaration_syntax
-            .syntax_index(db)
-            .node_at(declaration_syntax.expanded_program(db), declaration.node)?;
+        let declaration_node =
+            declaration_syntax.syntax_index(db).node_at(declaration_syntax.expanded_program(db), declaration.node)?;
         let function = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>()?;
         if function.generics.is_empty() {
             return None;
         }
         let signature = call_abi_signature(db, key).ok().flatten()?;
-        Some(Ok(GenericCallSpecialization {
-            declaration,
-            signature,
-        }))
+        Some(Ok(GenericCallSpecialization { declaration, signature }))
     })?
     .transpose()
 }
@@ -2340,10 +2018,8 @@ fn explicit_generic_type_argument_syntax(
 ) -> Option<&[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>]> {
     let terminal = path.segments.last()?;
     let receiver = path.segments.get(..path.segments.len().checked_sub(1)?)?;
-    let receiver_with_arguments = receiver
-        .iter()
-        .filter(|segment| !segment.node.type_args.is_empty())
-        .collect::<Vec<_>>();
+    let receiver_with_arguments =
+        receiver.iter().filter(|segment| !segment.node.type_args.is_empty()).collect::<Vec<_>>();
     let terminal_has_arguments = !terminal.node.type_args.is_empty();
     match (terminal_has_arguments, receiver_with_arguments.as_slice()) {
         (true, []) => Some(terminal.node.type_args.as_slice()),
@@ -2390,16 +2066,10 @@ fn generic_call_uses_parameter_type_arguments(
     if function.generics.len() != type_arguments.len() {
         return false;
     }
-    type_arguments
-        .iter()
-        .zip(function.generics.iter())
-        .all(|(argument, generic)| {
-            abi_type_from_syntax(db, key, &argument.node).is_ok()
-                || type_syntax_is_generic_parameter_reference(
-                    &argument.node,
-                    generic.node.name.as_str(),
-                )
-        })
+    type_arguments.iter().zip(function.generics.iter()).all(|(argument, generic)| {
+        abi_type_from_syntax(db, key, &argument.node).is_ok()
+            || type_syntax_is_generic_parameter_reference(&argument.node, generic.node.name.as_str())
+    })
 }
 
 /// A two-segment imported nominal call can spell either a module member or a static member on a
@@ -2435,12 +2105,7 @@ fn imported_generic_nominal_receiver_requires_instantiation(
     exported_generic_type_named(db, *target, key.generation, receiver_name)
 }
 
-fn exported_generic_type_named(
-    db: &dyn Db,
-    unit: SourceUnitId,
-    generation: SyntaxGenerationId,
-    name: &str,
-) -> bool {
+fn exported_generic_type_named(db: &dyn Db, unit: SourceUnitId, generation: SyntaxGenerationId, name: &str) -> bool {
     let mut pending = vec![unit];
     let mut visited = std::collections::HashSet::new();
     while let Some(current) = pending.pop() {
@@ -2453,19 +2118,15 @@ fn exported_generic_type_named(
         if syntax.generation(db) != generation {
             continue;
         }
-        if syntax
-            .syntax_index(db)
-            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition)
-            .any(|candidate| {
+        if syntax.syntax_index(db).ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition).any(
+            |candidate| {
                 syntax
                     .syntax_index(db)
                     .node_at(syntax.expanded_program(db), candidate)
                     .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
-                    .is_some_and(|definition| {
-                        definition.name.node.name == name && !definition.generics.is_empty()
-                    })
-            })
-        {
+                    .is_some_and(|definition| definition.name.node.name == name && !definition.generics.is_empty())
+            },
+        ) {
             return true;
         }
         pending.extend(public_reexport_units(db, current, generation));
@@ -2495,19 +2156,11 @@ fn generic_call_instantiation_for_node(
     for (argument, generic) in argument_syntax.iter().zip(function.generics.iter()) {
         match abi_type_from_syntax(db, key, &argument.node) {
             Ok(concrete) => concrete_arguments.push(concrete),
-            Err(_)
-                if type_syntax_is_generic_parameter_reference(
-                    &argument.node,
-                    generic.node.name.as_str(),
-                ) => {}
+            Err(_) if type_syntax_is_generic_parameter_reference(&argument.node, generic.node.name.as_str()) => {}
             Err(_) => return None,
         }
     }
-    Some(GenericCallInstantiation {
-        declaration,
-        argument_count,
-        arguments: concrete_arguments.into(),
-    })
+    Some(GenericCallInstantiation { declaration, argument_count, arguments: concrete_arguments.into() })
 }
 
 fn function_declares_generics(db: &dyn Db, declaration: AstNodeKey) -> bool {
@@ -2527,21 +2180,14 @@ fn function_declares_generics(db: &dyn Db, declaration: AstNodeKey) -> bool {
 /// Whether a qualified call's receiver is an exact current import target.
 /// Imported type/module member calls have no direct item edge; unknown qualified calls remain
 /// unavailable instead of being guessed.
-fn imported_call_receiver_exists(
-    db: &dyn Db,
-    key: AstNodeKey,
-    path: &beskid_analysis::syntax::Path,
-) -> bool {
+fn imported_call_receiver_exists(db: &dyn Db, key: AstNodeKey, path: &beskid_analysis::syntax::Path) -> bool {
     let Some((_member, receiver)) = path.segments.split_last() else {
         return false;
     };
     if receiver.is_empty() {
         return false;
     }
-    let receiver = receiver
-        .iter()
-        .map(|segment| segment.node.name.node.name.as_str())
-        .collect::<Vec<_>>();
+    let receiver = receiver.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>();
     db.syntax_dependency_registry()
         .lock()
         .expect("syntax dependency registry")
@@ -2567,9 +2213,7 @@ fn imported_call_receiver_exists(
 fn expression_is_lambda(expression: &beskid_analysis::syntax::Expression) -> bool {
     match expression {
         beskid_analysis::syntax::Expression::Lambda(_) => true,
-        beskid_analysis::syntax::Expression::Grouped(grouped) => {
-            expression_is_lambda(&grouped.node.expr.node)
-        }
+        beskid_analysis::syntax::Expression::Grouped(grouped) => expression_is_lambda(&grouped.node.expr.node),
         _ => false,
     }
 }
@@ -2580,10 +2224,7 @@ fn cast_intents_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<Arc<[CastIntent]>> {
-    with_node(db, syntax, key, |program, index, node| {
-        cast_intents_for_node(db, program, index, key, node)
-    })?
-    .transpose()
+    with_node(db, syntax, key, |program, index, node| cast_intents_for_node(db, program, index, key, node))?.transpose()
 }
 
 fn cast_intents_for_node(
@@ -2608,10 +2249,7 @@ fn cast_intents_for_node(
         return Some(Ok(Arc::from([])));
     }
     if primitive_numeric(actual) && primitive_numeric(expected) {
-        return Some(Ok(Arc::from([CastIntent {
-            from: actual,
-            to: expected,
-        }])));
+        return Some(Ok(Arc::from([CastIntent { from: actual, to: expected }])));
     }
     Some(Err(SemanticError::unavailable("cast_intents")))
 }
@@ -2628,24 +2266,17 @@ fn expected_cast_type(
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
 ) -> Option<Result<SemanticTypeId, SemanticError>> {
-    if let Some(binary_id) = nearest_ancestor(index, key.node, |kind| {
-        kind == beskid_analysis::syntax_query::NodeKind::BinaryExpression
-    }) {
+    if let Some(binary_id) =
+        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::BinaryExpression)
+    {
         let operands = index
             .children(binary_id)?
             .iter()
             .copied()
-            .filter(|child| {
-                index.kind(*child) != Some(beskid_analysis::syntax_query::NodeKind::BinaryOp)
-            })
+            .filter(|child| index.kind(*child) != Some(beskid_analysis::syntax_query::NodeKind::BinaryOp))
             .collect::<Vec<_>>();
-        let operand = operands
-            .iter()
-            .copied()
-            .find(|operand| is_ancestor(index, *operand, key.node))?;
-        let sibling = operands
-            .into_iter()
-            .find(|candidate| *candidate != operand)?;
+        let operand = operands.iter().copied().find(|operand| is_ancestor(index, *operand, key.node))?;
+        let sibling = operands.into_iter().find(|candidate| *candidate != operand)?;
         if is_transparent_binary_operand_path(index, operand, key.node) {
             let sibling_node = index.node_at(program, sibling)?;
             return semantic_type_for_node(program, index, sibling, sibling_node)
@@ -2653,19 +2284,15 @@ fn expected_cast_type(
         }
     }
 
-    if let Some(statement_id) = nearest_ancestor(index, key.node, |kind| {
-        kind == beskid_analysis::syntax_query::NodeKind::LetStatement
-    }) {
-        let statement = index
-            .node_at(program, statement_id)?
-            .of::<beskid_analysis::syntax::LetStatement>()?;
+    if let Some(statement_id) =
+        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::LetStatement)
+    {
+        let statement = index.node_at(program, statement_id)?.of::<beskid_analysis::syntax::LetStatement>()?;
         let value_id = index
             .children(statement_id)?
             .iter()
             .copied()
-            .find(|child| {
-                index.kind(*child) == Some(beskid_analysis::syntax_query::NodeKind::Expression)
-            })?;
+            .find(|child| index.kind(*child) == Some(beskid_analysis::syntax_query::NodeKind::Expression))?;
         if !is_ancestor(index, value_id, key.node) {
             return None;
         }
@@ -2678,19 +2305,12 @@ fn expected_cast_type(
         );
     }
 
-    let call_id = nearest_ancestor(index, key.node, |kind| {
-        kind == beskid_analysis::syntax_query::NodeKind::CallExpression
-    })?;
-    let call = index
-        .node_at(program, call_id)?
-        .of::<beskid_analysis::syntax::CallExpression>()?;
+    let call_id =
+        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::CallExpression)?;
+    let call = index.node_at(program, call_id)?.of::<beskid_analysis::syntax::CallExpression>()?;
     let argument_index = call.args.iter().position(|argument| {
         index
-            .direct_child_id(
-                program,
-                call_id,
-                beskid_analysis::syntax_query::DynNodeRef::from(argument),
-            )
+            .direct_child_id(program, call_id, beskid_analysis::syntax_query::DynNodeRef::from(argument))
             .is_some_and(|argument_id| is_ancestor(index, argument_id, key.node))
     })?;
     let expected = match &call.callee.node {
@@ -2702,18 +2322,10 @@ fn expected_cast_type(
                     .flatten()
                     .and_then(|signature| signature.parameters.get(argument_index).copied())
             } else if path.segments.len() == 1
-                && resolve_lexical_declaration(
-                    program,
-                    index,
-                    call_id,
-                    path.segments[0].node.name.node.name.as_str(),
-                )
-                .is_none()
+                && resolve_lexical_declaration(program, index, call_id, path.segments[0].node.name.node.name.as_str())
+                    .is_none()
             {
-                canonical_intrinsic_parameter_type(
-                    path.segments[0].node.name.node.name.as_str(),
-                    argument_index,
-                )
+                canonical_intrinsic_parameter_type(path.segments[0].node.name.node.name.as_str(), argument_index)
             } else {
                 None
             }
@@ -2775,11 +2387,7 @@ fn abi_semantic_type(ty: AbiType) -> Option<SemanticTypeId> {
 fn primitive_numeric(semantic_type: SemanticTypeId) -> bool {
     matches!(
         semantic_type,
-        SemanticTypeId::I32
-            | SemanticTypeId::I64
-            | SemanticTypeId::U8
-            | SemanticTypeId::WORD
-            | SemanticTypeId::F64
+        SemanticTypeId::I32 | SemanticTypeId::I64 | SemanticTypeId::U8 | SemanticTypeId::WORD | SemanticTypeId::F64
     )
 }
 
@@ -2812,11 +2420,7 @@ fn expression_fact_target(kind: beskid_analysis::syntax_query::NodeKind) -> bool
 }
 
 #[salsa::tracked]
-fn control_flow_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<ControlFlow> {
+fn control_flow_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<ControlFlow> {
     with_node(db, syntax, key, |_program, _index, node| {
         control_flow_for_node(node).map(|may_fall_through| ControlFlow { may_fall_through })
     })
@@ -2844,15 +2448,9 @@ fn control_flow_for_node(node: beskid_analysis::syntax_query::DynNodeRef<'_>) ->
     if let Some(with_statement) = node.of::<beskid_analysis::syntax::WithStatement>() {
         return Some(block_may_fall_through(&with_statement.body.node));
     }
-    if node
-        .of::<beskid_analysis::syntax::ReturnStatement>()
-        .is_some()
-        || node
-            .of::<beskid_analysis::syntax::BreakStatement>()
-            .is_some()
-        || node
-            .of::<beskid_analysis::syntax::ContinueStatement>()
-            .is_some()
+    if node.of::<beskid_analysis::syntax::ReturnStatement>().is_some()
+        || node.of::<beskid_analysis::syntax::BreakStatement>().is_some()
+        || node.of::<beskid_analysis::syntax::ContinueStatement>().is_some()
     {
         return Some(false);
     }
@@ -2866,9 +2464,7 @@ fn block_may_fall_through(block: &beskid_analysis::syntax::Block) -> bool {
 fn statements_may_fall_through(
     statements: &[beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Statement>],
 ) -> bool {
-    statements
-        .iter()
-        .all(|statement| statement_may_fall_through(&statement.node))
+    statements.iter().all(|statement| statement_may_fall_through(&statement.node))
 }
 
 fn statement_may_fall_through(statement: &beskid_analysis::syntax::Statement) -> bool {
@@ -2876,9 +2472,7 @@ fn statement_may_fall_through(statement: &beskid_analysis::syntax::Statement) ->
         beskid_analysis::syntax::Statement::Return(_)
         | beskid_analysis::syntax::Statement::Break(_)
         | beskid_analysis::syntax::Statement::Continue(_) => false,
-        beskid_analysis::syntax::Statement::If(if_statement) => {
-            if_may_fall_through(&if_statement.node)
-        }
+        beskid_analysis::syntax::Statement::If(if_statement) => if_may_fall_through(&if_statement.node),
         beskid_analysis::syntax::Statement::With(with_statement) => {
             block_may_fall_through(&with_statement.node.body.node)
         }
@@ -2904,46 +2498,24 @@ fn if_may_fall_through(if_statement: &beskid_analysis::syntax::IfStatement) -> b
 }
 
 #[salsa::tracked]
-fn item_signature_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<ItemSignature> {
-    with_node(db, syntax, key, |_program, _index, node| {
-        item_signature_for_node(node)
-    })?
-    .transpose()
+fn item_signature_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<ItemSignature> {
+    with_node(db, syntax, key, |_program, _index, node| item_signature_for_node(node))?.transpose()
 }
 
 fn item_signature_for_node(
     node: beskid_analysis::syntax_query::DynNodeRef<'_>,
 ) -> Option<Result<ItemSignature, SemanticError>> {
     if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
-        return Some(signature_from_syntax(
-            &function.parameters,
-            function.return_type.as_ref(),
-        ));
+        return Some(signature_from_syntax(&function.parameters, function.return_type.as_ref()));
     }
     if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
-        return Some(signature_from_syntax(
-            &method.parameters,
-            method.return_type.as_ref(),
-        ));
+        return Some(signature_from_syntax(&method.parameters, method.return_type.as_ref()));
     }
-    if node
-        .of::<beskid_analysis::syntax::TestDefinition>()
-        .is_some()
-    {
-        return Some(Ok(ItemSignature {
-            parameters: Arc::from([]),
-            result: SemanticTypeId::UNIT,
-        }));
+    if node.of::<beskid_analysis::syntax::TestDefinition>().is_some() {
+        return Some(Ok(ItemSignature { parameters: Arc::from([]), result: SemanticTypeId::UNIT }));
     }
     if let Some(contract) = node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
-        return Some(signature_from_syntax(
-            &contract.parameters,
-            contract.return_type.as_ref(),
-        ));
+        return Some(signature_from_syntax(&contract.parameters, contract.return_type.as_ref()));
     }
     None
 }
@@ -2956,13 +2528,9 @@ fn signature_from_syntax(
         .iter()
         .map(|parameter| semantic_type_from_syntax(&parameter.node.ty.node))
         .collect::<Result<Vec<_>, _>>()?;
-    let result = return_type.map_or(Ok(SemanticTypeId::UNIT), |return_type| {
-        semantic_type_from_syntax(&return_type.node)
-    })?;
-    Ok(ItemSignature {
-        parameters: parameters.into(),
-        result,
-    })
+    let result =
+        return_type.map_or(Ok(SemanticTypeId::UNIT), |return_type| semantic_type_from_syntax(&return_type.node))?;
+    Ok(ItemSignature { parameters: parameters.into(), result })
 }
 
 /// ABI-representation signature for syntax-only lowering.
@@ -2984,23 +2552,14 @@ fn item_abi_signature_tracked(
             if !function.generics.is_empty() {
                 return None;
             }
-            return Some(abi_signature_from_syntax(
-                db,
-                key,
-                &function.parameters,
-                function.return_type.as_ref(),
-            ));
+            return Some(abi_signature_from_syntax(db, key, &function.parameters, function.return_type.as_ref()));
         }
         if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
-            let mut signature = match abi_signature_from_syntax(
-                db,
-                key,
-                &method.parameters,
-                method.return_type.as_ref(),
-            ) {
-                Ok(signature) => signature,
-                Err(error) => return Some(Err(error)),
-            };
+            let mut signature =
+                match abi_signature_from_syntax(db, key, &method.parameters, method.return_type.as_ref()) {
+                    Ok(signature) => signature,
+                    Err(error) => return Some(Err(error)),
+                };
             let mut parameters = Vec::with_capacity(signature.parameters.len() + 1);
             parameters.push(SemanticTypeId::POINTER);
             parameters.extend(signature.parameters.iter().copied());
@@ -3008,20 +2567,10 @@ fn item_abi_signature_tracked(
             return Some(Ok(signature));
         }
         if let Some(contract) = node.of::<beskid_analysis::syntax::ContractMethodSignature>() {
-            return Some(abi_signature_from_syntax(
-                db,
-                key,
-                &contract.parameters,
-                contract.return_type.as_ref(),
-            ));
+            return Some(abi_signature_from_syntax(db, key, &contract.parameters, contract.return_type.as_ref()));
         }
         node.of::<beskid_analysis::syntax::TestDefinition>()
-            .map(|_| {
-                Ok(ItemSignature {
-                    parameters: Arc::from([]),
-                    result: SemanticTypeId::UNIT,
-                })
-            })
+            .map(|_| Ok(ItemSignature { parameters: Arc::from([]), result: SemanticTypeId::UNIT }))
     })?
     .transpose()
 }
@@ -3044,10 +2593,7 @@ fn call_abi_signature_tracked(
     .transpose()
 }
 
-fn call_abi_signature_for_call(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> Result<ItemSignature, SemanticError> {
+fn call_abi_signature_for_call(db: &dyn Db, key: AstNodeKey) -> Result<ItemSignature, SemanticError> {
     let declaration = match call_lowering(db, key)? {
         Some(CallLowering::Direct(declaration)) => declaration,
         Some(CallLowering::CorelibService(service)) => {
@@ -3062,33 +2608,24 @@ fn call_abi_signature_for_call(
             return Err(SemanticError::unavailable("call_abi_signature"));
         }
     };
-    let declaration_syntax = db
-        .syntax_unit(declaration.unit)
-        .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+    let declaration_syntax =
+        db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
     let declaration_node = declaration_syntax
         .syntax_index(db)
         .node_at(declaration_syntax.expanded_program(db), declaration.node)
         .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
-    let Some(function) = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>()
-    else {
-        return item_abi_signature(db, declaration)?
-            .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
+    let Some(function) = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>() else {
+        return item_abi_signature(db, declaration)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
     };
     if function.generics.is_empty() {
-        return item_abi_signature(db, declaration)?
-            .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
+        return item_abi_signature(db, declaration)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
     }
 
-    let arguments =
-        call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+    let arguments = call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
     if arguments.len() != function.parameters.len() {
         return Err(SemanticError::unavailable("call_abi_signature"));
     }
-    let generic_names = function
-        .generics
-        .iter()
-        .map(|generic| generic.node.name.as_str())
-        .collect::<Vec<_>>();
+    let generic_names = function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
     let mut substitutions = HashMap::new();
     if let Some(instantiation) = generic_call_instantiation(db, key)?
         && !instantiation.arguments.is_empty()
@@ -3105,8 +2642,7 @@ fn call_abi_signature_for_call(
     // the binding and the bare literal can inherit it if its magnitude fits.
     let mut provisional_integer_substitutions = HashSet::new();
     for (parameter, argument) in function.parameters.iter().zip(arguments.iter().copied()) {
-        let actual = abi_type(db, argument)?
-            .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+        let actual = abi_type(db, argument)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
         if let Some(generic) = generic_type_name(&parameter.node.ty.node, &generic_names) {
             let bare_integer = unsuffixed_integer_literal(db, argument)?;
             match substitutions.get(generic).copied() {
@@ -3117,8 +2653,7 @@ fn call_abi_signature_for_call(
                     }
                 }
                 Some(existing) if existing == actual => {}
-                Some(existing)
-                    if bare_integer && integer_literal_fits_abi(db, argument, existing)? => {}
+                Some(existing) if bare_integer && integer_literal_fits_abi(db, argument, existing)? => {}
                 Some(_) if provisional_integer_substitutions.remove(generic) => {
                     substitutions.insert(generic.to_owned(), actual);
                 }
@@ -3133,16 +2668,10 @@ fn call_abi_signature_for_call(
         .iter()
         .map(|parameter| generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions))
         .collect::<Result<Vec<_>, _>>()?;
-    let result = function
-        .return_type
-        .as_ref()
-        .map_or(Ok(SemanticTypeId::UNIT), |return_type| {
-            generic_abi_type(db, declaration, &return_type.node, &substitutions)
-        })?;
-    Ok(ItemSignature {
-        parameters: parameters.into(),
-        result,
-    })
+    let result = function.return_type.as_ref().map_or(Ok(SemanticTypeId::UNIT), |return_type| {
+        generic_abi_type(db, declaration, &return_type.node, &substitutions)
+    })?;
+    Ok(ItemSignature { parameters: parameters.into(), result })
 }
 
 /// Whether a source expression is a bare integer literal without an ABI suffix.
@@ -3155,11 +2684,7 @@ fn unsuffixed_integer_literal(db: &dyn Db, key: AstNodeKey) -> Result<bool, Sema
 
 /// Prove that one bare integer literal fits the ABI representation selected elsewhere in its
 /// generic call. Explicitly suffixed literals never reach this helper.
-fn integer_literal_fits_abi(
-    db: &dyn Db,
-    key: AstNodeKey,
-    expected: SemanticTypeId,
-) -> Result<bool, SemanticError> {
+fn integer_literal_fits_abi(db: &dyn Db, key: AstNodeKey, expected: SemanticTypeId) -> Result<bool, SemanticError> {
     let Some(text) = integer_literal_text(db, key)? else {
         return Ok(false);
     };
@@ -3190,10 +2715,7 @@ fn integer_literal_text(db: &dyn Db, key: AstNodeKey) -> Result<Option<Arc<str>>
 }
 
 fn integer_has_explicit_abi_suffix(text: &str) -> bool {
-    matches!(
-        text.rsplit_once('_').map(|(_, suffix)| suffix),
-        Some("i32" | "i64" | "u8")
-    )
+    matches!(text.rsplit_once('_').map(|(_, suffix)| suffix), Some("i32" | "i64" | "u8"))
 }
 
 #[salsa::tracked]
@@ -3205,17 +2727,9 @@ fn call_argument_abi_type_tracked(
     with_node(db, syntax, key, |_program, index, _node| {
         Some((|| {
             let mut current = key.node;
-            while let Some(parent) = index
-                .metadata_for(key.generation, current)
-                .and_then(|meta| meta.parent)
-            {
-                let parent_key = AstNodeKey {
-                    node: parent,
-                    ..key
-                };
-                if index.kind(parent)
-                    == Some(beskid_analysis::syntax_query::NodeKind::CallExpression)
-                {
+            while let Some(parent) = index.metadata_for(key.generation, current).and_then(|meta| meta.parent) {
+                let parent_key = AstNodeKey { node: parent, ..key };
+                if index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::CallExpression) {
                     let arguments = call_arguments(db, parent_key)?
                         .ok_or_else(|| SemanticError::unavailable("call_argument_abi_type"))?;
                     let argument_index = arguments.iter().position(|argument| {
@@ -3224,9 +2738,8 @@ fn call_argument_abi_type_tracked(
                             if descendant == argument.node {
                                 return true;
                             }
-                            let Some(next) = index
-                                .metadata_for(key.generation, descendant)
-                                .and_then(|meta| meta.parent)
+                            let Some(next) =
+                                index.metadata_for(key.generation, descendant).and_then(|meta| meta.parent)
                             else {
                                 return false;
                             };
@@ -3266,17 +2779,9 @@ fn dispatch_builtin_abi_signature(db: &dyn Db, key: AstNodeKey) -> Option<ItemSi
         .iter()
         .enumerate()
         .find(|(_, candidate)| candidate.runtime_symbol == symbol.0)?;
-    let parameters = spec
-        .params
-        .iter()
-        .copied()
-        .map(builtin_type_to_semantic)
-        .collect::<Option<Vec<_>>>()?;
+    let parameters = spec.params.iter().copied().map(builtin_type_to_semantic).collect::<Option<Vec<_>>>()?;
     let result = builtin_type_to_semantic(spec.returns)?;
-    Some(ItemSignature {
-        parameters: parameters.into(),
-        result,
-    })
+    Some(ItemSignature { parameters: parameters.into(), result })
 }
 
 fn builtin_type_to_semantic(ty: beskid_analysis::builtins::BuiltinType) -> Option<SemanticTypeId> {
@@ -3295,29 +2800,14 @@ fn builtin_type_to_semantic(ty: beskid_analysis::builtins::BuiltinType) -> Optio
 /// that merely spells one of these names remains dynamic and receives no import signature.
 fn corelib_service_abi_signature(service: CorelibService) -> Option<ItemSignature> {
     let (parameters, result) = match service.name {
-        "__syscall_write" => (
-            vec![SemanticTypeId::I64, SemanticTypeId::STRING],
-            SemanticTypeId::I64,
-        ),
-        "__syscall_read" => (
-            vec![SemanticTypeId::I64, SemanticTypeId::I64],
-            SemanticTypeId::STRING,
-        ),
-        "__syscall_write_bytes" => (
-            vec![SemanticTypeId::I64, SemanticTypeId::POINTER],
-            SemanticTypeId::I64,
-        ),
-        "__syscall_read_bytes" => (
-            vec![SemanticTypeId::I64, SemanticTypeId::I64],
-            SemanticTypeId::POINTER,
-        ),
+        "__syscall_write" => (vec![SemanticTypeId::I64, SemanticTypeId::STRING], SemanticTypeId::I64),
+        "__syscall_read" => (vec![SemanticTypeId::I64, SemanticTypeId::I64], SemanticTypeId::STRING),
+        "__syscall_write_bytes" => (vec![SemanticTypeId::I64, SemanticTypeId::POINTER], SemanticTypeId::I64),
+        "__syscall_read_bytes" => (vec![SemanticTypeId::I64, SemanticTypeId::I64], SemanticTypeId::POINTER),
         "__panic_str" => (vec![SemanticTypeId::STRING], SemanticTypeId::NEVER),
         _ => return None,
     };
-    Some(ItemSignature {
-        parameters: parameters.into(),
-        result,
-    })
+    Some(ItemSignature { parameters: parameters.into(), result })
 }
 
 fn generic_abi_type(
@@ -3331,11 +2821,7 @@ fn generic_abi_type(
             let [segment] = path.node.segments.as_slice() else {
                 return abi_type_from_syntax(db, declaration, syntax_type);
             };
-            segment
-                .node
-                .type_args
-                .is_empty()
-                .then_some(segment.node.name.node.name.as_str())
+            segment.node.type_args.is_empty().then_some(segment.node.name.node.name.as_str())
         }
         _ => None,
     };
@@ -3345,10 +2831,7 @@ fn generic_abi_type(
         .unwrap_or_else(|| abi_type_from_syntax(db, declaration, syntax_type))
 }
 
-fn generic_type_name<'a>(
-    syntax_type: &'a beskid_analysis::syntax::Type,
-    generics: &[&str],
-) -> Option<&'a str> {
+fn generic_type_name<'a>(syntax_type: &'a beskid_analysis::syntax::Type, generics: &[&str]) -> Option<&'a str> {
     let beskid_analysis::syntax::Type::Complex(path) = syntax_type else {
         return None;
     };
@@ -3356,12 +2839,7 @@ fn generic_type_name<'a>(
         return None;
     };
     let name = segment.node.name.node.name.as_str();
-    segment
-        .node
-        .type_args
-        .is_empty()
-        .then_some(name)
-        .filter(|name| generics.contains(name))
+    segment.node.type_args.is_empty().then_some(name).filter(|name| generics.contains(name))
 }
 
 fn abi_signature_from_syntax(
@@ -3374,13 +2852,9 @@ fn abi_signature_from_syntax(
         .iter()
         .map(|parameter| item_abi_type_from_syntax(db, key, &parameter.node.ty.node))
         .collect::<Result<Vec<_>, _>>()?;
-    let result = return_type.map_or(Ok(SemanticTypeId::UNIT), |return_type| {
-        item_abi_type_from_syntax(db, key, &return_type.node)
-    })?;
-    Ok(ItemSignature {
-        parameters: parameters.into(),
-        result,
-    })
+    let result = return_type
+        .map_or(Ok(SemanticTypeId::UNIT), |return_type| item_abi_type_from_syntax(db, key, &return_type.node))?;
+    Ok(ItemSignature { parameters: parameters.into(), result })
 }
 
 /// Resolve one declaration ABI type without broadening ordinary source lookup.
@@ -3395,9 +2869,8 @@ fn item_abi_type_from_syntax(
     key: AstNodeKey,
     syntax_type: &beskid_analysis::syntax::Type,
 ) -> Result<SemanticTypeId, SemanticError> {
-    abi_type_from_syntax(db, key, syntax_type).or_else(|error| {
-        exact_assembled_generic_nominal_envelope(db, key, syntax_type).ok_or(error)
-    })
+    abi_type_from_syntax(db, key, syntax_type)
+        .or_else(|error| exact_assembled_generic_nominal_envelope(db, key, syntax_type).ok_or(error))
 }
 
 fn exact_assembled_generic_nominal_envelope(
@@ -3411,26 +2884,14 @@ fn exact_assembled_generic_nominal_envelope(
     let (nominal, module_path) = path.node.segments.split_last()?;
     if nominal.node.type_args.is_empty()
         || module_path.is_empty()
-        || module_path
-            .iter()
-            .any(|segment| !segment.node.type_args.is_empty())
+        || module_path.iter().any(|segment| !segment.node.type_args.is_empty())
     {
         return None;
     }
-    let module_path = module_path
-        .iter()
-        .map(|segment| segment.node.name.node.name.clone())
-        .collect::<Vec<_>>();
+    let module_path = module_path.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
     let target = {
-        let registry = db
-            .syntax_dependency_registry()
-            .lock()
-            .expect("syntax dependency registry");
-        let [target] = registry
-            .modules
-            .get(&(key.generation, module_path))?
-            .as_slice()
-        else {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let [target] = registry.modules.get(&(key.generation, module_path))?.as_slice() else {
             return None;
         };
         *target
@@ -3446,11 +2907,7 @@ fn exact_assembled_generic_nominal_envelope(
 }
 
 #[salsa::tracked]
-fn abi_type_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<SemanticTypeId> {
+fn abi_type_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
         if let Some(expression) = node.of::<beskid_analysis::syntax::Expression>() {
             return Some(abi_type_for_expression(db, program, index, key, expression));
@@ -3471,26 +2928,15 @@ fn abi_type_tracked(
             );
         }
         if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
-            return Some(abi_type_for_local_path(
-                db,
-                program,
-                index,
-                key,
-                &path.path.node,
-            ));
+            return Some(abi_type_for_local_path(db, program, index, key, &path.path.node));
         }
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
-            return Some(abi_type_for_binary_expression(
-                db, program, index, key, binary,
-            ));
+            return Some(abi_type_for_binary_expression(db, program, index, key, binary));
         }
         if node.of::<beskid_analysis::syntax::Identifier>().is_some() {
             return abi_local_declaration_type(db, program, index, key, key.node);
         }
-        if node
-            .of::<beskid_analysis::syntax::CallExpression>()
-            .is_some()
-        {
+        if node.of::<beskid_analysis::syntax::CallExpression>().is_some() {
             let lowering = match call_lowering(db, key) {
                 Ok(Some(lowering)) => lowering,
                 Ok(None) => return None,
@@ -3528,19 +2974,11 @@ fn abi_type_for_expression(
 
     match expression {
         Expression::Literal(literal) => Ok(semantic_type_for_literal(&literal.node.literal.node)),
-        Expression::Path(path) => {
-            abi_type_for_local_path(db, program, index, key, &path.node.path.node)
-        }
-        Expression::Grouped(grouped) => {
-            abi_type_for_expression(db, program, index, key, &grouped.node.expr.node)
-        }
+        Expression::Path(path) => abi_type_for_local_path(db, program, index, key, &path.node.path.node),
+        Expression::Grouped(grouped) => abi_type_for_expression(db, program, index, key, &grouped.node.expr.node),
         Expression::Call(call) => {
             let call = index
-                .direct_child_id(
-                    program,
-                    key.node,
-                    beskid_analysis::syntax_query::DynNodeRef::from(call),
-                )
+                .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(call))
                 .map(|node| AstNodeKey { node, ..key })
                 .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
             call_abi_signature(db, call)?
@@ -3549,11 +2987,7 @@ fn abi_type_for_expression(
         }
         Expression::Binary(binary) => {
             let binary_key = index
-                .direct_child_id(
-                    program,
-                    key.node,
-                    beskid_analysis::syntax_query::DynNodeRef::from(binary),
-                )
+                .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(binary))
                 .map(|node| AstNodeKey { node, ..key })
                 .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
             abi_type(db, binary_key)?.ok_or_else(|| SemanticError::unavailable("abi_type"))
@@ -3570,28 +3004,18 @@ fn abi_type_for_binary_expression(
     binary: &beskid_analysis::syntax::BinaryExpression,
 ) -> Result<SemanticTypeId, SemanticError> {
     let left = index
-        .direct_child_id(
-            program,
-            key.node,
-            beskid_analysis::syntax_query::DynNodeRef::from(binary.left.as_ref()),
-        )
+        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(binary.left.as_ref()))
         .map(|node| AstNodeKey { node, ..key })
         .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     let right = index
-        .direct_child_id(
-            program,
-            key.node,
-            beskid_analysis::syntax_query::DynNodeRef::from(binary.right.as_ref()),
-        )
+        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(binary.right.as_ref()))
         .map(|node| AstNodeKey { node, ..key })
         .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     let left_type = abi_type(db, left)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     let right_type = abi_type(db, right)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     use beskid_analysis::syntax::BinaryOp;
     match binary.op.node {
-        BinaryOp::Add
-            if left_type == SemanticTypeId::STRING && right_type == SemanticTypeId::STRING =>
-        {
+        BinaryOp::Add if left_type == SemanticTypeId::STRING && right_type == SemanticTypeId::STRING => {
             Ok(SemanticTypeId::STRING)
         }
         BinaryOp::Eq | BinaryOp::NotEq
@@ -3599,9 +3023,7 @@ fn abi_type_for_binary_expression(
         {
             Ok(SemanticTypeId::BOOL)
         }
-        BinaryOp::Or | BinaryOp::And
-            if left_type == SemanticTypeId::BOOL && right_type == SemanticTypeId::BOOL =>
-        {
+        BinaryOp::Or | BinaryOp::And if left_type == SemanticTypeId::BOOL && right_type == SemanticTypeId::BOOL => {
             Ok(SemanticTypeId::BOOL)
         }
         BinaryOp::IdentityEq
@@ -3658,9 +3080,7 @@ fn aggregate_layout_tracked(
                 .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
                 .map(|field| aggregate_field_layout(db, program, index, key, field))
                 .collect::<Result<Vec<_>, SemanticError>>()
-                .map(|fields| AggregateLayoutFact {
-                    fields: fields.into(),
-                }),
+                .map(|fields| AggregateLayoutFact { fields: fields.into() }),
         )
     })?
     .transpose()
@@ -3674,9 +3094,7 @@ fn aggregate_literal_declaration_tracked(
 ) -> SemanticQueryResult<AstNodeKey> {
     with_node(db, syntax, key, |program, index, node| {
         node.of::<beskid_analysis::syntax::StructLiteralExpression>()
-            .and_then(|literal| {
-                resolve_nominal_layout_declaration(db, program, index, key, &literal.path.node)
-            })
+            .and_then(|literal| resolve_nominal_layout_declaration(db, program, index, key, &literal.path.node))
     })
 }
 
@@ -3694,24 +3112,15 @@ fn aggregate_field_access_tracked(
         if !receiver.node.type_args.is_empty() || !field.node.type_args.is_empty() {
             return None;
         }
-        let (declaration, receiver) = nominal_local_receiver_declaration(
-            db,
-            program,
-            index,
-            key,
-            receiver.node.name.node.name.as_str(),
-        )?;
+        let (declaration, receiver) =
+            nominal_local_receiver_declaration(db, program, index, key, receiver.node.name.node.name.as_str())?;
         let layout = aggregate_layout(db, declaration).ok().flatten()?;
         let index = layout
             .fields
             .iter()
             .position(|(name, _)| name.as_ref() == field.node.name.node.name)
             .and_then(|index| u32::try_from(index).ok())?;
-        Some(Ok(AggregateFieldAccess {
-            declaration,
-            receiver,
-            index,
-        }))
+        Some(Ok(AggregateFieldAccess { declaration, receiver, index }))
     })?
     .transpose()
 }
@@ -3748,24 +3157,16 @@ fn nominal_local_receiver_declaration(
 }
 
 #[salsa::tracked]
-fn enum_layout_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<EnumLayoutFact> {
+fn enum_layout_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<EnumLayoutFact> {
     with_node(db, syntax, key, |program, index, node| {
         if let Some(definition) = node.of::<beskid_analysis::syntax::EnumDefinition>() {
-            return Some(enum_layout_from_definition(
-                db, program, index, key, definition, None,
-            ));
+            return Some(enum_layout_from_definition(db, program, index, key, definition, None));
         }
-        node.of::<beskid_analysis::syntax::EnumConstructorExpression>()
-            .map(|constructor| {
-                let type_path =
-                    contextual_enum_constructor_type_path(program, index, key, constructor)
-                        .unwrap_or(&constructor.path.node.type_path.node);
-                instantiated_enum_layout_for_path(db, key, type_path)
-            })
+        node.of::<beskid_analysis::syntax::EnumConstructorExpression>().map(|constructor| {
+            let type_path = contextual_enum_constructor_type_path(program, index, key, constructor)
+                .unwrap_or(&constructor.path.node.type_path.node);
+            instantiated_enum_layout_for_path(db, key, type_path)
+        })
     })?
     .transpose()
 }
@@ -3787,8 +3188,7 @@ fn contextual_enum_constructor_type_path<'a>(
     let mut current = parent_node(index, key.node)?;
     while matches!(
         index.kind(current)?,
-        beskid_analysis::syntax_query::NodeKind::Expression
-            | beskid_analysis::syntax_query::NodeKind::Statement
+        beskid_analysis::syntax_query::NodeKind::Expression | beskid_analysis::syntax_query::NodeKind::Statement
     ) {
         current = parent_node(index, current)?;
     }
@@ -3811,20 +3211,10 @@ fn contextual_enum_constructor_type_path<'a>(
             }
             let item = index.node_at(program, item)?;
             item.of::<beskid_analysis::syntax::FunctionDefinition>()
-                .and_then(|function| {
-                    function
-                        .return_type
-                        .as_ref()
-                        .map(|annotation| &annotation.node)
-                })
+                .and_then(|function| function.return_type.as_ref().map(|annotation| &annotation.node))
                 .or_else(|| {
                     item.of::<beskid_analysis::syntax::MethodDefinition>()
-                        .and_then(|method| {
-                            method
-                                .return_type
-                                .as_ref()
-                                .map(|annotation| &annotation.node)
-                        })
+                        .and_then(|method| method.return_type.as_ref().map(|annotation| &annotation.node))
                 })
         }
         _ => None,
@@ -3834,9 +3224,8 @@ fn contextual_enum_constructor_type_path<'a>(
     };
     let expected_path = &path.node;
     let expected_terminal = expected_path.segments.last()?;
-    (expected_terminal.node.name.node.name == constructor_name
-        && !expected_terminal.node.type_args.is_empty())
-    .then_some(expected_path)
+    (expected_terminal.node.name.node.name == constructor_name && !expected_terminal.node.type_args.is_empty())
+        .then_some(expected_path)
 }
 
 fn instantiated_enum_layout_for_path(
@@ -3844,8 +3233,8 @@ fn instantiated_enum_layout_for_path(
     use_key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Result<EnumLayoutFact, SemanticError> {
-    let declaration = resolve_type_declaration(db, use_key, path)
-        .ok_or_else(|| SemanticError::unavailable("enum_layout"))?;
+    let declaration =
+        resolve_type_declaration(db, use_key, path).ok_or_else(|| SemanticError::unavailable("enum_layout"))?;
     let syntax = db
         .syntax_unit(declaration.unit)
         .filter(|syntax| syntax.generation(db) == declaration.generation)
@@ -3860,14 +3249,7 @@ fn instantiated_enum_layout_for_path(
         return enum_layout_from_definition(db, program, index, declaration, definition, None);
     }
     let substitutions = enum_layout_substitutions(db, use_key, definition, path)?;
-    enum_layout_from_definition(
-        db,
-        program,
-        index,
-        declaration,
-        definition,
-        Some(&substitutions),
-    )
+    enum_layout_from_definition(db, program, index, declaration, definition, Some(&substitutions))
 }
 
 fn enum_layout_substitutions(
@@ -3876,13 +3258,9 @@ fn enum_layout_substitutions(
     definition: &beskid_analysis::syntax::EnumDefinition,
     path: &beskid_analysis::syntax::Path,
 ) -> Result<HashMap<String, AggregateFieldShape>, SemanticError> {
-    let (terminal, module_path) = path
-        .segments
-        .split_last()
-        .ok_or_else(|| SemanticError::unavailable("enum_layout"))?;
-    if module_path
-        .iter()
-        .any(|segment| !segment.node.type_args.is_empty())
+    let (terminal, module_path) =
+        path.segments.split_last().ok_or_else(|| SemanticError::unavailable("enum_layout"))?;
+    if module_path.iter().any(|segment| !segment.node.type_args.is_empty())
         || terminal.node.type_args.len() != definition.generics.len()
         || definition.generics.is_empty()
     {
@@ -3895,10 +3273,7 @@ fn enum_layout_substitutions(
         .map(|(generic, argument)| {
             aggregate_shape_from_applied_type(db, use_key, &argument.node)
                 .or_else(|error| {
-                    if type_syntax_is_generic_parameter_reference(
-                        &argument.node,
-                        generic.node.name.as_str(),
-                    ) {
+                    if type_syntax_is_generic_parameter_reference(&argument.node, generic.node.name.as_str()) {
                         return Ok(AggregateFieldShape::Scalar(SemanticTypeId::POINTER));
                     }
                     Err(error)
@@ -3914,20 +3289,14 @@ fn aggregate_shape_from_applied_type(
     syntax_type: &beskid_analysis::syntax::Type,
 ) -> Result<AggregateFieldShape, SemanticError> {
     match syntax_type {
-        beskid_analysis::syntax::Type::Primitive(_) => Ok(AggregateFieldShape::Scalar(
-            semantic_type_from_syntax(syntax_type)?,
-        )),
-        beskid_analysis::syntax::Type::Complex(path) => {
-            resolve_type_declaration(db, use_key, &path.node)
-                .map(AggregateFieldShape::Nominal)
-                .ok_or_else(|| SemanticError::unavailable("enum_layout"))
+        beskid_analysis::syntax::Type::Primitive(_) => {
+            Ok(AggregateFieldShape::Scalar(semantic_type_from_syntax(syntax_type)?))
         }
-        beskid_analysis::syntax::Type::Array(_) => {
-            Ok(AggregateFieldShape::Scalar(SemanticTypeId::POINTER))
-        }
-        beskid_analysis::syntax::Type::Function { .. } => {
-            Err(SemanticError::unavailable("enum_layout"))
-        }
+        beskid_analysis::syntax::Type::Complex(path) => resolve_type_declaration(db, use_key, &path.node)
+            .map(AggregateFieldShape::Nominal)
+            .ok_or_else(|| SemanticError::unavailable("enum_layout")),
+        beskid_analysis::syntax::Type::Array(_) => Ok(AggregateFieldShape::Scalar(SemanticTypeId::POINTER)),
+        beskid_analysis::syntax::Type::Function { .. } => Err(SemanticError::unavailable("enum_layout")),
     }
 }
 
@@ -3950,9 +3319,7 @@ fn enum_layout_from_definition(
                 .node
                 .fields
                 .iter()
-                .map(|field| {
-                    enum_field_layout(db, program, index, declaration, field, substitutions)
-                })
+                .map(|field| enum_field_layout(db, program, index, declaration, field, substitutions))
                 .collect::<Result<Vec<_>, SemanticError>>()
                 .map(|fields| EnumVariantLayoutFact {
                     name: Arc::from(variant.node.name.node.name.as_str()),
@@ -3960,9 +3327,7 @@ fn enum_layout_from_definition(
                 })
         })
         .collect::<Result<Vec<_>, SemanticError>>()
-        .map(|variants| EnumLayoutFact {
-            variants: variants.into(),
-        })
+        .map(|variants| EnumLayoutFact { variants: variants.into() })
 }
 
 fn enum_field_layout(
@@ -3985,11 +3350,7 @@ fn enum_field_layout(
                 .node
                 .type_args
                 .is_empty()
-                .then(|| {
-                    substitutions
-                        .get(segment.node.name.node.name.as_str())
-                        .copied()
-                })
+                .then(|| substitutions.get(segment.node.name.node.name.as_str()).copied())
                 .flatten()
         }
         _ => None,
@@ -4010,8 +3371,8 @@ fn enum_constructor_tracked(
         let constructor = node.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
         let type_path = contextual_enum_constructor_type_path(program, index, key, constructor)
             .unwrap_or(&constructor.path.node.type_path.node);
-        let declaration = resolve_type_declaration(db, key, type_path)
-            .ok_or_else(|| SemanticError::unavailable("enum_constructor"));
+        let declaration =
+            resolve_type_declaration(db, key, type_path).ok_or_else(|| SemanticError::unavailable("enum_constructor"));
         let declaration = match declaration {
             Ok(declaration) => declaration,
             Err(error) => return Some(Err(error)),
@@ -4021,10 +3382,7 @@ fn enum_constructor_tracked(
             Ok(None) | Err(_) => return Some(Err(SemanticError::unavailable("enum_constructor"))),
         };
         let variant_name = constructor.path.node.variant.node.name.as_str();
-        let Some(variant_index) = layout
-            .variants
-            .iter()
-            .position(|variant| variant.name.as_ref() == variant_name)
+        let Some(variant_index) = layout.variants.iter().position(|variant| variant.name.as_ref() == variant_name)
         else {
             return Some(Err(SemanticError::unavailable("enum_constructor")));
         };
@@ -4037,15 +3395,8 @@ fn enum_constructor_tracked(
             .first()
             .map(|argument| {
                 index
-                    .direct_child_id(
-                        program,
-                        key.node,
-                        beskid_analysis::syntax_query::DynNodeRef::from(argument),
-                    )
-                    .map(|node| AstNodeKey {
-                        node: normalized_expression_node(index, node),
-                        ..key
-                    })
+                    .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
+                    .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
                     .ok_or_else(|| SemanticError::unavailable("enum_constructor"))
             })
             .transpose();
@@ -4053,55 +3404,35 @@ fn enum_constructor_tracked(
             Ok(variant_index) => variant_index,
             Err(_) => return Some(Err(SemanticError::unavailable("enum_constructor"))),
         };
-        Some(payload.map(|payload| EnumConstructorFact {
-            declaration,
-            variant_index,
-            payload,
-        }))
+        Some(payload.map(|payload| EnumConstructorFact { declaration, variant_index, payload }))
     })?
     .transpose()
 }
 
 #[salsa::tracked]
-fn enum_match_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<EnumMatchFact> {
+fn enum_match_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<EnumMatchFact> {
     with_node(db, syntax, key, |program, index, node| {
         let expression = node.of::<beskid_analysis::syntax::MatchExpression>()?;
-        let (declaration, layout) =
-            match enum_match_scrutinee_layout(db, program, index, key, expression) {
-                Some(Ok(fact)) => fact,
-                Some(Err(error)) => return Some(Err(error)),
-                None => return Some(Err(SemanticError::unavailable("enum_match"))),
-            };
+        let (declaration, layout) = match enum_match_scrutinee_layout(db, program, index, key, expression) {
+            Some(Ok(fact)) => fact,
+            Some(Err(error)) => return Some(Err(error)),
+            None => return Some(Err(SemanticError::unavailable("enum_match"))),
+        };
         let mut arms = Vec::with_capacity(expression.arms.len());
         for arm in &expression.arms {
             if arm.node.guard.is_some() {
                 return Some(Err(SemanticError::unavailable("enum_match")));
             }
             let arm_node = index
-                .direct_child_id(
-                    program,
-                    key.node,
-                    beskid_analysis::syntax_query::DynNodeRef::from(arm),
-                )
+                .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(arm))
                 .ok_or_else(|| SemanticError::unavailable("enum_match"));
             let arm_node = match arm_node {
                 Ok(arm_node) => arm_node,
                 Err(error) => return Some(Err(error)),
             };
             let body = index
-                .direct_child_id(
-                    program,
-                    arm_node,
-                    beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.value),
-                )
-                .map(|body| AstNodeKey {
-                    node: normalized_expression_node(index, body),
-                    ..key
-                })
+                .direct_child_id(program, arm_node, beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.value))
+                .map(|body| AstNodeKey { node: normalized_expression_node(index, body), ..key })
                 .ok_or_else(|| SemanticError::unavailable("enum_match"));
             let body = match body {
                 Ok(body) => body,
@@ -4110,46 +3441,27 @@ fn enum_match_tracked(
             let arm_fact = match &arm.node.pattern.node {
                 beskid_analysis::syntax::Pattern::Wildcard => Ok((None, None)),
                 beskid_analysis::syntax::Pattern::Enum(pattern) => {
-                    if !enum_pattern_targets_declaration(
-                        db,
-                        declaration,
-                        &pattern.node.path.node.type_path.node,
-                    ) {
+                    if !enum_pattern_targets_declaration(db, declaration, &pattern.node.path.node.type_path.node) {
                         return Some(Err(SemanticError::unavailable("enum_match")));
                     }
                     let name = pattern.node.path.node.variant.node.name.as_str();
-                    let Some((variant_index, variant)) = layout
-                        .variants
-                        .iter()
-                        .enumerate()
-                        .find(|(_, variant)| variant.name.as_ref() == name)
+                    let Some((variant_index, variant)) =
+                        layout.variants.iter().enumerate().find(|(_, variant)| variant.name.as_ref() == name)
                     else {
                         return Some(Err(SemanticError::unavailable("enum_match")));
                     };
-                    if variant.fields.len() != pattern.node.items.len() || variant.fields.len() > 1
-                    {
+                    if variant.fields.len() != pattern.node.items.len() || variant.fields.len() > 1 {
                         return Some(Err(SemanticError::unavailable("enum_match")));
                     }
                     let binding = match pattern.node.items.as_slice() {
                         [] => None,
-                        [item]
-                            if matches!(item.node, beskid_analysis::syntax::Pattern::Wildcard) =>
-                        {
-                            None
-                        }
-                        [item]
-                            if matches!(
-                                item.node,
-                                beskid_analysis::syntax::Pattern::Identifier(_)
-                            ) =>
-                        {
+                        [item] if matches!(item.node, beskid_analysis::syntax::Pattern::Wildcard) => None,
+                        [item] if matches!(item.node, beskid_analysis::syntax::Pattern::Identifier(_)) => {
                             let Some(pattern_node) = index
                                 .direct_child_id(
                                     program,
                                     arm_node,
-                                    beskid_analysis::syntax_query::DynNodeRef::from(
-                                        &arm.node.pattern,
-                                    ),
+                                    beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.pattern),
                                 )
                                 .and_then(|node| {
                                     index.direct_child_id(
@@ -4170,10 +3482,7 @@ fn enum_match_tracked(
                                 return Some(Err(SemanticError::unavailable("enum_match")));
                             };
                             Some(EnumMatchBindingFact {
-                                declaration: AstNodeKey {
-                                    node: pattern_node,
-                                    ..key
-                                },
+                                declaration: AstNodeKey { node: pattern_node, ..key },
                                 payload: variant.fields[0].1,
                             })
                         }
@@ -4190,17 +3499,9 @@ fn enum_match_tracked(
                 Ok(fact) => fact,
                 Err(error) => return Some(Err(error)),
             };
-            arms.push(EnumMatchArmFact {
-                variant_index,
-                body,
-                binding,
-            });
+            arms.push(EnumMatchArmFact { variant_index, body, binding });
         }
-        Some(Ok(EnumMatchFact {
-            declaration,
-            layout,
-            arms: arms.into(),
-        }))
+        Some(Ok(EnumMatchFact { declaration, layout, arms: arms.into() }))
     })?
     .transpose()
 }
@@ -4213,16 +3514,11 @@ fn enum_pattern_targets_declaration(
     let Some((terminal, module_path)) = path.segments.split_last() else {
         return false;
     };
-    if !terminal.node.type_args.is_empty()
-        || module_path
-            .iter()
-            .any(|segment| !segment.node.type_args.is_empty())
-    {
+    if !terminal.node.type_args.is_empty() || module_path.iter().any(|segment| !segment.node.type_args.is_empty()) {
         return false;
     }
-    let Some(syntax) = db
-        .syntax_unit(declaration.unit)
-        .filter(|syntax| syntax.generation(db) == declaration.generation)
+    let Some(syntax) =
+        db.syntax_unit(declaration.unit).filter(|syntax| syntax.generation(db) == declaration.generation)
     else {
         return false;
     };
@@ -4244,11 +3540,8 @@ fn enum_match_scrutinee_layout(
     key: AstNodeKey,
     expression: &beskid_analysis::syntax::MatchExpression,
 ) -> Option<Result<(AstNodeKey, EnumLayoutFact), SemanticError>> {
-    if let beskid_analysis::syntax::Expression::EnumConstructor(constructor) =
-        &expression.scrutinee.node
-    {
-        let declaration =
-            resolve_type_declaration(db, key, &constructor.node.path.node.type_path.node)?;
+    if let beskid_analysis::syntax::Expression::EnumConstructor(constructor) = &expression.scrutinee.node {
+        let declaration = resolve_type_declaration(db, key, &constructor.node.path.node.type_path.node)?;
         return Some(
             enum_layout(db, declaration)
                 .and_then(|layout| layout.ok_or_else(|| SemanticError::unavailable("enum_match")))
@@ -4264,12 +3557,7 @@ fn enum_match_scrutinee_layout(
     if !segment.node.type_args.is_empty() {
         return None;
     }
-    let local = resolve_lexical_declaration(
-        program,
-        index,
-        key.node,
-        segment.node.name.node.name.as_str(),
-    )?;
+    let local = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())?;
     let parent = parent_node(index, local)?;
     if index.kind(parent)? == beskid_analysis::syntax_query::NodeKind::Pattern {
         let binding = match pattern_binding_fact(db, index, key, local)? {
@@ -4323,9 +3611,7 @@ fn aggregate_field_layout(
                 .ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?,
         ),
         // Arrays are heap-backed reference values in ABI v5, including empty literal payloads.
-        beskid_analysis::syntax::Type::Array(_) => {
-            AggregateFieldShape::Scalar(SemanticTypeId::POINTER)
-        }
+        beskid_analysis::syntax::Type::Array(_) => AggregateFieldShape::Scalar(SemanticTypeId::POINTER),
         _ => return Err(SemanticError::unavailable("aggregate_layout")),
     };
     Ok((Arc::from(field.node.name.node.name.as_str()), shape))
@@ -4342,39 +3628,21 @@ fn resolve_nominal_layout_declaration(
         return Some(declaration);
     }
     let (name, module_path) = path.segments.split_last()?;
-    if module_path.is_empty()
-        || module_path
-            .iter()
-            .any(|segment| !segment.node.type_args.is_empty())
-    {
+    if module_path.is_empty() || module_path.iter().any(|segment| !segment.node.type_args.is_empty()) {
         return None;
     }
-    let mut module_path = module_path
-        .iter()
-        .map(|segment| segment.node.name.node.name.clone())
-        .collect::<Vec<_>>();
+    let mut module_path = module_path.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
     module_path.push(name.node.name.node.name.clone());
     let target = {
-        let registry = db
-            .syntax_dependency_registry()
-            .lock()
-            .expect("syntax dependency registry");
-        let [target] = registry
-            .modules
-            .get(&(key.generation, module_path))?
-            .as_slice()
-        else {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let [target] = registry.modules.get(&(key.generation, module_path))?.as_slice() else {
             return None;
         };
         *target
     };
-    if let Some(declaration) = unique_exported_type_in_unit(
-        db,
-        target,
-        key.generation,
-        &name.node.name.node.name,
-        name.node.type_args.len(),
-    ) {
+    if let Some(declaration) =
+        unique_exported_type_in_unit(db, target, key.generation, &name.node.name.node.name, name.node.type_args.len())
+    {
         return Some(declaration);
     }
     let [segment] = path.segments.as_slice() else {
@@ -4392,10 +3660,7 @@ fn resolve_nominal_layout_declaration(
                 || node
                     .of::<beskid_analysis::syntax::EnumDefinition>()
                     .is_some_and(|definition| definition.name.node.name == name);
-            matches.then_some(AstNodeKey {
-                node: metadata.id,
-                ..key
-            })
+            matches.then_some(AstNodeKey { node: metadata.id, ..key })
         })
         .collect::<Vec<_>>();
     let [declaration] = candidates.as_slice() else {
@@ -4409,8 +3674,7 @@ fn nominal_aggregate_abi_type(
     key: AstNodeKey,
     path: &beskid_analysis::syntax::Path,
 ) -> Result<SemanticTypeId, SemanticError> {
-    resolve_type_declaration(db, key, path)
-        .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    resolve_type_declaration(db, key, path).ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     Ok(SemanticTypeId::POINTER)
 }
 
@@ -4423,19 +3687,13 @@ fn abi_type_for_local_path(
 ) -> Result<SemanticTypeId, SemanticError> {
     match path.segments.as_slice() {
         [segment] if segment.node.type_args.is_empty() => {
-            let declaration = resolve_lexical_declaration(
-                program,
-                index,
-                key.node,
-                segment.node.name.node.name.as_str(),
-            )
-            .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+            let declaration =
+                resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())
+                    .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
             abi_local_declaration_type(db, program, index, key, declaration)
                 .unwrap_or_else(|| Err(SemanticError::unavailable("abi_type")))
         }
-        [receiver, field]
-            if receiver.node.type_args.is_empty() && field.node.type_args.is_empty() =>
-        {
+        [receiver, field] if receiver.node.type_args.is_empty() && field.node.type_args.is_empty() => {
             abi_type_for_direct_aggregate_field_projection(
                 db,
                 program,
@@ -4482,8 +3740,8 @@ fn abi_type_for_direct_aggregate_field_projection(
     let beskid_analysis::syntax::Type::Complex(receiver_path) = annotation else {
         return Err(SemanticError::unavailable("abi_type"));
     };
-    let declaration = resolve_type_declaration(db, key, &receiver_path.node)
-        .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    let declaration =
+        resolve_type_declaration(db, key, &receiver_path.node).ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     let syntax = db
         .syntax_unit(declaration.unit)
         .filter(|syntax| syntax.generation(db) == declaration.generation)
@@ -4493,14 +3751,9 @@ fn abi_type_for_direct_aggregate_field_projection(
         .node_at(syntax.expanded_program(db), declaration.node)
         .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
         .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-    let (terminal, module_path) = receiver_path
-        .node
-        .segments
-        .split_last()
-        .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-    if module_path
-        .iter()
-        .any(|segment| !segment.node.type_args.is_empty())
+    let (terminal, module_path) =
+        receiver_path.node.segments.split_last().ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    if module_path.iter().any(|segment| !segment.node.type_args.is_empty())
         || terminal.node.type_args.len() != definition.generics.len()
     {
         return Err(SemanticError::unavailable("abi_type"));
@@ -4509,8 +3762,7 @@ fn abi_type_for_direct_aggregate_field_projection(
         .fields
         .iter()
         .find(|field| {
-            field.node.kind == beskid_analysis::syntax::FieldKind::Value
-                && field.node.name.node.name == field_name
+            field.node.kind == beskid_analysis::syntax::FieldKind::Value && field.node.name.node.name == field_name
         })
         .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     let applied_generic = match &field.node.ty.node {
@@ -4523,10 +3775,7 @@ fn abi_type_for_direct_aggregate_field_projection(
                 .type_args
                 .is_empty()
                 .then(|| {
-                    definition
-                        .generics
-                        .iter()
-                        .position(|generic| generic.node.name == segment.node.name.node.name)
+                    definition.generics.iter().position(|generic| generic.node.name == segment.node.name.node.name)
                 })
                 .flatten()
         }
@@ -4551,38 +3800,29 @@ fn abi_local_declaration_type(
             .node_at(program, parent)?
             .of::<beskid_analysis::syntax::Parameter>()
             .map(|parameter| abi_type_from_syntax(db, key, &parameter.ty.node)),
-        beskid_analysis::syntax_query::NodeKind::LetStatement => index
-            .node_at(program, parent)?
-            .of::<beskid_analysis::syntax::LetStatement>()
-            .map(|statement| {
+        beskid_analysis::syntax_query::NodeKind::LetStatement => {
+            index.node_at(program, parent)?.of::<beskid_analysis::syntax::LetStatement>().map(|statement| {
                 statement.type_annotation.as_ref().map_or_else(
                     || Err(SemanticError::unavailable("abi_type")),
                     |syntax_type| abi_type_from_syntax(db, key, &syntax_type.node),
                 )
-            }),
+            })
+        }
         _ => None,
     }
 }
 
-fn resolve_type_declaration(
-    db: &dyn Db,
-    key: AstNodeKey,
-    path: &beskid_analysis::syntax::Path,
-) -> Option<AstNodeKey> {
+fn resolve_type_declaration(db: &dyn Db, key: AstNodeKey, path: &beskid_analysis::syntax::Path) -> Option<AstNodeKey> {
     let (name, module_path) = path.segments.split_last()?;
     let generic_arity = name.node.type_args.len();
     let name = name.node.name.node.name.as_str();
     if module_path.is_empty() {
         let mut candidates = Vec::new();
-        if let Some(local) = unique_type_in_unit(db, key.unit, key.generation, name, generic_arity)
-        {
+        if let Some(local) = unique_type_in_unit(db, key.unit, key.generation, name, generic_arity) {
             candidates.push(local);
         }
         let import_targets = {
-            let registry = db
-                .syntax_dependency_registry()
-                .lock()
-                .expect("syntax dependency registry");
+            let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
             registry
                 .imports
                 .get(&(key.unit, key.generation))
@@ -4591,22 +3831,20 @@ fn resolve_type_declaration(
                 .map(|import| import.target)
                 .collect::<Vec<_>>()
         };
-        candidates.extend(import_targets.into_iter().filter_map(|target| {
-            unique_exported_type_in_unit(db, target, key.generation, name, generic_arity)
-        }));
+        candidates.extend(
+            import_targets
+                .into_iter()
+                .filter_map(|target| unique_exported_type_in_unit(db, target, key.generation, name, generic_arity)),
+        );
         let [declaration] = candidates.as_slice() else {
             return None;
         };
         return Some(*declaration);
     }
-    let module_path = module_path
-        .iter()
-        .map(|segment| segment.node.name.node.name.as_str())
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
+    let module_path =
+        module_path.iter().map(|segment| segment.node.name.node.name.as_str()).map(str::to_owned).collect::<Vec<_>>();
     if let Some(unit) = resolve_qualified_module_unit(db, key, &module_path)
-        && let Some(declaration) =
-            unique_exported_type_in_unit(db, unit, key.generation, name, generic_arity)
+        && let Some(declaration) = unique_exported_type_in_unit(db, unit, key.generation, name, generic_arity)
     {
         return Some(declaration);
     }
@@ -4617,15 +3855,8 @@ fn resolve_type_declaration(
     let mut type_module = module_path;
     type_module.push(name.to_owned());
     let target = {
-        let registry = db
-            .syntax_dependency_registry()
-            .lock()
-            .expect("syntax dependency registry");
-        let [target] = registry
-            .modules
-            .get(&(key.generation, type_module))?
-            .as_slice()
-        else {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let [target] = registry.modules.get(&(key.generation, type_module))?.as_slice() else {
             return None;
         };
         *target
@@ -4648,9 +3879,7 @@ fn unique_exported_type_in_unit(
         if !visited.insert(current) {
             continue;
         }
-        if let Some(candidate) =
-            unique_public_type_in_unit(db, current, generation, name, generic_arity)
-        {
+        if let Some(candidate) = unique_public_type_in_unit(db, current, generation, name, generic_arity) {
             candidates.push(candidate);
         }
         pending.extend(public_reexport_units(db, current, generation));
@@ -4680,28 +3909,18 @@ fn unique_type_in_unit(
         .map(|metadata| metadata.id)
         .filter(|candidate| {
             index.node_at(program, *candidate).is_some_and(|node| {
-                node.of::<beskid_analysis::syntax::TypeDefinition>()
-                    .is_some_and(|definition| {
-                        definition.name.node.name == name
-                            && definition.generics.len() == generic_arity
-                    })
-                    || node
-                        .of::<beskid_analysis::syntax::EnumDefinition>()
-                        .is_some_and(|definition| {
-                            definition.name.node.name == name
-                                && definition.generics.len() == generic_arity
-                        })
+                node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|definition| {
+                    definition.name.node.name == name && definition.generics.len() == generic_arity
+                }) || node.of::<beskid_analysis::syntax::EnumDefinition>().is_some_and(|definition| {
+                    definition.name.node.name == name && definition.generics.len() == generic_arity
+                })
             })
         })
         .collect::<Vec<_>>();
     let [node] = matches.as_slice() else {
         return None;
     };
-    Some(AstNodeKey {
-        unit,
-        generation,
-        node: *node,
-    })
+    Some(AstNodeKey { unit, generation, node: *node })
 }
 
 fn unique_public_type_in_unit(
@@ -4723,36 +3942,25 @@ fn unique_public_type_in_unit(
         .map(|metadata| metadata.id)
         .filter(|candidate| {
             index.node_at(program, *candidate).is_some_and(|node| {
-                node.of::<beskid_analysis::syntax::TypeDefinition>()
-                    .is_some_and(|definition| {
-                        definition.visibility.node == beskid_analysis::syntax::Visibility::Public
-                            && definition.name.node.name == name
-                            && definition.generics.len() == generic_arity
-                    })
-                    || node
-                        .of::<beskid_analysis::syntax::EnumDefinition>()
-                        .is_some_and(|definition| {
-                            definition.visibility.node
-                                == beskid_analysis::syntax::Visibility::Public
-                                && definition.name.node.name == name
-                                && definition.generics.len() == generic_arity
-                        })
+                node.of::<beskid_analysis::syntax::TypeDefinition>().is_some_and(|definition| {
+                    definition.visibility.node == beskid_analysis::syntax::Visibility::Public
+                        && definition.name.node.name == name
+                        && definition.generics.len() == generic_arity
+                }) || node.of::<beskid_analysis::syntax::EnumDefinition>().is_some_and(|definition| {
+                    definition.visibility.node == beskid_analysis::syntax::Visibility::Public
+                        && definition.name.node.name == name
+                        && definition.generics.len() == generic_arity
+                })
             })
         })
         .collect::<Vec<_>>();
     let [node] = matches.as_slice() else {
         return None;
     };
-    Some(AstNodeKey {
-        unit,
-        generation,
-        node: *node,
-    })
+    Some(AstNodeKey { unit, generation, node: *node })
 }
 
-fn semantic_type_from_syntax(
-    syntax_type: &beskid_analysis::syntax::Type,
-) -> Result<SemanticTypeId, SemanticError> {
+fn semantic_type_from_syntax(syntax_type: &beskid_analysis::syntax::Type) -> Result<SemanticTypeId, SemanticError> {
     use beskid_analysis::syntax::{PrimitiveType, Type};
 
     match syntax_type {
@@ -4769,9 +3977,7 @@ fn semantic_type_from_syntax(
             PrimitiveType::Unit => SemanticTypeId::UNIT,
             PrimitiveType::Never => SemanticTypeId::NEVER,
         }),
-        Type::Complex(_) | Type::Array(_) | Type::Function { .. } => {
-            Err(SemanticError::unavailable("item_signature"))
-        }
+        Type::Complex(_) | Type::Array(_) | Type::Function { .. } => Err(SemanticError::unavailable("item_signature")),
     }
 }
 
@@ -4781,10 +3987,8 @@ fn closure_environment_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<ClosureEnvironment> {
-    with_node(db, syntax, key, |program, index, node| {
-        closure_environment_for_node(program, index, key, node)
-    })?
-    .transpose()
+    with_node(db, syntax, key, |program, index, node| closure_environment_for_node(program, index, key, node))?
+        .transpose()
 }
 
 fn closure_environment_for_node(
@@ -4799,19 +4003,14 @@ fn closure_environment_for_node(
         .iter()
         .map(|parameter| {
             index
-                .direct_child_id(
-                    program,
-                    key.node,
-                    beskid_analysis::syntax_query::DynNodeRef::from(parameter),
-                )
+                .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(parameter))
                 .ok_or_else(|| SemanticError::unavailable("closure_environment"))
                 .and_then(|parameter| {
                     index
                         .children(parameter)
                         .and_then(|children| {
                             children.iter().copied().find(|child| {
-                                index.kind(*child)
-                                    == Some(beskid_analysis::syntax_query::NodeKind::Identifier)
+                                index.kind(*child) == Some(beskid_analysis::syntax_query::NodeKind::Identifier)
                             })
                         })
                         .map(|node| AstNodeKey { node, ..key })
@@ -4827,10 +4026,7 @@ fn closure_environment_for_node(
         Ok(captures) => captures.into(),
         Err(error) => return Some(Err(error)),
     };
-    Some(Ok(ClosureEnvironment {
-        parameters: parameters.into(),
-        captures,
-    }))
+    Some(Ok(ClosureEnvironment { parameters: parameters.into(), captures }))
 }
 
 #[salsa::tracked]
@@ -4839,10 +4035,8 @@ fn closure_signature_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<ClosureSignature> {
-    with_node(db, syntax, key, |program, index, node| {
-        closure_signature_for_node(db, program, index, key, node)
-    })?
-    .transpose()
+    with_node(db, syntax, key, |program, index, node| closure_signature_for_node(db, program, index, key, node))?
+        .transpose()
 }
 
 fn closure_signature_for_node(
@@ -4854,15 +4048,8 @@ fn closure_signature_for_node(
 ) -> Option<Result<ClosureSignature, SemanticError>> {
     let lambda = node.of::<beskid_analysis::syntax::LambdaExpression>()?;
     let body = index
-        .direct_child_id(
-            program,
-            key.node,
-            beskid_analysis::syntax_query::DynNodeRef::from(lambda.body.as_ref()),
-        )
-        .map(|node| AstNodeKey {
-            node: normalized_expression_node(index, node),
-            ..key
-        })?;
+        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(lambda.body.as_ref()))
+        .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })?;
     let callable = match callable_signature_for_node(db, program, index, key, node) {
         Some(Ok(callable)) => callable,
         Some(Err(error)) => return Some(Err(error)),
@@ -4879,19 +4066,12 @@ fn closure_signature_for_node(
         .map(|capture| {
             local_declaration_type(program, index, capture.declaration.node)
                 .unwrap_or_else(|| Err(SemanticError::unavailable("closure_signature")))
-                .map(|abi_type| ClosureEnvironmentField {
-                    capture: *capture,
-                    abi_type,
-                })
+                .map(|abi_type| ClosureEnvironmentField { capture: *capture, abi_type })
         })
         .collect::<Result<Vec<_>, _>>()
         .map(|mut fields| {
             fields.sort_by_key(|field| {
-                (
-                    field.capture.slot.owner.node.0,
-                    field.capture.slot.index,
-                    field.capture.declaration.node.0,
-                )
+                (field.capture.slot.owner.node.0, field.capture.slot.index, field.capture.declaration.node.0)
             });
             fields
         });
@@ -4917,15 +4097,8 @@ fn closure_call_target_tracked(
     let lambda = with_node(db, syntax, key, |program, index, node| {
         let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
         index
-            .direct_child_id(
-                program,
-                key.node,
-                beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()),
-            )
-            .map(|node| AstNodeKey {
-                node: normalized_expression_node(index, node),
-                ..key
-            })
+            .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()))
+            .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
     })?;
     let Some(lambda) = lambda else {
         return Ok(None);
@@ -4961,26 +4134,15 @@ fn closure_captures(
             program,
             index,
             path_id,
-            path.path
-                .node
-                .segments
-                .first()
-                .map(|segment| segment.node.name.node.name.as_str())
-                .unwrap_or_default(),
+            path.path.node.segments.first().map(|segment| segment.node.name.node.name.as_str()).unwrap_or_default(),
         ) else {
             continue;
         };
         if path.path.node.segments.len() != 1 || is_ancestor(index, lambda.node, declaration) {
             continue;
         }
-        let declaration = AstNodeKey {
-            node: declaration,
-            ..lambda
-        };
-        if captures
-            .iter()
-            .any(|capture| capture.declaration == declaration)
-        {
+        let declaration = AstNodeKey { node: declaration, ..lambda };
+        if captures.iter().any(|capture| capture.declaration == declaration) {
             continue;
         }
         let Some(slot) = local_slot_for_declaration(index, declaration) else {
@@ -4990,12 +4152,7 @@ fn closure_captures(
             return Err(SemanticError::unavailable("closure_environment"));
         };
         let class = capture_storage_class(program, index, declaration)?;
-        captures.push(ClosureCapture {
-            declaration,
-            slot: slot?,
-            class,
-            span,
-        });
+        captures.push(ClosureCapture { declaration, slot: slot?, class, span });
     }
     Ok(captures)
 }
@@ -5006,10 +4163,7 @@ fn capture_storage_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<CaptureStorage> {
-    with_node(db, syntax, key, |program, index, node| {
-        capture_storage_for_node(program, index, key, node)
-    })?
-    .transpose()
+    with_node(db, syntax, key, |program, index, node| capture_storage_for_node(program, index, key, node))?.transpose()
 }
 
 fn capture_storage_for_node(
@@ -5025,24 +4179,10 @@ fn capture_storage_for_node(
     if !segment.node.type_args.is_empty() {
         return None;
     }
-    let declaration = resolve_lexical_declaration(
-        program,
-        index,
-        key.node,
-        segment.node.name.node.name.as_str(),
-    )?;
-    let declaration = AstNodeKey {
-        node: declaration,
-        ..key
-    };
+    let declaration = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())?;
+    let declaration = AstNodeKey { node: declaration, ..key };
     let span = node.span()?;
-    Some(
-        capture_storage_class(program, index, declaration).map(|class| CaptureStorage {
-            declaration,
-            class,
-            span,
-        }),
-    )
+    Some(capture_storage_class(program, index, declaration).map(|class| CaptureStorage { declaration, class, span }))
 }
 
 fn capture_storage_class(
@@ -5050,8 +4190,7 @@ fn capture_storage_class(
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     declaration: AstNodeKey,
 ) -> Result<CaptureStorageClass, SemanticError> {
-    let parent = parent_node(index, declaration.node)
-        .ok_or_else(|| SemanticError::unavailable("capture_storage"))?;
+    let parent = parent_node(index, declaration.node).ok_or_else(|| SemanticError::unavailable("capture_storage"))?;
     let mutable = index
         .node_at(program, parent)
         .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
@@ -5071,10 +4210,8 @@ fn callable_signature_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<ItemSignature> {
-    with_node(db, syntax, key, |program, index, node| {
-        callable_signature_for_node(db, program, index, key, node)
-    })?
-    .transpose()
+    with_node(db, syntax, key, |program, index, node| callable_signature_for_node(db, program, index, key, node))?
+        .transpose()
 }
 
 fn callable_signature_for_node(
@@ -5099,12 +4236,10 @@ fn callable_signature_for_node(
             })
             .collect::<Result<Vec<_>, _>>();
         let result = semantic_type_for_expression(program, index, key.node, &lambda.body.node);
-        return Some(parameters.and_then(|parameters| {
-            result.map(|result| ItemSignature {
-                parameters: parameters.into(),
-                result,
-            })
-        }));
+        return Some(
+            parameters
+                .and_then(|parameters| result.map(|result| ItemSignature { parameters: parameters.into(), result })),
+        );
     }
     if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
         return callable_signature_for_path(db, program, index, key, &path.path.node);
@@ -5130,11 +4265,7 @@ fn callable_signature_for_path(
 }
 
 #[salsa::tracked]
-fn spawn_target_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<SpawnTarget> {
+fn spawn_target_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<SpawnTarget> {
     with_node(db, syntax, key, |program, index, node| {
         let spawn = node.of::<beskid_analysis::syntax::SpawnExpression>()?;
         let callee = index.direct_child_id(
@@ -5142,17 +4273,12 @@ fn spawn_target_tracked(
             key.node,
             beskid_analysis::syntax_query::DynNodeRef::from(spawn.callee.as_ref()),
         )?;
-        let callee = AstNodeKey {
-            node: normalized_expression_node(index, callee),
-            ..key
-        };
+        let callee = AstNodeKey { node: normalized_expression_node(index, callee), ..key };
         let callee = match spawn_entry_operand(program, index, callee) {
             Ok(callee) => callee,
             Err(error) => return Some(Err(error)),
         };
-        let captures = if index.kind(callee.node)
-            == Some(beskid_analysis::syntax_query::NodeKind::LambdaExpression)
-        {
+        let captures = if index.kind(callee.node) == Some(beskid_analysis::syntax_query::NodeKind::LambdaExpression) {
             match closure_captures(program, index, callee) {
                 Ok(captures) => captures.into(),
                 Err(error) => return Some(Err(error)),
@@ -5185,16 +4311,9 @@ fn spawn_entry_operand(
         return Ok(callee);
     }
     let entry = index
-        .direct_child_id(
-            program,
-            callee.node,
-            beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()),
-        )
+        .direct_child_id(program, callee.node, beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()))
         .ok_or_else(|| SemanticError::unavailable("spawn_target"))?;
-    Ok(AstNodeKey {
-        node: normalized_expression_node(index, entry),
-        ..callee
-    })
+    Ok(AstNodeKey { node: normalized_expression_node(index, entry), ..callee })
 }
 
 fn normalized_expression_node(
@@ -5208,11 +4327,7 @@ fn normalized_expression_node(
                 | beskid_analysis::syntax_query::NodeKind::GroupedExpression
         )
     ) {
-        let Some(child) = index
-            .children(node)
-            .and_then(|children| children.first())
-            .copied()
-        else {
+        let Some(child) = index.children(node).and_then(|children| children.first()).copied() else {
             break;
         };
         node = child;
@@ -5221,21 +4336,14 @@ fn normalized_expression_node(
 }
 
 #[salsa::tracked]
-fn spawn_legality_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<SpawnLegality> {
+fn spawn_legality_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<SpawnLegality> {
     let target = spawn_target_tracked(db, syntax, key)?;
     let Some(target) = target else {
         return Ok(None);
     };
-    let span = node_span_tracked(db, syntax, key)?
-        .ok_or_else(|| SemanticError::unavailable("spawn_legality"))?;
+    let span = node_span_tracked(db, syntax, key)?.ok_or_else(|| SemanticError::unavailable("spawn_legality"))?;
     let index = syntax.syntax_index(db);
-    if index.kind(target.callee.node)
-        == Some(beskid_analysis::syntax_query::NodeKind::CallExpression)
-    {
+    if index.kind(target.callee.node) == Some(beskid_analysis::syntax_query::NodeKind::CallExpression) {
         // Non-empty `spawn Entry(args)` left the CallExpression in place; fail closed before
         // signature lookup so parameterized callees are not misdiagnosed as TargetRequiresArguments.
         return Ok(Some(SpawnLegality {
@@ -5287,12 +4395,7 @@ fn spawn_legality_tracked(
             }])
         },
     );
-    Ok(Some(SpawnLegality {
-        target,
-        result: Some(signature.result),
-        span,
-        diagnostics,
-    }))
+    Ok(Some(SpawnLegality { target, result: Some(signature.result), span, diagnostics }))
 }
 
 #[salsa::tracked]
@@ -5305,10 +4408,8 @@ fn spawn_entry_validation_tracked(
         return Ok(None);
     };
     let callable = callable_signature_tracked(db, syntax, legality.target.callee)?;
-    let is_zero_argument_entry = callable
-        .as_ref()
-        .is_some_and(|callable| callable.parameters.is_empty())
-        && legality.is_legal();
+    let is_zero_argument_entry =
+        callable.as_ref().is_some_and(|callable| callable.parameters.is_empty()) && legality.is_legal();
     Ok(Some(SpawnEntryValidation {
         spawn: key,
         target: legality.target.callee,
@@ -5332,17 +4433,12 @@ fn spawn_stack_capture(
         if !is_ancestor(index, lambda.node, path) {
             continue;
         }
-        let reference = AstNodeKey {
-            node: path,
-            ..lambda
-        };
+        let reference = AstNodeKey { node: path, ..lambda };
         let Some(storage) = capture_storage_tracked(db, syntax, reference)? else {
             continue;
         };
         if storage.class == CaptureStorageClass::StackReference
-            && captures
-                .iter()
-                .any(|capture| capture.declaration == storage.declaration)
+            && captures.iter().any(|capture| capture.declaration == storage.declaration)
         {
             return Ok(Some(storage));
         }
@@ -5372,19 +4468,11 @@ fn runtime_intrinsic_tracked(
         {
             return Some(Err(SemanticError::unavailable("runtime_intrinsic")));
         }
-        let segments = path
-            .node
-            .path
-            .node
-            .segments
-            .iter()
-            .map(|segment| segment.node.name.node.name.clone())
-            .collect::<Vec<_>>();
+        let segments =
+            path.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
         beskid_analysis::builtins::builtin_for_path(&segments)
             .map(|(index, _)| {
-                u32::try_from(index)
-                    .map(RuntimeIntrinsic)
-                    .map_err(|_| SemanticError::unavailable("runtime_intrinsic"))
+                u32::try_from(index).map(RuntimeIntrinsic).map_err(|_| SemanticError::unavailable("runtime_intrinsic"))
             })
             .or_else(|| Some(Err(SemanticError::unavailable("runtime_intrinsic"))))
     })?
@@ -5405,22 +4493,14 @@ fn runtime_intrinsic_name_tracked(
         if path.node.path.node.segments.len() != 1 {
             return None;
         }
-        Some(Ok(RuntimeIntrinsicName(Arc::from(
-            path.node.path.node.segments[0].node.name.node.name.as_str(),
-        ))))
+        Some(Ok(RuntimeIntrinsicName(Arc::from(path.node.path.node.segments[0].node.name.node.name.as_str()))))
     })?
     .transpose()
 }
 
 #[salsa::tracked]
-fn node_kind_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<IndexedNodeKind> {
-    with_node(db, syntax, key, |_program, _index, node| {
-        Some(node.node_kind())
-    })
+fn node_kind_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<IndexedNodeKind> {
+    with_node(db, syntax, key, |_program, _index, node| Some(node.node_kind()))
 }
 
 #[salsa::tracked]
@@ -5430,49 +4510,26 @@ fn child_nodes_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     with_node(db, syntax, key, |_program, index, _node| {
-        Some(
-            index
-                .children(key.node)?
-                .iter()
-                .map(|node| AstNodeKey { node: *node, ..key })
-                .collect::<Vec<_>>()
-                .into(),
-        )
+        Some(index.children(key.node)?.iter().map(|node| AstNodeKey { node: *node, ..key }).collect::<Vec<_>>().into())
     })
 }
 
 #[salsa::tracked]
-fn literal_fact_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<LiteralFact> {
+fn literal_fact_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<LiteralFact> {
     with_node(db, syntax, key, |_program, _index, node| {
         let literal = node.of::<beskid_analysis::syntax::Literal>()?;
         Some(match literal {
-            beskid_analysis::syntax::Literal::Integer(value) => {
-                LiteralFact::Integer(Arc::from(value.as_str()))
-            }
-            beskid_analysis::syntax::Literal::Float(value) => {
-                LiteralFact::Float(Arc::from(value.as_str()))
-            }
-            beskid_analysis::syntax::Literal::String(value) => {
-                LiteralFact::String(Arc::from(value.as_str()))
-            }
-            beskid_analysis::syntax::Literal::Char(value) => {
-                LiteralFact::Char(Arc::from(value.as_str()))
-            }
+            beskid_analysis::syntax::Literal::Integer(value) => LiteralFact::Integer(Arc::from(value.as_str())),
+            beskid_analysis::syntax::Literal::Float(value) => LiteralFact::Float(Arc::from(value.as_str())),
+            beskid_analysis::syntax::Literal::String(value) => LiteralFact::String(Arc::from(value.as_str())),
+            beskid_analysis::syntax::Literal::Char(value) => LiteralFact::Char(Arc::from(value.as_str())),
             beskid_analysis::syntax::Literal::Bool(value) => LiteralFact::Bool(*value),
         })
     })
 }
 
 #[salsa::tracked]
-fn node_span_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<SourceSpan> {
+fn node_span_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<SourceSpan> {
     with_node(db, syntax, key, |_program, _index, node| node.span())
 }
 
@@ -5487,8 +4544,7 @@ fn dispatch_builtin_symbol_tracked(
 ) -> SemanticQueryResult<DispatchBuiltinSymbol> {
     with_node(db, syntax, key, |program, index, node| {
         let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
-        let lowering =
-            call_lowering_for_node(db, program, index, key, node).and_then(|result| result.ok())?;
+        let lowering = call_lowering_for_node(db, program, index, key, node).and_then(|result| result.ok())?;
         if lowering != CallLowering::Dynamic {
             return None;
         }
@@ -5506,19 +4562,12 @@ fn dispatch_builtin_symbol_tracked(
     .transpose()
 }
 
-pub fn dispatch_builtin_symbol(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> SemanticQueryResult<DispatchBuiltinSymbol> {
+pub fn dispatch_builtin_symbol(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<DispatchBuiltinSymbol> {
     with_registered_syntax(db, key, dispatch_builtin_symbol_tracked)
 }
 
 #[salsa::tracked]
-fn operator_fact_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<OperatorFact> {
+fn operator_fact_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<OperatorFact> {
     with_node(db, syntax, key, |program, index, node| {
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
             return operator_fact_for_binary(db, program, index, key, binary);
@@ -5529,9 +4578,7 @@ fn operator_fact_tracked(
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryOp>() {
             return Some(binary_operator(*binary));
         }
-        node.of::<beskid_analysis::syntax::UnaryOp>()
-            .copied()
-            .map(unary_operator)
+        node.of::<beskid_analysis::syntax::UnaryOp>().copied().map(unary_operator)
     })
 }
 
@@ -5577,9 +4624,7 @@ fn operator_fact_for_binary(
     let left_type = abi_type(db, left_key).ok().flatten();
     let right_type = abi_type(db, right_key).ok().flatten();
     let result_type = abi_type(db, key).ok().flatten();
-    let involves_string = [left_type, right_type, result_type]
-        .into_iter()
-        .any(|ty| ty == Some(SemanticTypeId::STRING));
+    let involves_string = [left_type, right_type, result_type].into_iter().any(|ty| ty == Some(SemanticTypeId::STRING));
     if involves_string {
         return Some(match binary.op.node {
             beskid_analysis::syntax::BinaryOp::Add => OperatorFact::StringAdd,
@@ -5599,34 +4644,19 @@ fn unary_operator(operator: beskid_analysis::syntax::UnaryOp) -> OperatorFact {
 }
 
 #[salsa::tracked]
-fn item_body_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<AstNodeKey> {
+fn item_body_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
     with_node(db, syntax, key, |program, index, node| {
         if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
             return index
-                .direct_child_id(
-                    program,
-                    key.node,
-                    beskid_analysis::syntax_query::DynNodeRef::from(&function.body),
-                )
+                .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&function.body))
                 .map(|node| AstNodeKey { node, ..key });
         }
         if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
             return index
-                .direct_child_id(
-                    program,
-                    key.node,
-                    beskid_analysis::syntax_query::DynNodeRef::from(&method.body),
-                )
+                .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&method.body))
                 .map(|node| AstNodeKey { node, ..key });
         }
-        if node
-            .of::<beskid_analysis::syntax::TestDefinition>()
-            .is_some()
-        {
+        if node.of::<beskid_analysis::syntax::TestDefinition>().is_some() {
             return Some(key);
         }
         None
@@ -5650,22 +4680,14 @@ fn test_statement_nodes_tracked(
                 .iter()
                 .map(|statement| {
                     let wrapper = index
-                        .direct_child_id(
-                            program,
-                            key.node,
-                            beskid_analysis::syntax_query::DynNodeRef::from(statement),
-                        )
+                        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(statement))
                         .ok_or_else(|| SemanticError::unavailable("test_statement_nodes"))?;
-                    let children = index
-                        .children(wrapper)
-                        .ok_or_else(|| SemanticError::unavailable("test_statement_nodes"))?;
+                    let children =
+                        index.children(wrapper).ok_or_else(|| SemanticError::unavailable("test_statement_nodes"))?;
                     let [statement] = children else {
                         return Err(SemanticError::unavailable("test_statement_nodes"));
                     };
-                    Ok(AstNodeKey {
-                        node: *statement,
-                        ..key
-                    })
+                    Ok(AstNodeKey { node: *statement, ..key })
                 })
                 .collect::<Result<Vec<_>, _>>()
                 .map(Arc::from),
@@ -5691,9 +4713,7 @@ fn block_statement_nodes_tracked(
                 key.node,
                 beskid_analysis::syntax_query::DynNodeRef::from(&expression.block),
             )?;
-            let block = index
-                .node_at(program, block_key)?
-                .of::<beskid_analysis::syntax::Block>()?;
+            let block = index.node_at(program, block_key)?.of::<beskid_analysis::syntax::Block>()?;
             (block_key, block)
         };
         Some(
@@ -5702,22 +4722,14 @@ fn block_statement_nodes_tracked(
                 .iter()
                 .map(|statement| {
                     let wrapper = index
-                        .direct_child_id(
-                            program,
-                            block_key,
-                            beskid_analysis::syntax_query::DynNodeRef::from(statement),
-                        )
+                        .direct_child_id(program, block_key, beskid_analysis::syntax_query::DynNodeRef::from(statement))
                         .ok_or_else(|| SemanticError::unavailable("block_statement_nodes"))?;
-                    let [statement] = index
-                        .children(wrapper)
-                        .ok_or_else(|| SemanticError::unavailable("block_statement_nodes"))?
+                    let [statement] =
+                        index.children(wrapper).ok_or_else(|| SemanticError::unavailable("block_statement_nodes"))?
                     else {
                         return Err(SemanticError::unavailable("block_statement_nodes"));
                     };
-                    Ok(AstNodeKey {
-                        node: *statement,
-                        ..key
-                    })
+                    Ok(AstNodeKey { node: *statement, ..key })
                 })
                 .collect::<Result<Vec<_>, _>>()
                 .map(Arc::from),
@@ -5727,11 +4739,7 @@ fn block_statement_nodes_tracked(
 }
 
 #[salsa::tracked]
-fn item_name_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<Arc<str>> {
+fn item_name_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
     with_node(db, syntax, key, |_program, _index, node| {
         node.of::<beskid_analysis::syntax::FunctionDefinition>()
             .map(|definition| Arc::from(definition.name.node.name.as_str()))
@@ -5758,21 +4766,15 @@ fn item_export_symbol_tracked(
 ) -> SemanticQueryResult<ExportSymbol> {
     with_node(db, syntax, key, |_program, _index, node| {
         let definition = node.of::<beskid_analysis::syntax::FunctionDefinition>()?;
-        let export = definition
-            .attributes
-            .iter()
-            .find(|attribute| attribute.node.name.node.name == "Export")?;
+        let export = definition.attributes.iter().find(|attribute| attribute.node.name.node.name == "Export")?;
         if definition.visibility.node != beskid_analysis::syntax::Visibility::Public {
-            return Some(Err(SemanticError::new(
-                "`[Export]` applies to `pub` functions only",
-            )));
+            return Some(Err(SemanticError::new("`[Export]` applies to `pub` functions only")));
         }
         let raw = export.node.arguments.iter().find_map(|argument| {
             if argument.node.name.node.name != "Symbol" {
                 return None;
             }
-            let beskid_analysis::syntax::Expression::Literal(literal) = &argument.node.value.node
-            else {
+            let beskid_analysis::syntax::Expression::Literal(literal) = &argument.node.value.node else {
                 return None;
             };
             let beskid_analysis::syntax::Literal::String(value) = &literal.node.literal.node else {
@@ -5786,19 +4788,14 @@ fn item_export_symbol_tracked(
 }
 
 #[salsa::tracked]
-fn test_item_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<TestItem> {
+fn test_item_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<TestItem> {
     with_node(db, syntax, key, |_program, _index, node| {
         let definition = node.of::<beskid_analysis::syntax::TestDefinition>()?;
         let mut module_path = Vec::new();
         let mut parent = parent_node(_index, key.node);
         while let Some(current) = parent {
-            if let Some(module) = _index
-                .node_at(_program, current)
-                .and_then(|node| node.of::<beskid_analysis::syntax::InlineModule>())
+            if let Some(module) =
+                _index.node_at(_program, current).and_then(|node| node.of::<beskid_analysis::syntax::InlineModule>())
             {
                 module_path.push(module.name.node.name.clone());
             }
@@ -5884,15 +4881,9 @@ fn direct_callees_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     with_node(db, syntax, key, |program, index, node| {
-        if node
-            .of::<beskid_analysis::syntax::FunctionDefinition>()
-            .is_none()
-            && node
-                .of::<beskid_analysis::syntax::TestDefinition>()
-                .is_none()
-            && node
-                .of::<beskid_analysis::syntax::MethodDefinition>()
-                .is_none()
+        if node.of::<beskid_analysis::syntax::FunctionDefinition>().is_none()
+            && node.of::<beskid_analysis::syntax::TestDefinition>().is_none()
+            && node.of::<beskid_analysis::syntax::MethodDefinition>().is_none()
         {
             return None;
         }
@@ -5918,16 +4909,9 @@ fn direct_callees_for_item(
         // Reachability enumerates Direct callees only. Unavailable/dynamic call
         // classifications (e.g. extern contract members) are not Direct edges and
         // must not fail closed the whole entrypoint walk.
-        let Some(Ok(lowering)) = call_lowering_for_node(
-            db,
-            program,
-            index,
-            AstNodeKey {
-                node: call_id,
-                ..item
-            },
-            call_node,
-        ) else {
+        let Some(Ok(lowering)) =
+            call_lowering_for_node(db, program, index, AstNodeKey { node: call_id, ..item }, call_node)
+        else {
             continue;
         };
         if let CallLowering::Direct(declaration) = lowering
@@ -5952,10 +4936,7 @@ fn reachable_items_tracked(
     entry: AstNodeKey,
 ) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     if !syntax.accepts_key(db, program)
-        || syntax
-            .syntax_index(db)
-            .metadata_for(program.generation, program.node)
-            .is_none()
+        || syntax.syntax_index(db).metadata_for(program.generation, program.node).is_none()
     {
         return Ok(None);
     }
@@ -5963,15 +4944,11 @@ fn reachable_items_tracked(
         return Ok(None);
     };
     if !entry_syntax.accepts_key(db, entry)
-        || entry_syntax
-            .syntax_index(db)
-            .metadata_for(entry.generation, entry.node)
-            .is_none()
+        || entry_syntax.syntax_index(db).metadata_for(entry.generation, entry.node).is_none()
     {
         return Ok(None);
     }
-    if syntax.syntax_index(db).kind(program.node)
-        != Some(beskid_analysis::syntax_query::NodeKind::Program)
+    if syntax.syntax_index(db).kind(program.node) != Some(beskid_analysis::syntax_query::NodeKind::Program)
         || !matches!(
             entry_syntax.syntax_index(db).kind(entry.node),
             Some(
@@ -5983,18 +4960,12 @@ fn reachable_items_tracked(
         return Ok(None);
     }
 
-    fn visit(
-        db: &dyn Db,
-        item: AstNodeKey,
-        reachable: &mut Vec<AstNodeKey>,
-    ) -> Result<(), SemanticError> {
+    fn visit(db: &dyn Db, item: AstNodeKey, reachable: &mut Vec<AstNodeKey>) -> Result<(), SemanticError> {
         if reachable.contains(&item) {
             return Ok(());
         }
         reachable.push(item);
-        let item_syntax = db
-            .syntax_unit(item.unit)
-            .ok_or_else(|| SemanticError::unavailable("reachable_items"))?;
+        let item_syntax = db.syntax_unit(item.unit).ok_or_else(|| SemanticError::unavailable("reachable_items"))?;
         if !item_syntax.accepts_key(db, item) {
             return Err(SemanticError::unavailable("reachable_items"));
         }
@@ -6026,9 +4997,7 @@ fn with_node<T>(
     }
     let expanded = syntax.expanded_program(db);
     let index = syntax.syntax_index(db);
-    if index.generation() != key.generation
-        || index.metadata_for(key.generation, key.node).is_none()
-    {
+    if index.generation() != key.generation || index.metadata_for(key.generation, key.node).is_none() {
         return Ok(None);
     }
     let Some(node) = index.node_at(expanded, key.node) else {
@@ -6060,13 +5029,7 @@ pub fn completion_candidates(
     if !syntax.accepts_key(db, key) {
         return Ok(None);
     }
-    let Some(file) = db
-        .file_registry()
-        .lock()
-        .expect("file registry")
-        .get(key.unit.path(db))
-        .copied()
-    else {
+    let Some(file) = db.file_registry().lock().expect("file registry").get(key.unit.path(db)).copied() else {
         return Ok(None);
     };
     let source = file.text(db);
@@ -6083,15 +5046,9 @@ pub fn completion_candidates(
     let before = &source[..context.replacement_start];
     let mut candidates = Vec::new();
     if let Some(before_dot) = before.strip_suffix('.') {
-        let alias = before_dot
-            .rsplit(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
-            .next()
-            .unwrap_or_default();
+        let alias = before_dot.rsplit(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_').next().unwrap_or_default();
         let import_target = {
-            let registry = db
-                .syntax_dependency_registry()
-                .lock()
-                .expect("syntax dependency registry");
+            let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
             registry
                 .imports
                 .get(&(key.unit, key.generation))
@@ -6111,15 +5068,9 @@ pub fn completion_candidates(
         } else {
             let program = syntax.expanded_program(db);
             let index = syntax.syntax_index(db);
-            let reference =
-                deepest_node_containing_offset(index, context.cursor).unwrap_or(key.node);
-            let lookup = AstNodeKey {
-                node: reference,
-                ..key
-            };
-            let Some((declaration, _)) =
-                nominal_local_receiver_declaration(db, program, index, lookup, alias)
-            else {
+            let reference = deepest_node_containing_offset(index, context.cursor).unwrap_or(key.node);
+            let lookup = AstNodeKey { node: reference, ..key };
+            let Some((declaration, _)) = nominal_local_receiver_declaration(db, program, index, lookup, alias) else {
                 return Ok(None);
             };
             push_nominal_receiver_candidates(db, &mut candidates, declaration, prefix, &context);
@@ -6131,9 +5082,8 @@ pub fn completion_candidates(
         push_lexical_local_candidates(&mut candidates, program, index, reference, prefix, &context);
         push_unit_type_candidates(&mut candidates, program, index, prefix, &context);
         for id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
-            if let Some(function) = index
-                .node_at(program, id)
-                .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+            if let Some(function) =
+                index.node_at(program, id).and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
             {
                 push_completion_candidate(
                     &mut candidates,
@@ -6205,9 +5155,8 @@ fn push_lexical_local_candidates(
         if local_declaration_scope(index, declaration, reference).is_none() {
             continue;
         }
-        let Some(identifier) = index
-            .node_at(program, declaration)
-            .and_then(|node| node.of::<beskid_analysis::syntax::Identifier>())
+        let Some(identifier) =
+            index.node_at(program, declaration).and_then(|node| node.of::<beskid_analysis::syntax::Identifier>())
         else {
             continue;
         };
@@ -6230,9 +5179,8 @@ fn push_unit_type_candidates(
     context: &CompletionContext,
 ) {
     for id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::TypeDefinition) {
-        if let Some(definition) = index
-            .node_at(program, id)
-            .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+        if let Some(definition) =
+            index.node_at(program, id).and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
         {
             push_completion_candidate(
                 candidates,
@@ -6245,9 +5193,8 @@ fn push_unit_type_candidates(
         }
     }
     for id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::EnumDefinition) {
-        if let Some(definition) = index
-            .node_at(program, id)
-            .and_then(|node| node.of::<beskid_analysis::syntax::EnumDefinition>())
+        if let Some(definition) =
+            index.node_at(program, id).and_then(|node| node.of::<beskid_analysis::syntax::EnumDefinition>())
         {
             push_completion_candidate(
                 candidates,
@@ -6269,9 +5216,8 @@ fn push_unit_member_candidates(
     context: &CompletionContext,
 ) {
     for id in index.ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
-        if let Some(function) = index
-            .node_at(program, id)
-            .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+        if let Some(function) =
+            index.node_at(program, id).and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
         {
             push_completion_candidate(
                 candidates,
@@ -6301,9 +5247,8 @@ fn push_nominal_receiver_candidates(
     }
     let program = declaration_syntax.expanded_program(db);
     let index = declaration_syntax.syntax_index(db);
-    let Some(definition) = index
-        .node_at(program, declaration.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+    let Some(definition) =
+        index.node_at(program, declaration.node).and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
     else {
         return;
     };
@@ -6329,9 +5274,8 @@ fn push_nominal_receiver_candidates(
     }
     if let Some(children) = index.children(declaration.node) {
         for child in children.iter().copied() {
-            if let Some(method) = index
-                .node_at(program, child)
-                .and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
+            if let Some(method) =
+                index.node_at(program, child).and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
             {
                 push_completion_candidate(
                     candidates,
@@ -6368,10 +5312,7 @@ pub fn local_slot(db: &dyn Db, declaration: AstNodeKey) -> SemanticQueryResult<L
 ///
 /// The fact rejects immutable declarations, non-path targets, qualified paths, compound targets,
 /// and stale or unregistered syntax. Codegen uses it as the only authority for local writes.
-pub fn mutable_local_assignment(
-    db: &dyn Db,
-    assignment: AstNodeKey,
-) -> SemanticQueryResult<MutableLocalAssignment> {
+pub fn mutable_local_assignment(db: &dyn Db, assignment: AstNodeKey) -> SemanticQueryResult<MutableLocalAssignment> {
     with_registered_syntax(db, assignment, mutable_local_assignment_tracked)
 }
 
@@ -6425,10 +5366,7 @@ pub fn call_lowering(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CallLo
 
 /// Return the exact declared generic target for one current call with explicit terminal type
 /// arguments. Arity mismatches, stale generations, and inferred calls remain unavailable.
-pub fn generic_call_instantiation(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> SemanticQueryResult<GenericCallInstantiation> {
+pub fn generic_call_instantiation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<GenericCallInstantiation> {
     with_registered_syntax(db, key, generic_call_instantiation_tracked)
 }
 
@@ -6437,10 +5375,7 @@ pub fn generic_call_instantiation(
 /// Inferred generic arguments are accepted only when every ABI type is proven by the current
 /// call arguments.  The returned declaration plus signature is suitable for a mangled module
 /// identity and never consults legacy HIR lowering.
-pub fn generic_call_specialization(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> SemanticQueryResult<GenericCallSpecialization> {
+pub fn generic_call_specialization(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<GenericCallSpecialization> {
     with_registered_syntax(db, key, generic_call_specialization_tracked)
 }
 
@@ -6487,18 +5422,12 @@ pub fn aggregate_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Agg
 }
 
 /// Return the current nominal `type` declaration constructed by a struct literal.
-pub fn aggregate_literal_declaration(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> SemanticQueryResult<AstNodeKey> {
+pub fn aggregate_literal_declaration(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
     with_registered_syntax(db, key, aggregate_literal_declaration_tracked)
 }
 
 /// Return the exact field selected by a direct nominal local receiver member expression.
-pub fn aggregate_field_access(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> SemanticQueryResult<AggregateFieldAccess> {
+pub fn aggregate_field_access(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AggregateFieldAccess> {
     with_registered_syntax(db, key, aggregate_field_access_tracked)
 }
 
@@ -6541,10 +5470,7 @@ pub fn call_argument_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResu
 ///
 /// Captures never include declarations owned by the lambda itself. Stale, unregistered, and
 /// non-lambda nodes contain no fact.
-pub fn closure_environment(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> SemanticQueryResult<ClosureEnvironment> {
+pub fn closure_environment(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ClosureEnvironment> {
     with_registered_syntax(db, key, closure_environment_tracked)
 }
 
@@ -6604,10 +5530,7 @@ pub fn spawn_legality(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Spawn
 ///
 /// This validation does not claim a generated trampoline, closure allocation, or runtime fiber
 /// object. Stale, unregistered, and non-spawn nodes contain no fact.
-pub fn spawn_entry_validation(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> SemanticQueryResult<SpawnEntryValidation> {
+pub fn spawn_entry_validation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SpawnEntryValidation> {
     with_registered_syntax(db, key, spawn_entry_validation_tracked)
 }
 
@@ -6623,10 +5546,7 @@ pub fn runtime_intrinsic(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Ru
 ///
 /// The name alone does not authorize an ABI import; only a canonical-runtime typed program can
 /// turn it into one.
-pub fn runtime_intrinsic_name(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> SemanticQueryResult<RuntimeIntrinsicName> {
+pub fn runtime_intrinsic_name(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<RuntimeIntrinsicName> {
     with_registered_syntax(db, key, runtime_intrinsic_name_tracked)
 }
 
@@ -6655,18 +5575,12 @@ pub fn item_body(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey
 }
 
 /// Return the exact executable statement nodes for a current syntax test definition.
-pub fn test_statement_nodes(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+pub fn test_statement_nodes(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     with_registered_syntax(db, key, test_statement_nodes_tracked)
 }
 
 /// Return executable statements for a current block in source order.
-pub fn block_statement_nodes(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+pub fn block_statement_nodes(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     with_registered_syntax(db, key, block_statement_nodes_tracked)
 }
 
@@ -6697,11 +5611,7 @@ pub fn direct_callees(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[
 ///
 /// The result is deterministic depth-first preorder and includes the entry. Recursive cycles are
 /// visited once. Missing or unresolved call facts propagate explicit unavailability.
-pub fn reachable_items(
-    db: &dyn Db,
-    program: AstNodeKey,
-    entry: AstNodeKey,
-) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
+pub fn reachable_items(db: &dyn Db, program: AstNodeKey, entry: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     let Some(syntax) = db.syntax_unit(program.unit) else {
         return Ok(None);
     };

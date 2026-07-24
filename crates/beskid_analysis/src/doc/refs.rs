@@ -5,9 +5,7 @@ use std::path::PathBuf;
 use crate::resolve::symbol::symbol_key;
 use crate::resolve::{ItemInfo, Resolution};
 
-use super::qualified_names::{
-    lookup_type_ref_id, qualified_names_for_items, type_ref_lookup_index,
-};
+use super::qualified_names::{lookup_type_ref_id, qualified_names_for_items, type_ref_lookup_index};
 
 /// Registry documentation route context for turning resolved `@ref` paths into markdown links.
 ///
@@ -39,17 +37,11 @@ fn percent_encode_path_segment(input: &str) -> String {
 }
 
 fn escape_markdown_link_text(label: &str) -> String {
-    label
-        .replace('\\', "\\\\")
-        .replace('[', "\\[")
-        .replace(']', "\\]")
+    label.replace('\\', "\\\\").replace('[', "\\[").replace(']', "\\]")
 }
 
 fn version_suffix(package_with_version: &str) -> String {
-    package_with_version
-        .rsplit_once('@')
-        .map(|(_, ver)| ver.to_string())
-        .unwrap_or_else(|| "latest".to_string())
+    package_with_version.rsplit_once('@').map(|(_, ver)| ver.to_string()).unwrap_or_else(|| "latest".to_string())
 }
 
 fn package_for_item(target: &ItemInfo, ctx: &DocRefLinkContext) -> String {
@@ -65,10 +57,7 @@ fn package_for_item(target: &ItemInfo, ctx: &DocRefLinkContext) -> String {
             }
         }
         if let Some((_, dep_pkg)) = best
-            && ctx
-                .publishing_package
-                .as_ref()
-                .is_none_or(|pub_pkg| pub_pkg != &dep_pkg)
+            && ctx.publishing_package.as_ref().is_none_or(|pub_pkg| pub_pkg != &dep_pkg)
         {
             return format!("{dep_pkg}@{ver}");
         }
@@ -115,21 +104,11 @@ fn find_resolved_item_id(path: &str, resolution: &Resolution) -> Option<usize> {
 
 fn qualified_name_for_id(id: usize, resolution: &Resolution) -> String {
     let qnames = qualified_names_for_items(resolution);
-    qnames.get(&id).cloned().unwrap_or_else(|| {
-        resolution
-            .items
-            .get(id)
-            .map(|i| i.name.clone())
-            .unwrap_or_default()
-    })
+    qnames.get(&id).cloned().unwrap_or_else(|| resolution.items.get(id).map(|i| i.name.clone()).unwrap_or_default())
 }
 
 /// Resolve a `@ref` path to a Markdown fragment (markdown link when [DocRefLinkContext] is set, else backticks).
-pub fn resolve_ref_markdown(
-    path: &str,
-    resolution: &Resolution,
-    links: Option<&DocRefLinkContext>,
-) -> String {
+pub fn resolve_ref_markdown(path: &str, resolution: &Resolution, links: Option<&DocRefLinkContext>) -> String {
     let path = path.trim();
     if path.is_empty() {
         return "`@ref()`".to_string();
@@ -164,8 +143,8 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::resolve::{
-        ExportKind, ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution, ResolutionTables,
-        SymbolQualifier, SymbolRegistry, SymbolShape,
+        ExportKind, ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution, ResolutionTables, SymbolQualifier,
+        SymbolRegistry, SymbolShape,
     };
     use crate::syntax::SpanInfo;
 
@@ -209,10 +188,7 @@ mod tests {
             dependency_roots: vec![],
         };
         let md = resolve_ref_markdown("Widget::value", &resolution, Some(&ctx));
-        assert!(
-            md.contains("[Widget::value](/docs/demo%401.0.0/api/Widget%3A%3Avalue)"),
-            "{md}"
-        );
+        assert!(md.contains("[Widget::value](/docs/demo%401.0.0/api/Widget%3A%3Avalue)"), "{md}");
     }
 
     #[test]

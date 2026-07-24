@@ -49,10 +49,7 @@ impl Default for RepoWatchConfig {
     fn default() -> Self {
         Self {
             git: GitWatchConfig::default(),
-            files: WatchConfig {
-                mode: WatchMode::Recursive,
-                debounce_ms: 200,
-            },
+            files: WatchConfig { mode: WatchMode::Recursive, debounce_ms: 200 },
             include_untracked: true,
         }
     }

@@ -5,15 +5,15 @@ use ratatui::layout::Rect;
 
 use crate::shell::context::WidgetContext;
 use crate::shell::layout::overlays::{
-    OVERLAY_ANALYSIS, OVERLAY_COMPILE_DEBUG, OVERLAY_GRAPH, OVERLAY_PCKG, OVERLAY_SETTINGS,
-    OVERLAY_SUMMARY, OVERLAY_TEMPLATES, OVERLAY_TESTS, overlay_rect_for,
+    OVERLAY_ANALYSIS, OVERLAY_COMPILE_DEBUG, OVERLAY_GRAPH, OVERLAY_PCKG, OVERLAY_SETTINGS, OVERLAY_SUMMARY,
+    OVERLAY_TEMPLATES, OVERLAY_TESTS, overlay_rect_for,
 };
 use crate::shell::primitives::HotkeyItem;
 use crate::shell::registry::WidgetRegistry;
 use crate::tui::overlay_chrome::{draw_backdrop, hotkey, render_overlay_panel};
 use crate::tui::screens::{
-    analysis_overlay, compile_debug_overlay, graph_overlay, pckg_overlay, settings_overlay,
-    summary_overlay, templates_overlay, tests_overlay,
+    analysis_overlay, compile_debug_overlay, graph_overlay, pckg_overlay, settings_overlay, summary_overlay,
+    templates_overlay, tests_overlay,
 };
 use crate::tui::shell::focus::OverlayKind;
 use crate::tui::shell::pane_state::ShellMode;
@@ -32,9 +32,7 @@ pub enum OverlayRenderContext<'a> {
 }
 
 pub fn any_panel_overlay_visible(state: &ShellState) -> bool {
-    OverlayKind::ALL
-        .iter()
-        .any(|kind| state.overlay_visible(*kind))
+    OverlayKind::ALL.iter().any(|kind| state.overlay_visible(*kind))
 }
 
 /// Draw backdrop and all visible panel overlays with ratkit Pane chrome.
@@ -71,46 +69,26 @@ fn render_widget_overlays(frame: &mut Frame, area: Rect, widgets: HiOverlayWidge
         let overlay = overlay_rect_for(OVERLAY_GRAPH, area);
         widgets.ctx.shell_state.layout_rects.graph_overlay = Some(overlay);
         let ctx = &mut *widgets.ctx;
-        render_overlay_panel(
-            frame,
-            overlay,
-            "Dependency graph",
-            &simple_overlay_hotkeys(),
-            |body, frame| graph_overlay::render(body, frame, ctx),
-        );
+        render_overlay_panel(frame, overlay, "Dependency graph", &simple_overlay_hotkeys(), |body, frame| {
+            graph_overlay::render(body, frame, ctx)
+        });
     }
-    if widgets
-        .ctx
-        .shell_state
-        .overlay_visible(OverlayKind::Settings)
-    {
+    if widgets.ctx.shell_state.overlay_visible(OverlayKind::Settings) {
         let overlay = overlay_rect_for(OVERLAY_SETTINGS, area);
         widgets.ctx.shell_state.layout_rects.settings_overlay = Some(overlay);
         let ctx = &mut *widgets.ctx;
         let registry = widgets.registry;
-        render_overlay_panel(
-            frame,
-            overlay,
-            "Settings",
-            &simple_overlay_hotkeys(),
-            |body, frame| settings_overlay::render(body, frame, ctx, registry),
-        );
+        render_overlay_panel(frame, overlay, "Settings", &simple_overlay_hotkeys(), |body, frame| {
+            settings_overlay::render(body, frame, ctx, registry)
+        });
     }
-    if widgets
-        .ctx
-        .shell_state
-        .overlay_visible(OverlayKind::Analysis)
-    {
+    if widgets.ctx.shell_state.overlay_visible(OverlayKind::Analysis) {
         let overlay = overlay_rect_for(OVERLAY_ANALYSIS, area);
         widgets.ctx.shell_state.layout_rects.analysis_overlay = Some(overlay);
         let ctx = &mut *widgets.ctx;
-        render_overlay_panel(
-            frame,
-            overlay,
-            "Analysis",
-            &simple_overlay_hotkeys(),
-            |body, frame| analysis_overlay::render(body, frame, ctx),
-        );
+        render_overlay_panel(frame, overlay, "Analysis", &simple_overlay_hotkeys(), |body, frame| {
+            analysis_overlay::render(body, frame, ctx)
+        });
     }
 }
 
@@ -118,57 +96,37 @@ fn render_state_overlays(frame: &mut Frame, area: Rect, state: &mut ShellState) 
     if state.overlay_visible(OverlayKind::Tests) {
         let overlay = overlay_rect_for(OVERLAY_TESTS, area);
         state.layout_rects.tests_overlay = Some(overlay);
-        render_overlay_panel(
-            frame,
-            overlay,
-            &tests_title(state),
-            &tests_hotkeys(state),
-            |body, frame| tests_overlay::render(body, frame, state),
-        );
+        render_overlay_panel(frame, overlay, &tests_title(state), &tests_hotkeys(state), |body, frame| {
+            tests_overlay::render(body, frame, state)
+        });
     }
     if state.overlay_visible(OverlayKind::Summary) {
         let overlay = overlay_rect_for(OVERLAY_SUMMARY, area);
         state.layout_rects.summary_overlay = Some(overlay);
-        render_overlay_panel(
-            frame,
-            overlay,
-            "Run summary",
-            &summary_hotkeys(),
-            |body, frame| summary_overlay::render(body, frame, state),
-        );
+        render_overlay_panel(frame, overlay, "Run summary", &summary_hotkeys(), |body, frame| {
+            summary_overlay::render(body, frame, state)
+        });
     }
     if state.overlay_visible(OverlayKind::Pckg) {
         let overlay = overlay_rect_for(OVERLAY_PCKG, area);
         state.layout_rects.pckg_overlay = Some(overlay);
-        render_overlay_panel(
-            frame,
-            overlay,
-            "pckg registry",
-            &pckg_hotkeys(),
-            |body, frame| pckg_overlay::render(body, frame, state),
-        );
+        render_overlay_panel(frame, overlay, "pckg registry", &pckg_hotkeys(), |body, frame| {
+            pckg_overlay::render(body, frame, state)
+        });
     }
     if state.overlay_visible(OverlayKind::Templates) {
         let overlay = overlay_rect_for(OVERLAY_TEMPLATES, area);
         state.layout_rects.templates_overlay = Some(overlay);
-        render_overlay_panel(
-            frame,
-            overlay,
-            templates_title(state),
-            &templates_hotkeys(state),
-            |body, frame| templates_overlay::render(body, frame, state),
-        );
+        render_overlay_panel(frame, overlay, templates_title(state), &templates_hotkeys(state), |body, frame| {
+            templates_overlay::render(body, frame, state)
+        });
     }
     if state.overlay_visible(OverlayKind::CompileDebug) {
         let overlay = overlay_rect_for(OVERLAY_COMPILE_DEBUG, area);
         state.layout_rects.compile_debug_overlay = Some(overlay);
-        render_overlay_panel(
-            frame,
-            overlay,
-            "Compile debugger",
-            &simple_overlay_hotkeys(),
-            |body, frame| compile_debug_overlay::render(body, frame, state),
-        );
+        render_overlay_panel(frame, overlay, "Compile debugger", &simple_overlay_hotkeys(), |body, frame| {
+            compile_debug_overlay::render(body, frame, state)
+        });
     }
 }
 
@@ -185,11 +143,7 @@ fn tests_title(state: &ShellState) -> String {
 }
 
 fn tests_hotkeys(state: &ShellState) -> Vec<HotkeyItem> {
-    let mut keys = vec![
-        hotkey("q", "close"),
-        hotkey("Tab", "list/code"),
-        hotkey("↑↓", "navigate"),
-    ];
+    let mut keys = vec![hotkey("q", "close"), hotkey("Tab", "list/code"), hotkey("↑↓", "navigate")];
     if state.navigation_hint().is_some() {
         keys.push(hotkey("Space", "summary"));
     }
@@ -197,29 +151,15 @@ fn tests_hotkeys(state: &ShellState) -> Vec<HotkeyItem> {
 }
 
 fn summary_hotkeys() -> Vec<HotkeyItem> {
-    vec![
-        hotkey("Space", "exit"),
-        hotkey("q", "close"),
-        hotkey("Tab", "list/code"),
-        hotkey("↑↓", "failed tests"),
-    ]
+    vec![hotkey("Space", "exit"), hotkey("q", "close"), hotkey("Tab", "list/code"), hotkey("↑↓", "failed tests")]
 }
 
 fn pckg_hotkeys() -> Vec<HotkeyItem> {
-    vec![
-        hotkey("q", "close"),
-        hotkey("r", "refresh"),
-        hotkey("Tab", "list/readme"),
-        hotkey("↑↓", "packages"),
-    ]
+    vec![hotkey("q", "close"), hotkey("r", "refresh"), hotkey("Tab", "list/readme"), hotkey("↑↓", "packages")]
 }
 
 fn templates_title(state: &ShellState) -> &'static str {
-    if state.shell_mode == ShellMode::ProjectWizard {
-        "New project"
-    } else {
-        "Templates"
-    }
+    if state.shell_mode == ShellMode::ProjectWizard { "New project" } else { "Templates" }
 }
 
 fn templates_hotkeys(state: &ShellState) -> Vec<HotkeyItem> {
@@ -253,11 +193,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                render_panel_overlays(
-                    frame,
-                    frame.area(),
-                    OverlayRenderContext::Pipeline(&mut state),
-                );
+                render_panel_overlays(frame, frame.area(), OverlayRenderContext::Pipeline(&mut state));
             })
             .expect("draw");
 
@@ -318,10 +254,7 @@ mod tests {
                 render_panel_overlays(
                     frame,
                     frame.area(),
-                    OverlayRenderContext::Hi(HiOverlayWidgets {
-                        ctx: &mut ctx,
-                        registry: &registry,
-                    }),
+                    OverlayRenderContext::Hi(HiOverlayWidgets { ctx: &mut ctx, registry: &registry }),
                 );
             })
             .expect("draw");

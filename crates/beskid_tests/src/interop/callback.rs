@@ -1,10 +1,8 @@
 use beskid_abi::{
-    BESKID_USER_FFI_LAYOUT_BAND, RUNTIME_EXPORT_SYMBOLS, SYM_BESKID_REGISTER_CALLBACKS,
-    SYM_BESKID_REGISTER_HANDLERS,
+    BESKID_USER_FFI_LAYOUT_BAND, RUNTIME_EXPORT_SYMBOLS, SYM_BESKID_REGISTER_CALLBACKS, SYM_BESKID_REGISTER_HANDLERS,
 };
 use beskid_runtime::{
-    CallbackTableEntry, beskid_register_callbacks, install_callback_trampoline,
-    registered_callbacks,
+    CallbackTableEntry, beskid_register_callbacks, install_callback_trampoline, registered_callbacks,
 };
 
 #[test]
@@ -31,15 +29,8 @@ fn trampoline_resolves_symbol_id_and_invokes_target() {
     let export_ptr = sample_export as *const u8;
     let symbol_id = 7_u32;
     let trampoline = install_callback_trampoline(export_ptr, symbol_id);
-    let table = [CallbackTableEntry {
-        symbol_id,
-        fn_ptr: trampoline,
-        userdata: std::ptr::null_mut(),
-    }];
-    assert_eq!(
-        beskid_register_callbacks(BESKID_USER_FFI_LAYOUT_BAND, table.as_ptr(), table.len()),
-        0
-    );
+    let table = [CallbackTableEntry { symbol_id, fn_ptr: trampoline, userdata: std::ptr::null_mut() }];
+    assert_eq!(beskid_register_callbacks(BESKID_USER_FFI_LAYOUT_BAND, table.as_ptr(), table.len()), 0);
 
     let callable: extern "C" fn() -> i64 = unsafe { std::mem::transmute(trampoline) };
     assert_eq!(callable(), 42);

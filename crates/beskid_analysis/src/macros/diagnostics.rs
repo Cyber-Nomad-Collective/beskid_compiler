@@ -7,35 +7,14 @@ use crate::syntax::{SpanInfo, Spanned};
 
 use super::match_args::MatchError;
 
-pub fn diagnostic_from_match_error(
-    source_name: &str,
-    source: &str,
-    error: &MatchError,
-) -> SemanticDiagnostic {
+pub fn diagnostic_from_match_error(source_name: &str, source: &str, error: &MatchError) -> SemanticDiagnostic {
     let (span, kind) = match error {
-        MatchError::UnknownMacro { span, name } => (
+        MatchError::UnknownMacro { span, name } => (*span, SemanticIssueKind::MacroUnknown { name: name.clone() }),
+        MatchError::ArityMismatch { span, name, expected, actual } => (
             *span,
-            SemanticIssueKind::MacroUnknown { name: name.clone() },
+            SemanticIssueKind::MacroArgumentArityMismatch { name: name.clone(), expected: *expected, actual: *actual },
         ),
-        MatchError::ArityMismatch {
-            span,
-            name,
-            expected,
-            actual,
-        } => (
-            *span,
-            SemanticIssueKind::MacroArgumentArityMismatch {
-                name: name.clone(),
-                expected: *expected,
-                actual: *actual,
-            },
-        ),
-        MatchError::KindMismatch {
-            span,
-            name,
-            parameter,
-            expected_kind,
-        } => (
+        MatchError::KindMismatch { span, name, parameter, expected_kind } => (
             *span,
             SemanticIssueKind::MacroArgumentKindMismatch {
                 name: name.clone(),
@@ -125,9 +104,7 @@ fn scan_statement_residuals(
     use crate::syntax::Statement;
 
     match &stmt.node {
-        Statement::Expression(es) => {
-            scan_expression_residuals(source_name, source, &es.node.expression, out)
-        }
+        Statement::Expression(es) => scan_expression_residuals(source_name, source, &es.node.expression, out),
         Statement::Let(ls) => scan_expression_residuals(source_name, source, &ls.node.value, out),
         Statement::Return(rs) => {
             if let Some(v) = &rs.node.value {
@@ -191,21 +168,14 @@ fn scan_expression_residuals(
     match &expr.node {
         Expression::MacroInvocation(inv) => {
             let name = super::registry::macro_name_key(&inv.node.name);
-            out.push(diagnostic_from_kind(
-                source_name,
-                source,
-                inv.span,
-                SemanticIssueKind::MacroUnknown { name },
-            ));
+            out.push(diagnostic_from_kind(source_name, source, inv.span, SemanticIssueKind::MacroUnknown { name }));
         }
         Expression::MacroMetavariable(mv) => {
             out.push(diagnostic_from_kind(
                 source_name,
                 source,
                 mv.span,
-                SemanticIssueKind::MacroMetavariableOutsideBody {
-                    name: mv.node.name.node.name.clone(),
-                },
+                SemanticIssueKind::MacroMetavariableOutsideBody { name: mv.node.name.node.name.clone() },
             ));
         }
         Expression::Block(b) => scan_block_residuals(source_name, source, &b.node.block, out),

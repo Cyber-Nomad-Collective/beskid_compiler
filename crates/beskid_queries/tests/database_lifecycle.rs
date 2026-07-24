@@ -2,9 +2,8 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use beskid_queries::{
-    BeskidDatabase, bump_file_revision, configure_compilation_database_for_project,
-    configure_db_for_project, file_revision_for, reset_compilation_database,
-    reset_typed_entry_inputs,
+    BeskidDatabase, bump_file_revision, configure_compilation_database_for_project, configure_db_for_project,
+    file_revision_for, reset_compilation_database, reset_typed_entry_inputs,
 };
 
 static REGISTRY_TEST_LOCK: Mutex<()> = Mutex::new(());

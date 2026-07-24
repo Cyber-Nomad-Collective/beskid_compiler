@@ -23,12 +23,7 @@ struct PhaseStartRecorder {
 
 impl PhaseStartRecorder {
     fn count(&self, id: &'static str) -> usize {
-        *self
-            .starts
-            .lock()
-            .expect("phase recorder lock")
-            .get(id)
-            .unwrap_or(&0)
+        *self.starts.lock().expect("phase recorder lock").get(id).unwrap_or(&0)
     }
 
     fn saw(&self, id: &'static str) -> bool {
@@ -39,12 +34,7 @@ impl PhaseStartRecorder {
 impl PipelineObserver for PhaseStartRecorder {
     fn on_event(&self, event: PipelineEvent) {
         if let PipelineEvent::PhaseStart { id } = event {
-            *self
-                .starts
-                .lock()
-                .expect("phase recorder lock")
-                .entry(id)
-                .or_insert(0) += 1;
+            *self.starts.lock().expect("phase recorder lock").entry(id).or_insert(0) += 1;
         }
     }
 }
@@ -97,10 +87,7 @@ fn run_single_prepare_path(resolved: &ResolvedInput, observer: &PhaseStartRecord
     let (prepared, _gate_diagnostics) = prepare_compilation_diagnostics(
         resolved,
         PrepareOptions {
-            front_end: FrontEndOptions {
-                with_semantic_diagnostics: true,
-                ..Default::default()
-            },
+            front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
             ..Default::default()
         },
         Some(observer),
@@ -122,18 +109,13 @@ fn run_path_single_prepare_after_wave1() {
     let (root, entry) = minimal_run_fixture();
 
     with_cwd(&root, || {
-        let resolved =
-            resolve_input(Some(&entry), Some(&root), None, None, false, false).expect("resolve");
+        let resolved = resolve_input(Some(&entry), Some(&root), None, None, false, false).expect("resolve");
         configure_db_for_project(&root);
 
         let recorder = PhaseStartRecorder::default();
         run_single_prepare_path(&resolved, &recorder);
 
-        assert_eq!(
-            recorder.count(phases::PARSE),
-            1,
-            "Wave 1 run path must invoke prepare once (executable gate only)"
-        );
+        assert_eq!(recorder.count(phases::PARSE), 1, "Wave 1 run path must invoke prepare once (executable gate only)");
 
         assert_eq!(
             recorder.count(phases::SEMANTIC),
@@ -141,10 +123,7 @@ fn run_path_single_prepare_after_wave1() {
             "Wave 1 run path must run semantic parent phase exactly once per command"
         );
         for id in SEMANTIC_SUB_PHASE_IDS {
-            assert!(
-                recorder.saw(id),
-                "semantic sub-phase {id} should appear when observer is wired"
-            );
+            assert!(recorder.saw(id), "semantic sub-phase {id} should appear when observer is wired");
         }
     });
 
@@ -172,24 +151,16 @@ fn orphan_bd_single_prepare_without_bproj() {
     let (root, entry) = orphan_bd_fixture();
 
     with_cwd(&root, || {
-        let resolved =
-            resolve_input(Some(&entry), None, None, None, false, false).expect("resolve orphan");
+        let resolved = resolve_input(Some(&entry), None, None, None, false, false).expect("resolve orphan");
 
-        let plan = resolved
-            .compile_plan
-            .as_ref()
-            .expect("orphan .bd should get synthetic compile plan");
+        let plan = resolved.compile_plan.as_ref().expect("orphan .bd should get synthetic compile plan");
         assert_eq!(plan.project_name, "__synthetic__");
         assert_eq!(plan.target.entry.as_deref(), Some("Orphan.bd"));
 
         let recorder = PhaseStartRecorder::default();
         run_single_prepare_path(&resolved, &recorder);
 
-        assert_eq!(
-            recorder.count(phases::PARSE),
-            1,
-            "orphan .bd run path must invoke prepare once"
-        );
+        assert_eq!(recorder.count(phases::PARSE), 1, "orphan .bd run path must invoke prepare once");
         assert_eq!(recorder.count(phases::SEMANTIC), 1);
         assert_eq!(recorder.count(phases::LOWER), 1);
     });

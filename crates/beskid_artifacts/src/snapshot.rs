@@ -22,11 +22,7 @@ pub struct UnitArtifactRecord {
 
 impl AstUnitSnapshot {
     pub fn new(meta: UnitArtifactMeta, program_wire: Vec<u8>) -> Self {
-        Self {
-            schema_version: ARTIFACT_SCHEMA_VERSION,
-            meta,
-            program_wire,
-        }
+        Self { schema_version: ARTIFACT_SCHEMA_VERSION, meta, program_wire }
     }
 }
 

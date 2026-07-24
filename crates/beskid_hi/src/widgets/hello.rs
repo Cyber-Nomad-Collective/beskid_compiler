@@ -26,11 +26,7 @@ impl Default for HelloWidget {
 
 impl BeskidWidget for HelloWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: DESC.id,
-            title: DESC.title,
-            icon: DESC.icon,
-        }
+        WidgetMeta { id: DESC.id, title: DESC.title, icon: DESC.icon }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {
@@ -45,11 +41,7 @@ impl BeskidWidget for HelloWidget {
         frame.render_widget(
             Paragraph::new("beskid_hi extension widget — shell API surface OK")
                 .style(Style::default().fg(Color::Green))
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(format!(" {} ", DESC.id)),
-                ),
+                .block(Block::default().borders(Borders::ALL).title(format!(" {} ", DESC.id))),
             area,
         );
     }

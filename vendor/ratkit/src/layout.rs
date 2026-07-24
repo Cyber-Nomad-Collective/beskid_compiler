@@ -75,20 +75,11 @@ impl LayoutManager {
     /// Update layout for a terminal resize.
     pub fn on_resize(&mut self, width: u16, height: u16) -> LayoutResult<()> {
         if width < MIN_TERMINAL_WIDTH || height < MIN_TERMINAL_HEIGHT {
-            return Err(LayoutError::terminal_too_small(
-                MIN_TERMINAL_WIDTH,
-                MIN_TERMINAL_HEIGHT,
-                width,
-                height,
-            ));
+            return Err(LayoutError::terminal_too_small(MIN_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, width, height));
         }
 
         match self.debounce_state {
-            ResizeDebounceState::Pending {
-                pending_width,
-                pending_height,
-                scheduled_at,
-            } => {
+            ResizeDebounceState::Pending { pending_width, pending_height, scheduled_at } => {
                 if scheduled_at.elapsed() >= self.resize_debounce {
                     self.state.terminal_area = Rect::new(0, 0, width, height);
                     self.mark_dirty();
@@ -96,11 +87,8 @@ impl LayoutManager {
                     debug!("Layout resize (debounced): {}x{}", width, height);
                     self.recompute()
                 } else {
-                    self.debounce_state = ResizeDebounceState::Pending {
-                        pending_width: width,
-                        pending_height: height,
-                        scheduled_at,
-                    };
+                    self.debounce_state =
+                        ResizeDebounceState::Pending { pending_width: width, pending_height: height, scheduled_at };
                     debug!("Layout resize debounced: {}x{}", width, height);
                     Ok(())
                 }
@@ -108,10 +96,7 @@ impl LayoutManager {
             ResizeDebounceState::Idle => {
                 self.state.terminal_area = Rect::new(0, 0, width, height);
                 self.mark_dirty();
-                debug!(
-                    "Layout resize: {}x{} (area: {:?})",
-                    width, height, self.state.terminal_area
-                );
+                debug!("Layout resize: {}x{} (area: {:?})", width, height, self.state.terminal_area);
                 self.recompute()
             }
         }
@@ -119,25 +104,15 @@ impl LayoutManager {
 
     /// Schedule a resize with debouncing.
     pub fn schedule_resize(&mut self, width: u16, height: u16) {
-        self.debounce_state = ResizeDebounceState::Pending {
-            pending_width: width,
-            pending_height: height,
-            scheduled_at: Instant::now(),
-        };
-        debug!(
-            "Resize scheduled: {}x{} (debounce: {:?})",
-            width, height, self.resize_debounce
-        );
+        self.debounce_state =
+            ResizeDebounceState::Pending { pending_width: width, pending_height: height, scheduled_at: Instant::now() };
+        debug!("Resize scheduled: {}x{} (debounce: {:?})", width, height, self.resize_debounce);
     }
 
     /// Process any pending resize.
     pub fn process_pending_resize(&mut self) -> LayoutResult<()> {
         match self.debounce_state {
-            ResizeDebounceState::Pending {
-                pending_width,
-                pending_height,
-                ..
-            } => {
+            ResizeDebounceState::Pending { pending_width, pending_height, .. } => {
                 if pending_width < MIN_TERMINAL_WIDTH || pending_height < MIN_TERMINAL_HEIGHT {
                     self.debounce_state = ResizeDebounceState::Idle;
                     return Err(LayoutError::terminal_too_small(
@@ -151,10 +126,7 @@ impl LayoutManager {
                 self.state.terminal_area = Rect::new(0, 0, pending_width, pending_height);
                 self.mark_dirty();
                 self.debounce_state = ResizeDebounceState::Idle;
-                debug!(
-                    "Pending resize processed: {}x{}",
-                    pending_width, pending_height
-                );
+                debug!("Pending resize processed: {}x{}", pending_width, pending_height);
                 self.recompute()
             }
             ResizeDebounceState::Idle => Ok(()),
@@ -169,11 +141,7 @@ impl LayoutManager {
     /// Get the pending resize dimensions.
     pub fn pending_resize(&self) -> Option<(u16, u16)> {
         match self.debounce_state {
-            ResizeDebounceState::Pending {
-                pending_width,
-                pending_height,
-                ..
-            } => Some((pending_width, pending_height)),
+            ResizeDebounceState::Pending { pending_width, pending_height, .. } => Some((pending_width, pending_height)),
             ResizeDebounceState::Idle => None,
         }
     }
@@ -208,42 +176,22 @@ impl LayoutManager {
             }
         }
 
-        let remaining_height = area
-            .height
-            .saturating_sub(top_height)
-            .saturating_sub(bottom_height);
+        let remaining_height = area.height.saturating_sub(top_height).saturating_sub(bottom_height);
 
         if remaining_height < 1 {
-            return Err(LayoutError::layout_computation(
-                "Insufficient height for center region",
-            ));
+            return Err(LayoutError::layout_computation("Insufficient height for center region"));
         }
 
         let top_area = if top_height > 0 {
-            Rect {
-                x: area.x,
-                y: area.y,
-                width: area.width,
-                height: top_height,
-            }
+            Rect { x: area.x, y: area.y, width: area.width, height: top_height }
         } else {
             Rect::default()
         };
 
-        let center_area = Rect {
-            x: area.x,
-            y: area.y + top_height,
-            width: area.width,
-            height: remaining_height,
-        };
+        let center_area = Rect { x: area.x, y: area.y + top_height, width: area.width, height: remaining_height };
 
         let bottom_area = if bottom_height > 0 {
-            Rect {
-                x: area.x,
-                y: area.y + top_height + remaining_height,
-                width: area.width,
-                height: bottom_height,
-            }
+            Rect { x: area.x, y: area.y + top_height + remaining_height, width: area.width, height: bottom_height }
         } else {
             Rect::default()
         };
@@ -258,20 +206,12 @@ impl LayoutManager {
 
         self.dirty = false;
 
-        debug!(
-            "Layout recomputed: top={:?} center={:?} bottom={:?}",
-            top_area, center_area, bottom_area
-        );
+        debug!("Layout recomputed: top={:?} center={:?} bottom={:?}", top_area, center_area, bottom_area);
 
         Ok(())
     }
 
-    fn assign_element_rects(
-        &mut self,
-        top_area: Rect,
-        center_area: Rect,
-        bottom_area: Rect,
-    ) -> LayoutResult<()> {
+    fn assign_element_rects(&mut self, top_area: Rect, center_area: Rect, bottom_area: Rect) -> LayoutResult<()> {
         for id in self.registry.all_ids() {
             let metadata = self.registry.get_metadata_mut(id)?;
 
@@ -340,8 +280,7 @@ impl LayoutManager {
 
     /// Validate current layout state.
     pub fn validate(&self) -> LayoutResult<()> {
-        if self.state.terminal_area.width < MIN_TERMINAL_WIDTH
-            || self.state.terminal_area.height < MIN_TERMINAL_HEIGHT
+        if self.state.terminal_area.width < MIN_TERMINAL_WIDTH || self.state.terminal_area.height < MIN_TERMINAL_HEIGHT
         {
             return Err(LayoutError::terminal_too_small(
                 MIN_TERMINAL_WIDTH,
@@ -351,8 +290,7 @@ impl LayoutManager {
             ));
         }
 
-        let total_height =
-            self.state.top_height + self.state.center_area.height + self.state.bottom_height;
+        let total_height = self.state.top_height + self.state.center_area.height + self.state.bottom_height;
 
         if total_height != self.state.terminal_area.height {
             return Err(LayoutError::layout_computation(format!(
@@ -375,13 +313,7 @@ impl LayoutManager {
             .registry
             .all_ids()
             .into_iter()
-            .filter_map(|id| {
-                self.registry
-                    .get_metadata(id)
-                    .ok()
-                    .filter(|m| m.is_visible())
-                    .map(|m| (id, m.rect))
-            })
+            .filter_map(|id| self.registry.get_metadata(id).ok().filter(|m| m.is_visible()).map(|m| (id, m.rect)))
             .collect();
 
         hits.sort_by(|a, b| {
@@ -398,10 +330,7 @@ impl LayoutManager {
 
     /// Get all element IDs sorted by z-order (highest first).
     pub fn all_ids_sorted_by_z_order(&self) -> Vec<ElementId> {
-        self.all_hits_sorted_by_z_order()
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect()
+        self.all_hits_sorted_by_z_order().into_iter().map(|(id, _)| id).collect()
     }
 
     /// Get the z-order for a specific element.
@@ -411,10 +340,7 @@ impl LayoutManager {
 
     /// Get terminal dimensions.
     pub fn terminal_size(&self) -> (u16, u16) {
-        (
-            self.state.terminal_area.width,
-            self.state.terminal_area.height,
-        )
+        (self.state.terminal_area.width, self.state.terminal_area.height)
     }
 
     /// Get layout statistics for diagnostics.
@@ -422,12 +348,7 @@ impl LayoutManager {
         let all_ids = self.registry.all_ids();
         let visible_count = all_ids
             .iter()
-            .filter(|&id| {
-                self.registry
-                    .get_metadata(*id)
-                    .map(|m| m.is_visible())
-                    .unwrap_or(false)
-            })
+            .filter(|&id| self.registry.get_metadata(*id).map(|m| m.is_visible()).unwrap_or(false))
             .count();
 
         LayoutStats {
@@ -485,10 +406,7 @@ mod tests {
         let result = manager.on_resize(5, 3);
 
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            LayoutError::TerminalTooSmall(_, _, _, _)
-        ));
+        assert!(matches!(result.unwrap_err(), LayoutError::TerminalTooSmall(_, _, _, _)));
     }
 
     #[test]
@@ -511,12 +429,8 @@ mod tests {
         let id2 = ElementId::new();
         let metadata2 = ElementMetadata::new(id2, Region::Bottom).with_fixed_height(2);
 
-        let _ = manager
-            .registry_mut()
-            .register(metadata1, Arc::new(DummyElement::new(id1)));
-        let _ = manager
-            .registry_mut()
-            .register(metadata2, Arc::new(DummyElement::new(id2)));
+        let _ = manager.registry_mut().register(metadata1, Arc::new(DummyElement::new(id1)));
+        let _ = manager.registry_mut().register(metadata2, Arc::new(DummyElement::new(id2)));
 
         manager.on_resize(80, 24).unwrap();
         manager.recompute().unwrap();
@@ -533,9 +447,7 @@ mod tests {
         let id = ElementId::new();
         let metadata = ElementMetadata::new(id, Region::Center).with_z_order(10);
 
-        let _ = manager
-            .registry_mut()
-            .register(metadata, Arc::new(DummyElement::new(id)));
+        let _ = manager.registry_mut().register(metadata, Arc::new(DummyElement::new(id)));
 
         manager.on_resize(80, 24).unwrap();
         manager.recompute().unwrap();
@@ -567,12 +479,8 @@ mod tests {
         let id2 = ElementId::new();
         let metadata2 = ElementMetadata::new(id2, Region::Bottom).with_fixed_height(2);
 
-        let _ = manager
-            .registry_mut()
-            .register(metadata1, Arc::new(DummyElement::new(id1)));
-        let _ = manager
-            .registry_mut()
-            .register(metadata2, Arc::new(DummyElement::new(id2)));
+        let _ = manager.registry_mut().register(metadata1, Arc::new(DummyElement::new(id1)));
+        let _ = manager.registry_mut().register(metadata2, Arc::new(DummyElement::new(id2)));
 
         manager.on_resize(80, 24).unwrap();
         manager.recompute().unwrap();
@@ -593,9 +501,7 @@ mod tests {
         let id = ElementId::new();
         let metadata = ElementMetadata::new(id, Region::Center);
 
-        let _ = manager
-            .registry_mut()
-            .register(metadata, Arc::new(DummyElement::new(id)));
+        let _ = manager.registry_mut().register(metadata, Arc::new(DummyElement::new(id)));
         manager.on_resize(80, 24).unwrap();
         manager.recompute().unwrap();
 
@@ -614,12 +520,8 @@ mod tests {
         let id2 = ElementId::new();
         let metadata2 = ElementMetadata::new(id2, Region::Center).with_z_order(10);
 
-        let _ = manager
-            .registry_mut()
-            .register(metadata1, Arc::new(DummyElement::new(id1)));
-        let _ = manager
-            .registry_mut()
-            .register(metadata2, Arc::new(DummyElement::new(id2)));
+        let _ = manager.registry_mut().register(metadata1, Arc::new(DummyElement::new(id1)));
+        let _ = manager.registry_mut().register(metadata2, Arc::new(DummyElement::new(id2)));
 
         manager.on_resize(80, 24).unwrap();
         manager.recompute().unwrap();
@@ -636,9 +538,7 @@ mod tests {
         let id = ElementId::new();
         let metadata = ElementMetadata::new(id, Region::Center).with_z_order(42);
 
-        let _ = manager
-            .registry_mut()
-            .register(metadata, Arc::new(DummyElement::new(id)));
+        let _ = manager.registry_mut().register(metadata, Arc::new(DummyElement::new(id)));
 
         let z_order = manager.get_element_z_order(id);
         assert_eq!(z_order, Some(42));

@@ -5,8 +5,11 @@
 // lock/unlock still works for try_lock.
 
 const MUTEX_TABLE_MAX = 32;
-const MUTEX_LOCKED = 1;
-const MUTEX_UNLOCKED = 0;
+
+pub enum MutexState {
+    Unlocked,
+    Locked,
+}
 
 // ── Global mutex table (embedded in a static memory region) ──
 
@@ -35,7 +38,7 @@ pub pointer MutexCreate() {
         return NativePointer(0);
     }
     pointer slot = pointer_add(table, 8 + count * MUTEX_SLOT_SIZE);
-    raw_byte_store(slot, MUTEX_UNLOCKED);
+    raw_byte_store(slot, MutexState::Unlocked);
     raw_word_store(pointer_add(slot, 8), 0);
     mut word i = 0;
     while i < 8 {
@@ -63,8 +66,8 @@ pub i32 MutexLock(pointer id) {
     mut word attempts = 0;
     while attempts < 1000 {
         u8 locked = raw_byte_load(slot);
-        if locked == MUTEX_UNLOCKED {
-            raw_byte_store(slot, MUTEX_LOCKED);
+        if locked == MutexState::Unlocked {
+            raw_byte_store(slot, MutexState::Locked);
             raw_word_store(pointer_add(slot, 8), NativeWord(CurrentThreadState()));
             return 0;
         }
@@ -87,10 +90,10 @@ pub i32 MutexTryLock(pointer id) {
     }
     pointer slot = pointer_add(table, 8 + slotIndex * MUTEX_SLOT_SIZE);
     u8 locked = raw_byte_load(slot);
-    if locked == MUTEX_LOCKED {
+    if locked == MutexState::Locked {
         return 1;
     }
-    raw_byte_store(slot, MUTEX_LOCKED);
+    raw_byte_store(slot, MutexState::Locked);
     raw_word_store(pointer_add(slot, 8), NativeWord(CurrentThreadState()));
     return 0;
 }
@@ -107,7 +110,7 @@ pub unit MutexUnlock(pointer id) {
         return;
     }
     pointer slot = pointer_add(table, 8 + slotIndex * MUTEX_SLOT_SIZE);
-    raw_byte_store(slot, MUTEX_UNLOCKED);
+    raw_byte_store(slot, MutexState::Unlocked);
     raw_word_store(pointer_add(slot, 8), 0);
     // Wake first waiter by yielding (scheduler will pick it up).
     return;

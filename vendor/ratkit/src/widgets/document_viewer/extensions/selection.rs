@@ -6,9 +6,7 @@ use crate::widgets::document_viewer::state::SelectionState;
 
 /// Returns true when a zero-based line is selected.
 pub fn is_line_selected(selection: Option<&SelectionState>, line_index: usize) -> bool {
-    selection
-        .and_then(SelectionState::selected_range)
-        .is_some_and(|range| range.contains(&line_index))
+    selection.and_then(SelectionState::selected_range).is_some_and(|range| range.contains(&line_index))
 }
 
 /// Returns the style used for selected lines.

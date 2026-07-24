@@ -9,9 +9,11 @@ use beskid_graph::GraphKind;
 use beskid_queries::{GraphFetchRequest, get_graph_document, get_graph_document_simple, with_db};
 use clap::Args;
 use graphs_tui::{RenderOptions, render_mermaid_to_tui};
+use std::sync::mpsc::Sender;
 
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_tools::pipeline::{CliResolveOptions, frontend::resolve_input_with_pipeline};
+use beskid_tools::tui::shell::runtime::RuntimeOp;
 
 #[derive(Args, Debug)]
 pub struct GraphArgs {
@@ -46,11 +48,17 @@ pub struct GraphArgs {
 }
 
 pub fn execute(args: GraphArgs) -> Result<()> {
+    run_graph(args)
+}
+
+/// Same as [`execute`] but forwards pipeline progress into a running `beskid hi` shell.
+pub fn execute_for_hi(_msg_tx: Sender<RuntimeOp>, args: GraphArgs) -> Result<()> {
+    run_graph(args)
+}
+
+fn run_graph(args: GraphArgs) -> Result<()> {
     let kind = GraphKind::parse(&args.kind).ok_or_else(|| {
-        anyhow::anyhow!(
-            "unknown graph kind `{}` (use project|workspace|module|imports|host)",
-            args.kind
-        )
+        anyhow::anyhow!("unknown graph kind `{}` (use project|workspace|module|imports|host)", args.kind)
     })?;
 
     let resolved = resolve_input_with_pipeline(
@@ -73,10 +81,7 @@ pub fn execute(args: GraphArgs) -> Result<()> {
         .or_else(|| args.project.project.clone())
         .ok_or_else(|| anyhow::anyhow!("could not resolve project manifest"))?;
 
-    let workspace_manifest = resolved
-        .workspace_summary
-        .as_ref()
-        .map(|ws| ws.workspace_manifest_path.clone());
+    let workspace_manifest = resolved.workspace_summary.as_ref().map(|ws| ws.workspace_manifest_path.clone());
 
     let request = GraphFetchRequest {
         kind,
@@ -87,15 +92,10 @@ pub fn execute(args: GraphArgs) -> Result<()> {
         entry_source: Some(resolved.source.clone()),
     };
 
-    let doc = with_db(|db| get_graph_document(db, &request))
-        .or_else(|_| get_graph_document_simple(&request))?;
+    let doc = with_db(|db| get_graph_document(db, &request)).or_else(|_| get_graph_document_simple(&request))?;
 
     for warning in &doc.spec.warnings {
-        eprintln!(
-            "warning [{}]: {}",
-            warning_code(warning.code),
-            warning.message
-        );
+        eprintln!("warning [{}]: {}", warning_code(warning.code), warning.message);
     }
 
     let use_tui = (args.tui || stdout().is_terminal()) && !args.mermaid && args.out.is_none();

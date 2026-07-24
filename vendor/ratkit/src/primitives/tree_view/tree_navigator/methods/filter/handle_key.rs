@@ -18,12 +18,7 @@ impl TreeNavigator {
     /// # Returns
     ///
     /// `true` if the key was handled, `false` otherwise.
-    pub fn handle_key<T>(
-        &self,
-        key: KeyEvent,
-        nodes: &[TreeNode<T>],
-        state: &mut TreeViewState,
-    ) -> bool {
+    pub fn handle_key<T>(&self, key: KeyEvent, nodes: &[TreeNode<T>], state: &mut TreeViewState) -> bool {
         // Only handle key press events, not release
         if key.kind != crossterm::event::KeyEventKind::Press {
             return false;

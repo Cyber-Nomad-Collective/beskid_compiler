@@ -20,11 +20,8 @@ pub struct MissingSymbol {
 /// assembly unit (for link-plan completeness); JIT/AOT runtime resolution only needs this subset.
 pub fn referenced_extern_imports(artifact: &CodegenArtifact) -> Vec<ExternImport> {
     let defined: HashSet<String> = artifact.functions.iter().map(|f| f.name.clone()).collect();
-    let extern_by_symbol: std::collections::HashMap<&str, &ExternImport> = artifact
-        .extern_imports
-        .iter()
-        .map(|entry| (entry.symbol.as_str(), entry))
-        .collect();
+    let extern_by_symbol: std::collections::HashMap<&str, &ExternImport> =
+        artifact.extern_imports.iter().map(|entry| (entry.symbol.as_str(), entry)).collect();
 
     let mut out = Vec::new();
     for symbol in collect_referenced_testcase_symbols(artifact) {
@@ -43,11 +40,7 @@ pub fn referenced_extern_imports(artifact: &CodegenArtifact) -> Vec<ExternImport
 /// in `artifact.functions` or is a known builtin/extern import.
 pub fn validate_artifact(artifact: &CodegenArtifact) -> Result<(), Vec<MissingSymbol>> {
     let defined: HashSet<String> = artifact.functions.iter().map(|f| f.name.clone()).collect();
-    let extern_syms: HashSet<String> = artifact
-        .extern_imports
-        .iter()
-        .map(|e| e.symbol.clone())
-        .collect();
+    let extern_syms: HashSet<String> = artifact.extern_imports.iter().map(|e| e.symbol.clone()).collect();
 
     let mut missing = Vec::new();
     for symbol in collect_referenced_testcase_symbols(artifact) {
@@ -109,16 +102,9 @@ mod tests {
         });
 
         let artifact = CodegenArtifact {
-            functions: vec![LoweredFunction {
-                name: "main".into(),
-                function: callee,
-            }],
+            functions: vec![LoweredFunction { name: "main".into(), function: callee }],
             extern_imports: vec![
-                ExternImport {
-                    symbol: "isatty".into(),
-                    abi: Some("C".into()),
-                    library: Some("libc".into()),
-                },
+                ExternImport { symbol: "isatty".into(), abi: Some("C".into()), library: Some("libc".into()) },
                 ExternImport {
                     symbol: "GetConsoleScreenBufferInfo".into(),
                     abi: Some("C".into()),

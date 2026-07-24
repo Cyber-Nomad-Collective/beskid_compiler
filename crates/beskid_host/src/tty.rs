@@ -12,12 +12,7 @@ struct Winsize {
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn linux_tty_winsize(fd: i32) -> i64 {
     use std::arch::asm;
-    let mut ws = Winsize {
-        ws_row: 0,
-        ws_col: 0,
-        ws_xpixel: 0,
-        ws_ypixel: 0,
-    };
+    let mut ws = Winsize { ws_row: 0, ws_col: 0, ws_xpixel: 0, ws_ypixel: 0 };
     let request: u64 = 0x5413; // TIOCGWINSZ
     let mut result: isize;
     unsafe {

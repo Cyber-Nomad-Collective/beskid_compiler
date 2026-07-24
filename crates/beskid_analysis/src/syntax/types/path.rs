@@ -23,10 +23,7 @@ impl crate::parsing::parsable::Parsable for Path {
         pair: pest::iterators::Pair<crate::parser::Rule>,
     ) -> Result<crate::syntax::Spanned<Self>, crate::parsing::error::ParseError> {
         if pair.as_rule() != crate::parser::Rule::Path {
-            return Err(crate::parsing::error::ParseError::unexpected_rule(
-                pair,
-                Some(crate::parser::Rule::Path),
-            ));
+            return Err(crate::parsing::error::ParseError::unexpected_rule(pair, Some(crate::parser::Rule::Path)));
         }
 
         let span = crate::syntax::SpanInfo::from_span(&pair.as_span());
@@ -34,9 +31,9 @@ impl crate::parsing::parsable::Parsable for Path {
             .into_inner()
             .map(|segment| {
                 let mut inner = segment.into_inner();
-                let name = crate::syntax::Identifier::parse(inner.next().ok_or(
-                    crate::parsing::error::ParseError::missing(crate::parser::Rule::Identifier),
-                )?)?;
+                let name = crate::syntax::Identifier::parse(
+                    inner.next().ok_or(crate::parsing::error::ParseError::missing(crate::parser::Rule::Identifier))?,
+                )?;
                 let mut type_args = Vec::new();
                 if let Some(args) = inner.next() {
                     for arg in args.into_inner() {
@@ -44,10 +41,7 @@ impl crate::parsing::parsable::Parsable for Path {
                     }
                 }
                 let segment_span = name.span;
-                Ok(crate::syntax::Spanned::new(
-                    PathSegment { name, type_args },
-                    segment_span,
-                ))
+                Ok(crate::syntax::Spanned::new(PathSegment { name, type_args }, segment_span))
             })
             .collect::<Result<Vec<_>, _>>()?;
 

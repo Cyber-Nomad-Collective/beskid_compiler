@@ -9,10 +9,7 @@ use cranelift_codegen::ir::Value;
 impl Lowerable<NodeLoweringContext<'_, '_>> for HirExpressionNode {
     type Output = Option<Value>;
 
-    fn lower(
-        node: &Spanned<Self>,
-        ctx: &mut NodeLoweringContext<'_, '_>,
-    ) -> Result<Self::Output, CodegenError> {
+    fn lower(node: &Spanned<Self>, ctx: &mut NodeLoweringContext<'_, '_>) -> Result<Self::Output, CodegenError> {
         match &node.node {
             HirExpressionNode::MatchExpression(inner) => lower_node(inner, ctx),
             HirExpressionNode::LambdaExpression(lambda) => {
@@ -36,25 +33,19 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirExpressionNode {
                     ctx.expr_type(inner.node.expr.id).is_some(),
                     "unexpected raw TryExpression reached codegen; expected upstream desugaring"
                 );
-                Err(CodegenError::UnsupportedNode {
-                    span: node.span,
-                    node: "unexpected raw try expression",
-                })
+                Err(CodegenError::UnsupportedNode { span: node.span, node: "unexpected raw try expression" })
             }
-            HirExpressionNode::MacroInvocation(_) => Err(CodegenError::UnsupportedNode {
-                span: node.span,
-                node: "macro invocation expression",
-            }),
-            HirExpressionNode::MacroMetavariable(_) => Err(CodegenError::UnsupportedNode {
-                span: node.span,
-                node: "macro metavariable expression",
-            }),
+            HirExpressionNode::MacroInvocation(_) => {
+                Err(CodegenError::UnsupportedNode { span: node.span, node: "macro invocation expression" })
+            }
+            HirExpressionNode::MacroMetavariable(_) => {
+                Err(CodegenError::UnsupportedNode { span: node.span, node: "macro metavariable expression" })
+            }
             HirExpressionNode::IndexExpression(inner) => lower_node(inner, ctx),
             HirExpressionNode::ArrayLiteralExpression(inner) => lower_node(inner, ctx),
-            HirExpressionNode::CodeStringExpression(_) => Err(CodegenError::UnsupportedNode {
-                span: node.span,
-                node: "code string expression",
-            }),
+            HirExpressionNode::CodeStringExpression(_) => {
+                Err(CodegenError::UnsupportedNode { span: node.span, node: "code string expression" })
+            }
         }
     }
 }

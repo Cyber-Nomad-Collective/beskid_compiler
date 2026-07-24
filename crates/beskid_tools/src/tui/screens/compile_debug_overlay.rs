@@ -13,11 +13,7 @@ use crate::tui::shell::state::ShellState;
 
 pub fn update(msg: &ShellMessage, state: &mut ShellState) -> Vec<ShellEffect> {
     let effects = Vec::new();
-    if let ShellMessage::SetOverlayVisible {
-        kind: OverlayKind::CompileDebug,
-        visible: true,
-    } = msg
-    {
+    if let ShellMessage::SetOverlayVisible { kind: OverlayKind::CompileDebug, visible: true } = msg {
         state.set_overlay_visible(OverlayKind::CompileDebug, true);
         state.focus_overlay(OverlayKind::CompileDebug);
     }

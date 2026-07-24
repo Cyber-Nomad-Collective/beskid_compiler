@@ -44,8 +44,7 @@ impl TypeChecker<'_> {
         )
         .entered();
 
-        let mut unit_surfaces: HashMap<PathBuf, Arc<crate::types::surface::UnitTypeSurface>> =
-            HashMap::new();
+        let mut unit_surfaces: HashMap<PathBuf, Arc<crate::types::surface::UnitTypeSurface>> = HashMap::new();
         for (index, dependency) in dependency_programs.iter().enumerate() {
             if let Some(paths) = dependency_source_paths
                 && let Some(path) = paths.get(index)
@@ -77,19 +76,14 @@ impl TypeChecker<'_> {
                             .hir_units
                             .iter()
                             .find(|unit| crate::paths::same_file(&unit.path, path))
-                            .map(|unit| {
-                                Arc::new(build_unit_type_surface(&unit.hir, resolution, path))
-                            })
+                            .map(|unit| Arc::new(build_unit_type_surface(&unit.hir, resolution, path)))
                     })
                     .or_else(|| {
-                        index
-                            .prefetched_hir(path)
-                            .map(|hir| Arc::new(build_unit_type_surface(hir, resolution, path)))
+                        index.prefetched_hir(path).map(|hir| Arc::new(build_unit_type_surface(hir, resolution, path)))
                     })
                     .or_else(|| {
-                        prefetched_surfaces.and_then(|surfaces| {
-                            surfaces.get(&key).or_else(|| surfaces.get(path)).cloned()
-                        })
+                        prefetched_surfaces
+                            .and_then(|surfaces| surfaces.get(&key).or_else(|| surfaces.get(path)).cloned())
                     });
                 if let Some(surface) = surface {
                     unit_surfaces.insert(key, surface);
@@ -101,10 +95,7 @@ impl TypeChecker<'_> {
             unit_surfaces
                 .iter()
                 .filter(|(path, _)| {
-                    entry_source_path
-                        .as_ref()
-                        .map(|entry| **path != crate::paths::unit_path_key(entry))
-                        .unwrap_or(true)
+                    entry_source_path.as_ref().map(|entry| **path != crate::paths::unit_path_key(entry)).unwrap_or(true)
                 })
                 .map(|(path, surface)| (path.clone(), surface.clone())),
             Arc::new(entry_surface.clone()),
@@ -138,9 +129,7 @@ impl TypeChecker<'_> {
         }
 
         checker.errors.truncate(dependency_errors_before);
-        checker.current_source_path = entry_source_path
-            .as_ref()
-            .map(|path| crate::paths::unit_path_key(path));
+        checker.current_source_path = entry_source_path.as_ref().map(|path| crate::paths::unit_path_key(path));
         checker.seed_struct_definitions(program);
         checker.seed_generics_from_program(program);
         checker.seed_contract_signatures(program);
@@ -151,13 +140,7 @@ impl TypeChecker<'_> {
         for (index, item) in items.iter().enumerate() {
             if let Some((observer, phase)) = progress {
                 let label = checker.progress_label_with_path(hir_item_progress_label(item));
-                report_progress(
-                    Some(observer),
-                    phase,
-                    index as u64 + 1,
-                    item_total.max(1),
-                    label,
-                );
+                report_progress(Some(observer), phase, index as u64 + 1, item_total.max(1), label);
             }
             checker.type_item(item);
         }
@@ -182,34 +165,20 @@ impl TypeChecker<'_> {
             for dependency in dependency_programs {
                 merge_lowering_prep(
                     &mut lowering,
-                    LoweringPrep::run(
-                        dependency,
-                        resolution,
-                        &checker_result.node_types,
-                        &lowering_surfaces,
-                    ),
+                    LoweringPrep::run(dependency, resolution, &checker_result.node_types, &lowering_surfaces),
                 );
             }
         }
         merge_lowering_prep(
             &mut lowering,
-            LoweringPrep::run(
-                program,
-                resolution,
-                &checker_result.node_types,
-                &lowering_surfaces,
-            ),
+            LoweringPrep::run(program, resolution, &checker_result.node_types, &lowering_surfaces),
         );
         // Type-checked call kinds win over lowering-prep rediscovery (same spans, authoritative arity).
         lowering.call_kinds.extend(checker_call_kinds);
 
         let result = TypeResult {
             types: checker_result.types,
-            named_type_names: resolution
-                .items
-                .iter()
-                .map(|item| (item.id, item.name.clone()))
-                .collect(),
+            named_type_names: resolution.items.iter().map(|item| (item.id, item.name.clone())).collect(),
             node_types: checker_result.node_types,
             local_types: checker_result.local_types,
             unit_surfaces,
@@ -248,10 +217,7 @@ impl<'a> TypeChecker<'a> {
                 _ => continue,
             };
             if let Some(item_id) = self.item_id_for_span(span) {
-                let names = generics
-                    .iter()
-                    .map(|generic| generic.node.name.clone())
-                    .collect::<Vec<_>>();
+                let names = generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>();
                 self.generic_items.insert(item_id, names);
             }
         }

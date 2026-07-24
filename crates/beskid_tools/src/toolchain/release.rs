@@ -21,28 +21,21 @@ pub fn home_beskid_bin_dir() -> Result<PathBuf> {
 }
 
 pub fn managed_lsp_path() -> Result<PathBuf> {
-    let name = if cfg!(windows) {
-        "beskid_lsp.exe"
-    } else {
-        "beskid_lsp"
-    };
+    let name = if cfg!(windows) { "beskid_lsp.exe" } else { "beskid_lsp" };
     Ok(home_beskid_bin_dir()?.join(name))
 }
 
 pub fn resolve_lsp_platform_asset() -> Option<PlatformAsset> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("linux", "x86_64") => Some(PlatformAsset {
-            release_asset: "beskid_lsp-linux-amd64",
-            install_file_name: "beskid_lsp",
-        }),
-        ("macos", "aarch64") => Some(PlatformAsset {
-            release_asset: "beskid_lsp-darwin-arm64",
-            install_file_name: "beskid_lsp",
-        }),
-        ("windows", "x86_64") => Some(PlatformAsset {
-            release_asset: "beskid_lsp-windows-amd64.exe",
-            install_file_name: "beskid_lsp.exe",
-        }),
+        ("linux", "x86_64") => {
+            Some(PlatformAsset { release_asset: "beskid_lsp-linux-amd64", install_file_name: "beskid_lsp" })
+        }
+        ("macos", "aarch64") => {
+            Some(PlatformAsset { release_asset: "beskid_lsp-darwin-arm64", install_file_name: "beskid_lsp" })
+        }
+        ("windows", "x86_64") => {
+            Some(PlatformAsset { release_asset: "beskid_lsp-windows-amd64.exe", install_file_name: "beskid_lsp.exe" })
+        }
         _ => None,
     }
 }
@@ -52,16 +45,11 @@ fn release_download_url(tag: &str, asset: &str) -> String {
 }
 
 fn download_bytes(url: &str) -> Result<Vec<u8>> {
-    let mut response = ureq::get(url)
-        .call()
-        .with_context(|| format!("GET {url}"))?;
+    let mut response = ureq::get(url).call().with_context(|| format!("GET {url}"))?;
     if !response.status().is_success() {
         bail!("GET {url} failed with HTTP {}", response.status());
     }
-    response
-        .body_mut()
-        .read_to_vec()
-        .with_context(|| format!("read body from {url}"))
+    response.body_mut().read_to_vec().with_context(|| format!("read body from {url}"))
 }
 
 fn fetch_text(url: &str) -> Result<String> {
@@ -86,13 +74,8 @@ pub fn install_lsp(options: &InstallLspOptions) -> Result<LspInstallResult> {
     if tag.is_empty() {
         bail!("release tag must not be empty");
     }
-    let asset = resolve_lsp_platform_asset().with_context(|| {
-        format!(
-            "no published LSP build for {}-{}",
-            std::env::consts::OS,
-            std::env::consts::ARCH
-        )
-    })?;
+    let asset = resolve_lsp_platform_asset()
+        .with_context(|| format!("no published LSP build for {}-{}", std::env::consts::OS, std::env::consts::ARCH))?;
 
     let version_url = release_download_url(tag, "lsp-version.txt");
     let download_url = release_download_url(tag, asset.release_asset);
@@ -108,10 +91,8 @@ pub fn install_lsp(options: &InstallLspOptions) -> Result<LspInstallResult> {
     println!("Downloading {download_url}");
     let bytes = download_bytes(&download_url)?;
     fs::create_dir_all(&install_dir).with_context(|| install_dir.display().to_string())?;
-    let mut file =
-        fs::File::create(&install_path).with_context(|| install_path.display().to_string())?;
-    file.write_all(&bytes)
-        .with_context(|| install_path.display().to_string())?;
+    let mut file = fs::File::create(&install_path).with_context(|| install_path.display().to_string())?;
+    file.write_all(&bytes).with_context(|| install_path.display().to_string())?;
 
     #[cfg(unix)]
     {
@@ -121,15 +102,8 @@ pub fn install_lsp(options: &InstallLspOptions) -> Result<LspInstallResult> {
         fs::set_permissions(&install_path, perms)?;
     }
 
-    println!(
-        "Installed Beskid LSP {version} ({tag}) → {}",
-        install_path.display()
-    );
-    Ok(LspInstallResult {
-        path: install_path,
-        version,
-        release_tag: tag.to_string(),
-    })
+    println!("Installed Beskid LSP {version} ({tag}) → {}", install_path.display());
+    Ok(LspInstallResult { path: install_path, version, release_tag: tag.to_string() })
 }
 
 pub fn managed_lsp_exists() -> bool {

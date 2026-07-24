@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 
-use beskid_isle::{
-    AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, NodeFacts, NodeKind,
-};
+use beskid_isle::{AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, NodeFacts, NodeKind};
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::settings;
@@ -44,33 +42,17 @@ impl NodeFacts for ReturnFacts {
 #[test]
 fn return_statement_recurses_through_isle_and_emits_verified_clif() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Return.bd"));
     let generation = SyntaxGenerationId(8);
     let facts = ReturnFacts {
-        statement: AstNodeKey {
-            unit,
-            generation,
-            node: AstNodeId(1),
-        },
-        value: AstNodeKey {
-            unit,
-            generation,
-            node: AstNodeId(2),
-        },
+        statement: AstNodeKey { unit, generation, node: AstNodeId(1) },
+        value: AstNodeKey { unit, generation, node: AstNodeId(2) },
     };
     let emitter = FunctionEmitter::new(isa.as_ref());
     let function = emitter
-        .emit_statement(
-            UserFuncName::user(0, 11),
-            emitter.signature([], [types::I32]),
-            &facts,
-            facts.statement,
-        )
+        .emit_statement(UserFuncName::user(0, 11), emitter.signature([], [types::I32]), &facts, facts.statement)
         .expect("verified return statement");
 
     let clif = function.display().to_string();
@@ -110,35 +92,19 @@ fn unterminated_statement_is_rejected_by_mandatory_verification() {
     }
 
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Expression.bd"));
     let generation = SyntaxGenerationId(9);
     let facts = ExpressionFacts(ReturnFacts {
-        statement: AstNodeKey {
-            unit,
-            generation,
-            node: AstNodeId(1),
-        },
-        value: AstNodeKey {
-            unit,
-            generation,
-            node: AstNodeId(2),
-        },
+        statement: AstNodeKey { unit, generation, node: AstNodeId(1) },
+        value: AstNodeKey { unit, generation, node: AstNodeId(2) },
     });
     let emitter = FunctionEmitter::new(isa.as_ref());
     // Unit signatures receive an implicit empty `return`; non-unit signatures must still
     // terminate explicitly or the emitter rejects the body before verification.
     let error = emitter
-        .emit_statement(
-            UserFuncName::user(0, 12),
-            emitter.signature([], [types::I32]),
-            &facts,
-            facts.0.statement,
-        )
+        .emit_statement(UserFuncName::user(0, 12), emitter.signature([], [types::I32]), &facts, facts.0.statement)
         .expect_err("unterminated non-unit CLIF must not escape the emitter");
 
     assert!(matches!(error, FunctionEmissionError::Verification { .. }));

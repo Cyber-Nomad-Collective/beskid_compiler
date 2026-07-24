@@ -40,11 +40,7 @@ pub(crate) fn get_or_compute_layout(
 }
 
 pub(crate) fn build_descriptor(layout: &TypeLayout) -> TypeDescriptorData {
-    TypeDescriptorData {
-        size: layout.size,
-        align: layout.align,
-        pointer_offsets: layout.pointer_offsets.clone(),
-    }
+    TypeDescriptorData { size: layout.size, align: layout.align, pointer_offsets: layout.pointer_offsets.clone() }
 }
 
 fn compute_layout(type_result: &TypeResult, type_id: TypeId) -> Option<TypeLayout> {
@@ -59,11 +55,7 @@ fn compute_layout(type_result: &TypeResult, type_id: TypeId) -> Option<TypeLayou
 }
 
 fn pointer_layout() -> TypeLayout {
-    TypeLayout {
-        size: std::mem::size_of::<usize>(),
-        align: std::mem::align_of::<usize>(),
-        pointer_offsets: Vec::new(),
-    }
+    TypeLayout { size: std::mem::size_of::<usize>(), align: std::mem::align_of::<usize>(), pointer_offsets: Vec::new() }
 }
 
 fn compute_named_layout(type_result: &TypeResult, item_id: ItemId) -> Option<TypeLayout> {
@@ -82,20 +74,14 @@ fn primitive_layout(primitive: beskid_analysis::hir::HirPrimitiveType) -> TypeLa
         beskid_analysis::hir::HirPrimitiveType::I32 => (4, 4),
         beskid_analysis::hir::HirPrimitiveType::I64 => (8, 8),
         beskid_analysis::hir::HirPrimitiveType::U8 => (1, 1),
-        beskid_analysis::hir::HirPrimitiveType::Word => {
-            (std::mem::size_of::<usize>(), std::mem::align_of::<usize>())
-        }
+        beskid_analysis::hir::HirPrimitiveType::Word => (std::mem::size_of::<usize>(), std::mem::align_of::<usize>()),
         beskid_analysis::hir::HirPrimitiveType::F64 => (8, 8),
         beskid_analysis::hir::HirPrimitiveType::Unit => (0, 1),
         beskid_analysis::hir::HirPrimitiveType::Never => (0, 1),
         beskid_analysis::hir::HirPrimitiveType::Char => (4, 4),
         beskid_analysis::hir::HirPrimitiveType::String => (8, 8),
     };
-    TypeLayout {
-        size,
-        align,
-        pointer_offsets: Vec::new(),
-    }
+    TypeLayout { size, align, pointer_offsets: Vec::new() }
 }
 
 fn struct_layout(type_result: &TypeResult, fields: &[(String, TypeId)]) -> TypeLayout {
@@ -114,11 +100,7 @@ fn struct_layout(type_result: &TypeResult, fields: &[(String, TypeId)]) -> TypeL
         }
     }
 
-    TypeLayout {
-        size: align_to(offset, align),
-        align,
-        pointer_offsets,
-    }
+    TypeLayout { size: align_to(offset, align), align, pointer_offsets }
 }
 
 fn enum_layout(type_result: &TypeResult, variants: &[(String, Vec<TypeId>)]) -> TypeLayout {
@@ -147,20 +129,11 @@ fn enum_layout(type_result: &TypeResult, variants: &[(String, Vec<TypeId>)]) -> 
     }
 
     let payload_start = align_to(HEADER_SIZE, payload_align.max(tag_align));
-    pointer_offsets
-        .iter_mut()
-        .for_each(|off| *off += payload_start);
+    pointer_offsets.iter_mut().for_each(|off| *off += payload_start);
 
-    let total_size = align_to(
-        payload_start + payload_size,
-        HEADER_ALIGN.max(payload_align),
-    );
+    let total_size = align_to(payload_start + payload_size, HEADER_ALIGN.max(payload_align));
 
-    TypeLayout {
-        size: total_size,
-        align: HEADER_ALIGN.max(payload_align),
-        pointer_offsets,
-    }
+    TypeLayout { size: total_size, align: HEADER_ALIGN.max(payload_align), pointer_offsets }
 }
 
 pub(crate) fn is_pointer_like_type(type_result: &TypeResult, type_id: TypeId) -> bool {
@@ -232,10 +205,7 @@ pub(crate) fn enum_variant_field_offsets(
     variant_name: &str,
 ) -> Option<Vec<usize>> {
     let variants = type_result.enum_variants_ordered.get(&item_id)?;
-    let fields = variants
-        .iter()
-        .find(|(name, _)| name == variant_name)
-        .map(|(_, fields)| fields)?;
+    let fields = variants.iter().find(|(name, _)| name == variant_name).map(|(_, fields)| fields)?;
     let payload_start = enum_payload_start(type_result, item_id)?;
     let mut offset = ENUM_TAG_SIZE;
     let mut align = ENUM_TAG_ALIGN;

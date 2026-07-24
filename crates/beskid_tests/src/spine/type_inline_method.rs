@@ -94,11 +94,6 @@ type Bad {
     let ast: Spanned<AstProgram> = program.into();
     let mut hir: Spanned<HirProgram> = lower_program(&ast);
     normalize_program(&mut hir).expect("normalize");
-    let errors = Resolver::new()
-        .resolve_program(&hir)
-        .expect_err("expected duplicate member error");
-    assert!(matches!(
-        errors.first(),
-        Some(ResolveError::DuplicateItem { .. })
-    ));
+    let errors = Resolver::new().resolve_program(&hir).expect_err("expected duplicate member error");
+    assert!(matches!(errors.first(), Some(ResolveError::DuplicateItem { .. })));
 }

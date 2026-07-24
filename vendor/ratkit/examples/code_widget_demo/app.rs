@@ -10,9 +10,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::{
-    prelude::{
-        run, CoordinatorAction, CoordinatorApp, CoordinatorEvent, LayoutResult, RunnerConfig,
-    },
+    prelude::{run, CoordinatorAction, CoordinatorApp, CoordinatorEvent, LayoutResult, RunnerConfig},
     widgets::{CodeState, CodeWidget},
 };
 
@@ -77,10 +75,7 @@ impl CodeWidgetDemo {
 
     /// Builds the code widget with demo options.
     pub(super) fn widget(&self) -> CodeWidget {
-        CodeWidget::from_state(&self.state)
-            .show_line_numbers(true)
-            .show_outline(true)
-            .language("rust")
+        CodeWidget::from_state(&self.state).show_line_numbers(true).show_outline(true).language("rust")
     }
 
     /// Draws the top development metrics bar.
@@ -90,8 +85,7 @@ impl CodeWidgetDemo {
             self.fps, self.redraws, self.mouse_x, self.mouse_y
         );
         frame.render_widget(
-            Paragraph::new(Line::from(dev_text))
-                .style(Style::default().fg(Color::Black).bg(Color::Cyan)),
+            Paragraph::new(Line::from(dev_text)).style(Style::default().fg(Color::Black).bg(Color::Cyan)),
             area,
         );
     }
@@ -132,10 +126,7 @@ impl CoordinatorApp for CodeWidgetDemo {
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(1), Constraint::Min(0)])
             .split(frame.area());
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .title("Code");
+        let block = Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title("Code");
         self.code_area = block.inner(chunks[1]);
         self.render_dev_bar(frame, chunks[0]);
         frame.render_widget(block, chunks[1]);
@@ -148,12 +139,6 @@ impl CoordinatorApp for CodeWidgetDemo {
 pub fn run_demo() -> std::io::Result<()> {
     let startup_started_at = Instant::now();
     let startup_probe = std::env::args().any(|arg| arg == "--startup-probe");
-    let config = RunnerConfig {
-        tick_rate: Duration::from_millis(250),
-        ..RunnerConfig::default()
-    };
-    run(
-        CodeWidgetDemo::new(startup_probe, startup_started_at),
-        config,
-    )
+    let config = RunnerConfig { tick_rate: Duration::from_millis(250), ..RunnerConfig::default() };
+    run(CodeWidgetDemo::new(startup_probe, startup_started_at), config)
 }

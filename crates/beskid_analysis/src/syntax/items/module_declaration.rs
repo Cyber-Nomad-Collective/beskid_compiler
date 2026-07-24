@@ -27,13 +27,6 @@ impl Parsable for ModuleDeclaration {
         let visibility = parse_visibility_or_default(&pair, &mut inner)?;
         let path = Path::parse(inner.next().ok_or(ParseError::missing(Rule::Path))?)?;
 
-        Ok(Spanned::new(
-            Self {
-                attributes,
-                visibility,
-                path,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { attributes, visibility, path }, span))
     }
 }

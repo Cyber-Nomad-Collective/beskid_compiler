@@ -7,9 +7,7 @@ pub struct HirQuery<'a> {
 
 impl<'a> HirQuery<'a> {
     pub fn from<T: Into<HirNodeRef<'a>>>(start: T) -> Self {
-        Self {
-            start: start.into(),
-        }
+        Self { start: start.into() }
     }
 
     pub fn descendants(self) -> HirDescendants<'a> {
@@ -20,10 +18,7 @@ impl<'a> HirQuery<'a> {
         self.descendants().filter_map(|node| node.of::<T>())
     }
 
-    pub fn filter(
-        self,
-        predicate: impl Fn(&HirNodeRef<'a>) -> bool + 'a,
-    ) -> impl Iterator<Item = HirNodeRef<'a>> + 'a {
+    pub fn filter(self, predicate: impl Fn(&HirNodeRef<'a>) -> bool + 'a) -> impl Iterator<Item = HirNodeRef<'a>> + 'a {
         self.descendants().filter(predicate)
     }
 

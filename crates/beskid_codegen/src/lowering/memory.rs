@@ -4,11 +4,7 @@ use cranelift_codegen::ir::{InstBuilder, MemFlags, Type, Value};
 use cranelift_frontend::FunctionBuilder;
 
 /// Narrow or widen `value` to match `target` for integer CLIF types.
-pub(crate) fn coerce_value_to_clif_type(
-    builder: &mut FunctionBuilder,
-    value: Value,
-    target: Type,
-) -> Value {
+pub(crate) fn coerce_value_to_clif_type(builder: &mut FunctionBuilder, value: Value, target: Type) -> Value {
     let value_ty = builder.func.dfg.value_type(value);
     if value_ty == target {
         return value;

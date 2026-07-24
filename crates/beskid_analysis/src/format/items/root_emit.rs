@@ -2,8 +2,8 @@ use crate::doc::LeadingDocComment;
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::format::items::helpers::emit_attribute_lines;
 use crate::syntax::{
-    HostBodyItem, HostDefinition, InlineModule, Node, Program, RegistryBlock, RegistryEntry,
-    ScopeDefinition, ScopeHook, ScopeHookKind, Spanned,
+    HostBodyItem, HostDefinition, InlineModule, Node, Program, RegistryBlock, RegistryEntry, ScopeDefinition,
+    ScopeHook, ScopeHookKind, Spanned,
 };
 use std::fmt::Write;
 

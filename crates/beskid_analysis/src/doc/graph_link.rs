@@ -37,11 +37,7 @@ impl ApiDocLinkContext {
             }
         }
         let (_, package) = best?;
-        if package == self.publishing_package {
-            None
-        } else {
-            Some(package)
-        }
+        if package == self.publishing_package { None } else { Some(package) }
     }
 }
 
@@ -80,25 +76,17 @@ fn module_path_for_row(item: &ApiDocItem) -> Vec<String> {
 }
 
 fn next_synthetic_id(items: &[ApiDocItem]) -> usize {
-    items
-        .iter()
-        .filter_map(|i| i.id)
-        .max()
-        .unwrap_or(0)
-        .saturating_add(1)
+    items.iter().filter_map(|i| i.id).max().unwrap_or(0).saturating_add(1)
 }
 
 fn stub_location_from(items: &[ApiDocItem]) -> ApiLocation {
-    items
-        .first()
-        .map(|i| i.location.clone())
-        .unwrap_or(ApiLocation {
-            file: String::new(),
-            start_line: 1,
-            start_column: 1,
-            end_line: 1,
-            end_column: 1,
-        })
+    items.first().map(|i| i.location.clone()).unwrap_or(ApiLocation {
+        file: String::new(),
+        start_line: 1,
+        start_column: 1,
+        end_line: 1,
+        end_column: 1,
+    })
 }
 
 /// Populate `declaringPackage` from [`ApiDocLinkContext`].
@@ -236,13 +224,7 @@ mod tests {
     use crate::resolve::{ModuleGraph, Resolution, ResolutionTables};
 
     fn sample_location() -> ApiLocation {
-        ApiLocation {
-            file: "src/A.bd".into(),
-            start_line: 1,
-            start_column: 1,
-            end_line: 1,
-            end_column: 1,
-        }
+        ApiLocation { file: "src/A.bd".into(), start_line: 1, start_column: 1, end_line: 1, end_column: 1 }
     }
 
     fn empty_resolution() -> Resolution {
@@ -341,10 +323,7 @@ mod tests {
         let button = items.iter().find(|i| i.id == Some(3)).expect("button");
         assert_eq!(button.parent_id, Some(2));
 
-        let roots: Vec<_> = items
-            .iter()
-            .filter(|i| i.parent_id.is_none() && i.kind == KIND_MODULE)
-            .collect();
+        let roots: Vec<_> = items.iter().filter(|i| i.parent_id.is_none() && i.kind == KIND_MODULE).collect();
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].id, Some(1));
     }

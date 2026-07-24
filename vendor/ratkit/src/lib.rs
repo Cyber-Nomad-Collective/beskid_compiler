@@ -100,17 +100,17 @@ pub mod services;
 pub use runner_helper::{run, run_with_diagnostics};
 
 pub use core::{
-    CoordinatorAction, CoordinatorApp, CoordinatorConfig, CoordinatorEvent, Element, ElementHandle,
-    ElementId, ElementMetadata, FocusRequest, KeyboardEvent, LayoutCoordinator, LayoutError,
-    LayoutResult, MouseEvent, MouseRouterConfig, RedrawSignal, ResizeEvent, Runner, RunnerAction,
-    RunnerConfig, RunnerEvent, TickEvent, Visibility,
+    CoordinatorAction, CoordinatorApp, CoordinatorConfig, CoordinatorEvent, Element, ElementHandle, ElementId,
+    ElementMetadata, FocusRequest, KeyboardEvent, LayoutCoordinator, LayoutError, LayoutResult, MouseEvent,
+    MouseRouterConfig, RedrawSignal, ResizeEvent, Runner, RunnerAction, RunnerConfig, RunnerEvent, TickEvent,
+    Visibility,
 };
 
 /// Runner-first imports for applications.
 pub mod prelude {
     pub use crate::{
-        run, run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorConfig,
-        CoordinatorEvent, KeyboardEvent, LayoutResult, MouseEvent, MouseRouterConfig, ResizeEvent,
-        Runner, RunnerAction, RunnerConfig, RunnerEvent, TickEvent,
+        run, run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorConfig, CoordinatorEvent,
+        KeyboardEvent, LayoutResult, MouseEvent, MouseRouterConfig, ResizeEvent, Runner, RunnerAction, RunnerConfig,
+        RunnerEvent, TickEvent,
     };
 }

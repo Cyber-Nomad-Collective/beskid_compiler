@@ -45,11 +45,7 @@ use crate::widgets::markdown_preview::services::theme::loader::theme_json::Color
 /// let color = resolve_color_value(&reference, &defs, ThemeVariant::Dark);
 /// assert_eq!(color, Some(Color::Rgb(0, 0, 255)));
 /// ```
-pub fn resolve_color_value(
-    value: &ColorValue,
-    defs: &HashMap<String, String>,
-    variant: ThemeVariant,
-) -> Option<Color> {
+pub fn resolve_color_value(value: &ColorValue, defs: &HashMap<String, String>, variant: ThemeVariant) -> Option<Color> {
     match value {
         ColorValue::Direct(s) => resolve_string(s, defs),
         ColorValue::Variant { dark, light } => {
@@ -112,10 +108,7 @@ mod tests {
         defs.insert("darkBlue".to_string(), "#458588".to_string());
         defs.insert("lightBlue".to_string(), "#076678".to_string());
 
-        let value = ColorValue::Variant {
-            dark: "darkBlue".to_string(),
-            light: "lightBlue".to_string(),
-        };
+        let value = ColorValue::Variant { dark: "darkBlue".to_string(), light: "lightBlue".to_string() };
 
         let dark_result = resolve_color_value(&value, &defs, ThemeVariant::Dark);
         assert_eq!(dark_result, Some(Color::Rgb(69, 133, 136)));

@@ -26,9 +26,7 @@ pub fn collect_git_changes(repo_path: &Path, include_untracked: bool) -> GitChan
 
 fn parse_porcelain_status(output: &[u8], include_untracked: bool) -> GitChangeSet {
     let mut changes = GitChangeSet::default();
-    let mut entries = output
-        .split(|byte| *byte == 0)
-        .filter(|entry| !entry.is_empty());
+    let mut entries = output.split(|byte| *byte == 0).filter(|entry| !entry.is_empty());
 
     while let Some(entry) = entries.next() {
         if entry.len() < 3 {
@@ -47,11 +45,8 @@ fn parse_porcelain_status(output: &[u8], include_untracked: bool) -> GitChangeSe
             continue;
         }
 
-        let path_bytes = if is_rename_like(status_x, status_y) {
-            entries.next().unwrap_or(&entry[3..])
-        } else {
-            &entry[3..]
-        };
+        let path_bytes =
+            if is_rename_like(status_x, status_y) { entries.next().unwrap_or(&entry[3..]) } else { &entry[3..] };
 
         if path_bytes.is_empty() {
             continue;

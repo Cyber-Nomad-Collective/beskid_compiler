@@ -14,9 +14,7 @@ pub const INLINE_CODE_BG: Color = Color::Rgb(17, 19, 23);
 pub const INLINE_CODE_FG_FALLBACK: Color = Color::Rgb(240, 113, 120);
 
 pub fn inline_code_fg(app_theme: Option<&AppTheme>) -> Color {
-    app_theme
-        .map(|theme| theme.markdown.code)
-        .unwrap_or(INLINE_CODE_FG_FALLBACK)
+    app_theme.map(|theme| theme.markdown.code).unwrap_or(INLINE_CODE_FG_FALLBACK)
 }
 
 pub fn inline_code_style(base_style: Style, app_theme: Option<&AppTheme>) -> Style {
@@ -26,29 +24,13 @@ pub fn inline_code_style(base_style: Style, app_theme: Option<&AppTheme>) -> Sty
 pub fn render_text_segment(segment: &TextSegment, base_style: Style) -> Span<'static> {
     match segment {
         TextSegment::Plain(text) => Span::styled(text.clone(), base_style),
-        TextSegment::Bold(text) => {
-            Span::styled(text.clone(), base_style.add_modifier(Modifier::BOLD))
+        TextSegment::Bold(text) => Span::styled(text.clone(), base_style.add_modifier(Modifier::BOLD)),
+        TextSegment::Italic(text) => Span::styled(text.clone(), base_style.add_modifier(Modifier::ITALIC)),
+        TextSegment::BoldItalic(text) => {
+            Span::styled(text.clone(), base_style.add_modifier(Modifier::BOLD).add_modifier(Modifier::ITALIC))
         }
-        TextSegment::Italic(text) => {
-            Span::styled(text.clone(), base_style.add_modifier(Modifier::ITALIC))
-        }
-        TextSegment::BoldItalic(text) => Span::styled(
-            text.clone(),
-            base_style
-                .add_modifier(Modifier::BOLD)
-                .add_modifier(Modifier::ITALIC),
-        ),
-        TextSegment::InlineCode(text) => {
-            Span::styled(format!(" {} ", text), inline_code_style(base_style, None))
-        }
-        TextSegment::Link {
-            text,
-            url,
-            is_autolink,
-            bold,
-            italic,
-            show_icon,
-        } => {
+        TextSegment::InlineCode(text) => Span::styled(format!(" {} ", text), inline_code_style(base_style, None)),
+        TextSegment::Link { text, url, is_autolink, bold, italic, show_icon } => {
             // Only show icon for first segment of a link
             let full_text = if *show_icon {
                 let icon = get_link_icon(url);
@@ -78,18 +60,12 @@ pub fn render_text_segment(segment: &TextSegment, base_style: Style) -> Span<'st
 
             Span::styled(full_text, style)
         }
-        TextSegment::Strikethrough(text) => Span::styled(
-            text.clone(),
-            base_style
-                .fg(Color::Rgb(150, 150, 150))
-                .add_modifier(Modifier::CROSSED_OUT),
-        ),
-        TextSegment::Html(text) => Span::styled(
-            text.clone(),
-            base_style
-                .fg(Color::Rgb(100, 180, 100))
-                .add_modifier(Modifier::ITALIC),
-        ),
+        TextSegment::Strikethrough(text) => {
+            Span::styled(text.clone(), base_style.fg(Color::Rgb(150, 150, 150)).add_modifier(Modifier::CROSSED_OUT))
+        }
+        TextSegment::Html(text) => {
+            Span::styled(text.clone(), base_style.fg(Color::Rgb(100, 180, 100)).add_modifier(Modifier::ITALIC))
+        }
         TextSegment::Checkbox(state) => {
             let (icon, color) = match state {
                 CheckboxState::Unchecked => (CHECKBOX_UNCHECKED, Color::Rgb(180, 180, 180)),
@@ -110,12 +86,7 @@ pub fn segments_to_plain_text(segments: &[TextSegment]) -> String {
             TextSegment::Italic(text) => text.clone(),
             TextSegment::BoldItalic(text) => text.clone(),
             TextSegment::InlineCode(text) => format!("`{}`", text),
-            TextSegment::Link {
-                text,
-                url,
-                show_icon,
-                ..
-            } => {
+            TextSegment::Link { text, url, show_icon, .. } => {
                 // Only include icon if show_icon is true (first segment of link)
                 if *show_icon {
                     let icon = get_link_icon(url);

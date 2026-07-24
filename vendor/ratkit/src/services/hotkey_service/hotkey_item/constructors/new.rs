@@ -21,12 +21,7 @@ impl Hotkey {
     /// let hotkey = Hotkey::new("q", "Quit application");
     /// ```
     pub fn new(key: &str, description: &str) -> Self {
-        Self {
-            key: key.to_string(),
-            description: description.to_string(),
-            scope: HotkeyScope::Global,
-            priority: 0,
-        }
+        Self { key: key.to_string(), description: description.to_string(), scope: HotkeyScope::Global, priority: 0 }
     }
 
     /// Set the scope for this hotkey.

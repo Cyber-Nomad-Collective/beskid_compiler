@@ -32,9 +32,7 @@ fn pool() -> &'static PoolInner {
     POOL.get_or_init(|| {
         let (tx, rx) = mpsc::sync_channel::<SyscallJob>(1024);
         let rx = Arc::new(Mutex::new(rx));
-        let worker_count = std::thread::available_parallelism()
-            .map(|n| n.get().max(2))
-            .unwrap_or(2);
+        let worker_count = std::thread::available_parallelism().map(|n| n.get().max(2)).unwrap_or(2);
         for id in 0..worker_count {
             let rx = Arc::clone(&rx);
             thread::Builder::new()
@@ -69,20 +67,9 @@ where
     F: FnOnce() -> T + Send + 'static,
 {
     let (done_tx, done_rx) = mpsc::channel();
-    pool()
-        .jobs
-        .send(SyscallJob {
-            fiber,
-            task: Box::new(|| Box::new(task())),
-            done_tx,
-        })
-        .expect("syscall job send");
+    pool().jobs.send(SyscallJob { fiber, task: Box::new(|| Box::new(task())), done_tx }).expect("syscall job send");
     park_current(|_| {});
-    *done_rx
-        .recv()
-        .expect("syscall job result")
-        .downcast::<T>()
-        .expect("syscall result type")
+    *done_rx.recv().expect("syscall job result").downcast::<T>().expect("syscall result type")
 }
 
 /// Run an integer-returning task on a pool thread and park the current fiber until it completes.

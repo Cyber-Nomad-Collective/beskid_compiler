@@ -8,10 +8,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::primitives::scroll::calculate_scroll_offset;
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, KeyboardEvent,
-    RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, KeyboardEvent, RunnerConfig};
 
 struct ScrollDemo {
     selected: usize,
@@ -64,13 +61,7 @@ impl CoordinatorApp for ScrollDemo {
         let offset = calculate_scroll_offset(self.selected, visible_count.max(1), self.items.len());
 
         let mut lines = Vec::new();
-        for (idx, item) in self
-            .items
-            .iter()
-            .enumerate()
-            .skip(offset)
-            .take(visible_count)
-        {
+        for (idx, item) in self.items.iter().enumerate().skip(offset).take(visible_count) {
             if idx == self.selected {
                 lines.push(Line::from(format!("> {}", item)));
             } else {
@@ -78,8 +69,7 @@ impl CoordinatorApp for ScrollDemo {
             }
         }
 
-        let body =
-            Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" Items "));
+        let body = Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" Items "));
         frame.render_widget(body, chunks[1]);
     }
 }

@@ -150,17 +150,7 @@ impl SyntaxColors {
         operator: Color,
         punctuation: Color,
     ) -> Self {
-        Self {
-            comment,
-            keyword,
-            function,
-            variable,
-            string,
-            number,
-            type_,
-            operator,
-            punctuation,
-        }
+        Self { comment, keyword, function, variable, string, number, type_, operator, punctuation }
     }
 }
 

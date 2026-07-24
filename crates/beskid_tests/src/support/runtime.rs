@@ -6,8 +6,8 @@ use std::sync::Arc;
 use abfall::Heap;
 use beskid_aot::{AotRunRequest, BuildProfile, build_and_run, default_runtime_strategy};
 use beskid_runtime::{
-    RuntimeRoot, clear_current_heap, clear_current_root, enter_runtime_scope, leave_runtime_scope,
-    scheduler_init, set_current_heap, set_current_root,
+    RuntimeRoot, clear_current_heap, clear_current_root, enter_runtime_scope, leave_runtime_scope, scheduler_init,
+    set_current_heap, set_current_root,
 };
 
 use crate::test_harness::temp_case_dir;

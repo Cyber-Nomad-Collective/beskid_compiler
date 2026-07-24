@@ -38,15 +38,12 @@ pub fn typecheck(source: &str) -> Result<TypeResult, Vec<TypeError>> {
 
 pub fn typecheck_hir(source: &str) -> (Spanned<HirProgram>, Resolution, TypeResult) {
     let program = parse_program(source);
-    lower_normalize_resolve_type_spanned(&program)
-        .unwrap_or_else(|err| panic!("expected type success: {err}"))
+    lower_normalize_resolve_type_spanned(&program).unwrap_or_else(|err| panic!("expected type success: {err}"))
 }
 
 pub fn lower_resolve(source: &str) -> (Spanned<HirProgram>, Resolution) {
     let mut hir = lower_to_hir(source);
     normalize_program(&mut hir).expect("normalization failed");
-    let resolution = Resolver::new()
-        .resolve_program(&hir)
-        .expect("expected resolution to succeed");
+    let resolution = Resolver::new().resolve_program(&hir).expect("expected resolution to succeed");
     (hir, resolution)
 }

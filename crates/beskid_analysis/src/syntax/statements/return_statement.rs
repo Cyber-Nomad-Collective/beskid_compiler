@@ -17,11 +17,7 @@ pub struct ReturnStatement {
 impl Parsable for ReturnStatement {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
-        let value = pair
-            .into_inner()
-            .next()
-            .map(Expression::parse)
-            .transpose()?;
+        let value = pair.into_inner().next().map(Expression::parse).transpose()?;
 
         Ok(Spanned::new(Self { value }, span))
     }

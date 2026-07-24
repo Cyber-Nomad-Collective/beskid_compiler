@@ -12,47 +12,31 @@ use crate::expand::expand_syntax_for_assembly;
 use crate::inputs::ProjectSession;
 use crate::stats::{record_query_hit, record_query_miss};
 
-pub fn unit_materializer_for(
-    db: Arc<Mutex<BeskidDatabase>>,
-    session: ProjectSession,
-) -> UnitMaterializer {
+pub fn unit_materializer_for(db: Arc<Mutex<BeskidDatabase>>, session: ProjectSession) -> UnitMaterializer {
     Arc::new(move |path: &Path, source: &str| {
         let _ = session;
         let fp = content_fingerprint(source);
         if let Some(unit) = cached_unit(&db, &fp) {
             record_query_hit();
-            let hir = build_hir_units(std::slice::from_ref(&unit))
-                .into_iter()
-                .next()
-                .expect("unit hir");
+            let hir = build_hir_units(std::slice::from_ref(&unit)).into_iter().next().expect("unit hir");
             return Ok((unit, hir));
         }
 
         record_query_miss();
         let unit = parse_unit(path.to_path_buf(), source)?;
-        let hir = build_hir_units(std::slice::from_ref(&unit))
-            .into_iter()
-            .next()
-            .expect("unit hir");
+        let hir = build_hir_units(std::slice::from_ref(&unit)).into_iter().next().expect("unit hir");
         insert_cache(&db, fp, &unit);
         Ok((unit, hir))
     })
 }
 
-fn cached_unit(
-    db: &Arc<Mutex<BeskidDatabase>>,
-    fp: &str,
-) -> Option<beskid_analysis::projects::assembly::SourceUnit> {
+fn cached_unit(db: &Arc<Mutex<BeskidDatabase>>, fp: &str) -> Option<beskid_analysis::projects::assembly::SourceUnit> {
     let guard = db.lock().expect("beskid database lock");
     let cache = guard.unit_cache().lock().expect("unit cache");
     Some(cache.source_units.get(fp)?.as_ref().clone())
 }
 
-fn insert_cache(
-    db: &Arc<Mutex<BeskidDatabase>>,
-    fp: String,
-    unit: &beskid_analysis::projects::assembly::SourceUnit,
-) {
+fn insert_cache(db: &Arc<Mutex<BeskidDatabase>>, fp: String, unit: &beskid_analysis::projects::assembly::SourceUnit) {
     let guard = db.lock().expect("beskid database lock");
     let mut cache = guard.unit_cache().lock().expect("unit cache");
     cache.source_units.insert(fp, Arc::new(unit.clone()));
@@ -61,19 +45,11 @@ fn insert_cache(
 fn parse_unit(
     path: PathBuf,
     source: &str,
-) -> Result<beskid_analysis::projects::assembly::SourceUnit, beskid_analysis::projects::AssemblyError>
-{
+) -> Result<beskid_analysis::projects::assembly::SourceUnit, beskid_analysis::projects::AssemblyError> {
     let logical_name = path.display().to_string();
-    let program = parse_program_with_source_name(&logical_name, source)
-        .map(expand_syntax_for_assembly)
-        .map_err(|err| beskid_analysis::projects::AssemblyError::Parse {
-            path: path.clone(),
-            message: err.to_string(),
+    let program =
+        parse_program_with_source_name(&logical_name, source).map(expand_syntax_for_assembly).map_err(|err| {
+            beskid_analysis::projects::AssemblyError::Parse { path: path.clone(), message: err.to_string() }
         })?;
-    Ok(beskid_analysis::projects::assembly::SourceUnit {
-        logical_name,
-        path,
-        source: source.to_string(),
-        program,
-    })
+    Ok(beskid_analysis::projects::assembly::SourceUnit { logical_name, path, source: source.to_string(), program })
 }

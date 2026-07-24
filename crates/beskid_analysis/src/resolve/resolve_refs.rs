@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::hir::{
-    HirBlock, HirContractNode, HirEnumPath, HirExpressionNode, HirItem, HirPath, HirPattern,
-    HirProgram, HirStatementNode, HirStructLiteralField, HirType, HirVisibility,
+    HirBlock, HirContractNode, HirEnumPath, HirExpressionNode, HirItem, HirPath, HirPattern, HirProgram,
+    HirStatementNode, HirStructLiteralField, HirType, HirVisibility,
 };
 use crate::syntax::{self, Spanned};
 
@@ -33,10 +33,7 @@ impl Resolver {
         self.resolve_collected_program(program)
     }
 
-    pub fn resolve_collected_program(
-        &mut self,
-        program: &Spanned<HirProgram>,
-    ) -> ResolveResult<Resolution> {
+    pub fn resolve_collected_program(&mut self, program: &Spanned<HirProgram>) -> ResolveResult<Resolution> {
         let file_scoped_module_index = resolver::file_scoped_module_index(program);
         self.current_module = resolver::file_scoped_module_path(program)
             .map(|path| self.module_graph.ensure_module_path(&path))
@@ -48,11 +45,7 @@ impl Resolver {
             self.resolve_item(item);
         }
 
-        if self.errors.is_empty() {
-            Ok(self.take_resolution())
-        } else {
-            Err(std::mem::take(&mut self.errors))
-        }
+        if self.errors.is_empty() { Ok(self.take_resolution()) } else { Err(std::mem::take(&mut self.errors)) }
     }
 
     pub fn resolve_collected_program_for_api_documentation(
@@ -64,8 +57,7 @@ impl Resolver {
         self.current_module = logical_module_path
             .map(|path| self.module_graph.ensure_module_path(path))
             .or_else(|| {
-                resolver::file_scoped_module_path(program)
-                    .map(|path| self.module_graph.ensure_module_path(&path))
+                resolver::file_scoped_module_path(program).map(|path| self.module_graph.ensure_module_path(&path))
             })
             .unwrap_or(self.module_graph.root());
         for (index, item) in program.node.items.iter().enumerate() {
@@ -102,13 +94,7 @@ impl Resolver {
         super::symbol::SymbolRegistry,
         HashMap<super::symbol::SymbolId, ItemId>,
     ) {
-        (
-            self.items,
-            self.module_graph,
-            self.builtin_items,
-            self.symbols,
-            self.by_symbol,
-        )
+        (self.items, self.module_graph, self.builtin_items, self.symbols, self.by_symbol)
     }
 
     fn resolve_item(&mut self, item: &Spanned<HirItem>) {
@@ -135,8 +121,7 @@ impl Resolver {
                 self.push_scope();
                 self.resolve_type(&def.node.receiver_type);
                 let previous_receiver = self.current_receiver_item_id;
-                self.current_receiver_item_id =
-                    self.receiver_item_id_for_type(&def.node.receiver_type);
+                self.current_receiver_item_id = self.receiver_item_id_for_type(&def.node.receiver_type);
                 self.insert_local("this", def.node.receiver_type.span);
                 for param in &def.node.parameters {
                     self.resolve_type(&param.node.ty);
@@ -155,8 +140,7 @@ impl Resolver {
                     self.push_scope();
                     self.resolve_type(&method.node.receiver_type);
                     let previous_receiver = self.current_receiver_item_id;
-                    self.current_receiver_item_id =
-                        self.receiver_item_id_for_type(&method.node.receiver_type);
+                    self.current_receiver_item_id = self.receiver_item_id_for_type(&method.node.receiver_type);
                     self.insert_local("this", method.node.receiver_type.span);
                     for param in &method.node.parameters {
                         self.resolve_type(&param.node.ty);
@@ -188,11 +172,8 @@ impl Resolver {
             HirItem::InlineModule(def) => {
                 self.push_scope();
                 let previous_module = self.current_module;
-                let mut module_path = self
-                    .module_graph
-                    .module(self.current_module)
-                    .map(|module| module.path.clone())
-                    .unwrap_or_default();
+                let mut module_path =
+                    self.module_graph.module(self.current_module).map(|module| module.path.clone()).unwrap_or_default();
                 module_path.push(def.node.name.node.name.clone());
                 let child_id = self.module_graph.ensure_module_path(&module_path);
                 self.current_module = child_id;
@@ -218,16 +199,8 @@ impl Resolver {
                     else {
                         continue;
                     };
-                    if self
-                        .items
-                        .get(conformance_item_id.0)
-                        .is_some_and(|info| info.kind == ItemKind::Contract)
-                    {
-                        self.tables.insert_type_conformance(
-                            type_item_id,
-                            *conformance_item_id,
-                            conformance.span,
-                        );
+                    if self.items.get(conformance_item_id.0).is_some_and(|info| info.kind == ItemKind::Contract) {
+                        self.tables.insert_type_conformance(type_item_id, *conformance_item_id, conformance.span);
                     } else if let Some(item) = self.items.get(conformance_item_id.0) {
                         self.errors.push(ResolveError::InvalidConformanceTarget {
                             name: item.name.clone(),
@@ -242,8 +215,7 @@ impl Resolver {
                     self.push_scope();
                     self.resolve_type(&method.node.receiver_type);
                     let previous_receiver = self.current_receiver_item_id;
-                    self.current_receiver_item_id =
-                        self.receiver_item_id_for_type(&method.node.receiver_type);
+                    self.current_receiver_item_id = self.receiver_item_id_for_type(&method.node.receiver_type);
                     self.insert_local("this", method.node.receiver_type.span);
                     for param in &method.node.parameters {
                         self.resolve_type(&param.node.ty);
@@ -332,10 +304,7 @@ impl Resolver {
             HirStatementNode::ForStatement(for_stmt) => {
                 self.resolve_expression(&for_stmt.node.iterable);
                 self.push_scope();
-                self.insert_local(
-                    &for_stmt.node.iterator.node.name,
-                    for_stmt.node.iterator.span,
-                );
+                self.insert_local(&for_stmt.node.iterator.node.name, for_stmt.node.iterator.span);
                 for stmt in &for_stmt.node.body.node.statements {
                     self.resolve_statement(stmt);
                 }
@@ -474,10 +443,7 @@ impl Resolver {
                 self.resolve_type_path(path);
             }
             HirType::Array(inner) => self.resolve_type(inner),
-            HirType::Function {
-                return_type,
-                parameters,
-            } => {
+            HirType::Function { return_type, parameters } => {
                 self.resolve_type(return_type);
                 for parameter in parameters {
                     self.resolve_type(parameter);
@@ -489,75 +455,53 @@ impl Resolver {
     fn resolve_value_path(&mut self, path: &Spanned<HirPath>) {
         let segments = resolver::path_segments(path);
         if segments.is_empty() {
-            self.errors.push(ResolveError::UnknownValue {
-                name: "<unnamed>".to_string(),
-                span: path.span,
-            });
+            self.errors.push(ResolveError::UnknownValue { name: "<unnamed>".to_string(), span: path.span });
             return;
         }
         if segments.len() == 1 {
             let name = &segments[0];
             if let Some(local) = self.resolve_local(name) {
-                self.tables
-                    .insert_value(path.span, ResolvedValue::Local(local));
+                self.tables.insert_value(path.span, ResolvedValue::Local(local));
                 return;
             }
             if self.receiver_has_field(name)
                 && let Some(this_local) = self.resolve_local("this")
             {
-                self.tables
-                    .insert_value(path.span, ResolvedValue::Local(this_local));
+                self.tables.insert_value(path.span, ResolvedValue::Local(this_local));
                 return;
             }
             if let Some(item) = self.resolve_item_in_scope(name) {
-                self.tables
-                    .insert_value(path.span, ResolvedValue::Item(item));
+                self.tables.insert_value(path.span, ResolvedValue::Item(item));
                 return;
             }
-            self.errors.push(ResolveError::UnknownValue {
-                name: (*name).clone(),
-                span: path.span,
-            });
+            self.errors.push(ResolveError::UnknownValue { name: (*name).clone(), span: path.span });
             return;
         }
         if segments.len() >= 2 {
             if let Some(local) = self.resolve_local(&segments[0]) {
-                self.tables
-                    .insert_value(path.span, ResolvedValue::Local(local));
+                self.tables.insert_value(path.span, ResolvedValue::Local(local));
                 return;
             }
             if self.resolve_item_in_scope(&segments[0]).is_none()
-                && self
-                    .module_graph
-                    .module_id(std::slice::from_ref(&segments[0]))
-                    .is_none()
+                && self.module_graph.module_id(std::slice::from_ref(&segments[0])).is_none()
                 && !self.module_imports.contains_key(&segments[0])
             {
-                self.errors.push(ResolveError::UnknownValue {
-                    name: segments[0].clone(),
-                    span: path.span,
-                });
+                self.errors.push(ResolveError::UnknownValue { name: segments[0].clone(), span: path.span });
                 return;
             }
         }
         let lookup_segments = self.expand_import_alias(&segments);
         match self.resolve_item_in_module_path(&segments, &lookup_segments) {
             ModulePathLookup::Found(item) => {
-                self.tables
-                    .insert_value(path.span, ResolvedValue::Item(item));
+                self.tables.insert_value(path.span, ResolvedValue::Item(item));
             }
             ModulePathLookup::ModuleMissing => {
                 if let Some(local) = self.resolve_local(&segments[0]) {
-                    self.tables
-                        .insert_value(path.span, ResolvedValue::Local(local));
+                    self.tables.insert_value(path.span, ResolvedValue::Local(local));
                 } else if let Some(item) = self.resolve_item_in_scope(&segments[0])
-                    && self
-                        .items
-                        .get(item.0)
-                        .is_some_and(|info| info.kind == ItemKind::Contract)
+                    && self.items.get(item.0).is_some_and(|info| info.kind == ItemKind::Contract)
                 {
-                    self.tables
-                        .insert_value(path.span, ResolvedValue::Item(item));
+                    self.tables.insert_value(path.span, ResolvedValue::Item(item));
                 } else {
                     self.errors.push(ResolveError::UnknownModulePath {
                         path: segments[..segments.len() - 1].join("::"),
@@ -566,18 +510,10 @@ impl Resolver {
                 }
             }
             ModulePathLookup::NameMissing { module_path, name } => {
-                self.errors.push(ResolveError::UnknownValueInModule {
-                    module_path,
-                    name,
-                    span: path.span,
-                });
+                self.errors.push(ResolveError::UnknownValueInModule { module_path, name, span: path.span });
             }
             ModulePathLookup::NotVisible { module_path, name } => {
-                self.errors.push(ResolveError::PrivateItemInModule {
-                    module_path,
-                    name,
-                    span: path.span,
-                });
+                self.errors.push(ResolveError::PrivateItemInModule { module_path, name, span: path.span });
             }
         }
     }
@@ -585,27 +521,20 @@ impl Resolver {
     fn resolve_type_path(&mut self, path: &Spanned<HirPath>) {
         let segments = resolver::path_segments(path);
         if segments.is_empty() {
-            self.errors.push(ResolveError::UnknownType {
-                name: "<unnamed>".to_string(),
-                span: path.span,
-            });
+            self.errors.push(ResolveError::UnknownType { name: "<unnamed>".to_string(), span: path.span });
             return;
         }
         if segments.len() == 1 {
             let name = &segments[0];
             if self.is_generic(name) {
-                self.tables
-                    .insert_type(path.span, ResolvedType::Generic(name.clone()));
+                self.tables.insert_type(path.span, ResolvedType::Generic(name.clone()));
                 return;
             }
             if let Some(item) = self.resolve_item_in_scope(name) {
                 self.tables.insert_type(path.span, ResolvedType::Item(item));
                 return;
             }
-            self.errors.push(ResolveError::UnknownType {
-                name: (*name).clone(),
-                span: path.span,
-            });
+            self.errors.push(ResolveError::UnknownType { name: (*name).clone(), span: path.span });
             return;
         }
         let lookup_segments = self.expand_import_alias(&segments);
@@ -620,30 +549,17 @@ impl Resolver {
                 });
             }
             ModulePathLookup::NameMissing { module_path, name } => {
-                self.errors.push(ResolveError::UnknownTypeInModule {
-                    module_path,
-                    name,
-                    span: path.span,
-                });
+                self.errors.push(ResolveError::UnknownTypeInModule { module_path, name, span: path.span });
             }
             ModulePathLookup::NotVisible { module_path, name } => {
-                self.errors.push(ResolveError::PrivateItemInModule {
-                    module_path,
-                    name,
-                    span: path.span,
-                });
+                self.errors.push(ResolveError::PrivateItemInModule { module_path, name, span: path.span });
             }
         }
     }
 
     fn resolve_enum_path(&mut self, path: &Spanned<HirEnumPath>) {
         self.resolve_type_path(&path.node.type_path);
-        if let Some(resolved) = self
-            .tables
-            .resolved_types
-            .get(&path.node.type_path.span)
-            .cloned()
-        {
+        if let Some(resolved) = self.tables.resolved_types.get(&path.node.type_path.span).cloned() {
             self.tables.insert_type(path.span, resolved);
         }
     }
@@ -657,10 +573,7 @@ impl Resolver {
     }
 
     fn is_generic(&self, name: &str) -> bool {
-        self.generic_scopes
-            .iter()
-            .rev()
-            .any(|scope| scope.contains_key(name))
+        self.generic_scopes.iter().rev().any(|scope| scope.contains_key(name))
     }
 
     fn resolve_local(&self, name: &str) -> Option<LocalId> {
@@ -714,9 +627,7 @@ impl Resolver {
             && let Some(base_module) = self.module_imports.get(&original_segments[0])
         {
             let member = &original_segments[original_segments.len() - 1];
-            if let ModulePathLookup::Found(item) =
-                self.lookup_named_item_in_module(base_module, member)
-            {
+            if let ModulePathLookup::Found(item) = self.lookup_named_item_in_module(base_module, member) {
                 return ModulePathLookup::Found(item);
             }
         }
@@ -724,11 +635,8 @@ impl Resolver {
         // `Console.Controls.Panel.Panel.Render` — skip homonymous type segment in fully qualified paths.
         if original_segments.len() >= 4 {
             let member = &original_segments[original_segments.len() - 1];
-            let module_path: Vec<String> =
-                original_segments[..original_segments.len() - 2].to_vec();
-            if let ModulePathLookup::Found(item) =
-                self.lookup_named_item_in_module(&module_path, member)
-            {
+            let module_path: Vec<String> = original_segments[..original_segments.len() - 2].to_vec();
+            if let ModulePathLookup::Found(item) = self.lookup_named_item_in_module(&module_path, member) {
                 return ModulePathLookup::Found(item);
             }
         }
@@ -757,23 +665,14 @@ impl Resolver {
         let module_path_string = module_path.join("::");
         if let Some(item) = module.scope.get(name).copied() {
             if !module_path.is_empty()
-                && self
-                    .items
-                    .get(item.0)
-                    .is_some_and(|info| info.visibility == HirVisibility::Private)
+                && self.items.get(item.0).is_some_and(|info| info.visibility == HirVisibility::Private)
             {
-                ModulePathLookup::NotVisible {
-                    module_path: module_path_string,
-                    name: name.to_string(),
-                }
+                ModulePathLookup::NotVisible { module_path: module_path_string, name: name.to_string() }
             } else {
                 ModulePathLookup::Found(item)
             }
         } else {
-            ModulePathLookup::NameMissing {
-                module_path: module_path_string,
-                name: name.to_string(),
-            }
+            ModulePathLookup::NameMissing { module_path: module_path_string, name: name.to_string() }
         }
     }
 
@@ -801,66 +700,38 @@ impl Resolver {
             return false;
         };
         let member_name = format!("{}::{}", receiver.name, field_name);
-        self.items
-            .iter()
-            .any(|info| info.kind == ItemKind::Field && info.name == member_name)
+        self.items.iter().any(|info| info.kind == ItemKind::Field && info.name == member_name)
     }
 
     fn insert_local(&mut self, name: &str, span: syntax::SpanInfo) {
         if let Some((_, previous_span)) = self.find_shadowed_local(name) {
-            self.warnings.push(ResolveWarning::ShadowedLocal {
-                name: name.to_string(),
-                span,
-                previous: previous_span,
-            });
+            self.warnings.push(ResolveWarning::ShadowedLocal { name: name.to_string(), span, previous: previous_span });
         } else if let Some(previous_item) = self.resolve_item_in_scope(name) {
-            let previous_span = self
-                .items
-                .get(previous_item.0)
-                .map(|item| item.span)
-                .unwrap_or(span);
-            self.warnings.push(ResolveWarning::ShadowedLocal {
-                name: name.to_string(),
-                span,
-                previous: previous_span,
-            });
+            let previous_span = self.items.get(previous_item.0).map(|item| item.span).unwrap_or(span);
+            self.warnings.push(ResolveWarning::ShadowedLocal { name: name.to_string(), span, previous: previous_span });
         }
         let scope = match self.local_scopes.last_mut() {
             Some(scope) => scope,
             None => return,
         };
         if let Some(prev) = scope.get(name).copied() {
-            let previous = self
-                .tables
-                .local_info(prev)
-                .map(|info| info.span)
-                .unwrap_or(span);
-            self.errors.push(ResolveError::DuplicateLocal {
-                name: name.to_string(),
-                span,
-                previous,
-            });
+            let previous = self.tables.local_info(prev).map(|info| info.span).unwrap_or(span);
+            self.errors.push(ResolveError::DuplicateLocal { name: name.to_string(), span, previous });
             return;
         }
-        let id = self
-            .tables
-            .intern_local(name.to_string(), span, self.current_source_path.clone());
+        let id = self.tables.intern_local(name.to_string(), span, self.current_source_path.clone());
         scope.insert(name.to_string(), id);
     }
 
     fn find_shadowed_local(&self, name: &str) -> Option<(LocalId, syntax::SpanInfo)> {
         for scope in self.local_scopes.iter().rev().skip(1) {
             if let Some(local) = scope.get(name).copied() {
-                let span = self
-                    .tables
-                    .local_info(local)
-                    .map(|info| info.span)
-                    .unwrap_or_else(|| syntax::SpanInfo {
-                        start: 0,
-                        end: 0,
-                        line_col_start: (1, 1),
-                        line_col_end: (1, 1),
-                    });
+                let span = self.tables.local_info(local).map(|info| info.span).unwrap_or_else(|| syntax::SpanInfo {
+                    start: 0,
+                    end: 0,
+                    line_col_start: (1, 1),
+                    line_col_end: (1, 1),
+                });
                 return Some((local, span));
             }
         }

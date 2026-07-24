@@ -3,9 +3,9 @@
 use crate::naming_case::NamingProfile;
 use crate::syntax::ContractNode;
 use crate::syntax::{
-    Block, ContractDefinition, EnumDefinition, EnumVariant, Expression, ExtendTypeDefinition,
-    Field, FunctionDefinition, InlineModule, MethodDefinition, Node, Parameter, Pattern, Program,
-    Statement, TestDefinition, TypeDefinition,
+    Block, ContractDefinition, EnumDefinition, EnumVariant, Expression, ExtendTypeDefinition, Field,
+    FunctionDefinition, InlineModule, MethodDefinition, Node, Parameter, Pattern, Program, Statement, TestDefinition,
+    TypeDefinition,
 };
 use crate::syntax::{Identifier, Spanned};
 
@@ -85,10 +85,7 @@ fn walk_node_mut(node: &mut Node, visit: &mut impl FnMut(NamingRole, &mut Identi
     }
 }
 
-fn walk_type_definition(
-    def: &TypeDefinition,
-    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
-) {
+fn walk_type_definition(def: &TypeDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::TypeDeclaration, &def.name);
     for generic in &def.generics {
         visit(NamingRole::GenericParameter, generic);
@@ -101,10 +98,7 @@ fn walk_type_definition(
     }
 }
 
-fn walk_type_definition_mut(
-    def: &mut TypeDefinition,
-    visit: &mut impl FnMut(NamingRole, &mut Identifier),
-) {
+fn walk_type_definition_mut(def: &mut TypeDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::TypeDeclaration, &mut def.name.node);
     for generic in &mut def.generics {
         visit(NamingRole::GenericParameter, &mut generic.node);
@@ -117,10 +111,7 @@ fn walk_type_definition_mut(
     }
 }
 
-fn walk_enum_definition(
-    def: &EnumDefinition,
-    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
-) {
+fn walk_enum_definition(def: &EnumDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::TypeDeclaration, &def.name);
     for generic in &def.generics {
         visit(NamingRole::GenericParameter, generic);
@@ -130,10 +121,7 @@ fn walk_enum_definition(
     }
 }
 
-fn walk_enum_definition_mut(
-    def: &mut EnumDefinition,
-    visit: &mut impl FnMut(NamingRole, &mut Identifier),
-) {
+fn walk_enum_definition_mut(def: &mut EnumDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::TypeDeclaration, &mut def.name.node);
     for generic in &mut def.generics {
         visit(NamingRole::GenericParameter, &mut generic.node);
@@ -143,30 +131,21 @@ fn walk_enum_definition_mut(
     }
 }
 
-fn walk_enum_variant(
-    variant: &EnumVariant,
-    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
-) {
+fn walk_enum_variant(variant: &EnumVariant, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::EnumVariant, &variant.name);
     for field in &variant.fields {
         walk_field(&field.node, visit);
     }
 }
 
-fn walk_enum_variant_mut(
-    variant: &mut EnumVariant,
-    visit: &mut impl FnMut(NamingRole, &mut Identifier),
-) {
+fn walk_enum_variant_mut(variant: &mut EnumVariant, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::EnumVariant, &mut variant.name.node);
     for field in &mut variant.fields {
         walk_field_mut(&mut field.node, visit);
     }
 }
 
-fn walk_contract_definition(
-    def: &ContractDefinition,
-    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
-) {
+fn walk_contract_definition(def: &ContractDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::TypeDeclaration, &def.name);
     for item in &def.items {
         if let ContractNode::MethodSignature(sig) = &item.node {
@@ -178,10 +157,7 @@ fn walk_contract_definition(
     }
 }
 
-fn walk_contract_definition_mut(
-    def: &mut ContractDefinition,
-    visit: &mut impl FnMut(NamingRole, &mut Identifier),
-) {
+fn walk_contract_definition_mut(def: &mut ContractDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::TypeDeclaration, &mut def.name.node);
     for item in &mut def.items {
         if let ContractNode::MethodSignature(sig) = &mut item.node {
@@ -193,10 +169,7 @@ fn walk_contract_definition_mut(
     }
 }
 
-fn walk_function_definition(
-    def: &FunctionDefinition,
-    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
-) {
+fn walk_function_definition(def: &FunctionDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::Callable, &def.name);
     for generic in &def.generics {
         visit(NamingRole::GenericParameter, generic);
@@ -207,10 +180,7 @@ fn walk_function_definition(
     walk_block(&def.body.node, visit);
 }
 
-fn walk_function_definition_mut(
-    def: &mut FunctionDefinition,
-    visit: &mut impl FnMut(NamingRole, &mut Identifier),
-) {
+fn walk_function_definition_mut(def: &mut FunctionDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::Callable, &mut def.name.node);
     for generic in &mut def.generics {
         visit(NamingRole::GenericParameter, &mut generic.node);
@@ -221,10 +191,7 @@ fn walk_function_definition_mut(
     walk_block_mut(&mut def.body.node, visit);
 }
 
-fn walk_method_definition(
-    def: &MethodDefinition,
-    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
-) {
+fn walk_method_definition(def: &MethodDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::Callable, &def.name);
     for param in &def.parameters {
         walk_parameter(&param.node, visit);
@@ -232,10 +199,7 @@ fn walk_method_definition(
     walk_block(&def.body.node, visit);
 }
 
-fn walk_method_definition_mut(
-    def: &mut MethodDefinition,
-    visit: &mut impl FnMut(NamingRole, &mut Identifier),
-) {
+fn walk_method_definition_mut(def: &mut MethodDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::Callable, &mut def.name.node);
     for param in &mut def.parameters {
         walk_parameter_mut(&mut param.node, visit);
@@ -243,77 +207,53 @@ fn walk_method_definition_mut(
     walk_block_mut(&mut def.body.node, visit);
 }
 
-fn walk_extend_type(
-    def: &ExtendTypeDefinition,
-    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
-) {
+fn walk_extend_type(def: &ExtendTypeDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     for method in &def.methods {
         walk_method_definition(&method.node, visit);
     }
 }
 
-fn walk_extend_type_mut(
-    def: &mut ExtendTypeDefinition,
-    visit: &mut impl FnMut(NamingRole, &mut Identifier),
-) {
+fn walk_extend_type_mut(def: &mut ExtendTypeDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     for method in &mut def.methods {
         walk_method_definition_mut(&mut method.node, visit);
     }
 }
 
-fn walk_test_definition(
-    def: &TestDefinition,
-    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
-) {
+fn walk_test_definition(def: &TestDefinition, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::Test, &def.name);
     for stmt in &def.statements {
         walk_statement(&stmt.node, visit);
     }
 }
 
-fn walk_test_definition_mut(
-    def: &mut TestDefinition,
-    visit: &mut impl FnMut(NamingRole, &mut Identifier),
-) {
+fn walk_test_definition_mut(def: &mut TestDefinition, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::Test, &mut def.name.node);
     for stmt in &mut def.statements {
         walk_statement_mut(&mut stmt.node, visit);
     }
 }
 
-fn walk_inline_module(
-    module: &InlineModule,
-    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
-) {
+fn walk_inline_module(module: &InlineModule, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     visit(NamingRole::ModuleSegment, &module.name);
     for item in &module.items {
         walk_node(&item.node, visit);
     }
 }
 
-fn walk_inline_module_mut(
-    module: &mut InlineModule,
-    visit: &mut impl FnMut(NamingRole, &mut Identifier),
-) {
+fn walk_inline_module_mut(module: &mut InlineModule, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     visit(NamingRole::ModuleSegment, &mut module.name.node);
     for item in &mut module.items {
         walk_node_mut(&mut item.node, visit);
     }
 }
 
-fn walk_module_path(
-    path: &Spanned<crate::syntax::Path>,
-    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
-) {
+fn walk_module_path(path: &Spanned<crate::syntax::Path>, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     for segment in &path.node.segments {
         visit(NamingRole::ModuleSegment, &segment.node.name);
     }
 }
 
-fn walk_module_path_mut(
-    path: &mut Spanned<crate::syntax::Path>,
-    visit: &mut impl FnMut(NamingRole, &mut Identifier),
-) {
+fn walk_module_path_mut(path: &mut Spanned<crate::syntax::Path>, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     for segment in &mut path.node.segments {
         visit(NamingRole::ModuleSegment, &mut segment.node.name.node);
     }
@@ -553,10 +493,7 @@ fn walk_pattern(pattern: &Pattern, visit: &mut impl FnMut(NamingRole, &Spanned<I
     }
 }
 
-fn walk_else_branch(
-    branch: &crate::syntax::ElseBranch,
-    visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>),
-) {
+fn walk_else_branch(branch: &crate::syntax::ElseBranch, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier>)) {
     match branch {
         crate::syntax::ElseBranch::Block(b) => walk_block(&b.node, visit),
         crate::syntax::ElseBranch::If(nested) => {
@@ -569,10 +506,7 @@ fn walk_else_branch(
     }
 }
 
-fn walk_else_branch_mut(
-    branch: &mut crate::syntax::ElseBranch,
-    visit: &mut impl FnMut(NamingRole, &mut Identifier),
-) {
+fn walk_else_branch_mut(branch: &mut crate::syntax::ElseBranch, visit: &mut impl FnMut(NamingRole, &mut Identifier)) {
     match branch {
         crate::syntax::ElseBranch::Block(b) => walk_block_mut(&mut b.node, visit),
         crate::syntax::ElseBranch::If(nested) => {

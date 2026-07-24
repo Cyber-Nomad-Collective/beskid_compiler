@@ -2,12 +2,10 @@
 
 use anyhow::{Context, Result};
 use beskid_analysis::doc::{
-    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
-    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem, ApiDocLinkContext, ApiDocRoot, ApiLocation,
-    DocRefLinkContext, apply_signature_to_item, assign_declaring_packages,
-    build_api_doc_link_context, build_item_signature, display_name_for_item,
-    fill_member_ids_from_parents, link_api_doc_library_tree, qualified_names_for_items,
-    relativize_api_doc_paths, resolve_item_tiers,
+    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION, API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem,
+    ApiDocLinkContext, ApiDocRoot, ApiLocation, DocRefLinkContext, apply_signature_to_item, assign_declaring_packages,
+    build_api_doc_link_context, build_item_signature, display_name_for_item, fill_member_ids_from_parents,
+    link_api_doc_library_tree, qualified_names_for_items, relativize_api_doc_paths, resolve_item_tiers,
 };
 use beskid_analysis::hir::HirVisibility;
 use beskid_analysis::projects::assembly::ProgramAssembly;
@@ -72,13 +70,7 @@ fn visibility_stable(vis: HirVisibility) -> &'static str {
 fn location_for_span(_source: &str, file: &str, span: &SpanInfo) -> LocationJson {
     let (sl, sc) = span.line_col_start;
     let (el, ec) = span.line_col_end;
-    LocationJson {
-        file: file.to_string(),
-        start_line: sl,
-        start_column: sc,
-        end_line: el,
-        end_column: ec,
-    }
+    LocationJson { file: file.to_string(), start_line: sl, start_column: sc, end_line: el, end_column: ec }
 }
 
 fn location_for_byte_range(source: &str, file: &str, start: usize, end: usize) -> LocationJson {
@@ -115,12 +107,10 @@ fn build_doc_snapshot(
         configure_db_for_project(&plan.project_root);
         let mut db = BeskidDatabase::with_persistence(&plan.project_root);
         let options = PrepareOptions::default();
-        let shared = entry_resolution_with_db(&mut db, resolved, &options)
-            .context("entry resolution for api.json")?;
+        let shared = entry_resolution_with_db(&mut db, resolved, &options).context("entry resolution for api.json")?;
         let resolution = (*shared).clone();
 
-        let assembly_options =
-            assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
+        let assembly_options = assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
         let assembly = beskid_queries::program_assembly(
             &mut db,
             plan,
@@ -148,16 +138,12 @@ fn build_doc_snapshot(
     Ok((snap, None))
 }
 
-fn api_doc_link_context(
-    resolved: &beskid_analysis::services::ResolvedInput,
-) -> Option<ApiDocLinkContext> {
+fn api_doc_link_context(resolved: &beskid_analysis::services::ResolvedInput) -> Option<ApiDocLinkContext> {
     let plan = resolved.compile_plan.as_ref()?;
     build_api_doc_link_context(plan, resolved.prepared_workspace.as_ref())
 }
 
-fn docs_ref_link_context(
-    resolved: &beskid_analysis::services::ResolvedInput,
-) -> Option<DocRefLinkContext> {
+fn docs_ref_link_context(resolved: &beskid_analysis::services::ResolvedInput) -> Option<DocRefLinkContext> {
     let plan = resolved.compile_plan.as_ref()?;
     let manifest = load_manifest_from_path(&plan.manifest_path).ok()?;
     let name = manifest.project.name.trim();
@@ -192,11 +178,9 @@ pub fn execute(args: DocArgs) -> Result<()> {
         args.lockfile.frozen,
         args.lockfile.locked,
     )?;
-    let program = services::parse_program_with_source_name(
-        &resolved.source_path.display().to_string(),
-        &resolved.source,
-    )
-    .with_context(|| format!("parse {}", resolved.source_path.display()))?;
+    let program =
+        services::parse_program_with_source_name(&resolved.source_path.display().to_string(), &resolved.source)
+            .with_context(|| format!("parse {}", resolved.source_path.display()))?;
     let docs_ref = docs_ref_link_context(&resolved);
     let (snap, assembly) = build_doc_snapshot(&resolved, &program, docs_ref.as_ref())?;
 
@@ -219,19 +203,16 @@ pub fn execute(args: DocArgs) -> Result<()> {
     if let Some(res) = snap.resolution.as_ref() {
         for item in &res.items {
             let slot = snap.item_docs.get(item.id.0).and_then(|x| x.as_ref());
-            let doc_markdown = slot
-                .map(|d| d.markdown.clone())
-                .filter(|s| !s.trim().is_empty());
+            let doc_markdown = slot.map(|d| d.markdown.clone()).filter(|s| !s.trim().is_empty());
             let doc = slot.and_then(|d| d.structured.clone());
-            let loc =
-                location_for_item(item, assembly.as_ref(), &resolved.source, &source_path_str);
+            let loc = location_for_item(item, assembly.as_ref(), &resolved.source, &source_path_str);
             let qualified_name = qualified_names
                 .as_ref()
                 .and_then(|names| names.get(&item.id.0).cloned())
                 .unwrap_or_else(|| item.name.clone());
             let display_name = display_name_for_item(item);
-            let symbol_key = beskid_analysis::resolve::qualified_name(res, item.id)
-                .map(beskid_analysis::doc::ApiSymbolKey::new);
+            let symbol_key =
+                beskid_analysis::resolve::qualified_name(res, item.id).map(beskid_analysis::doc::ApiSymbolKey::new);
             let mut api_item = ApiDocItem {
                 id: Some(item.id.0),
                 qualified_name: qualified_name.clone(),
@@ -261,11 +242,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 controls: vec![],
                 tier: None,
             };
-            let item_program = item
-                .source_path
-                .as_ref()
-                .and_then(|path| syntax_by_path.get(path))
-                .unwrap_or(&program);
+            let item_program = item.source_path.as_ref().and_then(|path| syntax_by_path.get(path)).unwrap_or(&program);
             let sig = build_item_signature(item, Some(res), item_program);
             apply_signature_to_item(&mut api_item, sig);
             entries.push(DocEntry {
@@ -319,21 +296,12 @@ pub fn execute(args: DocArgs) -> Result<()> {
             });
         }
     }
-    entries.sort_by(|a, b| {
-        a.qualified_name
-            .cmp(&b.qualified_name)
-            .then(a.kind.cmp(&b.kind))
-    });
-    api_items.sort_by(|a, b| {
-        a.qualified_name
-            .cmp(&b.qualified_name)
-            .then(a.kind.cmp(&b.kind))
-    });
+    entries.sort_by(|a, b| a.qualified_name.cmp(&b.qualified_name).then(a.kind.cmp(&b.kind)));
+    api_items.sort_by(|a, b| a.qualified_name.cmp(&b.qualified_name).then(a.kind.cmp(&b.kind)));
 
     let had_resolution = snap.resolution.is_some();
     if had_resolution {
-        if let (Some(res), Some(ctx)) = (snap.resolution.as_ref(), api_doc_link_context(&resolved))
-        {
+        if let (Some(res), Some(ctx)) = (snap.resolution.as_ref(), api_doc_link_context(&resolved)) {
             link_api_doc_library_tree(&mut api_items, res);
             assign_declaring_packages(&mut api_items, &ctx);
         } else if let Some(res) = snap.resolution.as_ref() {
@@ -364,14 +332,10 @@ pub fn execute(args: DocArgs) -> Result<()> {
             items: api_items,
         }
     };
-    relativize_api_doc_paths(&mut api, link_ctx.as_ref()).map_err(|message| {
-        anyhow::anyhow!("relativize api.json paths to artifact layout: {message}")
-    })?;
-    fs::write(
-        args.out.join("api.json"),
-        serde_json::to_string_pretty(&api).context("serialize api.json")?,
-    )
-    .with_context(|| format!("write {}", args.out.join("api.json").display()))?;
+    relativize_api_doc_paths(&mut api, link_ctx.as_ref())
+        .map_err(|message| anyhow::anyhow!("relativize api.json paths to artifact layout: {message}"))?;
+    fs::write(args.out.join("api.json"), serde_json::to_string_pretty(&api).context("serialize api.json")?)
+        .with_context(|| format!("write {}", args.out.join("api.json").display()))?;
 
     let mut md = String::from("# API reference\n\n");
     if entries.is_empty() {
@@ -382,10 +346,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
         md.push('\n');
         md.push_str("## Items\n\n");
         for entry in &entries {
-            md.push_str(&format!(
-                "### `{}` (`{}`)\n\n",
-                entry.qualified_name, entry.kind
-            ));
+            md.push_str(&format!("### `{}` (`{}`)\n\n", entry.qualified_name, entry.kind));
             let body = entry
                 .doc_markdown
                 .as_deref()
@@ -399,11 +360,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
     fs::write(args.out.join("index.md"), md)
         .with_context(|| format!("write {}", args.out.join("index.md").display()))?;
 
-    println!(
-        "Wrote {} and {}",
-        args.out.join("api.json").display(),
-        args.out.join("index.md").display()
-    );
+    println!("Wrote {} and {}", args.out.join("api.json").display(), args.out.join("index.md").display());
     Ok(())
 }
 
@@ -414,10 +371,7 @@ mod member_doc_tests {
 
     #[test]
     fn api_json_contains_member_doc_markdown() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time")
-            .as_nanos();
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
         let root = std::env::temp_dir().join(format!("beskid-doc-{nonce}"));
         std::fs::create_dir_all(&root).expect("create root");
         let source_path = root.join("Sample.bd");
@@ -433,36 +387,20 @@ type User {
 
         execute(DocArgs {
             input: Some(source_path.clone()),
-            project: crate::project_args::ProjectResolveArgs {
-                project: None,
-                target: None,
-                workspace_member: None,
-            },
-            lockfile: crate::project_args::LockfilePolicyArgs {
-                frozen: false,
-                locked: false,
-            },
+            project: crate::project_args::ProjectResolveArgs { project: None, target: None, workspace_member: None },
+            lockfile: crate::project_args::LockfilePolicyArgs { frozen: false, locked: false },
             out: out_path.clone(),
         })
         .expect("execute doc");
 
         let api = std::fs::read_to_string(out_path.join("api.json")).expect("read api.json");
-        assert!(
-            api.contains("\"schemaVersion\": 4"),
-            "api.json should declare schema v4: {api}"
-        );
+        assert!(api.contains("\"schemaVersion\": 4"), "api.json should declare schema v4: {api}");
         assert!(
             api.contains("\"navigationModel\": \"graph-v1\""),
             "api.json should declare graph navigation model: {api}"
         );
-        assert!(
-            api.contains("\"parentId\":"),
-            "api.json should include parentId for member rows: {api}"
-        );
-        assert!(
-            api.contains("Display name of user."),
-            "api.json should include member doc markdown: {api}"
-        );
+        assert!(api.contains("\"parentId\":"), "api.json should include parentId for member rows: {api}");
+        assert!(api.contains("Display name of user."), "api.json should include member doc markdown: {api}");
 
         let _ = std::fs::remove_file(source_path);
         let _ = std::fs::remove_file(out_path.join("api.json"));
@@ -473,10 +411,7 @@ type User {
 
     #[test]
     fn api_json_graph_links_type_field_enum_variant_and_method() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time")
-            .as_nanos();
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
         let root = std::env::temp_dir().join(format!("beskid-doc-graph-{nonce}"));
         std::fs::create_dir_all(&root).expect("create root");
         let source_path = root.join("Graph.bd");
@@ -505,40 +440,21 @@ i64 Add(
 
         execute(DocArgs {
             input: Some(source_path.clone()),
-            project: crate::project_args::ProjectResolveArgs {
-                project: None,
-                target: None,
-                workspace_member: None,
-            },
-            lockfile: crate::project_args::LockfilePolicyArgs {
-                frozen: false,
-                locked: false,
-            },
+            project: crate::project_args::ProjectResolveArgs { project: None, target: None, workspace_member: None },
+            lockfile: crate::project_args::LockfilePolicyArgs { frozen: false, locked: false },
             out: out_path.clone(),
         })
         .expect("execute doc");
 
-        let api: ApiDocRoot = serde_json::from_str(
-            &std::fs::read_to_string(out_path.join("api.json")).expect("read"),
-        )
-        .expect("parse api.json");
+        let api: ApiDocRoot = serde_json::from_str(&std::fs::read_to_string(out_path.join("api.json")).expect("read"))
+            .expect("parse api.json");
         assert_eq!(api.schema_version, API_JSON_SCHEMA_VERSION);
-        assert_eq!(
-            api.navigation_model.as_deref(),
-            Some(API_JSON_NAVIGATION_MODEL_GRAPH_V1)
-        );
+        assert_eq!(api.navigation_model.as_deref(), Some(API_JSON_NAVIGATION_MODEL_GRAPH_V1));
 
-        let by_id = api
-            .items
-            .iter()
-            .filter_map(|i| i.id.map(|id| (id, i)))
-            .collect::<std::collections::HashMap<_, _>>();
+        let by_id =
+            api.items.iter().filter_map(|i| i.id.map(|id| (id, i))).collect::<std::collections::HashMap<_, _>>();
 
-        let type_row = api
-            .items
-            .iter()
-            .find(|i| i.kind == "type" && i.name.contains("Widget"))
-            .expect("type Widget");
+        let type_row = api.items.iter().find(|i| i.kind == "type" && i.name.contains("Widget")).expect("type Widget");
         let type_id = type_row.id.expect("type id");
         let field = api.items.iter().find(|i| i.kind == "field").expect("field");
         assert_eq!(field.parent_id, Some(type_id));
@@ -546,21 +462,13 @@ i64 Add(
 
         let enum_row = api.items.iter().find(|i| i.kind == "enum").expect("enum");
         let enum_id = enum_row.id.expect("enum id");
-        let variants: Vec<_> = api
-            .items
-            .iter()
-            .filter(|i| i.kind == "enum_variant")
-            .collect();
+        let variants: Vec<_> = api.items.iter().filter(|i| i.kind == "enum_variant").collect();
         assert_eq!(variants.len(), 2);
         for v in &variants {
             assert_eq!(v.parent_id, Some(enum_id));
         }
 
-        let func = api
-            .items
-            .iter()
-            .find(|i| i.kind == "function" && i.name.contains("Add"))
-            .expect("function");
+        let func = api.items.iter().find(|i| i.kind == "function" && i.name.contains("Add")).expect("function");
         assert!(
             func.parent_id.is_some(),
             "module-level functions must be parented under a module row for library-tree navigation"
@@ -582,10 +490,7 @@ i64 Add(
 
     #[test]
     fn api_json_v4_emits_field_type_ref_for_nested_types() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time")
-            .as_nanos();
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
         let root = std::env::temp_dir().join(format!("beskid-doc-nested-{nonce}"));
         std::fs::create_dir_all(&root).expect("create root");
         let source_path = root.join("Nested.bd");
@@ -597,23 +502,14 @@ type Outer { Inner inner, }
         std::fs::write(&source_path, source).expect("write source");
         execute(DocArgs {
             input: Some(source_path.clone()),
-            project: crate::project_args::ProjectResolveArgs {
-                project: None,
-                target: None,
-                workspace_member: None,
-            },
-            lockfile: crate::project_args::LockfilePolicyArgs {
-                frozen: false,
-                locked: false,
-            },
+            project: crate::project_args::ProjectResolveArgs { project: None, target: None, workspace_member: None },
+            lockfile: crate::project_args::LockfilePolicyArgs { frozen: false, locked: false },
             out: out_path.clone(),
         })
         .expect("execute doc");
 
-        let api: ApiDocRoot = serde_json::from_str(
-            &std::fs::read_to_string(out_path.join("api.json")).expect("read"),
-        )
-        .expect("parse api.json");
+        let api: ApiDocRoot = serde_json::from_str(&std::fs::read_to_string(out_path.join("api.json")).expect("read"))
+            .expect("parse api.json");
         assert_eq!(api.schema_version, API_JSON_SCHEMA_VERSION);
         assert!(
             !std::path::Path::new(&api.source).is_absolute(),
@@ -628,23 +524,12 @@ type Outer { Inner inner, }
             );
         }
 
-        let inner_type = api
-            .items
-            .iter()
-            .find(|i| i.kind == "type" && i.name == "Inner")
-            .expect("Inner type");
-        let field = api
-            .items
-            .iter()
-            .find(|i| i.kind == "field" && i.name.contains("inner"))
-            .expect("inner field");
+        let inner_type = api.items.iter().find(|i| i.kind == "type" && i.name == "Inner").expect("Inner type");
+        let field = api.items.iter().find(|i| i.kind == "field" && i.name.contains("inner")).expect("inner field");
         let field_type = field.field_type.as_ref().expect("fieldType");
         assert_eq!(field_type.display, "Inner");
         assert_eq!(field_type.ref_item_id, inner_type.id);
-        assert!(
-            field.signature.as_deref().unwrap_or("").contains("Inner"),
-            "signature should mention Inner"
-        );
+        assert!(field.signature.as_deref().unwrap_or("").contains("Inner"), "signature should mention Inner");
 
         let _ = std::fs::remove_file(source_path);
         let _ = std::fs::remove_file(out_path.join("api.json"));
@@ -655,10 +540,7 @@ type Outer { Inner inner, }
 
     #[test]
     fn api_json_ref_markdown_is_backtick_without_project_context() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time")
-            .as_nanos();
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
         let root = std::env::temp_dir().join(format!("beskid-doc-ref-{nonce}"));
         std::fs::create_dir_all(&root).expect("create root");
         let source_path = root.join("Refs.bd");
@@ -673,15 +555,8 @@ unit helper() { return 0; }
 
         execute(DocArgs {
             input: Some(source_path.clone()),
-            project: crate::project_args::ProjectResolveArgs {
-                project: None,
-                target: None,
-                workspace_member: None,
-            },
-            lockfile: crate::project_args::LockfilePolicyArgs {
-                frozen: false,
-                locked: false,
-            },
+            project: crate::project_args::ProjectResolveArgs { project: None, target: None, workspace_member: None },
+            lockfile: crate::project_args::LockfilePolicyArgs { frozen: false, locked: false },
             out: out_path.clone(),
         })
         .expect("execute doc");
@@ -691,10 +566,7 @@ unit helper() { return 0; }
             api.contains("`helper`") || api.contains("helper"),
             "resolved @ref should appear in doc markdown: {api}"
         );
-        assert!(
-            !api.contains("/docs/"),
-            "single-file doc without Project.proj must not emit pckg routes: {api}"
-        );
+        assert!(!api.contains("/docs/"), "single-file doc without Project.proj must not emit pckg routes: {api}");
 
         let _ = std::fs::remove_file(source_path);
         let _ = std::fs::remove_file(out_path.join("api.json"));
@@ -707,11 +579,7 @@ unit helper() { return 0; }
 fn render_structure_tree(entries: &[DocEntry]) -> String {
     let mut root = TreeNode::default();
     for (idx, entry) in entries.iter().enumerate() {
-        let segments: Vec<&str> = entry
-            .qualified_name
-            .split("::")
-            .filter(|s| !s.is_empty())
-            .collect();
+        let segments: Vec<&str> = entry.qualified_name.split("::").filter(|s| !s.is_empty()).collect();
         if segments.is_empty() {
             root.entries.push(idx);
             continue;
@@ -735,10 +603,7 @@ fn render_tree_node(node: &TreeNode, entries: &[DocEntry], depth: usize, out: &m
     }
     for entry_idx in &node.entries {
         let entry = &entries[*entry_idx];
-        out.push_str(&format!(
-            "{indent}- `{}` (`{}`)\n",
-            entry.qualified_name, entry.kind
-        ));
+        out.push_str(&format!("{indent}- `{}` (`{}`)\n", entry.qualified_name, entry.kind));
     }
 }
 
@@ -755,11 +620,7 @@ mod tests {
                 kind: "function".to_string(),
                 doc_markdown: None,
             },
-            DocEntry {
-                qualified_name: "util::math::Vec2".to_string(),
-                kind: "type".to_string(),
-                doc_markdown: None,
-            },
+            DocEntry { qualified_name: "util::math::Vec2".to_string(), kind: "type".to_string(), doc_markdown: None },
         ];
 
         let tree = render_structure_tree(&entries);

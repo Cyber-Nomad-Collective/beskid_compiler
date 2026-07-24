@@ -13,10 +13,7 @@ fn parses_file_scoped_module_declaration() {
 
 #[test]
 fn parses_module_declaration_with_extern_attribute() {
-    assert_parse(
-        Rule::ModuleDeclaration,
-        "[Extern(Abi: \"C\", Library: \"libc\")] mod net.http;",
-    );
+    assert_parse(Rule::ModuleDeclaration, "[Extern(Abi: \"C\", Library: \"libc\")] mod net.http;");
 }
 
 #[test]

@@ -2,8 +2,8 @@ use criterion::{Criterion, criterion_group, criterion_main};
 
 use abfall::Heap;
 use beskid_runtime::{
-    RuntimeRoot, clear_current_heap, clear_current_root, enter_runtime_scope, leave_runtime_scope,
-    set_current_heap, set_current_root, str_concat, str_new,
+    RuntimeRoot, clear_current_heap, clear_current_root, enter_runtime_scope, leave_runtime_scope, set_current_heap,
+    set_current_root, str_concat, str_new,
 };
 
 fn with_runtime_scope<R>(f: impl FnOnce() -> R) -> R {

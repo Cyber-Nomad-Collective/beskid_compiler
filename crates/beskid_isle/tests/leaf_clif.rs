@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
 use beskid_isle::{
-    AstNodeKey, IsleContext, LiteralKind, LoweringErrorKind, NodeFacts, NodeKind, OperatorFact,
-    lower_expression,
+    AstNodeKey, IsleContext, LiteralKind, LoweringErrorKind, NodeFacts, NodeKind, OperatorFact, lower_expression,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{AbiParam, Function, InstBuilder, Signature, types};
@@ -46,17 +45,10 @@ fn integer_rule_emits_verified_stock_clif() {
     };
     let facts = IntegerFacts { key };
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let mut function = Function::with_name_signature(
         cranelift_codegen::ir::UserFuncName::user(0, 0),
-        Signature {
-            params: vec![],
-            returns: vec![AbiParam::new(types::I32)],
-            call_conv: isa.default_call_conv(),
-        },
+        Signature { params: vec![], returns: vec![AbiParam::new(types::I32)], call_conv: isa.default_call_conv() },
     );
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -64,8 +56,7 @@ fn integer_rule_emits_verified_stock_clif() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), key)
-            .expect("integer rule");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), key).expect("integer rule");
         builder.ins().return_(&[value]);
         builder.finalize();
     }
@@ -107,10 +98,7 @@ fn float_rule_emits_verified_stock_clif() {
         node: AstNodeId(1),
     };
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let emitter = beskid_isle::FunctionEmitter::new(isa.as_ref());
     let function = emitter
         .emit_expression(
@@ -121,12 +109,7 @@ fn float_rule_emits_verified_stock_clif() {
         )
         .expect("verified float rule");
 
-    assert!(
-        function
-            .display()
-            .to_string()
-            .contains("f64const 0x1.8000000000000p0")
-    );
+    assert!(function.display().to_string().contains("f64const 0x1.8000000000000p0"));
 }
 
 #[test]
@@ -161,10 +144,7 @@ fn char_rule_emits_verified_stock_clif() {
         node: AstNodeId(1),
     };
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let emitter = beskid_isle::FunctionEmitter::new(isa.as_ref());
     let function = emitter
         .emit_expression(
@@ -268,16 +248,8 @@ fn binary_rule_recurses_through_ast_keys_and_emits_iadd() {
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Main.bd"));
     let generation = SyntaxGenerationId(3);
-    let node = |id| AstNodeKey {
-        unit,
-        generation,
-        node: AstNodeId(id),
-    };
-    let facts = BinaryFacts {
-        root: node(1),
-        left: node(2),
-        right: node(3),
-    };
+    let node = |id| AstNodeKey { unit, generation, node: AstNodeId(id) };
+    let facts = BinaryFacts { root: node(1), left: node(2), right: node(3) };
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -285,8 +257,7 @@ fn binary_rule_recurses_through_ast_keys_and_emits_iadd() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root)
-            .expect("binary rule");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root).expect("binary rule");
         builder.ins().return_(&[value]);
         builder.finalize();
     }
@@ -334,27 +305,13 @@ fn grouped_expression_unwraps_child_and_emits_verified_stock_clif() {
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Main.bd"));
     let generation = SyntaxGenerationId(5);
-    let node = |id| AstNodeKey {
-        unit,
-        generation,
-        node: AstNodeId(id),
-    };
-    let facts = GroupedFacts {
-        group: node(1),
-        inner: node(2),
-    };
+    let node = |id| AstNodeKey { unit, generation, node: AstNodeId(id) };
+    let facts = GroupedFacts { group: node(1), inner: node(2) };
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let mut function = Function::with_name_signature(
         cranelift_codegen::ir::UserFuncName::user(0, 0),
-        Signature {
-            params: vec![],
-            returns: vec![AbiParam::new(types::I32)],
-            call_conv: isa.default_call_conv(),
-        },
+        Signature { params: vec![], returns: vec![AbiParam::new(types::I32)], call_conv: isa.default_call_conv() },
     );
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -417,34 +374,18 @@ fn boolean_not_executes_with_canonical_zero_or_one_result() {
 
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Main.bd"));
-    let node = |id| AstNodeKey {
-        unit,
-        generation: SyntaxGenerationId(4),
-        node: AstNodeId(id),
-    };
-    let facts = NotFacts {
-        root: node(1),
-        value: node(2),
-    };
+    let node = |id| AstNodeKey { unit, generation: SyntaxGenerationId(4), node: AstNodeId(id) };
+    let facts = NotFacts { root: node(1), value: node(2) };
     let mut module = JITModule::new(JITBuilder::new(default_libcall_names()).expect("JIT"));
     let emitter = beskid_isle::FunctionEmitter::new(module.isa());
     let signature = emitter.signature([], [types::I8]);
     let function = emitter
-        .emit_expression(
-            cranelift_codegen::ir::UserFuncName::user(0, 7),
-            signature.clone(),
-            &facts,
-            facts.root,
-        )
+        .emit_expression(cranelift_codegen::ir::UserFuncName::user(0, 7), signature.clone(), &facts, facts.root)
         .expect("verified bool not");
-    let function_id = module
-        .declare_function("bool_not", Linkage::Local, &signature)
-        .expect("declare");
+    let function_id = module.declare_function("bool_not", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
     context.func = function;
-    module
-        .define_function(function_id, &mut context)
-        .expect("define");
+    module.define_function(function_id, &mut context).expect("define");
     module.finalize_definitions().expect("finalize");
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> u8 = unsafe { std::mem::transmute(code) };
@@ -509,16 +450,8 @@ fn binary_float_add_emits_fadd() {
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/FloatAdd.bd"));
     let generation = SyntaxGenerationId(3);
-    let node = |id| AstNodeKey {
-        unit,
-        generation,
-        node: AstNodeId(id),
-    };
-    let facts = BinaryFacts {
-        root: node(1),
-        left: node(2),
-        right: node(3),
-    };
+    let node = |id| AstNodeKey { unit, generation, node: AstNodeId(id) };
+    let facts = BinaryFacts { root: node(1), left: node(2), right: node(3) };
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -526,8 +459,7 @@ fn binary_float_add_emits_fadd() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root)
-            .expect("float add rule");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root).expect("float add rule");
         builder.ins().return_(&[value]);
         builder.finalize();
     }
@@ -582,27 +514,15 @@ fn binary_u8_less_than_emits_unsigned_compare() {
         }
 
         fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
-              if key == self.root || key == self.left || key == self.right {
-                  Some(types::I8)
-              } else {
-                  None
-              }
-          }
+            if key == self.root || key == self.left || key == self.right { Some(types::I8) } else { None }
+        }
     }
 
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/U8Lt.bd"));
     let generation = SyntaxGenerationId(3);
-    let node = |id| AstNodeKey {
-        unit,
-        generation,
-        node: AstNodeId(id),
-    };
-    let facts = BinaryFacts {
-        root: node(1),
-        left: node(2),
-        right: node(3),
-    };
+    let node = |id| AstNodeKey { unit, generation, node: AstNodeId(id) };
+    let facts = BinaryFacts { root: node(1), left: node(2), right: node(3) };
     let mut function = Function::new();
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -610,21 +530,14 @@ fn binary_u8_less_than_emits_unsigned_compare() {
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root)
-            .expect("u8 lt rule");
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root).expect("u8 lt rule");
         builder.ins().return_(&[value]);
         builder.finalize();
     }
 
     let clif = function.display().to_string();
-    assert!(
-        clif.contains("icmp ult") || clif.contains("ult"),
-        "expected unsigned less-than for u8:\n{clif}"
-    );
-    assert!(
-        !clif.contains("icmp slt") && !clif.contains(" slt "),
-        "must not use signed less-than for u8:\n{clif}"
-    );
+    assert!(clif.contains("icmp ult") || clif.contains("ult"), "expected unsigned less-than for u8:\n{clif}");
+    assert!(!clif.contains("icmp slt") && !clif.contains(" slt "), "must not use signed less-than for u8:\n{clif}");
 }
 
 #[test]
@@ -679,21 +592,10 @@ fn sdiv_traps_on_zero_divisor() {
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/DivZero.bd"));
     let generation = SyntaxGenerationId(7);
-    let node = |id| AstNodeKey {
-        unit,
-        generation,
-        node: AstNodeId(id),
-    };
-    let facts = DivFacts {
-        root: node(1),
-        left: node(2),
-        right: node(3),
-    };
+    let node = |id| AstNodeKey { unit, generation, node: AstNodeId(id) };
+    let facts = DivFacts { root: node(1), left: node(2), right: node(3) };
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let emitter = beskid_isle::FunctionEmitter::new(isa.as_ref());
     let function = emitter
         .emit_expression(
@@ -706,10 +608,7 @@ fn sdiv_traps_on_zero_divisor() {
 
     let clif = function.display().to_string();
     assert!(clif.contains("trapnz"), "expected trapnz:\n{clif}");
-    assert!(
-        clif.contains("int_divz"),
-        "expected IntegerDivisionByZero trap code:\n{clif}"
-    );
+    assert!(clif.contains("int_divz"), "expected IntegerDivisionByZero trap code:\n{clif}");
 }
 
 #[test]
@@ -756,49 +655,24 @@ fn bitwise_not_emits_bxor_with_all_ones() {
 
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Bnot.bd"));
-    let node = |id| AstNodeKey {
-        unit,
-        generation: SyntaxGenerationId(5),
-        node: AstNodeId(id),
-    };
-    let facts = BnotFacts {
-        root: node(1),
-        value: node(2),
-    };
+    let node = |id| AstNodeKey { unit, generation: SyntaxGenerationId(5), node: AstNodeId(id) };
+    let facts = BnotFacts { root: node(1), value: node(2) };
     let mut module = JITModule::new(JITBuilder::new(default_libcall_names()).expect("JIT"));
     let emitter = beskid_isle::FunctionEmitter::new(module.isa());
     let signature = emitter.signature([], [types::I32]);
     let function = emitter
-        .emit_expression(
-            cranelift_codegen::ir::UserFuncName::user(0, 8),
-            signature.clone(),
-            &facts,
-            facts.root,
-        )
+        .emit_expression(cranelift_codegen::ir::UserFuncName::user(0, 8), signature.clone(), &facts, facts.root)
         .expect("verified bitwise not");
 
     let clif = function.display().to_string();
-    assert!(
-        clif.contains("bxor"),
-        "expected bxor (bitwise XOR) in CLIF:\n{clif}"
-    );
-    assert!(
-        clif.contains("iconst.i32 -1"),
-        "expected iconst.i32 -1 (all-ones) in CLIF:\n{clif}"
-    );
-    assert!(
-        !clif.contains("icmp"),
-        "expected NO icmp (boolean compare) in CLIF:\n{clif}"
-    );
+    assert!(clif.contains("bxor"), "expected bxor (bitwise XOR) in CLIF:\n{clif}");
+    assert!(clif.contains("iconst.i32 -1"), "expected iconst.i32 -1 (all-ones) in CLIF:\n{clif}");
+    assert!(!clif.contains("icmp"), "expected NO icmp (boolean compare) in CLIF:\n{clif}");
 
-    let function_id = module
-        .declare_function("bitwise_not", Linkage::Local, &signature)
-        .expect("declare");
+    let function_id = module.declare_function("bitwise_not", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
     context.func = function;
-    module
-        .define_function(function_id, &mut context)
-        .expect("define");
+    module.define_function(function_id, &mut context).expect("define");
     module.finalize_definitions().expect("finalize");
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };

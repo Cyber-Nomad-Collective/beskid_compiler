@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::hir::{
-    HirContractNode, HirFieldKind, HirFunctionDefinition, HirItem, HirMethodDefinition, HirPath,
-    HirPrimitiveType, HirProgram, HirType, HirTypeDefinition,
+    HirContractNode, HirFieldKind, HirFunctionDefinition, HirItem, HirMethodDefinition, HirPath, HirPrimitiveType,
+    HirProgram, HirType, HirTypeDefinition,
 };
 use crate::paths;
 use crate::resolve::{ItemId, ItemKind, Resolution, ResolvedType};
@@ -115,28 +115,17 @@ pub fn merge_unit_surfaces_with_types(
     (types, merged)
 }
 
-fn merge_surface_into_remapped(
-    target: &mut MergedTypeEnv,
-    surface: &UnitTypeSurface,
-    remap: &HashMap<TypeId, TypeId>,
-) {
+fn merge_surface_into_remapped(target: &mut MergedTypeEnv, surface: &UnitTypeSurface, remap: &HashMap<TypeId, TypeId>) {
     for (item_id, signature) in &surface.function_signatures {
-        target
-            .function_signatures
-            .insert(*item_id, remap_signature(remap, signature));
+        target.function_signatures.insert(*item_id, remap_signature(remap, signature));
     }
     for (item_id, signature) in &surface.method_function_signatures {
-        target
-            .method_function_signatures
-            .insert(*item_id, remap_signature(remap, signature));
+        target.method_function_signatures.insert(*item_id, remap_signature(remap, signature));
     }
     for (item_id, fields) in &surface.struct_fields_ordered {
         target.struct_fields_ordered.insert(
             *item_id,
-            fields
-                .iter()
-                .map(|(name, type_id)| (name.clone(), remap_type_id(remap, *type_id)))
-                .collect(),
+            fields.iter().map(|(name, type_id)| (name.clone(), remap_type_id(remap, *type_id))).collect(),
         );
     }
     for (item_id, variants) in &surface.enum_variants_ordered {
@@ -145,51 +134,28 @@ fn merge_surface_into_remapped(
             variants
                 .iter()
                 .map(|(name, fields)| {
-                    (
-                        name.clone(),
-                        fields
-                            .iter()
-                            .map(|type_id| remap_type_id(remap, *type_id))
-                            .collect(),
-                    )
+                    (name.clone(), fields.iter().map(|type_id| remap_type_id(remap, *type_id)).collect())
                 })
                 .collect(),
         );
     }
     target.generic_items.extend(surface.generic_items.clone());
-    target
-        .struct_event_fields
-        .extend(surface.struct_event_fields.clone());
+    target.struct_event_fields.extend(surface.struct_event_fields.clone());
     for (key, signature) in &surface.contract_signatures {
-        target
-            .contract_signatures
-            .insert(key.clone(), remap_signature(remap, signature));
+        target.contract_signatures.insert(key.clone(), remap_signature(remap, signature));
     }
-    target
-        .contract_method_order
-        .extend(surface.contract_method_order.clone());
-    target
-        .methods_by_receiver
-        .extend(surface.methods_by_receiver.clone());
-    target
-        .named_type_names
-        .extend(surface.named_type_names.clone());
+    target.contract_method_order.extend(surface.contract_method_order.clone());
+    target.methods_by_receiver.extend(surface.methods_by_receiver.clone());
+    target.named_type_names.extend(surface.named_type_names.clone());
 }
 
 fn remap_type_id(remap: &HashMap<TypeId, TypeId>, type_id: TypeId) -> TypeId {
     remap.get(&type_id).copied().unwrap_or(type_id)
 }
 
-fn remap_signature(
-    remap: &HashMap<TypeId, TypeId>,
-    signature: &FunctionSignature,
-) -> FunctionSignature {
+fn remap_signature(remap: &HashMap<TypeId, TypeId>, signature: &FunctionSignature) -> FunctionSignature {
     FunctionSignature {
-        params: signature
-            .params
-            .iter()
-            .map(|param| remap_type_id(remap, *param))
-            .collect(),
+        params: signature.params.iter().map(|param| remap_type_id(remap, *param)).collect(),
         return_type: remap_type_id(remap, signature.return_type),
     }
 }
@@ -302,38 +268,24 @@ impl<'a> TypeSurfaceBuilder<'a> {
                 ItemKind::Type | ItemKind::Enum | ItemKind::Contract => {
                     let id = self.types.intern(TypeInfo::Named(item.id));
                     self.named_types.insert(item.id, id);
-                    self.surface
-                        .named_type_names
-                        .insert(item.id, item.name.clone());
+                    self.surface.named_type_names.insert(item.id, item.name.clone());
                 }
                 _ => {}
             }
         }
     }
 
-    fn seed_generic_item(
-        &mut self,
-        item_span: SpanInfo,
-        generics: &[Spanned<crate::hir::HirIdentifier>],
-    ) {
+    fn seed_generic_item(&mut self, item_span: SpanInfo, generics: &[Spanned<crate::hir::HirIdentifier>]) {
         let Some(item_id) = self.item_id_for_span(item_span) else {
             return;
         };
-        let names = generics
-            .iter()
-            .map(|generic| generic.node.name.clone())
-            .collect::<Vec<_>>();
+        let names = generics.iter().map(|generic| generic.node.name.clone()).collect::<Vec<_>>();
         if !names.is_empty() {
             self.surface.generic_items.insert(item_id, names);
         }
     }
 
-    fn register_struct_definition(
-        &mut self,
-        item_span: SpanInfo,
-        def: &HirTypeDefinition,
-        in_generic_scope: bool,
-    ) {
+    fn register_struct_definition(&mut self, item_span: SpanInfo, def: &HirTypeDefinition, in_generic_scope: bool) {
         let mut ordered = Vec::new();
         let mut event_fields = HashMap::new();
         for field in &def.fields {
@@ -353,24 +305,16 @@ impl<'a> TypeSurfaceBuilder<'a> {
             }
         }
         let type_name = def.name.node.name.as_str();
-        let item_id = self
-            .item_id_for_name(type_name, ItemKind::Type)
-            .or_else(|| self.item_id_for_span(item_span));
+        let item_id = self.item_id_for_name(type_name, ItemKind::Type).or_else(|| self.item_id_for_span(item_span));
         if let Some(item_id) = item_id {
             self.surface.struct_fields_ordered.insert(item_id, ordered);
             if !event_fields.is_empty() {
-                self.surface
-                    .struct_event_fields
-                    .insert(item_id, event_fields);
+                self.surface.struct_event_fields.insert(item_id, event_fields);
             }
         }
     }
 
-    fn register_enum_definition(
-        &mut self,
-        item_span: SpanInfo,
-        def: &crate::hir::HirEnumDefinition,
-    ) {
+    fn register_enum_definition(&mut self, item_span: SpanInfo, def: &crate::hir::HirEnumDefinition) {
         let mut inserted = Vec::new();
         for generic in &def.generics {
             let name = generic.node.name.clone();
@@ -389,9 +333,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
             ordered.push((variant.node.name.node.name.clone(), fields));
         }
         let enum_name = def.name.node.name.as_str();
-        let item_id = self
-            .item_id_for_name(enum_name, ItemKind::Enum)
-            .or_else(|| self.item_id_for_span(item_span));
+        let item_id = self.item_id_for_name(enum_name, ItemKind::Enum).or_else(|| self.item_id_for_span(item_span));
         if let Some(item_id) = item_id {
             self.surface.enum_variants_ordered.insert(item_id, ordered);
         }
@@ -416,9 +358,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         let placeholder_param = self.primitive_type_id(HirPrimitiveType::I64);
         let mut params = Vec::new();
         for param in &def.parameters {
-            let type_id = self
-                .type_id_for_type_in_generic_scope(&param.node.ty)
-                .or(placeholder_param);
+            let type_id = self.type_id_for_type_in_generic_scope(&param.node.ty).or(placeholder_param);
             if let Some(type_id) = type_id {
                 params.push(type_id);
             }
@@ -440,24 +380,14 @@ impl<'a> TypeSurfaceBuilder<'a> {
         let placeholder_param = self.primitive_type_id(HirPrimitiveType::I64);
         let mut params = Vec::new();
         for param in &def.node.parameters {
-            let type_id = self
-                .type_id_for_type_in_generic_scope(&param.node.ty)
-                .or(placeholder_param);
+            let type_id = self.type_id_for_type_in_generic_scope(&param.node.ty).or(placeholder_param);
             if let Some(type_id) = type_id {
                 params.push(type_id);
             }
         }
         self.record_signature(item_span, params.clone(), return_type);
-        if let (Some(method_item_id), Some(return_type)) =
-            (self.canonical_item_id_for_span(item_span), return_type)
-        {
-            self.surface.method_function_signatures.insert(
-                method_item_id,
-                FunctionSignature {
-                    params,
-                    return_type,
-                },
-            );
+        if let (Some(method_item_id), Some(return_type)) = (self.canonical_item_id_for_span(item_span), return_type) {
+            self.surface.method_function_signatures.insert(method_item_id, FunctionSignature { params, return_type });
         }
     }
 
@@ -486,15 +416,10 @@ impl<'a> TypeSurfaceBuilder<'a> {
         let Some(receiver_item) = self.named_item_id(receiver_type_id) else {
             return;
         };
-        self.surface
-            .methods_by_receiver
-            .insert((receiver_item, def.name.node.name.clone()), method_item_id);
+        self.surface.methods_by_receiver.insert((receiver_item, def.name.node.name.clone()), method_item_id);
         self.surface.method_function_signatures.insert(
             method_item_id,
-            FunctionSignature {
-                params: params.iter().skip(1).copied().collect(),
-                return_type,
-            },
+            FunctionSignature { params: params.iter().skip(1).copied().collect(), return_type },
         );
     }
 
@@ -502,15 +427,10 @@ impl<'a> TypeSurfaceBuilder<'a> {
         let Some(method_item_id) = self.item_id_for_span(method_span) else {
             return;
         };
-        let Some(ResolvedType::Item(receiver_item_id)) =
-            self.resolved_type_at(def.node.receiver_type.span)
-        else {
+        let Some(ResolvedType::Item(receiver_item_id)) = self.resolved_type_at(def.node.receiver_type.span) else {
             return;
         };
-        self.surface.methods_by_receiver.insert(
-            (receiver_item_id, def.node.name.node.name.clone()),
-            method_item_id,
-        );
+        self.surface.methods_by_receiver.insert((receiver_item_id, def.node.name.node.name.clone()), method_item_id);
     }
 
     fn seed_contract_signatures(&mut self, program: &Spanned<HirProgram>) {
@@ -533,18 +453,14 @@ impl<'a> TypeSurfaceBuilder<'a> {
                 &mut cache,
                 &mut HashSet::new(),
             );
-            let Some(contract_item_id) = self.item_id_for_name(&contract_name, ItemKind::Contract)
-            else {
+            let Some(contract_item_id) = self.item_id_for_name(&contract_name, ItemKind::Contract) else {
                 continue;
             };
-            self.surface.contract_method_order.insert(
-                contract_item_id,
-                signatures.iter().map(|(name, _)| name.clone()).collect(),
-            );
+            self.surface
+                .contract_method_order
+                .insert(contract_item_id, signatures.iter().map(|(name, _)| name.clone()).collect());
             for (method_name, signature) in signatures {
-                self.surface
-                    .contract_signatures
-                    .insert((contract_item_id, method_name), signature);
+                self.surface.contract_signatures.insert((contract_item_id, method_name), signature);
             }
         }
     }
@@ -572,10 +488,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         for node in &definition.node.items {
             match &node.node {
                 HirContractNode::MethodSignature(signature) => {
-                    if methods
-                        .iter()
-                        .any(|(name, _)| name == &signature.node.name.node.name)
-                    {
+                    if methods.iter().any(|(name, _)| name == &signature.node.name.node.name) {
                         continue;
                     }
                     let mut params = Vec::new();
@@ -599,13 +512,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
                     let Some(return_type) = return_type else {
                         continue;
                     };
-                    methods.push((
-                        signature.node.name.node.name.clone(),
-                        FunctionSignature {
-                            params,
-                            return_type,
-                        },
-                    ));
+                    methods.push((signature.node.name.node.name.clone(), FunctionSignature { params, return_type }));
                 }
                 HirContractNode::Embedding(embedding) => {
                     let embedded = self.collect_contract_signatures_recursive(
@@ -629,25 +536,14 @@ impl<'a> TypeSurfaceBuilder<'a> {
         methods
     }
 
-    fn record_signature(
-        &mut self,
-        item_span: SpanInfo,
-        params: Vec<TypeId>,
-        return_type: Option<TypeId>,
-    ) {
+    fn record_signature(&mut self, item_span: SpanInfo, params: Vec<TypeId>, return_type: Option<TypeId>) {
         let Some(item_id) = self.canonical_item_id_for_span(item_span) else {
             return;
         };
         let Some(return_type) = return_type else {
             return;
         };
-        self.surface.function_signatures.insert(
-            item_id,
-            FunctionSignature {
-                params,
-                return_type,
-            },
-        );
+        self.surface.function_signatures.insert(item_id, FunctionSignature { params, return_type });
     }
 
     fn resolve_foreign_return_type(&mut self, ty: &Spanned<HirType>) -> Option<TypeId> {
@@ -667,9 +563,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         if let HirType::Complex(path) = &ty.node
             && path.node.segments.len() == 1
             && path.node.segments[0].node.type_args.is_empty()
-            && let Some(type_id) = self
-                .generic_params
-                .get(&path.node.segments[0].node.name.node.name)
+            && let Some(type_id) = self.generic_params.get(&path.node.segments[0].node.name.node.name)
         {
             return Some(*type_id);
         }
@@ -682,25 +576,15 @@ impl<'a> TypeSurfaceBuilder<'a> {
             HirType::Complex(path) => self.type_id_for_path_with_args(path),
             HirType::Array(inner) => {
                 let inner_id = self.type_id_for_type(inner)?;
-                Some(
-                    self.types
-                        .find_array_of(inner_id)
-                        .unwrap_or_else(|| self.types.intern(TypeInfo::Array(inner_id))),
-                )
+                Some(self.types.find_array_of(inner_id).unwrap_or_else(|| self.types.intern(TypeInfo::Array(inner_id))))
             }
-            HirType::Function {
-                return_type,
-                parameters,
-            } => {
+            HirType::Function { return_type, parameters } => {
                 let return_type = self.type_id_for_type(return_type)?;
                 let mut params = Vec::with_capacity(parameters.len());
                 for parameter in parameters {
                     params.push(self.type_id_for_type(parameter)?);
                 }
-                Some(self.types.intern(TypeInfo::Function {
-                    params,
-                    return_type,
-                }))
+                Some(self.types.intern(TypeInfo::Function { params, return_type }))
             }
         }
     }
@@ -716,22 +600,15 @@ impl<'a> TypeSurfaceBuilder<'a> {
         for arg in &last.node.type_args {
             args.push(self.type_id_for_type(arg)?);
         }
-        Some(self.types.intern(TypeInfo::Applied {
-            base: item_id,
-            args,
-        }))
+        Some(self.types.intern(TypeInfo::Applied { base: item_id, args }))
     }
 
     fn item_id_for_type_path(&self, path: &Spanned<HirPath>) -> Option<ItemId> {
         if let Some(ResolvedType::Item(item_id)) = self.resolved_type_at(path.span) {
             return Some(item_id);
         }
-        let segments: Vec<String> = path
-            .node
-            .segments
-            .iter()
-            .map(|segment| segment.node.name.node.name.clone())
-            .collect();
+        let segments: Vec<String> =
+            path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect();
         if segments.len() >= 2 {
             let (module_path, tail) = segments.split_at(segments.len() - 1);
             if let Some(module_id) = self.resolution.module_graph.module_id(module_path)
@@ -750,9 +627,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         }
         if segments.len() == 1 {
             let name = &segments[0];
-            return self
-                .item_id_for_name(name, ItemKind::Enum)
-                .or_else(|| self.item_id_for_name(name, ItemKind::Type));
+            return self.item_id_for_name(name, ItemKind::Enum).or_else(|| self.item_id_for_name(name, ItemKind::Type));
         }
         None
     }
@@ -774,27 +649,17 @@ impl<'a> TypeSurfaceBuilder<'a> {
     }
 
     fn resolved_type_at(&self, span: SpanInfo) -> Option<ResolvedType> {
-        self.resolution
-            .tables
-            .resolved_type_at(span, Some(&self.source_path))
+        self.resolution.tables.resolved_type_at(span, Some(&self.source_path))
     }
 
     fn item_id_for_span(&self, span: SpanInfo) -> Option<ItemId> {
         if let Some(info) = self.resolution.items.iter().find(|info| {
             info.span == span
-                && info
-                    .source_path
-                    .as_ref()
-                    .is_some_and(|source| paths::same_file(source, &self.source_path))
+                && info.source_path.as_ref().is_some_and(|source| paths::same_file(source, &self.source_path))
         }) {
             return Some(info.id);
         }
-        let matches: Vec<_> = self
-            .resolution
-            .items
-            .iter()
-            .filter(|info| info.span == span)
-            .collect();
+        let matches: Vec<_> = self.resolution.items.iter().filter(|info| info.span == span).collect();
         match matches.as_slice() {
             [] => None,
             [single] => Some(single.id),
@@ -803,12 +668,8 @@ impl<'a> TypeSurfaceBuilder<'a> {
     }
 
     fn item_id_for_name(&self, name: &str, kind: ItemKind) -> Option<ItemId> {
-        let matches: Vec<_> = self
-            .resolution
-            .items
-            .iter()
-            .filter(|info| info.name == name && info.kind == kind)
-            .collect();
+        let matches: Vec<_> =
+            self.resolution.items.iter().filter(|info| info.name == name && info.kind == kind).collect();
         match matches.as_slice() {
             [] => None,
             [single] => Some(single.id),
@@ -816,9 +677,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
                 .iter()
                 .rev()
                 .find(|info| {
-                    info.source_path
-                        .as_ref()
-                        .is_some_and(|source| paths::same_file(source, &self.source_path))
+                    info.source_path.as_ref().is_some_and(|source| paths::same_file(source, &self.source_path))
                 })
                 .or_else(|| many.last())
                 .map(|info| info.id),
@@ -827,16 +686,8 @@ impl<'a> TypeSurfaceBuilder<'a> {
 
     fn canonical_item_id_for_span(&self, span: SpanInfo) -> Option<ItemId> {
         let item_id = self.item_id_for_span(span)?;
-        let symbol = self
-            .resolution
-            .items
-            .get(item_id.0)
-            .and_then(|info| info.symbol)?;
-        self.resolution
-            .by_symbol
-            .get(&symbol)
-            .copied()
-            .or(Some(item_id))
+        let symbol = self.resolution.items.get(item_id.0).and_then(|info| info.symbol)?;
+        self.resolution.by_symbol.get(&symbol).copied().or(Some(item_id))
     }
 }
 
@@ -851,33 +702,15 @@ mod tests {
         let i64 = TypeId(1);
 
         let mut dep = UnitTypeSurface::default();
-        dep.function_signatures.insert(
-            item,
-            FunctionSignature {
-                params: vec![i32],
-                return_type: i32,
-            },
-        );
+        dep.function_signatures.insert(item, FunctionSignature { params: vec![i32], return_type: i32 });
 
         let mut entry = UnitTypeSurface::default();
-        entry.function_signatures.insert(
-            item,
-            FunctionSignature {
-                params: vec![i64],
-                return_type: i64,
-            },
-        );
+        entry.function_signatures.insert(item, FunctionSignature { params: vec![i64], return_type: i64 });
 
-        let merged = merge_unit_surfaces(
-            std::iter::once((PathBuf::from("dep.bd"), Arc::new(dep))),
-            Arc::new(entry),
-        );
+        let merged = merge_unit_surfaces(std::iter::once((PathBuf::from("dep.bd"), Arc::new(dep))), Arc::new(entry));
         assert_eq!(
             merged.function_signatures.get(&item),
-            Some(&FunctionSignature {
-                params: vec![i64],
-                return_type: i64,
-            })
+            Some(&FunctionSignature { params: vec![i64], return_type: i64 })
         );
     }
 }

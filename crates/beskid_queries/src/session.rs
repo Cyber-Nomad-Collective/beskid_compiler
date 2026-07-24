@@ -24,11 +24,8 @@ pub fn with_db<T>(f: impl FnOnce(&mut BeskidDatabase) -> T) -> T {
 }
 
 fn configure_db_in_place(db: &mut BeskidDatabase, project_root: &Path) {
-    let canonical = project_root
-        .canonicalize()
-        .unwrap_or_else(|_| project_root.to_path_buf());
-    let already_configured =
-        CONFIGURED_ROOT.with(|configured| configured.borrow().as_ref() == Some(&canonical));
+    let canonical = project_root.canonicalize().unwrap_or_else(|_| project_root.to_path_buf());
+    let already_configured = CONFIGURED_ROOT.with(|configured| configured.borrow().as_ref() == Some(&canonical));
     if already_configured {
         return;
     }
@@ -79,13 +76,7 @@ pub fn compile_front_end_from_resolved_input(
     options: FrontEndOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<FrontEndTypedResult> {
-    let prepared = prepare_compilation(
-        resolved,
-        PrepareOptions {
-            front_end: options,
-            ..Default::default()
-        },
-        pipeline,
-    )?;
+    let prepared =
+        prepare_compilation(resolved, PrepareOptions { front_end: options, ..Default::default() }, pipeline)?;
     prepared.into_executable()
 }

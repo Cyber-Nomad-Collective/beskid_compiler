@@ -3,9 +3,7 @@
 pub mod runner;
 
 pub use crate::{
-    coordinator::{
-        CoordinatorAction, CoordinatorApp, CoordinatorConfig, CoordinatorEvent, LayoutCoordinator,
-    },
+    coordinator::{CoordinatorAction, CoordinatorApp, CoordinatorConfig, CoordinatorEvent, LayoutCoordinator},
     error::{LayoutError, LayoutResult},
     events::{KeyboardEvent, MouseEvent, ResizeEvent, TickEvent},
     focus::FocusRequest,

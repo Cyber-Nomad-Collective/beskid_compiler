@@ -41,14 +41,8 @@ pub fn resolve_input_with_pipeline(
 }
 
 /// Resolve to a [`ResolvedProject`] with optional pipeline reporting and unresolved-deps policy.
-pub fn resolve_project_with_pipeline(
-    options: FrontendProjectPipelineOptions<'_>,
-) -> Result<ResolvedProject> {
-    let FrontendProjectPipelineOptions {
-        resolve,
-        unresolved_dependency_policy,
-        pipeline,
-    } = options;
+pub fn resolve_project_with_pipeline(options: FrontendProjectPipelineOptions<'_>) -> Result<ResolvedProject> {
+    let FrontendProjectPipelineOptions { resolve, unresolved_dependency_policy, pipeline } = options;
     services::resolve_project_with_policy(
         resolve.input,
         resolve.project,
@@ -81,20 +75,11 @@ pub fn run_semantic_analysis_gate(
 ) -> Result<()> {
     observe_phase_result(pipeline, SEMANTIC, || {
         let diagnostics = if let Some(plan) = services::compile_plan_for_input_path(path) {
-            let resolved = services::resolved_input_from_plan(
-                path.to_path_buf(),
-                source.to_string(),
-                plan,
-                None,
-                None,
-            );
+            let resolved = services::resolved_input_from_plan(path.to_path_buf(), source.to_string(), plan, None, None);
             let (_, diagnostics) = beskid_queries::prepare_compilation_diagnostics(
                 &resolved,
                 services::PrepareOptions {
-                    front_end: services::FrontEndOptions {
-                        with_semantic_diagnostics: true,
-                        ..Default::default()
-                    },
+                    front_end: services::FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                     dependency_typing: services::DependencyTypingPolicy::FullClosure,
                 },
                 pipeline,

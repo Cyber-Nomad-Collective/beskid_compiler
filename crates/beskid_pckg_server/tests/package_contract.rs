@@ -1,7 +1,6 @@
 use beskid_pckg_contract::{
-    PackageContractFixture, PackageHealthSnapshotResponse, PackageSearchResponse,
-    PackageSummaryResponse, PackageVersionLifecycleResponse, PackageVersionSummaryResponse,
-    PublishPackageVersionRequest, UpsertPackageRequest,
+    PackageContractFixture, PackageHealthSnapshotResponse, PackageSearchResponse, PackageSummaryResponse,
+    PackageVersionLifecycleResponse, PackageVersionSummaryResponse, PublishPackageVersionRequest, UpsertPackageRequest,
 };
 
 fn health() -> PackageHealthSnapshotResponse {
@@ -45,12 +44,7 @@ fn package(name: &str, is_public: bool) -> PackageSummaryResponse {
     }
 }
 
-fn version(
-    package_name: &str,
-    value: &str,
-    published_at_utc: &str,
-    is_yanked: bool,
-) -> PackageVersionSummaryResponse {
+fn version(package_name: &str, value: &str, published_at_utc: &str, is_yanked: bool) -> PackageVersionSummaryResponse {
     PackageVersionSummaryResponse {
         id: format!("{package_name}-{value}"),
         package_id: format!("{package_name}-id"),
@@ -70,11 +64,7 @@ fn version(
 #[test]
 fn list_and_search_contracts_preserve_the_full_summary_wire_shape() {
     let summary = package("Public.Demo", true);
-    let search = PackageSearchResponse {
-        package: summary.clone(),
-        review_count: 3,
-        health: health(),
-    };
+    let search = PackageSearchResponse { package: summary.clone(), review_count: 3, health: health() };
 
     assert_eq!(
         serde_json::to_value(vec![summary]).unwrap(),
@@ -94,26 +84,15 @@ fn list_and_search_contracts_preserve_the_full_summary_wire_shape() {
 fn detail_and_version_contracts_preserve_artifact_metadata() {
     let fixture = PackageContractFixture::new(
         package("Details.Demo", true),
-        vec![version(
-            "Details.Demo",
-            "1.0.0",
-            "2026-07-13T12:00:00Z",
-            false,
-        )],
+        vec![version("Details.Demo", "1.0.0", "2026-07-13T12:00:00Z", false)],
         health(),
     );
 
     let details = fixture.detail_for(None).expect("public package is visible");
     let json = serde_json::to_value(details).unwrap();
     assert_eq!(json["versions"][0]["hasReadme"], true);
-    assert_eq!(
-        json["versions"][0]["configuration"],
-        serde_json::json!({"profile":"release"})
-    );
-    assert_eq!(
-        json["versions"][0]["overrides"],
-        serde_json::json!({"strict":true})
-    );
+    assert_eq!(json["versions"][0]["configuration"], serde_json::json!({"profile":"release"}));
+    assert_eq!(json["versions"][0]["overrides"], serde_json::json!({"strict":true}));
     assert_eq!(json["latestVersion"], "1.0.0");
 }
 
@@ -138,26 +117,18 @@ fn latest_download_resolves_to_the_most_recent_non_yanked_version() {
         health(),
     );
 
-    let download = fixture
-        .download_for(None, "latest")
-        .expect("latest active download");
+    let download = fixture.download_for(None, "latest").expect("latest active download");
     assert_eq!(download.version.version, "1.1.0");
     assert_eq!(download.content_type, "application/zip");
-    assert_eq!(
-        download.content_disposition,
-        "attachment; filename=Latest.Demo-1.1.0.bpk"
-    );
+    assert_eq!(download.content_disposition, "attachment; filename=Latest.Demo-1.1.0.bpk");
     assert!(fixture.download_for(None, "2.0.0").is_none());
 }
 
 #[test]
 fn yank_and_unyank_lifecycle_responses_keep_the_version_payload() {
     let version = version("Yank.Demo", "1.0.0", "2026-07-13T12:00:00Z", true);
-    let response = PackageVersionLifecycleResponse {
-        success: true,
-        message: "version yanked".to_owned(),
-        version: Some(version),
-    };
+    let response =
+        PackageVersionLifecycleResponse { success: true, message: "version yanked".to_owned(), version: Some(version) };
 
     let json = serde_json::to_value(response).unwrap();
     assert_eq!(json["success"], true);
@@ -176,11 +147,8 @@ fn checksum_matched_publish_is_an_idempotent_success() {
 
     assert!(request.is_idempotent_against(&existing));
     assert!(
-        !PublishPackageVersionRequest {
-            checksum_sha256: Some("different-checksum".to_owned()),
-            ..request
-        }
-        .is_idempotent_against(&existing)
+        !PublishPackageVersionRequest { checksum_sha256: Some("different-checksum".to_owned()), ..request }
+            .is_idempotent_against(&existing)
     );
 }
 

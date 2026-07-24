@@ -16,34 +16,25 @@ use std::path::{Path, PathBuf};
 
 use crate::projects::error::ProjectError;
 use crate::projects::graph::{
-    ProjectGraphBuildOptions, UnresolvedDependencyKind, build_project_graph_with_options,
-    collect_dependency_projects, collect_unresolved_dependencies,
+    ProjectGraphBuildOptions, UnresolvedDependencyKind, build_project_graph_with_options, collect_dependency_projects,
+    collect_unresolved_dependencies,
 };
 use crate::projects::model::{
-    CompilePlan, DependencySource, ProjectKind, ProjectManifest, Target, TargetKind,
-    UnresolvedDependencyNote, UnresolvedDependencyPolicy,
+    CompilePlan, DependencySource, ProjectKind, ProjectManifest, Target, TargetKind, UnresolvedDependencyNote,
+    UnresolvedDependencyPolicy,
 };
 use crate::projects::parser::parse_manifest;
 
 pub fn load_manifest_from_path(path: &Path) -> Result<ProjectManifest, ProjectError> {
     crate::projects::discovery::reject_legacy_manifest_path(path)?;
-    let source = fs::read_to_string(path).map_err(|source| ProjectError::ReadManifest {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let source =
+        fs::read_to_string(path).map_err(|source| ProjectError::ReadManifest { path: path.to_path_buf(), source })?;
     parse_manifest(&source)
 }
 
 /// Build a compile plan with strict unresolved-dependency policy and default graph options.
-pub fn build_compile_plan(
-    manifest_path: &Path,
-    target_name: Option<&str>,
-) -> Result<CompilePlan, ProjectError> {
-    build_compile_plan_with_policy(
-        manifest_path,
-        target_name,
-        UnresolvedDependencyPolicy::Error,
-    )
+pub fn build_compile_plan(manifest_path: &Path, target_name: Option<&str>) -> Result<CompilePlan, ProjectError> {
+    build_compile_plan_with_policy(manifest_path, target_name, UnresolvedDependencyPolicy::Error)
 }
 
 /// Build a compile plan with caller-controlled unresolved-dependency policy and default graph options.
@@ -87,16 +78,11 @@ pub fn build_compile_plan_with_policy_and_graph(
         .cloned()
         .collect::<Vec<_>>();
 
-    if unresolved_dependency_policy == UnresolvedDependencyPolicy::Error
-        && !unresolved_that_must_error.is_empty()
-    {
+    if unresolved_dependency_policy == UnresolvedDependencyPolicy::Error && !unresolved_that_must_error.is_empty() {
         let details = unresolved_that_must_error
             .iter()
             .map(|dependency| {
-                format!(
-                    "{}({:?}={})",
-                    dependency.dependency_name, dependency.source, dependency.descriptor
-                )
+                format!("{}({:?}={})", dependency.dependency_name, dependency.source, dependency.descriptor)
             })
             .collect::<Vec<_>>()
             .join(", ");
@@ -144,11 +130,7 @@ pub fn build_compile_plan_with_policy_and_graph(
                 .ok_or_else(|| ProjectError::TargetNotFound(name.to_string()))?,
             None => pick_default_host_target(&manifest.targets)
                 .cloned()
-                .ok_or_else(|| {
-                    ProjectError::Validation(
-                        "manifest must declare at least one target".to_string(),
-                    )
-                })?,
+                .ok_or_else(|| ProjectError::Validation("manifest must declare at least one target".to_string()))?,
         }
     };
 
@@ -175,30 +157,18 @@ pub fn plan_entry_path(plan: &CompilePlan, source_root: &Path) -> PathBuf {
 }
 
 fn mod_artifact_placeholder_target() -> Target {
-    Target {
-        name: "__mod__".to_string(),
-        kind: TargetKind::Lib,
-        entry: Some("Mod.bd".to_string()),
-    }
+    Target { name: "__mod__".to_string(), kind: TargetKind::Lib, entry: Some("Mod.bd".to_string()) }
 }
 
 fn aggregate_placeholder_target() -> Target {
-    Target {
-        name: "__aggregate__".to_string(),
-        kind: TargetKind::Lib,
-        entry: None,
-    }
+    Target { name: "__aggregate__".to_string(), kind: TargetKind::Lib, entry: None }
 }
 
 fn pick_default_host_target(targets: &[Target]) -> Option<&Target> {
     targets
         .iter()
         .find(|target| target.kind == TargetKind::App)
-        .or_else(|| {
-            targets
-                .iter()
-                .find(|target| target.kind == TargetKind::Test)
-        })
+        .or_else(|| targets.iter().find(|target| target.kind == TargetKind::Test))
         .or_else(|| targets.iter().find(|target| target.kind == TargetKind::Lib))
         .or_else(|| targets.first())
 }

@@ -14,22 +14,19 @@ use beskid_analysis::services::{
 };
 use beskid_queries::{
     AstNodeKey, SemanticTypeId, SyntaxGenerationId, build_typed_program, bump_file_revision,
-    bump_typed_prepare_revision, fingerprint_key, node_span, node_type, resolved_item,
-    resolved_local, typed_entry_state_with_db,
+    bump_typed_prepare_revision, fingerprint_key, node_span, node_type, resolved_item, resolved_local,
+    typed_entry_state_with_db,
 };
 
 use crate::diagnostics::lsp_diagnostics_from_syntax;
 use crate::manifest_uri::is_manifest_uri;
 use crate::session::db_access::with_compilation_db_mut_state;
 use crate::session::diagnostics_bridge::collect_syntax_diagnostics_for_state;
-use crate::session::documentation_facts::{
-    SyntaxDocumentationFact, syntax_documentation_facts_for_source,
-};
+use crate::session::documentation_facts::{SyntaxDocumentationFact, syntax_documentation_facts_for_source};
 use crate::session::project_context::cached_compilation_context;
 use crate::session::startup::wait_for_initial_scan;
 use crate::session::store::{
-    Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxDiagnostic, SyntaxHover,
-    SyntaxInlayHint, SyntaxSymbol,
+    Document, State, SyntaxCompletion, SyntaxDefinition, SyntaxDiagnostic, SyntaxHover, SyntaxInlayHint, SyntaxSymbol,
 };
 use crate::workspace_scan::uri_to_path;
 
@@ -53,10 +50,7 @@ struct SyntaxFacts {
 
 fn entry_key_for_resolved(resolved: &ResolvedInput) -> Option<String> {
     let plan = resolved.compile_plan.as_ref()?;
-    Some(fingerprint_key(&SessionFingerprint::for_entry(
-        plan,
-        &resolved.source_path,
-    )))
+    Some(fingerprint_key(&SessionFingerprint::for_entry(plan, &resolved.source_path)))
 }
 
 fn lockfile_digest_for_plan(plan: &beskid_analysis::projects::CompilePlan) -> String {
@@ -81,8 +75,7 @@ fn syntax_facts_for_entry(
     let Some(front_end) = entry_state.typed.as_ref() else {
         return SyntaxFacts::default();
     };
-    let project =
-        db.ensure_project_session(plan, &resolved.source_path, lockfile_digest_for_plan(plan));
+    let project = db.ensure_project_session(plan, &resolved.source_path, lockfile_digest_for_plan(plan));
     // Fail closed to prepare-spine syntax authority: post-mod-rewrite entry program, never the
     // pre-rewrite ProgramAssembly units that still carry HIR compatibility state.
     let assembly = Arc::new(front_end.syntax_assembly());
@@ -94,41 +87,26 @@ fn syntax_facts_for_entry(
     let Some(entry) = typed.assembly.units().get(typed.assembly.entry_index()) else {
         return SyntaxFacts::default();
     };
-    let index =
-        beskid_analysis::syntax_query::SyntaxIndex::from_program(&entry.program, generation);
+    let index = beskid_analysis::syntax_query::SyntaxIndex::from_program(&entry.program, generation);
 
     let mut definitions = Vec::new();
     let mut hovers = Vec::new();
     let mut inlay_hints = Vec::new();
     for metadata in index.metadata() {
-        let reference = AstNodeKey {
-            unit,
-            generation,
-            node: metadata.id,
-        };
+        let reference = AstNodeKey { unit, generation, node: metadata.id };
         if matches!(
             metadata.kind,
             beskid_analysis::syntax_query::NodeKind::LiteralExpression
                 | beskid_analysis::syntax_query::NodeKind::PathExpression
-        ) && let Some(type_label) = node_type(db, reference)
-            .ok()
-            .flatten()
-            .and_then(syntax_type_label)
+        ) && let Some(type_label) = node_type(db, reference).ok().flatten().and_then(syntax_type_label)
             && let Some(span) = node_span(db, reference).ok().flatten()
         {
-            inlay_hints.push(SyntaxInlayHint {
-                start: span.start,
-                end: span.end,
-                type_label: type_label.to_string(),
-            });
+            inlay_hints.push(SyntaxInlayHint { start: span.start, end: span.end, type_label: type_label.to_string() });
         }
         let local = resolved_local(db, reference).ok().flatten();
-        let declaration = local.map(|resolved| resolved.declaration).or_else(|| {
-            resolved_item(db, reference)
-                .ok()
-                .flatten()
-                .map(|resolved| resolved.declaration)
-        });
+        let declaration = local
+            .map(|resolved| resolved.declaration)
+            .or_else(|| resolved_item(db, reference).ok().flatten().map(|resolved| resolved.declaration));
         let Some(declaration) = declaration else {
             continue;
         };
@@ -146,37 +124,20 @@ fn syntax_facts_for_entry(
             declaration_start: declaration_span.start,
             declaration_end: declaration_span.end,
         });
-        let Some(target_unit) = typed
-            .assembly
-            .units()
-            .iter()
-            .find(|candidate| candidate.path == declaration_path)
+        let Some(target_unit) = typed.assembly.units().iter().find(|candidate| candidate.path == declaration_path)
         else {
             continue;
         };
-        let target_index = beskid_analysis::syntax_query::SyntaxIndex::from_program(
-            &target_unit.program,
-            generation,
-        );
+        let target_index = beskid_analysis::syntax_query::SyntaxIndex::from_program(&target_unit.program, generation);
         let (location_start, location_end, name, kind) = target_index
             .node_at(&target_unit.program, declaration.node)
             .and_then(|node| {
-                node.of::<beskid_analysis::syntax::FunctionDefinition>()
-                    .map(|function| {
-                        (
-                            function.name.span.start,
-                            function.name.span.end,
-                            function.name.node.name.clone(),
-                            "function",
-                        )
-                    })
+                node.of::<beskid_analysis::syntax::FunctionDefinition>().map(|function| {
+                    (function.name.span.start, function.name.span.end, function.name.node.name.clone(), "function")
+                })
             })
             .unwrap_or_else(|| {
-                let name = entry
-                    .source
-                    .get(reference_span.start..reference_span.end)
-                    .unwrap_or_default()
-                    .to_string();
+                let name = entry.source.get(reference_span.start..reference_span.end).unwrap_or_default().to_string();
                 (declaration_span.start, declaration_span.end, name, "local")
             });
         if !name.is_empty() {
@@ -191,33 +152,17 @@ fn syntax_facts_for_entry(
         }
     }
     definitions.sort_by_key(|definition| {
-        (
-            definition.reference_start,
-            definition.reference_end,
-            definition.declaration_path.clone(),
-        )
+        (definition.reference_start, definition.reference_end, definition.declaration_path.clone())
     });
     definitions.dedup();
-    hovers.sort_by_key(|hover| {
-        (
-            hover.reference_start,
-            hover.reference_end,
-            hover.location_path.clone(),
-        )
-    });
+    hovers.sort_by_key(|hover| (hover.reference_start, hover.reference_end, hover.location_path.clone()));
     hovers.dedup();
     inlay_hints.sort_by_key(|hint| (hint.start, hint.end, hint.type_label.clone()));
     inlay_hints.dedup();
     let completion = index
         .ids_of_kind(beskid_analysis::syntax_query::NodeKind::Program)
         .next()
-        .map(|node| SyntaxCompletion {
-            anchor: AstNodeKey {
-                unit,
-                generation,
-                node,
-            },
-        });
+        .map(|node| SyntaxCompletion { anchor: AstNodeKey { unit, generation, node } });
     SyntaxFacts {
         definitions,
         hovers,
@@ -257,68 +202,51 @@ fn syntax_symbols_for_program(
         .iter()
         .filter_map(|item| {
             match &item.node {
-                Node::Function(definition) => Some((
-                    definition.node.name.node.name.clone(),
-                    Kind::Function,
-                    definition.node.name.span,
-                )),
-                Node::Method(definition) => Some((
-                    definition.node.name.node.name.clone(),
-                    Kind::Method,
-                    definition.node.name.span,
-                )),
-                Node::TestDefinition(definition) => Some((
-                    definition.node.name.node.name.clone(),
-                    Kind::Test,
-                    definition.node.name.span,
-                )),
-                Node::TypeDefinition(definition) => Some((
-                    definition.node.name.node.name.clone(),
-                    Kind::Type,
-                    definition.node.name.span,
-                )),
-                Node::EnumDefinition(definition) => Some((
-                    definition.node.name.node.name.clone(),
-                    Kind::Enum,
-                    definition.node.name.span,
-                )),
-                Node::ContractDefinition(definition) => Some((
-                    definition.node.name.node.name.clone(),
-                    Kind::Contract,
-                    definition.node.name.span,
-                )),
-                Node::InlineModule(definition) => Some((
-                    definition.node.name.node.name.clone(),
-                    Kind::Module,
-                    definition.node.name.span,
-                )),
-                Node::ModuleDeclaration(definition) => {
-                    definition.node.path.node.segments.last().map(|segment| {
-                        (
-                            segment.node.name.node.name.clone(),
-                            Kind::Module,
-                            segment.span,
-                        )
-                    })
+                Node::Function(definition) => {
+                    Some((definition.node.name.node.name.clone(), Kind::Function, definition.node.name.span))
                 }
+                Node::Method(definition) => {
+                    Some((definition.node.name.node.name.clone(), Kind::Method, definition.node.name.span))
+                }
+                Node::TestDefinition(definition) => {
+                    Some((definition.node.name.node.name.clone(), Kind::Test, definition.node.name.span))
+                }
+                Node::TypeDefinition(definition) => {
+                    Some((definition.node.name.node.name.clone(), Kind::Type, definition.node.name.span))
+                }
+                Node::EnumDefinition(definition) => {
+                    Some((definition.node.name.node.name.clone(), Kind::Enum, definition.node.name.span))
+                }
+                Node::ContractDefinition(definition) => {
+                    Some((definition.node.name.node.name.clone(), Kind::Contract, definition.node.name.span))
+                }
+                Node::InlineModule(definition) => {
+                    Some((definition.node.name.node.name.clone(), Kind::Module, definition.node.name.span))
+                }
+                Node::ModuleDeclaration(definition) => definition
+                    .node
+                    .path
+                    .node
+                    .segments
+                    .last()
+                    .map(|segment| (segment.node.name.node.name.clone(), Kind::Module, segment.span)),
                 Node::UseDeclaration(definition) => definition
                     .node
                     .alias
                     .as_ref()
                     .map(|alias| (alias.node.name.clone(), Kind::Use, alias.span))
                     .or_else(|| {
-                        definition.node.path.node.segments.last().map(|segment| {
-                            (segment.node.name.node.name.clone(), Kind::Use, segment.span)
-                        })
+                        definition
+                            .node
+                            .path
+                            .node
+                            .segments
+                            .last()
+                            .map(|segment| (segment.node.name.node.name.clone(), Kind::Use, segment.span))
                     }),
                 _ => None,
             }
-            .map(|(name, kind, span)| SyntaxSymbol {
-                name,
-                kind,
-                start: span.start,
-                end: span.end,
-            })
+            .map(|(name, kind, span)| SyntaxSymbol { name, kind, start: span.start, end: span.end })
         })
         .collect()
 }
@@ -329,10 +257,7 @@ fn bump_entry_file_revision(db: &mut beskid_queries::BeskidDatabase, resolved: &
     }
 }
 
-fn bump_entry_typed_prepare_revision(
-    db: &mut beskid_queries::BeskidDatabase,
-    resolved: &ResolvedInput,
-) {
+fn bump_entry_typed_prepare_revision(db: &mut beskid_queries::BeskidDatabase, resolved: &ResolvedInput) {
     if let Some(entry_key) = entry_key_for_resolved(resolved) {
         bump_typed_prepare_revision(db, &entry_key);
     }
@@ -345,52 +270,29 @@ async fn resolved_input_for_path(
 ) -> Option<(ResolvedInput, beskid_analysis::CompilationContext)> {
     let session = cached_compilation_context(state, path).await?;
     session.compile_plan.as_ref()?;
-    let mut resolved = resolve_input(Some(&path.to_path_buf()), None, None, None, false, false)
-        .ok()
-        .or_else(|| {
-            let plan = session.compile_plan.clone()?;
-            Some(resolved_input_from_plan(
-                path.to_path_buf(),
-                text.to_string(),
-                plan,
-                None,
-                None,
-            ))
-        })?;
+    let mut resolved = resolve_input(Some(&path.to_path_buf()), None, None, None, false, false).ok().or_else(|| {
+        let plan = session.compile_plan.clone()?;
+        Some(resolved_input_from_plan(path.to_path_buf(), text.to_string(), plan, None, None))
+    })?;
     resolved.source = text.to_string();
     Some((resolved, session))
 }
 
 async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &str) -> SyntaxFacts {
     wait_for_initial_scan(state).await;
-    let documentation = if is_manifest_uri(uri) {
-        Vec::new()
-    } else {
-        syntax_documentation_facts_for_source(uri.as_str(), text)
-    };
+    let documentation =
+        if is_manifest_uri(uri) { Vec::new() } else { syntax_documentation_facts_for_source(uri.as_str(), text) };
     if is_manifest_uri(uri) {
         let diagnostics = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
-        return SyntaxFacts {
-            documentation,
-            diagnostics,
-            ..SyntaxFacts::default()
-        };
+        return SyntaxFacts { documentation, diagnostics, ..SyntaxFacts::default() };
     }
     let Some(path) = uri_to_path(uri) else {
         let diagnostics = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
-        return SyntaxFacts {
-            documentation,
-            diagnostics,
-            ..SyntaxFacts::default()
-        };
+        return SyntaxFacts { documentation, diagnostics, ..SyntaxFacts::default() };
     };
     let Some((resolved, session)) = resolved_input_for_path(state, &path, text).await else {
         let diagnostics = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
-        return SyntaxFacts {
-            documentation,
-            diagnostics,
-            ..SyntaxFacts::default()
-        };
+        return SyntaxFacts { documentation, diagnostics, ..SyntaxFacts::default() };
     };
     let mut facts = with_compilation_db_mut_state(state, |db, write| {
         if let Some(plan) = session.compile_plan.as_ref() {
@@ -404,8 +306,7 @@ async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &str) -> Syn
         }
     })
     .await;
-    facts.diagnostics =
-        collect_syntax_diagnostics_for_state(state, uri, text, Some(&session)).await;
+    facts.diagnostics = collect_syntax_diagnostics_for_state(state, uri, text, Some(&session)).await;
     facts.documentation = documentation;
     facts
 }
@@ -435,12 +336,7 @@ fn apply_syntax_facts(doc: &mut Document, syntax_facts: SyntaxFacts) {
 }
 
 /// Build a [`Document`] for `uri` with generation-bound syntax facts for the buffer text.
-pub async fn build_document(
-    state: &RwLock<State>,
-    uri: &Uri,
-    version: i32,
-    text: String,
-) -> Document {
+pub async fn build_document(state: &RwLock<State>, uri: &Uri, version: i32, text: String) -> Document {
     let syntax_facts = build_syntax_facts(state, uri, &text).await;
     document_from_syntax_facts(version, text, syntax_facts)
 }
@@ -519,15 +415,8 @@ async fn apply_typed_prepare_rebuild(state: &RwLock<State>, uri: &Uri) {
 pub async fn schedule_typed_prepare_rebuild(state: Arc<RwLock<State>>, uri: Uri) {
     let rev = {
         let mut write = state.write().await;
-        let next = write
-            .typed_prepare_schedule_revision
-            .get(&uri)
-            .copied()
-            .unwrap_or(0)
-            .saturating_add(1);
-        write
-            .typed_prepare_schedule_revision
-            .insert(uri.clone(), next);
+        let next = write.typed_prepare_schedule_revision.get(&uri).copied().unwrap_or(0).saturating_add(1);
+        write.typed_prepare_schedule_revision.insert(uri.clone(), next);
         next
     };
 
@@ -537,10 +426,7 @@ pub async fn schedule_typed_prepare_rebuild(state: Arc<RwLock<State>>, uri: Uri)
         tokio::time::sleep(Duration::from_millis(TYPED_PREPARE_DEBOUNCE_MS)).await;
         let should_run = {
             let read = state_for_task.read().await;
-            read.typed_prepare_schedule_revision
-                .get(&uri_for_task)
-                .copied()
-                == Some(rev)
+            read.typed_prepare_schedule_revision.get(&uri_for_task).copied() == Some(rev)
         };
         if should_run {
             apply_typed_prepare_rebuild(&state_for_task, &uri_for_task).await;
@@ -574,9 +460,7 @@ pub async fn set_document(state: &RwLock<State>, uri: Uri, version: i32, text: S
     {
         return false;
     }
-    write_state
-        .docs
-        .insert(uri, document_from_syntax_facts(version, text, syntax_facts));
+    write_state.docs.insert(uri, document_from_syntax_facts(version, text, syntax_facts));
     true
 }
 
@@ -638,9 +522,7 @@ pub async fn publish_diagnostics_for_uri(client: &Client, state: &RwLock<State>,
             apply_syntax_facts(indexed, syntax_facts);
         }
     }
-    client
-        .publish_diagnostics(uri.clone(), diagnostics, Some(version))
-        .await;
+    client.publish_diagnostics(uri.clone(), diagnostics, Some(version)).await;
 }
 
 #[cfg(test)]
@@ -667,13 +549,7 @@ mod tests {
         state.read().await.mark_initial_scan_complete();
         let file_uri = uri();
         set_document(&state, file_uri.clone(), 2, source()).await;
-        set_document(
-            &state,
-            file_uri.clone(),
-            1,
-            "i32 Main() { return 1; }".to_string(),
-        )
-        .await;
+        set_document(&state, file_uri.clone(), 1, "i32 Main() { return 1; }".to_string()).await;
 
         let read = state.read().await;
         let doc = read.docs.get(&file_uri).expect("document exists");
@@ -691,9 +567,7 @@ mod tests {
             let read = state.read().await;
             let doc = read.docs.get(&file_uri).expect("document exists");
             assert!(
-                doc.syntax_documentation
-                    .iter()
-                    .any(|fact| fact.name == "Main"),
+                doc.syntax_documentation.iter().any(|fact| fact.name == "Main"),
                 "precondition: documentation facts bound"
             );
         }
@@ -720,9 +594,7 @@ mod tests {
         let read = state.read().await;
         let doc = read.docs.get(&file_uri).expect("document exists");
         assert!(
-            doc.syntax_documentation
-                .iter()
-                .any(|fact| fact.name == "Main"),
+            doc.syntax_documentation.iter().any(|fact| fact.name == "Main"),
             "rebuild must rebind documentation facts to the current buffer"
         );
     }
@@ -732,47 +604,21 @@ mod tests {
         let file_uri = uri();
         let state = tokio::sync::RwLock::new(State::default());
         state.read().await.mark_initial_scan_complete();
-        set_document(
-            &state,
-            file_uri.clone(),
-            1,
-            "i32 Old() { return 0; }".into(),
-        )
-        .await;
+        set_document(&state, file_uri.clone(), 1, "i32 Old() { return 0; }".into()).await;
         {
             let read = state.read().await;
             let doc = read.docs.get(&file_uri).expect("document exists");
-            assert!(
-                doc.syntax_documentation
-                    .iter()
-                    .any(|fact| fact.name == "Old")
-            );
-            assert!(
-                !doc.syntax_documentation
-                    .iter()
-                    .any(|fact| fact.name == "Current")
-            );
+            assert!(doc.syntax_documentation.iter().any(|fact| fact.name == "Old"));
+            assert!(!doc.syntax_documentation.iter().any(|fact| fact.name == "Current"));
         }
-        set_document(
-            &state,
-            file_uri.clone(),
-            2,
-            "i32 Current() { return 0; }".into(),
-        )
-        .await;
+        set_document(&state, file_uri.clone(), 2, "i32 Current() { return 0; }".into()).await;
         let read = state.read().await;
         let doc = read.docs.get(&file_uri).expect("document exists");
         assert!(
-            doc.syntax_documentation
-                .iter()
-                .any(|fact| fact.name == "Current"),
+            doc.syntax_documentation.iter().any(|fact| fact.name == "Current"),
             "refresh must replace stale documentation facts"
         );
-        assert!(
-            !doc.syntax_documentation
-                .iter()
-                .any(|fact| fact.name == "Old")
-        );
+        assert!(!doc.syntax_documentation.iter().any(|fact| fact.name == "Old"));
     }
 
     #[tokio::test]
@@ -787,9 +633,7 @@ mod tests {
         // by the Document revision (no Document.analysis snapshot).
         let _ = &doc.syntax_diagnostics;
         assert!(
-            doc.syntax_diagnostics
-                .iter()
-                .all(|diag| diag.code.as_deref() != Some("E1709")),
+            doc.syntax_diagnostics.iter().all(|diag| diag.code.as_deref() != Some("E1709")),
             "refresh must not attach orphaned composition diagnostics"
         );
     }
@@ -820,9 +664,7 @@ mod tests {
         let doc = read.docs.get(&file_uri).expect("document exists");
         assert_eq!(doc.version, 2);
         assert!(
-            doc.syntax_documentation
-                .iter()
-                .any(|fact| fact.name == "Main"),
+            doc.syntax_documentation.iter().any(|fact| fact.name == "Main"),
             "same-text upsert must rebuild facts after a cleared snapshot-free document"
         );
     }

@@ -1,7 +1,7 @@
 //! Process host builtins for corelib `Core.Process`.
 
-use std::sync::atomic::AtomicI32;
 use std::process::Command;
+use std::sync::atomic::AtomicI32;
 
 static LAST_EXIT_CODE: AtomicI32 = AtomicI32::new(0);
 

@@ -1,16 +1,14 @@
 use crate::builtins::{BuiltinType, builtin_specs};
 use crate::hir::{
-    HirArrayLiteralExpression, HirBinaryExpression, HirBinaryOp, HirCallExpression,
-    HirEnumConstructorExpression, HirExpressionNode, HirIndexExpression, HirLambdaExpression,
-    HirLiteral, HirMatchArm, HirMatchExpression, HirMemberExpression, HirPath, HirPathExpression,
-    HirPattern, HirPrimitiveType, HirStructLiteralExpression, HirUnaryExpression, HirUnaryOp,
-    integer_literal_magnitude, integer_literal_primitive_type,
+    HirArrayLiteralExpression, HirBinaryExpression, HirBinaryOp, HirCallExpression, HirEnumConstructorExpression,
+    HirExpressionNode, HirIndexExpression, HirLambdaExpression, HirLiteral, HirMatchArm, HirMatchExpression,
+    HirMemberExpression, HirPath, HirPathExpression, HirPattern, HirPrimitiveType, HirStructLiteralExpression,
+    HirUnaryExpression, HirUnaryOp, integer_literal_magnitude, integer_literal_primitive_type,
 };
 use crate::resolve::{ItemKind, ResolvedType, ResolvedValue};
 use crate::syntax::Spanned;
 use crate::types::path_value::{
-    first_field_segment_name, method_name_from_path_callee, receiver_type_for_path_callee,
-    resolve_path_base_local,
+    first_field_segment_name, method_name_from_path_callee, receiver_type_for_path_callee, resolve_path_base_local,
 };
 use crate::types::{TypeId, TypeInfo};
 
@@ -18,23 +16,14 @@ use super::TypeChecker;
 use crate::types::result::{CallLoweringKind, MethodReceiverSource, TypeError};
 
 impl<'a> TypeChecker<'a> {
-    pub(crate) fn type_expression(
-        &mut self,
-        expression: &Spanned<HirExpressionNode>,
-    ) -> Option<TypeId> {
+    pub(crate) fn type_expression(&mut self, expression: &Spanned<HirExpressionNode>) -> Option<TypeId> {
         let type_id = match &expression.node {
-            HirExpressionNode::LambdaExpression(lambda) => {
-                self.type_lambda_expression_with_expected(lambda, None)
-            }
-            HirExpressionNode::LiteralExpression(literal) => {
-                self.type_id_for_literal(&literal.node.literal)
-            }
+            HirExpressionNode::LambdaExpression(lambda) => self.type_lambda_expression_with_expected(lambda, None),
+            HirExpressionNode::LiteralExpression(literal) => self.type_id_for_literal(&literal.node.literal),
             HirExpressionNode::PathExpression(path_expr) => {
                 self.type_id_for_path(path_expr.node.path.span, &path_expr.node.path)
             }
-            HirExpressionNode::StructLiteralExpression(literal) => {
-                self.type_struct_literal_expression(literal)
-            }
+            HirExpressionNode::StructLiteralExpression(literal) => self.type_struct_literal_expression(literal),
             HirExpressionNode::EnumConstructorExpression(constructor) => {
                 self.type_enum_constructor_expression(constructor)
             }
@@ -43,12 +32,8 @@ impl<'a> TypeChecker<'a> {
                 let value = self.type_expression(&assign.node.value);
                 if let (Some(target), Some(value)) = (target, value) {
                     let target_is_event_member = match &assign.node.target.node {
-                        HirExpressionNode::MemberExpression(member) => {
-                            self.is_event_member_expression(member)
-                        }
-                        HirExpressionNode::PathExpression(path_expr) => {
-                            self.is_event_path_expression(path_expr)
-                        }
+                        HirExpressionNode::MemberExpression(member) => self.is_event_member_expression(member),
+                        HirExpressionNode::PathExpression(path_expr) => self.is_event_path_expression(path_expr),
                         _ => false,
                     };
                     self.require_same_type(assign.span, target, value);
@@ -58,11 +43,8 @@ impl<'a> TypeChecker<'a> {
                             if target_is_event_member {
                                 return Some(target);
                             }
-                            if matches!(self.type_table.get(value), Some(TypeInfo::Function { .. }))
-                            {
-                                self.errors.push(TypeError::InvalidEventSubscriptionTarget {
-                                    span: assign.span,
-                                });
+                            if matches!(self.type_table.get(value), Some(TypeInfo::Function { .. })) {
+                                self.errors.push(TypeError::InvalidEventSubscriptionTarget { span: assign.span });
                                 return Some(target);
                             }
                             let is_string = matches!(
@@ -70,24 +52,19 @@ impl<'a> TypeChecker<'a> {
                                 Some(TypeInfo::Primitive(HirPrimitiveType::String))
                             );
                             if !self.is_numeric(target) && !is_string {
-                                self.errors
-                                    .push(TypeError::UnsupportedExpression { span: assign.span });
+                                self.errors.push(TypeError::UnsupportedExpression { span: assign.span });
                             }
                         }
                         crate::hir::HirAssignOp::SubAssign => {
                             if target_is_event_member {
                                 return Some(target);
                             }
-                            if matches!(self.type_table.get(value), Some(TypeInfo::Function { .. }))
-                            {
-                                self.errors.push(TypeError::InvalidEventSubscriptionTarget {
-                                    span: assign.span,
-                                });
+                            if matches!(self.type_table.get(value), Some(TypeInfo::Function { .. })) {
+                                self.errors.push(TypeError::InvalidEventSubscriptionTarget { span: assign.span });
                                 return Some(target);
                             }
                             if !self.is_numeric(target) {
-                                self.errors
-                                    .push(TypeError::UnsupportedExpression { span: assign.span });
+                                self.errors.push(TypeError::UnsupportedExpression { span: assign.span });
                             }
                         }
                     }
@@ -98,9 +75,7 @@ impl<'a> TypeChecker<'a> {
             }
             HirExpressionNode::BinaryExpression(binary) => self.type_binary_expression(binary),
             HirExpressionNode::UnaryExpression(unary) => self.type_unary_expression(unary),
-            HirExpressionNode::GroupedExpression(grouped) => {
-                self.type_expression(&grouped.node.expr)
-            }
+            HirExpressionNode::GroupedExpression(grouped) => self.type_expression(&grouped.node.expr),
             HirExpressionNode::BlockExpression(block_expr) => {
                 self.type_block(&block_expr.node.block);
                 self.primitive_type_id(HirPrimitiveType::Unit)
@@ -114,25 +89,15 @@ impl<'a> TypeChecker<'a> {
                 type_id
             }
             HirExpressionNode::MemberExpression(member) => self.type_member_expression(member),
-            HirExpressionNode::MatchExpression(match_expr) => {
-                self.type_match_expression(match_expr)
-            }
+            HirExpressionNode::MatchExpression(match_expr) => self.type_match_expression(match_expr),
             HirExpressionNode::TryExpression(try_expr) => self.type_try_expression(try_expr),
-            HirExpressionNode::SpawnExpression(spawn_expr) => {
-                self.type_spawn_expression(spawn_expr)
-            }
+            HirExpressionNode::SpawnExpression(spawn_expr) => self.type_spawn_expression(spawn_expr),
             HirExpressionNode::MacroInvocation(_) | HirExpressionNode::MacroMetavariable(_) => {
                 self.primitive_type_id(HirPrimitiveType::Unit)
             }
-            HirExpressionNode::IndexExpression(index_expr) => {
-                self.type_index_expression(index_expr)
-            }
-            HirExpressionNode::ArrayLiteralExpression(lit) => {
-                self.type_array_literal_expression(lit)
-            }
-            HirExpressionNode::CodeStringExpression(_) => {
-                self.primitive_type_id(HirPrimitiveType::String)
-            }
+            HirExpressionNode::IndexExpression(index_expr) => self.type_index_expression(index_expr),
+            HirExpressionNode::ArrayLiteralExpression(lit) => self.type_array_literal_expression(lit),
+            HirExpressionNode::CodeStringExpression(_) => self.primitive_type_id(HirPrimitiveType::String),
         };
 
         if let Some(type_id) = type_id {
@@ -141,31 +106,21 @@ impl<'a> TypeChecker<'a> {
         type_id
     }
 
-    fn type_index_expression(
-        &mut self,
-        index_expr: &Spanned<HirIndexExpression>,
-    ) -> Option<TypeId> {
+    fn type_index_expression(&mut self, index_expr: &Spanned<HirIndexExpression>) -> Option<TypeId> {
         let target_type = self.type_expression(&index_expr.node.target)?;
         let _index_type = self.type_expression(&index_expr.node.index);
 
         match self.type_table.get(target_type).cloned() {
             Some(TypeInfo::Array(element_type_id)) => Some(element_type_id),
-            Some(TypeInfo::Primitive(HirPrimitiveType::String)) => {
-                self.primitive_type_id(HirPrimitiveType::U8)
-            }
+            Some(TypeInfo::Primitive(HirPrimitiveType::String)) => self.primitive_type_id(HirPrimitiveType::U8),
             _ => {
-                self.errors.push(TypeError::UnsupportedExpression {
-                    span: index_expr.span,
-                });
+                self.errors.push(TypeError::UnsupportedExpression { span: index_expr.span });
                 None
             }
         }
     }
 
-    fn type_array_literal_expression(
-        &mut self,
-        lit: &Spanned<HirArrayLiteralExpression>,
-    ) -> Option<TypeId> {
+    fn type_array_literal_expression(&mut self, lit: &Spanned<HirArrayLiteralExpression>) -> Option<TypeId> {
         if lit.node.elements.is_empty() {
             return None;
         }
@@ -177,8 +132,7 @@ impl<'a> TypeChecker<'a> {
             if let Some(elem_type) = elem_type
                 && elem_type != first_type
             {
-                self.errors
-                    .push(TypeError::UnsupportedExpression { span: lit.span });
+                self.errors.push(TypeError::UnsupportedExpression { span: lit.span });
                 return None;
             }
         }
@@ -186,31 +140,19 @@ impl<'a> TypeChecker<'a> {
         Some(self.type_table.intern(TypeInfo::Array(first_type)))
     }
 
-    fn type_try_expression(
-        &mut self,
-        try_expr: &Spanned<crate::hir::HirTryExpression>,
-    ) -> Option<TypeId> {
+    fn type_try_expression(&mut self, try_expr: &Spanned<crate::hir::HirTryExpression>) -> Option<TypeId> {
         let target_type = self.type_expression(&try_expr.node.expr)?;
         let Some(result_item_id) = self.named_item_id(target_type) else {
-            self.errors.push(TypeError::InvalidTryTarget {
-                span: try_expr.span,
-            });
+            self.errors.push(TypeError::InvalidTryTarget { span: try_expr.span });
             return None;
         };
 
         let ok_fields = self
             .enum_variants_ordered
             .get(&result_item_id)
-            .and_then(|variants| {
-                variants
-                    .iter()
-                    .find(|(name, _)| name == "Ok")
-                    .map(|(_, fields)| fields.clone())
-            });
+            .and_then(|variants| variants.iter().find(|(name, _)| name == "Ok").map(|(_, fields)| fields.clone()));
         let Some(fields) = ok_fields else {
-            self.errors.push(TypeError::InvalidTryTarget {
-                span: try_expr.span,
-            });
+            self.errors.push(TypeError::InvalidTryTarget { span: try_expr.span });
             return None;
         };
 
@@ -221,9 +163,7 @@ impl<'a> TypeChecker<'a> {
                 } else if fields.len() == 1 {
                     Some(fields[0])
                 } else {
-                    self.errors.push(TypeError::InvalidTryTarget {
-                        span: try_expr.span,
-                    });
+                    self.errors.push(TypeError::InvalidTryTarget { span: try_expr.span });
                     None
                 }
             }
@@ -231,16 +171,12 @@ impl<'a> TypeChecker<'a> {
                 if fields.len() == 1 {
                     Some(fields[0])
                 } else {
-                    self.errors.push(TypeError::InvalidTryTarget {
-                        span: try_expr.span,
-                    });
+                    self.errors.push(TypeError::InvalidTryTarget { span: try_expr.span });
                     None
                 }
             }
             _ => {
-                self.errors.push(TypeError::InvalidTryTarget {
-                    span: try_expr.span,
-                });
+                self.errors.push(TypeError::InvalidTryTarget { span: try_expr.span });
                 None
             }
         }
@@ -251,22 +187,17 @@ impl<'a> TypeChecker<'a> {
         lambda: &Spanned<HirLambdaExpression>,
         expected_function: Option<TypeId>,
     ) -> Option<TypeId> {
-        let expected_signature =
-            expected_function.and_then(|type_id| match self.type_table.get(type_id) {
-                Some(TypeInfo::Function {
-                    params,
-                    return_type,
-                }) => Some((params.clone(), *return_type, type_id)),
-                _ => None,
-            });
+        let expected_signature = expected_function.and_then(|type_id| match self.type_table.get(type_id) {
+            Some(TypeInfo::Function { params, return_type }) => Some((params.clone(), *return_type, type_id)),
+            _ => None,
+        });
 
         let mut params = Vec::with_capacity(lambda.node.parameters.len());
         let mut missing = false;
 
         for (index, parameter) in lambda.node.parameters.iter().enumerate() {
-            let inferred = expected_signature
-                .as_ref()
-                .and_then(|(expected_params, _, _)| expected_params.get(index).copied());
+            let inferred =
+                expected_signature.as_ref().and_then(|(expected_params, _, _)| expected_params.get(index).copied());
             let type_id = if let Some(ty) = &parameter.node.ty {
                 let Some(type_id) = self.type_id_for_type(ty) else {
                     missing = true;
@@ -306,21 +237,14 @@ impl<'a> TypeChecker<'a> {
             return None;
         }
 
-        let actual = self.type_table.intern(TypeInfo::Function {
-            params,
-            return_type,
-        });
+        let actual = self.type_table.intern(TypeInfo::Function { params, return_type });
         if let Some((_, _, expected_type_id)) = expected_signature {
             return Some(expected_type_id);
         }
         Some(actual)
     }
 
-    fn type_argument_with_expected(
-        &mut self,
-        arg: &Spanned<HirExpressionNode>,
-        expected: TypeId,
-    ) -> Option<TypeId> {
+    fn type_argument_with_expected(&mut self, arg: &Spanned<HirExpressionNode>, expected: TypeId) -> Option<TypeId> {
         match &arg.node {
             HirExpressionNode::LambdaExpression(lambda) => {
                 self.type_lambda_expression_with_expected(lambda, Some(expected))
@@ -335,24 +259,14 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    pub(super) fn type_call_expression(
-        &mut self,
-        call: &Spanned<HirCallExpression>,
-    ) -> Option<TypeId> {
+    pub(super) fn type_call_expression(&mut self, call: &Spanned<HirCallExpression>) -> Option<TypeId> {
         if let Some((receiver_source, receiver_type, receiver_item_id, field_type)) =
             self.resolve_event_call_target(&call.node.callee)
         {
-            let TypeInfo::Function {
-                params,
-                return_type,
-            } = self
-                .type_table
-                .get(field_type)
-                .cloned()
-                .unwrap_or(TypeInfo::Primitive(HirPrimitiveType::Unit))
+            let TypeInfo::Function { params, return_type } =
+                self.type_table.get(field_type).cloned().unwrap_or(TypeInfo::Primitive(HirPrimitiveType::Unit))
             else {
-                self.errors
-                    .push(TypeError::UnknownCallTarget { span: call.span });
+                self.errors.push(TypeError::UnknownCallTarget { span: call.span });
                 return None;
             };
 
@@ -372,29 +286,16 @@ impl<'a> TypeChecker<'a> {
             }
 
             if self.current_receiver_item_id != Some(receiver_item_id) {
-                self.errors
-                    .push(TypeError::InvalidEventInvocationScope { span: call.span });
+                self.errors.push(TypeError::InvalidEventInvocationScope { span: call.span });
             }
 
-            self.record_call_kind(
-                call.id,
-                CallLoweringKind::EventInvoke {
-                    receiver_source,
-                    receiver_type,
-                },
-            );
+            self.record_call_kind(call.id, CallLoweringKind::EventInvoke { receiver_source, receiver_type });
             return Some(return_type);
         }
 
         if let HirExpressionNode::PathExpression(path_expr) = &call.node.callee.node {
-            let path: Vec<String> = path_expr
-                .node
-                .path
-                .node
-                .segments
-                .iter()
-                .map(|segment| segment.node.name.node.name.clone())
-                .collect();
+            let path: Vec<String> =
+                path_expr.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect();
             if Self::is_fiber_join_path(&path)
                 && let Some(handle) = call.node.args.first()
             {
@@ -412,15 +313,9 @@ impl<'a> TypeChecker<'a> {
                     source_path,
                 )
             {
-                if let Some(method_item_id) =
-                    self.method_item_for_receiver(receiver_type, method_name)
-                {
-                    let Some(signature) =
-                        self.method_dispatch_signature(method_item_id, receiver_type)
-                    else {
-                        self.errors.push(TypeError::UnknownCallTarget {
-                            span: call.node.callee.span,
-                        });
+                if let Some(method_item_id) = self.method_item_for_receiver(receiver_type, method_name) {
+                    let Some(signature) = self.method_dispatch_signature(method_item_id, receiver_type) else {
+                        self.errors.push(TypeError::UnknownCallTarget { span: call.node.callee.span });
                         return None;
                     };
                     let param_types = &signature.params;
@@ -450,10 +345,8 @@ impl<'a> TypeChecker<'a> {
                     return Some(signature.return_type);
                 }
                 if let Some(contract_item_id) = self.named_item_id(receiver_type)
-                    && let Some(signature) = self
-                        .contract_signatures
-                        .get(&(contract_item_id, method_name.to_string()))
-                        .cloned()
+                    && let Some(signature) =
+                        self.contract_signatures.get(&(contract_item_id, method_name.to_string())).cloned()
                 {
                     if call.node.args.len() != signature.params.len() {
                         self.errors.push(TypeError::CallArityMismatch {
@@ -486,10 +379,8 @@ impl<'a> TypeChecker<'a> {
             if segments.len() >= 2
                 && let Some(ResolvedValue::Item(contract_item_id)) = resolved
                 && let Some(method_name) = method_name_from_path_callee(segments)
-                && let Some(signature) = self
-                    .contract_signatures
-                    .get(&(contract_item_id, method_name.to_string()))
-                    .cloned()
+                && let Some(signature) =
+                    self.contract_signatures.get(&(contract_item_id, method_name.to_string())).cloned()
             {
                 if call.node.args.len() != signature.params.len() {
                     self.errors.push(TypeError::CallArityMismatch {
@@ -528,11 +419,7 @@ impl<'a> TypeChecker<'a> {
                     self.resolved_value_at(path_expr.node.path.span)
             {
                 let method_name = member.node.member.node.name.as_str().to_string();
-                if let Some(signature) = self
-                    .contract_signatures
-                    .get(&(item_id, method_name.clone()))
-                    .cloned()
-                {
+                if let Some(signature) = self.contract_signatures.get(&(item_id, method_name.clone())).cloned() {
                     if call.node.args.len() != signature.params.len() {
                         self.errors.push(TypeError::CallArityMismatch {
                             span: call.span,
@@ -555,9 +442,7 @@ impl<'a> TypeChecker<'a> {
                         call.id,
                         CallLoweringKind::ContractDispatch {
                             contract_item_id: item_id,
-                            receiver_source: MethodReceiverSource::Expression(
-                                member.node.target.span,
-                            ),
+                            receiver_source: MethodReceiverSource::Expression(member.node.target.span),
                             receiver_type,
                         },
                     );
@@ -568,11 +453,8 @@ impl<'a> TypeChecker<'a> {
             let target_type = self.type_expression(&member.node.target)?;
             let method_name = member.node.member.node.name.as_str();
             if let Some(method_item_id) = self.method_item_for_receiver(target_type, method_name) {
-                let Some(signature) = self.method_dispatch_signature(method_item_id, target_type)
-                else {
-                    self.errors.push(TypeError::UnknownCallTarget {
-                        span: call.node.callee.span,
-                    });
+                let Some(signature) = self.method_dispatch_signature(method_item_id, target_type) else {
+                    self.errors.push(TypeError::UnknownCallTarget { span: call.node.callee.span });
                     return None;
                 };
 
@@ -601,10 +483,8 @@ impl<'a> TypeChecker<'a> {
                 return Some(signature.return_type);
             }
             if let Some(contract_item_id) = self.named_item_id(target_type)
-                && let Some(signature) = self
-                    .contract_signatures
-                    .get(&(contract_item_id, method_name.to_string()))
-                    .cloned()
+                && let Some(signature) =
+                    self.contract_signatures.get(&(contract_item_id, method_name.to_string())).cloned()
             {
                 if call.node.args.len() != signature.params.len() {
                     self.errors.push(TypeError::CallArityMismatch {
@@ -633,19 +513,15 @@ impl<'a> TypeChecker<'a> {
         }
 
         let is_item_callee = match &call.node.callee.node {
-            HirExpressionNode::PathExpression(path_expr) => matches!(
-                self.resolved_value_at(path_expr.node.path.span),
-                Some(ResolvedValue::Item(_))
-            ),
+            HirExpressionNode::PathExpression(path_expr) => {
+                matches!(self.resolved_value_at(path_expr.node.path.span), Some(ResolvedValue::Item(_)))
+            }
             _ => false,
         };
 
         if !is_item_callee
             && let Some(callee_type) = self.type_expression(&call.node.callee)
-            && let Some(TypeInfo::Function {
-                params,
-                return_type,
-            }) = self.type_table.get(callee_type).cloned()
+            && let Some(TypeInfo::Function { params, return_type }) = self.type_table.get(callee_type).cloned()
         {
             if call.node.args.len() != params.len() {
                 self.errors.push(TypeError::CallArityMismatch {
@@ -704,8 +580,7 @@ impl<'a> TypeChecker<'a> {
         };
 
         let Some(signature) = signature else {
-            self.errors
-                .push(TypeError::UnknownCallTarget { span: call.span });
+            self.errors.push(TypeError::UnknownCallTarget { span: call.span });
             return None;
         };
 
@@ -727,24 +602,15 @@ impl<'a> TypeChecker<'a> {
                 }
                 None => {
                     if expected != 0 {
-                        let arg_types = call
-                            .node
-                            .args
-                            .iter()
-                            .filter_map(|arg| self.type_expression(arg))
-                            .collect::<Vec<_>>();
+                        let arg_types =
+                            call.node.args.iter().filter_map(|arg| self.type_expression(arg)).collect::<Vec<_>>();
                         if let Some(item_id) = callee_item_id {
-                            self.record_generic_call_constraints(
-                                item_id, &arg_types, expected, call.span,
-                            );
+                            self.record_generic_call_constraints(item_id, &arg_types, expected, call.span);
                         }
-                        if let Some(inferred) =
-                            self.infer_generic_args_from_call(callee_item_id, &call.node.args)
-                        {
+                        if let Some(inferred) = self.infer_generic_args_from_call(callee_item_id, &call.node.args) {
                             generic_args = Some(inferred);
                         } else {
-                            self.errors
-                                .push(TypeError::MissingTypeArguments { span: call.span });
+                            self.errors.push(TypeError::MissingTypeArguments { span: call.span });
                             return Some(signature.return_type);
                         }
                     }
@@ -753,28 +619,19 @@ impl<'a> TypeChecker<'a> {
         } else if let Some(args) = &generic_args
             && !args.is_empty()
         {
-            self.errors.push(TypeError::GenericArgumentMismatch {
-                span: call.span,
-                expected: 0,
-                actual: args.len(),
-            });
+            self.errors.push(TypeError::GenericArgumentMismatch { span: call.span, expected: 0, actual: args.len() });
             return Some(signature.return_type);
         }
 
         let substitution = generic_args.clone().unwrap_or_default();
 
-        let mapping = callee_item_id
-            .map(|item_id| self.generic_substitution_mapping(item_id, &substitution))
-            .unwrap_or_default();
+        let mapping =
+            callee_item_id.map(|item_id| self.generic_substitution_mapping(item_id, &substitution)).unwrap_or_default();
 
         let substituted_params = if mapping.is_empty() {
             signature.params.clone()
         } else {
-            signature
-                .params
-                .iter()
-                .map(|param| self.substitute_type_id(*param, &mapping))
-                .collect()
+            signature.params.iter().map(|param| self.substitute_type_id(*param, &mapping)).collect()
         };
 
         let substituted_return = if mapping.is_empty() {
@@ -783,10 +640,7 @@ impl<'a> TypeChecker<'a> {
             self.substitute_type_id(signature.return_type, &mapping)
         };
 
-        let expected_arity = builtin_param_kinds
-            .as_ref()
-            .map(std::vec::Vec::len)
-            .unwrap_or(substituted_params.len());
+        let expected_arity = builtin_param_kinds.as_ref().map(std::vec::Vec::len).unwrap_or(substituted_params.len());
 
         if call.node.args.len() != expected_arity {
             self.errors.push(TypeError::CallArityMismatch {
@@ -824,11 +678,7 @@ impl<'a> TypeChecker<'a> {
             && let Some(index) = self.resolution.builtin_items.get(&item_id)
             && let Some(spec) = crate::builtins::builtin_specs().get(*index)
             && spec.beskid_path == ["__array_new"]
-            && let Some(elem_size) = call
-                .node
-                .args
-                .first()
-                .and_then(|arg| integer_literal_value(&arg.node))
+            && let Some(elem_size) = call.node.args.first().and_then(|arg| integer_literal_value(&arg.node))
             && elem_size == 1
             && let Some(u8_arr) = self.u8_array_type_id()
         {
@@ -838,10 +688,7 @@ impl<'a> TypeChecker<'a> {
         Some(return_type)
     }
 
-    fn type_struct_literal_expression(
-        &mut self,
-        literal: &Spanned<HirStructLiteralExpression>,
-    ) -> Option<TypeId> {
+    fn type_struct_literal_expression(&mut self, literal: &Spanned<HirStructLiteralExpression>) -> Option<TypeId> {
         let mut type_id = self.type_id_for_path_with_args(&literal.node.path);
         if type_id.is_none()
             && let Some(segment) = literal.node.path.node.segments.last()
@@ -853,8 +700,7 @@ impl<'a> TypeChecker<'a> {
         }
         let type_id = type_id?;
         let Some(item_id) = self.named_item_id(type_id) else {
-            self.errors
-                .push(TypeError::UnknownStructType { span: literal.span });
+            self.errors.push(TypeError::UnknownStructType { span: literal.span });
             return None;
         };
         let mapping = self.generic_mapping_for_type_id(type_id);
@@ -867,8 +713,7 @@ impl<'a> TypeChecker<'a> {
                 .and_then(|item_id| self.struct_fields.get(&item_id).cloned())
         });
         let Some(fields) = fields else {
-            self.errors
-                .push(TypeError::UnknownStructType { span: literal.span });
+            self.errors.push(TypeError::UnknownStructType { span: literal.span });
             return None;
         };
 
@@ -877,17 +722,10 @@ impl<'a> TypeChecker<'a> {
             let name = field.node.name.node.name.clone();
             seen.insert(name.clone());
             let Some(expected) = fields.get(&name) else {
-                self.errors.push(TypeError::UnknownStructField {
-                    span: field.node.name.span,
-                    name,
-                });
+                self.errors.push(TypeError::UnknownStructField { span: field.node.name.span, name });
                 continue;
             };
-            let expected = if mapping.is_empty() {
-                *expected
-            } else {
-                self.substitute_type_id(*expected, &mapping)
-            };
+            let expected = if mapping.is_empty() { *expected } else { self.substitute_type_id(*expected, &mapping) };
             if let Some(actual) = self.type_expression(&field.node.value) {
                 self.require_same_type(field.node.value.span, expected, actual);
             }
@@ -897,18 +735,10 @@ impl<'a> TypeChecker<'a> {
             if seen.contains(name) {
                 continue;
             }
-            if self
-                .struct_event_fields
-                .get(&item_id)
-                .and_then(|event_fields| event_fields.get(name))
-                .is_some()
-            {
+            if self.struct_event_fields.get(&item_id).and_then(|event_fields| event_fields.get(name)).is_some() {
                 continue;
             }
-            self.errors.push(TypeError::MissingStructField {
-                span: literal.span,
-                name: name.clone(),
-            });
+            self.errors.push(TypeError::MissingStructField { span: literal.span, name: name.clone() });
         }
 
         Some(type_id)
@@ -918,8 +748,7 @@ impl<'a> TypeChecker<'a> {
         &mut self,
         constructor: &Spanned<HirEnumConstructorExpression>,
     ) -> Option<TypeId> {
-        let mut type_id =
-            self.type_id_for_enum_path(constructor.node.path.span, &constructor.node.path);
+        let mut type_id = self.type_id_for_enum_path(constructor.node.path.span, &constructor.node.path);
         if type_id.is_none() {
             let type_name = constructor
                 .node
@@ -937,9 +766,7 @@ impl<'a> TypeChecker<'a> {
         }
         let type_id = type_id?;
         let Some(item_id) = self.named_item_id(type_id) else {
-            self.errors.push(TypeError::UnknownEnumType {
-                span: constructor.span,
-            });
+            self.errors.push(TypeError::UnknownEnumType { span: constructor.span });
             return None;
         };
         let mapping = self.generic_mapping_for_type_id(type_id);
@@ -953,11 +780,7 @@ impl<'a> TypeChecker<'a> {
         } else if mapping.is_empty()
             && let Some(generic_names) = self.generic_items.get(&item_id)
             && !generic_names.is_empty()
-            && let Some(arg_type) = constructor
-                .node
-                .args
-                .first()
-                .and_then(|arg| self.type_expression(arg))
+            && let Some(arg_type) = constructor.node.args.first().and_then(|arg| self.type_expression(arg))
             && let Some(TypeInfo::Applied { base, .. }) = self.type_table.get(arg_type)
             && *base == item_id
         {
@@ -973,9 +796,7 @@ impl<'a> TypeChecker<'a> {
                 .and_then(|item_id| self.enum_variants.get(&item_id).cloned())
         });
         let Some(variants) = variants else {
-            self.errors.push(TypeError::UnknownEnumType {
-                span: constructor.span,
-            });
+            self.errors.push(TypeError::UnknownEnumType { span: constructor.span });
             return None;
         };
         let variant_name = constructor.node.path.node.variant.node.name.clone();
@@ -990,10 +811,7 @@ impl<'a> TypeChecker<'a> {
         let fields: Vec<TypeId> = if mapping.is_empty() {
             fields.clone()
         } else {
-            fields
-                .iter()
-                .map(|field| self.substitute_type_id(*field, &mapping))
-                .collect()
+            fields.iter().map(|field| self.substitute_type_id(*field, &mapping)).collect()
         };
 
         if constructor.node.args.len() != fields.len() {
@@ -1017,18 +835,13 @@ impl<'a> TypeChecker<'a> {
     fn type_member_expression(&mut self, member: &Spanned<HirMemberExpression>) -> Option<TypeId> {
         let target_type = self.type_expression(&member.node.target)?;
 
-        if self
-            .method_item_for_receiver(target_type, member.node.member.node.name.as_str())
-            .is_some()
-        {
-            self.errors
-                .push(TypeError::UnknownValueType { span: member.span });
+        if self.method_item_for_receiver(target_type, member.node.member.node.name.as_str()).is_some() {
+            self.errors.push(TypeError::UnknownValueType { span: member.span });
             return None;
         }
 
         let Some(item_id) = self.named_item_id(target_type) else {
-            self.errors
-                .push(TypeError::InvalidMemberTarget { span: member.span });
+            self.errors.push(TypeError::InvalidMemberTarget { span: member.span });
             return None;
         };
         let fields = self.struct_fields.get(&item_id).cloned().or_else(|| {
@@ -1040,24 +853,16 @@ impl<'a> TypeChecker<'a> {
                 .and_then(|item_id| self.struct_fields.get(&item_id).cloned())
         });
         let Some(fields) = fields else {
-            self.errors
-                .push(TypeError::UnknownStructType { span: member.span });
+            self.errors.push(TypeError::UnknownStructType { span: member.span });
             return None;
         };
         let mapping = self.generic_mapping_for_type_id(target_type);
         let name = member.node.member.node.name.clone();
         let Some(field_type) = fields.get(&name) else {
-            self.errors.push(TypeError::UnknownStructField {
-                span: member.node.member.span,
-                name,
-            });
+            self.errors.push(TypeError::UnknownStructField { span: member.node.member.span, name });
             return None;
         };
-        let field_type = if mapping.is_empty() {
-            *field_type
-        } else {
-            self.substitute_type_id(*field_type, &mapping)
-        };
+        let field_type = if mapping.is_empty() { *field_type } else { self.substitute_type_id(*field_type, &mapping) };
         Some(field_type)
     }
 
@@ -1068,10 +873,7 @@ impl<'a> TypeChecker<'a> {
         let Some(item_id) = self.named_item_id(target_type) else {
             return false;
         };
-        self.struct_event_fields
-            .get(&item_id)
-            .and_then(|fields| fields.get(&member.node.member.node.name))
-            .is_some()
+        self.struct_event_fields.get(&item_id).and_then(|fields| fields.get(&member.node.member.node.name)).is_some()
     }
 
     fn is_event_path_expression(&self, path_expr: &Spanned<HirPathExpression>) -> bool {
@@ -1079,10 +881,7 @@ impl<'a> TypeChecker<'a> {
         let Some(field_name) = first_field_segment_name(segments) else {
             return false;
         };
-        let Some(first_name) = segments
-            .first()
-            .map(|segment| segment.node.name.node.name.as_str())
-        else {
+        let Some(first_name) = segments.first().map(|segment| segment.node.name.node.name.as_str()) else {
             return false;
         };
         let Some(local_id) = resolve_path_base_local(
@@ -1099,10 +898,7 @@ impl<'a> TypeChecker<'a> {
         let Some(item_id) = self.named_item_id(base_type) else {
             return false;
         };
-        self.struct_event_fields
-            .get(&item_id)
-            .and_then(|fields| fields.get(field_name))
-            .is_some()
+        self.struct_event_fields.get(&item_id).and_then(|fields| fields.get(field_name)).is_some()
     }
 
     fn resolve_event_call_target(
@@ -1114,19 +910,13 @@ impl<'a> TypeChecker<'a> {
                 let receiver_type = self.type_expression(&member.node.target)?;
                 let receiver_item_id = self.named_item_id(receiver_type)?;
                 let field_name = member.node.member.node.name.as_str();
-                let is_event = self
-                    .struct_event_fields
-                    .get(&receiver_item_id)
-                    .and_then(|fields| fields.get(field_name))
-                    .is_some();
+                let is_event =
+                    self.struct_event_fields.get(&receiver_item_id).and_then(|fields| fields.get(field_name)).is_some();
                 if !is_event {
                     return None;
                 }
-                let field_type = self
-                    .struct_fields
-                    .get(&receiver_item_id)
-                    .and_then(|fields| fields.get(field_name))
-                    .copied()?;
+                let field_type =
+                    self.struct_fields.get(&receiver_item_id).and_then(|fields| fields.get(field_name)).copied()?;
                 Some((
                     MethodReceiverSource::Expression(member.node.target.span),
                     receiver_type,
@@ -1137,9 +927,7 @@ impl<'a> TypeChecker<'a> {
             HirExpressionNode::PathExpression(path_expr) => {
                 let segments = &path_expr.node.path.node.segments;
                 let field_name = first_field_segment_name(segments)?;
-                let first_name = segments
-                    .first()
-                    .map(|segment| segment.node.name.node.name.as_str())?;
+                let first_name = segments.first().map(|segment| segment.node.name.node.name.as_str())?;
                 let local_id = resolve_path_base_local(
                     self.resolution,
                     path_expr.node.path.span,
@@ -1148,34 +936,20 @@ impl<'a> TypeChecker<'a> {
                 )?;
                 let receiver_type = *self.local_types.get(&local_id)?;
                 let receiver_item_id = self.named_item_id(receiver_type)?;
-                let is_event = self
-                    .struct_event_fields
-                    .get(&receiver_item_id)
-                    .and_then(|fields| fields.get(field_name))
-                    .is_some();
+                let is_event =
+                    self.struct_event_fields.get(&receiver_item_id).and_then(|fields| fields.get(field_name)).is_some();
                 if !is_event {
                     return None;
                 }
-                let field_type = self
-                    .struct_fields
-                    .get(&receiver_item_id)
-                    .and_then(|fields| fields.get(field_name))
-                    .copied()?;
-                Some((
-                    MethodReceiverSource::Local(local_id),
-                    receiver_type,
-                    receiver_item_id,
-                    field_type,
-                ))
+                let field_type =
+                    self.struct_fields.get(&receiver_item_id).and_then(|fields| fields.get(field_name)).copied()?;
+                Some((MethodReceiverSource::Local(local_id), receiver_type, receiver_item_id, field_type))
             }
             _ => None,
         }
     }
 
-    fn type_match_expression(
-        &mut self,
-        match_expr: &Spanned<HirMatchExpression>,
-    ) -> Option<TypeId> {
+    fn type_match_expression(&mut self, match_expr: &Spanned<HirMatchExpression>) -> Option<TypeId> {
         self.type_match_expression_with_expected(match_expr, self.contextual_expected_type)
     }
 
@@ -1223,8 +997,7 @@ impl<'a> TypeChecker<'a> {
         };
         match &pattern.node {
             HirPattern::Enum(enum_pattern) => {
-                let enum_type = self
-                    .type_id_for_enum_path(enum_pattern.node.path.span, &enum_pattern.node.path);
+                let enum_type = self.type_id_for_enum_path(enum_pattern.node.path.span, &enum_pattern.node.path);
                 if let Some(enum_type) = enum_type {
                     let compatible_enum = enum_type == scrutinee_type
                         || (self.named_item_id(enum_type).is_some()
@@ -1249,10 +1022,7 @@ impl<'a> TypeChecker<'a> {
                             let fields = if mapping.is_empty() {
                                 fields
                             } else {
-                                fields
-                                    .iter()
-                                    .map(|field| self.substitute_type_id(*field, &mapping))
-                                    .collect::<Vec<_>>()
+                                fields.iter().map(|field| self.substitute_type_id(*field, &mapping)).collect::<Vec<_>>()
                             };
                             if fields.len() != enum_pattern.node.items.len() {
                                 self.errors.push(TypeError::EnumConstructorMismatch {
@@ -1261,9 +1031,7 @@ impl<'a> TypeChecker<'a> {
                                     actual: enum_pattern.node.items.len(),
                                 });
                             }
-                            for (item, expected_type) in
-                                enum_pattern.node.items.iter().zip(fields.iter())
-                            {
+                            for (item, expected_type) in enum_pattern.node.items.iter().zip(fields.iter()) {
                                 self.type_pattern_with_expected(*expected_type, item);
                             }
                         } else {
@@ -1293,8 +1061,7 @@ impl<'a> TypeChecker<'a> {
             }
             HirPattern::Wildcard => {}
             HirPattern::Enum(enum_pattern) => {
-                let enum_type = self
-                    .type_id_for_enum_path(enum_pattern.node.path.span, &enum_pattern.node.path);
+                let enum_type = self.type_id_for_enum_path(enum_pattern.node.path.span, &enum_pattern.node.path);
                 if let Some(enum_type) = enum_type {
                     let compatible_enum = enum_type == expected_type
                         || (self.named_item_id(enum_type).is_some()
@@ -1310,10 +1077,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    pub(super) fn type_binary_expression(
-        &mut self,
-        binary: &Spanned<HirBinaryExpression>,
-    ) -> Option<TypeId> {
+    pub(super) fn type_binary_expression(&mut self, binary: &Spanned<HirBinaryExpression>) -> Option<TypeId> {
         let left = self.type_expression(&binary.node.left);
         let right = self.type_expression(&binary.node.right);
 
@@ -1330,11 +1094,7 @@ impl<'a> TypeChecker<'a> {
             _ => return None,
         };
         if left != right {
-            self.errors.push(TypeError::TypeMismatch {
-                span: binary.span,
-                expected: left,
-                actual: right,
-            });
+            self.errors.push(TypeError::TypeMismatch { span: binary.span, expected: left, actual: right });
             return None;
         }
         match binary.node.op.node {
@@ -1342,8 +1102,7 @@ impl<'a> TypeChecker<'a> {
                 if self.is_bool(left) {
                     Some(left)
                 } else {
-                    self.errors
-                        .push(TypeError::InvalidBinaryOp { span: binary.span });
+                    self.errors.push(TypeError::InvalidBinaryOp { span: binary.span });
                     None
                 }
             }
@@ -1351,8 +1110,7 @@ impl<'a> TypeChecker<'a> {
                 if self.is_identity_comparable(left) {
                     self.primitive_type_id(HirPrimitiveType::Bool)
                 } else {
-                    self.errors
-                        .push(TypeError::InvalidBinaryOp { span: binary.span });
+                    self.errors.push(TypeError::InvalidBinaryOp { span: binary.span });
                     None
                 }
             }
@@ -1376,8 +1134,7 @@ impl<'a> TypeChecker<'a> {
                 if comparable {
                     self.primitive_type_id(HirPrimitiveType::Bool)
                 } else {
-                    self.errors
-                        .push(TypeError::InvalidBinaryOp { span: binary.span });
+                    self.errors.push(TypeError::InvalidBinaryOp { span: binary.span });
                     None
                 }
             }
@@ -1390,8 +1147,7 @@ impl<'a> TypeChecker<'a> {
                 {
                     Some(left)
                 } else {
-                    self.errors
-                        .push(TypeError::InvalidBinaryOp { span: binary.span });
+                    self.errors.push(TypeError::InvalidBinaryOp { span: binary.span });
                     None
                 }
             }
@@ -1399,26 +1155,21 @@ impl<'a> TypeChecker<'a> {
                 if self.is_numeric(left) {
                     Some(left)
                 } else {
-                    self.errors
-                        .push(TypeError::InvalidBinaryOp { span: binary.span });
+                    self.errors.push(TypeError::InvalidBinaryOp { span: binary.span });
                     None
                 }
             }
         }
     }
 
-    pub(super) fn type_unary_expression(
-        &mut self,
-        unary: &Spanned<HirUnaryExpression>,
-    ) -> Option<TypeId> {
+    pub(super) fn type_unary_expression(&mut self, unary: &Spanned<HirUnaryExpression>) -> Option<TypeId> {
         let expr = self.type_expression(&unary.node.expr)?;
         match unary.node.op.node {
             HirUnaryOp::Neg => {
                 if self.is_numeric(expr) {
                     Some(expr)
                 } else {
-                    self.errors
-                        .push(TypeError::InvalidUnaryOp { span: unary.span });
+                    self.errors.push(TypeError::InvalidUnaryOp { span: unary.span });
                     None
                 }
             }
@@ -1426,8 +1177,7 @@ impl<'a> TypeChecker<'a> {
                 if self.is_bool(expr) {
                     Some(expr)
                 } else {
-                    self.errors
-                        .push(TypeError::InvalidUnaryOp { span: unary.span });
+                    self.errors.push(TypeError::InvalidUnaryOp { span: unary.span });
                     None
                 }
             }
@@ -1436,9 +1186,7 @@ impl<'a> TypeChecker<'a> {
 
     pub(super) fn type_id_for_literal(&mut self, literal: &Spanned<HirLiteral>) -> Option<TypeId> {
         match &literal.node {
-            HirLiteral::Integer(text) => {
-                self.primitive_type_id(integer_literal_primitive_type(text))
-            }
+            HirLiteral::Integer(text) => self.primitive_type_id(integer_literal_primitive_type(text)),
             HirLiteral::Float(_) => self.primitive_type_id(HirPrimitiveType::F64),
             HirLiteral::String(_) => self.primitive_type_id(HirPrimitiveType::String),
             HirLiteral::Char(_) => self.primitive_type_id(HirPrimitiveType::Char),
@@ -1455,15 +1203,10 @@ impl<'a> TypeChecker<'a> {
             let field_name = path.node.segments[0].node.name.node.name.as_str();
             if let Some(ResolvedValue::Local(local_id)) = self.resolved_value_at(span)
                 && let Some(receiver_item) = self.current_receiver_item_id
-                && self
-                    .local_types
-                    .get(&local_id)
-                    .and_then(|type_id| self.named_item_id(*type_id))
+                && self.local_types.get(&local_id).and_then(|type_id| self.named_item_id(*type_id))
                     == Some(receiver_item)
-                && let Some(field_type) = self
-                    .struct_fields
-                    .get(&receiver_item)
-                    .and_then(|fields| fields.get(field_name))
+                && let Some(field_type) =
+                    self.struct_fields.get(&receiver_item).and_then(|fields| fields.get(field_name))
             {
                 return Some(*field_type);
             }
@@ -1472,12 +1215,10 @@ impl<'a> TypeChecker<'a> {
             return self.type_struct_field_path(span, path);
         }
         match self.resolved_value_at(span) {
-            Some(ResolvedValue::Local(local)) => {
-                self.local_types.get(&local).copied().or_else(|| {
-                    self.errors.push(TypeError::UnknownValueType { span });
-                    None
-                })
-            }
+            Some(ResolvedValue::Local(local)) => self.local_types.get(&local).copied().or_else(|| {
+                self.errors.push(TypeError::UnknownValueType { span });
+                None
+            }),
             Some(ResolvedValue::Item(_)) => {
                 self.errors.push(TypeError::UnknownValueType { span });
                 None
@@ -1489,17 +1230,11 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn type_struct_field_path(
-        &mut self,
-        span: crate::syntax::SpanInfo,
-        path: &Spanned<HirPath>,
-    ) -> Option<TypeId> {
+    fn type_struct_field_path(&mut self, span: crate::syntax::SpanInfo, path: &Spanned<HirPath>) -> Option<TypeId> {
         let segments = &path.node.segments;
         let source_path = self.current_source_path.as_ref();
         let first_name = segments.first()?.node.name.node.name.as_str();
-        let Some(local_id) =
-            resolve_path_base_local(self.resolution, span, first_name, source_path)
-        else {
+        let Some(local_id) = resolve_path_base_local(self.resolution, span, first_name, source_path) else {
             self.errors.push(TypeError::UnknownValueType { span });
             return None;
         };
@@ -1510,8 +1245,7 @@ impl<'a> TypeChecker<'a> {
         for segment in segments.iter().skip(1) {
             let field_name = segment.node.name.node.name.clone();
             let Some(item_id) = self.named_item_id(current_type) else {
-                self.errors
-                    .push(TypeError::InvalidMemberTarget { span: segment.span });
+                self.errors.push(TypeError::InvalidMemberTarget { span: segment.span });
                 return None;
             };
             let fields = self.struct_fields.get(&item_id).cloned().or_else(|| {
@@ -1523,23 +1257,16 @@ impl<'a> TypeChecker<'a> {
                     .and_then(|item_id| self.struct_fields.get(&item_id).cloned())
             });
             let Some(fields) = fields else {
-                self.errors
-                    .push(TypeError::UnknownStructType { span: segment.span });
+                self.errors.push(TypeError::UnknownStructType { span: segment.span });
                 return None;
             };
             let Some(field_type) = fields.get(&field_name) else {
-                self.errors.push(TypeError::UnknownStructField {
-                    span: segment.span,
-                    name: field_name,
-                });
+                self.errors.push(TypeError::UnknownStructField { span: segment.span, name: field_name });
                 return None;
             };
             let mapping = self.generic_mapping_for_type_id(current_type);
-            current_type = if mapping.is_empty() {
-                *field_type
-            } else {
-                self.substitute_type_id(*field_type, &mapping)
-            };
+            current_type =
+                if mapping.is_empty() { *field_type } else { self.substitute_type_id(*field_type, &mapping) };
         }
         Some(current_type)
     }
@@ -1554,13 +1281,8 @@ impl<'a> TypeChecker<'a> {
             Some(ResolvedType::Item(item_id)) => self.named_types.get(&item_id).copied(),
             Some(ResolvedType::Generic(name)) => self.generic_params.get(&name).copied(),
             None => {
-                let type_name = path
-                    .node
-                    .type_path
-                    .node
-                    .segments
-                    .last()
-                    .map(|segment| segment.node.name.node.name.as_str())?;
+                let type_name =
+                    path.node.type_path.node.segments.last().map(|segment| segment.node.name.node.name.as_str())?;
                 self.item_id_for_name(type_name, ItemKind::Enum)
                     .and_then(|item_id| self.named_types.get(&item_id).copied())
             }

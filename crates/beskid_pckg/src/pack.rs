@@ -5,9 +5,8 @@ use std::io;
 use std::path::Path;
 
 use beskid_analysis::projects::{
-    PACKAGE_README_ARTIFACT_NAME, ProjectKind, discover_project_manifest_in_dir,
-    discover_readme_for_package_root, is_package_root_readme_entry, parse_manifest,
-    resolve_readme_file_path,
+    PACKAGE_README_ARTIFACT_NAME, ProjectKind, discover_project_manifest_in_dir, discover_readme_for_package_root,
+    is_package_root_readme_entry, parse_manifest, resolve_readme_file_path,
 };
 use serde_json::{Value, json};
 use walkdir::WalkDir;
@@ -82,15 +81,11 @@ pub fn detect_pack_profile_with_override(
     source_root: &Path,
     override_kind: PackProfileOverride,
 ) -> Result<PackProfile, PckgError> {
-    let manifest_path =
-        discover_project_manifest_in_dir(source_root).map_err(|err| PckgError::Api {
-            status: reqwest::StatusCode::BAD_REQUEST,
-            message: format!(
-                "failed to discover `.bproj` manifest in {}: {err}",
-                source_root.display()
-            ),
-            body: None,
-        })?;
+    let manifest_path = discover_project_manifest_in_dir(source_root).map_err(|err| PckgError::Api {
+        status: reqwest::StatusCode::BAD_REQUEST,
+        message: format!("failed to discover `.bproj` manifest in {}: {err}", source_root.display()),
+        body: None,
+    })?;
 
     let manifest = if let Some(manifest_path) = manifest_path {
         let source = fs::read_to_string(&manifest_path).map_err(|err| PckgError::Api {
@@ -137,10 +132,7 @@ pub fn detect_pack_profile_with_override(
     if !template_path.is_file() {
         return Err(PckgError::Api {
             status: reqwest::StatusCode::BAD_REQUEST,
-            message: format!(
-                "template project requires `{TEMPLATE_JSON_REL}` at {}",
-                source_root.display()
-            ),
+            message: format!("template project requires `{TEMPLATE_JSON_REL}` at {}", source_root.display()),
             body: None,
         });
     }
@@ -160,29 +152,18 @@ pub fn load_template_package_summary(path: &Path) -> Result<TemplatePackageSumma
         message: format!("invalid `{TEMPLATE_JSON_REL}`: {err}"),
         body: None,
     })?;
-    let schema = root
-        .get("schema")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+    let schema = root.get("schema").and_then(Value::as_str).unwrap_or_default();
     if schema != "beskid.template.v1" {
         return Err(PckgError::Api {
             status: reqwest::StatusCode::BAD_REQUEST,
-            message: format!(
-                "`{TEMPLATE_JSON_REL}` schema must be `beskid.template.v1`, found `{schema}`"
-            ),
+            message: format!("`{TEMPLATE_JSON_REL}` schema must be `beskid.template.v1`, found `{schema}`"),
             body: None,
         });
     }
 
     Ok(TemplatePackageSummary {
-        short_name: root
-            .get("shortName")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        identity: root
-            .get("identity")
-            .and_then(Value::as_str)
-            .map(str::to_string),
+        short_name: root.get("shortName").and_then(Value::as_str).map(str::to_string),
+        identity: root.get("identity").and_then(Value::as_str).map(str::to_string),
         tags: root.get("tags").cloned(),
     })
 }
@@ -201,11 +182,7 @@ pub fn template_summary_json(summary: &TemplatePackageSummary) -> Value {
     Value::Object(obj)
 }
 
-pub fn build_package_json(
-    package_id: &str,
-    version: &str,
-    profile: &PackProfile,
-) -> Result<String, PckgError> {
+pub fn build_package_json(package_id: &str, version: &str, profile: &PackProfile) -> Result<String, PckgError> {
     use crate::api_doc::API_JSON_SCHEMA_VERSION;
 
     let value = match profile {
@@ -243,9 +220,7 @@ pub fn build_package_json(
 /// Remove generated API docs from template artifacts (template profile skips doc generation).
 pub fn strip_template_pack_excludes(entries: &mut Vec<(String, Vec<u8>)>) {
     entries.retain(|(name, _)| {
-        !name.starts_with(".beskid/docs/")
-            && name != ".beskid/docs/api.json"
-            && name != ".beskid/docs/index.md"
+        !name.starts_with(".beskid/docs/") && name != ".beskid/docs/api.json" && name != ".beskid/docs/index.md"
     });
 }
 
@@ -255,9 +230,7 @@ pub fn strip_template_pack_excludes(entries: &mut Vec<(String, Vec<u8>)>) {
 /// any prior generated docs to keep the artifact body lean unless the publisher explicitly opts in.
 pub fn strip_tool_pack_excludes(entries: &mut Vec<(String, Vec<u8>)>) {
     entries.retain(|(name, _)| {
-        !name.starts_with(".beskid/docs/")
-            && name != ".beskid/docs/api.json"
-            && name != ".beskid/docs/index.md"
+        !name.starts_with(".beskid/docs/") && name != ".beskid/docs/api.json" && name != ".beskid/docs/index.md"
     });
 }
 
@@ -292,10 +265,7 @@ fn collect_pack_entries_from_tree(source_root: &Path) -> Result<Vec<(String, Vec
 }
 
 /// Ensure the packed artifact exposes a root `README.md` entry for pckg when a readme is configured.
-pub fn apply_pack_readme(
-    source_root: &Path,
-    entries: &mut Vec<(String, Vec<u8>)>,
-) -> Result<(), PckgError> {
+pub fn apply_pack_readme(source_root: &Path, entries: &mut Vec<(String, Vec<u8>)>) -> Result<(), PckgError> {
     let manifest = discover_readme_for_package_root(source_root).map_err(|err| PckgError::Api {
         status: reqwest::StatusCode::BAD_REQUEST,
         message: format!("failed to read project manifest for readme: {err}"),
@@ -310,10 +280,7 @@ pub fn apply_pack_readme(
     if !readme_path.is_file() {
         return Err(PckgError::Api {
             status: reqwest::StatusCode::BAD_REQUEST,
-            message: format!(
-                "readme file `{}` does not exist or is not a file",
-                readme_path.display()
-            ),
+            message: format!("readme file `{}` does not exist or is not a file", readme_path.display()),
             body: None,
         });
     }
@@ -366,12 +333,8 @@ mod tests {
             identity: Some("beskid.templates.lib".into()),
             tags: None,
         };
-        let json = build_package_json(
-            "beskid.templates.lib",
-            "1.0.0",
-            &PackProfile::Template(summary),
-        )
-        .expect("serialize");
+        let json =
+            build_package_json("beskid.templates.lib", "1.0.0", &PackProfile::Template(summary)).expect("serialize");
         let root: Value = serde_json::from_str(&json).expect("parse");
         assert_eq!(root["packageKind"], PACKAGE_KIND_TEMPLATE);
         assert_eq!(root["template"]["shortName"], "lib");
@@ -393,28 +356,18 @@ mod tests {
 
     #[test]
     fn load_template_package_summary_requires_v1_schema() {
-        let dir =
-            std::env::temp_dir().join(format!("beskid_pckg_template_test_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("beskid_pckg_template_test_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join(".beskid")).expect("mkdir");
-        fs::write(
-            dir.join(TEMPLATE_JSON_REL),
-            r#"{"schema":"beskid.template.v0","shortName":"x"}"#,
-        )
-        .expect("write");
-        let err =
-            load_template_package_summary(&dir.join(TEMPLATE_JSON_REL)).expect_err("wrong schema");
+        fs::write(dir.join(TEMPLATE_JSON_REL), r#"{"schema":"beskid.template.v0","shortName":"x"}"#).expect("write");
+        let err = load_template_package_summary(&dir.join(TEMPLATE_JSON_REL)).expect_err("wrong schema");
         assert!(err.to_string().contains("beskid.template.v1"));
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn pack_profile_helpers_track_variant() {
-        let summary = TemplatePackageSummary {
-            short_name: None,
-            identity: None,
-            tags: None,
-        };
+        let summary = TemplatePackageSummary { short_name: None, identity: None, tags: None };
         let library = PackProfile::Library;
         let template = PackProfile::Template(summary);
         let tool = PackProfile::Tool;
@@ -429,8 +382,7 @@ mod tests {
 
     #[test]
     fn build_package_json_tool_profile_omits_api_doc_pointer() {
-        let json = build_package_json("beskid.cli.fmt-extra", "0.1.0", &PackProfile::Tool)
-            .expect("serialize");
+        let json = build_package_json("beskid.cli.fmt-extra", "0.1.0", &PackProfile::Tool).expect("serialize");
         let root: Value = serde_json::from_str(&json).expect("parse");
         assert_eq!(root["schema"], "beskid.package.v1");
         assert_eq!(root["packageKind"], PACKAGE_KIND_TOOL);
@@ -456,10 +408,7 @@ mod tests {
 
     #[test]
     fn detect_pack_profile_with_override_forces_tool_when_no_manifest() {
-        let dir = std::env::temp_dir().join(format!(
-            "beskid_pckg_tool_no_manifest_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("beskid_pckg_tool_no_manifest_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("mkdir");
 
@@ -472,10 +421,7 @@ mod tests {
 
     #[test]
     fn detect_pack_profile_with_override_rejects_template_project() {
-        let dir = std::env::temp_dir().join(format!(
-            "beskid_pckg_tool_vs_template_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("beskid_pckg_tool_vs_template_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join(".beskid")).expect("mkdir");
         fs::write(
@@ -492,28 +438,19 @@ mod tests {
 "#,
         )
         .expect("write bproj");
-        fs::write(
-            dir.join(TEMPLATE_JSON_REL),
-            r#"{"schema":"beskid.template.v1","shortName":"x"}"#,
-        )
-        .expect("write template.json");
+        fs::write(dir.join(TEMPLATE_JSON_REL), r#"{"schema":"beskid.template.v1","shortName":"x"}"#)
+            .expect("write template.json");
 
         let err = detect_pack_profile_with_override(&dir, PackProfileOverride::Tool)
             .expect_err("template + tool override must conflict");
-        assert!(
-            err.to_string().contains("--package-kind tool"),
-            "error mentions the conflicting flag: {err}"
-        );
+        assert!(err.to_string().contains("--package-kind tool"), "error mentions the conflicting flag: {err}");
 
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn detect_pack_profile_auto_matches_legacy_behavior() {
-        let dir = std::env::temp_dir().join(format!(
-            "beskid_pckg_auto_no_manifest_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("beskid_pckg_auto_no_manifest_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("mkdir");
 

@@ -5,9 +5,7 @@
 
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::immediates::Offset32;
-use cranelift_codegen::ir::{
-    BlockArg, InstBuilder, MemFlags, StackSlot, StackSlotData, StackSlotKind, Value, types,
-};
+use cranelift_codegen::ir::{BlockArg, InstBuilder, MemFlags, StackSlot, StackSlotData, StackSlotKind, Value, types};
 use cranelift_frontend::FunctionBuilder;
 
 /// ISLE-aligned trusted CLIF helpers over an active [`FunctionBuilder`].
@@ -18,10 +16,7 @@ pub struct ClifPrimitives<'a, 'f> {
 
 impl<'a, 'f> ClifPrimitives<'a, 'f> {
     pub fn new(builder: &'a mut FunctionBuilder<'f>) -> Self {
-        Self {
-            builder,
-            scratch_i64_slot: None,
-        }
+        Self { builder, scratch_i64_slot: None }
     }
 
     pub fn builder(&self) -> &FunctionBuilder<'f> {
@@ -38,18 +33,12 @@ impl<'a, 'f> ClifPrimitives<'a, 'f> {
 
     fn trusted_load(&mut self, ty: types::Type, base: Value, offset: i64) -> Option<Value> {
         let offset = Self::offset32(offset)?;
-        Some(
-            self.builder
-                .ins()
-                .load(ty, MemFlags::trusted(), base, offset),
-        )
+        Some(self.builder.ins().load(ty, MemFlags::trusted(), base, offset))
     }
 
     fn trusted_store(&mut self, base: Value, offset: i64, val: Value) -> Option<Value> {
         let offset = Self::offset32(offset)?;
-        self.builder
-            .ins()
-            .store(MemFlags::trusted(), val, base, offset);
+        self.builder.ins().store(MemFlags::trusted(), val, base, offset);
         Some(val)
     }
 
@@ -118,11 +107,7 @@ impl<'a, 'f> ClifPrimitives<'a, 'f> {
         if let Some(slot) = self.scratch_i64_slot {
             return slot;
         }
-        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-            StackSlotKind::ExplicitSlot,
-            8,
-            3,
-        ));
+        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 3));
         self.scratch_i64_slot = Some(slot);
         slot
     }
@@ -144,27 +129,19 @@ impl<'a, 'f> ClifPrimitives<'a, 'f> {
     }
 
     pub fn icmp_ult(&mut self, left: Value, right: Value) -> Value {
-        self.builder
-            .ins()
-            .icmp(IntCC::UnsignedLessThan, left, right)
+        self.builder.ins().icmp(IntCC::UnsignedLessThan, left, right)
     }
 
     pub fn icmp_ule(&mut self, left: Value, right: Value) -> Value {
-        self.builder
-            .ins()
-            .icmp(IntCC::UnsignedLessThanOrEqual, left, right)
+        self.builder.ins().icmp(IntCC::UnsignedLessThanOrEqual, left, right)
     }
 
     pub fn icmp_ugt(&mut self, left: Value, right: Value) -> Value {
-        self.builder
-            .ins()
-            .icmp(IntCC::UnsignedGreaterThan, left, right)
+        self.builder.ins().icmp(IntCC::UnsignedGreaterThan, left, right)
     }
 
     pub fn icmp_uge(&mut self, left: Value, right: Value) -> Value {
-        self.builder
-            .ins()
-            .icmp(IntCC::UnsignedGreaterThanOrEqual, left, right)
+        self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, left, right)
     }
 
     pub fn fadd_f64(&mut self, left: Value, right: Value) -> Value {
@@ -195,13 +172,7 @@ impl<'a, 'f> ClifPrimitives<'a, 'f> {
         self.builder.ins().fcvt_to_sint(types::I64, value)
     }
 
-    pub fn icmp_byte_ne(
-        &mut self,
-        left: Value,
-        right: Value,
-        left_off: i64,
-        right_off: i64,
-    ) -> Option<Value> {
+    pub fn icmp_byte_ne(&mut self, left: Value, right: Value, left_off: i64, right_off: i64) -> Option<Value> {
         let lb = self.load_i8_zext(left, left_off)?;
         let rb = self.load_i8_zext(right, right_off)?;
         Some(self.icmp_ne(lb, rb))
@@ -221,13 +192,7 @@ impl<'a, 'f> ClifPrimitives<'a, 'f> {
         let loop_block = builder.create_block();
         builder.append_block_param(loop_block, types::I64);
         let len_zero_done = builder.create_block();
-        builder.ins().brif(
-            len_is_zero,
-            len_zero_done,
-            &[],
-            loop_block,
-            &[BlockArg::Value(zero)],
-        );
+        builder.ins().brif(len_is_zero, len_zero_done, &[], loop_block, &[BlockArg::Value(zero)]);
 
         builder.switch_to_block(len_zero_done);
         builder.ins().jump(merge, &[BlockArg::Value(zero)]);
@@ -242,31 +207,19 @@ impl<'a, 'f> ClifPrimitives<'a, 'f> {
         builder.switch_to_block(body);
         let lptr = builder.ins().iadd(left, idx);
         let rptr = builder.ins().iadd(right, idx);
-        let lb = builder
-            .ins()
-            .load(types::I8, MemFlags::trusted(), lptr, Offset32::new(0));
-        let rb = builder
-            .ins()
-            .load(types::I8, MemFlags::trusted(), rptr, Offset32::new(0));
+        let lb = builder.ins().load(types::I8, MemFlags::trusted(), lptr, Offset32::new(0));
+        let rb = builder.ins().load(types::I8, MemFlags::trusted(), rptr, Offset32::new(0));
         let lb64 = builder.ins().uextend(types::I64, lb);
         let rb64 = builder.ins().uextend(types::I64, rb);
         let bytes_eq = builder.ins().icmp(IntCC::Equal, lb64, rb64);
         let mismatch = builder.create_block();
         let next_idx = builder.ins().iadd_imm(idx, 1);
-        builder.ins().brif(
-            bytes_eq,
-            loop_block,
-            &[BlockArg::Value(next_idx)],
-            mismatch,
-            &[],
-        );
+        builder.ins().brif(bytes_eq, loop_block, &[BlockArg::Value(next_idx)], mismatch, &[]);
 
         builder.switch_to_block(mismatch);
         let left_lt = builder.ins().icmp(IntCC::UnsignedLessThan, lb64, rb64);
         let mismatch_result = builder.ins().select(left_lt, neg_one, one);
-        builder
-            .ins()
-            .jump(merge, &[BlockArg::Value(mismatch_result)]);
+        builder.ins().jump(merge, &[BlockArg::Value(mismatch_result)]);
 
         builder.switch_to_block(done);
         builder.ins().jump(merge, &[BlockArg::Value(zero)]);

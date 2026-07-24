@@ -10,26 +10,16 @@ pub struct Row {
 impl Row {
     pub fn new(cols: u16) -> Self {
         Self {
-            cells: vec![
-                crate::primitives::termtui::vt100::cell::Cell::default();
-                usize::from(cols)
-            ],
+            cells: vec![crate::primitives::termtui::vt100::cell::Cell::default(); usize::from(cols)],
             size: 0,
             wrapped: false,
         }
     }
 
-    pub fn new_with_attrs(
-        cols: u16,
-        attrs: crate::primitives::termtui::vt100::attrs::Attrs,
-    ) -> Self {
+    pub fn new_with_attrs(cols: u16, attrs: crate::primitives::termtui::vt100::attrs::Attrs) -> Self {
         let mut cell = crate::primitives::termtui::vt100::cell::Cell::default();
         cell.set_attrs(attrs);
-        Self {
-            cells: vec![cell; usize::from(cols)],
-            size: 0,
-            wrapped: false,
-        }
+        Self { cells: vec![cell; usize::from(cols)], size: 0, wrapped: false }
     }
 
     pub fn cols(&self) -> u16 {
@@ -56,10 +46,7 @@ impl Row {
         self.cells.get(usize::from(col))
     }
 
-    pub fn get_mut(
-        &mut self,
-        col: u16,
-    ) -> Option<&mut crate::primitives::termtui::vt100::cell::Cell> {
+    pub fn get_mut(&mut self, col: u16) -> Option<&mut crate::primitives::termtui::vt100::cell::Cell> {
         self.size = self.size.max(col + 1);
         self.cells.get_mut(usize::from(col))
     }
@@ -128,12 +115,7 @@ impl Row {
         let mut prev_was_wide = false;
 
         let mut prev_col = start;
-        for (col, cell) in self
-            .cells()
-            .enumerate()
-            .skip(usize::from(start))
-            .take(usize::from(width))
-        {
+        for (col, cell) in self.cells().enumerate().skip(usize::from(start)).take(usize::from(width)) {
             if prev_was_wide {
                 prev_was_wide = false;
                 continue;
@@ -162,8 +144,6 @@ impl Row {
             return false;
         }
 
-        self.cells
-            .get(Into::<usize>::into(col) - 1)
-            .is_some_and(super::cell::Cell::is_wide)
+        self.cells.get(Into::<usize>::into(col) - 1).is_some_and(super::cell::Cell::is_wide)
     }
 }

@@ -54,16 +54,10 @@ impl StageFocus {
         match self {
             Self::Workspace => "Dependency resolution and materialization steps update here.",
             Self::FrontEnd => "Per-unit parse and macro expansion progress streams in the log.",
-            Self::Semantic => {
-                "Nested semantic rules and type-check passes appear in the pipeline tree."
-            }
+            Self::Semantic => "Nested semantic rules and type-check passes appear in the pipeline tree.",
             Self::LowerCodegen => "Lowering, CLIF, and JIT/AOT emit phases drive this stage.",
-            Self::Tests => {
-                "Each test row updates as cases start, pass, or fail. Full output streams in the log panel."
-            }
-            Self::Summary => {
-                "Final pass/fail counts, timings, and charts land here when the command finishes."
-            }
+            Self::Tests => "Each test row updates as cases start, pass, or fail. Full output streams in the log panel.",
+            Self::Summary => "Final pass/fail counts, timings, and charts land here when the command finishes.",
         }
     }
 
@@ -121,26 +115,17 @@ mod tests {
 
     #[test]
     fn classifies_semantic_type_check() {
-        assert_eq!(
-            StageFocus::from_stage_label("Type check"),
-            StageFocus::Semantic
-        );
+        assert_eq!(StageFocus::from_stage_label("Type check"), StageFocus::Semantic);
     }
 
     #[test]
     fn classifies_resolve_manifest() {
-        assert_eq!(
-            StageFocus::from_stage_label("Resolve manifest"),
-            StageFocus::Workspace
-        );
+        assert_eq!(StageFocus::from_stage_label("Resolve manifest"), StageFocus::Workspace);
     }
 
     #[test]
     fn classifies_jit_emit() {
-        assert_eq!(
-            StageFocus::from_stage_label("JIT compile"),
-            StageFocus::LowerCodegen
-        );
+        assert_eq!(StageFocus::from_stage_label("JIT compile"), StageFocus::LowerCodegen);
     }
 
     #[test]
@@ -162,11 +147,7 @@ mod tests {
 
     #[test]
     fn workspace_description_mentions_materialization() {
-        assert!(
-            StageFocus::Workspace
-                .description()
-                .contains("materialization")
-        );
+        assert!(StageFocus::Workspace.description().contains("materialization"));
     }
 
     #[test]

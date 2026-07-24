@@ -16,10 +16,7 @@ fn selects_a_bundle_for_an_exact_target() {
     .unwrap();
 
     assert_eq!(
-        manifest
-            .select_bundle("x86_64-unknown-linux-gnu")
-            .unwrap()
-            .url,
+        manifest.select_bundle("x86_64-unknown-linux-gnu").unwrap().url,
         "https://github.com/Cyber-Nomad-Collective/beskid_compiler/releases/download/v1.2.3/beskid.tar.gz"
     );
 }

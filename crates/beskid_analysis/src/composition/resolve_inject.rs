@@ -48,10 +48,7 @@ pub fn resolve_dependency_targets(
     }
 }
 
-pub fn walk_chain(
-    mut scope_id: ScopeId,
-    scope_parents: &HashMap<ScopeId, Option<ScopeId>>,
-) -> Vec<ScopeId> {
+pub fn walk_chain(mut scope_id: ScopeId, scope_parents: &HashMap<ScopeId, Option<ScopeId>>) -> Vec<ScopeId> {
     let mut chain = vec![scope_id];
     while let Some(Some(parent)) = scope_parents.get(&scope_id) {
         chain.push(*parent);

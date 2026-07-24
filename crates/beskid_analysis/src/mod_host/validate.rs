@@ -14,17 +14,9 @@ use super::types::{ContractRegistration, LoadedModArtifact};
 /// other `contractId` value fail with **E1853** before scheduling. Suffix matching is
 /// preserved for backwards compatibility with the existing `*.Collector` /
 /// `*.Generator` filters used by collect / generate / analyze / rewrite phases.
-const KNOWN_CONTRACT_SUFFIXES: &[&str] = &[
-    "Collector",
-    "Generator",
-    "AttributeGenerator",
-    "Analyzer",
-    "Rewriter",
-];
+const KNOWN_CONTRACT_SUFFIXES: &[&str] = &["Collector", "Generator", "AttributeGenerator", "Analyzer", "Rewriter"];
 
-pub(crate) fn validate_registrations(
-    loaded: &[LoadedModArtifact],
-) -> Result<(), ModHostDiagnostics> {
+pub(crate) fn validate_registrations(loaded: &[LoadedModArtifact]) -> Result<(), ModHostDiagnostics> {
     let mut issues = Vec::new();
 
     for artifact in loaded {
@@ -32,17 +24,9 @@ pub(crate) fn validate_registrations(
     }
     validate_cross_artifact(loaded, &mut issues);
 
-    issues.sort_by(|left, right| {
-        left.code()
-            .cmp(right.code())
-            .then(left.message().cmp(&right.message()))
-    });
+    issues.sort_by(|left, right| left.code().cmp(right.code()).then(left.message().cmp(&right.message())));
 
-    if issues.is_empty() {
-        Ok(())
-    } else {
-        Err(ModHostDiagnostics::new(issues))
-    }
+    if issues.is_empty() { Ok(()) } else { Err(ModHostDiagnostics::new(issues)) }
 }
 
 fn validate_artifact(artifact: &LoadedModArtifact, issues: &mut Vec<ModHostIssue>) {
@@ -79,10 +63,7 @@ fn validate_artifact(artifact: &LoadedModArtifact, issues: &mut Vec<ModHostIssue
             });
         }
 
-        let key = (
-            registration.contract_id.as_str(),
-            registration.type_id.as_str(),
-        );
+        let key = (registration.contract_id.as_str(), registration.type_id.as_str());
         if seen.insert(key, index).is_some() {
             issues.push(ModHostIssue::DuplicateRegistrationInArtifact {
                 package_id: package_id.clone(),
@@ -129,9 +110,7 @@ fn registrations_imply_required_contracts(artifact: &LoadedModArtifact) -> bool 
     let Some(capabilities) = mod_section.capabilities.as_ref() else {
         return false;
     };
-    capabilities
-        .iter()
-        .any(|capability| matches!(capability.as_str(), "emit_syntax" | "rewrite_syntax"))
+    capabilities.iter().any(|capability| matches!(capability.as_str(), "emit_syntax" | "rewrite_syntax"))
 }
 
 fn validate_cross_artifact(loaded: &[LoadedModArtifact], issues: &mut Vec<ModHostIssue>) {
@@ -147,17 +126,11 @@ fn validate_cross_artifact(loaded: &[LoadedModArtifact], issues: &mut Vec<ModHos
             .to_owned();
         for registration in &artifact.registrations {
             by_pair
-                .entry((
-                    registration.contract_id.as_str(),
-                    registration.type_id.as_str(),
-                ))
+                .entry((registration.contract_id.as_str(), registration.type_id.as_str()))
                 .or_default()
                 .push(package_id.clone());
             if !registration.entry_symbol.trim().is_empty() {
-                by_entry_symbol
-                    .entry(registration.entry_symbol.as_str())
-                    .or_default()
-                    .push(package_id.clone());
+                by_entry_symbol.entry(registration.entry_symbol.as_str()).or_default().push(package_id.clone());
             }
         }
     }
@@ -189,9 +162,7 @@ fn validate_cross_artifact(loaded: &[LoadedModArtifact], issues: &mut Vec<ModHos
 }
 
 fn is_known_contract(contract_id: &str) -> bool {
-    KNOWN_CONTRACT_SUFFIXES
-        .iter()
-        .any(|suffix| contract_id.ends_with(suffix))
+    KNOWN_CONTRACT_SUFFIXES.iter().any(|suffix| contract_id.ends_with(suffix))
 }
 
 #[cfg(test)]
@@ -239,11 +210,7 @@ mod tests {
     }
 
     fn registration(contract: &str, ty: &str, sym: &str) -> ContractRegistration {
-        ContractRegistration {
-            contract_id: contract.to_owned(),
-            type_id: ty.to_owned(),
-            entry_symbol: sym.to_owned(),
-        }
+        ContractRegistration { contract_id: contract.to_owned(), type_id: ty.to_owned(), entry_symbol: sym.to_owned() }
     }
 
     #[test]
@@ -259,33 +226,21 @@ mod tests {
 
     #[test]
     fn unknown_contract_id_emits_e1853() {
-        let loaded = vec![artifact_with(vec![registration(
-            "Beskid.Compiler.Made.Up",
-            "T",
-            "sym1",
-        )])];
+        let loaded = vec![artifact_with(vec![registration("Beskid.Compiler.Made.Up", "T", "sym1")])];
         let err = validate_registrations(&loaded).unwrap_err();
         assert!(err.codes().contains(&"E1853"));
     }
 
     #[test]
     fn rewriter_without_analyzer_emits_e1854() {
-        let loaded = vec![artifact_with(vec![registration(
-            "Beskid.Compiler.Collect.Rewriter",
-            "T",
-            "sym1",
-        )])];
+        let loaded = vec![artifact_with(vec![registration("Beskid.Compiler.Collect.Rewriter", "T", "sym1")])];
         let err = validate_registrations(&loaded).unwrap_err();
         assert!(err.codes().contains(&"E1854"));
     }
 
     #[test]
     fn missing_entry_symbol_emits_e1828() {
-        let loaded = vec![artifact_with(vec![registration(
-            "Beskid.Compiler.Collect.Generator",
-            "T",
-            "",
-        )])];
+        let loaded = vec![artifact_with(vec![registration("Beskid.Compiler.Collect.Generator", "T", "")])];
         let err = validate_registrations(&loaded).unwrap_err();
         assert!(err.codes().contains(&"E1828"));
     }
@@ -296,10 +251,7 @@ mod tests {
         let mut a = artifact_with(vec![pair.clone()]);
         a.discovered.project_name = "ModA".into();
         a.descriptor.as_mut().unwrap().package_id = "ModA".into();
-        let mut b = artifact_with(vec![ContractRegistration {
-            entry_symbol: "sym_b".into(),
-            ..pair.clone()
-        }]);
+        let mut b = artifact_with(vec![ContractRegistration { entry_symbol: "sym_b".into(), ..pair.clone() }]);
         b.discovered.project_name = "ModB".into();
         b.descriptor.as_mut().unwrap().package_id = "ModB".into();
 
@@ -309,19 +261,11 @@ mod tests {
 
     #[test]
     fn cross_artifact_entry_symbol_collision_emits_e1852() {
-        let mut a = artifact_with(vec![registration(
-            "Beskid.Compiler.Collect.Generator",
-            "TypeA",
-            "shared_symbol",
-        )]);
+        let mut a = artifact_with(vec![registration("Beskid.Compiler.Collect.Generator", "TypeA", "shared_symbol")]);
         a.discovered.project_name = "ModA".into();
         a.descriptor.as_mut().unwrap().package_id = "ModA".into();
 
-        let mut b = artifact_with(vec![registration(
-            "Beskid.Compiler.Collect.Analyzer",
-            "TypeB",
-            "shared_symbol",
-        )]);
+        let mut b = artifact_with(vec![registration("Beskid.Compiler.Collect.Analyzer", "TypeB", "shared_symbol")]);
         b.discovered.project_name = "ModB".into();
         b.descriptor.as_mut().unwrap().package_id = "ModB".into();
 

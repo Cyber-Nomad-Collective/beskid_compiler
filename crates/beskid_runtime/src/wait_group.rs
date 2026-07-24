@@ -15,8 +15,7 @@ struct WaitGroupInner {
 
 static WAIT_GROUPS: LazySlotMap<WaitGroupInner> = LazySlotMap::new(None);
 
-fn table()
--> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, WaitGroupInner>>> {
+fn table() -> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, WaitGroupInner>>> {
     lock_lazy_slot_map(&WAIT_GROUPS, "wait_group table lock")
 }
 /// Convert a slotmap key to a wait group id.
@@ -31,10 +30,7 @@ fn key_to_id(key: slotmap::DefaultKey) -> WaitGroupId {
 pub fn wait_group_create() -> WaitGroupId {
     let mut guard = table();
     let map = guard.as_mut().expect("wait_group map");
-    let key = map.insert(WaitGroupInner {
-        counter: 0,
-        waiters: Vec::new(),
-    });
+    let key = map.insert(WaitGroupInner { counter: 0, waiters: Vec::new() });
     key_to_id(key)
 }
 

@@ -1,8 +1,7 @@
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::syntax::{
-    BreakStatement, ContinueStatement, ElseBranch, Expression, ExpressionStatement, ForStatement,
-    IfStatement, LaunchStatement, LetStatement, RangeExpression, ReturnStatement, Spanned,
-    Statement, WhileStatement, WithStatement,
+    BreakStatement, ContinueStatement, ElseBranch, Expression, ExpressionStatement, ForStatement, IfStatement,
+    LaunchStatement, LetStatement, RangeExpression, ReturnStatement, Spanned, Statement, WhileStatement, WithStatement,
 };
 use std::fmt::Write;
 

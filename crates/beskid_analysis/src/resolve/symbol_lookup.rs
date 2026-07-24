@@ -14,19 +14,11 @@ pub fn item_id_for_symbol(resolution: &Resolution, symbol: SymbolId) -> Option<I
 
 /// Prefer the authoritative [`ItemId`] from [`Resolution::by_symbol`] when present.
 pub fn canonical_item_id(resolution: &Resolution, item: ItemId) -> ItemId {
-    symbol_for_item(resolution, item)
-        .and_then(|symbol| item_id_for_symbol(resolution, symbol))
-        .unwrap_or(item)
+    symbol_for_item(resolution, item).and_then(|symbol| item_id_for_symbol(resolution, symbol)).unwrap_or(item)
 }
 
-pub fn item_id_for_qualifier(
-    resolution: &Resolution,
-    qualifier: &SymbolQualifier,
-) -> Option<ItemId> {
-    resolution
-        .symbols
-        .lookup(qualifier)
-        .and_then(|symbol| item_id_for_symbol(resolution, symbol))
+pub fn item_id_for_qualifier(resolution: &Resolution, qualifier: &SymbolQualifier) -> Option<ItemId> {
+    resolution.symbols.lookup(qualifier).and_then(|symbol| item_id_for_symbol(resolution, symbol))
 }
 
 pub fn qualified_name(resolution: &Resolution, item: ItemId) -> Option<String> {

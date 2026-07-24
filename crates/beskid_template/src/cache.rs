@@ -36,9 +36,7 @@ pub fn beskid_config_root() -> PathBuf {
     {
         return PathBuf::from(dir);
     }
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("beskid")
+    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("beskid")
 }
 
 pub fn installed_root() -> PathBuf {
@@ -46,21 +44,13 @@ pub fn installed_root() -> PathBuf {
 }
 
 pub fn registry_index_path() -> PathBuf {
-    beskid_config_root()
-        .join("templates")
-        .join("registry-index.json")
+    beskid_config_root().join("templates").join("registry-index.json")
 }
 
 pub fn install_dir_for_identity(identity: &str) -> PathBuf {
     let safe: String = identity
         .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
         .collect();
     installed_root().join(safe)
 }
@@ -89,10 +79,7 @@ pub fn list_installed() -> TemplateResult<Vec<(InstallSnapshot, PathBuf)>> {
     Ok(out)
 }
 
-pub fn install_from_tree(
-    template_root: &Path,
-    snapshot: InstallSnapshot,
-) -> TemplateResult<PathBuf> {
+pub fn install_from_tree(template_root: &Path, snapshot: InstallSnapshot) -> TemplateResult<PathBuf> {
     let manifest = load_manifest_from_template_root(template_root)?;
     let dest = install_dir_for_identity(&manifest.identity);
     if dest.exists() {
@@ -113,12 +100,8 @@ pub fn uninstall_by_short_name(short_name: &str) -> TemplateResult<bool> {
     Ok(false)
 }
 
-pub fn find_installed_by_short_name(
-    short_name: &str,
-) -> TemplateResult<Option<(InstallSnapshot, PathBuf)>> {
-    Ok(list_installed()?
-        .into_iter()
-        .find(|(s, _)| s.short_name == short_name))
+pub fn find_installed_by_short_name(short_name: &str) -> TemplateResult<Option<(InstallSnapshot, PathBuf)>> {
+    Ok(list_installed()?.into_iter().find(|(s, _)| s.short_name == short_name))
 }
 
 pub fn write_snapshot(dir: &Path, snapshot: &InstallSnapshot) -> TemplateResult<()> {
@@ -149,12 +132,7 @@ pub fn checksum_dir(root: &Path) -> TemplateResult<String> {
         if file.ends_with("manifest.snapshot.json") {
             continue;
         }
-        hasher.update(
-            file.strip_prefix(root)
-                .unwrap_or(&file)
-                .to_string_lossy()
-                .as_bytes(),
-        );
+        hasher.update(file.strip_prefix(root).unwrap_or(&file).to_string_lossy().as_bytes());
         hasher.update(&fs::read(&file)?);
     }
     Ok(format!("{:x}", hasher.finalize()))
@@ -212,10 +190,7 @@ pub fn load_registry_index() -> RegistryIndex {
     if !path.is_file() {
         return RegistryIndex::default();
     }
-    fs::read(&path)
-        .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or_default()
+    fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
 
 pub fn save_registry_index(index: &RegistryIndex) -> TemplateResult<()> {

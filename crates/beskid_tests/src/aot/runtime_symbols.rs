@@ -12,8 +12,8 @@ use super::*;
 /// toolchains, so we use the `object` crate (same stack as codegen) for inspection.
 fn static_archive_symbol_text(path: &Path) -> String {
     let data = fs::read(path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
-    let archive = ArchiveFile::parse(data.as_slice())
-        .unwrap_or_else(|err| panic!("parse archive {}: {err:#}", path.display()));
+    let archive =
+        ArchiveFile::parse(data.as_slice()).unwrap_or_else(|err| panic!("parse archive {}: {err:#}", path.display()));
     let mut text = String::new();
     for member in archive.members() {
         let Ok(member) = member else {
@@ -45,27 +45,14 @@ fn static_build_contains_required_runtime_symbols() {
     let dir = temp_case_dir("static_with_runtime_symbols");
     let output = dir.join("libsample.a");
 
-    let result = build(AotBuildRequest::with_defaults(
-        artifact,
-        BuildOutputKind::StaticLib,
-        output,
-        "Main",
-    ))
-    .expect("aot static build");
+    let result = build(AotBuildRequest::with_defaults(artifact, BuildOutputKind::StaticLib, output, "Main"))
+        .expect("aot static build");
 
-    let final_path = result
-        .final_path
-        .expect("static build should emit final archive");
-    assert!(
-        final_path.exists(),
-        "expected final static archive to exist"
-    );
+    let final_path = result.final_path.expect("static build should emit final archive");
+    assert!(final_path.exists(), "expected final static archive to exist");
 
     let symbols = static_archive_symbol_text(&final_path);
-    assert!(
-        symbols.contains(SYM_ABI_VERSION),
-        "expected final static artifact to expose ABI version symbol"
-    );
+    assert!(symbols.contains(SYM_ABI_VERSION), "expected final static artifact to expose ABI version symbol");
     assert!(
         symbols.contains(SYM_INTEROP_DISPATCH_UNIT),
         "expected final static artifact to expose interop dispatch symbol"

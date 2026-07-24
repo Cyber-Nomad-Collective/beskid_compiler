@@ -18,10 +18,7 @@ pub fn handle_references(
     if project_manifest::is_manifest_uri(uri) {
         return project_manifest::token_references(&doc.text, offset)
             .into_iter()
-            .map(|(start, end)| Location {
-                uri: uri.clone(),
-                range: offset_range_to_lsp(&doc.text, start, end),
-            })
+            .map(|(start, end)| Location { uri: uri.clone(), range: offset_range_to_lsp(&doc.text, start, end) })
             .collect();
     }
 
@@ -43,11 +40,7 @@ pub fn handle_references(
         })
         .map(|reference| Location {
             uri: uri.clone(),
-            range: offset_range_to_lsp(
-                &doc.text,
-                reference.reference_start,
-                reference.reference_end,
-            ),
+            range: offset_range_to_lsp(&doc.text, reference.reference_start, reference.reference_end),
         })
         .collect();
     if include_declaration {

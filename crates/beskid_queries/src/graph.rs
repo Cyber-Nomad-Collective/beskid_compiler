@@ -15,11 +15,7 @@ use crate::stats::{SALSA_TRACE_TARGET, trace_query, trace_query_with_reason};
 use crate::unit::{seed_file_from_disk, unit_imports};
 
 /// Discovered unit paths for an entry (query boundary marker).
-pub fn discovered_units(
-    _db: &dyn Db,
-    _project: ProjectSession,
-    _entry_path: PathBuf,
-) -> Vec<String> {
+pub fn discovered_units(_db: &dyn Db, _project: ProjectSession, _entry_path: PathBuf) -> Vec<String> {
     trace_query("discovered_units", false);
     Vec::new()
 }
@@ -54,9 +50,7 @@ pub fn reverse_dependents(
         let grammar = db.grammar_revision_input();
         for path in &candidate_paths {
             let imports = unit_imports(db, project, grammar, path.clone());
-            if imports
-                .iter()
-                .any(|dep| dep == &current_key || dep.ends_with(&current_key))
+            if imports.iter().any(|dep| dep == &current_key || dep.ends_with(&current_key))
                 && !invalidated.iter().any(|p| p == path)
             {
                 invalidated.push(path.clone());
@@ -86,12 +80,7 @@ pub fn program_assembly_tracked(
 ) -> String {
     let _ = (db, project, grammar);
     trace_query("program_assembly_tracked", false);
-    format!(
-        "{}:{}:{}",
-        entry_path.display(),
-        lockfile_digest,
-        options_fingerprint
-    )
+    format!("{}:{}:{}", entry_path.display(), lockfile_digest, options_fingerprint)
 }
 
 /// Assembled program for an entry (Salsa-backed unit materialization).
@@ -116,14 +105,7 @@ pub fn program_assembly(
     let session = db.ensure_project_session(plan, entry_path, lockfile_digest.clone());
     let grammar = db.grammar_revision();
     let options_fp = assembly_options_fingerprint(options);
-    let _ = program_assembly_tracked(
-        db,
-        session,
-        grammar,
-        entry_path.to_path_buf(),
-        lockfile_digest,
-        options_fp,
-    );
+    let _ = program_assembly_tracked(db, session, grammar, entry_path.to_path_buf(), lockfile_digest, options_fp);
 
     if let Some(source) = entry_source {
         db.ensure_file_text(entry_path.to_path_buf(), source.to_string());

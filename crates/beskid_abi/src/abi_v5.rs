@@ -13,15 +13,14 @@ use sha2::{Digest, Sha256};
 mod bootstrap;
 
 pub use bootstrap::{
-    CANONICAL_RUNTIME_PACKAGE_NAME, CANONICAL_RUNTIME_PACKAGE_PUBLISHER, RuntimeAuditMetadata,
-    RuntimePackageIdentity, TRAP_DIAGNOSTIC_PREFIX, TRAP_EXIT_STATUS, canonical_runtime_package,
-    render_runtime_asm_include, render_runtime_c_header,
+    CANONICAL_RUNTIME_PACKAGE_NAME, CANONICAL_RUNTIME_PACKAGE_PUBLISHER, RuntimeAuditMetadata, RuntimePackageIdentity,
+    TRAP_DIAGNOSTIC_PREFIX, TRAP_EXIT_STATUS, canonical_runtime_package, render_runtime_asm_include,
+    render_runtime_c_header,
 };
 
 pub const ABI_V5: u32 = 5;
 pub const RUNTIME_SYMBOL_PREFIX: &str = "beskid_rt_v5_";
-pub const LIBRARY_LIFECYCLE_SYMBOLS: [&str; 2] =
-    ["beskid_library_attach_v5", "beskid_library_detach_v5"];
+pub const LIBRARY_LIFECYCLE_SYMBOLS: [&str; 2] = ["beskid_library_attach_v5", "beskid_library_detach_v5"];
 macro_rules! string_contract_type {
     ($name:ident) => {
         #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -87,9 +86,7 @@ impl TargetMetadata {
             .find(|candidate| candidate.triple == self.triple)
             .ok_or_else(|| TargetValidationError::UnsupportedTriple(self.triple.as_str().into()))?;
         if self != &expected {
-            return Err(TargetValidationError::MetadataMismatch {
-                triple: self.triple.as_str().into(),
-            });
+            return Err(TargetValidationError::MetadataMismatch { triple: self.triple.as_str().into() });
         }
         Ok(())
     }
@@ -231,10 +228,7 @@ impl TrapCode {
     pub fn all() -> Vec<Self> {
         crate::generated::abi_v5_contract::ABI_V5_TRAPS
             .iter()
-            .map(|(name, code)| Self {
-                name: (*name).into(),
-                code: *code,
-            })
+            .map(|(name, code)| Self { name: (*name).into(), code: *code })
             .collect()
     }
 }
@@ -249,10 +243,7 @@ impl TryFrom<u8> for TrapCode {
     type Error = InvalidTrapCode;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Self::all()
-            .into_iter()
-            .find(|code| code.code == value)
-            .ok_or(InvalidTrapCode(value))
+        Self::all().into_iter().find(|code| code.code == value).ok_or(InvalidTrapCode(value))
     }
 }
 
@@ -282,77 +273,49 @@ impl AbiManifestV5 {
         if self.abi_version != ABI_V5 {
             return Err(ManifestValidationError::WrongAbiVersion(self.abi_version));
         }
-        if self.trap_exit_status != TRAP_EXIT_STATUS
-            || self.trap_diagnostic != TRAP_DIAGNOSTIC_PREFIX
-        {
+        if self.trap_exit_status != TRAP_EXIT_STATUS || self.trap_diagnostic != TRAP_DIAGNOSTIC_PREFIX {
             return Err(ManifestValidationError::InvalidTrapContract);
         }
-        self.target
-            .validate()
-            .map_err(ManifestValidationError::InvalidTarget)?;
+        self.target.validate().map_err(ManifestValidationError::InvalidTarget)?;
 
         let mut symbols = HashSet::new();
         for function in self.imports.iter().chain(&self.exports) {
             if !function.symbol.starts_with(RUNTIME_SYMBOL_PREFIX)
                 && !LIBRARY_LIFECYCLE_SYMBOLS.contains(&function.symbol.as_str())
             {
-                return Err(ManifestValidationError::UnversionedRuntimeSymbol {
-                    symbol: function.symbol.clone(),
-                });
+                return Err(ManifestValidationError::UnversionedRuntimeSymbol { symbol: function.symbol.clone() });
             }
             if !symbols.insert(function.symbol.clone()) {
-                return Err(ManifestValidationError::DuplicateSymbol {
-                    symbol: function.symbol.clone(),
-                });
+                return Err(ManifestValidationError::DuplicateSymbol { symbol: function.symbol.clone() });
             }
         }
 
-        validate_named_contracts(
-            self.trusted_runtime_intrinsics
-                .iter()
-                .map(|entry| entry.name.as_str()),
-        )?;
+        validate_named_contracts(self.trusted_runtime_intrinsics.iter().map(|entry| entry.name.as_str()))?;
         let mut intrinsic_symbols = HashSet::new();
         for intrinsic in &self.trusted_runtime_intrinsics {
             if !intrinsic.symbol.starts_with(RUNTIME_SYMBOL_PREFIX) {
-                return Err(ManifestValidationError::UnversionedRuntimeSymbol {
-                    symbol: intrinsic.symbol.clone(),
-                });
+                return Err(ManifestValidationError::UnversionedRuntimeSymbol { symbol: intrinsic.symbol.clone() });
             }
             if !intrinsic_symbols.insert(intrinsic.symbol.as_str()) {
-                return Err(ManifestValidationError::DuplicateSymbol {
-                    symbol: intrinsic.symbol.clone(),
-                });
+                return Err(ManifestValidationError::DuplicateSymbol { symbol: intrinsic.symbol.clone() });
             }
         }
-        validate_named_contracts(
-            self.platform_imports
-                .iter()
-                .map(|entry| entry.symbol.as_str()),
-        )?;
+        validate_named_contracts(self.platform_imports.iter().map(|entry| entry.symbol.as_str()))?;
         validate_layouts(&self.layouts)?;
 
         if let Some(package) = &self.trusted_runtime_package {
             if package != &canonical_runtime_package() {
-                return Err(ManifestValidationError::UnauthorizedRuntimePackage {
-                    actual: package.clone(),
-                });
+                return Err(ManifestValidationError::UnauthorizedRuntimePackage { actual: package.clone() });
             }
             self.validate_canonical_bootstrap_contract()?;
-            let trap = self
-                .exports
-                .iter()
-                .find(|function| function.symbol == "beskid_rt_v5_trap");
-            if !matches!(trap, Some(function) if function.noreturn && function.result == AbiType::Void)
-            {
+            let trap = self.exports.iter().find(|function| function.symbol == "beskid_rt_v5_trap");
+            if !matches!(trap, Some(function) if function.noreturn && function.result == AbiType::Void) {
                 return Err(ManifestValidationError::InvalidTrapContract);
             }
         }
 
         if !assembly_exports_are_valid(&self.target, &self.assembly_exports) {
-            return Err(ManifestValidationError::InvalidAssemblyExports {
-                actual: self.assembly_exports.clone(),
-            });
+            return Err(ManifestValidationError::InvalidAssemblyExports { actual: self.assembly_exports.clone() });
         }
 
         let expected = TrapCode::all();
@@ -373,9 +336,7 @@ impl AbiManifestV5 {
     /// Typed manifest metadata only. Intrinsic legality is decided by the
     /// DB-owned `beskid_queries::runtime_intrinsic` provenance query.
     pub fn intrinsic_metadata(&self, name: &str) -> Option<&RuntimeIntrinsic> {
-        self.trusted_runtime_intrinsics
-            .iter()
-            .find(|intrinsic| intrinsic.name == name)
+        self.trusted_runtime_intrinsics.iter().find(|intrinsic| intrinsic.name == name)
     }
 }
 
@@ -387,15 +348,11 @@ fn assembly_exports_are_valid(target: &TargetMetadata, exports: &[AssemblyExport
     actual == expected
 }
 
-fn validate_named_contracts<'a>(
-    names: impl IntoIterator<Item = &'a str>,
-) -> Result<(), ManifestValidationError> {
+fn validate_named_contracts<'a>(names: impl IntoIterator<Item = &'a str>) -> Result<(), ManifestValidationError> {
     let mut seen = HashSet::new();
     for name in names {
         if name.is_empty() || !seen.insert(name) {
-            return Err(ManifestValidationError::DuplicateSymbol {
-                symbol: name.into(),
-            });
+            return Err(ManifestValidationError::DuplicateSymbol { symbol: name.into() });
         }
     }
     Ok(())
@@ -405,31 +362,18 @@ fn validate_layouts(layouts: &[AbiLayout]) -> Result<(), ManifestValidationError
     let mut names = HashSet::new();
     for layout in layouts {
         if layout.name.is_empty() || !names.insert(layout.name.as_str()) {
-            return Err(ManifestValidationError::DuplicateLayout {
-                name: layout.name.clone(),
-            });
+            return Err(ManifestValidationError::DuplicateLayout { name: layout.name.clone() });
         }
         if layout.size == 0
             || layout.alignment == 0
             || !layout.alignment.is_power_of_two()
-            || layout
-                .fields
-                .iter()
-                .any(|field| field.offset >= layout.size)
+            || layout.fields.iter().any(|field| field.offset >= layout.size)
         {
-            return Err(ManifestValidationError::InvalidLayout {
-                name: layout.name.clone(),
-            });
+            return Err(ManifestValidationError::InvalidLayout { name: layout.name.clone() });
         }
         let mut fields = HashSet::new();
-        if layout
-            .fields
-            .iter()
-            .any(|field| field.name.is_empty() || !fields.insert(field.name.as_str()))
-        {
-            return Err(ManifestValidationError::InvalidLayout {
-                name: layout.name.clone(),
-            });
+        if layout.fields.iter().any(|field| field.name.is_empty() || !fields.insert(field.name.as_str())) {
+            return Err(ManifestValidationError::InvalidLayout { name: layout.name.clone() });
         }
     }
     Ok(())
@@ -466,11 +410,7 @@ pub fn canonical_layout_hash(layouts: &[AbiLayout]) -> String {
     let mut canonical = layouts.to_vec();
     canonical.sort_by(|left, right| left.name.cmp(&right.name));
     for layout in &mut canonical {
-        layout.fields.sort_by(|left, right| {
-            left.offset
-                .cmp(&right.offset)
-                .then_with(|| left.name.cmp(&right.name))
-        });
+        layout.fields.sort_by(|left, right| left.offset.cmp(&right.offset).then_with(|| left.name.cmp(&right.name)));
     }
     let mut hasher = Sha256::new();
     for layout in canonical {
@@ -492,9 +432,7 @@ pub fn canonical_source_hash(units: &[SourceUnit]) -> Result<String, ManifestVal
     canonical.sort_by(|left, right| left.logical_path.cmp(&right.logical_path));
     for pair in canonical.windows(2) {
         if pair[0].logical_path == pair[1].logical_path {
-            return Err(ManifestValidationError::DuplicateSourcePath {
-                logical_path: pair[0].logical_path.clone(),
-            });
+            return Err(ManifestValidationError::DuplicateSourcePath { logical_path: pair[0].logical_path.clone() });
         }
     }
     let mut hasher = Sha256::new();

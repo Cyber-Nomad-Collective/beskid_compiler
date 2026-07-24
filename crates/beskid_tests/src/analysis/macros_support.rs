@@ -20,14 +20,10 @@ pub fn parse_expand_with_depth(source: &str, max_depth: u32) -> Spanned<Program>
 
 /// First function body named `name` in the program (top-level or inline module items).
 pub fn find_function_body<'a>(program: &'a Program, name: &str) -> &'a Spanned<Block> {
-    find_function_body_in_items(&program.items, name)
-        .unwrap_or_else(|| panic!("function `{name}` not found"))
+    find_function_body_in_items(&program.items, name).unwrap_or_else(|| panic!("function `{name}` not found"))
 }
 
-fn find_function_body_in_items<'a>(
-    items: &'a [Spanned<Node>],
-    name: &str,
-) -> Option<&'a Spanned<Block>> {
+fn find_function_body_in_items<'a>(items: &'a [Spanned<Node>], name: &str) -> Option<&'a Spanned<Block>> {
     for item in items {
         match &item.node {
             Node::Function(f) if f.node.name.node.name == name => return Some(&f.node.body),
@@ -45,10 +41,7 @@ fn find_function_body_in_items<'a>(
 /// Walk `expr` and panic if any `MacroInvocation` remains.
 pub fn assert_no_macro_invocations_in_expr(expr: &Expression) {
     walk_expression(expr, &mut |e| {
-        assert!(
-            !matches!(e, Expression::MacroInvocation(_)),
-            "unexpected macro invocation in expression tree: {e:?}"
-        );
+        assert!(!matches!(e, Expression::MacroInvocation(_)), "unexpected macro invocation in expression tree: {e:?}");
     });
 }
 
@@ -56,10 +49,7 @@ pub fn assert_no_macro_invocations_in_expr(expr: &Expression) {
 pub fn assert_no_macro_invocations_in_block(block: &Block) {
     for stmt in &block.statements {
         walk_statement(&stmt.node, &mut |e| {
-            assert!(
-                !matches!(e, Expression::MacroInvocation(_)),
-                "unexpected macro invocation: {e:?}"
-            );
+            assert!(!matches!(e, Expression::MacroInvocation(_)), "unexpected macro invocation: {e:?}");
         });
     }
 }

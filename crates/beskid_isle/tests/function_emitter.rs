@@ -9,11 +9,7 @@ use target_lexicon::Triple;
 
 #[test]
 fn signatures_and_pointer_types_come_from_each_supported_isa() {
-    for triple in [
-        "x86_64-unknown-linux-gnu",
-        "aarch64-apple-darwin",
-        "x86_64-pc-windows-msvc",
-    ] {
+    for triple in ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"] {
         let triple = Triple::from_str(triple).expect("supported triple syntax");
         let isa = cranelift_codegen::isa::lookup(triple.clone())
             .unwrap_or_else(|error| panic!("lookup {triple}: {error}"))
@@ -61,12 +57,7 @@ fn emitter_finalizes_and_verifies_each_selected_body() {
         node: AstNodeId(1),
     };
     let function = emitter
-        .emit_expression(
-            UserFuncName::user(0, 1),
-            emitter.signature([], [types::I32]),
-            &Facts(key),
-            key,
-        )
+        .emit_expression(UserFuncName::user(0, 1), emitter.signature([], [types::I32]), &Facts(key), key)
         .expect("verified function");
 
     assert!(function.display().to_string().contains("iconst.i32 9"));

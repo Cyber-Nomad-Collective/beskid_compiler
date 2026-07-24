@@ -28,18 +28,12 @@ impl NodeFacts for BlockFacts {
     }
 
     fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
-        self.nodes[2..]
-            .iter()
-            .step_by(2)
-            .any(|candidate| *candidate == key)
-            .then_some(LiteralKind::Integer)
+        self.nodes[2..].iter().step_by(2).any(|candidate| *candidate == key).then_some(LiteralKind::Integer)
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
         if key == self.nodes[0] {
-            [self.nodes[1], self.nodes[3], self.nodes[5]]
-                .get(usize::from(index))
-                .copied()
+            [self.nodes[1], self.nodes[3], self.nodes[5]].get(usize::from(index)).copied()
         } else if key == self.nodes[1] {
             (index == 0).then_some(self.nodes[2])
         } else if key == self.nodes[3] {
@@ -56,48 +50,28 @@ impl NodeFacts for BlockFacts {
     }
 
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
-        self.nodes[2..]
-            .iter()
-            .step_by(2)
-            .position(|candidate| *candidate == key)
-            .map(|index| index as i64 + 1)
+        self.nodes[2..].iter().step_by(2).position(|candidate| *candidate == key).map(|index| index as i64 + 1)
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
-        self.nodes[2..]
-            .iter()
-            .step_by(2)
-            .any(|candidate| *candidate == key)
-            .then_some(types::I32)
+        self.nodes[2..].iter().step_by(2).any(|candidate| *candidate == key).then_some(types::I32)
     }
 }
 
 #[test]
 fn block_rule_sequences_statements_and_returns_last_value() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Block.bd"));
     let generation = SyntaxGenerationId(11);
     let facts = BlockFacts {
-        nodes: std::array::from_fn(|index| AstNodeKey {
-            unit,
-            generation,
-            node: AstNodeId(index as u32 + 1),
-        }),
+        nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }),
     };
     let emitter = FunctionEmitter::new(isa.as_ref());
     let signature = emitter.signature([], [types::I32]);
     let function = emitter
-        .emit_statement(
-            UserFuncName::user(0, 14),
-            signature.clone(),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_statement(UserFuncName::user(0, 14), signature.clone(), &facts, facts.nodes[0])
         .expect("verified block sequence");
 
     let clif = function.display().to_string();
@@ -107,14 +81,10 @@ fn block_rule_sequences_statements_and_returns_last_value() {
     assert!(first < second && second < third, "{clif}");
 
     let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-    let function_id = module
-        .declare_function("block_sequence", Linkage::Local, &signature)
-        .expect("declare");
+    let function_id = module.declare_function("block_sequence", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
     context.func = function;
-    module
-        .define_function(function_id, &mut context)
-        .expect("define");
+    module.define_function(function_id, &mut context).expect("define");
     module.finalize_definitions().expect("finalize");
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };

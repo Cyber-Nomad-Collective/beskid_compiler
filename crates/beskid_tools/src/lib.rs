@@ -20,21 +20,21 @@ pub mod tui;
 
 pub use corelib::{CorelibProvisioning, ensure_bundled_corelib};
 pub use diagnostics::{
-    format_diagnostic, format_report, print_pretty_parse_error, print_pretty_pest_error,
-    print_report, print_semantic_diagnostics, report_from_anyhow,
+    format_diagnostic, format_report, print_pretty_parse_error, print_pretty_pest_error, print_report,
+    print_semantic_diagnostics, report_from_anyhow,
 };
 pub use logging::init as init_logging;
 pub use pipeline::{
-    CliInputPipelineOptions, CliPipeline, CliProjectPipelineOptions, CliResolveOptions,
-    PipelineProgressKind, resolve_input_with_cli_pipeline, resolve_input_with_cli_pipeline_kind,
-    resolve_project_with_cli_pipeline, use_cli_spinner,
+    CliInputPipelineOptions, CliPipeline, CliProjectPipelineOptions, CliResolveOptions, PipelineProgressKind,
+    resolve_input_with_cli_pipeline, resolve_input_with_cli_pipeline_kind, resolve_project_with_cli_pipeline,
+    use_cli_spinner,
 };
 pub use registry::{
-    RegistryConnectConfig, build_pckg_client, is_network_error, latest_non_yanked,
-    parse_package_selector, pckg_to_anyhow, pick_version, tokio_runtime,
+    RegistryConnectConfig, build_pckg_client, is_network_error, latest_non_yanked, parse_package_selector,
+    pckg_to_anyhow, pick_version, tokio_runtime,
 };
 pub use session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 pub use shell::{
-    BeskidWidget, BoardLayout, BoardV2Doc, CommandItem, HiLayoutState, ShellAction, ShellHost,
-    ShellScope, WidgetDescriptor, WidgetMeta, WidgetRegistrar, WidgetRegistry,
+    BeskidWidget, BoardLayout, BoardV2Doc, CommandItem, HiLayoutState, ShellAction, ShellHost, ShellScope,
+    WidgetDescriptor, WidgetMeta, WidgetRegistrar, WidgetRegistry,
 };

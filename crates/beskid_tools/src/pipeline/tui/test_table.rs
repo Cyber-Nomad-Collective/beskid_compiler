@@ -38,19 +38,10 @@ impl<'a> TestRunUi<'a> {
     /// When `pipeline` is `Some` and not plain, reuses its [`TuiSession`](super::terminal::TuiSession).
     pub fn new(plain: bool, pipeline: Option<&'a CliPipeline>) -> Self {
         let interactive = !plain && pipeline.is_some_and(|pipeline| pipeline.is_spinner_enabled());
-        Self {
-            plain: !interactive,
-            rows: Vec::new(),
-            pipeline: if interactive { pipeline } else { None },
-        }
+        Self { plain: !interactive, rows: Vec::new(), pipeline: if interactive { pipeline } else { None } }
     }
 
-    pub fn push_row(
-        &mut self,
-        qualified_name: impl Into<String>,
-        state: TestRowState,
-        link: Option<FileLineLink>,
-    ) {
+    pub fn push_row(&mut self, qualified_name: impl Into<String>, state: TestRowState, link: Option<FileLineLink>) {
         self.rows.push(TestRow {
             qualified_name: qualified_name.into(),
             link,
@@ -139,15 +130,9 @@ impl<'a> TestRunUi<'a> {
         skipped: usize,
         filtered_out: usize,
     ) -> io::Result<()> {
-        let summary = TestReportSummary {
-            passed,
-            failed,
-            skipped,
-            filtered_out,
-        };
-        let summary_line = format!(
-            "Result: passed={passed}, failed={failed}, skipped={skipped}, filtered_out={filtered_out}"
-        );
+        let summary = TestReportSummary { passed, failed, skipped, filtered_out };
+        let summary_line =
+            format!("Result: passed={passed}, failed={failed}, skipped={skipped}, filtered_out={filtered_out}");
         if self.plain {
             println!("{summary_line}");
             return Ok(());

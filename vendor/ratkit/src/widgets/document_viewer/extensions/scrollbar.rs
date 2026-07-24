@@ -18,11 +18,7 @@ pub fn render_scrollbar(area: Rect, buf: &mut Buffer, scroll: &ScrollState) {
     for row in 0..area.height {
         let is_thumb = row >= thumb_top && row < thumb_top.saturating_add(thumb_height);
         let symbol = if is_thumb { "█" } else { "│" };
-        let color = if is_thumb {
-            Color::Gray
-        } else {
-            Color::DarkGray
-        };
+        let color = if is_thumb { Color::Gray } else { Color::DarkGray };
         buf.set_string(area.x, area.y + row, symbol, Style::default().fg(color));
     }
 }
@@ -36,10 +32,7 @@ fn thumb_height(view_height: u16, total_lines: usize) -> u16 {
 /// Calculates scrollbar thumb top row.
 fn thumb_top(view_height: u16, thumb_height: u16, scroll: &ScrollState) -> u16 {
     let max_top = view_height.saturating_sub(thumb_height);
-    let max_offset = scroll
-        .total_lines
-        .saturating_sub(view_height as usize)
-        .max(1);
+    let max_offset = scroll.total_lines.saturating_sub(view_height as usize).max(1);
     let ratio = scroll.offset as f64 / max_offset as f64;
     (ratio * max_top as f64).round() as u16
 }

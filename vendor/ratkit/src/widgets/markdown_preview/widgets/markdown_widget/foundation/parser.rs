@@ -5,8 +5,7 @@
 
 /// Flush accumulated text segments as a paragraph or blockquote.
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::elements::{
-    CheckboxState, CodeBlockBorderKind, ColumnAlignment, ElementKind, MarkdownElement,
-    TableBorderKind, TextSegment,
+    CheckboxState, CodeBlockBorderKind, ColumnAlignment, ElementKind, MarkdownElement, TableBorderKind, TextSegment,
 };
 
 /// Flush accumulated segments as a paragraph or blockquote.
@@ -33,19 +32,12 @@ pub fn flush_paragraph(
 
     if blockquote_depth > 0 {
         lines.push(MarkdownElement {
-            kind: ElementKind::Blockquote {
-                content,
-                depth: blockquote_depth,
-            },
+            kind: ElementKind::Blockquote { content, depth: blockquote_depth },
             section_id,
             source_line,
         });
     } else {
-        lines.push(MarkdownElement {
-            kind: ElementKind::Paragraph(content),
-            section_id,
-            source_line,
-        });
+        lines.push(MarkdownElement { kind: ElementKind::Paragraph(content), section_id, source_line });
     }
 }
 
@@ -151,10 +143,7 @@ fn terminal_display_width(s: &str) -> usize {
 /// # Returns
 ///
 /// A vector of MarkdownElement, ready for rendering.
-pub fn render_markdown_to_elements(
-    content: &str,
-    frontmatter_collapsed: bool,
-) -> Vec<MarkdownElement> {
+pub fn render_markdown_to_elements(content: &str, frontmatter_collapsed: bool) -> Vec<MarkdownElement> {
     let mut lines = Vec::new();
 
     // Parse frontmatter first
@@ -166,17 +155,11 @@ pub fn render_markdown_to_elements(
     // Add frontmatter if present - each field gets its own line
     if let Some(fields) = frontmatter {
         // Get context_id for collapsed display
-        let context_id = fields
-            .iter()
-            .find(|(k, _)| k == "context_id")
-            .map(|(_, v)| v.clone());
+        let context_id = fields.iter().find(|(k, _)| k == "context_id").map(|(_, v)| v.clone());
 
         // Line 1: Opening --- with collapse icon
         lines.push(MarkdownElement {
-            kind: ElementKind::FrontmatterStart {
-                collapsed: frontmatter_collapsed,
-                context_id,
-            },
+            kind: ElementKind::FrontmatterStart { collapsed: frontmatter_collapsed, context_id },
             section_id: None, // Start is always visible (it's the toggle)
             source_line: current_source_line,
         });
@@ -201,11 +184,7 @@ pub fn render_markdown_to_elements(
         current_source_line += 1;
 
         // Empty line after frontmatter
-        lines.push(MarkdownElement {
-            kind: ElementKind::Empty,
-            section_id: None,
-            source_line: current_source_line,
-        });
+        lines.push(MarkdownElement { kind: ElementKind::Empty, section_id: None, source_line: current_source_line });
     }
 
     let mut current_segments: Vec<TextSegment> = Vec::new();
@@ -247,12 +226,7 @@ pub fn render_markdown_to_elements(
         }
     }
     // Helper to get line number from byte offset
-    let get_line = |offset: usize| -> usize {
-        byte_to_line
-            .get(offset)
-            .copied()
-            .unwrap_or(current_source_line)
-    };
+    let get_line = |offset: usize| -> usize { byte_to_line.get(offset).copied().unwrap_or(current_source_line) };
 
     let options = Options::all();
     let parser = Parser::new_ext(remaining_content, options).into_offset_iter();
@@ -448,10 +422,7 @@ pub fn render_markdown_to_elements(
                 TagEnd::CodeBlock => {
                     // End code block
                     lines.push(MarkdownElement {
-                        kind: ElementKind::CodeBlockBorder {
-                            kind: CodeBlockBorderKind::Bottom,
-                            blockquote_depth,
-                        },
+                        kind: ElementKind::CodeBlockBorder { kind: CodeBlockBorderKind::Bottom, blockquote_depth },
                         section_id: current_section_id,
                         source_line: event_source_line,
                     });
@@ -526,9 +497,7 @@ pub fn render_markdown_to_elements(
                     if !pending_table_rows.is_empty() {
                         // Top border
                         lines.push(MarkdownElement {
-                            kind: ElementKind::TableBorder(TableBorderKind::Top(
-                                table_col_widths.clone(),
-                            )),
+                            kind: ElementKind::TableBorder(TableBorderKind::Top(table_col_widths.clone())),
                             section_id: current_section_id,
                             source_line: event_source_line,
                         });
@@ -543,10 +512,7 @@ pub fn render_markdown_to_elements(
                                         .get(j)
                                         .copied()
                                         .unwrap_or_else(|| terminal_display_width(cell));
-                                    let alignment = table_alignments
-                                        .get(j)
-                                        .copied()
-                                        .unwrap_or(ColumnAlignment::None);
+                                    let alignment = table_alignments.get(j).copied().unwrap_or(ColumnAlignment::None);
                                     // Pad based on terminal display width (emoji-aware)
                                     let cell_width = terminal_display_width(cell);
                                     let padding = width.saturating_sub(cell_width);
@@ -557,12 +523,7 @@ pub fn render_markdown_to_elements(
                                         ColumnAlignment::Center => {
                                             let left_pad = padding / 2;
                                             let right_pad = padding - left_pad;
-                                            format!(
-                                                "{}{}{}",
-                                                " ".repeat(left_pad),
-                                                cell,
-                                                " ".repeat(right_pad)
-                                            )
+                                            format!("{}{}{}", " ".repeat(left_pad), cell, " ".repeat(right_pad))
                                         }
                                         ColumnAlignment::Left | ColumnAlignment::None => {
                                             format!("{}{}", cell, " ".repeat(padding))
@@ -584,9 +545,9 @@ pub fn render_markdown_to_elements(
                             // Header separator after first row
                             if is_header {
                                 lines.push(MarkdownElement {
-                                    kind: ElementKind::TableBorder(
-                                        TableBorderKind::HeaderSeparator(table_col_widths.clone()),
-                                    ),
+                                    kind: ElementKind::TableBorder(TableBorderKind::HeaderSeparator(
+                                        table_col_widths.clone(),
+                                    )),
                                     section_id: current_section_id,
                                     source_line: event_source_line,
                                 });
@@ -595,9 +556,7 @@ pub fn render_markdown_to_elements(
 
                         // Bottom border
                         lines.push(MarkdownElement {
-                            kind: ElementKind::TableBorder(TableBorderKind::Bottom(
-                                table_col_widths.clone(),
-                            )),
+                            kind: ElementKind::TableBorder(TableBorderKind::Bottom(table_col_widths.clone())),
                             section_id: current_section_id,
                             source_line: event_source_line,
                         });
@@ -651,10 +610,7 @@ pub fn render_markdown_to_elements(
                     if !code_block_started {
                         // Header includes the top border
                         lines.push(MarkdownElement {
-                            kind: ElementKind::CodeBlockHeader {
-                                language: code_block_lang.clone(),
-                                blockquote_depth,
-                            },
+                            kind: ElementKind::CodeBlockHeader { language: code_block_lang.clone(), blockquote_depth },
                             section_id: current_section_id,
                             source_line: event_source_line,
                         });
@@ -729,11 +685,7 @@ pub fn render_markdown_to_elements(
             }
             Event::TaskListMarker(checked) => {
                 // Add checkbox segment at the start of the list item
-                let state = if checked {
-                    CheckboxState::Checked
-                } else {
-                    CheckboxState::Unchecked
-                };
+                let state = if checked { CheckboxState::Checked } else { CheckboxState::Unchecked };
                 current_segments.insert(0, TextSegment::Checkbox(state));
             }
             Event::SoftBreak => {
@@ -783,13 +735,7 @@ pub fn render_markdown_to_elements(
     }
 
     // Flush any remaining content
-    flush_paragraph(
-        &mut lines,
-        &mut current_segments,
-        blockquote_depth,
-        current_section_id,
-        last_event_source_line,
-    );
+    flush_paragraph(&mut lines, &mut current_segments, blockquote_depth, current_section_id, last_event_source_line);
 
     // Remove trailing empty lines
     while matches!(lines.last(), Some(l) if matches!(l.kind, ElementKind::Empty)) {
@@ -797,11 +743,7 @@ pub fn render_markdown_to_elements(
     }
 
     if lines.is_empty() {
-        lines.push(MarkdownElement {
-            kind: ElementKind::Empty,
-            section_id: None,
-            source_line: 1,
-        });
+        lines.push(MarkdownElement { kind: ElementKind::Empty, section_id: None, source_line: 1 });
     }
 
     lines

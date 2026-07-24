@@ -82,9 +82,8 @@ pub fn compile_front_end_with_pipeline(
     options: FrontEndOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<FrontEndTypedResult> {
-    let plan = compile_plan.ok_or_else(|| {
-        anyhow::anyhow!("compile_front_end requires a CompilePlan (project context)")
-    })?;
+    let plan =
+        compile_plan.ok_or_else(|| anyhow::anyhow!("compile_front_end requires a CompilePlan (project context)"))?;
 
     let resolved = super::prepare::resolved_input_from_plan(
         entry_path.to_path_buf(),
@@ -94,14 +93,8 @@ pub fn compile_front_end_with_pipeline(
         None,
     );
 
-    let prepared = prepare_compilation(
-        &resolved,
-        PrepareOptions {
-            front_end: options,
-            ..Default::default()
-        },
-        pipeline,
-    )?;
+    let prepared =
+        prepare_compilation(&resolved, PrepareOptions { front_end: options, ..Default::default() }, pipeline)?;
 
     prepared.into_executable()
 }
@@ -125,15 +118,9 @@ mod tests {
         std::fs::write(&entry_path, source).expect("entry source");
 
         let plan = synthetic_compile_plan_for_source(&entry_path);
-        let mut front = compile_front_end_with_pipeline(
-            &entry_path,
-            source,
-            Some(&plan),
-            None,
-            FrontEndOptions::default(),
-            None,
-        )
-        .expect("front end");
+        let mut front =
+            compile_front_end_with_pipeline(&entry_path, source, Some(&plan), None, FrontEndOptions::default(), None)
+                .expect("front end");
         let rewritten = parse_program_with_source_name("Main.bd", "i32 Rewritten() { return 0; }")
             .expect("rewritten entry program");
         front.program = rewritten.clone();
@@ -144,14 +131,8 @@ mod tests {
         assert_eq!(syntax_assembly.roots(), &front.assembly.roots);
         assert_eq!(syntax_assembly.entry_index(), front.assembly.entry_index);
         assert_eq!(syntax_assembly.discovery(), front.assembly.discovery);
-        assert!(std::sync::Arc::ptr_eq(
-            syntax_assembly.module_index(),
-            &front.assembly.module_index,
-        ));
-        assert_eq!(
-            syntax_assembly.has_std_dependency(),
-            front.assembly.has_std_dependency,
-        );
+        assert!(std::sync::Arc::ptr_eq(syntax_assembly.module_index(), &front.assembly.module_index,));
+        assert_eq!(syntax_assembly.has_std_dependency(), front.assembly.has_std_dependency,);
         let _ = std::fs::remove_dir_all(root);
     }
 }

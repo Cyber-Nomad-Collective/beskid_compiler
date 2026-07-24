@@ -23,11 +23,7 @@ impl Default for WidgetRegistry {
 
 impl WidgetRegistry {
     pub fn new() -> Self {
-        Self {
-            widgets: HashMap::new(),
-            order: Vec::new(),
-            descriptors: BUILTIN_DESCRIPTORS.to_vec(),
-        }
+        Self { widgets: HashMap::new(), order: Vec::new(), descriptors: BUILTIN_DESCRIPTORS.to_vec() }
     }
 
     pub fn register(&mut self, widget: Box<dyn BeskidWidget>) {

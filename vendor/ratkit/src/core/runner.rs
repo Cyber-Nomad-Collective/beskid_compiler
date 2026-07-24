@@ -3,9 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::coordinator::{
-    CoordinatorAction, CoordinatorApp, CoordinatorConfig, CoordinatorEvent, LayoutCoordinator,
-};
+use crate::coordinator::{CoordinatorAction, CoordinatorApp, CoordinatorConfig, CoordinatorEvent, LayoutCoordinator};
 use crate::error::{LayoutError, LayoutResult};
 use crate::events::{RunnerEvent as LayoutRunnerEvent, TickEvent};
 use crate::focus::FocusRequest;
@@ -73,11 +71,7 @@ impl<A: CoordinatorApp> Runner<A> {
     pub fn new(app: A) -> Self {
         let config = RunnerConfig::default();
         let coordinator = LayoutCoordinator::new(app).with_config(config.coordinator_config());
-        Self {
-            coordinator,
-            config,
-            tick_count: 0,
-        }
+        Self { coordinator, config, tick_count: 0 }
     }
 
     /// Apply a custom runner configuration.
@@ -116,26 +110,17 @@ impl<A: CoordinatorApp> Runner<A> {
         }
 
         let action = match event {
-            RunnerEvent::Keyboard(keyboard) => {
-                self.handle_coordinator_event(CoordinatorEvent::Keyboard(keyboard))?
-            }
-            RunnerEvent::Mouse(mouse) => {
-                self.handle_coordinator_event(CoordinatorEvent::Mouse(mouse))?
-            }
+            RunnerEvent::Keyboard(keyboard) => self.handle_coordinator_event(CoordinatorEvent::Keyboard(keyboard))?,
+            RunnerEvent::Mouse(mouse) => self.handle_coordinator_event(CoordinatorEvent::Mouse(mouse))?,
             RunnerEvent::Tick(tick) => self.handle_tick(tick)?,
-            RunnerEvent::Resize(resize) => {
-                self.handle_coordinator_event(CoordinatorEvent::Resize(resize))?
-            }
+            RunnerEvent::Resize(resize) => self.handle_coordinator_event(CoordinatorEvent::Resize(resize))?,
         };
 
         Ok(action)
     }
 
     /// Handle coordinator events that are outside the standard input stream.
-    pub fn handle_coordinator_event(
-        &mut self,
-        event: CoordinatorEvent,
-    ) -> LayoutResult<RunnerAction> {
+    pub fn handle_coordinator_event(&mut self, event: CoordinatorEvent) -> LayoutResult<RunnerAction> {
         let action = self.coordinator.handle_event(event)?;
         Ok(self.normalize_action(action))
     }
@@ -161,11 +146,7 @@ impl<A: CoordinatorApp> Runner<A> {
     }
 
     /// Update element visibility.
-    pub fn set_visibility(
-        &mut self,
-        id: ElementId,
-        visibility: Visibility,
-    ) -> LayoutResult<RunnerAction> {
+    pub fn set_visibility(&mut self, id: ElementId, visibility: Visibility) -> LayoutResult<RunnerAction> {
         self.handle_coordinator_event(CoordinatorEvent::SetVisibility(id, visibility))
     }
 

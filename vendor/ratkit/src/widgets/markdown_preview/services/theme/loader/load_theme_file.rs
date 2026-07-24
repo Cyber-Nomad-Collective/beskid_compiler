@@ -40,8 +40,7 @@ use crate::widgets::markdown_preview::services::theme::loader::load_theme_str::l
 pub fn load_theme_file<P: AsRef<Path>>(path: P, variant: ThemeVariant) -> Result<AppTheme, String> {
     let path = path.as_ref();
 
-    let contents =
-        fs::read_to_string(path).map_err(|e| format!("Failed to read file {:?}: {}", path, e))?;
+    let contents = fs::read_to_string(path).map_err(|e| format!("Failed to read file {:?}: {}", path, e))?;
 
     load_theme_str(&contents, variant)
 }

@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use beskid_abi::abi_v5::{ABI_V5, AbiManifestV5, RuntimeAuditMetadata, TargetMetadata};
 use beskid_abi::runtime_kit::{
     BuildProfile, RuntimeArtifact, RuntimeArtifacts, RuntimeKitMetadata, RuntimeKitResolutionError,
-    exact_kit_metadata_path, host_runtime_triple, installed_runtime_prefix_for_executable,
-    installed_runtime_root, profile_directory_name, resolve_installed_runtime_kit,
+    exact_kit_metadata_path, host_runtime_triple, installed_runtime_prefix_for_executable, installed_runtime_root,
+    profile_directory_name, resolve_installed_runtime_kit,
 };
 use sha2::{Digest, Sha256};
 
@@ -17,15 +17,10 @@ static TEMP_PREFIX_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 impl TempPrefix {
     fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let sequence = TEMP_PREFIX_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "beskid-runtime-kit-resolution-{}-{nonce}-{sequence}",
-            std::process::id()
-        ));
+        let path = std::env::temp_dir()
+            .join(format!("beskid-runtime-kit-resolution-{}-{nonce}-{sequence}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         Self(path)
     }
@@ -38,10 +33,7 @@ impl Drop for TempPrefix {
 }
 
 fn linux_target() -> TargetMetadata {
-    TargetMetadata::supported()
-        .into_iter()
-        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
-        .unwrap()
+    TargetMetadata::supported().into_iter().find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu").unwrap()
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -49,10 +41,7 @@ fn sha256(bytes: &[u8]) -> String {
 }
 
 fn artifact(path: &str, contents: &[u8]) -> RuntimeArtifact {
-    RuntimeArtifact {
-        relative_path: path.into(),
-        sha256: sha256(contents),
-    }
+    RuntimeArtifact { relative_path: path.into(), sha256: sha256(contents) }
 }
 
 fn install_linux_kit(prefix: &Path, profile: BuildProfile) -> PathBuf {
@@ -61,10 +50,7 @@ fn install_linux_kit(prefix: &Path, profile: BuildProfile) -> PathBuf {
         BuildProfile::Debug => "debug",
         BuildProfile::Release => "release",
     };
-    let root = prefix
-        .join("lib/beskid-runtime/abi-5")
-        .join(target.triple.as_str())
-        .join(profile_name);
+    let root = prefix.join("lib/beskid-runtime/abi-5").join(target.triple.as_str()).join(profile_name);
     let static_bytes = b"static runtime";
     let shared_bytes = b"shared runtime";
     fs::create_dir_all(root.join("static")).unwrap();
@@ -93,11 +79,7 @@ fn install_linux_kit(prefix: &Path, profile: BuildProfile) -> PathBuf {
         abi_contract,
         audit,
     };
-    fs::write(
-        root.join("abi.json"),
-        metadata.canonical_abi_json().unwrap(),
-    )
-    .unwrap();
+    fs::write(root.join("abi.json"), metadata.canonical_abi_json().unwrap()).unwrap();
     root
 }
 
@@ -106,11 +88,7 @@ fn read_metadata(root: &Path) -> RuntimeKitMetadata {
 }
 
 fn write_metadata(root: &Path, metadata: &RuntimeKitMetadata) {
-    fs::write(
-        root.join("abi.json"),
-        serde_json::to_string_pretty(metadata).unwrap(),
-    )
-    .unwrap();
+    fs::write(root.join("abi.json"), serde_json::to_string_pretty(metadata).unwrap()).unwrap();
 }
 
 #[test]
@@ -118,17 +96,10 @@ fn resolves_only_the_exact_installed_target_and_profile_and_verifies_artifacts()
     let prefix = TempPrefix::new();
     let root = install_linux_kit(&prefix.0, BuildProfile::Debug);
 
-    let resolved =
-        resolve_installed_runtime_kit(&prefix.0, &linux_target(), BuildProfile::Debug).unwrap();
+    let resolved = resolve_installed_runtime_kit(&prefix.0, &linux_target(), BuildProfile::Debug).unwrap();
     assert_eq!(resolved.root, root);
-    assert_eq!(
-        resolved.static_library,
-        root.join("static/libbeskid_runtime.a")
-    );
-    assert_eq!(
-        resolved.shared_library,
-        root.join("shared/libbeskid_runtime.so")
-    );
+    assert_eq!(resolved.static_library, root.join("static/libbeskid_runtime.a"));
+    assert_eq!(resolved.shared_library, root.join("shared/libbeskid_runtime.so"));
     assert_eq!(resolved.shared_import_library, None);
 
     assert!(matches!(
@@ -179,9 +150,7 @@ fn rejects_metadata_allowlist_layout_and_trap_contract_drift_before_resolving_ar
     let root = install_linux_kit(&prefix.0, BuildProfile::Debug);
 
     let mut allowlist_drift = read_metadata(&root);
-    allowlist_drift
-        .import_allowlist
-        .push("unexpected_import".into());
+    allowlist_drift.import_allowlist.push("unexpected_import".into());
     write_metadata(&root, &allowlist_drift);
     assert!(matches!(
         resolve_installed_runtime_kit(&prefix.0, &linux_target(), BuildProfile::Debug),
@@ -191,8 +160,7 @@ fn rejects_metadata_allowlist_layout_and_trap_contract_drift_before_resolving_ar
     ));
 
     let mut layout_drift = read_metadata(&root);
-    layout_drift.layout_hash =
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into();
+    layout_drift.layout_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into();
     write_metadata(&root, &layout_drift);
     assert!(matches!(
         resolve_installed_runtime_kit(&prefix.0, &linux_target(), BuildProfile::Debug),
@@ -228,11 +196,7 @@ fn rejects_mixed_or_hash_tampered_artifacts_instead_of_accepting_a_nearby_kit() 
     ));
 
     let root = install_linux_kit(&prefix.0, BuildProfile::Debug);
-    fs::write(
-        root.join("static/libbeskid_runtime.a"),
-        b"tampered static runtime",
-    )
-    .unwrap();
+    fs::write(root.join("static/libbeskid_runtime.a"), b"tampered static runtime").unwrap();
     assert!(matches!(
         resolve_installed_runtime_kit(&prefix.0, &linux_target(), BuildProfile::Debug),
         Err(RuntimeKitResolutionError::ArtifactHashMismatch { path, .. })

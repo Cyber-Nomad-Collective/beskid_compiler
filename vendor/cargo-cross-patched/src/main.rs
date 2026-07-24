@@ -106,10 +106,7 @@ async fn run_cargo(args: cargo_cross::Args) -> Result<ExitCode> {
 
         if let Err(e) = result {
             let command_cap = capitalize_command(args.command.as_str());
-            color::log_error(&format!(
-                "{command_cap} failed for target: {}",
-                color::yellow(target)
-            ));
+            color::log_error(&format!("{command_cap} failed for target: {}", color::yellow(target)));
             color::log_error(&format!("Error: {}", color::white(&e.to_string())));
             return Ok(ExitCode::FAILURE);
         }
@@ -123,14 +120,8 @@ async fn run_cargo(args: cargo_cross::Args) -> Result<ExitCode> {
 
     let elapsed = start_time.elapsed();
     color::print_separator();
-    color::log_success(&format!(
-        "All {} operations completed successfully!",
-        color::cyan(args.command.as_str())
-    ));
-    color::log_success(&format!(
-        "Total time: {}",
-        color::yellow(&format_duration(elapsed))
-    ));
+    color::log_success(&format!("All {} operations completed successfully!", color::cyan(args.command.as_str())));
+    color::log_success(&format!("Total time: {}", color::yellow(&format_duration(elapsed))));
 
     set_github_output(&args);
 
@@ -148,13 +139,8 @@ async fn run_setup(setup: cargo_cross::cli::SetupArgs) -> Result<ExitCode> {
     let target = &setup.args.targets[0];
     let _guard = LogSilenceGuard::new();
     let prepared = prepare_target(target, &setup.args, &host).await?;
-    let env = build_cargo_env(
-        &prepared.actual_target,
-        &setup.args,
-        &prepared.cross_env,
-        &host,
-        prepared.skip_target_arg,
-    )?;
+    let env =
+        build_cargo_env(&prepared.actual_target, &setup.args, &prepared.cross_env, &host, prepared.skip_target_arg)?;
 
     write_setup_github_env(&env)?;
     print_setup_env(&env, setup.format)?;
@@ -165,10 +151,7 @@ async fn run_setup(setup: cargo_cross::cli::SetupArgs) -> Result<ExitCode> {
 async fn run_exec(exec: cargo_cross::cli::ExecArgs) -> Result<ExitCode> {
     let host = HostPlatform::detect();
     print_config(&exec.args, &host);
-    println!(
-        "{}",
-        color::format_config("Exec command", &format_cli_command(&exec.command))
-    );
+    println!("{}", color::format_config("Exec command", &format_cli_command(&exec.command)));
 
     let total_targets = exec.args.targets.len();
     for (i, target) in exec.args.targets.iter().enumerate() {
@@ -180,10 +163,7 @@ async fn run_exec(exec: cargo_cross::cli::ExecArgs) -> Result<ExitCode> {
         ));
 
         if let Err(e) = execute_exec_target(target, &exec.args, &exec.command, &host).await {
-            color::log_error(&format!(
-                "Exec failed for target: {}",
-                color::yellow(target)
-            ));
+            color::log_error(&format!("Exec failed for target: {}", color::yellow(target)));
             color::log_error(&format!("Error: {}", color::white(&e.to_string())));
             return Ok(ExitCode::FAILURE);
         }
@@ -195,11 +175,7 @@ async fn run_exec(exec: cargo_cross::cli::ExecArgs) -> Result<ExitCode> {
 
 async fn execute_target(target: &str, args: &cargo_cross::Args, host: &HostPlatform) -> Result<()> {
     color::print_separator();
-    color::log_info(&format!(
-        "Executing {} for {}...",
-        color::magenta(args.command.as_str()),
-        color::magenta(target)
-    ));
+    color::log_info(&format!("Executing {} for {}...", color::magenta(args.command.as_str()), color::magenta(target)));
 
     if args.clean_cache {
         color::log_info("Cleaning cache...");
@@ -208,26 +184,15 @@ async fn execute_target(target: &str, args: &cargo_cross::Args, host: &HostPlatf
 
     let prepared = prepare_target(target, args, host).await?;
 
-    let status = execute_cargo(
-        &prepared.actual_target,
-        args,
-        &prepared.cross_env,
-        host,
-        prepared.skip_target_arg,
-    )
-    .await?;
+    let status =
+        execute_cargo(&prepared.actual_target, args, &prepared.cross_env, host, prepared.skip_target_arg).await?;
 
     if !status.success() {
-        return Err(cargo_cross::CrossError::CargoFailed {
-            code: status.code().unwrap_or(1),
-        });
+        return Err(cargo_cross::CrossError::CargoFailed { code: status.code().unwrap_or(1) });
     }
 
     let command_cap = capitalize_command(args.command.as_str());
-    color::log_success(&format!(
-        "{command_cap} successful: {}",
-        color::yellow(&prepared.actual_target)
-    ));
+    color::log_success(&format!("{command_cap} successful: {}", color::yellow(&prepared.actual_target)));
 
     Ok(())
 }
@@ -239,10 +204,7 @@ async fn execute_exec_target(
     host: &HostPlatform,
 ) -> Result<()> {
     color::print_separator();
-    color::log_info(&format!(
-        "Executing custom command for {}...",
-        color::magenta(target)
-    ));
+    color::log_info(&format!("Executing custom command for {}...", color::magenta(target)));
 
     if args.clean_cache {
         color::log_info("Cleaning cache...");
@@ -250,13 +212,8 @@ async fn execute_exec_target(
     }
 
     let prepared = prepare_target(target, args, host).await?;
-    let build_env = build_cargo_env(
-        &prepared.actual_target,
-        args,
-        &prepared.cross_env,
-        host,
-        prepared.skip_target_arg,
-    )?;
+    let build_env =
+        build_cargo_env(&prepared.actual_target, args, &prepared.cross_env, host, prepared.skip_target_arg)?;
 
     let actual_command = prepare_exec_command(
         command,
@@ -275,22 +232,14 @@ async fn execute_exec_target(
 
     print_env_vars(&build_env);
     color::print_run_header();
-    println!(
-        "{}",
-        color::format_command(&format_cli_command(&actual_command))
-    );
+    println!("{}", color::format_command(&format_cli_command(&actual_command)));
 
     let status = run_command(&mut cmd, &actual_command[0]).await?;
     if !status.success() {
-        return Err(cargo_cross::CrossError::CommandFailed {
-            command: format_cli_command(&actual_command),
-        });
+        return Err(cargo_cross::CrossError::CommandFailed { command: format_cli_command(&actual_command) });
     }
 
-    color::log_success(&format!(
-        "Exec successful: {}",
-        color::yellow(&prepared.actual_target)
-    ));
+    color::log_success(&format!("Exec successful: {}", color::yellow(&prepared.actual_target)));
 
     Ok(())
 }
@@ -300,10 +249,7 @@ fn prepare_exec_command(command: &[String], target: &str, inject_target: bool) -
         return command.to_vec();
     }
 
-    let passthrough_index = command
-        .iter()
-        .position(|arg| arg == "--")
-        .unwrap_or(command.len());
+    let passthrough_index = command.iter().position(|arg| arg == "--").unwrap_or(command.len());
     if has_explicit_exec_target(&command[..passthrough_index]) {
         return command.to_vec();
     }
@@ -320,10 +266,7 @@ fn is_cargo_invocation(command: &[String]) -> bool {
         return false;
     };
 
-    Path::new(program)
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        == Some("cargo")
+    Path::new(program).file_stem().and_then(|stem| stem.to_str()) == Some("cargo")
 }
 
 fn exec_cargo_subcommand_supports_target(command: &[String]) -> bool {
@@ -353,10 +296,7 @@ fn cargo_subcommand_for_exec(command: &[String]) -> Option<&str> {
         return None;
     }
 
-    let passthrough_index = command
-        .iter()
-        .position(|arg| arg == "--")
-        .unwrap_or(command.len());
+    let passthrough_index = command.iter().position(|arg| arg == "--").unwrap_or(command.len());
     let mut index = 1;
 
     while index < passthrough_index {
@@ -408,20 +348,13 @@ fn has_explicit_exec_target(args: &[String]) -> bool {
     false
 }
 
-async fn prepare_target(
-    target: &str,
-    args: &cargo_cross::Args,
-    host: &HostPlatform,
-) -> Result<PreparedTarget> {
+async fn prepare_target(target: &str, args: &cargo_cross::Args, host: &HostPlatform) -> Result<PreparedTarget> {
     let is_host_build = target == "host-tuple";
     let actual_target = if is_host_build { &host.triple } else { target };
     let target_config = get_target_config(actual_target);
     let auto_build_std = ensure_target_installed(actual_target, args.toolchain.as_deref()).await?;
     let mut cross_env = if is_host_build {
-        color::log_info(&format!(
-            "Building for host ({}), skipping toolchain setup",
-            color::cyan(actual_target)
-        ));
+        color::log_info(&format!("Building for host ({}), skipping toolchain setup", color::cyan(actual_target)));
         cargo_cross::env::CrossEnv::new()
     } else if let Some(env) = check_preconfigured_env(actual_target, args) {
         color::log_success(&format!(
@@ -450,26 +383,18 @@ async fn prepare_target(
     }
 
     // Handle build-std requirement
-    let needs_build_std =
-        args.build_std.is_some() || args.panic_immediate_abort || cross_env.build_std.is_some();
+    let needs_build_std = args.build_std.is_some() || args.panic_immediate_abort || cross_env.build_std.is_some();
 
     if needs_build_std {
         ensure_rust_src(actual_target, args.toolchain.as_deref()).await?;
     }
 
-    Ok(PreparedTarget {
-        actual_target: actual_target.to_string(),
-        skip_target_arg: is_host_build,
-        cross_env,
-    })
+    Ok(PreparedTarget { actual_target: actual_target.to_string(), skip_target_arg: is_host_build, cross_env })
 }
 
 /// Check for pre-configured compiler environment variables
 /// Returns Some(CrossEnv) if CC_<target> or generic CC/CXX are set
-fn check_preconfigured_env(
-    target: &str,
-    args: &cargo_cross::Args,
-) -> Option<cargo_cross::env::CrossEnv> {
+fn check_preconfigured_env(target: &str, args: &cargo_cross::Args) -> Option<cargo_cross::env::CrossEnv> {
     // Skip if user explicitly wants to skip toolchain setup
     if args.no_toolchain_setup {
         return None;
@@ -609,10 +534,7 @@ fn print_config(args: &cargo_cross::Args, _host: &HostPlatform) {
     println!("{}", color::format_config("Targets", &targets_str));
 
     if args.glibc_version != cargo_cross::config::DEFAULT_GLIBC_VERSION {
-        println!(
-            "{}",
-            color::format_config("Glibc version", &args.glibc_version)
-        );
+        println!("{}", color::format_config("Glibc version", &args.glibc_version));
     }
 
     if let Some(ref features) = args.features {
@@ -626,18 +548,11 @@ fn print_config(args: &cargo_cross::Args, _host: &HostPlatform) {
     }
 
     if !args.rustflags.is_empty() {
-        println!(
-            "{}",
-            color::format_config("Additional rustflags", &args.rustflags.join(" "))
-        );
+        println!("{}", color::format_config("Additional rustflags", &args.rustflags.join(" ")));
     }
 
     if let Some(ref build_std) = args.build_std {
-        let display = if build_std == "true" {
-            "true".to_string()
-        } else {
-            build_std.clone()
-        };
+        let display = if build_std == "true" { "true".to_string() } else { build_std.clone() };
         println!("{}", color::format_config("Build std", &display));
     }
 }
@@ -647,10 +562,7 @@ fn set_github_output(args: &cargo_cross::Args) {
         // Convert targets to JSON array
         let json_array = serde_json::to_string(&args.targets).unwrap_or_else(|_| "[]".to_string());
 
-        if let Ok(mut file) = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&github_output)
-        {
+        if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(&github_output) {
             use std::io::Write;
             let _ = writeln!(file, "targets={json_array}");
         }
@@ -666,11 +578,7 @@ fn capitalize_command(command: &str) -> String {
 }
 
 fn format_cli_command(command: &[String]) -> String {
-    command
-        .iter()
-        .map(|part| shell_escape(part))
-        .collect::<Vec<_>>()
-        .join(" ")
+    command.iter().map(|part| shell_escape(part)).collect::<Vec<_>>().join(" ")
 }
 
 fn print_env_vars(env: &std::collections::HashMap<String, String>) {
@@ -684,10 +592,7 @@ fn print_env_vars(env: &std::collections::HashMap<String, String>) {
     }
 }
 
-fn print_setup_env(
-    env: &std::collections::HashMap<String, String>,
-    format: SetupOutputFormat,
-) -> Result<()> {
+fn print_setup_env(env: &std::collections::HashMap<String, String>, format: SetupOutputFormat) -> Result<()> {
     let rendered = render_setup_env(env, format)?;
     if !rendered.is_empty() {
         println!("{rendered}");
@@ -695,10 +600,7 @@ fn print_setup_env(
     Ok(())
 }
 
-fn render_setup_env(
-    env: &std::collections::HashMap<String, String>,
-    format: SetupOutputFormat,
-) -> Result<String> {
+fn render_setup_env(env: &std::collections::HashMap<String, String>, format: SetupOutputFormat) -> Result<String> {
     let mut rendered = Vec::new();
 
     match resolve_setup_output_format(format) {
@@ -736,10 +638,7 @@ fn write_setup_github_env(env: &std::collections::HashMap<String, String>) -> Re
         return Ok(());
     };
 
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(github_env)?;
+    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(github_env)?;
 
     use std::io::Write;
     for (key, value) in sorted_env(env) {
@@ -752,17 +651,11 @@ fn write_setup_github_env(env: &std::collections::HashMap<String, String>) -> Re
 }
 
 fn sorted_env(env: &std::collections::HashMap<String, String>) -> BTreeMap<String, String> {
-    env.iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect()
+    env.iter().map(|(key, value)| (key.clone(), value.clone())).collect()
 }
 
 fn resolve_setup_output_format(format: SetupOutputFormat) -> SetupOutputFormat {
-    resolve_setup_output_format_with_shells(
-        format,
-        std::env::var_os("SHELL"),
-        std::env::var_os("COMSPEC"),
-    )
+    resolve_setup_output_format_with_shells(format, std::env::var_os("SHELL"), std::env::var_os("COMSPEC"))
 }
 
 fn resolve_setup_output_format_with_shells(
@@ -771,9 +664,7 @@ fn resolve_setup_output_format_with_shells(
     comspec: Option<std::ffi::OsString>,
 ) -> SetupOutputFormat {
     match format {
-        SetupOutputFormat::Auto => {
-            detect_setup_shell(shell, comspec).unwrap_or(SetupOutputFormat::Bash)
-        }
+        SetupOutputFormat::Auto => detect_setup_shell(shell, comspec).unwrap_or(SetupOutputFormat::Bash),
         other => other,
     }
 }
@@ -782,18 +673,13 @@ fn detect_setup_shell(
     shell: Option<std::ffi::OsString>,
     comspec: Option<std::ffi::OsString>,
 ) -> Option<SetupOutputFormat> {
-    shell
-        .and_then(detect_shell_from_os_str)
-        .or_else(|| comspec.and_then(detect_shell_from_os_str))
+    shell.and_then(detect_shell_from_os_str).or_else(|| comspec.and_then(detect_shell_from_os_str))
 }
 
 fn detect_shell_from_os_str(shell: std::ffi::OsString) -> Option<SetupOutputFormat> {
     let shell = shell.to_string_lossy();
     let shell = shell.rsplit(['/', '\\']).next()?;
-    let name = shell
-        .strip_suffix(".exe")
-        .unwrap_or(shell)
-        .to_ascii_lowercase();
+    let name = shell.strip_suffix(".exe").unwrap_or(shell).to_ascii_lowercase();
 
     match name.as_str() {
         "bash" | "sh" => Some(SetupOutputFormat::Bash),
@@ -810,10 +696,10 @@ fn shell_escape(value: &str) -> String {
         return "''".to_string();
     }
 
-    if value.chars().all(|c| {
-        c.is_ascii_alphanumeric()
-            || matches!(c, '_' | '@' | '%' | '+' | '=' | ':' | ',' | '.' | '/' | '-')
-    }) {
+    if value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '@' | '%' | '+' | '=' | ':' | ',' | '.' | '/' | '-'))
+    {
         return value.to_string();
     }
 
@@ -822,11 +708,7 @@ fn shell_escape(value: &str) -> String {
 }
 
 fn fish_escape(value: &str) -> String {
-    let escaped = value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('$', "\\$")
-        .replace('\n', "\\n");
+    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$").replace('\n', "\\n");
     format!("\"{escaped}\"")
 }
 
@@ -879,79 +761,39 @@ mod tests {
 
     #[test]
     fn prepare_exec_command_injects_target_for_cargo() {
-        let command = vec![
-            "cargo".to_string(),
-            "clippy".to_string(),
-            "--workspace".to_string(),
-        ];
+        let command = vec!["cargo".to_string(), "clippy".to_string(), "--workspace".to_string()];
         let prepared = prepare_exec_command(&command, "x86_64-pc-windows-gnu", true);
-        assert_eq!(
-            prepared,
-            vec![
-                "cargo",
-                "clippy",
-                "--workspace",
-                "--target",
-                "x86_64-pc-windows-gnu",
-            ]
-        );
+        assert_eq!(prepared, vec!["cargo", "clippy", "--workspace", "--target", "x86_64-pc-windows-gnu",]);
     }
 
     #[test]
     fn prepare_exec_command_respects_existing_target() {
-        let command = vec![
-            "cargo".to_string(),
-            "clippy".to_string(),
-            "--target".to_string(),
-            "aarch64-apple-darwin".to_string(),
-        ];
+        let command =
+            vec!["cargo".to_string(), "clippy".to_string(), "--target".to_string(), "aarch64-apple-darwin".to_string()];
         let prepared = prepare_exec_command(&command, "x86_64-pc-windows-gnu", true);
         assert_eq!(prepared, command);
     }
 
     #[test]
     fn prepare_exec_command_respects_existing_short_target() {
-        let command = vec![
-            "cargo".to_string(),
-            "clippy".to_string(),
-            "-t".to_string(),
-            "aarch64-apple-darwin".to_string(),
-        ];
+        let command =
+            vec!["cargo".to_string(), "clippy".to_string(), "-t".to_string(), "aarch64-apple-darwin".to_string()];
         let prepared = prepare_exec_command(&command, "x86_64-pc-windows-gnu", true);
         assert_eq!(prepared, command);
     }
 
     #[test]
     fn prepare_exec_command_respects_existing_short_concat_target() {
-        let command = vec![
-            "cargo".to_string(),
-            "clippy".to_string(),
-            "-taarch64-apple-darwin".to_string(),
-        ];
+        let command = vec!["cargo".to_string(), "clippy".to_string(), "-taarch64-apple-darwin".to_string()];
         let prepared = prepare_exec_command(&command, "x86_64-pc-windows-gnu", true);
         assert_eq!(prepared, command);
     }
 
     #[test]
     fn prepare_exec_command_inserts_target_before_passthrough_separator() {
-        let command = vec![
-            "cargo".to_string(),
-            "test".to_string(),
-            "--".to_string(),
-            "--nocapture".to_string(),
-        ];
+        let command = vec!["cargo".to_string(), "test".to_string(), "--".to_string(), "--nocapture".to_string()];
         let prepared = prepare_exec_command(&command, "x86_64-pc-windows-gnu", true);
-        assert_eq!(
-            prepared,
-            vec![
-                "cargo",
-                "test",
-                "--target",
-                "x86_64-pc-windows-gnu",
-                "--",
-                "--nocapture",
-            ]
-        );
+        assert_eq!(prepared, vec!["cargo", "test", "--target", "x86_64-pc-windows-gnu", "--", "--nocapture",]);
     }
 
     #[test]
@@ -966,15 +808,7 @@ mod tests {
         let prepared = prepare_exec_command(&command, "x86_64-pc-windows-gnu", true);
         assert_eq!(
             prepared,
-            vec![
-                "cargo",
-                "test",
-                "--target",
-                "x86_64-pc-windows-gnu",
-                "--",
-                "--target",
-                "aarch64-apple-darwin",
-            ]
+            vec!["cargo", "test", "--target", "x86_64-pc-windows-gnu", "--", "--target", "aarch64-apple-darwin",]
         );
     }
 
@@ -994,12 +828,7 @@ mod tests {
 
     #[test]
     fn prepare_exec_command_skips_fmt_passthrough_subcommands() {
-        let command = vec![
-            "cargo".to_string(),
-            "fmt".to_string(),
-            "--".to_string(),
-            "--check".to_string(),
-        ];
+        let command = vec!["cargo".to_string(), "fmt".to_string(), "--".to_string(), "--check".to_string()];
         let prepared = prepare_exec_command(&command, "x86_64-pc-windows-gnu", true);
         assert_eq!(prepared, command);
     }
@@ -1041,9 +870,7 @@ mod tests {
         assert_eq!(
             detect_setup_shell(
                 None,
-                Some(OsString::from(
-                    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-                ))
+                Some(OsString::from("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"))
             ),
             Some(SetupOutputFormat::Powershell)
         );
@@ -1051,20 +878,13 @@ mod tests {
 
     #[test]
     fn write_setup_github_env_appends_multiline_entries() {
-        let github_env =
-            std::env::temp_dir().join(format!("cargo-cross-github-env-{}.txt", std::process::id()));
+        let github_env = std::env::temp_dir().join(format!("cargo-cross-github-env-{}.txt", std::process::id()));
         let original = std::env::var_os("GITHUB_ENV");
         std::env::set_var("GITHUB_ENV", &github_env);
 
         let mut env = HashMap::new();
-        env.insert(
-            "CC_x86_64_pc_windows_gnu".to_string(),
-            "x86_64-w64-mingw32-gcc".to_string(),
-        );
-        env.insert(
-            "PATH".to_string(),
-            "/tmp/toolchain/bin:/usr/bin".to_string(),
-        );
+        env.insert("CC_x86_64_pc_windows_gnu".to_string(), "x86_64-w64-mingw32-gcc".to_string());
+        env.insert("PATH".to_string(), "/tmp/toolchain/bin:/usr/bin".to_string());
         write_setup_github_env(&env).unwrap();
 
         let contents = std::fs::read_to_string(&github_env).unwrap();
@@ -1080,14 +900,8 @@ mod tests {
     #[test]
     fn render_setup_env_supports_bash() {
         let mut env = HashMap::new();
-        env.insert(
-            "CC_x86_64_unknown_linux_gnu".to_string(),
-            "clang".to_string(),
-        );
-        env.insert(
-            "PATH".to_string(),
-            "/tmp/toolchain/bin:/usr/bin".to_string(),
-        );
+        env.insert("CC_x86_64_unknown_linux_gnu".to_string(), "clang".to_string());
+        env.insert("PATH".to_string(), "/tmp/toolchain/bin:/usr/bin".to_string());
 
         let rendered = render_setup_env(&env, SetupOutputFormat::Bash).unwrap();
         assert!(rendered.contains("export CC_x86_64_unknown_linux_gnu=clang"));
@@ -1097,10 +911,7 @@ mod tests {
     #[test]
     fn render_setup_env_supports_fish() {
         let mut env = HashMap::new();
-        env.insert(
-            "PATH".to_string(),
-            "/tmp/toolchain/bin:/usr/bin".to_string(),
-        );
+        env.insert("PATH".to_string(), "/tmp/toolchain/bin:/usr/bin".to_string());
 
         let rendered = render_setup_env(&env, SetupOutputFormat::Fish).unwrap();
         assert_eq!(rendered, "set -gx PATH -- \"/tmp/toolchain/bin:/usr/bin\";");
@@ -1109,10 +920,7 @@ mod tests {
     #[test]
     fn render_setup_env_supports_json() {
         let mut env = HashMap::new();
-        env.insert(
-            "PATH".to_string(),
-            "/tmp/toolchain/bin:/usr/bin".to_string(),
-        );
+        env.insert("PATH".to_string(), "/tmp/toolchain/bin:/usr/bin".to_string());
 
         let rendered = render_setup_env(&env, SetupOutputFormat::Json).unwrap();
         assert!(rendered.contains("\"PATH\": \"/tmp/toolchain/bin:/usr/bin\""));
@@ -1130,10 +938,7 @@ mod tests {
     #[test]
     fn render_setup_env_supports_cmd() {
         let mut env = HashMap::new();
-        env.insert(
-            "PATH".to_string(),
-            "C:\\toolchain\\bin;%USERPROFILE%".to_string(),
-        );
+        env.insert("PATH".to_string(), "C:\\toolchain\\bin;%USERPROFILE%".to_string());
 
         let rendered = render_setup_env(&env, SetupOutputFormat::Cmd).unwrap();
         assert_eq!(rendered, "set \"PATH=C:\\toolchain\\bin;%%USERPROFILE%%\"");

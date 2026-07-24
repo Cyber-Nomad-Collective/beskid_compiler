@@ -3,11 +3,7 @@ use crate::analysis::diagnostics::Severity;
 use crate::analysis::rules::RuleContext;
 use crate::types::{TypeError, TypeResult, format_type_id};
 
-pub(crate) fn emit_type_error(
-    ctx: &mut RuleContext,
-    error: TypeError,
-    result: Option<&TypeResult>,
-) {
+pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: Option<&TypeResult>) {
     match error {
         TypeError::UnknownType { span, name } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeUnknownType { name });
@@ -39,80 +35,29 @@ pub(crate) fn emit_type_error(
         TypeError::MissingTypeArguments { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeMissingTypeArguments);
         }
-        TypeError::GenericArgumentMismatch {
-            span,
-            expected,
-            actual,
-        } => {
-            ctx.emit_issue(
-                span,
-                SemanticIssueKind::TypeGenericArgumentMismatch { expected, actual },
-            );
+        TypeError::GenericArgumentMismatch { span, expected, actual } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeGenericArgumentMismatch { expected, actual });
         }
-        TypeError::TypeMismatch {
-            span,
-            expected,
-            actual,
-        } => {
+        TypeError::TypeMismatch { span, expected, actual } => {
             let expected_name = render_type(result, expected);
             let actual_name = render_type(result, actual);
-            ctx.emit_issue(
-                span,
-                SemanticIssueKind::TypeMismatch {
-                    expected_name,
-                    actual_name,
-                },
-            );
+            ctx.emit_issue(span, SemanticIssueKind::TypeMismatch { expected_name, actual_name });
         }
-        TypeError::MatchArmTypeMismatch {
-            span,
-            expected,
-            actual,
-        } => {
+        TypeError::MatchArmTypeMismatch { span, expected, actual } => {
             let expected_name = render_type(result, expected);
             let actual_name = render_type(result, actual);
-            ctx.emit_issue(
-                span,
-                SemanticIssueKind::TypeMatchArmMismatch {
-                    expected_name,
-                    actual_name,
-                },
-            );
+            ctx.emit_issue(span, SemanticIssueKind::TypeMatchArmMismatch { expected_name, actual_name });
         }
-        TypeError::CallArityMismatch {
-            span,
-            expected,
-            actual,
-        } => {
-            ctx.emit_issue(
-                span,
-                SemanticIssueKind::TypeCallArityMismatch { expected, actual },
-            );
+        TypeError::CallArityMismatch { span, expected, actual } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeCallArityMismatch { expected, actual });
         }
-        TypeError::CallArgumentMismatch {
-            span,
-            expected,
-            actual,
-        } => {
+        TypeError::CallArgumentMismatch { span, expected, actual } => {
             let expected_name = render_type(result, expected);
             let actual_name = render_type(result, actual);
-            ctx.emit_issue(
-                span,
-                SemanticIssueKind::TypeCallArgumentMismatch {
-                    expected_name,
-                    actual_name,
-                },
-            );
+            ctx.emit_issue(span, SemanticIssueKind::TypeCallArgumentMismatch { expected_name, actual_name });
         }
-        TypeError::EnumConstructorMismatch {
-            span,
-            expected,
-            actual,
-        } => {
-            ctx.emit_issue(
-                span,
-                SemanticIssueKind::TypeEnumConstructorMismatch { expected, actual },
-            );
+        TypeError::EnumConstructorMismatch { span, expected, actual } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeEnumConstructorMismatch { expected, actual });
         }
         TypeError::UnknownCallTarget { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeUnknownCallTarget);
@@ -150,48 +95,22 @@ pub(crate) fn emit_type_error(
         TypeError::StackReferenceEscapesSpawn { span } => {
             ctx.emit_issue(span, SemanticIssueKind::StackReferenceEscapesSpawn);
         }
-        TypeError::ReturnTypeMismatch {
-            span,
-            expected,
-            actual,
-        } => {
+        TypeError::ReturnTypeMismatch { span, expected, actual } => {
             let expected_name = render_type(result, expected);
-            let actual_name = actual
-                .map(|type_id| render_type(result, type_id))
-                .unwrap_or_else(|| "unit".to_string());
-            ctx.emit_issue(
-                span,
-                SemanticIssueKind::TypeReturnMismatch {
-                    expected_name,
-                    actual_name,
-                },
-            );
+            let actual_name = actual.map(|type_id| render_type(result, type_id)).unwrap_or_else(|| "unit".to_string());
+            ctx.emit_issue(span, SemanticIssueKind::TypeReturnMismatch { expected_name, actual_name });
         }
         TypeError::NonIterableForTarget { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeNonIterableForTarget);
         }
-        TypeError::IterableNextArityMismatch {
-            span,
-            expected,
-            actual,
-        } => {
-            ctx.emit_issue(
-                span,
-                SemanticIssueKind::TypeIterableNextArityMismatch { expected, actual },
-            );
+        TypeError::IterableNextArityMismatch { span, expected, actual } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeIterableNextArityMismatch { expected, actual });
         }
         TypeError::IterableNextReturnNotOption { span } => {
             ctx.emit_issue(span, SemanticIssueKind::TypeIterableNextReturnNotOption);
         }
-        TypeError::IterableOptionSomeArityMismatch {
-            span,
-            expected,
-            actual,
-        } => {
-            ctx.emit_issue(
-                span,
-                SemanticIssueKind::TypeIterableOptionSomeArityMismatch { expected, actual },
-            );
+        TypeError::IterableOptionSomeArityMismatch { span, expected, actual } => {
+            ctx.emit_issue(span, SemanticIssueKind::TypeIterableOptionSomeArityMismatch { expected, actual });
         }
         TypeError::ExternInvalidAbi { span, .. } => {
             ctx.emit_simple(
@@ -219,7 +138,10 @@ pub(crate) fn emit_type_error(
                 "T0903",
                 format!("extern param type not allowed in `{}`", method),
                 "parameter type",
-                Some("Allowed: bool, u8, i32, i64, f64; for raw pointers, pass as i64 (pointer-sized) for now".to_string()),
+                Some(
+                    "Allowed: bool, u8, i32, i64, f64; for raw pointers, pass as i64 (pointer-sized) for now"
+                        .to_string(),
+                ),
                 Severity::Error,
             );
         }

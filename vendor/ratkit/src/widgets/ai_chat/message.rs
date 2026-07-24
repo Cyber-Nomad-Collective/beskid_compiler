@@ -23,22 +23,12 @@ pub struct Message {
 impl Message {
     /// Create a new user message.
     pub fn user(content: String) -> Self {
-        Self {
-            role: MessageRole::User,
-            content,
-            attachments: Vec::new(),
-            timestamp: std::time::SystemTime::now(),
-        }
+        Self { role: MessageRole::User, content, attachments: Vec::new(), timestamp: std::time::SystemTime::now() }
     }
 
     /// Create a new AI message.
     pub fn assistant(content: String) -> Self {
-        Self {
-            role: MessageRole::Assistant,
-            content,
-            attachments: Vec::new(),
-            timestamp: std::time::SystemTime::now(),
-        }
+        Self { role: MessageRole::Assistant, content, attachments: Vec::new(), timestamp: std::time::SystemTime::now() }
     }
 
     /// Add file attachment.

@@ -15,9 +15,7 @@ use walkdir::WalkDir;
 
 use crate::diagnostics::{collect_syntax_diagnostics, lsp_diagnostics_from_syntax};
 use crate::protocol::status::{idle_status, send_beskid_status, workspace_scan_status};
-use crate::session::lifecycle::{
-    build_document, rebuild_open_document_syntax_facts, set_disk_snapshot,
-};
+use crate::session::lifecycle::{build_document, rebuild_open_document_syntax_facts, set_disk_snapshot};
 use crate::session::project_context::invalidate_compilation_cache;
 use crate::session::startup::signal_initial_scan_complete;
 use crate::session::store::{Document, State};
@@ -31,10 +29,7 @@ fn uri_from_path(path: &Path) -> Option<Uri> {
 }
 
 pub(crate) fn should_skip_dir_for_scan(name: &str) -> bool {
-    matches!(
-        name,
-        ".git" | "target" | "node_modules" | ".beskid" | "out" | "bin" | "obj" | ".vs"
-    )
+    matches!(name, ".git" | "target" | "node_modules" | ".beskid" | "out" | "bin" | "obj" | ".vs")
 }
 
 fn is_scannable_extension(ext: &str) -> bool {
@@ -53,9 +48,7 @@ async fn maybe_emit_scan_progress(
     detail: Option<String>,
 ) {
     let now = Instant::now();
-    let elapsed_ok = last_emit
-        .map(|t| now.duration_since(t) >= STATUS_EMIT_INTERVAL)
-        .unwrap_or(true);
+    let elapsed_ok = last_emit.map(|t| now.duration_since(t) >= STATUS_EMIT_INTERVAL).unwrap_or(true);
     let milestone = processed == 0 || processed == total || processed.is_multiple_of(25);
     if !milestone && !elapsed_ok {
         return;
@@ -69,21 +62,13 @@ async fn emit_scan_idle(client: &Client) {
 }
 
 /// Recursively index `root` for Beskid sources, publish diagnostics for closed files, then emit idle status.
-pub async fn scan_workspace(
-    client: &Client,
-    state: &RwLock<State>,
-    root: &Path,
-    focused_project: Option<&Path>,
-) {
+pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path, focused_project: Option<&Path>) {
     let mut paths: Vec<PathBuf> = Vec::new();
     for entry in WalkDir::new(root)
         .into_iter()
         .filter_entry(|e| {
             if e.file_type().is_dir() {
-                !e.file_name()
-                    .to_str()
-                    .map(should_skip_dir_for_scan)
-                    .unwrap_or(false)
+                !e.file_name().to_str().map(should_skip_dir_for_scan).unwrap_or(false)
             } else {
                 true
             }
@@ -91,12 +76,7 @@ pub async fn scan_workspace(
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_file())
     {
-        if entry
-            .path()
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(is_scannable_extension)
-        {
+        if entry.path().extension().and_then(|ext| ext.to_str()).is_some_and(is_scannable_extension) {
             paths.push(entry.path().to_path_buf());
         }
     }
@@ -108,14 +88,8 @@ pub async fn scan_workspace(
         b_focus
             .cmp(&a_focus)
             .then_with(|| {
-                let a_manifest = a
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(is_manifest_extension);
-                let b_manifest = b
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(is_manifest_extension);
+                let a_manifest = a.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension);
+                let b_manifest = b.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension);
                 b_manifest.cmp(&a_manifest)
             })
             .then_with(|| a.as_path().cmp(b.as_path()))
@@ -126,14 +100,7 @@ pub async fn scan_workspace(
     let total = paths.len() as u32;
     let mut last_emit = None;
     if total > 0 {
-        maybe_emit_scan_progress(
-            client,
-            &mut last_emit,
-            0,
-            total,
-            Some(root.display().to_string()),
-        )
-        .await;
+        maybe_emit_scan_progress(client, &mut last_emit, 0, total, Some(root.display().to_string())).await;
     }
 
     let sem = Semaphore::new(MAX_CONCURRENT_READS);
@@ -210,9 +177,7 @@ pub async fn scan_workspace(
 /// Remove a workspace-indexed document and clear its diagnostics.
 pub async fn clear_disk_snapshot(client: &Client, state: &RwLock<State>, uri: &Uri) {
     state.write().await.workspace_index.remove(uri);
-    client
-        .publish_diagnostics(uri.clone(), Vec::new(), None)
-        .await;
+    client.publish_diagnostics(uri.clone(), Vec::new(), None).await;
 }
 
 /// Best-effort `file://` URI to local path (for workspace scanning and file watchers).
@@ -228,9 +193,7 @@ pub fn path_to_uri(path: &Path) -> Option<Uri> {
 
 /// Map a local path to a `file://` URI string (fallback uses `path.display()`).
 pub fn path_to_uri_string(path: &Path) -> String {
-    path_to_uri(path)
-        .map(|u| u.to_string())
-        .unwrap_or_else(|| format!("file://{}", path.display()))
+    path_to_uri(path).map(|u| u.to_string()).unwrap_or_else(|| format!("file://{}", path.display()))
 }
 
 /// Parse a URI string to a local filesystem path.
@@ -247,10 +210,7 @@ pub fn discover_workspace_manifest_paths(workspace_roots: &[PathBuf]) -> Vec<Pat
             .into_iter()
             .filter_entry(|e| {
                 if e.file_type().is_dir() {
-                    !e.file_name()
-                        .to_str()
-                        .map(should_skip_dir_for_scan)
-                        .unwrap_or(false)
+                    !e.file_name().to_str().map(should_skip_dir_for_scan).unwrap_or(false)
                 } else {
                     true
                 }
@@ -273,11 +233,7 @@ pub fn discover_workspace_manifest_paths(workspace_roots: &[PathBuf]) -> Vec<Pat
 }
 
 /// Clears closed-file workspace cache and diagnostics for every indexed URI under `root`.
-pub async fn clear_closed_workspace_under_root(
-    client: &Client,
-    state: &RwLock<State>,
-    root: &Path,
-) {
+pub async fn clear_closed_workspace_under_root(client: &Client, state: &RwLock<State>, root: &Path) {
     let root_key = root.to_string_lossy().to_string();
     let mut remove: Vec<Uri> = Vec::new();
     {
@@ -297,16 +253,8 @@ pub async fn clear_closed_workspace_under_root(
 }
 
 /// Re-read changed paths on disk when buffers are closed; may invalidate compilation cache on manifest edits.
-pub async fn refresh_after_disk_change(
-    client: &Client,
-    state: &RwLock<State>,
-    changed_paths: &[PathBuf],
-) {
-    if changed_paths.iter().any(|p| {
-        p.extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(is_manifest_extension)
-    }) {
+pub async fn refresh_after_disk_change(client: &Client, state: &RwLock<State>, changed_paths: &[PathBuf]) {
+    if changed_paths.iter().any(|p| p.extension().and_then(|e| e.to_str()).is_some_and(is_manifest_extension)) {
         invalidate_compilation_cache(state).await;
         rebuild_open_document_syntax_facts(state).await;
     }
@@ -335,9 +283,7 @@ pub async fn refresh_after_disk_change(
 /// After `didClose`, reload disk contents into the workspace index when the file still exists.
 pub async fn hydrate_disk_after_close(client: &Client, state: &RwLock<State>, uri: &Uri) {
     let Some(path) = uri_to_path(uri) else {
-        client
-            .publish_diagnostics(uri.clone(), Vec::new(), None)
-            .await;
+        client.publish_diagnostics(uri.clone(), Vec::new(), None).await;
         return;
     };
     if !path.exists() {
@@ -351,7 +297,5 @@ pub async fn hydrate_disk_after_close(client: &Client, state: &RwLock<State>, ur
     let doc = build_document(state, uri, 0, text).await;
     let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
     set_disk_snapshot(state, uri.clone(), doc).await;
-    client
-        .publish_diagnostics(uri.clone(), diagnostics, Some(0))
-        .await;
+    client.publish_diagnostics(uri.clone(), diagnostics, Some(0)).await;
 }

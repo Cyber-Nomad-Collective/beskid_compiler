@@ -19,10 +19,9 @@ pub struct ParseArgs {
 
 /// Read `args.input`, parse, and print `Debug` AST output.
 pub fn execute(args: ParseArgs) -> Result<()> {
-    let source = fs::read_to_string(&args.input)
-        .with_context(|| format!("Failed to read file: {}", args.input.display()))?;
-    let program =
-        services::parse_program_with_source_name(&args.input.display().to_string(), &source)?;
+    let source =
+        fs::read_to_string(&args.input).with_context(|| format!("Failed to read file: {}", args.input.display()))?;
+    let program = services::parse_program_with_source_name(&args.input.display().to_string(), &source)?;
 
     let _ = args.format.as_str();
     println!("{:#?}", program.node);

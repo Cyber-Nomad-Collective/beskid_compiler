@@ -2,8 +2,8 @@ use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::{RuleContext, resolve};
 use crate::hir::{
-    HirBlock, HirExpressionNode, HirForStatement, HirItem, HirLegalityError, HirLetStatement,
-    HirPath, HirProgram, HirStatementNode, HirUseDeclaration, validate_hir_program,
+    HirBlock, HirExpressionNode, HirForStatement, HirItem, HirLegalityError, HirLetStatement, HirPath, HirProgram,
+    HirStatementNode, HirUseDeclaration, validate_hir_program,
 };
 use crate::resolve::{Resolution, Resolver};
 use crate::syntax::{SpanInfo, Spanned};
@@ -61,12 +61,7 @@ impl SemanticPipelineRule {
     fn emit_legality_error(&self, ctx: &mut RuleContext, error: HirLegalityError) {
         match error {
             HirLegalityError::InvalidSpan { span, context } => {
-                ctx.emit_issue(
-                    span,
-                    SemanticIssueKind::InvalidHirSpan {
-                        context: context.to_string(),
-                    },
-                );
+                ctx.emit_issue(span, SemanticIssueKind::InvalidHirSpan { context: context.to_string() });
             }
             HirLegalityError::UnresolvedValuePath { span } => {
                 ctx.emit_issue(span, SemanticIssueKind::UnresolvedHirValuePath);
@@ -75,18 +70,9 @@ impl SemanticPipelineRule {
                 ctx.emit_issue(span, SemanticIssueKind::UnresolvedHirTypePath);
             }
             HirLegalityError::NonNormalizedControlFlow { span, message } => {
-                ctx.emit_issue(
-                    span,
-                    SemanticIssueKind::NonNormalizedHirControlFlow {
-                        message: message.to_string(),
-                    },
-                );
+                ctx.emit_issue(span, SemanticIssueKind::NonNormalizedHirControlFlow { message: message.to_string() });
             }
-            HirLegalityError::DuplicateAttributeTarget {
-                span,
-                kind,
-                previous,
-            } => {
+            HirLegalityError::DuplicateAttributeTarget { span, kind, previous } => {
                 ctx.emit_issue(
                     span,
                     SemanticIssueKind::DuplicateAttributeDeclarationTarget {
@@ -104,12 +90,7 @@ impl SemanticPipelineRule {
                     },
                 );
             }
-            HirLegalityError::AttributeTargetNotAllowed {
-                span,
-                name,
-                target,
-                allowed,
-            } => {
+            HirLegalityError::AttributeTargetNotAllowed { span, name, target, allowed } => {
                 ctx.emit_issue(
                     span,
                     SemanticIssueKind::AttributeTargetNotAllowed {
@@ -138,10 +119,7 @@ impl SemanticPipelineRule {
     where
         I: IntoIterator<Item = crate::hir::AttributeTargetKind>,
     {
-        kinds
-            .into_iter()
-            .map(|kind| kind.as_str().to_string())
-            .collect()
+        kinds.into_iter().map(|kind| kind.as_str().to_string()).collect()
     }
 
     fn check_ambiguous_imports(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {
@@ -152,22 +130,14 @@ impl SemanticPipelineRule {
                 continue;
             };
             let imported_name = self.imported_name_local(&use_decl.node);
-            let imported_span = use_decl
-                .node
-                .alias
-                .as_ref()
-                .map(|alias| alias.span)
-                .unwrap_or(use_decl.node.path.span);
+            let imported_span = use_decl.node.alias.as_ref().map(|alias| alias.span).unwrap_or(use_decl.node.path.span);
             let Some(previous_span) = seen.insert(imported_name.clone(), imported_span) else {
                 continue;
             };
 
             ctx.emit_issue(
                 imported_span,
-                SemanticIssueKind::AmbiguousImport {
-                    name: imported_name,
-                    previous: previous_span,
-                },
+                SemanticIssueKind::AmbiguousImport { name: imported_name, previous: previous_span },
             );
         }
     }
@@ -194,10 +164,7 @@ impl SemanticPipelineRule {
                 if Self::import_path_known_in_assembly(&path, &known_paths) {
                     continue;
                 }
-                ctx.emit_issue(
-                    use_decl.node.path.span,
-                    SemanticIssueKind::UnknownImportPath { path },
-                );
+                ctx.emit_issue(use_decl.node.path.span, SemanticIssueKind::UnknownImportPath { path });
             }
             return;
         }
@@ -240,9 +207,7 @@ impl SemanticPipelineRule {
 
             ctx.emit_issue(
                 use_decl.node.path.span,
-                SemanticIssueKind::UnknownImportPath {
-                    path: self.path_to_string_local(&use_decl.node.path),
-                },
+                SemanticIssueKind::UnknownImportPath { path: self.path_to_string_local(&use_decl.node.path) },
             );
         }
     }
@@ -264,20 +229,11 @@ impl SemanticPipelineRule {
     }
 
     fn path_tail_local(&self, path: &Spanned<HirPath>) -> String {
-        path.node
-            .segments
-            .last()
-            .map(|segment| segment.node.name.node.name.clone())
-            .unwrap_or_default()
+        path.node.segments.last().map(|segment| segment.node.name.node.name.clone()).unwrap_or_default()
     }
 
     fn path_to_string_local(&self, path: &Spanned<HirPath>) -> String {
-        path.node
-            .segments
-            .iter()
-            .map(|segment| segment.node.name.node.name.clone())
-            .collect::<Vec<_>>()
-            .join(".")
+        path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>().join(".")
     }
 
     fn imported_name_local(&self, use_decl: &HirUseDeclaration) -> String {
@@ -319,8 +275,7 @@ impl HirVisit for UseBeforeDeclVisitor<'_> {
         let parent = self.kind_stack.last().copied();
 
         if let Some(for_statement) = node.of::<HirForStatement>() {
-            self.for_iterators
-                .push(for_statement.iterator.node.name.clone());
+            self.for_iterators.push(for_statement.iterator.node.name.clone());
         }
 
         if let Some(block) = node.of::<HirBlock>() {
@@ -328,18 +283,13 @@ impl HirVisit for UseBeforeDeclVisitor<'_> {
                 .statements
                 .iter()
                 .filter_map(|statement| match &statement.node {
-                    HirStatementNode::LetStatement(let_statement) => {
-                        Some(let_statement.node.name.node.name.clone())
-                    }
+                    HirStatementNode::LetStatement(let_statement) => Some(let_statement.node.name.node.name.clone()),
                     _ => None,
                 })
                 .collect::<HashSet<_>>();
 
             let start_declared_len = self.declared_stack.len();
-            self.block_frames.push(DeclFrame {
-                pending,
-                start_declared_len,
-            });
+            self.block_frames.push(DeclFrame { pending, start_declared_len });
 
             if parent == Some(HirNodeKind::ForStatement)
                 && let Some(iterator_name) = self.for_iterators.last().cloned()
@@ -355,17 +305,12 @@ impl HirVisit for UseBeforeDeclVisitor<'_> {
         {
             let name_value = &name.node.name.node.name;
             if let Some(frame) = self.block_frames.last()
-                && !self
-                    .declared_stack
-                    .iter()
-                    .any(|declared| declared == name_value)
+                && !self.declared_stack.iter().any(|declared| declared == name_value)
                 && frame.pending.contains(name_value)
             {
                 self.ctx.emit_issue(
                     path_expr.node.path.span,
-                    SemanticIssueKind::UseBeforeDeclaration {
-                        name: name_value.clone(),
-                    },
+                    SemanticIssueKind::UseBeforeDeclaration { name: name_value.clone() },
                 );
             }
         }

@@ -76,10 +76,7 @@ pub struct ModHostSession {
 
 impl ModHostSession {
     pub(crate) fn new(loaded: Vec<LoadedModArtifact>) -> Self {
-        Self {
-            loaded,
-            composition_snapshot: None,
-        }
+        Self { loaded, composition_snapshot: None }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -87,16 +84,11 @@ impl ModHostSession {
     }
 
     pub fn registrations(&self) -> impl Iterator<Item = &ContractRegistration> {
-        self.loaded
-            .iter()
-            .flat_map(|artifact| artifact.registrations.iter())
+        self.loaded.iter().flat_map(|artifact| artifact.registrations.iter())
     }
 
     pub fn loaded_descriptor_count(&self) -> usize {
-        self.loaded
-            .iter()
-            .filter(|artifact| artifact.descriptor.is_some())
-            .count()
+        self.loaded.iter().filter(|artifact| artifact.descriptor.is_some()).count()
     }
 
     pub fn set_composition_snapshot(&mut self, snapshot: crate::composition::CompositionSnapshot) {

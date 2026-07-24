@@ -17,34 +17,19 @@ pub struct EnumConstructorExpression {
     pub args: Vec<Spanned<Expression>>,
 }
 
-pub(crate) fn parse_enum_constructor_expression(
-    pair: Pair<Rule>,
-) -> Result<Spanned<Expression>, ParseError> {
+pub(crate) fn parse_enum_constructor_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
-    let variant = pair
-        .into_inner()
-        .next()
-        .ok_or(ParseError::missing(Rule::EnumConstructorExpression))?;
+    let variant = pair.into_inner().next().ok_or(ParseError::missing(Rule::EnumConstructorExpression))?;
     let mut inner = variant.clone().into_inner();
     let has_empty_parens = variant.as_rule() == Rule::enum_constructor_with_args;
     let path = EnumPath::parse(inner.next().ok_or(ParseError::missing(Rule::EnumPath))?)?;
     let args = if let Some(arg_list) = inner.next() {
-        arg_list
-            .into_inner()
-            .map(Expression::parse)
-            .collect::<Result<Vec<_>, _>>()?
+        arg_list.into_inner().map(Expression::parse).collect::<Result<Vec<_>, _>>()?
     } else {
         Vec::new()
     };
 
-    let constructor = Spanned::new(
-        EnumConstructorExpression {
-            path,
-            has_empty_parens,
-            args,
-        },
-        span,
-    );
+    let constructor = Spanned::new(EnumConstructorExpression { path, has_empty_parens, args }, span);
 
     Ok(Spanned::new(Expression::EnumConstructor(constructor), span))
 }

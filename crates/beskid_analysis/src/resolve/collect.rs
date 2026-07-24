@@ -9,22 +9,15 @@ use super::items::{ItemInfo, ItemKind};
 use super::member_items;
 use super::module_graph::ModuleGraph;
 use super::resolver::{self, Resolver};
-use super::symbol::{
-    BUILTIN_PACKAGE, SymbolId, SymbolQualifier, SymbolShape, symbol_shape_for_item,
-    symbol_to_string,
-};
+use super::symbol::{BUILTIN_PACKAGE, SymbolId, SymbolQualifier, SymbolShape, symbol_shape_for_item, symbol_to_string};
 use crate::builtins::builtin_specs;
 
 pub(super) fn type_name_for_method_receiver(receiver_type: &Spanned<HirType>) -> String {
     match &receiver_type.node {
         HirType::Primitive(primitive) => format!("{:?}", primitive.node),
-        HirType::Complex(path) => path
-            .node
-            .segments
-            .iter()
-            .map(|segment| segment.node.name.node.name.clone())
-            .collect::<Vec<_>>()
-            .join("."),
+        HirType::Complex(path) => {
+            path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>().join(".")
+        }
         HirType::Array(_) => "Array".to_string(),
         HirType::Function { .. } => "Function".to_string(),
     }
@@ -39,20 +32,11 @@ pub(super) fn path_tail(path: &Spanned<crate::hir::HirPath>) -> String {
 }
 
 pub(super) fn builtin_span() -> syntax::SpanInfo {
-    syntax::SpanInfo {
-        start: 0,
-        end: 0,
-        line_col_start: (1, 1),
-        line_col_end: (1, 1),
-    }
+    syntax::SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) }
 }
 
 pub(super) fn use_imported_name(use_decl: &HirUseDeclaration) -> String {
-    use_decl
-        .alias
-        .as_ref()
-        .map(|alias| alias.node.name.clone())
-        .unwrap_or_else(|| path_tail(&use_decl.path))
+    use_decl.alias.as_ref().map(|alias| alias.node.name.clone()).unwrap_or_else(|| path_tail(&use_decl.path))
 }
 
 impl Resolver {
@@ -71,21 +55,11 @@ impl Resolver {
         symbols: super::symbol::SymbolRegistry,
         by_symbol: std::collections::HashMap<SymbolId, ItemId>,
     ) -> Self {
-        Self {
-            items,
-            module_graph,
-            builtin_items,
-            symbols,
-            by_symbol,
-            ..Self::default()
-        }
+        Self { items, module_graph, builtin_items, symbols, by_symbol, ..Self::default() }
     }
 
     fn current_module_path(&self) -> Vec<String> {
-        self.module_graph
-            .module(self.current_module)
-            .map(|module| module.path.clone())
-            .unwrap_or_default()
+        self.module_graph.module(self.current_module).map(|module| module.path.clone()).unwrap_or_default()
     }
 
     fn try_register_symbol(
@@ -99,18 +73,8 @@ impl Resolver {
         member_name: Option<&str>,
         span: syntax::SpanInfo,
     ) -> Option<SymbolId> {
-        let shape = symbol_shape_for_item(
-            kind,
-            module_path,
-            name,
-            method_receiver,
-            parent_symbol,
-            member_name,
-        )?;
-        let qualifier = SymbolQualifier {
-            package: self.declaring_package.clone(),
-            shape,
-        };
+        let shape = symbol_shape_for_item(kind, module_path, name, method_receiver, parent_symbol, member_name)?;
+        let qualifier = SymbolQualifier { package: self.declaring_package.clone(), shape };
         if let Some(existing) = self.symbols.lookup(&qualifier) {
             if self.by_symbol.get(&existing) != Some(&item_id) {
                 let previous = self
@@ -182,22 +146,12 @@ impl Resolver {
             let id = ItemId(self.items.len());
             if let Some(prev) = self.module_graph.insert_item(module_id, name.clone(), id) {
                 let prev_span = self.items[prev.0].span;
-                self.errors.push(ResolveError::DuplicateItem {
-                    name,
-                    span: builtin_span(),
-                    previous: prev_span,
-                });
+                self.errors.push(ResolveError::DuplicateItem { name, span: builtin_span(), previous: prev_span });
                 continue;
             }
-            let path: Vec<String> = spec
-                .beskid_path
-                .iter()
-                .map(|segment| (*segment).to_string())
-                .collect();
-            let qualifier = SymbolQualifier {
-                package: BUILTIN_PACKAGE.to_string(),
-                shape: SymbolShape::Builtin { path },
-            };
+            let path: Vec<String> = spec.beskid_path.iter().map(|segment| (*segment).to_string()).collect();
+            let qualifier =
+                SymbolQualifier { package: BUILTIN_PACKAGE.to_string(), shape: SymbolShape::Builtin { path } };
             let symbol_id = self.symbols.intern(qualifier);
             self.by_symbol.insert(symbol_id, id);
             self.items.push(ItemInfo {
@@ -220,12 +174,9 @@ impl Resolver {
             HirItem::HostDefinition(_) => {
                 return;
             }
-            HirItem::FunctionDefinition(def) => (
-                def.node.name.node.name.clone(),
-                ItemKind::Function,
-                def.node.visibility.node,
-                None,
-            ),
+            HirItem::FunctionDefinition(def) => {
+                (def.node.name.node.name.clone(), ItemKind::Function, def.node.visibility.node, None)
+            }
             HirItem::MethodDefinition(def) => {
                 let receiver = type_name_for_method_receiver(&def.node.receiver_type);
                 (
@@ -254,42 +205,24 @@ impl Resolver {
                 }
                 return;
             }
-            HirItem::TestDefinition(def) => (
-                def.node.name.node.name.clone(),
-                ItemKind::Test,
-                def.node.visibility.node,
-                None,
-            ),
-            HirItem::TypeDefinition(def) => (
-                def.node.name.node.name.clone(),
-                ItemKind::Type,
-                def.node.visibility.node,
-                None,
-            ),
-            HirItem::EnumDefinition(def) => (
-                def.node.name.node.name.clone(),
-                ItemKind::Enum,
-                def.node.visibility.node,
-                None,
-            ),
-            HirItem::ContractDefinition(def) => (
-                def.node.name.node.name.clone(),
-                ItemKind::Contract,
-                def.node.visibility.node,
-                None,
-            ),
-            HirItem::ModuleDeclaration(def) => (
-                path_tail(&def.node.path),
-                ItemKind::Module,
-                def.node.visibility.node,
-                None,
-            ),
-            HirItem::InlineModule(def) => (
-                def.node.name.node.name.clone(),
-                ItemKind::Module,
-                def.node.visibility.node,
-                None,
-            ),
+            HirItem::TestDefinition(def) => {
+                (def.node.name.node.name.clone(), ItemKind::Test, def.node.visibility.node, None)
+            }
+            HirItem::TypeDefinition(def) => {
+                (def.node.name.node.name.clone(), ItemKind::Type, def.node.visibility.node, None)
+            }
+            HirItem::EnumDefinition(def) => {
+                (def.node.name.node.name.clone(), ItemKind::Enum, def.node.visibility.node, None)
+            }
+            HirItem::ContractDefinition(def) => {
+                (def.node.name.node.name.clone(), ItemKind::Contract, def.node.visibility.node, None)
+            }
+            HirItem::ModuleDeclaration(def) => {
+                (path_tail(&def.node.path), ItemKind::Module, def.node.visibility.node, None)
+            }
+            HirItem::InlineModule(def) => {
+                (def.node.name.node.name.clone(), ItemKind::Module, def.node.visibility.node, None)
+            }
             HirItem::UseDeclaration(def) => {
                 self.collect_use_declaration(item, def);
                 return;
@@ -305,14 +238,8 @@ impl Resolver {
         let id = ItemId(self.items.len());
         let module_id = match &item.node {
             HirItem::ModuleDeclaration(def) => {
-                let segments: Vec<String> = def
-                    .node
-                    .path
-                    .node
-                    .segments
-                    .iter()
-                    .map(|segment| segment.node.name.node.name.clone())
-                    .collect();
+                let segments: Vec<String> =
+                    def.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect();
                 let parent_path = &segments[..segments.len().saturating_sub(1)];
                 self.module_graph.ensure_module_path(parent_path)
             }
@@ -320,50 +247,27 @@ impl Resolver {
         };
         if let Some(prev) = self.module_graph.insert_item(module_id, name.clone(), id) {
             let prev_span = self.items[prev.0].span;
-            self.errors.push(ResolveError::DuplicateItem {
-                name,
-                span: item.span,
-                previous: prev_span,
-            });
+            self.errors.push(ResolveError::DuplicateItem { name, span: item.span, previous: prev_span });
             return;
         }
         let push_module_path = match &item.node {
             HirItem::ModuleDeclaration(def) => {
-                let segments: Vec<String> = def
-                    .node
-                    .path
-                    .node
-                    .segments
-                    .iter()
-                    .map(|segment| segment.node.name.node.name.clone())
-                    .collect();
+                let segments: Vec<String> =
+                    def.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect();
                 let mut path = self.current_module_path();
                 path.extend_from_slice(&segments[..segments.len().saturating_sub(1)]);
                 path
             }
             _ => self.current_module_path(),
         };
-        self.push_item(
-            id,
-            None,
-            name,
-            kind,
-            visibility,
-            item.span,
-            method_receiver,
-            push_module_path,
-        );
+        self.push_item(id, None, name, kind, visibility, item.span, method_receiver, push_module_path);
 
         self.collect_member_items(item, id);
 
         if let HirItem::TypeDefinition(def) = &item.node {
             let type_name = def.node.name.node.name.clone();
-            let field_names: std::collections::HashSet<_> = def
-                .node
-                .fields
-                .iter()
-                .map(|field| field.node.name.node.name.as_str())
-                .collect();
+            let field_names: std::collections::HashSet<_> =
+                def.node.fields.iter().map(|field| field.node.name.node.name.as_str()).collect();
             for method in &def.node.methods {
                 let method_name = method.node.name.node.name.as_str();
                 if field_names.contains(method_name) {
@@ -410,11 +314,8 @@ impl Resolver {
         }
         if let HirItem::InlineModule(def) = &item.node {
             let previous_module = self.current_module;
-            let mut module_path = self
-                .module_graph
-                .module(self.current_module)
-                .map(|module| module.path.clone())
-                .unwrap_or_default();
+            let mut module_path =
+                self.module_graph.module(self.current_module).map(|module| module.path.clone()).unwrap_or_default();
             module_path.push(def.node.name.node.name.clone());
             let child_module = self.module_graph.ensure_module_path(&module_path);
             self.current_module = child_module;
@@ -425,11 +326,7 @@ impl Resolver {
         }
     }
 
-    fn collect_use_declaration(
-        &mut self,
-        item: &Spanned<HirItem>,
-        def: &Spanned<HirUseDeclaration>,
-    ) {
+    fn collect_use_declaration(&mut self, item: &Spanned<HirItem>, def: &Spanned<HirUseDeclaration>) {
         let alias = use_imported_name(&def.node);
         let module_path = resolver::path_segments(&def.node.path);
         if self.module_imports.contains_key(&alias) {
@@ -441,10 +338,8 @@ impl Resolver {
             return;
         }
         if self.module_graph.module_id(&module_path).is_none() {
-            self.errors.push(ResolveError::UnknownModulePath {
-                path: module_path.join("::"),
-                span: def.node.path.span,
-            });
+            self.errors
+                .push(ResolveError::UnknownModulePath { path: module_path.join("::"), span: def.node.path.span });
             return;
         }
         self.module_imports.insert(alias, module_path.clone());
@@ -476,10 +371,7 @@ impl Resolver {
             })
             .collect();
         for (name, item_id) in imports {
-            if let Some(_prev) = self
-                .module_graph
-                .insert_item(self.current_module, name, item_id)
-            {
+            if let Some(_prev) = self.module_graph.insert_item(self.current_module, name, item_id) {
                 // Import collides with an existing local declaration — silently skip
                 continue;
             }
@@ -495,16 +387,7 @@ impl Resolver {
         parent_id: ItemId,
     ) {
         let id = ItemId(self.items.len());
-        self.push_item(
-            id,
-            Some(parent_id),
-            name,
-            kind,
-            visibility,
-            span,
-            None,
-            self.current_module_path(),
-        );
+        self.push_item(id, Some(parent_id), name, kind, visibility, span, None, self.current_module_path());
     }
 
     fn push_item(
@@ -518,8 +401,7 @@ impl Resolver {
         method_receiver: Option<String>,
         module_path: Vec<String>,
     ) {
-        let parent_symbol =
-            parent_id.and_then(|parent| self.items.get(parent.0).and_then(|info| info.symbol));
+        let parent_symbol = parent_id.and_then(|parent| self.items.get(parent.0).and_then(|info| info.symbol));
         let symbol = self.try_register_symbol(
             id,
             kind,
@@ -558,16 +440,8 @@ impl Resolver {
         method: &Spanned<crate::hir::HirMethodDefinition>,
         parent_id: ItemId,
     ) {
-        let parent_name = self
-            .items
-            .get(parent_id.0)
-            .map(|item| item.name.clone())
-            .unwrap_or_default();
-        let visibility = self
-            .items
-            .get(parent_id.0)
-            .map(|item| item.visibility)
-            .unwrap_or(HirVisibility::Private);
+        let parent_name = self.items.get(parent_id.0).map(|item| item.name.clone()).unwrap_or_default();
+        let visibility = self.items.get(parent_id.0).map(|item| item.visibility).unwrap_or(HirVisibility::Private);
         for parameter in &method.node.parameters {
             self.push_member_item(
                 format!("{}::{}", parent_name, parameter.node.name.node.name),

@@ -63,10 +63,7 @@ pub struct WatchConfig {
 
 impl Default for WatchConfig {
     fn default() -> Self {
-        Self {
-            mode: WatchMode::File,
-            debounce_ms: 100,
-        }
+        Self { mode: WatchMode::File, debounce_ms: 100 }
     }
 }
 

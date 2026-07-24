@@ -80,32 +80,17 @@ audit {
 
 #[test]
 fn v5_manifest_is_the_only_input_to_every_generated_artifact() {
-    let source = fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime_manifest.bsol"),
-    )
-    .unwrap();
+    let source =
+        fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime_manifest.bsol"))
+            .unwrap();
     let manifest = load_v5_manifest_source(&source).expect("valid v5 source");
     assert_eq!(manifest.meta.abi_version, 5);
-    assert!(
-        manifest
-            .intrinsics
-            .iter()
-            .all(|intrinsic| intrinsic.symbol.starts_with("beskid_rt_v5_"))
-    );
-    let trap = manifest
-        .exports
-        .iter()
-        .find(|entry| entry.symbol == "beskid_rt_v5_trap")
-        .unwrap();
+    assert!(manifest.intrinsics.iter().all(|intrinsic| intrinsic.symbol.starts_with("beskid_rt_v5_")));
+    let trap = manifest.exports.iter().find(|entry| entry.symbol == "beskid_rt_v5_trap").unwrap();
     assert_eq!(trap.params[0].name, "code");
     assert_eq!(trap.result, "never");
     assert_eq!(
-        manifest
-            .targets
-            .iter()
-            .find(|entry| entry.triple == "x86_64-unknown-linux-gnu")
-            .unwrap()
-            .object_format,
+        manifest.targets.iter().find(|entry| entry.triple == "x86_64-unknown-linux-gnu").unwrap().object_format,
         "elf"
     );
 
@@ -114,14 +99,8 @@ fn v5_manifest_is_the_only_input_to_every_generated_artifact() {
     assert_eq!(first, second);
     assert!(first.rust.contains("beskid_rt_v5_trap"));
     assert!(first.c_header.contains("_Noreturn"));
-    assert!(
-        first.gnu_asm["x86_64-unknown-linux-gnu"]
-            .contains("#define BESKID_CONTEXT_SWITCH_FROM_REGISTER rdi")
-    );
-    assert!(
-        first.masm["x86_64-pc-windows-msvc"]
-            .contains("BESKID_CONTEXT_SWITCH_FROM_REGISTER TEXTEQU <rcx>")
-    );
+    assert!(first.gnu_asm["x86_64-unknown-linux-gnu"].contains("#define BESKID_CONTEXT_SWITCH_FROM_REGISTER rdi"));
+    assert!(first.masm["x86_64-pc-windows-msvc"].contains("BESKID_CONTEXT_SWITCH_FROM_REGISTER TEXTEQU <rcx>"));
     assert!(first.abi_json.contains("\"trapExitStatus\": 101"));
     assert!(first.audit_json.contains("\"forbiddenSymbolFamilies\""));
 }
@@ -133,8 +112,7 @@ fn checked_in_v5_artifacts_are_fresh() {
     let manifest = load_v5_manifest_source(&source).expect("workspace v5 source");
     let artifacts = generate_v5_artifacts(&manifest).expect("artifacts");
     assert_eq!(
-        fs::read_to_string(root.join("crates/beskid_abi/src/generated/abi_v5_contract.rs"))
-            .unwrap(),
+        fs::read_to_string(root.join("crates/beskid_abi/src/generated/abi_v5_contract.rs")).unwrap(),
         artifacts.rust
     );
     assert_eq!(
@@ -143,18 +121,14 @@ fn checked_in_v5_artifacts_are_fresh() {
     );
     for (target, contents) in artifacts.gnu_asm.iter().chain(&artifacts.masm) {
         assert_eq!(
-            fs::read_to_string(root.join(format!(
-                "crates/beskid_abi/include/beskid_runtime_abi_v5_{}.inc",
-                target.replace('-', "_")
-            )))
+            fs::read_to_string(
+                root.join(format!("crates/beskid_abi/include/beskid_runtime_abi_v5_{}.inc", target.replace('-', "_")))
+            )
             .unwrap(),
             *contents
         );
     }
-    assert_eq!(
-        fs::read_to_string(root.join("crates/beskid_abi/include/abi-v5.json")).unwrap(),
-        artifacts.abi_json
-    );
+    assert_eq!(fs::read_to_string(root.join("crates/beskid_abi/include/abi-v5.json")).unwrap(), artifacts.abi_json);
     assert_eq!(
         fs::read_to_string(root.join("crates/beskid_abi/include/abi-v5-audit.json")).unwrap(),
         artifacts.audit_json
@@ -201,22 +175,14 @@ fn parser_rejects_unknown_duplicate_and_invalid_contract_fields() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
     assert!(
-        load_v5_manifest_source(&source.replacen(
-            "schema_version = 1",
-            "schema_version = 1\n  surprise = true",
-            1
-        ))
-        .unwrap_err()
-        .contains("unknown field")
+        load_v5_manifest_source(&source.replacen("schema_version = 1", "schema_version = 1\n  surprise = true", 1))
+            .unwrap_err()
+            .contains("unknown field")
     );
     assert!(
-        load_v5_manifest_source(&source.replacen(
-            "schema_version = 1",
-            "schema_version = 1\n  schema_version = 1",
-            1
-        ))
-        .unwrap_err()
-        .contains("duplicate field")
+        load_v5_manifest_source(&source.replacen("schema_version = 1", "schema_version = 1\n  schema_version = 1", 1))
+            .unwrap_err()
+            .contains("duplicate field")
     );
     assert!(
         load_v5_manifest_source(&source.replacen("returns = never", "returns = void", 1))
@@ -224,21 +190,13 @@ fn parser_rejects_unknown_duplicate_and_invalid_contract_fields() {
             .contains("noreturn")
     );
     assert!(
-        load_v5_manifest_source(&source.replacen(
-            "offset = 8, type = usize",
-            "offset = 0, type = usize",
-            1
-        ))
-        .unwrap_err()
-        .contains("overlapping")
+        load_v5_manifest_source(&source.replacen("offset = 8, type = usize", "offset = 0, type = usize", 1))
+            .unwrap_err()
+            .contains("overlapping")
     );
     assert!(
-        load_v5_manifest_source(&source.replacen(
-            "target = \"x86_64-unknown-linux-gnu\"",
-            "target = [bad]",
-            1,
-        ))
-        .is_err()
+        load_v5_manifest_source(&source.replacen("target = \"x86_64-unknown-linux-gnu\"", "target = [bad]", 1,))
+            .is_err()
     );
     assert!(
         load_v5_manifest_source(&source.replacen(
@@ -289,11 +247,7 @@ fn generated_target_and_trap_tables_follow_manifest_facts() {
     let changed = source
         .replacen("object_format = elf", "object_format = elf_test", 1)
         .replacen("symbol_prefix = \"\"", "symbol_prefix = \"_\"", 1)
-        .replacen(
-            "trap \"null_reference\" { code = 1 }",
-            "trap \"changed_null\" { code = 1 }",
-            1,
-        );
+        .replacen("trap \"null_reference\" { code = 1 }", "trap \"changed_null\" { code = 1 }", 1);
     let artifacts = generate_v5_artifacts(&load_v5_manifest_source(&changed).unwrap()).unwrap();
     assert!(artifacts.rust.contains("ABI_V5_TARGETS"));
     assert!(artifacts.rust.contains("elf_test"));
@@ -307,10 +261,7 @@ fn windows_stack_parameter_is_typed_and_renders_as_a_masm_operand() {
     let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
     let artifacts = generate_v5_artifacts(&load_v5_manifest_source(&source).unwrap()).unwrap();
     let windows = &artifacts.masm["x86_64-pc-windows-msvc"];
-    assert!(
-        windows
-            .contains("BESKID_CONTEXT_INIT_RETURN_TRAMPOLINE_STACK_OPERAND TEXTEQU <[rsp + 40]>")
-    );
+    assert!(windows.contains("BESKID_CONTEXT_INIT_RETURN_TRAMPOLINE_STACK_OPERAND TEXTEQU <[rsp + 40]>"));
     assert!(!windows.contains("stack+40"));
     assert!(!windows.contains("RETURN_TRAMPOLINE_REGISTER"));
 }
@@ -323,19 +274,12 @@ fn generated_assembler_contracts_are_target_scoped_and_parseable() {
     let linux = &artifacts.gnu_asm["x86_64-unknown-linux-gnu"];
     let darwin = &artifacts.gnu_asm["aarch64-apple-darwin"];
     let windows = &artifacts.masm["x86_64-pc-windows-msvc"];
-    assert!(
-        artifacts
-            .c_header
-            .contains("beskid_rt_v5_abi_version(void)")
-    );
+    assert!(artifacts.c_header.contains("beskid_rt_v5_abi_version(void)"));
     let c_source = std::env::temp_dir().join(format!("beskid-abi-v5-{}.c", std::process::id()));
     let c_object = c_source.with_extension("o");
     fs::write(
         &c_source,
-        format!(
-            "{}\nuint32_t smoke(void) {{ return beskid_rt_v5_abi_version(); }}\n",
-            artifacts.c_header
-        ),
+        format!("{}\nuint32_t smoke(void) {{ return beskid_rt_v5_abi_version(); }}\n", artifacts.c_header),
     )
     .unwrap();
     let c_output = std::process::Command::new("clang")
@@ -360,21 +304,13 @@ fn generated_assembler_contracts_are_target_scoped_and_parseable() {
     let _ = fs::remove_file(c_source);
     let _ = fs::remove_file(c_object);
     assert!(!linux.contains("xmm6") && !linux.contains("x19") && !linux.contains("STACK_OPERAND"));
-    assert!(
-        !darwin.contains("rdi") && !darwin.contains("xmm6") && !darwin.contains("STACK_OPERAND")
-    );
+    assert!(!darwin.contains("rdi") && !darwin.contains("xmm6") && !darwin.contains("STACK_OPERAND"));
     assert!(!windows.contains("x19") && !windows.contains("BESKID_AARCH64"));
     assert!(windows.contains("RETURN_TRAMPOLINE_STACK_OPERAND TEXTEQU <[rsp + 40]>"));
     assert!(!windows.contains("stack+40"));
     let mut lhs = std::collections::BTreeSet::new();
-    for line in windows
-        .lines()
-        .filter(|line| line.contains(" EQU ") || line.contains(" TEXTEQU "))
-    {
-        assert!(
-            lhs.insert(line.split_whitespace().next().unwrap()),
-            "duplicate MASM definition: {line}"
-        );
+    for line in windows.lines().filter(|line| line.contains(" EQU ") || line.contains(" TEXTEQU ")) {
+        assert!(lhs.insert(line.split_whitespace().next().unwrap()), "duplicate MASM definition: {line}");
     }
     let shadow_space = windows
         .lines()
@@ -404,26 +340,14 @@ fn generated_assembler_contracts_are_target_scoped_and_parseable() {
             ".text\n.globl _smoke\n_smoke:\n  mov x9, BESKID_CONTEXT_SWITCH_FROM_REGISTER\n  ret\n",
         ),
     ] {
-        let temp =
-            std::env::temp_dir().join(format!("beskid-abi-v5-{}-{triple}.S", std::process::id()));
+        let temp = std::env::temp_dir().join(format!("beskid-abi-v5-{}-{triple}.S", std::process::id()));
         let object = temp.with_extension("o");
         fs::write(&temp, format!("{include}\n{body}")).unwrap();
         let output = std::process::Command::new("clang")
-            .args([
-                "-target",
-                triple,
-                "-c",
-                temp.to_str().unwrap(),
-                "-o",
-                object.to_str().unwrap(),
-            ])
+            .args(["-target", triple, "-c", temp.to_str().unwrap(), "-o", object.to_str().unwrap()])
             .output()
             .unwrap();
-        assert!(
-            output.status.success(),
-            "assembler rejected {triple}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        assert!(output.status.success(), "assembler rejected {triple}: {}", String::from_utf8_lossy(&output.stderr));
         let metadata = fs::metadata(&object).unwrap();
         assert!(metadata.len() > 0, "assembler produced an empty object");
         let bytes = fs::read(&object).unwrap();
@@ -432,21 +356,13 @@ fn generated_assembler_contracts_are_target_scoped_and_parseable() {
             "arm64-apple-macos11" => b"\xcf\xfa\xed\xfe",
             _ => unreachable!(),
         };
-        assert!(
-            bytes.starts_with(expected_magic),
-            "assembler produced the wrong object format for {triple}"
-        );
+        assert!(bytes.starts_with(expected_magic), "assembler produced the wrong object format for {triple}");
         let _ = fs::remove_file(temp);
         let _ = fs::remove_file(object);
     }
 
-    let Some(llvm_ml) = std::env::var_os("LLVM_ML")
-        .map(std::path::PathBuf::from)
-        .or_else(|| {
-            [
-                std::path::PathBuf::from("llvm-ml"),
-                std::path::PathBuf::from("/opt/homebrew/opt/llvm/bin/llvm-ml"),
-            ]
+    let Some(llvm_ml) = std::env::var_os("LLVM_ML").map(std::path::PathBuf::from).or_else(|| {
+        [std::path::PathBuf::from("llvm-ml"), std::path::PathBuf::from("/opt/homebrew/opt/llvm/bin/llvm-ml")]
             .into_iter()
             .find(|candidate| {
                 std::process::Command::new(candidate)
@@ -454,8 +370,7 @@ fn generated_assembler_contracts_are_target_scoped_and_parseable() {
                     .output()
                     .is_ok_and(|output| output.status.success())
             })
-        })
-    else {
+    }) else {
         // Linux CI runners do not ship llvm-ml; keep the GNU asm contract covered above.
         eprintln!("skipping MASM contract: LLVM_ML/llvm-ml not available");
         return;
@@ -487,10 +402,7 @@ fn generated_assembler_contracts_are_target_scoped_and_parseable() {
         String::from_utf8_lossy(&output.stderr)
     );
     let object = fs::read(&object_path).unwrap();
-    assert!(
-        object.starts_with(b"\x64\x86"),
-        "llvm-ml did not emit AMD64 COFF"
-    );
+    assert!(object.starts_with(b"\x64\x86"), "llvm-ml did not emit AMD64 COFF");
     let llvm_dir = llvm_ml.parent().unwrap_or_else(|| std::path::Path::new(""));
     let readobj = std::process::Command::new(llvm_dir.join("llvm-readobj"))
         .args(["--file-headers", "--relocations"])
@@ -499,10 +411,7 @@ fn generated_assembler_contracts_are_target_scoped_and_parseable() {
         .expect("llvm-readobj must accompany llvm-ml");
     let readobj = String::from_utf8_lossy(&readobj.stdout);
     assert!(readobj.contains("IMAGE_FILE_MACHINE_AMD64"));
-    assert!(
-        !readobj.contains("IMAGE_REL_AMD64"),
-        "generated include consumer must not leave relocations: {readobj}"
-    );
+    assert!(!readobj.contains("IMAGE_REL_AMD64"), "generated include consumer must not leave relocations: {readobj}");
     let objdump = std::process::Command::new(llvm_dir.join("llvm-objdump"))
         .arg("-d")
         .arg(&object_path)

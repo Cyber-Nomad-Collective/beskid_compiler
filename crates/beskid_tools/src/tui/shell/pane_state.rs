@@ -55,10 +55,7 @@ pub struct TemplatesPaneState {
 
 impl PckgPaneState {
     pub fn selected_package_id(&self) -> Option<&str> {
-        self.list_state
-            .selected()
-            .and_then(|index| self.packages.get(index))
-            .map(|pkg| pkg.name.as_str())
+        self.list_state.selected().and_then(|index| self.packages.get(index)).map(|pkg| pkg.name.as_str())
     }
 }
 
@@ -73,10 +70,7 @@ impl TemplatesPaneState {
     pub fn selected_package_id(&self) -> Option<String> {
         let index = self.list_state.selected()?;
         match self.tab {
-            TemplateListTab::Installed => self
-                .installed
-                .get(index)
-                .and_then(|row| row.package_id.clone()),
+            TemplateListTab::Installed => self.installed.get(index).and_then(|row| row.package_id.clone()),
             TemplateListTab::Registry => self.registry.get(index).map(|row| row.package_id.clone()),
         }
     }
@@ -84,9 +78,7 @@ impl TemplatesPaneState {
     pub fn selected_short_name(&self) -> Option<&str> {
         let index = self.list_state.selected()?;
         match self.tab {
-            TemplateListTab::Installed => {
-                self.installed.get(index).map(|row| row.short_name.as_str())
-            }
+            TemplateListTab::Installed => self.installed.get(index).map(|row| row.short_name.as_str()),
             TemplateListTab::Registry => None,
         }
     }

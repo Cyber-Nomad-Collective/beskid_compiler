@@ -14,21 +14,14 @@ pub(crate) fn local_type_id(
     state: &crate::lowering::function::FunctionLoweringState,
     local_id: LocalId,
 ) -> Option<TypeId> {
-    state
-        .local_type_overrides
-        .get(&local_id)
-        .copied()
-        .or_else(|| type_result.local_types.get(&local_id).copied())
+    state.local_type_overrides.get(&local_id).copied().or_else(|| type_result.local_types.get(&local_id).copied())
 }
 
 pub(crate) fn node_expr_type(type_result: &TypeResult, node_id: HirNodeId) -> Option<TypeId> {
     type_result.node_type(node_id)
 }
 
-pub(crate) fn expr_type_for_node(
-    type_result: &TypeResult,
-    node: &Spanned<HirExpressionNode>,
-) -> Option<TypeId> {
+pub(crate) fn expr_type_for_node(type_result: &TypeResult, node: &Spanned<HirExpressionNode>) -> Option<TypeId> {
     type_result.expr_type(node)
 }
 
@@ -43,15 +36,10 @@ pub(crate) fn require_expr_type(
     type_result: &TypeResult,
     node: &Spanned<HirExpressionNode>,
 ) -> Result<TypeId, CodegenError> {
-    type_result
-        .expr_type(node)
-        .ok_or(CodegenError::MissingExpressionType { span: node.span })
+    type_result.expr_type(node).ok_or(CodegenError::MissingExpressionType { span: node.span })
 }
 
-pub(crate) fn type_id_for_item(
-    type_result: &TypeResult,
-    item_id: beskid_analysis::resolve::ItemId,
-) -> Option<TypeId> {
+pub(crate) fn type_id_for_item(type_result: &TypeResult, item_id: beskid_analysis::resolve::ItemId) -> Option<TypeId> {
     let mut index = 0usize;
     loop {
         let type_id = TypeId(index);
@@ -77,18 +65,9 @@ pub(crate) fn struct_literal_type_id(
     {
         return Some(type_id);
     }
-    let segments: Vec<String> = path
-        .node
-        .segments
-        .iter()
-        .map(|segment| segment.node.name.node.name.clone())
-        .collect();
-    crate::lowering::types::resolve_type_path_item_id_for_codegen(
-        resolution,
-        type_result,
-        &segments,
-    )
-    .and_then(|item_id| type_id_for_item(type_result, item_id))
+    let segments: Vec<String> = path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect();
+    crate::lowering::types::resolve_type_path_item_id_for_codegen(resolution, type_result, &segments)
+        .and_then(|item_id| type_id_for_item(type_result, item_id))
 }
 
 pub(crate) fn resolved_value_at(
@@ -96,43 +75,31 @@ pub(crate) fn resolved_value_at(
     span: SpanInfo,
     source_path: Option<&PathBuf>,
 ) -> Option<ResolvedValue> {
-    resolution
-        .tables
-        .resolved_value_at(span, source_path)
-        .map(|value| match value {
-            ResolvedValue::Item(item_id) => {
-                ResolvedValue::Item(canonical_item_id(resolution, item_id))
-            }
-            other => other,
-        })
+    resolution.tables.resolved_value_at(span, source_path).map(|value| match value {
+        ResolvedValue::Item(item_id) => ResolvedValue::Item(canonical_item_id(resolution, item_id)),
+        other => other,
+    })
 }
 
-pub(crate) fn canonicalize_call_kind(
-    resolution: &Resolution,
-    kind: CallLoweringKind,
-) -> CallLoweringKind {
+pub(crate) fn canonicalize_call_kind(resolution: &Resolution, kind: CallLoweringKind) -> CallLoweringKind {
     match kind {
-        CallLoweringKind::ItemCall { item_id } => CallLoweringKind::ItemCall {
-            item_id: canonical_item_id(resolution, item_id),
-        },
-        CallLoweringKind::MethodDispatch {
-            method_item_id,
-            receiver_source,
-            receiver_type,
-        } => CallLoweringKind::MethodDispatch {
-            method_item_id: canonical_item_id(resolution, method_item_id),
-            receiver_source,
-            receiver_type,
-        },
-        CallLoweringKind::ContractDispatch {
-            contract_item_id,
-            receiver_source,
-            receiver_type,
-        } => CallLoweringKind::ContractDispatch {
-            contract_item_id: canonical_item_id(resolution, contract_item_id),
-            receiver_source,
-            receiver_type,
-        },
+        CallLoweringKind::ItemCall { item_id } => {
+            CallLoweringKind::ItemCall { item_id: canonical_item_id(resolution, item_id) }
+        }
+        CallLoweringKind::MethodDispatch { method_item_id, receiver_source, receiver_type } => {
+            CallLoweringKind::MethodDispatch {
+                method_item_id: canonical_item_id(resolution, method_item_id),
+                receiver_source,
+                receiver_type,
+            }
+        }
+        CallLoweringKind::ContractDispatch { contract_item_id, receiver_source, receiver_type } => {
+            CallLoweringKind::ContractDispatch {
+                contract_item_id: canonical_item_id(resolution, contract_item_id),
+                receiver_source,
+                receiver_type,
+            }
+        }
         other => other,
     }
 }
@@ -161,9 +128,5 @@ pub(crate) fn local_id_for_span(
         })
         .map(|info| info.id)
         .collect();
-    if matches.len() == 1 {
-        Some(matches[0])
-    } else {
-        None
-    }
+    if matches.len() == 1 { Some(matches[0]) } else { None }
 }

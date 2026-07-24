@@ -41,11 +41,8 @@ impl Parsable for EnumDefinition {
             match item.as_rule() {
                 Rule::GenericParameters => generics = parse_identifier_list(item)?,
                 Rule::EnumVariantList => {
-                    let (parsed_variants, parsed_docs) = parse_doc_attached_list(
-                        item,
-                        Rule::EnumVariantWithDocs,
-                        Rule::EnumVariant,
-                    )?;
+                    let (parsed_variants, parsed_docs) =
+                        parse_doc_attached_list(item, Rule::EnumVariantWithDocs, Rule::EnumVariant)?;
                     variants = parsed_variants;
                     variant_docs = parsed_docs;
                 }
@@ -54,15 +51,6 @@ impl Parsable for EnumDefinition {
         }
         debug_assert_eq!(variants.len(), variant_docs.len());
 
-        Ok(Spanned::new(
-            Self {
-                visibility,
-                name,
-                generics,
-                variants,
-                variant_docs,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { visibility, name, generics, variants, variant_docs }, span))
     }
 }

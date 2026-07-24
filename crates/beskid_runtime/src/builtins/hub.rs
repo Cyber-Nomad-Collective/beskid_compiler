@@ -16,11 +16,7 @@ pub extern "C-unwind" fn hub_unregister(hub_id: i64, index: i64) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn hub_wait_receive(
-    hub_id: i64,
-    out_index: *mut i64,
-    out_value: *mut i64,
-) -> i64 {
+pub extern "C-unwind" fn hub_wait_receive(hub_id: i64, out_index: *mut i64, out_value: *mut i64) -> i64 {
     hub::hub_wait_receive(hub_id, out_index, out_value)
 }
 

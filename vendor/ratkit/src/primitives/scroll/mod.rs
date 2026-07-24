@@ -54,11 +54,7 @@
 /// // Selected in middle - center it
 /// assert_eq!(calculate_scroll_offset(10, 5, 20), 8);
 /// ```
-pub fn calculate_scroll_offset(
-    selected_index: usize,
-    visible_count: usize,
-    total_count: usize,
-) -> usize {
+pub fn calculate_scroll_offset(selected_index: usize, visible_count: usize, total_count: usize) -> usize {
     if total_count <= visible_count {
         return 0;
     }

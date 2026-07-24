@@ -11,8 +11,8 @@ use ratatui::widgets::{Block, Borders};
 use ratatui::Frame;
 use ratkit::primitives::termtui::{render_screen, CursorStyle, Parser, VtEvent};
 use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, KeyboardEvent,
-    RedrawSignal, ResizeEvent, RunnerConfig,
+    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, KeyboardEvent, RedrawSignal,
+    ResizeEvent, RunnerConfig,
 };
 
 struct TermMprocsTerminal {
@@ -31,12 +31,7 @@ impl TermMprocsTerminal {
 
     fn spawn_with_command(command: &str, args: &[&str], rows: u16, cols: u16) -> Result<Self> {
         let pty_system = native_pty_system();
-        let pty_size = PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        };
+        let pty_size = PtySize { rows, cols, pixel_width: 0, pixel_height: 0 };
         let pair = pty_system.openpty(pty_size)?;
 
         let mut cmd = CommandBuilder::new(command);
@@ -87,13 +82,7 @@ impl TermMprocsTerminal {
             }
         });
 
-        Ok(Self {
-            parser,
-            writer,
-            master: Arc::new(Mutex::new(master)),
-            redraw_signal,
-            _child: child,
-        })
+        Ok(Self { parser, writer, master: Arc::new(Mutex::new(master)), redraw_signal, _child: child })
     }
 
     fn resize(&mut self, rows: u16, cols: u16) {
@@ -104,12 +93,7 @@ impl TermMprocsTerminal {
             parser.set_size(rows, cols);
         }
         if let Ok(mut master) = self.master.lock() {
-            let _ = master.resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            });
+            let _ = master.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
         }
         self.redraw_signal.request_redraw();
     }
@@ -205,15 +189,9 @@ impl CoordinatorApp for TermMprocsDemo {
         } else {
             " termtui demo (wrapper focused) "
         };
-        let border_style = if self.terminal_focused {
-            Style::default().fg(Color::Cyan)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-        let block = Block::default()
-            .title(title)
-            .borders(Borders::ALL)
-            .border_style(border_style);
+        let border_style =
+            if self.terminal_focused { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::DarkGray) };
+        let block = Block::default().title(title).borders(Borders::ALL).border_style(border_style);
         let inner = block.inner(area);
         frame.render_widget(block, area);
 

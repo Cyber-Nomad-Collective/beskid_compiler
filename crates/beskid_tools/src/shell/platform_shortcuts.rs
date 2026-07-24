@@ -27,11 +27,7 @@ pub fn menu_label() -> &'static str {
 
 /// Full menu hint (macOS keeps Fn+F10 as a secondary because F-keys are often media keys).
 pub fn menu_hint() -> String {
-    if is_macos() {
-        "Ctrl+M / Fn+F10".into()
-    } else {
-        "F10".into()
-    }
+    if is_macos() { "Ctrl+M / Fn+F10".into() } else { "F10".into() }
 }
 
 /// Open the command palette (`Ctrl+P` / `:`).
@@ -39,8 +35,7 @@ pub fn opens_palette(key: &KeyEvent) -> bool {
     if key.code == KeyCode::Char(':') {
         return true;
     }
-    matches!(key.code, KeyCode::Char('p') | KeyCode::Char('P'))
-        && key.modifiers.contains(KeyModifiers::CONTROL)
+    matches!(key.code, KeyCode::Char('p') | KeyCode::Char('P')) && key.modifiers.contains(KeyModifiers::CONTROL)
 }
 
 /// Toggle the pinned top menu (`F10`; on macOS also `Ctrl+M`).
@@ -48,8 +43,7 @@ pub fn toggles_menu(key: &KeyEvent) -> bool {
     if key.code == KeyCode::F(10) {
         return true;
     }
-    matches!(key.code, KeyCode::Char('m') | KeyCode::Char('M'))
-        && key.modifiers.contains(KeyModifiers::CONTROL)
+    matches!(key.code, KeyCode::Char('m') | KeyCode::Char('M')) && key.modifiers.contains(KeyModifiers::CONTROL)
 }
 
 #[cfg(test)]
@@ -58,12 +52,7 @@ mod tests {
     use crossterm::event::KeyEventKind;
 
     fn key(modifiers: KeyModifiers, code: KeyCode) -> KeyEvent {
-        KeyEvent {
-            code,
-            modifiers,
-            kind: KeyEventKind::Press,
-            state: crossterm::event::KeyEventState::NONE,
-        }
+        KeyEvent { code, modifiers, kind: KeyEventKind::Press, state: crossterm::event::KeyEventState::NONE }
     }
 
     #[test]
@@ -73,32 +62,21 @@ mod tests {
 
     #[test]
     fn control_p_opens_palette() {
-        assert!(opens_palette(&key(
-            KeyModifiers::CONTROL,
-            KeyCode::Char('p'),
-        )));
+        assert!(opens_palette(&key(KeyModifiers::CONTROL, KeyCode::Char('p'),)));
     }
 
     #[test]
     fn super_p_does_not_open_palette() {
-        assert!(!opens_palette(&key(
-            KeyModifiers::SUPER,
-            KeyCode::Char('p'),
-        )));
+        assert!(!opens_palette(&key(KeyModifiers::SUPER, KeyCode::Char('p'),)));
     }
 
     #[test]
     fn control_m_toggles_menu() {
-        assert!(toggles_menu(&key(
-            KeyModifiers::CONTROL,
-            KeyCode::Char('m'),
-        )));
+        assert!(toggles_menu(&key(KeyModifiers::CONTROL, KeyCode::Char('m'),)));
     }
 
     #[test]
     fn super_m_does_not_toggle_menu() {
-        assert!(!toggles_menu(
-            &key(KeyModifiers::SUPER, KeyCode::Char('m'),)
-        ));
+        assert!(!toggles_menu(&key(KeyModifiers::SUPER, KeyCode::Char('m'),)));
     }
 }

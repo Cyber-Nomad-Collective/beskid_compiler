@@ -1,6 +1,6 @@
 use beskid_pckg_community::{
-    ApiKeyScope, Board, BoardId, CommunityError, CommunityService, NotificationPreference,
-    NotificationScope, Permission, Principal, Profile, ResourceId, Role, Subject, VoteValue,
+    ApiKeyScope, Board, BoardId, CommunityError, CommunityService, NotificationPreference, NotificationScope,
+    Permission, Principal, Profile, ResourceId, Role, Subject, VoteValue,
 };
 
 fn subject(value: &str) -> Subject {
@@ -22,17 +22,9 @@ fn publisher_verification_requires_a_super_admin() {
     let publisher = subject("hub:publisher");
     community.upsert_profile(Profile::new(publisher.clone(), "Beskid Labs"));
 
-    assert_eq!(
-        community.verify_publisher(&user("hub:member"), &publisher),
-        Err(CommunityError::Forbidden)
-    );
+    assert_eq!(community.verify_publisher(&user("hub:member"), &publisher), Err(CommunityError::Forbidden));
 
-    community
-        .verify_publisher(
-            &Principal::auth_hub(subject("hub:admin"), [Role::SuperAdmin]),
-            &publisher,
-        )
-        .unwrap();
+    community.verify_publisher(&Principal::auth_hub(subject("hub:admin"), [Role::SuperAdmin]), &publisher).unwrap();
     assert!(community.profile(&publisher).unwrap().is_publisher_verified);
 }
 
@@ -50,9 +42,7 @@ fn api_keys_enforce_read_and_publish_scopes() {
 fn publisher_self_follow_is_visible_without_creating_a_follow() {
     let mut community = CommunityService::new();
     let publisher = subject("hub:publisher");
-    let result = community
-        .toggle_publisher_follow(&user("hub:publisher"), &publisher)
-        .unwrap();
+    let result = community.toggle_publisher_follow(&user("hub:publisher"), &publisher).unwrap();
 
     assert!(result.is_following);
     assert!(!result.changed);
@@ -66,26 +56,12 @@ fn members_can_publish_to_unlocked_boards_and_followers_are_notified() {
     community.add_board(board);
     let author = user("hub:author");
     let follower = user("hub:follower");
-    community
-        .toggle_publisher_follow(&follower, author.subject().unwrap())
-        .unwrap();
+    community.toggle_publisher_follow(&follower, author.subject().unwrap()).unwrap();
 
-    let post = community
-        .create_post(
-            &author,
-            &BoardId::new("announcements").unwrap(),
-            "Hello",
-            "World",
-        )
-        .unwrap();
+    let post = community.create_post(&author, &BoardId::new("announcements").unwrap(), "Hello", "World").unwrap();
 
     assert_eq!(post.author, subject("hub:author"));
-    assert_eq!(
-        community
-            .notifications_for(follower.subject().unwrap())
-            .len(),
-        1
-    );
+    assert_eq!(community.notifications_for(follower.subject().unwrap()).len(), 1);
 }
 
 #[test]
@@ -97,21 +73,10 @@ fn locked_board_requires_moderator_or_resource_permission_to_publish() {
     community.add_board(board);
     let member = user("hub:member");
 
-    assert_eq!(
-        community.create_post(&member, &board_id, "Nope", "Nope"),
-        Err(CommunityError::BoardLocked)
-    );
+    assert_eq!(community.create_post(&member, &board_id, "Nope", "Nope"), Err(CommunityError::BoardLocked));
 
-    community.grant_permission(
-        subject("hub:member"),
-        ResourceId::board(board_id.clone()),
-        Permission::Moderate,
-    );
-    assert!(
-        community
-            .create_post(&member, &board_id, "Allowed", "With moderation permission")
-            .is_ok()
-    );
+    community.grant_permission(subject("hub:member"), ResourceId::board(board_id.clone()), Permission::Moderate);
+    assert!(community.create_post(&member, &board_id, "Allowed", "With moderation permission").is_ok());
 }
 
 #[test]
@@ -121,28 +86,11 @@ fn author_cannot_vote_on_own_post_but_other_member_can_change_vote() {
     community.add_board(Board::new(board_id.clone(), "General"));
     let author = user("hub:author");
     let voter = user("hub:voter");
-    let post = community
-        .create_post(&author, &board_id, "Title", "Body")
-        .unwrap();
+    let post = community.create_post(&author, &board_id, "Title", "Body").unwrap();
 
-    assert_eq!(
-        community.vote_on_post(&author, post.id, VoteValue::Up),
-        Err(CommunityError::SelfVote)
-    );
-    assert_eq!(
-        community
-            .vote_on_post(&voter, post.id, VoteValue::Up)
-            .unwrap()
-            .score,
-        1
-    );
-    assert_eq!(
-        community
-            .vote_on_post(&voter, post.id, VoteValue::Down)
-            .unwrap()
-            .score,
-        -1
-    );
+    assert_eq!(community.vote_on_post(&author, post.id, VoteValue::Up), Err(CommunityError::SelfVote));
+    assert_eq!(community.vote_on_post(&voter, post.id, VoteValue::Up).unwrap().score, 1);
+    assert_eq!(community.vote_on_post(&voter, post.id, VoteValue::Down).unwrap().score, -1);
 }
 
 #[test]
@@ -152,23 +100,12 @@ fn reply_notifies_post_author_but_never_notifies_the_actor() {
     community.add_board(Board::new(board_id.clone(), "General"));
     let author = user("hub:author");
     let commenter = user("hub:commenter");
-    let post = community
-        .create_post(&author, &board_id, "Title", "Body")
-        .unwrap();
+    let post = community.create_post(&author, &board_id, "Title", "Body").unwrap();
 
-    community
-        .create_comment(&commenter, post.id, "Question", None)
-        .unwrap();
+    community.create_comment(&commenter, post.id, "Question", None).unwrap();
 
-    assert_eq!(
-        community.notifications_for(author.subject().unwrap()).len(),
-        1
-    );
-    assert!(
-        community
-            .notifications_for(commenter.subject().unwrap())
-            .is_empty()
-    );
+    assert_eq!(community.notifications_for(author.subject().unwrap()).len(), 1);
+    assert!(community.notifications_for(commenter.subject().unwrap()).is_empty());
 }
 
 #[test]
@@ -178,10 +115,7 @@ fn notification_preferences_filter_delivery_by_scope() {
     community.set_notification_preference(member.clone(), NotificationPreference::mentions_only());
 
     assert!(community.should_notify(&member, beskid_pckg_community::NotificationScope::Mention));
-    assert!(!community.should_notify(
-        &member,
-        beskid_pckg_community::NotificationScope::FollowedPublisherPost
-    ));
+    assert!(!community.should_notify(&member, beskid_pckg_community::NotificationScope::FollowedPublisherPost));
 }
 
 #[test]
@@ -190,12 +124,8 @@ fn community_getters_return_boards_posts_and_post_comments_in_stable_id_order() 
     let board_id = BoardId::new("general").unwrap();
     community.add_board(Board::new(board_id.clone(), "General"));
     let author = user("github:1");
-    let post = community
-        .create_post(&author, &board_id, "First", "Body")
-        .unwrap();
-    let comment = community
-        .create_comment(&user("github:2"), post.id, "Reply", None)
-        .unwrap();
+    let post = community.create_post(&author, &board_id, "First", "Body").unwrap();
+    let comment = community.create_comment(&user("github:2"), post.id, "Reply", None).unwrap();
 
     assert_eq!(community.boards().len(), 1);
     assert_eq!(community.board(&board_id).unwrap().title, "General");
@@ -212,31 +142,17 @@ fn publisher_and_package_follow_statuses_never_create_self_follows() {
     let publisher = subject("github:2");
 
     assert!(!community.is_following_publisher(actor.subject().unwrap(), &publisher));
-    community
-        .toggle_publisher_follow(&actor, &publisher)
-        .unwrap();
+    community.toggle_publisher_follow(&actor, &publisher).unwrap();
     assert!(community.is_following_publisher(actor.subject().unwrap(), &publisher));
     assert_eq!(community.publisher_follow_count(&publisher), 1);
 
-    assert!(
-        community
-            .toggle_package_follow(&actor, "beskid.tools")
-            .unwrap()
-            .is_following
-    );
+    assert!(community.toggle_package_follow(&actor, "beskid.tools").unwrap().is_following);
     assert!(community.is_following_package(actor.subject().unwrap(), "beskid.tools"));
     assert_eq!(community.package_follow_count("beskid.tools"), 1);
-    assert!(
-        community
-            .toggle_package_follow(&actor, "beskid.tools")
-            .unwrap()
-            .changed
-    );
+    assert!(community.toggle_package_follow(&actor, "beskid.tools").unwrap().changed);
     assert!(!community.is_following_package(actor.subject().unwrap(), "beskid.tools"));
 
-    let self_follow = community
-        .toggle_publisher_follow(&actor, actor.subject().unwrap())
-        .unwrap();
+    let self_follow = community.toggle_publisher_follow(&actor, actor.subject().unwrap()).unwrap();
     assert!(self_follow.is_following);
     assert!(!self_follow.changed);
 }
@@ -248,21 +164,11 @@ fn notification_preferences_default_and_notifications_can_only_be_read_by_recipi
     community.add_board(Board::new(board_id.clone(), "General"));
     let author = user("github:1");
     let commenter = user("github:2");
-    let post = community
-        .create_post(&author, &board_id, "First", "Body")
-        .unwrap();
+    let post = community.create_post(&author, &board_id, "First", "Body").unwrap();
 
-    assert_eq!(
-        community.notification_preference(author.subject().unwrap()),
-        NotificationPreference::all()
-    );
-    community.set_notification_preference(
-        author.subject().unwrap().clone(),
-        NotificationPreference::all(),
-    );
-    let comment = community
-        .create_comment(&commenter, post.id, "Reply", None)
-        .unwrap();
+    assert_eq!(community.notification_preference(author.subject().unwrap()), NotificationPreference::all());
+    community.set_notification_preference(author.subject().unwrap().clone(), NotificationPreference::all());
+    let comment = community.create_comment(&commenter, post.id, "Reply", None).unwrap();
     let notification = community.notifications_for(author.subject().unwrap())[0];
     assert_eq!(notification.scope, NotificationScope::Reply);
     assert!(!notification.is_read);
@@ -273,9 +179,7 @@ fn notification_preferences_default_and_notifications_can_only_be_read_by_recipi
         community.mark_notification_read(&commenter, notification_id),
         Err(CommunityError::NotificationNotFound)
     );
-    community
-        .mark_notification_read(&author, notification_id)
-        .unwrap();
+    community.mark_notification_read(&author, notification_id).unwrap();
     assert!(community.notifications_for(author.subject().unwrap())[0].is_read);
 }
 
@@ -286,15 +190,8 @@ fn bulk_read_and_delivery_check_are_scoped_to_the_auth_hub_recipient() {
     let other = user("github:2");
     let test_id = community.create_test_notification(&owner).unwrap();
 
-    assert_eq!(
-        community.notifications_for(owner.subject().unwrap()).len(),
-        1
-    );
-    assert!(
-        community
-            .notifications_for(other.subject().unwrap())
-            .is_empty()
-    );
+    assert_eq!(community.notifications_for(owner.subject().unwrap()).len(), 1);
+    assert!(community.notifications_for(other.subject().unwrap()).is_empty());
     assert_eq!(community.mark_all_notifications_read(&other).unwrap(), 0);
     assert!(!community.notifications_for(owner.subject().unwrap())[0].is_read);
 

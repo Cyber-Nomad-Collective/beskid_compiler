@@ -42,10 +42,7 @@ pub enum CrossError {
     HttpError(#[from] reqwest::Error),
 
     #[error("IO error: {message}\nDetails: {source}")]
-    IoError {
-        message: String,
-        source: std::io::Error,
-    },
+    IoError { message: String, source: std::io::Error },
 
     #[error("Program not found: '{program}'\nPlease ensure it is installed and available in PATH")]
     ProgramNotFound { program: String },
@@ -111,17 +108,11 @@ pub enum CrossError {
 impl From<std::io::Error> for CrossError {
     fn from(err: std::io::Error) -> Self {
         match err.kind() {
-            std::io::ErrorKind::NotFound => Self::ProgramNotFound {
-                program: "unknown".to_string(),
-            },
-            std::io::ErrorKind::PermissionDenied => Self::IoError {
-                message: "Permission denied".to_string(),
-                source: err,
-            },
-            _ => Self::IoError {
-                message: err.kind().to_string(),
-                source: err,
-            },
+            std::io::ErrorKind::NotFound => Self::ProgramNotFound { program: "unknown".to_string() },
+            std::io::ErrorKind::PermissionDenied => {
+                Self::IoError { message: "Permission denied".to_string(), source: err }
+            }
+            _ => Self::IoError { message: err.kind().to_string(), source: err },
         }
     }
 }
@@ -136,33 +127,21 @@ pub async fn run_command(cmd: &mut Command, program: &str) -> Result<std::proces
     }
 
     cmd.status().await.map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => CrossError::ProgramNotFound {
-            program: program.to_string(),
-        },
-        std::io::ErrorKind::PermissionDenied => CrossError::CommandExecutionFailed {
-            command: program.to_string(),
-            reason: "Permission denied".to_string(),
-        },
-        _ => CrossError::CommandExecutionFailed {
-            command: program.to_string(),
-            reason: e.to_string(),
-        },
+        std::io::ErrorKind::NotFound => CrossError::ProgramNotFound { program: program.to_string() },
+        std::io::ErrorKind::PermissionDenied => {
+            CrossError::CommandExecutionFailed { command: program.to_string(), reason: "Permission denied".to_string() }
+        }
+        _ => CrossError::CommandExecutionFailed { command: program.to_string(), reason: e.to_string() },
     })
 }
 
 /// Execute a command and return its output, with improved error messages
 pub async fn run_command_output(cmd: &mut Command, program: &str) -> Result<std::process::Output> {
     cmd.output().await.map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => CrossError::ProgramNotFound {
-            program: program.to_string(),
-        },
-        std::io::ErrorKind::PermissionDenied => CrossError::CommandExecutionFailed {
-            command: program.to_string(),
-            reason: "Permission denied".to_string(),
-        },
-        _ => CrossError::CommandExecutionFailed {
-            command: program.to_string(),
-            reason: e.to_string(),
-        },
+        std::io::ErrorKind::NotFound => CrossError::ProgramNotFound { program: program.to_string() },
+        std::io::ErrorKind::PermissionDenied => {
+            CrossError::CommandExecutionFailed { command: program.to_string(), reason: "Permission denied".to_string() }
+        }
+        _ => CrossError::CommandExecutionFailed { command: program.to_string(), reason: e.to_string() },
     })
 }

@@ -11,19 +11,13 @@ impl ServiceContainer {
     pub fn from_registrations(registrations: &[Registration]) -> Self {
         let mut by_scope: HashMap<ScopeId, Vec<Registration>> = HashMap::new();
         for registration in registrations {
-            by_scope
-                .entry(registration.scope_id)
-                .or_default()
-                .push(registration.clone());
+            by_scope.entry(registration.scope_id).or_default().push(registration.clone());
         }
         Self { by_scope }
     }
 
     pub fn registrations_for_scope(&self, scope_id: ScopeId) -> &[Registration] {
-        self.by_scope
-            .get(&scope_id)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
+        self.by_scope.get(&scope_id).map(Vec::as_slice).unwrap_or_default()
     }
 
     pub fn find_scope_matches(&self, scope_id: ScopeId, requested: &str) -> Vec<Registration> {

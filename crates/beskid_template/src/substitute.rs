@@ -18,9 +18,7 @@ pub fn build_substitution_map(
     }
 
     for (form_name, form) in &manifest.forms {
-        if let Some(input_id) = form_name
-            .strip_suffix("::input")
-            .or(Some(form_name.as_str()))
+        if let Some(input_id) = form_name.strip_suffix("::input").or(Some(form_name.as_str()))
             && let Some(input) = raw_values.get(input_id)
         {
             let out = apply_form(&form.form_id, input)?;
@@ -48,10 +46,7 @@ pub fn ensure_no_placeholders_remain(text: &str) -> TemplateResult<()> {
     static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r"\{\{[^}]+\}\}").expect("placeholder regex"));
     if let Some(cap) = re.find(text) {
-        return Err(TemplateError::InvalidManifest(format!(
-            "unresolved placeholder `{}`",
-            cap.as_str()
-        )));
+        return Err(TemplateError::InvalidManifest(format!("unresolved placeholder `{}`", cap.as_str())));
     }
     Ok(())
 }

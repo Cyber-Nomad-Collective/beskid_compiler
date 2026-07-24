@@ -65,21 +65,13 @@ pub fn builtin_for_path(path: &[String]) -> Option<(usize, &'static BuiltinSpec)
 }
 
 /// Look up a builtin spec by its resolved [`ItemId`] and builtin index mapping.
-pub fn builtin_for_item(
-    builtin_items: &HashMap<ItemId, usize>,
-    item_id: ItemId,
-) -> Option<&'static BuiltinSpec> {
-    builtin_items
-        .get(&item_id)
-        .and_then(|index| BUILTINS.get(*index))
+pub fn builtin_for_item(builtin_items: &HashMap<ItemId, usize>, item_id: ItemId) -> Option<&'static BuiltinSpec> {
+    builtin_items.get(&item_id).and_then(|index| BUILTINS.get(*index))
 }
 
 fn path_matches(expected: &[&str], actual: &[String]) -> bool {
     if expected.len() != actual.len() {
         return false;
     }
-    expected
-        .iter()
-        .zip(actual.iter())
-        .all(|(left, right)| *left == right)
+    expected.iter().zip(actual.iter()).all(|(left, right)| *left == right)
 }

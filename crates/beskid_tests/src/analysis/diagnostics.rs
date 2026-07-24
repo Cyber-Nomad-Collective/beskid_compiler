@@ -3,20 +3,13 @@ use beskid_analysis::analysis::SemanticIssueKind;
 use beskid_analysis::syntax::SpanInfo;
 
 fn span() -> SpanInfo {
-    SpanInfo {
-        start: 1,
-        end: 2,
-        line_col_start: (3, 4),
-        line_col_end: (3, 5),
-    }
+    SpanInfo { start: 1, end: 2, line_col_start: (3, 4), line_col_end: (3, 5) }
 }
 
 #[test]
 fn resolve_private_item_issue_contract_is_stable() {
-    let issue = SemanticIssueKind::ResolvePrivateItemInModule {
-        module_path: "foo.bar".to_string(),
-        name: "baz".to_string(),
-    };
+    let issue =
+        SemanticIssueKind::ResolvePrivateItemInModule { module_path: "foo.bar".to_string(), name: "baz".to_string() };
     assert_eq!(issue.code(), "E1107");
     assert_eq!(issue.severity(), Severity::Error);
     assert!(issue.message().contains("private item `baz`"));
@@ -29,11 +22,7 @@ fn invalid_event_subscription_target_issue_contract_is_stable() {
     assert_eq!(issue.code(), "E1221");
     assert_eq!(issue.severity(), Severity::Error);
     assert_eq!(issue.label(), "invalid event subscription target");
-    assert!(
-        issue
-            .message()
-            .contains("event subscription target must be an event field")
-    );
+    assert!(issue.message().contains("event subscription target must be an event field"));
     assert!(issue.help().is_some());
 }
 
@@ -43,19 +32,13 @@ fn invalid_try_target_issue_contract_is_stable() {
     assert_eq!(issue.code(), "E1222");
     assert_eq!(issue.severity(), Severity::Error);
     assert_eq!(issue.label(), "invalid try target");
-    assert!(
-        issue
-            .message()
-            .contains("try operator requires a Result value with an Ok payload")
-    );
+    assert!(issue.message().contains("try operator requires a Result value with an Ok payload"));
     assert!(issue.help().is_some());
 }
 
 #[test]
 fn invalid_conformance_target_issue_contract_is_stable() {
-    let issue = SemanticIssueKind::ResolveInvalidConformanceTarget {
-        name: "NotContract".to_string(),
-    };
+    let issue = SemanticIssueKind::ResolveInvalidConformanceTarget { name: "NotContract".to_string() };
     assert_eq!(issue.code(), "E1607");
     assert_eq!(issue.severity(), Severity::Error);
     assert_eq!(issue.label(), "invalid conformance target");
@@ -72,15 +55,8 @@ fn unknown_attribute_declaration_target_issue_contract_is_stable() {
     assert_eq!(issue.code(), "E1509");
     assert_eq!(issue.severity(), Severity::Error);
     assert_eq!(issue.label(), "unknown attribute declaration target");
-    assert!(
-        issue
-            .message()
-            .contains("unknown attribute declaration target kind `BadTarget`")
-    );
-    assert_eq!(
-        issue.help().as_deref(),
-        Some("allowed targets: TypeDeclaration")
-    );
+    assert!(issue.message().contains("unknown attribute declaration target kind `BadTarget`"));
+    assert_eq!(issue.help().as_deref(), Some("allowed targets: TypeDeclaration"));
 }
 
 #[test]
@@ -94,15 +70,8 @@ fn attribute_target_mismatch_issue_contract_is_stable() {
     assert_eq!(issue.code(), "E1510");
     assert_eq!(issue.severity(), Severity::Error);
     assert_eq!(issue.label(), "attribute target not allowed");
-    assert!(
-        issue
-            .message()
-            .contains("attribute `Extern` cannot be applied to `ModuleDeclaration`")
-    );
-    assert_eq!(
-        issue.help().as_deref(),
-        Some("allowed targets: ContractDeclaration")
-    );
+    assert!(issue.message().contains("attribute `Extern` cannot be applied to `ModuleDeclaration`"));
+    assert_eq!(issue.help().as_deref(), Some("allowed targets: ContractDeclaration"));
 }
 
 #[test]
@@ -114,69 +83,41 @@ fn duplicate_attribute_target_issue_contract_is_stable() {
 
     assert_eq!(issue.code(), "E1508");
     assert_eq!(issue.severity(), Severity::Error);
-    assert!(
-        issue
-            .message()
-            .contains("duplicate target `TypeDeclaration`")
-    );
-    assert_eq!(
-        issue.help().as_deref(),
-        Some("target already listed at line 3, column 4")
-    );
+    assert!(issue.message().contains("duplicate target `TypeDeclaration`"));
+    assert_eq!(issue.help().as_deref(), Some("target already listed at line 3, column 4"));
 }
 
 #[test]
 fn duplicate_definition_uses_previous_span_help() {
-    let issue = SemanticIssueKind::DuplicateDefinitionName {
-        name: "User".to_string(),
-        previous: span(),
-    };
+    let issue = SemanticIssueKind::DuplicateDefinitionName { name: "User".to_string(), previous: span() };
     assert_eq!(issue.code(), "E1001");
     assert_eq!(issue.severity(), Severity::Error);
     assert!(issue.message().contains("duplicate definition name `User`"));
-    assert_eq!(
-        issue.help().as_deref(),
-        Some("previously defined at line 3, column 4")
-    );
+    assert_eq!(issue.help().as_deref(), Some("previously defined at line 3, column 4"));
 }
 
 #[test]
 fn resolve_unknown_module_path_issue_uses_distinct_code() {
-    let issue = SemanticIssueKind::ResolveUnknownModulePath {
-        path: "Core::Results".to_string(),
-    };
+    let issue = SemanticIssueKind::ResolveUnknownModulePath { path: "Core::Results".to_string() };
     assert_eq!(issue.code(), "E1108");
     assert_eq!(issue.severity(), Severity::Error);
     assert_eq!(issue.label(), "unknown module path");
-    assert!(
-        issue
-            .message()
-            .contains("unknown module path `Core::Results`")
-    );
+    assert!(issue.message().contains("unknown module path `Core::Results`"));
 }
 
 #[test]
 fn warning_issue_contract_is_stable() {
-    let issue = SemanticIssueKind::TypeImplicitNumericCast {
-        from: "i64".to_string(),
-        to: "i32".to_string(),
-    };
+    let issue = SemanticIssueKind::TypeImplicitNumericCast { from: "i64".to_string(), to: "i32".to_string() };
     assert_eq!(issue.code(), "W1203");
     assert_eq!(issue.severity(), Severity::Warning);
     assert_eq!(issue.label(), "implicit numeric cast");
-    assert!(
-        issue
-            .message()
-            .contains("implicit numeric cast from i64 to i32")
-    );
+    assert!(issue.message().contains("implicit numeric cast from i64 to i32"));
     assert!(issue.help().is_some());
 }
 
 #[test]
 fn file_scoped_module_not_first_issue_contract_is_stable() {
-    let issue = SemanticIssueKind::FileScopedModuleNotFirstItem {
-        module_path: "app.core".to_string(),
-    };
+    let issue = SemanticIssueKind::FileScopedModuleNotFirstItem { module_path: "app.core".to_string() };
     assert_eq!(issue.code(), "E1505");
     assert_eq!(issue.severity(), Severity::Error);
     assert_eq!(issue.label(), "file-scoped module must be first item");
@@ -186,17 +127,11 @@ fn file_scoped_module_not_first_issue_contract_is_stable() {
 
 #[test]
 fn duplicate_file_scoped_module_issue_contract_is_stable() {
-    let issue = SemanticIssueKind::DuplicateFileScopedModule {
-        module_path: "app.other".to_string(),
-    };
+    let issue = SemanticIssueKind::DuplicateFileScopedModule { module_path: "app.other".to_string() };
     assert_eq!(issue.code(), "E1506");
     assert_eq!(issue.severity(), Severity::Error);
     assert_eq!(issue.label(), "duplicate file-scoped module");
-    assert!(
-        issue
-            .message()
-            .contains("duplicate file-scoped module declaration")
-    );
+    assert!(issue.message().contains("duplicate file-scoped module declaration"));
     assert!(issue.help().is_some());
 }
 
@@ -206,11 +141,7 @@ fn forbidden_module_declaration_in_file_scoped_issue_contract_is_stable() {
     assert_eq!(issue.code(), "E1507");
     assert_eq!(issue.severity(), Severity::Error);
     assert_eq!(issue.label(), "module declaration not allowed");
-    assert!(
-        issue
-            .message()
-            .contains("not allowed in a file-scoped module file")
-    );
+    assert!(issue.message().contains("not allowed in a file-scoped module file"));
     assert!(issue.help().is_some());
 }
 
@@ -219,71 +150,20 @@ fn composition_diagnostic_codes_are_stable() {
     let issues = [
         (SemanticIssueKind::CompositionMissingLaunchHost, "E1701"),
         (SemanticIssueKind::CompositionMultipleLaunchHosts, "E1702"),
-        (
-            SemanticIssueKind::CompositionDependencyCycle {
-                from_id: 1,
-                to_id: 2,
-            },
-            "E1703",
-        ),
-        (
-            SemanticIssueKind::CompositionUnresolvedInject {
-                requested_type: "StorageContract".to_string(),
-            },
-            "E1704",
-        ),
-        (
-            SemanticIssueKind::CompositionAmbiguousInject {
-                requested_type: "StorageContract".to_string(),
-            },
-            "E1705",
-        ),
+        (SemanticIssueKind::CompositionDependencyCycle { from_id: 1, to_id: 2 }, "E1703"),
+        (SemanticIssueKind::CompositionUnresolvedInject { requested_type: "StorageContract".to_string() }, "E1704"),
+        (SemanticIssueKind::CompositionAmbiguousInject { requested_type: "StorageContract".to_string() }, "E1705"),
         (SemanticIssueKind::CompositionScopedOutsideWith, "E1706"),
-        (
-            SemanticIssueKind::CompositionChildScopeWithoutParent {
-                scope_name: "HttpScope".to_string(),
-            },
-            "E1707",
-        ),
-        (
-            SemanticIssueKind::CompositionWithArgsMismatch {
-                scope_name: "HttpScope".to_string(),
-            },
-            "E1708",
-        ),
-        (
-            SemanticIssueKind::CompositionLaunchTargetNotHost {
-                target_name: "NotHost".to_string(),
-            },
-            "E1709",
-        ),
+        (SemanticIssueKind::CompositionChildScopeWithoutParent { scope_name: "HttpScope".to_string() }, "E1707"),
+        (SemanticIssueKind::CompositionWithArgsMismatch { scope_name: "HttpScope".to_string() }, "E1708"),
+        (SemanticIssueKind::CompositionLaunchTargetNotHost { target_name: "NotHost".to_string() }, "E1709"),
         (SemanticIssueKind::CompositionHostInModProject, "E1710"),
         (SemanticIssueKind::CompositionLaunchInLibProject, "E1711"),
         (SemanticIssueKind::CompositionInjectOnConstructor, "E1712"),
-        (
-            SemanticIssueKind::CompositionOverrideLifetimeMismatch {
-                binding: "StorageContract".to_string(),
-            },
-            "E1713",
-        ),
-        (
-            SemanticIssueKind::CompositionInvalidScopeQualifier {
-                qualifier: "self".to_string(),
-            },
-            "E1714",
-        ),
-        (
-            SemanticIssueKind::CompositionHostInheritanceCycle {
-                host_name: "AppHost".to_string(),
-            },
-            "E1715",
-        ),
-        (
-            SemanticIssueKind::CompositionDuplicateScopeName {
-                scope_name: "HttpScope".to_string(),
-            },
-            "E1716",
-        ),
+        (SemanticIssueKind::CompositionOverrideLifetimeMismatch { binding: "StorageContract".to_string() }, "E1713"),
+        (SemanticIssueKind::CompositionInvalidScopeQualifier { qualifier: "self".to_string() }, "E1714"),
+        (SemanticIssueKind::CompositionHostInheritanceCycle { host_name: "AppHost".to_string() }, "E1715"),
+        (SemanticIssueKind::CompositionDuplicateScopeName { scope_name: "HttpScope".to_string() }, "E1716"),
     ];
 
     for (issue, expected_code) in issues {

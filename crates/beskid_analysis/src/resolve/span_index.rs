@@ -24,17 +24,10 @@ pub struct SpanIndex {
 }
 
 impl SpanIndex {
-    pub fn build_from_maps(
-        values: &[(SpanInfo, ResolvedValue)],
-        types: &[(SpanInfo, ResolvedType)],
-    ) -> Self {
+    pub fn build_from_maps(values: &[(SpanInfo, ResolvedValue)], types: &[(SpanInfo, ResolvedType)]) -> Self {
         let mut entries = Vec::with_capacity(values.len() + types.len());
         for (span, value) in values {
-            entries.push(SpanEntry {
-                start: span.start,
-                end: span.end,
-                target: SpanTarget::Value(*value),
-            });
+            entries.push(SpanEntry { start: span.start, end: span.end, target: SpanTarget::Value(*value) });
         }
         for (span, resolved_type) in types {
             entries.push(SpanEntry {
@@ -123,46 +116,21 @@ mod tests {
 
     #[test]
     fn exact_span_lookup_wins_over_outer() {
-        let outer = SpanInfo {
-            start: 0,
-            end: 20,
-            ..Default::default()
-        };
-        let inner = SpanInfo {
-            start: 5,
-            end: 10,
-            ..Default::default()
-        };
+        let outer = SpanInfo { start: 0, end: 20, ..Default::default() };
+        let inner = SpanInfo { start: 5, end: 10, ..Default::default() };
         let index = SpanIndex::build_from_maps(
-            &[
-                (outer, ResolvedValue::Item(ItemId(1))),
-                (inner, ResolvedValue::Local(LocalId(2))),
-            ],
+            &[(outer, ResolvedValue::Item(ItemId(1))), (inner, ResolvedValue::Local(LocalId(2)))],
             &[],
         );
-        assert_eq!(
-            index.lookup_value(inner),
-            Some(ResolvedValue::Local(LocalId(2)))
-        );
+        assert_eq!(index.lookup_value(inner), Some(ResolvedValue::Local(LocalId(2))));
     }
 
     #[test]
     fn same_start_prefers_exact_end() {
-        let a = SpanInfo {
-            start: 10,
-            end: 15,
-            ..Default::default()
-        };
-        let b = SpanInfo {
-            start: 10,
-            end: 20,
-            ..Default::default()
-        };
+        let a = SpanInfo { start: 10, end: 15, ..Default::default() };
+        let b = SpanInfo { start: 10, end: 20, ..Default::default() };
         let index = SpanIndex::build_from_maps(
-            &[
-                (a, ResolvedValue::Item(ItemId(1))),
-                (b, ResolvedValue::Item(ItemId(2))),
-            ],
+            &[(a, ResolvedValue::Item(ItemId(1))), (b, ResolvedValue::Item(ItemId(2)))],
             &[],
         );
         assert_eq!(index.lookup_value(a), Some(ResolvedValue::Item(ItemId(1))));

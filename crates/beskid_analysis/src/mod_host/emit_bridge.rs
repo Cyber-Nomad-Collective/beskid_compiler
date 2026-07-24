@@ -26,10 +26,7 @@ pub fn materialize_program_item(source: &str) -> Result<Spanned<ProgramItem>> {
 pub fn materialize_program_items(
     sources: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> Result<Vec<Spanned<ProgramItem>>> {
-    sources
-        .into_iter()
-        .map(|source| materialize_program_item(source.as_ref()))
-        .collect()
+    sources.into_iter().map(|source| materialize_program_item(source.as_ref())).collect()
 }
 
 pub fn materialize_function_definition(source: &str) -> Result<Spanned<FunctionDefinition>> {
@@ -59,22 +56,19 @@ mod tests {
 
     #[test]
     fn materializes_function_definition_from_source() {
-        let item = materialize_function_definition("pub fn generated() { return; }")
-            .expect("function materialize");
+        let item = materialize_function_definition("pub fn generated() { return; }").expect("function materialize");
         assert_eq!(item.node.name.node.name, "generated");
     }
 
     #[test]
     fn materializes_type_definition_from_source() {
-        let item =
-            materialize_type_definition("type Account { i64 balance }").expect("type materialize");
+        let item = materialize_type_definition("type Account { i64 balance }").expect("type materialize");
         assert_eq!(item.node.name.node.name, "Account");
     }
 
     #[test]
     fn materializes_contract_definition_from_source() {
-        let item = materialize_contract_definition("contract IStorage { unit Save(); }")
-            .expect("contract materialize");
+        let item = materialize_contract_definition("contract IStorage { unit Save(); }").expect("contract materialize");
         assert_eq!(item.node.name.node.name, "IStorage");
     }
 }

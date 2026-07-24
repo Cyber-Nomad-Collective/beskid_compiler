@@ -40,12 +40,7 @@ fn sweep_frees_memory() {
     drop(roots); // drop roots so they become collectable
     ctx.heap().force_collect();
     let after = ctx.heap().bytes_allocated();
-    assert!(
-        after < peak / 2,
-        "expected significant reclaim: after={}, peak={}",
-        after,
-        peak
-    );
+    assert!(after < peak / 2, "expected significant reclaim: after={}, peak={}", after, peak);
 }
 
 #[test]
@@ -63,24 +58,15 @@ fn threshold_triggers_collection() {
     let after_bg = ctx.heap().bytes_allocated();
     ctx.heap().force_collect();
     let after_force = ctx.heap().bytes_allocated();
-    assert!(
-        after_force <= after_bg,
-        "force_collect should not increase usage"
-    );
+    assert!(after_force <= after_bg, "force_collect should not increase usage");
 }
 
 #[test]
 fn tracing_chain_keeps_all_nodes() {
     let ctx = GcContext::new();
-    let mut prev = Some(ctx.allocate(Node {
-        value: 0,
-        next: None,
-    }));
+    let mut prev = Some(ctx.allocate(Node { value: 0, next: None }));
     for i in 1..100 {
-        let n = ctx.allocate(Node {
-            value: i,
-            next: prev.map(|p| p.as_ptr()),
-        });
+        let n = ctx.allocate(Node { value: i, next: prev.map(|p| p.as_ptr()) });
         prev = Some(n);
     }
     ctx.heap().force_collect(); // all nodes reachable from last (prev)
@@ -205,8 +191,7 @@ fn beskid_descriptor_trace_keeps_child_payload_alive() {
     }
 
     let mut parent_slot = parent;
-    heap.external_roots()
-        .register_root(&mut parent_slot as *mut *mut u8);
+    heap.external_roots().register_root(&mut parent_slot as *mut *mut u8);
     let before = heap.bytes_allocated();
     heap.force_collect();
     assert_eq!(
@@ -215,13 +200,9 @@ fn beskid_descriptor_trace_keeps_child_payload_alive() {
         "descriptor tracing should keep the child payload alive through the rooted parent"
     );
 
-    heap.external_roots()
-        .unregister_root(&mut parent_slot as *mut *mut u8);
+    heap.external_roots().unregister_root(&mut parent_slot as *mut *mut u8);
     let after = heap.force_collect();
-    assert!(
-        after < before,
-        "removing the parent root should allow parent and child payloads to be reclaimed"
-    );
+    assert!(after < before, "removing the parent root should allow parent and child payloads to be reclaimed");
     assert!(!heap.owns_beskid_payload(parent));
     assert!(!heap.owns_beskid_payload(child));
 }

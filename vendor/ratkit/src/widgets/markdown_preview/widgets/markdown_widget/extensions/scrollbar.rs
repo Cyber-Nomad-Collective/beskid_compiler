@@ -62,11 +62,7 @@ impl<'a> CustomScrollbar<'a> {
     /// let scrollbar = CustomScrollbar::new(&scroll_state);
     /// ```
     pub fn new(scroll_state: &'a ScrollState) -> Self {
-        Self {
-            scroll_state,
-            config: ScrollbarConfig::default(),
-            show_percentage: false,
-        }
+        Self { scroll_state, config: ScrollbarConfig::default(), show_percentage: false }
     }
 
     /// Set the scrollbar configuration.
@@ -267,11 +263,7 @@ impl<'a> CustomScrollbar<'a> {
 
         // Calculate percentage
         let max_scroll = total.saturating_sub(viewport);
-        let percentage = if max_scroll > 0 {
-            ((offset as f64 / max_scroll as f64) * 100.0).round() as u8
-        } else {
-            0
-        };
+        let percentage = if max_scroll > 0 { ((offset as f64 / max_scroll as f64) * 100.0).round() as u8 } else { 0 };
 
         // Format percentage string (right-aligned, 4 chars: "100%", " 50%", "  0%")
         let pct_str = format!("{:>3}%", percentage);
@@ -301,8 +293,7 @@ impl<'a> CustomScrollbar<'a> {
     /// * `area` - The area to render the thumb in (same as track area).
     /// * `buf` - The buffer to render to.
     pub(crate) fn render_thumb(&self, area: Rect, buf: &mut Buffer) {
-        let (thumb_y, thumb_height) =
-            thumb_bounds(self.scroll_state, area.height, self.config.min_thumb_height);
+        let (thumb_y, thumb_height) = thumb_bounds(self.scroll_state, area.height, self.config.min_thumb_height);
 
         let thumb_start = area.y + thumb_y;
         let thumb_end = thumb_start + thumb_height;
@@ -310,8 +301,7 @@ impl<'a> CustomScrollbar<'a> {
         for y in thumb_start..thumb_end.min(area.y + area.height) {
             for x in area.x..area.x + area.width {
                 if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_char(self.config.thumb_char)
-                        .set_style(self.config.thumb_style);
+                    cell.set_char(self.config.thumb_char).set_style(self.config.thumb_style);
                 }
             }
         }
@@ -331,8 +321,7 @@ impl<'a> CustomScrollbar<'a> {
         for y in area.y..area.y + area.height {
             for x in area.x..area.x + area.width {
                 if let Some(cell) = buf.cell_mut((x, y)) {
-                    cell.set_char(self.config.track_char)
-                        .set_style(self.config.track_style);
+                    cell.set_char(self.config.track_char).set_style(self.config.track_style);
                 }
             }
         }

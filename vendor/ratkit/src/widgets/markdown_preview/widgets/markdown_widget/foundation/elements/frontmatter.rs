@@ -19,17 +19,13 @@ pub fn render(
     let border_char = "\u{2500}";
 
     if collapsed {
-        let context_id = fields
-            .iter()
-            .find(|(k, _)| k == "context_id")
-            .map(|(_, v)| v.as_str())
-            .unwrap_or("frontmatter");
+        let context_id =
+            fields.iter().find(|(k, _)| k == "context_id").map(|(_, v)| v.as_str()).unwrap_or("frontmatter");
 
         // Build collapsed line: "\u{25b6} \u{2500}\u{2500}\u{2500} context_id \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}"
         let prefix = "\u{25b6} \u{2500}\u{2500}\u{2500} ";
         let suffix = " ";
-        let used_width =
-            prefix.chars().count() + context_id.chars().count() + suffix.chars().count();
+        let used_width = prefix.chars().count() + context_id.chars().count() + suffix.chars().count();
         let remaining = width.saturating_sub(used_width);
         let border_fill = border_char.repeat(remaining);
 
@@ -121,10 +117,7 @@ pub fn render_start(collapsed: bool, context_id: Option<&str>, width: usize) -> 
         // Expanded: "\u{25bc} \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}"
         let prefix_len = 2; // "\u{25bc} "
         let top_border = border_char.repeat(width.saturating_sub(prefix_len));
-        Line::from(vec![
-            Span::styled("\u{25bc} ", collapse_icon_style),
-            Span::styled(top_border, border_style),
-        ])
+        Line::from(vec![Span::styled("\u{25bc} ", collapse_icon_style), Span::styled(top_border, border_style)])
     }
 }
 
@@ -139,10 +132,7 @@ pub fn render_field(key: &str, value: &str, width: usize) -> Vec<Line<'static>> 
 
     if value_width == 0 || value.chars().count() <= value_width {
         // Value fits on one line
-        vec![Line::from(vec![
-            Span::styled(key_prefix, key_style),
-            Span::styled(value.to_string(), value_style),
-        ])]
+        vec![Line::from(vec![Span::styled(key_prefix, key_style), Span::styled(value.to_string(), value_style)])]
     } else {
         // Wrap value across multiple lines
         let wrapped = wrap_text(value, value_width);

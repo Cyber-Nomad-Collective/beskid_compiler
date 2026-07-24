@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use beskid_isle::{
-    AstNodeKey, EnumLayout, EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter,
-    LiteralKind, LoweringErrorKind, MatchArmFact, NodeFacts, NodeKind,
+    AstNodeKey, EnumLayout, EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter, LiteralKind,
+    LoweringErrorKind, MatchArmFact, NodeFacts, NodeKind,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{Type, UserFuncName, types};
@@ -41,9 +41,7 @@ impl NodeFacts for EnumFacts {
     }
 
     fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
-        self.nodes[2..]
-            .contains(&key)
-            .then_some(LiteralKind::Integer)
+        self.nodes[2..].contains(&key).then_some(LiteralKind::Integer)
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
@@ -91,14 +89,8 @@ impl NodeFacts for EnumFacts {
             return None;
         }
         Some(match self.arms {
-            Arms::Exact => vec![
-                MatchArmFact::variant(0, self.nodes[3]),
-                MatchArmFact::variant(7, self.nodes[4]),
-            ],
-            Arms::Wildcard => vec![
-                MatchArmFact::variant(0, self.nodes[3]),
-                MatchArmFact::wildcard(self.nodes[5]),
-            ],
+            Arms::Exact => vec![MatchArmFact::variant(0, self.nodes[3]), MatchArmFact::variant(7, self.nodes[4])],
+            Arms::Wildcard => vec![MatchArmFact::variant(0, self.nodes[3]), MatchArmFact::wildcard(self.nodes[5])],
             Arms::Missing => vec![MatchArmFact::variant(0, self.nodes[3])],
             Arms::Duplicate => vec![
                 MatchArmFact::variant(0, self.nodes[3]),
@@ -114,10 +106,7 @@ fn valid_layout() -> EnumLayout {
         8,
         2,
         FieldLayout::new(types::I32, 0),
-        vec![
-            EnumVariantLayout::new(0, None),
-            EnumVariantLayout::new(7, Some(FieldLayout::new(types::I32, 4))),
-        ],
+        vec![EnumVariantLayout::new(0, None), EnumVariantLayout::new(7, Some(FieldLayout::new(types::I32, 4)))],
     )
 }
 
@@ -126,11 +115,7 @@ fn facts(pointer_type: Type, arms: Arms, variant_index: u32, layout: EnumLayout)
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Enum.bd"));
     let generation = SyntaxGenerationId(18);
     EnumFacts {
-        nodes: std::array::from_fn(|index| AstNodeKey {
-            unit,
-            generation,
-            node: AstNodeId(index as u32 + 1),
-        }),
+        nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }),
         pointer_type,
         layout,
         variant_index,
@@ -147,23 +132,14 @@ fn run(arms: Arms, function_index: u32) -> (i32, String) {
     let emitter = FunctionEmitter::new(isa.as_ref());
     let signature = emitter.signature([], [types::I32]);
     let function = emitter
-        .emit_expression(
-            UserFuncName::user(0, function_index),
-            signature.clone(),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_expression(UserFuncName::user(0, function_index), signature.clone(), &facts, facts.nodes[0])
         .expect("verified enum match");
     let clif = function.display().to_string();
     let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-    let function_id = module
-        .declare_function("enum_match", Linkage::Local, &signature)
-        .expect("declare");
+    let function_id = module.declare_function("enum_match", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
     context.func = function;
-    module
-        .define_function(function_id, &mut context)
-        .expect("define");
+    module.define_function(function_id, &mut context).expect("define");
     module.finalize_definitions().expect("finalize");
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
@@ -216,12 +192,7 @@ fn duplicate_match_arm_is_an_exact_keyed_error() {
     let facts = facts(isa.pointer_type(), Arms::Duplicate, 1, valid_layout());
     let emitter = FunctionEmitter::new(isa.as_ref());
     let error = emitter
-        .emit_expression(
-            UserFuncName::user(0, 31),
-            emitter.signature([], [types::I32]),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_expression(UserFuncName::user(0, 31), emitter.signature([], [types::I32]), &facts, facts.nodes[0])
         .expect_err("duplicate semantic match arms must not lower");
     let FunctionEmissionError::Lowering(error) = error else {
         panic!("expected lowering error");
@@ -270,12 +241,8 @@ impl NodeFacts for UnitMatchFacts {
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
-        (key == self.nodes[0]).then(|| {
-            vec![
-                MatchArmFact::variant(0, self.nodes[2]),
-                MatchArmFact::variant(7, self.nodes[3]),
-            ]
-        })
+        (key == self.nodes[0])
+            .then(|| vec![MatchArmFact::variant(0, self.nodes[2]), MatchArmFact::variant(7, self.nodes[3])])
     }
 }
 
@@ -297,12 +264,7 @@ fn statement_context_enum_match_lowers_unit_arm_blocks() {
     };
     let emitter = FunctionEmitter::new(isa.as_ref());
     let function = emitter
-        .emit_statement(
-            UserFuncName::user(0, 32),
-            emitter.signature([], []),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_statement(UserFuncName::user(0, 32), emitter.signature([], []), &facts, facts.nodes[0])
         .expect("unit match statement lowers through dedicated dispatch");
     let clif = function.display().to_string();
     assert!(clif.contains("brif"), "{clif}");
@@ -318,20 +280,12 @@ fn duplicate_enum_discriminant_is_an_exact_layout_error() {
         4,
         2,
         FieldLayout::new(types::I32, 0),
-        vec![
-            EnumVariantLayout::new(0, None),
-            EnumVariantLayout::new(0, None),
-        ],
+        vec![EnumVariantLayout::new(0, None), EnumVariantLayout::new(0, None)],
     );
     let facts = facts(isa.pointer_type(), Arms::Exact, 0, invalid);
     let emitter = FunctionEmitter::new(isa.as_ref());
     let error = emitter
-        .emit_expression(
-            UserFuncName::user(0, 29),
-            emitter.signature([], [isa.pointer_type()]),
-            &facts,
-            facts.nodes[1],
-        )
+        .emit_expression(UserFuncName::user(0, 29), emitter.signature([], [isa.pointer_type()]), &facts, facts.nodes[1])
         .expect_err("duplicate discriminants invalidate semantic layout");
     let FunctionEmissionError::Lowering(error) = error else {
         panic!("expected lowering error");
@@ -349,12 +303,7 @@ fn unknown_enum_variant_is_an_exact_keyed_error() {
     let facts = facts(isa.pointer_type(), Arms::Exact, 2, valid_layout());
     let emitter = FunctionEmitter::new(isa.as_ref());
     let error = emitter
-        .emit_expression(
-            UserFuncName::user(0, 30),
-            emitter.signature([], [isa.pointer_type()]),
-            &facts,
-            facts.nodes[1],
-        )
+        .emit_expression(UserFuncName::user(0, 30), emitter.signature([], [isa.pointer_type()]), &facts, facts.nodes[1])
         .expect_err("variant index must exist in semantic layout");
     let FunctionEmissionError::Lowering(error) = error else {
         panic!("expected lowering error");

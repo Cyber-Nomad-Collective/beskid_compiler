@@ -17,11 +17,7 @@ pub struct ExpressionStatement {
 impl Parsable for ExpressionStatement {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         let span = SpanInfo::from_span(&pair.as_span());
-        let expression = Expression::parse(
-            pair.into_inner()
-                .next()
-                .ok_or(ParseError::missing(Rule::Expression))?,
-        )?;
+        let expression = Expression::parse(pair.into_inner().next().ok_or(ParseError::missing(Rule::Expression))?)?;
 
         Ok(Spanned::new(Self { expression }, span))
     }

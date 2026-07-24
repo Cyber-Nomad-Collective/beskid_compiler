@@ -38,9 +38,7 @@ impl Attachment {
             "📄"
         } else if self.mime_type.starts_with("text/") || self.mime_type == "application/json" {
             "📝"
-        } else if self.mime_type == "application/x-directory"
-            || self.mime_type.contains("directory")
-        {
+        } else if self.mime_type == "application/x-directory" || self.mime_type.contains("directory") {
             "📁"
         } else {
             "📎"
@@ -144,11 +142,7 @@ impl<'a> UserMessage<'a> {
     /// Format timestamp as HH:MM.
     fn format_timestamp(&self) -> String {
         if let Some(ts) = self.timestamp {
-            let duration = ts
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .ok()
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
+            let duration = ts.duration_since(SystemTime::UNIX_EPOCH).ok().map(|d| d.as_secs()).unwrap_or(0);
             let hours = (duration / 3600) % 24;
             let minutes = (duration / 60) % 60;
             format!("{:02}:{:02}", hours, minutes)
@@ -169,16 +163,11 @@ impl<'a> UserMessage<'a> {
 
         // Draw left border with agent color
         for y in area.y..area.y + area.height {
-            buf.get_mut(area.x, y)
-                .set_style(Style::default().fg(self.agent_color));
+            buf.get_mut(area.x, y).set_style(Style::default().fg(self.agent_color));
         }
 
         // Determine background style based on focus
-        let bg_color = if self.focused {
-            colors.background_element
-        } else {
-            colors.background_panel
-        };
+        let bg_color = if self.focused { colors.background_element } else { colors.background_panel };
 
         // Fill background
         for x in (area.x + 1)..(area.x + area.width) {
@@ -407,10 +396,7 @@ mod tests {
 
     #[test]
     fn test_user_message_with_options() {
-        let attachments = vec![Attachment::new(
-            "test.png".to_string(),
-            "image/png".to_string(),
-        )];
+        let attachments = vec![Attachment::new("test.png".to_string(), "image/png".to_string())];
         let timestamp = SystemTime::now();
 
         let msg = UserMessage::new("Test message")

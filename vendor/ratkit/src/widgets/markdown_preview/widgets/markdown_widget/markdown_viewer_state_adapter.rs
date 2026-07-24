@@ -23,9 +23,7 @@ pub fn markdown_scroll_to_viewer_scroll(
 }
 
 /// Converts markdown document display choices into shared viewer display settings.
-pub fn markdown_display_to_viewer_display(
-    display: &MarkdownDisplaySettings,
-) -> document_viewer::DisplaySettings {
+pub fn markdown_display_to_viewer_display(display: &MarkdownDisplaySettings) -> document_viewer::DisplaySettings {
     let mut viewer_display = display.viewer.clone();
     viewer_display.show_line_numbers = display.show_document_line_numbers();
     viewer_display.highlight_current_line = false;
@@ -34,9 +32,7 @@ pub fn markdown_display_to_viewer_display(
 }
 
 /// Copies markdown source content into the shared viewer source state.
-pub fn markdown_source_to_viewer_source(
-    source: &MarkdownSourceState,
-) -> document_viewer::SourceState {
+pub fn markdown_source_to_viewer_source(source: &MarkdownSourceState) -> document_viewer::SourceState {
     let mut viewer_source = document_viewer::SourceState::default();
     viewer_source.set_source_string(source.content().unwrap_or_default());
     viewer_source

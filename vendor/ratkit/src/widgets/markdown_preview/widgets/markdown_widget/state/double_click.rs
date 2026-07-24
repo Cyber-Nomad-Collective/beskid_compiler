@@ -86,12 +86,9 @@ impl DoubleClickState {
         let position_threshold = 3; // Allow small movement between clicks
 
         // Check if this is a double-click (follows a recent click at same position)
-        let is_double = if let (Some(last_time), Some((last_x, last_y))) =
-            (self.last_click_time, self.last_click_pos)
-        {
+        let is_double = if let (Some(last_time), Some((last_x, last_y))) = (self.last_click_time, self.last_click_pos) {
             let time_ok = now.duration_since(last_time) < double_click_threshold;
-            let pos_ok = x.abs_diff(last_x) <= position_threshold
-                && y.abs_diff(last_y) <= position_threshold;
+            let pos_ok = x.abs_diff(last_x) <= position_threshold && y.abs_diff(last_y) <= position_threshold;
             time_ok && pos_ok
         } else {
             false

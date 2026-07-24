@@ -2,9 +2,7 @@ use crate::widgets::markdown_preview::widgets::markdown_widget::extensions::scro
     click_to_offset, is_in_scrollbar_area,
 };
 use crate::widgets::markdown_preview::widgets::markdown_widget::extensions::selection::should_render_line;
-use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::elements::{
-    render, ElementKind,
-};
+use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::elements::{render, ElementKind};
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::events::MarkdownEvent;
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::helpers::is_in_area;
 use crate::widgets::markdown_preview::widgets::markdown_widget::foundation::types::SelectionPos;
@@ -15,11 +13,7 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
 impl<'a> MarkdownWidget<'a> {
-    pub(crate) fn handle_mouse_internal(
-        &mut self,
-        event: &MouseEvent,
-        area: Rect,
-    ) -> MarkdownEvent {
+    pub(crate) fn handle_mouse_internal(&mut self, event: &MouseEvent, area: Rect) -> MarkdownEvent {
         if !is_in_area(event.column, event.row, area) {
             if self.selection.is_active() {
                 self.selection.exit();
@@ -50,21 +44,14 @@ impl<'a> MarkdownWidget<'a> {
                             let prev_hovered = self.toc_hovered;
                             let prev_entry = self.toc_hovered_entry;
                             self.handle_toc_hover_internal(event, toc_area);
-                            if prev_hovered != self.toc_hovered
-                                || prev_entry != self.toc_hovered_entry
-                            {
-                                return MarkdownEvent::TocHoverChanged {
-                                    hovered: self.toc_hovered,
-                                };
+                            if prev_hovered != self.toc_hovered || prev_entry != self.toc_hovered_entry {
+                                return MarkdownEvent::TocHoverChanged { hovered: self.toc_hovered };
                             }
                             return MarkdownEvent::None;
                         }
                         MouseEventKind::Down(MouseButton::Left) => {
                             if self.handle_toc_click_internal(event, toc_area) {
-                                return MarkdownEvent::Scrolled {
-                                    offset: self.scroll.scroll_offset,
-                                    direction: 0,
-                                };
+                                return MarkdownEvent::Scrolled { offset: self.scroll.scroll_offset, direction: 0 };
                             }
                             return MarkdownEvent::None;
                         }
@@ -74,11 +61,7 @@ impl<'a> MarkdownWidget<'a> {
                             return MarkdownEvent::None;
                         }
                         MouseEventKind::ScrollDown => {
-                            let entry_count = self
-                                .toc_state
-                                .as_ref()
-                                .map(|s| s.entry_count())
-                                .unwrap_or(0);
+                            let entry_count = self.toc_state.as_ref().map(|s| s.entry_count()).unwrap_or(0);
                             let visible_height = toc_area.height as usize;
                             let max_offset = entry_count.saturating_sub(visible_height);
                             if self.toc_scroll_offset < max_offset {
@@ -103,22 +86,17 @@ impl<'a> MarkdownWidget<'a> {
         if let Some(scrollbar_area) = self.calculate_scrollbar_area(area) {
             if is_in_scrollbar_area(event.column, event.row, scrollbar_area) {
                 match event.kind {
-                    MouseEventKind::Down(MouseButton::Left)
-                    | MouseEventKind::Drag(MouseButton::Left) => {
+                    MouseEventKind::Down(MouseButton::Left) | MouseEventKind::Drag(MouseButton::Left) => {
                         let new_offset = click_to_offset(event.row, scrollbar_area, &self.scroll);
                         self.scroll.scroll_offset = new_offset;
-                        return MarkdownEvent::Scrolled {
-                            offset: new_offset,
-                            direction: 0,
-                        };
+                        return MarkdownEvent::Scrolled { offset: new_offset, direction: 0 };
                     }
                     MouseEventKind::ScrollUp => {
                         let old_offset = self.scroll.scroll_offset;
                         self.scroll.scroll_up(5);
                         return MarkdownEvent::Scrolled {
                             offset: self.scroll.scroll_offset,
-                            direction: -(old_offset.saturating_sub(self.scroll.scroll_offset)
-                                as i32),
+                            direction: -(old_offset.saturating_sub(self.scroll.scroll_offset) as i32),
                         };
                     }
                     MouseEventKind::ScrollDown => {
@@ -150,11 +128,8 @@ impl<'a> MarkdownWidget<'a> {
                     return MarkdownEvent::FocusedLine { line: clicked_line };
                 }
 
-                let (is_double, _should_process_pending) = self.double_click.process_click(
-                    event.column,
-                    event.row,
-                    self.scroll.scroll_offset,
-                );
+                let (is_double, _should_process_pending) =
+                    self.double_click.process_click(event.column, event.row, self.scroll.scroll_offset);
 
                 if is_double {
                     if let Some(evt) = self.get_line_info_at_position(relative_y, width) {
@@ -172,12 +147,7 @@ impl<'a> MarkdownWidget<'a> {
             }
             MouseEventKind::Drag(MouseButton::Left) => {
                 let event_result = if !self.selection.is_active() {
-                    self.selection.enter(
-                        document_x,
-                        document_y,
-                        self.rendered_lines.clone(),
-                        width,
-                    );
+                    self.selection.enter(document_x, document_y, self.rendered_lines.clone(), width);
                     self.selection_active = true;
                     self.selection.anchor = Some(SelectionPos::new(document_x, document_y));
                     self.mode = MarkdownWidgetMode::Drag;
@@ -249,15 +219,9 @@ impl<'a> MarkdownWidget<'a> {
             }
 
             if self.handle_click_collapse(relative_x, relative_y, width) {
-                if let Some((_, line_kind, text)) =
-                    self.get_line_info_at_position(relative_y, width)
-                {
+                if let Some((_, line_kind, text)) = self.get_line_info_at_position(relative_y, width) {
                     if line_kind == "Heading" {
-                        return MarkdownEvent::HeadingToggled {
-                            level: 1,
-                            text,
-                            collapsed: true,
-                        };
+                        return MarkdownEvent::HeadingToggled { level: 1, text, collapsed: true };
                     }
                 }
             }

@@ -57,12 +57,7 @@ fn header_panel() -> BoardNode {
 }
 
 fn log_panel() -> BoardNode {
-    BoardNode {
-        kind: NodeKind::Panel,
-        widget: Some("shell.log".into()),
-        fixed_height: Some(8),
-        ..BoardNode::default()
-    }
+    BoardNode { kind: NodeKind::Panel, widget: Some("shell.log".into()), fixed_height: Some(8), ..BoardNode::default() }
 }
 
 fn footer_panel() -> BoardNode {
@@ -75,12 +70,7 @@ fn footer_panel() -> BoardNode {
 }
 
 fn panel(widget: &str, grow: Option<u32>) -> BoardNode {
-    BoardNode {
-        kind: NodeKind::Panel,
-        widget: Some(widget.into()),
-        grow,
-        ..BoardNode::default()
-    }
+    BoardNode { kind: NodeKind::Panel, widget: Some(widget.into()), grow, ..BoardNode::default() }
 }
 
 fn apply_holy_grail(doc: &mut BoardV2Doc) {
@@ -122,12 +112,7 @@ fn apply_holy_grail(doc: &mut BoardV2Doc) {
         "root".into(),
         BoardNode {
             kind: NodeKind::Col,
-            children: vec![
-                "header".into(),
-                "body".into(),
-                "log".into(),
-                "footer".into(),
-            ],
+            children: vec!["header".into(), "body".into(), "log".into(), "footer".into()],
             ..BoardNode::default()
         },
     );
@@ -163,12 +148,7 @@ fn apply_sidebar_main(doc: &mut BoardV2Doc) {
         "root".into(),
         BoardNode {
             kind: NodeKind::Col,
-            children: vec![
-                "header".into(),
-                "body".into(),
-                "log".into(),
-                "footer".into(),
-            ],
+            children: vec!["header".into(), "body".into(), "log".into(), "footer".into()],
             ..BoardNode::default()
         },
     );
@@ -196,10 +176,7 @@ fn apply_dashboard_grid(doc: &mut BoardV2Doc) {
     nodes.insert("header".into(), header_panel());
     nodes.insert("tile_welcome".into(), panel("hi.welcome", Some(1)));
     nodes.insert("tile_shortcuts".into(), panel("shell.shortcuts", Some(1)));
-    nodes.insert(
-        "tile_analyze".into(),
-        panel("analysis.diagnostics", Some(1)),
-    );
+    nodes.insert("tile_analyze".into(), panel("analysis.diagnostics", Some(1)));
     nodes.insert("tile_log".into(), panel("shell.log", Some(1)));
     nodes.insert(
         "row_top".into(),

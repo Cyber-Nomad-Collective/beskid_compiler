@@ -4,11 +4,7 @@ use crate::widgets::document_viewer::DocumentOutlineItem;
 
 /// Extracts markdown headings as shared outline entries.
 pub fn markdown_outline_from_content(content: &str) -> Vec<DocumentOutlineItem> {
-    content
-        .lines()
-        .enumerate()
-        .filter_map(|(index, line)| markdown_heading(line, index + 1))
-        .collect()
+    content.lines().enumerate().filter_map(|(index, line)| markdown_heading(line, index + 1)).collect()
 }
 
 /// Converts one markdown heading line into an outline item.
@@ -22,12 +18,7 @@ fn markdown_heading(line: &str, line_number: usize) -> Option<DocumentOutlineIte
     if title.is_empty() {
         return None;
     }
-    Some(DocumentOutlineItem::new(
-        title,
-        line_number,
-        level - 1,
-        "heading",
-    ))
+    Some(DocumentOutlineItem::new(title, line_number, level - 1, "heading"))
 }
 
 #[cfg(test)]

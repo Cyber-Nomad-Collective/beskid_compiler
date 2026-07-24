@@ -15,12 +15,7 @@ pub enum ProjectError {
     Parse(String),
     /// Parse error with optional UTF-8 byte span into the manifest source.
     #[error("manifest parse error at line {line}: {message}")]
-    ParseAt {
-        line: usize,
-        message: String,
-        start: Option<usize>,
-        end: Option<usize>,
-    },
+    ParseAt { line: usize, message: String, start: Option<usize>, end: Option<usize> },
     #[error("manifest validation error: {0}")]
     Validation(String),
     /// Meta / manifest contract failure in diagnostic band **E1801–E1899** (platform-spec
@@ -87,10 +82,7 @@ pub enum ProjectError {
 
 impl ProjectError {
     pub fn meta_contract(code: &'static str, message: impl Into<String>) -> Self {
-        Self::MetaContractViolation {
-            code,
-            message: message.into(),
-        }
+        Self::MetaContractViolation { code, message: message.into() }
     }
 
     /// Byte span in the manifest source when this error was produced with location info.
@@ -114,32 +106,10 @@ impl ProjectError {
     /// Map a Bsol parse/validation failure into project manifest diagnostics.
     pub fn from_bsol(err: bsol::BsolError) -> Self {
         match err {
-            bsol::BsolError::ParseAt {
-                line,
-                message,
-                start,
-                end,
-            } => Self::ParseAt {
-                line,
-                message,
-                start,
-                end,
-            },
-            bsol::BsolError::SchemaAt {
-                line,
-                message,
-                start,
-                end,
-            } => Self::ParseAt {
-                line,
-                message,
-                start,
-                end,
-            },
+            bsol::BsolError::ParseAt { line, message, start, end } => Self::ParseAt { line, message, start, end },
+            bsol::BsolError::SchemaAt { line, message, start, end } => Self::ParseAt { line, message, start, end },
             bsol::BsolError::Parse(msg) | bsol::BsolError::Schema(msg) => Self::Parse(msg),
-            bsol::BsolError::UnknownProfile(name) => {
-                Self::Parse(format!("unknown Bsol schema profile `{name}`"))
-            }
+            bsol::BsolError::UnknownProfile(name) => Self::Parse(format!("unknown Bsol schema profile `{name}`")),
             bsol::BsolError::Import(msg) => Self::Parse(msg),
         }
     }

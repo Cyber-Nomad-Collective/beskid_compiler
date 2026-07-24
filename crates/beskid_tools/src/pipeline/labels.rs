@@ -104,16 +104,14 @@ mod tests {
 
     #[test]
     fn semantic_naming_style_is_last_semantic_sub_phase() {
-        let (index, total) =
-            sub_phase_index(phases::SEMANTIC, phases::SEMANTIC_NAMING_STYLE).expect("indexed");
+        let (index, total) = sub_phase_index(phases::SEMANTIC, phases::SEMANTIC_NAMING_STYLE).expect("indexed");
         assert_eq!(index, 7);
         assert_eq!(total, 8);
     }
 
     #[test]
     fn lower_type_check_indexes_under_lower_parent() {
-        let (index, total) =
-            sub_phase_index(phases::LOWER, phases::LOWER_TYPE_CHECK).expect("indexed");
+        let (index, total) = sub_phase_index(phases::LOWER, phases::LOWER_TYPE_CHECK).expect("indexed");
         assert_eq!(index, 4);
         assert_eq!(total, 5);
     }

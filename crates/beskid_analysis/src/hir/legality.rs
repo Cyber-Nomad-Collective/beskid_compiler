@@ -1,8 +1,8 @@
 //! Post-resolution HIR invariants: spans, resolved paths, control-flow shape, and attribute targets.
 
 use crate::hir::{
-    AttributeTargetKind, HirAttribute, HirBlock, HirContractNode, HirElseBranch, HirExpressionNode,
-    HirIfStatement, HirItem, HirPattern, HirProgram, HirStatementNode, HirType,
+    AttributeTargetKind, HirAttribute, HirBlock, HirContractNode, HirElseBranch, HirExpressionNode, HirIfStatement,
+    HirItem, HirPattern, HirProgram, HirStatementNode, HirType,
 };
 use crate::resolve::Resolution;
 use crate::runtime_registration::{RUNTIME_HANDLER_SPECS, runtime_return_group_label};
@@ -48,10 +48,7 @@ pub enum HirLegalityError {
 }
 
 /// Collect legality issues without mutating `program` (unlike normalize/type passes).
-pub fn validate_hir_program(
-    program: &Spanned<HirProgram>,
-    resolution: &Resolution,
-) -> Vec<HirLegalityError> {
+pub fn validate_hir_program(program: &Spanned<HirProgram>, resolution: &Resolution) -> Vec<HirLegalityError> {
     let mut validator = HirLegalityValidator::new(resolution);
     validator.validate_program(program);
     validator.errors
@@ -65,11 +62,7 @@ struct HirLegalityValidator<'a> {
 
 impl<'a> HirLegalityValidator<'a> {
     fn new(resolution: &'a Resolution) -> Self {
-        Self {
-            resolution,
-            errors: Vec::new(),
-            attribute_targets: HashMap::new(),
-        }
+        Self { resolution, errors: Vec::new(), attribute_targets: HashMap::new() }
     }
 
     fn validate_program(&mut self, program: &Spanned<HirProgram>) {
@@ -88,12 +81,9 @@ impl<'a> HirLegalityValidator<'a> {
                         .node
                         .targets
                         .iter()
-                        .filter_map(|target| {
-                            AttributeTargetKind::parse(target.node.name.node.name.as_str())
-                        })
+                        .filter_map(|target| AttributeTargetKind::parse(target.node.name.node.name.as_str()))
                         .collect();
-                    self.attribute_targets
-                        .insert(def.node.name.node.name.clone(), targets);
+                    self.attribute_targets.insert(def.node.name.node.name.clone(), targets);
                 }
                 HirItem::InlineModule(def) => {
                     self.collect_attribute_targets(&def.node.items);
@@ -109,21 +99,18 @@ impl<'a> HirLegalityValidator<'a> {
             let Some(allowed_targets) = self.attribute_targets.get(name) else {
                 continue;
             };
-            let target_kind = AttributeTargetKind::parse(target)
-                .expect("attribute legality target kind must be canonical");
-            if allowed_targets.is_empty()
-                || allowed_targets.iter().any(|value| value == &target_kind)
-            {
+            let target_kind =
+                AttributeTargetKind::parse(target).expect("attribute legality target kind must be canonical");
+            if allowed_targets.is_empty() || allowed_targets.iter().any(|value| value == &target_kind) {
                 continue;
             }
 
-            self.errors
-                .push(HirLegalityError::AttributeTargetNotAllowed {
-                    span: attribute.span,
-                    name: name.clone(),
-                    target: target_kind,
-                    allowed: allowed_targets.clone(),
-                });
+            self.errors.push(HirLegalityError::AttributeTargetNotAllowed {
+                span: attribute.span,
+                name: name.clone(),
+                target: target_kind,
+                allowed: allowed_targets.clone(),
+            });
         }
     }
 
@@ -150,10 +137,7 @@ impl<'a> HirLegalityValidator<'a> {
             }
             HirItem::MethodDefinition(def) => {
                 self.check_span(def.span, "method_definition");
-                self.validate_applied_attributes(
-                    &def.node.attributes,
-                    AttributeTargetKind::MethodDeclaration.as_str(),
-                );
+                self.validate_applied_attributes(&def.node.attributes, AttributeTargetKind::MethodDeclaration.as_str());
                 self.validate_type(&def.node.receiver_type);
                 self.validate_block(&def.node.body);
                 for parameter in &def.node.parameters {
@@ -204,21 +188,11 @@ impl<'a> HirLegalityValidator<'a> {
             }
             HirItem::TypeDefinition(def) => {
                 self.check_span(def.span, "type_definition");
-                self.validate_applied_attributes(
-                    &def.node.attributes,
-                    AttributeTargetKind::TypeDeclaration.as_str(),
-                );
+                self.validate_applied_attributes(&def.node.attributes, AttributeTargetKind::TypeDeclaration.as_str());
                 for conformance in &def.node.conformances {
                     self.check_span(conformance.span, "type_conformance_path");
-                    if !self
-                        .resolution
-                        .tables
-                        .resolved_types
-                        .contains_key(&conformance.span)
-                    {
-                        self.errors.push(HirLegalityError::UnresolvedTypePath {
-                            span: conformance.span,
-                        });
+                    if !self.resolution.tables.resolved_types.contains_key(&conformance.span) {
+                        self.errors.push(HirLegalityError::UnresolvedTypePath { span: conformance.span });
                     }
                 }
                 for field in &def.node.fields {
@@ -296,12 +270,11 @@ impl<'a> HirLegalityValidator<'a> {
                         continue;
                     };
                     if let Some(previous) = seen_targets.insert(target_kind, target.span) {
-                        self.errors
-                            .push(HirLegalityError::DuplicateAttributeTarget {
-                                span: target.span,
-                                kind: target_kind,
-                                previous,
-                            });
+                        self.errors.push(HirLegalityError::DuplicateAttributeTarget {
+                            span: target.span,
+                            kind: target_kind,
+                            previous,
+                        });
                     }
                 }
                 for parameter in &def.node.parameters {
@@ -399,11 +372,10 @@ impl<'a> HirLegalityValidator<'a> {
             HirExpressionNode::MatchExpression(match_expr) => {
                 self.check_span(match_expr.span, "match_expression");
                 if match_expr.node.arms.is_empty() {
-                    self.errors
-                        .push(HirLegalityError::NonNormalizedControlFlow {
-                            span: match_expr.span,
-                            message: "match expression must contain at least one arm",
-                        });
+                    self.errors.push(HirLegalityError::NonNormalizedControlFlow {
+                        span: match_expr.span,
+                        message: "match expression must contain at least one arm",
+                    });
                 }
                 self.validate_expression(&match_expr.node.scrutinee);
                 for arm in &match_expr.node.arms {
@@ -459,29 +431,15 @@ impl<'a> HirLegalityValidator<'a> {
             HirExpressionNode::PathExpression(path_expr) => {
                 self.check_span(path_expr.span, "path_expression");
                 self.check_span(path_expr.node.path.span, "path");
-                if !self
-                    .resolution
-                    .tables
-                    .resolved_values
-                    .contains_key(&path_expr.node.path.span)
-                {
-                    self.errors.push(HirLegalityError::UnresolvedValuePath {
-                        span: path_expr.node.path.span,
-                    });
+                if !self.resolution.tables.resolved_values.contains_key(&path_expr.node.path.span) {
+                    self.errors.push(HirLegalityError::UnresolvedValuePath { span: path_expr.node.path.span });
                 }
             }
             HirExpressionNode::StructLiteralExpression(literal_expr) => {
                 self.check_span(literal_expr.span, "struct_literal_expression");
                 self.check_span(literal_expr.node.path.span, "struct_literal_path");
-                if !self
-                    .resolution
-                    .tables
-                    .resolved_types
-                    .contains_key(&literal_expr.node.path.span)
-                {
-                    self.errors.push(HirLegalityError::UnresolvedTypePath {
-                        span: literal_expr.node.path.span,
-                    });
+                if !self.resolution.tables.resolved_types.contains_key(&literal_expr.node.path.span) {
+                    self.errors.push(HirLegalityError::UnresolvedTypePath { span: literal_expr.node.path.span });
                 }
                 for field in &literal_expr.node.fields {
                     self.check_span(field.span, "struct_literal_field");
@@ -491,15 +449,8 @@ impl<'a> HirLegalityValidator<'a> {
             HirExpressionNode::EnumConstructorExpression(constructor_expr) => {
                 self.check_span(constructor_expr.span, "enum_constructor_expression");
                 self.check_span(constructor_expr.node.path.span, "enum_path");
-                if !self
-                    .resolution
-                    .tables
-                    .resolved_types
-                    .contains_key(&constructor_expr.node.path.span)
-                {
-                    self.errors.push(HirLegalityError::UnresolvedTypePath {
-                        span: constructor_expr.node.path.span,
-                    });
+                if !self.resolution.tables.resolved_types.contains_key(&constructor_expr.node.path.span) {
+                    self.errors.push(HirLegalityError::UnresolvedTypePath { span: constructor_expr.node.path.span });
                 }
                 for argument in &constructor_expr.node.args {
                     self.validate_expression(argument);
@@ -557,15 +508,8 @@ impl<'a> HirLegalityValidator<'a> {
             HirPattern::Enum(enum_pattern) => {
                 self.check_span(enum_pattern.span, "enum_pattern");
                 self.check_span(enum_pattern.node.path.span, "enum_pattern_path");
-                if !self
-                    .resolution
-                    .tables
-                    .resolved_types
-                    .contains_key(&enum_pattern.node.path.span)
-                {
-                    self.errors.push(HirLegalityError::UnresolvedTypePath {
-                        span: enum_pattern.node.path.span,
-                    });
+                if !self.resolution.tables.resolved_types.contains_key(&enum_pattern.node.path.span) {
+                    self.errors.push(HirLegalityError::UnresolvedTypePath { span: enum_pattern.node.path.span });
                 }
                 for child in &enum_pattern.node.items {
                     self.validate_pattern(child);
@@ -580,21 +524,12 @@ impl<'a> HirLegalityValidator<'a> {
             HirType::Primitive(primitive) => self.check_span(primitive.span, "primitive_type"),
             HirType::Complex(path) => {
                 self.check_span(path.span, "complex_type_path");
-                if !self
-                    .resolution
-                    .tables
-                    .resolved_types
-                    .contains_key(&path.span)
-                {
-                    self.errors
-                        .push(HirLegalityError::UnresolvedTypePath { span: path.span });
+                if !self.resolution.tables.resolved_types.contains_key(&path.span) {
+                    self.errors.push(HirLegalityError::UnresolvedTypePath { span: path.span });
                 }
             }
             HirType::Array(inner) => self.validate_type(inner),
-            HirType::Function {
-                return_type,
-                parameters,
-            } => {
+            HirType::Function { return_type, parameters } => {
                 self.validate_type(return_type);
                 for parameter in parameters {
                     self.validate_type(parameter);
@@ -603,30 +538,17 @@ impl<'a> HirLegalityValidator<'a> {
         }
     }
 
-    fn validate_runtime_handler_metadata(
-        &mut self,
-        span: SpanInfo,
-        runtime_handler: &crate::hir::HirRuntimeHandler,
-    ) {
-        let Some(spec) = RUNTIME_HANDLER_SPECS
-            .iter()
-            .find(|spec| spec.tag == runtime_handler.dispatch_tag)
-        else {
+    fn validate_runtime_handler_metadata(&mut self, span: SpanInfo, runtime_handler: &crate::hir::HirRuntimeHandler) {
+        let Some(spec) = RUNTIME_HANDLER_SPECS.iter().find(|spec| spec.tag == runtime_handler.dispatch_tag) else {
             self.errors.push(HirLegalityError::InvalidRuntimeHandler {
                 span,
-                message: format!(
-                    "unknown runtime dispatch tag `{}`",
-                    runtime_handler.dispatch_tag
-                ),
+                message: format!("unknown runtime dispatch tag `{}`", runtime_handler.dispatch_tag),
             });
             return;
         };
 
         let expected_returns = runtime_return_group_label(spec.return_group);
-        if !runtime_handler
-            .returns
-            .eq_ignore_ascii_case(expected_returns)
-        {
+        if !runtime_handler.returns.eq_ignore_ascii_case(expected_returns) {
             self.errors.push(HirLegalityError::InvalidRuntimeHandler {
                 span,
                 message: format!(
@@ -639,11 +561,9 @@ impl<'a> HirLegalityValidator<'a> {
 
     fn check_span(&mut self, span: SpanInfo, context: &'static str) {
         let line_col_reversed = span.line_col_start.0 > span.line_col_end.0
-            || (span.line_col_start.0 == span.line_col_end.0
-                && span.line_col_start.1 > span.line_col_end.1);
+            || (span.line_col_start.0 == span.line_col_end.0 && span.line_col_start.1 > span.line_col_end.1);
         if span.start > span.end || line_col_reversed {
-            self.errors
-                .push(HirLegalityError::InvalidSpan { span, context });
+            self.errors.push(HirLegalityError::InvalidSpan { span, context });
         }
     }
 }

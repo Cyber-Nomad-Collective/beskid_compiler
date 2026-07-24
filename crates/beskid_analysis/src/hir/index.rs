@@ -1,8 +1,7 @@
 //! Post-normalize HIR walk assigning stable [`HirNodeId`](crate::resolve::HirNodeId) values.
 
 use crate::hir::{
-    HirBlock, HirElseBranch, HirExpressionNode, HirItem, HirMatchArm, HirPattern, HirProgram,
-    HirStatementNode,
+    HirBlock, HirElseBranch, HirExpressionNode, HirItem, HirMatchArm, HirPattern, HirProgram, HirStatementNode,
 };
 use crate::resolve::HirNodeId;
 use crate::syntax::Spanned;
@@ -80,15 +79,10 @@ fn max_hir_node_id_block(block: &Spanned<HirBlock>, mut max: u32) -> u32 {
 fn max_hir_node_id_statement(stmt: &Spanned<HirStatementNode>, mut max: u32) -> u32 {
     max = max.max(stmt.id.0);
     match &stmt.node {
-        HirStatementNode::LetStatement(let_stmt) => {
-            max_hir_node_id_expression(&let_stmt.node.value, max)
+        HirStatementNode::LetStatement(let_stmt) => max_hir_node_id_expression(&let_stmt.node.value, max),
+        HirStatementNode::ReturnStatement(ret) => {
+            ret.node.value.as_ref().map(|expr| max_hir_node_id_expression(expr, max)).unwrap_or(max)
         }
-        HirStatementNode::ReturnStatement(ret) => ret
-            .node
-            .value
-            .as_ref()
-            .map(|expr| max_hir_node_id_expression(expr, max))
-            .unwrap_or(max),
         HirStatementNode::WhileStatement(w) => {
             max = max_hir_node_id_expression(&w.node.condition, max);
             max_hir_node_id_block(&w.node.body, max)
@@ -98,9 +92,7 @@ fn max_hir_node_id_statement(stmt: &Spanned<HirStatementNode>, mut max: u32) -> 
             max_hir_node_id_block(&f.node.body, max)
         }
         HirStatementNode::IfStatement(i) => max_hir_node_id_if(i, max),
-        HirStatementNode::ExpressionStatement(e) => {
-            max_hir_node_id_expression(&e.node.expression, max)
-        }
+        HirStatementNode::ExpressionStatement(e) => max_hir_node_id_expression(&e.node.expression, max),
         _ => max,
     }
 }
@@ -249,9 +241,7 @@ fn reset_block_node_ids(block: &mut Spanned<HirBlock>) {
 fn reset_statement_node_ids(stmt: &mut Spanned<HirStatementNode>) {
     stmt.id = HirNodeId::INVALID;
     match &mut stmt.node {
-        HirStatementNode::LetStatement(let_stmt) => {
-            reset_expression_node_ids(&mut let_stmt.node.value)
-        }
+        HirStatementNode::LetStatement(let_stmt) => reset_expression_node_ids(&mut let_stmt.node.value),
         HirStatementNode::ReturnStatement(ret) => {
             if let Some(expr) = &mut ret.node.value {
                 reset_expression_node_ids(expr);

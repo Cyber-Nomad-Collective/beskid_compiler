@@ -64,9 +64,7 @@ impl Parsable for EnumPattern {
         let mut inner = pair.into_inner();
         let path = EnumPath::parse(inner.next().ok_or(ParseError::missing(Rule::EnumPath))?)?;
         let items = if let Some(list) = inner.next() {
-            list.into_inner()
-                .map(Pattern::parse)
-                .collect::<Result<Vec<_>, _>>()?
+            list.into_inner().map(Pattern::parse).collect::<Result<Vec<_>, _>>()?
         } else {
             Vec::new()
         };

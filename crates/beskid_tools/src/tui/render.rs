@@ -7,9 +7,7 @@ use crate::shell::hotkeys::ShellHotkeys;
 use crate::shell::key_bindings::ShortcutBindings;
 use crate::shell::overlay_render::{OverlayRenderContext, render_panel_overlays};
 use crate::shell::shortcut_clicks::ShortcutClickTargets;
-use crate::tui::layout::{
-    PANEL_DETAIL, PANEL_FOOTER, PANEL_LOG, PANEL_STAGE, resolve_shell_layout,
-};
+use crate::tui::layout::{PANEL_DETAIL, PANEL_FOOTER, PANEL_LOG, PANEL_STAGE, resolve_shell_layout};
 use crate::tui::screens::pipeline_compile;
 use crate::tui::shell::state::ShellState;
 

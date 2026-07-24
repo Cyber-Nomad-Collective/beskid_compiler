@@ -44,72 +44,58 @@ mod unit;
 pub use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
 pub use beskid_graph::GraphKind;
 pub use db::{
-    BeskidDatabase, Db, UnitArtifactCache, configure_compilation_database_for_project,
-    replace_compilation_database, reset_compilation_database,
+    BeskidDatabase, Db, UnitArtifactCache, configure_compilation_database_for_project, replace_compilation_database,
+    reset_compilation_database,
 };
 pub use entry::{
-    cached_semantic_snapshot_for_key, entry_resolution_with_db, fingerprint_key,
-    invalidate_entry_sessions, prepare_compilation_diagnostics_with_db,
-    prepare_compilation_with_db, semantic_gate_diagnostics, semantic_snapshot, session_fingerprint,
-    typed_entry_bundle,
+    cached_semantic_snapshot_for_key, entry_resolution_with_db, fingerprint_key, invalidate_entry_sessions,
+    prepare_compilation_diagnostics_with_db, prepare_compilation_with_db, semantic_gate_diagnostics, semantic_snapshot,
+    session_fingerprint, typed_entry_bundle,
 };
 pub use graph::{
-    discovered_units, module_index_fingerprint, program_assembly, program_assembly_tracked,
-    reverse_dependents, syntax_program_assembly,
+    discovered_units, module_index_fingerprint, program_assembly, program_assembly_tracked, reverse_dependents,
+    syntax_program_assembly,
 };
 pub use graph_viz::{
-    GraphFetchRequest, GraphQueryError, get_graph_document, get_graph_document_simple,
-    graph_fingerprint_project_deps, graph_mermaid_project_deps, graph_mermaid_workspace,
-    manifest_digest,
+    GraphFetchRequest, GraphQueryError, get_graph_document, get_graph_document_simple, graph_fingerprint_project_deps,
+    graph_mermaid_project_deps, graph_mermaid_workspace, manifest_digest,
 };
 pub use inputs::{FileText, GrammarRevision, ProjectSession};
 pub use modhost::{
     CapabilitySetId, ManifestGenerationId, ModHostSyntaxGenerationId, bump_syntax_generation,
     mod_collect_target_fingerprint, mod_generate, mod_generate_fingerprint,
 };
-pub use output::{
-    SharedFrontEnd, SharedResolution, SharedTypeResult, SharedUnitResolution, SharedUnitTypeSurface,
-};
-pub use persistence::{
-    SalsaPersistenceManifest, cache_root_for_project, ensure_salsa_dir, load_manifest,
-};
+pub use output::{SharedFrontEnd, SharedResolution, SharedTypeResult, SharedUnitResolution, SharedUnitTypeSurface};
+pub use persistence::{SalsaPersistenceManifest, cache_root_for_project, ensure_salsa_dir, load_manifest};
 pub use semantic_contract::{
-    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, CallLowering,
-    CaptureStorageClass, CastIntent, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture,
-    ClosureEnvironment, ClosureEnvironmentField, ClosureLoweringStatus,
-    ClosurePointerMapRequirement, CompletionCandidate, CompletionContext, CompletionKind,
-    ControlFlow, CorelibService, DispatchBuiltinSymbol, EnumConstructorFact, EnumLayoutFact,
-    EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, ExportSymbol, ForIteratorFact,
-    GenericCallInstantiation, GenericCallSpecialization, IndexedNodeKind, ItemSignature,
-    LiteralFact, LocalSlot, MutableLocalAssignment, OperatorFact, RangeForFact, ResolvedItem,
-    ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName, SemanticError, SemanticQueryResult,
-    SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnosticKind, SpawnEntryValidation,
-    SpawnTarget, TestItem, TypedProgram, abi_type, aggregate_field_access, aggregate_layout,
-    aggregate_literal_declaration, block_statement_nodes, call_abi_signature,
-    call_argument_abi_type, call_arguments, call_lowering, callable_signature, capture_storage,
-    cast_intents, child_nodes, closure_call_target, closure_environment, closure_signature,
-    completion_candidates, control_flow, direct_callees, dispatch_builtin_symbol, enum_constructor,
-    enum_layout, enum_match, extern_contract_import_for_declaration, for_iterator_fact,
-    format_ast_node_key, format_ast_node_site, format_source_span_range,
-    generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
-    item_export_symbol, item_name, item_signature, literal_fact, local_slot,
-    mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver,
-    operator_fact, range_for_fact, reachable_items, resolved_item, resolved_local,
-    runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation, spawn_legality,
-    spawn_target, test_item, test_statement_nodes,
+    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, CallLowering, CaptureStorageClass,
+    CastIntent, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
+    ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement, CompletionCandidate,
+    CompletionContext, CompletionKind, ControlFlow, CorelibService, DispatchBuiltinSymbol, EnumConstructorFact,
+    EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, ExportSymbol, ForIteratorFact,
+    GenericCallInstantiation, GenericCallSpecialization, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot,
+    MutableLocalAssignment, OperatorFact, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic,
+    RuntimeIntrinsicName, SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId,
+    SpawnDiagnosticKind, SpawnEntryValidation, SpawnTarget, TestItem, TypedProgram, abi_type, aggregate_field_access,
+    aggregate_layout, aggregate_literal_declaration, block_statement_nodes, call_abi_signature, call_argument_abi_type,
+    call_arguments, call_lowering, callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target,
+    closure_environment, closure_signature, completion_candidates, control_flow, direct_callees,
+    dispatch_builtin_symbol, enum_constructor, enum_layout, enum_match, extern_contract_import_for_declaration,
+    for_iterator_fact, format_ast_node_key, format_ast_node_site, format_source_span_range, generic_call_instantiation,
+    generic_call_specialization, item_abi_signature, item_body, item_export_symbol, item_name, item_signature,
+    literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver,
+    operator_fact, range_for_fact, reachable_items, resolved_item, resolved_local, runtime_intrinsic,
+    runtime_intrinsic_name, spawn_entry_validation, spawn_legality, spawn_target, test_item, test_statement_nodes,
 };
 pub use session::{
     compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,
     prepare_compilation_diagnostics, with_db,
 };
-pub use stats::{
-    emit_salsa_stats, record_query_hit, record_query_miss, record_revision_bump, reset, snapshot,
-};
+pub use stats::{emit_salsa_stats, record_query_hit, record_query_miss, record_revision_bump, reset, snapshot};
 pub use typed_entry_bundle::{
-    FileRevision, TypedEntryState, TypedPrepareRevision, bump_file_revision,
-    bump_typed_prepare_revision, clear_typed_entry_cache, file_revision_for, is_typed_bundle_stale,
-    reset_typed_entry_inputs, typed_entry_bundle_tracked, typed_entry_bundle_with_db,
-    typed_entry_state_with_db, typed_prepare_revision_for,
+    FileRevision, TypedEntryState, TypedPrepareRevision, bump_file_revision, bump_typed_prepare_revision,
+    clear_typed_entry_cache, file_revision_for, is_typed_bundle_stale, reset_typed_entry_inputs,
+    typed_entry_bundle_tracked, typed_entry_bundle_with_db, typed_entry_state_with_db, typed_prepare_revision_for,
 };
 pub use typed_program::build_canonical_corelib_syscall_typed_program;
 pub use typed_program::build_canonical_runtime_typed_program;
@@ -118,10 +104,8 @@ pub use typed_program::build_typed_program_with_corelib_services;
 pub use typed_program::build_typed_program_with_corelib_syscall_services;
 pub use typed_program::project_session_for_syntax_assembly;
 pub use unit::{
-    parse_and_expand_unit, parse_and_expand_unit_tracked, parse_and_expand_unit_with_source,
-    seed_file_from_disk, unit_content_fingerprint, unit_imports,
+    parse_and_expand_unit, parse_and_expand_unit_tracked, parse_and_expand_unit_with_source, seed_file_from_disk,
+    unit_content_fingerprint, unit_imports,
 };
 
-pub use beskid_analysis::services::{
-    FrontEndOptions, FrontEndTypedResult, PrepareOptions, PreparedCompilation,
-};
+pub use beskid_analysis::services::{FrontEndOptions, FrontEndTypedResult, PrepareOptions, PreparedCompilation};

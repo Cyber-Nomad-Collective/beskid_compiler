@@ -26,12 +26,7 @@ fn admin_cookie() -> String {
 }
 
 async fn json(response: axum::response::Response) -> serde_json::Value {
-    let bytes = response
-        .into_body()
-        .collect()
-        .await
-        .expect("response body is readable")
-        .to_bytes();
+    let bytes = response.into_body().collect().await.expect("response body is readable").to_bytes();
     serde_json::from_slice(&bytes).expect("response is json")
 }
 
@@ -57,12 +52,7 @@ async fn super_admin_can_manage_blocked_links_and_read_publish_activity() {
 
     let blocked = app
         .clone()
-        .oneshot(
-            Request::get("/api/admin/blocked-links")
-                .header("cookie", &cookie)
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::get("/api/admin/blocked-links").header("cookie", &cookie).body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(blocked.status(), StatusCode::OK);
@@ -74,9 +64,7 @@ async fn super_admin_can_manage_blocked_links_and_read_publish_activity() {
             Request::post("/api/packages")
                 .header("content-type", "application/json")
                 .header("cookie", &cookie)
-                .body(Body::from(
-                    r#"{"name":"Audit.Demo","isPublic":true,"submitForReview":false}"#,
-                ))
+                .body(Body::from(r#"{"name":"Audit.Demo","isPublic":true,"submitForReview":false}"#))
                 .unwrap(),
         )
         .await
@@ -89,10 +77,7 @@ async fn super_admin_can_manage_blocked_links_and_read_publish_activity() {
             Request::post("/api/packages/Audit.Demo/versions")
                 .header("content-type", "application/json")
                 .header("cookie", &cookie)
-                .body(Body::from(
-                    serde_json::json!({"version":"1.0.0", "checksumSha256":"a".repeat(64)})
-                        .to_string(),
-                ))
+                .body(Body::from(serde_json::json!({"version":"1.0.0", "checksumSha256":"a".repeat(64)}).to_string()))
                 .unwrap(),
         )
         .await
@@ -102,10 +87,7 @@ async fn super_admin_can_manage_blocked_links_and_read_publish_activity() {
     let activity = app
         .clone()
         .oneshot(
-            Request::get("/api/admin/registry-activity?take=50")
-                .header("cookie", &cookie)
-                .body(Body::empty())
-                .unwrap(),
+            Request::get("/api/admin/registry-activity?take=50").header("cookie", &cookie).body(Body::empty()).unwrap(),
         )
         .await
         .unwrap();
@@ -116,8 +98,7 @@ async fn super_admin_can_manage_blocked_links_and_read_publish_activity() {
             .as_array()
             .expect("activity array")
             .iter()
-            .any(|entry| entry["action"] == "publish_success"
-                && entry["packageName"] == "Audit.Demo")
+            .any(|entry| entry["action"] == "publish_success" && entry["packageName"] == "Audit.Demo")
     );
 
     let spotlight = app

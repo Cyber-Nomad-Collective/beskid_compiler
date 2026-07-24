@@ -17,12 +17,7 @@ pub enum LogTab {
 }
 
 impl LogTab {
-    pub const ALL: [LogTab; 4] = [
-        LogTab::Build,
-        LogTab::Semantic,
-        LogTab::Incremental,
-        LogTab::Traces,
-    ];
+    pub const ALL: [LogTab; 4] = [LogTab::Build, LogTab::Semantic, LogTab::Incremental, LogTab::Traces];
 
     pub fn index(self) -> usize {
         match self {
@@ -141,10 +136,7 @@ mod tests {
 
     #[test]
     fn semantic_labels_route_to_semantic_tab() {
-        assert_eq!(
-            log_tab_for_phase_label("Semantic analysis"),
-            LogTab::Semantic
-        );
+        assert_eq!(log_tab_for_phase_label("Semantic analysis"), LogTab::Semantic);
         assert_eq!(log_tab_for_phase_label("Resolve manifest"), LogTab::Build);
     }
 }

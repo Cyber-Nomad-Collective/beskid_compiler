@@ -68,8 +68,7 @@ fn apply_selection_to_line(
         let span_len = span_text.chars().count() as i32;
         let span_end = current_pos + span_len;
 
-        let is_line_number =
-            current_pos == 0 && span_text.chars().all(|c| c.is_ascii_digit() || c == ' ');
+        let is_line_number = current_pos == 0 && span_text.chars().all(|c| c.is_ascii_digit() || c == ' ');
         if is_line_number || span_text.contains('│') || span_text.contains('▋') {
             new_spans.push(span);
             current_pos = span_end;

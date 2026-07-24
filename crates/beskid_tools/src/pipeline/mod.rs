@@ -23,15 +23,14 @@ use beskid_pipeline::{
 
 use labels::{phase_label, sub_phase_index};
 pub use resolve_options::{
-    CliInputPipelineOptions, CliProjectPipelineOptions, CliResolveOptions,
-    FrontendProjectPipelineOptions,
+    CliInputPipelineOptions, CliProjectPipelineOptions, CliResolveOptions, FrontendProjectPipelineOptions,
 };
 
 use crate::tui::shell::runtime::RuntimeOp;
 
 use tui::{
-    TestReportSummary, TestRow, TuiSession, count_severities, format_duration, format_phase_end,
-    format_phase_start, format_severity_summary, format_work_unit,
+    TestReportSummary, TestRow, TuiSession, count_severities, format_duration, format_phase_end, format_phase_start,
+    format_severity_summary, format_work_unit,
 };
 
 const WORK_UNIT_UI_MIN_INTERVAL: Duration = Duration::from_millis(60);
@@ -58,13 +57,8 @@ impl WorkUnitThrottleState {
     fn should_emit_work_unit(&mut self, msg: String, now: Instant) -> bool {
         self.work_unit_events = self.work_unit_events.wrapping_add(1);
         self.pending_msg = Some(msg);
-        let due_time = self
-            .last_emit
-            .map(|t| now.duration_since(t) >= WORK_UNIT_UI_MIN_INTERVAL)
-            .unwrap_or(true);
-        let due_burst = self
-            .work_unit_events
-            .is_multiple_of(WORK_UNIT_UI_BURST_INTERVAL);
+        let due_time = self.last_emit.map(|t| now.duration_since(t) >= WORK_UNIT_UI_MIN_INTERVAL).unwrap_or(true);
+        let due_burst = self.work_unit_events.is_multiple_of(WORK_UNIT_UI_BURST_INTERVAL);
         if due_time || due_burst {
             self.last_emit = Some(now);
             true
@@ -187,10 +181,7 @@ impl CliPipeline {
         if self.plain || self.hi_attached {
             return Ok(());
         }
-        let mut suspended = self
-            .tui_suspended
-            .lock()
-            .expect("tui_suspended mutex poisoned");
+        let mut suspended = self.tui_suspended.lock().expect("tui_suspended mutex poisoned");
         if !*suspended {
             return Ok(());
         }
@@ -213,11 +204,7 @@ impl CliPipeline {
     }
 
     /// Show the test-outcome summary chart in the shared shell (staged until Space).
-    pub fn show_test_summary(
-        &self,
-        summary: TestReportSummary,
-        title: impl Into<String>,
-    ) -> io::Result<()> {
+    pub fn show_test_summary(&self, summary: TestReportSummary, title: impl Into<String>) -> io::Result<()> {
         self.with_tui_result(|tui| tui.show_test_report(summary, title))
     }
 
@@ -259,10 +246,7 @@ impl CliPipeline {
         if let Ok(tui) = self.tui.lock() {
             tui.wait_for_dismiss()?;
         }
-        let mut suspended = self
-            .tui_suspended
-            .lock()
-            .expect("tui_suspended mutex poisoned");
+        let mut suspended = self.tui_suspended.lock().expect("tui_suspended mutex poisoned");
         *suspended = true;
         Ok(())
     }
@@ -272,10 +256,7 @@ impl CliPipeline {
         if self.plain || self.hi_attached {
             return;
         }
-        let mut suspended = self
-            .tui_suspended
-            .lock()
-            .expect("tui_suspended mutex poisoned");
+        let mut suspended = self.tui_suspended.lock().expect("tui_suspended mutex poisoned");
         if *suspended {
             return;
         }
@@ -295,17 +276,11 @@ impl CliPipeline {
     }
 
     fn tui_suspended(&self) -> bool {
-        *self
-            .tui_suspended
-            .lock()
-            .expect("tui_suspended mutex poisoned")
+        *self.tui_suspended.lock().expect("tui_suspended mutex poisoned")
     }
 
     /// Print semantic diagnostics (suspending the TUI when needed) and return severity counts.
-    pub fn report_semantic_diagnostics(
-        &self,
-        diagnostics: &[SemanticDiagnostic],
-    ) -> tui::SeverityCounts {
+    pub fn report_semantic_diagnostics(&self, diagnostics: &[SemanticDiagnostic]) -> tui::SeverityCounts {
         let counts = count_severities(diagnostics);
         if !self.hi_attached {
             self.halt_progress_bars_for_output();
@@ -334,10 +309,7 @@ impl CliPipeline {
 
     /// Stop animated progress after resolve/analysis so JIT/test work does not fight the TUI.
     pub fn finish_prepare_ui(&self, message: impl Into<Cow<'static, str>>) {
-        let mut finished = self
-            .prepare_ui_finished
-            .lock()
-            .expect("prepare_ui_finished mutex poisoned");
+        let mut finished = self.prepare_ui_finished.lock().expect("prepare_ui_finished mutex poisoned");
         if *finished {
             return;
         }
@@ -346,10 +318,7 @@ impl CliPipeline {
     }
 
     pub fn prepare_ui_finished(&self) -> bool {
-        *self
-            .prepare_ui_finished
-            .lock()
-            .expect("prepare_ui_finished mutex poisoned")
+        *self.prepare_ui_finished.lock().expect("prepare_ui_finished mutex poisoned")
     }
 
     pub fn println_session(&self, line: impl AsRef<str>) {
@@ -378,8 +347,7 @@ impl CliPipeline {
         if !self.plain {
             let active = self.tui.lock().is_ok_and(|tui| tui.is_active());
             if active {
-                let panel = summary
-                    .unwrap_or_else(|| tui::CommandSummary::plain("Result", headline.clone()));
+                let panel = summary.unwrap_or_else(|| tui::CommandSummary::plain("Result", headline.clone()));
                 if let Ok(tui) = self.tui.lock() {
                     let _ = tui.stage_summary(panel);
                 }
@@ -392,10 +360,7 @@ impl CliPipeline {
                     if let Ok(tui) = self.tui.lock() {
                         let _ = tui.wait_for_dismiss();
                     }
-                    let mut suspended = self
-                        .tui_suspended
-                        .lock()
-                        .expect("tui_suspended mutex poisoned");
+                    let mut suspended = self.tui_suspended.lock().expect("tui_suspended mutex poisoned");
                     *suspended = true;
                 }
             }
@@ -409,11 +374,7 @@ impl CliPipeline {
         self.finish_session(message);
     }
 
-    pub fn finish_build_with_summary(
-        &self,
-        message: impl Into<Cow<'static, str>>,
-        summary: tui::CommandSummary,
-    ) {
+    pub fn finish_build_with_summary(&self, message: impl Into<Cow<'static, str>>, summary: tui::CommandSummary) {
         self.finish_session_with_summary(message, Some(summary));
     }
 
@@ -425,18 +386,12 @@ impl CliPipeline {
         if self.plain {
             return false;
         }
-        self.tui
-            .lock()
-            .map(|tui| tui.interrupted())
-            .unwrap_or(false)
+        self.tui.lock().map(|tui| tui.interrupted()).unwrap_or(false)
     }
 
     fn flush_pending_work_unit_ui(&self) {
         let pending = {
-            let mut t = self
-                .work_unit_throttle
-                .lock()
-                .expect("cli pipeline throttle mutex poisoned");
+            let mut t = self.work_unit_throttle.lock().expect("cli pipeline throttle mutex poisoned");
             t.take_pending_message()
         };
         let Some(msg) = pending else {
@@ -474,22 +429,13 @@ impl CliPipeline {
         }
         let total_pos = *self.total_pos.lock().expect("total_pos mutex poisoned");
         if let Ok(tui) = self.tui.lock() {
-            let _ = tui.set_pipeline_progress(
-                total_pos,
-                self.phase_total,
-                "Pipeline",
-                stage_pos,
-                stage_len,
-                stage_label,
-            );
+            let _ =
+                tui.set_pipeline_progress(total_pos, self.phase_total, "Pipeline", stage_pos, stage_len, stage_label);
         }
     }
 
     fn current_phase_depth(&self) -> usize {
-        self.phase_stack
-            .lock()
-            .map(|stack| stack.len())
-            .unwrap_or(0)
+        self.phase_stack.lock().map(|stack| stack.len()).unwrap_or(0)
     }
 
     fn with_tui<F>(&self, f: F)
@@ -522,10 +468,7 @@ impl CliPipeline {
         }
         let now = Instant::now();
         let emit_tree = {
-            let mut t = self
-                .work_unit_throttle
-                .lock()
-                .expect("cli pipeline throttle mutex poisoned");
+            let mut t = self.work_unit_throttle.lock().expect("cli pipeline throttle mutex poisoned");
             t.should_emit_work_unit(msg.clone(), now)
         };
         if emit_tree {
@@ -544,10 +487,7 @@ impl CliPipeline {
         }
         let depth = self.current_phase_depth();
         if let Ok(mut stack) = self.phase_stack.lock() {
-            stack.push(PhaseStackEntry {
-                id,
-                started: Instant::now(),
-            });
+            stack.push(PhaseStackEntry { id, started: Instant::now() });
         }
         let label = phase_label(id);
         let line = format_phase_start(depth, self.plain, label);
@@ -568,15 +508,9 @@ impl CliPipeline {
             t.reset_for_phase_boundary();
         }
         let (depth, duration) = {
-            let mut stack = self
-                .phase_stack
-                .lock()
-                .expect("cli pipeline phase stack mutex poisoned");
+            let mut stack = self.phase_stack.lock().expect("cli pipeline phase stack mutex poisoned");
             let depth = stack.len().saturating_sub(1);
-            let duration = stack
-                .pop()
-                .map(|entry| entry.started.elapsed())
-                .unwrap_or_default();
+            let duration = stack.pop().map(|entry| entry.started.elapsed()).unwrap_or_default();
             (depth, duration)
         };
         let label = phase_label(id);
@@ -601,9 +535,7 @@ impl CliPipeline {
     }
 }
 
-pub fn resolve_input_with_cli_pipeline(
-    options: CliResolveOptions<'_>,
-) -> Result<(Arc<CliPipeline>, ResolvedInput)> {
+pub fn resolve_input_with_cli_pipeline(options: CliResolveOptions<'_>) -> Result<(Arc<CliPipeline>, ResolvedInput)> {
     resolve_input_with_cli_pipeline_kind(CliInputPipelineOptions {
         resolve: options,
         progress_kind: PipelineProgressKind::FullBuild,
@@ -613,14 +545,8 @@ pub fn resolve_input_with_cli_pipeline(
 pub fn resolve_input_with_cli_pipeline_kind(
     options: CliInputPipelineOptions<'_>,
 ) -> Result<(Arc<CliPipeline>, ResolvedInput)> {
-    let CliInputPipelineOptions {
-        resolve,
-        progress_kind,
-    } = options;
-    let pipeline_ui = Arc::new(CliPipeline::new_with_kind(
-        use_cli_spinner(resolve.plain),
-        progress_kind,
-    ));
+    let CliInputPipelineOptions { resolve, progress_kind } = options;
+    let pipeline_ui = Arc::new(CliPipeline::new_with_kind(use_cli_spinner(resolve.plain), progress_kind));
     let resolved = frontend::resolve_input_with_pipeline(resolve, Some(pipeline_ui.as_ref()))?;
     Ok((pipeline_ui, resolved))
 }
@@ -628,14 +554,9 @@ pub fn resolve_input_with_cli_pipeline_kind(
 pub fn resolve_project_with_cli_pipeline(
     options: CliProjectPipelineOptions<'_>,
 ) -> Result<(Arc<CliPipeline>, ResolvedProject)> {
-    let CliProjectPipelineOptions {
-        resolve,
-        unresolved_dependency_policy,
-    } = options;
-    let pipeline_ui = Arc::new(CliPipeline::new_with_kind(
-        use_cli_spinner(resolve.plain),
-        PipelineProgressKind::FullBuild,
-    ));
+    let CliProjectPipelineOptions { resolve, unresolved_dependency_policy } = options;
+    let pipeline_ui =
+        Arc::new(CliPipeline::new_with_kind(use_cli_spinner(resolve.plain), PipelineProgressKind::FullBuild));
     let resolved = frontend::resolve_project_with_pipeline(FrontendProjectPipelineOptions {
         resolve,
         unresolved_dependency_policy,
@@ -652,12 +573,7 @@ impl PipelineObserver for CliPipeline {
         match event {
             PipelineEvent::PhaseStart { id } => self.on_phase_start(id),
             PipelineEvent::PhaseEnd { id } => self.on_phase_end(id),
-            PipelineEvent::WorkUnit {
-                id: _,
-                done,
-                total,
-                label,
-            } => {
+            PipelineEvent::WorkUnit { id: _, done, total, label } => {
                 let depth = self.current_phase_depth().saturating_add(1);
                 let msg = format_work_unit(depth, self.plain, done, total, &label);
                 self.emit_work_unit_if_due(msg, depth, done, total, &label);

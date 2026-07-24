@@ -4,9 +4,8 @@ use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::{
-    BreakStatement, ContinueStatement, ExpressionStatement, ForStatement, IfStatement,
-    LaunchStatement, LetStatement, ReturnStatement, SpanInfo, Spanned, WhileStatement,
-    WithStatement,
+    BreakStatement, ContinueStatement, ExpressionStatement, ForStatement, IfStatement, LaunchStatement, LetStatement,
+    ReturnStatement, SpanInfo, Spanned, WhileStatement, WithStatement,
 };
 
 use beskid_ast_derive::AstNode;
@@ -47,10 +46,7 @@ fn parse_statement(pair: Pair<Rule>) -> Result<Spanned<Statement>, ParseError> {
 
     match pair.as_rule() {
         Rule::Statement => {
-            let inner = pair
-                .into_inner()
-                .next()
-                .ok_or(ParseError::missing(Rule::Statement))?;
+            let inner = pair.into_inner().next().ok_or(ParseError::missing(Rule::Statement))?;
             parse_statement(inner)
         }
         Rule::LetStatement => {

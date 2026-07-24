@@ -3,13 +3,11 @@
 use crate::resolve::Resolution;
 use crate::resolve::items::{ItemInfo, ItemKind};
 use crate::syntax::{
-    ContractMethodSignature, ContractNode, EnumDefinition, EnumVariant, Field, FunctionDefinition,
-    MethodDefinition, Node, Parameter, Program, SpanInfo, Spanned, TypeDefinition,
+    ContractMethodSignature, ContractNode, EnumDefinition, EnumVariant, Field, FunctionDefinition, MethodDefinition,
+    Node, Parameter, Program, SpanInfo, Spanned, TypeDefinition,
 };
 
-use super::api_snapshot::{
-    ApiGenericParameterDoc, ApiItemSignature, ApiParameterDoc, ApiTypeAnnotation,
-};
+use super::api_snapshot::{ApiGenericParameterDoc, ApiItemSignature, ApiParameterDoc, ApiTypeAnnotation};
 use super::qualified_names::{display_name_for_item, module_path_for_item};
 use super::type_format::type_annotation_for_type;
 
@@ -29,34 +27,24 @@ fn spans_equal(a: SpanInfo, b: SpanInfo) -> bool {
 }
 
 fn find_decl_at_span(program: &Program, span: SpanInfo) -> Option<SyntaxDeclAtSpan<'_>> {
-    program
-        .items
-        .iter()
-        .find_map(|item| find_decl_in_node(item, span))
+    program.items.iter().find_map(|item| find_decl_in_node(item, span))
 }
 
 fn find_parameter<'a>(
     mut parameters: impl Iterator<Item = &'a Spanned<Parameter>>,
     span: SpanInfo,
 ) -> Option<SyntaxDeclAtSpan<'a>> {
-    parameters
-        .find(|parameter| spans_equal(parameter.span, span))
-        .map(SyntaxDeclAtSpan::Parameter)
+    parameters.find(|parameter| spans_equal(parameter.span, span)).map(SyntaxDeclAtSpan::Parameter)
 }
 
 fn find_field<'a>(
     mut fields: impl Iterator<Item = &'a Spanned<Field>>,
     span: SpanInfo,
 ) -> Option<SyntaxDeclAtSpan<'a>> {
-    fields
-        .find(|field| spans_equal(field.span, span))
-        .map(SyntaxDeclAtSpan::Field)
+    fields.find(|field| spans_equal(field.span, span)).map(SyntaxDeclAtSpan::Field)
 }
 
-fn find_contract_method<'a>(
-    items: &'a [Spanned<ContractNode>],
-    span: SpanInfo,
-) -> Option<SyntaxDeclAtSpan<'a>> {
+fn find_contract_method<'a>(items: &'a [Spanned<ContractNode>], span: SpanInfo) -> Option<SyntaxDeclAtSpan<'a>> {
     for item in items {
         let ContractNode::MethodSignature(method) = &item.node else {
             continue;
@@ -121,11 +109,7 @@ fn find_decl_in_node<'a>(item: &'a Spanned<Node>, span: SpanInfo) -> Option<Synt
             }
         }),
         Node::ContractDefinition(def) => find_contract_method(&def.node.items, span),
-        Node::InlineModule(module) => module
-            .node
-            .items
-            .iter()
-            .find_map(|nested| find_decl_in_node(nested, span)),
+        Node::InlineModule(module) => module.node.items.iter().find_map(|nested| find_decl_in_node(nested, span)),
         _ => None,
     }
 }
@@ -134,16 +118,11 @@ fn parameter_modifier(parameter: &Parameter) -> Option<String> {
     parameter.mutable.then(|| "mut".to_string())
 }
 
-fn generic_parameters_from_names(
-    names: impl Iterator<Item = String>,
-) -> Vec<ApiGenericParameterDoc> {
+fn generic_parameters_from_names(names: impl Iterator<Item = String>) -> Vec<ApiGenericParameterDoc> {
     names.map(|name| ApiGenericParameterDoc { name }).collect()
 }
 
-fn callable_parameters(
-    parameters: &[Spanned<Parameter>],
-    resolution: Option<&Resolution>,
-) -> Vec<ApiParameterDoc> {
+fn callable_parameters(parameters: &[Spanned<Parameter>], resolution: Option<&Resolution>) -> Vec<ApiParameterDoc> {
     parameters
         .iter()
         .map(|parameter| ApiParameterDoc {
@@ -171,10 +150,7 @@ fn callable_signature(
 ) -> (Option<ApiTypeAnnotation>, Vec<ApiParameterDoc>, String) {
     let return_type = return_annotation(return_type, resolution);
     let parameters = callable_parameters(parameters, resolution);
-    let result = return_type
-        .as_ref()
-        .map(|ty| ty.display.clone())
-        .unwrap_or_else(|| "unit".to_string());
+    let result = return_type.as_ref().map(|ty| ty.display.clone()).unwrap_or_else(|| "unit".to_string());
     let parameters = parameters
         .into_iter()
         .map(|parameter| {
@@ -188,26 +164,13 @@ fn callable_signature(
         .collect::<Vec<_>>();
     let text = parameters
         .iter()
-        .map(|(parameter, modifier)| {
-            format!("{modifier}{} {}", parameter.ty.display, parameter.name)
-        })
+        .map(|(parameter, modifier)| format!("{modifier}{} {}", parameter.ty.display, parameter.name))
         .collect::<Vec<_>>()
         .join(", ");
-    (
-        return_type,
-        parameters
-            .into_iter()
-            .map(|(parameter, _)| parameter)
-            .collect(),
-        format!("{result} {name}({text})"),
-    )
+    (return_type, parameters.into_iter().map(|(parameter, _)| parameter).collect(), format!("{result} {name}({text})"))
 }
 
-fn build_from_decl(
-    decl: SyntaxDeclAtSpan<'_>,
-    item: &ItemInfo,
-    resolution: Option<&Resolution>,
-) -> ApiItemSignature {
+fn build_from_decl(decl: SyntaxDeclAtSpan<'_>, item: &ItemInfo, resolution: Option<&Resolution>) -> ApiItemSignature {
     let mut signature = ApiItemSignature {
         display_name: Some(display_name_for_item(item)),
         module_path: resolution
@@ -226,12 +189,8 @@ fn build_from_decl(
             );
             signature.return_type = return_type;
             signature.parameters = parameters;
-            signature.generic_parameters = generic_parameters_from_names(
-                def.node
-                    .generics
-                    .iter()
-                    .map(|generic| generic.node.name.clone()),
-            );
+            signature.generic_parameters =
+                generic_parameters_from_names(def.node.generics.iter().map(|generic| generic.node.name.clone()));
             signature.signature = Some(text);
         }
         SyntaxDeclAtSpan::Method(def) => {
@@ -247,11 +206,7 @@ fn build_from_decl(
             signature.signature = Some(text);
         }
         SyntaxDeclAtSpan::Type(def) => {
-            let generics = def
-                .node
-                .generics
-                .iter()
-                .map(|generic| generic.node.name.clone());
+            let generics = def.node.generics.iter().map(|generic| generic.node.name.clone());
             signature.generic_parameters = generic_parameters_from_names(generics.clone());
             let generic_text = generics.collect::<Vec<_>>().join(", ");
             signature.signature = Some(if generic_text.is_empty() {
@@ -261,11 +216,7 @@ fn build_from_decl(
             });
         }
         SyntaxDeclAtSpan::Enum(def) => {
-            let generics = def
-                .node
-                .generics
-                .iter()
-                .map(|generic| generic.node.name.clone());
+            let generics = def.node.generics.iter().map(|generic| generic.node.name.clone());
             signature.generic_parameters = generic_parameters_from_names(generics.clone());
             let generic_text = generics.collect::<Vec<_>>().join(", ");
             signature.signature = Some(if generic_text.is_empty() {
@@ -279,18 +230,12 @@ fn build_from_decl(
         }
         SyntaxDeclAtSpan::Field(field) => {
             let field_type = type_annotation_for_type(&field.node.ty, resolution);
-            signature.signature = Some(format!(
-                "{} {}",
-                field_type.display, field.node.name.node.name
-            ));
+            signature.signature = Some(format!("{} {}", field_type.display, field.node.name.node.name));
             signature.field_type = Some(field_type);
         }
         SyntaxDeclAtSpan::Parameter(parameter) => {
             let field_type = type_annotation_for_type(&parameter.node.ty, resolution);
-            signature.signature = Some(format!(
-                "{} {}",
-                field_type.display, parameter.node.name.node.name
-            ));
+            signature.signature = Some(format!("{} {}", field_type.display, parameter.node.name.node.name));
             signature.field_type = Some(field_type);
         }
         SyntaxDeclAtSpan::ContractMethod(method) => {
@@ -324,10 +269,7 @@ pub fn build_item_signature(
     };
     let Some(decl) = find_decl_at_span(&program.node, item.span) else {
         return if matches!(item.kind, ItemKind::Statement) {
-            ApiItemSignature {
-                signature: Some("statement".to_string()),
-                ..base
-            }
+            ApiItemSignature { signature: Some("statement".to_string()), ..base }
         } else {
             base
         };
@@ -336,10 +278,7 @@ pub fn build_item_signature(
 }
 
 /// Apply [`ApiItemSignature`] fields onto an [`super::api_snapshot::ApiDocItem`].
-pub fn apply_signature_to_item(
-    item: &mut super::api_snapshot::ApiDocItem,
-    signature: ApiItemSignature,
-) {
+pub fn apply_signature_to_item(item: &mut super::api_snapshot::ApiDocItem, signature: ApiItemSignature) {
     item.display_name = signature.display_name;
     item.module_path = signature.module_path;
     item.signature = signature.signature;

@@ -21,9 +21,7 @@ const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 /// Cached progress styles to avoid repeated template parsing
 static DOWNLOAD_SPINNER_STYLE: LazyLock<ProgressStyle> = LazyLock::new(|| {
-    ProgressStyle::default_spinner()
-        .template("{spinner:.green} Downloading [{elapsed_precise}] {bytes}")
-        .unwrap()
+    ProgressStyle::default_spinner().template("{spinner:.green} Downloading [{elapsed_precise}] {bytes}").unwrap()
 });
 
 static DOWNLOAD_BAR_STYLE: LazyLock<ProgressStyle> = LazyLock::new(|| {
@@ -37,12 +35,9 @@ static EXTRACT_SPINNER_STYLE: LazyLock<ProgressStyle> = LazyLock::new(|| {
     ProgressStyle::default_spinner()
         .template("{spinner:.magenta} Extracting  [{elapsed_precise}] {pos} files ({my_per_sec}/s)")
         .unwrap()
-        .with_key(
-            "my_per_sec",
-            |state: &indicatif::ProgressState, w: &mut dyn std::fmt::Write| {
-                write!(w, "{:.0}", state.per_sec()).unwrap();
-            },
-        )
+        .with_key("my_per_sec", |state: &indicatif::ProgressState, w: &mut dyn std::fmt::Write| {
+            write!(w, "{:.0}", state.per_sec()).unwrap();
+        })
 });
 
 static EXTRACT_BAR_STYLE: LazyLock<ProgressStyle> = LazyLock::new(|| {
@@ -131,9 +126,7 @@ async fn send_request_with_retry_range(
                     return Ok(response);
                 }
 
-                return Err(CrossError::DownloadFailed(format!(
-                    "HTTP {status} for {url}"
-                )));
+                return Err(CrossError::DownloadFailed(format!("HTTP {status} for {url}")));
             }
             Err(err) => {
                 if !is_retryable_error(&err) || attempt == MAX_RETRIES {
@@ -146,10 +139,7 @@ async fn send_request_with_retry_range(
     }
 
     // This should never be reached, but just in case
-    Err(last_error.map_or_else(
-        || CrossError::DownloadFailed("Unknown error".to_string()),
-        Into::into,
-    ))
+    Err(last_error.map_or_else(|| CrossError::DownloadFailed("Unknown error".to_string()), Into::into))
 }
 
 /// Download to file with resume support and automatic retry
@@ -172,11 +162,7 @@ async fn download_with_resume(
 
         // Open file in append mode or create if doesn't exist
         let mut file = if downloaded > 0 {
-            File::options()
-                .append(true)
-                .create(true)
-                .open(file_path)
-                .await?
+            File::options().append(true).create(true).open(file_path).await?
         } else {
             File::create(file_path).await?
         };
@@ -195,9 +181,7 @@ async fn download_with_resume(
                     file.flush().await?;
 
                     if attempt >= MAX_RETRIES {
-                        return Err(CrossError::DownloadFailed(format!(
-                            "Max retries reached: {err}"
-                        )));
+                        return Err(CrossError::DownloadFailed(format!("Max retries reached: {err}")));
                     }
 
                     attempt += 1;
@@ -228,26 +212,12 @@ pub async fn download_file(url: &str, dest: &Path) -> Result<()> {
     // Download to temporary file
     // Note: Can't use with_extension() because dest may contain dots (e.g., v0.7.7)
     let temp_path = dest.parent().map_or_else(
-        || {
-            std::path::PathBuf::from(format!(
-                "{}.tmp",
-                dest.file_name().unwrap().to_string_lossy()
-            ))
-        },
-        |p| {
-            p.join(format!(
-                "{}.tmp",
-                dest.file_name().unwrap().to_string_lossy()
-            ))
-        },
+        || std::path::PathBuf::from(format!("{}.tmp", dest.file_name().unwrap().to_string_lossy())),
+        |p| p.join(format!("{}.tmp", dest.file_name().unwrap().to_string_lossy())),
     );
 
     // Check if partial file exists
-    let already_downloaded = if temp_path.exists() {
-        fs::metadata(&temp_path).await?.len()
-    } else {
-        0
-    };
+    let already_downloaded = if temp_path.exists() { fs::metadata(&temp_path).await?.len() } else { 0 };
 
     // Get total size (try without Range first to get accurate size)
     let response = send_request_with_retry(&client, url).await?;
@@ -283,11 +253,7 @@ pub async fn download_and_extract(
     let url = apply_github_proxy(url, github_proxy);
 
     // Get absolute path for destination
-    let dest = if dest.is_absolute() {
-        dest.to_path_buf()
-    } else {
-        std::env::current_dir()?.join(dest)
-    };
+    let dest = if dest.is_absolute() { dest.to_path_buf() } else { std::env::current_dir()?.join(dest) };
 
     // Create parent directory
     if let Some(parent) = dest.parent() {
@@ -296,10 +262,7 @@ pub async fn download_and_extract(
 
     // Use temporary directory for extraction
     // Note: Can't use with_extension() because dest may contain dots (e.g., v0.7.7)
-    let temp_dir = dest.parent().unwrap().join(format!(
-        "{}.tmp",
-        dest.file_name().unwrap().to_string_lossy()
-    ));
+    let temp_dir = dest.parent().unwrap().join(format!("{}.tmp", dest.file_name().unwrap().to_string_lossy()));
     cleanup_and_create_dir(&temp_dir).await?;
 
     color::log_info(&format!(
@@ -339,11 +302,7 @@ async fn download_archive(url: &str, file_path: &Path) -> Result<()> {
     let client = create_http_client()?;
 
     // Check if partial file exists
-    let already_downloaded = if file_path.exists() {
-        fs::metadata(file_path).await?.len()
-    } else {
-        0
-    };
+    let already_downloaded = if file_path.exists() { fs::metadata(file_path).await?.len() } else { 0 };
 
     // Get total size for progress bar
     let response = send_request_with_retry(&client, url).await?;
@@ -369,10 +328,7 @@ async fn download_and_extract_tar_gz(url: &str, dest: &Path) -> Result<()> {
 
     // Download to {dest}.tar.gz file first (with resume support)
     // Note: Can't use with_extension() because dest may contain dots (e.g., v0.7.7)
-    let archive_path = dest.parent().unwrap().join(format!(
-        "{}.tar.gz",
-        dest.file_name().unwrap().to_string_lossy()
-    ));
+    let archive_path = dest.parent().unwrap().join(format!("{}.tar.gz", dest.file_name().unwrap().to_string_lossy()));
     download_archive(url, &archive_path).await?;
 
     // Now extract the downloaded archive
@@ -383,20 +339,13 @@ async fn download_and_extract_tar_gz(url: &str, dest: &Path) -> Result<()> {
 
     // Decompress and extract with permission preservation for executable files
     let decoder = GzipDecoder::new(buf_reader);
-    let mut archive = ArchiveBuilder::new(decoder)
-        .set_preserve_permissions(true)
-        .build();
+    let mut archive = ArchiveBuilder::new(decoder).set_preserve_permissions(true).build();
 
-    let mut entries = archive
-        .entries()
-        .map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
+    let mut entries = archive.entries().map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
 
     while let Some(entry) = entries.next().await {
         let mut entry = entry.map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
-        entry
-            .unpack_in(dest)
-            .await
-            .map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
+        entry.unpack_in(dest).await.map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
         extract_pb.inc(1);
     }
 
@@ -412,10 +361,7 @@ async fn download_and_extract_tar_gz(url: &str, dest: &Path) -> Result<()> {
 async fn download_and_extract_zip(url: &str, dest: &Path) -> Result<()> {
     // Download to {dest}.zip file
     // Note: Can't use with_extension() because dest may contain dots (e.g., v0.7.7)
-    let zip_path = dest.parent().unwrap().join(format!(
-        "{}.zip",
-        dest.file_name().unwrap().to_string_lossy()
-    ));
+    let zip_path = dest.parent().unwrap().join(format!("{}.zip", dest.file_name().unwrap().to_string_lossy()));
     download_archive(url, &zip_path).await?;
 
     // Extract ZIP with progress (creates its own progress bar with known total)
@@ -437,8 +383,7 @@ fn extract_zip_archive(zip_path: &Path, dest: &Path) -> Result<()> {
     fs::create_dir_all(dest)?;
 
     let file = fs::File::open(zip_path)?;
-    let mut archive =
-        zip::ZipArchive::new(file).map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
 
     let total_files = archive.len();
 
@@ -450,9 +395,7 @@ fn extract_zip_archive(zip_path: &Path, dest: &Path) -> Result<()> {
     let mut files_by_unix_mode: Vec<(std::path::PathBuf, u32)> = Vec::new();
 
     for i in 0..total_files {
-        let mut file = archive
-            .by_index(i)
-            .map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
+        let mut file = archive.by_index(i).map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
 
         let outpath = match file.enclosed_name() {
             Some(path) => dest.join(path),
@@ -463,8 +406,7 @@ fn extract_zip_archive(zip_path: &Path, dest: &Path) -> Result<()> {
         #[allow(clippy::cast_possible_truncation)] // symlink targets are typically small
         let symlink_target = if file.is_symlink() && (cfg!(unix) || cfg!(windows)) {
             let mut target = Vec::with_capacity(file.size() as usize);
-            file.read_to_end(&mut target)
-                .map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
+            file.read_to_end(&mut target).map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
             Some(target)
         } else if file.is_dir() {
             // Create directory and ensure it's writable for subsequent file extractions
@@ -486,14 +428,13 @@ fn extract_zip_archive(zip_path: &Path, dest: &Path) -> Result<()> {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::symlink;
-                let target_str = std::str::from_utf8(&target)
-                    .map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
+                let target_str =
+                    std::str::from_utf8(&target).map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
                 // Remove existing file/symlink if present
                 if outpath.symlink_metadata().is_ok() {
                     fs::remove_file(&outpath).ok();
                 }
-                symlink(target_str, &outpath)
-                    .map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
+                symlink(target_str, &outpath).map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
             }
             #[cfg(not(unix))]
             {
@@ -505,9 +446,7 @@ fn extract_zip_archive(zip_path: &Path, dest: &Path) -> Result<()> {
             }
         } else {
             // Regular file: re-open file handle and copy content
-            let mut file = archive
-                .by_index(i)
-                .map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
+            let mut file = archive.by_index(i).map_err(|e| CrossError::ExtractionFailed(e.to_string()))?;
 
             if let Some(parent) = outpath.parent() {
                 make_writable_dir_all(parent)?;
@@ -684,14 +623,8 @@ mod tests {
 
     #[test]
     fn test_archive_format_detection() {
-        assert_eq!(
-            ArchiveFormat::from_url("foo.tar.gz"),
-            Some(ArchiveFormat::TarGz)
-        );
-        assert_eq!(
-            ArchiveFormat::from_url("foo.tgz"),
-            Some(ArchiveFormat::TarGz)
-        );
+        assert_eq!(ArchiveFormat::from_url("foo.tar.gz"), Some(ArchiveFormat::TarGz));
+        assert_eq!(ArchiveFormat::from_url("foo.tgz"), Some(ArchiveFormat::TarGz));
         assert_eq!(ArchiveFormat::from_url("foo.zip"), Some(ArchiveFormat::Zip));
         assert_eq!(ArchiveFormat::from_url("foo.txt"), None);
         assert_eq!(ArchiveFormat::from_url("foo.tar.xz"), None); // Not supported
@@ -703,13 +636,7 @@ mod tests {
             apply_github_proxy("https://github.com/foo/bar", Some("https://proxy.com/")),
             "https://proxy.com/https://github.com/foo/bar"
         );
-        assert_eq!(
-            apply_github_proxy("https://other.com/foo", Some("https://proxy.com/")),
-            "https://other.com/foo"
-        );
-        assert_eq!(
-            apply_github_proxy("https://github.com/foo/bar", None),
-            "https://github.com/foo/bar"
-        );
+        assert_eq!(apply_github_proxy("https://other.com/foo", Some("https://proxy.com/")), "https://other.com/foo");
+        assert_eq!(apply_github_proxy("https://github.com/foo/bar", None), "https://github.com/foo/bar");
     }
 }

@@ -55,11 +55,7 @@ fn handler_overrides() -> &'static Mutex<HandlerOverrides> {
 /// Returns `0` on success, `1` when `version` does not match [`BESKID_RUNTIME_ABI_VERSION`],
 /// and `2` when `table` is null or `count` is zero.
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn beskid_register_handlers(
-    version: u64,
-    table: *const HandlerTableEntry,
-    count: u64,
-) -> i32 {
+pub extern "C-unwind" fn beskid_register_handlers(version: u64, table: *const HandlerTableEntry, count: u64) -> i32 {
     if version != u64::from(BESKID_RUNTIME_ABI_VERSION) {
         return 1;
     }
@@ -80,24 +76,24 @@ pub extern "C-unwind" fn beskid_register_handlers(
         }
         match entry.group {
             DISPATCH_GROUP_USIZE => {
-                overrides.usize_handlers.insert(entry.tag, unsafe {
-                    std::mem::transmute::<*const u8, UsizeHandler>(handler)
-                });
+                overrides
+                    .usize_handlers
+                    .insert(entry.tag, unsafe { std::mem::transmute::<*const u8, UsizeHandler>(handler) });
             }
             DISPATCH_GROUP_PTR => {
-                overrides.ptr_handlers.insert(entry.tag, unsafe {
-                    std::mem::transmute::<*const u8, PtrHandler>(handler)
-                });
+                overrides
+                    .ptr_handlers
+                    .insert(entry.tag, unsafe { std::mem::transmute::<*const u8, PtrHandler>(handler) });
             }
             DISPATCH_GROUP_UNIT => {
-                overrides.unit_handlers.insert(entry.tag, unsafe {
-                    std::mem::transmute::<*const u8, UnitHandler>(handler)
-                });
+                overrides
+                    .unit_handlers
+                    .insert(entry.tag, unsafe { std::mem::transmute::<*const u8, UnitHandler>(handler) });
             }
             DISPATCH_GROUP_I64 => {
-                overrides.i64_handlers.insert(entry.tag, unsafe {
-                    std::mem::transmute::<*const u8, I64Handler>(handler)
-                });
+                overrides
+                    .i64_handlers
+                    .insert(entry.tag, unsafe { std::mem::transmute::<*const u8, I64Handler>(handler) });
             }
             _ => {}
         }

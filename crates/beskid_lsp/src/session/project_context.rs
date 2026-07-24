@@ -7,14 +7,12 @@ use super::store::State;
 
 fn project_graph_options_from_env() -> beskid_analysis::ProjectGraphBuildOptions {
     beskid_analysis::ProjectGraphBuildOptions {
-        workspace_member_for_meta_default: std::env::var(
-            "BESKID_WORKSPACE_MEMBER_FOR_META_DEFAULT",
-        )
-        .ok()
-        .and_then(|value| {
-            let trimmed = value.trim();
-            (!trimmed.is_empty()).then(|| trimmed.to_string())
-        }),
+        workspace_member_for_meta_default: std::env::var("BESKID_WORKSPACE_MEMBER_FOR_META_DEFAULT").ok().and_then(
+            |value| {
+                let trimmed = value.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_string())
+            },
+        ),
     }
 }
 
@@ -25,10 +23,7 @@ pub async fn cached_compilation_context(
     path: &std::path::Path,
 ) -> Option<beskid_analysis::CompilationContext> {
     let focused = { state.read().await.focused_project.clone() };
-    let (manifest, _) = match beskid_analysis::resolve_project_manifest_for_source_path(path, None)
-        .ok()
-        .flatten()
-    {
+    let (manifest, _) = match beskid_analysis::resolve_project_manifest_for_source_path(path, None).ok().flatten() {
         Some(resolved) => resolved,
         None => {
             let focused_manifest = focused.as_ref()?;
@@ -41,26 +36,15 @@ pub async fn cached_compilation_context(
         }
     };
     let graph_options = project_graph_options_from_env();
-    let cache_key = (
-        manifest.clone(),
-        graph_options.workspace_member_for_meta_default.clone(),
-    );
+    let cache_key = (manifest.clone(), graph_options.workspace_member_for_meta_default.clone());
     {
         let s = state.read().await;
         if let Some(ctx) = s.compilation_context_cache.get(&cache_key) {
             return Some(ctx.clone());
         }
     }
-    let ctx = beskid_analysis::CompilationContext::try_for_analysis_path_with_graph_options(
-        path,
-        None,
-        graph_options,
-    )?;
-    state
-        .write()
-        .await
-        .compilation_context_cache
-        .insert(cache_key, ctx.clone());
+    let ctx = beskid_analysis::CompilationContext::try_for_analysis_path_with_graph_options(path, None, graph_options)?;
+    state.write().await.compilation_context_cache.insert(cache_key, ctx.clone());
     Some(ctx)
 }
 
@@ -80,8 +64,7 @@ pub async fn invalidate_compilation_cache(state: &RwLock<State>) {
         {
             focused_roots.push(root.to_path_buf());
         }
-        let cold_start =
-            read.compilation_context_cache.is_empty() && read.configured_project_root.is_none();
+        let cold_start = read.compilation_context_cache.is_empty() && read.configured_project_root.is_none();
         (project_roots, focused_roots, cold_start)
     };
 

@@ -17,15 +17,15 @@ use axum::{
 };
 use beskid_pckg_artifacts::LocalFileArtifactStore;
 use beskid_pckg_auth::{
-    AuthHubHandoffVerifier, AuthHubIdentity, HandoffRequest, Hs256AuthHubHandoffVerifier,
-    issue_pckg_session, verify_pckg_session,
+    AuthHubHandoffVerifier, AuthHubIdentity, HandoffRequest, Hs256AuthHubHandoffVerifier, issue_pckg_session,
+    verify_pckg_session,
 };
 use beskid_pckg_contract::{ApiErrorResponse, HealthResponse, SessionResponse};
 use beskid_pckg_store::{
-    AsyncPackageCommunityReviewRepository, AsyncPackageRepository, InMemoryPackageRepository,
-    NewPackage, Package, PackageCommunityReview, PackageCommunityReviewError, PackageRepository,
-    PackageVersion, PublishOutcome, PublishVersion, SqlxCommunityRepository, SqlxPackageRepository,
-    StoreError, WorkspacePublishOutcome, WorkspacePublishReservation,
+    AsyncPackageCommunityReviewRepository, AsyncPackageRepository, InMemoryPackageRepository, NewPackage, Package,
+    PackageCommunityReview, PackageCommunityReviewError, PackageRepository, PackageVersion, PublishOutcome,
+    PublishVersion, SqlxCommunityRepository, SqlxPackageRepository, StoreError, WorkspacePublishOutcome,
+    WorkspacePublishReservation,
 };
 use serde::Deserialize;
 use sqlx::Row;
@@ -128,21 +128,15 @@ impl PackageBackend {
     async fn delete_package(&self, name: &str) -> Result<Vec<PackageVersion>, StoreError> {
         match self {
             Self::InMemory(repository) => {
-                let mut package_repository = repository
-                    .repository
-                    .lock()
-                    .expect("package repository mutex is not poisoned");
+                let mut package_repository =
+                    repository.repository.lock().expect("package repository mutex is not poisoned");
                 let package_id = package_repository
                     .find_package(name)
                     .map(|package| package.id.clone())
                     .ok_or(StoreError::PackageNotFound)?;
                 let versions = package_repository.delete_package(name)?;
                 drop(package_repository);
-                repository
-                    .package_names
-                    .lock()
-                    .expect("package catalog mutex is not poisoned")
-                    .remove(name);
+                repository.package_names.lock().expect("package catalog mutex is not poisoned").remove(name);
                 repository
                     .versions_by_package
                     .lock()
@@ -157,21 +151,11 @@ impl PackageBackend {
     async fn find_package_by_id(&self, id: &str) -> Result<Option<Package>, StoreError> {
         match self {
             Self::InMemory(repository) => {
-                let names = repository
-                    .package_names
-                    .lock()
-                    .expect("package catalog mutex is not poisoned")
-                    .clone();
-                let repository = repository
-                    .repository
-                    .lock()
-                    .expect("package repository mutex is not poisoned");
-                Ok(names.into_iter().find_map(|name| {
-                    repository
-                        .find_package(&name)
-                        .filter(|package| package.id == id)
-                        .cloned()
-                }))
+                let names = repository.package_names.lock().expect("package catalog mutex is not poisoned").clone();
+                let repository = repository.repository.lock().expect("package repository mutex is not poisoned");
+                Ok(names
+                    .into_iter()
+                    .find_map(|name| repository.find_package(&name).filter(|package| package.id == id).cloned()))
             }
             Self::Sqlx(repository) => sqlx_find_package_by_id(repository, id).await,
         }
@@ -180,30 +164,17 @@ impl PackageBackend {
     async fn list_packages(&self, limit: i64, offset: i64) -> Result<Vec<Package>, StoreError> {
         match self {
             Self::InMemory(repository) => {
-                let names = repository
-                    .package_names
-                    .lock()
-                    .expect("package catalog mutex is not poisoned")
-                    .clone();
-                let repository = repository
-                    .repository
-                    .lock()
-                    .expect("package repository mutex is not poisoned");
-                let mut packages = names
-                    .into_iter()
-                    .filter_map(|name| repository.find_package(&name).cloned())
-                    .collect::<Vec<_>>();
+                let names = repository.package_names.lock().expect("package catalog mutex is not poisoned").clone();
+                let repository = repository.repository.lock().expect("package repository mutex is not poisoned");
+                let mut packages =
+                    names.into_iter().filter_map(|name| repository.find_package(&name).cloned()).collect::<Vec<_>>();
                 packages.sort_by(|left, right| {
                     right
                         .updated_at_unix_seconds
                         .cmp(&left.updated_at_unix_seconds)
                         .then_with(|| left.name.cmp(&right.name))
                 });
-                Ok(packages
-                    .into_iter()
-                    .skip(offset as usize)
-                    .take(limit as usize)
-                    .collect())
+                Ok(packages.into_iter().skip(offset as usize).take(limit as usize).collect())
             }
             Self::Sqlx(repository) => sqlx_list_packages(repository, limit, offset).await,
         }
@@ -219,10 +190,7 @@ impl PackageBackend {
                     .get(package_id)
                     .cloned()
                     .unwrap_or_default();
-                let repository = repository
-                    .repository
-                    .lock()
-                    .expect("package repository mutex is not poisoned");
+                let repository = repository.repository.lock().expect("package repository mutex is not poisoned");
                 let mut versions = versions
                     .into_iter()
                     .filter_map(|version| repository.find_version(package_id, &version).cloned())
@@ -248,9 +216,7 @@ impl PackageBackend {
                     .expect("package repository mutex is not poisoned")
                     .publish_version(request)?;
                 let version = match &outcome {
-                    PublishOutcome::Created(version) | PublishOutcome::AlreadyExists(version) => {
-                        version
-                    }
+                    PublishOutcome::Created(version) | PublishOutcome::AlreadyExists(version) => version,
                 };
                 repository
                     .versions_by_package
@@ -274,27 +240,20 @@ impl PackageBackend {
     ) -> Result<Vec<WorkspacePublishOutcome>, StoreError> {
         match self {
             Self::InMemory(repository) => {
-                let mut package_repository = repository
-                    .repository
-                    .lock()
-                    .expect("package repository mutex is not poisoned");
+                let mut package_repository =
+                    repository.repository.lock().expect("package repository mutex is not poisoned");
                 let before = package_repository.clone();
                 let result = (|| {
                     let mut outcomes = Vec::with_capacity(reservations.len());
                     for reservation in &reservations {
-                        let package = match package_repository
-                            .find_package(&reservation.package.name)
-                            .cloned()
-                        {
+                        let package = match package_repository.find_package(&reservation.package.name).cloned() {
                             Some(package) => {
                                 if package.owner_subject != reservation.package.owner_subject {
                                     return Err(StoreError::PackageOwnershipConflict);
                                 }
                                 package
                             }
-                            None => {
-                                package_repository.create_package(reservation.package.clone())?
-                            }
+                            None => package_repository.create_package(reservation.package.clone())?,
                         };
                         let version = package_repository.publish_version(PublishVersion {
                             id: reservation.version_id.clone(),
@@ -315,24 +274,15 @@ impl PackageBackend {
                 }
                 let outcomes = result.expect("checked above");
                 drop(package_repository);
-                let mut names = repository
-                    .package_names
-                    .lock()
-                    .expect("package catalog mutex is not poisoned");
-                let mut versions = repository
-                    .versions_by_package
-                    .lock()
-                    .expect("version catalog mutex is not poisoned");
+                let mut names = repository.package_names.lock().expect("package catalog mutex is not poisoned");
+                let mut versions =
+                    repository.versions_by_package.lock().expect("version catalog mutex is not poisoned");
                 for outcome in &outcomes {
                     names.insert(outcome.package.name.clone());
                     let version = match &outcome.version {
-                        PublishOutcome::Created(version)
-                        | PublishOutcome::AlreadyExists(version) => version,
+                        PublishOutcome::Created(version) | PublishOutcome::AlreadyExists(version) => version,
                     };
-                    versions
-                        .entry(version.package_id.clone())
-                        .or_default()
-                        .insert(version.version.clone());
+                    versions.entry(version.package_id.clone()).or_default().insert(version.version.clone());
                 }
                 Ok(outcomes)
             }
@@ -340,11 +290,7 @@ impl PackageBackend {
         }
     }
 
-    async fn find_version(
-        &self,
-        package_id: &str,
-        version: &str,
-    ) -> Result<Option<PackageVersion>, StoreError> {
+    async fn find_version(&self, package_id: &str, version: &str) -> Result<Option<PackageVersion>, StoreError> {
         match self {
             Self::InMemory(repository) => Ok(repository
                 .repository
@@ -369,13 +315,9 @@ impl PackageBackend {
                 if review.comment.trim().is_empty() {
                     return Err(PackageCommunityReviewError::InvalidComment);
                 }
-                let mut reviews = repository
-                    .community_reviews
-                    .lock()
-                    .expect("community reviews mutex is not poisoned");
+                let mut reviews = repository.community_reviews.lock().expect("community reviews mutex is not poisoned");
                 if let Some(existing) = reviews.iter_mut().find(|existing| {
-                    existing.package_id == review.package_id
-                        && existing.author_subject == review.author_subject
+                    existing.package_id == review.package_id && existing.author_subject == review.author_subject
                 }) {
                     let mut updated = review;
                     updated.id = existing.id.clone();
@@ -419,80 +361,43 @@ impl PackageBackend {
                 .lock()
                 .expect("package repository mutex is not poisoned")
                 .set_yanked(package_id, version, yanked, now_unix_seconds),
-            Self::Sqlx(repository) => {
-                repository
-                    .set_yanked(package_id, version, yanked, now_unix_seconds)
-                    .await
-            }
+            Self::Sqlx(repository) => repository.set_yanked(package_id, version, yanked, now_unix_seconds).await,
         }
     }
 }
 
 fn row_package(row: sqlx::postgres::PgRow) -> Result<Package, StoreError> {
     Ok(Package {
-        id: row
-            .try_get("id")
-            .map_err(|error| StoreError::Database(error.to_string()))?,
-        name: row
-            .try_get("name")
-            .map_err(|error| StoreError::Database(error.to_string()))?,
-        owner_subject: row
-            .try_get("owner_subject")
-            .map_err(|error| StoreError::Database(error.to_string()))?,
-        is_public: row
-            .try_get("is_public")
-            .map_err(|error| StoreError::Database(error.to_string()))?,
-        created_at_unix_seconds: row
-            .try_get("created_at")
-            .map_err(|error| StoreError::Database(error.to_string()))?,
-        updated_at_unix_seconds: row
-            .try_get("updated_at")
-            .map_err(|error| StoreError::Database(error.to_string()))?,
+        id: row.try_get("id").map_err(|error| StoreError::Database(error.to_string()))?,
+        name: row.try_get("name").map_err(|error| StoreError::Database(error.to_string()))?,
+        owner_subject: row.try_get("owner_subject").map_err(|error| StoreError::Database(error.to_string()))?,
+        is_public: row.try_get("is_public").map_err(|error| StoreError::Database(error.to_string()))?,
+        created_at_unix_seconds: row.try_get("created_at").map_err(|error| StoreError::Database(error.to_string()))?,
+        updated_at_unix_seconds: row.try_get("updated_at").map_err(|error| StoreError::Database(error.to_string()))?,
     })
 }
 
 fn row_version(row: sqlx::postgres::PgRow) -> Result<PackageVersion, StoreError> {
-    let size_bytes: i64 = row
-        .try_get("size_bytes")
-        .map_err(|error| StoreError::Database(error.to_string()))?;
+    let size_bytes: i64 = row.try_get("size_bytes").map_err(|error| StoreError::Database(error.to_string()))?;
     Ok(PackageVersion {
-        id: row
-            .try_get("id")
-            .map_err(|error| StoreError::Database(error.to_string()))?,
-        package_id: row
-            .try_get("package_id")
-            .map_err(|error| StoreError::Database(error.to_string()))?,
-        version: row
-            .try_get("version")
-            .map_err(|error| StoreError::Database(error.to_string()))?,
-        checksum_sha256: row
-            .try_get("checksum_sha256")
-            .map_err(|error| StoreError::Database(error.to_string()))?,
-        storage_key: row
-            .try_get("storage_key")
-            .map_err(|error| StoreError::Database(error.to_string()))?,
-        size_bytes: size_bytes
-            .try_into()
-            .map_err(|_| StoreError::InvalidIdentifier)?,
-        is_yanked: row
-            .try_get("is_yanked")
-            .map_err(|error| StoreError::Database(error.to_string()))?,
+        id: row.try_get("id").map_err(|error| StoreError::Database(error.to_string()))?,
+        package_id: row.try_get("package_id").map_err(|error| StoreError::Database(error.to_string()))?,
+        version: row.try_get("version").map_err(|error| StoreError::Database(error.to_string()))?,
+        checksum_sha256: row.try_get("checksum_sha256").map_err(|error| StoreError::Database(error.to_string()))?,
+        storage_key: row.try_get("storage_key").map_err(|error| StoreError::Database(error.to_string()))?,
+        size_bytes: size_bytes.try_into().map_err(|_| StoreError::InvalidIdentifier)?,
+        is_yanked: row.try_get("is_yanked").map_err(|error| StoreError::Database(error.to_string()))?,
         published_at_unix_seconds: row
             .try_get("published_at")
             .map_err(|error| StoreError::Database(error.to_string()))?,
-        yanked_at_unix_seconds: row
-            .try_get("yanked_at")
-            .map_err(|error| StoreError::Database(error.to_string()))?,
+        yanked_at_unix_seconds: row.try_get("yanked_at").map_err(|error| StoreError::Database(error.to_string()))?,
     })
 }
 
 const PACKAGE_SELECT: &str = "SELECT id::text AS id, name, owner_subject, is_public, EXTRACT(EPOCH FROM created_at_utc)::bigint AS created_at, EXTRACT(EPOCH FROM updated_at_utc)::bigint AS updated_at FROM pckg_packages";
 const VERSION_SELECT: &str = "SELECT id::text AS id, package_id::text AS package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, EXTRACT(EPOCH FROM published_at_utc)::bigint AS published_at, EXTRACT(EPOCH FROM yanked_at_utc)::bigint AS yanked_at FROM pckg_package_versions";
 
-async fn sqlx_find_package_by_id(
-    repository: &SqlxPackageRepository,
-    id: &str,
-) -> Result<Option<Package>, StoreError> {
+async fn sqlx_find_package_by_id(repository: &SqlxPackageRepository, id: &str) -> Result<Option<Package>, StoreError> {
     let query = format!("{PACKAGE_SELECT} WHERE id::text = $1");
     sqlx::query(&query)
         .bind(id)
@@ -508,8 +413,7 @@ async fn sqlx_list_packages(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<Package>, StoreError> {
-    let query =
-        format!("{PACKAGE_SELECT} ORDER BY updated_at_utc DESC, name ASC LIMIT $1 OFFSET $2");
+    let query = format!("{PACKAGE_SELECT} ORDER BY updated_at_utc DESC, name ASC LIMIT $1 OFFSET $2");
     sqlx::query(&query)
         .bind(limit)
         .bind(offset)
@@ -525,9 +429,7 @@ async fn sqlx_list_versions(
     repository: &SqlxPackageRepository,
     package_id: &str,
 ) -> Result<Vec<PackageVersion>, StoreError> {
-    let query = format!(
-        "{VERSION_SELECT} WHERE package_id::text = $1 ORDER BY published_at_utc DESC, version DESC"
-    );
+    let query = format!("{VERSION_SELECT} WHERE package_id::text = $1 ORDER BY published_at_utc DESC, version DESC");
     sqlx::query(&query)
         .bind(package_id)
         .fetch_all(repository.pool())
@@ -564,37 +466,24 @@ impl Default for PckgServerConfig {
 
 impl PckgServerConfig {
     pub fn from_environment() -> Result<Self, beskid_pckg_auth::AuthError> {
-        let service_token = env::var("PCKG_AUTH_HUB_SERVICE_TOKEN")
-            .map_err(|_| beskid_pckg_auth::AuthError::MissingConfiguration)?;
-        let session_secret = env::var("PCKG_SESSION_SECRET")
-            .map_err(|_| beskid_pckg_auth::AuthError::MissingConfiguration)?;
+        let service_token =
+            env::var("PCKG_AUTH_HUB_SERVICE_TOKEN").map_err(|_| beskid_pckg_auth::AuthError::MissingConfiguration)?;
+        let session_secret =
+            env::var("PCKG_SESSION_SECRET").map_err(|_| beskid_pckg_auth::AuthError::MissingConfiguration)?;
         Ok(Self::with_auth_secrets(service_token, session_secret)
-            .with_secure_cookies(
-                env::var("PCKG_COOKIE_SECURE")
-                    .map(|value| value != "false")
-                    .unwrap_or(true),
-            )
-            .with_web_root(
-                env::var_os("PCKG_WEB_ROOT")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| PathBuf::from("/app/web")),
-            )
+            .with_secure_cookies(env::var("PCKG_COOKIE_SECURE").map(|value| value != "false").unwrap_or(true))
+            .with_web_root(env::var_os("PCKG_WEB_ROOT").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/app/web")))
             .with_artifact_root(
-                env::var_os("PCKG_ARTIFACT_ROOT")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| PathBuf::from("/app/artifacts")),
+                env::var_os("PCKG_ARTIFACT_ROOT").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/app/artifacts")),
             )
             .with_database_url(env::var("PCKG_DATABASE_URL").ok())
             .with_admin_bootstrap_subject(env::var("PCKG_ADMIN_BOOTSTRAP_SUBJECT").ok()))
     }
 
-    pub fn with_auth_secrets(
-        service_token: impl Into<String>,
-        session_secret: impl Into<String>,
-    ) -> Self {
+    pub fn with_auth_secrets(service_token: impl Into<String>, session_secret: impl Into<String>) -> Self {
         let session_secret = session_secret.into();
-        let handoff_verifier = Hs256AuthHubHandoffVerifier::new(service_token)
-            .expect("explicit auth hub service token is non-empty");
+        let handoff_verifier =
+            Hs256AuthHubHandoffVerifier::new(service_token).expect("explicit auth hub service token is non-empty");
         Self {
             auth: Some(AuthConfig {
                 handoff_verifier: Arc::new(handoff_verifier),
@@ -650,10 +539,7 @@ impl PckgServerConfig {
 /// [`router_from_config`] or [`serve`] so a failed database migration can never
 /// silently fall back to volatile data.
 pub fn router(config: PckgServerConfig) -> Router {
-    assert!(
-        config.database_url.is_none(),
-        "PCKG_DATABASE_URL is configured; use router_from_config or serve"
-    );
+    assert!(config.database_url.is_none(), "PCKG_DATABASE_URL is configured; use router_from_config or serve");
     router_with_backend(config, PackageBackend::in_memory(), None)
 }
 
@@ -663,47 +549,38 @@ pub fn router(config: PckgServerConfig) -> Router {
 /// audited GitHub-subject mapping.
 pub async fn router_from_config(config: PckgServerConfig) -> Result<Router, ServerStartupError> {
     let Some(database_url) = config.database_url.clone() else {
-        return Ok(router_with_backend(
-            config,
-            PackageBackend::in_memory(),
-            None,
-        ));
+        return Ok(router_with_backend(config, PackageBackend::in_memory(), None));
     };
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(&database_url)
         .await
-        .map_err(|error| {
-            ServerStartupError(format!("cannot connect to PCKG_DATABASE_URL: {error}"))
-        })?;
+        .map_err(|error| ServerStartupError(format!("cannot connect to PCKG_DATABASE_URL: {error}")))?;
     let repository = SqlxPackageRepository::new(pool.clone());
-    repository.migrate().await.map_err(|error| {
-        ServerStartupError(format!("pckg registry migration failed: {error:?}"))
-    })?;
+    repository
+        .migrate()
+        .await
+        .map_err(|error| ServerStartupError(format!("pckg registry migration failed: {error:?}")))?;
     repository
         .migrate_api_keys()
         .await
         .map_err(|error| ServerStartupError(format!("pckg API-key migration failed: {error:?}")))?;
-    repository.migrate_administration().await.map_err(|error| {
-        ServerStartupError(format!("pckg administration migration failed: {error:?}"))
-    })?;
+    repository
+        .migrate_administration()
+        .await
+        .map_err(|error| ServerStartupError(format!("pckg administration migration failed: {error:?}")))?;
     if let Some(subject) = config.admin_bootstrap_subject.as_deref() {
         repository
             .bootstrap_super_admin(subject, now_unix_seconds())
             .await
-            .map_err(|error| {
-                ServerStartupError(format!("pckg administration bootstrap failed: {error:?}"))
-            })?;
+            .map_err(|error| ServerStartupError(format!("pckg administration bootstrap failed: {error:?}")))?;
     }
     let community_repository = Arc::new(SqlxCommunityRepository::new(pool));
-    community_repository.migrate().await.map_err(|error| {
-        ServerStartupError(format!("pckg community migration failed: {error:?}"))
-    })?;
-    Ok(router_with_backend(
-        config,
-        PackageBackend::Sqlx(Arc::new(repository)),
-        Some(community_repository),
-    ))
+    community_repository
+        .migrate()
+        .await
+        .map_err(|error| ServerStartupError(format!("pckg community migration failed: {error:?}")))?;
+    Ok(router_with_backend(config, PackageBackend::Sqlx(Arc::new(repository)), Some(community_repository)))
 }
 
 fn router_with_backend(
@@ -720,9 +597,7 @@ fn router_with_backend(
         PackageBackend::InMemory(_) => None,
     };
     let operations = match &packages {
-        PackageBackend::Sqlx(repository) => {
-            operations_routes::OperationsState::sqlx(repository.clone())
-        }
+        PackageBackend::Sqlx(repository) => operations_routes::OperationsState::sqlx(repository.clone()),
         PackageBackend::InMemory(_) => {
             operations_routes::OperationsState::in_memory(config.admin_bootstrap_subject.clone())
         }
@@ -734,14 +609,10 @@ fn router_with_backend(
             Some(repository) => community_routes::CommunityState::with_sqlx_session_secret(
                 auth.session_secret.clone(),
                 repository.clone(),
-                moderation_repository
-                    .clone()
-                    .expect("SQL community storage requires SQL administration storage"),
+                moderation_repository.clone().expect("SQL community storage requires SQL administration storage"),
                 Arc::new(operations.clone()),
             ),
-            None => {
-                community_routes::CommunityState::with_session_secret(auth.session_secret.clone())
-            }
+            None => community_routes::CommunityState::with_session_secret(auth.session_secret.clone()),
         })
         .unwrap_or_default();
     let api_keys = match &packages {
@@ -752,120 +623,54 @@ fn router_with_backend(
         .route("/health", get(health))
         .route("/health/live", get(health))
         .route("/health/ready", get(health))
-        .route(
-            "/api/packages",
-            get(packages::list_packages).post(packages::upsert_package),
-        )
+        .route("/api/packages", get(packages::list_packages).post(packages::upsert_package))
         .route("/api/search", get(packages::search_packages))
         .route("/api/embed/badge.svg", get(embed::badge))
         .route("/api/embed/card", get(embed::card))
         .route("/api/publishers", get(packages::list_publishers))
-        .route(
-            "/api/publishers/{subject}/packages",
-            get(packages::publisher_packages),
-        )
+        .route("/api/publishers/{subject}/packages", get(packages::publisher_packages))
         .route(
             "/api/packages/{name}/community-reviews",
             get(packages::list_community_reviews).post(packages::create_community_review),
         )
-        .route(
-            "/api/packages/{idOrName}",
-            get(packages::package_detail).delete(packages::delete_package),
-        )
-        .route(
-            "/api/packages/{name}/versions",
-            get(packages::list_versions).post(packages::publish_version),
-        )
-        .route(
-            "/api/packages/{name}/versions/{version}/yank",
-            axum::routing::post(packages::yank_version),
-        )
-        .route(
-            "/api/packages/{name}/versions/{version}/unyank",
-            axum::routing::post(packages::unyank_version),
-        )
-        .route(
-            "/api/packages/{name}/versions/{version}/artifact",
-            axum::routing::post(packages::upload_artifact),
-        )
-        .route(
-            "/api/packages/{name}/versions/{version}/download",
-            get(packages::download_artifact),
-        )
-        .route(
-            "/api/packages/{name}/versions/{version}/readme",
-            get(artifact_routes::readme),
-        )
-        .route(
-            "/api/packages/{name}/versions/{version}/docs",
-            get(artifact_routes::list_docs),
-        )
-        .route(
-            "/api/packages/{name}/versions/{version}/docs/file",
-            get(artifact_routes::read_doc),
-        )
-        .route(
-            "/api/packages/{name}/versions/{version}/docs/structured",
-            get(artifact_routes::structured_docs),
-        )
-        .route(
-            "/api/packages/{name}/versions/{version}/source/tree",
-            get(artifact_routes::source_tree),
-        )
-        .route(
-            "/api/packages/{name}/versions/{version}/source/file",
-            get(artifact_routes::read_source),
-        )
-        .route(
-            "/api/workspaces/publish",
-            axum::routing::post(workspace_review_routes::publish_workspace),
-        )
+        .route("/api/packages/{idOrName}", get(packages::package_detail).delete(packages::delete_package))
+        .route("/api/packages/{name}/versions", get(packages::list_versions).post(packages::publish_version))
+        .route("/api/packages/{name}/versions/{version}/yank", axum::routing::post(packages::yank_version))
+        .route("/api/packages/{name}/versions/{version}/unyank", axum::routing::post(packages::unyank_version))
+        .route("/api/packages/{name}/versions/{version}/artifact", axum::routing::post(packages::upload_artifact))
+        .route("/api/packages/{name}/versions/{version}/download", get(packages::download_artifact))
+        .route("/api/packages/{name}/versions/{version}/readme", get(artifact_routes::readme))
+        .route("/api/packages/{name}/versions/{version}/docs", get(artifact_routes::list_docs))
+        .route("/api/packages/{name}/versions/{version}/docs/file", get(artifact_routes::read_doc))
+        .route("/api/packages/{name}/versions/{version}/docs/structured", get(artifact_routes::structured_docs))
+        .route("/api/packages/{name}/versions/{version}/source/tree", get(artifact_routes::source_tree))
+        .route("/api/packages/{name}/versions/{version}/source/file", get(artifact_routes::read_source))
+        .route("/api/workspaces/publish", axum::routing::post(workspace_review_routes::publish_workspace))
         .route(
             "/api/packages/{name}/review-requests",
             axum::routing::post(workspace_review_routes::submit_review_request),
         )
-        .route(
-            "/api/packages/reviews",
-            get(workspace_review_routes::list_review_queue),
-        )
-        .route(
-            "/api/packages/reviews/{review_id}/actions",
-            axum::routing::post(workspace_review_routes::review_action),
-        )
+        .route("/api/packages/reviews", get(workspace_review_routes::list_review_queue))
+        .route("/api/packages/reviews/{review_id}/actions", axum::routing::post(workspace_review_routes::review_action))
         .route("/api/auth/hub-finish", get(auth_hub_finish))
         .route("/api/auth/session", get(read_session))
-        .route(
-            "/api/api-keys",
-            get(api_key_routes::list_api_keys).post(api_key_routes::create_api_key),
-        )
+        .route("/api/api-keys", get(api_key_routes::list_api_keys).post(api_key_routes::create_api_key))
         .route("/api/api-keys/{id}", delete(api_key_routes::revoke_api_key))
         .route("/api/admin/users", get(admin_routes::list_users))
-        .route(
-            "/api/admin/users/{subject}",
-            axum::routing::patch(admin_routes::update_user),
-        )
+        .route("/api/admin/users/{subject}", axum::routing::patch(admin_routes::update_user))
         .route("/api/admin/roles", get(admin_routes::list_roles))
-        .route(
-            "/api/admin/roles/{subject}",
-            axum::routing::put(admin_routes::grant_role),
-        )
+        .route("/api/admin/roles/{subject}", axum::routing::put(admin_routes::grant_role))
         .route(
             "/api/admin/publishers/{subject}/verification",
             axum::routing::put(admin_routes::set_publisher_verification),
         )
-        .route(
-            "/api/admin/permissions",
-            get(admin_routes::list_permissions).post(admin_routes::grant_permission),
-        )
+        .route("/api/admin/permissions", get(admin_routes::list_permissions).post(admin_routes::grant_permission))
         .route(
             "/api/admin/packages/{name}/versions/{version}/review",
             axum::routing::post(admin_routes::review_package_version),
         )
         .merge(operations_routes::router())
-        .nest_service(
-            "/api/community",
-            community_routes::router(community_state.clone()),
-        )
+        .nest_service("/api/community", community_routes::router(community_state.clone()))
         .route("/api", any(api_not_found))
         .route("/api/{*path}", any(api_not_found))
         .with_state(AppState {
@@ -882,9 +687,7 @@ fn router_with_backend(
 
 pub async fn serve(config: PckgServerConfig) -> std::io::Result<()> {
     let listener = tokio::net::TcpListener::bind(config.bind_address).await?;
-    let router = router_from_config(config)
-        .await
-        .map_err(std::io::Error::other)?;
+    let router = router_from_config(config).await.map_err(std::io::Error::other)?;
     axum::serve(listener, router).await
 }
 
@@ -893,10 +696,7 @@ async fn health() -> Json<HealthResponse> {
 }
 
 async fn api_not_found() -> impl IntoResponse {
-    (
-        StatusCode::NOT_FOUND,
-        Json(ApiErrorResponse::new("API endpoint not found")),
-    )
+    (StatusCode::NOT_FOUND, Json(ApiErrorResponse::new("API endpoint not found")))
 }
 
 #[derive(Debug, Deserialize)]
@@ -904,24 +704,14 @@ struct AuthHubFinishQuery {
     handoff: Option<String>,
 }
 
-async fn auth_hub_finish(
-    State(state): State<AppState>,
-    Query(query): Query<AuthHubFinishQuery>,
-) -> impl IntoResponse {
+async fn auth_hub_finish(State(state): State<AppState>, Query(query): Query<AuthHubFinishQuery>) -> impl IntoResponse {
     let Some(handoff) = query.handoff.filter(|value| !value.trim().is_empty()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ApiErrorResponse::new("handoff is required")),
-        )
-            .into_response();
+        return (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("handoff is required"))).into_response();
     };
     let Some(auth) = state.auth else {
         return unauthorized_response();
     };
-    let identity = match auth.handoff_verifier.verify(HandoffRequest {
-        app: "pckg".to_owned(),
-        handoff,
-    }) {
+    let identity = match auth.handoff_verifier.verify(HandoffRequest { app: "pckg".to_owned(), handoff }) {
         Ok(identity) => identity,
         Err(_) => return invalid_handoff_response(),
     };
@@ -930,15 +720,11 @@ async fn auth_hub_finish(
         Err(_) => return invalid_handoff_response(),
     };
     let secure = if auth.secure_cookies { "; Secure" } else { "" };
-    let cookie =
-        format!("pckg_session={session}; HttpOnly; Path=/; SameSite=Lax; Max-Age=28800{secure}");
+    let cookie = format!("pckg_session={session}; HttpOnly; Path=/; SameSite=Lax; Max-Age=28800{secure}");
     let mut response = Redirect::to("/dashboard/packages/my").into_response();
-    response.headers_mut().insert(
-        header::SET_COOKIE,
-        cookie
-            .parse()
-            .expect("session cookie uses valid header characters"),
-    );
+    response
+        .headers_mut()
+        .insert(header::SET_COOKIE, cookie.parse().expect("session cookie uses valid header characters"));
     response
 }
 
@@ -976,25 +762,15 @@ fn session_response(identity: AuthHubIdentity) -> SessionResponse {
 pub(crate) fn authenticated_subject(state: &AppState, headers: &HeaderMap) -> Option<String> {
     let auth = state.auth.as_ref()?;
     let session = session_cookie(headers)?;
-    verify_pckg_session(session, &auth.session_secret)
-        .ok()
-        .map(|identity| identity.subject)
+    verify_pckg_session(session, &auth.session_secret).ok().map(|identity| identity.subject)
 }
 
 pub(crate) fn unauthorized_response() -> axum::response::Response {
-    (
-        StatusCode::UNAUTHORIZED,
-        Json(ApiErrorResponse::new("authentication required")),
-    )
-        .into_response()
+    (StatusCode::UNAUTHORIZED, Json(ApiErrorResponse::new("authentication required"))).into_response()
 }
 
 fn invalid_handoff_response() -> axum::response::Response {
-    (
-        StatusCode::UNAUTHORIZED,
-        Json(ApiErrorResponse::new("invalid handoff")),
-    )
-        .into_response()
+    (StatusCode::UNAUTHORIZED, Json(ApiErrorResponse::new("invalid handoff"))).into_response()
 }
 
 pub(crate) fn now_unix_seconds() -> i64 {

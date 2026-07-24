@@ -193,11 +193,7 @@ impl GcContext {
     /// let result = handle.join().unwrap();
     /// ```
     pub fn with_heap(heap: Arc<Heap>) -> Self {
-        let inner = Box::pin(GcContextInner {
-            heap,
-            local_gray: Tracer::new(),
-            _marker: std::marker::PhantomData,
-        });
+        let inner = Box::pin(GcContextInner { heap, local_gray: Tracer::new(), _marker: std::marker::PhantomData });
         set_current_context(&inner);
         GcContext(inner)
     }

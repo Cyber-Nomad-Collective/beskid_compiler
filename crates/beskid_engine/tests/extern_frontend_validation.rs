@@ -12,10 +12,7 @@ pub i64 Main() { return 0; }
     let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
         .expect_err("type checking should fail for invalid ABI");
     let msg = format!("{err:#}");
-    assert!(
-        msg.contains("invalid extern ABI"),
-        "unexpected message: {msg}"
-    );
+    assert!(msg.contains("invalid extern ABI"), "unexpected message: {msg}");
     Ok(())
 }
 
@@ -30,10 +27,7 @@ pub i64 Main() { return 0; }
     let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
         .expect_err("type checking should fail for missing library");
     let msg = format!("{err:#}");
-    assert!(
-        msg.contains("extern declaration missing library"),
-        "unexpected message: {msg}"
-    );
+    assert!(msg.contains("extern declaration missing library"), "unexpected message: {msg}");
     Ok(())
 }
 
@@ -48,10 +42,7 @@ pub i64 Main() { return 0; }
     let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
         .expect_err("type checking should fail for disallowed param type");
     let msg = format!("{err:#}");
-    assert!(
-        msg.contains("disallowed parameter type") && msg.contains("nope"),
-        "unexpected message: {msg}"
-    );
+    assert!(msg.contains("disallowed parameter type") && msg.contains("nope"), "unexpected message: {msg}");
     Ok(())
 }
 
@@ -66,9 +57,6 @@ pub i64 Main() { return 0; }
     let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
         .expect_err("should fail for ref parameter modifier");
     let msg = format!("{err:#}");
-    assert!(
-        msg.contains("unknown module path") && msg.contains("ref"),
-        "unexpected message: {msg}"
-    );
+    assert!(msg.contains("unknown module path") && msg.contains("ref"), "unexpected message: {msg}");
     Ok(())
 }

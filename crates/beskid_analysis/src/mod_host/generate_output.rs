@@ -58,18 +58,15 @@ impl GenerateOutputLayout {
 }
 
 pub fn load_generate_output_layout(path: &Path) -> Result<GenerateOutputLayout, String> {
-    let json = fs::read_to_string(path)
-        .map_err(|err| format!("failed to read generate layout {}: {err}", path.display()))?;
+    let json =
+        fs::read_to_string(path).map_err(|err| format!("failed to read generate layout {}: {err}", path.display()))?;
     GenerateOutputLayout::from_json(&json)
         .map_err(|err| format!("failed to parse generate layout {}: {err}", path.display()))
 }
 
 /// Resolve `.generated/{modulePathDirs}/{fileName}.g.bd` under a package root.
 pub fn resolve_generated_path(package_root: &Path, module_path: &str, file_name: &str) -> PathBuf {
-    let segments: Vec<&str> = module_path
-        .split('.')
-        .filter(|segment| !segment.is_empty())
-        .collect();
+    let segments: Vec<&str> = module_path.split('.').filter(|segment| !segment.is_empty()).collect();
     let dir_segments = if segments.last().copied() == Some(file_name) {
         &segments[..segments.len().saturating_sub(1)]
     } else {
@@ -88,10 +85,7 @@ pub fn resolve_package_root(plan: &CompilePlan, package_id: &str) -> Option<Path
     if plan.project_name == package_id {
         return Some(plan.project_root.clone());
     }
-    plan.dependency_projects
-        .iter()
-        .find(|dep| dep.project_name == package_id)
-        .map(|dep| dep.project_root.clone())
+    plan.dependency_projects.iter().find(|dep| dep.project_name == package_id).map(|dep| dep.project_root.clone())
 }
 
 /// Write mod generator typed items to disk using an optional layout manifest.
@@ -101,9 +95,7 @@ pub fn write_typed_generate_output(
     layout: Option<&GenerateOutputLayout>,
 ) -> Result<(), String> {
     match layout {
-        Some(layout) if layout.schema_version >= 2 => {
-            write_code_outputs_v2(output_root, layout, items)
-        }
+        Some(layout) if layout.schema_version >= 2 => write_code_outputs_v2(output_root, layout, items),
         Some(layout) => write_with_layout_v1(output_root, items, layout),
         None => write_single_file(output_root, DEFAULT_SINGLE_FILE, "", items),
     }
@@ -156,10 +148,7 @@ fn resolve_output_package_root(
     {
         return Ok(root);
     }
-    Err(format!(
-        "unable to resolve package root for packageId `{}`",
-        file.package_id
-    ))
+    Err(format!("unable to resolve package root for packageId `{}`", file.package_id))
 }
 
 fn required_file_name(file: &GenerateOutputFile) -> Result<String, String> {
@@ -169,10 +158,7 @@ fn required_file_name(file: &GenerateOutputFile) -> Result<String, String> {
     Ok(file.file_name.clone())
 }
 
-fn required_module_path(
-    file: &GenerateOutputFile,
-    output: &CodeGenerateOutput,
-) -> Result<String, String> {
+fn required_module_path(file: &GenerateOutputFile, output: &CodeGenerateOutput) -> Result<String, String> {
     if !file.module_path.is_empty() {
         return Ok(file.module_path.clone());
     }
@@ -190,10 +176,7 @@ fn write_code_outputs_v2(
     let _ = output_root;
     let _ = layout;
     if !items.is_empty() {
-        return Err(
-            "schemaVersion 2 layouts require code outputs; typed item materialization is unsupported"
-                .into(),
-        );
+        return Err("schemaVersion 2 layouts require code outputs; typed item materialization is unsupported".into());
     }
     Ok(())
 }
@@ -204,17 +187,11 @@ fn write_with_layout_v1(
     layout: &GenerateOutputLayout,
 ) -> Result<(), String> {
     if layout.schema_version != 1 {
-        return Err(format!(
-            "unsupported generate layout schemaVersion {} (expected 1 or 2)",
-            layout.schema_version
-        ));
+        return Err(format!("unsupported generate layout schemaVersion {} (expected 1 or 2)", layout.schema_version));
     }
     let expected = layout.expected_item_count();
     if items.len() != expected {
-        return Err(format!(
-            "generate layout expects {expected} typed items, got {}",
-            items.len()
-        ));
+        return Err(format!("generate layout expects {expected} typed items, got {}", items.len()));
     }
 
     let mut offset = 0usize;
@@ -239,8 +216,7 @@ fn write_single_file(
 
 fn write_text_file(out_path: &Path, header: &str, body: &str) -> Result<(), String> {
     if let Some(parent) = out_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
     }
     fs::write(out_path, format!("{header}{body}"))
         .map_err(|err| format!("failed to write {}: {err}", out_path.display()))?;
@@ -248,13 +224,8 @@ fn write_text_file(out_path: &Path, header: &str, body: &str) -> Result<(), Stri
 }
 
 fn format_items(items: &[Spanned<ProgramItem>]) -> Result<String, EmitError> {
-    let program = Spanned::new(
-        Program {
-            items: items.to_vec(),
-            leading_docs: vec![None; items.len()],
-        },
-        SpanInfo::default(),
-    );
+    let program =
+        Spanned::new(Program { items: items.to_vec(), leading_docs: vec![None; items.len()] }, SpanInfo::default());
     format_program(&program)
 }
 
@@ -267,10 +238,7 @@ mod tests {
     fn resolve_generated_path_maps_module_path_to_dot_generated() {
         let root = PathBuf::from("/pkg");
         let path = resolve_generated_path(&root, "Core.Text.Regex.Generated", "Generated");
-        assert_eq!(
-            path,
-            PathBuf::from("/pkg/.generated/Core/Text/Regex/Generated.g.bd")
-        );
+        assert_eq!(path, PathBuf::from("/pkg/.generated/Core/Text/Regex/Generated.g.bd"));
     }
 
     #[test]
@@ -294,10 +262,7 @@ mod tests {
         };
         let output = std::env::temp_dir().join(format!(
             "generate_output_test_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("time")
-                .as_nanos()
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("time").as_nanos()
         ));
         write_with_layout_v1(&output, &items, &layout).expect("write");
         let written = fs::read_to_string(output.join("Demo.bd")).expect("read");
@@ -310,10 +275,7 @@ mod tests {
     fn write_code_generate_output_writes_g_bd_under_package_root() {
         let package = std::env::temp_dir().join(format!(
             "code_generate_output_test_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("time")
-                .as_nanos()
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("time").as_nanos()
         ));
         fs::create_dir_all(&package).expect("mkdir");
         let layout = GenerateOutputLayout {
@@ -331,14 +293,10 @@ mod tests {
             None,
             &package,
             &layout,
-            &[CodeGenerateOutput {
-                module_path: String::new(),
-                body: "pub i64 Demo() { return 1; }".into(),
-            }],
+            &[CodeGenerateOutput { module_path: String::new(), body: "pub i64 Demo() { return 1; }".into() }],
         )
         .expect("write");
-        let written = fs::read_to_string(package.join(".generated/Core/Text/Regex/Generated.g.bd"))
-            .expect("read");
+        let written = fs::read_to_string(package.join(".generated/Core/Text/Regex/Generated.g.bd")).expect("read");
         assert!(written.starts_with("// generated\n"));
         assert!(written.contains("pub i64 Demo()"));
         let _ = fs::remove_dir_all(package);

@@ -78,11 +78,7 @@ impl InputState {
     /// Get filtered files matching query.
     pub fn filtered_files(&self) -> Vec<String> {
         let query_lower = self.file_query.to_lowercase();
-        self.available_files
-            .iter()
-            .filter(|f| f.to_lowercase().contains(&query_lower))
-            .cloned()
-            .collect()
+        self.available_files.iter().filter(|f| f.to_lowercase().contains(&query_lower)).cloned().collect()
     }
 
     /// Get selected file index.
@@ -111,17 +107,8 @@ impl InputState {
     /// - venv
     pub fn load_files_from_cwd(&mut self) {
         let cwd = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
-        let ignore_patterns = [
-            ".git",
-            "node_modules",
-            "target",
-            "__pycache__",
-            ".venv",
-            "venv",
-            "dist",
-            "build",
-            ".DS_Store",
-        ];
+        let ignore_patterns =
+            [".git", "node_modules", "target", "__pycache__", ".venv", "venv", "dist", "build", ".DS_Store"];
 
         self.available_files = fs::read_dir(&cwd)
             .into_iter()
@@ -129,9 +116,7 @@ impl InputState {
             .filter_map(|entry| entry.ok())
             .filter_map(|entry| entry.file_name().to_str().map(|s| s.to_string()))
             .filter(|name| {
-                !ignore_patterns
-                    .iter()
-                    .any(|pattern| name.eq_ignore_ascii_case(pattern) || name.starts_with(pattern))
+                !ignore_patterns.iter().any(|pattern| name.eq_ignore_ascii_case(pattern) || name.starts_with(pattern))
             })
             .collect();
     }

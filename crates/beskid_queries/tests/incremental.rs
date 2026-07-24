@@ -3,12 +3,10 @@
 use std::path::PathBuf;
 
 use beskid_analysis::services::{SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot};
-use beskid_analysis::services::{
-    get_or_insert_assembly, invalidate_entry_sessions, update_semantic_snapshot,
-};
+use beskid_analysis::services::{get_or_insert_assembly, invalidate_entry_sessions, update_semantic_snapshot};
 use beskid_queries::{
-    BeskidDatabase, Db, ProjectSession, fingerprint_key, parse_and_expand_unit, record_query_hit,
-    reset, semantic_snapshot, snapshot, unit_content_fingerprint, unit_imports,
+    BeskidDatabase, Db, ProjectSession, fingerprint_key, parse_and_expand_unit, record_query_hit, reset,
+    semantic_snapshot, snapshot, unit_content_fingerprint, unit_imports,
 };
 
 fn fixture_source() -> String {
@@ -72,20 +70,11 @@ fn second_parse_hits_unit_cache() {
     let fp = unit_content_fingerprint(&path, &source);
     db.ensure_file_text(path.clone(), source);
 
-    let session = ProjectSession::new(
-        &db,
-        PathBuf::from("/tmp/project"),
-        path.clone(),
-        "App".to_string(),
-        "lock".to_string(),
-    );
+    let session =
+        ProjectSession::new(&db, PathBuf::from("/tmp/project"), path.clone(), "App".to_string(), "lock".to_string());
     let unit1 = parse_and_expand_unit(&db, session, path.clone());
     assert!(
-        db.unit_cache()
-            .lock()
-            .expect("unit cache")
-            .source_units
-            .contains_key(&fp),
+        db.unit_cache().lock().expect("unit cache").source_units.contains_key(&fp),
         "first parse should populate unit cache"
     );
     let unit2 = parse_and_expand_unit(&db, session, path.clone());
@@ -99,13 +88,8 @@ fn file_edit_invalidates_unit_cache() {
     let path = fixture_path();
     db.ensure_file_text(path.clone(), fixture_source());
 
-    let session = ProjectSession::new(
-        &db,
-        PathBuf::from("/tmp/project"),
-        path.clone(),
-        "App".to_string(),
-        "lock".to_string(),
-    );
+    let session =
+        ProjectSession::new(&db, PathBuf::from("/tmp/project"), path.clone(), "App".to_string(), "lock".to_string());
 
     let _ = parse_and_expand_unit(&db, session, path.clone());
     reset();
@@ -120,13 +104,8 @@ fn unit_imports_tracks_use_paths() {
     let mut db = BeskidDatabase::default();
     let path = fixture_path();
     db.ensure_file_text(path.clone(), fixture_source());
-    let session = ProjectSession::new(
-        &db,
-        PathBuf::from("/tmp/project"),
-        path.clone(),
-        "App".to_string(),
-        "lock".to_string(),
-    );
+    let session =
+        ProjectSession::new(&db, PathBuf::from("/tmp/project"), path.clone(), "App".to_string(), "lock".to_string());
     let grammar = db.grammar_revision();
     let imports = unit_imports(&db, session, grammar, path);
     assert!(imports.iter().any(|import| import.contains("std.io")));
@@ -141,13 +120,8 @@ fn warm_second_parse_reuses_unit_cache() {
     let fp = unit_content_fingerprint(&path, &source);
     db.ensure_file_text(path.clone(), source);
 
-    let session = ProjectSession::new(
-        &db,
-        PathBuf::from("/tmp/project"),
-        path.clone(),
-        "App".to_string(),
-        "lock".to_string(),
-    );
+    let session =
+        ProjectSession::new(&db, PathBuf::from("/tmp/project"), path.clone(), "App".to_string(), "lock".to_string());
 
     let _ = parse_and_expand_unit(&db, session, path.clone());
     let misses_after_cold = snapshot().1;
@@ -159,13 +133,7 @@ fn warm_second_parse_reuses_unit_cache() {
         misses_after_warm <= misses_after_cold,
         "warm parse should not increase misses (cold={misses_after_cold} warm={misses_after_warm})"
     );
-    assert!(
-        db.unit_cache()
-            .lock()
-            .expect("unit cache")
-            .source_units
-            .contains_key(&fp)
-    );
+    assert!(db.unit_cache().lock().expect("unit cache").source_units.contains_key(&fp));
 }
 
 #[test]
@@ -178,14 +146,9 @@ fn entry_resolution_with_db_populates_symbol_registry() {
 
     let compiler_root = {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        manifest
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("compiler root")
-            .to_path_buf()
+        manifest.parent().and_then(|p| p.parent()).expect("compiler root").to_path_buf()
     };
-    let fixture_root =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
+    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
     let main_path = fixture_root.join("Src/Main.bd");
     let _source = std::fs::read_to_string(&main_path).expect("read Main.bd");
     let project_root = fixture_root.canonicalize().unwrap_or(fixture_root.clone());
@@ -194,15 +157,8 @@ fn entry_resolution_with_db_populates_symbol_registry() {
     std::env::set_current_dir(&compiler_root).expect("chdir");
     let result = {
         configure_db_for_project(&project_root);
-        let resolved = resolve_input(
-            Some(&main_path),
-            Some(&project_root),
-            Some("App"),
-            None,
-            false,
-            false,
-        )
-        .expect("resolve fixture");
+        let resolved = resolve_input(Some(&main_path), Some(&project_root), Some("App"), None, false, false)
+            .expect("resolve fixture");
         let mut db = BeskidDatabase::with_persistence(&project_root);
         let mut options = PrepareOptions::default();
         options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
@@ -211,25 +167,10 @@ fn entry_resolution_with_db_populates_symbol_registry() {
     std::env::set_current_dir(previous).expect("restore cwd");
 
     let shared = result.expect("entry resolution");
+    assert!(!shared.by_symbol().is_empty(), "expected prefetch symbols in by_symbol");
+    assert!(shared.items.iter().any(|item| item.name == "WriteLine"), "expected WriteLine in entry resolution items");
     assert!(
-        !shared.by_symbol().is_empty(),
-        "expected prefetch symbols in by_symbol"
-    );
-    assert!(
-        shared.items.iter().any(|item| item.name == "WriteLine"),
-        "expected WriteLine in entry resolution items"
-    );
-    assert!(
-        shared
-            .qualified_name(
-                shared
-                    .items
-                    .iter()
-                    .find(|i| i.name == "WriteLine")
-                    .unwrap()
-                    .id
-            )
-            .is_some(),
+        shared.qualified_name(shared.items.iter().find(|i| i.name == "WriteLine").unwrap().id).is_some(),
         "WriteLine should have registry-backed qualified name"
     );
 }
@@ -239,21 +180,15 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
     use beskid_analysis::projects::AssemblyDiscovery;
     use beskid_analysis::services::{PrepareOptions, resolve_input};
     use beskid_queries::{
-        bump_file_revision, bump_typed_prepare_revision, configure_db_for_project,
-        entry_resolution_with_db, fingerprint_key, is_typed_bundle_stale,
-        typed_entry_state_with_db,
+        bump_file_revision, bump_typed_prepare_revision, configure_db_for_project, entry_resolution_with_db,
+        fingerprint_key, is_typed_bundle_stale, typed_entry_state_with_db,
     };
 
     let compiler_root = {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        manifest
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("compiler root")
-            .to_path_buf()
+        manifest.parent().and_then(|p| p.parent()).expect("compiler root").to_path_buf()
     };
-    let fixture_root =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
+    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp");
     let main_path = fixture_root.join("Src/Main.bd");
     let project_root = fixture_root.canonicalize().unwrap_or(fixture_root.clone());
 
@@ -261,15 +196,8 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
     std::env::set_current_dir(&compiler_root).expect("chdir");
     let result = {
         configure_db_for_project(&project_root);
-        let resolved = resolve_input(
-            Some(&main_path),
-            Some(&project_root),
-            Some("App"),
-            None,
-            false,
-            false,
-        )
-        .expect("resolve fixture");
+        let resolved = resolve_input(Some(&main_path), Some(&project_root), Some("App"), None, false, false)
+            .expect("resolve fixture");
         let mut db = BeskidDatabase::with_persistence(&project_root);
         let mut options = PrepareOptions::default();
         options.front_end.assembly_discovery = AssemblyDiscovery::ImportClosure;
@@ -277,49 +205,29 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
             .compile_plan
             .as_ref()
             .map(|plan| {
-                fingerprint_key(&beskid_analysis::services::SessionFingerprint::for_entry(
-                    plan,
-                    &resolved.source_path,
-                ))
+                fingerprint_key(&beskid_analysis::services::SessionFingerprint::for_entry(plan, &resolved.source_path))
             })
             .expect("entry key");
         bump_file_revision(&mut db, &entry_key);
         assert!(is_typed_bundle_stale(&db, &entry_key));
 
-        let state = typed_entry_state_with_db(&mut db, &resolved, &options, None)
-            .expect("typed entry state");
-        assert!(
-            state.typed.is_some(),
-            "stale typed bundle should run EntryOnly gate prepare"
-        );
-        assert!(
-            !state.resolution.by_symbol().is_empty(),
-            "fast resolution path should still populate registry"
-        );
+        let state = typed_entry_state_with_db(&mut db, &resolved, &options, None).expect("typed entry state");
+        assert!(state.typed.is_some(), "stale typed bundle should run EntryOnly gate prepare");
+        assert!(!state.resolution.by_symbol().is_empty(), "fast resolution path should still populate registry");
 
         bump_typed_prepare_revision(&mut db, &entry_key);
         assert!(!is_typed_bundle_stale(&db, &entry_key));
 
-        let resolution_only =
-            entry_resolution_with_db(&mut db, &resolved, &options).expect("entry resolution");
-        assert!(
-            !resolution_only.by_symbol().is_empty(),
-            "entry_resolution_with_db remains the fast path export"
-        );
+        let resolution_only = entry_resolution_with_db(&mut db, &resolved, &options).expect("entry resolution");
+        assert!(!resolution_only.by_symbol().is_empty(), "entry_resolution_with_db remains the fast path export");
 
         typed_entry_state_with_db(&mut db, &resolved, &options, None).expect("typed entry state")
     };
     std::env::set_current_dir(previous).expect("restore cwd");
 
     let state = result;
-    assert!(
-        state.typed.is_some(),
-        "caught-up typed prepare revision should produce executable bundle"
-    );
-    assert!(
-        !state.resolution.by_symbol().is_empty(),
-        "typed state should retain resolution"
-    );
+    assert!(state.typed.is_some(), "caught-up typed prepare revision should produce executable bundle");
+    assert!(!state.resolution.by_symbol().is_empty(), "typed state should retain resolution");
 }
 
 #[test]
@@ -353,18 +261,13 @@ fn syntax_program_assembly_strips_hir_without_document_snapshot() {
     std::fs::write(&entry_path, source).expect("entry");
 
     let plan = synthetic_compile_plan_for_source(&entry_path);
-    let options =
-        assembly_options_for_prepare(&plan, FrontEndOptions::default().assembly_discovery);
+    let options = assembly_options_for_prepare(&plan, FrontEndOptions::default().assembly_discovery);
     let mut db = BeskidDatabase::default();
-    let syntax = syntax_program_assembly(&mut db, &plan, None, &entry_path, Some(source), &options)
-        .expect("syntax assembly");
+    let syntax =
+        syntax_program_assembly(&mut db, &plan, None, &entry_path, Some(source), &options).expect("syntax assembly");
 
     assert_eq!(
-        syntax
-            .entry_unit()
-            .path
-            .canonicalize()
-            .unwrap_or_else(|_| syntax.entry_unit().path.clone()),
+        syntax.entry_unit().path.canonicalize().unwrap_or_else(|_| syntax.entry_unit().path.clone()),
         entry_path.canonicalize().unwrap_or(entry_path.clone())
     );
     assert!(

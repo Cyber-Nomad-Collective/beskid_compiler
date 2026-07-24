@@ -52,20 +52,11 @@ pub fn effective_roots_from_plan_and_workspace(
         }
     };
 
-    EffectiveCompilationRoots {
-        host: RootEntry {
-            dependency_name: None,
-            source_root: host_root,
-        },
-        dependencies: deps,
-    }
+    EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root: host_root }, dependencies: deps }
 }
 
 /// Replay materialized roots from an on-disk `Project.lock` when no prepared workspace is available (LSP).
-pub fn effective_roots_from_lockfile(
-    plan: &CompilePlan,
-    lockfile_path: &Path,
-) -> EffectiveCompilationRoots {
+pub fn effective_roots_from_lockfile(plan: &CompilePlan, lockfile_path: &Path) -> EffectiveCompilationRoots {
     let mut base = effective_roots_from_plan_and_workspace(plan, None);
     let Ok(text) = fs::read_to_string(lockfile_path) else {
         return base;
@@ -83,30 +74,17 @@ pub fn effective_roots_from_lockfile(
         }
         let project = PathBuf::from(entry.project());
         let source_root = PathBuf::from(entry.source_root());
-        let relative = source_root
-            .strip_prefix(&project)
-            .unwrap_or(Path::new("src"));
+        let relative = source_root.strip_prefix(&project).unwrap_or(Path::new("src"));
         let effective = materialized.join(relative);
-        if let Some(dep) = base
-            .dependencies
-            .iter_mut()
-            .find(|d| d.dependency_name.as_deref() == Some(entry.name()))
-        {
-            dep.source_root = if effective.is_dir() {
-                effective
-            } else {
-                materialized
-            };
+        if let Some(dep) = base.dependencies.iter_mut().find(|d| d.dependency_name.as_deref() == Some(entry.name())) {
+            dep.source_root = if effective.is_dir() { effective } else { materialized };
         }
     }
 
     let root_materialized = plan.project_root.join("obj").join("beskid").join("root");
     if root_materialized.is_dir() {
-        let segment = plan
-            .source_root
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "Src".to_string());
+        let segment =
+            plan.source_root.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Src".to_string());
         let candidate = root_materialized.join(segment);
         if candidate.is_dir() {
             base.host.source_root = candidate;
@@ -142,11 +120,6 @@ pub fn effective_roots_for_plan(
 pub fn module_roots_from_effective(roots: &EffectiveCompilationRoots) -> Vec<PathBuf> {
     let mut out = Vec::with_capacity(1 + roots.dependencies.len());
     out.push(roots.host.source_root.clone());
-    out.extend(
-        roots
-            .dependencies
-            .iter()
-            .map(|entry| entry.source_root.clone()),
-    );
+    out.extend(roots.dependencies.iter().map(|entry| entry.source_root.clone()));
     out
 }

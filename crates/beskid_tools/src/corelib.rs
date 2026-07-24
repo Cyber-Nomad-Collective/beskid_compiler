@@ -35,19 +35,13 @@ pub fn ensure_bundled_corelib() -> Result<CorelibProvisioning> {
             remove_dir_all_retry(&target_root)
                 .with_context(|| format!("remove old corelib at {}", target_root.display()))?;
         }
-        fs::create_dir_all(&target_root)
-            .with_context(|| format!("create corelib root {}", target_root.display()))?;
+        fs::create_dir_all(&target_root).with_context(|| format!("create corelib root {}", target_root.display()))?;
         write_embedded_dir(&EMBEDDED_CORELIB, &target_root)?;
     } else {
-        fs::create_dir_all(&target_root)
-            .with_context(|| format!("create corelib root {}", target_root.display()))?;
+        fs::create_dir_all(&target_root).with_context(|| format!("create corelib root {}", target_root.display()))?;
     }
 
-    Ok(CorelibProvisioning {
-        root: target_root,
-        version: bundled_version.to_string(),
-        updated: should_install,
-    })
+    Ok(CorelibProvisioning { root: target_root, version: bundled_version.to_string(), updated: should_install })
 }
 
 fn remove_dir_all_retry(path: &Path) -> Result<()> {
@@ -88,67 +82,38 @@ fn corelib_install_root() -> Result<PathBuf> {
 
 fn embedded_version() -> Result<Version> {
     if let Some(file) = EMBEDDED_CORELIB.get_file("package.json") {
-        return parse_package_json_version(
-            file.contents_utf8().unwrap_or_default(),
-            "embedded package.json",
-        );
+        return parse_package_json_version(file.contents_utf8().unwrap_or_default(), "embedded package.json");
     }
 
     let project = EMBEDDED_CORELIB
         .get_file("beskid_corelib/corelib.bproj")
-        .ok_or_else(|| {
-            anyhow::anyhow!("embedded corelib is missing beskid_corelib/corelib.bproj")
-        })?;
-    parse_project_manifest_version(
-        project.contents_utf8().unwrap_or_default(),
-        "embedded corelib.bproj",
-    )
+        .ok_or_else(|| anyhow::anyhow!("embedded corelib is missing beskid_corelib/corelib.bproj"))?;
+    parse_project_manifest_version(project.contents_utf8().unwrap_or_default(), "embedded corelib.bproj")
 }
 
 fn installed_version(root: &Path) -> Result<Option<Version>> {
-    for package_path in [
-        root.join("beskid_corelib/package.json"),
-        root.join("package.json"),
-    ] {
+    for package_path in [root.join("beskid_corelib/package.json"), root.join("package.json")] {
         if package_path.is_file() {
-            let content = fs::read_to_string(&package_path).with_context(|| {
-                format!(
-                    "read installed corelib package file {}",
-                    package_path.display()
-                )
-            })?;
-            return Ok(Some(parse_package_json_version(
-                &content,
-                "installed package.json",
-            )?));
+            let content = fs::read_to_string(&package_path)
+                .with_context(|| format!("read installed corelib package file {}", package_path.display()))?;
+            return Ok(Some(parse_package_json_version(&content, "installed package.json")?));
         }
     }
 
-    for project_path in [
-        root.join("beskid_corelib/corelib.bproj"),
-        root.join("corelib.bproj"),
-    ] {
+    for project_path in [root.join("beskid_corelib/corelib.bproj"), root.join("corelib.bproj")] {
         if !project_path.is_file() {
             continue;
         }
-        let content = fs::read_to_string(&project_path).with_context(|| {
-            format!(
-                "read installed corelib project manifest {}",
-                project_path.display()
-            )
-        })?;
-        return Ok(Some(parse_project_manifest_version(
-            &content,
-            "installed .bproj manifest",
-        )?));
+        let content = fs::read_to_string(&project_path)
+            .with_context(|| format!("read installed corelib project manifest {}", project_path.display()))?;
+        return Ok(Some(parse_project_manifest_version(&content, "installed .bproj manifest")?));
     }
 
     Ok(None)
 }
 
 fn parse_package_json_version(content: &str, source: &str) -> Result<Version> {
-    let value: serde_json::Value =
-        serde_json::from_str(content).with_context(|| format!("parse JSON for {source}"))?;
+    let value: serde_json::Value = serde_json::from_str(content).with_context(|| format!("parse JSON for {source}"))?;
     let raw = value
         .get("version")
         .and_then(serde_json::Value::as_str)
@@ -168,8 +133,7 @@ fn write_embedded_dir(source: &Dir<'_>, destination: &Path) -> Result<()> {
         let rel = file.path();
         let target = destination.join(rel);
         if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("create corelib directory {}", parent.display()))?;
+            fs::create_dir_all(parent).with_context(|| format!("create corelib directory {}", parent.display()))?;
         }
         fs::write(&target, file.contents())
             .with_context(|| format!("write embedded corelib file {}", target.display()))?;
@@ -177,8 +141,7 @@ fn write_embedded_dir(source: &Dir<'_>, destination: &Path) -> Result<()> {
 
     for dir in source.dirs() {
         let target = destination.join(dir.path());
-        fs::create_dir_all(&target)
-            .with_context(|| format!("create corelib directory {}", target.display()))?;
+        fs::create_dir_all(&target).with_context(|| format!("create corelib directory {}", target.display()))?;
         write_embedded_dir(dir, destination)?;
     }
 

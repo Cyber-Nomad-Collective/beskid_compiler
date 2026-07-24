@@ -3,9 +3,7 @@
 use std::path::PathBuf;
 
 use crate::hir::index::reset_program_node_ids;
-use crate::hir::{
-    AstProgram, HirProgram, index_program_from_base, lower_program as lower_hir_program,
-};
+use crate::hir::{AstProgram, HirProgram, index_program_from_base, lower_program as lower_hir_program};
 use crate::syntax::{Program, Spanned};
 
 use super::SourceUnit;
@@ -18,13 +16,7 @@ pub struct UnitHir {
 
 /// Lower every unit's AST once (deterministic spans for resolve/codegen).
 pub fn build_hir_units(units: &[SourceUnit]) -> Vec<UnitHir> {
-    units
-        .iter()
-        .map(|unit| UnitHir {
-            path: unit.path.clone(),
-            hir: unit_to_hir(&unit.program),
-        })
-        .collect()
+    units.iter().map(|unit| UnitHir { path: unit.path.clone(), hir: unit_to_hir(&unit.program) }).collect()
 }
 
 /// Assign globally unique [`HirNodeId`] values across an assembled unit list.

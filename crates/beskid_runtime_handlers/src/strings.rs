@@ -18,8 +18,7 @@ pub fn str_eq(left: *const BeskidStr, right: *const BeskidStr) -> i64 {
             return i64::from(left_len == 0);
         }
         let equal = unsafe {
-            std::slice::from_raw_parts(left_ptr, left_len)
-                == std::slice::from_raw_parts(right_ptr, right_len)
+            std::slice::from_raw_parts(left_ptr, left_len) == std::slice::from_raw_parts(right_ptr, right_len)
         };
         return i64::from(equal);
     }

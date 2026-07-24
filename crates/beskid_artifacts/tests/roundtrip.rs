@@ -1,6 +1,6 @@
 use beskid_artifacts::{
-    ARTIFACT_SCHEMA_VERSION, ArtifactManifest, ArtifactStore, AstUnitSnapshot, UnitArtifactMeta,
-    content_fingerprint, decode_ast, encode_ast, grammar_revision,
+    ARTIFACT_SCHEMA_VERSION, ArtifactManifest, ArtifactStore, AstUnitSnapshot, UnitArtifactMeta, content_fingerprint,
+    decode_ast, encode_ast, grammar_revision,
 };
 
 #[test]
@@ -122,9 +122,7 @@ fn schema_migration_purges_all_legacy_units_before_rewriting_one() {
         },
         vec![4, 2],
     );
-    store
-        .write_unit(&current)
-        .expect("migrate and rewrite one unit");
+    store.write_unit(&current).expect("migrate and rewrite one unit");
 
     assert!(store.unit_paths("rewritten").ast.exists());
     assert!(!store.unit_paths("untouched").unit_dir.exists());
@@ -143,12 +141,6 @@ fn schema_migration_purges_all_legacy_units_before_rewriting_one() {
             .sum()
     }
     let hir_files = count_hir_files(store.cache_root());
-    assert_eq!(
-        hir_files, 0,
-        "migration must purge every legacy HIR payload"
-    );
-    assert_eq!(
-        store.manifest().expect("current manifest").schema_version,
-        ARTIFACT_SCHEMA_VERSION
-    );
+    assert_eq!(hir_files, 0, "migration must purge every legacy HIR payload");
+    assert_eq!(store.manifest().expect("current manifest").schema_version, ARTIFACT_SCHEMA_VERSION);
 }

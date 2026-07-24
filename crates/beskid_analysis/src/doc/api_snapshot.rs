@@ -230,8 +230,7 @@ mod tests {
 
     #[test]
     fn api_symbol_key_deserializes_from_json_string() {
-        let key: ApiSymbolKey =
-            serde_json::from_str("\"corelib::Std::Console::Esc\"").expect("deserialize");
+        let key: ApiSymbolKey = serde_json::from_str("\"corelib::Std::Console::Esc\"").expect("deserialize");
         assert_eq!(key.as_str(), "corelib::Std::Console::Esc");
     }
 
@@ -267,9 +266,6 @@ mod tests {
             tier: None,
         };
         let value = serde_json::to_value(&item).expect("serialize item");
-        assert_eq!(
-            value.get("symbolKey").and_then(|v| v.as_str()),
-            Some("corelib::Std::Console::Esc")
-        );
+        assert_eq!(value.get("symbolKey").and_then(|v| v.as_str()), Some("corelib::Std::Console::Esc"));
     }
 }

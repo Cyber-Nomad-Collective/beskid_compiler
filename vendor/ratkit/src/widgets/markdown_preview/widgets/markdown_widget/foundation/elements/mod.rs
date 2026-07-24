@@ -16,13 +16,11 @@ pub mod table;
 pub mod text;
 
 pub use constants::{
-    get_language_icon, get_link_icon, heading_bg_color, heading_fg_color, CodeBlockColors,
-    CodeBlockTheme, BLOCKQUOTE_MARKER, BULLET_MARKERS, CHECKBOX_CHECKED, CHECKBOX_TODO,
-    CHECKBOX_UNCHECKED, HEADING_ICONS, HORIZONTAL_RULE_CHAR,
+    get_language_icon, get_link_icon, heading_bg_color, heading_fg_color, CodeBlockColors, CodeBlockTheme,
+    BLOCKQUOTE_MARKER, BULLET_MARKERS, CHECKBOX_CHECKED, CHECKBOX_TODO, CHECKBOX_UNCHECKED, HEADING_ICONS,
+    HORIZONTAL_RULE_CHAR,
 };
-pub use enums::{
-    CheckboxState, CodeBlockBorderKind, ColumnAlignment, ElementKind, TableBorderKind, TextSegment,
-};
+pub use enums::{CheckboxState, CodeBlockBorderKind, ColumnAlignment, ElementKind, TableBorderKind, TextSegment};
 pub use render::{render, render_with_options, RenderOptions};
 pub use text::{inline_code_fg, inline_code_style, INLINE_CODE_BG, INLINE_CODE_FG_FALLBACK};
 
@@ -43,10 +41,6 @@ pub struct MarkdownElement {
 impl MarkdownElement {
     /// Create a new markdown element with source line tracking.
     pub fn new(kind: ElementKind, section_id: Option<usize>, source_line: usize) -> Self {
-        Self {
-            kind,
-            section_id,
-            source_line,
-        }
+        Self { kind, section_id, source_line }
     }
 }

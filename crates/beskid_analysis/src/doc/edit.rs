@@ -11,15 +11,8 @@ use crate::syntax::{Program, SpanInfo};
 /// Text edit to insert or replace a leading doc block (IDE quick-fix shape).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DocCommentEdit {
-    Insert {
-        at: usize,
-        text: String,
-    },
-    Replace {
-        start: usize,
-        end: usize,
-        text: String,
-    },
+    Insert { at: usize, text: String },
+    Replace { start: usize, end: usize, text: String },
 }
 
 fn leading_doc_for_item_span(program: &Program, item_span: SpanInfo) -> Option<LeadingDocComment> {
@@ -51,37 +44,22 @@ pub fn doc_comment_edit_for_offset(
     let stub = build_stub_for_item(program, item, existing.as_ref())?;
 
     if let Some(leading) = existing {
-        Some(DocCommentEdit::Replace {
-            start: leading.span.start,
-            end: leading.span.end,
-            text: stub,
-        })
+        Some(DocCommentEdit::Replace { start: leading.span.start, end: leading.span.end, text: stub })
     } else {
-        Some(DocCommentEdit::Insert {
-            at: item.span.start,
-            text: stub,
-        })
+        Some(DocCommentEdit::Insert { at: item.span.start, text: stub })
     }
 }
 
 fn first_summary_line(existing: Option<&LeadingDocComment>) -> Option<String> {
     let d = existing?;
-    let line = d
-        .normalized_source
-        .lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty())?;
+    let line = d.normalized_source.lines().map(str::trim).find(|l| !l.is_empty())?;
     if line.starts_with('@') {
         return None;
     }
     Some(line.to_string())
 }
 
-fn build_stub_for_item(
-    program: &Program,
-    item: &ItemInfo,
-    existing: Option<&LeadingDocComment>,
-) -> Option<String> {
+fn build_stub_for_item(program: &Program, item: &ItemInfo, existing: Option<&LeadingDocComment>) -> Option<String> {
     let summary = first_summary_line(existing).unwrap_or_else(|| "TODO: Summary.".to_string());
     let mut out = String::new();
     out.push_str("/// ");
@@ -89,10 +67,7 @@ fn build_stub_for_item(
     out.push('\n');
     out.push_str("///\n");
 
-    let generics = generic_param_names_for_span(program, item.span)
-        .unwrap_or_default()
-        .into_iter()
-        .collect::<Vec<_>>();
+    let generics = generic_param_names_for_span(program, item.span).unwrap_or_default().into_iter().collect::<Vec<_>>();
     for g in &generics {
         out.push_str("/// @par(");
         out.push_str(g);

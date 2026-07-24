@@ -61,10 +61,7 @@ pub struct AttributeArgument {
 impl Parsable for AttributeDeclaration {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         if pair.as_rule() != Rule::AttributeDeclaration {
-            return Err(ParseError::unexpected_rule(
-                pair,
-                Some(Rule::AttributeDeclaration),
-            ));
+            return Err(ParseError::unexpected_rule(pair, Some(Rule::AttributeDeclaration)));
         }
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.clone().into_inner().peekable();
@@ -76,40 +73,23 @@ impl Parsable for AttributeDeclaration {
         for item in inner {
             match item.as_rule() {
                 Rule::AttributeTargetList => {
-                    targets = item
-                        .into_inner()
-                        .map(AttributeTarget::parse)
-                        .collect::<Result<Vec<_>, _>>()?;
+                    targets = item.into_inner().map(AttributeTarget::parse).collect::<Result<Vec<_>, _>>()?;
                 }
                 Rule::AttributeParameterList => {
-                    parameters = item
-                        .into_inner()
-                        .map(AttributeParameter::parse)
-                        .collect::<Result<Vec<_>, _>>()?;
+                    parameters = item.into_inner().map(AttributeParameter::parse).collect::<Result<Vec<_>, _>>()?;
                 }
                 _ => return Err(ParseError::unexpected_rule(item, None)),
             }
         }
 
-        Ok(Spanned::new(
-            Self {
-                visibility,
-                name,
-                targets,
-                parameters,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { visibility, name, targets, parameters }, span))
     }
 }
 
 impl Parsable for AttributeTarget {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         if pair.as_rule() != Rule::AttributeTarget {
-            return Err(ParseError::unexpected_rule(
-                pair,
-                Some(Rule::AttributeTarget),
-            ));
+            return Err(ParseError::unexpected_rule(pair, Some(Rule::AttributeTarget)));
         }
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner();
@@ -122,10 +102,7 @@ impl Parsable for AttributeTarget {
 impl Parsable for AttributeParameter {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         if pair.as_rule() != Rule::AttributeParameter {
-            return Err(ParseError::unexpected_rule(
-                pair,
-                Some(Rule::AttributeParameter),
-            ));
+            return Err(ParseError::unexpected_rule(pair, Some(Rule::AttributeParameter)));
         }
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner();
@@ -136,14 +113,7 @@ impl Parsable for AttributeParameter {
             None => None,
         };
 
-        Ok(Spanned::new(
-            Self {
-                name,
-                ty,
-                default_value,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { name, ty, default_value }, span))
     }
 }
 
@@ -156,9 +126,7 @@ impl Parsable for Attribute {
         let mut inner = pair.into_inner();
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
         let arguments = if let Some(args) = inner.next() {
-            args.into_inner()
-                .map(AttributeArgument::parse)
-                .collect::<Result<Vec<_>, _>>()?
+            args.into_inner().map(AttributeArgument::parse).collect::<Result<Vec<_>, _>>()?
         } else {
             Vec::new()
         };
@@ -170,10 +138,7 @@ impl Parsable for Attribute {
 impl Parsable for AttributeArgument {
     fn parse(pair: Pair<Rule>) -> Result<Spanned<Self>, ParseError> {
         if pair.as_rule() != Rule::AttributeArgument {
-            return Err(ParseError::unexpected_rule(
-                pair,
-                Some(Rule::AttributeArgument),
-            ));
+            return Err(ParseError::unexpected_rule(pair, Some(Rule::AttributeArgument)));
         }
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner();

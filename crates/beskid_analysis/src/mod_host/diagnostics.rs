@@ -21,60 +21,27 @@ use super::invoker::{AnalyzerDiagnostic, AnalyzerSeverity};
 pub enum ModHostIssue {
     /// E1828 — `entrySymbol` referenced by a registration is empty / missing in the
     /// descriptor.
-    MissingEntrySymbol {
-        package_id: String,
-        contract_id: String,
-        type_id: String,
-        descriptor: PathBuf,
-    },
+    MissingEntrySymbol { package_id: String, contract_id: String, type_id: String, descriptor: PathBuf },
     /// E1829 — Duplicate `(contractId, typeId)` registration in one artifact.
-    DuplicateRegistrationInArtifact {
-        package_id: String,
-        contract_id: String,
-        type_id: String,
-        descriptor: PathBuf,
-    },
+    DuplicateRegistrationInArtifact { package_id: String, contract_id: String, type_id: String, descriptor: PathBuf },
     /// E1830 — `registrations` empty but mod package declared required contracts.
-    EmptyRegistrationsForRequiredMod {
-        package_id: String,
-        manifest: PathBuf,
-    },
+    EmptyRegistrationsForRequiredMod { package_id: String, manifest: PathBuf },
     /// E1831 — Required capability missing for one or more registrations.
-    MissingCapability {
-        package_id: String,
-        contract_id: String,
-        capability: String,
-        manifest: PathBuf,
-    },
+    MissingCapability { package_id: String, contract_id: String, capability: String, manifest: PathBuf },
     /// E1832 — `maxGeneratorRounds` exceeded during host mod.generate scheduling.
     MaxGeneratorRoundsExceeded { limit: u32 },
     /// E1851 — Same `(contractId, typeId)` is provided by multiple mod artifacts. Hosts
     /// must reject this rather than picking a winner non-deterministically.
-    ConflictingRegistrationAcrossArtifacts {
-        contract_id: String,
-        type_id: String,
-        package_ids: Vec<String>,
-    },
+    ConflictingRegistrationAcrossArtifacts { contract_id: String, type_id: String, package_ids: Vec<String> },
     /// E1852 — Two distinct artifacts export the **same `entrySymbol`** for different
     /// `(contractId, typeId)` tuples; loader cannot disambiguate native exports.
-    DuplicateEntrySymbolAcrossArtifacts {
-        entry_symbol: String,
-        package_ids: Vec<String>,
-    },
+    DuplicateEntrySymbolAcrossArtifacts { entry_symbol: String, package_ids: Vec<String> },
     /// E1853 — Unknown `contractId` value in a registration (not a known SDK contract).
-    UnknownContractId {
-        package_id: String,
-        contract_id: String,
-        descriptor: PathBuf,
-    },
+    UnknownContractId { package_id: String, contract_id: String, descriptor: PathBuf },
     /// E1854 — `Rewriter` registration without an attached `Analyzer` registration in
     /// the same artifact. The host requires analyzer-driven registration of rewrites
     /// per `compiler-mod-sdk`.
-    RewriterWithoutAnalyzer {
-        package_id: String,
-        type_id: String,
-        descriptor: PathBuf,
-    },
+    RewriterWithoutAnalyzer { package_id: String, type_id: String, descriptor: PathBuf },
     /// E1855 — Catch-all scheduling-stage conflict / failure when no narrower code
     /// from the **E1851–E1870** band applies.
     SchedulingFailure { package_id: String, message: String },
@@ -98,69 +65,38 @@ impl ModHostIssue {
 
     pub fn message(&self) -> String {
         match self {
-            ModHostIssue::MissingEntrySymbol {
-                package_id,
-                contract_id,
-                type_id,
-                ..
-            } => format!(
-                "mod `{package_id}` registration `{contract_id}` for type `{type_id}` has empty `entrySymbol`"
-            ),
-            ModHostIssue::DuplicateRegistrationInArtifact {
-                package_id,
-                contract_id,
-                type_id,
-                ..
-            } => format!(
+            ModHostIssue::MissingEntrySymbol { package_id, contract_id, type_id, .. } => {
+                format!("mod `{package_id}` registration `{contract_id}` for type `{type_id}` has empty `entrySymbol`")
+            }
+            ModHostIssue::DuplicateRegistrationInArtifact { package_id, contract_id, type_id, .. } => format!(
                 "mod `{package_id}` declares duplicate registration `({contract_id}, {type_id})` in one artifact"
             ),
             ModHostIssue::EmptyRegistrationsForRequiredMod { package_id, .. } => format!(
                 "mod `{package_id}` declares required contract capabilities but its artifact `registrations` array is empty"
             ),
-            ModHostIssue::MissingCapability {
-                package_id,
-                contract_id,
-                capability,
-                ..
-            } => format!(
+            ModHostIssue::MissingCapability { package_id, contract_id, capability, .. } => format!(
                 "mod `{package_id}` registers `{contract_id}` but is missing required capability `{capability}`"
             ),
-            ModHostIssue::MaxGeneratorRoundsExceeded { limit } => format!(
-                "mod host exceeded `maxGeneratorRounds` limit of {limit} while merging generated syntax"
-            ),
-            ModHostIssue::ConflictingRegistrationAcrossArtifacts {
-                contract_id,
-                type_id,
-                package_ids,
-            } => format!(
+            ModHostIssue::MaxGeneratorRoundsExceeded { limit } => {
+                format!("mod host exceeded `maxGeneratorRounds` limit of {limit} while merging generated syntax")
+            }
+            ModHostIssue::ConflictingRegistrationAcrossArtifacts { contract_id, type_id, package_ids } => format!(
                 "registration `({contract_id}, {type_id})` is provided by multiple mod artifacts: {}",
                 package_ids.join(", ")
             ),
-            ModHostIssue::DuplicateEntrySymbolAcrossArtifacts {
-                entry_symbol,
-                package_ids,
-            } => format!(
+            ModHostIssue::DuplicateEntrySymbolAcrossArtifacts { entry_symbol, package_ids } => format!(
                 "entry symbol `{entry_symbol}` is exported by multiple mod artifacts: {}",
                 package_ids.join(", ")
             ),
-            ModHostIssue::UnknownContractId {
-                package_id,
-                contract_id,
-                ..
-            } => format!(
+            ModHostIssue::UnknownContractId { package_id, contract_id, .. } => format!(
                 "mod `{package_id}` registers unknown contract id `{contract_id}` (not a recognized SDK contract)"
             ),
-            ModHostIssue::RewriterWithoutAnalyzer {
-                package_id,
-                type_id,
-                ..
-            } => format!(
-                "mod `{package_id}` registers Rewriter `{type_id}` but provides no Analyzer to drive it"
-            ),
-            ModHostIssue::SchedulingFailure {
-                package_id,
-                message,
-            } => format!("mod `{package_id}` scheduling failed: {message}"),
+            ModHostIssue::RewriterWithoutAnalyzer { package_id, type_id, .. } => {
+                format!("mod `{package_id}` registers Rewriter `{type_id}` but provides no Analyzer to drive it")
+            }
+            ModHostIssue::SchedulingFailure { package_id, message } => {
+                format!("mod `{package_id}` scheduling failed: {message}")
+            }
         }
     }
 }

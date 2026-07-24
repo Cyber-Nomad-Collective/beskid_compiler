@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use abfall::Heap;
 use beskid_runtime::{
-    RuntimeRoot, alloc, channel_create, channel_receive, channel_send, clear_current_heap,
-    clear_current_root, enter_runtime_scope, fiber_join, fiber_spawn, gc_bytes_allocated,
-    gc_collect, leave_runtime_scope, run_closure_as_main, set_current_heap, set_current_root,
+    RuntimeRoot, alloc, channel_create, channel_receive, channel_send, clear_current_heap, clear_current_root,
+    enter_runtime_scope, fiber_join, fiber_spawn, gc_bytes_allocated, gc_collect, leave_runtime_scope,
+    run_closure_as_main, set_current_heap, set_current_root,
     status::{FIBER_JOIN_OK, STATUS_OK},
 };
 

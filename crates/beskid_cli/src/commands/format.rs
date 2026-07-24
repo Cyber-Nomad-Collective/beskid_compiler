@@ -33,18 +33,13 @@ pub struct FormatArgs {
 /// Format paths per `--write`, `--check`, or stdout/`--output` rules.
 pub fn execute(args: FormatArgs) -> Result<()> {
     let started = Instant::now();
-    let input_is_dir = fs::metadata(&args.input)
-        .with_context(|| format!("stat {}", args.input.display()))?
-        .is_dir();
+    let input_is_dir = fs::metadata(&args.input).with_context(|| format!("stat {}", args.input.display()))?.is_dir();
 
-    let paths = collect_bd_files(&args.input, input_is_dir)
-        .with_context(|| format!("scan {}", args.input.display()))?;
+    let paths =
+        collect_bd_files(&args.input, input_is_dir).with_context(|| format!("scan {}", args.input.display()))?;
 
     if paths.is_empty() {
-        eprintln!(
-            "beskid format: 0 .bd file(s) in {}",
-            fmt_duration(started.elapsed())
-        );
+        eprintln!("beskid format: 0 .bd file(s) in {}", fmt_duration(started.elapsed()));
         return Ok(());
     }
 
@@ -63,10 +58,7 @@ pub fn execute(args: FormatArgs) -> Result<()> {
     if paths.len() == 1 && !input_is_dir && !args.write && !args.check && args.output.is_none() {
         let formatted = format_path_to_string(&paths[0])?;
         print!("{formatted}");
-        eprintln!(
-            "beskid format: 1 file in {}",
-            fmt_duration(started.elapsed())
-        );
+        eprintln!("beskid format: 1 file in {}", fmt_duration(started.elapsed()));
         return Ok(());
     }
 
@@ -76,25 +68,17 @@ pub fn execute(args: FormatArgs) -> Result<()> {
     {
         let formatted = format_path_to_string(&paths[0])?;
         fs::write(out, formatted).with_context(|| format!("write {}", out.display()))?;
-        eprintln!(
-            "beskid format: 1 file in {}",
-            fmt_duration(started.elapsed())
-        );
+        eprintln!("beskid format: 1 file in {}", fmt_duration(started.elapsed()));
         return Ok(());
     }
 
     for path in &paths {
-        format_one_write_or_check(path, args.write, args.check)
-            .with_context(|| format!("{}", path.display()))?;
+        format_one_write_or_check(path, args.write, args.check).with_context(|| format!("{}", path.display()))?;
     }
 
     let elapsed = started.elapsed();
     let label = if args.check { "checked" } else { "formatted" };
-    eprintln!(
-        "beskid format: {label} {} .bd file(s) in {}",
-        paths.len(),
-        fmt_duration(elapsed)
-    );
+    eprintln!("beskid format: {label} {} .bd file(s) in {}", paths.len(), fmt_duration(elapsed));
 
     Ok(())
 }
@@ -126,11 +110,7 @@ fn format_one_write_or_check(path: &Path, write: bool, check: bool) -> Result<()
 
     if check {
         if formatted != source {
-            bail!(
-                "not formatted: {} (run `beskid format --write {}`)",
-                path.display(),
-                path.display()
-            );
+            bail!("not formatted: {} (run `beskid format --write {}`)", path.display(), path.display());
         }
         return Ok(());
     }
@@ -170,25 +150,13 @@ fn collect_bd_files(path: &Path, input_is_dir: bool) -> Result<Vec<PathBuf>> {
 }
 
 fn is_bd_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(OsStr::to_str)
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("bd"))
+    path.extension().and_then(OsStr::to_str).is_some_and(|ext| ext.eq_ignore_ascii_case("bd"))
 }
 
 fn is_skipped_dir(name: &OsStr) -> bool {
     matches!(
         name.to_str(),
-        Some(
-            ".git"
-                | ".svn"
-                | ".hg"
-                | "target"
-                | "node_modules"
-                | "dist"
-                | ".venv"
-                | "vendor"
-                | "__pycache__"
-        )
+        Some(".git" | ".svn" | ".hg" | "target" | "node_modules" | "dist" | ".venv" | "vendor" | "__pycache__")
     )
 }
 

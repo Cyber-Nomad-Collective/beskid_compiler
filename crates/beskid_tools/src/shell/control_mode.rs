@@ -33,14 +33,7 @@ impl HiControlMode {
             ],
             Self::LayoutEdit => {
                 let mut items = vec![
-                    HotkeyItem::new(
-                        "w",
-                        if layout_drawer_visible {
-                            "Hide widget list"
-                        } else {
-                            "Widget list"
-                        },
-                    ),
+                    HotkeyItem::new("w", if layout_drawer_visible { "Hide widget list" } else { "Widget list" }),
                     HotkeyItem::new("Tab", "Next panel"),
                     HotkeyItem::new("+/-", "resize"),
                     HotkeyItem::new("Esc", "exit edit"),

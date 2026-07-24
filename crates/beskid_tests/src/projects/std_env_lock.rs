@@ -7,8 +7,5 @@ use std::sync::{Mutex, OnceLock};
 static STD_DEPENDENCY_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 pub(crate) fn std_dependency_env_lock() -> std::sync::MutexGuard<'static, ()> {
-    STD_DEPENDENCY_ENV_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    STD_DEPENDENCY_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }

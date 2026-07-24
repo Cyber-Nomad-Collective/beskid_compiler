@@ -11,8 +11,7 @@ use std::{
 };
 
 use beskid_pckg_store::{
-    LegacyIdentityCutoverError, LegacyIdentityCutoverRequest, LegacyIdentitySubjectMapping,
-    SqlxPackageRepository,
+    LegacyIdentityCutoverError, LegacyIdentityCutoverRequest, LegacyIdentitySubjectMapping, SqlxPackageRepository,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
@@ -66,10 +65,7 @@ async fn run() -> Result<(), String> {
     ensure_apply_acknowledged(true, env::var("PCKG_CUTOVER_REHEARSAL").ok().as_deref())?;
 
     let repository = SqlxPackageRepository::new(pool);
-    repository
-        .migrate()
-        .await
-        .map_err(|error| format!("Rust migration failed: {error:?}"))?;
+    repository.migrate().await.map_err(|error| format!("Rust migration failed: {error:?}"))?;
     let report = repository
         .import_legacy_identity_cutover(LegacyIdentityCutoverRequest {
             run_id: arguments.run_id,
@@ -79,9 +75,7 @@ async fn run() -> Result<(), String> {
         })
         .await
         .map_err(render_cutover_error)?;
-    if report.imported_package_count != legacy_packages
-        || report.imported_version_count != legacy_versions
-    {
+    if report.imported_package_count != legacy_packages || report.imported_version_count != legacy_versions {
         return Err(format!(
             "import count mismatch: expected {legacy_packages} packages/{legacy_versions} versions, imported {}/{}",
             report.imported_package_count, report.imported_version_count
@@ -106,15 +100,12 @@ async fn preflight(
         .fetch_one(pool)
         .await
         .map_err(|error| format!("legacy PackageVersions table is unavailable: {error}"))?;
-    let known = mappings
-        .iter()
-        .map(|mapping| mapping.legacy_identity_id.as_str())
-        .collect::<std::collections::BTreeSet<_>>();
-    let owners =
-        sqlx::query("SELECT DISTINCT \"OwnerUserId\" FROM \"Packages\" ORDER BY \"OwnerUserId\"")
-            .fetch_all(pool)
-            .await
-            .map_err(|error| format!("cannot read legacy package owners: {error}"))?;
+    let known =
+        mappings.iter().map(|mapping| mapping.legacy_identity_id.as_str()).collect::<std::collections::BTreeSet<_>>();
+    let owners = sqlx::query("SELECT DISTINCT \"OwnerUserId\" FROM \"Packages\" ORDER BY \"OwnerUserId\"")
+        .fetch_all(pool)
+        .await
+        .map_err(|error| format!("cannot read legacy package owners: {error}"))?;
     let missing = owners
         .iter()
         .map(|row| row.try_get::<String, _>("OwnerUserId"))
@@ -124,22 +115,22 @@ async fn preflight(
         .filter(|owner| !known.contains(owner.as_str()))
         .collect::<Vec<_>>();
     if !missing.is_empty() {
-        return Err(format!(
-            "mapping file is missing legacy owners: {}",
-            missing.join(", ")
-        ));
+        return Err(format!("mapping file is missing legacy owners: {}", missing.join(", ")));
     }
-    let artifacts = sqlx::query("SELECT \"StorageKey\", \"ChecksumSha256\" FROM \"PackageVersions\" ORDER BY \"StorageKey\"")
-        .fetch_all(pool)
-        .await
-        .map_err(|error| format!("cannot read legacy version artifacts: {error}"))?
-        .into_iter()
-        .map(|row| Ok(LegacyArtifact {
-            storage_key: row.try_get("StorageKey")?,
-            checksum_sha256: row.try_get("ChecksumSha256")?,
-        }))
-        .collect::<Result<Vec<_>, sqlx::Error>>()
-        .map_err(|error| format!("cannot decode a legacy artifact: {error}"))?;
+    let artifacts =
+        sqlx::query("SELECT \"StorageKey\", \"ChecksumSha256\" FROM \"PackageVersions\" ORDER BY \"StorageKey\"")
+            .fetch_all(pool)
+            .await
+            .map_err(|error| format!("cannot read legacy version artifacts: {error}"))?
+            .into_iter()
+            .map(|row| {
+                Ok(LegacyArtifact {
+                    storage_key: row.try_get("StorageKey")?,
+                    checksum_sha256: row.try_get("ChecksumSha256")?,
+                })
+            })
+            .collect::<Result<Vec<_>, sqlx::Error>>()
+            .map_err(|error| format!("cannot decode a legacy artifact: {error}"))?;
     Ok((
         u64::try_from(legacy_packages).map_err(|_| "negative package count".to_owned())?,
         u64::try_from(legacy_versions).map_err(|_| "negative version count".to_owned())?,
@@ -148,19 +139,13 @@ async fn preflight(
 }
 
 fn verify_artifacts(root: &Path, artifacts: &[LegacyArtifact]) -> Result<(), String> {
-    let root = root
-        .canonicalize()
-        .map_err(|error| format!("cannot open artifact root {}: {error}", root.display()))?;
+    let root = root.canonicalize().map_err(|error| format!("cannot open artifact root {}: {error}", root.display()))?;
     for artifact in artifacts {
         let path = safe_artifact_path(&root, &artifact.storage_key)?;
-        let bytes = fs::read(&path)
-            .map_err(|error| format!("cannot read artifact {}: {error}", path.display()))?;
+        let bytes = fs::read(&path).map_err(|error| format!("cannot read artifact {}: {error}", path.display()))?;
         let actual = format!("{:x}", Sha256::digest(bytes));
         if !actual.eq_ignore_ascii_case(&artifact.checksum_sha256) {
-            return Err(format!(
-                "checksum mismatch for artifact {}",
-                artifact.storage_key
-            ));
+            return Err(format!("checksum mismatch for artifact {}", artifact.storage_key));
         }
     }
     Ok(())
@@ -170,9 +155,7 @@ fn safe_artifact_path(root: &Path, storage_key: &str) -> Result<PathBuf, String>
     let relative = Path::new(storage_key);
     if relative.as_os_str().is_empty()
         || relative.is_absolute()
-        || relative
-            .components()
-            .any(|component| !matches!(component, Component::Normal(_)))
+        || relative.components().any(|component| !matches!(component, Component::Normal(_)))
     {
         return Err(format!("unsafe legacy storage key: {storage_key}"));
     }
@@ -180,8 +163,8 @@ fn safe_artifact_path(root: &Path, storage_key: &str) -> Result<PathBuf, String>
 }
 
 fn read_mappings(path: &Path) -> Result<Vec<LegacyIdentitySubjectMapping>, String> {
-    let contents = fs::read_to_string(path)
-        .map_err(|error| format!("cannot read mapping file {}: {error}", path.display()))?;
+    let contents =
+        fs::read_to_string(path).map_err(|error| format!("cannot read mapping file {}: {error}", path.display()))?;
     let mut mappings = Vec::new();
     let mut seen_legacy_identities = std::collections::BTreeSet::new();
     for (line_number, line) in contents.lines().enumerate() {
@@ -190,34 +173,18 @@ fn read_mappings(path: &Path) -> Result<Vec<LegacyIdentitySubjectMapping>, Strin
         }
         let fields = line.split('\t').collect::<Vec<_>>();
         if fields.len() != 4 {
-            return Err(format!(
-                "mapping line {} must have four tab-separated fields",
-                line_number + 1
-            ));
+            return Err(format!("mapping line {} must have four tab-separated fields", line_number + 1));
         }
-        let approved_at_unix_seconds = fields[3].parse::<i64>().map_err(|_| {
-            format!(
-                "mapping line {} has an invalid approval timestamp",
-                line_number + 1
-            )
-        })?;
-        if fields
-            .iter()
-            .take(3)
-            .any(|field| field.trim().is_empty() || *field != field.trim())
+        let approved_at_unix_seconds = fields[3]
+            .parse::<i64>()
+            .map_err(|_| format!("mapping line {} has an invalid approval timestamp", line_number + 1))?;
+        if fields.iter().take(3).any(|field| field.trim().is_empty() || *field != field.trim())
             || !canonical_github_subject(fields[1])
         {
-            return Err(format!(
-                "mapping line {} must use trimmed values and github:<numeric-id>",
-                line_number + 1
-            ));
+            return Err(format!("mapping line {} must use trimmed values and github:<numeric-id>", line_number + 1));
         }
         if !seen_legacy_identities.insert(fields[0]) {
-            return Err(format!(
-                "mapping line {} repeats legacy identity `{}`",
-                line_number + 1,
-                fields[0]
-            ));
+            return Err(format!("mapping line {} repeats legacy identity `{}`", line_number + 1, fields[0]));
         }
         mappings.push(LegacyIdentitySubjectMapping {
             legacy_identity_id: fields[0].to_owned(),
@@ -280,17 +247,14 @@ fn now_unix_seconds() -> Result<i64, String> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|error| error.to_string())
-        .and_then(|duration| {
-            i64::try_from(duration.as_secs()).map_err(|_| "current time exceeds i64".to_owned())
-        })
+        .and_then(|duration| i64::try_from(duration.as_secs()).map_err(|_| "current time exceeds i64".to_owned()))
 }
 
 fn render_cutover_error(error: LegacyIdentityCutoverError) -> String {
     match error {
-        LegacyIdentityCutoverError::RejectedUnmappedIdentities(report) => format!(
-            "import rejected: {} unmapped owners",
-            report.unmapped_identities.len()
-        ),
+        LegacyIdentityCutoverError::RejectedUnmappedIdentities(report) => {
+            format!("import rejected: {} unmapped owners", report.unmapped_identities.len())
+        }
         other => format!("import failed: {other:?}"),
     }
 }
@@ -298,8 +262,7 @@ fn render_cutover_error(error: LegacyIdentityCutoverError) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        canonical_github_subject, ensure_apply_acknowledged, parse_arguments, read_mappings,
-        safe_artifact_path,
+        canonical_github_subject, ensure_apply_acknowledged, parse_arguments, read_mappings, safe_artifact_path,
     };
     use std::{fs, path::Path};
 
@@ -344,15 +307,9 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_legacy_identity_mapping_during_dry_run() {
-        let path = std::env::temp_dir().join(format!(
-            "pckg-cutover-duplicate-mapping-{}.tsv",
-            std::process::id()
-        ));
-        fs::write(
-            &path,
-            "legacy-1\tgithub:1\treviewer\t1760000000\nlegacy-1\tgithub:1\treviewer\t1760000000\n",
-        )
-        .unwrap();
+        let path = std::env::temp_dir().join(format!("pckg-cutover-duplicate-mapping-{}.tsv", std::process::id()));
+        fs::write(&path, "legacy-1\tgithub:1\treviewer\t1760000000\nlegacy-1\tgithub:1\treviewer\t1760000000\n")
+            .unwrap();
         assert!(read_mappings(&path).is_err());
         fs::remove_file(path).unwrap();
     }

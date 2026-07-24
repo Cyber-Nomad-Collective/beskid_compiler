@@ -40,10 +40,7 @@ impl HirPrimitiveType {
     }
 
     pub fn is_integer(&self) -> bool {
-        matches!(
-            self,
-            HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8
-        )
+        matches!(self, HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8)
     }
 }
 
@@ -61,10 +58,7 @@ pub enum HirType {
     #[ast(child)]
     Array(Box<Spanned<HirType>>),
     #[ast(children)]
-    Function {
-        return_type: Box<Spanned<HirType>>,
-        parameters: Vec<Spanned<HirType>>,
-    },
+    Function { return_type: Box<Spanned<HirType>>, parameters: Vec<Spanned<HirType>> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, beskid_ast_derive::HirNode)]

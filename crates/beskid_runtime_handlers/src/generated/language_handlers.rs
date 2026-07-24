@@ -10,10 +10,7 @@ use beskid_runtime::HandlerTableEntry;
 unsafe extern "C" fn language_dispatch_bytes_compare(enum_ptr: *const u8) -> i64 {
     let p0 = crate::envelope::load_ptr(enum_ptr, 0);
     let p1 = crate::envelope::load_ptr(enum_ptr, 1);
-    crate::bytes_compare(
-        p0 as *const beskid_abi::BeskidArray,
-        p1 as *const beskid_abi::BeskidArray,
-    )
+    crate::bytes_compare(p0 as *const beskid_abi::BeskidArray, p1 as *const beskid_abi::BeskidArray)
 }
 
 /// # Safety
@@ -49,31 +46,11 @@ unsafe extern "C" fn language_dispatch_test_bytes_ptr(_enum_ptr: *const u8) -> i
 }
 
 const LANGUAGE_HANDLERS: [HandlerTableEntry; 5] = [
-    HandlerTableEntry {
-        group: 3,
-        tag: 0,
-        fn_ptr: language_dispatch_bytes_compare as *const u8,
-    },
-    HandlerTableEntry {
-        group: 3,
-        tag: 1,
-        fn_ptr: language_dispatch_bytes_get as *const u8,
-    },
-    HandlerTableEntry {
-        group: 3,
-        tag: 42,
-        fn_ptr: language_dispatch_str_eq as *const u8,
-    },
-    HandlerTableEntry {
-        group: 3,
-        tag: 43,
-        fn_ptr: language_dispatch_test_bytes_len as *const u8,
-    },
-    HandlerTableEntry {
-        group: 3,
-        tag: 44,
-        fn_ptr: language_dispatch_test_bytes_ptr as *const u8,
-    },
+    HandlerTableEntry { group: 3, tag: 0, fn_ptr: language_dispatch_bytes_compare as *const u8 },
+    HandlerTableEntry { group: 3, tag: 1, fn_ptr: language_dispatch_bytes_get as *const u8 },
+    HandlerTableEntry { group: 3, tag: 42, fn_ptr: language_dispatch_str_eq as *const u8 },
+    HandlerTableEntry { group: 3, tag: 43, fn_ptr: language_dispatch_test_bytes_len as *const u8 },
+    HandlerTableEntry { group: 3, tag: 44, fn_ptr: language_dispatch_test_bytes_ptr as *const u8 },
 ];
 
 /// Register all language-owned dispatch handlers with the runtime.

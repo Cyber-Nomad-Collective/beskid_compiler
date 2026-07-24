@@ -30,10 +30,8 @@ pub fn run_binary(path: &Path, timeout: Duration) -> Output {
 }
 
 pub fn nm_contains_symbol(path: &Path, symbol: &str) -> bool {
-    let output = Command::new("nm")
-        .arg(path)
-        .output()
-        .unwrap_or_else(|error| panic!("run nm on {}: {error}", path.display()));
+    let output =
+        Command::new("nm").arg(path).output().unwrap_or_else(|error| panic!("run nm on {}: {error}", path.display()));
     assert!(output.status.success(), "nm failed for {}", path.display());
     String::from_utf8_lossy(&output.stdout).contains(symbol)
 }

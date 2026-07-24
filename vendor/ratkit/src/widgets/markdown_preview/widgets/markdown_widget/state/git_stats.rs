@@ -23,11 +23,7 @@ pub struct GitStatsState {
 impl GitStatsState {
     /// Create a new git stats state with defaults.
     pub fn new() -> Self {
-        Self {
-            show: false,
-            cache: None,
-            last_update: None,
-        }
+        Self { show: false, cache: None, last_update: None }
     }
 }
 
@@ -46,13 +42,7 @@ use std::process::Command;
 /// A tuple of (additions, modified_file_count, deletions).
 pub fn compute_git_stats(file_path: Option<&Path>) -> (usize, usize, usize) {
     let args = match file_path {
-        Some(path) => vec![
-            "diff",
-            "--numstat",
-            "HEAD",
-            "--",
-            path.to_str().unwrap_or(""),
-        ],
+        Some(path) => vec!["diff", "--numstat", "HEAD", "--", path.to_str().unwrap_or("")],
         None => vec!["diff", "--numstat", "HEAD"],
     };
 
@@ -159,11 +149,7 @@ impl GitStatsState {
 
         if should_update {
             let (adds, modified, dels) = compute_git_stats(source_path);
-            self.cache = Some(GitStats {
-                additions: adds,
-                modified,
-                deletions: dels,
-            });
+            self.cache = Some(GitStats { additions: adds, modified, deletions: dels });
             self.last_update = Some(Instant::now());
             true
         } else {
@@ -209,11 +195,7 @@ impl GitStatsState {
     ///     println!("Git stats updated!");
     /// }
     /// ```
-    pub fn update_if_changed(
-        &mut self,
-        source_path: Option<&Path>,
-        watcher: &mut GitWatcher,
-    ) -> bool {
+    pub fn update_if_changed(&mut self, source_path: Option<&Path>, watcher: &mut GitWatcher) -> bool {
         if !self.show {
             return false;
         }
@@ -221,11 +203,7 @@ impl GitStatsState {
         // Only update if the watcher detected changes
         if watcher.check_for_changes() {
             let (adds, modified, dels) = compute_git_stats(source_path);
-            self.cache = Some(GitStats {
-                additions: adds,
-                modified,
-                deletions: dels,
-            });
+            self.cache = Some(GitStats { additions: adds, modified, deletions: dels });
             self.last_update = Some(Instant::now());
             true
         } else {
@@ -243,11 +221,7 @@ impl GitStatsState {
     /// * `source_path` - The path to the source file, if any.
     pub fn force_update(&mut self, source_path: Option<&Path>) {
         let (adds, modified, dels) = compute_git_stats(source_path);
-        self.cache = Some(GitStats {
-            additions: adds,
-            modified,
-            deletions: dels,
-        });
+        self.cache = Some(GitStats { additions: adds, modified, deletions: dels });
         self.last_update = Some(Instant::now());
     }
 }

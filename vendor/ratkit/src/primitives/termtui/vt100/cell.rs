@@ -25,10 +25,7 @@ impl PartialEq<Self> for Cell {
 impl Cell {
     #[cfg(test)]
     pub fn new(content: &str) -> Cell {
-        Cell {
-            text: content.into(),
-            attrs: Default::default(),
-        }
+        Cell { text: content.into(), attrs: Default::default() }
     }
 
     #[cfg(test)]

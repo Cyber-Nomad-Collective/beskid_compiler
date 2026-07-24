@@ -43,14 +43,12 @@ pub fn collect_symbol_values(
             continue;
         }
 
-        let needs_prompt = symbol.is_required
-            || (manifest.prefer_interactive && options.interactive && !options.no_interactive);
+        let needs_prompt =
+            symbol.is_required || (manifest.prefer_interactive && options.interactive && !options.no_interactive);
 
         if needs_prompt {
             if options.no_interactive || !options.interactive {
-                return Err(TemplateError::RequiredSymbol {
-                    symbol_id: id.clone(),
-                });
+                return Err(TemplateError::RequiredSymbol { symbol_id: id.clone() });
             }
             let value = prompt_symbol(id, symbol)?;
             validate_symbol_value(id, symbol, &value)?;
@@ -67,23 +65,17 @@ fn validate_symbol_value(id: &str, symbol: &TemplateSymbol, value: &str) -> Temp
             if let Some(choices) = &symbol.choices
                 && !choices.iter().any(|c| c == value)
             {
-                return Err(TemplateError::InvalidManifest(format!(
-                    "symbol `{id}` value `{value}` is not in choices"
-                )));
+                return Err(TemplateError::InvalidManifest(format!("symbol `{id}` value `{value}` is not in choices")));
             }
         }
         SymbolType::Bool => {
             if value != "true" && value != "false" {
-                return Err(TemplateError::InvalidManifest(format!(
-                    "symbol `{id}` must be true or false"
-                )));
+                return Err(TemplateError::InvalidManifest(format!("symbol `{id}` must be true or false")));
             }
         }
         SymbolType::Integer => {
             if value.parse::<i64>().is_err() {
-                return Err(TemplateError::InvalidManifest(format!(
-                    "symbol `{id}` must be an integer"
-                )));
+                return Err(TemplateError::InvalidManifest(format!("symbol `{id}` must be an integer")));
             }
         }
         SymbolType::String => {}
@@ -116,9 +108,7 @@ fn prompt_symbol(id: &str, symbol: &TemplateSymbol) -> TemplateResult<String> {
             if choices.iter().any(|c| c == line) {
                 return Ok(line.to_string());
             }
-            Err(TemplateError::InvalidManifest(format!(
-                "invalid choice for symbol `{id}`"
-            )))
+            Err(TemplateError::InvalidManifest(format!("invalid choice for symbol `{id}`")))
         }
         SymbolType::Bool => {
             write!(stdout, "{prompt} [{id}] (true/false): ")?;
@@ -129,9 +119,7 @@ fn prompt_symbol(id: &str, symbol: &TemplateSymbol) -> TemplateResult<String> {
             if line == "true" || line == "false" {
                 Ok(line.to_string())
             } else {
-                Err(TemplateError::InvalidManifest(format!(
-                    "symbol `{id}` requires true or false"
-                )))
+                Err(TemplateError::InvalidManifest(format!("symbol `{id}` requires true or false")))
             }
         }
         _ => {
@@ -141,9 +129,7 @@ fn prompt_symbol(id: &str, symbol: &TemplateSymbol) -> TemplateResult<String> {
             stdin.read_line(&mut line)?;
             let line = line.trim();
             if line.is_empty() && symbol.is_required {
-                return Err(TemplateError::RequiredSymbol {
-                    symbol_id: id.to_string(),
-                });
+                return Err(TemplateError::RequiredSymbol { symbol_id: id.to_string() });
             }
             Ok(line.to_string())
         }
@@ -151,13 +137,10 @@ fn prompt_symbol(id: &str, symbol: &TemplateSymbol) -> TemplateResult<String> {
 }
 
 pub fn parse_symbol_flag(flag: &str) -> TemplateResult<(String, String)> {
-    let (id, value) = flag
-        .split_once('=')
-        .ok_or_else(|| TemplateError::InvalidManifest(format!("invalid --symbol `{flag}`")))?;
+    let (id, value) =
+        flag.split_once('=').ok_or_else(|| TemplateError::InvalidManifest(format!("invalid --symbol `{flag}`")))?;
     if id.is_empty() {
-        return Err(TemplateError::InvalidManifest(format!(
-            "invalid --symbol `{flag}`"
-        )));
+        return Err(TemplateError::InvalidManifest(format!("invalid --symbol `{flag}`")));
     }
     Ok((id.to_string(), value.to_string()))
 }

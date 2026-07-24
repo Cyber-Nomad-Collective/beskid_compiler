@@ -4,15 +4,13 @@ use rustc_demangle::try_demangle;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ABI_V5, AbiFieldLayout, AbiFunction, AbiLayout, AbiManifestV5, AbiType, AssemblyExport,
-    AssemblyParameterLocation, AssemblyRegister, AssemblySymbol, ManifestValidationError,
-    PlatformImport, RuntimeIntrinsic, TargetMetadata, TrapCode,
+    ABI_V5, AbiFieldLayout, AbiFunction, AbiLayout, AbiManifestV5, AbiType, AssemblyExport, AssemblyParameterLocation,
+    AssemblyRegister, AssemblySymbol, ManifestValidationError, PlatformImport, RuntimeIntrinsic, TargetMetadata,
+    TrapCode,
 };
 
-pub const CANONICAL_RUNTIME_PACKAGE_PUBLISHER: &str =
-    crate::generated::abi_v5_contract::ABI_V5_RUNTIME_PUBLISHER;
-pub const CANONICAL_RUNTIME_PACKAGE_NAME: &str =
-    crate::generated::abi_v5_contract::ABI_V5_RUNTIME_PACKAGE;
+pub const CANONICAL_RUNTIME_PACKAGE_PUBLISHER: &str = crate::generated::abi_v5_contract::ABI_V5_RUNTIME_PUBLISHER;
+pub const CANONICAL_RUNTIME_PACKAGE_NAME: &str = crate::generated::abi_v5_contract::ABI_V5_RUNTIME_PACKAGE;
 pub const TRAP_EXIT_STATUS: u8 = crate::generated::abi_v5_contract::ABI_V5_TRAP_EXIT_STATUS as u8;
 pub const TRAP_DIAGNOSTIC_PREFIX: &str = crate::generated::abi_v5_contract::ABI_V5_TRAP_DIAGNOSTIC;
 
@@ -58,16 +56,10 @@ pub struct RuntimeAuditMetadata {
 }
 
 impl RuntimeAuditMetadata {
-    pub fn for_manifest(
-        manifest: &AbiManifestV5,
-        runtime_source_hash: &str,
-    ) -> Result<Self, ManifestValidationError> {
+    pub fn for_manifest(manifest: &AbiManifestV5, runtime_source_hash: &str) -> Result<Self, ManifestValidationError> {
         manifest.validate()?;
-        let mut allowed_imports = manifest
-            .platform_imports
-            .iter()
-            .map(|entry| entry.symbol.clone())
-            .collect::<Vec<_>>();
+        let mut allowed_imports =
+            manifest.platform_imports.iter().map(|entry| entry.symbol.clone()).collect::<Vec<_>>();
         // Darwin C11 thread-local storage lowers through the platform TLV bootstrap helper.
         // Normalization strips the Mach-O leading underscore, leaving this exact spelling.
         if manifest.target.object_format.as_str() == "macho" {
@@ -79,22 +71,12 @@ impl RuntimeAuditMetadata {
             .exports
             .iter()
             .map(|entry| entry.symbol.clone())
-            .chain(
-                manifest
-                    .assembly_exports
-                    .iter()
-                    .map(|entry| entry.symbol.as_str().into()),
-            )
+            .chain(manifest.assembly_exports.iter().map(|entry| entry.symbol.as_str().into()))
             .collect::<Vec<_>>();
         loader_required_exports.sort();
         loader_required_exports.dedup();
         let mut allowed_exports = loader_required_exports.clone();
-        allowed_exports.extend(
-            manifest
-                .trusted_runtime_intrinsics
-                .iter()
-                .map(|intrinsic| intrinsic.symbol.clone()),
-        );
+        allowed_exports.extend(manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.symbol.clone()));
         allowed_exports.sort();
         allowed_exports.dedup();
         Ok(Self {
@@ -111,11 +93,7 @@ impl RuntimeAuditMetadata {
 
     pub fn validate(&self, manifest: &AbiManifestV5) -> Result<(), ManifestValidationError> {
         let expected = Self::for_manifest(manifest, &self.runtime_source_hash)?;
-        if self == &expected {
-            Ok(())
-        } else {
-            Err(ManifestValidationError::InvalidRuntimeAuditMetadata)
-        }
+        if self == &expected { Ok(()) } else { Err(ManifestValidationError::InvalidRuntimeAuditMetadata) }
     }
 
     pub fn audit_object_symbol_tables<'a>(
@@ -166,50 +144,26 @@ impl RuntimeAuditMetadata {
     }
 }
 
-fn exact_symbol_set(
-    table: &str,
-    expected: &[String],
-    actual: &BTreeSet<String>,
-) -> Result<(), String> {
+fn exact_symbol_set(table: &str, expected: &[String], actual: &BTreeSet<String>) -> Result<(), String> {
     let expected = expected.iter().cloned().collect::<BTreeSet<_>>();
     if expected == *actual {
         return Ok(());
     }
     let missing = expected.difference(actual).cloned().collect::<Vec<_>>();
     let unexpected = actual.difference(&expected).cloned().collect::<Vec<_>>();
-    Err(format!(
-        "{table} symbol table mismatch: missing={missing:?}, unexpected={unexpected:?}"
-    ))
+    Err(format!("{table} symbol table mismatch: missing={missing:?}, unexpected={unexpected:?}"))
 }
 
-fn required_symbol_set(
-    table: &str,
-    required: &[String],
-    actual: &BTreeSet<String>,
-) -> Result<(), String> {
+fn required_symbol_set(table: &str, required: &[String], actual: &BTreeSet<String>) -> Result<(), String> {
     let required = required.iter().cloned().collect::<BTreeSet<_>>();
     let missing = required.difference(actual).cloned().collect::<Vec<_>>();
-    if missing.is_empty() {
-        Ok(())
-    } else {
-        Err(format!("{table} symbol table is missing={missing:?}"))
-    }
+    if missing.is_empty() { Ok(()) } else { Err(format!("{table} symbol table is missing={missing:?}")) }
 }
 
-fn allowlisted_symbol_set(
-    table: &str,
-    allowed: &[String],
-    actual: &BTreeSet<String>,
-) -> Result<(), String> {
+fn allowlisted_symbol_set(table: &str, allowed: &[String], actual: &BTreeSet<String>) -> Result<(), String> {
     let allowed = allowed.iter().cloned().collect::<BTreeSet<_>>();
     let unexpected = actual.difference(&allowed).cloned().collect::<Vec<_>>();
-    if unexpected.is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
-            "{table} symbol table has unexpected={unexpected:?}"
-        ))
-    }
+    if unexpected.is_empty() { Ok(()) } else { Err(format!("{table} symbol table has unexpected={unexpected:?}")) }
 }
 
 fn normalize_object_symbol(raw: &str, object_format: &str, symbol_prefix: &str) -> String {
@@ -226,18 +180,11 @@ fn normalize_object_symbol(raw: &str, object_format: &str, symbol_prefix: &str) 
 
 fn reject_forbidden_provenance(raw: &str, forbidden: &[String]) -> Result<(), String> {
     let unprefixed = raw.strip_prefix('_').unwrap_or(raw);
-    let rust_mangled =
-        unprefixed.starts_with('R') || (unprefixed.starts_with("ZN") && unprefixed.ends_with('E'));
-    let demangled = try_demangle(raw)
-        .or_else(|_| try_demangle(unprefixed))
-        .ok()
-        .map(|symbol| symbol.to_string());
-    let forbidden_family = forbidden.iter().any(|family| {
-        raw.contains(family)
-            || demangled
-                .as_deref()
-                .is_some_and(|symbol| symbol.contains(family))
-    });
+    let rust_mangled = unprefixed.starts_with('R') || (unprefixed.starts_with("ZN") && unprefixed.ends_with('E'));
+    let demangled = try_demangle(raw).or_else(|_| try_demangle(unprefixed)).ok().map(|symbol| symbol.to_string());
+    let forbidden_family = forbidden
+        .iter()
+        .any(|family| raw.contains(family) || demangled.as_deref().is_some_and(|symbol| symbol.contains(family)));
     if rust_mangled || demangled.is_some() || forbidden_family {
         Err(format!("forbidden runtime provenance symbol `{raw}`"))
     } else {
@@ -252,19 +199,15 @@ struct SourceAudit {
 }
 
 fn forbidden_symbol_families() -> Vec<String> {
-    serde_json::from_str::<SourceAudit>(include_str!(concat!(
-        env!("OUT_DIR"),
-        "/abi-v5-audit.json"
-    )))
-    .expect("build-validated audit source")
-    .forbidden_symbol_families
+    serde_json::from_str::<SourceAudit>(include_str!(concat!(env!("OUT_DIR"), "/abi-v5-audit.json")))
+        .expect("build-validated audit source")
+        .forbidden_symbol_families
 }
 
 impl AbiManifestV5 {
     pub fn canonical_runtime(target: TargetMetadata) -> Self {
-        let source: SourceContract =
-            serde_json::from_str(crate::generated::abi_v5_contract::ABI_V5_SOURCE_JSON)
-                .expect("build-validated ABI-v5 generated source");
+        let source: SourceContract = serde_json::from_str(crate::generated::abi_v5_contract::ABI_V5_SOURCE_JSON)
+            .expect("build-validated ABI-v5 generated source");
         let _target_source = source
             .targets
             .iter()
@@ -280,12 +223,7 @@ impl AbiManifestV5 {
             layouts: source
                 .layouts
                 .iter()
-                .filter(|layout| {
-                    layout
-                        .target
-                        .as_deref()
-                        .is_none_or(|value| value == target_slug)
-                })
+                .filter(|layout| layout.target.as_deref().is_none_or(|value| value == target_slug))
                 .map(source_layout)
                 .collect(),
             trusted_runtime_package: Some(canonical_runtime_package()),
@@ -296,11 +234,7 @@ impl AbiManifestV5 {
                 .filter(|entry| entry.target == target_slug)
                 .map(source_platform_import)
                 .collect(),
-            assembly_exports: source
-                .assembly
-                .iter()
-                .map(|entry| source_assembly(entry, target_slug))
-                .collect(),
+            assembly_exports: source.assembly.iter().map(|entry| source_assembly(entry, target_slug)).collect(),
             traps: crate::generated::abi_v5_contract::ABI_V5_TRAPS
                 .iter()
                 .map(|(_, code)| TrapCode::try_from(*code).expect("validated trap code"))
@@ -309,19 +243,13 @@ impl AbiManifestV5 {
         }
     }
 
-    pub(super) fn validate_canonical_bootstrap_contract(
-        &self,
-    ) -> Result<(), ManifestValidationError> {
+    pub(super) fn validate_canonical_bootstrap_contract(&self) -> Result<(), ManifestValidationError> {
         if !self.imports.is_empty() {
-            return Err(ManifestValidationError::InvalidRuntimeImportSet {
-                actual: self.imports.clone(),
-            });
+            return Err(ManifestValidationError::InvalidRuntimeImportSet { actual: self.imports.clone() });
         }
         let canonical = Self::canonical_runtime(self.target.clone());
         if self.exports != canonical.exports {
-            return Err(ManifestValidationError::InvalidRuntimeExportSet {
-                actual: self.exports.clone(),
-            });
+            return Err(ManifestValidationError::InvalidRuntimeExportSet { actual: self.exports.clone() });
         }
         if self.trusted_runtime_intrinsics != canonical.trusted_runtime_intrinsics {
             return Err(ManifestValidationError::InvalidRuntimeIntrinsicSet {
@@ -329,14 +257,10 @@ impl AbiManifestV5 {
             });
         }
         if self.platform_imports != canonical.platform_imports {
-            return Err(ManifestValidationError::InvalidPlatformImportSet {
-                actual: self.platform_imports.clone(),
-            });
+            return Err(ManifestValidationError::InvalidPlatformImportSet { actual: self.platform_imports.clone() });
         }
         if self.layouts != canonical.layouts {
-            return Err(ManifestValidationError::InvalidRuntimeLayoutSet {
-                actual: self.layouts.clone(),
-            });
+            return Err(ManifestValidationError::InvalidRuntimeLayoutSet { actual: self.layouts.clone() });
         }
         Ok(())
     }
@@ -496,11 +420,7 @@ fn source_layout(entry: &SourceLayout) -> AbiLayout {
         fields: entry
             .fields
             .iter()
-            .map(|field| AbiFieldLayout {
-                name: field.name.clone(),
-                offset: field.offset,
-                ty: source_type(&field.ty),
-            })
+            .map(|field| AbiFieldLayout { name: field.name.clone(), offset: field.offset, ty: source_type(&field.ty) })
             .collect(),
     }
 }
@@ -517,41 +437,27 @@ fn source_assembly(entry: &SourceAssembly, target: &str) -> AssemblyExport {
             .iter()
             .map(|location| match location {
                 SourceParameterLocation::Register { register } => {
-                    AssemblyParameterLocation::Register {
-                        register: AssemblyRegister::new(register),
-                    }
+                    AssemblyParameterLocation::Register { register: AssemblyRegister::new(register) }
                 }
                 SourceParameterLocation::Stack { base, offset } => {
-                    AssemblyParameterLocation::Stack {
-                        base: AssemblyRegister::new(base),
-                        offset: *offset,
-                    }
+                    AssemblyParameterLocation::Stack { base: AssemblyRegister::new(base), offset: *offset }
                 }
             })
             .collect(),
         result: source_type(&entry.result),
-        preserved_registers: entry.preserved[target]
-            .iter()
-            .map(|value| source_register(value))
-            .collect(),
+        preserved_registers: entry.preserved[target].iter().map(|value| source_register(value)).collect(),
     }
 }
 
-pub fn render_runtime_c_header(
-    manifest: &AbiManifestV5,
-) -> Result<String, ManifestValidationError> {
+pub fn render_runtime_c_header(manifest: &AbiManifestV5) -> Result<String, ManifestValidationError> {
     manifest.validate()?;
     Ok(include_str!(concat!(env!("OUT_DIR"), "/beskid_runtime_abi_v5.h")).into())
 }
 
-pub fn render_runtime_asm_include(
-    manifest: &AbiManifestV5,
-) -> Result<String, ManifestValidationError> {
+pub fn render_runtime_asm_include(manifest: &AbiManifestV5) -> Result<String, ManifestValidationError> {
     manifest.validate()?;
     crate::generated::abi_v5_contract::ABI_V5_ASM_INCLUDES
         .iter()
-        .find_map(|(target, source)| {
-            (*target == manifest.target.triple.as_str()).then(|| (*source).into())
-        })
+        .find_map(|(target, source)| (*target == manifest.target.triple.as_str()).then(|| (*source).into()))
         .ok_or(ManifestValidationError::InvalidRuntimeAuditMetadata)
 }

@@ -7,9 +7,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::services::git_watcher::GitWatcher;
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct GitWatcherDemo {
     watcher: GitWatcher,
@@ -18,17 +16,11 @@ struct GitWatcherDemo {
 
 impl GitWatcherDemo {
     fn new() -> io::Result<Self> {
-        let mut watcher =
-            GitWatcher::new().map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        let mut watcher = GitWatcher::new().map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
         let path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        watcher
-            .watch(&path)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        watcher.watch(&path).map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
 
-        Ok(Self {
-            watcher,
-            last_change: "No git changes yet".to_string(),
-        })
+        Ok(Self { watcher, last_change: "No git changes yet".to_string() })
     }
 }
 
@@ -43,9 +35,7 @@ impl CoordinatorApp for GitWatcherDemo {
                     Ok(CoordinatorAction::Continue)
                 }
             }
-            CoordinatorEvent::Keyboard(keyboard)
-                if keyboard.key_code == crossterm::event::KeyCode::Char('q') =>
-            {
+            CoordinatorEvent::Keyboard(keyboard) if keyboard.key_code == crossterm::event::KeyCode::Char('q') => {
                 Ok(CoordinatorAction::Quit)
             }
             _ => Ok(CoordinatorAction::Redraw),

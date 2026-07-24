@@ -7,9 +7,7 @@ use ratatui::{
     widgets::{Clear, Paragraph},
     Frame,
 };
-use ratkit::prelude::{
-    run, CoordinatorAction, CoordinatorApp, CoordinatorEvent, LayoutResult, RunnerConfig,
-};
+use ratkit::prelude::{run, CoordinatorAction, CoordinatorApp, CoordinatorEvent, LayoutResult, RunnerConfig};
 
 struct MouseOnlyDemo {
     x: u16,

@@ -6,12 +6,7 @@ use crate::support::type_result::empty_type_result;
 
 #[test]
 fn dynamic_ineligible_mapping_maps_to_e2013() {
-    let span = SpanInfo {
-        start: 0,
-        end: 1,
-        line_col_start: (1, 1),
-        line_col_end: (1, 2),
-    };
+    let span = SpanInfo { start: 0, end: 1, line_col_start: (1, 1), line_col_end: (1, 2) };
     let (type_result, resolution) = empty_type_result();
     let error = CodegenError::IneligibleSerializeMapping {
         span,

@@ -41,12 +41,7 @@ impl<'a, 'b, T> StatefulWidget for TreeViewRef<'a, 'b, T> {
         }
 
         // Render visible items
-        for (i, (line, path)) in items
-            .iter()
-            .skip(state.offset)
-            .take(visible_height)
-            .enumerate()
-        {
+        for (i, (line, path)) in items.iter().skip(state.offset).take(visible_height).enumerate() {
             let y = area.y + i as u16;
 
             // Fill background for selected row (full-width highlight like Yazi)

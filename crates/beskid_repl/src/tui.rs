@@ -4,9 +4,7 @@ use std::io::{self, stdout};
 
 use crossterm::ExecutableCommand;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
@@ -36,17 +34,8 @@ pub fn run_tui(session: &mut ReplSession) -> io::Result<()> {
                 .split(frame.area());
 
             let pseudo = PseudoTerminal::new(parser.screen())
-                .block(
-                    Block::default()
-                        .title(" Beskid REPL ")
-                        .borders(Borders::ALL),
-                )
-                .style(
-                    Style::default()
-                        .fg(Color::White)
-                        .bg(Color::Black)
-                        .add_modifier(Modifier::BOLD),
-                );
+                .block(Block::default().title(" Beskid REPL ").borders(Borders::ALL))
+                .style(Style::default().fg(Color::White).bg(Color::Black).add_modifier(Modifier::BOLD));
             frame.render_widget(pseudo, chunks[0]);
 
             let input_line = Paragraph::new(format!("{PROMPT}{input}"))
@@ -109,9 +98,7 @@ fn handle_line(session: &mut ReplSession, parser: &mut Parser, line: &str) {
         match handle_command(session, command.trim()) {
             CommandOutcome::Quit => {}
             CommandOutcome::Print(message) => write_output(parser, &message),
-            CommandOutcome::PrintError(message) => {
-                write_output(parser, &format!("error: {message}"))
-            }
+            CommandOutcome::PrintError(message) => write_output(parser, &format!("error: {message}")),
         }
         return;
     }
@@ -133,10 +120,8 @@ enum CommandOutcome {
 }
 
 fn handle_command(session: &mut ReplSession, command: &str) -> CommandOutcome {
-    let (name, rest) = command
-        .split_once(char::is_whitespace)
-        .map(|(name, rest)| (name, rest.trim()))
-        .unwrap_or((command, ""));
+    let (name, rest) =
+        command.split_once(char::is_whitespace).map(|(name, rest)| (name, rest.trim())).unwrap_or((command, ""));
 
     match name {
         "quit" | "q" | "exit" => CommandOutcome::Quit,
@@ -154,9 +139,7 @@ fn handle_command(session: &mut ReplSession, command: &str) -> CommandOutcome {
                 other => CommandOutcome::PrintError(format!("unexpected outcome: {other:?}")),
             }
         }
-        "help" | "h" | "?" => {
-            CommandOutcome::Print("commands: :quit, :reset, :type <snippet>".into())
-        }
+        "help" | "h" | "?" => CommandOutcome::Print("commands: :quit, :reset, :type <snippet>".into()),
         other => CommandOutcome::PrintError(format!("unknown command `{other}`")),
     }
 }

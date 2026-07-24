@@ -53,45 +53,21 @@ fn render_line_with_segments(
     let mut char_pos = 0;
 
     // Get theme colors with fallbacks
-    let link_color = app_theme
-        .map(|t| t.markdown.link_text)
-        .unwrap_or(Color::Rgb(100, 200, 100));
+    let link_color = app_theme.map(|t| t.markdown.link_text).unwrap_or(Color::Rgb(100, 200, 100));
     let emph_color = app_theme.map(|t| t.markdown.emph).unwrap_or(Color::Reset);
     let strong_color = app_theme.map(|t| t.markdown.strong).unwrap_or(Color::Reset);
 
     for segment in segments {
         let (text, style) = match segment {
             TextSegment::Plain(t) => (t.clone(), Style::default()),
-            TextSegment::Bold(t) => (
-                t.clone(),
-                Style::default()
-                    .fg(strong_color)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            TextSegment::Italic(t) => (
-                t.clone(),
-                Style::default()
-                    .fg(emph_color)
-                    .add_modifier(Modifier::ITALIC),
-            ),
+            TextSegment::Bold(t) => (t.clone(), Style::default().fg(strong_color).add_modifier(Modifier::BOLD)),
+            TextSegment::Italic(t) => (t.clone(), Style::default().fg(emph_color).add_modifier(Modifier::ITALIC)),
             TextSegment::BoldItalic(t) => (
                 t.clone(),
-                Style::default()
-                    .fg(strong_color)
-                    .add_modifier(Modifier::BOLD)
-                    .add_modifier(Modifier::ITALIC),
+                Style::default().fg(strong_color).add_modifier(Modifier::BOLD).add_modifier(Modifier::ITALIC),
             ),
-            TextSegment::InlineCode(t) => {
-                (t.clone(), inline_code_style(Style::default(), app_theme))
-            }
-            TextSegment::Link {
-                text,
-                url,
-                is_autolink,
-                bold,
-                italic,
-                show_icon,
-            } => {
+            TextSegment::InlineCode(t) => (t.clone(), inline_code_style(Style::default(), app_theme)),
+            TextSegment::Link { text, url, is_autolink, bold, italic, show_icon } => {
                 // Only show icon for first segment of a link
                 let full_text = if *show_icon {
                     let icon = get_link_icon(url);
@@ -122,12 +98,9 @@ fn render_line_with_segments(
 
                 (full_text, style)
             }
-            TextSegment::Strikethrough(t) => (
-                t.clone(),
-                Style::default()
-                    .fg(Color::Rgb(150, 150, 150))
-                    .add_modifier(Modifier::CROSSED_OUT),
-            ),
+            TextSegment::Strikethrough(t) => {
+                (t.clone(), Style::default().fg(Color::Rgb(150, 150, 150)).add_modifier(Modifier::CROSSED_OUT))
+            }
             TextSegment::Html(t) => (t.clone(), Style::default()),
             TextSegment::Checkbox(state) => {
                 let (icon, color) = match state {
@@ -180,12 +153,7 @@ fn segments_to_plain_text(segments: &[TextSegment]) -> String {
             TextSegment::Italic(text) => text.clone(),
             TextSegment::BoldItalic(text) => text.clone(),
             TextSegment::InlineCode(text) => text.clone(),
-            TextSegment::Link {
-                text,
-                url,
-                show_icon,
-                ..
-            } => {
+            TextSegment::Link { text, url, show_icon, .. } => {
                 // Only include icon if show_icon is true (first segment of link)
                 if *show_icon {
                     let icon = get_link_icon(url);

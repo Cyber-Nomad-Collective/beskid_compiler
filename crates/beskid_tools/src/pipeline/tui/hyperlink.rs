@@ -14,10 +14,7 @@ pub struct FileLineLink {
 
 /// Whether OSC 8 links are emitted (TTY stderr, not plain, hyperlinks not disabled).
 pub fn hyperlinks_enabled(plain: bool) -> bool {
-    !plain
-        && stderr_is_tty()
-        && env::var_os("BESKID_NO_HYPERLINKS").is_none()
-        && env::var_os("NO_HYPERLINKS").is_none()
+    !plain && stderr_is_tty() && env::var_os("BESKID_NO_HYPERLINKS").is_none() && env::var_os("NO_HYPERLINKS").is_none()
 }
 
 fn stderr_is_tty() -> bool {

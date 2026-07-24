@@ -15,9 +15,6 @@ impl HotkeyRegistry {
     /// let registry = HotkeyRegistry::new();
     /// ```
     pub fn new() -> Self {
-        Self {
-            hotkeys: Vec::new(),
-            active_scope: None,
-        }
+        Self { hotkeys: Vec::new(), active_scope: None }
     }
 }

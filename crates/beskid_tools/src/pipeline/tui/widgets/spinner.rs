@@ -13,10 +13,7 @@ pub fn draw_status_spinner(frame: &mut Frame, area: Rect, tick: u64) {
 /// Indeterminate stage bar while pipeline work is in flight.
 pub fn draw_stage_bar_spinner(frame: &mut Frame, area: Rect, tick: u64) {
     frame.render_widget(
-        BarSpinner::new(tick)
-            .motion(BarMotion::Loop)
-            .arc_color(Color::Cyan)
-            .dim_color(Color::DarkGray),
+        BarSpinner::new(tick).motion(BarMotion::Loop).arc_color(Color::Cyan).dim_color(Color::DarkGray),
         area,
     );
 }

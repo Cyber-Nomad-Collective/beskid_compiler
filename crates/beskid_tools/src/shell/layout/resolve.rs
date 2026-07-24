@@ -16,53 +16,22 @@ pub struct ResolvedPanels<'a> {
     pub chrome_area: Rect,
 }
 
-pub fn resolve_panels<'a>(
-    runtime: &'a mut LayoutRuntime,
-    area: Rect,
-) -> Result<ResolvedPanels<'a>, String> {
+pub fn resolve_panels<'a>(runtime: &'a mut LayoutRuntime, area: Rect) -> Result<ResolvedPanels<'a>, String> {
     let header_h = PINNED_TOP_ROWS.min(area.height);
     let chrome_h = CHROME_ROWS.min(area.height.saturating_sub(header_h));
-    let main_h = area
-        .height
-        .saturating_sub(header_h)
-        .saturating_sub(chrome_h);
-    let header_area = Rect {
-        width: area.width,
-        height: header_h,
-        x: area.x,
-        y: area.y,
-    };
-    let main_area = Rect {
-        width: area.width,
-        height: main_h,
-        x: area.x,
-        y: area.y + header_h,
-    };
+    let main_h = area.height.saturating_sub(header_h).saturating_sub(chrome_h);
+    let header_area = Rect { width: area.width, height: header_h, x: area.x, y: area.y };
+    let main_area = Rect { width: area.width, height: main_h, x: area.x, y: area.y + header_h };
     if main_area.width == 0 || main_area.height == 0 {
         return Err("terminal too small for panel layout".into());
     }
-    let chrome_area = Rect {
-        width: area.width,
-        height: chrome_h,
-        x: area.x,
-        y: area.y + header_h + main_h,
-    };
+    let chrome_area = Rect { width: area.width, height: chrome_h, x: area.x, y: area.y + header_h + main_h };
     let frame = panes_ratatui::resolve(runtime, main_area).map_err(|e| e.to_string())?;
-    Ok(ResolvedPanels {
-        frame,
-        header_area,
-        main_area,
-        chrome_area,
-    })
+    Ok(ResolvedPanels { frame, header_area, main_area, chrome_area })
 }
 
 /// Panel under a terminal cell, if any (coordinates relative to full frame).
-pub fn panel_id_at_terminal(
-    frame: &TerminalFrame<'_>,
-    main_area: Rect,
-    column: u16,
-    row: u16,
-) -> Option<PanelId> {
+pub fn panel_id_at_terminal(frame: &TerminalFrame<'_>, main_area: Rect, column: u16, row: u16) -> Option<PanelId> {
     if column < main_area.x
         || row < main_area.y
         || column >= main_area.x + main_area.width

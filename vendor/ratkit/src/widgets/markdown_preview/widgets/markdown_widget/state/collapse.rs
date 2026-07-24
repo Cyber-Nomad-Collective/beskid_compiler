@@ -20,10 +20,7 @@ pub struct CollapseState {
 impl CollapseState {
     /// Create a new collapse state with no collapsed sections.
     pub fn new() -> Self {
-        Self {
-            sections: HashMap::new(),
-            hierarchy: HashMap::new(),
-        }
+        Self { sections: HashMap::new(), hierarchy: HashMap::new() }
     }
 }
 
@@ -148,14 +145,8 @@ impl CollapseState {
     /// * `section_id` - The ID of the section.
     /// * `level` - The heading level (1-6).
     /// * `parent_section_id` - The parent section's ID, if any.
-    pub fn register_section(
-        &mut self,
-        section_id: usize,
-        level: u8,
-        parent_section_id: Option<usize>,
-    ) {
-        self.hierarchy
-            .insert(section_id, (level, parent_section_id));
+    pub fn register_section(&mut self, section_id: usize, level: u8, parent_section_id: Option<usize>) {
+        self.hierarchy.insert(section_id, (level, parent_section_id));
     }
 }
 

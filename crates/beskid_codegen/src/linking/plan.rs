@@ -14,8 +14,7 @@ use crate::lowering::types::type_id_for_type;
 
 use super::call_graph::collect_calls_in_body;
 use super::def_index::{
-    FunctionDefIndex, find_function_by_name, find_function_by_span, find_method_by_name,
-    find_method_by_span,
+    FunctionDefIndex, find_function_by_name, find_function_by_span, find_method_by_name, find_method_by_span,
 };
 
 /// One symbol to emit in the link plan.
@@ -72,28 +71,16 @@ impl LinkPlan {
         let mut module_path = Vec::new();
         let mut root_calls = Vec::new();
 
-        walk_hir_items(
-            &entry.node.items,
-            &mut module_path,
-            &mut |item, _qualified, _short| {
-                let HirItem::TestDefinition(test) = &item.node else {
-                    return;
-                };
-                let Some(info) = item_info_for_span(resolution, item.span, None) else {
-                    return;
-                };
-                entries.push(LinkSymbol::Test {
-                    item: info.id,
-                    name: test.node.name.node.name.clone(),
-                });
-                root_calls.extend(collect_calls_in_body(
-                    &test.node.body,
-                    resolution,
-                    type_result,
-                    None,
-                ));
-            },
-        );
+        walk_hir_items(&entry.node.items, &mut module_path, &mut |item, _qualified, _short| {
+            let HirItem::TestDefinition(test) = &item.node else {
+                return;
+            };
+            let Some(info) = item_info_for_span(resolution, item.span, None) else {
+                return;
+            };
+            entries.push(LinkSymbol::Test { item: info.id, name: test.node.name.node.name.clone() });
+            root_calls.extend(collect_calls_in_body(&test.node.body, resolution, type_result, None));
+        });
         visit_callees(root_calls, resolution, type_result, def_index, &mut callees);
 
         Self { callees, entries }
@@ -113,47 +100,35 @@ impl LinkPlan {
         let mut module_path = Vec::new();
         let mut root_calls = Vec::new();
 
-        walk_hir_items(
-            &entry.node.items,
-            &mut module_path,
-            &mut |item, qualified, short| {
-                if !entrypoint_matches(entrypoint, qualified, short) {
-                    return;
+        walk_hir_items(&entry.node.items, &mut module_path, &mut |item, qualified, short| {
+            if !entrypoint_matches(entrypoint, qualified, short) {
+                return;
+            }
+            let Some(info) = item_info_for_span(resolution, item.span, entry_source_path) else {
+                return;
+            };
+            match &item.node {
+                HirItem::TestDefinition(test) => {
+                    entries.push(LinkSymbol::Test { item: info.id, name: short.to_string() });
+                    root_calls.extend(collect_calls_in_body(
+                        &test.node.body,
+                        resolution,
+                        type_result,
+                        entry_source_path,
+                    ));
                 }
-                let Some(info) = item_info_for_span(resolution, item.span, entry_source_path)
-                else {
-                    return;
-                };
-                match &item.node {
-                    HirItem::TestDefinition(test) => {
-                        entries.push(LinkSymbol::Test {
-                            item: info.id,
-                            name: short.to_string(),
-                        });
-                        root_calls.extend(collect_calls_in_body(
-                            &test.node.body,
-                            resolution,
-                            type_result,
-                            entry_source_path,
-                        ));
-                    }
-                    HirItem::FunctionDefinition(def) => {
-                        entries.push(LinkSymbol::Function {
-                            item: info.id,
-                            mangled: None,
-                            receiver_type: None,
-                        });
-                        root_calls.extend(collect_calls_in_body(
-                            &def.node.body,
-                            resolution,
-                            type_result,
-                            entry_source_path,
-                        ));
-                    }
-                    _ => {}
+                HirItem::FunctionDefinition(def) => {
+                    entries.push(LinkSymbol::Function { item: info.id, mangled: None, receiver_type: None });
+                    root_calls.extend(collect_calls_in_body(
+                        &def.node.body,
+                        resolution,
+                        type_result,
+                        entry_source_path,
+                    ));
                 }
-            },
-        );
+                _ => {}
+            }
+        });
         visit_callees(root_calls, resolution, type_result, def_index, &mut callees);
 
         Self { callees, entries }
@@ -186,12 +161,9 @@ impl LinkPlan {
             let LinkSymbol::Function { item, .. } = symbol else {
                 continue;
             };
-            let path = def_index.source_path(*item).or_else(|| {
-                resolution
-                    .items
-                    .get(item.0)
-                    .and_then(|info| info.source_path.as_ref())
-            });
+            let path = def_index
+                .source_path(*item)
+                .or_else(|| resolution.items.get(item.0).and_then(|info| info.source_path.as_ref()));
             let Some(path) = path else {
                 continue;
             };
@@ -203,11 +175,7 @@ impl LinkPlan {
             .keys()
             .copied()
             .filter(|item| {
-                let Some(path) = resolution
-                    .items
-                    .get(item.0)
-                    .and_then(|info| info.source_path.as_ref())
-                else {
+                let Some(path) = resolution.items.get(item.0).and_then(|info| info.source_path.as_ref()) else {
                     return false;
                 };
                 unit_paths.contains(&unit_path_key(path))
@@ -221,18 +189,10 @@ impl LinkPlan {
         let mut names = HashSet::new();
         for symbol in self.callees.iter().chain(self.entries.iter()) {
             match symbol {
-                LinkSymbol::Function {
-                    item: _,
-                    mangled: Some(name),
-                    receiver_type: _,
-                } => {
+                LinkSymbol::Function { item: _, mangled: Some(name), receiver_type: _ } => {
                     names.insert(name.clone());
                 }
-                LinkSymbol::Function {
-                    item,
-                    mangled: None,
-                    receiver_type: _,
-                } => {
+                LinkSymbol::Function { item, mangled: None, receiver_type: _ } => {
                     if let Some(info) = resolution.items.get(item.0) {
                         names.insert(info.name.clone());
                     }
@@ -253,11 +213,8 @@ fn entrypoint_matches(entrypoint: &str, qualified: &str, short: &str) -> bool {
     entrypoint == short || entrypoint == qualified
 }
 
-fn walk_hir_items<'a, F>(
-    items: &'a [Spanned<HirItem>],
-    module_path: &mut Vec<String>,
-    visit: &mut F,
-) where
+fn walk_hir_items<'a, F>(items: &'a [Spanned<HirItem>], module_path: &mut Vec<String>, visit: &mut F)
+where
     F: FnMut(&'a Spanned<HirItem>, &str, &str),
 {
     for item in items {
@@ -283,11 +240,7 @@ fn walk_hir_items<'a, F>(
 }
 
 fn qualified_item_name(module_path: &[String], short: &str) -> String {
-    if module_path.is_empty() {
-        short.to_string()
-    } else {
-        format!("{}::{}", module_path.join("::"), short)
-    }
+    if module_path.is_empty() { short.to_string() } else { format!("{}::{}", module_path.join("::"), short) }
 }
 
 fn visit_callees(
@@ -307,27 +260,15 @@ fn visit_callees(
             continue;
         }
 
-        let emit_key = CalleeKey {
-            item: item_id,
-            mangled: call.mangled.clone(),
-        };
+        let emit_key = CalleeKey { item: item_id, mangled: call.mangled.clone() };
         if emitted.insert(emit_key) {
             if let Some(def) = def_index.method(item_id) {
                 let mangled = call
                     .mangled
                     .clone()
                     .or_else(|| method_mangled_name(resolution, type_result, def))
-                    .unwrap_or_else(|| {
-                        resolution
-                            .items
-                            .get(item_id.0)
-                            .map(|i| i.name.clone())
-                            .unwrap_or_default()
-                    });
-                callees.push(LinkSymbol::Method {
-                    item: item_id,
-                    mangled,
-                });
+                    .unwrap_or_else(|| resolution.items.get(item_id.0).map(|i| i.name.clone()).unwrap_or_default());
+                callees.push(LinkSymbol::Method { item: item_id, mangled });
             } else {
                 callees.push(LinkSymbol::Function {
                     item: item_id,
@@ -343,34 +284,20 @@ fn visit_callees(
 
         if let Some(def) = def_index.function(item_id) {
             let callee_path = def_index.source_path(item_id);
-            worklist.extend(collect_calls_in_body(
-                &def.node.body,
-                resolution,
-                type_result,
-                callee_path,
-            ));
+            worklist.extend(collect_calls_in_body(&def.node.body, resolution, type_result, callee_path));
             continue;
         }
 
         if let Some(def) = def_index.method(item_id) {
             let callee_path = def_index.source_path(item_id);
-            worklist.extend(collect_calls_in_body(
-                &def.node.body,
-                resolution,
-                type_result,
-                callee_path,
-            ));
+            worklist.extend(collect_calls_in_body(&def.node.body, resolution, type_result, callee_path));
             continue;
         }
 
         if let Some(info) = resolution.items.get(item_id.0)
             && matches!(info.kind, ItemKind::Function | ItemKind::Method)
         {
-            worklist.extend(calls_in_item_body_from_source(
-                info,
-                resolution,
-                type_result,
-            ));
+            worklist.extend(calls_in_item_body_from_source(info, resolution, type_result));
         }
     }
 }
@@ -387,9 +314,7 @@ fn calls_in_item_body_from_source(
         return Vec::new();
     };
     let logical_name = path.display().to_string();
-    let Ok(program) =
-        beskid_analysis::services::parse_program_with_source_name(&logical_name, &source)
-    else {
+    let Ok(program) = beskid_analysis::services::parse_program_with_source_name(&logical_name, &source) else {
         return Vec::new();
     };
     let ast: beskid_analysis::syntax::Spanned<beskid_analysis::hir::AstProgram> = program.into();
@@ -416,18 +341,13 @@ fn method_mangled_name(
     type_result: &TypeResult,
     def: &Spanned<HirMethodDefinition>,
 ) -> Option<String> {
-    let receiver_type_id =
-        type_id_for_type(resolution, type_result, None, &def.node.receiver_type)?;
+    let receiver_type_id = type_id_for_type(resolution, type_result, None, &def.node.receiver_type)?;
     let receiver_item = match type_result.types.get(receiver_type_id) {
         Some(TypeInfo::Named(item_id)) => *item_id,
         Some(TypeInfo::Applied { base, .. }) => *base,
         _ => return None,
     };
-    let receiver_name = resolution
-        .items
-        .iter()
-        .find(|info| info.id == receiver_item)
-        .map(|info| info.name.as_str())?;
+    let receiver_name = resolution.items.iter().find(|info| info.id == receiver_item).map(|info| info.name.as_str())?;
     Some(mangle_method_name(receiver_name, &def.node.name.node.name))
 }
 
@@ -439,20 +359,13 @@ fn item_info_for_span<'a>(
     if let Some(path) = source_path
         && let Some(info) = resolution.items.iter().find(|info| {
             info.span == span
-                && info
-                    .source_path
-                    .as_ref()
-                    .is_some_and(|source| beskid_analysis::paths::same_file(source, path))
+                && info.source_path.as_ref().is_some_and(|source| beskid_analysis::paths::same_file(source, path))
         })
     {
         return Some(info);
     }
 
-    let matches: Vec<_> = resolution
-        .items
-        .iter()
-        .filter(|info| info.span == span)
-        .collect();
+    let matches: Vec<_> = resolution.items.iter().filter(|info| info.span == span).collect();
     match matches.as_slice() {
         [] => None,
         [single] => Some(single),

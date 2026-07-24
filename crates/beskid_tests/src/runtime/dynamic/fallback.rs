@@ -1,7 +1,7 @@
 use crate::support::runtime::with_runtime_scope;
 use beskid_runtime::dynamic::{
-    DYNAMIC_ERR_INCOMPATIBLE, DYNAMIC_OK, DynamicCell, FieldStep, map_dynamic_fallback,
-    register_mapping, register_shape, reset_tables_for_test,
+    DYNAMIC_ERR_INCOMPATIBLE, DYNAMIC_OK, DynamicCell, FieldStep, map_dynamic_fallback, register_mapping,
+    register_shape, reset_tables_for_test,
 };
 use beskid_runtime::dynamic_cell_create;
 
@@ -18,15 +18,7 @@ fn dynamic_fallback_mapping_succeeds_for_registered_shapes() {
     reset_tables_for_test();
     register_shape(SRC_SHAPE, std::mem::size_of::<Payload>());
     register_shape(DST_SHAPE, std::mem::size_of::<Payload>());
-    register_mapping(
-        SRC_SHAPE,
-        DST_SHAPE,
-        vec![FieldStep {
-            src_offset: 0,
-            dst_offset: 0,
-            size: 8,
-        }],
-    );
+    register_mapping(SRC_SHAPE, DST_SHAPE, vec![FieldStep { src_offset: 0, dst_offset: 0, size: 8 }]);
 
     with_runtime_scope(|heap, root| {
         let payload = heap.allocate_beskid(std::mem::size_of::<Payload>(), std::ptr::null());
@@ -51,16 +43,9 @@ fn dynamic_fallback_returns_deterministic_incompatible_error() {
     register_shape(SRC_SHAPE, std::mem::size_of::<Payload>());
     register_shape(DST_SHAPE, std::mem::size_of::<Payload>());
 
-    let cell = DynamicCell {
-        shape_id: SRC_SHAPE,
-        flags: 0,
-        payload: std::ptr::dangling_mut::<u8>(),
-    };
+    let cell = DynamicCell { shape_id: SRC_SHAPE, flags: 0, payload: std::ptr::dangling_mut::<u8>() };
     let mut out = Payload { value: 0 };
 
     let status = unsafe { map_dynamic_fallback(&cell, DST_SHAPE, (&raw mut out) as *mut u8) };
-    assert_eq!(
-        status, DYNAMIC_ERR_INCOMPATIBLE,
-        "missing mapping must surface deterministic E-dynamic-map-001 status"
-    );
+    assert_eq!(status, DYNAMIC_ERR_INCOMPATIBLE, "missing mapping must surface deterministic E-dynamic-map-001 status");
 }

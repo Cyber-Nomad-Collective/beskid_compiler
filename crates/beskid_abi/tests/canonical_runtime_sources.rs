@@ -1,10 +1,8 @@
 use beskid_abi::abi_v5::{AbiManifestV5, SourceUnit, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, RuntimeCapabilityError,
-    canonical_corelib_service_capability, canonical_corelib_service_source_path,
-    canonical_runtime_intrinsic_capability, canonical_runtime_sources,
-    prove_canonical_runtime_corpus,
+    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
+    RuntimeCapabilityError, canonical_corelib_service_capability, canonical_corelib_service_source_path,
+    canonical_runtime_intrinsic_capability, canonical_runtime_sources, prove_canonical_runtime_corpus,
 };
 
 fn linux_manifest() -> AbiManifestV5 {
@@ -18,15 +16,9 @@ fn linux_manifest() -> AbiManifestV5 {
 #[test]
 fn canonical_bootstrap_source_is_embedded_and_exports_the_v5_probe() {
     let sources = canonical_runtime_sources();
-    let bootstrap = sources
-        .iter()
-        .find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
-        .expect("bootstrap source");
-    assert!(
-        bootstrap
-            .source
-            .contains("[Export(Abi:\"C\", Symbol:\"beskid_rt_v5_abi_version\")]")
-    );
+    let bootstrap =
+        sources.iter().find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH).expect("bootstrap source");
+    assert!(bootstrap.source.contains("[Export(Abi:\"C\", Symbol:\"beskid_rt_v5_abi_version\")]"));
     assert!(bootstrap.source.contains("return 5;"));
     assert!(!bootstrap.source.contains("ABI v4"));
     assert!(!bootstrap.source.contains("__"));
@@ -35,11 +27,8 @@ fn canonical_bootstrap_source_is_embedded_and_exports_the_v5_probe() {
 #[test]
 fn canonical_bootstrap_source_exports_the_v5_lifecycle_and_trap_wrappers() {
     let sources = canonical_runtime_sources();
-    let source = &sources
-        .iter()
-        .find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
-        .expect("bootstrap source")
-        .source;
+    let source =
+        &sources.iter().find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH).expect("bootstrap source").source;
 
     // Every manifest lifecycle/trap export is source-owned. Context-switch exports are
     // intentionally supplied by target assembly and covered by their own assembly tests.
@@ -60,10 +49,7 @@ fn canonical_bootstrap_source_exports_the_v5_lifecycle_and_trap_wrappers() {
         "beskid_rt_v5_thread_detach",
         "beskid_rt_v5_trap",
     ] {
-        assert!(
-            source.contains(&format!("Symbol:\"{symbol}\"")),
-            "canonical runtime source must own {symbol}",
-        );
+        assert!(source.contains(&format!("Symbol:\"{symbol}\"")), "canonical runtime source must own {symbol}",);
     }
 
     assert!(source.contains("pub pointer ProcessInit(pointer config)"));
@@ -79,11 +65,8 @@ fn canonical_bootstrap_source_exports_the_v5_lifecycle_and_trap_wrappers() {
 #[test]
 fn canonical_bootstrap_source_uses_only_manifest_owned_allocation_and_tls_primitives() {
     let sources = canonical_runtime_sources();
-    let source = &sources
-        .iter()
-        .find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
-        .expect("bootstrap source")
-        .source;
+    let source =
+        &sources.iter().find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH).expect("bootstrap source").source;
 
     assert!(source.contains("pub pointer SystemAllocate(word size, word alignment)"));
     assert!(source.contains("return system_allocate(size, alignment);"));
@@ -104,19 +87,13 @@ fn canonical_bootstrap_source_uses_only_manifest_owned_allocation_and_tls_primit
 #[test]
 fn canonical_bootstrap_owns_beskid_tls_state_on_thread_attach_detach() {
     let sources = canonical_runtime_sources();
-    let source = &sources
-        .iter()
-        .find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
-        .expect("bootstrap source")
-        .source;
+    let source =
+        &sources.iter().find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH).expect("bootstrap source").source;
 
     // ProcessInit stamps BeskidRuntimeState.abi_version at offset 0 and must not install the
     // RuntimeState pointer as if it were BeskidTlsState (root_frame lives at TLS offset 8).
     assert!(source.contains("raw_word_store(config, 5)"));
-    assert!(
-        !source.contains("tls_set(config);"),
-        "ProcessInit must not put BeskidRuntimeState into TLS"
-    );
+    assert!(!source.contains("tls_set(config);"), "ProcessInit must not put BeskidRuntimeState into TLS");
 
     // ThreadAttach allocates a dedicated BeskidTlsState (size 32, alignment 8).
     assert!(source.contains("SystemAllocate(32, 8)"));
@@ -138,11 +115,8 @@ fn canonical_bootstrap_owns_beskid_tls_state_on_thread_attach_detach() {
 #[test]
 fn canonical_runtime_source_owns_allocation_headers_and_lifo_root_frames() {
     let sources = canonical_runtime_sources();
-    let source = &sources
-        .iter()
-        .find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
-        .expect("bootstrap source")
-        .source;
+    let source =
+        &sources.iter().find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH).expect("bootstrap source").source;
 
     // The bridge's `allocate_beskid` returns the address of an object header, zero-fills the
     // allocation, and installs the descriptor at offset zero.  The source runtime must retain
@@ -172,19 +146,14 @@ fn canonical_runtime_source_owns_allocation_headers_and_lifo_root_frames() {
 #[test]
 fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_and_rooting() {
     let sources = canonical_runtime_sources();
-    let source = &sources
-        .iter()
-        .find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
-        .expect("bootstrap source")
-        .source;
+    let source =
+        &sources.iter().find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH).expect("bootstrap source").source;
 
     // A descriptor is a 40-byte ABI record. Pointer-map entries are byte offsets into the
     // complete object, so validation must reject a non-word offset and all arithmetic must be
     // checked before forming an address. Overflow uses wrapping multiply/add (not
     // `NativeWordMax() - 8`) because `word` compares are signed in Cranelift.
-    assert!(source.contains(
-        "pub bool ValidatePointerMap(pointer pointerMap, word pointerCount, word objectSize)"
-    ));
+    assert!(source.contains("pub bool ValidatePointerMap(pointer pointerMap, word pointerCount, word objectSize)"));
     assert!(source.contains("word mapOffset = index * 8"));
     assert!(source.contains("if mapOffset / 8 != index"));
     assert!(source.contains("if offset % 8 != 0"));
@@ -209,12 +178,8 @@ fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_an
         .split("// Allocates a closure capture environment")
         .next()
         .expect("managed allocation body");
-    let null_guard = allocate
-        .find("if request == NativePointer(0)")
-        .expect("null request guard");
-    let descriptor_read = allocate
-        .find("AllocationDescriptor(request)")
-        .expect("descriptor read");
+    let null_guard = allocate.find("if request == NativePointer(0)").expect("null request guard");
+    let descriptor_read = allocate.find("AllocationDescriptor(request)").expect("descriptor read");
     assert!(null_guard < descriptor_read);
     assert!(allocate.contains("bool descriptorOk = ValidateTypeDescriptor(descriptor);"));
     assert!(allocate.contains("if descriptorOk"));
@@ -232,43 +197,25 @@ fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_an
         .next()
         .expect("closure allocation body");
     assert!(closure_allocate.contains("return AllocateObject(request);"));
-    for duplicate in [
-        "ValidateTypeDescriptor",
-        "SystemAllocate",
-        "memory_set",
-        "InitializeObjectHeader",
-    ] {
-        assert!(
-            !closure_allocate.contains(duplicate),
-            "closure allocation must not duplicate {duplicate}"
-        );
+    for duplicate in ["ValidateTypeDescriptor", "SystemAllocate", "memory_set", "InitializeObjectHeader"] {
+        assert!(!closure_allocate.contains(duplicate), "closure allocation must not duplicate {duplicate}");
     }
 
-    assert!(source.contains("pub bool StoreClosureCapture(pointer environment, pointer descriptor, word mapIndex, pointer value)"));
     assert!(source.contains(
-        "pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer environment)"
+        "pub bool StoreClosureCapture(pointer environment, pointer descriptor, word mapIndex, pointer value)"
     ));
+    assert!(source.contains("pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer environment)"));
     assert!(source.contains("return SetRootSlotValue(rootFrame, slotIndex, environment);"));
-    assert!(
-        source.contains(
-            "pub bool RootClosureEnvironmentCurrent(word slotIndex, pointer environment)"
-        )
-    );
-    assert!(
-        source.contains(
-            "return RootClosureEnvironment(CurrentThreadState(), slotIndex, environment);"
-        )
-    );
+    assert!(source.contains("pub bool RootClosureEnvironmentCurrent(word slotIndex, pointer environment)"));
+    assert!(source.contains("return RootClosureEnvironment(CurrentThreadState(), slotIndex, environment);"));
 }
 
 #[test]
 fn exact_embedded_source_set_receives_non_serializable_intrinsic_authority() {
     let manifest = linux_manifest();
     let sources = canonical_runtime_sources();
-    let proof =
-        prove_canonical_runtime_corpus(&sources, &manifest).expect("canonical source proof");
-    let capability =
-        canonical_runtime_intrinsic_capability(&manifest).expect("canonical intrinsic authority");
+    let proof = prove_canonical_runtime_corpus(&sources, &manifest).expect("canonical source proof");
+    let capability = canonical_runtime_intrinsic_capability(&manifest).expect("canonical intrinsic authority");
 
     assert!(proof.authorizes_source(CANONICAL_BOOTSTRAP_SOURCE_PATH));
     assert!(capability.authorizes_source(CANONICAL_BOOTSTRAP_SOURCE_PATH));
@@ -284,26 +231,13 @@ fn exact_embedded_source_set_receives_non_serializable_intrinsic_authority() {
         "trap",
     ] {
         assert!(
-            capability
-                .intrinsic_for_source(CANONICAL_BOOTSTRAP_SOURCE_PATH, intrinsic)
-                .is_some(),
+            capability.intrinsic_for_source(CANONICAL_BOOTSTRAP_SOURCE_PATH, intrinsic).is_some(),
             "canonical runtime must retain authority for {intrinsic}",
         );
     }
-    assert!(
-        capability
-            .intrinsic_for_source("src/User.bd", "trap")
-            .is_none()
-    );
-    assert!(
-        capability
-            .intrinsic_for_source(CANONICAL_BOOTSTRAP_SOURCE_PATH, "not_manifest_declared",)
-            .is_none()
-    );
-    assert_eq!(
-        capability.source_hash(),
-        beskid_abi::abi_v5::canonical_source_hash(&sources).unwrap()
-    );
+    assert!(capability.intrinsic_for_source("src/User.bd", "trap").is_none());
+    assert!(capability.intrinsic_for_source(CANONICAL_BOOTSTRAP_SOURCE_PATH, "not_manifest_declared",).is_none());
+    assert_eq!(capability.source_hash(), beskid_abi::abi_v5::canonical_source_hash(&sources).unwrap());
 }
 
 #[test]
@@ -340,16 +274,12 @@ fn lookalike_source_path_name_or_contents_cannot_receive_authority() {
 fn manifest_drift_cannot_expand_runtime_authority() {
     let mut manifest = linux_manifest();
     manifest.trusted_runtime_intrinsics.pop();
-    assert!(matches!(
-        canonical_runtime_intrinsic_capability(&manifest),
-        Err(RuntimeCapabilityError::InvalidManifest)
-    ));
+    assert!(matches!(canonical_runtime_intrinsic_capability(&manifest), Err(RuntimeCapabilityError::InvalidManifest)));
 }
 
 #[test]
 fn canonical_foundation_assert_owns_only_the_panic_service() {
-    let capability =
-        canonical_corelib_service_capability(&linux_manifest()).expect("Corelib service authority");
+    let capability = canonical_corelib_service_capability(&linux_manifest()).expect("Corelib service authority");
 
     assert_eq!(
         capability
@@ -358,25 +288,18 @@ fn canonical_foundation_assert_owns_only_the_panic_service() {
         Some("panic_str")
     );
     assert!(
-        capability
-            .service_for_source(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, "__syscall_write")
-            .is_none(),
+        capability.service_for_source(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, "__syscall_write").is_none(),
         "the Assert unit must not receive every Corelib service"
     );
 }
 
 #[test]
 fn canonical_corelib_service_source_paths_are_lexically_normalized() {
-    for logical in [
-        CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
-        CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
-    ] {
-        let path = canonical_corelib_service_source_path(logical)
-            .unwrap_or_else(|| panic!("missing path for {logical}"));
+    for logical in [CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH] {
+        let path =
+            canonical_corelib_service_source_path(logical).unwrap_or_else(|| panic!("missing path for {logical}"));
         assert!(
-            !path
-                .components()
-                .any(|component| matches!(component, std::path::Component::ParentDir)),
+            !path.components().any(|component| matches!(component, std::path::Component::ParentDir)),
             "service path for {logical} retained ParentDir: {path:?}"
         );
         assert!(

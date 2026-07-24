@@ -13,10 +13,7 @@ pub struct LinkLibraryInputs {
 
 /// Collect logical library names and search paths for `artifact`, optionally reading the project
 /// manifest `link` block from `plan`.
-pub fn link_libraries_for_artifact(
-    artifact: &CodegenArtifact,
-    plan: Option<&CompilePlan>,
-) -> LinkLibraryInputs {
+pub fn link_libraries_for_artifact(artifact: &CodegenArtifact, plan: Option<&CompilePlan>) -> LinkLibraryInputs {
     let mut libraries = Vec::new();
     let mut search_paths = Vec::new();
 
@@ -31,27 +28,19 @@ pub fn link_libraries_for_artifact(
     for import in &artifact.extern_imports {
         if let Some(library) = import.library.as_deref() {
             let canon = canonical_logical_name(library);
-            if !libraries
-                .iter()
-                .any(|name| canonical_logical_name(name) == canon)
-            {
+            if !libraries.iter().any(|name| canonical_logical_name(name) == canon) {
                 libraries.push(canon);
             }
         }
     }
 
-    LinkLibraryInputs {
-        external_libraries: libraries,
-        library_search_paths: search_paths,
-    }
+    LinkLibraryInputs { external_libraries: libraries, library_search_paths: search_paths }
 }
 
 /// Apply [`LinkLibraryInputs`] to an [`beskid_aot::AotBuildRequest`] (manifest libraries first).
 pub fn apply_link_libraries(request: &mut beskid_aot::AotBuildRequest, inputs: LinkLibraryInputs) {
-    request.external_libraries =
-        merge_libraries(&request.external_libraries, &inputs.external_libraries);
-    request.library_search_paths =
-        merge_search_paths(&request.library_search_paths, &inputs.library_search_paths);
+    request.external_libraries = merge_libraries(&request.external_libraries, &inputs.external_libraries);
+    request.library_search_paths = merge_search_paths(&request.library_search_paths, &inputs.library_search_paths);
 }
 
 fn merge_libraries(existing: &[String], extra: &[String]) -> Vec<String> {
@@ -66,10 +55,7 @@ fn merge_libraries(existing: &[String], extra: &[String]) -> Vec<String> {
     out
 }
 
-fn merge_search_paths(
-    existing: &[std::path::PathBuf],
-    extra: &[std::path::PathBuf],
-) -> Vec<std::path::PathBuf> {
+fn merge_search_paths(existing: &[std::path::PathBuf], extra: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for path in existing.iter().chain(extra.iter()) {

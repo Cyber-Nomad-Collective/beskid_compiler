@@ -18,8 +18,6 @@ impl TreeNavigator {
     /// let navigator = TreeNavigator::new();
     /// ```
     pub fn new() -> Self {
-        Self {
-            keybindings: TreeKeyBindings::default(),
-        }
+        Self { keybindings: TreeKeyBindings::default() }
     }
 }

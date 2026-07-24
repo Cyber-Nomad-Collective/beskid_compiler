@@ -82,8 +82,7 @@ pub fn run_main_fiber(main: extern "C" fn(*mut u8) -> i64, env: *mut u8) -> i64 
     let mut result = 0i64;
     tls::with_scheduler(|s| {
         s.join_non_detached_children();
-        if let Some(JoinOutcome::Value(n)) = s.fibers.get(main_key).and_then(|f| f.outcome.as_ref())
-        {
+        if let Some(JoinOutcome::Value(n)) = s.fibers.get(main_key).and_then(|f| f.outcome.as_ref()) {
             result = *n;
         }
         // Leak coroutine stacks on shutdown so Drop does not force-unwind across C unwind boundaries.
@@ -119,10 +118,7 @@ where
             }
         }
     }
-    let mut ctx = Ctx {
-        func: Some(Box::new(f)),
-        panic: None,
-    };
+    let mut ctx = Ctx { func: Some(Box::new(f)), panic: None };
     let ptr = &mut ctx as *mut Ctx as *mut u8;
     let result = run_main_fiber(trampoline, ptr);
     if let Some(panic) = ctx.panic {

@@ -13,11 +13,7 @@ pub struct ScopeWidget;
 
 impl BeskidWidget for ScopeWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: "shell.scope",
-            title: "Scope",
-            icon: "◎",
-        }
+        WidgetMeta { id: "shell.scope", title: "Scope", icon: "◎" }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {

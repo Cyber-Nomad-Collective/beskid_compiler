@@ -33,25 +33,15 @@ impl ShortcutClickTargets {
         if y >= area.y.saturating_add(area.height) {
             return;
         }
-        self.add_rect(
-            Rect {
-                x: area.x,
-                y,
-                width: area.width,
-                height: 1,
-            },
-            action,
-        );
+        self.add_rect(Rect { x: area.x, y, width: area.width, height: 1 }, action);
     }
 
     pub fn hit(&self, column: u16, row: u16) -> Option<ShortcutClickAction> {
-        self.regions.iter().rev().find_map(|(rect, action)| {
-            if point_in_rect(column, row, *rect) {
-                Some(*action)
-            } else {
-                None
-            }
-        })
+        self.regions.iter().rev().find_map(
+            |(rect, action)| {
+                if point_in_rect(column, row, *rect) { Some(*action) } else { None }
+            },
+        )
     }
 }
 
@@ -64,11 +54,7 @@ pub fn action_for_hotkey_description(description: &str) -> Option<ShortcutClickA
     }
 }
 
-pub fn register_footer_clicks(
-    targets: &mut ShortcutClickTargets,
-    area: Rect,
-    items: &[HotkeyItem],
-) {
+pub fn register_footer_clicks(targets: &mut ShortcutClickTargets, area: Rect, items: &[HotkeyItem]) {
     if area.height == 0 {
         return;
     }
@@ -77,31 +63,16 @@ pub fn register_footer_clicks(
     for item in items {
         let key_w = item.key.chars().count() as u16;
         let desc_w = item.description.chars().count() as u16;
-        let segment_w = key_w
-            .saturating_add(1)
-            .saturating_add(desc_w)
-            .saturating_add(2);
+        let segment_w = key_w.saturating_add(1).saturating_add(desc_w).saturating_add(2);
         if let Some(action) = action_for_hotkey_description(&item.description) {
             let width = segment_w.min(area.width.saturating_sub(x.saturating_sub(area.x)));
-            targets.add_rect(
-                Rect {
-                    x,
-                    y,
-                    width,
-                    height: 1,
-                },
-                action,
-            );
+            targets.add_rect(Rect { x, y, width, height: 1 }, action);
         }
         x = x.saturating_add(segment_w);
     }
 }
 
-pub fn register_help_overlay_clicks(
-    targets: &mut ShortcutClickTargets,
-    area: Rect,
-    items: &[HotkeyItem],
-) {
+pub fn register_help_overlay_clicks(targets: &mut ShortcutClickTargets, area: Rect, items: &[HotkeyItem]) {
     if area.height < 3 {
         return;
     }
@@ -114,12 +85,7 @@ pub fn register_help_overlay_clicks(
         }
         if let Some(action) = action_for_hotkey_description(&item.description) {
             targets.add_rect(
-                Rect {
-                    x: area.x.saturating_add(1),
-                    y: row,
-                    width: area.width.saturating_sub(2),
-                    height: 1,
-                },
+                Rect { x: area.x.saturating_add(1), y: row, width: area.width.saturating_sub(2), height: 1 },
                 action,
             );
         }

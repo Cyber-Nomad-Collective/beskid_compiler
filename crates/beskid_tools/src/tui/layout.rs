@@ -6,8 +6,8 @@ use crate::shell::chrome::PINNED_TOP_ROWS;
 use crate::tui::shell::state::LayoutRects;
 
 pub use crate::shell::layout::overlays::{
-    OVERLAY_ANALYSIS, OVERLAY_COMPILE_DEBUG, OVERLAY_GRAPH, OVERLAY_PCKG, OVERLAY_SETTINGS,
-    OVERLAY_SUMMARY, OVERLAY_TEMPLATES, OVERLAY_TESTS, overlay_rect, overlay_rect_for,
+    OVERLAY_ANALYSIS, OVERLAY_COMPILE_DEBUG, OVERLAY_GRAPH, OVERLAY_PCKG, OVERLAY_SETTINGS, OVERLAY_SUMMARY,
+    OVERLAY_TEMPLATES, OVERLAY_TESTS, overlay_rect, overlay_rect_for,
 };
 
 pub const PANEL_HEADER: &str = "header";
@@ -17,13 +17,7 @@ pub const PANEL_LOG: &str = "log";
 pub const PANEL_FOOTER: &str = "footer";
 
 pub fn panel_kinds() -> [&'static str; 5] {
-    [
-        PANEL_HEADER,
-        PANEL_STAGE,
-        PANEL_DETAIL,
-        PANEL_LOG,
-        PANEL_FOOTER,
-    ]
+    [PANEL_HEADER, PANEL_STAGE, PANEL_DETAIL, PANEL_LOG, PANEL_FOOTER]
 }
 
 /// Base panels: header → stage|detail → log → footer.
@@ -35,12 +29,8 @@ pub fn resolve_shell_layout(area: Rect) -> LayoutRects {
         Constraint::Length(6),
     ])
     .areas(area);
-    let footer = Rect {
-        height: footer_block.height.saturating_sub(1),
-        ..footer_block
-    };
-    let [stage, detail] =
-        Layout::horizontal([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)]).areas(body);
+    let footer = Rect { height: footer_block.height.saturating_sub(1), ..footer_block };
+    let [stage, detail] = Layout::horizontal([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)]).areas(body);
 
     let chrome = Rect {
         y: footer_block.y + footer.height,

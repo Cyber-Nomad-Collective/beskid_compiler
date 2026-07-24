@@ -48,18 +48,14 @@ fn file_key(path: &Path) -> String {
 }
 
 fn update_manifest_count(root: &Path) -> std::io::Result<()> {
-    let count = fs::read_dir(root.join("files"))?
-        .filter_map(|e| e.ok())
-        .count();
+    let count = fs::read_dir(root.join("files"))?.filter_map(|e| e.ok()).count();
     let manifest_path = root.join("manifest.json");
     let mut manifest: SalsaPersistenceManifest = if manifest_path.is_file() {
-        serde_json::from_str(&fs::read_to_string(&manifest_path)?).unwrap_or(
-            SalsaPersistenceManifest {
-                grammar_rev: env!("CARGO_PKG_VERSION").to_string(),
-                compiler_version: env!("CARGO_PKG_VERSION").to_string(),
-                persisted_files: 0,
-            },
-        )
+        serde_json::from_str(&fs::read_to_string(&manifest_path)?).unwrap_or(SalsaPersistenceManifest {
+            grammar_rev: env!("CARGO_PKG_VERSION").to_string(),
+            compiler_version: env!("CARGO_PKG_VERSION").to_string(),
+            persisted_files: 0,
+        })
     } else {
         SalsaPersistenceManifest {
             grammar_rev: env!("CARGO_PKG_VERSION").to_string(),
@@ -78,9 +74,5 @@ pub fn load_manifest(root: &Path) -> Option<SalsaPersistenceManifest> {
 }
 
 pub fn cache_root_for_project(project_root: &Path) -> PathBuf {
-    project_root
-        .join("obj")
-        .join("beskid")
-        .join("cache")
-        .join("salsa")
+    project_root.join("obj").join("beskid").join("cache").join("salsa")
 }

@@ -1,8 +1,7 @@
 //! Event types and routing for UI interactions.
 
 use crossterm::event::{
-    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent as CrosstermMouseEvent,
-    MouseEventKind,
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent as CrosstermMouseEvent, MouseEventKind,
 };
 use ratatui::layout::Rect;
 use std::fmt;
@@ -17,11 +16,7 @@ pub struct KeyboardEvent {
 
 impl KeyboardEvent {
     pub fn from_crossterm(event: KeyEvent) -> Self {
-        Self {
-            key_code: event.code,
-            modifiers: event.modifiers,
-            kind: event.kind,
-        }
+        Self { key_code: event.code, modifiers: event.modifiers, kind: event.kind }
     }
 
     pub fn is_key_down(&self) -> bool {
@@ -75,11 +70,7 @@ impl KeyboardEvent {
 
 impl fmt::Display for KeyboardEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let modifiers_str = if self.modifiers.is_empty() {
-            String::new()
-        } else {
-            format!("{:?}+", self.modifiers)
-        };
+        let modifiers_str = if self.modifiers.is_empty() { String::new() } else { format!("{:?}+", self.modifiers) };
         write!(f, "{}{:?}", modifiers_str, self.key_code)
     }
 }
@@ -95,12 +86,7 @@ pub struct MouseEvent {
 
 impl MouseEvent {
     pub fn from_crossterm(event: CrosstermMouseEvent) -> Self {
-        Self {
-            kind: event.kind,
-            column: event.column,
-            row: event.row,
-            modifiers: event.modifiers,
-        }
+        Self { kind: event.kind, column: event.column, row: event.row, modifiers: event.modifiers }
     }
 
     pub fn position(&self) -> (u16, u16) {
@@ -247,11 +233,8 @@ mod tests {
 
     #[test]
     fn test_keyboard_event() {
-        let event = KeyboardEvent {
-            key_code: KeyCode::Char('a'),
-            modifiers: KeyModifiers::CONTROL,
-            kind: KeyEventKind::Press,
-        };
+        let event =
+            KeyboardEvent { key_code: KeyCode::Char('a'), modifiers: KeyModifiers::CONTROL, kind: KeyEventKind::Press };
 
         assert!(event.is_key_down());
         assert!(!event.is_key_up());

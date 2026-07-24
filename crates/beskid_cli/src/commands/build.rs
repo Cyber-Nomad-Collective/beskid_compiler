@@ -9,8 +9,8 @@ use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::TargetKind;
 use beskid_aot::{
-    AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, ProjectTargetKind,
-    build, default_output_kind, default_runtime_strategy, resolve_entrypoint,
+    AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, ProjectTargetKind, build,
+    default_output_kind, default_runtime_strategy, resolve_entrypoint,
 };
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
@@ -106,14 +106,9 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
         locked: args.lockfile.locked,
     };
     let (session, resolved) = match hi_tx {
-        None => CommandSession::open_and_resolve(
-            args.plain,
-            PipelineProgressKind::FullBuild,
-            &resolve_args,
-        )?,
+        None => CommandSession::open_and_resolve(args.plain, PipelineProgressKind::FullBuild, &resolve_args)?,
         Some(tx) => {
-            let session =
-                CommandSession::with_attached_pipeline(tx, PipelineProgressKind::FullBuild);
+            let session = CommandSession::with_attached_pipeline(tx, PipelineProgressKind::FullBuild);
             let resolved = session.resolve_input(&resolve_args)?;
             (session, resolved)
         }
@@ -121,27 +116,17 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
     let hi_attached = session.pipeline().is_hi_attached();
     let prepared = session.executable_gate_prepared(
         &resolved,
-        SemanticGateOptions {
-            finish_prepare_ui: false,
-            prepare_message: "Analysis complete",
-        },
+        SemanticGateOptions { finish_prepare_ui: false, prepare_message: "Analysis complete" },
     )?;
     let front = prepared.into_executable()?;
 
     let input_path = resolved.source_path.clone();
     let project_target_kind = resolved.compile_plan.as_ref().map(|plan| plan.target.kind);
-    let default_output_stem = resolved
-        .compile_plan
-        .as_ref()
-        .map(|plan| plan.target.name.clone());
+    let default_output_stem = resolved.compile_plan.as_ref().map(|plan| plan.target.name.clone());
 
     let entrypoint = resolve_entrypoint(args.entrypoint.clone())?;
-    let artifact = lower_prepared_entrypoint(
-        &front,
-        &entrypoint,
-        args.target_triple.as_deref(),
-        Some(session.observer()),
-    )?;
+    let artifact =
+        lower_prepared_entrypoint(&front, &entrypoint, args.target_triple.as_deref(), Some(session.observer()))?;
 
     let output_kind = resolve_output_kind(args.kind, project_target_kind);
 
@@ -149,25 +134,15 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
     let output = if let Some(path) = args.output {
         path
     } else {
-        let stem = default_output_stem.as_deref().unwrap_or_else(|| {
-            input_path
-                .file_stem()
-                .and_then(|part| part.to_str())
-                .unwrap_or("aot_out")
-        });
+        let stem = default_output_stem
+            .as_deref()
+            .unwrap_or_else(|| input_path.file_stem().and_then(|part| part.to_str()).unwrap_or("aot_out"));
         let file_name = beskid_aot::target::output_filename(stem, output_kind, &target);
-        let parent = input_path
-            .parent()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("."));
+        let parent = input_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
         parent.join(file_name)
     };
 
-    let profile = if args.release {
-        BuildProfile::Release
-    } else {
-        BuildProfile::Debug
-    };
+    let profile = if args.release { BuildProfile::Release } else { BuildProfile::Debug };
 
     let runtime = (output_kind != BuildOutputKind::ObjectOnly)
         .then(|| default_runtime_strategy(profile, args.target_triple.as_deref()))
@@ -178,9 +153,7 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
         (true, false) => LinkMode::PreferStatic,
         (false, true) => LinkMode::PreferDynamic,
         (true, true) => {
-            return Err(anyhow::anyhow!(
-                "`--prefer-static` and `--prefer-dynamic` are mutually exclusive"
-            ));
+            return Err(anyhow::anyhow!("`--prefer-static` and `--prefer-dynamic` are mutually exclusive"));
         }
         (false, false) => LinkMode::Auto,
     };
@@ -213,36 +186,24 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
     let result = build(build_request)?;
     session.pipeline().finish_build_with_summary(
         "Build complete",
-        CommandSummary::plain("Build", "Build complete")
-            .with_stat("output", output.display().to_string()),
+        CommandSummary::plain("Build", "Build complete").with_stat("output", output.display().to_string()),
     );
 
     if args.plain
         && !hi_attached
         && let Some(plan) = resolved.compile_plan.as_ref()
     {
-        println!(
-            "deps: {} materialized dependency project(s)",
-            plan.dependency_projects.len()
-        );
+        println!("deps: {} materialized dependency project(s)", plan.dependency_projects.len());
         println!(
             "corelib: {}",
-            if plan.has_std_dependency {
-                "available (implicit or declared)"
-            } else {
-                "not available"
-            }
+            if plan.has_std_dependency { "available (implicit or declared)" } else { "not available" }
         );
     }
 
     if hi_attached {
-        session
-            .pipeline()
-            .println_session(format!("object   {}", result.object_path.display()));
+        session.pipeline().println_session(format!("object   {}", result.object_path.display()));
         if let Some(final_path) = result.final_path.as_ref() {
-            session
-                .pipeline()
-                .println_session(format!("output   {}", final_path.display()));
+            session.pipeline().println_session(format!("output   {}", final_path.display()));
         }
     } else {
         println!();
@@ -260,10 +221,7 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
     Ok(())
 }
 
-fn resolve_output_kind(
-    kind: Option<BuildKind>,
-    target_kind: Option<TargetKind>,
-) -> BuildOutputKind {
+fn resolve_output_kind(kind: Option<BuildKind>, target_kind: Option<TargetKind>) -> BuildOutputKind {
     match kind {
         Some(kind) => map_build_kind(kind),
         None => default_output_kind(target_kind.map(map_target_kind)),

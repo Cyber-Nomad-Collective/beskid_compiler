@@ -13,9 +13,7 @@ pub struct DirectInstall {
 
 impl DirectInstall {
     pub fn new(root: impl AsRef<Path>) -> Self {
-        Self {
-            root: root.as_ref().to_owned(),
-        }
+        Self { root: root.as_ref().to_owned() }
     }
 
     pub fn install_empty(&self, version: &Version) -> Result<(), UpError> {
@@ -25,9 +23,7 @@ impl DirectInstall {
 
     pub fn activate(&self, version: &Version) -> Result<(), UpError> {
         if !self.version_dir(version).is_dir() {
-            return Err(UpError::InvalidManifest(format!(
-                "version {version} is not installed"
-            )));
+            return Err(UpError::InvalidManifest(format!("version {version} is not installed")));
         }
         fs::create_dir_all(&self.root).map_err(io_error)?;
         let pending = self.root.join("active.pending");
@@ -48,9 +44,7 @@ impl DirectInstall {
 
     pub fn remove(&self, version: &Version) -> Result<(), UpError> {
         if self.active_version()?.as_ref() == Some(version) {
-            return Err(UpError::InvalidManifest(
-                "select a different version before removing the active one".into(),
-            ));
+            return Err(UpError::InvalidManifest("select a different version before removing the active one".into()));
         }
         fs::remove_dir_all(self.version_dir(version)).map_err(io_error)
     }

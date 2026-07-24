@@ -36,9 +36,7 @@ fn first_macro_invocation_in_program(program: &Program) -> Spanned<MacroInvocati
     panic!("macro invocation not found");
 }
 
-fn find_invocation_in_statement(
-    stmt: &beskid_analysis::syntax::Statement,
-) -> Option<Spanned<MacroInvocation>> {
+fn find_invocation_in_statement(stmt: &beskid_analysis::syntax::Statement) -> Option<Spanned<MacroInvocation>> {
     use beskid_analysis::syntax::Statement;
     let expr = match stmt {
         Statement::Expression(es) => Some(&es.node.expression),
@@ -75,27 +73,14 @@ unit Main() {
     let after = parse_format_reparse(source);
     let def_after = first_macro_definition(&after.node);
 
-    assert_eq!(
-        def_before.node.name.node.name,
-        def_after.node.name.node.name
-    );
+    assert_eq!(def_before.node.name.node.name, def_after.node.name.node.name);
     assert_eq!(
         def_before.node.parameters.len(),
         def_after.node.parameters.len(),
         "parameter count must survive format round-trip"
     );
-    let kinds_before: Vec<MacroFragmentKind> = def_before
-        .node
-        .parameters
-        .iter()
-        .map(|p| p.node.kind.node)
-        .collect();
-    let kinds_after: Vec<MacroFragmentKind> = def_after
-        .node
-        .parameters
-        .iter()
-        .map(|p| p.node.kind.node)
-        .collect();
+    let kinds_before: Vec<MacroFragmentKind> = def_before.node.parameters.iter().map(|p| p.node.kind.node).collect();
+    let kinds_after: Vec<MacroFragmentKind> = def_after.node.parameters.iter().map(|p| p.node.kind.node).collect();
     assert_eq!(kinds_before, kinds_after);
 }
 
@@ -106,10 +91,7 @@ fn macro_definition_roundtrip_preserves_macro_name() {
     let def_before = first_macro_definition(&before.node);
     let after = parse_format_reparse(source);
     let def_after = first_macro_definition(&after.node);
-    assert_eq!(
-        def_before.node.name.node.name,
-        def_after.node.name.node.name
-    );
+    assert_eq!(def_before.node.name.node.name, def_after.node.name.node.name);
 }
 
 #[test]
@@ -128,18 +110,9 @@ unit Main() {
     let after = parse_format_reparse(source);
     let inv_after = first_macro_invocation_in_program(&after.node);
 
-    assert_eq!(
-        inv_before.node.arguments.len(),
-        inv_after.node.arguments.len()
-    );
-    assert_eq!(
-        inv_before.node.block.is_some(),
-        inv_after.node.block.is_some()
-    );
-    assert_eq!(
-        inv_before.node.name.node.name,
-        inv_after.node.name.node.name
-    );
+    assert_eq!(inv_before.node.arguments.len(), inv_after.node.arguments.len());
+    assert_eq!(inv_before.node.block.is_some(), inv_after.node.block.is_some());
+    assert_eq!(inv_before.node.name.node.name, inv_after.node.name.node.name);
 }
 
 #[test]
@@ -147,8 +120,5 @@ fn macro_metavariable_roundtrip_preserves_parameter_names() {
     let source = "macro m (expression x) { $x; }\nunit Main() { return; }\n";
     let program = parse_program(source).expect("parse");
     let formatted = format_program(&program).expect("format");
-    assert!(
-        formatted.contains("$x"),
-        "formatted macro body should retain $x metavariable, got:\n{formatted}"
-    );
+    assert!(formatted.contains("$x"), "formatted macro body should retain $x metavariable, got:\n{formatted}");
 }

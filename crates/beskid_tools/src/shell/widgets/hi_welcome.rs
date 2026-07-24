@@ -14,11 +14,7 @@ pub struct HiWelcomeWidget;
 
 impl BeskidWidget for HiWelcomeWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: "hi.welcome",
-            title: "Welcome",
-            icon: "◇",
-        }
+        WidgetMeta { id: "hi.welcome", title: "Welcome", icon: "◇" }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<crate::shell::primitives::Hotkey> {
@@ -33,34 +29,21 @@ impl BeskidWidget for HiWelcomeWidget {
         let palette_hint = ctx.key_bindings.palette_hint();
         let lines = match ctx.scope {
             ShellScope::User => vec![
-                Line::from(Span::styled(
-                    "Beskid interactive shell",
-                    Style::default().fg(Color::Cyan),
-                )),
+                Line::from(Span::styled("Beskid interactive shell", Style::default().fg(Color::Cyan))),
                 Line::from(""),
-                Line::from(format!(
-                    "No project detected here. Use {palette_hint} → Open workspace / Open project."
-                )),
+                Line::from(format!("No project detected here. Use {palette_hint} → Open workspace / Open project.")),
                 Line::from(""),
-                Line::from(format!(
-                    "Use {palette_hint} for pages, compiler commands, and tools."
-                )),
+                Line::from(format!("Use {palette_hint} for pages, compiler commands, and tools.")),
             ],
             ShellScope::Project { manifest, .. } => scoped_lines(
                 "Project",
-                manifest
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("project"),
+                manifest.file_stem().and_then(|s| s.to_str()).unwrap_or("project"),
                 "Run analyze, test, and build from the command palette.",
                 &palette_hint,
             ),
             ShellScope::Workspace { manifest, .. } => scoped_lines(
                 "Workspace",
-                manifest
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("workspace"),
+                manifest.file_stem().and_then(|s| s.to_str()).unwrap_or("workspace"),
                 "Inspect graphs, dependencies, and targets from the command palette.",
                 &palette_hint,
             ),
@@ -68,26 +51,19 @@ impl BeskidWidget for HiWelcomeWidget {
 
         frame.render_widget(Paragraph::new(lines), area);
         if ctx.scope.is_user() {
-            ctx.shortcut_clicks
-                .add_row(area, 4, ShortcutClickAction::OpenPalette);
+            ctx.shortcut_clicks.add_row(area, 4, ShortcutClickAction::OpenPalette);
         } else {
-            ctx.shortcut_clicks
-                .add_row(area, 3, ShortcutClickAction::OpenPalette);
+            ctx.shortcut_clicks.add_row(area, 3, ShortcutClickAction::OpenPalette);
         }
     }
 }
 
 fn scoped_lines(kind: &str, name: &str, hint: &str, palette_hint: &str) -> Vec<Line<'static>> {
     vec![
-        Line::from(Span::styled(
-            format!("{kind}: {name}"),
-            Style::default().fg(Color::Cyan),
-        )),
+        Line::from(Span::styled(format!("{kind}: {name}"), Style::default().fg(Color::Cyan))),
         Line::from(""),
         Line::from(hint.to_string()),
         Line::from(""),
-        Line::from(format!(
-            "Use {palette_hint} for pages, compiler commands, and tools."
-        )),
+        Line::from(format!("Use {palette_hint} for pages, compiler commands, and tools.")),
     ]
 }

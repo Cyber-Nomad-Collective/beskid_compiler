@@ -1,6 +1,4 @@
-use crate::hir::{
-    HirBlock, HirElseBranch, HirExpressionNode, HirIfStatement, HirPrimitiveType, HirStatementNode,
-};
+use crate::hir::{HirBlock, HirElseBranch, HirExpressionNode, HirIfStatement, HirPrimitiveType, HirStatementNode};
 use crate::syntax::Spanned;
 
 use super::TypeChecker;
@@ -29,10 +27,9 @@ impl<'a> TypeChecker<'a> {
                         (Some(expected), HirExpressionNode::MatchExpression(match_expr)) => {
                             self.type_match_expression_with_expected(match_expr, Some(expected))
                         }
-                        (Some(_), _) | (None, _) => self.infer_local_type_from_expression(
-                            let_stmt.node.name.span,
-                            &let_stmt.node.value,
-                        ),
+                        (Some(_), _) | (None, _) => {
+                            self.infer_local_type_from_expression(let_stmt.node.name.span, &let_stmt.node.value)
+                        }
                     };
                     self.contextual_expected_type = previous_contextual;
                     if let Some(expected) = expected {
@@ -47,18 +44,11 @@ impl<'a> TypeChecker<'a> {
                     }
                 }
                 None => {
-                    if let Some(actual) = self.infer_local_type_from_expression(
-                        let_stmt.node.name.span,
-                        &let_stmt.node.value,
-                    ) {
-                        if matches!(
-                            self.type_table.get(actual),
-                            Some(crate::types::TypeInfo::Fiber(_))
-                        ) {
-                            self.register_fiber_handle_local(
-                                let_stmt.node.name.span,
-                                let_stmt.node.value.id,
-                            );
+                    if let Some(actual) =
+                        self.infer_local_type_from_expression(let_stmt.node.name.span, &let_stmt.node.value)
+                    {
+                        if matches!(self.type_table.get(actual), Some(crate::types::TypeInfo::Fiber(_))) {
+                            self.register_fiber_handle_local(let_stmt.node.name.span, let_stmt.node.value.id);
                         }
                         self.insert_local_type(let_stmt.node.name.span, actual);
                     }
@@ -69,11 +59,7 @@ impl<'a> TypeChecker<'a> {
                 if let Some(expected) = self.current_return_type {
                     self.contextual_expected_type = Some(expected);
                 }
-                let actual = return_stmt
-                    .node
-                    .value
-                    .as_ref()
-                    .and_then(|expr| self.type_expression(expr));
+                let actual = return_stmt.node.value.as_ref().and_then(|expr| self.type_expression(expr));
                 self.contextual_expected_type = previous_contextual;
                 if let Some(expected) = self.current_return_type {
                     match actual {

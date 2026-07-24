@@ -41,13 +41,7 @@ pub struct TypeEnv<'a> {
 
 impl<'a> TypeEnv<'a> {
     pub fn new(table: &'a TypeTable) -> Self {
-        Self {
-            table,
-            generic_items: None,
-            function_signatures: None,
-            enum_variants: None,
-            named_types: None,
-        }
+        Self { table, generic_items: None, function_signatures: None, enum_variants: None, named_types: None }
     }
 
     pub fn with_generics(
@@ -60,10 +54,7 @@ impl<'a> TypeEnv<'a> {
         self
     }
 
-    pub fn with_enum_variants(
-        mut self,
-        enum_variants: &'a HashMap<ItemId, HashMap<String, Vec<TypeId>>>,
-    ) -> Self {
+    pub fn with_enum_variants(mut self, enum_variants: &'a HashMap<ItemId, HashMap<String, Vec<TypeId>>>) -> Self {
         self.enum_variants = Some(enum_variants);
         self
     }
@@ -89,9 +80,7 @@ impl<'a> TypeEnv<'a> {
         self.function_signatures
     }
 
-    pub(crate) fn enum_variants(
-        &self,
-    ) -> Option<&'a HashMap<ItemId, HashMap<String, Vec<TypeId>>>> {
+    pub(crate) fn enum_variants(&self) -> Option<&'a HashMap<ItemId, HashMap<String, Vec<TypeId>>>> {
         self.enum_variants
     }
 }

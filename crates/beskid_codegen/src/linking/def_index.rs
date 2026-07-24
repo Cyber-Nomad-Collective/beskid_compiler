@@ -3,9 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use beskid_analysis::hir::{
-    AstProgram, HirFunctionDefinition, HirItem, HirMethodDefinition, HirProgram,
-};
+use beskid_analysis::hir::{AstProgram, HirFunctionDefinition, HirItem, HirMethodDefinition, HirProgram};
 use beskid_analysis::paths::{same_file, unit_path_key};
 use beskid_analysis::projects::assembly::UnitHir;
 use beskid_analysis::resolve::{ItemId, ItemInfo, ItemKind, Resolution, SymbolId};
@@ -49,13 +47,9 @@ impl<'a> FunctionDefIndex<'a> {
                 continue;
             };
             let short_name = item_short_name(&info.name).to_string();
-            let Some(program_index) = program_index_for_source(
-                &mut programs,
-                &mut program_keys,
-                hir_units,
-                &by_path,
-                source_path,
-            ) else {
+            let Some(program_index) =
+                program_index_for_source(&mut programs, &mut program_keys, hir_units, &by_path, source_path)
+            else {
                 continue;
             };
             let program = if program_index < hir_units.len() {
@@ -65,11 +59,7 @@ impl<'a> FunctionDefIndex<'a> {
             };
             let source_key = unit_path_key(source_path);
             source_paths.insert(info.id, source_key);
-            let loc = DefLoc {
-                program: program_index,
-                span: info.span,
-                short_name: short_name.clone(),
-            };
+            let loc = DefLoc { program: program_index, span: info.span, short_name: short_name.clone() };
             match info.kind {
                 ItemKind::Function => {
                     if find_function_in_unit(program, info.span, &short_name).is_some() {
@@ -89,15 +79,7 @@ impl<'a> FunctionDefIndex<'a> {
             }
         }
 
-        Self {
-            hir_units,
-            assembly_unit_count: hir_units.len(),
-            programs,
-            functions,
-            methods,
-            source_paths,
-            by_symbol,
-        }
+        Self { hir_units, assembly_unit_count: hir_units.len(), programs, functions, methods, source_paths, by_symbol }
     }
 
     fn program_at(&self, index: usize) -> Option<&Spanned<HirProgram>> {
@@ -113,10 +95,7 @@ impl<'a> FunctionDefIndex<'a> {
     }
 
     pub fn functions(&self) -> HashMap<ItemId, &Spanned<HirFunctionDefinition>> {
-        self.functions
-            .keys()
-            .filter_map(|item| Some((*item, self.function(*item)?)))
-            .collect()
+        self.functions.keys().filter_map(|item| Some((*item, self.function(*item)?))).collect()
     }
 
     pub fn function(&self, item: ItemId) -> Option<&Spanned<HirFunctionDefinition>> {
@@ -141,10 +120,7 @@ impl<'a> FunctionDefIndex<'a> {
 }
 
 /// Load a unit HIR program from disk for a resolved item.
-pub fn load_hir_program_for_item(
-    resolution: &Resolution,
-    item: ItemId,
-) -> Option<Spanned<HirProgram>> {
+pub fn load_hir_program_for_item(resolution: &Resolution, item: ItemId) -> Option<Spanned<HirProgram>> {
     let info = resolution.items.get(item.0)?;
     load_hir_program(info)
 }
@@ -165,10 +141,7 @@ fn program_index_for_source(
     if let Some(&index) = program_keys.get(&key) {
         return Some(index);
     }
-    if let Some(index) = hir_units
-        .iter()
-        .position(|unit| same_file(&unit.path, source_path))
-    {
+    if let Some(index) = hir_units.iter().position(|unit| same_file(&unit.path, source_path)) {
         program_keys.insert(key, index);
         return Some(index);
     }
@@ -182,8 +155,7 @@ fn program_index_for_source(
 fn load_hir_program_from_path(path: &PathBuf) -> Option<Spanned<HirProgram>> {
     let source = std::fs::read_to_string(path).ok()?;
     let logical_name = path.display().to_string();
-    let program =
-        beskid_analysis::services::parse_program_with_source_name(&logical_name, &source).ok()?;
+    let program = beskid_analysis::services::parse_program_with_source_name(&logical_name, &source).ok()?;
     let ast: Spanned<AstProgram> = program.into();
     Some(beskid_analysis::hir::lower_program(&ast))
 }
@@ -236,10 +208,7 @@ pub(crate) fn find_method_by_name<'a>(
     find_method_by_name_in_items(&program.node.items, name, &mut HashSet::new())
 }
 
-fn find_function_in_items(
-    items: &[Spanned<HirItem>],
-    span: SpanInfo,
-) -> Option<&Spanned<HirFunctionDefinition>> {
+fn find_function_in_items(items: &[Spanned<HirItem>], span: SpanInfo) -> Option<&Spanned<HirFunctionDefinition>> {
     find_function_in_items_inner(items, span, &mut HashSet::new())
 }
 
@@ -297,10 +266,7 @@ fn find_function_in_items_inner<'a>(
     None
 }
 
-fn find_method_in_items(
-    items: &[Spanned<HirItem>],
-    span: SpanInfo,
-) -> Option<&Spanned<HirMethodDefinition>> {
+fn find_method_in_items(items: &[Spanned<HirItem>], span: SpanInfo) -> Option<&Spanned<HirMethodDefinition>> {
     find_method_in_items_inner(items, span, &mut HashSet::new())
 }
 

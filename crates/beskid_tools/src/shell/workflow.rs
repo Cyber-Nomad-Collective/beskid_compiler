@@ -98,11 +98,7 @@ impl StageRunner {
             Box::pin(async move {
                 if stop.try_recv().is_ok() {
                     let _ = input.tx.send(WorkflowEvent::Cancelled);
-                    return StageOutput {
-                        stage,
-                        success: false,
-                        message: "Cancelled".into(),
-                    };
+                    return StageOutput { stage, success: false, message: "Cancelled".into() };
                 }
                 let _ = input.tx.send(WorkflowEvent::StageStarted(stage));
                 worker(input, stop)
@@ -119,16 +115,6 @@ impl StageRunner {
     /// Signal the stage to stop (cancellation).
     pub fn stop(&self) -> TaskResult<()> {
         self.task.stop()
-    }
-
-    /// Wait for the stage to complete and return its output.
-    pub async fn join(&self) -> TaskResult<StageOutput> {
-        self.task.join().await
-    }
-
-    /// Stop and wait for completion.
-    pub async fn stop_and_join(&self) -> TaskResult<StageOutput> {
-        self.task.stop_and_join().await
     }
 
     /// Check if the stage is currently running.
@@ -152,6 +138,10 @@ impl StageRunner {
 pub struct WorkflowEngine {
     build_runner: StageRunner,
     test_runner: StageRunner,
+    run_runner: StageRunner,
+    analyze_runner: StageRunner,
+    graph_runner: StageRunner,
+
     event_tx: mpsc::Sender<WorkflowEvent>,
     event_rx: mpsc::Receiver<WorkflowEvent>,
     current_stage: Option<WorkflowStage>,
@@ -166,17 +156,10 @@ impl WorkflowEngine {
         let build_runner = StageRunner::new(WorkflowStage::Build, {
             move |input: StageInput, stop: StopReceiver<()>| {
                 if stop.try_recv().is_ok() {
-                    return StageOutput {
-                        stage: WorkflowStage::Build,
-                        success: false,
-                        message: "Cancelled".into(),
-                    };
+                    return StageOutput { stage: WorkflowStage::Build, success: false, message: "Cancelled".into() };
                 }
                 if let Some(reg) = registrar {
-                    let _ = input.tx.send(WorkflowEvent::Log(
-                        WorkflowStage::Build,
-                        "Compiling...".into(),
-                    ));
+                    let _ = input.tx.send(WorkflowEvent::Log(WorkflowStage::Build, "Compiling...".into()));
                     let result = reg(HiCompileRequest {
                         command: "build",
                         params: &input.params,
@@ -210,11 +193,7 @@ impl WorkflowEngine {
         let test_runner = StageRunner::new(WorkflowStage::Test, {
             move |input: StageInput, stop: StopReceiver<()>| {
                 if stop.try_recv().is_ok() {
-                    return StageOutput {
-                        stage: WorkflowStage::Test,
-                        success: false,
-                        message: "Cancelled".into(),
-                    };
+                    return StageOutput { stage: WorkflowStage::Test, success: false, message: "Cancelled".into() };
                 }
                 if let Some(reg) = test_registrar {
                     let result = reg(HiCompileRequest {
@@ -224,11 +203,9 @@ impl WorkflowEngine {
                         msg_tx: mpsc::channel().0,
                     });
                     match result {
-                        Ok(()) => StageOutput {
-                            stage: WorkflowStage::Test,
-                            success: true,
-                            message: "Tests passed".into(),
-                        },
+                        Ok(()) => {
+                            StageOutput { stage: WorkflowStage::Test, success: true, message: "Tests passed".into() }
+                        }
                         Err(e) => StageOutput {
                             stage: WorkflowStage::Test,
                             success: false,
@@ -245,9 +222,116 @@ impl WorkflowEngine {
             }
         });
 
+        let run_registrar = compile_registrar;
+        let run_runner = StageRunner::new(WorkflowStage::Run, {
+            move |input: StageInput, stop: StopReceiver<()>| {
+                if stop.try_recv().is_ok() {
+                    return StageOutput { stage: WorkflowStage::Run, success: false, message: "Cancelled".into() };
+                }
+                if let Some(reg) = run_registrar {
+                    let result = reg(HiCompileRequest {
+                        command: "run",
+                        params: &input.params,
+                        scope: &input.scope,
+                        msg_tx: mpsc::channel().0,
+                    });
+                    match result {
+                        Ok(()) => {
+                            StageOutput { stage: WorkflowStage::Run, success: true, message: "Run succeeded".into() }
+                        }
+                        Err(e) => StageOutput {
+                            stage: WorkflowStage::Run,
+                            success: false,
+                            message: format!("Run failed: {e}"),
+                        },
+                    }
+                } else {
+                    StageOutput {
+                        stage: WorkflowStage::Run,
+                        success: false,
+                        message: "No compile registrar available".into(),
+                    }
+                }
+            }
+        });
+
+        let analyze_registrar = compile_registrar;
+        let analyze_runner = StageRunner::new(WorkflowStage::Analyze, {
+            move |input: StageInput, stop: StopReceiver<()>| {
+                if stop.try_recv().is_ok() {
+                    return StageOutput { stage: WorkflowStage::Analyze, success: false, message: "Cancelled".into() };
+                }
+                if let Some(reg) = analyze_registrar {
+                    let result = reg(HiCompileRequest {
+                        command: "analyze",
+                        params: &input.params,
+                        scope: &input.scope,
+                        msg_tx: mpsc::channel().0,
+                    });
+                    match result {
+                        Ok(()) => StageOutput {
+                            stage: WorkflowStage::Analyze,
+                            success: true,
+                            message: "Analyze succeeded".into(),
+                        },
+                        Err(e) => StageOutput {
+                            stage: WorkflowStage::Analyze,
+                            success: false,
+                            message: format!("Analyze failed: {e}"),
+                        },
+                    }
+                } else {
+                    StageOutput {
+                        stage: WorkflowStage::Analyze,
+                        success: false,
+                        message: "No compile registrar available".into(),
+                    }
+                }
+            }
+        });
+
+        let graph_registrar = compile_registrar;
+        let graph_runner = StageRunner::new(WorkflowStage::Graph, {
+            move |input: StageInput, stop: StopReceiver<()>| {
+                if stop.try_recv().is_ok() {
+                    return StageOutput { stage: WorkflowStage::Graph, success: false, message: "Cancelled".into() };
+                }
+                if let Some(reg) = graph_registrar {
+                    let result = reg(HiCompileRequest {
+                        command: "graph",
+                        params: &input.params,
+                        scope: &input.scope,
+                        msg_tx: mpsc::channel().0,
+                    });
+                    match result {
+                        Ok(()) => StageOutput {
+                            stage: WorkflowStage::Graph,
+                            success: true,
+                            message: "Graph succeeded".into(),
+                        },
+                        Err(e) => StageOutput {
+                            stage: WorkflowStage::Graph,
+                            success: false,
+                            message: format!("Graph failed: {e}"),
+                        },
+                    }
+                } else {
+                    StageOutput {
+                        stage: WorkflowStage::Graph,
+                        success: false,
+                        message: "No compile registrar available".into(),
+                    }
+                }
+            }
+        });
+
         Self {
             build_runner,
             test_runner,
+            run_runner,
+            analyze_runner,
+            graph_runner,
+
             event_tx,
             event_rx,
             current_stage: None,
@@ -269,21 +353,21 @@ impl WorkflowEngine {
                 let _ = self.test_runner.run(StageInput { params, scope, tx });
                 self.current_stage = Some(WorkflowStage::Test);
             }
+            WorkflowCommand::Run { target, args } => {
+                let params = if args.is_empty() { target } else { format!("{} {}", target, args.join(" ")) };
+                let _ = self.run_runner.run(StageInput { params, scope, tx });
+                self.current_stage = Some(WorkflowStage::Run);
+            }
+            WorkflowCommand::Analyze { params } => {
+                let _ = self.analyze_runner.run(StageInput { params, scope, tx });
+                self.current_stage = Some(WorkflowStage::Analyze);
+            }
+            WorkflowCommand::Graph { params } => {
+                let _ = self.graph_runner.run(StageInput { params, scope, tx });
+                self.current_stage = Some(WorkflowStage::Graph);
+            }
             WorkflowCommand::Cancel => {
                 self.cancel();
-            }
-            _ => {
-                // Run, Analyze, Graph - placeholder for future in-process execution
-                let stage = match &command {
-                    WorkflowCommand::Run { .. } => WorkflowStage::Run,
-                    WorkflowCommand::Analyze { .. } => WorkflowStage::Analyze,
-                    WorkflowCommand::Graph { .. } => WorkflowStage::Graph,
-                    _ => return,
-                };
-                let _ = tx.send(WorkflowEvent::Log(
-                    stage,
-                    "Stage not yet implemented in-process".into(),
-                ));
             }
         }
     }
@@ -298,7 +382,15 @@ impl WorkflowEngine {
                 WorkflowStage::Test => {
                     let _ = self.test_runner.stop();
                 }
-                _ => {}
+                WorkflowStage::Run => {
+                    let _ = self.run_runner.stop();
+                }
+                WorkflowStage::Analyze => {
+                    let _ = self.analyze_runner.stop();
+                }
+                WorkflowStage::Graph => {
+                    let _ = self.graph_runner.stop();
+                }
             }
             self.current_stage = None;
         }
@@ -328,37 +420,6 @@ impl WorkflowEngine {
             events.push(event);
         }
         events
-    }
-
-    /// Check if the currently running stage is finished (Task::is_running returns false).
-    pub fn is_stage_finished(&self) -> bool {
-        match self.current_stage {
-            Some(WorkflowStage::Build) => !self.build_runner.is_running(),
-            Some(WorkflowStage::Test) => !self.test_runner.is_running(),
-            _ => true,
-        }
-    }
-
-    /// Join the current stage (blocking wait). Call from the event loop thread.
-    #[allow(unused_variables)]
-    pub fn join_current_stage(&mut self) {
-        let _stage = match self.current_stage {
-            Some(s) => s,
-            None => return,
-        };
-        match _stage {
-            WorkflowStage::Build => {
-                // We can't block on async in the sync event loop, so we use the
-                // compile_registrar approach directly for now.
-                self.current_stage = None;
-            }
-            WorkflowStage::Test => {
-                self.current_stage = None;
-            }
-            _ => {
-                self.current_stage = None;
-            }
-        };
     }
 
     pub fn current_stage(&self) -> Option<WorkflowStage> {

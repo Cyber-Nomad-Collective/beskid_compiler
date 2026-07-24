@@ -4,9 +4,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::widgets::theme_picker::{ThemePicker, ThemePickerEvent};
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct ThemePickerDemo {
     picker: ThemePicker,
@@ -17,10 +15,7 @@ impl ThemePickerDemo {
     fn new() -> Self {
         let mut picker = ThemePicker::new();
         picker.show();
-        Self {
-            picker,
-            last_event: "Previewing themes".to_string(),
-        }
+        Self { picker, last_event: "Previewing themes".to_string() }
     }
 }
 
@@ -65,11 +60,7 @@ impl CoordinatorApp for ThemePickerDemo {
             Line::from("q: quit"),
             Line::from(self.last_event.clone()),
         ])
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Theme Picker "),
-        );
+        .block(Block::default().borders(Borders::ALL).title(" Theme Picker "));
         frame.render_widget(body, area);
         self.picker.render(frame, area);
     }

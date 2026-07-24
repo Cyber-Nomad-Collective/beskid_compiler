@@ -3,17 +3,15 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use beskid_abi::{
-    abi_v5::TargetMetadata, runtime_source::canonical_corelib_syscall_service_capability,
-};
+use beskid_abi::{abi_v5::TargetMetadata, runtime_source::canonical_corelib_syscall_service_capability};
 use beskid_analysis::services::{FrontEndOptions, ResolvedInput, resolve_input};
 use beskid_codegen::RETIRED_HIR_LOWERING_PATH;
 use beskid_codegen::lowering::lower_program_with_assembly_for_entrypoint;
 use beskid_queries::{
     AstNodeId, AstNodeKey, CallLowering, SourceUnitId, SyntaxGenerationId,
     build_typed_program_with_corelib_syscall_services, call_lowering, child_nodes,
-    compile_front_end_from_resolved_input, enum_constructor, enum_layout, enum_match, item_name,
-    node_kind, node_span, project_session_for_syntax_assembly, resolved_item, with_db,
+    compile_front_end_from_resolved_input, enum_constructor, enum_layout, enum_match, item_name, node_kind, node_span,
+    project_session_for_syntax_assembly, resolved_item, with_db,
 };
 
 fn compiler_workspace_root() -> PathBuf {
@@ -26,23 +24,13 @@ fn compiler_workspace_root() -> PathBuf {
 
 fn assert_hir_driver_rejected(entry_rel: &str, entrypoint: &str) {
     let root = compiler_workspace_root();
-    let entry = root
-        .join("corelib/beskid_corelib/tests/corelib_tests/src")
-        .join(entry_rel);
-    let project_root = entry
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
+    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src").join(entry_rel);
+    let project_root = entry.parent().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
     let source = std::fs::read_to_string(&entry).expect("read entry");
 
     let previous = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(&root).expect("chdir");
-    let resolved = resolve_input(Some(&entry), Some(&project_root), None, None, false, false)
-        .expect("resolve");
+    let resolved = resolve_input(Some(&entry), Some(&project_root), None, None, false, false).expect("resolve");
     std::env::set_current_dir(previous).expect("restore cwd");
 
     let plan = resolved.compile_plan.expect("compile plan");
@@ -58,10 +46,7 @@ fn assert_hir_driver_rejected(entry_rel: &str, entrypoint: &str) {
 
     let front = compile_front_end_from_resolved_input(
         &resolved_input,
-        FrontEndOptions {
-            with_semantic_diagnostics: false,
-            ..Default::default()
-        },
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
     )
     .expect("front-end");
@@ -74,15 +59,8 @@ fn assert_hir_driver_rejected(entry_rel: &str, entrypoint: &str) {
         Some(entrypoint),
     )
     .expect_err("retired HIR driver must reject without fallback");
-    let message = errors
-        .iter()
-        .map(std::string::ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("; ");
-    assert!(
-        message.contains(RETIRED_HIR_LOWERING_PATH),
-        "entrypoint {entrypoint} in {entry_rel}: {message}"
-    );
+    let message = errors.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join("; ");
+    assert!(message.contains(RETIRED_HIR_LOWERING_PATH), "entrypoint {entrypoint} in {entry_rel}: {message}");
 }
 
 #[test]
@@ -98,8 +76,7 @@ fn lower_system_input_read_smoke_rejects_hir_driver() {
 #[test]
 fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() {
     let root = compiler_workspace_root();
-    let entry =
-        root.join("corelib/beskid_corelib/tests/corelib_tests/src/system/OutputWriteTests.bd");
+    let entry = root.join("corelib/beskid_corelib/tests/corelib_tests/src/system/OutputWriteTests.bd");
     let project_root = entry
         .parent()
         .and_then(|path| path.parent())
@@ -124,10 +101,7 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
     };
     let front = compile_front_end_from_resolved_input(
         &resolved_input,
-        FrontEndOptions {
-            with_semantic_diagnostics: false,
-            ..Default::default()
-        },
+        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         None,
     )
     .expect("resolved syntax frontend");
@@ -141,24 +115,13 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
         // qualified-call declaration fact in the materialized Foundation source.
         let assembly = Arc::new(front.syntax_assembly());
         let generation = SyntaxGenerationId(1);
-        let project = project_session_for_syntax_assembly(
-            db,
-            &assembly,
-            "syntax-codegen",
-            "prepared-frontend",
-        )
-        .expect("syntax project session");
+        let project = project_session_for_syntax_assembly(db, &assembly, "syntax-codegen", "prepared-frontend")
+            .expect("syntax project session");
         let manifest = beskid_abi::abi_v5::AbiManifestV5::canonical_runtime(target.clone());
-        let capability = canonical_corelib_syscall_service_capability(&manifest)
-            .expect("canonical Corelib service capability");
-        build_typed_program_with_corelib_syscall_services(
-            db,
-            project,
-            generation,
-            Arc::clone(&assembly),
-            capability,
-        )
-        .expect("register canonical syntax facts");
+        let capability =
+            canonical_corelib_syscall_service_capability(&manifest).expect("canonical Corelib service capability");
+        build_typed_program_with_corelib_syscall_services(db, project, generation, Arc::clone(&assembly), capability)
+            .expect("register canonical syntax facts");
         let output_root = AstNodeKey {
             unit: SourceUnitId::new(
                 db,
@@ -177,8 +140,7 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
         let mut write_with = None;
         while let Some(key) = pending.pop() {
             let span = node_span(db, key).expect("node span");
-            if node_kind(db, key).expect("node kind")
-                == Some(beskid_queries::IndexedNodeKind::CallExpression)
+            if node_kind(db, key).expect("node kind") == Some(beskid_queries::IndexedNodeKind::CallExpression)
                 && span.is_some_and(|span| span.line_col_start.0 == 19)
             {
                 write_with = Some(key);
@@ -189,15 +151,12 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
             }
         }
         let write_with = write_with.expect("Core.Syscall.WriteWith call at Output.bd:19");
-        let call_children = child_nodes(db, write_with)
-            .expect("WriteWith call children")
-            .expect("WriteWith call child list");
+        let call_children =
+            child_nodes(db, write_with).expect("WriteWith call children").expect("WriteWith call child list");
         let mut callee_nodes = vec![call_children[0]];
         let mut path = None;
         while let Some(key) = callee_nodes.pop() {
-            if node_kind(db, key).expect("callee node kind")
-                == Some(beskid_queries::IndexedNodeKind::PathExpression)
-            {
+            if node_kind(db, key).expect("callee node kind") == Some(beskid_queries::IndexedNodeKind::PathExpression) {
                 path = Some(key);
                 break;
             }
@@ -233,10 +192,7 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
         while let Some(key) = pending.pop() {
             if node_kind(db, key).expect("Syscall node kind")
                 == Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
-                && item_name(db, key)
-                    .expect("Syscall function name")
-                    .as_deref()
-                    == Some("Write")
+                && item_name(db, key).expect("Syscall function name").as_deref() == Some("Write")
             {
                 syscall_write = Some(key);
                 break;
@@ -265,11 +221,7 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
         let constructor = enum_constructor(db, invalid_fd);
         let layout = beskid_queries::enum_layout(db, invalid_fd);
         assert!(
-            constructor
-                .as_ref()
-                .ok()
-                .and_then(|fact| fact.as_ref())
-                .is_some(),
+            constructor.as_ref().ok().and_then(|fact| fact.as_ref()).is_some(),
             "Core.Syscall.Write must expose the Result::Error constructor fact for its fd guard; \
              constructor={constructor:?}; layout={layout:?}"
         );
@@ -279,10 +231,7 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
         while let Some(key) = pending.pop() {
             if node_kind(db, key).expect("Syscall node kind")
                 == Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
-                && item_name(db, key)
-                    .expect("Syscall function name")
-                    .as_deref()
-                    == Some("ResolveDescriptorFd")
+                && item_name(db, key).expect("Syscall function name").as_deref() == Some("ResolveDescriptorFd")
             {
                 resolve_descriptor = Some(key);
                 break;
@@ -320,9 +269,8 @@ fn canonical_output_write_with_resolves_through_the_assembled_syntax_artifact() 
             }
         }
         let descriptor = descriptor.expect("Descriptor enum definition");
-        let descriptor_layout = enum_layout(db, descriptor)
-            .expect("Descriptor layout query")
-            .expect("Descriptor layout");
+        let descriptor_layout =
+            enum_layout(db, descriptor).expect("Descriptor layout query").expect("Descriptor layout");
         assert!(
             matches!(
                 descriptor_layout.variants[0].fields.as_ref(),

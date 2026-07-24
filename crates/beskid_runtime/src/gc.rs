@@ -17,10 +17,7 @@ use std::cell::{Cell, RefCell};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
-use abfall::{
-    GcOptions, Heap, HeapSessionGuard, enter_heap_session,
-    with_current_heap as ab_with_current_heap,
-};
+use abfall::{GcOptions, Heap, HeapSessionGuard, enter_heap_session, with_current_heap as ab_with_current_heap};
 
 /// Counters updated by runtime builtins (extended when `metrics` is enabled).
 #[derive(Default)]
@@ -52,10 +49,7 @@ pub struct RuntimeRoot {
 
 impl RuntimeRoot {
     pub fn new(heap: Arc<Heap>) -> Self {
-        Self {
-            heap,
-            runtime_state: RuntimeState::default(),
-        }
+        Self { heap, runtime_state: RuntimeState::default() }
     }
 }
 
@@ -183,9 +177,7 @@ pub fn leave_runtime_scope() {
     RUNTIME_SCOPE_DEPTH.with(|depth| {
         let current = depth.get();
         if current == 0 {
-            panic!(
-                "runtime scope underflow: leave_runtime_scope called without enter_runtime_scope"
-            );
+            panic!("runtime scope underflow: leave_runtime_scope called without enter_runtime_scope");
         }
         depth.set(current - 1);
     });
@@ -350,28 +342,16 @@ mod tests {
 
     #[test]
     fn test_enter_leave_runtime_scope() {
-        assert!(
-            !in_runtime_scope(),
-            "no scope should be active at test start"
-        );
+        assert!(!in_runtime_scope(), "no scope should be active at test start");
         enter_runtime_scope();
         assert!(in_runtime_scope(), "scope should be active after enter");
         // Nested scopes stack.
         enter_runtime_scope();
-        assert!(
-            in_runtime_scope(),
-            "scope should remain active after nested enter"
-        );
+        assert!(in_runtime_scope(), "scope should remain active after nested enter");
         leave_runtime_scope();
-        assert!(
-            in_runtime_scope(),
-            "scope should still be active after one leave (nested)"
-        );
+        assert!(in_runtime_scope(), "scope should still be active after one leave (nested)");
         leave_runtime_scope();
-        assert!(
-            !in_runtime_scope(),
-            "scope should be inactive after balanced leave"
-        );
+        assert!(!in_runtime_scope(), "scope should be inactive after balanced leave");
     }
 
     #[test]

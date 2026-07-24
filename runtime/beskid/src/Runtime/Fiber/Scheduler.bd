@@ -10,17 +10,21 @@
 // with placeholder calls.
 
 // ── Fiber State Constants ──────────────────────────────────────────
-const FIBER_RUNNABLE  = 0;
-const FIBER_RUNNING   = 1;
-const FIBER_PARKED    = 2;
-const FIBER_DONE      = 3;
-const FIBER_CANCELLED = 4;
+pub enum FiberState {
+    Runnable,
+    Running,
+    Parked,
+    Done,
+    Cancelled,
+}
 
-const JOIN_OK        = 0;
-const JOIN_CANCELLED = 1;
-const JOIN_PANICKED  = 2;
-const JOIN_NOT_DONE  = 3;
-const JOIN_STACK_OVERFLOW = 4;
+pub enum JoinOutcome {
+    Ok,
+    Cancelled,
+    Panicked,
+    NotDone,
+    StackOverflow,
+}
 
 // Scheduler table embedded in BeskidRuntimeState at offset 3072+.
 // Layout (512 bytes):
@@ -90,7 +94,7 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
     }
     pointer fib = FiberRecord(count);
     memory_set(fib, 0, FIBER_SLOT_SIZE);
-    raw_word_store(fib, FIBER_RUNNABLE);
+    raw_word_store(fib, FiberState::Runnable);
     raw_word_store(pointer_add(fib, 8), entry);
     raw_word_store(pointer_add(fib, 16), arg);
     raw_word_store(pointer_add(fib, 24), cancelSlot);
@@ -149,13 +153,13 @@ pub word FiberState(word index) {
 
 // Check if fiber is parked (waiting on a channel/mutex/wg).
 pub bool FiberParked(word index) {
-    return FiberState(index) == FIBER_PARKED;
+    return FiberState(index) == FiberState::Parked;
 }
 
 // Check if fiber is finished.
 pub bool FiberFinished(word index) {
     word s = FiberState(index);
-    return s == FIBER_DONE || s == FIBER_CANCELLED;
+    return s == FiberState::Done || s == FiberState::Cancelled;
 }
 
 // Mark fiber done with a return value.
@@ -163,12 +167,12 @@ pub unit FiberDone(word index, i64 value) {
     pointer fib = FiberRecord(index);
     u8 cancelled = raw_byte_load(pointer_add(fib, 41));
     if cancelled != 0 {
-        raw_word_store(fib, FIBER_CANCELLED);
-        raw_word_store(pointer_add(fib, 48), JOIN_CANCELLED);
+        raw_word_store(fib, FiberState::Cancelled);
+        raw_word_store(pointer_add(fib, 48), JoinOutcome::Cancelled);
         raw_word_store(pointer_add(fib, 56), 0);
     } else {
-        raw_word_store(fib, FIBER_DONE);
-        raw_word_store(pointer_add(fib, 48), JOIN_OK);
+        raw_word_store(fib, FiberState::Done);
+        raw_word_store(pointer_add(fib, 48), JoinOutcome::Ok);
         raw_word_store(pointer_add(fib, 56), word(value));
     }
     return;
@@ -236,7 +240,7 @@ pub unit ApplyPendingCancels() {
         raw_byte_store(pointer_add(fib, 41), 1); // cancelled
         // Wake parked fiber if needed.
         if FiberParked(idx) {
-            FiberSetState(idx, FIBER_RUNNABLE);
+            FiberSetState(idx, FiberState::Runnable);
             RunQueuePush(idx);
         }
         i = i + 1;
@@ -265,7 +269,7 @@ pub unit ApplyPendingWakes() {
     while i < count {
         word idx = raw_word_load(pointer_add(table, 1144 + i * 8));
         if FiberParked(idx) {
-            FiberSetState(idx, FIBER_RUNNABLE);
+            FiberSetState(idx, FiberState::Runnable);
         }
         RunQueuePush(idx);
         i = i + 1;
@@ -301,7 +305,7 @@ pub bool SchedStep() {
         mut word i = 0; mut bool alive = false;
         while i < fiberCount {
             word s = FiberState(i);
-            if s == FIBER_RUNNABLE || s == FIBER_PARKED || s == FIBER_RUNNING {
+            if s == FiberState::Runnable || s == FiberState::Parked || s == FiberState::Running {
                 alive = true;
             }
             i = i + 1;
@@ -317,7 +321,7 @@ pub bool SchedStep() {
     if FiberParked(next) { return true; } // Skip parked.
 
     pointer fib = FiberRecord(next);
-    FiberSetState(next, FIBER_RUNNING);
+    FiberSetState(next, FiberState::Running);
     word entry = raw_word_load(pointer_add(fib, 8));
     word arg = raw_word_load(pointer_add(fib, 16));
 
@@ -356,8 +360,8 @@ pub i64 SchedRun() {
             mut word i = 0; mut bool anyAlive = false; mut bool anyRunnable = false;
             while i < fiberCount {
                 word s = FiberState(i);
-                if s == FIBER_RUNNABLE { anyAlive = true; }
-                if s == FIBER_PARKED { anyRunnable = true; }
+                if s == FiberState::Runnable { anyAlive = true; }
+                if s == FiberState::Parked { anyRunnable = true; }
                 i = i + 1;
             }
             if !anyRunnable {

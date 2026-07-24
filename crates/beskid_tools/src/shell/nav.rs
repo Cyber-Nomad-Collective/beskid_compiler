@@ -31,11 +31,8 @@ impl NavAction {
             }
             "cli" => {
                 let raw = target.unwrap_or_default();
-                let argv = if raw.is_empty() {
-                    Vec::new()
-                } else {
-                    raw.split_whitespace().map(str::to_string).collect()
-                };
+                let argv =
+                    if raw.is_empty() { Vec::new() } else { raw.split_whitespace().map(str::to_string).collect() };
                 Ok(Self::Cli(argv))
             }
             "group" => Ok(Self::Group),
@@ -174,10 +171,7 @@ impl Default for NavRegistry {
 
 impl NavRegistry {
     pub fn new() -> Self {
-        let mut registry = Self {
-            items: HashMap::new(),
-            order: Vec::new(),
-        };
+        let mut registry = Self { items: HashMap::new(), order: Vec::new() };
         registry.register_builtins();
         registry
     }
@@ -214,10 +208,7 @@ impl NavRegistry {
     }
 
     pub fn children_of(&self, parent_id: &str) -> Vec<&NavItemDescriptor> {
-        let mut kids: Vec<_> = self
-            .items()
-            .filter(|item| item.parent.as_deref() == Some(parent_id))
-            .collect();
+        let mut kids: Vec<_> = self.items().filter(|item| item.parent.as_deref() == Some(parent_id)).collect();
         kids.sort_by_key(|item| item.order);
         kids
     }
@@ -230,9 +221,7 @@ impl From<BuiltinNavItem> for NavItemDescriptor {
             BuiltinNavAction::Page(id) => NavAction::Page(id.into()),
             BuiltinNavAction::Overlay(id) => NavAction::Overlay(id.into()),
             BuiltinNavAction::Widget(id) => NavAction::Widget(id.into()),
-            BuiltinNavAction::Cli(argv) => {
-                NavAction::Cli(argv.iter().map(|s| (*s).into()).collect())
-            }
+            BuiltinNavAction::Cli(argv) => NavAction::Cli(argv.iter().map(|s| (*s).into()).collect()),
         };
         Self {
             id: value.id.into(),

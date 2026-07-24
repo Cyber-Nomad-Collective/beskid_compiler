@@ -37,10 +37,7 @@ pub fn position_to_offset(source: &str, position: Position) -> usize {
 pub fn offset_range_to_lsp(source: &str, start: usize, end: usize) -> Range {
     let bounded_start = start.min(source.len());
     let bounded_end = end.max(bounded_start).min(source.len());
-    Range::new(
-        offset_to_position(source, bounded_start),
-        offset_to_position(source, bounded_end),
-    )
+    Range::new(offset_to_position(source, bounded_start), offset_to_position(source, bounded_end))
 }
 
 /// Map a [`SymbolLocation`] to an LSP range, reading `location.path` when it differs from `fallback_path`.

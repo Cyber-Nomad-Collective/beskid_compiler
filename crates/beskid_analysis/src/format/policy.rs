@@ -4,10 +4,7 @@ use crate::format::emit::{EmitCtx, EmitError};
 use crate::syntax::Statement;
 use std::fmt::Write;
 
-pub(crate) fn between_top_level_declarations<W: Write>(
-    cx: &mut EmitCtx,
-    w: &mut W,
-) -> Result<(), EmitError> {
+pub(crate) fn between_top_level_declarations<W: Write>(cx: &mut EmitCtx, w: &mut W) -> Result<(), EmitError> {
     cx.nl(w)
 }
 
@@ -22,10 +19,7 @@ pub(crate) fn between_block_items<W: Write>(
     prev: &Statement,
     next: &Statement,
 ) -> Result<(), EmitError> {
-    let prev_is_block_like = matches!(
-        prev,
-        Statement::If(_) | Statement::While(_) | Statement::For(_)
-    );
+    let prev_is_block_like = matches!(prev, Statement::If(_) | Statement::While(_) | Statement::For(_));
     if prev_is_block_like && matches!(next, Statement::Let(_)) {
         return cx.nl(w);
     }

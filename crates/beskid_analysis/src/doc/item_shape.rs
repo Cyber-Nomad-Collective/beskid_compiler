@@ -5,13 +5,9 @@ use crate::syntax::{EnumDefinition, FunctionDefinition, Node, Program, Spanned, 
 
 fn walk_enum_variants(node: &Spanned<Node>, span: SpanInfo) -> Option<Vec<String>> {
     match &node.node {
-        Node::EnumDefinition(e) if node.span == span => Some(
-            e.node
-                .variants
-                .iter()
-                .map(|v| v.node.name.node.name.clone())
-                .collect(),
-        ),
+        Node::EnumDefinition(e) if node.span == span => {
+            Some(e.node.variants.iter().map(|v| v.node.name.node.name.clone()).collect())
+        }
         Node::InlineModule(im) => {
             for nested in &im.node.items {
                 if let Some(v) = walk_enum_variants(nested, span) {
@@ -35,27 +31,15 @@ pub fn enum_variant_names_for_span(program: &Program, span: SpanInfo) -> Option<
 }
 
 fn generics_from_type(def: &Spanned<TypeDefinition>) -> Vec<String> {
-    def.node
-        .generics
-        .iter()
-        .map(|g| g.node.name.clone())
-        .collect()
+    def.node.generics.iter().map(|g| g.node.name.clone()).collect()
 }
 
 fn generics_from_enum(def: &Spanned<EnumDefinition>) -> Vec<String> {
-    def.node
-        .generics
-        .iter()
-        .map(|g| g.node.name.clone())
-        .collect()
+    def.node.generics.iter().map(|g| g.node.name.clone()).collect()
 }
 
 fn generics_from_function(def: &Spanned<FunctionDefinition>) -> Vec<String> {
-    def.node
-        .generics
-        .iter()
-        .map(|g| g.node.name.clone())
-        .collect()
+    def.node.generics.iter().map(|g| g.node.name.clone()).collect()
 }
 
 fn walk_generics(node: &Spanned<Node>, span: SpanInfo) -> Option<Vec<String>> {

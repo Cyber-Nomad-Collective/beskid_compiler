@@ -35,11 +35,7 @@ use crate::primitives::tree_view::tree_view_state::TreeViewState;
 ///     matches_filter(&data.name, filter)
 /// });
 /// ```
-pub fn get_visible_paths_filtered<T, F>(
-    nodes: &[TreeNode<T>],
-    state: &TreeViewState,
-    matcher: F,
-) -> Vec<Vec<usize>>
+pub fn get_visible_paths_filtered<T, F>(nodes: &[TreeNode<T>], state: &TreeViewState, matcher: F) -> Vec<Vec<usize>>
 where
     F: Fn(&T, &Option<String>) -> bool,
 {

@@ -2,9 +2,7 @@
 
 use std::path::PathBuf;
 
-use beskid_analysis::hir::{
-    HirBlock, HirCallExpression, HirElseBranch, HirExpressionNode, HirStatementNode,
-};
+use beskid_analysis::hir::{HirBlock, HirCallExpression, HirElseBranch, HirExpressionNode, HirStatementNode};
 use beskid_analysis::paths::same_file;
 use beskid_analysis::resolve::{ItemId, ItemKind, Resolution, ResolvedValue, canonical_item_id};
 use beskid_analysis::syntax::Spanned;
@@ -40,28 +38,10 @@ fn collect_calls_in_else_branch(
             collect_calls_in_block(block, resolution, type_result, source_path, out);
         }
         HirElseBranch::If(nested) => {
-            collect_calls_in_expression(
-                &nested.node.condition,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
-            collect_calls_in_block(
-                &nested.node.then_block,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
+            collect_calls_in_expression(&nested.node.condition, resolution, type_result, source_path, out);
+            collect_calls_in_block(&nested.node.then_block, resolution, type_result, source_path, out);
             if let Some(nested_else) = &nested.node.else_branch {
-                collect_calls_in_else_branch(
-                    nested_else,
-                    resolution,
-                    type_result,
-                    source_path,
-                    out,
-                );
+                collect_calls_in_else_branch(nested_else, resolution, type_result, source_path, out);
             }
         }
     }
@@ -76,70 +56,22 @@ fn collect_calls_in_statement(
 ) {
     match &statement.node {
         HirStatementNode::ExpressionStatement(expr_stmt) => {
-            collect_calls_in_expression(
-                &expr_stmt.node.expression,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
+            collect_calls_in_expression(&expr_stmt.node.expression, resolution, type_result, source_path, out);
         }
         HirStatementNode::IfStatement(if_stmt) => {
-            collect_calls_in_expression(
-                &if_stmt.node.condition,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
-            collect_calls_in_block(
-                &if_stmt.node.then_block,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
+            collect_calls_in_expression(&if_stmt.node.condition, resolution, type_result, source_path, out);
+            collect_calls_in_block(&if_stmt.node.then_block, resolution, type_result, source_path, out);
             if let Some(else_branch) = &if_stmt.node.else_branch {
-                collect_calls_in_else_branch(
-                    else_branch,
-                    resolution,
-                    type_result,
-                    source_path,
-                    out,
-                );
+                collect_calls_in_else_branch(else_branch, resolution, type_result, source_path, out);
             }
         }
         HirStatementNode::WhileStatement(while_stmt) => {
-            collect_calls_in_expression(
-                &while_stmt.node.condition,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
-            collect_calls_in_block(
-                &while_stmt.node.body,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
+            collect_calls_in_expression(&while_stmt.node.condition, resolution, type_result, source_path, out);
+            collect_calls_in_block(&while_stmt.node.body, resolution, type_result, source_path, out);
         }
         HirStatementNode::ForStatement(for_stmt) => {
-            collect_calls_in_expression(
-                &for_stmt.node.iterable,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
-            collect_calls_in_block(
-                &for_stmt.node.body,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
+            collect_calls_in_expression(&for_stmt.node.iterable, resolution, type_result, source_path, out);
+            collect_calls_in_block(&for_stmt.node.body, resolution, type_result, source_path, out);
         }
         HirStatementNode::ReturnStatement(ret) => {
             if let Some(value) = &ret.node.value {
@@ -147,13 +79,7 @@ fn collect_calls_in_statement(
             }
         }
         HirStatementNode::LetStatement(let_stmt) => {
-            collect_calls_in_expression(
-                &let_stmt.node.value,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
+            collect_calls_in_expression(&let_stmt.node.value, resolution, type_result, source_path, out);
         }
         _ => {}
     }
@@ -188,104 +114,38 @@ fn collect_calls_in_expression(
             }
         }
         HirExpressionNode::BinaryExpression(binary) => {
-            collect_calls_in_expression(
-                &binary.node.left,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
-            collect_calls_in_expression(
-                &binary.node.right,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
+            collect_calls_in_expression(&binary.node.left, resolution, type_result, source_path, out);
+            collect_calls_in_expression(&binary.node.right, resolution, type_result, source_path, out);
         }
         HirExpressionNode::UnaryExpression(unary) => {
-            collect_calls_in_expression(
-                &unary.node.expr,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
+            collect_calls_in_expression(&unary.node.expr, resolution, type_result, source_path, out);
         }
         HirExpressionNode::AssignExpression(assign) => {
-            collect_calls_in_expression(
-                &assign.node.target,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
-            collect_calls_in_expression(
-                &assign.node.value,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
+            collect_calls_in_expression(&assign.node.target, resolution, type_result, source_path, out);
+            collect_calls_in_expression(&assign.node.value, resolution, type_result, source_path, out);
         }
         HirExpressionNode::GroupedExpression(grouped) => {
-            collect_calls_in_expression(
-                &grouped.node.expr,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
+            collect_calls_in_expression(&grouped.node.expr, resolution, type_result, source_path, out);
         }
         HirExpressionNode::BlockExpression(block_expr) => {
-            collect_calls_in_block(
-                &block_expr.node.block,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
+            collect_calls_in_block(&block_expr.node.block, resolution, type_result, source_path, out);
         }
         HirExpressionNode::MatchExpression(match_expr) => {
-            collect_calls_in_expression(
-                &match_expr.node.scrutinee,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
+            collect_calls_in_expression(&match_expr.node.scrutinee, resolution, type_result, source_path, out);
             for arm in &match_expr.node.arms {
                 if let Some(guard) = &arm.node.guard {
                     collect_calls_in_expression(guard, resolution, type_result, source_path, out);
                 }
-                collect_calls_in_expression(
-                    &arm.node.value,
-                    resolution,
-                    type_result,
-                    source_path,
-                    out,
-                );
+                collect_calls_in_expression(&arm.node.value, resolution, type_result, source_path, out);
             }
         }
         HirExpressionNode::StructLiteralExpression(lit) => {
             for field in &lit.node.fields {
-                collect_calls_in_expression(
-                    &field.node.value,
-                    resolution,
-                    type_result,
-                    source_path,
-                    out,
-                );
+                collect_calls_in_expression(&field.node.value, resolution, type_result, source_path, out);
             }
         }
         HirExpressionNode::TryExpression(try_expr) => {
-            collect_calls_in_expression(
-                &try_expr.node.expr,
-                resolution,
-                type_result,
-                source_path,
-                out,
-            );
+            collect_calls_in_expression(&try_expr.node.expr, resolution, type_result, source_path, out);
         }
         HirExpressionNode::SpawnExpression(spawn) => {
             collect_spawn_entry_callees(&spawn.node.callee, resolution, source_path, out);
@@ -302,9 +162,8 @@ fn collect_spawn_entry_callees(
 ) {
     match &callee.node {
         HirExpressionNode::PathExpression(path) => {
-            if let Some(ResolvedValue::Item(item_id)) = resolution
-                .tables
-                .resolved_value_at(path.node.path.span, source_path)
+            if let Some(ResolvedValue::Item(item_id)) =
+                resolution.tables.resolved_value_at(path.node.path.span, source_path)
             {
                 let item_id = canonical_item_id(resolution, item_id);
                 out.push(ResolvedCall {
@@ -324,8 +183,7 @@ fn collect_spawn_entry_callees(
 }
 
 pub fn resolve_path_item_id(resolution: &Resolution, segments: &[String]) -> Option<ItemId> {
-    item_id_from_module_graph(resolution, segments)
-        .map(|item_id| canonical_item_id(resolution, item_id))
+    item_id_from_module_graph(resolution, segments).map(|item_id| canonical_item_id(resolution, item_id))
 }
 
 pub(crate) fn resolve_item_call_id(
@@ -343,14 +201,12 @@ pub(crate) fn resolve_item_call_id(
         HirExpressionNode::PathExpression(path) => path.node.path.span,
         _ => call.node.callee.span,
     };
-    let item_id = if let Some(ResolvedValue::Item(item_id)) = resolution
-        .tables
-        .resolved_value_at(callee_span, source_path)
-    {
-        item_id
-    } else {
-        item_id_for_call_path(resolution, call, source_path)?
-    };
+    let item_id =
+        if let Some(ResolvedValue::Item(item_id)) = resolution.tables.resolved_value_at(callee_span, source_path) {
+            item_id
+        } else {
+            item_id_for_call_path(resolution, call, source_path)?
+        };
     Some(canonical_item_id(resolution, item_id))
 }
 
@@ -397,8 +253,7 @@ fn resolve_member_method_call(
         resolution,
         method_item_for_receiver_type(resolution, type_result, receiver_type, method_name)?,
     );
-    let mangled =
-        method_mangled_from_receiver(method_item_id, receiver_type, resolution, type_result);
+    let mangled = method_mangled_from_receiver(method_item_id, receiver_type, resolution, type_result);
     Some(ResolvedCall {
         item_id: method_item_id,
         symbol: symbol_for_call(resolution, method_item_id),
@@ -420,53 +275,29 @@ fn resolve_call(
         .map(|kind| crate::lowering::locals::canonicalize_call_kind(resolution, kind))
     {
         kind
-    } else if let Some(resolved) =
-        resolve_member_method_call(call, resolution, type_result, source_path)
-    {
+    } else if let Some(resolved) = resolve_member_method_call(call, resolution, type_result, source_path) {
         return Some(resolved);
     } else if let Some(item_id) = resolve_item_call_id(call, resolution, source_path) {
-        CallLoweringKind::ItemCall {
-            item_id: canonical_item_id(resolution, item_id),
-        }
+        CallLoweringKind::ItemCall { item_id: canonical_item_id(resolution, item_id) }
     } else {
         return None;
     };
     match kind {
         CallLoweringKind::ItemCall { item_id } => {
             let item_id = canonical_item_id(resolution, item_id);
-            let mut generic_args =
-                generic_type_args_for_call(call, resolution, type_result, source_path);
+            let mut generic_args = generic_type_args_for_call(call, resolution, type_result, source_path);
             if generic_args.is_empty()
-                && let Some(inferred) = infer_generic_type_args_for_call(
-                    call,
-                    item_id,
-                    resolution,
-                    type_result,
-                    source_path,
-                )
+                && let Some(inferred) =
+                    infer_generic_type_args_for_call(call, item_id, resolution, type_result, source_path)
             {
                 generic_args = inferred;
             }
             let mangled = build_function_mangled(item_id, &generic_args, resolution, type_result);
-            Some(ResolvedCall {
-                item_id,
-                symbol: symbol_for_call(resolution, item_id),
-                mangled,
-                receiver_type: None,
-            })
+            Some(ResolvedCall { item_id, symbol: symbol_for_call(resolution, item_id), mangled, receiver_type: None })
         }
-        CallLoweringKind::MethodDispatch {
-            method_item_id,
-            receiver_type,
-            ..
-        } => {
+        CallLoweringKind::MethodDispatch { method_item_id, receiver_type, .. } => {
             let method_item_id = canonical_item_id(resolution, method_item_id);
-            let mangled = method_mangled_from_receiver(
-                method_item_id,
-                receiver_type,
-                resolution,
-                type_result,
-            );
+            let mangled = method_mangled_from_receiver(method_item_id, receiver_type, resolution, type_result);
             Some(ResolvedCall {
                 item_id: method_item_id,
                 symbol: symbol_for_call(resolution, method_item_id),
@@ -474,25 +305,14 @@ fn resolve_call(
                 receiver_type: Some(receiver_type),
             })
         }
-        CallLoweringKind::ContractDispatch {
-            contract_item_id,
-            receiver_type,
-            ..
-        } => resolve_contract_dispatch_call(
-            call,
-            contract_item_id,
-            receiver_type,
-            resolution,
-            type_result,
-        ),
+        CallLoweringKind::ContractDispatch { contract_item_id, receiver_type, .. } => {
+            resolve_contract_dispatch_call(call, contract_item_id, receiver_type, resolution, type_result)
+        }
         CallLoweringKind::EventInvoke { .. } | CallLoweringKind::CallableValueCall => None,
     }
 }
 
-fn symbol_for_call(
-    resolution: &Resolution,
-    item_id: ItemId,
-) -> Option<beskid_analysis::resolve::SymbolId> {
+fn symbol_for_call(resolution: &Resolution, item_id: ItemId) -> Option<beskid_analysis::resolve::SymbolId> {
     resolution.items.get(item_id.0).and_then(|info| info.symbol)
 }
 
@@ -502,15 +322,9 @@ fn path_segments_from_call(call: &Spanned<HirCallExpression>) -> Option<Vec<Stri
 
 fn callee_path_segments(callee: &Spanned<HirExpressionNode>) -> Option<Vec<String>> {
     match &callee.node {
-        HirExpressionNode::PathExpression(path) => Some(
-            path.node
-                .path
-                .node
-                .segments
-                .iter()
-                .map(|segment| segment.node.name.node.name.clone())
-                .collect(),
-        ),
+        HirExpressionNode::PathExpression(path) => {
+            Some(path.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect())
+        }
         HirExpressionNode::MemberExpression(member) => {
             let mut segments = callee_path_segments(&member.node.target)?;
             segments.push(member.node.member.node.name.clone());
@@ -576,22 +390,14 @@ fn item_id_for_call_path(
             if display != segments[0].as_str() {
                 continue;
             }
-            if info
-                .source_path
-                .as_ref()
-                .is_some_and(|source| same_file(source, path))
-            {
+            if info.source_path.as_ref().is_some_and(|source| same_file(source, path)) {
                 return Some(info.id);
             }
         }
     }
 
     let name = segments.last()?;
-    let module_suffix = if segments.len() > 1 {
-        segments[..segments.len() - 1].join("::")
-    } else {
-        String::new()
-    };
+    let module_suffix = if segments.len() > 1 { segments[..segments.len() - 1].join("::") } else { String::new() };
     let mut matches = Vec::new();
     for &item_id in resolution.by_symbol.values() {
         let Some(info) = resolution.items.get(item_id.0) else {
@@ -622,9 +428,7 @@ fn item_id_for_call_path(
             if let Some(path) = source_path
                 && let Some(item) = many.iter().find(|item| {
                     resolution.items.get(item.0).is_some_and(|info| {
-                        info.source_path
-                            .as_ref()
-                            .is_some_and(|source| beskid_analysis::paths::same_file(source, path))
+                        info.source_path.as_ref().is_some_and(|source| beskid_analysis::paths::same_file(source, path))
                     })
                 })
             {
@@ -637,16 +441,10 @@ fn item_id_for_call_path(
 
 fn contract_method_name(call: &Spanned<HirCallExpression>) -> Option<String> {
     match &call.node.callee.node {
-        HirExpressionNode::PathExpression(path_expr) => path_expr
-            .node
-            .path
-            .node
-            .segments
-            .last()
-            .map(|segment| segment.node.name.node.name.clone()),
-        HirExpressionNode::MemberExpression(member_expr) => {
-            Some(member_expr.node.member.node.name.clone())
+        HirExpressionNode::PathExpression(path_expr) => {
+            path_expr.node.path.node.segments.last().map(|segment| segment.node.name.node.name.clone())
         }
+        HirExpressionNode::MemberExpression(member_expr) => Some(member_expr.node.member.node.name.clone()),
         _ => None,
     }
 }
@@ -671,21 +469,17 @@ fn resolve_contract_dispatch_call(
         .iter()
         .find(|info| info.kind == ItemKind::Method && info.name == expected)
         .or_else(|| {
-            resolution.items.iter().find(|info| {
-                info.kind == ItemKind::Method && info.name.ends_with(&format!("::{method_name}"))
-            })
+            resolution
+                .items
+                .iter()
+                .find(|info| info.kind == ItemKind::Method && info.name.ends_with(&format!("::{method_name}")))
         })
         .map(|info| info.id)?;
     let method_item_id = canonical_item_id(resolution, method_item_id);
     Some(ResolvedCall {
         item_id: method_item_id,
         symbol: symbol_for_call(resolution, method_item_id),
-        mangled: method_mangled_from_receiver(
-            method_item_id,
-            receiver_type,
-            resolution,
-            type_result,
-        ),
+        mangled: method_mangled_from_receiver(method_item_id, receiver_type, resolution, type_result),
         receiver_type: Some(receiver_type),
     })
 }
@@ -730,12 +524,7 @@ fn infer_generic_type_args_for_call(
 
     let mut arg_types = Vec::with_capacity(call.node.args.len());
     for arg in &call.node.args {
-        arg_types.push(expr_type_for_call_arg(
-            arg,
-            resolution,
-            type_result,
-            source_path,
-        )?);
+        arg_types.push(expr_type_for_call_arg(arg, resolution, type_result, source_path)?);
     }
     type_result.infer_generic_args_from_call_types(item_id, &arg_types)
 }
@@ -757,12 +546,8 @@ fn infer_generic_args_from_call_expr_type(
     }
     let signature = type_result.function_signatures.get(&item_id)?;
     let mut mapping = std::collections::HashMap::new();
-    if !bind_generic_args_from_return_type(
-        &type_result.types,
-        signature.return_type,
-        expr_type,
-        &mut mapping,
-    ) || mapping.len() != expected
+    if !bind_generic_args_from_return_type(&type_result.types, signature.return_type, expr_type, &mut mapping)
+        || mapping.len() != expected
     {
         return None;
     }
@@ -788,15 +573,8 @@ fn bind_generic_args_from_return_type(
                 true
             }
         }
-        Some(TypeInfo::Applied {
-            base: param_base,
-            args: param_args,
-        }) => {
-            let Some(TypeInfo::Applied {
-                base: arg_base,
-                args: arg_args,
-            }) = types.get(arg_type)
-            else {
+        Some(TypeInfo::Applied { base: param_base, args: param_args }) => {
+            let Some(TypeInfo::Applied { base: arg_base, args: arg_args }) = types.get(arg_type) else {
                 return false;
             };
             if param_base != arg_base || param_args.len() != arg_args.len() {
@@ -843,13 +621,7 @@ fn build_function_mangled(
         return None;
     }
     let base = resolution.items.get(item_id.0)?.name.clone();
-    Some(mangle_generic_item_function(
-        item_id,
-        &base,
-        generic_args,
-        resolution,
-        type_result,
-    ))
+    Some(mangle_generic_item_function(item_id, &base, generic_args, resolution, type_result))
 }
 
 fn method_mangled_from_receiver(
@@ -864,10 +636,6 @@ fn method_mangled_from_receiver(
         Some(TypeInfo::Applied { base, .. }) => *base,
         _ => return None,
     };
-    let receiver_name = resolution
-        .items
-        .iter()
-        .find(|info| info.id == receiver_item)
-        .map(|info| info.name.as_str())?;
+    let receiver_name = resolution.items.iter().find(|info| info.id == receiver_item).map(|info| info.name.as_str())?;
     Some(mangle_method_name(receiver_name, method_name))
 }

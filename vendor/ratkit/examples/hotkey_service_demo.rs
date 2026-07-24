@@ -5,9 +5,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::services::hotkey_service::{Hotkey, HotkeyRegistry, HotkeyScope};
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct HotkeyServiceDemo {
     registry: HotkeyRegistry,
@@ -21,10 +19,7 @@ impl HotkeyServiceDemo {
         registry.register(Hotkey::new("j", "Move down").scope(HotkeyScope::Tab("Demo")));
         registry.register(Hotkey::new("k", "Move up").scope(HotkeyScope::Tab("Demo")));
 
-        Self {
-            registry,
-            scope: HotkeyScope::Tab("Demo"),
-        }
+        Self { registry, scope: HotkeyScope::Tab("Demo") }
     }
 }
 
@@ -49,17 +44,10 @@ impl CoordinatorApp for HotkeyServiceDemo {
             if hotkey.scope != self.scope && hotkey.scope != HotkeyScope::Global {
                 continue;
             }
-            lines.push(Line::from(format!(
-                "{}  - {}",
-                hotkey.key, hotkey.description
-            )));
+            lines.push(Line::from(format!("{}  - {}", hotkey.key, hotkey.description)));
         }
 
-        let body = Paragraph::new(lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" HotkeyRegistry "),
-        );
+        let body = Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" HotkeyRegistry "));
         frame.render_widget(body, area);
     }
 }

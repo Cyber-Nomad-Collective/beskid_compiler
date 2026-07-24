@@ -30,11 +30,7 @@ impl Engine {
     pub fn try_new() -> Result<Self, JitError> {
         let prefix = runtime_prefix()?;
         let target = host_runtime_target()?;
-        let profile = if cfg!(debug_assertions) {
-            RuntimeKitProfile::Debug
-        } else {
-            RuntimeKitProfile::Release
-        };
+        let profile = if cfg!(debug_assertions) { RuntimeKitProfile::Debug } else { RuntimeKitProfile::Release };
         Self::with_runtime_kit(&prefix, target, profile)
     }
 
@@ -45,14 +41,7 @@ impl Engine {
         profile: RuntimeKitProfile,
     ) -> Result<Self, JitError> {
         let jit = BeskidJitModule::new_with_runtime_kit(prefix, &target, profile, &[])?;
-        Ok(Self {
-            runtime_kit: RuntimeKitSelection {
-                prefix: prefix.to_path_buf(),
-                target,
-                profile,
-            },
-            jit,
-        })
+        Ok(Self { runtime_kit: RuntimeKitSelection { prefix: prefix.to_path_buf(), target, profile }, jit })
     }
 
     /// Exact ABI-v5 target selected by this engine's validated runtime kit.
@@ -88,8 +77,8 @@ impl Engine {
             .collect::<Vec<_>>();
 
         #[cfg(feature = "extern_dlopen")]
-        let extras = resolve_extern_symbols(&runtime_externs)
-            .map_err(|e| JitError::Isa(format!("extern resolve: {}", e)))?;
+        let extras =
+            resolve_extern_symbols(&runtime_externs).map_err(|e| JitError::Isa(format!("extern resolve: {}", e)))?;
 
         #[cfg(all(not(feature = "extern_dlopen"), unix))]
         let extras = if runtime_externs.is_empty() {
@@ -102,11 +91,7 @@ impl Engine {
         #[cfg(all(not(feature = "extern_dlopen"), not(unix)))]
         let extras: Vec<(String, *const u8)> = {
             if !runtime_externs.is_empty() {
-                let list = runtime_externs
-                    .iter()
-                    .map(|e| e.symbol.clone())
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let list = runtime_externs.iter().map(|e| e.symbol.clone()).collect::<Vec<_>>().join(", ");
                 return Err(JitError::Isa(format!(
                     "extern imports present but JIT extern resolution is unsupported on this host: {}",
                     list
@@ -144,10 +129,7 @@ impl Engine {
     /// The caller must cast the returned pointer to the exact generated function signature and
     /// must only call it while the owning JIT module remains alive.
     pub unsafe fn entrypoint_ptr(&mut self, name: &str) -> Result<*const u8, JitError> {
-        let func_id = self
-            .jit
-            .get_func_id(name)
-            .ok_or_else(|| JitError::MissingFunction(name.to_string()))?;
+        let func_id = self.jit.get_func_id(name).ok_or_else(|| JitError::MissingFunction(name.to_string()))?;
         Ok(unsafe { self.jit.get_finalized_function_ptr(func_id) })
     }
 
@@ -164,23 +146,19 @@ impl Default for Engine {
 }
 
 fn runtime_prefix() -> Result<PathBuf, JitError> {
-    beskid_abi::runtime_kit::installed_runtime_prefix()
-        .map_err(|error| JitError::RuntimeKit(error.to_string()))
+    beskid_abi::runtime_kit::installed_runtime_prefix().map_err(|error| JitError::RuntimeKit(error.to_string()))
 }
 
 /// ABI-v5 target metadata for the native JIT host.
 pub fn host_runtime_target() -> Result<TargetMetadata, JitError> {
-    beskid_abi::runtime_kit::host_runtime_target()
-        .map_err(|error| JitError::RuntimeKit(error.to_string()))
+    beskid_abi::runtime_kit::host_runtime_target().map_err(|error| JitError::RuntimeKit(error.to_string()))
 }
 
 /// Resolve extern symbols from libraries already mapped into this process (libc, pthread, …).
 ///
 /// Used for JIT runs on Unix hosts where the dynamic linker has already loaded standard libraries.
 #[cfg(all(not(feature = "extern_dlopen"), unix))]
-fn resolve_process_extern_symbols(
-    imports: &[ExternImport],
-) -> Result<Vec<(String, *const u8)>, String> {
+fn resolve_process_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(String, *const u8)>, String> {
     use std::ffi::{CStr, CString};
     use std::os::raw::{c_char, c_void};
 
@@ -193,8 +171,7 @@ fn resolve_process_extern_symbols(
 
     let mut result = Vec::with_capacity(imports.len());
     for imp in imports {
-        let c_sym =
-            CString::new(imp.symbol.as_str()).map_err(|_| format!("bad symbol: {}", imp.symbol))?;
+        let c_sym = CString::new(imp.symbol.as_str()).map_err(|_| format!("bad symbol: {}", imp.symbol))?;
         let addr = unsafe { dlsym(RTLD_DEFAULT, c_sym.as_ptr()) };
         if addr.is_null() {
             let err = unsafe { CStr::from_ptr(dlerror()) };
@@ -222,10 +199,8 @@ static SECURITY_TEST: OnceLock<Mutex<(Option<Vec<String>>, Option<Vec<String>>)>
 
 #[cfg(feature = "extern_dlopen")]
 fn caches() -> &'static ExternCaches {
-    EXTERN_CACHES.get_or_init(|| ExternCaches {
-        libs: Mutex::new(Default::default()),
-        symbols: Mutex::new(Default::default()),
-    })
+    EXTERN_CACHES
+        .get_or_init(|| ExternCaches { libs: Mutex::new(Default::default()), symbols: Mutex::new(Default::default()) })
 }
 
 #[cfg(feature = "extern_dlopen")]
@@ -255,24 +230,14 @@ fn resolve_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(String, *cons
     // BESKID_EXTERN_DENY:  comma-separated patterns; matches are denied
     // Pattern forms: "lib:symbol", "lib:*", "*:symbol", or just "symbol". '*' is a wildcard.
     let (allow_pats, deny_pats): (Vec<String>, Vec<String>) = if let Some(m) = SECURITY_TEST.get() {
-        let guard = m
-            .lock()
-            .map_err(|_| "extern security cache poisoned".to_string())?;
-        (
-            guard.0.clone().unwrap_or_default(),
-            guard.1.clone().unwrap_or_default(),
-        )
+        let guard = m.lock().map_err(|_| "extern security cache poisoned".to_string())?;
+        (guard.0.clone().unwrap_or_default(), guard.1.clone().unwrap_or_default())
     } else {
         let allow = std::env::var("BESKID_EXTERN_ALLOW").ok();
         let deny = std::env::var("BESKID_EXTERN_DENY").ok();
         let parse = |s: Option<String>| -> Vec<String> {
             s.as_deref()
-                .map(|s| {
-                    s.split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect()
-                })
+                .map(|s| s.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
                 .unwrap_or_default()
         };
         (parse(allow), parse(deny))
@@ -289,12 +254,7 @@ fn resolve_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(String, *cons
         }
         pat == text
     }
-    fn allow_deny_check(
-        allow: &[String],
-        deny: &[String],
-        lib: &str,
-        sym: &str,
-    ) -> Result<(), String> {
+    fn allow_deny_check(allow: &[String], deny: &[String], lib: &str, sym: &str) -> Result<(), String> {
         let matches_pat = |p: &str| -> bool {
             if let Some(colon) = p.find(':') {
                 let (lp, sp) = p.split_at(colon);
@@ -313,14 +273,8 @@ fn resolve_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(String, *cons
         Ok(())
     }
     let caches = caches();
-    let mut libs_guard = caches
-        .libs
-        .lock()
-        .map_err(|_| "extern cache poisoned (libs)".to_string())?;
-    let mut syms_guard = caches
-        .symbols
-        .lock()
-        .map_err(|_| "extern cache poisoned (symbols)".to_string())?;
+    let mut libs_guard = caches.libs.lock().map_err(|_| "extern cache poisoned (libs)".to_string())?;
+    let mut syms_guard = caches.symbols.lock().map_err(|_| "extern cache poisoned (symbols)".to_string())?;
 
     for imp in imports {
         let Some(lib) = imp.library.as_ref() else {
@@ -346,8 +300,7 @@ fn resolve_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(String, *cons
             h
         };
 
-        let c_sym =
-            CString::new(imp.symbol.as_str()).map_err(|_| format!("bad symbol: {}", imp.symbol))?;
+        let c_sym = CString::new(imp.symbol.as_str()).map_err(|_| format!("bad symbol: {}", imp.symbol))?;
         let addr = unsafe { dlsym(handle, c_sym.as_ptr()) };
         if addr.is_null() {
             let err = unsafe { CStr::from_ptr(dlerror()) };
@@ -366,12 +319,7 @@ pub fn set_security_policies_for_tests(allow: Option<&str>, deny: Option<&str>) 
     let m = SECURITY_TEST.get_or_init(|| Mutex::new((None, None)));
     let mut guard = m.lock().unwrap();
     let parse = |s: Option<&str>| -> Option<Vec<String>> {
-        s.map(|v| {
-            v.split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        })
+        s.map(|v| v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
     };
     guard.0 = parse(allow);
     guard.1 = parse(deny);

@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use beskid_isle::{
-    AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, LoweringErrorKind, NodeFacts,
-    NodeKind, StringInterner, StringMaterializationError,
+    AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, LoweringErrorKind, NodeFacts, NodeKind,
+    StringInterner, StringMaterializationError,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{InstBuilder, UserFuncName, Value, types};
@@ -64,9 +64,7 @@ impl StringInterner for ModuleStringInterner {
             .map_err(|_| StringMaterializationError::Artifact("define literal data"))?;
         let global = self.module.declare_data_in_func(data, builder.func);
         self.interned.push(text.to_owned());
-        Ok(builder
-            .ins()
-            .global_value(self.module.isa().pointer_type(), global))
+        Ok(builder.ins().global_value(self.module.isa().pointer_type(), global))
     }
 }
 
@@ -79,19 +77,14 @@ impl StringInterner for FailingStringInterner {
         _key: AstNodeKey,
         _text: &str,
     ) -> Result<Value, StringMaterializationError> {
-        Err(StringMaterializationError::DispatchEmission(
-            "dispatch call result",
-        ))
+        Err(StringMaterializationError::DispatchEmission("dispatch call result"))
     }
 }
 
 #[test]
 fn string_rule_interns_data_and_emits_verified_stock_clif() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let mut interner = ModuleStringInterner {
         module: JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names())),
         interned: Vec::new(),
@@ -102,10 +95,7 @@ fn string_rule_interns_data_and_emits_verified_stock_clif() {
         generation: SyntaxGenerationId(7),
         node: AstNodeId(1),
     };
-    let facts = StringFacts {
-        key,
-        text: "Beskid".to_owned(),
-    };
+    let facts = StringFacts { key, text: "Beskid".to_owned() };
     let emitter = FunctionEmitter::new(isa.as_ref());
     let function = emitter
         .emit_expression_with_string_interner(
@@ -125,20 +115,14 @@ fn string_rule_interns_data_and_emits_verified_stock_clif() {
 #[test]
 fn string_materialization_failure_is_a_specific_lowering_error() {
     let flags = settings::Flags::new(settings::builder());
-    let isa = cranelift_codegen::isa::lookup(Triple::host())
-        .expect("host ISA")
-        .finish(flags)
-        .expect("host flags");
+    let isa = cranelift_codegen::isa::lookup(Triple::host()).expect("host ISA").finish(flags).expect("host flags");
     let db = BeskidDatabase::default();
     let key = AstNodeKey {
         unit: SourceUnitId::new(&db, PathBuf::from("/tmp/StringFailure.bd")),
         generation: SyntaxGenerationId(8),
         node: AstNodeId(1),
     };
-    let facts = StringFacts {
-        key,
-        text: "Beskid".to_owned(),
-    };
+    let facts = StringFacts { key, text: "Beskid".to_owned() };
     let error = FunctionEmitter::new(isa.as_ref())
         .emit_expression_with_string_interner(
             UserFuncName::user(0, 11),
@@ -154,8 +138,6 @@ fn string_materialization_failure_is_a_specific_lowering_error() {
     };
     assert_eq!(
         error.kind(),
-        LoweringErrorKind::StringMaterialization(StringMaterializationError::DispatchEmission(
-            "dispatch call result",
-        )),
+        LoweringErrorKind::StringMaterialization(StringMaterializationError::DispatchEmission("dispatch call result",)),
     );
 }

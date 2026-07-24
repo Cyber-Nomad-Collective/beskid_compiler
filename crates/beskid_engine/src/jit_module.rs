@@ -57,9 +57,7 @@ impl From<HostError> for JitError {
     fn from(value: HostError) -> Self {
         match value {
             HostError::MissingSymbol(name) => JitError::MissingFunction(name),
-            HostError::InvalidGlobalValue => {
-                JitError::Isa("invalid global value for extern data symbol".to_owned())
-            }
+            HostError::InvalidGlobalValue => JitError::Isa("invalid global value for extern data symbol".to_owned()),
         }
     }
 }
@@ -91,10 +89,7 @@ impl BeskidJitModule {
         extras: &[(String, *const u8)],
     ) -> Result<Self, JitError> {
         let runtime = JitRuntimeKit::load(prefix, target, profile).map_err(JitError::RuntimeKit)?;
-        if let Some((name, _)) = extras
-            .iter()
-            .find(|(name, _)| runtime.metadata().export_allowlist.contains(name))
-        {
+        if let Some((name, _)) = extras.iter().find(|(name, _)| runtime.metadata().export_allowlist.contains(name)) {
             return Err(JitError::RuntimeKit(format!(
                 "external symbol `{name}` cannot override an ABI-v5 runtime export"
             )));
@@ -137,18 +132,8 @@ impl BeskidJitModule {
             self.builtins_declared = true;
         }
 
-        declare_user_functions(
-            &mut self.module,
-            artifact,
-            Linkage::Local,
-            &mut self.func_ids,
-        )?;
-        declare_exact_runtime_imports(
-            &mut self.module,
-            artifact,
-            &self.exact_symbols,
-            &mut self.func_ids,
-        )?;
+        declare_user_functions(&mut self.module, artifact, Linkage::Local, &mut self.func_ids)?;
+        declare_exact_runtime_imports(&mut self.module, artifact, &self.exact_symbols, &mut self.func_ids)?;
         declare_validated_extern_imports(&mut self.module, artifact, &mut self.func_ids)?;
 
         emit_string_literals(&mut self.module, artifact)?;
@@ -167,18 +152,10 @@ impl BeskidJitModule {
             remap_testcase_externals(&self.module, &mut ctx, &self.func_ids)?;
             self.module.define_function(func_id, &mut ctx)?;
             self.module.clear_context(&mut ctx);
-            emit_work_unit(
-                pipeline,
-                JIT_EMIT,
-                (index as u64) + 1,
-                total,
-                function.name.clone(),
-            );
+            emit_work_unit(pipeline, JIT_EMIT, (index as u64) + 1, total, function.name.clone());
         }
 
-        observe_phase_result(pipeline, JIT_FINALIZE, || {
-            self.module.finalize_definitions().map_err(JitError::from)
-        })?;
+        observe_phase_result(pipeline, JIT_FINALIZE, || self.module.finalize_definitions().map_err(JitError::from))?;
         Ok(())
     }
 
@@ -224,11 +201,8 @@ fn declare_exact_runtime_imports(
                 continue;
             }
             let signature = function.function.dfg.signatures[external.signature].clone();
-            beskid_codegen::cranelift_host::validate_ffi_signature(
-                &signature,
-                module.isa().pointer_type(),
-            )
-            .map_err(JitError::Isa)?;
+            beskid_codegen::cranelift_host::validate_ffi_signature(&signature, module.isa().pointer_type())
+                .map_err(JitError::Isa)?;
             let id = module.declare_function(symbol.as_ref(), Linkage::Import, &signature)?;
             func_ids.insert(symbol.into_owned(), id);
         }
@@ -236,15 +210,8 @@ fn declare_exact_runtime_imports(
     Ok(())
 }
 
-fn validate_exact_symbol_references(
-    artifact: &CodegenArtifact,
-    approved: &HashSet<String>,
-) -> Result<(), JitError> {
-    let defined = artifact
-        .functions
-        .iter()
-        .map(|function| function.name.as_str())
-        .collect::<HashSet<_>>();
+fn validate_exact_symbol_references(artifact: &CodegenArtifact, approved: &HashSet<String>) -> Result<(), JitError> {
+    let defined = artifact.functions.iter().map(|function| function.name.as_str()).collect::<HashSet<_>>();
     for function in &artifact.functions {
         for (_, external) in function.function.dfg.ext_funcs.iter() {
             let cranelift_codegen::ir::ExternalName::TestCase(name) = &external.name else {
@@ -281,156 +248,50 @@ fn process_linked_soft_builtins() -> Vec<(String, *const u8)> {
     // Keep in sync with `beskid_runtime_bridge` link_anchor / `BUILTIN_SPECS`.
     vec![
         ("alloc".into(), beskid_runtime::alloc as *const u8),
-        (
-            "beskid_register_callbacks".into(),
-            beskid_runtime::beskid_register_callbacks as *const u8,
-        ),
-        (
-            "beskid_register_handlers".into(),
-            beskid_runtime::beskid_register_handlers as *const u8,
-        ),
-        (
-            "beskid_runtime_abi_version".into(),
-            beskid_runtime::beskid_runtime_abi_version as *const u8,
-        ),
-        (
-            "composition_bind_plural".into(),
-            beskid_runtime::composition_bind_plural as *const u8,
-        ),
-        (
-            "composition_container_create".into(),
-            beskid_runtime::composition_container_create as *const u8,
-        ),
-        (
-            "composition_container_drop".into(),
-            beskid_runtime::composition_container_drop as *const u8,
-        ),
-        (
-            "composition_launch".into(),
-            beskid_runtime::composition_launch as *const u8,
-        ),
-        (
-            "composition_register".into(),
-            beskid_runtime::composition_register as *const u8,
-        ),
-        (
-            "composition_resolve".into(),
-            beskid_runtime::composition_resolve as *const u8,
-        ),
-        (
-            "composition_resolve_plural".into(),
-            beskid_runtime::composition_resolve_plural as *const u8,
-        ),
-        (
-            "composition_scope_depth".into(),
-            beskid_runtime::composition_scope_depth as *const u8,
-        ),
-        (
-            "composition_scope_enter".into(),
-            beskid_runtime::composition_scope_enter as *const u8,
-        ),
-        (
-            "composition_scope_leave".into(),
-            beskid_runtime::composition_scope_leave as *const u8,
-        ),
-        (
-            "composition_shutdown".into(),
-            beskid_runtime::composition_shutdown as *const u8,
-        ),
-        (
-            "dynamic_cast_checked".into(),
-            beskid_runtime::dynamic_cast_checked as *const u8,
-        ),
-        (
-            "dynamic_cell_create".into(),
-            beskid_runtime::dynamic_cell_create as *const u8,
-        ),
-        (
-            "dynamic_cell_wrap".into(),
-            beskid_runtime::dynamic_cell_wrap as *const u8,
-        ),
-        (
-            "dynamic_map_aot".into(),
-            beskid_runtime::dynamic_map_aot as *const u8,
-        ),
-        (
-            "dynamic_map_fallback".into(),
-            beskid_runtime::dynamic_map_fallback as *const u8,
-        ),
-        (
-            "dynamic_object_alloc".into(),
-            beskid_runtime::dynamic_object_alloc as *const u8,
-        ),
-        (
-            "fiber_yield".into(),
-            beskid_runtime::fiber_yield as *const u8,
-        ),
-        (
-            "gc_register_root".into(),
-            beskid_runtime::gc_register_root as *const u8,
-        ),
-        (
-            "gc_root_handle".into(),
-            beskid_runtime::gc_root_handle as *const u8,
-        ),
-        (
-            "gc_unregister_root".into(),
-            beskid_runtime::gc_unregister_root as *const u8,
-        ),
-        (
-            "gc_unroot_handle".into(),
-            beskid_runtime::gc_unroot_handle as *const u8,
-        ),
-        (
-            "gc_write_barrier".into(),
-            beskid_runtime::gc_write_barrier as *const u8,
-        ),
-        (
-            "interop_dispatch_ptr".into(),
-            beskid_runtime::interop_dispatch_ptr as *const u8,
-        ),
-        (
-            "interop_dispatch_unit".into(),
-            beskid_runtime::interop_dispatch_unit as *const u8,
-        ),
-        (
-            "interop_dispatch_usize".into(),
-            beskid_runtime::interop_dispatch_usize as *const u8,
-        ),
-        (
-            "interop_dispatch_i64".into(),
-            beskid_runtime::interop_dispatch_i64 as *const u8,
-        ),
+        ("beskid_register_callbacks".into(), beskid_runtime::beskid_register_callbacks as *const u8),
+        ("beskid_register_handlers".into(), beskid_runtime::beskid_register_handlers as *const u8),
+        ("beskid_runtime_abi_version".into(), beskid_runtime::beskid_runtime_abi_version as *const u8),
+        ("composition_bind_plural".into(), beskid_runtime::composition_bind_plural as *const u8),
+        ("composition_container_create".into(), beskid_runtime::composition_container_create as *const u8),
+        ("composition_container_drop".into(), beskid_runtime::composition_container_drop as *const u8),
+        ("composition_launch".into(), beskid_runtime::composition_launch as *const u8),
+        ("composition_register".into(), beskid_runtime::composition_register as *const u8),
+        ("composition_resolve".into(), beskid_runtime::composition_resolve as *const u8),
+        ("composition_resolve_plural".into(), beskid_runtime::composition_resolve_plural as *const u8),
+        ("composition_scope_depth".into(), beskid_runtime::composition_scope_depth as *const u8),
+        ("composition_scope_enter".into(), beskid_runtime::composition_scope_enter as *const u8),
+        ("composition_scope_leave".into(), beskid_runtime::composition_scope_leave as *const u8),
+        ("composition_shutdown".into(), beskid_runtime::composition_shutdown as *const u8),
+        ("dynamic_cast_checked".into(), beskid_runtime::dynamic_cast_checked as *const u8),
+        ("dynamic_cell_create".into(), beskid_runtime::dynamic_cell_create as *const u8),
+        ("dynamic_cell_wrap".into(), beskid_runtime::dynamic_cell_wrap as *const u8),
+        ("dynamic_map_aot".into(), beskid_runtime::dynamic_map_aot as *const u8),
+        ("dynamic_map_fallback".into(), beskid_runtime::dynamic_map_fallback as *const u8),
+        ("dynamic_object_alloc".into(), beskid_runtime::dynamic_object_alloc as *const u8),
+        ("fiber_yield".into(), beskid_runtime::fiber_yield as *const u8),
+        ("gc_register_root".into(), beskid_runtime::gc_register_root as *const u8),
+        ("gc_root_handle".into(), beskid_runtime::gc_root_handle as *const u8),
+        ("gc_unregister_root".into(), beskid_runtime::gc_unregister_root as *const u8),
+        ("gc_unroot_handle".into(), beskid_runtime::gc_unroot_handle as *const u8),
+        ("gc_write_barrier".into(), beskid_runtime::gc_write_barrier as *const u8),
+        ("interop_dispatch_ptr".into(), beskid_runtime::interop_dispatch_ptr as *const u8),
+        ("interop_dispatch_unit".into(), beskid_runtime::interop_dispatch_unit as *const u8),
+        ("interop_dispatch_usize".into(), beskid_runtime::interop_dispatch_usize as *const u8),
+        ("interop_dispatch_i64".into(), beskid_runtime::interop_dispatch_i64 as *const u8),
         ("panic".into(), beskid_runtime::panic as *const u8),
         ("panic_str".into(), beskid_runtime::panic_str as *const u8),
-        (
-            "syscall_read".into(),
-            beskid_runtime::builtins::syscall_read as *const u8,
-        ),
-        (
-            "syscall_read_bytes".into(),
-            beskid_runtime::builtins::syscall_read_bytes as *const u8,
-        ),
-        (
-            "syscall_write".into(),
-            beskid_runtime::syscall_write as *const u8,
-        ),
-        (
-            "syscall_write_bytes".into(),
-            beskid_runtime::builtins::syscall_write_bytes as *const u8,
-        ),
-        (
-            "runtime_preempt_check".into(),
-            beskid_runtime::runtime_preempt_check as *const u8,
-        ),
+        ("syscall_read".into(), beskid_runtime::builtins::syscall_read as *const u8),
+        ("syscall_read_bytes".into(), beskid_runtime::builtins::syscall_read_bytes as *const u8),
+        ("syscall_write".into(), beskid_runtime::syscall_write as *const u8),
+        ("syscall_write_bytes".into(), beskid_runtime::builtins::syscall_write_bytes as *const u8),
+        ("runtime_preempt_check".into(), beskid_runtime::runtime_preempt_check as *const u8),
     ]
 }
 
 fn new_builder(extras: &[(String, *const u8)]) -> Result<JITBuilder, JitError> {
     let isa_builder = cranelift_native::builder().map_err(|err| JitError::Isa(err.to_string()))?;
-    let isa = isa_builder
-        .finish(settings::Flags::new(settings::builder()))
-        .map_err(|err| JitError::Isa(err.to_string()))?;
+    let isa =
+        isa_builder.finish(settings::Flags::new(settings::builder())).map_err(|err| JitError::Isa(err.to_string()))?;
     let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
     for (sym, addr) in extras {
         builder.symbol(sym, *addr);

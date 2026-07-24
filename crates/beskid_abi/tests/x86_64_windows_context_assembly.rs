@@ -11,14 +11,8 @@ struct TempDir(PathBuf);
 
 impl TempDir {
     fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "beskid-windows-context-{}-{nonce}",
-            std::process::id()
-        ));
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let path = std::env::temp_dir().join(format!("beskid-windows-context-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         Self(path)
     }
@@ -31,10 +25,7 @@ impl Drop for TempDir {
 }
 
 fn target() -> TargetMetadata {
-    TargetMetadata::supported()
-        .into_iter()
-        .find(|target| target.triple.as_str() == "x86_64-pc-windows-msvc")
-        .unwrap()
+    TargetMetadata::supported().into_iter().find(|target| target.triple.as_str() == "x86_64-pc-windows-msvc").unwrap()
 }
 
 fn source() -> PathBuf {
@@ -43,11 +34,7 @@ fn source() -> PathBuf {
 
 fn llvm_tool(name: &str) -> PathBuf {
     let homebrew = Path::new("/opt/homebrew/opt/llvm/bin").join(name);
-    if homebrew.is_file() {
-        homebrew
-    } else {
-        PathBuf::from(name)
-    }
+    if homebrew.is_file() { homebrew } else { PathBuf::from(name) }
 }
 
 fn llvm_tool_or_skip(name: &str) -> Option<PathBuf> {
@@ -69,11 +56,7 @@ fn prepare_include(temp: &Path) {
 
 fn output(command: &mut Command) -> std::process::Output {
     let output = command.output().unwrap();
-    assert!(
-        output.status.success(),
-        "command failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert!(output.status.success(), "command failed: {}", String::from_utf8_lossy(&output.stderr));
     output
 }
 
@@ -94,44 +77,23 @@ fn coff_object_exports_exactly_two_symbols_and_contains_no_unwind_sections() {
     let temp = TempDir::new();
     prepare_include(&temp.0);
     let object = temp.0.join("context.obj");
-    output(
-        Command::new(llvm_ml)
-            .args(["--m64", "/c", "/X", "/Fo"])
-            .arg(&object)
-            .arg("/I")
-            .arg(&temp.0)
-            .arg(source()),
-    );
+    output(Command::new(llvm_ml).args(["--m64", "/c", "/X", "/Fo"]).arg(&object).arg("/I").arg(&temp.0).arg(source()));
 
-    let mut symbols = String::from_utf8(
-        output(
-            Command::new(llvm_nm)
-                .args(["-g", "--defined-only", "-P"])
-                .arg(&object),
-        )
-        .stdout,
-    )
-    .unwrap()
-    .lines()
-    .filter_map(|line| {
-        let mut fields = line.split_whitespace();
-        let name = fields.next()?;
-        let kind = fields.next()?;
-        matches!(kind, "T" | "t").then(|| name.to_owned())
-    })
-    .collect::<Vec<_>>();
+    let mut symbols =
+        String::from_utf8(output(Command::new(llvm_nm).args(["-g", "--defined-only", "-P"]).arg(&object)).stdout)
+            .unwrap()
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split_whitespace();
+                let name = fields.next()?;
+                let kind = fields.next()?;
+                matches!(kind, "T" | "t").then(|| name.to_owned())
+            })
+            .collect::<Vec<_>>();
     symbols.sort();
-    assert_eq!(
-        symbols,
-        [
-            "beskid_arch_v5_context_init".to_owned(),
-            "beskid_arch_v5_context_switch".to_owned(),
-        ]
-    );
+    assert_eq!(symbols, ["beskid_arch_v5_context_init".to_owned(), "beskid_arch_v5_context_switch".to_owned(),]);
 
-    let sections =
-        String::from_utf8(output(Command::new(llvm_objdump).arg("-h").arg(&object)).stdout)
-            .unwrap();
+    let sections = String::from_utf8(output(Command::new(llvm_objdump).arg("-h").arg(&object)).stdout).unwrap();
     assert!(!sections.contains(".pdata"));
     assert!(!sections.contains(".xdata"));
 }
@@ -149,9 +111,7 @@ fn masm_source_saves_the_complete_manifest_preserved_register_set() {
             register.to_ascii_uppercase()
         )));
     }
-    for register in [
-        "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
-    ] {
+    for register in ["xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15"] {
         assert!(source.contains(&format!(
             "movdqu [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_{}_OFFSET], {register}",
             register.to_ascii_uppercase()

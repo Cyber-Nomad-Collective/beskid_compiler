@@ -3,8 +3,7 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    AggregateFieldShape, AstNodeKey, SemanticTypeId, aggregate_layout,
-    aggregate_literal_declaration,
+    AggregateFieldShape, AstNodeKey, SemanticTypeId, aggregate_layout, aggregate_literal_declaration,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -35,15 +34,9 @@ pub fn emit_aggregate_static_data<M: Module>(
     module: &mut M,
     plan: &AggregateStaticPlan,
 ) -> ModuleResult<(DataId, DataId, DataId)> {
-    let pointer_map =
-        module.declare_data(&plan.pointer_map_symbol, Linkage::Local, false, false)?;
+    let pointer_map = module.declare_data(&plan.pointer_map_symbol, Linkage::Local, false, false)?;
     let descriptor = module.declare_data(&plan.descriptor_symbol, Linkage::Local, false, false)?;
-    let request = module.declare_data(
-        &plan.allocation_request_symbol,
-        Linkage::Local,
-        false,
-        false,
-    )?;
+    let request = module.declare_data(&plan.allocation_request_symbol, Linkage::Local, false, false)?;
     let mut pointer_map_bytes = Vec::with_capacity(plan.pointer_map_offsets.len().max(1) * 8);
     if plan.pointer_map_offsets.is_empty() {
         pointer_map_bytes.extend_from_slice(&0u64.to_le_bytes());
@@ -61,11 +54,8 @@ pub fn emit_aggregate_static_data<M: Module>(
     write_word(
         &mut descriptor_bytes,
         24,
-        u64::try_from(plan.pointer_map_offsets.len()).map_err(|_| {
-            ModuleError::Backend(anyhow::anyhow!(
-                "aggregate pointer-map length exceeds ABI word"
-            ))
-        })?,
+        u64::try_from(plan.pointer_map_offsets.len())
+            .map_err(|_| ModuleError::Backend(anyhow::anyhow!("aggregate pointer-map length exceeds ABI word")))?,
     )?;
     write_word(&mut descriptor_bytes, 32, 1)?; // flags bit 0 = IS_AGGREGATE
     let mut descriptor_data = DataDescription::new();
@@ -85,36 +75,20 @@ pub fn emit_aggregate_static_data<M: Module>(
 }
 
 fn write_word(bytes: &mut [u8], offset: usize, value: u64) -> Result<(), ModuleError> {
-    let destination = bytes.get_mut(offset..offset + 8).ok_or_else(|| {
-        ModuleError::Backend(anyhow::anyhow!("aggregate static-data layout overflow"))
-    })?;
+    let destination = bytes
+        .get_mut(offset..offset + 8)
+        .ok_or_else(|| ModuleError::Backend(anyhow::anyhow!("aggregate static-data layout overflow")))?;
     destination.copy_from_slice(&value.to_le_bytes());
     Ok(())
 }
 
 impl CodegenInput<'_> {
     pub fn aggregate_static_plan(&self, literal: AstNodeKey) -> Option<AggregateStaticPlan> {
-        let declaration = aggregate_literal_declaration(self.database(), literal)
-            .ok()
-            .flatten()?;
-        let aggregate = aggregate_layout(self.database(), declaration)
-            .ok()
-            .flatten()?;
-        let header = self
-            .abi_manifest()
-            .layouts
-            .iter()
-            .find(|layout| layout.name == "BeskidObjectHeader")?;
-        let descriptor = self
-            .abi_manifest()
-            .layouts
-            .iter()
-            .find(|layout| layout.name == "BeskidTypeDescriptor")?;
-        let request = self
-            .abi_manifest()
-            .layouts
-            .iter()
-            .find(|layout| layout.name == "BeskidAllocationRequest")?;
+        let declaration = aggregate_literal_declaration(self.database(), literal).ok().flatten()?;
+        let aggregate = aggregate_layout(self.database(), declaration).ok().flatten()?;
+        let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
+        let descriptor = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidTypeDescriptor")?;
+        let request = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAllocationRequest")?;
         if header.size < 16
             || !valid_alignment(header.alignment)
             || descriptor.size != 40
@@ -133,8 +107,7 @@ impl CodegenInput<'_> {
                 AggregateFieldShape::Scalar(semantic) => *semantic,
                 AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
             };
-            let (field_size, field_alignment, pointer) =
-                scalar_layout(self.target().pointer_width, abi_type)?;
+            let (field_size, field_alignment, pointer) = scalar_layout(self.target().pointer_width, abi_type)?;
             size = align_to(size, field_alignment)?;
             let field_offset = size;
             size = size.checked_add(field_size)?;
@@ -142,10 +115,7 @@ impl CodegenInput<'_> {
             if pointer {
                 pointer_map_offsets.push(field_offset);
             }
-            fields.push(AggregateStaticField {
-                abi_type,
-                field_offset,
-            });
+            fields.push(AggregateStaticField { abi_type, field_offset });
         }
         let object_size = align_to(size, alignment)?;
         let unit = self
@@ -184,9 +154,7 @@ fn valid_alignment(value: u64) -> bool {
 }
 fn align_to(value: u64, alignment: u64) -> Option<u64> {
     valid_alignment(alignment).then_some(())?;
-    value
-        .checked_add(alignment - 1)
-        .map(|value| value & !(alignment - 1))
+    value.checked_add(alignment - 1).map(|value| value & !(alignment - 1))
 }
 fn paths_match(left: &std::path::Path, right: &std::path::Path) -> bool {
     left.canonicalize().unwrap_or_else(|_| left.to_path_buf())

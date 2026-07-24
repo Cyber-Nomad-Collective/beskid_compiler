@@ -17,20 +17,9 @@ impl ExtensionWidgetDescriptor {
         description: &'static str,
         default_grow: Option<u32>,
     ) -> Self {
-        Self {
-            id,
-            title,
-            icon,
-            description,
-            default_grow,
-        }
+        Self { id, title, icon, description, default_grow }
     }
 }
 
-pub const WIDGET_CATALOG: &[ExtensionWidgetDescriptor] = &[ExtensionWidgetDescriptor::new(
-    "hi.hello",
-    "Hello",
-    "★",
-    "beskid_hi extension demo tile",
-    Some(1),
-)];
+pub const WIDGET_CATALOG: &[ExtensionWidgetDescriptor] =
+    &[ExtensionWidgetDescriptor::new("hi.hello", "Hello", "★", "beskid_hi extension demo tile", Some(1))];

@@ -38,11 +38,6 @@ impl FileWatcher {
             Config::default().with_poll_interval(Duration::from_millis(config.debounce_ms)),
         )?;
 
-        Ok(Self {
-            watcher,
-            rx,
-            config,
-            changed_paths: Vec::new(),
-        })
+        Ok(Self { watcher, rx, config, changed_paths: Vec::new() })
     }
 }

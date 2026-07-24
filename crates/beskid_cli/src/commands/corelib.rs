@@ -24,10 +24,7 @@ fn generate_corelib_project(output: &Path) -> Result<()> {
     validate_template_layout(&template_root)?;
 
     if is_same_location(&template_root, output) {
-        println!(
-            "Using checked-in Beskid corelib project at {}",
-            template_root.display()
-        );
+        println!("Using checked-in Beskid corelib project at {}", template_root.display());
         return Ok(());
     }
 
@@ -35,10 +32,7 @@ fn generate_corelib_project(output: &Path) -> Result<()> {
 
     println!(
         "Generated Beskid corelib project at {}",
-        output
-            .canonicalize()
-            .unwrap_or_else(|_| output.to_path_buf())
-            .display()
+        output.canonicalize().unwrap_or_else(|_| output.to_path_buf()).display()
     );
     Ok(())
 }
@@ -53,10 +47,7 @@ fn validate_template_layout(template_root: &Path) -> Result<()> {
 
     let manifest = template_root.join("beskid_corelib/corelib.bproj");
     if !manifest.is_file() {
-        anyhow::bail!(
-            "missing corelib manifest template at `{}`",
-            manifest.display()
-        );
+        anyhow::bail!("missing corelib manifest template at `{}`", manifest.display());
     }
 
     let _ = workspace;
@@ -68,12 +59,7 @@ fn discover_workspace_manifest(root: &Path) -> Option<PathBuf> {
         let mut matches = entries
             .filter_map(Result::ok)
             .map(|entry| entry.path())
-            .filter(|path| {
-                path.is_file()
-                    && path
-                        .extension()
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case("bws"))
-            })
+            .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bws")))
             .collect::<Vec<_>>();
         matches.sort();
         matches.into_iter().next()
@@ -88,12 +74,9 @@ fn is_same_location(left: &Path, right: &Path) -> bool {
 }
 
 fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
-    fs::create_dir_all(destination)
-        .with_context(|| format!("create directory `{}`", destination.display()))?;
+    fs::create_dir_all(destination).with_context(|| format!("create directory `{}`", destination.display()))?;
 
-    for entry in fs::read_dir(source)
-        .with_context(|| format!("read template directory `{}`", source.display()))?
-    {
+    for entry in fs::read_dir(source).with_context(|| format!("read template directory `{}`", source.display()))? {
         let entry = entry.with_context(|| format!("read entry under `{}`", source.display()))?;
         let source_path = entry.path();
         let destination_path = destination.join(entry.file_name());
@@ -101,13 +84,8 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
         if source_path.is_dir() {
             copy_dir_recursive(&source_path, &destination_path)?;
         } else {
-            fs::copy(&source_path, &destination_path).with_context(|| {
-                format!(
-                    "copy `{}` to `{}`",
-                    source_path.display(),
-                    destination_path.display()
-                )
-            })?;
+            fs::copy(&source_path, &destination_path)
+                .with_context(|| format!("copy `{}` to `{}`", source_path.display(), destination_path.display()))?;
         }
     }
 

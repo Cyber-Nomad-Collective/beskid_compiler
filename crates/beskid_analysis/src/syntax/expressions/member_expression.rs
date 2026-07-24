@@ -21,19 +21,10 @@ pub(crate) fn parse_member_expression(
     pair: Pair<Rule>,
 ) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
-    let member = pair
-        .into_inner()
-        .next()
-        .ok_or(ParseError::missing(Rule::Identifier))?;
+    let member = pair.into_inner().next().ok_or(ParseError::missing(Rule::Identifier))?;
     let member = Identifier::parse(member)?;
 
-    let member_expr = Spanned::new(
-        MemberExpression {
-            target: Box::new(target),
-            member,
-        },
-        span,
-    );
+    let member_expr = Spanned::new(MemberExpression { target: Box::new(target), member }, span);
 
     Ok(Spanned::new(Expression::Member(member_expr), span))
 }

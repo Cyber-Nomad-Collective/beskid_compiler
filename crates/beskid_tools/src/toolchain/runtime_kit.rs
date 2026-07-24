@@ -48,52 +48,32 @@ pub struct RuntimeKitBuildOptions {
 /// Build and atomically publish the compiler-owned canonical runtime for this native host.
 /// The caller supplies only its empty destination and profile; runtime source and native library
 /// paths are constructed here, so a bridge or arbitrary archive cannot enter the ABI-v5 layout.
-pub fn build_native_host(
-    prefix: PathBuf,
-    profile: RuntimeKitProfile,
-) -> Result<ResolvedRuntimeKit> {
+pub fn build_native_host(prefix: PathBuf, profile: RuntimeKitProfile) -> Result<ResolvedRuntimeKit> {
     let target = beskid_abi::runtime_kit::host_runtime_target()
         .map_err(|error| anyhow!("unsupported ABI-v5 native host: {error}"))?;
-    let staging = std::env::temp_dir().join(format!(
-        "beskid-native-runtime-{}-{}",
-        std::process::id(),
-        profile.as_str()
-    ));
+    let staging =
+        std::env::temp_dir().join(format!("beskid-native-runtime-{}-{}", std::process::id(), profile.as_str()));
     if staging.exists() {
-        std::fs::remove_dir_all(&staging).map_err(|error| {
-            anyhow!(
-                "remove stale runtime staging {}: {error}",
-                staging.display()
-            )
-        })?;
+        std::fs::remove_dir_all(&staging)
+            .map_err(|error| anyhow!("remove stale runtime staging {}: {error}", staging.display()))?;
     }
     let authority = beskid_aot::require_canonical_host_emit_authority()
         .map_err(|error| anyhow!("canonical host emit authority: {error}"))?;
-    let pair =
-        beskid_aot::emit_host_platform_library_pair(&authority, staging.clone(), "beskid_runtime")
-            .map_err(|error| anyhow!("link canonical native runtime: {error}"))?;
+    let pair = beskid_aot::emit_host_platform_library_pair(&authority, staging.clone(), "beskid_runtime")
+        .map_err(|error| anyhow!("link canonical native runtime: {error}"))?;
     // Windows COFF kits require the companion import library beside the shared DLL.
     // Dropping `pair.shared_import_library` made `build_native_host` publish invalid
     // Windows ABI-v5 kits (`shared_import_library: None`) even when the linker emitted it.
     let shared_import_library = pair.shared_import_library;
     if target.object_format.as_str() == "coff" {
         let import = shared_import_library.as_ref().ok_or_else(|| {
-            anyhow!(
-                "Windows ABI-v5 native runtime kit for `{}` requires a COFF import library",
-                target.triple.as_str()
-            )
+            anyhow!("Windows ABI-v5 native runtime kit for `{}` requires a COFF import library", target.triple.as_str())
         })?;
         if !import.is_file() {
-            bail!(
-                "Windows ABI-v5 native runtime kit missing COFF import library at {}",
-                import.display()
-            );
+            bail!("Windows ABI-v5 native runtime kit missing COFF import library at {}", import.display());
         }
     } else if shared_import_library.is_some() {
-        bail!(
-            "non-COFF ABI-v5 target `{}` must not publish a shared import library",
-            target.triple.as_str()
-        );
+        bail!("non-COFF ABI-v5 target `{}` must not publish a shared import library", target.triple.as_str());
     }
     let result = build(RuntimeKitBuildOptions {
         prefix,
@@ -145,10 +125,7 @@ pub fn build(options: RuntimeKitBuildOptions) -> Result<ResolvedRuntimeKit> {
                 .map(|target| target.triple.as_str().to_owned())
                 .collect::<Vec<_>>()
                 .join(", ");
-            anyhow!(
-                "unsupported ABI-v5 runtime target `{}`; expected one of: {supported}",
-                options.target
-            )
+            anyhow!("unsupported ABI-v5 runtime target `{}`; expected one of: {supported}", options.target)
         })?;
     let canonical_hash = canonical_runtime_source_hash();
     let request = RuntimeKitBuildRequest {
@@ -160,8 +137,7 @@ pub fn build(options: RuntimeKitBuildOptions) -> Result<ResolvedRuntimeKit> {
         shared_library: options.shared_library,
         shared_import_library: options.shared_import_library,
     };
-    build_canonical_runtime_kit(&request)
-        .map_err(|error| anyhow!("failed to build ABI-v5 runtime kit: {error:?}"))
+    build_canonical_runtime_kit(&request).map_err(|error| anyhow!("failed to build ABI-v5 runtime kit: {error:?}"))
 }
 
 /// Publish every requested profile for one ABI-v5 target.
@@ -183,10 +159,7 @@ pub fn build_matrix(options: RuntimeKitMatrixBuildOptions) -> Result<Vec<Resolve
             RuntimeKitProfile::Release => &mut saw_release,
         };
         if std::mem::replace(seen, true) {
-            bail!(
-                "runtime-kit matrix contains duplicate {} profile",
-                artifacts.profile.as_str()
-            );
+            bail!("runtime-kit matrix contains duplicate {} profile", artifacts.profile.as_str());
         }
         verify_provenance_symbol_list(&options.target, &artifacts.provenance_symbol_list)?;
     }
@@ -198,30 +171,17 @@ pub fn build_matrix(options: RuntimeKitMatrixBuildOptions) -> Result<Vec<Resolve
         .into_iter()
         .find(|candidate| candidate.triple.as_str() == options.target)
         .ok_or_else(|| anyhow!("unsupported ABI-v5 runtime target `{}`", options.target))?;
-    let final_target_root = options
-        .prefix
-        .join("lib/beskid-runtime/abi-5")
-        .join(target.triple.as_str());
+    let final_target_root = options.prefix.join("lib/beskid-runtime/abi-5").join(target.triple.as_str());
     if final_target_root.exists() {
-        bail!(
-            "runtime-kit matrix destination already exists: {}",
-            final_target_root.display()
-        );
+        bail!("runtime-kit matrix destination already exists: {}", final_target_root.display());
     }
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
+    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
     let staging_prefix = options.prefix.join(format!(
         ".beskid-runtime-kit-matrix-{}-{}-{nonce}",
         std::process::id(),
         target.triple.as_str()
     ));
-    let profiles = options
-        .profiles
-        .iter()
-        .map(|artifacts| artifacts.profile)
-        .collect::<Vec<_>>();
+    let profiles = options.profiles.iter().map(|artifacts| artifacts.profile).collect::<Vec<_>>();
     let publish = (|| -> Result<Vec<ResolvedRuntimeKit>> {
         for artifacts in options.profiles {
             build(RuntimeKitBuildOptions {
@@ -233,30 +193,18 @@ pub fn build_matrix(options: RuntimeKitMatrixBuildOptions) -> Result<Vec<Resolve
                 shared_import_library: artifacts.shared_import_library,
             })?;
         }
-        let staged_target_root = staging_prefix
-            .join("lib/beskid-runtime/abi-5")
-            .join(target.triple.as_str());
-        let parent = final_target_root
-            .parent()
-            .expect("ABI-v5 runtime target root has a parent");
-        std::fs::create_dir_all(parent).map_err(|error| {
-            anyhow!(
-                "create ABI-v5 runtime-kit destination parent `{}`: {error}",
-                parent.display()
-            )
-        })?;
+        let staged_target_root = staging_prefix.join("lib/beskid-runtime/abi-5").join(target.triple.as_str());
+        let parent = final_target_root.parent().expect("ABI-v5 runtime target root has a parent");
+        std::fs::create_dir_all(parent)
+            .map_err(|error| anyhow!("create ABI-v5 runtime-kit destination parent `{}`: {error}", parent.display()))?;
         std::fs::rename(&staged_target_root, &final_target_root).map_err(|error| {
-            anyhow!(
-                "atomically publish ABI-v5 runtime-kit matrix `{}`: {error}",
-                final_target_root.display()
-            )
+            anyhow!("atomically publish ABI-v5 runtime-kit matrix `{}`: {error}", final_target_root.display())
         })?;
         profiles
             .into_iter()
             .map(|profile| {
-                resolve_canonical_runtime_kit(&options.prefix, &target, profile.into()).map_err(
-                    |error| anyhow!("resolve published ABI-v5 runtime-kit matrix: {error:?}"),
-                )
+                resolve_canonical_runtime_kit(&options.prefix, &target, profile.into())
+                    .map_err(|error| anyhow!("resolve published ABI-v5 runtime-kit matrix: {error:?}"))
             })
             .collect()
     })();
@@ -265,18 +213,10 @@ pub fn build_matrix(options: RuntimeKitMatrixBuildOptions) -> Result<Vec<Resolve
 }
 
 fn verify_provenance_symbol_list(target: &str, path: &std::path::Path) -> Result<()> {
-    let source = std::fs::read_to_string(path).map_err(|error| {
-        anyhow!(
-            "read ABI-v5 runtime provenance symbol list `{}`: {error}",
-            path.display()
-        )
-    })?;
-    let symbols = parse_symbol_list(&source).map_err(|error| {
-        anyhow!(
-            "parse ABI-v5 runtime provenance symbol list `{}`: {error}",
-            path.display()
-        )
-    })?;
+    let source = std::fs::read_to_string(path)
+        .map_err(|error| anyhow!("read ABI-v5 runtime provenance symbol list `{}`: {error}", path.display()))?;
+    let symbols = parse_symbol_list(&source)
+        .map_err(|error| anyhow!("parse ABI-v5 runtime provenance symbol list `{}`: {error}", path.display()))?;
     let target_metadata = TargetMetadata::supported()
         .into_iter()
         .find(|candidate| candidate.triple.as_str() == target)
@@ -284,12 +224,7 @@ fn verify_provenance_symbol_list(target: &str, path: &std::path::Path) -> Result
     RuntimeProvenanceAudit::canonical(target_metadata)
         .map_err(|error| anyhow!("derive ABI-v5 provenance audit for `{target}`: {error:?}"))?
         .verify(&symbols)
-        .map_err(|error| {
-            anyhow!(
-                "ABI-v5 runtime provenance rejected `{}`: {error}",
-                path.display()
-            )
-        })
+        .map_err(|error| anyhow!("ABI-v5 runtime provenance rejected `{}`: {error}", path.display()))
 }
 
 #[cfg(test)]
@@ -303,29 +238,20 @@ mod tests {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     fn native_host_builder_publishes_the_canonical_runtime_to_an_empty_prefix() {
         let prefix = TempDir::new("native-host-runtime-prefix");
-        let built = build_native_host(prefix.0.clone(), RuntimeKitProfile::Debug)
-            .expect("publish native host runtime kit");
+        let built =
+            build_native_host(prefix.0.clone(), RuntimeKitProfile::Debug).expect("publish native host runtime kit");
         assert!(built.static_library.is_file());
         assert!(built.shared_library.is_file());
-        assert!(
-            built.shared_import_library.is_none(),
-            "Mach-O native kits must not publish a COFF import library"
-        );
+        assert!(built.shared_import_library.is_none(), "Mach-O native kits must not publish a COFF import library");
         let output = std::process::Command::new("nm")
             .args(["-g", "--defined-only", "-j"])
             .arg(&built.static_library)
             .output()
             .expect("inspect staged static runtime archive");
-        assert!(
-            output.status.success(),
-            "nm failed for staged static runtime archive"
-        );
+        assert!(output.status.success(), "nm failed for staged static runtime archive");
         let symbols = String::from_utf8(output.stdout).expect("utf-8 nm output");
         assert!(
-            !symbols
-                .lines()
-                .map(|symbol| symbol.trim_start_matches('_'))
-                .any(|symbol| symbol == "panic"),
+            !symbols.lines().map(|symbol| symbol.trim_start_matches('_')).any(|symbol| symbol == "panic"),
             "staged static runtime archive leaked forbidden non-ABI panic symbol: {symbols}"
         );
     }
@@ -336,34 +262,18 @@ mod tests {
         let prefix = TempDir::new("native-host-windows-import-lib");
         let built = build_native_host(prefix.0.clone(), RuntimeKitProfile::Debug)
             .expect("publish Windows native host runtime kit");
-        let import = built
-            .shared_import_library
-            .as_ref()
-            .expect("Windows ABI-v5 kits must publish a COFF import library");
-        assert!(
-            import.is_file(),
-            "missing COFF import library: {}",
-            import.display()
-        );
-        assert_eq!(
-            import.file_name().and_then(|name| name.to_str()),
-            Some("beskid_runtime_import.lib")
-        );
+        let import =
+            built.shared_import_library.as_ref().expect("Windows ABI-v5 kits must publish a COFF import library");
+        assert!(import.is_file(), "missing COFF import library: {}", import.display());
+        assert_eq!(import.file_name().and_then(|name| name.to_str()), Some("beskid_runtime_import.lib"));
         assert!(built.static_library.is_file());
         assert!(built.shared_library.is_file());
     }
 
     #[test]
-    #[cfg(any(
-        all(target_os = "linux", target_arch = "x86_64"),
-        all(target_os = "macos", target_arch = "aarch64"),
-    ))]
+    #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
     fn native_host_builder_publishes_closure_exports_with_manifest_provenance_for_each_profile() {
-        let triple = if cfg!(target_os = "macos") {
-            "aarch64-apple-darwin"
-        } else {
-            "x86_64-unknown-linux-gnu"
-        };
+        let triple = if cfg!(target_os = "macos") { "aarch64-apple-darwin" } else { "x86_64-unknown-linux-gnu" };
         let target = TargetMetadata::supported()
             .into_iter()
             .find(|target| target.triple.as_str() == triple)
@@ -378,27 +288,17 @@ mod tests {
 
         for profile in [RuntimeKitProfile::Debug, RuntimeKitProfile::Release] {
             let prefix = TempDir::new(profile.as_str());
-            let built = build_native_host(prefix.0.clone(), profile)
-                .expect("publish native host runtime kit");
+            let built = build_native_host(prefix.0.clone(), profile).expect("publish native host runtime kit");
             let defined = Command::new("nm")
-                .args(if cfg!(target_os = "macos") {
-                    vec!["-gU", "-j"]
-                } else {
-                    vec!["-g", "--defined-only", "-j"]
-                })
+                .args(if cfg!(target_os = "macos") { vec!["-gU", "-j"] } else { vec!["-g", "--defined-only", "-j"] })
                 .arg(&built.static_library)
                 .output()
                 .expect("inspect staged static runtime archive");
-            assert!(
-                defined.status.success(),
-                "nm failed for static runtime archive"
-            );
+            assert!(defined.status.success(), "nm failed for static runtime archive");
             let defined = String::from_utf8(defined.stdout).expect("UTF-8 symbol list");
             for symbol in expected {
                 assert!(
-                    defined
-                        .lines()
-                        .any(|actual| actual.trim_start_matches('_') == symbol),
+                    defined.lines().any(|actual| actual.trim_start_matches('_') == symbol),
                     "{} kit omitted {symbol}: {defined}",
                     profile.as_str(),
                 );
@@ -409,10 +309,7 @@ mod tests {
                 .arg(&built.static_library)
                 .output()
                 .expect("inspect staged static runtime archive imports");
-            assert!(
-                undefined.status.success(),
-                "nm failed for static runtime archive imports"
-            );
+            assert!(undefined.status.success(), "nm failed for static runtime archive imports");
             let symbol_list = format!(
                 "target={}\n{}{}",
                 target.triple.as_str(),
@@ -483,11 +380,7 @@ mod tests {
     fn build_derives_the_canonical_runtime_source_hash() {
         let prefix = TempDir::new("canonical-source-prefix");
         let inputs = TempDir::new("canonical-source-inputs");
-        let artifacts = profile_artifacts(
-            &inputs,
-            RuntimeKitProfile::Debug,
-            "x86_64-unknown-linux-gnu",
-        );
+        let artifacts = profile_artifacts(&inputs, RuntimeKitProfile::Debug, "x86_64-unknown-linux-gnu");
         let built = build(RuntimeKitBuildOptions {
             prefix: prefix.0.clone(),
             target: "x86_64-unknown-linux-gnu".into(),
@@ -500,21 +393,13 @@ mod tests {
         assert_eq!(built.metadata.source_hash, canonical_runtime_source_hash());
     }
 
-    fn profile_artifacts(
-        inputs: &TempDir,
-        profile: RuntimeKitProfile,
-        target: &str,
-    ) -> RuntimeKitProfileArtifacts {
+    fn profile_artifacts(inputs: &TempDir, profile: RuntimeKitProfile, target: &str) -> RuntimeKitProfileArtifacts {
         let suffix = profile.as_str();
         let target = TargetMetadata::supported()
             .into_iter()
             .find(|candidate| candidate.triple.as_str() == target)
             .expect("supported matrix target");
-        let static_extension = if target.object_format.as_str() == "coff" {
-            "lib"
-        } else {
-            "a"
-        };
+        let static_extension = if target.object_format.as_str() == "coff" { "lib" } else { "a" };
         let shared_extension = match target.object_format.as_str() {
             "elf" => "so",
             "macho" => "dylib",
@@ -558,25 +443,14 @@ mod tests {
             prefix: prefix.0.clone(),
             target: "x86_64-unknown-linux-gnu".into(),
             profiles: vec![
-                profile_artifacts(
-                    &inputs,
-                    RuntimeKitProfile::Debug,
-                    "x86_64-unknown-linux-gnu",
-                ),
-                profile_artifacts(
-                    &inputs,
-                    RuntimeKitProfile::Release,
-                    "x86_64-unknown-linux-gnu",
-                ),
+                profile_artifacts(&inputs, RuntimeKitProfile::Debug, "x86_64-unknown-linux-gnu"),
+                profile_artifacts(&inputs, RuntimeKitProfile::Release, "x86_64-unknown-linux-gnu"),
             ],
         })
         .expect("publish Linux runtime-kit matrix");
         assert_eq!(built.len(), 2);
         for profile in ["debug", "release"] {
-            let root = prefix
-                .0
-                .join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu")
-                .join(profile);
+            let root = prefix.0.join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu").join(profile);
             assert!(root.join("abi.json").is_file());
             assert!(root.join("static/libbeskid_runtime.a").is_file());
             assert!(root.join("shared/libbeskid_runtime.so").is_file());
@@ -596,15 +470,8 @@ mod tests {
             ],
         })
         .expect("publish deterministic Darwin layout");
-        assert!(built.iter().all(|kit| {
-            kit.shared_library
-                .ends_with("shared/libbeskid_runtime.dylib")
-        }));
-        assert!(
-            built
-                .iter()
-                .all(|kit| kit.static_library.ends_with("static/libbeskid_runtime.a"))
-        );
+        assert!(built.iter().all(|kit| { kit.shared_library.ends_with("shared/libbeskid_runtime.dylib") }));
+        assert!(built.iter().all(|kit| kit.static_library.ends_with("static/libbeskid_runtime.a")));
     }
 
     #[test]
@@ -624,11 +491,7 @@ mod tests {
 
         assert_eq!(built.len(), 2);
         for profile in ["debug", "release"] {
-            let root = prefix
-                .0
-                .join("lib/beskid-runtime/abi-5")
-                .join(target)
-                .join(profile);
+            let root = prefix.0.join("lib/beskid-runtime/abi-5").join(target).join(profile);
             assert!(root.join("abi.json").is_file());
             assert!(root.join("static/beskid_runtime.lib").is_file());
             assert!(root.join("shared/beskid_runtime.dll").is_file());
@@ -642,11 +505,7 @@ mod tests {
         let error = build_matrix(RuntimeKitMatrixBuildOptions {
             prefix: prefix.0.clone(),
             target: "x86_64-unknown-linux-gnu".into(),
-            profiles: vec![profile_artifacts(
-                &inputs,
-                RuntimeKitProfile::Debug,
-                "x86_64-unknown-linux-gnu",
-            )],
+            profiles: vec![profile_artifacts(&inputs, RuntimeKitProfile::Debug, "x86_64-unknown-linux-gnu")],
         })
         .unwrap_err()
         .to_string();
@@ -656,16 +515,8 @@ mod tests {
             prefix: prefix.0.clone(),
             target: "x86_64-unknown-linux-gnu".into(),
             profiles: vec![
-                profile_artifacts(
-                    &inputs,
-                    RuntimeKitProfile::Debug,
-                    "x86_64-unknown-linux-gnu",
-                ),
-                profile_artifacts(
-                    &inputs,
-                    RuntimeKitProfile::Debug,
-                    "x86_64-unknown-linux-gnu",
-                ),
+                profile_artifacts(&inputs, RuntimeKitProfile::Debug, "x86_64-unknown-linux-gnu"),
+                profile_artifacts(&inputs, RuntimeKitProfile::Debug, "x86_64-unknown-linux-gnu"),
             ],
         })
         .unwrap_err()
@@ -677,21 +528,10 @@ mod tests {
     fn rejected_provenance_publishes_no_profile_from_the_matrix() {
         let prefix = TempDir::new("provenance-prefix");
         let inputs = TempDir::new("provenance-inputs");
-        let debug = profile_artifacts(
-            &inputs,
-            RuntimeKitProfile::Debug,
-            "x86_64-unknown-linux-gnu",
-        );
-        let release = profile_artifacts(
-            &inputs,
-            RuntimeKitProfile::Release,
-            "x86_64-unknown-linux-gnu",
-        );
-        fs::write(
-            &release.provenance_symbol_list,
-            "target=x86_64-unknown-linux-gnu\ndefined=beskid_runtime_bridge\n",
-        )
-        .unwrap();
+        let debug = profile_artifacts(&inputs, RuntimeKitProfile::Debug, "x86_64-unknown-linux-gnu");
+        let release = profile_artifacts(&inputs, RuntimeKitProfile::Release, "x86_64-unknown-linux-gnu");
+        fs::write(&release.provenance_symbol_list, "target=x86_64-unknown-linux-gnu\ndefined=beskid_runtime_bridge\n")
+            .unwrap();
 
         let error = build_matrix(RuntimeKitMatrixBuildOptions {
             prefix: prefix.0.clone(),
@@ -701,28 +541,15 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(error.contains("runtime provenance rejected"));
-        assert!(
-            !prefix
-                .0
-                .join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu/debug")
-                .exists()
-        );
+        assert!(!prefix.0.join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu/debug").exists());
     }
 
     #[test]
     fn failed_artifact_copy_publishes_no_profile_from_the_matrix() {
         let prefix = TempDir::new("artifact-prefix");
         let inputs = TempDir::new("artifact-inputs");
-        let debug = profile_artifacts(
-            &inputs,
-            RuntimeKitProfile::Debug,
-            "x86_64-unknown-linux-gnu",
-        );
-        let mut release = profile_artifacts(
-            &inputs,
-            RuntimeKitProfile::Release,
-            "x86_64-unknown-linux-gnu",
-        );
+        let debug = profile_artifacts(&inputs, RuntimeKitProfile::Debug, "x86_64-unknown-linux-gnu");
+        let mut release = profile_artifacts(&inputs, RuntimeKitProfile::Release, "x86_64-unknown-linux-gnu");
         release.shared_library = inputs.0.join("missing-release.so");
 
         assert!(
@@ -733,11 +560,6 @@ mod tests {
             })
             .is_err()
         );
-        assert!(
-            !prefix
-                .0
-                .join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu")
-                .exists()
-        );
+        assert!(!prefix.0.join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu").exists());
     }
 }

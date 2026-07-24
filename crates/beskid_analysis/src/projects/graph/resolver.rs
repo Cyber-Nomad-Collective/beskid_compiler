@@ -29,13 +29,7 @@ pub struct WorkspaceResolutionRules {
 
 impl Default for WorkspaceResolutionRules {
     fn default() -> Self {
-        Self::new(
-            None,
-            Vec::new(),
-            HashMap::new(),
-            HashSet::new(),
-            HashMap::new(),
-        )
+        Self::new(None, Vec::new(), HashMap::new(), HashSet::new(), HashMap::new())
     }
 }
 
@@ -47,19 +41,11 @@ impl WorkspaceResolutionRules {
         registry_aliases: HashSet<String>,
         registry_urls: HashMap<String, String>,
     ) -> Self {
-        Self {
-            workspace_root,
-            workspace_members,
-            overrides_by_dependency,
-            registry_aliases,
-            registry_urls,
-        }
+        Self { workspace_root, workspace_members, overrides_by_dependency, registry_aliases, registry_urls }
     }
 
     fn override_version_for(&self, dependency_name: &str) -> Option<&str> {
-        self.overrides_by_dependency
-            .get(&dependency_name.to_ascii_lowercase())
-            .map(String::as_str)
+        self.overrides_by_dependency.get(&dependency_name.to_ascii_lowercase()).map(String::as_str)
     }
 
     fn has_registry_alias(&self, alias: &str) -> bool {
@@ -90,32 +76,23 @@ pub fn resolve_dependencies(
     has_std_dependency: &mut bool,
 ) -> Result<(), ProjectError> {
     let consumer_project_root = project_root_from_manifest_path(consumer_manifest_path)?;
-    let has_explicit_std_dependency = consumer_manifest
-        .dependencies
-        .iter()
-        .any(|dependency| dependency.name.eq_ignore_ascii_case("Std"));
-    let is_std_project = consumer_manifest.project.name.eq_ignore_ascii_case("Std")
-        || is_std_manifest_path(consumer_manifest_path);
+    let has_explicit_std_dependency =
+        consumer_manifest.dependencies.iter().any(|dependency| dependency.name.eq_ignore_ascii_case("Std"));
+    let is_std_project =
+        consumer_manifest.project.name.eq_ignore_ascii_case("Std") || is_std_manifest_path(consumer_manifest_path);
 
     for dependency in &consumer_manifest.dependencies {
         match dependency.source {
             DependencySource::Path => {
-                let fallback_std_path = if dependency.name.eq_ignore_ascii_case("Std") {
-                    default_corelib_dependency_path()
-                } else {
-                    None
-                };
+                let fallback_std_path =
+                    if dependency.name.eq_ignore_ascii_case("Std") { default_corelib_dependency_path() } else { None };
 
-                let relative_path = dependency
-                    .path
-                    .as_deref()
-                    .or(fallback_std_path.as_deref())
-                    .ok_or_else(|| {
-                        ProjectError::Validation(format!(
-                            "dependency `{}` with source=\"path\" requires `path`",
-                            dependency.name
-                        ))
-                    })?;
+                let relative_path = dependency.path.as_deref().or(fallback_std_path.as_deref()).ok_or_else(|| {
+                    ProjectError::Validation(format!(
+                        "dependency `{}` with source=\"path\" requires `path`",
+                        dependency.name
+                    ))
+                })?;
 
                 attach_path_dependency(
                     dag,
@@ -154,10 +131,7 @@ pub fn resolve_dependencies(
                     .add_edge(
                         consumer_index,
                         unresolved_index,
-                        DependencyEdge {
-                            dependency_name: dependency.name.clone(),
-                            source: dependency.source,
-                        },
+                        DependencyEdge { dependency_name: dependency.name.clone(), source: dependency.source },
                     )
                     .is_err()
                 {
@@ -192,21 +166,17 @@ pub fn resolve_dependencies(
                     }
                 }
 
-                let unresolved_index =
-                    dag.add_node(ProjectGraphNode::UnresolvedRegistryDependency {
-                        dependency_name: dependency.name.clone(),
-                        version,
-                        registry: dependency.registry.clone(),
-                    });
+                let unresolved_index = dag.add_node(ProjectGraphNode::UnresolvedRegistryDependency {
+                    dependency_name: dependency.name.clone(),
+                    version,
+                    registry: dependency.registry.clone(),
+                });
 
                 if dag
                     .add_edge(
                         consumer_index,
                         unresolved_index,
-                        DependencyEdge {
-                            dependency_name: dependency.name.clone(),
-                            source: dependency.source,
-                        },
+                        DependencyEdge { dependency_name: dependency.name.clone(), source: dependency.source },
                     )
                     .is_err()
                 {
@@ -261,10 +231,7 @@ fn attach_path_dependency(
 ) -> Result<(), ProjectError> {
     let dependency_manifest_path = dependency_manifest_path(consumer_project_root, relative_path)?;
 
-    if let Some(cycle_start) = visiting
-        .iter()
-        .position(|path| path == &dependency_manifest_path)
-    {
+    if let Some(cycle_start) = visiting.iter().position(|path| path == &dependency_manifest_path) {
         return Err(ProjectError::DependencyCycle(format_cycle_from_visiting(
             visiting,
             cycle_start,
@@ -272,15 +239,12 @@ fn attach_path_dependency(
         )));
     }
 
-    let dependency_index = if let Some(existing_index) =
-        node_by_manifest.get(&dependency_manifest_path)
-    {
+    let dependency_index = if let Some(existing_index) = node_by_manifest.get(&dependency_manifest_path) {
         *existing_index
     } else {
         let dependency_manifest = load_manifest_from_path(&dependency_manifest_path)?;
         let dependency_project_root = project_root_from_manifest_path(&dependency_manifest_path)?;
-        let dependency_source_root =
-            dependency_project_root.join(&dependency_manifest.project.root);
+        let dependency_source_root = dependency_project_root.join(&dependency_manifest.project.root);
 
         let dependency_index = dag.add_node(ProjectGraphNode::ResolvedPathDependency {
             dependency_name: dependency_name.to_string(),
@@ -313,10 +277,7 @@ fn attach_path_dependency(
         .add_edge(
             consumer_index,
             dependency_index,
-            DependencyEdge {
-                dependency_name: dependency_name.to_string(),
-                source: DependencySource::Path,
-            },
+            DependencyEdge { dependency_name: dependency_name.to_string(), source: DependencySource::Path },
         )
         .is_err()
     {
@@ -349,17 +310,9 @@ fn default_corelib_dependency_path() -> Option<String> {
 /// nests `beskid_corelib/corelib.bproj`). `Std` path resolution must always end at the package.
 fn corelib_aggregate_project_dir(root: &Path) -> PathBuf {
     let nested = root.join("beskid_corelib");
-    if discover_project_manifest_in_dir(&nested)
-        .ok()
-        .flatten()
-        .is_some()
-    {
+    if discover_project_manifest_in_dir(&nested).ok().flatten().is_some() {
         nested
-    } else if discover_project_manifest_in_dir(root)
-        .ok()
-        .flatten()
-        .is_some()
-    {
+    } else if discover_project_manifest_in_dir(root).ok().flatten().is_some() {
         root.to_path_buf()
     } else {
         nested
@@ -369,10 +322,7 @@ fn corelib_aggregate_project_dir(root: &Path) -> PathBuf {
 /// True when the consumer already path-depends on the aggregate `beskid_corelib` project
 /// (explicit `corelib` / `Std` link). Skip implicit `Std` injection so module paths stay on the
 /// shard layout (`Testing::Assertions`) instead of duplicating the aggregate as `Std::*`.
-fn depends_on_corelib_aggregate(
-    consumer_manifest: &ProjectManifest,
-    consumer_project_root: &Path,
-) -> bool {
+fn depends_on_corelib_aggregate(consumer_manifest: &ProjectManifest, consumer_project_root: &Path) -> bool {
     let Some(corelib_root) = default_corelib_dependency_path().map(PathBuf::from) else {
         return false;
     };
@@ -390,9 +340,7 @@ fn depends_on_corelib_aggregate(
             || dependency.path.as_ref().is_some_and(|relative_path| {
                 dependency_manifest_path(consumer_project_root, relative_path)
                     .ok()
-                    .map(|dependency_manifest| {
-                        normalize_existing_path(&dependency_manifest) == corelib_manifest
-                    })
+                    .map(|dependency_manifest| normalize_existing_path(&dependency_manifest) == corelib_manifest)
                     .unwrap_or(false)
             })
     })
@@ -418,11 +366,7 @@ fn discover_repo_corelib_root() -> Option<PathBuf> {
     let cwd = env::current_dir().ok()?;
     for ancestor in cwd.ancestors() {
         let candidate = ancestor.join("corelib").join("beskid_corelib");
-        if discover_project_manifest_in_dir(&candidate)
-            .ok()
-            .flatten()
-            .is_some()
-        {
+        if discover_project_manifest_in_dir(&candidate).ok().flatten().is_some() {
             return Some(candidate);
         }
     }
@@ -438,21 +382,12 @@ fn is_std_manifest_path(manifest_path: &Path) -> bool {
         .ok()
         .flatten()
         .map(|path| normalize_existing_path(&path))
-        .unwrap_or_else(|| {
-            normalize_existing_path(&PathBuf::from(corelib_root).join("corelib.bproj"))
-        });
+        .unwrap_or_else(|| normalize_existing_path(&PathBuf::from(corelib_root).join("corelib.bproj")));
     normalized_manifest == corelib_manifest
 }
 
-fn format_cycle_from_visiting(
-    visiting: &[PathBuf],
-    cycle_start: usize,
-    repeated_path: &Path,
-) -> String {
-    let mut cycle_chain = visiting[cycle_start..]
-        .iter()
-        .map(|path| path.display().to_string())
-        .collect::<Vec<_>>();
+fn format_cycle_from_visiting(visiting: &[PathBuf], cycle_start: usize, repeated_path: &Path) -> String {
+    let mut cycle_chain = visiting[cycle_start..].iter().map(|path| path.display().to_string()).collect::<Vec<_>>();
     cycle_chain.push(repeated_path.display().to_string());
     cycle_chain.join(" -> ")
 }

@@ -11,10 +11,7 @@ pub enum ReservedKeyword {
 
 /// Find the first reserved keyword token in `source` (word boundaries).
 pub fn find_reserved_keyword(source: &str) -> Option<(SpanInfo, ReservedKeyword)> {
-    for (keyword, kind) in [
-        ("async", ReservedKeyword::Async),
-        ("await", ReservedKeyword::Await),
-    ] {
+    for (keyword, kind) in [("async", ReservedKeyword::Async), ("await", ReservedKeyword::Await)] {
         let mut search_from = 0usize;
         while let Some(rel) = source[search_from..].find(keyword) {
             let start = search_from + rel;
@@ -37,22 +34,9 @@ fn is_word_boundary(source: &str, start: usize, end: usize) -> bool {
 fn span_for_range(source: &str, start: usize, end: usize) -> SpanInfo {
     let prefix = &source[..start];
     let line = prefix.matches('\n').count() + 1;
-    let col = prefix
-        .rsplit('\n')
-        .next()
-        .map(|line_prefix| line_prefix.len() + 1)
-        .unwrap_or(1);
+    let col = prefix.rsplit('\n').next().map(|line_prefix| line_prefix.len() + 1).unwrap_or(1);
     let end_prefix = &source[..end];
     let end_line = end_prefix.matches('\n').count() + 1;
-    let end_col = end_prefix
-        .rsplit('\n')
-        .next()
-        .map(|line_prefix| line_prefix.len() + 1)
-        .unwrap_or(1);
-    SpanInfo {
-        start,
-        end,
-        line_col_start: (line, col),
-        line_col_end: (end_line, end_col),
-    }
+    let end_col = end_prefix.rsplit('\n').next().map(|line_prefix| line_prefix.len() + 1).unwrap_or(1);
+    SpanInfo { start, end, line_col_start: (line, col), line_col_end: (end_line, end_col) }
 }

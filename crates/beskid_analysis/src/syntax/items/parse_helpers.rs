@@ -7,18 +7,11 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::{Attribute, Identifier, Parameter, SpanInfo, Spanned, Visibility};
 
-pub(crate) fn parse_attributes(
-    inner: &mut Peekable<Pairs<Rule>>,
-) -> Result<Vec<Spanned<Attribute>>, ParseError> {
+pub(crate) fn parse_attributes(inner: &mut Peekable<Pairs<Rule>>) -> Result<Vec<Spanned<Attribute>>, ParseError> {
     if let Some(next) = inner.peek()
         && next.as_rule() == Rule::AttributeList
     {
-        return inner
-            .next()
-            .expect("attribute list pair")
-            .into_inner()
-            .map(Attribute::parse)
-            .collect();
+        return inner.next().expect("attribute list pair").into_inner().map(Attribute::parse).collect();
     }
     Ok(Vec::new())
 }
@@ -33,15 +26,10 @@ pub(crate) fn parse_visibility_or_default(
         return Visibility::parse(inner.next().expect("visibility pair"));
     }
 
-    Ok(Spanned::new(
-        Visibility::Private,
-        SpanInfo::from_span(&pair.as_span()),
-    ))
+    Ok(Spanned::new(Visibility::Private, SpanInfo::from_span(&pair.as_span())))
 }
 
-pub(crate) fn parse_identifier_list(
-    pair: Pair<Rule>,
-) -> Result<Vec<Spanned<Identifier>>, ParseError> {
+pub(crate) fn parse_identifier_list(pair: Pair<Rule>) -> Result<Vec<Spanned<Identifier>>, ParseError> {
     pair.into_inner().map(Identifier::parse).collect()
 }
 
@@ -129,10 +117,7 @@ where
 {
     let mut values = Vec::new();
     let mut docs = Vec::new();
-    for inner in pair
-        .into_inner()
-        .filter(|inner| inner.as_rule() == wrapper_rule)
-    {
+    for inner in pair.into_inner().filter(|inner| inner.as_rule() == wrapper_rule) {
         let (doc, value) = parse_doc_attached_pair(inner, wrapper_rule, inner_rule)?;
         values.push(value);
         docs.push(doc);

@@ -19,8 +19,7 @@ use crate::errors::CodegenError;
 use crate::lowering::node_context::NodeLoweringContext;
 use crate::lowering::types::pointer_type;
 use beskid_abi::{
-    SYM_COMPOSITION_CONTAINER_CREATE, SYM_COMPOSITION_CONTAINER_DROP, SYM_COMPOSITION_LAUNCH,
-    SYM_COMPOSITION_SHUTDOWN,
+    SYM_COMPOSITION_CONTAINER_CREATE, SYM_COMPOSITION_CONTAINER_DROP, SYM_COMPOSITION_LAUNCH, SYM_COMPOSITION_SHUTDOWN,
 };
 use beskid_analysis::syntax::{LaunchStatement, Spanned};
 use cranelift_codegen::ir::{AbiParam, ExtFuncData, ExternalName, InstBuilder, Signature, types};
@@ -81,10 +80,7 @@ fn emit_shutdown(ctx: &mut NodeLoweringContext<'_, '_>, container: cranelift_cod
     ctx.builder.ins().call(func_ref, &[container]);
 }
 
-fn emit_container_drop(
-    ctx: &mut NodeLoweringContext<'_, '_>,
-    container: cranelift_codegen::ir::Value,
-) {
+fn emit_container_drop(ctx: &mut NodeLoweringContext<'_, '_>, container: cranelift_codegen::ir::Value) {
     let mut sig = Signature::new(CallConv::SystemV);
     sig.params.push(AbiParam::new(pointer_type()));
     let sig_ref = ctx.builder.func.import_signature(sig);

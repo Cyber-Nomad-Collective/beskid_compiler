@@ -86,26 +86,10 @@ const TEMPLATES_SETTINGS: &[ToolSettingDescriptor] = &[
 const SHORTCUTS_SETTINGS: &[ToolSettingDescriptor] = &[];
 
 pub const BUILTIN_SETTINGS: &[ToolSettingsPage] = &[
-    ToolSettingsPage {
-        tool_id: "shell",
-        title: "Shell",
-        settings: SHELL_SETTINGS,
-    },
-    ToolSettingsPage {
-        tool_id: "pckg",
-        title: "Packages",
-        settings: PCKG_SETTINGS,
-    },
-    ToolSettingsPage {
-        tool_id: "templates",
-        title: "Templates",
-        settings: TEMPLATES_SETTINGS,
-    },
-    ToolSettingsPage {
-        tool_id: "shortcuts",
-        title: "Shortcuts",
-        settings: SHORTCUTS_SETTINGS,
-    },
+    ToolSettingsPage { tool_id: "shell", title: "Shell", settings: SHELL_SETTINGS },
+    ToolSettingsPage { tool_id: "pckg", title: "Packages", settings: PCKG_SETTINGS },
+    ToolSettingsPage { tool_id: "templates", title: "Templates", settings: TEMPLATES_SETTINGS },
+    ToolSettingsPage { tool_id: "shortcuts", title: "Shortcuts", settings: SHORTCUTS_SETTINGS },
 ];
 
 pub type ToolSettingsRegistrar = fn(&mut ToolSettingsRegistry);
@@ -165,17 +149,11 @@ impl ToolsConfig {
 }
 
 pub fn user_config_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".beskid")
-        .join("config")
-        .join("tools.bsol")
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".beskid").join("config").join("tools.bsol")
 }
 
 pub fn scope_config_path(scope: &ShellScope) -> Option<PathBuf> {
-    scope
-        .root_dir()
-        .map(|root| root.join(".beskid").join("tools.bsol"))
+    scope.root_dir().map(|root| root.join(".beskid").join("tools.bsol"))
 }
 
 pub fn save_path_for_scope(scope: &ShellScope) -> PathBuf {
@@ -183,10 +161,7 @@ pub fn save_path_for_scope(scope: &ShellScope) -> PathBuf {
 }
 
 pub fn load_config(scope: &ShellScope, registry: &ToolSettingsRegistry) -> ToolsConfig {
-    let mut config = ToolsConfig {
-        version: 1,
-        ..ToolsConfig::default()
-    };
+    let mut config = ToolsConfig { version: 1, ..ToolsConfig::default() };
 
     if user_config_path().is_file()
         && let Ok(parsed) = load_from_path(&user_config_path())
@@ -213,12 +188,7 @@ pub fn save_config(scope: &ShellScope, config: &ToolsConfig) -> Result<(), Strin
     fs::write(&path, emit_config(config)).map_err(|e| e.to_string())
 }
 
-pub fn get_value(
-    config: &ToolsConfig,
-    registry: &ToolSettingsRegistry,
-    tool_id: &str,
-    key: &str,
-) -> String {
+pub fn get_value(config: &ToolsConfig, registry: &ToolSettingsRegistry, tool_id: &str, key: &str) -> String {
     config
         .values
         .get(&(tool_id.to_string(), key.to_string()))
@@ -228,19 +198,14 @@ pub fn get_value(
 }
 
 pub fn set_value(config: &mut ToolsConfig, tool_id: &str, key: &str, value: String) {
-    config
-        .values
-        .insert((tool_id.to_string(), key.to_string()), value);
+    config.values.insert((tool_id.to_string(), key.to_string()), value);
 }
 
 fn apply_defaults(config: &mut ToolsConfig, registry: &ToolSettingsRegistry) {
     for page in registry.pages() {
         for desc in page.settings {
             let key = (page.tool_id.to_string(), desc.key.to_string());
-            config
-                .values
-                .entry(key)
-                .or_insert_with(|| desc.default.to_string());
+            config.values.entry(key).or_insert_with(|| desc.default.to_string());
         }
     }
 }
@@ -267,21 +232,9 @@ fn lower_config(doc: ValidatedDocument) -> Result<ToolsConfig, String> {
                 }
             }
             "setting" => {
-                let tool_id = block
-                    .fields
-                    .get("tool_id")
-                    .cloned()
-                    .ok_or("setting missing tool_id")?;
-                let key = block
-                    .fields
-                    .get("key")
-                    .cloned()
-                    .ok_or("setting missing key")?;
-                let value = block
-                    .fields
-                    .get("value")
-                    .cloned()
-                    .ok_or("setting missing value")?;
+                let tool_id = block.fields.get("tool_id").cloned().ok_or("setting missing tool_id")?;
+                let key = block.fields.get("key").cloned().ok_or("setting missing key")?;
+                let value = block.fields.get("value").cloned().ok_or("setting missing value")?;
                 config.values.insert((tool_id, key), value);
             }
             other => return Err(format!("unexpected tools.config.v1 block `{other}`")),
@@ -334,10 +287,7 @@ setting {
 }
 "#;
         let parsed = parse_config(source).expect("parse");
-        assert_eq!(
-            get_value(&parsed, &registry, "shell", "autosave_layout"),
-            "false"
-        );
+        assert_eq!(get_value(&parsed, &registry, "shell", "autosave_layout"), "false");
         let again = parse_config(&emit_config(&parsed)).expect("re-parse");
         assert_eq!(parsed, again);
     }
@@ -346,10 +296,7 @@ setting {
     fn defaults_fill_missing_keys() {
         let registry = ToolSettingsRegistry::with_builtins();
         let config = load_config(&ShellScope::User, &registry);
-        assert_eq!(
-            get_value(&config, &registry, "pckg", "base_url"),
-            "https://pckg.beskid-lang.org"
-        );
+        assert_eq!(get_value(&config, &registry, "pckg", "base_url"), "https://pckg.beskid-lang.org");
     }
 
     #[test]

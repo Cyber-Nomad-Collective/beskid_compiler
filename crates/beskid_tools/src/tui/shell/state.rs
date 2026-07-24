@@ -7,9 +7,7 @@ use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
 
 use crate::pipeline::tui::log_tabs::{LogTab, LogTabStates};
-use crate::pipeline::tui::{
-    CommandSummary, PipelineProgress, PipelineTree, TestReportSummary, TestRow, TestRowState,
-};
+use crate::pipeline::tui::{CommandSummary, PipelineProgress, PipelineTree, TestReportSummary, TestRow, TestRowState};
 use crate::tui::widgets::CodeViewerPanel;
 
 use super::focus::{FocusTarget, OverlayKind, PaneFocus};
@@ -156,13 +154,7 @@ impl ShellState {
         self.test_rows
             .iter()
             .enumerate()
-            .filter_map(|(index, row)| {
-                if row.state == TestRowState::Failed {
-                    Some(index)
-                } else {
-                    None
-                }
-            })
+            .filter_map(|(index, row)| if row.state == TestRowState::Failed { Some(index) } else { None })
             .collect()
     }
 
@@ -172,26 +164,19 @@ impl ShellState {
             return;
         };
         if let Some(link) = row.link.as_ref()
-            && self
-                .code_viewer
-                .load_file(&link.path, Some(link.line))
-                .is_ok()
+            && self.code_viewer.load_file(&link.path, Some(link.line)).is_ok()
         {
             return;
         }
         if let Some(detail) = row.failure_detail.as_deref() {
-            self.code_viewer
-                .load_text(&row.qualified_name, detail, "text");
+            self.code_viewer.load_text(&row.qualified_name, detail, "text");
         } else {
             self.code_viewer.clear();
         }
     }
 
     pub fn sync_code_viewer_for_selection(&mut self) {
-        let index = self
-            .test_list_state
-            .selected()
-            .or_else(|| selected_running_index(&self.test_rows));
+        let index = self.test_list_state.selected().or_else(|| selected_running_index(&self.test_rows));
         if let Some(index) = index {
             self.sync_code_viewer_for_test(index);
         }
@@ -202,12 +187,8 @@ impl ShellState {
             self.code_viewer.clear();
             return;
         };
-        let readme = detail
-            .readme
-            .as_deref()
-            .unwrap_or("No readme published for this package.");
-        self.code_viewer
-            .load_text(&detail.package.name, readme, "markdown");
+        let readme = detail.readme.as_deref().unwrap_or("No readme published for this package.");
+        self.code_viewer.load_text(&detail.package.name, readme, "markdown");
     }
 
     pub fn sync_template_detail_viewer(&mut self) {
@@ -266,10 +247,7 @@ impl ShellState {
 fn selected_running_index(rows: &[TestRow]) -> Option<usize> {
     rows.iter()
         .position(|row| row.state == TestRowState::Running)
-        .or_else(|| {
-            rows.iter()
-                .rposition(|row| row.state != TestRowState::Pending)
-        })
+        .or_else(|| rows.iter().rposition(|row| row.state != TestRowState::Pending))
 }
 
 impl ShellState {
@@ -282,9 +260,7 @@ impl ShellState {
     }
 
     pub fn any_overlay_visible(&self) -> bool {
-        OverlayKind::ALL
-            .iter()
-            .any(|kind| self.overlay_visible(*kind))
+        OverlayKind::ALL.iter().any(|kind| self.overlay_visible(*kind))
     }
 
     pub fn set_overlay_visible(&mut self, kind: OverlayKind, visible: bool) {
@@ -361,12 +337,10 @@ impl ShellState {
     pub fn nav_reached(&self, target: NavTarget) -> bool {
         match target {
             NavTarget::Tests => {
-                self.overlay_visible(OverlayKind::Tests)
-                    && self.focus == FocusTarget::Overlay(OverlayKind::Tests)
+                self.overlay_visible(OverlayKind::Tests) && self.focus == FocusTarget::Overlay(OverlayKind::Tests)
             }
             NavTarget::Summary => {
-                self.overlay_visible(OverlayKind::Summary)
-                    && self.focus == FocusTarget::Overlay(OverlayKind::Summary)
+                self.overlay_visible(OverlayKind::Summary) && self.focus == FocusTarget::Overlay(OverlayKind::Summary)
             }
             NavTarget::Exit => false,
         }
@@ -393,11 +367,7 @@ mod tests {
 
     #[test]
     fn advance_opens_tests_overlay() {
-        let mut state = ShellState {
-            tests_loaded: true,
-            compile_complete: true,
-            ..Default::default()
-        };
+        let mut state = ShellState { tests_loaded: true, compile_complete: true, ..Default::default() };
         assert!(state.advance_once().is_none());
         assert!(state.overlay_visible(OverlayKind::Tests));
         assert_eq!(state.focus, FocusTarget::Overlay(OverlayKind::Tests));

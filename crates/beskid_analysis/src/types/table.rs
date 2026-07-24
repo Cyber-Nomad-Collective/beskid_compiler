@@ -46,12 +46,7 @@ impl Default for TypeTable {
 
 impl TypeTable {
     pub fn new() -> Self {
-        Self {
-            types: Vec::new(),
-            intern_map: HashMap::new(),
-            primitive_ids: HashMap::new(),
-            array_ids: HashMap::new(),
-        }
+        Self { types: Vec::new(), intern_map: HashMap::new(), primitive_ids: HashMap::new(), array_ids: HashMap::new() }
     }
 
     /// Return an existing id when `info` is already present (structural hash-consing).
@@ -108,12 +103,7 @@ impl TypeTable {
         remap
     }
 
-    fn import_type_id(
-        &mut self,
-        old_id: TypeId,
-        other: &TypeTable,
-        remap: &mut HashMap<TypeId, TypeId>,
-    ) -> TypeId {
+    fn import_type_id(&mut self, old_id: TypeId, other: &TypeTable, remap: &mut HashMap<TypeId, TypeId>) -> TypeId {
         if let Some(new_id) = remap.get(&old_id) {
             return *new_id;
         }
@@ -136,27 +126,14 @@ impl TypeTable {
             TypeInfo::Primitive(_) | TypeInfo::Named(_) | TypeInfo::GenericParam(_) => info.clone(),
             TypeInfo::Applied { base, args } => TypeInfo::Applied {
                 base: *base,
-                args: args
-                    .iter()
-                    .map(|arg| self.import_type_id(*arg, other, remap))
-                    .collect(),
+                args: args.iter().map(|arg| self.import_type_id(*arg, other, remap)).collect(),
             },
-            TypeInfo::Function {
-                params,
-                return_type,
-            } => TypeInfo::Function {
-                params: params
-                    .iter()
-                    .map(|param| self.import_type_id(*param, other, remap))
-                    .collect(),
+            TypeInfo::Function { params, return_type } => TypeInfo::Function {
+                params: params.iter().map(|param| self.import_type_id(*param, other, remap)).collect(),
                 return_type: self.import_type_id(*return_type, other, remap),
             },
-            TypeInfo::Array(element) => {
-                TypeInfo::Array(self.import_type_id(*element, other, remap))
-            }
-            TypeInfo::Fiber(payload) => {
-                TypeInfo::Fiber(self.import_type_id(*payload, other, remap))
-            }
+            TypeInfo::Array(element) => TypeInfo::Array(self.import_type_id(*element, other, remap)),
+            TypeInfo::Fiber(payload) => TypeInfo::Fiber(self.import_type_id(*payload, other, remap)),
         }
     }
 }

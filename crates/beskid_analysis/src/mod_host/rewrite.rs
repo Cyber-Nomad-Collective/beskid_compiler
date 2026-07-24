@@ -5,9 +5,7 @@ use crate::syntax::{Program, Spanned};
 
 use super::context::ModInvocationContext;
 use super::invoker::{ContractInvoker, RewriterOutcome};
-use super::types::{
-    AnalyzedContracts, ContractRegistration, ModHostInput, ModHostSession, RewriteResult,
-};
+use super::types::{AnalyzedContracts, ContractRegistration, ModHostInput, ModHostSession, RewriteResult};
 
 /// Run every Rewriter contract registered by `mod.load`, scheduled by analyzer fixes.
 /// Each invocation is dispatched through `invoker`; the returned `RewriteResult`
@@ -22,11 +20,8 @@ pub(crate) fn run_rewriters(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<RewriteResult> {
     observe_phase_result(pipeline, MOD_REWRITE, || {
-        let mut registrations: Vec<ContractRegistration> = session
-            .registrations()
-            .filter(|registration| is_rewrite_registration(registration))
-            .cloned()
-            .collect();
+        let mut registrations: Vec<ContractRegistration> =
+            session.registrations().filter(|registration| is_rewrite_registration(registration)).cloned().collect();
         registrations.sort_by(|left, right| {
             left.contract_id
                 .cmp(&right.contract_id)

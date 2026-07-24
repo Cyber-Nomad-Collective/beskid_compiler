@@ -1,6 +1,4 @@
-use crate::harness::assertions::{
-    assert_exit_code, assert_file_exists, assert_output_contains, assert_success,
-};
+use crate::harness::assertions::{assert_exit_code, assert_file_exists, assert_output_contains, assert_success};
 use crate::harness::cli::BeskidCliInvoker;
 use crate::harness::process::nm_contains_symbol;
 use crate::harness::workspace::E2eWorkspace;
@@ -13,24 +11,10 @@ fn runtime_calls_fixture_aot_runs_and_object_contains_runtime_symbols() {
     let object_output = workspace.join("out/runtime_calls.o");
     let cli = BeskidCliInvoker::new();
 
-    let aot_run = cli.run([
-        "run",
-        "--project",
-        manifest.to_str().expect("manifest path str"),
-        "--target",
-        "App",
-    ]);
+    let aot_run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
     assert_success(&aot_run, "run runtime-calls fixture through AOT subprocess");
-    assert_exit_code(
-        &aot_run,
-        0,
-        "run runtime-calls fixture through AOT subprocess",
-    );
-    assert_output_contains(
-        &aot_run,
-        "ok",
-        "run runtime-calls fixture through AOT subprocess",
-    );
+    assert_exit_code(&aot_run, 0, "run runtime-calls fixture through AOT subprocess");
+    assert_output_contains(&aot_run, "ok", "run runtime-calls fixture through AOT subprocess");
 
     let build = cli.run([
         "build",
@@ -47,10 +31,7 @@ fn runtime_calls_fixture_aot_runs_and_object_contains_runtime_symbols() {
     assert_file_exists(&output_binary, "runtime-calls output binary");
     assert_file_exists(&object_output, "runtime-calls object file");
     assert_output_contains(&build, "output   ", "build runtime-calls fixture");
-    assert!(
-        nm_contains_symbol(&object_output, "str_len"),
-        "expected runtime-calls object to reference str_len"
-    );
+    assert!(nm_contains_symbol(&object_output, "str_len"), "expected runtime-calls object to reference str_len");
     assert!(
         nm_contains_symbol(&object_output, "syscall_write"),
         "expected runtime-calls object to reference syscall_write"
@@ -69,22 +50,9 @@ fn event_unsubscribe_fixture_aot_runs_and_object_contains_event_symbols() {
     let object_output = workspace.join("out/event_unsubscribe.o");
     let cli = BeskidCliInvoker::new();
 
-    let aot_run = cli.run([
-        "run",
-        "--project",
-        manifest.to_str().expect("manifest path str"),
-        "--target",
-        "App",
-    ]);
-    assert_success(
-        &aot_run,
-        "run event-unsubscribe fixture through AOT subprocess",
-    );
-    assert_exit_code(
-        &aot_run,
-        0,
-        "run event-unsubscribe fixture through AOT subprocess",
-    );
+    let aot_run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
+    assert_success(&aot_run, "run event-unsubscribe fixture through AOT subprocess");
+    assert_exit_code(&aot_run, 0, "run event-unsubscribe fixture through AOT subprocess");
 
     let build = cli.run([
         "build",
@@ -118,13 +86,7 @@ fn smoke_fixture_build_graph_includes_corelib_dependency() {
     let object_output = workspace.join("out/corelib_graph.o");
     let cli = BeskidCliInvoker::new();
 
-    let aot_run = cli.run([
-        "run",
-        "--project",
-        manifest.to_str().expect("manifest path str"),
-        "--target",
-        "App",
-    ]);
+    let aot_run = cli.run(["run", "--project", manifest.to_str().expect("manifest path str"), "--target", "App"]);
     assert_success(&aot_run, "run smoke fixture through AOT subprocess");
     assert_exit_code(&aot_run, 0, "run smoke fixture through AOT subprocess");
 
@@ -140,19 +102,9 @@ fn smoke_fixture_build_graph_includes_corelib_dependency() {
         object_output.to_str().expect("object path str"),
     ]);
     assert_success(&build, "build smoke fixture with corelib graph");
-    assert_output_contains(
-        &build,
-        "corelib: project dependency detected",
-        "build smoke fixture with corelib graph",
-    );
+    assert_output_contains(&build, "corelib: project dependency detected", "build smoke fixture with corelib graph");
     assert_file_exists(&output_binary, "corelib graph output binary");
     assert_file_exists(&object_output, "corelib graph object file");
-    assert!(
-        nm_contains_symbol(&object_output, "str_len"),
-        "expected corelib graph object to reference str_len"
-    );
-    assert!(
-        nm_contains_symbol(&object_output, "array_new"),
-        "expected corelib graph object to reference array_new"
-    );
+    assert!(nm_contains_symbol(&object_output, "str_len"), "expected corelib graph object to reference str_len");
+    assert!(nm_contains_symbol(&object_output, "array_new"), "expected corelib graph object to reference array_new");
 }

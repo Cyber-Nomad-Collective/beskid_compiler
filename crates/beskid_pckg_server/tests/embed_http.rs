@@ -22,16 +22,8 @@ fn session(subject: &str) -> String {
 }
 
 async fn text(response: axum::response::Response) -> String {
-    String::from_utf8(
-        response
-            .into_body()
-            .collect()
-            .await
-            .expect("body is readable")
-            .to_bytes()
-            .to_vec(),
-    )
-    .expect("response is UTF-8")
+    String::from_utf8(response.into_body().collect().await.expect("body is readable").to_bytes().to_vec())
+        .expect("response is UTF-8")
 }
 
 #[tokio::test]
@@ -39,11 +31,7 @@ async fn public_embed_card_and_badge_match_legacy_content_contract_without_priva
     let app = router(config());
     let owner_cookie = format!("pckg_session={}", session("github:1"));
 
-    for (name, is_public) in [
-        ("Public.Embed", true),
-        ("Private.Embed", false),
-        ("@pckg/demo-lib", true),
-    ] {
+    for (name, is_public) in [("Public.Embed", true), ("Private.Embed", false), ("@pckg/demo-lib", true)] {
         let response = app
             .clone()
             .oneshot(
@@ -82,22 +70,12 @@ async fn public_embed_card_and_badge_match_legacy_content_contract_without_priva
 
     let badge = app
         .clone()
-        .oneshot(
-            Request::get("/api/embed/badge.svg?package=Public.Embed")
-                .body(Body::empty())
-                .expect("request builds"),
-        )
+        .oneshot(Request::get("/api/embed/badge.svg?package=Public.Embed").body(Body::empty()).expect("request builds"))
         .await
         .expect("route responds");
     assert_eq!(badge.status(), StatusCode::OK);
-    assert_eq!(
-        badge.headers().get("content-type").expect("content type"),
-        "image/svg+xml; charset=utf-8"
-    );
-    assert_eq!(
-        badge.headers().get("cache-control").expect("cache control"),
-        "public, max-age=120"
-    );
+    assert_eq!(badge.headers().get("content-type").expect("content type"), "image/svg+xml; charset=utf-8");
+    assert_eq!(badge.headers().get("cache-control").expect("cache control"), "public, max-age=120");
     assert!(text(badge).await.contains("Public.Embed · 1.2.3"));
 
     let card = app
@@ -112,32 +90,17 @@ async fn public_embed_card_and_badge_match_legacy_content_contract_without_priva
         .await
         .expect("route responds");
     assert_eq!(card.status(), StatusCode::OK);
-    assert_eq!(
-        card.headers().get("content-type").expect("content type"),
-        "text/html; charset=utf-8"
-    );
-    assert_eq!(
-        card.headers().get("content-security-policy").expect("CSP"),
-        "frame-ancestors *"
-    );
-    assert_eq!(
-        card.headers().get("cache-control").expect("cache control"),
-        "public, max-age=120"
-    );
+    assert_eq!(card.headers().get("content-type").expect("content type"), "text/html; charset=utf-8");
+    assert_eq!(card.headers().get("content-security-policy").expect("CSP"), "frame-ancestors *");
+    assert_eq!(card.headers().get("cache-control").expect("cache control"), "public, max-age=120");
     let card_body = text(card).await;
     assert!(card_body.contains("Public.Embed"));
     assert!(card_body.contains("color-scheme:light dark"));
-    assert!(
-        card_body.contains("https://registry.example/api/embed/badge.svg?package=Public.Embed")
-    );
+    assert!(card_body.contains("https://registry.example/api/embed/badge.svg?package=Public.Embed"));
 
     let private_card = app
         .clone()
-        .oneshot(
-            Request::get("/api/embed/card?package=Private.Embed")
-                .body(Body::empty())
-                .expect("request builds"),
-        )
+        .oneshot(Request::get("/api/embed/card?package=Private.Embed").body(Body::empty()).expect("request builds"))
         .await
         .expect("route responds");
     assert_eq!(private_card.status(), StatusCode::NOT_FOUND);
@@ -146,9 +109,7 @@ async fn public_embed_card_and_badge_match_legacy_content_contract_without_priva
     let private_badge = app
         .clone()
         .oneshot(
-            Request::get("/api/embed/badge.svg?package=Private.Embed")
-                .body(Body::empty())
-                .expect("request builds"),
+            Request::get("/api/embed/badge.svg?package=Private.Embed").body(Body::empty()).expect("request builds"),
         )
         .await
         .expect("route responds");

@@ -14,11 +14,7 @@ pub struct TestsWidget;
 
 impl BeskidWidget for TestsWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: "tests.runner",
-            title: "Tests",
-            icon: "✓",
-        }
+        WidgetMeta { id: "tests.runner", title: "Tests", icon: "✓" }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {
@@ -51,8 +47,7 @@ impl BeskidWidget for TestsWidget {
 }
 
 pub fn open_tests(ctx: &mut WidgetContext<'_>) {
-    ctx.shell_state
-        .set_overlay_visible(OverlayKind::Tests, true);
+    ctx.shell_state.set_overlay_visible(OverlayKind::Tests, true);
     ctx.shell_state.focus_overlay(OverlayKind::Tests);
     ctx.shell_state.sync_code_viewer_for_selection();
 }

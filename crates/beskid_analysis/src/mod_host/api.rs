@@ -11,8 +11,7 @@ use super::diagnostics::{ModHostDiagnostics, ModHostIssue};
 use super::discovery::discover_mod_dependencies;
 use super::generate::{is_generate_registration, resolved_max_generator_rounds, run_generators};
 use super::generate_output::{
-    CodeGenerateOutput, load_generate_output_layout, write_code_generate_output,
-    write_typed_generate_output,
+    CodeGenerateOutput, load_generate_output_layout, write_code_generate_output, write_typed_generate_output,
 };
 use super::invoker::GeneratorOutcome;
 use super::invoker::{ContractInvoker, StubContractInvoker};
@@ -22,8 +21,7 @@ use super::native::NativeContractInvoker;
 use super::reparse::reparse_if_needed;
 use super::rewrite::run_rewriters;
 use super::types::{
-    LoadedModArtifact, ModHostAnalyzeResult, ModHostGenerateResult, ModHostInput, ModHostSession,
-    ProgramItem,
+    LoadedModArtifact, ModHostAnalyzeResult, ModHostGenerateResult, ModHostInput, ModHostSession, ProgramItem,
 };
 use super::validate::validate_registrations;
 use crate::projects::CompilePlan;
@@ -41,18 +39,9 @@ pub fn native_invoker_for_plan(
     let loaded = load_artifacts(Some(plan.project_root.as_path()), discovered, pipeline)?;
     let object_paths: Vec<PathBuf> = loaded
         .iter()
-        .filter_map(|artifact| {
-            artifact
-                .descriptor
-                .as_ref()
-                .map(|descriptor| descriptor.object_path())
-        })
+        .filter_map(|artifact| artifact.descriptor.as_ref().map(|descriptor| descriptor.object_path()))
         .collect();
-    if object_paths.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(NativeContractInvoker::new(object_paths)))
-    }
+    if object_paths.is_empty() { Ok(None) } else { Ok(Some(NativeContractInvoker::new(object_paths))) }
 }
 
 /// Run `mod.collect` only and return the observed target fingerprint.
@@ -79,16 +68,8 @@ pub fn collect_mod_target_fingerprint(input: &ModHostInput<'_>) -> Result<String
     Ok(capture_target_fingerprint(&collected.outcomes))
 }
 
-pub fn run_through_generate(
-    program: Spanned<Program>,
-    input: &ModHostInput<'_>,
-) -> Result<ModHostGenerateResult> {
-    let macro_outcome = run_macro_expand_with_diagnostics(
-        program,
-        input.pipeline,
-        input.source_name,
-        input.source,
-    )?;
+pub fn run_through_generate(program: Spanned<Program>, input: &ModHostInput<'_>) -> Result<ModHostGenerateResult> {
+    let macro_outcome = run_macro_expand_with_diagnostics(program, input.pipeline, input.source_name, input.source)?;
     let mut macro_diagnostics = macro_outcome.diagnostics;
     let mut program = macro_outcome.program;
     let discovered = discover_mod_dependencies(input.compile_plan)?;
@@ -143,37 +124,19 @@ pub fn run_through_generate(
         }
         program = merge_generated_syntax(program, &generated)?;
         if generated.requires_reparse() {
-            program = reparse_if_needed(
-                program,
-                &generated,
-                input.source_name,
-                input.source,
-                input.pipeline,
-            )?;
+            program = reparse_if_needed(program, &generated, input.source_name, input.source, input.pipeline)?;
         }
-        let needs_another_round = collected
-            .outcomes
-            .iter()
-            .any(|outcome| !outcome.narrowed_targets.is_empty());
+        let needs_another_round = collected.outcomes.iter().any(|outcome| !outcome.narrowed_targets.is_empty());
         if !needs_another_round {
             break;
         }
     }
-    if round >= max_rounds
-        && collector_outcomes
-            .iter()
-            .any(|outcome| !outcome.narrowed_targets.is_empty())
-    {
-        return Err(anyhow::Error::new(ModHostDiagnostics::new(vec![
-            ModHostIssue::MaxGeneratorRoundsExceeded { limit: max_rounds },
-        ])));
+    if round >= max_rounds && collector_outcomes.iter().any(|outcome| !outcome.narrowed_targets.is_empty()) {
+        return Err(anyhow::Error::new(ModHostDiagnostics::new(vec![ModHostIssue::MaxGeneratorRoundsExceeded {
+            limit: max_rounds,
+        }])));
     }
-    let macro_outcome = run_macro_expand_with_diagnostics(
-        program,
-        input.pipeline,
-        input.source_name,
-        input.source,
-    )?;
+    let macro_outcome = run_macro_expand_with_diagnostics(program, input.pipeline, input.source_name, input.source)?;
     program = macro_outcome.program;
     macro_diagnostics.extend(macro_outcome.diagnostics);
 
@@ -209,25 +172,16 @@ fn materialize_declared_outputs(
 
         for output in outputs {
             let layout_path = artifact.discovered.project_root.join(&output.layout);
-            let layout = load_generate_output_layout(&layout_path)
-                .map_err(|err| anyhow::anyhow!("{err}"))?;
+            let layout = load_generate_output_layout(&layout_path).map_err(|err| anyhow::anyhow!("{err}"))?;
             if layout.schema_version >= 2 {
                 if code_outputs.is_empty() {
                     continue;
                 }
-                write_code_generate_output(
-                    compile_plan,
-                    &artifact.discovered.project_root,
-                    &layout,
-                    &code_outputs,
-                )
-                .map_err(|err| anyhow::anyhow!("{err}"))?;
+                write_code_generate_output(compile_plan, &artifact.discovered.project_root, &layout, &code_outputs)
+                    .map_err(|err| anyhow::anyhow!("{err}"))?;
                 continue;
             }
-            let output_root = artifact
-                .discovered
-                .project_root
-                .join(output.resolved_root());
+            let output_root = artifact.discovered.project_root.join(output.resolved_root());
             if typed_items.is_empty() {
                 continue;
             }
@@ -238,10 +192,7 @@ fn materialize_declared_outputs(
     Ok(())
 }
 
-fn code_outputs_for_artifact(
-    artifact: &LoadedModArtifact,
-    outcomes: &[GeneratorOutcome],
-) -> Vec<CodeGenerateOutput> {
+fn code_outputs_for_artifact(artifact: &LoadedModArtifact, outcomes: &[GeneratorOutcome]) -> Vec<CodeGenerateOutput> {
     use std::collections::HashSet;
 
     let generator_type_ids: HashSet<&str> = artifact
@@ -258,10 +209,7 @@ fn code_outputs_for_artifact(
         .collect()
 }
 
-fn typed_items_for_artifact(
-    artifact: &LoadedModArtifact,
-    outcomes: &[GeneratorOutcome],
-) -> Vec<Spanned<ProgramItem>> {
+fn typed_items_for_artifact(artifact: &LoadedModArtifact, outcomes: &[GeneratorOutcome]) -> Vec<Spanned<ProgramItem>> {
     use std::collections::HashSet;
 
     let generator_type_ids: HashSet<&str> = artifact
@@ -315,11 +263,7 @@ pub fn run_analyze_rewrite_with_invoker(
     pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
 ) -> Result<ModHostAnalyzeResult> {
     if session.is_empty() {
-        return Ok(ModHostAnalyzeResult {
-            program,
-            analyzer_outcomes: Vec::new(),
-            rewriter_outcomes: Vec::new(),
-        });
+        return Ok(ModHostAnalyzeResult { program, analyzer_outcomes: Vec::new(), rewriter_outcomes: Vec::new() });
     }
 
     let default_invoker = StubContractInvoker::new();
@@ -332,11 +276,7 @@ pub fn run_analyze_rewrite_with_invoker(
     let analyzer_outcomes = analyzed.outcomes.clone();
     let rewrite = run_rewriters(program, session, &analyzed, host_input, invoker, pipeline)?;
 
-    Ok(ModHostAnalyzeResult {
-        program: rewrite.program,
-        analyzer_outcomes,
-        rewriter_outcomes: rewrite.outcomes,
-    })
+    Ok(ModHostAnalyzeResult { program: rewrite.program, analyzer_outcomes, rewriter_outcomes: rewrite.outcomes })
 }
 
 /// Surface the structured [`ModHostDiagnostics`] from a `mod_host` error. Returns
@@ -496,9 +436,8 @@ dependency "ModA" {
         assert_eq!(generated.generator_outcomes.len(), 1);
 
         let composition_snapshot = generated.session.composition_snapshot_or_default();
-        let semantic_snapshot =
-            crate::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
-                .with_composition(&composition_snapshot);
+        let semantic_snapshot = crate::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+            .with_composition(&composition_snapshot);
         let analyze = run_analyze_rewrite_with_invoker(
             generated.program,
             &generated.session,
@@ -596,15 +535,12 @@ dependency "ModA" {
             Ok(_) => panic!("duplicate (contractId, typeId) registration must abort"),
             Err(err) => err,
         };
-        let diagnostics = extract_mod_host_diagnostics(&err)
-            .expect("mod host diagnostics surfaced through anyhow chain");
+        let diagnostics =
+            extract_mod_host_diagnostics(&err).expect("mod host diagnostics surfaced through anyhow chain");
         assert!(diagnostics.codes().contains(&"E1829"));
 
         let events = pipeline.events.lock().expect("events").clone();
-        assert!(
-            !events.contains(&beskid_pipeline::phases::MOD_COLLECT),
-            "scheduling must abort before mod.collect"
-        );
+        assert!(!events.contains(&beskid_pipeline::phases::MOD_COLLECT), "scheduling must abort before mod.collect");
 
         let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
     }
@@ -615,11 +551,7 @@ dependency "ModA" {
             manifest_path: host.join("Host.bproj"),
             project_name: "Host".to_owned(),
             source_root: host.join("Src"),
-            target: Target {
-                name: "main".to_owned(),
-                kind: TargetKind::App,
-                entry: Some("Main.bd".to_owned()),
-            },
+            target: Target { name: "main".to_owned(), kind: TargetKind::App, entry: Some("Main.bd".to_owned()) },
             dependency_projects: vec![ResolvedDependencyProject {
                 dependency_name: "ModA".to_owned(),
                 manifest_path: mod_dir.join("ModA.bproj"),
@@ -633,10 +565,7 @@ dependency "ModA" {
     }
 
     fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
-        let id = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time")
-            .as_nanos();
+        let id = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
         std::env::temp_dir().join(format!("{prefix}_{id}"))
     }
 }

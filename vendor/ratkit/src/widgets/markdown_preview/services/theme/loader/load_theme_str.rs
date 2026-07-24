@@ -8,9 +8,7 @@ use ratatui::style::Color;
 
 use crate::widgets::markdown_preview::services::theme::diff_colors::DiffColors;
 use crate::widgets::markdown_preview::services::theme::loader::resolve_defs::resolve_color_value;
-use crate::widgets::markdown_preview::services::theme::loader::theme_json::{
-    ColorValue, ThemeJson,
-};
+use crate::widgets::markdown_preview::services::theme::loader::theme_json::{ColorValue, ThemeJson};
 use crate::widgets::markdown_preview::services::theme::markdown_colors::MarkdownColors;
 use crate::widgets::markdown_preview::services::theme::syntax_colors::SyntaxColors;
 
@@ -53,26 +51,19 @@ use crate::widgets::markdown_preview::services::theme::syntax_colors::SyntaxColo
 /// assert!(theme.is_ok());
 /// ```
 pub fn load_theme_str(json: &str, variant: ThemeVariant) -> Result<AppTheme, String> {
-    let theme_json: ThemeJson =
-        serde_json::from_str(json).map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    let theme_json: ThemeJson = serde_json::from_str(json).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
     build_theme_from_json(&theme_json, variant)
 }
 
 /// Builds an AppTheme from parsed ThemeJson.
-pub(crate) fn build_theme_from_json(
-    theme_json: &ThemeJson,
-    variant: ThemeVariant,
-) -> Result<AppTheme, String> {
+pub(crate) fn build_theme_from_json(theme_json: &ThemeJson, variant: ThemeVariant) -> Result<AppTheme, String> {
     let defs = &theme_json.defs;
     let theme = &theme_json.theme;
 
     // Helper to resolve a color with a default
     let resolve = |key: &str, default: Color| -> Color {
-        theme
-            .get(key)
-            .and_then(|v| resolve_color_value(v, defs, variant))
-            .unwrap_or(default)
+        theme.get(key).and_then(|v| resolve_color_value(v, defs, variant)).unwrap_or(default)
     };
 
     // Get default theme for fallback values
@@ -91,20 +82,15 @@ pub(crate) fn build_theme_from_json(
     let text = resolve("text", default.text);
     let text_muted = resolve("textMuted", default.text_muted);
     // Selected text falls back to text if not specified
-    let selected_text = theme
-        .get("selectedText")
-        .and_then(|v| resolve_color_value(v, defs, variant))
-        .unwrap_or(text);
+    let selected_text = theme.get("selectedText").and_then(|v| resolve_color_value(v, defs, variant)).unwrap_or(text);
 
     // Build background colors
     let background = resolve("background", default.background);
     let background_panel = resolve("backgroundPanel", default.background_panel);
     let background_element = resolve("backgroundElement", default.background_element);
     // Menu background falls back to panel if not specified
-    let background_menu = theme
-        .get("backgroundMenu")
-        .and_then(|v| resolve_color_value(v, defs, variant))
-        .unwrap_or(background_panel);
+    let background_menu =
+        theme.get("backgroundMenu").and_then(|v| resolve_color_value(v, defs, variant)).unwrap_or(background_panel);
 
     // Build border colors
     let border = resolve("border", default.border);
@@ -153,10 +139,7 @@ fn build_diff_colors(
     let default = DiffColors::default();
 
     let resolve = |key: &str, default: Color| -> Color {
-        theme
-            .get(key)
-            .and_then(|v| resolve_color_value(v, defs, variant))
-            .unwrap_or(default)
+        theme.get(key).and_then(|v| resolve_color_value(v, defs, variant)).unwrap_or(default)
     };
 
     DiffColors {
@@ -184,10 +167,7 @@ fn build_markdown_colors(
     let default = MarkdownColors::default();
 
     let resolve = |key: &str, default: Color| -> Color {
-        theme
-            .get(key)
-            .and_then(|v| resolve_color_value(v, defs, variant))
-            .unwrap_or(default)
+        theme.get(key).and_then(|v| resolve_color_value(v, defs, variant)).unwrap_or(default)
     };
 
     MarkdownColors {
@@ -217,10 +197,7 @@ fn build_syntax_colors(
     let default = SyntaxColors::default();
 
     let resolve = |key: &str, default: Color| -> Color {
-        theme
-            .get(key)
-            .and_then(|v| resolve_color_value(v, defs, variant))
-            .unwrap_or(default)
+        theme.get(key).and_then(|v| resolve_color_value(v, defs, variant)).unwrap_or(default)
     };
 
     SyntaxColors {

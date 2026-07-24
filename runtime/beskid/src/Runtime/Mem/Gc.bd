@@ -13,9 +13,11 @@
 // installed by ThreadAttach during bootstrap.
 
 // Mark-state constants for gc_word.
-const GC_WHITE = 0;
-const GC_GRAY = 1;
-const GC_BLACK = 2;
+pub enum GcMark {
+    White,
+    Gray,
+    Black,
+}
 
 // ── Heap state layout (in-process, thread-local) ──────────────────
 
@@ -394,8 +396,8 @@ pub word GcCollectIfNeeded() {
 // Marks a single object gray and pushes it onto the mark stack.
 pub unit GcMarkGray(pointer object) {
     word state = raw_word_load(pointer_add(object, 8));
-    if state == GC_WHITE {
-        raw_word_store(pointer_add(object, 8), GC_GRAY);
+    if state == GcMark::White {
+        raw_word_store(pointer_add(object, 8), GcMark::Gray);
         // Push onto gray stack for processing.
         PushGray(object);
     }
@@ -404,7 +406,7 @@ pub unit GcMarkGray(pointer object) {
 
 // Marks an object black (fully traced).
 pub unit GcMarkBlack(pointer object) {
-    raw_word_store(pointer_add(object, 8), GC_BLACK);
+    raw_word_store(pointer_add(object, 8), GcMark::Black);
     return;
 }
 
@@ -556,9 +558,9 @@ pub unit Sweep(pointer heap) {
         } else {
             word state = raw_word_load(pointer_add(bump, 8));
             word objSize = raw_word_load(descriptor);
-            if state == GC_BLACK {
+            if state == GcMark::Black {
                 // Object is live — reset to white for next cycle.
-                raw_word_store(pointer_add(bump, 8), GC_WHITE);
+                raw_word_store(pointer_add(bump, 8), GcMark::White);
                 liveBytes = liveBytes + objSize;
                 liveCount = liveCount + 1;
             } else {

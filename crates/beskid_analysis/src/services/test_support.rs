@@ -8,9 +8,7 @@ static PROJECT_TEST_CWD_LOCK: Mutex<()> = Mutex::new(());
 
 /// Run `f` with cwd set to `dir`, restoring the previous cwd afterward.
 pub(crate) fn with_cwd<R>(dir: &Path, f: impl FnOnce() -> R) -> R {
-    let _guard = PROJECT_TEST_CWD_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _guard = PROJECT_TEST_CWD_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let previous = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(dir).expect("chdir");
     let out = f();

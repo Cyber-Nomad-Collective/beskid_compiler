@@ -23,17 +23,9 @@ pub struct SymbolQualifier {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SymbolShape {
     /// `package::module::path::Name`
-    ModuleItem {
-        module_path: Vec<String>,
-        name: String,
-        kind: ExportKind,
-    },
+    ModuleItem { module_path: Vec<String>, name: String, kind: ExportKind },
     /// `package::parent_qn::member`
-    Member {
-        parent: SymbolId,
-        name: String,
-        kind: MemberKind,
-    },
+    Member { parent: SymbolId, name: String, kind: MemberKind },
     /// `package::ReceiverType::method`
     Method { receiver: String, name: String },
     /// `beskid::path::segments`
@@ -132,18 +124,11 @@ impl SymbolRegistry {
 /// Canonical `::`-separated qualified name for docs, link plans, and LSP.
 pub fn symbol_to_string(registry: &SymbolRegistry, qualifier: &SymbolQualifier) -> String {
     match &qualifier.shape {
-        SymbolShape::ModuleItem {
-            module_path, name, ..
-        } => {
+        SymbolShape::ModuleItem { module_path, name, .. } => {
             if module_path.is_empty() {
                 format!("{}::{}", qualifier.package, name)
             } else {
-                format!(
-                    "{}::{}::{}",
-                    qualifier.package,
-                    module_path.join("::"),
-                    name
-                )
+                format!("{}::{}::{}", qualifier.package, module_path.join("::"), name)
             }
         }
         SymbolShape::Method { receiver, name } => {
@@ -191,16 +176,8 @@ pub fn symbol_shape_for_item(
     if let (Some(parent), Some(member_name)) = (parent_symbol, member_display_name)
         && let Some(member_kind) = MemberKind::from_item_kind(kind)
     {
-        let short = member_name
-            .split_once("::")
-            .map(|x| x.1)
-            .unwrap_or(member_name)
-            .to_string();
-        return Some(SymbolShape::Member {
-            parent,
-            name: short,
-            kind: member_kind,
-        });
+        let short = member_name.split_once("::").map(|x| x.1).unwrap_or(member_name).to_string();
+        return Some(SymbolShape::Member { parent, name: short, kind: member_kind });
     }
     if let Some(export_kind) = ExportKind::from_item_kind(kind) {
         return Some(SymbolShape::ModuleItem {
@@ -220,10 +197,7 @@ pub fn register_item_symbol(
     item_id: ItemId,
     shape: SymbolShape,
 ) -> SymbolId {
-    let qualifier = SymbolQualifier {
-        package: package.to_string(),
-        shape,
-    };
+    let qualifier = SymbolQualifier { package: package.to_string(), shape };
     let symbol_id = registry.intern(qualifier);
     by_symbol.insert(symbol_id, item_id);
     symbol_id

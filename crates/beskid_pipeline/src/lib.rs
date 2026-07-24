@@ -23,18 +23,9 @@ pub use timing::TimedPipelineObserver;
 /// A single pipeline observation (phase boundaries or fine-grained work units).
 #[derive(Debug, Clone)]
 pub enum PipelineEvent {
-    PhaseStart {
-        id: &'static str,
-    },
-    PhaseEnd {
-        id: &'static str,
-    },
-    WorkUnit {
-        id: &'static str,
-        done: u64,
-        total: u64,
-        label: Cow<'static, str>,
-    },
+    PhaseStart { id: &'static str },
+    PhaseEnd { id: &'static str },
+    WorkUnit { id: &'static str, done: u64, total: u64, label: Cow<'static, str> },
 }
 
 /// Receives [`PipelineEvent`] from compiler stages. Implementations must be cheap; heavy work
@@ -52,11 +43,7 @@ impl PipelineObserver for NoopPipeline {
 }
 
 /// Runs `f` wrapped in [`PipelineEvent::PhaseStart`] / [`PipelineEvent::PhaseEnd`] when `obs` is present.
-pub fn observe_phase<O: PipelineObserver + ?Sized>(
-    obs: Option<&O>,
-    id: &'static str,
-    f: impl FnOnce(),
-) {
+pub fn observe_phase<O: PipelineObserver + ?Sized>(obs: Option<&O>, id: &'static str, f: impl FnOnce()) {
     let span = tracing::info_span!(target: "beskid.pipeline", "pipeline.phase", phase = id);
     let _guard = span.enter();
     if let Some(o) = obs {
@@ -123,12 +110,7 @@ pub fn emit_work_unit<O: PipelineObserver + ?Sized>(
         "work unit"
     );
     if let Some(o) = obs {
-        o.on_event(PipelineEvent::WorkUnit {
-            id,
-            done,
-            total,
-            label,
-        });
+        o.on_event(PipelineEvent::WorkUnit { id, done, total, label });
     }
 }
 

@@ -5,18 +5,15 @@ use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SyntaxProgramAssembly,
 };
 use beskid_queries::{
-    AstNodeId, AstNodeKey, BeskidDatabase, ModHostSyntaxGenerationId, ProjectSession, SourceUnitId,
-    SyntaxGenerationId, TypedProgram, call_arguments, call_lowering, cast_intents, control_flow,
-    item_signature, local_slot, node_type, resolved_item, resolved_local, runtime_intrinsic,
+    AstNodeId, AstNodeKey, BeskidDatabase, ModHostSyntaxGenerationId, ProjectSession, SourceUnitId, SyntaxGenerationId,
+    TypedProgram, call_arguments, call_lowering, cast_intents, control_flow, item_signature, local_slot, node_type,
+    resolved_item, resolved_local, runtime_intrinsic,
 };
 
 fn empty_assembly() -> Arc<SyntaxProgramAssembly> {
     Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
-            host: RootEntry {
-                dependency_name: None,
-                source_root: PathBuf::from("/tmp/project/src"),
-            },
+            host: RootEntry { dependency_name: None, source_root: PathBuf::from("/tmp/project/src") },
             dependencies: Vec::new(),
         },
         Arc::new(Vec::new()),
@@ -43,18 +40,7 @@ fn source_units_are_interned_by_path_and_do_not_collide() {
 
     let node = AstNodeId(7);
     let generation = SyntaxGenerationId(11);
-    assert_ne!(
-        AstNodeKey {
-            unit: main,
-            generation,
-            node,
-        },
-        AstNodeKey {
-            unit: other,
-            generation,
-            node,
-        }
-    );
+    assert_ne!(AstNodeKey { unit: main, generation, node }, AstNodeKey { unit: other, generation, node });
 }
 
 #[test]
@@ -69,10 +55,7 @@ fn source_unit_interning_canonicalizes_path_aliases() {
     let through_alias = SourceUnitId::new(&db, aliased);
 
     assert_eq!(canonical, through_alias);
-    assert_eq!(
-        canonical.path(&db),
-        &source.canonicalize().expect("canonical source")
-    );
+    assert_eq!(canonical.path(&db), &source.canonicalize().expect("canonical source"));
 }
 
 #[cfg(unix)]
@@ -93,13 +76,7 @@ fn missing_source_under_symlink_keeps_identity_after_creation() {
     let after_creation = SourceUnitId::new(&db, missing_through_link);
 
     assert_eq!(before_creation, after_creation);
-    assert_eq!(
-        before_creation.path(&db),
-        &real
-            .canonicalize()
-            .expect("canonical real directory")
-            .join("New.bd")
-    );
+    assert_eq!(before_creation.path(&db), &real.canonicalize().expect("canonical real directory").join("New.bd"));
 }
 
 #[cfg(unix)]
@@ -118,13 +95,7 @@ fn symlink_parent_traversal_is_not_lexically_conflated() {
     let traversed = SourceUnitId::new(&db, linked_child.join("..").join("New.bd"));
     let lexical = SourceUnitId::new(&db, directory.path().join("New.bd"));
     assert_ne!(traversed, lexical);
-    assert_eq!(
-        traversed.path(&db),
-        &physical
-            .canonicalize()
-            .expect("canonical physical directory")
-            .join("New.bd")
-    );
+    assert_eq!(traversed.path(&db), &physical.canonicalize().expect("canonical physical directory").join("New.bd"));
 
     std::fs::write(physical.join("New.bd"), "i32 Main() { return 0; }").expect("create source");
     let after_creation = SourceUnitId::new(&db, linked_child.join("..").join("New.bd"));
@@ -136,13 +107,8 @@ fn stale_generation_has_no_semantic_facts() {
     let mut db = BeskidDatabase::default();
     let entry_path = PathBuf::from("/tmp/project/src/Main.bd");
     let entry = SourceUnitId::new(&db, entry_path.clone());
-    let project = ProjectSession::new(
-        &db,
-        PathBuf::from("/tmp/project"),
-        entry_path,
-        "App".to_string(),
-        "lock".to_string(),
-    );
+    let project =
+        ProjectSession::new(&db, PathBuf::from("/tmp/project"), entry_path, "App".to_string(), "lock".to_string());
     let typed = TypedProgram {
         project,
         entry,
@@ -151,22 +117,10 @@ fn stale_generation_has_no_semantic_facts() {
         runtime_intrinsic_capability: None,
         corelib_service_capability: None,
     };
-    db.ensure_file_text(
-        typed.entry.path(&db).clone(),
-        "i32 Main() { return 0; }".to_string(),
-    );
-    let authority = db
-        .ensure_syntax_unit(typed.project, typed.entry, typed.generation)
-        .expect("syntax registration");
-    let current = AstNodeKey {
-        unit: entry,
-        generation: typed.generation,
-        node: AstNodeId(0),
-    };
-    let stale = AstNodeKey {
-        generation: SyntaxGenerationId(3),
-        ..current
-    };
+    db.ensure_file_text(typed.entry.path(&db).clone(), "i32 Main() { return 0; }".to_string());
+    let authority = db.ensure_syntax_unit(typed.project, typed.entry, typed.generation).expect("syntax registration");
+    let current = AstNodeKey { unit: entry, generation: typed.generation, node: AstNodeId(0) };
+    let stale = AstNodeKey { generation: SyntaxGenerationId(3), ..current };
     assert!(db.syntax_unit(typed.entry) == Some(authority));
 
     assert_eq!(resolved_item(&db, current), Ok(None));
@@ -199,19 +153,11 @@ fn stale_generation_has_no_semantic_facts() {
     assert_eq!(resolved_item(&db, unregistered), Ok(None));
 
     let same_authority = db
-        .update_syntax_source(
-            typed.project,
-            typed.entry,
-            SyntaxGenerationId(5),
-            "i32 Main() { return 1; }".to_string(),
-        )
+        .update_syntax_source(typed.project, typed.entry, SyntaxGenerationId(5), "i32 Main() { return 1; }".to_string())
         .expect("registered syntax edit");
     assert!(same_authority == authority);
     assert_eq!(resolved_item(&db, current), Ok(None));
-    let current_after_update = AstNodeKey {
-        generation: SyntaxGenerationId(5),
-        ..current
-    };
+    let current_after_update = AstNodeKey { generation: SyntaxGenerationId(5), ..current };
     assert_eq!(resolved_item(&db, current_after_update), Ok(None));
 }
 
@@ -226,17 +172,10 @@ fn unchanged_ensure_is_idempotent_without_parse_or_index_rebuild() {
         "App".to_string(),
         "lock".to_string(),
     );
-    db.ensure_file_text(
-        entry.path(&db).clone(),
-        "i32 Main() { return 0; }".to_string(),
-    );
+    db.ensure_file_text(entry.path(&db).clone(), "i32 Main() { return 0; }".to_string());
 
-    let first = db
-        .ensure_syntax_unit(project, entry, SyntaxGenerationId(1))
-        .expect("first registration");
-    let second = db
-        .ensure_syntax_unit(project, entry, SyntaxGenerationId(1))
-        .expect("idempotent registration");
+    let first = db.ensure_syntax_unit(project, entry, SyntaxGenerationId(1)).expect("first registration");
+    let second = db.ensure_syntax_unit(project, entry, SyntaxGenerationId(1)).expect("idempotent registration");
 
     assert!(first == second);
     assert_eq!(db.syntax_authority_counts(), (1, 1));
@@ -253,42 +192,22 @@ fn generations_are_monotonic_and_bound_to_source_content() {
         "App".to_string(),
         "lock".to_string(),
     );
-    db.update_syntax_source(
-        project,
-        entry,
-        SyntaxGenerationId(4),
-        "i32 Main() { return 0; }".to_string(),
-    )
-    .expect("initial source");
+    db.update_syntax_source(project, entry, SyntaxGenerationId(4), "i32 Main() { return 0; }".to_string())
+        .expect("initial source");
 
     assert!(
-        db.update_syntax_source(
-            project,
-            entry,
-            SyntaxGenerationId(4),
-            "i32 Main() { return 1; }".to_string(),
-        )
-        .is_err(),
+        db.update_syntax_source(project, entry, SyntaxGenerationId(4), "i32 Main() { return 1; }".to_string(),)
+            .is_err(),
         "changed syntax cannot reuse a generation"
     );
     assert!(
-        db.update_syntax_source(
-            project,
-            entry,
-            SyntaxGenerationId(3),
-            "i32 Main() { return 2; }".to_string(),
-        )
-        .is_err(),
+        db.update_syntax_source(project, entry, SyntaxGenerationId(3), "i32 Main() { return 2; }".to_string(),)
+            .is_err(),
         "generation cannot regress"
     );
     assert!(
-        db.update_syntax_source(
-            project,
-            entry,
-            SyntaxGenerationId(5),
-            "i32 Main() { return 0; }".to_string(),
-        )
-        .is_err(),
+        db.update_syntax_source(project, entry, SyntaxGenerationId(5), "i32 Main() { return 0; }".to_string(),)
+            .is_err(),
         "unchanged syntax cannot be blindly relabeled"
     );
     assert_eq!(db.syntax_authority_counts(), (1, 1));
@@ -307,14 +226,11 @@ fn source_fingerprint_cannot_be_resurrected_in_a_later_generation() {
     );
     let source_a = "i32 Main() { return 1; }";
     let source_b = "i32 Main() { return 2; }";
-    db.update_syntax_source(project, entry, SyntaxGenerationId(4), source_a.to_string())
-        .expect("generation A");
-    db.update_syntax_source(project, entry, SyntaxGenerationId(5), source_b.to_string())
-        .expect("generation B");
+    db.update_syntax_source(project, entry, SyntaxGenerationId(4), source_a.to_string()).expect("generation A");
+    db.update_syntax_source(project, entry, SyntaxGenerationId(5), source_b.to_string()).expect("generation B");
 
     assert!(
-        db.update_syntax_source(project, entry, SyntaxGenerationId(6), source_a.to_string())
-            .is_err(),
+        db.update_syntax_source(project, entry, SyntaxGenerationId(6), source_a.to_string()).is_err(),
         "A@g4 -> B@g5 -> A@g6 must not resurrect an old fingerprint"
     );
     assert_eq!(db.syntax_authority_counts(), (2, 2));
@@ -333,21 +249,14 @@ fn trivia_only_edit_cannot_relabel_the_same_expanded_tree() {
     );
     let compact = "i32 Main() { return 1; }";
     let spaced = "i32   Main()   {   return 1;   }";
-    db.update_syntax_source(project, entry, SyntaxGenerationId(4), compact.to_string())
-        .expect("initial syntax");
+    db.update_syntax_source(project, entry, SyntaxGenerationId(4), compact.to_string()).expect("initial syntax");
 
     assert!(
-        db.update_syntax_source(project, entry, SyntaxGenerationId(5), spaced.to_string())
-            .is_err(),
+        db.update_syntax_source(project, entry, SyntaxGenerationId(5), spaced.to_string()).is_err(),
         "trivia-only edits must not assign a new generation to the same expanded tree"
     );
     assert_eq!(db.syntax_authority_counts(), (2, 1));
-    assert_eq!(
-        db.file_text(entry.path(&db))
-            .expect("original file input")
-            .text(&db),
-        compact
-    );
+    assert_eq!(db.file_text(entry.path(&db)).expect("original file input").text(&db), compact);
 }
 
 #[test]
@@ -368,22 +277,11 @@ fn source_unit_cannot_be_reassigned_between_project_sessions() {
         "Second".to_string(),
         "lock-b".to_string(),
     );
-    db.update_syntax_source(
-        first,
-        entry,
-        SyntaxGenerationId(1),
-        "i32 Main() { return 0; }".to_string(),
-    )
-    .expect("first project owns source");
+    db.update_syntax_source(first, entry, SyntaxGenerationId(1), "i32 Main() { return 0; }".to_string())
+        .expect("first project owns source");
 
     assert!(
-        db.update_syntax_source(
-            second,
-            entry,
-            SyntaxGenerationId(2),
-            "i32 Main() { return 1; }".to_string(),
-        )
-        .is_err()
+        db.update_syntax_source(second, entry, SyntaxGenerationId(2), "i32 Main() { return 1; }".to_string(),).is_err()
     );
 }
 
@@ -424,27 +322,13 @@ fn failed_edit_keeps_previous_source_and_syntax_authority() {
         "lock".to_string(),
     );
     let source = "i32 Main() { return 0; }";
-    let authority = db
-        .update_syntax_source(project, entry, SyntaxGenerationId(1), source.to_string())
-        .expect("initial source");
+    let authority =
+        db.update_syntax_source(project, entry, SyntaxGenerationId(1), source.to_string()).expect("initial source");
 
-    assert!(
-        db.update_syntax_source(
-            project,
-            entry,
-            SyntaxGenerationId(2),
-            "not valid Beskid".to_string(),
-        )
-        .is_err()
-    );
+    assert!(db.update_syntax_source(project, entry, SyntaxGenerationId(2), "not valid Beskid".to_string(),).is_err());
 
     assert!(db.syntax_unit(entry) == Some(authority));
-    assert_eq!(
-        db.file_text(entry.path(&db))
-            .expect("previous file input")
-            .text(&db),
-        source
-    );
+    assert_eq!(db.file_text(entry.path(&db)).expect("previous file input").text(&db), source);
     assert_eq!(db.syntax_authority_counts(), (2, 1));
 }
 
@@ -461,10 +345,7 @@ fn syntax_registration_reports_parse_failure_instead_of_inventing_empty_program(
     );
     db.ensure_file_text(entry.path(&db).clone(), "not valid Beskid".to_string());
 
-    assert!(
-        db.ensure_syntax_unit(project, entry, SyntaxGenerationId(1))
-            .is_err()
-    );
+    assert!(db.ensure_syntax_unit(project, entry, SyntaxGenerationId(1)).is_err());
     assert!(db.syntax_unit(entry).is_none());
 }
 

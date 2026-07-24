@@ -7,10 +7,7 @@ use std::time::{Duration, Instant};
 
 use beskid_codegen::CodegenArtifact;
 
-use crate::api::{
-    AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, RuntimeKitRequest,
-    build,
-};
+use crate::api::{AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, RuntimeKitRequest, build};
 use crate::error::{AotError, AotResult};
 use crate::target::{detect_target, output_filename};
 
@@ -38,22 +35,14 @@ pub struct AotRunResult {
 /// Emit and link an executable under `request.output_dir`, then run it with a bounded wait.
 pub fn build_and_run(request: AotRunRequest) -> AotResult<AotRunResult> {
     if request.entrypoint.trim().is_empty() {
-        return Err(AotError::InvalidRequest {
-            message: "entrypoint must not be empty".to_owned(),
-        });
+        return Err(AotError::InvalidRequest { message: "entrypoint must not be empty".to_owned() });
     }
 
-    std::fs::create_dir_all(&request.output_dir).map_err(|err| AotError::Io {
-        path: request.output_dir.clone(),
-        message: err.to_string(),
-    })?;
+    std::fs::create_dir_all(&request.output_dir)
+        .map_err(|err| AotError::Io { path: request.output_dir.clone(), message: err.to_string() })?;
 
     let target = detect_target(None)?;
-    let exe_path = request.output_dir.join(output_filename(
-        RUN_EXE_BASENAME,
-        BuildOutputKind::Exe,
-        &target,
-    ));
+    let exe_path = request.output_dir.join(output_filename(RUN_EXE_BASENAME, BuildOutputKind::Exe, &target));
 
     let build_result = build(AotBuildRequest {
         artifact: request.artifact,
@@ -72,31 +61,19 @@ pub fn build_and_run(request: AotRunRequest) -> AotResult<AotRunResult> {
         pipeline: None,
     })?;
 
-    let exe_path = build_result
-        .final_path
-        .ok_or_else(|| AotError::InvalidRequest {
-            message: "executable build did not produce a final linked artifact".to_owned(),
-        })?;
+    let exe_path = build_result.final_path.ok_or_else(|| AotError::InvalidRequest {
+        message: "executable build did not produce a final linked artifact".to_owned(),
+    })?;
 
     let (exit_code, stdout, stderr) = run_executable(&exe_path, DEFAULT_RUN_TIMEOUT)?;
 
-    Ok(AotRunResult {
-        exe_path,
-        exit_code,
-        stdout,
-        stderr,
-    })
+    Ok(AotRunResult { exe_path, exit_code, stdout, stderr })
 }
 
 /// Run an already-linked executable produced by [`build`] or [`build_and_run`].
 pub fn run_linked_executable(path: &Path) -> AotResult<AotRunResult> {
     let (exit_code, stdout, stderr) = run_executable(path, DEFAULT_RUN_TIMEOUT)?;
-    Ok(AotRunResult {
-        exe_path: path.to_path_buf(),
-        exit_code,
-        stdout,
-        stderr,
-    })
+    Ok(AotRunResult { exe_path: path.to_path_buf(), exit_code, stdout, stderr })
 }
 
 fn run_executable(path: &Path, timeout: Duration) -> AotResult<(i32, Vec<u8>, Vec<u8>)> {
@@ -105,33 +82,24 @@ fn run_executable(path: &Path, timeout: Duration) -> AotResult<(i32, Vec<u8>, Ve
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|err| AotError::RunFailed {
-            path: path.to_path_buf(),
-            message: err.to_string(),
-        })?;
+        .map_err(|err| AotError::RunFailed { path: path.to_path_buf(), message: err.to_string() })?;
 
     let start = Instant::now();
     loop {
         if start.elapsed() > timeout {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(AotError::RunTimedOut {
-                path: path.to_path_buf(),
-                seconds: timeout.as_secs(),
-            });
+            return Err(AotError::RunTimedOut { path: path.to_path_buf(), seconds: timeout.as_secs() });
         }
 
-        match child.try_wait().map_err(|err| AotError::RunFailed {
-            path: path.to_path_buf(),
-            message: err.to_string(),
-        })? {
+        match child
+            .try_wait()
+            .map_err(|err| AotError::RunFailed { path: path.to_path_buf(), message: err.to_string() })?
+        {
             Some(_) => {
                 let output = child
                     .wait_with_output()
-                    .map_err(|err| AotError::RunFailed {
-                        path: path.to_path_buf(),
-                        message: err.to_string(),
-                    })?;
+                    .map_err(|err| AotError::RunFailed { path: path.to_path_buf(), message: err.to_string() })?;
                 let exit_code = output.status.code().unwrap_or(-1);
                 return Ok((exit_code, output.stdout, output.stderr));
             }

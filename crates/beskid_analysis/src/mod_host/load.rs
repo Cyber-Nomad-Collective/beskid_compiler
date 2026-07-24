@@ -15,29 +15,15 @@ pub(crate) fn load_artifacts(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<Vec<LoadedModArtifact>> {
     observe_phase_result(pipeline, MOD_LOAD, || {
-        mods.into_iter()
-            .map(|discovered| load_artifact(workspace_root, discovered))
-            .collect()
+        mods.into_iter().map(|discovered| load_artifact(workspace_root, discovered)).collect()
     })
 }
 
-fn load_artifact(
-    workspace_root: Option<&Path>,
-    discovered: DiscoveredMod,
-) -> Result<LoadedModArtifact> {
-    let descriptor = find_descriptor(workspace_root, &discovered)?
-        .map(|path| read_descriptor(&path))
-        .transpose()?;
-    let registrations = descriptor
-        .as_ref()
-        .map(|descriptor| descriptor.registrations.clone())
-        .unwrap_or_default();
+fn load_artifact(workspace_root: Option<&Path>, discovered: DiscoveredMod) -> Result<LoadedModArtifact> {
+    let descriptor = find_descriptor(workspace_root, &discovered)?.map(|path| read_descriptor(&path)).transpose()?;
+    let registrations = descriptor.as_ref().map(|descriptor| descriptor.registrations.clone()).unwrap_or_default();
 
-    Ok(LoadedModArtifact {
-        discovered,
-        descriptor,
-        registrations,
-    })
+    Ok(LoadedModArtifact { discovered, descriptor, registrations })
 }
 
 fn read_descriptor(path: &Path) -> Result<ModArtifactDescriptor> {
@@ -45,17 +31,11 @@ fn read_descriptor(path: &Path) -> Result<ModArtifactDescriptor> {
         .with_context(|| format!("failed to read mod artifact descriptor {}", path.display()))?;
     let mut descriptor: ModArtifactDescriptor = serde_json::from_str(&json)
         .with_context(|| format!("failed to parse mod artifact descriptor {}", path.display()))?;
-    descriptor.artifact_dir = path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
+    descriptor.artifact_dir = path.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
     Ok(descriptor)
 }
 
-fn find_descriptor(
-    workspace_root: Option<&Path>,
-    discovered: &DiscoveredMod,
-) -> Result<Option<PathBuf>> {
+fn find_descriptor(workspace_root: Option<&Path>, discovered: &DiscoveredMod) -> Result<Option<PathBuf>> {
     let mut roots = BTreeSet::new();
     if let Some(workspace_root) = workspace_root {
         roots.insert(workspace_root.to_path_buf());
@@ -65,19 +45,12 @@ fn find_descriptor(
         roots.insert(source_parent.to_path_buf());
     }
 
-    let package_candidates = [
-        discovered.project_name.as_str(),
-        discovered.dependency_name.as_str(),
-    ];
+    let package_candidates = [discovered.project_name.as_str(), discovered.dependency_name.as_str()];
     let mut descriptors = Vec::new();
 
     for root in roots {
         for package_id in package_candidates {
-            let artifact_root = root
-                .join(".beskid")
-                .join("obj")
-                .join("mods")
-                .join(package_id);
+            let artifact_root = root.join(".beskid").join("obj").join("mods").join(package_id);
             if artifact_root.is_dir() {
                 collect_descriptors(&artifact_root, &mut descriptors)?;
             }
@@ -89,20 +62,16 @@ fn find_descriptor(
 }
 
 fn collect_descriptors(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(root)
-        .with_context(|| format!("failed to inspect mod artifact cache {}", root.display()))?
+    for entry in
+        fs::read_dir(root).with_context(|| format!("failed to inspect mod artifact cache {}", root.display()))?
     {
-        let entry = entry
-            .with_context(|| format!("failed to inspect mod artifact cache {}", root.display()))?;
+        let entry = entry.with_context(|| format!("failed to inspect mod artifact cache {}", root.display()))?;
         let path = entry.path();
-        let file_type = entry
-            .file_type()
-            .with_context(|| format!("failed to inspect mod artifact cache {}", path.display()))?;
+        let file_type =
+            entry.file_type().with_context(|| format!("failed to inspect mod artifact cache {}", path.display()))?;
         if file_type.is_dir() {
             collect_descriptors(&path, out)?;
-        } else if file_type.is_file()
-            && path.file_name().and_then(|name| name.to_str()) == Some(MOD_DESCRIPTOR_FILE)
-        {
+        } else if file_type.is_file() && path.file_name().and_then(|name| name.to_str()) == Some(MOD_DESCRIPTOR_FILE) {
             out.push(path);
         }
     }
@@ -123,8 +92,7 @@ mod tests {
         let root = unique_temp_dir("mod_host_load_empty");
         let mod_dir = root.join("ModA");
         fs::create_dir_all(mod_dir.join("Src")).expect("mod dir");
-        let loaded =
-            load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], None).expect("load");
+        let loaded = load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], None).expect("load");
 
         assert_eq!(loaded.len(), 1);
         assert!(loaded[0].descriptor.is_none());
@@ -161,15 +129,11 @@ mod tests {
         )
         .expect("descriptor");
 
-        let loaded =
-            load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], None).expect("load");
+        let loaded = load_artifacts(Some(&root), vec![discovered("ModA", &mod_dir)], None).expect("load");
 
         assert_eq!(loaded[0].registrations.len(), 1);
         assert_eq!(loaded[0].registrations[0].entry_symbol, "moda_emit");
-        assert_eq!(
-            loaded[0].descriptor.as_ref().unwrap().artifact_dir,
-            descriptor_dir
-        );
+        assert_eq!(loaded[0].descriptor.as_ref().unwrap().artifact_dir, descriptor_dir);
 
         let _ = fs::remove_dir_all(root); // Discard result: temp dir cleanup
     }
@@ -191,10 +155,7 @@ mod tests {
     }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
-        let id = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time")
-            .as_nanos();
+        let id = SystemTime::now().duration_since(UNIX_EPOCH).expect("time").as_nanos();
         std::env::temp_dir().join(format!("{prefix}_{id}"))
     }
 }

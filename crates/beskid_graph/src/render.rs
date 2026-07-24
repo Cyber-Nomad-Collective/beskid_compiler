@@ -10,19 +10,11 @@ pub enum GraphError {
     UnknownNode(String),
 }
 
-pub fn render_document(
-    spec: GraphSpec,
-    focused_project_uri: Option<String>,
-) -> Result<GraphDocument, GraphError> {
+pub fn render_document(spec: GraphSpec, focused_project_uri: Option<String>) -> Result<GraphDocument, GraphError> {
     let mermaid = render_flowchart(&spec)?;
     let revision = fingerprint_spec(&spec);
     let metadata = spec.metadata(focused_project_uri);
-    Ok(GraphDocument {
-        spec,
-        mermaid,
-        revision,
-        metadata,
-    })
+    Ok(GraphDocument { spec, mermaid, revision, metadata })
 }
 
 pub fn render_flowchart(spec: &GraphSpec) -> Result<String, GraphError> {
@@ -31,11 +23,7 @@ pub fn render_flowchart(spec: &GraphSpec) -> Result<String, GraphError> {
     let mut output = format!("flowchart {}\n", spec.direction.to_mermaid_direction());
 
     for node in &spec.nodes {
-        output.push_str(&format!(
-            "  {}[{}]\n",
-            node.id,
-            sanitize_tui_label(&node.label)
-        ));
+        output.push_str(&format!("  {}[{}]\n", node.id, sanitize_tui_label(&node.label)));
     }
 
     for edge in &spec.edges {
@@ -48,12 +36,7 @@ pub fn render_flowchart(spec: &GraphSpec) -> Result<String, GraphError> {
 
         match &edge.label {
             Some(label) => {
-                output.push_str(&format!(
-                    "  {} -->|{}| {}\n",
-                    edge.from,
-                    escape_edge_label(label),
-                    edge.to
-                ));
+                output.push_str(&format!("  {} -->|{}| {}\n", edge.from, escape_edge_label(label), edge.to));
             }
             None => {
                 output.push_str(&format!("  {} --> {}\n", edge.from, edge.to));
@@ -111,9 +94,7 @@ fn append_style_classes(output: &mut String, spec: &GraphSpec) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{
-        GraphDirection, GraphEdge, GraphKind, GraphNode, GraphNodeKind, GraphSpec, NodeMetadata,
-    };
+    use crate::model::{GraphDirection, GraphEdge, GraphKind, GraphNode, GraphNodeKind, GraphSpec, NodeMetadata};
     use graphs_tui::{RenderOptions, render_mermaid_to_tui};
 
     #[test]

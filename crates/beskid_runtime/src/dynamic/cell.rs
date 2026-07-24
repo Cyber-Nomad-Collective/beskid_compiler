@@ -17,10 +17,6 @@ impl DynamicCell {
 
     #[must_use]
     pub const fn empty() -> Self {
-        Self {
-            shape_id: 0,
-            flags: 0,
-            payload: core::ptr::null_mut(),
-        }
+        Self { shape_id: 0, flags: 0, payload: core::ptr::null_mut() }
     }
 }

@@ -7,9 +7,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::primitives::statusline::{OperationalMode, StyledStatusLine};
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct StatusLineDemo {
     renders: usize,
@@ -20,9 +18,7 @@ impl CoordinatorApp for StatusLineDemo {
     fn on_event(&mut self, event: CoordinatorEvent) -> ratkit::LayoutResult<CoordinatorAction> {
         self.events += 1;
         match event {
-            CoordinatorEvent::Keyboard(keyboard)
-                if keyboard.key_code == crossterm::event::KeyCode::Char('q') =>
-            {
+            CoordinatorEvent::Keyboard(keyboard) if keyboard.key_code == crossterm::event::KeyCode::Char('q') => {
                 Ok(CoordinatorAction::Quit)
             }
             _ => Ok(CoordinatorAction::Redraw),
@@ -55,9 +51,6 @@ impl CoordinatorApp for StatusLineDemo {
 }
 
 fn main() -> io::Result<()> {
-    let app = StatusLineDemo {
-        renders: 0,
-        events: 0,
-    };
+    let app = StatusLineDemo { renders: 0, events: 0 };
     run_with_diagnostics(app, RunnerConfig::default())
 }

@@ -1,9 +1,7 @@
 //! Host bridge for `Beskid.Compiler.Query` — maps Mod SDK `NodeRef` to `beskid_analysis::syntax_query`.
 
 use crate::syntax::{Program, SpanInfo, Spanned};
-use crate::syntax_query::{
-    Ancestors, Descendants, DynNodeRef, NodeKind, Query, SyntaxNodeId, SyntaxSnapshot,
-};
+use crate::syntax_query::{Ancestors, Descendants, DynNodeRef, NodeKind, Query, SyntaxNodeId, SyntaxSnapshot};
 
 use super::types::ProgramItem;
 
@@ -82,17 +80,11 @@ pub enum PipelineValidationError {
 
 impl SdkNodeRef {
     pub fn from_stable(id: SyntaxNodeId) -> Self {
-        Self {
-            syntax_generation_id: id.generation_id,
-            node_id: id.node_id,
-        }
+        Self { syntax_generation_id: id.generation_id, node_id: id.node_id }
     }
 
     pub fn to_stable(self) -> SyntaxNodeId {
-        SyntaxNodeId {
-            generation_id: self.syntax_generation_id,
-            node_id: self.node_id,
-        }
+        SyntaxNodeId { generation_id: self.syntax_generation_id, node_id: self.node_id }
     }
 }
 
@@ -108,14 +100,7 @@ pub struct SdkSyntaxQuery<'a> {
 
 impl<'a> SdkSyntaxQuery<'a> {
     pub fn at(snapshot: &'a SyntaxSnapshot<'a>, root: SdkNodeRef) -> Self {
-        Self {
-            snapshot,
-            start: root,
-            max_nodes: 0,
-            max_depth: 0,
-            nodes_visited: 0,
-            bound_exceeded: false,
-        }
+        Self { snapshot, start: root, max_nodes: 0, max_depth: 0, nodes_visited: 0, bound_exceeded: false }
     }
 
     pub fn at_program(snapshot: &'a SyntaxSnapshot<'a>, program: &'a Spanned<Program>) -> Self {
@@ -137,10 +122,7 @@ impl<'a> SdkSyntaxQuery<'a> {
     }
 
     pub fn bounds(&self) -> QueryBounds {
-        QueryBounds {
-            max_nodes: self.max_nodes,
-            max_depth: self.max_depth,
-        }
+        QueryBounds { max_nodes: self.max_nodes, max_depth: self.max_depth }
     }
 
     fn resolve(&self, id: SdkNodeRef) -> Option<DynNodeRef<'a>> {
@@ -181,10 +163,7 @@ impl<'a> SdkSyntaxQuery<'a> {
     pub fn parent(&self, node: SdkNodeRef) -> Option<SdkNodeRef> {
         let stable = node.to_stable();
         let parent_id = self.snapshot.parent_id(stable.node_id)?;
-        Some(SdkNodeRef::from_stable(SyntaxNodeId {
-            generation_id: stable.generation_id,
-            node_id: parent_id,
-        }))
+        Some(SdkNodeRef::from_stable(SyntaxNodeId { generation_id: stable.generation_id, node_id: parent_id }))
     }
 
     pub fn ancestors(&self, node: SdkNodeRef) -> Vec<SdkNodeRef> {
@@ -216,9 +195,7 @@ impl<'a> SdkSyntaxQuery<'a> {
         self.of_kind(kind).into_iter().next()
     }
 
-    pub fn find_first_typed<T: crate::syntax_query::AstNode + 'static>(
-        &mut self,
-    ) -> Option<SdkNodeRef> {
+    pub fn find_first_typed<T: crate::syntax_query::AstNode + 'static>(&mut self) -> Option<SdkNodeRef> {
         let start = self.resolve(self.start)?;
         for node in Descendants::new(start) {
             if node.of::<T>().is_none() {
@@ -238,22 +215,12 @@ impl<'a> SdkSyntaxQuery<'a> {
     }
 
     pub fn select(&mut self) -> SdkSyntaxSelection {
-        SdkSyntaxSelection {
-            nodes: self.descendants(),
-            bounds: self.bounds(),
-        }
+        SdkSyntaxSelection { nodes: self.descendants(), bounds: self.bounds() }
     }
 
     pub fn where_kind(&self, selection: SdkSyntaxSelection, kind: NodeKind) -> SdkSyntaxSelection {
-        let nodes = selection
-            .nodes
-            .into_iter()
-            .filter(|id| self.snapshot.kind_of(id.node_id) == Some(kind))
-            .collect();
-        SdkSyntaxSelection {
-            nodes,
-            bounds: selection.bounds,
-        }
+        let nodes = selection.nodes.into_iter().filter(|id| self.snapshot.kind_of(id.node_id) == Some(kind)).collect();
+        SdkSyntaxSelection { nodes, bounds: selection.bounds }
     }
 
     pub fn pipeline(&self, root: SdkNodeRef) -> SdkSyntaxPipeline<'a> {
@@ -263,12 +230,7 @@ impl<'a> SdkSyntaxQuery<'a> {
 
 impl<'a> SdkSyntaxPipeline<'a> {
     pub fn new(snapshot: &'a SyntaxSnapshot<'a>, root: SdkNodeRef, bounds: QueryBounds) -> Self {
-        Self {
-            snapshot,
-            root,
-            bounds,
-            ops: Vec::new(),
-        }
+        Self { snapshot, root, bounds, ops: Vec::new() }
     }
 
     pub fn from_ops(
@@ -277,47 +239,26 @@ impl<'a> SdkSyntaxPipeline<'a> {
         bounds: QueryBounds,
         ops: Vec<PipelineOp>,
     ) -> Self {
-        Self {
-            snapshot,
-            root,
-            bounds,
-            ops,
-        }
+        Self { snapshot, root, bounds, ops }
     }
 
     pub fn replace(mut self, target: SdkNodeRef, replacement: SdkNodeRef) -> Self {
-        self.ops.push(PipelineOp {
-            kind: PipelineOpKind::Replace,
-            target,
-            payload: Some(replacement),
-        });
+        self.ops.push(PipelineOp { kind: PipelineOpKind::Replace, target, payload: Some(replacement) });
         self
     }
 
     pub fn remove(mut self, target: SdkNodeRef) -> Self {
-        self.ops.push(PipelineOp {
-            kind: PipelineOpKind::Remove,
-            target,
-            payload: None,
-        });
+        self.ops.push(PipelineOp { kind: PipelineOpKind::Remove, target, payload: None });
         self
     }
 
     pub fn insert_before(mut self, anchor: SdkNodeRef, node: SdkNodeRef) -> Self {
-        self.ops.push(PipelineOp {
-            kind: PipelineOpKind::InsertBefore,
-            target: anchor,
-            payload: Some(node),
-        });
+        self.ops.push(PipelineOp { kind: PipelineOpKind::InsertBefore, target: anchor, payload: Some(node) });
         self
     }
 
     pub fn insert_after(mut self, anchor: SdkNodeRef, node: SdkNodeRef) -> Self {
-        self.ops.push(PipelineOp {
-            kind: PipelineOpKind::InsertAfter,
-            target: anchor,
-            payload: Some(node),
-        });
+        self.ops.push(PipelineOp { kind: PipelineOpKind::InsertAfter, target: anchor, payload: Some(node) });
         self
     }
 
@@ -330,16 +271,8 @@ impl<'a> SdkSyntaxPipeline<'a> {
     }
 
     /// Validate queued ops and apply them structurally to top-level program items.
-    pub fn apply(
-        self,
-        program: &mut Spanned<Program>,
-    ) -> Result<SdkNodeRef, PipelineValidationError> {
-        let SdkSyntaxPipeline {
-            snapshot,
-            root,
-            bounds: _,
-            ops,
-        } = self;
+    pub fn apply(self, program: &mut Spanned<Program>) -> Result<SdkNodeRef, PipelineValidationError> {
+        let SdkSyntaxPipeline { snapshot, root, bounds: _, ops } = self;
         validate_pipeline(snapshot, root, &ops)?;
         let ordered = ordered_ops(ops);
         let resolved = resolve_program_item_ops(program, snapshot, &ordered)?;
@@ -382,9 +315,7 @@ fn validate_pipeline(
                 return Err(PipelineValidationError::MissingNode { node: payload });
             }
         }
-        if matches!(op.kind, PipelineOpKind::Replace | PipelineOpKind::Remove)
-            && !seen_targets.insert(op.target)
-        {
+        if matches!(op.kind, PipelineOpKind::Replace | PipelineOpKind::Remove) && !seen_targets.insert(op.target) {
             return Err(PipelineValidationError::Conflict { target: op.target });
         }
     }
@@ -420,29 +351,18 @@ fn resolve_program_item_ops(
         let Some(target_index) = program_item_index(program, snapshot, op.target) else {
             continue;
         };
-        let payload = op
-            .payload
-            .and_then(|payload| clone_payload_item(program, snapshot, payload));
-        if matches!(
-            op.kind,
-            PipelineOpKind::Replace | PipelineOpKind::InsertBefore | PipelineOpKind::InsertAfter
-        ) && payload.is_none()
+        let payload = op.payload.and_then(|payload| clone_payload_item(program, snapshot, payload));
+        if matches!(op.kind, PipelineOpKind::Replace | PipelineOpKind::InsertBefore | PipelineOpKind::InsertAfter)
+            && payload.is_none()
         {
             continue;
         }
-        resolved.push(ResolvedProgramItemOp {
-            kind: op.kind,
-            target_index,
-            payload,
-        });
+        resolved.push(ResolvedProgramItemOp { kind: op.kind, target_index, payload });
     }
     Ok(resolved)
 }
 
-fn apply_resolved_program_item_ops(
-    program: &mut Spanned<Program>,
-    ops: Vec<ResolvedProgramItemOp>,
-) {
+fn apply_resolved_program_item_ops(program: &mut Spanned<Program>, ops: Vec<ResolvedProgramItemOp>) {
     for op in ops.into_iter().rev() {
         match op.kind {
             PipelineOpKind::Remove => {
@@ -484,9 +404,7 @@ pub(crate) fn apply_program_item_op(
     let (target_index, payload_item) = {
         let snapshot = materialize_snapshot(program, generation_id);
         let target_index = program_item_index(program, &snapshot, op.target);
-        let payload_item = op
-            .payload
-            .and_then(|payload| clone_payload_item(program, &snapshot, payload));
+        let payload_item = op.payload.and_then(|payload| clone_payload_item(program, &snapshot, payload));
         (target_index, payload_item)
     };
     let Some(index) = target_index else {
@@ -521,11 +439,7 @@ pub(crate) fn apply_program_item_op(
     Ok(())
 }
 
-fn program_item_index(
-    program: &Spanned<Program>,
-    snapshot: &SyntaxSnapshot<'_>,
-    target: SdkNodeRef,
-) -> Option<usize> {
+fn program_item_index(program: &Spanned<Program>, snapshot: &SyntaxSnapshot<'_>, target: SdkNodeRef) -> Option<usize> {
     let target_stable = target.to_stable();
     program.node.items.iter().position(|item| {
         if snapshot.stable_id(DynNodeRef::from(item)) == Some(target_stable) {
@@ -545,9 +459,7 @@ fn item_matches_stable_id(
 ) -> bool {
     use crate::syntax::Node;
     match node {
-        Node::Function(definition) => {
-            snapshot.stable_id(DynNodeRef::from(&definition.node)) == Some(target_stable)
-        }
+        Node::Function(definition) => snapshot.stable_id(DynNodeRef::from(&definition.node)) == Some(target_stable),
         Node::TypeDefinition(definition) => {
             snapshot.stable_id(DynNodeRef::from(&definition.node)) == Some(target_stable)
         }
@@ -567,10 +479,7 @@ fn clone_payload_item(
 }
 
 /// Materialize a snapshot for the current syntax generation.
-pub fn materialize_snapshot<'a>(
-    program: &'a Spanned<Program>,
-    syntax_generation_id: u64,
-) -> SyntaxSnapshot<'a> {
+pub fn materialize_snapshot<'a>(program: &'a Spanned<Program>, syntax_generation_id: u64) -> SyntaxSnapshot<'a> {
     SyntaxSnapshot::from_program(program, syntax_generation_id)
 }
 
@@ -585,9 +494,7 @@ pub fn downcast_node<'a, T: crate::syntax_query::AstNode + 'static>(
 
 /// Fluent Rust-side query entry (used by tests and future native shims).
 pub fn query_at<'a>(snapshot: &'a SyntaxSnapshot<'a>, root: SdkNodeRef) -> Query<'a> {
-    let node = snapshot
-        .resolve(root.to_stable())
-        .expect("query root must exist in snapshot");
+    let node = snapshot.resolve(root.to_stable()).expect("query root must exist in snapshot");
     Query::from(node)
 }
 
@@ -604,10 +511,7 @@ mod tests {
         let func_id = (0..snap.len() as u32)
             .find(|id| snap.kind_of(*id) == Some(NodeKind::FunctionDefinition))
             .expect("function indexed in snapshot");
-        let func_ref = SdkNodeRef {
-            syntax_generation_id: 1,
-            node_id: func_id,
-        };
+        let func_ref = SdkNodeRef { syntax_generation_id: 1, node_id: func_id };
         let q = SdkSyntaxQuery::at_program(&snap, &program);
         assert!(q.parent(func_ref).is_some());
         let typed = query_at(&snap, func_ref).find_first::<crate::syntax::FunctionDefinition>();
@@ -620,9 +524,7 @@ mod tests {
         let program = parse_program(src).expect("parse");
         let snap = materialize_snapshot(&program, 7);
         let mut q = SdkSyntaxQuery::at_program(&snap, &program);
-        let func = q
-            .find_first_typed::<crate::syntax::FunctionDefinition>()
-            .expect("function");
+        let func = q.find_first_typed::<crate::syntax::FunctionDefinition>().expect("function");
         let span = q.span(func).expect("function span");
         assert!(span.start < span.end);
         assert!(span.line_start > 0);
@@ -634,16 +536,11 @@ mod tests {
         let program = parse_program(src).expect("parse");
         let snap = materialize_snapshot(&program, 1);
         let mut q = SdkSyntaxQuery::at_program(&snap, &program);
-        let func = q
-            .find_first_typed::<crate::syntax::FunctionDefinition>()
-            .expect("function");
+        let func = q.find_first_typed::<crate::syntax::FunctionDefinition>().expect("function");
         let pipeline = q.pipeline(func).replace(func, func).remove(func);
         let ordered = pipeline.ordered_ops();
         assert_eq!(ordered.len(), 2);
-        assert!(matches!(
-            pipeline.validate(),
-            Err(PipelineValidationError::Conflict { .. })
-        ));
+        assert!(matches!(pipeline.validate(), Err(PipelineValidationError::Conflict { .. })));
     }
 
     #[test]
@@ -653,15 +550,8 @@ mod tests {
         let (drop_fn, root, ops) = {
             let snap = materialize_snapshot(&program, 1);
             let mut q = SdkSyntaxQuery::at_program(&snap, &program);
-            let drop_fn = q
-                .of_kind(NodeKind::FunctionDefinition)
-                .into_iter()
-                .nth(1)
-                .expect("second function");
-            let root = SdkNodeRef {
-                syntax_generation_id: 1,
-                node_id: snap.root_id(),
-            };
+            let drop_fn = q.of_kind(NodeKind::FunctionDefinition).into_iter().nth(1).expect("second function");
+            let root = SdkNodeRef { syntax_generation_id: 1, node_id: snap.root_id() };
             let ops = q.pipeline(root).remove(drop_fn).ordered_ops();
             (drop_fn, root, ops)
         };

@@ -1,33 +1,24 @@
 //! Typed `api.json` (schema v4 + graph navigation) embedded in `.bpk` artifacts under `.beskid/docs/`.
 
 pub use beskid_analysis::doc::{
-    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION,
-    API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocRoot, path_looks_absolute,
+    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION, API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocRoot,
+    path_looks_absolute,
 };
 
-fn validate_type_ref(
-    target: Option<usize>,
-    root: &ApiDocRoot,
-    item_label: &str,
-) -> Result<(), String> {
+fn validate_type_ref(target: Option<usize>, root: &ApiDocRoot, item_label: &str) -> Result<(), String> {
     let Some(ref_id) = target else {
         return Ok(());
     };
     if root.items.iter().any(|p| p.id == Some(ref_id)) {
         Ok(())
     } else {
-        Err(format!(
-            "{item_label} references missing refItemId {ref_id}"
-        ))
+        Err(format!("{item_label} references missing refItemId {ref_id}"))
     }
 }
 
 fn validate_package_relative_paths(root: &ApiDocRoot) -> Result<(), String> {
     if path_looks_absolute(&root.source) {
-        return Err(format!(
-            "api.json source must be package-relative, not absolute: \"{}\"",
-            root.source
-        ));
+        return Err(format!("api.json source must be package-relative, not absolute: \"{}\"", root.source));
     }
     for item in &root.items {
         if path_looks_absolute(&item.location.file) {
@@ -84,10 +75,7 @@ pub fn validate_packed_api_doc(root: &ApiDocRoot) -> Result<(), String> {
                 validate_type_ref(
                     param.ty.ref_item_id,
                     root,
-                    &format!(
-                        "item id {id} (\"{}\") parameters[{index}].type",
-                        item.qualified_name
-                    ),
+                    &format!("item id {id} (\"{}\") parameters[{index}].type", item.qualified_name),
                 )?;
             }
 
@@ -142,10 +130,7 @@ fn validate_symbol_keys(root: &ApiDocRoot) -> Result<(), String> {
         };
         let key_str = key.as_str();
         if key_str.trim().is_empty() {
-            let label = item
-                .id
-                .map(|id| format!("id {id}"))
-                .unwrap_or_else(|| item.qualified_name.clone());
+            let label = item.id.map(|id| format!("id {id}")).unwrap_or_else(|| item.qualified_name.clone());
             return Err(format!("api.json item \"{label}\" has empty symbolKey"));
         }
         if !key_str.contains("::") {
@@ -159,9 +144,7 @@ fn validate_symbol_keys(root: &ApiDocRoot) -> Result<(), String> {
         }
         if let Some(&previous_id) = seen.get(key_str) {
             let id = item.id.unwrap_or(0);
-            return Err(format!(
-                "duplicate symbolKey \"{key_str}\" on item id {id} and id {previous_id}"
-            ));
+            return Err(format!("duplicate symbolKey \"{key_str}\" on item id {id} and id {previous_id}"));
         }
         if let Some(id) = item.id {
             seen.insert(key_str.to_string(), id);
@@ -171,11 +154,7 @@ fn validate_symbol_keys(root: &ApiDocRoot) -> Result<(), String> {
             && !rest.is_empty()
             && !item.qualified_name.is_empty()
         {
-            let qn_leaf = item
-                .qualified_name
-                .rsplit("::")
-                .next()
-                .unwrap_or(item.qualified_name.as_str());
+            let qn_leaf = item.qualified_name.rsplit("::").next().unwrap_or(item.qualified_name.as_str());
             let key_leaf = rest.rsplit("::").next().unwrap_or(rest);
             if qn_leaf != key_leaf
                 && !item.qualified_name.ends_with(&format!("::{key_leaf}"))
@@ -209,22 +188,10 @@ mod tests {
     use beskid_analysis::doc::{ApiDocItem, ApiLocation};
 
     fn sample_location() -> ApiLocation {
-        ApiLocation {
-            file: "t.bd".into(),
-            start_line: 1,
-            start_column: 1,
-            end_line: 1,
-            end_column: 1,
-        }
+        ApiLocation { file: "t.bd".into(), start_line: 1, start_column: 1, end_line: 1, end_column: 1 }
     }
 
-    fn minimal_item(
-        id: usize,
-        name: &str,
-        kind: &str,
-        parent_id: Option<usize>,
-        member_ids: Vec<usize>,
-    ) -> ApiDocItem {
+    fn minimal_item(id: usize, name: &str, kind: &str, parent_id: Option<usize>, member_ids: Vec<usize>) -> ApiDocItem {
         minimal_item_with_symbol_key(id, name, kind, parent_id, member_ids, None)
     }
 
@@ -307,10 +274,7 @@ mod tests {
             navigation_model: Some(API_JSON_NAVIGATION_MODEL_GRAPH_V1.into()),
             generator: "test".into(),
             source: "t.bd".into(),
-            items: vec![
-                minimal_item(1, "T", "type", None, vec![2]),
-                minimal_item(2, "T::x", "field", Some(1), vec![]),
-            ],
+            items: vec![minimal_item(1, "T", "type", None, vec![2]), minimal_item(2, "T::x", "field", Some(1), vec![])],
         };
         validate_packed_api_doc(&root).expect("valid graph");
     }

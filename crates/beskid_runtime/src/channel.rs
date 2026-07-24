@@ -20,8 +20,7 @@ struct ChannelInner {
 
 static CHANNELS: LazySlotMap<ChannelInner> = LazySlotMap::new(None);
 
-fn channels()
--> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, ChannelInner>>> {
+fn channels() -> std::sync::MutexGuard<'static, Option<slotmap::SlotMap<slotmap::DefaultKey, ChannelInner>>> {
     lock_lazy_slot_map(&CHANNELS, "channel table lock")
 }
 
@@ -31,11 +30,7 @@ fn key_to_id(key: slotmap::DefaultKey) -> ChannelId {
 
 /// Create a channel. `capacity <= 0` means unbounded; `capacity > 0` is bounded FIFO capacity.
 pub fn channel_create(capacity: i64) -> ChannelId {
-    let capacity = if capacity <= 0 {
-        None
-    } else {
-        Some(capacity as usize)
-    };
+    let capacity = if capacity <= 0 { None } else { Some(capacity as usize) };
     let mut guard = channels();
     let map = guard.as_mut().expect("channel map");
     let key = map.insert(ChannelInner {
@@ -251,8 +246,7 @@ pub fn channel_send_ptr(id: ChannelId, value_ptr: *mut u8) -> i64 {
     if fiber_cancelled() {
         return STATUS_CANCELLED;
     }
-    let handle =
-        crate::gc::with_current_root_if_active(|root| crate::gc::store_handle(root, value_ptr));
+    let handle = crate::gc::with_current_root_if_active(|root| crate::gc::store_handle(root, value_ptr));
     let Some(handle) = handle else {
         return STATUS_CLOSED;
     };
@@ -281,8 +275,7 @@ pub fn channel_try_send_ptr(id: ChannelId, value_ptr: *mut u8) -> i64 {
     if fiber_cancelled() {
         return STATUS_CANCELLED;
     }
-    let handle =
-        crate::gc::with_current_root_if_active(|root| crate::gc::store_handle(root, value_ptr));
+    let handle = crate::gc::with_current_root_if_active(|root| crate::gc::store_handle(root, value_ptr));
     let Some(handle) = handle else {
         return STATUS_CLOSED;
     };
@@ -321,8 +314,8 @@ pub fn channel_receive_ptr(id: ChannelId, out_ptr: *mut *mut u8) -> i64 {
         return status;
     }
     let handle = handle_slot as u64;
-    let value_ptr = crate::gc::with_current_heap(|heap| heap.external_roots().get_handle(handle))
-        .unwrap_or(std::ptr::null_mut());
+    let value_ptr =
+        crate::gc::with_current_heap(|heap| heap.external_roots().get_handle(handle)).unwrap_or(std::ptr::null_mut());
     crate::gc::with_current_root_if_active(|root| crate::gc::drop_handle(root, handle));
     crate::gc::with_current_heap(|heap| heap.write_barrier(std::ptr::null_mut(), value_ptr));
     // SAFETY: `out_ptr` was validated non-null on entry; the caller-provided pointer storage
@@ -345,8 +338,8 @@ pub fn channel_try_receive_ptr(id: ChannelId, out_ptr: *mut *mut u8) -> i64 {
         return status;
     }
     let handle = handle_slot as u64;
-    let value_ptr = crate::gc::with_current_heap(|heap| heap.external_roots().get_handle(handle))
-        .unwrap_or(std::ptr::null_mut());
+    let value_ptr =
+        crate::gc::with_current_heap(|heap| heap.external_roots().get_handle(handle)).unwrap_or(std::ptr::null_mut());
     crate::gc::with_current_root_if_active(|root| crate::gc::drop_handle(root, handle));
     crate::gc::with_current_heap(|heap| heap.write_barrier(std::ptr::null_mut(), value_ptr));
     // SAFETY: `out_ptr` was validated non-null on entry; the caller-provided pointer storage
@@ -401,11 +394,7 @@ mod tests {
         let ch = channel_create(0);
         assert_ne!(ch, 0, "channel id should be non-zero after creation");
         channel_close(ch);
-        assert_eq!(
-            channel_try_send(ch, 1),
-            STATUS_CLOSED,
-            "try_send on closed channel should return STATUS_CLOSED"
-        );
+        assert_eq!(channel_try_send(ch, 1), STATUS_CLOSED, "try_send on closed channel should return STATUS_CLOSED");
     }
 
     #[test]

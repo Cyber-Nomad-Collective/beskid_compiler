@@ -52,9 +52,7 @@ pub fn is_keyword_escape(name: &str) -> bool {
 }
 
 fn reserved_keyword_prefix_conflict(lower: &str) -> bool {
-    RESERVED_IDENTIFIERS
-        .iter()
-        .any(|kw| lower == *kw || lower.starts_with(&format!("{kw}_")))
+    RESERVED_IDENTIFIERS.iter().any(|kw| lower == *kw || lower.starts_with(&format!("{kw}_")))
 }
 
 fn is_ascii_ident_char(c: char) -> bool {
@@ -68,11 +66,7 @@ pub fn split_words(name: &str) -> Vec<String> {
         return vec![String::new()];
     }
     if core.contains('_') {
-        return core
-            .split('_')
-            .filter(|p| !p.is_empty())
-            .map(|p| p.to_ascii_lowercase())
-            .collect();
+        return core.split('_').filter(|p| !p.is_empty()).map(|p| p.to_ascii_lowercase()).collect();
     }
     let mut words = Vec::new();
     let mut buf = String::new();
@@ -104,11 +98,7 @@ fn capitalize(word: &str) -> String {
 /// Escape leading `_` when the spelling conflicts with reserved keywords.
 pub fn escape_reserved(raw: &str) -> String {
     let lower = raw.to_ascii_lowercase();
-    if reserved_keyword_prefix_conflict(&lower) {
-        format!("_{raw}")
-    } else {
-        raw.to_string()
-    }
+    if reserved_keyword_prefix_conflict(&lower) { format!("_{raw}") } else { raw.to_string() }
 }
 
 /// Normalize `name` toward `profile` without changing word semantics.
@@ -168,8 +158,7 @@ fn profile_body_matches(name: &str, profile: NamingProfile) -> bool {
             if !first.is_ascii_lowercase() {
                 return false;
             }
-            ch.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-                && !core.contains("__")
+            ch.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') && !core.contains("__")
         }
     }
 }
@@ -195,28 +184,16 @@ mod tests {
 
     #[test]
     fn normalize_profiles() {
-        assert_eq!(
-            normalize_to_profile("hub_register", NamingProfile::PascalCase),
-            "HubRegister"
-        );
-        assert_eq!(
-            normalize_to_profile("HubRegister", NamingProfile::LowerCamelCase),
-            "hubRegister"
-        );
-        assert_eq!(
-            normalize_to_profile("hubRegister", NamingProfile::SnakeCase),
-            "hub_register"
-        );
+        assert_eq!(normalize_to_profile("hub_register", NamingProfile::PascalCase), "HubRegister");
+        assert_eq!(normalize_to_profile("HubRegister", NamingProfile::LowerCamelCase), "hubRegister");
+        assert_eq!(normalize_to_profile("hubRegister", NamingProfile::SnakeCase), "hub_register");
     }
 
     #[test]
     fn matches_corelib_examples() {
         assert!(matches_profile("IsOk", NamingProfile::PascalCase));
         assert!(matches_profile("isTty", NamingProfile::LowerCamelCase));
-        assert!(matches_profile(
-            "hub_register_accepts_channel",
-            NamingProfile::SnakeCase
-        ));
+        assert!(matches_profile("hub_register_accepts_channel", NamingProfile::SnakeCase));
         assert!(!matches_profile("is_tty", NamingProfile::LowerCamelCase));
         assert!(!matches_profile("isok", NamingProfile::PascalCase));
     }

@@ -5,8 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use beskid_analysis::CompilationContext;
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, configure_compilation_database_for_project,
-    reset_compilation_database,
+    AstNodeKey, BeskidDatabase, configure_compilation_database_for_project, reset_compilation_database,
 };
 use tokio::sync::{Mutex as AsyncMutex, Notify};
 use tower_lsp_server::ls_types::Uri;
@@ -153,20 +152,11 @@ impl Default for State {
 
 impl State {
     pub fn document_union(&self, uri: &Uri) -> Option<Document> {
-        self.docs
-            .get(uri)
-            .cloned()
-            .or_else(|| self.workspace_index.get(uri).cloned())
+        self.docs.get(uri).cloned().or_else(|| self.workspace_index.get(uri).cloned())
     }
 
-    pub fn configure_db_for_project_with_db(
-        &mut self,
-        db: &mut BeskidDatabase,
-        project_root: &std::path::Path,
-    ) {
-        let canonical = project_root
-            .canonicalize()
-            .unwrap_or_else(|_| project_root.to_path_buf());
+    pub fn configure_db_for_project_with_db(&mut self, db: &mut BeskidDatabase, project_root: &std::path::Path) {
+        let canonical = project_root.canonicalize().unwrap_or_else(|_| project_root.to_path_buf());
         if self.configured_project_root.as_ref() == Some(&canonical) {
             return;
         }

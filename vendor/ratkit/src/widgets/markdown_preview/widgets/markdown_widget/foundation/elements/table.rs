@@ -26,31 +26,19 @@ pub fn render_table_border(_element: &MarkdownElement, kind: &TableBorderKind) -
 }
 
 /// Render table row.
-pub fn render_table_row(
-    _element: &MarkdownElement,
-    cells: &[String],
-    is_header: bool,
-) -> Line<'static> {
+pub fn render_table_row(_element: &MarkdownElement, cells: &[String], is_header: bool) -> Line<'static> {
     let style = if is_header {
-        Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD)
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::White)
     };
 
     let mut spans = Vec::new();
-    spans.push(Span::styled(
-        "\u{2502}",
-        Style::default().fg(Color::DarkGray),
-    ));
+    spans.push(Span::styled("\u{2502}", Style::default().fg(Color::DarkGray)));
 
     for cell in cells {
         spans.push(Span::styled(format!(" {} ", cell), style));
-        spans.push(Span::styled(
-            "\u{2502}",
-            Style::default().fg(Color::DarkGray),
-        ));
+        spans.push(Span::styled("\u{2502}", Style::default().fg(Color::DarkGray)));
     }
 
     Line::from(spans)

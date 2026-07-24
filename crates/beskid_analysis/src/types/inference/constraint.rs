@@ -11,33 +11,11 @@ pub struct TypeVar(pub u32);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Constraint {
-    Equal {
-        var: TypeVar,
-        ty: TypeId,
-        span: SpanInfo,
-    },
-    EqualVar {
-        left: TypeVar,
-        right: TypeVar,
-        span: SpanInfo,
-    },
-    ApplyGeneric {
-        callee: ItemId,
-        arg_types: Vec<TypeId>,
-        result_vars: Vec<TypeVar>,
-        span: SpanInfo,
-    },
-    IsNumeric {
-        var: TypeVar,
-        span: SpanInfo,
-        name: String,
-    },
-    VariantOf {
-        var: TypeVar,
-        enum_item: ItemId,
-        variant: String,
-        span: SpanInfo,
-    },
+    Equal { var: TypeVar, ty: TypeId, span: SpanInfo },
+    EqualVar { left: TypeVar, right: TypeVar, span: SpanInfo },
+    ApplyGeneric { callee: ItemId, arg_types: Vec<TypeId>, result_vars: Vec<TypeVar>, span: SpanInfo },
+    IsNumeric { var: TypeVar, span: SpanInfo, name: String },
+    VariantOf { var: TypeVar, enum_item: ItemId, variant: String, span: SpanInfo },
 }
 
 #[derive(Debug, Default, Clone)]
@@ -82,43 +60,17 @@ impl ConstraintSet {
     }
 
     pub fn is_numeric(&mut self, var: TypeVar, span: SpanInfo, name: impl Into<String>) {
-        self.push(Constraint::IsNumeric {
-            var,
-            span,
-            name: name.into(),
-        });
+        self.push(Constraint::IsNumeric { var, span, name: name.into() });
     }
 
-    pub fn variant_of(
-        &mut self,
-        var: TypeVar,
-        enum_item: ItemId,
-        variant: impl Into<String>,
-        span: SpanInfo,
-    ) {
-        self.push(Constraint::VariantOf {
-            var,
-            enum_item,
-            variant: variant.into(),
-            span,
-        });
+    pub fn variant_of(&mut self, var: TypeVar, enum_item: ItemId, variant: impl Into<String>, span: SpanInfo) {
+        self.push(Constraint::VariantOf { var, enum_item, variant: variant.into(), span });
     }
 
-    pub fn apply_generic(
-        &mut self,
-        callee: ItemId,
-        arg_types: Vec<TypeId>,
-        result_vars: Vec<TypeVar>,
-        span: SpanInfo,
-    ) {
+    pub fn apply_generic(&mut self, callee: ItemId, arg_types: Vec<TypeId>, result_vars: Vec<TypeVar>, span: SpanInfo) {
         for var in &result_vars {
             self.must_resolve.insert(*var);
         }
-        self.push(Constraint::ApplyGeneric {
-            callee,
-            arg_types,
-            result_vars,
-            span,
-        });
+        self.push(Constraint::ApplyGeneric { callee, arg_types, result_vars, span });
     }
 }

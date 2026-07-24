@@ -9,11 +9,7 @@ use crate::error::{CrossError, Result};
 use crate::platform::{setup_cmake, setup_generic_cmake_toolchain};
 
 /// Setup iOS cross-compilation environment
-pub async fn setup(
-    target_config: &TargetConfig,
-    args: &Args,
-    host: &HostPlatform,
-) -> Result<CrossEnv> {
+pub async fn setup(target_config: &TargetConfig, args: &Args, host: &HostPlatform) -> Result<CrossEnv> {
     let arch = target_config.arch;
     let rust_target = target_config.target;
     let is_simulator = matches!(target_config.os, Os::IosSim) || arch == Arch::X86_64;
@@ -23,27 +19,15 @@ pub async fn setup(
     } else if host.is_linux() {
         setup_ioscross(arch, rust_target, args, host, is_simulator).await
     } else {
-        Err(CrossError::CrossCompilationNotSupported {
-            target_os: "ios".to_string(),
-            host_os: host.os.to_string(),
-        })
+        Err(CrossError::CrossCompilationNotSupported { target_os: "ios".to_string(), host_os: host.os.to_string() })
     }
 }
 
 /// Setup native iOS compilation (on macOS host)
-async fn setup_native(
-    rust_target: &str,
-    args: &Args,
-    host: &HostPlatform,
-    is_simulator: bool,
-) -> Result<CrossEnv> {
+async fn setup_native(rust_target: &str, args: &Args, host: &HostPlatform, is_simulator: bool) -> Result<CrossEnv> {
     let mut env = CrossEnv::new();
 
-    let sdk_type = if is_simulator {
-        super::AppleSdkType::IPhoneSimulator
-    } else {
-        super::AppleSdkType::IPhoneOS
-    };
+    let sdk_type = if is_simulator { super::AppleSdkType::IPhoneSimulator } else { super::AppleSdkType::IPhoneOS };
 
     // Check custom SDK path first
     let sdk_path = if is_simulator {
@@ -67,20 +51,14 @@ async fn setup_native(
     if let Some(ref sdk) = sdk_path {
         env.set_sdkroot(sdk);
         env.add_rustflag(format!("-C link-arg=--sysroot={}", sdk.display()));
-        color::log_success(&format!(
-            "Using iPhone SDK at {}",
-            color::cyan(&sdk.display().to_string())
-        ));
+        color::log_success(&format!("Using iPhone SDK at {}", color::cyan(&sdk.display().to_string())));
     }
 
     // Set deployment target to match Rust's minimum iOS version
     // This ensures C code (e.g., aws-lc-sys) is compiled with the same minimum version
     // as the Rust target, avoiding symbol mismatches like ___chkstk_darwin
-    let deployment_target = if is_simulator {
-        "IPHONE_SIMULATOR_DEPLOYMENT_TARGET"
-    } else {
-        "IPHONEOS_DEPLOYMENT_TARGET"
-    };
+    let deployment_target =
+        if is_simulator { "IPHONE_SIMULATOR_DEPLOYMENT_TARGET" } else { "IPHONEOS_DEPLOYMENT_TARGET" };
     // Use iOS 12.0 as minimum - this is a reasonable baseline that has ___chkstk_darwin
     // and is compatible with modern Rust iOS targets
     env.set_env(deployment_target, "12.0");
@@ -89,10 +67,7 @@ async fn setup_native(
     setup_cmake(&mut env, args.cmake_generator.as_deref(), host.is_windows());
     setup_generic_cmake_toolchain(&mut env);
 
-    color::log_success(&format!(
-        "Using native macOS toolchain for {}",
-        color::yellow(rust_target)
-    ));
+    color::log_success(&format!("Using native macOS toolchain for {}", color::yellow(rust_target)));
 
     Ok(env)
 }
@@ -110,10 +85,7 @@ async fn setup_ioscross(
         Arch::Aarch64 => "arm64",
         Arch::X86_64 => "x86_64",
         _ => {
-            return Err(CrossError::UnsupportedArchitecture {
-                arch: arch.as_str().to_string(),
-                os: "ios".to_string(),
-            });
+            return Err(CrossError::UnsupportedArchitecture { arch: arch.as_str().to_string(), os: "ios".to_string() });
         }
     };
 
@@ -132,27 +104,15 @@ async fn setup_ioscross(
     // Download compiler if not present
     if !compiler_dir.join("bin").join(&clang_name).exists() {
         let host_platform = host.download_platform();
-        let ubuntu_version = super::get_ubuntu_version()
-            .await
-            .unwrap_or_else(|| "20.04".to_string());
+        let ubuntu_version = super::get_ubuntu_version().await.unwrap_or_else(|| "20.04".to_string());
 
-        let ios_sdk_type = if is_simulator {
-            "iPhoneSimulator"
-        } else {
-            "iPhoneOS"
-        };
+        let ios_sdk_type = if is_simulator { "iPhoneSimulator" } else { "iPhoneOS" };
 
         let download_url = format!(
             "https://github.com/zijiren233/cctools-port/releases/download/{cctools_version}/ioscross-{ios_sdk_type}{iphone_sdk_suffix}-{arch_prefix}-{host_platform}-gnu-ubuntu-{ubuntu_version}.tar.gz"
         );
 
-        download_and_extract(
-            &download_url,
-            &compiler_dir,
-            None,
-            args.github_proxy.as_deref(),
-        )
-        .await?;
+        download_and_extract(&download_url, &compiler_dir, None, args.github_proxy.as_deref()).await?;
     }
 
     let mut env = CrossEnv::new();
@@ -169,9 +129,7 @@ async fn setup_ioscross(
     env.add_path(compiler_dir.join("clang/bin"));
 
     // Set linker flags
-    let linker_path = compiler_dir
-        .join("bin")
-        .join(format!("{arch_prefix}-apple-darwin11-ld"));
+    let linker_path = compiler_dir.join("bin").join(format!("{arch_prefix}-apple-darwin11-ld"));
     env.add_ldflag(format!("-fuse-ld={}", linker_path.display()));
     env.add_rustflag(format!("-C link-arg=-fuse-ld={}", linker_path.display()));
 
@@ -190,21 +148,15 @@ async fn setup_ioscross(
     }
 
     // Set deployment target to ensure C code uses compatible minimum version
-    let deployment_target = if is_simulator {
-        "IPHONE_SIMULATOR_DEPLOYMENT_TARGET"
-    } else {
-        "IPHONEOS_DEPLOYMENT_TARGET"
-    };
+    let deployment_target =
+        if is_simulator { "IPHONE_SIMULATOR_DEPLOYMENT_TARGET" } else { "IPHONEOS_DEPLOYMENT_TARGET" };
     env.set_env(deployment_target, "12.0");
 
     // Setup CMake generator if specified
     setup_cmake(&mut env, args.cmake_generator.as_deref(), host.is_windows());
     setup_generic_cmake_toolchain(&mut env);
 
-    color::log_success(&format!(
-        "Configured iOS toolchain for {}",
-        color::yellow(rust_target)
-    ));
+    color::log_success(&format!("Configured iOS toolchain for {}", color::yellow(rust_target)));
 
     Ok(env)
 }

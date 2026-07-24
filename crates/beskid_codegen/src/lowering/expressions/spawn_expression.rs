@@ -1,12 +1,8 @@
 use crate::errors::CodegenError;
 use crate::lowering::context::LoweredFunction;
 use crate::lowering::dispatch::lower_dispatch_builtin_call;
-use crate::lowering::expressions::call_expression::{
-    lower_spawn_lambda_target, type_returns_runtime_value,
-};
-use crate::lowering::function::{
-    linker_name_for_item_function, lower_function_with_name, mangle_item_function,
-};
+use crate::lowering::expressions::call_expression::{lower_spawn_lambda_target, type_returns_runtime_value};
+use crate::lowering::function::{linker_name_for_item_function, lower_function_with_name, mangle_item_function};
 use crate::lowering::locals::resolved_value_at;
 use crate::lowering::lowerable::Lowerable;
 use crate::lowering::node_context::NodeLoweringContext;
@@ -16,8 +12,7 @@ use beskid_analysis::hir::{HirExpressionNode, HirSpawnExpression};
 use beskid_analysis::resolve::{ItemId, ResolvedValue, canonical_item_id};
 use beskid_analysis::syntax::{SpanInfo, Spanned};
 use cranelift_codegen::ir::{
-    AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, StackSlotData,
-    StackSlotKind, Value, types,
+    AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, StackSlotData, StackSlotKind, Value, types,
 };
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings;
@@ -28,10 +23,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 impl Lowerable<NodeLoweringContext<'_, '_>> for HirSpawnExpression {
     type Output = Option<cranelift_codegen::ir::Value>;
 
-    fn lower(
-        node: &Spanned<Self>,
-        ctx: &mut NodeLoweringContext<'_, '_>,
-    ) -> Result<Self::Output, CodegenError> {
+    fn lower(node: &Spanned<Self>, ctx: &mut NodeLoweringContext<'_, '_>) -> Result<Self::Output, CodegenError> {
         lower_spawn_expression(node, ctx)
     }
 }
@@ -49,10 +41,8 @@ fn emit_fiber_entry_trampoline(
     returns_value: bool,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Value, CodegenError> {
-    let trampoline_name = format!(
-        "__beskid_spawn_entry_{}",
-        ctx.codegen.functions_emitted + ctx.codegen.lowered_functions.len()
-    );
+    let trampoline_name =
+        format!("__beskid_spawn_entry_{}", ctx.codegen.functions_emitted + ctx.codegen.lowered_functions.len());
 
     let mut function = Function::new();
     function.signature = fiber_entry_signature();
@@ -73,13 +63,10 @@ fn emit_fiber_entry_trampoline(
     });
     let call = builder.ins().call(func_ref, &[]);
     let return_value = if returns_value {
-        *builder
-            .inst_results(call)
-            .first()
-            .ok_or(CodegenError::UnsupportedNode {
-                span: Default::default(),
-                node: "spawn entry trampoline call result",
-            })?
+        *builder.inst_results(call).first().ok_or(CodegenError::UnsupportedNode {
+            span: Default::default(),
+            node: "spawn entry trampoline call result",
+        })?
     } else {
         builder.ins().iconst(types::I64, 0)
     };
@@ -88,17 +75,11 @@ fn emit_fiber_entry_trampoline(
 
     let flags = settings::Flags::new(settings::builder());
     if let Err(err) = verify_function(&function, &flags) {
-        return Err(CodegenError::VerificationFailed {
-            function: trampoline_name.clone(),
-            message: err.to_string(),
-        });
+        return Err(CodegenError::VerificationFailed { function: trampoline_name.clone(), message: err.to_string() });
     }
 
     ctx.codegen.functions_emitted += 1;
-    ctx.codegen.lowered_functions.push(LoweredFunction {
-        name: trampoline_name.clone(),
-        function,
-    });
+    ctx.codegen.lowered_functions.push(LoweredFunction { name: trampoline_name.clone(), function });
 
     let sig_ref = ctx.builder.func.import_signature(fiber_entry_signature());
     let func_ref = ctx.builder.func.import_function(ExtFuncData {
@@ -122,21 +103,14 @@ fn function_signature_for_item(
         .ok_or(CodegenError::MissingSymbol("spawn entry signature"))?;
     let mut signature = Signature::new(CallConv::SystemV);
     for param in &signature_types.params {
-        let clif_ty =
-            map_type_id_to_clif(ctx.type_result, *param).ok_or(CodegenError::UnsupportedNode {
-                span,
-                node: "spawn entry parameter type",
-            })?;
+        let clif_ty = map_type_id_to_clif(ctx.type_result, *param)
+            .ok_or(CodegenError::UnsupportedNode { span, node: "spawn entry parameter type" })?;
         signature.params.push(AbiParam::new(clif_ty));
     }
     let returns_value = type_returns_runtime_value(ctx.type_result, signature_types.return_type);
     if returns_value {
-        let clif_ty = map_type_id_to_clif(ctx.type_result, signature_types.return_type).ok_or(
-            CodegenError::UnsupportedNode {
-                span,
-                node: "spawn entry return type",
-            },
-        )?;
+        let clif_ty = map_type_id_to_clif(ctx.type_result, signature_types.return_type)
+            .ok_or(CodegenError::UnsupportedNode { span, node: "spawn entry return type" })?;
         signature.returns.push(AbiParam::new(clif_ty));
     }
     Ok((signature, returns_value))
@@ -150,12 +124,7 @@ fn ensure_spawn_path_target_emitted(
     if ctx.codegen.symbol_emitted(symbol_name) || ctx.codegen.emitting_items.contains(&item_id) {
         return Ok(());
     }
-    let def = ctx
-        .function_defs
-        .get(&item_id)
-        .ok_or(CodegenError::MissingSymbol(
-            "spawn entry function definition",
-        ))?;
+    let def = ctx.function_defs.get(&item_id).ok_or(CodegenError::MissingSymbol("spawn entry function definition"))?;
     let saved_source_path = ctx.codegen.current_source_path.clone();
     ctx.codegen.current_source_path = ctx
         .resolution
@@ -208,39 +177,25 @@ fn lower_spawn_entry(
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Value, CodegenError> {
     let (target_name, target_sig, returns_value) = match &callee.node {
-        HirExpressionNode::LambdaExpression(lambda) => {
-            lower_spawn_lambda_target(lambda, spawn_span, ctx)?
-        }
+        HirExpressionNode::LambdaExpression(lambda) => lower_spawn_lambda_target(lambda, spawn_span, ctx)?,
         HirExpressionNode::CallExpression(call) if call.node.args.is_empty() => {
             return lower_spawn_entry(&call.node.callee, spawn_span, ctx);
         }
         HirExpressionNode::CallExpression(_) => {
-            return Err(CodegenError::UnsupportedNode {
-                span: spawn_span,
-                node: "spawn callee arguments",
-            });
+            return Err(CodegenError::UnsupportedNode { span: spawn_span, node: "spawn callee arguments" });
         }
         HirExpressionNode::PathExpression(path) => {
-            let item_id = resolved_value_at(
-                ctx.resolution,
-                path.node.path.span,
-                ctx.codegen.current_source_path.as_ref(),
-            )
-            .and_then(|resolved| match resolved {
-                ResolvedValue::Item(item_id) => Some(item_id),
-                _ => None,
-            })
-            .ok_or(CodegenError::UnsupportedNode {
-                span: spawn_span,
-                node: "spawn entry path",
-            })?;
+            let item_id =
+                resolved_value_at(ctx.resolution, path.node.path.span, ctx.codegen.current_source_path.as_ref())
+                    .and_then(|resolved| match resolved {
+                        ResolvedValue::Item(item_id) => Some(item_id),
+                        _ => None,
+                    })
+                    .ok_or(CodegenError::UnsupportedNode { span: spawn_span, node: "spawn entry path" })?;
             resolve_spawn_path_target(item_id, spawn_span, ctx)?
         }
         _ => {
-            return Err(CodegenError::UnsupportedNode {
-                span: spawn_span,
-                node: "spawn callee",
-            });
+            return Err(CodegenError::UnsupportedNode { span: spawn_span, node: "spawn callee" });
         }
     };
     emit_fiber_entry_trampoline(&target_name, target_sig, returns_value, ctx)
@@ -253,28 +208,17 @@ fn lower_spawn_expression(
     let entry_ptr = lower_spawn_entry(&spawn.node.callee, spawn.span, ctx)?;
 
     let env = ctx.builder.ins().iconst(pointer_type(), 0);
-    let on_cancelled_slot =
-        ctx.builder
-            .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 3));
+    let on_cancelled_slot = ctx.builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 3));
     ctx.builder.ins().stack_store(env, on_cancelled_slot, 0);
-    let on_cancelled_slot_addr = ctx
-        .builder
-        .ins()
-        .stack_addr(pointer_type(), on_cancelled_slot, 0);
+    let on_cancelled_slot_addr = ctx.builder.ins().stack_addr(pointer_type(), on_cancelled_slot, 0);
 
     let handle = lower_dispatch_builtin_call(
         spawn.span,
-        DispatchRoute {
-            tag: TAG_FIBER_SPAWN_WITH_CANCEL_SLOT,
-            group: DispatchReturnGroup::I64,
-        },
+        DispatchRoute { tag: TAG_FIBER_SPAWN_WITH_CANCEL_SLOT, group: DispatchReturnGroup::I64 },
         &[entry_ptr, env, on_cancelled_slot_addr],
         true,
         ctx,
     )?
-    .ok_or(CodegenError::UnsupportedNode {
-        span: spawn.span,
-        node: "fiber_spawn_with_cancel_slot result",
-    })?;
+    .ok_or(CodegenError::UnsupportedNode { span: spawn.span, node: "fiber_spawn_with_cancel_slot result" })?;
     Ok(Some(handle))
 }

@@ -15,11 +15,7 @@ pub struct RegistryConnectConfig {
 
 impl RegistryConnectConfig {
     pub fn new(registry_url: impl Into<String>) -> Self {
-        Self {
-            registry_url: registry_url.into(),
-            bearer_token: None,
-            api_key: None,
-        }
+        Self { registry_url: registry_url.into(), bearer_token: None, api_key: None }
     }
 
     pub fn with_bearer_token(mut self, token: impl Into<String>) -> Self {
@@ -46,10 +42,7 @@ pub fn build_pckg_client(config: &RegistryConnectConfig) -> Result<PckgClient> {
 
 /// Multi-thread Tokio runtime for blocking on async pckg client calls.
 pub fn tokio_runtime() -> Result<tokio::runtime::Runtime> {
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .context("tokio runtime")
+    tokio::runtime::Builder::new_multi_thread().enable_all().build().context("tokio runtime")
 }
 
 /// Parse `package@version` or bare package id.
@@ -77,9 +70,7 @@ pub fn pick_version(
 }
 
 /// Highest semver among non-yanked versions.
-pub fn latest_non_yanked(
-    versions: &[PackageVersionSummaryResponse],
-) -> Option<PackageVersionSummaryResponse> {
+pub fn latest_non_yanked(versions: &[PackageVersionSummaryResponse]) -> Option<PackageVersionSummaryResponse> {
     versions
         .iter()
         .filter(|v| !v.is_yanked)

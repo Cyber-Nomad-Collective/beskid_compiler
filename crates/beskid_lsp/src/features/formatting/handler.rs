@@ -21,10 +21,7 @@ pub fn handle_range_formatting(document: &Document, _range: Range) -> Option<Vec
 }
 
 fn full_document_edit(original: &str, replacement: String) -> TextEdit {
-    TextEdit {
-        range: offset_range_to_lsp(original, 0, original.len()),
-        new_text: replacement,
-    }
+    TextEdit { range: offset_range_to_lsp(original, 0, original.len()), new_text: replacement }
 }
 
 #[cfg(test)]
@@ -70,10 +67,7 @@ mod tests {
         let range = Range::new(Position::new(0, 0), Position::new(0, 3));
         let edits = handle_range_formatting(&doc, range).expect("range format");
         assert_eq!(edits.len(), 1);
-        assert_eq!(
-            edits[0].range,
-            offset_range_to_lsp(&doc.text, 0, doc.text.len())
-        );
+        assert_eq!(edits[0].range, offset_range_to_lsp(&doc.text, 0, doc.text.len()));
         assert!(edits[0].new_text.contains("pub i32 Main()"));
     }
 
@@ -89,10 +83,8 @@ mod tests {
     /// LSP handler must agree with `beskid_analysis::format::format_program` (same as CLI).
     #[test]
     fn formatting_matches_format_program_fixture_docs_and_control() {
-        const MESSY: &str =
-            include_str!("../../../../beskid_tests/fixtures/format/docs_and_control.input.bd");
-        const CANON: &str =
-            include_str!("../../../../beskid_tests/fixtures/format/docs_and_control.expected.bd");
+        const MESSY: &str = include_str!("../../../../beskid_tests/fixtures/format/docs_and_control.input.bd");
+        const CANON: &str = include_str!("../../../../beskid_tests/fixtures/format/docs_and_control.expected.bd");
 
         let parsed = beskid_analysis::services::parse_program(MESSY).expect("fixture parses");
         let from_api = beskid_analysis::format::format_program(&parsed).expect("format_program");
@@ -100,10 +92,7 @@ mod tests {
         let doc = mk_doc(MESSY);
         let edits = handle_document_formatting(&doc).expect("lsp format");
         assert_eq!(edits.len(), 1);
-        assert_eq!(
-            edits[0].new_text, from_api,
-            "LSP document format must match format_program output"
-        );
+        assert_eq!(edits[0].new_text, from_api, "LSP document format must match format_program output");
         assert_eq!(from_api, CANON, "fixture drift: update golden or formatter");
     }
 }

@@ -24,8 +24,8 @@ use crate::commands::tree::TreeArgs;
 use crate::commands::update::UpdateArgs;
 use crate::commands::validate_bsol::ValidateBsolArgs;
 use crate::commands::{
-    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, hi, import, lock, lsp,
-    migrate_bsol, new, parse, repl, run, runtime_kit, test, tree, update, validate_bsol,
+    analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, hi, import, lock, lsp, migrate_bsol, new,
+    parse, repl, run, runtime_kit, test, tree, update, validate_bsol,
 };
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_pckg::PckgArgs;
@@ -140,8 +140,7 @@ pub enum Commands {
 /// Parses argv, provisions bundled corelib when needed, and runs the selected subcommand.
 pub fn run() -> miette::Result<()> {
     let os_args = env::args_os();
-    let all_args =
-        argfile::expand_args_from(os_args, argfile::parse_fromfile, argfile::PREFIX).unwrap();
+    let all_args = argfile::expand_args_from(os_args, argfile::parse_fromfile, argfile::PREFIX).unwrap();
     let cli = Cli::parse_from(all_args);
     beskid_tools::logging::init(cli.log_cranelift);
     if !matches!(&cli.command, Commands::RuntimeKit(_)) {
@@ -167,19 +166,15 @@ pub fn run() -> miette::Result<()> {
         Commands::Corelib(args) => corelib::execute(args),
         Commands::RuntimeKit(args) => runtime_kit::execute(args),
         Commands::New(args) => new::execute(*args),
-        Commands::Pckg(args) => maybe_generate_docs_for_pack(&args)
-            .and_then(|_| beskid_pckg::cli::execute(args).map_err(Into::into)),
+        Commands::Pckg(args) => {
+            maybe_generate_docs_for_pack(&args).and_then(|_| beskid_pckg::cli::execute(args).map_err(Into::into))
+        }
         Commands::Lsp(args) => lsp::execute(args),
         Commands::Up(args) => beskid_up::execute(args).map_err(anyhow::Error::from),
         Commands::ValidateBsol(args) => validate_bsol::execute(args),
         Commands::MigrateBsol(args) => migrate_bsol::execute(args),
         Commands::Graph(args) => graph::execute(args),
-        Commands::Hi(args) => hi::execute(
-            args,
-            &[beskid_hi::register_widgets],
-            &[beskid_hi::register_nav],
-            &[],
-        ),
+        Commands::Hi(args) => hi::execute(args, &[beskid_hi::register_widgets], &[beskid_hi::register_nav], &[]),
     };
 
     result.map_err(anyhow_to_miette)
@@ -188,11 +183,7 @@ pub fn run() -> miette::Result<()> {
 fn ensure_corelib_ready() -> anyhow::Result<()> {
     let provisioned = beskid_tools::ensure_bundled_corelib()?;
     if provisioned.updated {
-        println!(
-            "corelib: updated to {} at {}",
-            provisioned.version,
-            provisioned.root.display()
-        );
+        println!("corelib: updated to {} at {}", provisioned.version, provisioned.root.display());
     }
     Ok(())
 }
@@ -210,10 +201,7 @@ fn maybe_generate_docs_for_pack(args: &PckgArgs) -> anyhow::Result<()> {
     };
 
     let source_root = absolutize_source_root(&pack_args.source)?;
-    if matches!(
-        beskid_pckg::detect_pack_profile(&source_root)?,
-        beskid_pckg::PackProfile::Template(_)
-    ) {
+    if matches!(beskid_pckg::detect_pack_profile(&source_root)?, beskid_pckg::PackProfile::Template(_)) {
         return Ok(());
     }
     let (input, project) = resolve_doc_entrypoint(&source_root)?;
@@ -221,15 +209,8 @@ fn maybe_generate_docs_for_pack(args: &PckgArgs) -> anyhow::Result<()> {
 
     let doc_args = DocArgs {
         input,
-        project: ProjectResolveArgs {
-            project,
-            target: None,
-            workspace_member: None,
-        },
-        lockfile: LockfilePolicyArgs {
-            frozen: false,
-            locked: false,
-        },
+        project: ProjectResolveArgs { project, target: None, workspace_member: None },
+        lockfile: LockfilePolicyArgs { frozen: false, locked: false },
         out,
     };
     doc::execute(doc_args)?;
@@ -243,20 +224,14 @@ fn absolutize_source_root(source: &Path) -> anyhow::Result<PathBuf> {
     Ok(env::current_dir()?.join(source))
 }
 
-fn resolve_doc_entrypoint(
-    source_root: &Path,
-) -> anyhow::Result<(Option<PathBuf>, Option<PathBuf>)> {
-    if let Ok(Some(project_manifest)) =
-        beskid_analysis::projects::discover_project_manifest_in_dir(source_root)
-    {
+fn resolve_doc_entrypoint(source_root: &Path) -> anyhow::Result<(Option<PathBuf>, Option<PathBuf>)> {
+    if let Ok(Some(project_manifest)) = beskid_analysis::projects::discover_project_manifest_in_dir(source_root) {
         return Ok((None, Some(project_manifest)));
     }
 
-    for candidate in [
-        source_root.join("main.bd"),
-        source_root.join("src").join("main.bd"),
-        source_root.join("index.bd"),
-    ] {
+    for candidate in
+        [source_root.join("main.bd"), source_root.join("src").join("main.bd"), source_root.join("index.bd")]
+    {
         if candidate.exists() {
             return Ok((Some(candidate), None));
         }
@@ -328,17 +303,8 @@ mod tests {
 
     #[test]
     fn parses_new_console_instantiate() {
-        let cli = Cli::try_parse_from([
-            "beskid",
-            "new",
-            "console",
-            "-n",
-            "MyApp",
-            "-o",
-            "./MyApp",
-            "--no-interactive",
-        ])
-        .expect("parse");
+        let cli = Cli::try_parse_from(["beskid", "new", "console", "-n", "MyApp", "-o", "./MyApp", "--no-interactive"])
+            .expect("parse");
         let Commands::New(args) = cli.command else {
             panic!("expected new");
         };
@@ -348,8 +314,7 @@ mod tests {
 
     #[test]
     fn parses_lsp_install_with_release_tag() {
-        let cli = Cli::try_parse_from(["beskid", "lsp", "install", "--release-tag", "lsp-v0.1.5"])
-            .expect("parse cli");
+        let cli = Cli::try_parse_from(["beskid", "lsp", "install", "--release-tag", "lsp-v0.1.5"]).expect("parse cli");
         let Commands::Lsp(args) = cli.command else {
             panic!("expected lsp command");
         };
@@ -421,8 +386,7 @@ mod tests {
         let Commands::RuntimeKit(args) = cli.command else {
             panic!("expected runtime-kit command");
         };
-        let crate::commands::runtime_kit::RuntimeKitCommand::BuildNativeHost(args) = args.command
-        else {
+        let crate::commands::runtime_kit::RuntimeKitCommand::BuildNativeHost(args) = args.command else {
             panic!("expected native host runtime-kit build");
         };
         assert_eq!(args.prefix, Path::new("/tmp/beskid-native-runtime"));
@@ -477,22 +441,12 @@ mod tests {
         let Commands::RuntimeKit(args) = cli.command else {
             panic!("expected runtime-kit command");
         };
-        let crate::commands::runtime_kit::RuntimeKitCommand::BuildMatrix(args) = args.command
-        else {
+        let crate::commands::runtime_kit::RuntimeKitCommand::BuildMatrix(args) = args.command else {
             panic!("expected runtime-kit matrix command");
         };
         assert_eq!(args.target, "x86_64-unknown-linux-gnu");
-        assert_eq!(
-            args.debug_static_library,
-            Path::new("out/debug/libbeskid_runtime.a")
-        );
-        assert_eq!(
-            args.release_shared_library,
-            Path::new("out/release/libbeskid_runtime.so")
-        );
-        assert_eq!(
-            args.debug_provenance_symbol_list,
-            Path::new("out/debug/runtime.symbols")
-        );
+        assert_eq!(args.debug_static_library, Path::new("out/debug/libbeskid_runtime.a"));
+        assert_eq!(args.release_shared_library, Path::new("out/release/libbeskid_runtime.so"));
+        assert_eq!(args.debug_provenance_symbol_list, Path::new("out/debug/runtime.symbols"));
     }
 }

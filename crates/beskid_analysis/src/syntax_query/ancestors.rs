@@ -52,9 +52,6 @@ mod tests {
         let start = snap.node_at(func_id).expect("func node");
         let ancestors: Vec<_> = Ancestors::new(&snap, start).collect();
         assert!(!ancestors.is_empty());
-        assert_eq!(
-            ancestors.last().map(|n| n.node_kind()),
-            Some(crate::syntax_query::NodeKind::Program)
-        );
+        assert_eq!(ancestors.last().map(|n| n.node_kind()), Some(crate::syntax_query::NodeKind::Program));
     }
 }

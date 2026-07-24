@@ -6,10 +6,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::primitives::menu_bar::{MenuBar, MenuItem};
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, MouseEvent,
-    RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, MouseEvent, RunnerConfig};
 
 struct MenuBarDemo {
     menu: MenuBar,
@@ -18,17 +15,10 @@ struct MenuBarDemo {
 
 impl MenuBarDemo {
     fn new() -> Self {
-        let menu = MenuBar::new(vec![
-            MenuItem::new("File", 0),
-            MenuItem::new("Edit", 1),
-            MenuItem::new("View", 2),
-        ])
-        .with_selected(0);
+        let menu = MenuBar::new(vec![MenuItem::new("File", 0), MenuItem::new("Edit", 1), MenuItem::new("View", 2)])
+            .with_selected(0);
 
-        Self {
-            menu,
-            last_selected: Some(0),
-        }
+        Self { menu, last_selected: Some(0) }
     }
 
     fn select_index(&mut self, index: usize) {

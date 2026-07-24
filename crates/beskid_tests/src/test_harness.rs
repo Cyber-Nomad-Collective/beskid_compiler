@@ -7,9 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Write a `.bproj` manifest and return its path.
 pub(crate) fn write_project_manifest(dir: impl AsRef<Path>, source: &str) -> PathBuf {
     let normalized = normalize_legacy_project_block(source);
-    let manifest_path = dir
-        .as_ref()
-        .join(manifest_file_name_from_source(&normalized, "bproj"));
+    let manifest_path = dir.as_ref().join(manifest_file_name_from_source(&normalized, "bproj"));
     fs::write(&manifest_path, &normalized).expect("write project manifest");
     manifest_path
 }
@@ -39,18 +37,12 @@ pub(crate) fn normalize_legacy_project_block(source: &str) -> String {
 
 fn parse_quoted_manifest_string(raw: &str) -> Option<&str> {
     let trimmed = raw.trim();
-    trimmed
-        .strip_prefix('"')?
-        .split('"')
-        .next()
-        .filter(|name| !name.is_empty())
+    trimmed.strip_prefix('"')?.split('"').next().filter(|name| !name.is_empty())
 }
 
 /// Write a `.bws` workspace manifest and return its path.
 pub(crate) fn write_workspace_manifest(dir: impl AsRef<Path>, source: &str) -> PathBuf {
-    let manifest_path = dir
-        .as_ref()
-        .join(manifest_file_name_from_source(source, "bws"));
+    let manifest_path = dir.as_ref().join(manifest_file_name_from_source(source, "bws"));
     fs::write(&manifest_path, source).expect("write workspace manifest");
     manifest_path
 }
@@ -64,25 +56,14 @@ fn manifest_file_name_from_source(source: &str, extension: &str) -> String {
         })
         .unwrap_or("test");
     let block = first_line.split('{').next().unwrap_or("test").trim();
-    let stem = if block == "project" || block == "workspace" {
-        "test"
-    } else {
-        block
-    };
+    let stem = if block == "project" || block == "workspace" { "test" } else { block };
     format!("{stem}.{extension}")
 }
 
 /// Unique temp directory under the OS temp dir (PID + time); caller should remove when done.
 pub(crate) fn temp_case_dir(prefix: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time ok")
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!(
-        "beskid_tests_{prefix}_{}_{}",
-        std::process::id(),
-        nanos
-    ));
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).expect("time ok").as_nanos();
+    let dir = std::env::temp_dir().join(format!("beskid_tests_{prefix}_{}_{}", std::process::id(), nanos));
     fs::create_dir_all(&dir).expect("create temp dir");
     dir
 }
@@ -91,12 +72,7 @@ pub(crate) fn temp_case_dir(prefix: &str) -> PathBuf {
 #[track_caller]
 pub(crate) fn assert_same_canonical_path(left: impl AsRef<Path>, right: impl AsRef<Path>) {
     assert_eq!(
-        left.as_ref()
-            .canonicalize()
-            .expect("left path canonicalize"),
-        right
-            .as_ref()
-            .canonicalize()
-            .expect("right path canonicalize"),
+        left.as_ref().canonicalize().expect("left path canonicalize"),
+        right.as_ref().canonicalize().expect("right path canonicalize"),
     );
 }

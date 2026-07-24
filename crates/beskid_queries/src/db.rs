@@ -11,9 +11,7 @@ use beskid_analysis::syntax::SyntaxGenerationId;
 use salsa::Setter;
 
 use crate::inputs::{FileText, GrammarRevision, ProjectSession};
-use crate::semantic_contract::{
-    CorelibService, SemanticError, SourceUnitId, SyntaxUnitInput, SyntaxUnitRevision,
-};
+use crate::semantic_contract::{CorelibService, SemanticError, SourceUnitId, SyntaxUnitInput, SyntaxUnitRevision};
 use crate::stats::record_revision_bump;
 use crate::typed_entry_bundle::reset_typed_entry_inputs;
 
@@ -109,13 +107,7 @@ impl BeskidDatabase {
     }
 
     pub fn with_persistence(project_root: &Path) -> Self {
-        Self::new(Some(
-            project_root
-                .join("obj")
-                .join("beskid")
-                .join("cache")
-                .join("salsa"),
-        ))
+        Self::new(Some(project_root.join("obj").join("beskid").join("cache").join("salsa")))
     }
 
     pub fn persistence_root(&self) -> Option<&Path> {
@@ -133,8 +125,7 @@ impl BeskidDatabase {
     }
 
     pub fn grammar_revision_ref(&self) -> GrammarRevision {
-        self.grammar_revision
-            .expect("grammar revision initialized in BeskidDatabase::new")
+        self.grammar_revision.expect("grammar revision initialized in BeskidDatabase::new")
     }
 
     /// Return the single registered Salsa revision input for `unit`.
@@ -149,15 +140,9 @@ impl BeskidDatabase {
         unit: SourceUnitId,
         generation: beskid_analysis::syntax::SyntaxGenerationId,
     ) -> Result<SyntaxUnitInput, SemanticError> {
-        let source = self
-            .file_text(unit.path(self))
-            .map(|file| file.text(self).clone())
-            .ok_or_else(|| {
-                SemanticError::new(format!(
-                    "source text is not registered for {}",
-                    unit.path(self).display()
-                ))
-            })?;
+        let source = self.file_text(unit.path(self)).map(|file| file.text(self).clone()).ok_or_else(|| {
+            SemanticError::new(format!("source text is not registered for {}", unit.path(self).display()))
+        })?;
         let source_fingerprint = Arc::<str>::from(beskid_artifacts::content_fingerprint(&source));
         if let Some(input) = self.syntax_unit(unit) {
             self.validate_existing_registration(input, project, generation, &source_fingerprint)?;
@@ -166,13 +151,7 @@ impl BeskidDatabase {
             }
         }
         let program = self.parse_and_expand(unit, &source)?;
-        self.register_expanded_syntax(
-            project,
-            unit,
-            generation,
-            source_fingerprint,
-            Arc::new(program),
-        )
+        self.register_expanded_syntax(project, unit, generation, source_fingerprint, Arc::new(program))
     }
 
     /// Register an already expanded source unit without reparsing away mod rewrites.
@@ -194,13 +173,7 @@ impl BeskidDatabase {
                 return Ok(input);
             }
         }
-        let input = self.register_expanded_syntax(
-            project,
-            unit,
-            generation,
-            source_fingerprint,
-            expanded_program,
-        )?;
+        let input = self.register_expanded_syntax(project, unit, generation, source_fingerprint, expanded_program)?;
         self.ensure_file_text(unit.path(self).clone(), source);
         Ok(input)
     }
@@ -221,13 +194,7 @@ impl BeskidDatabase {
             }
         }
         let program = self.parse_and_expand(unit, &source)?;
-        let input = self.register_expanded_syntax(
-            project,
-            unit,
-            generation,
-            source_fingerprint,
-            Arc::new(program),
-        )?;
+        let input = self.register_expanded_syntax(project, unit, generation, source_fingerprint, Arc::new(program))?;
         self.ensure_file_text(unit.path(self).clone(), source);
         Ok(input)
     }
@@ -246,21 +213,14 @@ impl BeskidDatabase {
         if let Some(input) = registry.get(&unit).copied() {
             self.validate_existing_registration(input, project, generation, &source_fingerprint)?;
             let current = input.revision(self);
-            if current
-                .tree_fingerprint_history
-                .iter()
-                .any(|fingerprint| fingerprint == &tree_fingerprint)
-            {
+            if current.tree_fingerprint_history.iter().any(|fingerprint| fingerprint == &tree_fingerprint) {
                 return Err(SemanticError::new(
                     "expanded syntax cannot reuse a tree fingerprint from an existing generation",
                 ));
             }
-            let syntax_index = Arc::new(beskid_analysis::syntax_query::SyntaxIndex::from_program(
-                &expanded_program,
-                generation,
-            ));
-            self.syntax_index_build_count
-                .fetch_add(1, Ordering::Relaxed);
+            let syntax_index =
+                Arc::new(beskid_analysis::syntax_query::SyntaxIndex::from_program(&expanded_program, generation));
+            self.syntax_index_build_count.fetch_add(1, Ordering::Relaxed);
             let mut source_fingerprint_history = current.source_fingerprint_history.to_vec();
             source_fingerprint_history.push(Arc::clone(&source_fingerprint));
             let mut tree_fingerprint_history = current.tree_fingerprint_history.to_vec();
@@ -276,12 +236,9 @@ impl BeskidDatabase {
             }));
             return Ok(input);
         }
-        let syntax_index = Arc::new(beskid_analysis::syntax_query::SyntaxIndex::from_program(
-            &expanded_program,
-            generation,
-        ));
-        self.syntax_index_build_count
-            .fetch_add(1, Ordering::Relaxed);
+        let syntax_index =
+            Arc::new(beskid_analysis::syntax_query::SyntaxIndex::from_program(&expanded_program, generation));
+        self.syntax_index_build_count.fetch_add(1, Ordering::Relaxed);
         let input = SyntaxUnitInput::new(
             self,
             project,
@@ -308,9 +265,7 @@ impl BeskidDatabase {
         source_fingerprint: &Arc<str>,
     ) -> Result<(), SemanticError> {
         if input.project(self) != project {
-            return Err(SemanticError::new(
-                "a source unit cannot be reassigned to another project session",
-            ));
+            return Err(SemanticError::new("a source unit cannot be reassigned to another project session"));
         }
         let current_generation = input.generation(self);
         let source_changed = input.source_fingerprint(self) != source_fingerprint;
@@ -318,9 +273,7 @@ impl BeskidDatabase {
             return Err(SemanticError::new("syntax generation cannot regress"));
         }
         if source_changed && generation.0 == current_generation.0 {
-            return Err(SemanticError::new(
-                "changed syntax requires a strictly newer generation",
-            ));
+            return Err(SemanticError::new("changed syntax requires a strictly newer generation"));
         }
         if source_changed
             && input
@@ -329,14 +282,10 @@ impl BeskidDatabase {
                 .iter()
                 .any(|fingerprint| fingerprint == source_fingerprint)
         {
-            return Err(SemanticError::new(
-                "source syntax cannot resurrect a fingerprint from an earlier generation",
-            ));
+            return Err(SemanticError::new("source syntax cannot resurrect a fingerprint from an earlier generation"));
         }
         if !source_changed && generation != current_generation {
-            return Err(SemanticError::new(
-                "unchanged syntax cannot be relabeled with a different generation",
-            ));
+            return Err(SemanticError::new("unchanged syntax cannot be relabeled with a different generation"));
         }
         Ok(())
     }
@@ -345,15 +294,11 @@ impl BeskidDatabase {
         &self,
         unit: SourceUnitId,
         source: &str,
-    ) -> Result<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>, SemanticError>
-    {
+    ) -> Result<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>, SemanticError> {
         self.syntax_parse_count.fetch_add(1, Ordering::Relaxed);
         let source_name = unit.path(self).display().to_string();
-        let program =
-            beskid_analysis::services::parse_program_with_source_name(&source_name, source)
-                .map_err(|error| {
-                    SemanticError::new(format!("failed to parse {source_name}: {error}"))
-                })?;
+        let program = beskid_analysis::services::parse_program_with_source_name(&source_name, source)
+            .map_err(|error| SemanticError::new(format!("failed to parse {source_name}: {error}")))?;
         let expanded = beskid_analysis::macros::expand_program_with_diagnostics(
             program,
             beskid_analysis::macros::DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
@@ -374,10 +319,7 @@ impl BeskidDatabase {
 
     #[doc(hidden)]
     pub fn syntax_authority_counts(&self) -> (u64, u64) {
-        (
-            self.syntax_parse_count.load(Ordering::Relaxed),
-            self.syntax_index_build_count.load(Ordering::Relaxed),
-        )
+        (self.syntax_parse_count.load(Ordering::Relaxed), self.syntax_index_build_count.load(Ordering::Relaxed))
     }
 
     /// Invalidate units that import `changed_path` (fine-grained edit propagation).
@@ -388,12 +330,7 @@ impl BeskidDatabase {
         candidate_paths: Vec<PathBuf>,
     ) {
         let db_ref: &dyn Db = self;
-        let dependents = crate::graph::reverse_dependents(
-            db_ref,
-            session,
-            changed_path.clone(),
-            candidate_paths,
-        );
+        let dependents = crate::graph::reverse_dependents(db_ref, session, changed_path.clone(), candidate_paths);
         let mut fingerprints = Vec::new();
         for path in dependents {
             if let Some(file) = self.file_text(&path) {
@@ -412,18 +349,11 @@ impl BeskidDatabase {
 
     /// Register a module index snapshot for per-unit resolution queries.
     pub fn cache_module_index(&self, fingerprint: String, index: Arc<ModuleIndex>) {
-        self.module_index_cache
-            .lock()
-            .expect("module index cache")
-            .insert(fingerprint, index);
+        self.module_index_cache.lock().expect("module index cache").insert(fingerprint, index);
     }
 
     pub fn module_index_cached(&self, fingerprint: &str) -> Option<Arc<ModuleIndex>> {
-        self.module_index_cache
-            .lock()
-            .expect("module index cache")
-            .get(fingerprint)
-            .cloned()
+        self.module_index_cache.lock().expect("module index cache").get(fingerprint).cloned()
     }
 
     fn invalidate_unit_fingerprints(&self, fingerprints: &[String]) {
@@ -474,21 +404,11 @@ impl BeskidDatabase {
     }
 
     fn known_file_paths(&self) -> Vec<PathBuf> {
-        self.file_registry
-            .lock()
-            .expect("file registry")
-            .keys()
-            .cloned()
-            .collect()
+        self.file_registry.lock().expect("file registry").keys().cloned().collect()
     }
 
     fn active_project_session(&self) -> Option<ProjectSession> {
-        self.project_registry
-            .lock()
-            .expect("project registry")
-            .values()
-            .next()
-            .copied()
+        self.project_registry.lock().expect("project registry").values().next().copied()
     }
 
     fn set_file_text_inner(&mut self, canonical: PathBuf, text: String) {
@@ -500,10 +420,7 @@ impl BeskidDatabase {
             existing.set_text(self).to(text.clone());
         } else {
             let file = FileText::new(self, canonical.clone(), text.clone());
-            self.file_registry
-                .lock()
-                .expect("file registry")
-                .insert(canonical.clone(), file);
+            self.file_registry.lock().expect("file registry").insert(canonical.clone(), file);
         }
         if let Some(root) = &self.persistence_root {
             let _ = crate::persistence::persist_file_text(root, &canonical, &text);
@@ -512,11 +429,7 @@ impl BeskidDatabase {
 
     pub fn file_text(&self, path: &Path) -> Option<FileText> {
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        self.file_registry
-            .lock()
-            .expect("file registry")
-            .get(&canonical)
-            .copied()
+        self.file_registry.lock().expect("file registry").get(&canonical).copied()
     }
 
     pub fn ensure_project_session(
@@ -527,9 +440,7 @@ impl BeskidDatabase {
     ) -> ProjectSession {
         let key = (
             plan.project_root.clone(),
-            entry_path
-                .canonicalize()
-                .unwrap_or_else(|_| entry_path.to_path_buf()),
+            entry_path.canonicalize().unwrap_or_else(|_| entry_path.to_path_buf()),
             plan.target.name.clone(),
         );
         let existing = {
@@ -547,10 +458,7 @@ impl BeskidDatabase {
             plan.target.name.clone(),
             lockfile_digest,
         );
-        self.project_registry
-            .lock()
-            .expect("project registry")
-            .insert(key, session);
+        self.project_registry.lock().expect("project registry").insert(key, session);
         session
     }
 }
@@ -567,23 +475,18 @@ pub fn reset_compilation_database(target: &mut BeskidDatabase) {
 }
 
 /// Reconfigure persistence for `project_root`, replacing storage when the root changes.
-pub fn configure_compilation_database_for_project(
-    target: &mut BeskidDatabase,
-    project_root: &Path,
-) {
+pub fn configure_compilation_database_for_project(target: &mut BeskidDatabase, project_root: &Path) {
     replace_compilation_database(target, BeskidDatabase::with_persistence(project_root));
 }
 
 fn expanded_syntax_fingerprint(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
 ) -> Result<String, SemanticError> {
-    let mut structural = serde_json::to_value(program).map_err(|error| {
-        SemanticError::new(format!("failed to fingerprint expanded syntax: {error}"))
-    })?;
+    let mut structural = serde_json::to_value(program)
+        .map_err(|error| SemanticError::new(format!("failed to fingerprint expanded syntax: {error}")))?;
     remove_span_fields(&mut structural);
-    let encoded = serde_json::to_string(&structural).map_err(|error| {
-        SemanticError::new(format!("failed to fingerprint expanded syntax: {error}"))
-    })?;
+    let encoded = serde_json::to_string(&structural)
+        .map_err(|error| SemanticError::new(format!("failed to fingerprint expanded syntax: {error}")))?;
     Ok(beskid_artifacts::content_fingerprint(&encoded))
 }
 
@@ -618,11 +521,7 @@ impl Db for BeskidDatabase {
     }
 
     fn syntax_unit(&self, unit: SourceUnitId) -> Option<SyntaxUnitInput> {
-        self.syntax_unit_registry
-            .lock()
-            .expect("syntax unit registry")
-            .get(&unit)
-            .copied()
+        self.syntax_unit_registry.lock().expect("syntax unit registry").get(&unit).copied()
     }
 
     fn syntax_dependency_registry(&self) -> &Mutex<SyntaxDependencyRegistry> {

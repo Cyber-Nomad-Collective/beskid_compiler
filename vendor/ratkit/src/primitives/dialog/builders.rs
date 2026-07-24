@@ -1,6 +1,6 @@
 use crate::primitives::dialog::types::{
-    Dialog, DialogActionsLayout, DialogBodyRenderer, DialogFooter, DialogKeymap, DialogModalMode,
-    DialogPadding, DialogShadow, DialogType, DialogWrap,
+    Dialog, DialogActionsLayout, DialogBodyRenderer, DialogFooter, DialogKeymap, DialogModalMode, DialogPadding,
+    DialogShadow, DialogType, DialogWrap,
 };
 use crossterm::event::KeyCode;
 use ratatui::layout::Alignment;
@@ -25,10 +25,7 @@ impl<'a> Dialog<'a> {
             modal_mode: DialogModalMode::Blocking,
             border_color: None,
             style: Style::default(),
-            button_selected_style: Style::default()
-                .fg(Color::Black)
-                .bg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            button_selected_style: Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD),
             button_style: Style::default(),
             actions_layout: DialogActionsLayout::Horizontal,
             actions_alignment: Alignment::Center,
@@ -64,9 +61,7 @@ impl<'a> Dialog<'a> {
     }
 
     pub fn confirm(title: &'a str, message: &'a str) -> Self {
-        Self::new(title, message)
-            .dialog_type(DialogType::Confirm)
-            .buttons(vec!["Yes", "No"])
+        Self::new(title, message).dialog_type(DialogType::Confirm).buttons(vec!["Yes", "No"])
     }
 
     pub fn dialog_type(mut self, dialog_type: DialogType) -> Self {
@@ -125,11 +120,7 @@ impl<'a> Dialog<'a> {
     }
 
     pub fn overlay(mut self, overlay: bool) -> Self {
-        self.backdrop_style = if overlay {
-            Some(Style::default().bg(Color::Rgb(0, 0, 0)))
-        } else {
-            None
-        };
+        self.backdrop_style = if overlay { Some(Style::default().bg(Color::Rgb(0, 0, 0))) } else { None };
         self
     }
 
@@ -184,10 +175,7 @@ impl<'a> Dialog<'a> {
     }
 
     pub fn content_padding(mut self, horizontal: u16, vertical: u16) -> Self {
-        self.content_padding = DialogPadding {
-            horizontal,
-            vertical,
-        };
+        self.content_padding = DialogPadding { horizontal, vertical };
         self
     }
 
@@ -248,10 +236,8 @@ impl<'a> Dialog<'a> {
 
         self.style = Style::default().bg(theme.background_panel).fg(theme.text);
 
-        self.button_selected_style = Style::default()
-            .fg(theme.selected_text)
-            .bg(theme.primary)
-            .add_modifier(Modifier::BOLD);
+        self.button_selected_style =
+            Style::default().fg(theme.selected_text).bg(theme.primary).add_modifier(Modifier::BOLD);
         self.button_style = Style::default().fg(theme.text);
 
         self

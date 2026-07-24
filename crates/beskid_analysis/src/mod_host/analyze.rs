@@ -46,8 +46,7 @@ fn ensure_snapshot_for_analyzer(
             package_id: registration.type_id.clone(),
             contract_id: registration.contract_id.clone(),
             type_id: registration.type_id.clone(),
-            message: "semantic snapshot not available for Analyzer (requires composition stage)"
-                .to_owned(),
+            message: "semantic snapshot not available for Analyzer (requires composition stage)".to_owned(),
         });
     };
     if !snapshot.satisfies_minimum("composition") {
@@ -82,14 +81,12 @@ mod tests {
     fn analyzer_requires_composition_stage_snapshot() {
         let registration = analyzer_registration();
         let semantic_only = SemanticSnapshot::from_diagnostics(&[], 1, "semantic");
-        let err = ensure_snapshot_for_analyzer(Some(&semantic_only), &registration)
-            .expect_err("semantic-only snapshot");
+        let err =
+            ensure_snapshot_for_analyzer(Some(&semantic_only), &registration).expect_err("semantic-only snapshot");
         assert!(err.message.contains("composition"));
 
-        let composition =
-            semantic_only.with_composition(&crate::composition::CompositionSnapshot::default());
-        ensure_snapshot_for_analyzer(Some(&composition), &registration)
-            .expect("composition snapshot");
+        let composition = semantic_only.with_composition(&crate::composition::CompositionSnapshot::default());
+        ensure_snapshot_for_analyzer(Some(&composition), &registration).expect("composition snapshot");
     }
 
     #[test]

@@ -15,17 +15,7 @@ pub struct DocumentOutlineItem {
 
 impl DocumentOutlineItem {
     /// Creates a new outline item.
-    pub fn new(
-        title: impl Into<String>,
-        line: usize,
-        level: usize,
-        kind: impl Into<String>,
-    ) -> Self {
-        Self {
-            title: title.into(),
-            line,
-            level,
-            kind: kind.into(),
-        }
+    pub fn new(title: impl Into<String>, line: usize, level: usize, kind: impl Into<String>) -> Self {
+        Self { title: title.into(), line, level, kind: kind.into() }
     }
 }

@@ -22,10 +22,7 @@ pub(crate) fn list_workspaces(workspace_roots: &[PathBuf]) -> Result<Value> {
             .into_iter()
             .filter_entry(|e| {
                 if e.file_type().is_dir() {
-                    !e.file_name()
-                        .to_str()
-                        .map(should_skip_dir_for_scan)
-                        .unwrap_or(false)
+                    !e.file_name().to_str().map(should_skip_dir_for_scan).unwrap_or(false)
                 } else {
                     true
                 }

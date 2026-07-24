@@ -40,21 +40,16 @@ use super::theme_config::ThemeConfig;
 /// save_theme("nord", Some("/path/to/config.json".into())).ok();
 /// ```
 pub fn save_theme(theme_name: &str, config_path: Option<PathBuf>) -> io::Result<()> {
-    let path = config_path.or_else(default_config_path).ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            "Could not determine config directory",
-        )
-    })?;
+    let path = config_path
+        .or_else(default_config_path)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Could not determine config directory"))?;
 
     // Ensure the parent directory exists
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let config = ThemeConfig {
-        theme_name: theme_name.to_string(),
-    };
+    let config = ThemeConfig { theme_name: theme_name.to_string() };
 
     let json = serde_json::to_string_pretty(&config)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("JSON error: {}", e)))?;

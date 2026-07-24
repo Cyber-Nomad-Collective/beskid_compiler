@@ -5,9 +5,7 @@ use crate::color;
 use crate::config::{get_target_config, HostPlatform, Os};
 use crate::env::{get_build_std_config, CMakeToolchain, CrossEnv};
 use crate::error::{run_command, run_command_output, CrossError, Result};
-use crate::platform::{
-    cmake_toolchain_env_key, has_preconfigured_cmake_toolchain, prepare_cmake_toolchain_file,
-};
+use crate::platform::{cmake_toolchain_env_key, has_preconfigured_cmake_toolchain, prepare_cmake_toolchain_file};
 use std::collections::HashMap;
 use std::process::ExitStatus;
 use tokio::process::Command as TokioCommand;
@@ -118,18 +116,13 @@ fn maybe_add_cmake_toolchain_env(
         return Ok(());
     }
 
-    let effective_toolchain = cross_env
-        .cmake_toolchain
-        .clone()
-        .or_else(|| infer_generic_cmake_toolchain(target_config.os, cross_env));
+    let effective_toolchain =
+        cross_env.cmake_toolchain.clone().or_else(|| infer_generic_cmake_toolchain(target_config.os, cross_env));
     let mut cmake_env = cross_env.clone();
     cmake_env.cmake_toolchain = effective_toolchain;
 
     if let Some(toolchain_path) = prepare_cmake_toolchain_file(args, target_config, &cmake_env)? {
-        env.insert(
-            cmake_toolchain_env_key(target),
-            crate::platform::to_cmake_path(&toolchain_path),
-        );
+        env.insert(cmake_toolchain_env_key(target), crate::platform::to_cmake_path(&toolchain_path));
     }
 
     Ok(())
@@ -155,11 +148,7 @@ fn build_rustflags(args: &Args, cross_env: &CrossEnv) -> String {
 
     // Add CRT static flag
     if let Some(crt_static) = args.crt_static {
-        let flag = if crt_static {
-            "-C target-feature=+crt-static"
-        } else {
-            "-C target-feature=-crt-static"
-        };
+        let flag = if crt_static { "-C target-feature=+crt-static" } else { "-C target-feature=-crt-static" };
         append_flag(&mut rustflags, flag);
     }
 
@@ -175,10 +164,7 @@ fn build_rustflags(args: &Args, cross_env: &CrossEnv) -> String {
 
     // Add location-detail flag
     if let Some(ref location_detail) = args.location_detail {
-        append_flag(
-            &mut rustflags,
-            &format!("-Zlocation-detail={location_detail}"),
-        );
+        append_flag(&mut rustflags, &format!("-Zlocation-detail={location_detail}"));
     }
 
     // Add additional rustflags from command line
@@ -193,14 +179,8 @@ fn build_rustflags(args: &Args, cross_env: &CrossEnv) -> String {
 /// These are needed when explicitly passing --target that matches the host
 fn add_host_config_env(env: &mut HashMap<String, String>) {
     env.insert("CARGO_UNSTABLE_HOST_CONFIG".to_string(), "true".to_string());
-    env.insert(
-        "CARGO_UNSTABLE_TARGET_APPLIES_TO_HOST".to_string(),
-        "true".to_string(),
-    );
-    env.insert(
-        "CARGO_TARGET_APPLIES_TO_HOST".to_string(),
-        "false".to_string(),
-    );
+    env.insert("CARGO_UNSTABLE_TARGET_APPLIES_TO_HOST".to_string(), "true".to_string());
+    env.insert("CARGO_TARGET_APPLIES_TO_HOST".to_string(), "false".to_string());
 }
 
 /// Add wrapper environment (sccache or `rustc_wrapper`)
@@ -268,43 +248,22 @@ fn add_cc_crate_env(env: &mut HashMap<String, String>, args: &Args) {
 /// Add user-provided compiler flags
 fn add_compiler_flags_env(env: &mut HashMap<String, String>, args: &Args, target_lower: &str) {
     if let Some(ref cflags) = args.cflags {
-        let existing = env
-            .get(&format!("CFLAGS_{target_lower}"))
-            .cloned()
-            .unwrap_or_default();
-        let new_flags = if existing.is_empty() {
-            cflags.clone()
-        } else {
-            format!("{existing} {cflags}")
-        };
+        let existing = env.get(&format!("CFLAGS_{target_lower}")).cloned().unwrap_or_default();
+        let new_flags = if existing.is_empty() { cflags.clone() } else { format!("{existing} {cflags}") };
         env.insert(format!("CFLAGS_{target_lower}"), new_flags.clone());
         env.insert("CFLAGS".to_string(), new_flags);
     }
 
     if let Some(ref cxxflags) = args.cxxflags {
-        let existing = env
-            .get(&format!("CXXFLAGS_{target_lower}"))
-            .cloned()
-            .unwrap_or_default();
-        let new_flags = if existing.is_empty() {
-            cxxflags.clone()
-        } else {
-            format!("{existing} {cxxflags}")
-        };
+        let existing = env.get(&format!("CXXFLAGS_{target_lower}")).cloned().unwrap_or_default();
+        let new_flags = if existing.is_empty() { cxxflags.clone() } else { format!("{existing} {cxxflags}") };
         env.insert(format!("CXXFLAGS_{target_lower}"), new_flags.clone());
         env.insert("CXXFLAGS".to_string(), new_flags);
     }
 
     if let Some(ref ldflags) = args.ldflags {
-        let existing = env
-            .get(&format!("LDFLAGS_{target_lower}"))
-            .cloned()
-            .unwrap_or_default();
-        let new_flags = if existing.is_empty() {
-            ldflags.clone()
-        } else {
-            format!("{existing} {ldflags}")
-        };
+        let existing = env.get(&format!("LDFLAGS_{target_lower}")).cloned().unwrap_or_default();
+        let new_flags = if existing.is_empty() { ldflags.clone() } else { format!("{existing} {ldflags}") };
         env.insert(format!("LDFLAGS_{target_lower}"), new_flags.clone());
         env.insert("LDFLAGS".to_string(), new_flags);
     }
@@ -316,12 +275,7 @@ fn add_compiler_flags_env(env: &mut HashMap<String, String>, args: &Args, target
 }
 
 /// Build the cargo command with all arguments
-fn build_cargo_command(
-    target: &str,
-    args: &Args,
-    cross_env: &CrossEnv,
-    skip_target_arg: bool,
-) -> TokioCommand {
+fn build_cargo_command(target: &str, args: &Args, cross_env: &CrossEnv, skip_target_arg: bool) -> TokioCommand {
     let mut cmd = TokioCommand::new("cargo");
 
     // Toolchain
@@ -462,17 +416,13 @@ fn add_package_args(cmd: &mut TokioCommand, args: &Args) {
 
 /// Add build-std arguments
 fn add_build_std_args(cmd: &mut TokioCommand, args: &Args, cross_env: &CrossEnv) {
-    let build_std_value = args
-        .build_std
-        .as_ref()
-        .or(cross_env.build_std.as_ref())
-        .map(|s| {
-            if s == "true" {
-                get_build_std_config().to_string()
-            } else {
-                s.clone()
-            }
-        });
+    let build_std_value = args.build_std.as_ref().or(cross_env.build_std.as_ref()).map(|s| {
+        if s == "true" {
+            get_build_std_config().to_string()
+        } else {
+            s.clone()
+        }
+    });
 
     if let Some(ref crates) = build_std_value {
         cmd.arg(format!("-Zbuild-std={crates}"));
@@ -609,15 +559,9 @@ pub async fn ensure_target_installed(target: &str, toolchain: Option<&str>) -> R
     let output = run_command_output(&mut cmd, "rustup").await?;
     let available = String::from_utf8_lossy(&output.stdout);
 
-    if available
-        .lines()
-        .any(|line| line.trim().starts_with(target))
-    {
+    if available.lines().any(|line| line.trim().starts_with(target)) {
         // Install target
-        color::log_info(&format!(
-            "Installing Rust target: {}",
-            color::yellow(target)
-        ));
+        color::log_info(&format!("Installing Rust target: {}", color::yellow(target)));
 
         let mut cmd = TokioCommand::new("rustup");
         cmd.arg("target").arg("add").arg(target);
@@ -628,9 +572,7 @@ pub async fn ensure_target_installed(target: &str, toolchain: Option<&str>) -> R
 
         let status = run_command(&mut cmd, "rustup").await?;
         if !status.success() {
-            return Err(CrossError::TargetInstallFailed {
-                target: target.to_string(),
-            });
+            return Err(CrossError::TargetInstallFailed { target: target.to_string() });
         }
         return Ok(false);
     }
@@ -649,28 +591,16 @@ pub async fn ensure_target_installed(target: &str, toolchain: Option<&str>) -> R
         return Ok(true);
     }
 
-    Err(CrossError::BuildStdRequired {
-        target: target.to_string(),
-    })
+    Err(CrossError::BuildStdRequired { target: target.to_string() })
 }
 
 /// Add rust-src component if needed for build-std
 pub async fn ensure_rust_src(target: &str, toolchain: Option<&str>) -> Result<()> {
-    let toolchain_info = toolchain
-        .map(|t| format!(" and toolchain: {}", color::yellow(t)))
-        .unwrap_or_default();
-    color::log_info(&format!(
-        "Adding rust-src component for target: {}{}",
-        color::yellow(target),
-        toolchain_info
-    ));
+    let toolchain_info = toolchain.map(|t| format!(" and toolchain: {}", color::yellow(t))).unwrap_or_default();
+    color::log_info(&format!("Adding rust-src component for target: {}{}", color::yellow(target), toolchain_info));
 
     let mut cmd = TokioCommand::new("rustup");
-    cmd.arg("component")
-        .arg("add")
-        .arg("rust-src")
-        .arg("--target")
-        .arg(target);
+    cmd.arg("component").arg("add").arg("rust-src").arg("--target").arg(target);
 
     if let Some(tc) = toolchain {
         cmd.arg("--toolchain").arg(tc);
@@ -713,10 +643,7 @@ mod tests {
         append_flag(&mut flags, "-C opt-level=3");
         append_flag(&mut flags, "-C target-feature=+crt-static");
         append_flag(&mut flags, "-Z build-std");
-        assert_eq!(
-            flags,
-            "-C opt-level=3 -C target-feature=+crt-static -Z build-std"
-        );
+        assert_eq!(flags, "-C opt-level=3 -C target-feature=+crt-static -Z build-std");
     }
 
     #[test]
@@ -726,20 +653,17 @@ mod tests {
         env.set_cxx("C:/toolchains/freebsd/bin/x86_64-unknown-freebsd13-g++.exe");
         env.set_ar("C:/toolchains/freebsd/bin/x86_64-unknown-freebsd13-ar.exe");
         env.set_linker("C:/toolchains/freebsd/bin/x86_64-unknown-freebsd13-gcc.exe");
-        env.set_sysroot(PathBuf::from(
-            "C:/toolchains/freebsd/x86_64-unknown-freebsd13",
-        ));
+        env.set_sysroot(PathBuf::from("C:/toolchains/freebsd/x86_64-unknown-freebsd13"));
 
         let target_config = get_target_config("x86_64-unknown-freebsd").unwrap();
         let rendered = render_cmake_toolchain_file(target_config, &env);
 
         assert!(rendered.contains("set(CMAKE_SYSTEM_NAME \"FreeBSD\")"));
         assert!(rendered.contains("set(CMAKE_SYSTEM_PROCESSOR \"amd64\")"));
-        assert!(rendered.contains(
-            "set(CMAKE_C_COMPILER \"C:/toolchains/freebsd/bin/x86_64-unknown-freebsd13-gcc.exe\")"
-        ));
-        assert!(rendered
-            .contains("set(CMAKE_SYSROOT \"C:/toolchains/freebsd/x86_64-unknown-freebsd13\")"));
+        assert!(
+            rendered.contains("set(CMAKE_C_COMPILER \"C:/toolchains/freebsd/bin/x86_64-unknown-freebsd13-gcc.exe\")")
+        );
+        assert!(rendered.contains("set(CMAKE_SYSROOT \"C:/toolchains/freebsd/x86_64-unknown-freebsd13\")"));
         assert!(!rendered.contains("CMAKE_FIND_ROOT_PATH"));
         assert!(!rendered.contains("CMAKE_FIND_ROOT_PATH_MODE_PROGRAM"));
         assert!(!rendered.contains("CMAKE_TRY_COMPILE_TARGET_TYPE"));
@@ -798,10 +722,7 @@ mod tests {
 
     #[test]
     fn test_build_cargo_env_generates_target_specific_cmake_toolchain_file() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "cargo-cross-cmake-toolchain-test-{}",
-            std::process::id()
-        ));
+        let temp_dir = std::env::temp_dir().join(format!("cargo-cross-cmake-toolchain-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_dir);
 
         let args = Args {
@@ -812,10 +733,7 @@ mod tests {
             init_runner: false,
             cross_make_version: "test".to_string(),
             cross_compiler_dir: temp_dir.join("toolchains"),
-            build: BuildArgs {
-                no_toolchain_setup: true,
-                ..BuildArgs::default()
-            },
+            build: BuildArgs { no_toolchain_setup: true, ..BuildArgs::default() },
         };
 
         let mut env = CrossEnv::new();
@@ -826,8 +744,7 @@ mod tests {
         env.set_sysroot(temp_dir.join("sysroot"));
 
         let host = HostPlatform::detect();
-        let build_env =
-            build_cargo_env("x86_64-unknown-freebsd", &args, &env, &host, false).unwrap();
+        let build_env = build_cargo_env("x86_64-unknown-freebsd", &args, &env, &host, false).unwrap();
 
         let key = "CMAKE_TOOLCHAIN_FILE_x86_64_unknown_freebsd";
         let toolchain_path = Path::new(build_env.get(key).unwrap());
@@ -844,10 +761,8 @@ mod tests {
 
     #[test]
     fn test_build_cargo_env_uses_custom_cmake_toolchain_with_target_specific_key() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "cargo-cross-custom-cmake-toolchain-test-{}",
-            std::process::id()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cargo-cross-custom-cmake-toolchain-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
 
@@ -862,18 +777,14 @@ mod tests {
             init_runner: false,
             cross_make_version: "test".to_string(),
             cross_compiler_dir: temp_dir.join("toolchains"),
-            build: BuildArgs {
-                no_toolchain_setup: true,
-                ..BuildArgs::default()
-            },
+            build: BuildArgs { no_toolchain_setup: true, ..BuildArgs::default() },
         };
 
         let mut env = CrossEnv::new();
         env.set_custom_cmake_toolchain(&custom_toolchain);
 
         let host = HostPlatform::detect();
-        let build_env =
-            build_cargo_env("aarch64-linux-android", &args, &env, &host, false).unwrap();
+        let build_env = build_cargo_env("aarch64-linux-android", &args, &env, &host, false).unwrap();
 
         assert_eq!(
             build_env.get("CMAKE_TOOLCHAIN_FILE_aarch64_linux_android"),

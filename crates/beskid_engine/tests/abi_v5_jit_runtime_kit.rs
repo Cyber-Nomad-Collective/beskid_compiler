@@ -47,9 +47,7 @@ fn host_target() -> Option<TargetMetadata> {
         ("aarch64", "macos") => "aarch64-apple-darwin",
         _ => return None,
     };
-    TargetMetadata::supported()
-        .into_iter()
-        .find(|target| target.triple.as_str() == triple)
+    TargetMetadata::supported().into_iter().find(|target| target.triple.as_str() == triple)
 }
 
 fn compile_shared(path: &Path, symbols: &[String], unexpected: bool) {
@@ -69,17 +67,8 @@ fn compile_shared(path: &Path, symbols: &[String], unexpected: bool) {
     } else {
         command.args(["-shared", "-fPIC"]);
     }
-    let output = command
-        .arg(&source_path)
-        .arg("-o")
-        .arg(path)
-        .output()
-        .expect("invoke host C compiler");
-    assert!(
-        output.status.success(),
-        "shared runtime compile failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let output = command.arg(&source_path).arg("-o").arg(path).output().expect("invoke host C compiler");
+    assert!(output.status.success(), "shared runtime compile failed: {}", String::from_utf8_lossy(&output.stderr));
 }
 
 fn install_kit(
@@ -93,23 +82,14 @@ fn install_kit(
     fs::create_dir_all(&inputs).unwrap();
     let static_library = inputs.join("runtime.a");
     fs::write(&static_library, b"static runtime placeholder").unwrap();
-    let shared_library = inputs.join(if cfg!(target_os = "macos") {
-        "runtime.dylib"
-    } else {
-        "runtime.so"
-    });
+    let shared_library = inputs.join(if cfg!(target_os = "macos") { "runtime.dylib" } else { "runtime.so" });
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     let symbols = if complete_exports {
         manifest
             .exports
             .iter()
             .map(|entry| entry.symbol.clone())
-            .chain(
-                manifest
-                    .assembly_exports
-                    .iter()
-                    .map(|entry| entry.symbol.as_str().to_owned()),
-            )
+            .chain(manifest.assembly_exports.iter().map(|entry| entry.symbol.as_str().to_owned()))
             .collect::<Vec<_>>()
     } else {
         vec!["beskid_rt_v5_abi_version".to_owned()]
@@ -141,22 +121,12 @@ fn loader_requires_only_metadata_loader_exports_and_retains_library() {
     let shared = install_kit(temp.path(), &target, true, true, canonical_hash());
     let runtime = JitRuntimeKit::load(temp.path(), &target, BuildProfile::Debug).unwrap();
     let actual = runtime.symbol_names().collect::<BTreeSet<_>>();
-    let expected = runtime
-        .metadata()
-        .loader_required_exports
-        .iter()
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>();
+    let expected = runtime.metadata().loader_required_exports.iter().map(String::as_str).collect::<BTreeSet<_>>();
     assert_eq!(actual, expected);
     assert!(!actual.contains("beskid_rt_v5_intrinsic_system_allocate"));
     assert!(!actual.contains("attacker_unapproved_export"));
     assert_eq!(runtime.shared_library_path(), shared);
-    assert!(
-        runtime
-            .symbols()
-            .iter()
-            .all(|(_, address)| !address.is_null())
-    );
+    assert!(runtime.symbols().iter().all(|(_, address)| !address.is_null()));
 
     BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[])
         .expect("JIT owns loaded runtime for module lifetime");
@@ -169,14 +139,8 @@ fn runtime_exports_cannot_be_overridden_by_external_symbol_registration() {
     };
     let temp = TestDir::new();
     install_kit(temp.path(), &target, true, false, canonical_hash());
-    let fake = [(
-        "beskid_rt_v5_abi_version".to_owned(),
-        std::ptr::dangling::<u8>(),
-    )];
-    assert!(
-        BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &fake,)
-            .is_err()
-    );
+    let fake = [("beskid_rt_v5_abi_version".to_owned(), std::ptr::dangling::<u8>())];
+    assert!(BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &fake,).is_err());
 }
 
 #[test]
@@ -212,8 +176,7 @@ fn unapproved_runtime_reference_is_rejected_before_process_symbol_fallback() {
     let temp = TestDir::new();
     install_kit(temp.path(), &target, true, false, canonical_hash());
     let mut function = Function::new();
-    let signature =
-        function.import_signature(Signature::new(cranelift_codegen::isa::CallConv::SystemV));
+    let signature = function.import_signature(Signature::new(cranelift_codegen::isa::CallConv::SystemV));
     // `getpid` is a real process symbol (resolvable via dlsym) that is neither a kit export nor a
     // soft builtin (`BUILTIN_SPECS` / dispatch). Exact-kit JIT validation must reject it before any
     // process-symbol fallback can satisfy it.
@@ -223,19 +186,10 @@ fn unapproved_runtime_reference_is_rejected_before_process_symbol_fallback() {
         colocated: false,
         patchable: false,
     });
-    let artifact = CodegenArtifact {
-        functions: vec![LoweredFunction {
-            name: "Main".into(),
-            function,
-        }],
-        ..Default::default()
-    };
-    let mut jit =
-        BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[])
-            .unwrap();
-    let error = jit
-        .compile(&artifact)
-        .expect_err("unapproved process symbol must be rejected before dlsym fallback");
+    let artifact =
+        CodegenArtifact { functions: vec![LoweredFunction { name: "Main".into(), function }], ..Default::default() };
+    let mut jit = BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[]).unwrap();
+    let error = jit.compile(&artifact).expect_err("unapproved process symbol must be rejected before dlsym fallback");
     assert!(error.to_string().contains("not approved"));
 }
 
@@ -271,22 +225,13 @@ fn corelib_syscall_write_links_from_the_process_builtin_registry() {
     builder.finalize();
 
     let artifact = CodegenArtifact {
-        functions: vec![LoweredFunction {
-            name: "Main".into(),
-            function,
-        }],
-        extern_imports: vec![ExternImport {
-            symbol: "syscall_write".into(),
-            abi: Some("C".into()),
-            library: None,
-        }],
+        functions: vec![LoweredFunction { name: "Main".into(), function }],
+        extern_imports: vec![ExternImport { symbol: "syscall_write".into(), abi: Some("C".into()), library: None }],
         ..Default::default()
     };
-    let mut jit =
-        BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[])
-            .expect("exact ABI-v5 runtime kit loads before process builtin registration");
-    jit.compile(&artifact)
-        .expect("Corelib syscall_write must link through the process builtin registry");
+    let mut jit = BeskidJitModule::new_with_runtime_kit(temp.path(), &target, BuildProfile::Debug, &[])
+        .expect("exact ABI-v5 runtime kit loads before process builtin registration");
+    jit.compile(&artifact).expect("Corelib syscall_write must link through the process builtin registry");
 }
 
 #[test]
@@ -296,12 +241,11 @@ fn engine_uses_only_the_configured_exact_runtime_kit() {
     };
     let temp = TestDir::new();
     install_kit(temp.path(), &target, true, false, canonical_hash());
-    let mut engine = Engine::with_runtime_kit(temp.path(), target, BuildProfile::Debug)
-        .expect("construct exact-kit Engine");
+    let mut engine =
+        Engine::with_runtime_kit(temp.path(), target, BuildProfile::Debug).expect("construct exact-kit Engine");
 
     let mut function = Function::new();
-    let signature =
-        function.import_signature(Signature::new(cranelift_codegen::isa::CallConv::SystemV));
+    let signature = function.import_signature(Signature::new(cranelift_codegen::isa::CallConv::SystemV));
     // `getpid` resolves in-process but is not part of the exact ABI-v5 kit nor a soft builtin, so the
     // Engine must reject it rather than satisfy it from the surrounding process symbols.
     function.import_function(cranelift_codegen::ir::ExtFuncData {
@@ -310,13 +254,8 @@ fn engine_uses_only_the_configured_exact_runtime_kit() {
         colocated: false,
         patchable: false,
     });
-    let artifact = CodegenArtifact {
-        functions: vec![LoweredFunction {
-            name: "Main".into(),
-            function,
-        }],
-        ..Default::default()
-    };
+    let artifact =
+        CodegenArtifact { functions: vec![LoweredFunction { name: "Main".into(), function }], ..Default::default() };
 
     let error = engine
         .compile_artifact(&artifact)
@@ -353,12 +292,8 @@ fn engine_try_new_fails_closed_when_exact_debug_manifest_is_missing() {
         }
     };
     let message = error.to_string();
-    let expected = empty
-        .path()
-        .join("lib/beskid-runtime/abi-5")
-        .join(target.triple.as_str())
-        .join("debug")
-        .join("abi.json");
+    let expected =
+        empty.path().join("lib/beskid-runtime/abi-5").join(target.triple.as_str()).join("debug").join("abi.json");
     assert!(
         message.contains(&expected.display().to_string()) || message.contains("MetadataRead"),
         "expected missing-manifest fail-closed diagnostic mentioning {}, got {message}",
@@ -375,12 +310,9 @@ fn codegen_input_route_fails_closed_when_exact_kit_manifest_is_missing() {
     let previous = std::env::var_os("BESKID_RUNTIME_PREFIX");
     // SAFETY: this integration target serializes around the process environment and restores it.
     unsafe { std::env::set_var("BESKID_RUNTIME_PREFIX", empty.path()) };
-    let error = beskid_engine::services::run_entrypoint(
-        Path::new("missing-kit.bd"),
-        "i64 Main() { return 1; }",
-        "Main",
-    )
-    .expect_err("CodegenInput JIT route must fail closed without an exact kit");
+    let error =
+        beskid_engine::services::run_entrypoint(Path::new("missing-kit.bd"), "i64 Main() { return 1; }", "Main")
+            .expect_err("CodegenInput JIT route must fail closed without an exact kit");
     unsafe {
         if let Some(value) = previous {
             std::env::set_var("BESKID_RUNTIME_PREFIX", value);
@@ -389,12 +321,8 @@ fn codegen_input_route_fails_closed_when_exact_kit_manifest_is_missing() {
         }
     };
     let message = error.to_string();
-    let expected = empty
-        .path()
-        .join("lib/beskid-runtime/abi-5")
-        .join(target.triple.as_str())
-        .join("debug")
-        .join("abi.json");
+    let expected =
+        empty.path().join("lib/beskid-runtime/abi-5").join(target.triple.as_str()).join("debug").join("abi.json");
     assert!(
         message.contains(&expected.display().to_string())
             || message.contains("MetadataRead")
@@ -416,12 +344,9 @@ fn codegen_input_route_fails_closed_when_exact_kit_is_tampered() {
     let previous = std::env::var_os("BESKID_RUNTIME_PREFIX");
     // SAFETY: this integration target serializes around the process environment and restores it.
     unsafe { std::env::set_var("BESKID_RUNTIME_PREFIX", tampered.path()) };
-    let error = beskid_engine::services::run_entrypoint(
-        Path::new("tampered-kit.bd"),
-        "i64 Main() { return 1; }",
-        "Main",
-    )
-    .expect_err("CodegenInput JIT route must reject a tampered exact kit");
+    let error =
+        beskid_engine::services::run_entrypoint(Path::new("tampered-kit.bd"), "i64 Main() { return 1; }", "Main")
+            .expect_err("CodegenInput JIT route must reject a tampered exact kit");
     unsafe {
         if let Some(value) = previous {
             std::env::set_var("BESKID_RUNTIME_PREFIX", value);
@@ -452,11 +377,5 @@ fn prepare_jit_entrypoint_uses_codegen_input_symbols_only() {
     .expect("CodegenInput preparation");
     assert!(prepared.symbol.starts_with("Main#syntax_"));
     assert_eq!(prepared.artifact.functions.len(), 2);
-    assert!(
-        prepared
-            .artifact
-            .functions
-            .iter()
-            .any(|function| function.name.starts_with("Echo#syntax_"))
-    );
+    assert!(prepared.artifact.functions.iter().any(|function| function.name.starts_with("Echo#syntax_")));
 }

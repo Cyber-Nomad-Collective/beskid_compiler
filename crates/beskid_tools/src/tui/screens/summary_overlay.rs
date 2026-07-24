@@ -18,10 +18,8 @@ use crate::tui::shell::state::ShellState;
 pub fn update(msg: &ShellMessage, state: &mut ShellState) -> Vec<ShellEffect> {
     if matches!(
         msg,
-        ShellMessage::SetOverlayVisible {
-            kind: OverlayKind::Summary,
-            visible: true,
-        } | ShellMessage::ShowTestReport { .. }
+        ShellMessage::SetOverlayVisible { kind: OverlayKind::Summary, visible: true }
+            | ShellMessage::ShowTestReport { .. }
             | ShellMessage::StageSummary(_)
     ) {
         state.set_overlay_visible(OverlayKind::Summary, true);
@@ -36,17 +34,13 @@ pub fn on_input(event: &InputEvent, state: &mut ShellState) -> InputResult {
 
 pub fn render(area: Rect, frame: &mut Frame, state: &mut ShellState) {
     let [top, bottom] = Layout::vertical([Constraint::Length(8), Constraint::Min(6)]).areas(area);
-    let [chart, headline] =
-        Layout::vertical([Constraint::Min(4), Constraint::Length(3)]).areas(top);
+    let [chart, headline] = Layout::vertical([Constraint::Min(4), Constraint::Length(3)]).areas(top);
     draw_summary_chart_panel(frame, chart, &state.command_summary);
     draw_summary_headline_footer(frame, headline, &state.command_summary);
 
-    let [explorer, code] =
-        Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)]).areas(bottom);
+    let [explorer, code] = Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)]).areas(bottom);
     let selected_title = draw_failed_explorer(frame, explorer, state);
-    state
-        .code_viewer
-        .draw(frame, code, selected_title.as_deref());
+    state.code_viewer.draw(frame, code, selected_title.as_deref());
 }
 
 fn draw_failed_explorer(frame: &mut Frame, area: Rect, state: &mut ShellState) -> Option<String> {
@@ -61,10 +55,7 @@ fn draw_failed_explorer(frame: &mut Frame, area: Rect, state: &mut ShellState) -
         .iter()
         .filter_map(|&row_index| state.test_rows.get(row_index))
         .map(|row| {
-            let time = row
-                .duration
-                .map(format_duration)
-                .unwrap_or_else(|| "—".to_owned());
+            let time = row.duration.map(format_duration).unwrap_or_else(|| "—".to_owned());
             ListItem::new(Line::from(vec![
                 Span::styled("fail", Style::default().fg(Color::Red)),
                 Span::raw(format!(" {time:>8}  ")),
@@ -74,11 +65,7 @@ fn draw_failed_explorer(frame: &mut Frame, area: Rect, state: &mut ShellState) -
         .collect();
     let mut list_state = ListState::default();
     list_state.select(Some(state.summary_explorer_index));
-    let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" Failed tests "),
-    );
+    let list = List::new(items).block(Block::default().borders(Borders::ALL).title(" Failed tests "));
     frame.render_stateful_widget(list, area, &mut list_state);
     failed
         .get(state.summary_explorer_index)

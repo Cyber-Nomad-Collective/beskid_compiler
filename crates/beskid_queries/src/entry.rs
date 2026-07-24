@@ -3,8 +3,8 @@
 use anyhow::Result;
 use beskid_analysis::analysis::SemanticDiagnostic;
 use beskid_analysis::services::{
-    FrontEndOptions, PrepareOptions, PreparedCompilation, ResolvedInput, SemanticSnapshot,
-    SessionFingerprint, cached_semantic_snapshot, invalidate_entry_sessions_for_project,
+    FrontEndOptions, PrepareOptions, PreparedCompilation, ResolvedInput, SemanticSnapshot, SessionFingerprint,
+    cached_semantic_snapshot, invalidate_entry_sessions_for_project,
 };
 use beskid_pipeline::{PipelineObserver, observe_phase, phases};
 
@@ -47,23 +47,10 @@ pub fn cached_semantic_snapshot_for_key(fingerprint: &str) -> Option<SemanticSna
 
 fn decode_fingerprint_key(key: &str) -> SessionFingerprint {
     let mut parts = key.splitn(3, '\0');
-    let project_root = parts
-        .next()
-        .map(std::path::PathBuf::from)
-        .unwrap_or_default();
-    let entry_canonical = parts
-        .next()
-        .map(std::path::PathBuf::from)
-        .unwrap_or_default();
-    let lockfile_digest = parts
-        .next()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(0);
-    SessionFingerprint {
-        project_root,
-        entry_canonical,
-        lockfile_digest,
-    }
+    let project_root = parts.next().map(std::path::PathBuf::from).unwrap_or_default();
+    let entry_canonical = parts.next().map(std::path::PathBuf::from).unwrap_or_default();
+    let lockfile_digest = parts.next().and_then(|value| value.parse().ok()).unwrap_or(0);
+    SessionFingerprint { project_root, entry_canonical, lockfile_digest }
 }
 
 pub fn fingerprint_key(fingerprint: &SessionFingerprint) -> String {
@@ -106,8 +93,7 @@ pub fn prepare_compilation_diagnostics_with_db(
     trace_query("prepare_compilation_diagnostics_with_db", false);
     let resolved = enrich_resolved_with_assembly(db, resolved, &options)?;
     db.ensure_file_text(resolved.source_path.clone(), resolved.source.clone());
-    let result =
-        beskid_analysis::services::prepare_compilation_diagnostics(&resolved, options, pipeline)?;
+    let result = beskid_analysis::services::prepare_compilation_diagnostics(&resolved, options, pipeline)?;
     if let Some(fp) = session_fingerprint(&resolved) {
         let _ = semantic_snapshot(db, &fingerprint_key(&fp));
     }
@@ -123,10 +109,7 @@ pub fn typed_entry_bundle(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SharedFrontEnd> {
     let options = PrepareOptions {
-        front_end: FrontEndOptions {
-            with_semantic_diagnostics: false,
-            ..Default::default()
-        },
+        front_end: FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
         ..Default::default()
     };
     crate::typed_entry_bundle::typed_entry_bundle_with_db(db, resolved, &options, pipeline)
@@ -141,10 +124,8 @@ pub fn entry_resolution_with_db(
     trace_query("entry_resolution_with_db", false);
     let resolved = enrich_resolved_with_assembly(db, resolved, options)?;
     db.ensure_file_text(resolved.source_path.clone(), resolved.source.clone());
-    let assembly = resolved
-        .assembly
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("entry resolution requires assembled program"))?;
+    let assembly =
+        resolved.assembly.as_ref().ok_or_else(|| anyhow::anyhow!("entry resolution requires assembled program"))?;
     let resolution = beskid_analysis::services::resolve_entry(
         assembly.entry_hir(),
         &assembly.module_index,
@@ -165,10 +146,8 @@ fn enrich_resolved_with_assembly(
     let Some(plan) = resolved.compile_plan.as_ref() else {
         return Ok(clone_resolved(resolved));
     };
-    let assembly_options = beskid_analysis::projects::assembly_options_for_prepare(
-        plan,
-        options.front_end.assembly_discovery,
-    );
+    let assembly_options =
+        beskid_analysis::projects::assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
     let assembly = program_assembly(
         db,
         plan,

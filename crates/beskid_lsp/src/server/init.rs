@@ -5,9 +5,7 @@ use tower_lsp_server::ls_types::*;
 pub fn initialize_result() -> InitializeResult {
     InitializeResult {
         capabilities: ServerCapabilities {
-            text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                TextDocumentSyncKind::INCREMENTAL,
-            )),
+            text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::INCREMENTAL)),
             hover_provider: Some(HoverProviderCapability::Simple(true)),
             definition_provider: Some(OneOf::Left(true)),
             declaration_provider: Some(DeclarationCapability::Simple(true)),
@@ -16,14 +14,14 @@ pub fn initialize_result() -> InitializeResult {
                 trigger_characters: Some(vec![".".to_string(), ":".to_string(), "_".to_string()]),
                 ..CompletionOptions::default()
             }),
-            semantic_tokens_provider: Some(
-                SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
+            semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
+                SemanticTokensOptions {
                     legend: semantic_token_legend(),
                     full: Some(SemanticTokensFullOptions::Bool(true)),
                     range: None,
                     work_done_progress_options: WorkDoneProgressOptions::default(),
-                }),
-            ),
+                },
+            )),
             document_symbol_provider: Some(OneOf::Left(true)),
             document_formatting_provider: Some(OneOf::Left(true)),
             document_range_formatting_provider: Some(OneOf::Left(true)),
@@ -37,10 +35,7 @@ pub fn initialize_result() -> InitializeResult {
             rename_provider: Some(OneOf::Left(true)),
             inlay_hint_provider: Some(OneOf::Left(true)),
             execute_command_provider: Some(ExecuteCommandOptions {
-                commands: PROJECT_EXPLORER_COMMANDS
-                    .iter()
-                    .map(|command| (*command).to_string())
-                    .collect(),
+                commands: PROJECT_EXPLORER_COMMANDS.iter().map(|command| (*command).to_string()).collect(),
                 ..ExecuteCommandOptions::default()
             }),
             workspace: Some(WorkspaceServerCapabilities {

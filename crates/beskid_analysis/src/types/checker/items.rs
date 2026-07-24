@@ -48,8 +48,7 @@ impl<'a> TypeChecker<'a> {
             }
             if field.node.kind == crate::hir::HirFieldKind::Event {
                 if matches!(field.node.event_capacity, Some(0)) {
-                    self.errors
-                        .push(TypeError::InvalidEventCapacity { span: field.span });
+                    self.errors.push(TypeError::InvalidEventCapacity { span: field.span });
                 }
                 event_fields.insert(field.node.name.node.name.clone(), field.node.event_capacity);
             }
@@ -87,9 +86,7 @@ impl<'a> TypeChecker<'a> {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {
                     let name = generic.node.name.clone();
-                    let type_id = self
-                        .type_table
-                        .intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                    let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
                     self.generic_params.insert(name.clone(), type_id);
                     inserted.push(name);
                 }
@@ -98,9 +95,7 @@ impl<'a> TypeChecker<'a> {
                 for variant in &def.node.variants {
                     let mut fields = Vec::new();
                     for field in &variant.node.fields {
-                        if let Some(type_id) =
-                            self.type_id_for_type_in_generic_scope(&field.node.ty)
-                        {
+                        if let Some(type_id) = self.type_id_for_type_in_generic_scope(&field.node.ty) {
                             fields.push(type_id);
                         }
                     }
@@ -167,9 +162,7 @@ impl<'a> TypeChecker<'a> {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {
                     let name = generic.node.name.clone();
-                    let type_id = self
-                        .type_table
-                        .intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                    let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
                     self.generic_params.insert(name.clone(), type_id);
                     inserted.push(name);
                 }
@@ -182,9 +175,7 @@ impl<'a> TypeChecker<'a> {
                 let placeholder_param = self.primitive_type_id(HirPrimitiveType::I64);
                 let mut params = Vec::new();
                 for param in &def.node.parameters {
-                    let type_id = self
-                        .type_id_for_type_in_generic_scope(&param.node.ty)
-                        .or(placeholder_param);
+                    let type_id = self.type_id_for_type_in_generic_scope(&param.node.ty).or(placeholder_param);
                     if let Some(type_id) = type_id {
                         params.push(type_id);
                     }
@@ -242,9 +233,7 @@ impl<'a> TypeChecker<'a> {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {
                     let name = generic.node.name.clone();
-                    let type_id = self
-                        .type_table
-                        .intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                    let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
                     self.generic_params.insert(name.clone(), type_id);
                     inserted.push(name);
                 }
@@ -252,10 +241,7 @@ impl<'a> TypeChecker<'a> {
                     .node
                     .return_type
                     .as_ref()
-                    .and_then(|ty| {
-                        self.type_id_for_type(ty)
-                            .or_else(|| self.resolve_foreign_return_type(ty))
-                    })
+                    .and_then(|ty| self.type_id_for_type(ty).or_else(|| self.resolve_foreign_return_type(ty)))
                     .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
                 self.current_return_type = return_type;
                 let mut params = Vec::new();
@@ -300,9 +286,7 @@ impl<'a> TypeChecker<'a> {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {
                     let name = generic.node.name.clone();
-                    let type_id = self
-                        .type_table
-                        .intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                    let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
                     self.generic_params.insert(name.clone(), type_id);
                     inserted.push(name);
                 }
@@ -318,9 +302,7 @@ impl<'a> TypeChecker<'a> {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {
                     let name = generic.node.name.clone();
-                    let type_id = self
-                        .type_table
-                        .intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                    let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
                     self.generic_params.insert(name.clone(), type_id);
                     inserted.push(name);
                 }
@@ -329,9 +311,7 @@ impl<'a> TypeChecker<'a> {
                 for variant in &def.node.variants {
                     let mut fields = Vec::new();
                     for field in &variant.node.fields {
-                        if let Some(type_id) =
-                            self.type_id_for_type_in_generic_scope(&field.node.ty)
-                        {
+                        if let Some(type_id) = self.type_id_for_type_in_generic_scope(&field.node.ty) {
                             fields.push(type_id);
                         }
                     }
@@ -375,27 +355,13 @@ impl<'a> TypeChecker<'a> {
         let Some(return_type) = return_type else {
             return;
         };
-        self.function_signatures.insert(
-            item_id,
-            FunctionSignature {
-                params,
-                return_type,
-            },
-        );
+        self.function_signatures.insert(item_id, FunctionSignature { params, return_type });
     }
 
     fn canonical_item_id_for_span(&self, span: crate::syntax::SpanInfo) -> Option<ItemId> {
         let item_id = self.item_id_for_span(span)?;
-        let symbol = self
-            .resolution
-            .items
-            .get(item_id.0)
-            .and_then(|info| info.symbol)?;
-        self.resolution
-            .by_symbol
-            .get(&symbol)
-            .copied()
-            .or(Some(item_id))
+        let symbol = self.resolution.items.get(item_id.0).and_then(|info| info.symbol)?;
+        self.resolution.by_symbol.get(&symbol).copied().or(Some(item_id))
     }
 
     fn type_method_definition(
@@ -405,8 +371,7 @@ impl<'a> TypeChecker<'a> {
     ) {
         let receiver_type = self.type_id_for_type(&def.node.receiver_type);
         let previous_receiver = self.current_receiver_item_id;
-        self.current_receiver_item_id =
-            receiver_type.and_then(|type_id| self.named_item_id(type_id));
+        self.current_receiver_item_id = receiver_type.and_then(|type_id| self.named_item_id(type_id));
         let return_type = def
             .node
             .return_type
@@ -425,16 +390,8 @@ impl<'a> TypeChecker<'a> {
             }
         }
         self.record_signature(item_span, params.clone(), return_type);
-        if let (Some(method_item_id), Some(return_type)) =
-            (self.canonical_item_id_for_span(item_span), return_type)
-        {
-            self.method_function_signatures.insert(
-                method_item_id,
-                FunctionSignature {
-                    params,
-                    return_type,
-                },
-            );
+        if let (Some(method_item_id), Some(return_type)) = (self.canonical_item_id_for_span(item_span), return_type) {
+            self.method_function_signatures.insert(method_item_id, FunctionSignature { params, return_type });
         }
         self.type_block(&def.node.body);
         self.current_receiver_item_id = previous_receiver;
@@ -454,9 +411,7 @@ impl<'a> TypeChecker<'a> {
         let placeholder_param = self.primitive_type_id(HirPrimitiveType::I64);
         let mut params = Vec::new();
         for param in &def.node.parameters {
-            let type_id = self
-                .type_id_for_type_in_generic_scope(&param.node.ty)
-                .or(placeholder_param);
+            let type_id = self.type_id_for_type_in_generic_scope(&param.node.ty).or(placeholder_param);
             if let Some(type_id) = type_id {
                 params.push(type_id);
             }
@@ -465,10 +420,7 @@ impl<'a> TypeChecker<'a> {
         if let Some(method_item_id) = self.canonical_item_id_for_span(item_span) {
             self.method_function_signatures.insert(
                 method_item_id,
-                FunctionSignature {
-                    params: params.clone(),
-                    return_type: return_type.expect("method return type"),
-                },
+                FunctionSignature { params: params.clone(), return_type: return_type.expect("method return type") },
             );
         }
     }
@@ -498,14 +450,10 @@ impl<'a> TypeChecker<'a> {
         let Some(receiver_item) = self.named_item_id(receiver_type_id) else {
             return;
         };
-        self.methods_by_receiver
-            .insert((receiver_item, def.name.node.name.clone()), method_item_id);
+        self.methods_by_receiver.insert((receiver_item, def.name.node.name.clone()), method_item_id);
         self.method_function_signatures.insert(
             method_item_id,
-            FunctionSignature {
-                params: params.iter().skip(1).copied().collect(),
-                return_type,
-            },
+            FunctionSignature { params: params.iter().skip(1).copied().collect(), return_type },
         );
     }
 }

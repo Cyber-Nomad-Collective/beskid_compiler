@@ -11,8 +11,8 @@ use beskid_analysis::services::{ResolvedInput, resolve_input};
 use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    AstNodeKey, SourceUnitId, build_typed_program, call_lowering, configure_db_for_project,
-    program_assembly, project_session_for_syntax_assembly, with_db,
+    AstNodeKey, SourceUnitId, build_typed_program, call_lowering, configure_db_for_project, program_assembly,
+    project_session_for_syntax_assembly, with_db,
 };
 
 use super::std_env_lock::std_dependency_env_lock;
@@ -29,9 +29,7 @@ pub fn with_large_test_stack(f: impl FnOnce() + Send + 'static) {
 }
 
 pub fn fixture_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../beskid_e2e_tests/fixtures")
-        .join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures").join(name)
 }
 
 pub fn corelib_mvp_fixture() -> PathBuf {
@@ -55,23 +53,11 @@ pub fn with_project_test_env<F: FnOnce()>(project_root: &Path, f: F) {
 pub fn resolve_fixture(fixture_root: &Path, entry: &str, target: &str) -> ResolvedInput {
     let root = fixture_root.to_path_buf();
     let entry_path = root.join(entry);
-    resolve_input(
-        Some(&entry_path),
-        Some(&root),
-        Some(target),
-        None,
-        false,
-        false,
-    )
-    .expect("resolve fixture")
+    resolve_input(Some(&entry_path), Some(&root), Some(target), None, false, false).expect("resolve fixture")
 }
 
 /// Populate `ResolvedInput.assembly` once via Salsa `program_assembly`.
-pub fn resolve_fixture_with_assembly(
-    fixture_root: &Path,
-    entry: &str,
-    target: &str,
-) -> ResolvedInput {
+pub fn resolve_fixture_with_assembly(fixture_root: &Path, entry: &str, target: &str) -> ResolvedInput {
     let mut resolved = resolve_fixture(fixture_root, entry, target);
     let plan = resolved.compile_plan.clone().expect("compile plan");
     let assembly = with_db(|db| {
@@ -90,12 +76,10 @@ pub fn resolve_fixture_with_assembly(
 }
 
 static CORELIB_MVP_ASSEMBLY: OnceLock<Arc<ProgramAssembly>> = OnceLock::new();
-static CORELIB_TESTS_ENTRY_ASSEMBLIES: Mutex<Option<HashMap<String, Arc<ProgramAssembly>>>> =
-    Mutex::new(None);
+static CORELIB_TESTS_ENTRY_ASSEMBLIES: Mutex<Option<HashMap<String, Arc<ProgramAssembly>>>> = Mutex::new(None);
 
 pub fn corelib_tests_project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corelib/beskid_corelib/tests/corelib_tests")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib/beskid_corelib/tests/corelib_tests")
 }
 
 /// Resolve a `corelib_tests` entry through the analysis spine (no assembly yet).
@@ -114,13 +98,8 @@ pub fn resolve_corelib_tests_entry_with_assembly(entry_relative: &str) -> Resolv
     resolved
 }
 
-fn cached_corelib_tests_assembly(
-    entry_relative: &str,
-    resolved: &ResolvedInput,
-) -> Arc<ProgramAssembly> {
-    let mut guard = CORELIB_TESTS_ENTRY_ASSEMBLIES
-        .lock()
-        .expect("corelib_tests assembly cache lock");
+fn cached_corelib_tests_assembly(entry_relative: &str, resolved: &ResolvedInput) -> Arc<ProgramAssembly> {
+    let mut guard = CORELIB_TESTS_ENTRY_ASSEMBLIES.lock().expect("corelib_tests assembly cache lock");
     if guard.is_none() {
         *guard = Some(HashMap::new());
     }
@@ -167,67 +146,40 @@ pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
     let started = Instant::now();
     let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
     with_db(|db| {
-        let assembly = resolved
-            .assembly
-            .as_ref()
-            .expect("corelib entry assembly")
-            .clone();
+        let assembly = resolved.assembly.as_ref().expect("corelib entry assembly").clone();
         let syntax_assembly = std::sync::Arc::new(SyntaxProgramAssembly::from(&assembly));
-        let project = project_session_for_syntax_assembly(
-            db,
-            &syntax_assembly,
-            "corelib-syntax-gate",
-            "prepared-corelib-entry",
-        )
-        .expect("corelib syntax project session");
+        let project =
+            project_session_for_syntax_assembly(db, &syntax_assembly, "corelib-syntax-gate", "prepared-corelib-entry")
+                .expect("corelib syntax project session");
         let generation = SyntaxGenerationId(1);
-        let typed = build_typed_program(db, project, generation, syntax_assembly)
-            .expect("corelib syntax program");
+        let typed = build_typed_program(db, project, generation, syntax_assembly).expect("corelib syntax program");
         let entry = typed.assembly.entry_unit();
         let index = SyntaxIndex::from_program(&entry.program, generation);
         let unit = SourceUnitId::new(db, entry.path.clone());
         for node in index.ids_of_kind(NodeKind::CallExpression) {
-            let key = AstNodeKey {
-                unit,
-                generation,
-                node,
-            };
+            let key = AstNodeKey { unit, generation, node };
             call_lowering(db, key)
                 .and_then(|fact| {
                     fact.ok_or_else(|| {
-                        beskid_queries::SemanticError::unavailable(
-                            "entry call has no syntax lowering fact",
-                        )
+                        beskid_queries::SemanticError::unavailable("entry call has no syntax lowering fact")
                     })
                 })
                 .unwrap_or_else(|error| {
-                    panic!(
-                        "corelib syntax call gate for {entry_relative} failed at node {:?}: {error}",
-                        node
-                    )
+                    panic!("corelib syntax call gate for {entry_relative} failed at node {:?}: {error}", node)
                 });
         }
     });
-    test_progress(&format!(
-        "✓ corelib typecheck: {entry_relative} ({:.1}s)",
-        started.elapsed().as_secs_f64()
-    ));
+    test_progress(&format!("✓ corelib typecheck: {entry_relative} ({:.1}s)", started.elapsed().as_secs_f64()));
 }
 
 /// Lower a single test entrypoint from a `corelib_tests` file to CLIF (same path as `beskid test`).
-pub fn lower_corelib_tests_entrypoint(
-    entry_relative: &str,
-    entrypoint: &str,
-) -> beskid_codegen::CodegenArtifact {
+pub fn lower_corelib_tests_entrypoint(entry_relative: &str, entrypoint: &str) -> beskid_codegen::CodegenArtifact {
     let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
-    let assembly = Arc::new(SyntaxProgramAssembly::from(
-        resolved.assembly.as_ref().expect("corelib entry assembly"),
-    ));
+    let assembly = Arc::new(SyntaxProgramAssembly::from(resolved.assembly.as_ref().expect("corelib entry assembly")));
     beskid_engine::services::lower_syntax_assembly_entrypoint(
         assembly,
         entrypoint,
-        beskid_engine::host_runtime_target()
-            .unwrap_or_else(|error| panic!("host ABI-v5 target: {error}")),
+        beskid_engine::host_runtime_target().unwrap_or_else(|error| panic!("host ABI-v5 target: {error}")),
     )
     .unwrap_or_else(|err| panic!("lower {entrypoint} in {entry_relative}: {err}"))
 }
@@ -245,9 +197,8 @@ pub fn shared_corelib_mvp_assembly() -> Arc<ProgramAssembly> {
     CORELIB_MVP_ASSEMBLY
         .get_or_init(|| {
             let root = corelib_mvp_fixture();
-            let resolved = with_project_test_env_return(&root, |root| {
-                resolve_fixture_with_assembly(root, "Src/Main.bd", "App")
-            });
+            let resolved =
+                with_project_test_env_return(&root, |root| resolve_fixture_with_assembly(root, "Src/Main.bd", "App"));
             Arc::new(resolved.assembly.expect("assembly"))
         })
         .clone()
@@ -269,21 +220,11 @@ mod tests {
     fn corelib_entry_assemblies_remain_isolated_by_explicit_source_path() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
-            let channel =
-                resolve_corelib_tests_entry_with_assembly("concurrency/ChannelApiTests.bd");
-            let messages =
-                resolve_corelib_tests_entry_with_assembly("console/ConsoleMessageChannelTests.bd");
+            let channel = resolve_corelib_tests_entry_with_assembly("concurrency/ChannelApiTests.bd");
+            let messages = resolve_corelib_tests_entry_with_assembly("console/ConsoleMessageChannelTests.bd");
 
-            assert!(
-                channel
-                    .source_path
-                    .ends_with("concurrency/ChannelApiTests.bd")
-            );
-            assert!(
-                messages
-                    .source_path
-                    .ends_with("console/ConsoleMessageChannelTests.bd")
-            );
+            assert!(channel.source_path.ends_with("concurrency/ChannelApiTests.bd"));
+            assert!(messages.source_path.ends_with("console/ConsoleMessageChannelTests.bd"));
             assert!(
                 channel
                     .assembly

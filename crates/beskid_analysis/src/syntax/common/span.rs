@@ -3,9 +3,7 @@
 use pest::Span;
 
 /// Source span: UTF-8 byte range and 1-based line/column endpoints (inclusive-style reporting).
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
 pub struct SpanInfo {
     pub start: usize,
     pub end: usize,
@@ -45,11 +43,8 @@ impl SpanInfo {
         let mut cur = 0usize;
         for (idx, chunk) in source.split_inclusive('\n').enumerate() {
             if idx == target {
-                let end = if chunk.ends_with('\n') && !chunk.is_empty() {
-                    cur + chunk.len() - 1
-                } else {
-                    cur + chunk.len()
-                };
+                let end =
+                    if chunk.ends_with('\n') && !chunk.is_empty() { cur + chunk.len() - 1 } else { cur + chunk.len() };
                 let end = end.max(cur + 1).min(source.len());
                 return Self::from_byte_range_in_source(source, cur, end);
             }
@@ -97,11 +92,7 @@ pub struct Spanned<T> {
 impl<T> Spanned<T> {
     /// Wraps `node` with `span` and an unset node id.
     pub fn new(node: T, span: SpanInfo) -> Self {
-        Self {
-            node,
-            span,
-            id: HirNodeId::INVALID,
-        }
+        Self { node, span, id: HirNodeId::INVALID }
     }
 }
 

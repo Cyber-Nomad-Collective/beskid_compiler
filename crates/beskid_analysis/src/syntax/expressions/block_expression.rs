@@ -16,10 +16,7 @@ pub struct BlockExpression {
 
 pub(crate) fn parse_block_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, ParseError> {
     let span = SpanInfo::from_span(&pair.as_span());
-    let inner = pair
-        .into_inner()
-        .next()
-        .ok_or(ParseError::missing(Rule::Block))?;
+    let inner = pair.into_inner().next().ok_or(ParseError::missing(Rule::Block))?;
     let block = Block::parse(inner)?;
     let block_expr = Spanned::new(BlockExpression { block }, span);
 

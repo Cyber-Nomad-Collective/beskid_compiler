@@ -67,30 +67,14 @@ impl DocumentViewerWidget {
         let outline_area = self.outline_area(content_area);
         let scrollbar_area = self.scrollbar_area(content_area);
         let line_area = if scrollbar_area.is_some() {
-            Rect {
-                width: content_area.width.saturating_sub(1),
-                ..content_area
-            }
+            Rect { width: content_area.width.saturating_sub(1), ..content_area }
         } else {
             content_area
         };
 
-        render_document_lines(
-            line_area,
-            buf,
-            &self.document.lines,
-            scroll,
-            &self.display,
-            self.selection.as_ref(),
-        );
+        render_document_lines(line_area, buf, &self.document.lines, scroll, &self.display, self.selection.as_ref());
         if let Some(area) = outline_area {
-            render_outline(
-                area,
-                buf,
-                &self.document.outline,
-                self.outline_hovered,
-                self.outline_hovered_entry,
-            );
+            render_outline(area, buf, &self.document.outline, self.outline_hovered, self.outline_hovered_entry);
         }
         if let Some(area) = scrollbar_area {
             render_scrollbar(area, buf, scroll);
@@ -119,15 +103,8 @@ impl DocumentViewerWidget {
 fn split_statusline(area: Rect, has_statusline: bool) -> (Rect, Option<Rect>) {
     if has_statusline && area.height > 1 {
         (
-            Rect {
-                height: area.height.saturating_sub(1),
-                ..area
-            },
-            Some(Rect {
-                y: area.y + area.height.saturating_sub(1),
-                height: 1,
-                ..area
-            }),
+            Rect { height: area.height.saturating_sub(1), ..area },
+            Some(Rect { y: area.y + area.height.saturating_sub(1), height: 1, ..area }),
         )
     } else {
         (area, None)

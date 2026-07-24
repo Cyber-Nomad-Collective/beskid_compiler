@@ -49,13 +49,8 @@ impl<'a> Pane<'a> {
         self.render(frame, area, paragraph);
     }
 
-    pub fn render_paragraph_with_footer<F>(
-        &self,
-        frame: &mut Frame,
-        area: Rect,
-        content: Vec<Line<'a>>,
-        footer: F,
-    ) where
+    pub fn render_paragraph_with_footer<F>(&self, frame: &mut Frame, area: Rect, content: Vec<Line<'a>>, footer: F)
+    where
         F: Widget,
     {
         let paragraph = Paragraph::new(content);

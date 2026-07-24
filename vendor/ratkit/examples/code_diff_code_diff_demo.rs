@@ -1,9 +1,7 @@
 use crossterm::event::KeyCode;
 use ratatui::{widgets::Block, Frame};
 use ratkit::widgets::code_diff::CodeDiff;
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct CodeDiffDemo {
     diff: CodeDiff,

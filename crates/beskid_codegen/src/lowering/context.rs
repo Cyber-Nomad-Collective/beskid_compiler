@@ -86,11 +86,7 @@ impl CodegenContext {
         type_result: &beskid_analysis::types::TypeResult,
         type_id: TypeId,
     ) -> Option<TypeLayout> {
-        crate::lowering::descriptor::get_or_compute_layout(
-            &mut self.type_layouts,
-            type_result,
-            type_id,
-        )
+        crate::lowering::descriptor::get_or_compute_layout(&mut self.type_layouts, type_result, type_id)
     }
 
     /// Compute or return cached [`crate::lowering::descriptor::TypeDescriptorData`] for runtime metadata emission.

@@ -10,10 +10,7 @@ use crate::api::{BuildProfile, RuntimeKitRequest};
 use crate::error::{AotError, AotResult};
 
 /// Default AOT runtime request: one exact installed ABI-v5 kit.
-pub fn default_runtime_strategy(
-    profile: BuildProfile,
-    target_triple: Option<&str>,
-) -> AotResult<RuntimeKitRequest> {
+pub fn default_runtime_strategy(profile: BuildProfile, target_triple: Option<&str>) -> AotResult<RuntimeKitRequest> {
     let prefix = runtime_prefix()?;
     installed_runtime_strategy(&prefix, profile, target_triple)
 }
@@ -48,17 +45,13 @@ pub(crate) fn resolve_aot_runtime_kit(
     profile: RuntimeKitProfile,
 ) -> AotResult<beskid_abi::runtime_kit::ResolvedRuntimeKit> {
     resolve_canonical_runtime_kit(prefix, target, profile).map_err(|error| AotError::RuntimeBuild {
-        message: format!(
-            "ABI-v5 runtime kit validation failed for `{}`: {error:?}",
-            prefix.display()
-        ),
+        message: format!("ABI-v5 runtime kit validation failed for `{}`: {error:?}", prefix.display()),
     })
 }
 
 fn runtime_prefix() -> AotResult<PathBuf> {
-    beskid_abi::runtime_kit::installed_runtime_prefix().map_err(|error| AotError::RuntimeBuild {
-        message: error.to_string(),
-    })
+    beskid_abi::runtime_kit::installed_runtime_prefix()
+        .map_err(|error| AotError::RuntimeBuild { message: error.to_string() })
 }
 
 fn runtime_target(target_triple: Option<&str>) -> AotResult<TargetMetadata> {
@@ -66,14 +59,9 @@ fn runtime_target(target_triple: Option<&str>) -> AotResult<TargetMetadata> {
         Some(triple) => TargetMetadata::supported()
             .into_iter()
             .find(|target| target.triple.as_str() == triple)
-            .ok_or_else(|| AotError::RuntimeBuild {
-                message: format!("unsupported ABI-v5 runtime target `{triple}`"),
-            }),
-        None => {
-            beskid_abi::runtime_kit::host_runtime_target().map_err(|error| AotError::RuntimeBuild {
-                message: error.to_string(),
-            })
-        }
+            .ok_or_else(|| AotError::RuntimeBuild { message: format!("unsupported ABI-v5 runtime target `{triple}`") }),
+        None => beskid_abi::runtime_kit::host_runtime_target()
+            .map_err(|error| AotError::RuntimeBuild { message: error.to_string() }),
     }
 }
 

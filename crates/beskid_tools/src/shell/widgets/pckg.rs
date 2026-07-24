@@ -13,11 +13,7 @@ pub struct PckgWidget;
 
 impl BeskidWidget for PckgWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: "pckg.browser",
-            title: "Packages",
-            icon: "📦",
-        }
+        WidgetMeta { id: "pckg.browser", title: "Packages", icon: "📦" }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {

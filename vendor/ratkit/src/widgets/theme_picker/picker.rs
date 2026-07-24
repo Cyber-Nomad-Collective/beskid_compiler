@@ -45,20 +45,14 @@ fn filter_themes(filter: &str) -> Vec<(usize, &'static str)> {
             } else {
                 let filter_lower = filter.to_lowercase();
                 name.to_lowercase().contains(&filter_lower)
-                    || format_display_name(name)
-                        .to_lowercase()
-                        .contains(&filter_lower)
+                    || format_display_name(name).to_lowercase().contains(&filter_lower)
             }
         })
         .map(|(i, name)| (i, *name))
         .collect()
 }
 
-fn calculate_scroll_offset(
-    selected_index: usize,
-    visible_count: usize,
-    total_count: usize,
-) -> usize {
+fn calculate_scroll_offset(selected_index: usize, visible_count: usize, total_count: usize) -> usize {
     if total_count <= visible_count {
         return 0;
     }
@@ -228,11 +222,7 @@ impl ThemePicker {
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 if !filtered.is_empty() {
-                    let new_index = if self.state.index() == 0 {
-                        filtered.len() - 1
-                    } else {
-                        self.state.index() - 1
-                    };
+                    let new_index = if self.state.index() == 0 { filtered.len() - 1 } else { self.state.index() - 1 };
                     self.state.set_index(new_index);
                     if let Some((_, theme_name)) = filtered.get(new_index) {
                         let theme = load_theme_preview(theme_name);
@@ -289,17 +279,12 @@ impl ThemePicker {
 
         frame.render_widget(Clear, popup_area);
 
-        let scroll_offset =
-            calculate_scroll_offset(self.state.index(), visible_count, filtered.len());
+        let scroll_offset = calculate_scroll_offset(self.state.index(), visible_count, filtered.len());
 
         let mut items: Vec<Line> = Vec::new();
 
         let search_style = Style::default().fg(current_theme.text);
-        let cursor = if self.state.filter().is_empty() {
-            "_"
-        } else {
-            ""
-        };
+        let cursor = if self.state.filter().is_empty() { "_" } else { "" };
         let mut filter_str = String::new();
         let _ = write!(filter_str, "{}{}", self.state.filter(), cursor);
         items.push(Line::from(vec![
@@ -308,50 +293,30 @@ impl ThemePicker {
         ]));
 
         let separator = "─".repeat(self.width.saturating_sub(2) as usize);
-        items.push(Line::from(Span::styled(
-            separator,
-            Style::default().fg(current_theme.border),
-        )));
+        items.push(Line::from(Span::styled(separator, Style::default().fg(current_theme.border))));
 
         if filtered.is_empty() {
-            items.push(Line::from(Span::styled(
-                "   No matching themes",
-                Style::default().fg(current_theme.text_muted),
-            )));
+            items
+                .push(Line::from(Span::styled("   No matching themes", Style::default().fg(current_theme.text_muted))));
         } else {
-            for (filtered_idx, (original_idx, theme_name)) in filtered
-                .iter()
-                .enumerate()
-                .skip(scroll_offset)
-                .take(visible_count)
+            for (filtered_idx, (original_idx, theme_name)) in
+                filtered.iter().enumerate().skip(scroll_offset).take(visible_count)
             {
                 let display_name = format_display_name(theme_name);
                 let is_selected = filtered_idx == self.state.index();
 
                 let prefix = if is_selected { " > " } else { "   " };
-                let suffix = if *original_idx == self.state.saved_index() {
-                    " *"
-                } else {
-                    ""
-                };
+                let suffix = if *original_idx == self.state.saved_index() { " *" } else { "" };
 
                 let style = if is_selected {
-                    Style::default()
-                        .fg(current_theme.primary)
-                        .bg(current_theme.background)
-                        .add_modifier(Modifier::BOLD)
+                    Style::default().fg(current_theme.primary).bg(current_theme.background).add_modifier(Modifier::BOLD)
                 } else if *original_idx == self.state.saved_index() {
-                    Style::default()
-                        .fg(current_theme.success)
-                        .add_modifier(Modifier::BOLD)
+                    Style::default().fg(current_theme.success).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(current_theme.text)
                 };
 
-                items.push(Line::from(Span::styled(
-                    format!("{}{}{}", prefix, display_name, suffix),
-                    style,
-                )));
+                items.push(Line::from(Span::styled(format!("{}{}{}", prefix, display_name, suffix), style)));
             }
         }
 
@@ -369,19 +334,9 @@ impl ThemePicker {
         }
 
         let title = if !self.state.filter().is_empty() {
-            format!(
-                " {} ({}/{}) ",
-                self.title,
-                filtered.len(),
-                BUILTIN_THEMES.len()
-            )
+            format!(" {} ({}/{}) ", self.title, filtered.len(), BUILTIN_THEMES.len())
         } else if filtered.len() > visible_count {
-            format!(
-                " {} ({}/{}) ",
-                self.title,
-                self.state.index() + 1,
-                filtered.len()
-            )
+            format!(" {} ({}/{}) ", self.title, self.state.index() + 1, filtered.len())
         } else {
             format!(" {} ", self.title)
         };
@@ -392,12 +347,7 @@ impl ThemePicker {
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(current_theme.border_active))
                 .style(Style::default().bg(current_theme.background_menu))
-                .title(Span::styled(
-                    title,
-                    Style::default()
-                        .fg(current_theme.primary)
-                        .add_modifier(Modifier::BOLD),
-                )),
+                .title(Span::styled(title, Style::default().fg(current_theme.primary).add_modifier(Modifier::BOLD))),
         );
 
         frame.render_widget(popup, popup_area);

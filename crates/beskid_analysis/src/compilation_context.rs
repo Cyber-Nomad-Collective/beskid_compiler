@@ -6,10 +6,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::projects::{
-    CompilePlan, ProgramAssembly, ProjectGraphBuildOptions, ProjectKind,
-    UnresolvedDependencyPolicy, build_compile_plan_with_policy_and_graph, discover_workspace_file,
-    effective_roots_for_plan, load_manifest_from_path, module_roots_from_effective,
-    resolve_project_manifest_for_source_path,
+    CompilePlan, ProgramAssembly, ProjectGraphBuildOptions, ProjectKind, UnresolvedDependencyPolicy,
+    build_compile_plan_with_policy_and_graph, discover_workspace_file, effective_roots_for_plan,
+    load_manifest_from_path, module_roots_from_effective, resolve_project_manifest_for_source_path,
 };
 
 /// Thin project session view: manifest paths and module roots for query/database inputs.
@@ -32,11 +31,7 @@ pub type CompilationContext = ProjectSessionHandle;
 impl ProjectSessionHandle {
     /// Build a session handle for IDE/analysis paths (module roots from lockfile when present).
     pub fn try_for_analysis_path(path: &Path, workspace_member: Option<&str>) -> Option<Self> {
-        Self::try_for_analysis_path_with_graph_options(
-            path,
-            workspace_member,
-            ProjectGraphBuildOptions::default(),
-        )
+        Self::try_for_analysis_path_with_graph_options(path, workspace_member, ProjectGraphBuildOptions::default())
     }
 
     /// Like [`Self::try_for_analysis_path`], but forwards [`ProjectGraphBuildOptions`] (for example
@@ -55,24 +50,19 @@ impl ProjectSessionHandle {
             .or_else(|| discover_workspace_file(&manifest_path));
         let compile_plan = match project_kind {
             ProjectKind::Template | ProjectKind::Bsol => None,
-            ProjectKind::Host | ProjectKind::Mod | ProjectKind::Aggregate => {
-                build_compile_plan_with_policy_and_graph(
-                    &manifest_path,
-                    None,
-                    UnresolvedDependencyPolicy::Error,
-                    graph_options,
-                )
-                .ok()
-            }
+            ProjectKind::Host | ProjectKind::Mod | ProjectKind::Aggregate => build_compile_plan_with_policy_and_graph(
+                &manifest_path,
+                None,
+                UnresolvedDependencyPolicy::Error,
+                graph_options,
+            )
+            .ok(),
         };
         let module_roots = compile_plan
             .as_ref()
             .map(|plan| module_roots_from_effective(&effective_roots_for_plan(plan, None)))
             .unwrap_or_else(|| {
-                let project_root = manifest_path
-                    .parent()
-                    .map(Path::to_path_buf)
-                    .unwrap_or_default();
+                let project_root = manifest_path.parent().map(Path::to_path_buf).unwrap_or_default();
                 vec![project_root.join(&manifest.project.root)]
             });
         Some(Self {
@@ -87,11 +77,7 @@ impl ProjectSessionHandle {
     /// Legacy hook retained until document/LSP callers migrate to query-backed assembly (W3-B/W3-D).
     ///
     /// Always returns `None`; assembly is no longer built or cached on the session handle.
-    pub fn assembly_for_entry(
-        &mut self,
-        _entry_path: &Path,
-        _entry_source: &str,
-    ) -> Option<&ProgramAssembly> {
+    pub fn assembly_for_entry(&mut self, _entry_path: &Path, _entry_source: &str) -> Option<&ProgramAssembly> {
         None
     }
 

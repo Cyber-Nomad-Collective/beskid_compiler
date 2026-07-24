@@ -2,9 +2,7 @@
 
 use std::collections::HashMap;
 
-use bsol::{
-    ValidatedBlock, ValidatedDocument, ValidatedValue, load_profile, parse_bsol_document, validate,
-};
+use bsol::{ValidatedBlock, ValidatedDocument, ValidatedValue, load_profile, parse_bsol_document, validate};
 
 use super::model::{BoardNode, BoardV2Doc, NodeKind};
 use crate::shell::board::{BoardLayout, BoardRegion, BoardTile};
@@ -37,9 +35,8 @@ pub fn parse_board(source: &str) -> Result<BoardV2Doc, String> {
 
 pub fn import_v1(layout: &BoardLayout) -> BoardV2Doc {
     let mut nodes = HashMap::new();
-    let tile = |_id: &str, region: BoardRegion| -> Option<&BoardTile> {
-        layout.tiles.iter().find(|t| t.region == region)
-    };
+    let tile =
+        |_id: &str, region: BoardRegion| -> Option<&BoardTile> { layout.tiles.iter().find(|t| t.region == region) };
     let mut panel = |id: &str, region: BoardRegion, fixed_h: Option<u32>, grow: Option<u32>| {
         if let Some(t) = tile(id, region) {
             nodes.insert(
@@ -72,12 +69,7 @@ pub fn import_v1(layout: &BoardLayout) -> BoardV2Doc {
         "root".into(),
         BoardNode {
             kind: NodeKind::Col,
-            children: vec![
-                "header".into(),
-                "body".into(),
-                "log".into(),
-                "footer".into(),
-            ],
+            children: vec!["header".into(), "body".into(), "log".into(), "footer".into()],
             ..BoardNode::default()
         },
     );
@@ -103,8 +95,7 @@ fn lower_v2(doc: ValidatedDocument) -> Result<BoardV2Doc, String> {
                 name = block.label.clone().unwrap_or_else(|| "default".into());
                 title = block.fields.get("title").cloned();
                 scope_hint = block.fields.get("scope").cloned();
-                root = field_as_label(block, "root")
-                    .ok_or_else(|| "board missing root".to_string())?;
+                root = field_as_label(block, "root").ok_or_else(|| "board missing root".to_string())?;
                 let version: u32 = block
                     .fields
                     .get("version")
@@ -115,10 +106,7 @@ fn lower_v2(doc: ValidatedDocument) -> Result<BoardV2Doc, String> {
                 }
             }
             "node" => {
-                let id = block
-                    .label
-                    .clone()
-                    .ok_or_else(|| "node missing label".to_string())?;
+                let id = block.label.clone().ok_or_else(|| "node missing label".to_string())?;
                 nodes.insert(id, lower_node(block)?);
             }
             other => return Err(format!("unexpected board.v2 block `{other}`")),
@@ -132,13 +120,7 @@ fn lower_v2(doc: ValidatedDocument) -> Result<BoardV2Doc, String> {
         return Err(format!("root node `{root}` not defined"));
     }
 
-    Ok(BoardV2Doc {
-        name,
-        title,
-        scope_hint,
-        root,
-        nodes,
-    })
+    Ok(BoardV2Doc { name, title, scope_hint, root, nodes })
 }
 
 #[allow(dead_code)]
@@ -167,30 +149,22 @@ fn lower_node(block: &ValidatedBlock) -> Result<BoardNode, String> {
         .fields
         .get("kind")
         .and_then(|k| NodeKind::parse_kind(k))
-        .ok_or_else(|| {
-            format!(
-                "node `{}` has invalid kind",
-                block.label.as_deref().unwrap_or("?")
-            )
-        })?;
-    let children = block
-        .values
-        .get("children")
-        .and_then(|v| v.as_list_strings())
-        .or_else(|| block.lists.get("children").cloned())
-        .map(|items| {
-            items
-                .into_iter()
-                .map(|item| {
-                    if item.starts_with('@') {
-                        item.rsplit('/').next().unwrap_or(&item).to_string()
-                    } else {
-                        item
-                    }
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+        .ok_or_else(|| format!("node `{}` has invalid kind", block.label.as_deref().unwrap_or("?")))?;
+    let children =
+        block
+            .values
+            .get("children")
+            .and_then(|v| v.as_list_strings())
+            .or_else(|| block.lists.get("children").cloned())
+            .map(|items| {
+                items
+                    .into_iter()
+                    .map(|item| {
+                        if item.starts_with('@') { item.rsplit('/').next().unwrap_or(&item).to_string() } else { item }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
     Ok(BoardNode {
         kind,
         widget: block.fields.get("widget").cloned(),
@@ -198,10 +172,7 @@ fn lower_node(block: &ValidatedBlock) -> Result<BoardNode, String> {
         min_width: block.fields.get("min_width").and_then(|v| v.parse().ok()),
         min_height: block.fields.get("min_height").and_then(|v| v.parse().ok()),
         fixed_width: block.fields.get("fixed_width").and_then(|v| v.parse().ok()),
-        fixed_height: block
-            .fields
-            .get("fixed_height")
-            .and_then(|v| v.parse().ok()),
+        fixed_height: block.fields.get("fixed_height").and_then(|v| v.parse().ok()),
         ratio: block.fields.get("ratio").and_then(|v| v.parse().ok()),
         children,
         active: block.fields.get("active").cloned(),

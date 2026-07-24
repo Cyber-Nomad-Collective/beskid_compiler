@@ -26,29 +26,19 @@ impl Parsable for ExtendTypeDefinition {
         let span = SpanInfo::from_span(&pair.as_span());
         let mut inner = pair.into_inner();
 
-        let target_pair = inner
-            .next()
-            .ok_or(ParseError::missing(Rule::ReceiverType))?;
+        let target_pair = inner.next().ok_or(ParseError::missing(Rule::ReceiverType))?;
         let target_type = parse_receiver_type(target_pair)?;
 
         let mut methods = Vec::new();
         let mut method_docs = Vec::new();
         for method_pair in inner {
-            let (doc_opt, method) =
-                parse_doc_attached_with(method_pair, Rule::ImplMethodWithDocs, |inner_pair| {
-                    MethodDefinition::parse_with_receiver(inner_pair, target_type.clone())
-                })?;
+            let (doc_opt, method) = parse_doc_attached_with(method_pair, Rule::ImplMethodWithDocs, |inner_pair| {
+                MethodDefinition::parse_with_receiver(inner_pair, target_type.clone())
+            })?;
             methods.push(method);
             method_docs.push(doc_opt);
         }
 
-        Ok(Spanned::new(
-            Self {
-                target_type,
-                methods,
-                method_docs,
-            },
-            span,
-        ))
+        Ok(Spanned::new(Self { target_type, methods, method_docs }, span))
     }
 }

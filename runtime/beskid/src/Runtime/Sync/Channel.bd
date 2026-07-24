@@ -16,10 +16,12 @@ pub pointer ChannelTable() {
     return pointer_add(state, 3072);
 }
 
-const STATUS_OK = 0;
-const STATUS_CLOSED = 1;
-const STATUS_CANCELLED = 2;
-const STATUS_WOULD_BLOCK = 3;
+pub enum ChannelStatus {
+    Ok,
+    Closed,
+    Cancelled,
+    WouldBlock,
+}
 
 // Creates a channel. Capacity 0 means unbounded.
 [Export(Abi:"C", Symbol:"channel_create")]
@@ -67,22 +69,22 @@ pub pointer ChannelSlot(i64 id) {
 pub i64 ChannelSend(i64 id, i64 value) {
     pointer ch = ChannelSlot(id);
     if ch == NativePointer(0) {
-        return STATUS_CLOSED;
+        return ChannelStatus::Closed;
     }
     u8 closed = raw_byte_load(pointer_add(ch, 32));
     if closed != 0 {
-        return STATUS_CLOSED;
+        return ChannelStatus::Closed;
     }
     word count = raw_word_load(pointer_add(ch, 16));
     i64 cap = i64(raw_word_load(pointer_add(ch, 24)));
     if cap > 0 && i64(count) >= cap {
-        return STATUS_WOULD_BLOCK;
+        return ChannelStatus::WouldBlock;
     }
     word tail = raw_word_load(pointer_add(ch, 8));
     raw_word_store(pointer_add(ch, 40 + (tail % CHANNEL_BUFFER_SIZE) * 8), word(value));
     raw_word_store(pointer_add(ch, 8), (tail + 1) % CHANNEL_BUFFER_SIZE);
     raw_word_store(pointer_add(ch, 16), count + 1);
-    return STATUS_OK;
+    return ChannelStatus::Ok;
 }
 
 // Tries to send without blocking.
@@ -96,17 +98,17 @@ pub i64 ChannelTrySend(i64 id, i64 value) {
 pub i64 ChannelReceiveStatus(i64 id) {
     pointer ch = ChannelSlot(id);
     if ch == NativePointer(0) {
-        return STATUS_CLOSED;
+        return ChannelStatus::Closed;
     }
     u8 closed = raw_byte_load(pointer_add(ch, 32));
     word count = raw_word_load(pointer_add(ch, 16));
     if count > 0 {
-        return STATUS_OK;
+        return ChannelStatus::Ok;
     }
     if closed != 0 {
-        return STATUS_CLOSED;
+        return ChannelStatus::Closed;
     }
-    return STATUS_WOULD_BLOCK;
+    return ChannelStatus::WouldBlock;
 }
 
 // Dequeues a value after a successful receive_status call.
@@ -162,7 +164,7 @@ pub unit ChannelClose(i64 id) {
 [Export(Abi:"C", Symbol:"channel_send_ptr")]
 pub i64 ChannelSendPtr(i64 id, pointer valuePtr) {
     if valuePtr == NativePointer(0) {
-        return STATUS_CANCELLED;
+        return ChannelStatus::Cancelled;
     }
     return ChannelSend(id, i64(NativeWord(valuePtr)));
 }
@@ -170,7 +172,7 @@ pub i64 ChannelSendPtr(i64 id, pointer valuePtr) {
 [Export(Abi:"C", Symbol:"channel_try_send_ptr")]
 pub i64 ChannelTrySendPtr(i64 id, pointer valuePtr) {
     if valuePtr == NativePointer(0) {
-        return STATUS_CANCELLED;
+        return ChannelStatus::Cancelled;
     }
     return ChannelTrySend(id, i64(NativeWord(valuePtr)));
 }

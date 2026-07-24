@@ -13,10 +13,7 @@ fn format_types(
     expected: TypeId,
     actual: TypeId,
 ) -> (String, String) {
-    (
-        format_type_id(type_result, Some(resolution), expected),
-        format_type_id(type_result, Some(resolution), actual),
-    )
+    (format_type_id(type_result, Some(resolution), expected), format_type_id(type_result, Some(resolution), actual))
 }
 
 /// Map a single [`CodegenError`] to a semantic diagnostic with stable `E20xx` codes.
@@ -98,20 +95,13 @@ pub fn codegen_error_to_diagnostic(
             Some(format!("{CODEGEN_ERROR_PREFIX}07")),
             Severity::Error,
         ),
-        CodegenError::MissingCastIntent {
-            span,
-            expected,
-            actual,
-        } => {
-            let (expected_name, actual_name) =
-                format_types(type_result, resolution, *expected, *actual);
+        CodegenError::MissingCastIntent { span, expected, actual } => {
+            let (expected_name, actual_name) = format_types(type_result, resolution, *expected, *actual);
             make_diagnostic(
                 source_name,
                 source,
                 *span,
-                format!(
-                    "missing cast intent for numeric mismatch (expected {expected_name}, actual {actual_name})"
-                ),
+                format!("missing cast intent for numeric mismatch (expected {expected_name}, actual {actual_name})"),
                 "missing cast intent",
                 None,
                 Some(format!("{CODEGEN_ERROR_PREFIX}08")),
@@ -128,20 +118,13 @@ pub fn codegen_error_to_diagnostic(
             Some(format!("{CODEGEN_ERROR_PREFIX}09")),
             Severity::Error,
         ),
-        CodegenError::TypeMismatch {
-            span,
-            expected,
-            actual,
-        } => {
-            let (expected_name, actual_name) =
-                format_types(type_result, resolution, *expected, *actual);
+        CodegenError::TypeMismatch { span, expected, actual } => {
+            let (expected_name, actual_name) = format_types(type_result, resolution, *expected, *actual);
             make_diagnostic(
                 source_name,
                 source,
                 *span,
-                format!(
-                    "type mismatch during codegen (expected {expected_name}, actual {actual_name})"
-                ),
+                format!("type mismatch during codegen (expected {expected_name}, actual {actual_name})"),
                 "type mismatch",
                 None,
                 Some(format!("{CODEGEN_ERROR_PREFIX}10")),
@@ -168,11 +151,7 @@ pub fn codegen_error_to_diagnostic(
             Some(format!("{CODEGEN_ERROR_PREFIX}12")),
             Severity::Error,
         ),
-        CodegenError::IneligibleSerializeMapping {
-            span,
-            src_name,
-            dst_name,
-        } => make_diagnostic(
+        CodegenError::IneligibleSerializeMapping { span, src_name, dst_name } => make_diagnostic(
             source_name,
             source,
             *span,
@@ -207,17 +186,10 @@ pub fn codegen_errors_to_diagnostics(
 ) -> Vec<SemanticDiagnostic> {
     errors
         .iter()
-        .map(|error| {
-            codegen_error_to_diagnostic(source_name, source, error, type_result, resolution)
-        })
+        .map(|error| codegen_error_to_diagnostic(source_name, source, error, type_result, resolution))
         .collect()
 }
 
 fn default_span() -> SpanInfo {
-    SpanInfo {
-        start: 0,
-        end: 0,
-        line_col_start: (1, 1),
-        line_col_end: (1, 1),
-    }
+    SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) }
 }

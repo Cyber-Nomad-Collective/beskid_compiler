@@ -56,9 +56,7 @@ mod tests {
 
     #[test]
     fn test_metadata_is_not_relevant() {
-        let event = Event::new(EventKind::Modify(ModifyKind::Metadata(
-            notify::event::MetadataKind::Permissions,
-        )));
+        let event = Event::new(EventKind::Modify(ModifyKind::Metadata(notify::event::MetadataKind::Permissions)));
         assert!(!is_relevant_event(&event));
     }
 

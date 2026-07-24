@@ -20,10 +20,7 @@ pub fn try_desugar_target_for_operand(
 }
 
 /// Spans of `?` operands that are not a `Result`-shaped enum (semantic stage 7 / early IDE).
-pub fn invalid_try_expression_spans(
-    resolution: &Resolution,
-    entry: &Spanned<HirProgram>,
-) -> Vec<SpanInfo> {
+pub fn invalid_try_expression_spans(resolution: &Resolution, entry: &Spanned<HirProgram>) -> Vec<SpanInfo> {
     TypeChecker::invalid_try_expression_spans(resolution, entry)
 }
 

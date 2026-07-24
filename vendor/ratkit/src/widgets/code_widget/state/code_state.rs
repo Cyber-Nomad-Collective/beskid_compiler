@@ -5,8 +5,7 @@ use std::hash::{Hash, Hasher};
 use crate::widgets::{
     code_widget::foundation::CodeLanguage,
     document_viewer::{
-        CacheState, DisplaySettings, DocumentOutlineItem, ScrollState, SelectionState, SourceState,
-        VimState,
+        CacheState, DisplaySettings, DocumentOutlineItem, ScrollState, SelectionState, SourceState, VimState,
     },
 };
 
@@ -45,9 +44,7 @@ impl CodeState {
     pub fn selected_text(&self) -> Option<String> {
         let range = self.selection.selected_range()?;
         let lines: Vec<&str> = self.source.content().lines().collect();
-        let selected: Vec<&str> = range
-            .filter_map(|index| lines.get(index).copied())
-            .collect();
+        let selected: Vec<&str> = range.filter_map(|index| lines.get(index).copied()).collect();
         if selected.is_empty() {
             None
         } else {
@@ -68,12 +65,7 @@ impl CodeState {
     }
 
     /// Stores a render cache hash for content, display settings, and language.
-    pub fn remember_render_cache(
-        &mut self,
-        content: &str,
-        display: &DisplaySettings,
-        language: &CodeLanguage,
-    ) {
+    pub fn remember_render_cache(&mut self, content: &str, display: &DisplaySettings, language: &CodeLanguage) {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         content.hash(&mut hasher);
         language.hash(&mut hasher);

@@ -34,13 +34,10 @@ pub struct ReleaseManifest {
 
 impl ReleaseManifest {
     pub fn from_json(input: &str) -> Result<Self, UpError> {
-        let raw: RawManifest = serde_json::from_str(input)
-            .map_err(|error| UpError::InvalidManifest(error.to_string()))?;
+        let raw: RawManifest =
+            serde_json::from_str(input).map_err(|error| UpError::InvalidManifest(error.to_string()))?;
         if raw.schema != 1 {
-            return Err(UpError::InvalidManifest(format!(
-                "unsupported schema {}",
-                raw.schema
-            )));
+            return Err(UpError::InvalidManifest(format!("unsupported schema {}", raw.schema)));
         }
         let version = Version::parse(&raw.version)
             .map_err(|error| UpError::InvalidManifest(format!("invalid version: {error}")))?;
@@ -54,19 +51,11 @@ impl ReleaseManifest {
                     bundle.url
                 )));
             }
-            if bundle.sha256.len() != 64
-                || !bundle.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
-            {
-                return Err(UpError::InvalidManifest(format!(
-                    "bundle checksum is not SHA-256: {}",
-                    bundle.target
-                )));
+            if bundle.sha256.len() != 64 || !bundle.sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err(UpError::InvalidManifest(format!("bundle checksum is not SHA-256: {}", bundle.target)));
             }
         }
-        Ok(Self {
-            version,
-            bundles: raw.bundles,
-        })
+        Ok(Self { version, bundles: raw.bundles })
     }
 
     pub fn select_bundle(&self, target: &str) -> Result<&Bundle, UpError> {

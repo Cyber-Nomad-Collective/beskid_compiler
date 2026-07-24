@@ -1,23 +1,19 @@
 //! ABI-v5 interop dispatch envelopes shared by syntax ISLE and legacy HIR lowering.
 
 use beskid_abi::{
-    DISPATCH_PAD_OFFSET, DISPATCH_PAYLOAD_OFFSET, DISPATCH_TAG_OFFSET, DISPATCH_TYPE_DESC_OFFSET,
-    DispatchReturnGroup, DispatchRoute, SYM_INTEROP_DISPATCH_I64, SYM_INTEROP_DISPATCH_PTR,
-    SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, dispatch_route_for_symbol,
+    DISPATCH_PAD_OFFSET, DISPATCH_PAYLOAD_OFFSET, DISPATCH_TAG_OFFSET, DISPATCH_TYPE_DESC_OFFSET, DispatchReturnGroup,
+    DispatchRoute, SYM_INTEROP_DISPATCH_I64, SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT,
+    SYM_INTEROP_DISPATCH_USIZE, dispatch_route_for_symbol,
 };
 use cranelift_codegen::ir::{
-    AbiParam, ExtFuncData, ExternalName, InstBuilder, MemFlags, Signature, StackSlotData,
-    StackSlotKind, Type, Value, types,
+    AbiParam, ExtFuncData, ExternalName, InstBuilder, MemFlags, Signature, StackSlotData, StackSlotKind, Type, Value,
+    types,
 };
 use cranelift_codegen::isa::CallConv;
 use cranelift_frontend::FunctionBuilder;
 
 pub fn pointer_type() -> Type {
-    if cfg!(target_pointer_width = "64") {
-        types::I64
-    } else {
-        types::I32
-    }
+    if cfg!(target_pointer_width = "64") { types::I64 } else { types::I32 }
 }
 
 pub fn emit_dispatch_call(
@@ -28,36 +24,22 @@ pub fn emit_dispatch_call(
 ) -> Result<Option<Value>, &'static str> {
     let payload_bytes = args.len().saturating_mul(8);
     let envelope_size = (DISPATCH_PAYLOAD_OFFSET as usize) + payload_bytes;
-    let slot = builder.create_sized_stack_slot(StackSlotData::new(
-        StackSlotKind::ExplicitSlot,
-        envelope_size as u32,
-        3,
-    ));
+    let slot =
+        builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, envelope_size as u32, 3));
     let envelope_ptr = builder.ins().stack_addr(pointer_type(), slot, 0);
 
     let null_desc = builder.ins().iconst(pointer_type(), 0);
-    builder.ins().store(
-        MemFlags::new(),
-        null_desc,
-        envelope_ptr,
-        DISPATCH_TYPE_DESC_OFFSET,
-    );
+    builder.ins().store(MemFlags::new(), null_desc, envelope_ptr, DISPATCH_TYPE_DESC_OFFSET);
 
     let tag_val = builder.ins().iconst(types::I32, i64::from(route.tag));
-    builder
-        .ins()
-        .store(MemFlags::new(), tag_val, envelope_ptr, DISPATCH_TAG_OFFSET);
+    builder.ins().store(MemFlags::new(), tag_val, envelope_ptr, DISPATCH_TAG_OFFSET);
 
     let pad_val = builder.ins().iconst(types::I32, 0);
-    builder
-        .ins()
-        .store(MemFlags::new(), pad_val, envelope_ptr, DISPATCH_PAD_OFFSET);
+    builder.ins().store(MemFlags::new(), pad_val, envelope_ptr, DISPATCH_PAD_OFFSET);
 
     for (index, arg) in args.iter().enumerate() {
         let offset = DISPATCH_PAYLOAD_OFFSET + (index as i32 * 8);
-        builder
-            .ins()
-            .store(MemFlags::new(), *arg, envelope_ptr, offset);
+        builder.ins().store(MemFlags::new(), *arg, envelope_ptr, offset);
     }
 
     let (dispatch_symbol, returns_ptr, returns_i64) = match route.group {
@@ -88,18 +70,12 @@ pub fn emit_dispatch_call(
         return Ok(None);
     }
 
-    let value = *builder
-        .inst_results(call)
-        .first()
-        .ok_or("dispatch call result")?;
+    let value = *builder.inst_results(call).first().ok_or("dispatch call result")?;
 
     Ok(Some(value))
 }
 
-pub fn emit_str_from_i64_dispatch(
-    builder: &mut FunctionBuilder,
-    value: Value,
-) -> Result<Value, &'static str> {
+pub fn emit_str_from_i64_dispatch(builder: &mut FunctionBuilder, value: Value) -> Result<Value, &'static str> {
     let route = dispatch_route_for_symbol("str_from_i64").ok_or("str_from_i64 dispatch route")?;
     emit_dispatch_call(builder, route, &[value], true)?.ok_or("str_from_i64 result")
 }

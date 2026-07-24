@@ -18,11 +18,7 @@ pub struct JitRuntimeKit {
 }
 
 impl JitRuntimeKit {
-    pub fn load(
-        prefix: &Path,
-        target: &TargetMetadata,
-        profile: BuildProfile,
-    ) -> Result<Self, String> {
+    pub fn load(prefix: &Path, target: &TargetMetadata, profile: BuildProfile) -> Result<Self, String> {
         let kit = resolve_canonical_runtime_kit(prefix, target, profile)
             .map_err(|error| format!("ABI-v5 runtime kit validation failed: {error:?}"))?;
         let library = DynamicLibrary::open(&kit.shared_library)?;
@@ -30,12 +26,7 @@ impl JitRuntimeKit {
         for name in &kit.metadata.loader_required_exports {
             symbols.push((name.clone(), library.symbol(name)?));
         }
-        Ok(Self {
-            _library: library,
-            metadata: kit.metadata,
-            shared_library: kit.shared_library,
-            symbols,
-        })
+        Ok(Self { _library: library, metadata: kit.metadata, shared_library: kit.shared_library, symbols })
     }
 
     pub fn metadata(&self) -> &RuntimeKitMetadata {
@@ -72,10 +63,7 @@ impl DynamicLibrary {
         #[cfg(not(target_os = "linux"))]
         const RTLD_LOCAL: std::ffi::c_int = 4;
         unsafe extern "C" {
-            fn dlopen(
-                filename: *const std::ffi::c_char,
-                flags: std::ffi::c_int,
-            ) -> *mut std::ffi::c_void;
+            fn dlopen(filename: *const std::ffi::c_char, flags: std::ffi::c_int) -> *mut std::ffi::c_void;
             fn dlerror() -> *const std::ffi::c_char;
         }
         let path = CString::new(path.as_os_str().as_bytes())
@@ -100,24 +88,17 @@ impl DynamicLibrary {
 
     fn symbol(&self, name: &str) -> Result<*const u8, String> {
         unsafe extern "C" {
-            fn dlsym(
-                handle: *mut std::ffi::c_void,
-                symbol: *const std::ffi::c_char,
-            ) -> *mut std::ffi::c_void;
+            fn dlsym(handle: *mut std::ffi::c_void, symbol: *const std::ffi::c_char) -> *mut std::ffi::c_void;
             fn dlerror() -> *const std::ffi::c_char;
         }
-        let symbol =
-            CString::new(name).map_err(|_| format!("runtime symbol contains NUL: {name:?}"))?;
+        let symbol = CString::new(name).map_err(|_| format!("runtime symbol contains NUL: {name:?}"))?;
         unsafe {
             let _ = dlerror();
         }
         let address = unsafe { dlsym(self.0, symbol.as_ptr()) };
         let error = unsafe { dlerror() };
         if !error.is_null() || address.is_null() {
-            return Err(format!(
-                "approved runtime export `{name}` is unavailable: {}",
-                last_dl_error(error)
-            ));
+            return Err(format!("approved runtime export `{name}` is unavailable: {}", last_dl_error(error)));
         }
         Ok(address.cast())
     }
@@ -140,9 +121,7 @@ fn last_dl_error(error: *const std::ffi::c_char) -> String {
     if error.is_null() {
         "dynamic loader returned no diagnostic".into()
     } else {
-        unsafe { CStr::from_ptr(error) }
-            .to_string_lossy()
-            .into_owned()
+        unsafe { CStr::from_ptr(error) }.to_string_lossy().into_owned()
     }
 }
 
@@ -157,11 +136,7 @@ impl DynamicLibrary {
         unsafe extern "system" {
             fn LoadLibraryW(path: *const u16) -> *mut std::ffi::c_void;
         }
-        let wide = path
-            .as_os_str()
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect::<Vec<_>>();
+        let wide = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<_>>();
         let handle = unsafe { LoadLibraryW(wide.as_ptr()) };
         if handle.is_null() {
             return Err(format!("LoadLibraryW failed for `{}`", path.display()));
@@ -172,13 +147,9 @@ impl DynamicLibrary {
     fn symbol(&self, name: &str) -> Result<*const u8, String> {
         #[link(name = "kernel32")]
         unsafe extern "system" {
-            fn GetProcAddress(
-                module: *mut std::ffi::c_void,
-                name: *const u8,
-            ) -> *mut std::ffi::c_void;
+            fn GetProcAddress(module: *mut std::ffi::c_void, name: *const u8) -> *mut std::ffi::c_void;
         }
-        let name_c =
-            CString::new(name).map_err(|_| format!("runtime symbol contains NUL: {name:?}"))?;
+        let name_c = CString::new(name).map_err(|_| format!("runtime symbol contains NUL: {name:?}"))?;
         let address = unsafe { GetProcAddress(self.0, name_c.as_ptr().cast()) };
         if address.is_null() {
             return Err(format!("approved runtime export `{name}` is unavailable"));

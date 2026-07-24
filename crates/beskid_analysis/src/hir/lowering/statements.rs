@@ -1,7 +1,6 @@
 use crate::hir::{
-    HirBlock, HirBreakStatement, HirContinueStatement, HirElseBranch, HirExpressionStatement,
-    HirForStatement, HirIfStatement, HirLetStatement, HirReturnStatement, HirStatementNode,
-    HirWhileStatement,
+    HirBlock, HirBreakStatement, HirContinueStatement, HirElseBranch, HirExpressionStatement, HirForStatement,
+    HirIfStatement, HirLetStatement, HirReturnStatement, HirStatementNode, HirWhileStatement,
 };
 use crate::syntax::{self, Spanned};
 
@@ -11,12 +10,7 @@ impl Lowerable for Spanned<syntax::Block> {
     type Output = Spanned<HirBlock>;
 
     fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirBlock {
-                statements: self.node.statements.iter().map(Lowerable::lower).collect(),
-            },
-            self.span,
-        )
+        Spanned::new(HirBlock { statements: self.node.statements.iter().map(Lowerable::lower).collect() }, self.span)
     }
 }
 
@@ -26,29 +20,17 @@ impl Lowerable for Spanned<syntax::Statement> {
     fn lower(&self) -> Self::Output {
         let node = match &self.node {
             syntax::Statement::Let(let_stmt) => HirStatementNode::LetStatement(let_stmt.lower()),
-            syntax::Statement::Return(return_stmt) => {
-                HirStatementNode::ReturnStatement(return_stmt.lower())
-            }
-            syntax::Statement::Break(_) => {
-                HirStatementNode::BreakStatement(Spanned::new(HirBreakStatement, self.span))
-            }
+            syntax::Statement::Return(return_stmt) => HirStatementNode::ReturnStatement(return_stmt.lower()),
+            syntax::Statement::Break(_) => HirStatementNode::BreakStatement(Spanned::new(HirBreakStatement, self.span)),
             syntax::Statement::Continue(_) => {
                 HirStatementNode::ContinueStatement(Spanned::new(HirContinueStatement, self.span))
             }
-            syntax::Statement::While(while_stmt) => {
-                HirStatementNode::WhileStatement(while_stmt.lower())
-            }
+            syntax::Statement::While(while_stmt) => HirStatementNode::WhileStatement(while_stmt.lower()),
             syntax::Statement::For(for_stmt) => HirStatementNode::ForStatement(for_stmt.lower()),
             syntax::Statement::If(if_stmt) => HirStatementNode::IfStatement(if_stmt.lower()),
-            syntax::Statement::With(with_stmt) => {
-                HirStatementNode::WithStatement(with_stmt.clone())
-            }
-            syntax::Statement::Launch(launch_stmt) => {
-                HirStatementNode::LaunchStatement(launch_stmt.clone())
-            }
-            syntax::Statement::Expression(expr_stmt) => {
-                HirStatementNode::ExpressionStatement(expr_stmt.lower())
-            }
+            syntax::Statement::With(with_stmt) => HirStatementNode::WithStatement(with_stmt.clone()),
+            syntax::Statement::Launch(launch_stmt) => HirStatementNode::LaunchStatement(launch_stmt.clone()),
+            syntax::Statement::Expression(expr_stmt) => HirStatementNode::ExpressionStatement(expr_stmt.lower()),
         };
         Spanned::new(node, self.span)
     }
@@ -74,12 +56,7 @@ impl Lowerable for Spanned<syntax::ReturnStatement> {
     type Output = Spanned<HirReturnStatement>;
 
     fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirReturnStatement {
-                value: self.node.value.as_ref().map(Lowerable::lower),
-            },
-            self.span,
-        )
+        Spanned::new(HirReturnStatement { value: self.node.value.as_ref().map(Lowerable::lower) }, self.span)
     }
 }
 
@@ -88,10 +65,7 @@ impl Lowerable for Spanned<syntax::WhileStatement> {
 
     fn lower(&self) -> Self::Output {
         Spanned::new(
-            HirWhileStatement {
-                condition: self.node.condition.lower(),
-                body: self.node.body.lower(),
-            },
+            HirWhileStatement { condition: self.node.condition.lower(), body: self.node.body.lower() },
             self.span,
         )
     }
@@ -143,11 +117,6 @@ impl Lowerable for Spanned<syntax::ExpressionStatement> {
     type Output = Spanned<HirExpressionStatement>;
 
     fn lower(&self) -> Self::Output {
-        Spanned::new(
-            HirExpressionStatement {
-                expression: self.node.expression.lower(),
-            },
-            self.span,
-        )
+        Spanned::new(HirExpressionStatement { expression: self.node.expression.lower() }, self.span)
     }
 }

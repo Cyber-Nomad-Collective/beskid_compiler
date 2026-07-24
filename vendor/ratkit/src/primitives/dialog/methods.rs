@@ -59,11 +59,7 @@ impl<'a> Dialog<'a> {
 
     pub fn handle_click(&self, column: u16, row: u16) -> Option<usize> {
         for (idx, area) in self.button_areas.iter().enumerate() {
-            if column >= area.x
-                && column < area.x + area.width
-                && row >= area.y
-                && row < area.y + area.height
-            {
+            if column >= area.x && column < area.x + area.width && row >= area.y && row < area.y + area.height {
                 return Some(idx);
             }
         }
@@ -71,10 +67,7 @@ impl<'a> Dialog<'a> {
     }
 
     pub fn blocks_background_events(&self) -> bool {
-        matches!(
-            self.modal_mode,
-            crate::primitives::dialog::types::DialogModalMode::Blocking
-        )
+        matches!(self.modal_mode, crate::primitives::dialog::types::DialogModalMode::Blocking)
     }
 
     pub fn handle_key_event(&mut self, key: KeyCode) -> DialogEventResult {

@@ -27,29 +27,17 @@ pub enum CodegenError {
     #[error("missing expression type information")]
     MissingExpressionType { span: SpanInfo },
     #[error("missing cast intent for numeric mismatch (expected {expected:?}, actual {actual:?})")]
-    MissingCastIntent {
-        span: SpanInfo,
-        expected: TypeId,
-        actual: TypeId,
-    },
+    MissingCastIntent { span: SpanInfo, expected: TypeId, actual: TypeId },
     #[error("invalid cast intent: {message}")]
     InvalidCastIntent { span: SpanInfo, message: String },
     #[error("type mismatch during codegen (expected {expected:?}, actual {actual:?})")]
-    TypeMismatch {
-        span: SpanInfo,
-        expected: TypeId,
-        actual: TypeId,
-    },
+    TypeMismatch { span: SpanInfo, expected: TypeId, actual: TypeId },
     #[error("CLIF verification failed for `{function}`: {message}")]
     VerificationFailed { function: String, message: String },
     #[error("invalid export: {message}")]
     InvalidExport { span: SpanInfo, message: String },
     #[error("ineligible serialize mapping from `{src_name}` to `{dst_name}`")]
-    IneligibleSerializeMapping {
-        span: SpanInfo,
-        src_name: String,
-        dst_name: String,
-    },
+    IneligibleSerializeMapping { span: SpanInfo, src_name: String, dst_name: String },
     #[error("{message}")]
     RetiredHirLoweringPath { message: String },
 }
@@ -57,8 +45,6 @@ pub enum CodegenError {
 impl CodegenError {
     /// Construct the sole retired-path error for HIR/`Lowerable` drivers.
     pub fn retired_hir_lowering_path() -> Self {
-        Self::RetiredHirLoweringPath {
-            message: RETIRED_HIR_LOWERING_PATH.to_owned(),
-        }
+        Self::RetiredHirLoweringPath { message: RETIRED_HIR_LOWERING_PATH.to_owned() }
     }
 }

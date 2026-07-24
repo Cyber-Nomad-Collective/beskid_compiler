@@ -60,21 +60,9 @@ pub fn severity_command_summary(
         title,
         headline,
         stats: vec![
-            SummaryStat {
-                label: "errors".into(),
-                value: counts.errors.to_string(),
-                color: Some(Color::Red),
-            },
-            SummaryStat {
-                label: "warnings".into(),
-                value: counts.warnings.to_string(),
-                color: Some(Color::Yellow),
-            },
-            SummaryStat {
-                label: "notes".into(),
-                value: counts.notes.to_string(),
-                color: Some(Color::Blue),
-            },
+            SummaryStat { label: "errors".into(), value: counts.errors.to_string(), color: Some(Color::Red) },
+            SummaryStat { label: "warnings".into(), value: counts.warnings.to_string(), color: Some(Color::Yellow) },
+            SummaryStat { label: "notes".into(), value: counts.notes.to_string(), color: Some(Color::Blue) },
         ],
         slices,
     }

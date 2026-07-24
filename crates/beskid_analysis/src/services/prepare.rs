@@ -6,10 +6,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use beskid_pipeline::{
     PipelineObserver, observe_phase, observe_phase_result,
-    phases::{
-        COMPOSITION_RESOLVE, LOWER, LOWER_READY, PARSE, PROGRAM_ASSEMBLE, SEMANTIC,
-        SEMANTIC_SNAPSHOT,
-    },
+    phases::{COMPOSITION_RESOLVE, LOWER, LOWER_READY, PARSE, PROGRAM_ASSEMBLE, SEMANTIC, SEMANTIC_SNAPSHOT},
 };
 use tracing::Span;
 
@@ -18,29 +15,21 @@ use crate::analysis::SemanticDiagnostic;
 use crate::analysis::rules::{RuleContext, resolve, types};
 use crate::mod_host::diagnostics::analyzer_diagnostic_to_semantic;
 use crate::mod_host::{
-    ModHostInput, native_invoker_for_plan, run_analyze_rewrite_after_composition,
-    run_through_generate,
+    ModHostInput, native_invoker_for_plan, run_analyze_rewrite_after_composition, run_through_generate,
 };
 use crate::projects::{
-    CompilePlan, PreparedProjectWorkspace, ProgramAssembly, assemble_program,
-    assembly_options_for_prepare,
+    CompilePlan, PreparedProjectWorkspace, ProgramAssembly, assemble_program, assembly_options_for_prepare,
 };
 use crate::syntax::Spanned;
 
 use super::composition::{composition_result_to_diagnostics, resolve_program_composition};
 use super::entry_session::{
-    cached_executable_if_valid, current_syntax_generation_id, store_executable_and_snapshot,
-    update_semantic_snapshot,
+    cached_executable_if_valid, current_syntax_generation_id, store_executable_and_snapshot, update_semantic_snapshot,
 };
 use super::front_end::{FrontEndOptions, FrontEndTypedResult};
 use super::input::ResolvedInput;
-use super::lower::{
-    DependencyTypingPolicy, LowerResolveTypeError,
-    lower_normalize_resolve_type_spanned_with_assembly,
-};
-use super::semantic::{
-    require_no_semantic_errors, semantic_rule_diagnostics_for_program_with_pipeline,
-};
+use super::lower::{DependencyTypingPolicy, LowerResolveTypeError, lower_normalize_resolve_type_spanned_with_assembly};
+use super::semantic::{require_no_semantic_errors, semantic_rule_diagnostics_for_program_with_pipeline};
 use super::session::{SemanticSnapshot, SessionFingerprint, session_for_assembly};
 
 /// Options for [`prepare_compilation`].
@@ -53,10 +42,7 @@ pub struct PrepareOptions {
 
 impl Default for PrepareOptions {
     fn default() -> Self {
-        Self {
-            front_end: FrontEndOptions::default(),
-            dependency_typing: DependencyTypingPolicy::FullClosure,
-        }
+        Self { front_end: FrontEndOptions::default(), dependency_typing: DependencyTypingPolicy::FullClosure }
     }
 }
 
@@ -86,14 +72,9 @@ impl PreparedCompilation {
     }
 
     pub fn executable(&self) -> Result<&FrontEndTypedResult> {
-        self.typed
-            .as_ref()
-            .map(|typed| typed.as_ref())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "prepare_compilation did not produce typed HIR (lower failed during diagnostic collection)"
-                )
-            })
+        self.typed.as_ref().map(|typed| typed.as_ref()).ok_or_else(|| {
+            anyhow::anyhow!("prepare_compilation did not produce typed HIR (lower failed during diagnostic collection)")
+        })
     }
 
     /// Syntax-only project assembly for generation-safe consumers (LSP, queries, ISLE).
@@ -129,9 +110,10 @@ pub fn prepare_compilation(
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<PreparedCompilation> {
-    let plan = resolved.compile_plan.as_ref().ok_or_else(|| {
-        anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)")
-    })?;
+    let plan = resolved
+        .compile_plan
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)"))?;
 
     let spine = run_prepare_spine(
         &resolved.source_path,
@@ -154,9 +136,10 @@ pub fn prepare_compilation_diagnostics(
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>)> {
-    let plan = resolved.compile_plan.as_ref().ok_or_else(|| {
-        anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)")
-    })?;
+    let plan = resolved
+        .compile_plan
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)"))?;
 
     let mut diagnostics = Vec::new();
     let spine = run_prepare_spine(
@@ -179,11 +162,7 @@ struct PrepareSpineOutput {
 }
 
 fn session_fingerprint_field(fingerprint: &SessionFingerprint) -> String {
-    format!(
-        "{}:{}",
-        fingerprint.entry_canonical.display(),
-        fingerprint.lockfile_digest
-    )
+    format!("{}:{}", fingerprint.entry_canonical.display(), fingerprint.lockfile_digest)
 }
 
 fn run_prepare_spine(
@@ -229,15 +208,9 @@ fn run_prepare_spine(
         (*session.assembly).clone()
     } else {
         observe_phase_result(pipeline, PROGRAM_ASSEMBLE, || {
-            let assembled = assemble_program(
-                plan,
-                prepared_workspace,
-                entry_path,
-                Some(entry_source),
-                &assembly_options,
-                pipeline,
-            )
-            .map_err(|err| anyhow::anyhow!("{err}"))?;
+            let assembled =
+                assemble_program(plan, prepared_workspace, entry_path, Some(entry_source), &assembly_options, pipeline)
+                    .map_err(|err| anyhow::anyhow!("{err}"))?;
             let session = session_for_assembly(session_fingerprint.clone(), assembled);
             Ok::<crate::projects::ProgramAssembly, anyhow::Error>((*session.assembly).clone())
         })?
@@ -248,9 +221,7 @@ fn run_prepare_spine(
     observe_phase(pipeline, PARSE, || {});
 
     let native_invoker = native_invoker_for_plan(plan, pipeline).ok().flatten();
-    let invoker_ref = native_invoker
-        .as_ref()
-        .map(|invoker| invoker as &dyn crate::mod_host::ContractInvoker);
+    let invoker_ref = native_invoker.as_ref().map(|invoker| invoker as &dyn crate::mod_host::ContractInvoker);
 
     let mut generated = run_through_generate(
         program.clone(),
@@ -270,10 +241,8 @@ fn run_prepare_spine(
     Span::current().record("syntax_generation_id", syntax_generation_id);
 
     let mut rule_options = AnalysisOptions::default();
-    rule_options.module_level_meta_items_allowed =
-        options.front_end.module_level_meta_items_allowed;
-    rule_options.known_assembly_module_paths =
-        Some(assembly.module_index.known_module_path_strings());
+    rule_options.module_level_meta_items_allowed = options.front_end.module_level_meta_items_allowed;
+    rule_options.known_assembly_module_paths = Some(assembly.module_index.known_module_path_strings());
     rule_options.program_assembly_module_index = Some((*assembly.module_index).clone());
     rule_options.entry_source_path = Some(entry_unit.path.clone());
     rule_options.program_assembly = Some(assembly.clone());
@@ -298,11 +267,7 @@ fn run_prepare_spine(
         observe_phase(pipeline, SEMANTIC_SNAPSHOT, || {
             update_semantic_snapshot(
                 &session_fingerprint,
-                SemanticSnapshot::from_diagnostics(
-                    snapshot_diagnostics,
-                    syntax_generation_id,
-                    "semantic",
-                ),
+                SemanticSnapshot::from_diagnostics(snapshot_diagnostics, syntax_generation_id, "semantic"),
             );
         });
     }
@@ -359,9 +324,7 @@ fn run_prepare_spine(
         ));
     }
 
-    generated
-        .session
-        .set_composition_snapshot(composition_result.snapshot.clone());
+    generated.session.set_composition_snapshot(composition_result.snapshot.clone());
 
     let binding_plan = composition_result.plan.clone();
     let composition_snapshot = composition_result.snapshot.clone();
@@ -388,22 +351,15 @@ fn run_prepare_spine(
                 binding_plan: binding_plan.clone(),
                 composition_snapshot: composition_snapshot.clone(),
             };
-            let executable_snapshot =
-                super::session::cached_semantic_snapshot(&session_fingerprint)
-                    .map(|snap| {
-                        snap.with_typed_resolution(resolution_fingerprint, types_fingerprint)
-                    })
-                    .unwrap_or_else(|| {
-                        SemanticSnapshot::from_diagnostics(&[], syntax_generation_id, "executable")
-                            .with_composition(&composition_snapshot)
-                            .with_typed_resolution(resolution_fingerprint, types_fingerprint)
-                    });
-            let stored = store_executable_and_snapshot(
-                &session_fingerprint,
-                Some(typed_result),
-                executable_snapshot,
-            )
-            .ok_or_else(|| anyhow::anyhow!("entry session missing for executable cache store"))?;
+            let executable_snapshot = super::session::cached_semantic_snapshot(&session_fingerprint)
+                .map(|snap| snap.with_typed_resolution(resolution_fingerprint, types_fingerprint))
+                .unwrap_or_else(|| {
+                    SemanticSnapshot::from_diagnostics(&[], syntax_generation_id, "executable")
+                        .with_composition(&composition_snapshot)
+                        .with_typed_resolution(resolution_fingerprint, types_fingerprint)
+                });
+            let stored = store_executable_and_snapshot(&session_fingerprint, Some(typed_result), executable_snapshot)
+                .ok_or_else(|| anyhow::anyhow!("entry session missing for executable cache store"))?;
             Some(stored)
         }
         Err(error) if collect_diagnostics => {
@@ -418,13 +374,7 @@ fn run_prepare_spine(
     };
 
     Ok(PrepareSpineOutput {
-        prepared: PreparedCompilation {
-            assembly,
-            program,
-            binding_plan,
-            composition_snapshot,
-            typed,
-        },
+        prepared: PreparedCompilation { assembly, program, binding_plan, composition_snapshot, typed },
         collected_diagnostics,
     })
 }
@@ -493,8 +443,7 @@ mod tests {
 
     use super::{PrepareOptions, prepare_compilation, prepare_compilation_diagnostics};
     use crate::services::{
-        FrontEndOptions, parse_program_with_source_name, resolved_input_from_plan,
-        synthetic_compile_plan_for_source,
+        FrontEndOptions, parse_program_with_source_name, resolved_input_from_plan, synthetic_compile_plan_for_source,
     };
 
     static TEST_ID: AtomicU64 = AtomicU64::new(0);
@@ -509,15 +458,11 @@ mod tests {
         std::fs::write(&entry_path, source).expect("entry source");
 
         let plan = synthetic_compile_plan_for_source(&entry_path);
-        let resolved =
-            resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
+        let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
         let prepared = prepare_compilation(
             &resolved,
             PrepareOptions {
-                front_end: FrontEndOptions {
-                    with_semantic_diagnostics: true,
-                    ..Default::default()
-                },
+                front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                 ..Default::default()
             },
             None,
@@ -532,14 +477,10 @@ mod tests {
             "prepare-spine syntax assembly must match the prepare entry program"
         );
         let typed = prepared.typed.as_ref().expect("typed front-end");
-        assert_eq!(
-            syntax.entry_unit().program,
-            typed.syntax_assembly().entry_unit().program
-        );
+        assert_eq!(syntax.entry_unit().program, typed.syntax_assembly().entry_unit().program);
 
         // Untyped path: rewritten prepare.program is the sole authority (no DocumentAnalysisSnapshot).
-        let rewritten = parse_program_with_source_name("Main.bd", "i32 Rewritten() { return 1; }")
-            .expect("rewritten");
+        let rewritten = parse_program_with_source_name("Main.bd", "i32 Rewritten() { return 1; }").expect("rewritten");
         let mut untyped = prepared;
         untyped.typed = None;
         untyped.program = rewritten.clone();
@@ -548,10 +489,7 @@ mod tests {
             rewritten,
             "untyped prepare-spine syntax assembly must project prepare.program"
         );
-        assert!(
-            !untyped.syntax_assembly().units().is_empty(),
-            "syntax assembly must retain immutable source units"
-        );
+        assert!(!untyped.syntax_assembly().units().is_empty(), "syntax assembly must retain immutable source units");
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -567,15 +505,11 @@ mod tests {
         std::fs::write(&entry_path, source).expect("entry source");
 
         let plan = synthetic_compile_plan_for_source(&entry_path);
-        let resolved =
-            resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
+        let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
         let (prepared, diags) = prepare_compilation_diagnostics(
             &resolved,
             PrepareOptions {
-                front_end: FrontEndOptions {
-                    with_semantic_diagnostics: true,
-                    ..Default::default()
-                },
+                front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
                 ..Default::default()
             },
             None,
@@ -584,16 +518,9 @@ mod tests {
 
         let syntax = prepared.syntax_assembly();
         let expected = entry_path.canonicalize().unwrap_or(entry_path.clone());
-        let actual = syntax
-            .entry_unit()
-            .path
-            .canonicalize()
-            .unwrap_or_else(|_| syntax.entry_unit().path.clone());
+        let actual = syntax.entry_unit().path.canonicalize().unwrap_or_else(|_| syntax.entry_unit().path.clone());
         assert_eq!(actual, expected);
-        assert!(
-            !diags.is_empty(),
-            "prepare-spine diagnostics must surface without DocumentAnalysisSnapshot"
-        );
+        assert!(!diags.is_empty(), "prepare-spine diagnostics must surface without DocumentAnalysisSnapshot");
 
         let _ = std::fs::remove_dir_all(root);
     }

@@ -94,24 +94,12 @@ pub fn build_mod_artifact(req: ModArtifactBuildRequest) -> AotResult<ModArtifact
     validate_mod_artifact_request(&req)?;
 
     let lock_hash = hash_optional_file(req.lockfile_path.as_deref())?;
-    let mod_source_hash =
-        hash_mod_sources(&req.project_root, &req.manifest_path, &req.source_root)?;
-    let artifact_key = compute_mod_artifact_key(
-        &lock_hash,
-        &mod_source_hash,
-        &req.target_triple,
-        &req.compiler_version,
-    );
-    let artifact_dir = mod_artifact_dir(
-        &req.workspace_root,
-        &req.package_id,
-        &artifact_key,
-        &req.target_triple,
-    );
-    fs::create_dir_all(&artifact_dir).map_err(|err| AotError::Io {
-        path: artifact_dir.clone(),
-        message: err.to_string(),
-    })?;
+    let mod_source_hash = hash_mod_sources(&req.project_root, &req.manifest_path, &req.source_root)?;
+    let artifact_key =
+        compute_mod_artifact_key(&lock_hash, &mod_source_hash, &req.target_triple, &req.compiler_version);
+    let artifact_dir = mod_artifact_dir(&req.workspace_root, &req.package_id, &artifact_key, &req.target_triple);
+    fs::create_dir_all(&artifact_dir)
+        .map_err(|err| AotError::Io { path: artifact_dir.clone(), message: err.to_string() })?;
 
     let object_path = artifact_dir.join(MOD_OBJECT_FILE);
     crate::api::emit_object_only(AotBuildRequest {
@@ -156,42 +144,26 @@ fn generate_embedded_grammars(project_root: &Path, artifact_dir: &Path) -> AotRe
         return Ok(());
     }
     let generated_dir = artifact_dir.join("generated");
-    fs::create_dir_all(&generated_dir).map_err(|err| AotError::Io {
-        path: generated_dir.clone(),
-        message: err.to_string(),
-    })?;
-    for entry in fs::read_dir(&grammars_dir).map_err(|err| AotError::Io {
-        path: grammars_dir.clone(),
-        message: err.to_string(),
-    })? {
-        let entry = entry.map_err(|err| AotError::Io {
-            path: grammars_dir.clone(),
-            message: err.to_string(),
-        })?;
+    fs::create_dir_all(&generated_dir)
+        .map_err(|err| AotError::Io { path: generated_dir.clone(), message: err.to_string() })?;
+    for entry in fs::read_dir(&grammars_dir)
+        .map_err(|err| AotError::Io { path: grammars_dir.clone(), message: err.to_string() })?
+    {
+        let entry = entry.map_err(|err| AotError::Io { path: grammars_dir.clone(), message: err.to_string() })?;
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("pest") {
             continue;
         }
-        let source = fs::read_to_string(&path).map_err(|err| AotError::Io {
-            path: path.clone(),
-            message: err.to_string(),
+        let source =
+            fs::read_to_string(&path).map_err(|err| AotError::Io { path: path.clone(), message: err.to_string() })?;
+        let rules = beskid_pest_gen::parse_grammar_rules(&source).map_err(|message| AotError::InvalidRequest {
+            message: format!("grammar {}: {message}", path.display()),
         })?;
-        let rules = beskid_pest_gen::parse_grammar_rules(&source).map_err(|message| {
-            AotError::InvalidRequest {
-                message: format!("grammar {}: {message}", path.display()),
-            }
-        })?;
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("grammar");
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("grammar");
         let module_name = stem.replace('-', "_");
         let emitted = beskid_pest_gen::emit_combinator_module(&module_name, &rules);
         let out_path = generated_dir.join(format!("{module_name}.bd"));
-        fs::write(&out_path, emitted).map_err(|err| AotError::Io {
-            path: out_path,
-            message: err.to_string(),
-        })?;
+        fs::write(&out_path, emitted).map_err(|err| AotError::Io { path: out_path, message: err.to_string() })?;
     }
     Ok(())
 }
@@ -213,19 +185,8 @@ pub fn compute_mod_artifact_key(
 }
 
 /// Workspace object-cache directory for a resolved mod artifact.
-pub fn mod_artifact_dir(
-    workspace_root: &Path,
-    package_id: &str,
-    artifact_key: &str,
-    target_triple: &str,
-) -> PathBuf {
-    workspace_root
-        .join(".beskid")
-        .join("obj")
-        .join("mods")
-        .join(package_id)
-        .join(artifact_key)
-        .join(target_triple)
+pub fn mod_artifact_dir(workspace_root: &Path, package_id: &str, artifact_key: &str, target_triple: &str) -> PathBuf {
+    workspace_root.join(".beskid").join("obj").join("mods").join(package_id).join(artifact_key).join(target_triple)
 }
 
 fn validate_mod_artifact_request(req: &ModArtifactBuildRequest) -> AotResult<()> {
@@ -235,9 +196,7 @@ fn validate_mod_artifact_request(req: &ModArtifactBuildRequest) -> AotResult<()>
         ("compiler_version", req.compiler_version.as_str()),
     ] {
         if value.trim().is_empty() {
-            return Err(AotError::InvalidRequest {
-                message: format!("mod artifact {field} must not be empty"),
-            });
+            return Err(AotError::InvalidRequest { message: format!("mod artifact {field} must not be empty") });
         }
     }
 
@@ -245,14 +204,11 @@ fn validate_mod_artifact_request(req: &ModArtifactBuildRequest) -> AotResult<()>
 }
 
 fn write_descriptor_sidecar(descriptor: &ModArtifactDescriptor) -> AotResult<()> {
-    let json =
-        serde_json::to_string_pretty(descriptor).map_err(|err| AotError::InvalidRequest {
-            message: format!("failed to serialize mod artifact descriptor: {err}"),
-        })?;
-    fs::write(descriptor.sidecar_path(), json).map_err(|err| AotError::Io {
-        path: descriptor.sidecar_path(),
-        message: err.to_string(),
-    })
+    let json = serde_json::to_string_pretty(descriptor).map_err(|err| AotError::InvalidRequest {
+        message: format!("failed to serialize mod artifact descriptor: {err}"),
+    })?;
+    fs::write(descriptor.sidecar_path(), json)
+        .map_err(|err| AotError::Io { path: descriptor.sidecar_path(), message: err.to_string() })
 }
 
 fn hash_optional_file(path: Option<&Path>) -> AotResult<String> {
@@ -262,11 +218,7 @@ fn hash_optional_file(path: Option<&Path>) -> AotResult<String> {
     }
 }
 
-fn hash_mod_sources(
-    project_root: &Path,
-    manifest_path: &Path,
-    source_root: &Path,
-) -> AotResult<String> {
+fn hash_mod_sources(project_root: &Path, manifest_path: &Path, source_root: &Path) -> AotResult<String> {
     let mut files = vec![manifest_path.to_path_buf()];
     let project_mod = project_root.join("project.mod");
     if project_mod.is_file() {
@@ -280,10 +232,7 @@ fn hash_mod_sources(
     for path in files {
         let relative = path.strip_prefix(project_root).unwrap_or(path.as_path());
         let relative = relative.to_string_lossy();
-        let contents = fs::read(&path).map_err(|err| AotError::Io {
-            path: path.clone(),
-            message: err.to_string(),
-        })?;
+        let contents = fs::read(&path).map_err(|err| AotError::Io { path: path.clone(), message: err.to_string() })?;
         hasher.update(relative.as_bytes());
         hasher.update([0]);
         hasher.update(contents.len().to_le_bytes());
@@ -296,20 +245,13 @@ fn hash_mod_sources(
 }
 
 fn collect_regular_files(root: &Path, files: &mut Vec<PathBuf>) -> AotResult<()> {
-    let entries = fs::read_dir(root).map_err(|err| AotError::Io {
-        path: root.to_path_buf(),
-        message: err.to_string(),
-    })?;
+    let entries =
+        fs::read_dir(root).map_err(|err| AotError::Io { path: root.to_path_buf(), message: err.to_string() })?;
     for entry in entries {
-        let entry = entry.map_err(|err| AotError::Io {
-            path: root.to_path_buf(),
-            message: err.to_string(),
-        })?;
+        let entry = entry.map_err(|err| AotError::Io { path: root.to_path_buf(), message: err.to_string() })?;
         let path = entry.path();
-        let file_type = entry.file_type().map_err(|err| AotError::Io {
-            path: path.clone(),
-            message: err.to_string(),
-        })?;
+        let file_type =
+            entry.file_type().map_err(|err| AotError::Io { path: path.clone(), message: err.to_string() })?;
         if file_type.is_dir() {
             collect_regular_files(&path, files)?;
         } else if file_type.is_file() {
@@ -322,10 +264,7 @@ fn collect_regular_files(root: &Path, files: &mut Vec<PathBuf>) -> AotResult<()>
 fn hash_file(path: &Path) -> AotResult<String> {
     fs::read(path)
         .map(|bytes| sha256_hex(&bytes))
-        .map_err(|err| AotError::Io {
-            path: path.to_path_buf(),
-            message: err.to_string(),
-        })
+        .map_err(|err| AotError::Io { path: path.to_path_buf(), message: err.to_string() })
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -335,9 +274,5 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
-    bytes
-        .as_ref()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    bytes.as_ref().iter().map(|byte| format!("{byte:02x}")).collect()
 }

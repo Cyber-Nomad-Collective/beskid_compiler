@@ -17,13 +17,10 @@ use anyhow::Result;
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::AnalysisOptions;
 use beskid_analysis::mod_host::{
-    InvocationKind, ModHostInput, StubContractInvoker, run_analyze_rewrite_with_invoker,
-    run_through_generate,
+    InvocationKind, ModHostInput, StubContractInvoker, run_analyze_rewrite_with_invoker, run_through_generate,
 };
 use beskid_analysis::projects::{CompilePlan, ResolvedDependencyProject, Target, TargetKind};
-use beskid_analysis::services::{
-    parse_program_with_source_name, semantic_rule_diagnostics_for_program,
-};
+use beskid_analysis::services::{parse_program_with_source_name, semantic_rule_diagnostics_for_program};
 use beskid_engine::services::prepare_jit_entrypoint;
 use beskid_engine::{Engine, host_runtime_target};
 use beskid_pipeline::phases::{
@@ -32,8 +29,7 @@ use beskid_pipeline::phases::{
 use beskid_pipeline::{PipelineEvent, PipelineObserver, observe_phase};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
-const SAMPLE_MOD_PROJECT: &str =
-    include_str!("../../beskid_tests/fixtures/mods/sample_mod/SampleMod.bproj");
+const SAMPLE_MOD_PROJECT: &str = include_str!("../../beskid_tests/fixtures/mods/sample_mod/SampleMod.bproj");
 
 const HOST_MANIFEST: &str = r#"
 Host {
@@ -112,9 +108,8 @@ fn mod_host_full_pipeline_compiles_in_engine() -> Result<()> {
         HOST_SOURCE,
         AnalysisOptions::default(),
     );
-    let snapshot =
-        beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
-            .with_composition(&generated.session.composition_snapshot_or_default());
+    let snapshot = beskid_analysis::services::SemanticSnapshot::from_diagnostics(&[], 1, "semantic")
+        .with_composition(&generated.session.composition_snapshot_or_default());
     let analyze = run_analyze_rewrite_with_invoker(
         generated.program,
         &generated.session,
@@ -130,18 +125,13 @@ fn mod_host_full_pipeline_compiles_in_engine() -> Result<()> {
     // Mod-host rewrite authority stays on the analysis spine; JIT compile uses the sole
     // CodegenInput → ISLE route against the host entry source (no HIR/`Lowerable` driver).
     let _ = &analyze.program;
-    let prepared = prepare_jit_entrypoint(
-        workspace.host_dir.join("Src").join("Main.bd").as_path(),
-        HOST_SOURCE,
-        "Main",
-    )?;
+    let prepared =
+        prepare_jit_entrypoint(workspace.host_dir.join("Src").join("Main.bd").as_path(), HOST_SOURCE, "Main")?;
 
     let kit_prefix = tempfile::tempdir().expect("exact kit prefix");
-    build_native_host(kit_prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
-        .expect("publish exact native kit");
+    build_native_host(kit_prefix.path().to_path_buf(), RuntimeKitProfile::Debug).expect("publish exact native kit");
     let target = host_runtime_target().expect("host target");
-    let mut engine = Engine::with_runtime_kit(kit_prefix.path(), target, BuildProfile::Debug)
-        .expect("load exact kit");
+    let mut engine = Engine::with_runtime_kit(kit_prefix.path(), target, BuildProfile::Debug).expect("load exact kit");
     engine
         .compile_artifact_with_pipeline(&prepared.artifact, Some(pipeline.as_ref()))
         .map_err(|err| anyhow::anyhow!("engine compile failed: {err}"))?;
@@ -158,28 +148,14 @@ fn mod_host_full_pipeline_compiles_in_engine() -> Result<()> {
         .collect();
     assert_eq!(
         kinds,
-        vec![
-            "collector",
-            "generator",
-            "generator",
-            "analyzer",
-            "rewriter"
-        ],
+        vec!["collector", "generator", "generator", "analyzer", "rewriter"],
         "engine integration must see all four contract kinds dispatched in canonical order"
     );
 
     let events = pipeline.phase_starts();
     assert_subsequence(
         &events,
-        &[
-            MACRO_EXPAND,
-            MOD_LOAD,
-            MOD_COLLECT,
-            MOD_GENERATE,
-            MACRO_EXPAND,
-            MOD_ANALYZE,
-            MOD_REWRITE,
-        ],
+        &[MACRO_EXPAND, MOD_LOAD, MOD_COLLECT, MOD_GENERATE, MACRO_EXPAND, MOD_ANALYZE, MOD_REWRITE],
     );
     Ok(())
 }
@@ -192,15 +168,8 @@ struct TestWorkspace {
 
 impl TestWorkspace {
     fn new(prefix: &str) -> Self {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time ok")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "beskid_engine_{prefix}_{}_{}",
-            std::process::id(),
-            nanos
-        ));
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).expect("time ok").as_nanos();
+        let root = std::env::temp_dir().join(format!("beskid_engine_{prefix}_{}_{}", std::process::id(), nanos));
         let host_dir = root.join("Host");
         let mod_dir = root.join("SampleMod");
         fs::create_dir_all(host_dir.join("Src")).expect("host source root");
@@ -208,11 +177,7 @@ impl TestWorkspace {
         fs::write(host_dir.join("Src").join("Main.bd"), HOST_SOURCE).expect("host source");
         fs::write(host_dir.join("Host.bproj"), HOST_MANIFEST).expect("host manifest");
         fs::write(mod_dir.join("SampleMod.bproj"), SAMPLE_MOD_PROJECT).expect("mod manifest");
-        Self {
-            root,
-            host_dir,
-            mod_dir,
-        }
+        Self { root, host_dir, mod_dir }
     }
 
     fn write_descriptor(&self, registrations_json: &str) {
@@ -249,11 +214,7 @@ impl TestWorkspace {
             manifest_path: self.host_dir.join("Host.bproj"),
             project_name: "Host".to_owned(),
             source_root: self.host_dir.join("Src"),
-            target: Target {
-                name: "main".to_owned(),
-                kind: TargetKind::App,
-                entry: Some("Main.bd".to_owned()),
-            },
+            target: Target { name: "main".to_owned(), kind: TargetKind::App, entry: Some("Main.bd".to_owned()) },
             dependency_projects: vec![ResolvedDependencyProject {
                 dependency_name: "SampleMod".to_owned(),
                 manifest_path: self.mod_dir.join("SampleMod.bproj"),
@@ -280,9 +241,5 @@ fn assert_subsequence(events: &[&'static str], expected: &[&'static str]) {
             cursor += 1;
         }
     }
-    assert_eq!(
-        cursor,
-        expected.len(),
-        "expected phase subsequence {expected:?} in observed events {events:?}"
-    );
+    assert_eq!(cursor, expected.len(), "expected phase subsequence {expected:?} in observed events {events:?}");
 }

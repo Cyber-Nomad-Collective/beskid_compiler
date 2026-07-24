@@ -124,12 +124,7 @@ mod miette_report_error_tests {
         let diagnostic = make_diagnostic(
             "test.bd",
             "hello",
-            SpanInfo {
-                start: 0,
-                end: 1,
-                line_col_start: (1, 1),
-                line_col_end: (1, 2),
-            },
+            SpanInfo { start: 0, end: 1, line_col_start: (1, 1), line_col_end: (1, 2) },
             "example diagnostic",
             "here",
             None,
@@ -138,13 +133,9 @@ mod miette_report_error_tests {
         );
         let wrapped = MietteReportError::new(diagnostic.clone());
         let anyhow_err = anyhow::Error::new(wrapped);
-        let downcast = anyhow_err
-            .downcast_ref::<MietteReportError>()
-            .expect("MietteReportError should round-trip through anyhow");
+        let downcast =
+            anyhow_err.downcast_ref::<MietteReportError>().expect("MietteReportError should round-trip through anyhow");
         assert_eq!(downcast.diagnostic().message, diagnostic.message);
-        assert_eq!(
-            downcast.diagnostic().code.as_deref(),
-            diagnostic.code.as_deref()
-        );
+        assert_eq!(downcast.diagnostic().code.as_deref(), diagnostic.code.as_deref());
     }
 }

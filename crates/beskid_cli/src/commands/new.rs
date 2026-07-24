@@ -7,8 +7,8 @@ use clap::{Args, Subcommand};
 
 use beskid_template::{
     InstallTemplateRequest, InstantiateTemplateRequest, ListTemplatesRequest, TemplateSelector,
-    UninstallTemplateRequest, count_selectors, install_template, instantiate_template,
-    list_templates, parse_kind_filter, parse_symbol_flag, uninstall_template,
+    UninstallTemplateRequest, count_selectors, install_template, instantiate_template, list_templates,
+    parse_kind_filter, parse_symbol_flag, uninstall_template,
 };
 use beskid_tools::registry::{RegistryConnectConfig, parse_package_selector};
 
@@ -141,11 +141,7 @@ pub struct UninstallArgs {
 
 #[derive(Args, Debug, Clone, Default)]
 pub struct RegistryConnectArgs {
-    #[arg(
-        long,
-        env = "BESKID_PCKG_URL",
-        default_value = "https://pckg.beskid-lang.org"
-    )]
+    #[arg(long, env = "BESKID_PCKG_URL", default_value = "https://pckg.beskid-lang.org")]
     pub registry_url: String,
 
     #[arg(long, env = "BESKID_PCKG_TOKEN")]
@@ -182,20 +178,13 @@ pub fn execute(args: NewArgs) -> Result<()> {
 fn execute_list(args: ListArgs) -> Result<()> {
     let kind_filter = args.kind.as_deref().map(parse_kind_filter).transpose()?;
 
-    let output = list_templates(ListTemplatesRequest {
-        kind_filter,
-        online: args.online,
-        registry: args.registry.to_config(),
-    })?;
+    let output =
+        list_templates(ListTemplatesRequest { kind_filter, online: args.online, registry: args.registry.to_config() })?;
 
     println!("Installed templates:");
     for row in &output.installed {
         let yanked = if row.yanked { " [yanked]" } else { "" };
-        let version = row
-            .version
-            .as_deref()
-            .map(|v| format!("@{v}"))
-            .unwrap_or_default();
+        let version = row.version.as_deref().map(|v| format!("@{v}")).unwrap_or_default();
         let package = row.package_id.as_deref().unwrap_or("—");
         println!(
             "  {} — {} ({:?}){} [{:?}] {}{}",
@@ -231,16 +220,11 @@ fn execute_install(args: InstallArgs) -> Result<()> {
 }
 
 fn execute_uninstall(args: UninstallArgs) -> Result<()> {
-    let result = uninstall_template(UninstallTemplateRequest {
-        short_name: args.short_name.clone(),
-    })?;
+    let result = uninstall_template(UninstallTemplateRequest { short_name: args.short_name.clone() })?;
     if result.removed {
         println!("Uninstalled template `{}`.", args.short_name);
     } else {
-        println!(
-            "No installed template with short name `{}`.",
-            args.short_name
-        );
+        println!("No installed template with short name `{}`.", args.short_name);
     }
     Ok(())
 }
@@ -248,15 +232,10 @@ fn execute_uninstall(args: UninstallArgs) -> Result<()> {
 fn execute_instantiate(short_name: Option<String>, flags: InstantiateFlags) -> Result<()> {
     let selector = build_selector(short_name, &flags)?;
     if count_selectors(&selector) != 1 {
-        anyhow::bail!(
-            "exactly one template selector is required: shortName, --package, --path, or --git"
-        );
+        anyhow::bail!("exactly one template selector is required: shortName, --package, --path, or --git");
     }
 
-    let output = flags
-        .output
-        .clone()
-        .ok_or_else(|| anyhow!("`-o` / `--output` is required"))?;
+    let output = flags.output.clone().ok_or_else(|| anyhow!("`-o` / `--output` is required"))?;
 
     let mut symbols = Vec::new();
     for flag in &flags.symbols {
@@ -279,17 +258,11 @@ fn execute_instantiate(short_name: Option<String>, flags: InstantiateFlags) -> R
         beskid_exe: Some(std::env::current_exe()?),
     })?;
 
-    println!(
-        "Created template output at {}",
-        result.output_root.display()
-    );
+    println!("Created template output at {}", result.output_root.display());
     Ok(())
 }
 
-fn build_selector(
-    short_name: Option<String>,
-    flags: &InstantiateFlags,
-) -> Result<TemplateSelector> {
+fn build_selector(short_name: Option<String>, flags: &InstantiateFlags) -> Result<TemplateSelector> {
     if let Some(path) = &flags.path {
         return Ok(TemplateSelector::Path(path.clone()));
     }

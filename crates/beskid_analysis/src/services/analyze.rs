@@ -33,21 +33,18 @@ fn analyze_program_with_options_and_plan(
     _options: crate::AnalysisOptions,
     compile_plan: Option<&CompilePlan>,
 ) -> Result<Vec<SemanticDiagnostic>> {
-    if let Some((span, keyword)) = crate::parsing::reserved_keywords::find_reserved_keyword(source)
-    {
+    if let Some((span, keyword)) = crate::parsing::reserved_keywords::find_reserved_keyword(source) {
         use crate::analysis::diagnostic_kinds::SemanticIssueKind;
         use crate::analysis::diagnostics::make_diagnostic;
         use crate::parsing::reserved_keywords::ReservedKeyword;
 
         let (code, message) = match keyword {
-            ReservedKeyword::Async => (
-                SemanticIssueKind::AsyncKeywordReserved.code(),
-                SemanticIssueKind::AsyncKeywordReserved.message(),
-            ),
-            ReservedKeyword::Await => (
-                SemanticIssueKind::AwaitKeywordReserved.code(),
-                SemanticIssueKind::AwaitKeywordReserved.message(),
-            ),
+            ReservedKeyword::Async => {
+                (SemanticIssueKind::AsyncKeywordReserved.code(), SemanticIssueKind::AsyncKeywordReserved.message())
+            }
+            ReservedKeyword::Await => {
+                (SemanticIssueKind::AwaitKeywordReserved.code(), SemanticIssueKind::AwaitKeywordReserved.message())
+            }
         };
         let label = match keyword {
             ReservedKeyword::Async => SemanticIssueKind::AsyncKeywordReserved.label(),
@@ -74,41 +71,25 @@ fn analyze_program_with_options_and_plan(
             source,
             crate::AnalysisOptions::default(),
         );
-        diagnostics.extend(composition_diagnostics_for_program(
-            &program,
-            None,
-            &source_name,
-            source,
-        )?);
+        diagnostics.extend(composition_diagnostics_for_program(&program, None, &source_name, source)?);
         return Ok(diagnostics);
     }
 
     let plan = compile_plan.expect("checked above");
-    let resolved = resolved_input_from_plan(
-        path.to_path_buf(),
-        source.to_string(),
-        plan.clone(),
-        None,
-        None,
-    );
+    let resolved = resolved_input_from_plan(path.to_path_buf(), source.to_string(), plan.clone(), None, None);
 
     let prepare_options = PrepareOptions {
-        front_end: FrontEndOptions {
-            with_semantic_diagnostics: true,
-            ..Default::default()
-        },
+        front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
         ..Default::default()
     };
 
-    let (_prepared, diagnostics) =
-        prepare_compilation_diagnostics(&resolved, prepare_options, None)?;
+    let (_prepared, diagnostics) = prepare_compilation_diagnostics(&resolved, prepare_options, None)?;
 
     Ok(diagnostics)
 }
 
 pub fn analyze_file_in_project(path: &Path) -> Result<Vec<SemanticDiagnostic>> {
-    let source = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read file: {}", path.display()))?;
+    let source = fs::read_to_string(path).with_context(|| format!("Failed to read file: {}", path.display()))?;
     analyze_source_in_project(path, &source)
 }
 
@@ -133,13 +114,7 @@ pub fn analyze_source_with_compilation_context(
         return analyze_program(path, source);
     };
 
-    let resolved = resolved_input_from_plan(
-        path.to_path_buf(),
-        source.to_string(),
-        plan.clone(),
-        None,
-        None,
-    );
+    let resolved = resolved_input_from_plan(path.to_path_buf(), source.to_string(), plan.clone(), None, None);
 
     let prepare_options = PrepareOptions {
         front_end: FrontEndOptions {
@@ -150,8 +125,7 @@ pub fn analyze_source_with_compilation_context(
         ..Default::default()
     };
 
-    let (_prepared, mut diagnostics) =
-        prepare_compilation_diagnostics(&resolved, prepare_options, None)?;
+    let (_prepared, mut diagnostics) = prepare_compilation_diagnostics(&resolved, prepare_options, None)?;
 
     if is_non_entry_project_file(path, Some(&plan)) {
         diagnostics.retain(|diagnostic| diagnostic.code.as_deref() == Some("parse"));
@@ -174,11 +148,7 @@ pub fn analyze_source_in_project_with_options(
         graph_opts.workspace_member_for_meta_default = Some(member.to_string());
     }
 
-    match ProjectSessionHandle::try_for_analysis_path_with_graph_options(
-        path,
-        options.workspace_member,
-        graph_opts,
-    ) {
+    match ProjectSessionHandle::try_for_analysis_path_with_graph_options(path, options.workspace_member, graph_opts) {
         Some(ctx) => analyze_source_with_compilation_context(path, source, &ctx),
         None => analyze_program(path, source),
     }
@@ -191,10 +161,7 @@ pub fn compile_plan_for_input_path(path: &Path) -> Option<CompilePlan> {
     ProjectSessionHandle::try_for_analysis_path(path, None).and_then(|c| c.compile_plan)
 }
 
-pub fn compile_plan_for_input_path_with_member(
-    path: &Path,
-    workspace_member: Option<&str>,
-) -> Option<CompilePlan> {
+pub fn compile_plan_for_input_path_with_member(path: &Path, workspace_member: Option<&str>) -> Option<CompilePlan> {
     if !path.is_file() {
         return None;
     }
@@ -205,12 +172,8 @@ fn is_non_entry_project_file(path: &Path, plan: Option<&CompilePlan>) -> bool {
     let Some(plan) = plan else {
         return false;
     };
-    let entry_path = plan
-        .target
-        .entry
-        .as_ref()
-        .filter(|entry| !entry.trim().is_empty())
-        .map(|entry| plan.source_root.join(entry));
+    let entry_path =
+        plan.target.entry.as_ref().filter(|entry| !entry.trim().is_empty()).map(|entry| plan.source_root.join(entry));
     let Some(entry_path) = entry_path else {
         return false;
     };

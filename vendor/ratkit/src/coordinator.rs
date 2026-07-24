@@ -157,13 +157,9 @@ impl<A: CoordinatorApp> LayoutCoordinator<A> {
             CoordinatorEvent::Tick(count) => self.handle_tick(count),
             CoordinatorEvent::Resize(resize) => self.handle_resize(resize),
             CoordinatorEvent::Focus(request) => self.handle_focus(request),
-            CoordinatorEvent::Register(metadata, element) => {
-                self.handle_register(metadata, element)
-            }
+            CoordinatorEvent::Register(metadata, element) => self.handle_register(metadata, element),
             CoordinatorEvent::Unregister(id) => self.handle_unregister(id),
-            CoordinatorEvent::SetVisibility(id, visibility) => {
-                self.handle_set_visibility(id, visibility)
-            }
+            CoordinatorEvent::SetVisibility(id, visibility) => self.handle_set_visibility(id, visibility),
             CoordinatorEvent::RequestDiagnosticInfo => self.handle_diagnostic_request(),
         }
     }
@@ -272,9 +268,7 @@ impl<A: CoordinatorApp> LayoutCoordinator<A> {
     ) -> LayoutResult<CoordinatorAction> {
         let id = metadata.id;
 
-        self.layout
-            .registry_mut()
-            .register(metadata.clone(), element.clone())?;
+        self.layout.registry_mut().register(metadata.clone(), element.clone())?;
         self.focus.registry_mut().register(metadata, element)?;
 
         self.invalidate_layout();
@@ -297,11 +291,7 @@ impl<A: CoordinatorApp> LayoutCoordinator<A> {
         Ok(CoordinatorAction::Continue)
     }
 
-    fn handle_set_visibility(
-        &mut self,
-        id: ElementId,
-        visibility: Visibility,
-    ) -> LayoutResult<CoordinatorAction> {
+    fn handle_set_visibility(&mut self, id: ElementId, visibility: Visibility) -> LayoutResult<CoordinatorAction> {
         self.layout.registry_mut().set_visibility(id, visibility)?;
 
         if visibility == Visibility::Hidden && self.focus.focused() == Some(id) {
@@ -329,20 +319,12 @@ impl<A: CoordinatorApp> LayoutCoordinator<A> {
             visible_elements: registry
                 .all_ids()
                 .iter()
-                .filter(|&id| {
-                    registry
-                        .get_metadata(*id)
-                        .map(|m| m.is_visible())
-                        .unwrap_or(false)
-                })
+                .filter(|&id| registry.get_metadata(*id).map(|m| m.is_visible()).unwrap_or(false))
                 .count(),
             focusable_elements: focusable.len(),
             focused_element: self.focus.focused(),
             captured_element: self.mouse.captured_element(),
-            terminal_size: (
-                self.layout.state().terminal_area.width,
-                self.layout.state().terminal_area.height,
-            ),
+            terminal_size: (self.layout.state().terminal_area.width, self.layout.state().terminal_area.height),
             region_areas: vec![
                 (Region::Top, self.layout.get_region_area(Region::Top)),
                 (Region::Center, self.layout.get_region_area(Region::Center)),
@@ -353,12 +335,7 @@ impl<A: CoordinatorApp> LayoutCoordinator<A> {
                 .registry()
                 .all_ids()
                 .into_iter()
-                .filter_map(|id| {
-                    registry
-                        .get_metadata(id)
-                        .ok()
-                        .map(|m| (id, m.region, m.z_order))
-                })
+                .filter_map(|id| registry.get_metadata(id).ok().map(|m| (id, m.region, m.z_order)))
                 .take(10)
                 .collect(),
             dirty_flags: self.dirty,
@@ -431,9 +408,7 @@ mod tests {
         let metadata = ElementMetadata::new(id, Region::Center).with_focusable(true);
         let element = Arc::new(DummyElement::new(id));
 
-        let action = coordinator
-            .handle_event(CoordinatorEvent::Register(metadata, element))
-            .unwrap();
+        let action = coordinator.handle_event(CoordinatorEvent::Register(metadata, element)).unwrap();
 
         assert_eq!(action, CoordinatorAction::Continue);
         assert!(coordinator.layout.registry().len() == 1);
@@ -444,9 +419,7 @@ mod tests {
         let app = TestApp;
         let mut coordinator = LayoutCoordinator::new(app);
 
-        let action = coordinator
-            .handle_event(CoordinatorEvent::Resize(ResizeEvent::new(80, 24)))
-            .unwrap();
+        let action = coordinator.handle_event(CoordinatorEvent::Resize(ResizeEvent::new(80, 24))).unwrap();
 
         assert_eq!(action, CoordinatorAction::Redraw);
         assert_eq!(coordinator.layout.state().terminal_area.width, 80);

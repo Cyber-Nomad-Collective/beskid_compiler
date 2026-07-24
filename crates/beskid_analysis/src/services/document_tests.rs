@@ -4,13 +4,13 @@ mod tests {
 
     use crate::compilation_context::ProjectSessionHandle;
     use crate::projects::{
-        AssemblyDiscovery, AssemblyOptions, ProgramAssembly, WorkspacePrepareOptions,
-        assemble_program, prepare_project_workspace_with_options,
+        AssemblyDiscovery, AssemblyOptions, ProgramAssembly, WorkspacePrepareOptions, assemble_program,
+        prepare_project_workspace_with_options,
     };
     use crate::services::{
-        build_document_analysis_from_resolution, build_document_analysis_with_context,
-        completion_candidates, definition_at_offset, parse_program_with_source_name,
-        references_at_offset_workspace, resolve_entry, resolve_input,
+        build_document_analysis_from_resolution, build_document_analysis_with_context, completion_candidates,
+        definition_at_offset, parse_program_with_source_name, references_at_offset_workspace, resolve_entry,
+        resolve_input,
     };
 
     struct CorelibMvpFixture {
@@ -28,19 +28,11 @@ mod tests {
     }
 
     fn corelib_mvp_paths() -> CorelibMvpFixture {
-        let main_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
+        let main_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_e2e_tests/fixtures/corelib_mvp/Src/Main.bd");
         let source = std::fs::read_to_string(&main_path).expect("read Main.bd");
-        let project_root = main_path
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("fixture root")
-            .to_path_buf();
-        CorelibMvpFixture {
-            main_path,
-            project_root,
-            source,
-        }
+        let project_root = main_path.parent().and_then(|p| p.parent()).expect("fixture root").to_path_buf();
+        CorelibMvpFixture { main_path, project_root, source }
     }
 
     fn with_cwd_at_workspace_root<R>(root: &Path, f: impl FnOnce() -> R) -> R {
@@ -48,22 +40,13 @@ mod tests {
     }
 
     fn assemble_corelib_mvp(path: &Path, source: &str, project_root: &Path) -> ProgramAssembly {
-        let resolved = resolve_input(
-            Some(&path.to_path_buf()),
-            Some(&project_root.to_path_buf()),
-            None,
-            None,
-            false,
-            false,
-        )
-        .expect("resolve corelib_mvp");
+        let resolved =
+            resolve_input(Some(&path.to_path_buf()), Some(&project_root.to_path_buf()), None, None, false, false)
+                .expect("resolve corelib_mvp");
         let plan = resolved.compile_plan.expect("compile plan");
         let prepared = resolved.prepared_workspace.clone().or_else(|| {
             let lockfile = plan.manifest_path.with_file_name("Project.lock");
-            let options = WorkspacePrepareOptions {
-                frozen: false,
-                locked: lockfile.is_file(),
-            };
+            let options = WorkspacePrepareOptions { frozen: false, locked: lockfile.is_file() };
             prepare_project_workspace_with_options(&plan, options, None).ok()
         });
         assemble_program(
@@ -71,10 +54,7 @@ mod tests {
             prepared.as_ref(),
             path,
             Some(source),
-            &AssemblyOptions {
-                discovery: AssemblyDiscovery::ImportClosure,
-                ..Default::default()
-            },
+            &AssemblyOptions { discovery: AssemblyDiscovery::ImportClosure, ..Default::default() },
             None,
         )
         .expect("assemble")
@@ -86,15 +66,10 @@ mod tests {
         assembly: &ProgramAssembly,
         fixture: &CorelibMvpFixture,
     ) -> crate::services::DocumentAnalysisSnapshot {
-        let program =
-            parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source)
-                .expect("parse Main.bd");
-        let resolution = resolve_entry(
-            assembly.entry_hir(),
-            &assembly.module_index,
-            Some(&fixture.main_path),
-        )
-        .expect("entry resolution");
+        let program = parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source)
+            .expect("parse Main.bd");
+        let resolution = resolve_entry(assembly.entry_hir(), &assembly.module_index, Some(&fixture.main_path))
+            .expect("entry resolution");
         let module_paths = assembly.module_index.known_module_path_strings();
         build_document_analysis_from_resolution(
             &program,
@@ -108,16 +83,12 @@ mod tests {
         )
     }
 
-    fn snapshot_with_entry_resolution() -> (
-        crate::services::DocumentAnalysisSnapshot,
-        CorelibMvpFixture,
-        ProgramAssembly,
-    ) {
+    fn snapshot_with_entry_resolution()
+    -> (crate::services::DocumentAnalysisSnapshot, CorelibMvpFixture, ProgramAssembly) {
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();
-            let assembly =
-                assemble_corelib_mvp(&fixture.main_path, &fixture.source, &fixture.project_root);
+            let assembly = assemble_corelib_mvp(&fixture.main_path, &fixture.source, &fixture.project_root);
             let snapshot = snapshot_from_entry_resolution(&assembly, &fixture);
             (snapshot, fixture, assembly)
         })
@@ -126,18 +97,11 @@ mod tests {
     #[test]
     fn corelib_mvp_document_analysis_resolves_io_printline() {
         let (snapshot, _, _) = snapshot_with_entry_resolution();
-        let resolution = snapshot
-            .resolution
-            .as_ref()
-            .expect("assembly-backed resolution");
+        let resolution = snapshot.resolution.as_ref().expect("assembly-backed resolution");
         assert!(
             resolution.items.iter().any(|item| item.name == "WriteLine"),
             "expected WriteLine in merged items: {:?}",
-            resolution
-                .items
-                .iter()
-                .map(|item| &item.name)
-                .collect::<Vec<_>>()
+            resolution.items.iter().map(|item| &item.name).collect::<Vec<_>>()
         );
     }
 
@@ -156,10 +120,7 @@ mod tests {
                 snapshot
                     .resolution
                     .as_ref()
-                    .is_some_and(|resolution| resolution
-                        .items
-                        .iter()
-                        .any(|item| item.name == "WriteLine")),
+                    .is_some_and(|resolution| resolution.items.iter().any(|item| item.name == "WriteLine")),
                 "expected WriteLine in resolution when cross-file definition is unavailable"
             );
         }
@@ -168,8 +129,7 @@ mod tests {
     #[test]
     fn corelib_mvp_completion_after_output_dot_includes_writeline() {
         let (snapshot, fixture, _) = snapshot_with_entry_resolution();
-        let offset =
-            fixture.source.find("    Output.").expect("main Output.") + "    Output.".len();
+        let offset = fixture.source.find("    Output.").expect("main Output.") + "    Output.".len();
         let candidates = completion_candidates(&snapshot, &fixture.source, offset);
         assert!(
             candidates.iter().any(|c| c.label == "WriteLine"),
@@ -205,29 +165,20 @@ mod tests {
     fn corelib_mvp_workspace_references_include_io_definition() {
         let (snapshot, fixture, assembly) = snapshot_with_entry_resolution();
         let offset = fixture.source.find("WriteLine").expect("WriteLine usage");
-        let references =
-            references_at_offset_workspace(&snapshot, &assembly, &fixture.main_path, offset, true);
+        let references = references_at_offset_workspace(&snapshot, &assembly, &fixture.main_path, offset, true);
         if references.is_empty() {
             assert!(
                 snapshot
                     .resolution
                     .as_ref()
-                    .is_some_and(|resolution| resolution
-                        .items
-                        .iter()
-                        .any(|item| item.name == "WriteLine")),
+                    .is_some_and(|resolution| resolution.items.iter().any(|item| item.name == "WriteLine")),
                 "expected WriteLine in resolution when workspace references are unavailable"
             );
         } else {
             assert!(
-                references.iter().any(|reference| {
-                    reference.location.path.to_string_lossy().contains("Output")
-                }),
+                references.iter().any(|reference| { reference.location.path.to_string_lossy().contains("Output") }),
                 "expected a reference in Output.bd, got {:?}",
-                references
-                    .iter()
-                    .map(|r| r.location.path.display())
-                    .collect::<Vec<_>>()
+                references.iter().map(|r| r.location.path.display()).collect::<Vec<_>>()
             );
         }
     }
@@ -235,31 +186,19 @@ mod tests {
     #[test]
     fn corelib_mvp_lifecycle_snapshot_resolves_writeline_via_entry_resolution() {
         let (snapshot, fixture, _) = snapshot_with_entry_resolution();
-        let resolution = snapshot
-            .resolution
-            .as_ref()
-            .expect("lifecycle entry resolution snapshot");
+        let resolution = snapshot.resolution.as_ref().expect("lifecycle entry resolution snapshot");
         assert!(
             resolution.items.iter().any(|item| item.name == "WriteLine"),
             "expected WriteLine via entry resolution spine: {:?}",
-            resolution
-                .items
-                .iter()
-                .map(|item| &item.name)
-                .collect::<Vec<_>>()
+            resolution.items.iter().map(|item| &item.name).collect::<Vec<_>>()
         );
-        assert!(
-            fixture.main_path.is_file(),
-            "fixture entry should exist at {}",
-            fixture.main_path.display()
-        );
+        assert!(fixture.main_path.is_file(), "fixture entry should exist at {}", fixture.main_path.display());
     }
 
     #[test]
     fn corelib_mvp_lifecycle_completion_after_output_dot_includes_writeline() {
         let (snapshot, fixture, _) = snapshot_with_entry_resolution();
-        let offset =
-            fixture.source.find("    Output.").expect("main Output.") + "    Output.".len();
+        let offset = fixture.source.find("    Output.").expect("main Output.") + "    Output.".len();
         let candidates = completion_candidates(&snapshot, &fixture.source, offset);
         assert!(
             candidates.iter().any(|c| c.label == "WriteLine"),
@@ -273,11 +212,8 @@ mod tests {
         let root = compiler_workspace_root();
         with_cwd_at_workspace_root(&root, || {
             let fixture = corelib_mvp_paths();
-            let program = parse_program_with_source_name(
-                &fixture.main_path.to_string_lossy(),
-                &fixture.source,
-            )
-            .expect("parse");
+            let program =
+                parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source).expect("parse");
             let handle = ProjectSessionHandle::try_for_analysis_path(&fixture.main_path, None);
             let snapshot = build_document_analysis_with_context(
                 &program,
@@ -291,10 +227,7 @@ mod tests {
                 snapshot.resolution.is_none(),
                 "without query-backed entry resolution, snapshot should not resolve"
             );
-            assert!(
-                handle.is_some(),
-                "project session should still be available for composition diagnostics"
-            );
+            assert!(handle.is_some(), "project session should still be available for composition diagnostics");
         });
     }
 }

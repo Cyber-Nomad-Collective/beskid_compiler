@@ -61,16 +61,13 @@ fn audit_for(triple: &str) -> Result<RuntimeProvenanceAudit, String> {
         .into_iter()
         .find(|candidate| candidate.triple.as_str() == triple)
         .ok_or_else(|| format!("unsupported ABI-v5 target `{triple}`"))?;
-    RuntimeProvenanceAudit::canonical(target)
-        .map_err(|error| format!("invalid ABI-v5 manifest: {error:?}"))
+    RuntimeProvenanceAudit::canonical(target).map_err(|error| format!("invalid ABI-v5 manifest: {error:?}"))
 }
 
 fn read_symbol_list(path: &str) -> Result<String, String> {
     if path == "-" {
         let mut source = String::new();
-        io::stdin()
-            .read_to_string(&mut source)
-            .map_err(|error| format!("read standard input: {error}"))?;
+        io::stdin().read_to_string(&mut source).map_err(|error| format!("read standard input: {error}"))?;
         return Ok(source);
     }
     std::fs::read_to_string(Path::new(path)).map_err(|error| format!("read `{path}`: {error}"))

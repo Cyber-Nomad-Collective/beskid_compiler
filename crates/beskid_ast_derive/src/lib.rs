@@ -6,10 +6,7 @@
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{
-    Attribute, Data, DeriveInput, Fields, GenericArgument, LitStr, PathArguments, Type,
-    parse_macro_input,
-};
+use syn::{Attribute, Data, DeriveInput, Fields, GenericArgument, LitStr, PathArguments, Type, parse_macro_input};
 
 /// Marker attribute consumed by `beskid_ast_reflect_gen` when emitting Mod SDK `.bd` mirrors.
 /// Expands to its input unchanged.
@@ -53,14 +50,8 @@ fn derive_node_impl(
     let kind_ident = parse_kind_attr(&input.attrs).unwrap_or_else(|| name.clone());
 
     let children_body = match &input.data {
-        Data::Struct(ds) => {
-            gen_struct_children(ds.fields.iter().collect::<Vec<_>>(), &node_trait, &node_ref)
-        }
-        Data::Enum(en) => gen_enum_children(
-            en.variants.iter().collect::<Vec<_>>(),
-            &node_trait,
-            &node_ref,
-        ),
+        Data::Struct(ds) => gen_struct_children(ds.fields.iter().collect::<Vec<_>>(), &node_trait, &node_ref),
+        Data::Enum(en) => gen_enum_children(en.variants.iter().collect::<Vec<_>>(), &node_trait, &node_ref),
         Data::Union(_) => quote! {},
     };
 
@@ -88,12 +79,9 @@ pub fn derive_phase_from_ast(input: TokenStream) -> TokenStream {
     let phase_attr = match parse_phase_attr(&input.attrs) {
         Ok(Some(value)) => value,
         Ok(None) => {
-            return syn::Error::new_spanned(
-                name,
-                "PhaseFromAst requires #[phase(source = \"...\", phase = \"...\")]",
-            )
-            .to_compile_error()
-            .into();
+            return syn::Error::new_spanned(name, "PhaseFromAst requires #[phase(source = \"...\", phase = \"...\")]")
+                .to_compile_error()
+                .into();
         }
         Err(err) => return err.to_compile_error().into(),
     };
@@ -105,12 +93,9 @@ pub fn derive_phase_from_ast(input: TokenStream) -> TokenStream {
             quote! { #name < #phase > }
         }
         _ => {
-            return syn::Error::new_spanned(
-                name,
-                "PhaseFromAst supports enums with at most one type parameter",
-            )
-            .to_compile_error()
-            .into();
+            return syn::Error::new_spanned(name, "PhaseFromAst supports enums with at most one type parameter")
+                .to_compile_error()
+                .into();
         }
     };
 
@@ -120,8 +105,7 @@ pub fn derive_phase_from_ast(input: TokenStream) -> TokenStream {
             let mut arms = Vec::new();
             for variant in &enum_data.variants {
                 let target_ident = &variant.ident;
-                let source_ident =
-                    parse_variant_from_attr(&variant.attrs).unwrap_or_else(|| target_ident.clone());
+                let source_ident = parse_variant_from_attr(&variant.attrs).unwrap_or_else(|| target_ident.clone());
                 let arm = match &variant.fields {
                     Fields::Unnamed(fields) if fields.unnamed.len() == 1 => quote! {
                         #source_path::#source_ident(value) => #name::#target_ident(value),
@@ -158,9 +142,7 @@ pub fn derive_phase_from_ast(input: TokenStream) -> TokenStream {
         Data::Struct(struct_data) => {
             let fields = match &struct_data.fields {
                 Fields::Named(fields) => fields.named.iter().collect::<Vec<_>>(),
-                Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-                    fields.unnamed.iter().collect()
-                }
+                Fields::Unnamed(fields) if fields.unnamed.len() == 1 => fields.unnamed.iter().collect(),
                 _ => {
                     return syn::Error::new_spanned(
                         &struct_data.fields,
@@ -205,12 +187,9 @@ pub fn derive_phase_from_ast(input: TokenStream) -> TokenStream {
             }
         }
         _ => {
-            return syn::Error::new_spanned(
-                name,
-                "PhaseFromAst can only be derived for enums or structs",
-            )
-            .to_compile_error()
-            .into();
+            return syn::Error::new_spanned(name, "PhaseFromAst can only be derived for enums or structs")
+                .to_compile_error()
+                .into();
         }
     };
 
@@ -262,10 +241,7 @@ fn parse_phase_attr(attrs: &[Attribute]) -> Result<Option<PhaseAttr>, syn::Error
         if let (Some(source), Some(phase)) = (source, phase) {
             return Ok(Some(PhaseAttr { source, phase }));
         }
-        return Err(syn::Error::new_spanned(
-            attr,
-            "phase attribute requires source and phase",
-        ));
+        return Err(syn::Error::new_spanned(attr, "phase attribute requires source and phase"));
     }
     Ok(None)
 }
@@ -357,11 +333,7 @@ fn gen_enum_children(
                 let mut stmts = Vec::new();
                 for (i, field) in unnamed.unnamed.iter().enumerate() {
                     let fattr = parse_field_attr(&field.attrs);
-                    let attr = if matches!(fattr, FieldAttr::Skip) && i == 0 {
-                        &vattr
-                    } else {
-                        &fattr
-                    };
+                    let attr = if matches!(fattr, FieldAttr::Skip) && i == 0 { &vattr } else { &fattr };
 
                     if matches!(attr, FieldAttr::Skip) {
                         binds.push(quote! { _ });
@@ -369,12 +341,7 @@ fn gen_enum_children(
                     }
                     let binding = format_ident!("f{}", i);
                     binds.push(quote! { #binding });
-                    stmts.push(gen_push_for_type(
-                        &field.ty,
-                        quote! { #binding },
-                        node_trait,
-                        node_ref,
-                    ));
+                    stmts.push(gen_push_for_type(&field.ty, quote! { #binding }, node_trait, node_ref));
                 }
                 arms.push(quote! { Self::#vident( #(#binds),* ) => { #(#stmts)* } });
             }
@@ -384,23 +351,14 @@ fn gen_enum_children(
                 for field in &named.named {
                     let fname = field.ident.as_ref().unwrap();
                     let fattr = parse_field_attr(&field.attrs);
-                    let attr = if matches!(fattr, FieldAttr::Skip) {
-                        &vattr
-                    } else {
-                        &fattr
-                    };
+                    let attr = if matches!(fattr, FieldAttr::Skip) { &vattr } else { &fattr };
 
                     if matches!(attr, FieldAttr::Skip) {
                         binds.push(quote! { #fname: _ });
                         continue;
                     }
                     binds.push(quote! { #fname });
-                    stmts.push(gen_push_for_type(
-                        &field.ty,
-                        quote! { #fname },
-                        node_trait,
-                        node_ref,
-                    ));
+                    stmts.push(gen_push_for_type(&field.ty, quote! { #fname }, node_trait, node_ref));
                 }
                 arms.push(quote! { Self::#vident { #(#binds),* } => { #(#stmts)* } });
             }
@@ -425,8 +383,7 @@ fn gen_push_for_type(
                     ("Option", PathArguments::AngleBracketed(ab)) => {
                         if let Some(GenericArgument::Type(inner_ty)) = ab.args.first() {
                             let v = format_ident!("__v");
-                            let inner =
-                                gen_push_for_type(inner_ty, quote! { #v }, node_trait, node_ref);
+                            let inner = gen_push_for_type(inner_ty, quote! { #v }, node_trait, node_ref);
                             return quote! {
                                 if let ::core::option::Option::Some(#v) = (#access).as_ref() {
                                     #inner
@@ -437,8 +394,7 @@ fn gen_push_for_type(
                     ("Vec", PathArguments::AngleBracketed(ab)) => {
                         if let Some(GenericArgument::Type(inner_ty)) = ab.args.first() {
                             let v = format_ident!("__it");
-                            let inner =
-                                gen_push_for_type(inner_ty, quote! { #v }, node_trait, node_ref);
+                            let inner = gen_push_for_type(inner_ty, quote! { #v }, node_trait, node_ref);
                             return quote! {
                                 for #v in (#access).iter() {
                                     #inner
@@ -448,12 +404,8 @@ fn gen_push_for_type(
                     }
                     ("Box", PathArguments::AngleBracketed(ab)) => {
                         if let Some(GenericArgument::Type(inner_ty)) = ab.args.first() {
-                            let inner = gen_push_for_type(
-                                inner_ty,
-                                quote! { (#access).as_ref() },
-                                node_trait,
-                                node_ref,
-                            );
+                            let inner =
+                                gen_push_for_type(inner_ty, quote! { (#access).as_ref() }, node_trait, node_ref);
                             return quote! { #inner };
                         }
                     }
@@ -478,10 +430,7 @@ fn gen_push_for_type(
     }
 }
 
-fn gen_phase_field_conversion(
-    ty: &Type,
-    access: proc_macro2::TokenStream,
-) -> proc_macro2::TokenStream {
+fn gen_phase_field_conversion(ty: &Type, access: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     match ty {
         Type::Path(tp) => {
             if let Some(seg) = tp.path.segments.last() {

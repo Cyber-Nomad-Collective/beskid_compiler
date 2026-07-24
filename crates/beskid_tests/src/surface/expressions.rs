@@ -171,14 +171,7 @@ fn rejects_argument_list_starting_with_comma() {
     assert_parse_fail(Rule::ArgumentList, ", 1");
 }
 
-fn expect_binary(
-    expr: &Expression,
-    op: BinaryOp,
-) -> (
-    &Spanned<Expression>,
-    &Spanned<BinaryOp>,
-    &Spanned<Expression>,
-) {
+fn expect_binary(expr: &Expression, op: BinaryOp) -> (&Spanned<Expression>, &Spanned<BinaryOp>, &Spanned<Expression>) {
     if let Expression::Binary(binary) = expr {
         assert_eq!(binary.node.op.node, op);
         return (&binary.node.left, &binary.node.op, &binary.node.right);
@@ -191,13 +184,7 @@ fn expect_binary_op(op: &Spanned<BinaryOp>, expected: BinaryOp) {
     assert_eq!(op.node, expected);
 }
 
-fn expect_assign(
-    expr: &Expression,
-) -> (
-    &Spanned<Expression>,
-    &Spanned<AssignOp>,
-    &Spanned<Expression>,
-) {
+fn expect_assign(expr: &Expression) -> (&Spanned<Expression>, &Spanned<AssignOp>, &Spanned<Expression>) {
     if let Expression::Assign(assign) = expr {
         return (&assign.node.target, &assign.node.op, &assign.node.value);
     }
@@ -205,10 +192,7 @@ fn expect_assign(
     panic!("expected assign expression");
 }
 
-fn expect_call(
-    expr: &Expression,
-    args_len: usize,
-) -> (&Spanned<Expression>, &[Spanned<Expression>]) {
+fn expect_call(expr: &Expression, args_len: usize) -> (&Spanned<Expression>, &[Spanned<Expression>]) {
     if let Expression::Call(call) = expr {
         assert_eq!(call.node.args.len(), args_len);
         return (&call.node.callee, &call.node.args);
@@ -228,10 +212,7 @@ fn expect_try(expr: &Expression) -> &Spanned<Expression> {
 fn expect_lambda(
     expr: &Expression,
     params_len: usize,
-) -> (
-    &[Spanned<beskid_analysis::syntax::LambdaParameter>],
-    &Spanned<Expression>,
-) {
+) -> (&[Spanned<beskid_analysis::syntax::LambdaParameter>], &Spanned<Expression>) {
     if let Expression::Lambda(lambda) = expr {
         assert_eq!(lambda.node.parameters.len(), params_len);
         return (&lambda.node.parameters, &lambda.node.body);
@@ -243,10 +224,7 @@ fn expect_lambda(
 fn expect_identifier_path(expr: &Expression, expected: &str) {
     if let Expression::Path(path) = expr {
         assert_eq!(path.node.path.node.segments.len(), 1);
-        assert_eq!(
-            path.node.path.node.segments[0].node.name.node.name.as_str(),
-            expected
-        );
+        assert_eq!(path.node.path.node.segments[0].node.name.node.name.as_str(), expected);
         return;
     }
 

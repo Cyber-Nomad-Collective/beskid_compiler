@@ -4,9 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::Result;
-use beskid_analysis::services::{
-    DependencyTypingPolicy, FrontEndOptions, PrepareOptions, ResolvedInput,
-};
+use beskid_analysis::services::{DependencyTypingPolicy, FrontEndOptions, PrepareOptions, ResolvedInput};
 use beskid_pipeline::PipelineObserver;
 use salsa::Setter;
 
@@ -49,8 +47,7 @@ struct TypedEntryCache {
 }
 
 static FILE_REVISION_REGISTRY: OnceLock<Mutex<HashMap<String, FileRevision>>> = OnceLock::new();
-static TYPED_PREPARE_REVISION_REGISTRY: OnceLock<Mutex<HashMap<String, TypedPrepareRevision>>> =
-    OnceLock::new();
+static TYPED_PREPARE_REVISION_REGISTRY: OnceLock<Mutex<HashMap<String, TypedPrepareRevision>>> = OnceLock::new();
 static TYPED_ENTRY_CACHE: OnceLock<Mutex<TypedEntryCache>> = OnceLock::new();
 
 fn file_revision_registry() -> &'static Mutex<HashMap<String, FileRevision>> {
@@ -66,9 +63,7 @@ fn typed_entry_cache() -> &'static Mutex<TypedEntryCache> {
 }
 
 fn ensure_file_revision(db: &mut BeskidDatabase, entry_key: &str) -> FileRevision {
-    let mut registry = file_revision_registry()
-        .lock()
-        .expect("file revision registry");
+    let mut registry = file_revision_registry().lock().expect("file revision registry");
     if let Some(revision) = registry.get(entry_key) {
         return *revision;
     }
@@ -78,9 +73,7 @@ fn ensure_file_revision(db: &mut BeskidDatabase, entry_key: &str) -> FileRevisio
 }
 
 fn ensure_typed_prepare_revision(db: &mut BeskidDatabase, entry_key: &str) -> TypedPrepareRevision {
-    let mut registry = typed_prepare_revision_registry()
-        .lock()
-        .expect("typed prepare revision registry");
+    let mut registry = typed_prepare_revision_registry().lock().expect("typed prepare revision registry");
     if let Some(revision) = registry.get(entry_key) {
         return *revision;
     }
@@ -95,11 +88,7 @@ pub fn bump_file_revision(db: &mut BeskidDatabase, entry_key: &str) -> u64 {
     let next = revision.revision(db).saturating_add(1);
     revision.set_revision(db).to(next);
     record_revision_bump();
-    typed_entry_cache()
-        .lock()
-        .expect("typed entry cache")
-        .gate_bundles
-        .remove(entry_key);
+    typed_entry_cache().lock().expect("typed entry cache").gate_bundles.remove(entry_key);
     next
 }
 
@@ -139,16 +128,11 @@ pub fn is_typed_bundle_stale(db: &dyn Db, entry_key: &str) -> bool {
 fn prepare_options_fingerprint(options: &PrepareOptions) -> String {
     format!(
         "discovery={:?}:semantic={}:typing={:?}",
-        options.front_end.assembly_discovery,
-        options.front_end.with_semantic_diagnostics,
-        options.dependency_typing,
+        options.front_end.assembly_discovery, options.front_end.with_semantic_diagnostics, options.dependency_typing,
     )
 }
 
-fn project_session_for_resolved(
-    db: &mut BeskidDatabase,
-    resolved: &ResolvedInput,
-) -> Option<ProjectSession> {
+fn project_session_for_resolved(db: &mut BeskidDatabase, resolved: &ResolvedInput) -> Option<ProjectSession> {
     let plan = resolved.compile_plan.as_ref()?;
     let lockfile_digest = lockfile_digest_for_plan(plan);
     Some(db.ensure_project_session(plan, &resolved.source_path, lockfile_digest))
@@ -177,10 +161,7 @@ fn materialize_typed_bundle(
         db,
         resolved,
         PrepareOptions {
-            front_end: FrontEndOptions {
-                with_semantic_diagnostics: false,
-                ..Default::default()
-            },
+            front_end: FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
             dependency_typing,
         },
         pipeline,
@@ -220,20 +201,11 @@ fn run_tracked_typed_prepare(
     trace_query_with_reason(
         "typed_entry_bundle",
         cache_hit,
-        if cache_hit {
-            Some("typed_prepare_revision")
-        } else {
-            None
-        },
+        if cache_hit { Some("typed_prepare_revision") } else { None },
     );
 
     let Some(project) = project_session_for_resolved(db, resolved) else {
-        return materialize_typed_bundle(
-            db,
-            resolved,
-            DependencyTypingPolicy::FullClosure,
-            pipeline,
-        );
+        return materialize_typed_bundle(db, resolved, DependencyTypingPolicy::FullClosure, pipeline);
     };
     let grammar = db.grammar_revision();
     let options_fingerprint = prepare_options_fingerprint(options);
@@ -258,16 +230,12 @@ fn run_tracked_typed_prepare(
         return Ok(front);
     }
 
-    let front =
-        materialize_typed_bundle(db, resolved, DependencyTypingPolicy::FullClosure, pipeline)?;
+    let front = materialize_typed_bundle(db, resolved, DependencyTypingPolicy::FullClosure, pipeline)?;
     typed_entry_cache()
         .lock()
         .expect("typed entry cache")
         .full_bundles
-        .insert(
-            entry_key.to_string(),
-            (typed_prepare_revision, front.clone()),
-        );
+        .insert(entry_key.to_string(), (typed_prepare_revision, front.clone()));
     Ok(front)
 }
 
@@ -284,15 +252,7 @@ fn run_tracked_entry_gate_prepare(
         .gate_bundles
         .get(entry_key)
         .is_some_and(|(generation, _)| *generation == file_revision);
-    trace_query_with_reason(
-        "typed_entry_gate_bundle",
-        cache_hit,
-        if cache_hit {
-            Some("file_revision")
-        } else {
-            None
-        },
-    );
+    trace_query_with_reason("typed_entry_gate_bundle", cache_hit, if cache_hit { Some("file_revision") } else { None });
 
     if let Some((generation, front)) = typed_entry_cache()
         .lock()
@@ -306,8 +266,7 @@ fn run_tracked_entry_gate_prepare(
         return Ok(front);
     }
 
-    let front =
-        materialize_typed_bundle(db, resolved, DependencyTypingPolicy::EntryOnly, pipeline)?;
+    let front = materialize_typed_bundle(db, resolved, DependencyTypingPolicy::EntryOnly, pipeline)?;
     typed_entry_cache()
         .lock()
         .expect("typed entry cache")
@@ -332,23 +291,11 @@ pub fn typed_entry_state_with_db(
 
     let resolution = entry_resolution_with_db(db, resolved, options)?;
     let typed = if stale {
-        Some(run_tracked_entry_gate_prepare(
-            db, resolved, &entry_key, pipeline,
-        )?)
+        Some(run_tracked_entry_gate_prepare(db, resolved, &entry_key, pipeline)?)
     } else {
-        Some(run_tracked_typed_prepare(
-            db, resolved, &entry_key, options, pipeline,
-        )?)
+        Some(run_tracked_typed_prepare(db, resolved, &entry_key, options, pipeline)?)
     };
-    Ok(TypedEntryState {
-        resolution,
-        typed,
-        generation: if stale {
-            file_revision
-        } else {
-            typed_prepare_revision
-        },
-    })
+    Ok(TypedEntryState { resolution, typed, generation: if stale { file_revision } else { typed_prepare_revision } })
 }
 
 /// Executable typed bundle when prepare revision caught up; otherwise runs full prepare.
@@ -388,13 +335,7 @@ pub fn clear_typed_entry_cache() {
 /// Clear process-global typed-entry Salsa inputs and side cache before replacing
 /// [`BeskidDatabase`] storage (LSP invalidation, project-root switch, CLI reconfigure).
 pub fn reset_typed_entry_inputs() {
-    file_revision_registry()
-        .lock()
-        .expect("file revision registry")
-        .clear();
-    typed_prepare_revision_registry()
-        .lock()
-        .expect("typed prepare revision registry")
-        .clear();
+    file_revision_registry().lock().expect("file revision registry").clear();
+    typed_prepare_revision_registry().lock().expect("typed prepare revision registry").clear();
     clear_typed_entry_cache();
 }

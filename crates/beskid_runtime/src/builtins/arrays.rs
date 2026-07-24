@@ -28,11 +28,7 @@ pub extern "C-unwind" fn array_new(elem_size: usize, len: usize) -> *mut BeskidA
     };
 
     unsafe {
-        target.write(BeskidArray {
-            ptr: data_ptr,
-            len,
-            cap: len,
-        });
+        target.write(BeskidArray { ptr: data_ptr, len, cap: len });
     }
     target
 }

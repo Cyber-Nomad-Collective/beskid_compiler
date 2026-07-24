@@ -8,9 +8,7 @@ use ratatui::{
     Frame,
 };
 use ratkit::primitives::button::Button;
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct ButtonDemo {
     button: Button,
@@ -19,10 +17,7 @@ struct ButtonDemo {
 
 impl ButtonDemo {
     fn new() -> Self {
-        Self {
-            button: Button::new("Action"),
-            clicks: 0,
-        }
+        Self { button: Button::new("Action"), clicks: 0 }
     }
 }
 
@@ -64,24 +59,13 @@ impl CoordinatorApp for ButtonDemo {
         let button_area = button_demo_area(inner, &self.button);
         self.button.set_area(button_area);
         let button_text = format!(" [{}] ", self.button.text());
-        let button_style = if self.button.hovered() {
-            self.button.hover()
-        } else {
-            self.button.normal()
-        };
+        let button_style = if self.button.hovered() { self.button.hover() } else { self.button.normal() };
         let button = Paragraph::new(Line::from(Span::styled(button_text, button_style)));
         frame.render_widget(button, button_area);
 
-        let body_area = Rect {
-            x: inner.x,
-            y: inner.y + 2,
-            width: inner.width,
-            height: inner.height.saturating_sub(2),
-        };
-        let body = Paragraph::new(Line::from(format!(
-            "Click the button (mouse) or press q to quit. Clicks: {}",
-            self.clicks
-        )));
+        let body_area = Rect { x: inner.x, y: inner.y + 2, width: inner.width, height: inner.height.saturating_sub(2) };
+        let body =
+            Paragraph::new(Line::from(format!("Click the button (mouse) or press q to quit. Clicks: {}", self.clicks)));
         frame.render_widget(body, body_area);
     }
 }
@@ -91,12 +75,7 @@ fn button_demo_area(inner: Rect, button: &Button) -> Rect {
     let x = inner.x + 2;
     let y = inner.y + 1;
 
-    Rect {
-        x,
-        y,
-        width: button_width,
-        height: 1,
-    }
+    Rect { x, y, width: button_width, height: 1 }
 }
 
 fn main() -> io::Result<()> {

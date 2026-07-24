@@ -21,17 +21,13 @@ use crate::projects::{CompilePlan, PreparedProjectWorkspace};
 use crate::syntax::{Node, Program, Spanned};
 
 /// Optional Salsa-backed unit builder (set by `beskid_queries` during assembly).
-pub type UnitMaterializer = std::sync::Arc<
-    dyn Fn(&Path, &str) -> Result<(SourceUnit, UnitHir), AssemblyError> + Send + Sync,
->;
+pub type UnitMaterializer =
+    std::sync::Arc<dyn Fn(&Path, &str) -> Result<(SourceUnit, UnitHir), AssemblyError> + Send + Sync>;
 
 #[derive(Debug, Error)]
 pub enum AssemblyError {
     #[error("failed to read {path}: {source}")]
-    Read {
-        path: PathBuf,
-        source: std::io::Error,
-    },
+    Read { path: PathBuf, source: std::io::Error },
     #[error("failed to parse {path}: {message}")]
     Parse { path: PathBuf, message: String },
     #[error("entry file not found under effective roots: {path}")]
@@ -41,13 +37,8 @@ pub enum AssemblyError {
 }
 
 pub(crate) fn expand_syntax_for_assembly(program: Spanned<Program>) -> Spanned<Program> {
-    crate::macros::expand_program_with_diagnostics(
-        program,
-        crate::macros::DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
-        "",
-        "",
-    )
-    .program
+    crate::macros::expand_program_with_diagnostics(program, crate::macros::DEFAULT_MAX_MACRO_EXPANSION_DEPTH, "", "")
+        .program
 }
 
 /// Default assembly options for a compile plan.
@@ -68,10 +59,7 @@ pub fn assembly_options_for_plan(plan: &CompilePlan) -> AssemblyOptions {
 ///
 /// [`AssemblyDiscovery::ImportClosure`] in `front_end_discovery` means "use the plan default"
 /// (import closure when `entry` is set, workspace scan when it is not). Any other mode overrides.
-pub fn assembly_options_for_prepare(
-    plan: &CompilePlan,
-    front_end_discovery: AssemblyDiscovery,
-) -> AssemblyOptions {
+pub fn assembly_options_for_prepare(plan: &CompilePlan, front_end_discovery: AssemblyDiscovery) -> AssemblyOptions {
     let mut options = assembly_options_for_plan(plan);
     if front_end_discovery != AssemblyDiscovery::ImportClosure {
         options.discovery = front_end_discovery;
@@ -90,15 +78,7 @@ pub(crate) fn assemble_program(
     options: &AssemblyOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ProgramAssembly, AssemblyError> {
-    assemble_program_with_materializer(
-        plan,
-        workspace,
-        entry_path,
-        entry_source,
-        options,
-        None,
-        pipeline,
-    )
+    assemble_program_with_materializer(plan, workspace, entry_path, entry_source, options, None, pipeline)
 }
 
 /// Like [`assemble_program`], using an optional Salsa unit materializer when provided.
@@ -114,17 +94,13 @@ pub fn assemble_program_with_materializer(
     let roots = effective_roots_for_plan(plan, workspace);
     let module_roots: Vec<PathBuf> = super::roots::module_roots_from_effective(&roots);
 
-    let entry_canonical = entry_path
-        .canonicalize()
-        .unwrap_or_else(|_| entry_path.to_path_buf());
+    let entry_canonical = entry_path.canonicalize().unwrap_or_else(|_| entry_path.to_path_buf());
 
     let scan_without_entry = options.discovery == AssemblyDiscovery::WorkspaceScan
         && plan.target.entry.as_deref().unwrap_or("").trim().is_empty();
 
     if !scan_without_entry && !entry_canonical.is_file() {
-        return Err(AssemblyError::EntryNotFound {
-            path: entry_path.to_path_buf(),
-        });
+        return Err(AssemblyError::EntryNotFound { path: entry_path.to_path_buf() });
     }
 
     let mut discovered: Vec<PathBuf> = Vec::new();
@@ -145,9 +121,7 @@ pub fn assemble_program_with_materializer(
 
             while let Some(path) = queue.pop_front() {
                 if discovered_sources.len() >= options.max_units {
-                    return Err(AssemblyError::MaxUnits {
-                        max: options.max_units,
-                    });
+                    return Err(AssemblyError::MaxUnits { max: options.max_units });
                 }
                 let key = path.canonicalize().unwrap_or_else(|_| path.clone());
                 if !seen.insert(key) {
@@ -158,16 +132,11 @@ pub fn assemble_program_with_materializer(
                     if let Some(entry_text) = entry_source {
                         entry_text.to_string()
                     } else {
-                        fs::read_to_string(&path).map_err(|source| AssemblyError::Read {
-                            path: path.clone(),
-                            source,
-                        })?
+                        fs::read_to_string(&path)
+                            .map_err(|source| AssemblyError::Read { path: path.clone(), source })?
                     }
                 } else {
-                    fs::read_to_string(&path).map_err(|source| AssemblyError::Read {
-                        path: path.clone(),
-                        source,
-                    })?
+                    fs::read_to_string(&path).map_err(|source| AssemblyError::Read { path: path.clone(), source })?
                 };
 
                 discovered.push(path.clone());
@@ -207,9 +176,7 @@ pub fn assemble_program_with_materializer(
             paths.sort();
             for path in paths {
                 if discovered.len() >= options.max_units {
-                    return Err(AssemblyError::MaxUnits {
-                        max: options.max_units,
-                    });
+                    return Err(AssemblyError::MaxUnits { max: options.max_units });
                 }
                 enqueue(path, &mut discovered, &mut seen);
             }
@@ -225,9 +192,7 @@ pub fn assemble_program_with_materializer(
             "unit cache manifest skipped"
         );
     }
-    let entry_key = entry_canonical
-        .canonicalize()
-        .unwrap_or(entry_canonical.clone());
+    let entry_key = entry_canonical.canonicalize().unwrap_or(entry_canonical.clone());
 
     struct UnitBuildInput {
         path: PathBuf,
@@ -240,11 +205,7 @@ pub fn assemble_program_with_materializer(
             .iter()
             .map(|(path, source)| {
                 let path_key = path.canonicalize().unwrap_or_else(|_| path.clone());
-                Ok(UnitBuildInput {
-                    path: path.clone(),
-                    is_entry: path_key == entry_key,
-                    source: source.clone(),
-                })
+                Ok(UnitBuildInput { path: path.clone(), is_entry: path_key == entry_key, source: source.clone() })
             })
             .collect::<Result<Vec<_>, _>>()?
     } else {
@@ -268,110 +229,77 @@ pub fn assemble_program_with_materializer(
                             return None;
                         }
                         Err(source) => {
-                            return Some(Err(AssemblyError::Read {
-                                path: path.clone(),
-                                source,
-                            }));
+                            return Some(Err(AssemblyError::Read { path: path.clone(), source }));
                         }
                     }
                 };
-                Some(Ok(UnitBuildInput {
-                    path: path.clone(),
-                    is_entry,
-                    source,
-                }))
+                Some(Ok(UnitBuildInput { path: path.clone(), is_entry, source }))
             })
             .collect::<Result<Vec<_>, _>>()?
     };
 
-    let default_threads = if materializer.is_some() {
-        1
-    } else {
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4)
-    };
-    let thread_cap = std::env::var("BESKID_ASSEMBLY_THREADS")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(default_threads);
+    let default_threads =
+        if materializer.is_some() { 1 } else { std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4) };
+    let thread_cap =
+        std::env::var("BESKID_ASSEMBLY_THREADS").ok().and_then(|value| value.parse().ok()).unwrap_or(default_threads);
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(thread_cap.max(1))
         .build()
-        .map_err(|err| AssemblyError::Parse {
-            path: entry_path.to_path_buf(),
-            message: err.to_string(),
-        })?;
+        .map_err(|err| AssemblyError::Parse { path: entry_path.to_path_buf(), message: err.to_string() })?;
 
     let project_root_for_pool = project_root.clone();
     let salsa_build = materializer.as_ref().map(|build| build.as_ref() as _);
     let build_total = build_inputs.len() as u64;
     let build_done = AtomicU64::new(0);
-    let built_units: Result<Vec<(usize, bool, SourceUnit, super::UnitHir)>, AssemblyError> = pool
-        .install(|| {
-            build_inputs
-                .par_iter()
-                .enumerate()
-                .map(|(discovered_index, input)| {
-                    let logical_name = input.path.display().to_string();
-                    let file = input.path.display().to_string();
-                    let started = std::time::Instant::now();
-                    let unit_span = tracing::info_span!(
-                        target: "beskid.analysis.assembly",
-                        "assembly.unit",
-                        unit = %logical_name,
-                        file = %file,
-                        duration_ms = tracing::field::Empty,
-                    );
-                    let _unit_guard = unit_span.enter();
+    let built_units: Result<Vec<(usize, bool, SourceUnit, super::UnitHir)>, AssemblyError> = pool.install(|| {
+        build_inputs
+            .par_iter()
+            .enumerate()
+            .map(|(discovered_index, input)| {
+                let logical_name = input.path.display().to_string();
+                let file = input.path.display().to_string();
+                let started = std::time::Instant::now();
+                let unit_span = tracing::info_span!(
+                    target: "beskid.analysis.assembly",
+                    "assembly.unit",
+                    unit = %logical_name,
+                    file = %file,
+                    duration_ms = tracing::field::Empty,
+                );
+                let _unit_guard = unit_span.enter();
 
-                    let builder = UnitBuilder::new(&project_root_for_pool);
-                    let builder = if let Some(build) = salsa_build {
-                        builder.with_salsa_build(build)
-                    } else {
-                        builder
-                    };
-                    let label = unit_progress_label(&input.path);
-                    let result = match builder.build_unit(&input.path, &input.source) {
-                        Ok((unit, hir)) => {
-                            let done = build_done.fetch_add(1, Ordering::Relaxed) + 1;
-                            report_progress(
-                                pipeline,
-                                PROGRAM_ASSEMBLE,
-                                done,
-                                build_total.max(1),
-                                label,
-                            );
-                            Ok((discovered_index, input.is_entry, unit, hir))
-                        }
-                        Err(AssemblyError::Parse { path, message })
-                            if options.skip_parse_errors && !input.is_entry =>
-                        {
-                            tracing::warn!(
-                                target: "beskid.analysis.assembly",
-                                unit = %path.display(),
-                                file = %path.display(),
-                                error = %message,
-                                "skipping unparseable unit"
-                            );
-                            Err(AssemblyError::Parse {
-                                path,
-                                message: "skipped".to_string(),
-                            })
-                        }
-                        Err(err) => Err(err),
-                    };
-                    unit_span.record("duration_ms", started.elapsed().as_millis() as u64);
-                    result
-                })
-                .filter(|result| {
-                    !matches!(
-                        result,
-                        Err(AssemblyError::Parse { message, .. }) if message == "skipped"
-                    )
-                })
-                .collect()
-        });
+                let builder = UnitBuilder::new(&project_root_for_pool);
+                let builder = if let Some(build) = salsa_build { builder.with_salsa_build(build) } else { builder };
+                let label = unit_progress_label(&input.path);
+                let result = match builder.build_unit(&input.path, &input.source) {
+                    Ok((unit, hir)) => {
+                        let done = build_done.fetch_add(1, Ordering::Relaxed) + 1;
+                        report_progress(pipeline, PROGRAM_ASSEMBLE, done, build_total.max(1), label);
+                        Ok((discovered_index, input.is_entry, unit, hir))
+                    }
+                    Err(AssemblyError::Parse { path, message }) if options.skip_parse_errors && !input.is_entry => {
+                        tracing::warn!(
+                            target: "beskid.analysis.assembly",
+                            unit = %path.display(),
+                            file = %path.display(),
+                            error = %message,
+                            "skipping unparseable unit"
+                        );
+                        Err(AssemblyError::Parse { path, message: "skipped".to_string() })
+                    }
+                    Err(err) => Err(err),
+                };
+                unit_span.record("duration_ms", started.elapsed().as_millis() as u64);
+                result
+            })
+            .filter(|result| {
+                !matches!(
+                    result,
+                    Err(AssemblyError::Parse { message, .. }) if message == "skipped"
+                )
+            })
+            .collect()
+    });
 
     let mut built_units = built_units?;
     built_units.sort_by_key(|(index, _, _, _)| *index);
@@ -389,9 +317,7 @@ pub fn assemble_program_with_materializer(
     super::reindex_hir_units_in_place(&mut hir_units_vec);
 
     if units.is_empty() {
-        return Err(AssemblyError::EntryNotFound {
-            path: entry_path.to_path_buf(),
-        });
+        return Err(AssemblyError::EntryNotFound { path: entry_path.to_path_buf() });
     }
 
     let disk_stats = disk_cache_stats();
@@ -405,14 +331,8 @@ pub fn assemble_program_with_materializer(
 
     let hir_units = Arc::new(hir_units_vec);
     let prefetch_dependency_roots = options.discovery == AssemblyDiscovery::WorkspaceScan;
-    let module_index = Arc::new(ModuleIndex::build(
-        &units,
-        hir_units.as_ref(),
-        entry_index,
-        &roots,
-        plan,
-        prefetch_dependency_roots,
-    ));
+    let module_index =
+        Arc::new(ModuleIndex::build(&units, hir_units.as_ref(), entry_index, &roots, plan, prefetch_dependency_roots));
 
     let trusted_corelib_service_paths = trusted_corelib_service_paths(plan, workspace, &units);
 
@@ -438,27 +358,20 @@ fn trusted_corelib_service_paths(
     units: &[SourceUnit],
 ) -> Arc<[PathBuf]> {
     let mut trusted = Vec::new();
-    for logical_path in beskid_abi::runtime_source::canonical_corelib_service_sources()
-        .into_iter()
-        .map(|source| source.logical_path)
+    for logical_path in
+        beskid_abi::runtime_source::canonical_corelib_service_sources().into_iter().map(|source| source.logical_path)
     {
-        let Some(canonical_path) =
-            beskid_abi::runtime_source::canonical_corelib_service_source_path(&logical_path)
+        let Some(canonical_path) = beskid_abi::runtime_source::canonical_corelib_service_source_path(&logical_path)
         else {
             continue;
         };
         // Lexically clean both sides so `../..` from CARGO_MANIFEST_DIR matches a resolved
         // Foundation `source_root`. Do not canonicalize: symlink resolution would let a
         // user-project link to the compiler-owned file inherit panic/syscall provenance.
-        let Some((index, dependency)) =
-            plan.dependency_projects
-                .iter()
-                .enumerate()
-                .find(|(_, dependency)| {
-                    let source_root = normalize_lexically(&dependency.source_root);
-                    canonical_path.starts_with(&source_root)
-                })
-        else {
+        let Some((index, dependency)) = plan.dependency_projects.iter().enumerate().find(|(_, dependency)| {
+            let source_root = normalize_lexically(&dependency.source_root);
+            canonical_path.starts_with(&source_root)
+        }) else {
             continue;
         };
         let source_root = normalize_lexically(&dependency.source_root);
@@ -469,10 +382,7 @@ fn trusted_corelib_service_paths(
             .and_then(|workspace| workspace.materialized_dependencies.get(index))
             .map(|dependency| dependency.materialized_source_root.join(relative))
             .unwrap_or(canonical_path);
-        if let Some(unit) = units
-            .iter()
-            .find(|unit| paths_match(&unit.path, &effective_path))
-        {
+        if let Some(unit) = units.iter().find(|unit| paths_match(&unit.path, &effective_path)) {
             trusted.push(unit.path.clone());
         }
     }
@@ -572,10 +482,7 @@ pub(crate) fn module_paths_from_qualified_references(source: &str) -> Vec<String
             continue;
         }
         for dotted in find_dotted_module_references(trimmed) {
-            let segments: Vec<&str> = dotted
-                .split('.')
-                .filter(|segment| !segment.is_empty())
-                .collect();
+            let segments: Vec<&str> = dotted.split('.').filter(|segment| !segment.is_empty()).collect();
             if segments.len() < 2 {
                 continue;
             }
@@ -634,10 +541,7 @@ fn find_dotted_module_references(line: &str) -> Vec<String> {
 fn parse_use_import_path(trimmed: &str) -> Option<String> {
     let rest = trimmed.strip_prefix("use ")?;
     let without_comment = rest.split("//").next()?.trim_end_matches(';').trim();
-    let import_path = without_comment
-        .split_once(" as ")
-        .map(|(path, _)| path.trim())
-        .unwrap_or(without_comment);
+    let import_path = without_comment.split_once(" as ").map(|(path, _)| path.trim()).unwrap_or(without_comment);
     (!import_path.is_empty()).then(|| import_path.to_string())
 }
 
@@ -645,10 +549,7 @@ fn parse_use_import_path(trimmed: &str) -> Option<String> {
 /// parent module facade (`Core/Syscall/Syscall.bd`) that hosts sibling functions referenced via
 /// qualified paths (`Core.Syscall.ReadWith`) without an explicit `use`.
 pub(crate) fn parent_module_import_path(import_path: &str) -> Option<String> {
-    let segments: Vec<&str> = import_path
-        .split('.')
-        .filter(|segment| !segment.is_empty())
-        .collect();
+    let segments: Vec<&str> = import_path.split('.').filter(|segment| !segment.is_empty()).collect();
     if segments.len() <= 2 {
         return None;
     }
@@ -656,9 +557,7 @@ pub(crate) fn parent_module_import_path(import_path: &str) -> Option<String> {
 }
 
 fn unit_progress_label(path: &Path) -> String {
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.display().to_string())
+    path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_else(|| path.display().to_string())
 }
 
 #[cfg(test)]
@@ -670,18 +569,14 @@ mod tests {
 
     use super::trusted_corelib_service_paths;
     use crate::projects::{
-        AssemblyDiscovery, AssemblyError, AssemblyOptions, CompilePlan, ResolvedDependencyProject,
-        Target, TargetKind, assemble_program, assembly_options_for_plan,
-        assembly_options_for_prepare, plan_entry_path,
+        AssemblyDiscovery, AssemblyError, AssemblyOptions, CompilePlan, ResolvedDependencyProject, Target, TargetKind,
+        assemble_program, assembly_options_for_plan, assembly_options_for_prepare, plan_entry_path,
     };
     use crate::projects::{MaterializedDependencyProject, PreparedProjectWorkspace, SourceUnit};
     use crate::services::parse_program_with_source_name;
 
     fn temp_project_root(label: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
         std::env::temp_dir().join(format!("beskid_asm_{label}_{nanos}"))
     }
 
@@ -697,28 +592,15 @@ mod tests {
     fn materialized_compiler_foundation_path_retains_service_provenance_but_a_copy_does_not() {
         let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
             .into_iter()
-            .find(|source| {
-                source.logical_path
-                    == beskid_abi::runtime_source::CANONICAL_CORELIB_SYSCALL_SOURCE_PATH
-            })
+            .find(|source| source.logical_path == beskid_abi::runtime_source::CANONICAL_CORELIB_SYSCALL_SOURCE_PATH)
             .expect("embedded Foundation syscall source");
-        let canonical_path =
-            beskid_abi::runtime_source::canonical_corelib_service_source_path(&source.logical_path)
-                .expect("compiler-owned syscall path");
-        let canonical_source_root = canonical_path
-            .ancestors()
-            .nth(3)
-            .expect("Foundation source root")
-            .to_path_buf();
-        let canonical_project_root = canonical_source_root
-            .parent()
-            .expect("Foundation project root")
-            .to_path_buf();
+        let canonical_path = beskid_abi::runtime_source::canonical_corelib_service_source_path(&source.logical_path)
+            .expect("compiler-owned syscall path");
+        let canonical_source_root = canonical_path.ancestors().nth(3).expect("Foundation source root").to_path_buf();
+        let canonical_project_root = canonical_source_root.parent().expect("Foundation project root").to_path_buf();
         let workspace_root = temp_project_root("trusted_foundation_materialization");
         let materialized_source_root = workspace_root.join("deps/foundation/src");
-        let relative = canonical_path
-            .strip_prefix(&canonical_source_root)
-            .expect("syscall below source root");
+        let relative = canonical_path.strip_prefix(&canonical_source_root).expect("syscall below source root");
         let materialized_path = materialized_source_root.join(relative);
         let unit = SourceUnit {
             logical_name: materialized_path.display().to_string(),
@@ -732,11 +614,7 @@ mod tests {
             manifest_path: workspace_root.join("App.bproj"),
             project_name: "App".into(),
             source_root: workspace_root.join("src"),
-            target: Target {
-                name: "App".into(),
-                kind: TargetKind::App,
-                entry: Some("Main.bd".into()),
-            },
+            target: Target { name: "App".into(), kind: TargetKind::App, entry: Some("Main.bd".into()) },
             dependency_projects: vec![ResolvedDependencyProject {
                 dependency_name: "corelib_foundation".into(),
                 manifest_path: canonical_project_root.join("corelib_foundation.bproj"),
@@ -768,12 +646,7 @@ mod tests {
         let mut copied_plan = plan.clone();
         copied_plan.dependency_projects[0].source_root = workspace_root.join("copied/src");
         assert!(
-            trusted_corelib_service_paths(
-                &copied_plan,
-                Some(&workspace),
-                std::slice::from_ref(&unit),
-            )
-            .is_empty(),
+            trusted_corelib_service_paths(&copied_plan, Some(&workspace), std::slice::from_ref(&unit),).is_empty(),
             "a copied source root cannot inherit Corelib service provenance"
         );
         let _ = fs::remove_dir_all(workspace_root);
@@ -787,36 +660,22 @@ mod tests {
         // panic_str authority under Corelib tests.
         let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
             .into_iter()
-            .find(|source| {
-                source.logical_path
-                    == beskid_abi::runtime_source::CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH
-            })
+            .find(|source| source.logical_path == beskid_abi::runtime_source::CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
             .expect("embedded Foundation Assert source");
-        let canonical_path =
-            beskid_abi::runtime_source::canonical_corelib_service_source_path(&source.logical_path)
-                .expect("compiler-owned Assert path");
+        let canonical_path = beskid_abi::runtime_source::canonical_corelib_service_source_path(&source.logical_path)
+            .expect("compiler-owned Assert path");
         assert!(
-            !canonical_path
-                .components()
-                .any(|component| matches!(component, std::path::Component::ParentDir)),
+            !canonical_path.components().any(|component| matches!(component, std::path::Component::ParentDir)),
             "canonical service paths must be lexically normalized: {canonical_path:?}"
         );
         let canonical_source_root = fs::canonicalize(
-            canonical_path
-                .parent()
-                .and_then(|testing| testing.parent())
-                .expect("Assert under foundation/src"),
+            canonical_path.parent().and_then(|testing| testing.parent()).expect("Assert under foundation/src"),
         )
         .expect("resolve foundation source root");
-        let canonical_project_root = canonical_source_root
-            .parent()
-            .expect("Foundation project root")
-            .to_path_buf();
+        let canonical_project_root = canonical_source_root.parent().expect("Foundation project root").to_path_buf();
         let workspace_root = temp_project_root("trusted_assert_resolved_root");
         let materialized_source_root = workspace_root.join("deps/foundation/src");
-        let relative = canonical_path
-            .strip_prefix(&canonical_source_root)
-            .expect("Assert below source root");
+        let relative = canonical_path.strip_prefix(&canonical_source_root).expect("Assert below source root");
         let materialized_path = materialized_source_root.join(relative);
         let unit = SourceUnit {
             logical_name: materialized_path.display().to_string(),
@@ -830,11 +689,7 @@ mod tests {
             manifest_path: workspace_root.join("App.bproj"),
             project_name: "App".into(),
             source_root: workspace_root.join("src"),
-            target: Target {
-                name: "App".into(),
-                kind: TargetKind::App,
-                entry: Some("Main.bd".into()),
-            },
+            target: Target { name: "App".into(), kind: TargetKind::App, entry: Some("Main.bd".into()) },
             dependency_projects: vec![ResolvedDependencyProject {
                 dependency_name: "corelib_foundation".into(),
                 manifest_path: canonical_project_root.join("corelib_foundation.bproj"),
@@ -866,10 +721,7 @@ mod tests {
     }
 
     fn no_entry_plan_with_source(source: &str) -> (CompilePlan, PathBuf) {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
         let project_root = std::env::temp_dir().join(format!("beskid_asm_test_{nanos}"));
         let source_root = project_root.join("src");
         fs::create_dir_all(&source_root).expect("create source root");
@@ -879,11 +731,7 @@ mod tests {
             project_root: project_root.clone(),
             manifest_path: project_root.join("project.bproj"),
             project_name: "fixture".to_string(),
-            target: Target {
-                name: "__aggregate__".to_string(),
-                kind: TargetKind::Lib,
-                entry: None,
-            },
+            target: Target { name: "__aggregate__".to_string(), kind: TargetKind::Lib, entry: None },
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
             has_std_dependency: false,
@@ -909,8 +757,7 @@ mod tests {
 
     #[test]
     fn qualified_reference_scan_finds_module_prefixes() {
-        let source =
-            "Core.Results.Result<i64, SyscallError> Write() { Core.Syscall.WriteWith(x); }";
+        let source = "Core.Results.Result<i64, SyscallError> Write() { Core.Syscall.WriteWith(x); }";
         let paths = super::module_paths_from_qualified_references(source);
         assert!(paths.contains(&"Core.Results".to_string()));
         assert!(paths.contains(&"Core".to_string()));
@@ -921,11 +768,7 @@ mod tests {
     fn workspace_scan_assembles_without_placeholder_entry_file() {
         let (plan, entry_path) = no_entry_plan_with_source("pub fn Main() { }");
         let options = assembly_options_for_plan(&plan);
-        assert!(
-            !entry_path.is_file(),
-            "placeholder entry should not exist: {}",
-            entry_path.display()
-        );
+        assert!(!entry_path.is_file(), "placeholder entry should not exist: {}", entry_path.display());
 
         let assembly = assemble_program(&plan, None, &entry_path, Some(""), &options, None)
             .expect("workspace scan should assemble units without a real entry file");
@@ -940,10 +783,7 @@ mod tests {
         options.discovery = AssemblyDiscovery::ImportClosure;
         let err = assemble_program(&plan, None, &entry_path, Some(""), &options, None)
             .expect_err("import closure without entry file should fail");
-        assert!(
-            matches!(err, AssemblyError::EntryNotFound { .. }),
-            "unexpected error: {err}"
-        );
+        assert!(matches!(err, AssemblyError::EntryNotFound { .. }), "unexpected error: {err}");
         let _ = fs::remove_dir_all(&plan.project_root);
     }
 
@@ -980,11 +820,7 @@ mod tests {
             project_root: project_root.clone(),
             manifest_path: project_root.join("project.bproj"),
             project_name: "fixture".to_string(),
-            target: Target {
-                name: "Entry".to_string(),
-                kind: TargetKind::Lib,
-                entry: Some("Entry.bd".to_string()),
-            },
+            target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
             has_std_dependency: false,
@@ -996,15 +832,9 @@ mod tests {
         assert_eq!(assembly.units.len(), 1);
         assert_eq!(assembly.discovery, AssemblyDiscovery::ImportClosure);
         assert!(
-            assembly.units.iter().all(
-                |unit| unit.path.file_name().and_then(|name| name.to_str()) == Some("Entry.bd")
-            ),
+            assembly.units.iter().all(|unit| unit.path.file_name().and_then(|name| name.to_str()) == Some("Entry.bd")),
             "unexpected units: {:?}",
-            assembly
-                .units
-                .iter()
-                .map(|unit| unit.path.display().to_string())
-                .collect::<Vec<_>>()
+            assembly.units.iter().map(|unit| unit.path.display().to_string()).collect::<Vec<_>>()
         );
         let _ = fs::remove_dir_all(&project_root);
     }
@@ -1013,16 +843,8 @@ mod tests {
     fn import_closure_follows_transitive_use_imports() {
         let project_root = temp_project_root("import_closure_transitive");
         let source_root = project_root.join("src");
-        write_bd(
-            &source_root,
-            "Entry.bd",
-            "use Lib.A;\npub fn Entry() { Lib.A.Run(); }",
-        );
-        write_bd(
-            &source_root,
-            "Lib/A.bd",
-            "use Lib.B;\npub fn Run() { Lib.B.Run(); }",
-        );
+        write_bd(&source_root, "Entry.bd", "use Lib.A;\npub fn Entry() { Lib.A.Run(); }");
+        write_bd(&source_root, "Lib/A.bd", "use Lib.B;\npub fn Run() { Lib.B.Run(); }");
         write_bd(&source_root, "Lib/B.bd", "pub fn Run() { }");
         write_bd(&source_root, "Unused.bd", "pub fn Unused() { }");
         let plan = CompilePlan {
@@ -1030,11 +852,7 @@ mod tests {
             project_root: project_root.clone(),
             manifest_path: project_root.join("project.bproj"),
             project_name: "fixture".to_string(),
-            target: Target {
-                name: "Entry".to_string(),
-                kind: TargetKind::Lib,
-                entry: Some("Entry.bd".to_string()),
-            },
+            target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
             has_std_dependency: false,
@@ -1043,17 +861,8 @@ mod tests {
         let options = assembly_options_for_plan(&plan);
         let assembly = assemble_program(&plan, None, &entry_path, None, &options, None)
             .expect("import closure should follow transitive imports");
-        let names: Vec<String> = assembly
-            .units
-            .iter()
-            .map(|unit| {
-                unit.path
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned()
-            })
-            .collect();
+        let names: Vec<String> =
+            assembly.units.iter().map(|unit| unit.path.file_name().unwrap().to_string_lossy().into_owned()).collect();
         assert_eq!(names.len(), 3);
         assert!(names.iter().any(|name| name == "Entry.bd"));
         assert!(names.iter().any(|name| name == "A.bd"));
@@ -1066,59 +875,34 @@ mod tests {
     fn import_closure_follows_public_module_declarations() {
         let project_root = temp_project_root("import_closure_public_module");
         let source_root = project_root.join("src");
-        write_bd(
-            &source_root,
-            "Entry.bd",
-            "use Core.Text.Regex;\npub fn Entry() { Core.Text.Regex.Parse(); }",
-        );
+        write_bd(&source_root, "Entry.bd", "use Core.Text.Regex;\npub fn Entry() { Core.Text.Regex.Parse(); }");
         write_bd(
             &source_root,
             "Core/Text/Regex.bd",
             "pub mod Core.Text.Regex.Generated;\npub fn Parse() { Core.Text.Regex.Generated.ParsePat(); }",
         );
-        write_bd(
-            &source_root,
-            "Core/Text/Regex/Generated.bd",
-            "pub fn ParsePat() { }",
-        );
+        write_bd(&source_root, "Core/Text/Regex/Generated.bd", "pub fn ParsePat() { }");
         let plan = CompilePlan {
             source_root: source_root.clone(),
             project_root: project_root.clone(),
             manifest_path: project_root.join("project.bproj"),
             project_name: "fixture".to_string(),
-            target: Target {
-                name: "Entry".to_string(),
-                kind: TargetKind::Lib,
-                entry: Some("Entry.bd".to_string()),
-            },
+            target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
             has_std_dependency: false,
         };
-        let assembly = assemble_program(
-            &plan,
-            None,
-            &source_root.join("Entry.bd"),
-            None,
-            &assembly_options_for_plan(&plan),
-            None,
-        )
-        .expect("public module declaration should extend import closure");
+        let assembly =
+            assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
+                .expect("public module declaration should extend import closure");
         let loaded: Vec<_> = assembly.units.iter().map(|unit| &unit.path).collect();
+        assert!(loaded.iter().any(|path| path.ends_with("Entry.bd")), "expected entry in closure, got: {loaded:?}");
         assert!(
-            loaded.iter().any(|path| path.ends_with("Entry.bd")),
-            "expected entry in closure, got: {loaded:?}"
-        );
-        assert!(
-            loaded
-                .iter()
-                .any(|path| path.ends_with("Core/Text/Regex.bd")),
+            loaded.iter().any(|path| path.ends_with("Core/Text/Regex.bd")),
             "expected declared module owner in closure, got: {loaded:?}"
         );
         assert!(
-            loaded
-                .iter()
-                .any(|path| path.ends_with("Core/Text/Regex/Generated.bd")),
+            loaded.iter().any(|path| path.ends_with("Core/Text/Regex/Generated.bd")),
             "expected declared generated module in closure, got: {loaded:?}"
         );
         let _ = fs::remove_dir_all(&project_root);
@@ -1128,49 +912,29 @@ mod tests {
     fn import_closure_follows_public_module_declarations_into_generated_sources() {
         let project_root = temp_project_root("import_closure_generated_public_module");
         let source_root = project_root.join("src");
-        write_bd(
-            &source_root,
-            "Entry.bd",
-            "use Core.Text.Regex;\npub fn Entry() { Core.Text.Regex.Parse(); }",
-        );
+        write_bd(&source_root, "Entry.bd", "use Core.Text.Regex;\npub fn Entry() { Core.Text.Regex.Parse(); }");
         write_bd(
             &source_root,
             "Core/Text/Regex.bd",
             "pub mod Core.Text.Regex.Generated;\npub fn Parse() { Core.Text.Regex.Generated.ParsePat(); }",
         );
-        write_bd(
-            &project_root.join(".generated"),
-            "Core/Text/Regex/Generated.g.bd",
-            "pub fn ParsePat() { }",
-        );
+        write_bd(&project_root.join(".generated"), "Core/Text/Regex/Generated.g.bd", "pub fn ParsePat() { }");
         let plan = CompilePlan {
             source_root: source_root.clone(),
             project_root: project_root.clone(),
             manifest_path: project_root.join("project.bproj"),
             project_name: "fixture".to_string(),
-            target: Target {
-                name: "Entry".to_string(),
-                kind: TargetKind::Lib,
-                entry: Some("Entry.bd".to_string()),
-            },
+            target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
             has_std_dependency: false,
         };
-        let assembly = assemble_program(
-            &plan,
-            None,
-            &source_root.join("Entry.bd"),
-            None,
-            &assembly_options_for_plan(&plan),
-            None,
-        )
-        .expect("public module declaration should resolve its generated source");
+        let assembly =
+            assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
+                .expect("public module declaration should resolve its generated source");
         let loaded: Vec<_> = assembly.units.iter().map(|unit| &unit.path).collect();
         assert!(
-            loaded
-                .iter()
-                .any(|path| path.ends_with(".generated/Core/Text/Regex/Generated.g.bd")),
+            loaded.iter().any(|path| path.ends_with(".generated/Core/Text/Regex/Generated.g.bd")),
             "expected generated declared module in closure, got: {loaded:?}"
         );
         let _ = fs::remove_dir_all(&project_root);
@@ -1180,34 +944,20 @@ mod tests {
     fn import_closure_ignores_missing_public_module_declarations() {
         let project_root = temp_project_root("import_closure_missing_public_module");
         let source_root = project_root.join("src");
-        write_bd(
-            &source_root,
-            "Entry.bd",
-            "pub mod Core.Text.DoesNotExist;\npub fn Entry() { }",
-        );
+        write_bd(&source_root, "Entry.bd", "pub mod Core.Text.DoesNotExist;\npub fn Entry() { }");
         let plan = CompilePlan {
             source_root: source_root.clone(),
             project_root: project_root.clone(),
             manifest_path: project_root.join("project.bproj"),
             project_name: "fixture".to_string(),
-            target: Target {
-                name: "Entry".to_string(),
-                kind: TargetKind::Lib,
-                entry: Some("Entry.bd".to_string()),
-            },
+            target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
             has_std_dependency: false,
         };
-        let assembly = assemble_program(
-            &plan,
-            None,
-            &source_root.join("Entry.bd"),
-            None,
-            &assembly_options_for_plan(&plan),
-            None,
-        )
-        .expect("absent module declaration target should not invalidate existing closure");
+        let assembly =
+            assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
+                .expect("absent module declaration target should not invalidate existing closure");
         assert_eq!(assembly.units.len(), 1);
         let _ = fs::remove_dir_all(&project_root);
     }
@@ -1224,24 +974,14 @@ mod tests {
             project_root: project_root.clone(),
             manifest_path: project_root.join("project.bproj"),
             project_name: "fixture".to_string(),
-            target: Target {
-                name: "Entry".to_string(),
-                kind: TargetKind::Lib,
-                entry: Some("Entry.bd".to_string()),
-            },
+            target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
             has_std_dependency: false,
         };
-        let assembly = assemble_program(
-            &plan,
-            None,
-            &source_root.join("Entry.bd"),
-            None,
-            &assembly_options_for_plan(&plan),
-            None,
-        )
-        .expect("module declaration cycles should be de-duplicated");
+        let assembly =
+            assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
+                .expect("module declaration cycles should be de-duplicated");
         assert_eq!(assembly.units.len(), 3);
         let _ = fs::remove_dir_all(&project_root);
     }
@@ -1257,11 +997,7 @@ mod tests {
             project_root: project_root.clone(),
             manifest_path: project_root.join("project.bproj"),
             project_name: "fixture".to_string(),
-            target: Target {
-                name: "__aggregate__".to_string(),
-                kind: TargetKind::Lib,
-                entry: None,
-            },
+            target: Target { name: "__aggregate__".to_string(), kind: TargetKind::Lib, entry: None },
             dependency_projects: Vec::new(),
             unresolved_dependencies: Vec::new(),
             has_std_dependency: false,
@@ -1283,22 +1019,14 @@ mod tests {
         let dep_source_root = dep_root.join("src");
         write_bd(&source_root, "Entry.bd", "pub fn Entry() { }");
         for index in 0..8 {
-            write_bd(
-                &dep_source_root,
-                &format!("Shard{index}.bd"),
-                &format!("pub fn Shard{index}() {{ }}"),
-            );
+            write_bd(&dep_source_root, &format!("Shard{index}.bd"), &format!("pub fn Shard{index}() {{ }}"));
         }
         let plan = CompilePlan {
             source_root: source_root.clone(),
             project_root: project_root.clone(),
             manifest_path: project_root.join("project.bproj"),
             project_name: "fixture".to_string(),
-            target: Target {
-                name: "Entry".to_string(),
-                kind: TargetKind::Lib,
-                entry: Some("Entry.bd".to_string()),
-            },
+            target: Target { name: "Entry".to_string(), kind: TargetKind::Lib, entry: Some("Entry.bd".to_string()) },
             dependency_projects: vec![ResolvedDependencyProject {
                 dependency_name: "core".to_string(),
                 manifest_path: dep_root.join("core.bproj"),
@@ -1310,10 +1038,7 @@ mod tests {
             has_std_dependency: false,
         };
         let entry_path = source_root.join("Entry.bd");
-        let options = AssemblyOptions {
-            discovery: AssemblyDiscovery::ImportClosure,
-            ..AssemblyOptions::default()
-        };
+        let options = AssemblyOptions { discovery: AssemblyDiscovery::ImportClosure, ..AssemblyOptions::default() };
         let assembly = assemble_program(&plan, None, &entry_path, None, &options, None)
             .expect("import closure should assemble entry without dependency units");
         assert_eq!(assembly.units.len(), 1);
@@ -1323,10 +1048,8 @@ mod tests {
             assembly.module_index.prefetched_paths().len()
         );
 
-        let scan_options = AssemblyOptions {
-            discovery: AssemblyDiscovery::WorkspaceScan,
-            ..AssemblyOptions::default()
-        };
+        let scan_options =
+            AssemblyOptions { discovery: AssemblyDiscovery::WorkspaceScan, ..AssemblyOptions::default() };
         let scanned = assemble_program(&plan, None, &entry_path, None, &scan_options, None)
             .expect("workspace scan should assemble host and prefetch dependency tree");
         assert!(

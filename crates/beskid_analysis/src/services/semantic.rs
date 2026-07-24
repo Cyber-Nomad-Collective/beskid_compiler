@@ -56,11 +56,7 @@ impl fmt::Display for SemanticDiagnosticsError {
         if count == 1 {
             return write!(f, "{}", self.diagnostics[0].message);
         }
-        write!(
-            f,
-            "{count} semantic errors (first: {})",
-            self.diagnostics[0].message
-        )
+        write!(f, "{count} semantic errors (first: {})", self.diagnostics[0].message)
     }
 }
 
@@ -72,9 +68,7 @@ impl miette::Diagnostic for SemanticDiagnosticsError {
     }
 
     fn severity(&self) -> Option<miette::Severity> {
-        self.diagnostics
-            .first()
-            .and_then(miette::Diagnostic::severity)
+        self.diagnostics.first().and_then(miette::Diagnostic::severity)
     }
 
     fn help<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
@@ -86,45 +80,32 @@ impl miette::Diagnostic for SemanticDiagnosticsError {
     }
 
     fn source_code(&self) -> Option<&dyn miette::SourceCode> {
-        self.diagnostics
-            .first()
-            .and_then(|d| miette::Diagnostic::source_code(d))
+        self.diagnostics.first().and_then(|d| miette::Diagnostic::source_code(d))
     }
 
     fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
-        self.diagnostics
-            .first()
-            .and_then(miette::Diagnostic::labels)
+        self.diagnostics.first().and_then(miette::Diagnostic::labels)
     }
 
     fn related<'a>(&'a self) -> Option<Box<dyn Iterator<Item = &'a dyn miette::Diagnostic> + 'a>> {
         if self.diagnostics.len() <= 1 {
             return None;
         }
-        Some(Box::new(
-            self.diagnostics[1..]
-                .iter()
-                .map(|d| d as &dyn miette::Diagnostic),
-        ))
+        Some(Box::new(self.diagnostics[1..].iter().map(|d| d as &dyn miette::Diagnostic)))
     }
 
     fn diagnostic_source(&self) -> Option<&dyn miette::Diagnostic> {
-        self.diagnostics
-            .first()
-            .and_then(|d| miette::Diagnostic::diagnostic_source(d))
+        self.diagnostics.first().and_then(|d| miette::Diagnostic::diagnostic_source(d))
     }
 }
 
 pub fn require_no_semantic_errors(
     diagnostics: &[SemanticDiagnostic],
 ) -> std::result::Result<(), SemanticDiagnosticsError> {
-    let has_errors = diagnostics
-        .iter()
-        .any(|diagnostic| matches!(diagnostic.severity, crate::analysis::Severity::Error));
+    let has_errors =
+        diagnostics.iter().any(|diagnostic| matches!(diagnostic.severity, crate::analysis::Severity::Error));
     if has_errors {
-        return Err(SemanticDiagnosticsError::from_diagnostics(
-            diagnostics.to_vec(),
-        ));
+        return Err(SemanticDiagnosticsError::from_diagnostics(diagnostics.to_vec()));
     }
     Ok(())
 }

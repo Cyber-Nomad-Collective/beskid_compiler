@@ -65,36 +65,14 @@ fn duplicate_identical_descriptor_produces_stable_collector_and_generator_outcom
     );
 
     // Compare collector type_ids across runs.
-    let collect_a: Vec<&str> = result_a
-        .collector_outcomes
-        .iter()
-        .map(|o| o.type_id.as_str())
-        .collect();
-    let collect_b: Vec<&str> = result_b
-        .collector_outcomes
-        .iter()
-        .map(|o| o.type_id.as_str())
-        .collect();
-    assert_eq!(
-        collect_a, collect_b,
-        "collector type_ids must be identical across identical inputs"
-    );
+    let collect_a: Vec<&str> = result_a.collector_outcomes.iter().map(|o| o.type_id.as_str()).collect();
+    let collect_b: Vec<&str> = result_b.collector_outcomes.iter().map(|o| o.type_id.as_str()).collect();
+    assert_eq!(collect_a, collect_b, "collector type_ids must be identical across identical inputs");
 
     // Compare generator type_ids across runs.
-    let gen_a: Vec<&str> = result_a
-        .generator_outcomes
-        .iter()
-        .map(|o| o.type_id.as_str())
-        .collect();
-    let gen_b: Vec<&str> = result_b
-        .generator_outcomes
-        .iter()
-        .map(|o| o.type_id.as_str())
-        .collect();
-    assert_eq!(
-        gen_a, gen_b,
-        "generator type_ids must be identical across identical inputs"
-    );
+    let gen_a: Vec<&str> = result_a.generator_outcomes.iter().map(|o| o.type_id.as_str()).collect();
+    let gen_b: Vec<&str> = result_b.generator_outcomes.iter().map(|o| o.type_id.as_str()).collect();
+    assert_eq!(gen_a, gen_b, "generator type_ids must be identical across identical inputs");
 }
 
 #[test]
@@ -196,27 +174,12 @@ fn scripted_generator_contributions_are_stable_across_identical_runs() {
     .expect("second scripted run");
 
     // Generator type_ids and contribution counts must be identical.
-    let gen_ids_a: Vec<&str> = result_a
-        .generator_outcomes
-        .iter()
-        .map(|o| o.type_id.as_str())
-        .collect();
-    let gen_ids_b: Vec<&str> = result_b
-        .generator_outcomes
-        .iter()
-        .map(|o| o.type_id.as_str())
-        .collect();
-    assert_eq!(
-        gen_ids_a, gen_ids_b,
-        "generator type_ids must be identical for identical regs"
-    );
+    let gen_ids_a: Vec<&str> = result_a.generator_outcomes.iter().map(|o| o.type_id.as_str()).collect();
+    let gen_ids_b: Vec<&str> = result_b.generator_outcomes.iter().map(|o| o.type_id.as_str()).collect();
+    assert_eq!(gen_ids_a, gen_ids_b, "generator type_ids must be identical for identical regs");
 
     // Typed items from stub generators are empty; verify stability of that emptiness.
-    for (outcome_a, outcome_b) in result_a
-        .generator_outcomes
-        .iter()
-        .zip(result_b.generator_outcomes.iter())
-    {
+    for (outcome_a, outcome_b) in result_a.generator_outcomes.iter().zip(result_b.generator_outcomes.iter()) {
         assert_eq!(
             outcome_a.typed_items.len(),
             outcome_b.typed_items.len(),

@@ -25,10 +25,7 @@ pub struct DiffStats {
 impl DiffStats {
     /// Create new diff stats.
     pub fn new(additions: u32, deletions: u32) -> Self {
-        Self {
-            additions,
-            deletions,
-        }
+        Self { additions, deletions }
     }
 }
 
@@ -53,12 +50,7 @@ pub struct RevertBanner {
 impl RevertBanner {
     /// Create a new revert banner.
     pub fn new() -> Self {
-        Self {
-            reverted_count: 0,
-            diff_stats: DiffStats::default(),
-            restored: false,
-            hovered: false,
-        }
+        Self { reverted_count: 0, diff_stats: DiffStats::default(), restored: false, hovered: false }
     }
 
     /// Create a banner with reverted message count.
@@ -148,12 +140,7 @@ impl RevertBanner {
                 self.reverted_count,
                 if self.reverted_count == 1 { "" } else { "s" }
             );
-            (
-                text,
-                Style::default()
-                    .fg(colors.success)
-                    .add_modifier(Modifier::DIM),
-            )
+            (text, Style::default().fg(colors.success).add_modifier(Modifier::DIM))
         } else {
             // Revert indicator with diff stats and keybind hint
             let revert_icon = "↩";
@@ -165,26 +152,17 @@ impl RevertBanner {
             );
 
             let diff_text = if self.diff_stats.additions > 0 || self.diff_stats.deletions > 0 {
-                format!(
-                    "(+{} -{})",
-                    self.diff_stats.additions, self.diff_stats.deletions
-                )
+                format!("(+{} -{})", self.diff_stats.additions, self.diff_stats.deletions)
             } else {
                 String::new()
             };
 
-            let keybind_hint = if self.hovered {
-                " [Ctrl+Z] to redo "
-            } else {
-                " "
-            };
+            let keybind_hint = if self.hovered { " [Ctrl+Z] to redo " } else { " " };
 
             let full_text = format!("{}{}{}", message_text, diff_text, keybind_hint);
 
             let style = if self.hovered {
-                Style::default()
-                    .fg(colors.primary)
-                    .add_modifier(Modifier::BOLD)
+                Style::default().fg(colors.primary).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(colors.text)
             };
@@ -194,20 +172,11 @@ impl RevertBanner {
 
         // Center the content horizontally
         let content_width = content.chars().count() as u16;
-        let x_offset = if area.width > content_width {
-            (area.width - content_width) / 2
-        } else {
-            0
-        };
+        let x_offset = if area.width > content_width { (area.width - content_width) / 2 } else { 0 };
 
         // Render the styled content
         let span = Span::styled(content, content_style);
-        buf.set_span(
-            area.x + x_offset,
-            area.y,
-            &span,
-            content_width.min(area.width),
-        );
+        buf.set_span(area.x + x_offset, area.y, &span, content_width.min(area.width));
     }
 }
 
@@ -331,11 +300,7 @@ mod tests {
 
     #[test]
     fn test_revert_banner_builder() {
-        let banner = RevertBanner::new()
-            .with_reverted_count(3)
-            .with_diff(8, 2)
-            .hovered(true)
-            .restored(false);
+        let banner = RevertBanner::new().with_reverted_count(3).with_diff(8, 2).hovered(true).restored(false);
 
         assert_eq!(banner.reverted_count, 3);
         assert_eq!(banner.diff_stats.additions, 8);
@@ -388,11 +353,7 @@ mod tests {
 
     #[test]
     fn test_revert_banner_renderer() {
-        let renderer = RevertBannerRenderer::new()
-            .reverted_count(7)
-            .diff(15, 3)
-            .hovered(true)
-            .restored(false);
+        let renderer = RevertBannerRenderer::new().reverted_count(7).diff(15, 3).hovered(true).restored(false);
 
         assert_eq!(renderer.reverted_count, 7);
         assert_eq!(renderer.diff_stats.additions, 15);

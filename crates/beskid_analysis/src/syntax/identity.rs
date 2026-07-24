@@ -88,16 +88,9 @@ mod tests {
 
     #[test]
     fn formats_ast_node_key_labels() {
-        let key = AstNodeKey {
-            unit: "/tmp/String.bd",
-            generation: SyntaxGenerationId(96),
-            node: AstNodeId(21),
-        };
+        let key = AstNodeKey { unit: "/tmp/String.bd", generation: SyntaxGenerationId(96), node: AstNodeId(21) };
         assert_eq!(key.cursor_label(), "g96:n21");
-        assert_eq!(
-            key.display_label("/tmp/String.bd"),
-            "/tmp/String.bd#g96:n21"
-        );
+        assert_eq!(key.display_label("/tmp/String.bd"), "/tmp/String.bd#g96:n21");
         assert_eq!(format!("{key}"), "/tmp/String.bd#g96:n21");
         assert_eq!(format!("{key:?}"), "#g96:n21");
     }

@@ -71,9 +71,7 @@ impl Scheduler {
         Self {
             fibers,
             run_queue: VecDeque::new(),
-            processor_count: std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(1),
+            processor_count: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1),
             clock_start: Instant::now(),
             main_fiber,
         }
@@ -86,9 +84,7 @@ impl Scheduler {
         on_cancelled_slot: *mut *mut EventState,
         parent: Option<FiberKey>,
     ) -> FiberKey {
-        let coroutine = Coroutine::new(move |yielder: &Yielder<(), ()>, ()| {
-            run_fiber_body(yielder, entry, env)
-        });
+        let coroutine = Coroutine::new(move |yielder: &Yielder<(), ()>, ()| run_fiber_body(yielder, entry, env));
         let key = self.fibers.insert(Fiber {
             state: FiberState::Runnable,
             coroutine: Some(coroutine),
@@ -114,11 +110,7 @@ impl Scheduler {
         tls::drain_pending_wakes(self);
         while let Some(next) = self.run_queue.pop_front() {
             tls::apply_pending_states(self);
-            if self
-                .fibers
-                .get(next)
-                .is_some_and(|f| f.state == FiberState::Parked)
-            {
+            if self.fibers.get(next).is_some_and(|f| f.state == FiberState::Parked) {
                 continue;
             }
             self.resume_fiber(next);
@@ -131,22 +123,15 @@ impl Scheduler {
     }
 
     pub(super) fn should_continue(&self) -> bool {
-        self.fibers.values().any(|f| {
-            matches!(
-                f.state,
-                FiberState::Runnable | FiberState::Running | FiberState::Parked
-            )
-        })
+        self.fibers.values().any(|f| matches!(f.state, FiberState::Runnable | FiberState::Running | FiberState::Parked))
     }
 
     pub(super) fn all_blocked(&self) -> bool {
         self.run_queue.is_empty()
-            && self.fibers.values().all(|f| {
-                matches!(
-                    f.state,
-                    FiberState::Parked | FiberState::Done | FiberState::Cancelled
-                )
-            })
+            && self
+                .fibers
+                .values()
+                .all(|f| matches!(f.state, FiberState::Parked | FiberState::Done | FiberState::Cancelled))
     }
 
     pub(super) fn join_non_detached_children(&mut self) {
@@ -154,9 +139,7 @@ impl Scheduler {
             .fibers
             .iter()
             .filter(|(k, f)| {
-                *k != self.main_fiber
-                    && !f.detached
-                    && !matches!(f.state, FiberState::Done | FiberState::Cancelled)
+                *k != self.main_fiber && !f.detached && !matches!(f.state, FiberState::Done | FiberState::Cancelled)
             })
             .map(|(k, _)| k)
             .collect();
@@ -170,18 +153,10 @@ impl Scheduler {
     fn resume_fiber(&mut self, key: FiberKey) {
         tls::apply_pending_states(self);
         let state = self.fibers.get(key).expect("fiber").state;
-        if matches!(
-            state,
-            FiberState::Parked | FiberState::Done | FiberState::Cancelled
-        ) {
+        if matches!(state, FiberState::Parked | FiberState::Done | FiberState::Cancelled) {
             return;
         }
-        let cancelled = self
-            .fibers
-            .get(key)
-            .expect("fiber")
-            .cancelled
-            .load(Ordering::Acquire);
+        let cancelled = self.fibers.get(key).expect("fiber").cancelled.load(Ordering::Acquire);
         self.fibers.get_mut(key).expect("fiber").state = FiberState::Running;
         tls::set_current(Some(key));
         tls::set_cancelled(cancelled);
@@ -192,11 +167,7 @@ impl Scheduler {
         }
 
         let result = {
-            let coro = self
-                .fibers
-                .get_mut(key)
-                .and_then(|f| f.coroutine.as_mut())
-                .expect("coroutine");
+            let coro = self.fibers.get_mut(key).and_then(|f| f.coroutine.as_mut()).expect("coroutine");
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| coro.resume(())))
         };
 
@@ -223,16 +194,8 @@ impl Scheduler {
             }
             Ok(CoroutineResult::Return(value)) => {
                 let cancelled = f.cancelled.load(Ordering::Acquire);
-                f.outcome = if cancelled {
-                    Some(JoinOutcome::Cancelled)
-                } else {
-                    Some(JoinOutcome::Value(value))
-                };
-                f.state = if cancelled {
-                    FiberState::Cancelled
-                } else {
-                    FiberState::Done
-                };
+                f.outcome = if cancelled { Some(JoinOutcome::Cancelled) } else { Some(JoinOutcome::Value(value)) };
+                f.state = if cancelled { FiberState::Cancelled } else { FiberState::Done };
                 f.coroutine = None;
                 f.yielder = None;
                 tls::set_yielder(None);
@@ -268,20 +231,14 @@ impl Fiber {
     pub(super) fn start(&mut self, entry: extern "C" fn(*mut u8) -> i64, env: *mut u8) {
         self.entry = Some(entry);
         self.env = env;
-        self.coroutine = Some(Coroutine::new(move |yielder: &Yielder<(), ()>, ()| {
-            run_fiber_body(yielder, entry, env)
-        }));
+        self.coroutine = Some(Coroutine::new(move |yielder: &Yielder<(), ()>, ()| run_fiber_body(yielder, entry, env)));
         self.state = FiberState::Runnable;
     }
 }
 
 pub(super) fn wake_all_parked_fibers(s: &mut Scheduler) {
-    let parked: Vec<FiberKey> = s
-        .fibers
-        .iter()
-        .filter(|(_, f)| f.state == FiberState::Parked)
-        .map(|(k, _)| k)
-        .collect();
+    let parked: Vec<FiberKey> =
+        s.fibers.iter().filter(|(_, f)| f.state == FiberState::Parked).map(|(k, _)| k).collect();
     for key in parked {
         wake_fiber_immediate(s, key);
     }
@@ -298,11 +255,7 @@ pub(super) fn wake_fiber_immediate(s: &mut Scheduler, key: FiberKey) {
     }
 }
 
-fn run_fiber_body(
-    yielder: &Yielder<(), ()>,
-    entry: extern "C" fn(*mut u8) -> i64,
-    env: *mut u8,
-) -> i64 {
+fn run_fiber_body(yielder: &Yielder<(), ()>, entry: extern "C" fn(*mut u8) -> i64, env: *mut u8) -> i64 {
     let yielder_ptr = yielder as *const Yielder<(), ()>;
     tls::set_yielder(Some(yielder_ptr));
     if let Some(key) = tls::current_fiber_key() {

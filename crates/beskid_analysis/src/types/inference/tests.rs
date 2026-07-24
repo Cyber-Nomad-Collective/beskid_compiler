@@ -4,9 +4,8 @@ use crate::hir::HirPrimitiveType;
 use crate::resolve::ItemId;
 use crate::syntax::SpanInfo;
 use crate::types::inference::{
-    ConstraintSet, FunctionSignature, InferenceResult, TypeEnv, TypeVar,
-    infer_generic_args_from_call_types, is_numeric, solve_constraints, unify_numeric_types,
-    unify_types,
+    ConstraintSet, FunctionSignature, InferenceResult, TypeEnv, TypeVar, infer_generic_args_from_call_types,
+    is_numeric, solve_constraints, unify_numeric_types, unify_types,
 };
 use crate::types::result::TypeError;
 use crate::types::{TypeId, TypeInfo, TypeTable};
@@ -56,11 +55,7 @@ fn solve_is_numeric_unbound_is_ambiguous_e1202() {
     set.is_numeric(var, SpanInfo::default(), "sum");
     let env = TypeEnv::new(&table);
     let errors = solve_constraints(set, &env, SpanInfo::default()).expect_err("ambiguous");
-    assert!(
-        errors
-            .iter()
-            .any(|e| matches!(e, TypeError::MissingTypeAnnotation { name, .. } if name == "sum"))
-    );
+    assert!(errors.iter().any(|e| matches!(e, TypeError::MissingTypeAnnotation { name, .. } if name == "sum")));
 }
 
 #[test]
@@ -75,22 +70,10 @@ fn infer_generic_args_widens_numeric_bindings() {
     generic_items.insert(item, vec!["T".to_string()]);
 
     let mut function_signatures = HashMap::new();
-    function_signatures.insert(
-        item,
-        FunctionSignature {
-            params: vec![t, t],
-            return_type: t,
-        },
-    );
+    function_signatures.insert(item, FunctionSignature { params: vec![t, t], return_type: t });
 
-    let inferred = infer_generic_args_from_call_types(
-        &table,
-        &generic_items,
-        &function_signatures,
-        item,
-        &[i32, i64],
-    )
-    .expect("infer widened T");
+    let inferred = infer_generic_args_from_call_types(&table, &generic_items, &function_signatures, item, &[i32, i64])
+        .expect("infer widened T");
     assert_eq!(inferred, vec![i64]);
 }
 
@@ -105,13 +88,7 @@ fn solve_apply_generic_binds_result_vars() {
     generic_items.insert(item, vec!["T".to_string()]);
 
     let mut function_signatures = HashMap::new();
-    function_signatures.insert(
-        item,
-        FunctionSignature {
-            params: vec![t],
-            return_type: t,
-        },
-    );
+    function_signatures.insert(item, FunctionSignature { params: vec![t], return_type: t });
 
     let mut set = ConstraintSet::default();
     let result = set.fresh_var();
@@ -150,10 +127,7 @@ fn solve_variant_of_binds_enum_type() {
     let enum_type = table.intern(TypeInfo::Named(enum_item));
 
     let mut enum_variants = HashMap::new();
-    enum_variants.insert(
-        enum_item,
-        HashMap::from([("Some".to_string(), vec![TypeId(0)])]),
-    );
+    enum_variants.insert(enum_item, HashMap::from([("Some".to_string(), vec![TypeId(0)])]));
     let mut named_types = HashMap::new();
     named_types.insert(enum_item, enum_type);
 
@@ -161,9 +135,7 @@ fn solve_variant_of_binds_enum_type() {
     let var = set.fresh_var();
     set.variant_of(var, enum_item, "Some", SpanInfo::default());
 
-    let env = TypeEnv::new(&table)
-        .with_enum_variants(&enum_variants)
-        .with_named_types(&named_types);
+    let env = TypeEnv::new(&table).with_enum_variants(&enum_variants).with_named_types(&named_types);
     let result = solve_constraints(set, &env, SpanInfo::default()).expect("variant solve");
     assert_eq!(result.bindings.get(&var), Some(&enum_type));
 }

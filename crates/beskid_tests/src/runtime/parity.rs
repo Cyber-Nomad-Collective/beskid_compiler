@@ -1,25 +1,17 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::support::runtime::{
-    aot_compile_only, aot_run_main_i32, aot_run_main_i64, compile_artifact,
-};
+use crate::support::runtime::{aot_compile_only, aot_run_main_i32, aot_run_main_i64, compile_artifact};
 use crate::test_harness::temp_case_dir;
 use beskid_aot::{AotBuildRequest, BuildOutputKind, build};
 
 fn assert_try_parity_ok_case(name: &str, source: &str, expected: i64) {
     let aot_value = aot_run_main_i64(source);
-    assert_eq!(
-        aot_value, expected,
-        "expected AOT try-expression outcome for {name}"
-    );
+    assert_eq!(aot_value, expected, "expected AOT try-expression outcome for {name}");
 
     let dir = temp_case_dir(name);
     let object_path = build_aot_object(source, dir.join("parity.o"));
-    assert!(
-        object_path.exists(),
-        "expected AOT object output for try-expression parity case {name}"
-    );
+    assert!(object_path.exists(), "expected AOT object output for try-expression parity case {name}");
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -70,22 +62,14 @@ const TRY_PARITY_OK_CASES: &[TryParityOkCase] = &[
 
 fn build_aot_object(source: &str, output: PathBuf) -> PathBuf {
     let artifact = compile_artifact(source);
-    let result = build(AotBuildRequest::with_defaults(
-        artifact,
-        BuildOutputKind::ObjectOnly,
-        output,
-        "Main",
-    ))
-    .expect("expected AOT object build to succeed");
+    let result = build(AotBuildRequest::with_defaults(artifact, BuildOutputKind::ObjectOnly, output, "Main"))
+        .expect("expected AOT object build to succeed");
 
     result.object_path
 }
 
 fn object_contains_symbol(path: &Path, symbol: &str) -> bool {
-    let output = Command::new("nm")
-        .arg(path)
-        .output()
-        .expect("expected nm to inspect object file");
+    let output = Command::new("nm").arg(path).output().expect("expected nm to inspect object file");
     assert!(output.status.success(), "expected nm to succeed");
     let text = String::from_utf8_lossy(&output.stdout);
     text.contains(symbol)
@@ -118,10 +102,7 @@ fn parity_array_len_reads_beskid_array_length() {
         }
     ";
     let aot_value = aot_run_main_i64(source);
-    assert_eq!(
-        aot_value, 3,
-        "expected __array_len to match allocation length"
-    );
+    assert_eq!(aot_value, 3, "expected __array_len to match allocation length");
 
     let dir = temp_case_dir("array_len");
     let object_path = build_aot_object(source, dir.join("parity_array_len.o"));
@@ -138,10 +119,7 @@ fn parity_array_len_reads_beskid_array_length() {
 fn parity_alloc_path_is_consistent() {
     let source = "i64 Main() { return __array_new(8, 3); }";
     let aot_value = aot_run_main_i64(source);
-    assert_ne!(
-        aot_value, 0,
-        "expected AOT alloc path to produce non-null pointer value"
-    );
+    assert_ne!(aot_value, 0, "expected AOT alloc path to produce non-null pointer value");
 
     let dir = temp_case_dir("array_new");
     let object_path = build_aot_object(source, dir.join("parity.o"));
@@ -168,10 +146,7 @@ fn parity_panic_builtin_compiles() {
     ))
     .expect("expected AOT compile to succeed for panic builtin path");
 
-    assert!(
-        result.object_path.exists(),
-        "expected parity AOT object output"
-    );
+    assert!(result.object_path.exists(), "expected parity AOT object output");
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -193,10 +168,7 @@ fn parity_contract_dispatch_outcome_is_consistent() {
 
     let dir = temp_case_dir("contract_dispatch");
     let object_path = build_aot_object(source, dir.join("parity.o"));
-    assert!(
-        object_path.exists(),
-        "expected AOT object output for contract dispatch parity"
-    );
+    assert!(object_path.exists(), "expected AOT object output for contract dispatch parity");
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -243,11 +215,7 @@ const EVENT_PARITY_CASES: &[EventParityCase] = &[
 fn parity_event_lifecycle_is_consistent() {
     for case in EVENT_PARITY_CASES {
         let aot_value = aot_run_main_i64(case.source);
-        assert_eq!(
-            aot_value, 42,
-            "expected AOT event lifecycle outcome for {}",
-            case.name
-        );
+        assert_eq!(aot_value, 42, "expected AOT event lifecycle outcome for {}", case.name);
 
         let dir = temp_case_dir(case.name);
         let object_path = build_aot_object(case.source, dir.join("parity.o"));
@@ -276,34 +244,24 @@ fn parity_identity_equality_behavior_is_consistent() {
         }
     ";
     let aot_value = aot_run_main_i64(source);
-    assert_eq!(
-        aot_value, 1,
-        "expected AOT identity equality to evaluate true"
-    );
+    assert_eq!(aot_value, 1, "expected AOT identity equality to evaluate true");
 
     let dir = temp_case_dir("identity_equality");
     let object_path = build_aot_object(source, dir.join("parity.o"));
-    assert!(
-        object_path.exists(),
-        "expected AOT object output for identity equality parity"
-    );
+    assert!(object_path.exists(), "expected AOT object output for identity equality parity");
     let _ = std::fs::remove_dir_all(dir);
 }
 
 #[ignore = "AOT/HIR runtime probes incomplete on local ABI-v5 kit (missing _alloc / expression types / try desugar)"]
 #[test]
 fn parity_range_loop_behavior_is_consistent() {
-    let source =
-        "i32 Main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
+    let source = "i32 Main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }";
     let aot_value = aot_run_main_i32(source);
     assert_eq!(aot_value, 6, "expected AOT range-loop accumulation result");
 
     let dir = temp_case_dir("range_loop");
     let object_path = build_aot_object(source, dir.join("parity.o"));
-    assert!(
-        object_path.exists(),
-        "expected AOT object output for range-loop parity"
-    );
+    assert!(object_path.exists(), "expected AOT object output for range-loop parity");
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -331,10 +289,7 @@ fn parity_generic_iterable_loop_behavior_is_consistent() {
 
     let dir = temp_case_dir("generic_iterable_loop");
     let object_path = build_aot_object(source, dir.join("parity.o"));
-    assert!(
-        object_path.exists(),
-        "expected AOT object output for generic iterable loop parity"
-    );
+    assert!(object_path.exists(), "expected AOT object output for generic iterable loop parity");
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -361,9 +316,6 @@ fn parity_try_expression_err_path_compiles() {
 
     let dir = temp_case_dir("try_expression_err_compile_only");
     let object_path = build_aot_object(source, dir.join("parity.o"));
-    assert!(
-        object_path.exists(),
-        "expected AOT object output for try-expression err-path compile parity"
-    );
+    assert!(object_path.exists(), "expected AOT object output for try-expression err-path compile parity");
     let _ = std::fs::remove_dir_all(dir);
 }

@@ -13,17 +13,10 @@ impl SyntaxNodeFacts<'_> {
                 ))
             })
             .collect::<Option<Vec<_>>>()?;
-        Some(StructLayout::new(
-            u32::try_from(plan.object_size).ok()?,
-            plan.object_alignment.ilog2() as u8,
-            fields,
-        ))
+        Some(StructLayout::new(u32::try_from(plan.object_size).ok()?, plan.object_alignment.ilog2() as u8, fields))
     }
 
-    pub(super) fn struct_layout_for_declaration(
-        &self,
-        declaration: AstNodeKey,
-    ) -> Option<StructLayout> {
+    pub(super) fn struct_layout_for_declaration(&self, declaration: AstNodeKey) -> Option<StructLayout> {
         let isa = self.isa?;
         let aggregate = self.query(aggregate_layout(self.db, declaration))?;
         let mut size = 0_u32;
@@ -62,9 +55,7 @@ impl SyntaxNodeFacts<'_> {
         for variant in source.variants.iter() {
             let payload = match variant.fields.as_ref() {
                 [] => None,
-                [(_, AggregateFieldShape::Scalar(semantic))] => {
-                    Some(map_signature_type(isa, *semantic)?)
-                }
+                [(_, AggregateFieldShape::Scalar(semantic))] => Some(map_signature_type(isa, *semantic)?),
                 [(_, AggregateFieldShape::Nominal(_))] => Some(isa.pointer_type()),
                 _ => return None,
             };
@@ -77,9 +68,7 @@ impl SyntaxNodeFacts<'_> {
         let size = payloads
             .iter()
             .flatten()
-            .fold(tag_type.bytes(), |size, payload| {
-                size.max(payload_offset.saturating_add(payload.bytes()))
-            });
+            .fold(tag_type.bytes(), |size, payload| size.max(payload_offset.saturating_add(payload.bytes())));
         let size = align_to(size, alignment)?.max(1);
         for (index, payload) in payloads.into_iter().enumerate() {
             variants.push(EnumVariantLayout::new(
@@ -87,44 +76,24 @@ impl SyntaxNodeFacts<'_> {
                 payload.map(|value_type| FieldLayout::new(value_type, payload_offset)),
             ));
         }
-        Some(EnumLayout::new(
-            size,
-            alignment.ilog2() as u8,
-            tag,
-            variants,
-        ))
+        Some(EnumLayout::new(size, alignment.ilog2() as u8, tag, variants))
     }
 
     pub(super) fn array_elements_for_literal(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
-        (self.node_kind(key) == Some(NodeKind::ArrayLiteralExpression)).then(|| {
-            self.raw_children(key)
-                .into_iter()
-                .filter_map(|child| self.unwrap_transparent(child))
-                .collect()
-        })
+        (self.node_kind(key) == Some(NodeKind::ArrayLiteralExpression))
+            .then(|| self.raw_children(key).into_iter().filter_map(|child| self.unwrap_transparent(child)).collect())
     }
 
-    pub(super) fn array_layout_for_literal(
-        &self,
-        key: AstNodeKey,
-    ) -> Option<beskid_isle::ArrayLayout> {
+    pub(super) fn array_layout_for_literal(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
         let elements = self.array_elements_for_literal(key)?;
         if !elements.is_empty() {
             return None;
         }
         let pointer = self.isa?.pointer_type();
-        Some(beskid_isle::ArrayLayout::new(
-            pointer,
-            pointer.bytes(),
-            0,
-            pointer.bytes().ilog2() as u8,
-        ))
+        Some(beskid_isle::ArrayLayout::new(pointer, pointer.bytes(), 0, pointer.bytes().ilog2() as u8))
     }
 
-    pub(super) fn runtime_intrinsic(
-        &self,
-        key: AstNodeKey,
-    ) -> Option<(u32, &beskid_abi::abi_v5::RuntimeIntrinsic)> {
+    pub(super) fn runtime_intrinsic(&self, key: AstNodeKey) -> Option<(u32, &beskid_abi::abi_v5::RuntimeIntrinsic)> {
         let name = self.query(runtime_intrinsic_name(self.db, key))?;
         self.input.runtime_intrinsic_for(key, &name.0)
     }
@@ -139,8 +108,7 @@ impl SyntaxNodeFacts<'_> {
                 beskid_queries::IndexedNodeKind::Block => continue,
                 beskid_queries::IndexedNodeKind::Parameter => {
                     let identifier = self.raw_children(child).into_iter().find(|candidate| {
-                        self.query(node_kind(self.db, *candidate))
-                            == Some(beskid_queries::IndexedNodeKind::Identifier)
+                        self.query(node_kind(self.db, *candidate)) == Some(beskid_queries::IndexedNodeKind::Identifier)
                     })?;
                     let slot = self.query(local_slot(self.db, identifier))?;
                     let specialization = self
@@ -151,17 +119,13 @@ impl SyntaxNodeFacts<'_> {
                     let value_type = specialization
                         .or_else(|| {
                             self.query(item_abi_signature(self.db, key))
-                                .and_then(|signature| {
-                                    signature.parameters.get(parameters.len()).copied()
-                                })
+                                .and_then(|signature| signature.parameters.get(parameters.len()).copied())
                         })
                         .or_else(|| self.scalar_semantic_type(identifier))
                         .and_then(|semantic| {
                             if matches!(
                                 semantic,
-                                SemanticTypeId::WORD
-                                    | SemanticTypeId::POINTER
-                                    | SemanticTypeId::STRING
+                                SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING
                             ) {
                                 self.isa.map(|isa| isa.pointer_type())
                             } else {
@@ -169,10 +133,7 @@ impl SyntaxNodeFacts<'_> {
                             }
                         })?;
                     parameters.push(ParameterSlot {
-                        slot: LocalSlotId {
-                            owner_node: slot.owner.node.0,
-                            index: slot.index,
-                        },
+                        slot: LocalSlotId { owner_node: slot.owner.node.0, index: slot.index },
                         value_type,
                     });
                 }
@@ -183,50 +144,45 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn scalar_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
-        if self.query(node_kind(self.db, key))
-            == Some(beskid_queries::IndexedNodeKind::ForStatement)
-        {
-            return self
-                .query(for_iterator_fact(self.db, key))
-                .map(|fact| fact.element_type);
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::ForStatement) {
+            return self.query(for_iterator_fact(self.db, key)).map(|fact| fact.element_type);
         }
         self.query(cast_intents(self.db, key))
             .and_then(|intents| intents.first().map(|intent| intent.to))
             .or_else(|| self.query(abi_type(self.db, key)))
             .or_else(|| self.query(node_type(self.db, key)))
             .or_else(|| {
-                (self.query(node_kind(self.db, key))
-                    == Some(beskid_queries::IndexedNodeKind::LetStatement))
-                .then(|| {
-                    self.raw_children(key)
-                        .into_iter()
-                        .find(|child| {
-                            self.query(node_kind(self.db, *child))
-                                == Some(beskid_queries::IndexedNodeKind::Identifier)
-                        })
-                        .and_then(|identifier| self.query(abi_type(self.db, identifier)))
-                        .or_else(|| {
-                            self.raw_children(key)
-                                .into_iter()
-                                .find(|child| {
-                                    self.query(node_kind(self.db, *child))
-                                        == Some(beskid_queries::IndexedNodeKind::Identifier)
-                                })
-                                .and_then(|identifier| self.query(node_type(self.db, identifier)))
-                        })
-                })?
+                (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::LetStatement)).then(
+                    || {
+                        self.raw_children(key)
+                            .into_iter()
+                            .find(|child| {
+                                self.query(node_kind(self.db, *child))
+                                    == Some(beskid_queries::IndexedNodeKind::Identifier)
+                            })
+                            .and_then(|identifier| self.query(abi_type(self.db, identifier)))
+                            .or_else(|| {
+                                self.raw_children(key)
+                                    .into_iter()
+                                    .find(|child| {
+                                        self.query(node_kind(self.db, *child))
+                                            == Some(beskid_queries::IndexedNodeKind::Identifier)
+                                    })
+                                    .and_then(|identifier| self.query(node_type(self.db, identifier)))
+                            })
+                    },
+                )?
             })
             .or_else(|| {
-                self.query(aggregate_field_access(self.db, key))
-                    .and_then(|access| {
-                        self.query(aggregate_layout(self.db, access.declaration))?
-                            .fields
-                            .get(usize::try_from(access.index).ok()?)
-                            .map(|(_, shape)| match shape {
-                                AggregateFieldShape::Scalar(semantic) => *semantic,
-                                AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
-                            })
-                    })
+                self.query(aggregate_field_access(self.db, key)).and_then(|access| {
+                    self.query(aggregate_layout(self.db, access.declaration))?
+                        .fields
+                        .get(usize::try_from(access.index).ok()?)
+                        .map(|(_, shape)| match shape {
+                            AggregateFieldShape::Scalar(semantic) => *semantic,
+                            AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+                        })
+                })
             })
             .or_else(|| {
                 let (_, intrinsic) = self.runtime_intrinsic(key)?;
@@ -236,40 +192,27 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn literal(&self, key: AstNodeKey) -> Option<LiteralFact> {
         self.query(literal_fact(self.db, key)).or_else(|| {
-            self.query(child_nodes(self.db, key))?
-                .iter()
-                .find_map(|child| self.query(literal_fact(self.db, *child)))
+            self.query(child_nodes(self.db, key))?.iter().find_map(|child| self.query(literal_fact(self.db, *child)))
         })
     }
 
     pub(super) fn children(&self, key: AstNodeKey) -> Vec<AstNodeKey> {
         let children = self.raw_children(key);
-        let children = if self.query(node_kind(self.db, key))
-            == Some(beskid_queries::IndexedNodeKind::TestDefinition)
-        {
+        let children = if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::TestDefinition) {
             children
                 .into_iter()
                 .filter(|child| {
-                    self.query(node_kind(self.db, *child))
-                        == Some(beskid_queries::IndexedNodeKind::Statement)
+                    self.query(node_kind(self.db, *child)) == Some(beskid_queries::IndexedNodeKind::Statement)
                 })
                 .collect()
         } else {
             children
         };
-        children
-            .into_iter()
-            .filter_map(|child| self.unwrap_transparent(child))
-            .collect()
+        children.into_iter().filter_map(|child| self.unwrap_transparent(child)).collect()
     }
 
     pub(super) fn raw_children(&self, key: AstNodeKey) -> Vec<AstNodeKey> {
-        self.query(child_nodes(self.db, key))
-            .as_deref()
-            .into_iter()
-            .flatten()
-            .copied()
-            .collect()
+        self.query(child_nodes(self.db, key)).as_deref().into_iter().flatten().copied().collect()
     }
 
     pub(super) fn unwrap_transparent(&self, mut key: AstNodeKey) -> Option<AstNodeKey> {

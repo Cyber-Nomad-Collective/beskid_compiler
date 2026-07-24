@@ -6,26 +6,17 @@ use crate::model::{GraphDocument, GraphKind, GraphNodeKind, NodeMetadata};
 use crate::render::render_document;
 
 /// Build an import-closure graph from unit paths and their import path strings.
-pub fn from_import_closure(
-    units: &[(PathBuf, Vec<String>)],
-) -> Result<GraphDocument, crate::render::GraphError> {
+pub fn from_import_closure(units: &[(PathBuf, Vec<String>)]) -> Result<GraphDocument, crate::render::GraphError> {
     let mut builder = SpecBuilder::new(GraphKind::ImportClosure);
     let mut id_by_path: HashMap<String, String> = HashMap::new();
 
     for (path, _) in units {
-        let label = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unit")
-            .to_owned();
+        let label = path.file_name().and_then(|n| n.to_str()).unwrap_or("unit").to_owned();
         let id = builder.add_node(
             label,
             GraphNodeKind::Unit,
             None,
-            NodeMetadata {
-                uri: path_to_uri(path),
-                ..Default::default()
-            },
+            NodeMetadata { uri: path_to_uri(path), ..Default::default() },
         );
         id_by_path.insert(path.display().to_string(), id);
     }

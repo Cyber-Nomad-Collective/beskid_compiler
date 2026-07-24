@@ -5,8 +5,8 @@ use beskid_abi::{
     runtime_provenance::{RuntimeProvenanceAudit, parse_symbol_list},
 };
 use beskid_aot::{
-    emit_host_context_library_pair, emit_host_platform_library_pair,
-    lower_canonical_runtime_prepared_syntax, require_canonical_host_emit_authority,
+    emit_host_context_library_pair, emit_host_platform_library_pair, lower_canonical_runtime_prepared_syntax,
+    require_canonical_host_emit_authority,
 };
 
 #[test]
@@ -18,42 +18,24 @@ fn host_emitters_mint_authority_only_from_the_embedded_canonical_corpus() {
 }
 
 #[test]
-#[cfg(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "macos", target_arch = "aarch64"),
-))]
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
 fn host_context_pair_contains_the_manifest_context_exports_in_both_native_artifacts() {
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair =
-        emit_host_context_library_pair(&authority, temp.path().join("out"), "runtime_context")
-            .expect("emit host context pair");
+    let pair = emit_host_context_library_pair(&authority, temp.path().join("out"), "runtime_context")
+        .expect("emit host context pair");
 
-    let expected = [
-        "beskid_arch_v5_context_init".to_owned(),
-        "beskid_arch_v5_context_switch".to_owned(),
-    ];
+    let expected = ["beskid_arch_v5_context_init".to_owned(), "beskid_arch_v5_context_switch".to_owned()];
     assert_eq!(pair.provenance_symbols, expected);
 
     for artifact in [&pair.static_library, &pair.shared_library] {
-        let output = Command::new("nm")
-            .args(["-g", "--defined-only", "-j"])
-            .arg(artifact)
-            .output()
-            .expect("run nm");
-        assert!(
-            output.status.success(),
-            "nm failed for {}",
-            artifact.display()
-        );
+        let output = Command::new("nm").args(["-g", "--defined-only", "-j"]).arg(artifact).output().expect("run nm");
+        assert!(output.status.success(), "nm failed for {}", artifact.display());
         let symbols = String::from_utf8(output.stdout).expect("utf-8 nm output");
         for symbol in &expected {
             assert!(
                 symbols.lines().any(|line| {
-                    line.trim_end_matches(':')
-                        .strip_prefix('_')
-                        .unwrap_or(line.trim_end_matches(':'))
-                        == symbol
+                    line.trim_end_matches(':').strip_prefix('_').unwrap_or(line.trim_end_matches(':')) == symbol
                 }),
                 "{} does not define {symbol}: {symbols}",
                 artifact.display()
@@ -67,9 +49,8 @@ fn host_context_pair_contains_the_manifest_context_exports_in_both_native_artifa
 fn host_platform_pair_exports_canonical_runtime_and_host_platform_boundary() {
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair =
-        emit_host_platform_library_pair(&authority, temp.path().join("out"), "runtime_platform")
-            .expect("emit host platform pair");
+    let pair = emit_host_platform_library_pair(&authority, temp.path().join("out"), "runtime_platform")
+        .expect("emit host platform pair");
 
     let required_exports = [
         "beskid_arch_v5_context_init",
@@ -89,40 +70,23 @@ fn host_platform_pair_exports_canonical_runtime_and_host_platform_boundary() {
     }
 
     for artifact in [&pair.static_library, &pair.shared_library] {
-        let output = Command::new("nm")
-            .args(["-gU", "-j"])
-            .arg(artifact)
-            .output()
-            .expect("run nm");
-        assert!(
-            output.status.success(),
-            "nm failed for {}",
-            artifact.display()
-        );
+        let output = Command::new("nm").args(["-gU", "-j"]).arg(artifact).output().expect("run nm");
+        assert!(output.status.success(), "nm failed for {}", artifact.display());
         let defined = String::from_utf8(output.stdout).expect("utf-8 nm output");
         for symbol in required_exports {
             assert!(
-                defined
-                    .lines()
-                    .any(|line| line.trim_start_matches('_') == symbol),
+                defined.lines().any(|line| line.trim_start_matches('_') == symbol),
                 "{} does not define {symbol}: {defined}",
                 artifact.display()
             );
         }
     }
 
-    let output = Command::new("nm")
-        .args(["-u", "-j"])
-        .arg(&pair.static_library)
-        .output()
-        .expect("run nm");
+    let output = Command::new("nm").args(["-u", "-j"]).arg(&pair.static_library).output().expect("run nm");
     assert!(output.status.success(), "nm failed");
     let undefined = String::from_utf8(output.stdout).expect("utf-8 nm output");
     for symbol in ["_mmap", "_munmap", "__tlv_bootstrap"] {
-        assert!(
-            undefined.lines().any(|line| line == symbol),
-            "platform archive does not import {symbol}: {undefined}"
-        );
+        assert!(undefined.lines().any(|line| line == symbol), "platform archive does not import {symbol}: {undefined}");
     }
 }
 
@@ -131,9 +95,8 @@ fn host_platform_pair_exports_canonical_runtime_and_host_platform_boundary() {
 fn linux_host_platform_pair_exports_canonical_runtime_and_native_boundary() {
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair =
-        emit_host_platform_library_pair(&authority, temp.path().join("out"), "runtime_platform")
-            .expect("emit Linux host platform pair");
+    let pair = emit_host_platform_library_pair(&authority, temp.path().join("out"), "runtime_platform")
+        .expect("emit Linux host platform pair");
 
     let required_exports = [
         "beskid_arch_v5_context_init",
@@ -153,16 +116,8 @@ fn linux_host_platform_pair_exports_canonical_runtime_and_native_boundary() {
     }
 
     for artifact in [&pair.static_library, &pair.shared_library] {
-        let output = Command::new("nm")
-            .args(["-g", "--defined-only", "-j"])
-            .arg(artifact)
-            .output()
-            .expect("run nm");
-        assert!(
-            output.status.success(),
-            "nm failed for {}",
-            artifact.display()
-        );
+        let output = Command::new("nm").args(["-g", "--defined-only", "-j"]).arg(artifact).output().expect("run nm");
+        assert!(output.status.success(), "nm failed for {}", artifact.display());
         let symbols = String::from_utf8(output.stdout).expect("utf-8 nm output");
         for symbol in required_exports {
             assert!(
@@ -179,22 +134,12 @@ fn linux_host_platform_pair_exports_canonical_runtime_and_native_boundary() {
 fn windows_host_platform_pair_emits_a_coff_import_library_for_the_shared_runtime() {
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair =
-        emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime")
-            .expect("emit Windows platform pair");
+    let pair = emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime")
+        .expect("emit Windows platform pair");
 
-    let import_library = pair
-        .shared_import_library
-        .expect("Windows shared runtime must emit its COFF import library");
-    assert!(
-        import_library.is_file(),
-        "missing import library: {}",
-        import_library.display()
-    );
-    assert_eq!(
-        import_library.file_name().and_then(|name| name.to_str()),
-        Some("beskid_runtime_import.lib")
-    );
+    let import_library = pair.shared_import_library.expect("Windows shared runtime must emit its COFF import library");
+    assert!(import_library.is_file(), "missing import library: {}", import_library.display());
+    assert_eq!(import_library.file_name().and_then(|name| name.to_str()), Some("beskid_runtime_import.lib"));
     assert!(pair.shared_library.is_file());
     assert!(pair.static_library.is_file());
     for symbol in [
@@ -203,47 +148,29 @@ fn windows_host_platform_pair_emits_a_coff_import_library_for_the_shared_runtime
         "beskid_rt_v5_intrinsic_tls_get",
         "beskid_rt_v5_intrinsic_tls_set",
     ] {
-        assert!(
-            pair.provenance_symbols.contains(&symbol.to_owned()),
-            "Windows platform pair omitted {symbol}"
-        );
+        assert!(pair.provenance_symbols.contains(&symbol.to_owned()), "Windows platform pair omitted {symbol}");
     }
 }
 
 #[test]
-#[cfg(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "macos", target_arch = "aarch64"),
-))]
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
 fn canonical_bootstrap_lowers_through_the_aot_prepared_syntax_boundary() {
-    let triple = if cfg!(target_os = "macos") {
-        "aarch64-apple-darwin"
-    } else {
-        "x86_64-unknown-linux-gnu"
-    };
+    let triple = if cfg!(target_os = "macos") { "aarch64-apple-darwin" } else { "x86_64-unknown-linux-gnu" };
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|candidate| candidate.triple.as_str() == triple)
         .expect("supported host target");
-    let artifact =
-        lower_canonical_runtime_prepared_syntax(target.clone()).expect("lower Bootstrap");
+    let artifact = lower_canonical_runtime_prepared_syntax(target.clone()).expect("lower Bootstrap");
     assert!(!artifact.functions.is_empty());
     let manifest = AbiManifestV5::canonical_runtime(target);
     for export in manifest.exports {
         assert!(
-            artifact
-                .exports
-                .iter()
-                .any(|entry| entry.exported_symbol == export.symbol),
+            artifact.exports.iter().any(|entry| entry.exported_symbol == export.symbol),
             "missing manifest runtime export {}",
             export.symbol
         );
     }
-    let clif = artifact
-        .functions
-        .iter()
-        .map(|function| function.function.display().to_string())
-        .collect::<String>();
+    let clif = artifact.functions.iter().map(|function| function.function.display().to_string()).collect::<String>();
     for intrinsic in [
         "beskid_rt_v5_intrinsic_memory_copy",
         "beskid_rt_v5_intrinsic_memory_set",
@@ -255,10 +182,7 @@ fn canonical_bootstrap_lowers_through_the_aot_prepared_syntax_boundary() {
         "beskid_rt_v5_intrinsic_raw_word_load",
         "beskid_rt_v5_intrinsic_raw_word_store",
     ] {
-        assert!(
-            !clif.contains(intrinsic),
-            "direct ISLE intrinsic must not leave an object import: {intrinsic}"
-        );
+        assert!(!clif.contains(intrinsic), "direct ISLE intrinsic must not leave an object import: {intrinsic}");
     }
     assert!(
         !clif.contains("tls_value"),
@@ -271,19 +195,13 @@ fn canonical_bootstrap_lowers_through_the_aot_prepared_syntax_boundary() {
 fn canonical_platform_pair_links_the_native_tls_helper() {
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair =
-        emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime")
-            .expect("link canonical platform pair");
-    for symbol in [
-        "beskid_rt_v5_intrinsic_tls_get",
-        "beskid_rt_v5_intrinsic_tls_set",
-    ] {
+    let pair = emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime")
+        .expect("link canonical platform pair");
+    for symbol in ["beskid_rt_v5_intrinsic_tls_get", "beskid_rt_v5_intrinsic_tls_set"] {
         assert!(pair.provenance_symbols.contains(&symbol.to_owned()));
     }
-    let symbols = Command::new("nm")
-        .args(["-u", pair.shared_library.to_str().expect("utf-8 path")])
-        .output()
-        .expect("run nm");
+    let symbols =
+        Command::new("nm").args(["-u", pair.shared_library.to_str().expect("utf-8 path")]).output().expect("run nm");
     assert!(symbols.status.success());
     assert!(
         String::from_utf8_lossy(&symbols.stdout).contains("__tlv_bootstrap"),
@@ -324,54 +242,29 @@ int main(void) {
         .status()
         .expect("compile TLS smoke");
     assert!(status.success());
-    assert!(
-        Command::new(executable)
-            .status()
-            .expect("run TLS smoke")
-            .success()
-    );
+    assert!(Command::new(executable).status().expect("run TLS smoke").success());
 }
 
 #[test]
-#[cfg(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "macos", target_arch = "aarch64"),
-))]
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
 fn canonical_runtime_static_archive_hides_non_abi_implementation_symbols() {
-    let triple = if cfg!(target_os = "macos") {
-        "aarch64-apple-darwin"
-    } else {
-        "x86_64-unknown-linux-gnu"
-    };
+    let triple = if cfg!(target_os = "macos") { "aarch64-apple-darwin" } else { "x86_64-unknown-linux-gnu" };
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair =
-        emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime")
-            .expect("link canonical platform pair");
-    let output = Command::new("nm")
-        .args(["-g", "--defined-only", "-j"])
-        .arg(&pair.static_library)
-        .output()
-        .expect("run nm");
+    let pair = emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime")
+        .expect("link canonical platform pair");
+    let output =
+        Command::new("nm").args(["-g", "--defined-only", "-j"]).arg(&pair.static_library).output().expect("run nm");
     assert!(output.status.success(), "nm failed");
     let symbols = String::from_utf8(output.stdout).expect("utf-8 nm output");
+    assert!(!symbols.contains("#syntax"), "static runtime archive leaked syntax implementation symbols: {symbols}");
     assert!(
-        !symbols.contains("#syntax"),
-        "static runtime archive leaked syntax implementation symbols: {symbols}"
-    );
-    assert!(
-        !symbols
-            .lines()
-            .map(|symbol| symbol.trim_start_matches('_'))
-            .any(|symbol| symbol == "panic"),
+        !symbols.lines().map(|symbol| symbol.trim_start_matches('_')).any(|symbol| symbol == "panic"),
         "static runtime archive leaked forbidden non-ABI panic symbol: {symbols}"
     );
 
-    let undefined = Command::new("nm")
-        .args(["-u", "-j"])
-        .arg(&pair.static_library)
-        .output()
-        .expect("run nm for static imports");
+    let undefined =
+        Command::new("nm").args(["-u", "-j"]).arg(&pair.static_library).output().expect("run nm for static imports");
     assert!(undefined.status.success(), "nm failed");
     let target = TargetMetadata::supported()
         .into_iter()

@@ -8,29 +8,24 @@ use super::TypeChecker;
 use crate::types::result::TypeError;
 
 impl<'a> TypeChecker<'a> {
-    pub(super) fn type_spawn_expression(
-        &mut self,
-        spawn: &Spanned<HirSpawnExpression>,
-    ) -> Option<TypeId> {
+    pub(super) fn type_spawn_expression(&mut self, spawn: &Spanned<HirSpawnExpression>) -> Option<TypeId> {
         let parent_scope = self.fiber_scope_stack.last().copied().unwrap_or(0);
         let child_scope = self.alloc_fiber_scope(parent_scope);
 
-        let return_type =
-            if let HirExpressionNode::LambdaExpression(lambda) = &spawn.node.callee.node {
-                self.fiber_scope_stack.push(child_scope);
-                let typed = self.type_lambda_expression_with_expected(lambda, None);
-                self.fiber_scope_stack.pop();
-                self.check_spawn_lambda_captures(&spawn.node.callee, spawn.span);
-                typed.and_then(|fn_type| self.function_return_type(fn_type))
-            } else if let HirExpressionNode::CallExpression(call) = &spawn.node.callee.node {
-                self.spawn_return_type_for_entry(&call.node.callee, spawn.span)
-            } else {
-                self.spawn_return_type_for_entry(&spawn.node.callee, spawn.span)
-            };
+        let return_type = if let HirExpressionNode::LambdaExpression(lambda) = &spawn.node.callee.node {
+            self.fiber_scope_stack.push(child_scope);
+            let typed = self.type_lambda_expression_with_expected(lambda, None);
+            self.fiber_scope_stack.pop();
+            self.check_spawn_lambda_captures(&spawn.node.callee, spawn.span);
+            typed.and_then(|fn_type| self.function_return_type(fn_type))
+        } else if let HirExpressionNode::CallExpression(call) = &spawn.node.callee.node {
+            self.spawn_return_type_for_entry(&call.node.callee, spawn.span)
+        } else {
+            self.spawn_return_type_for_entry(&spawn.node.callee, spawn.span)
+        };
 
         let Some(return_type) = return_type else {
-            self.errors
-                .push(TypeError::SpawnTargetNotFiberCompatible { span: spawn.span });
+            self.errors.push(TypeError::SpawnTargetNotFiberCompatible { span: spawn.span });
             return None;
         };
 
@@ -51,8 +46,7 @@ impl<'a> TypeChecker<'a> {
         };
         let current_scope = self.fiber_scope_stack.last().copied().unwrap_or(0);
         if self.fiber_scope_is_strict_ancestor(handle_scope, current_scope) {
-            self.errors
-                .push(TypeError::JoinWouldDeadlock { span: join_span });
+            self.errors.push(TypeError::JoinWouldDeadlock { span: join_span });
         }
     }
 
@@ -101,10 +95,7 @@ impl<'a> TypeChecker<'a> {
         if let HirExpressionNode::PathExpression(path) = &entry.node
             && let Some(ResolvedValue::Item(item_id)) = self.resolved_value_at(path.node.path.span)
         {
-            return self
-                .function_signatures
-                .get(&item_id)
-                .map(|signature| signature.return_type);
+            return self.function_signatures.get(&item_id).map(|signature| signature.return_type);
         }
 
         let callee_type = self.type_expression(entry)?;
@@ -113,36 +104,23 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn check_spawn_callee(&mut self, callee_type: TypeId, span: crate::syntax::SpanInfo) {
-        if !matches!(
-            self.type_table.get(callee_type),
-            Some(TypeInfo::Function { .. })
-        ) {
-            self.errors
-                .push(TypeError::SpawnTargetNotFiberCompatible { span });
+        if !matches!(self.type_table.get(callee_type), Some(TypeInfo::Function { .. })) {
+            self.errors.push(TypeError::SpawnTargetNotFiberCompatible { span });
         }
     }
 
-    fn check_spawn_lambda_captures(
-        &mut self,
-        callee: &Spanned<HirExpressionNode>,
-        span: crate::syntax::SpanInfo,
-    ) {
+    fn check_spawn_lambda_captures(&mut self, callee: &Spanned<HirExpressionNode>, span: crate::syntax::SpanInfo) {
         let HirExpressionNode::LambdaExpression(lambda) = &callee.node else {
             return;
         };
         if self.lambda_references_outer_stack(lambda) {
-            self.errors
-                .push(TypeError::StackReferenceEscapesSpawn { span });
+            self.errors.push(TypeError::StackReferenceEscapesSpawn { span });
         }
     }
 
     fn lambda_references_outer_stack(&self, lambda: &Spanned<HirLambdaExpression>) -> bool {
-        let param_locals: std::collections::HashSet<_> = lambda
-            .node
-            .parameters
-            .iter()
-            .filter_map(|p| self.local_id_for_span(p.node.name.span))
-            .collect();
+        let param_locals: std::collections::HashSet<_> =
+            lambda.node.parameters.iter().filter_map(|p| self.local_id_for_span(p.node.name.span)).collect();
         self.expression_references_outer_local(lambda.node.body.as_ref(), &param_locals)
     }
 
@@ -158,9 +136,7 @@ impl<'a> TypeChecker<'a> {
                 .resolved_values
                 .get(&path.node.path.span)
                 .and_then(|resolved| match resolved {
-                    crate::resolve::ResolvedValue::Local(local_id) => {
-                        (!param_locals.contains(local_id)).then_some(())
-                    }
+                    crate::resolve::ResolvedValue::Local(local_id) => (!param_locals.contains(local_id)).then_some(()),
                     _ => None,
                 })
                 .is_some(),
@@ -175,11 +151,7 @@ impl<'a> TypeChecker<'a> {
             }
             HirExpressionNode::CallExpression(call) => {
                 self.expression_references_outer_local(&call.node.callee, param_locals)
-                    || call
-                        .node
-                        .args
-                        .iter()
-                        .any(|arg| self.expression_references_outer_local(arg, param_locals))
+                    || call.node.args.iter().any(|arg| self.expression_references_outer_local(arg, param_locals))
             }
             HirExpressionNode::BinaryExpression(binary) => {
                 self.expression_references_outer_local(&binary.node.left, param_locals)
@@ -192,28 +164,22 @@ impl<'a> TypeChecker<'a> {
             HirExpressionNode::MemberExpression(member) => {
                 self.expression_references_outer_local(&member.node.target, param_locals)
             }
-            HirExpressionNode::BlockExpression(block) => block
-                .node
-                .block
-                .node
-                .statements
-                .iter()
-                .any(|stmt| match &stmt.node {
-                    HirStatementNode::ExpressionStatement(expr_stmt) => self
-                        .expression_references_outer_local(
-                            &expr_stmt.node.expression,
-                            param_locals,
-                        ),
-                    HirStatementNode::ReturnStatement(ret) => {
-                        ret.node.value.as_ref().is_some_and(|value| {
-                            self.expression_references_outer_local(value, param_locals)
-                        })
+            HirExpressionNode::BlockExpression(block) => {
+                block.node.block.node.statements.iter().any(|stmt| match &stmt.node {
+                    HirStatementNode::ExpressionStatement(expr_stmt) => {
+                        self.expression_references_outer_local(&expr_stmt.node.expression, param_locals)
                     }
+                    HirStatementNode::ReturnStatement(ret) => ret
+                        .node
+                        .value
+                        .as_ref()
+                        .is_some_and(|value| self.expression_references_outer_local(value, param_locals)),
                     HirStatementNode::LetStatement(let_stmt) => {
                         self.expression_references_outer_local(&let_stmt.node.value, param_locals)
                     }
                     _ => false,
-                }),
+                })
+            }
             _ => false,
         }
     }
@@ -232,8 +198,6 @@ impl<'a> TypeChecker<'a> {
     }
 
     pub(super) fn is_fiber_join_path(path: &[String]) -> bool {
-        builtin_for_path(path)
-            .map(|(_, spec)| spec.runtime_symbol == "fiber_join_status")
-            .unwrap_or(false)
+        builtin_for_path(path).map(|(_, spec)| spec.runtime_symbol == "fiber_join_status").unwrap_or(false)
     }
 }

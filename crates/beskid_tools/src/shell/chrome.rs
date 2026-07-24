@@ -12,9 +12,7 @@ pub type FooterHotkeyItem = HotkeyItem;
 use super::control_mode::HiControlMode;
 use super::hotkeys::ShellHotkeys;
 use super::scope::ShellScope;
-use super::shortcut_clicks::{
-    ShortcutClickTargets, register_footer_clicks, register_help_overlay_clicks,
-};
+use super::shortcut_clicks::{ShortcutClickTargets, register_footer_clicks, register_help_overlay_clicks};
 
 /// Fixed height of the pinned top bar (not layout-editable).
 pub const PINNED_TOP_ROWS: u16 = 1;
@@ -32,12 +30,7 @@ impl ShellChrome {
         }
         let scope_label = scope.chrome_title();
         let line = Line::from(vec![
-            Span::styled(
-                "Welcome",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            Span::styled("Welcome", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::raw("   "),
             Span::styled(scope_label, Style::default().fg(Color::DarkGray)),
         ]);
@@ -79,18 +72,14 @@ impl ShellChrome {
                 Line::from(vec![
                     Span::styled(
                         format!("{}  ", item.key),
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
                     ),
                     Span::styled(item.description.clone(), Style::default().fg(Color::Gray)),
                 ])
             })
             .collect();
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(" Shortcuts ")
-            .style(Style::default().bg(Color::Indexed(234)));
+        let block =
+            Block::default().borders(Borders::ALL).title(" Shortcuts ").style(Style::default().bg(Color::Indexed(234)));
         frame.render_widget(Paragraph::new(lines).block(block), area);
     }
 }
@@ -117,22 +106,13 @@ mod tests {
     fn chrome_renders_welcome_and_scope() {
         let backend = TestBackend::new(80, 10);
         let mut terminal = Terminal::new(backend).expect("terminal");
-        let scope = ShellScope::Workspace {
-            root: "/tmp/ws".into(),
-            manifest: "/tmp/ws/CoreLib.bws".into(),
-        };
+        let scope = ShellScope::Workspace { root: "/tmp/ws".into(), manifest: "/tmp/ws/CoreLib.bws".into() };
         terminal
             .draw(|frame| {
                 ShellChrome::default().render_pinned_top_bar(frame.area(), frame, &scope);
             })
             .expect("draw");
-        let text: String = terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let text: String = terminal.backend().buffer().content.iter().map(|cell| cell.symbol()).collect();
         assert!(text.contains("Welcome"));
         assert!(text.contains("CoreLib"));
         assert!(!text.contains("Compiling"));

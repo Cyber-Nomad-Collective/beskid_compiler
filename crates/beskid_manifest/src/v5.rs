@@ -135,22 +135,9 @@ pub struct GeneratedV5Artifacts {
 
 pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String> {
     let document = parse_bsol_document(source).map_err(|error| error.to_string())?;
-    let allowed_blocks = [
-        "manifest",
-        "target",
-        "export",
-        "intrinsic",
-        "layout",
-        "platform_import",
-        "assembly",
-        "trap",
-        "audit",
-    ];
-    if let Some(block) = document
-        .blocks
-        .iter()
-        .find(|block| !allowed_blocks.contains(&block.kind.as_str()))
-    {
+    let allowed_blocks =
+        ["manifest", "target", "export", "intrinsic", "layout", "platform_import", "assembly", "trap", "audit"];
+    if let Some(block) = document.blocks.iter().find(|block| !allowed_blocks.contains(&block.kind.as_str())) {
         return Err(format!("unknown top-level block `{}`", block.kind));
     }
     let manifest = one(&document.blocks, "manifest")?;
@@ -250,28 +237,14 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
     let traps = blocks(&document.blocks, "trap")
         .map(|block| {
             ensure_fields(block, &["code"])?;
-            Ok(TrapV5 {
-                name: label(block)?,
-                code: u32_field(block, "code")?,
-            })
+            Ok(TrapV5 { name: label(block)?, code: u32_field(block, "code")? })
         })
         .collect::<Result<Vec<_>, String>>()?;
     let audit_block = one(&document.blocks, "audit")?;
     ensure_fields(audit_block, &["forbidden_symbol_families"])?;
-    let audit = AuditV5 {
-        forbidden_symbol_families: list_field(audit_block, "forbidden_symbol_families")?,
-    };
-    let result = RuntimeManifestV5 {
-        meta,
-        targets,
-        exports,
-        intrinsics,
-        layouts,
-        platform_imports,
-        assembly,
-        traps,
-        audit,
-    };
+    let audit = AuditV5 { forbidden_symbol_families: list_field(audit_block, "forbidden_symbol_families")? };
+    let result =
+        RuntimeManifestV5 { meta, targets, exports, intrinsics, layouts, platform_imports, assembly, traps, audit };
     validate(&result)?;
     Ok(result)
 }
@@ -280,10 +253,7 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     if manifest.targets.is_empty() {
         return Err("manifest must define at least one target".into());
     }
-    unique(
-        manifest.targets.iter().map(|target| target.triple.as_str()),
-        "target",
-    )?;
+    unique(manifest.targets.iter().map(|target| target.triple.as_str()), "target")?;
     for target in &manifest.targets {
         if target.triple.is_empty()
             || target.endianness != "little"
@@ -293,52 +263,32 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             || target.stack_alignment == 0
             || !matches!(target.symbol_prefix.as_str(), "" | "_")
         {
-            return Err(format!(
-                "target {} violates generic ABI-v5 target invariants",
-                target.triple
-            ));
+            return Err(format!("target {} violates generic ABI-v5 target invariants", target.triple));
         }
     }
-    let target_names = manifest
-        .targets
-        .iter()
-        .map(|target| target.triple.as_str())
-        .collect::<BTreeSet<_>>();
+    let target_names = manifest.targets.iter().map(|target| target.triple.as_str()).collect::<BTreeSet<_>>();
     if manifest
         .layouts
         .iter()
         .filter_map(|layout| layout.target.as_deref())
         .any(|target| !target_names.contains(target))
-        || manifest
-            .platform_imports
-            .iter()
-            .any(|import| !target_names.contains(import.target.as_str()))
+        || manifest.platform_imports.iter().any(|import| !target_names.contains(import.target.as_str()))
     {
         return Err("target-specific contract entry references an unknown target".into());
     }
-    if manifest.meta.runtime_publisher != "beskid-lang.org"
-        || manifest.meta.runtime_package != "beskid-runtime-native"
+    if manifest.meta.runtime_publisher != "beskid-lang.org" || manifest.meta.runtime_package != "beskid-runtime-native"
     {
         return Err("canonical runtime package identity is mandatory".into());
     }
-    if manifest.meta.trap_exit_status != 101
-        || manifest.meta.trap_diagnostic != "beskid runtime trap v5"
-    {
+    if manifest.meta.trap_exit_status != 101 || manifest.meta.trap_diagnostic != "beskid runtime trap v5" {
         return Err("trap contract must use the stable diagnostic and exit status 101".into());
     }
-    let trap = manifest
-        .exports
-        .iter()
-        .find(|entry| entry.symbol == "beskid_rt_v5_trap")
-        .ok_or("missing trap export")?;
+    let trap =
+        manifest.exports.iter().find(|entry| entry.symbol == "beskid_rt_v5_trap").ok_or("missing trap export")?;
     if trap.result != "never" {
         return Err("beskid_rt_v5_trap must be noreturn".into());
     }
-    let trap_codes = manifest
-        .traps
-        .iter()
-        .map(|trap| trap.code)
-        .collect::<BTreeSet<_>>();
+    let trap_codes = manifest.traps.iter().map(|trap| trap.code).collect::<BTreeSet<_>>();
     if trap_codes != (1..=10).collect() {
         return Err("trap codes must be exactly 1 through 10".into());
     }
@@ -346,32 +296,12 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     if manifest.traps.iter().any(|trap| trap.name.is_empty()) {
         return Err("trap names must not be empty".into());
     }
-    unique(
-        manifest.exports.iter().map(|entry| entry.symbol.as_str()),
-        "export",
-    )?;
-    unique(
-        manifest.intrinsics.iter().map(|entry| entry.name.as_str()),
-        "intrinsic",
-    )?;
-    unique(
-        manifest
-            .intrinsics
-            .iter()
-            .map(|entry| entry.symbol.as_str()),
-        "intrinsic linker symbol",
-    )?;
-    unique(
-        manifest
-            .layouts
-            .iter()
-            .map(|entry| (entry.target.as_deref(), entry.name.as_str())),
-        "layout",
-    )?;
+    unique(manifest.exports.iter().map(|entry| entry.symbol.as_str()), "export")?;
+    unique(manifest.intrinsics.iter().map(|entry| entry.name.as_str()), "intrinsic")?;
+    unique(manifest.intrinsics.iter().map(|entry| entry.symbol.as_str()), "intrinsic linker symbol")?;
+    unique(manifest.layouts.iter().map(|entry| (entry.target.as_deref(), entry.name.as_str())), "layout")?;
     for entry in &manifest.exports {
-        if entry.symbol.is_empty()
-            || (!entry.symbol.contains("_v5_") && !entry.symbol.ends_with("_v5"))
-        {
+        if entry.symbol.is_empty() || (!entry.symbol.contains("_v5_") && !entry.symbol.ends_with("_v5")) {
             return Err(format!("export {} is not ABI-v5 versioned", entry.symbol));
         }
     }
@@ -381,17 +311,11 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             || !entry.symbol.starts_with("beskid_rt_v5_")
             || entry.capability != format!("runtime.bootstrap.{}", entry.name)
         {
-            return Err(format!(
-                "intrinsic {} has an invalid capability id",
-                entry.name
-            ));
+            return Err(format!("intrinsic {} has an invalid capability id", entry.name));
         }
     }
     unique(
-        manifest
-            .platform_imports
-            .iter()
-            .map(|entry| (entry.target.as_str(), entry.symbol.as_str())),
+        manifest.platform_imports.iter().map(|entry| (entry.target.as_str(), entry.symbol.as_str())),
         "platform import",
     )?;
     for entry in &manifest.platform_imports {
@@ -400,42 +324,30 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         }
     }
     let known_types = [
-        "void", "never", "pointer", "usize", "isize", "i8", "u8", "i16", "u16", "i32", "u32",
-        "i64", "u64", "v128", "f32", "f64",
+        "void", "never", "pointer", "usize", "isize", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "v128",
+        "f32", "f64",
     ];
     for (owner, params, result) in manifest
         .exports
         .iter()
-        .map(|entry| {
-            (
-                entry.symbol.as_str(),
-                entry.params.as_slice(),
-                entry.result.as_str(),
-            )
-        })
-        .chain(manifest.intrinsics.iter().map(|entry| {
-            (
-                entry.name.as_str(),
-                entry.params.as_slice(),
-                entry.result.as_str(),
-            )
-        }))
-        .chain(manifest.platform_imports.iter().map(|entry| {
-            (
-                entry.symbol.as_str(),
-                entry.params.as_slice(),
-                entry.result.as_str(),
-            )
-        }))
+        .map(|entry| (entry.symbol.as_str(), entry.params.as_slice(), entry.result.as_str()))
+        .chain(
+            manifest
+                .intrinsics
+                .iter()
+                .map(|entry| (entry.name.as_str(), entry.params.as_slice(), entry.result.as_str())),
+        )
+        .chain(
+            manifest
+                .platform_imports
+                .iter()
+                .map(|entry| (entry.symbol.as_str(), entry.params.as_slice(), entry.result.as_str())),
+        )
     {
         if !known_types.contains(&result)
-            || params
-                .iter()
-                .any(|param| param.name.is_empty() || !known_types.contains(&param.ty.as_str()))
+            || params.iter().any(|param| param.name.is_empty() || !known_types.contains(&param.ty.as_str()))
         {
-            return Err(format!(
-                "`{owner}` uses an unknown ABI type or unnamed parameter"
-            ));
+            return Err(format!("`{owner}` uses an unknown ABI type or unnamed parameter"));
         }
         unique(params.iter().map(|param| param.name.as_str()), "parameter")?;
     }
@@ -445,17 +357,13 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             || !layout.alignment.is_power_of_two()
             || layout.size % layout.alignment != 0
         {
-            return Err(format!(
-                "layout `{}` has invalid size/alignment",
-                layout.name
-            ));
+            return Err(format!("layout `{}` has invalid size/alignment", layout.name));
         }
         let mut ranges = Vec::new();
         for field in &layout.fields {
-            let width = abi_width(&field.ty)
-                .ok_or_else(|| format!("layout `{}` has unknown field type", layout.name))?;
-            if field.offset % width.min(layout.alignment) != 0 || field.offset + width > layout.size
-            {
+            let width =
+                abi_width(&field.ty).ok_or_else(|| format!("layout `{}` has unknown field type", layout.name))?;
+            if field.offset % width.min(layout.alignment) != 0 || field.offset + width > layout.size {
                 return Err(format!("layout `{}` has an invalid field", layout.name));
             }
             ranges.push((field.offset, field.offset + width));
@@ -465,38 +373,16 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             return Err(format!("layout `{}` has overlapping fields", layout.name));
         }
     }
-    unique(
-        manifest.assembly.iter().map(|entry| entry.symbol.as_str()),
-        "assembly export",
-    )?;
+    unique(manifest.assembly.iter().map(|entry| entry.symbol.as_str()), "assembly export")?;
     for entry in &manifest.assembly {
         if !entry.symbol.starts_with("beskid_arch_v5_") || entry.params.is_empty() {
-            return Err(format!(
-                "assembly {} violates generic ABI-v5 invariants",
-                entry.symbol
-            ));
+            return Err(format!("assembly {} violates generic ABI-v5 invariants", entry.symbol));
         }
-        unique(
-            entry.params.iter().map(|param| param.name.as_str()),
-            "assembly parameter",
-        )?;
-        if entry
-            .preserved
-            .keys()
-            .map(String::as_str)
-            .collect::<BTreeSet<_>>()
-            != target_names
-            || entry
-                .locations
-                .keys()
-                .map(String::as_str)
-                .collect::<BTreeSet<_>>()
-                != target_names
+        unique(entry.params.iter().map(|param| param.name.as_str()), "assembly parameter")?;
+        if entry.preserved.keys().map(String::as_str).collect::<BTreeSet<_>>() != target_names
+            || entry.locations.keys().map(String::as_str).collect::<BTreeSet<_>>() != target_names
         {
-            return Err(format!(
-                "assembly {} target mappings are incomplete",
-                entry.symbol
-            ));
+            return Err(format!("assembly {} target mappings are incomplete", entry.symbol));
         }
         for target in &manifest.targets {
             let locations = &entry.locations[&target.triple];
@@ -507,24 +393,14 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
                 })
                 || entry.preserved[&target.triple].iter().any(String::is_empty)
             {
-                return Err(format!(
-                    "assembly {} has an invalid {} mapping",
-                    entry.symbol, target.triple
-                ));
+                return Err(format!("assembly {} has an invalid {} mapping", entry.symbol, target.triple));
             }
         }
     }
     if manifest.audit.forbidden_symbol_families.is_empty() {
         return Err("audit policy must define forbidden provenance families".into());
     }
-    unique(
-        manifest
-            .audit
-            .forbidden_symbol_families
-            .iter()
-            .map(String::as_str),
-        "forbidden provenance family",
-    )?;
+    unique(manifest.audit.forbidden_symbol_families.iter().map(String::as_str), "forbidden provenance family")?;
     Ok(())
 }
 
@@ -535,23 +411,13 @@ pub fn generate_v5_artifacts(manifest: &RuntimeManifestV5) -> Result<GeneratedV5
         .targets
         .iter()
         .filter(|target| target.object_format != "coff")
-        .map(|target| {
-            (
-                target.triple.clone(),
-                render_asm_target(&manifest, target, false),
-            )
-        })
+        .map(|target| (target.triple.clone(), render_asm_target(&manifest, target, false)))
         .collect::<BTreeMap<_, _>>();
     let masm = manifest
         .targets
         .iter()
         .filter(|target| target.object_format == "coff")
-        .map(|target| {
-            (
-                target.triple.clone(),
-                render_asm_target(&manifest, target, true),
-            )
-        })
+        .map(|target| (target.triple.clone(), render_asm_target(&manifest, target, true)))
         .collect::<BTreeMap<_, _>>();
     Ok(GeneratedV5Artifacts {
         rust: render_rust(&manifest, &gnu_asm, &masm),
@@ -578,14 +444,8 @@ pub fn write_v5_artifacts(manifest: &RuntimeManifestV5, workspace: &Path) -> Res
         fs::write(path, contents).map_err(|error| error.to_string())?;
     }
     for (target, contents) in artifacts.gnu_asm.into_iter().chain(artifacts.masm) {
-        fs::write(
-            include.join(format!(
-                "beskid_runtime_abi_v5_{}.inc",
-                target.replace('-', "_")
-            )),
-            contents,
-        )
-        .map_err(|error| error.to_string())?;
+        fs::write(include.join(format!("beskid_runtime_abi_v5_{}.inc", target.replace('-', "_"))), contents)
+            .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -602,11 +462,8 @@ fn render_rust(
     masm: &BTreeMap<String, String>,
 ) -> String {
     let json = serde_json::to_string(manifest).expect("serializable manifest");
-    let trap_rows = manifest
-        .traps
-        .iter()
-        .map(|trap| format!("    ({:?}, {}),\n", trap.name, trap.code))
-        .collect::<String>();
+    let trap_rows =
+        manifest.traps.iter().map(|trap| format!("    ({:?}, {}),\n", trap.name, trap.code)).collect::<String>();
     let target_rows = manifest
         .targets
         .iter()
@@ -679,44 +536,19 @@ fn render_c_header(manifest: &RuntimeManifestV5) -> String {
     let mut out = String::from(
         "/* @generated from runtime_manifest.bsol; do not edit. */\n#ifndef BESKID_RUNTIME_ABI_V5_H\n#define BESKID_RUNTIME_ABI_V5_H\n#include <stddef.h>\n#include <stdint.h>\n",
     );
-    writeln!(
-        out,
-        "#define BESKID_RUNTIME_ABI_VERSION {}",
-        manifest.meta.abi_version
-    )
-    .unwrap();
-    writeln!(
-        out,
-        "#define BESKID_TRAP_EXIT_STATUS {}",
-        manifest.meta.trap_exit_status
-    )
-    .unwrap();
-    writeln!(
-        out,
-        "#define BESKID_TRAP_DIAGNOSTIC {:?}",
-        manifest.meta.trap_diagnostic
-    )
-    .unwrap();
+    writeln!(out, "#define BESKID_RUNTIME_ABI_VERSION {}", manifest.meta.abi_version).unwrap();
+    writeln!(out, "#define BESKID_TRAP_EXIT_STATUS {}", manifest.meta.trap_exit_status).unwrap();
+    writeln!(out, "#define BESKID_TRAP_DIAGNOSTIC {:?}", manifest.meta.trap_diagnostic).unwrap();
     for layout in &manifest.layouts {
         let name = macro_name(layout.name.strip_prefix("Beskid").unwrap_or(&layout.name));
         writeln!(out, "#define BESKID_{name}_SIZE {}", layout.size).unwrap();
         writeln!(out, "#define BESKID_{name}_ALIGNMENT {}", layout.alignment).unwrap();
         for field in &layout.fields {
-            writeln!(
-                out,
-                "#define BESKID_{name}_{}_OFFSET {}",
-                macro_name(&field.name),
-                field.offset
-            )
-            .unwrap();
+            writeln!(out, "#define BESKID_{name}_{}_OFFSET {}", macro_name(&field.name), field.offset).unwrap();
         }
     }
     for function in &manifest.exports {
-        let noreturn = if function.result == "never" {
-            "_Noreturn "
-        } else {
-            ""
-        };
+        let noreturn = if function.result == "never" { "_Noreturn " } else { "" };
         let params = if function.params.is_empty() {
             "void".into()
         } else {
@@ -727,14 +559,7 @@ fn render_c_header(manifest: &RuntimeManifestV5) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
-        writeln!(
-            out,
-            "{noreturn}{} {}({});",
-            c_type(&function.result),
-            function.symbol,
-            params
-        )
-        .unwrap();
+        writeln!(out, "{noreturn}{} {}({});", c_type(&function.result), function.symbol, params).unwrap();
     }
     for function in &manifest.assembly {
         writeln!(
@@ -762,52 +587,19 @@ fn render_asm_target(manifest: &RuntimeManifestV5, target: &TargetV5, masm: bool
         "/* @generated from runtime_manifest.bsol; do not edit. */\n".into()
     };
     let separator = if masm { " EQU " } else { " = " };
-    writeln!(
-        out,
-        "BESKID_RUNTIME_ABI_VERSION{separator}{}",
-        manifest.meta.abi_version
-    )
-    .unwrap();
+    writeln!(out, "BESKID_RUNTIME_ABI_VERSION{separator}{}", manifest.meta.abi_version).unwrap();
     {
         let target_name = macro_name(&target.triple);
         if masm {
-            writeln!(
-                out,
-                "BESKID_{target_name}_SYMBOL_PREFIX TEXTEQU <{}>",
-                target.symbol_prefix
-            )
-            .unwrap();
+            writeln!(out, "BESKID_{target_name}_SYMBOL_PREFIX TEXTEQU <{}>", target.symbol_prefix).unwrap();
         } else {
-            writeln!(
-                out,
-                "/* BESKID_{target_name}_SYMBOL_PREFIX = {:?} */",
-                target.symbol_prefix
-            )
-            .unwrap();
+            writeln!(out, "/* BESKID_{target_name}_SYMBOL_PREFIX = {:?} */", target.symbol_prefix).unwrap();
         }
-        writeln!(
-            out,
-            "BESKID_{target_name}_STACK_ALIGNMENT{separator}{}",
-            target.stack_alignment
-        )
-        .unwrap();
-        writeln!(
-            out,
-            "BESKID_{target_name}_SHADOW_SPACE{separator}{}",
-            target.shadow_space
-        )
-        .unwrap();
-        for layout in manifest
-            .layouts
-            .iter()
-            .filter(|layout| layout.target.as_deref() == Some(target.triple.as_str()))
+        writeln!(out, "BESKID_{target_name}_STACK_ALIGNMENT{separator}{}", target.stack_alignment).unwrap();
+        writeln!(out, "BESKID_{target_name}_SHADOW_SPACE{separator}{}", target.shadow_space).unwrap();
+        for layout in manifest.layouts.iter().filter(|layout| layout.target.as_deref() == Some(target.triple.as_str()))
         {
-            writeln!(
-                out,
-                "BESKID_{target_name}_CONTEXT_SIZE{separator}{}",
-                layout.size
-            )
-            .unwrap();
+            writeln!(out, "BESKID_{target_name}_CONTEXT_SIZE{separator}{}", layout.size).unwrap();
             for field in &layout.fields {
                 writeln!(
                     out,
@@ -819,32 +611,16 @@ fn render_asm_target(manifest: &RuntimeManifestV5, target: &TargetV5, masm: bool
             }
         }
         for function in &manifest.assembly {
-            let function_name = function
-                .symbol
-                .strip_prefix("beskid_arch_v5_")
-                .unwrap_or(&function.symbol);
-            for (param, location) in function
-                .params
-                .iter()
-                .zip(&function.locations[&target.triple])
-            {
+            let function_name = function.symbol.strip_prefix("beskid_arch_v5_").unwrap_or(&function.symbol);
+            for (param, location) in function.params.iter().zip(&function.locations[&target.triple]) {
                 let (kind, operand) = match location {
                     ParameterLocationV5::Register { register } => ("REGISTER", register.clone()),
                     ParameterLocationV5::Stack { base, offset } => {
-                        let operand = if masm {
-                            format!("[{base} + {offset}]")
-                        } else {
-                            format!("{offset}(%{base})")
-                        };
+                        let operand = if masm { format!("[{base} + {offset}]") } else { format!("{offset}(%{base})") };
                         ("STACK_OPERAND", operand)
                     }
                 };
-                let key = format!(
-                    "BESKID_{}_{}_{}",
-                    macro_name(function_name),
-                    macro_name(&param.name),
-                    kind,
-                );
+                let key = format!("BESKID_{}_{}_{}", macro_name(function_name), macro_name(&param.name), kind,);
                 if masm {
                     writeln!(out, "{key} TEXTEQU <{operand}>").unwrap();
                 } else {
@@ -852,21 +628,11 @@ fn render_asm_target(manifest: &RuntimeManifestV5, target: &TargetV5, masm: bool
                 }
             }
             if masm {
-                writeln!(
-                    out,
-                    "; {} preserved: {}",
-                    function.symbol,
-                    function.preserved[&target.triple].join(",")
-                )
-                .unwrap();
+                writeln!(out, "; {} preserved: {}", function.symbol, function.preserved[&target.triple].join(","))
+                    .unwrap();
             } else {
-                writeln!(
-                    out,
-                    "/* {} preserved: {} */",
-                    function.symbol,
-                    function.preserved[&target.triple].join(",")
-                )
-                .unwrap();
+                writeln!(out, "/* {} preserved: {} */", function.symbol, function.preserved[&target.triple].join(","))
+                    .unwrap();
             }
         }
     }
@@ -892,11 +658,7 @@ fn macro_name(value: &str) -> String {
         if index > 0 && ch.is_ascii_uppercase() && !output.ends_with('_') {
             output.push('_');
         }
-        output.push(if ch.is_ascii_alphanumeric() {
-            ch.to_ascii_uppercase()
-        } else {
-            '_'
-        });
+        output.push(if ch.is_ascii_alphanumeric() { ch.to_ascii_uppercase() } else { '_' });
     }
     output
 }
@@ -916,17 +678,11 @@ fn canonicalized(manifest: &RuntimeManifestV5) -> RuntimeManifestV5 {
     value.targets.sort_by(|a, b| a.triple.cmp(&b.triple));
     value.exports.sort_by(|a, b| a.symbol.cmp(&b.symbol));
     value.intrinsics.sort_by(|a, b| a.name.cmp(&b.name));
-    value
-        .layouts
-        .sort_by(|a, b| a.target.cmp(&b.target).then_with(|| a.name.cmp(&b.name)));
+    value.layouts.sort_by(|a, b| a.target.cmp(&b.target).then_with(|| a.name.cmp(&b.name)));
     for layout in &mut value.layouts {
         layout.fields.sort_by_key(|field| field.offset);
     }
-    value.platform_imports.sort_by(|a, b| {
-        a.target
-            .cmp(&b.target)
-            .then_with(|| a.symbol.cmp(&b.symbol))
-    });
+    value.platform_imports.sort_by(|a, b| a.target.cmp(&b.target).then_with(|| a.symbol.cmp(&b.symbol)));
     value.assembly.sort_by(|a, b| a.symbol.cmp(&b.symbol));
     value.traps.sort_by_key(|trap| trap.code);
     value.audit.forbidden_symbol_families.sort();
@@ -935,24 +691,14 @@ fn canonicalized(manifest: &RuntimeManifestV5) -> RuntimeManifestV5 {
 
 fn one<'a>(blocks: &'a [BsolBlock], kind: &str) -> Result<&'a BsolBlock, String> {
     let mut found = blocks.iter().filter(|block| block.kind == kind);
-    let first = found
-        .next()
-        .ok_or_else(|| format!("missing `{kind}` block"))?;
-    if found.next().is_some() {
-        Err(format!("duplicate `{kind}` block"))
-    } else {
-        Ok(first)
-    }
+    let first = found.next().ok_or_else(|| format!("missing `{kind}` block"))?;
+    if found.next().is_some() { Err(format!("duplicate `{kind}` block")) } else { Ok(first) }
 }
 fn blocks<'a>(blocks: &'a [BsolBlock], kind: &'a str) -> impl Iterator<Item = &'a BsolBlock> {
     blocks.iter().filter(move |block| block.kind == kind)
 }
 fn label(block: &BsolBlock) -> Result<String, String> {
-    block
-        .label
-        .as_ref()
-        .map(|label| label.value.clone())
-        .ok_or_else(|| format!("`{}` requires a label", block.kind))
+    block.label.as_ref().map(|label| label.value.clone()).ok_or_else(|| format!("`{}` requires a label", block.kind))
 }
 fn value<'a>(block: &'a BsolBlock, key: &str) -> Result<&'a BsolValue, String> {
     block
@@ -973,10 +719,7 @@ fn ensure_fields(block: &BsolBlock, allowed: &[&str]) -> Result<(), String> {
                     return Err(format!("unknown field `{}` in `{}`", entry.key, block.kind));
                 }
                 if !seen.insert(entry.key.as_str()) {
-                    return Err(format!(
-                        "duplicate field `{}` in `{}`",
-                        entry.key, block.kind
-                    ));
+                    return Err(format!("duplicate field `{}` in `{}`", entry.key, block.kind));
                 }
             }
             BsolItem::Block(_) => {
@@ -1008,14 +751,10 @@ fn optional_string_field(block: &BsolBlock, key: &str) -> Result<Option<String>,
         .transpose()
 }
 fn u32_field(block: &BsolBlock, key: &str) -> Result<u32, String> {
-    string_field(block, key)?
-        .parse()
-        .map_err(|_| format!("`{key}` must be u32"))
+    string_field(block, key)?.parse().map_err(|_| format!("`{key}` must be u32"))
 }
 fn u64_field(block: &BsolBlock, key: &str) -> Result<u64, String> {
-    string_field(block, key)?
-        .parse()
-        .map_err(|_| format!("`{key}` must be u64"))
+    string_field(block, key)?.parse().map_err(|_| format!("`{key}` must be u64"))
 }
 fn list_items<'a>(block: &'a BsolBlock, key: &str) -> Result<&'a [BsolListItem], String> {
     match value(block, key)? {
@@ -1039,10 +778,7 @@ fn parameters(block: &BsolBlock, key: &str) -> Result<Vec<ParameterV5>, String> 
         .map(|item| match item {
             BsolListItem::InlineMap(map) => {
                 ensure_map_fields(map, &["name", "type"])?;
-                Ok(ParameterV5 {
-                    name: map_string(map, "name")?,
-                    ty: map_string(map, "type")?,
-                })
+                Ok(ParameterV5 { name: map_string(map, "name")?, ty: map_string(map, "type")? })
             }
             _ => Err(format!("`{key}` entries must be inline maps")),
         })
@@ -1056,9 +792,7 @@ fn fields(block: &BsolBlock) -> Result<Vec<FieldV5>, String> {
                 ensure_map_fields(map, &["name", "offset", "type"])?;
                 Ok(FieldV5 {
                     name: map_string(map, "name")?,
-                    offset: map_string(map, "offset")?
-                        .parse()
-                        .map_err(|_| "field offset must be u64")?,
+                    offset: map_string(map, "offset")?.parse().map_err(|_| "field offset must be u64")?,
                     ty: map_string(map, "type")?,
                 })
             }
@@ -1099,22 +833,13 @@ fn parse_assembly(block: &BsolBlock, targets: &[TargetV5]) -> Result<AssemblyV5,
         allowed.push(format!("{slug}_preserved"));
         allowed.push(format!("{slug}_locations"));
     }
-    ensure_fields(
-        block,
-        &allowed.iter().map(String::as_str).collect::<Vec<_>>(),
-    )?;
+    ensure_fields(block, &allowed.iter().map(String::as_str).collect::<Vec<_>>())?;
     let mut preserved = BTreeMap::new();
     let mut locations = BTreeMap::new();
     for target in targets {
         let slug = target.triple.replace('-', "_");
-        preserved.insert(
-            target.triple.clone(),
-            list_field(block, &format!("{slug}_preserved"))?,
-        );
-        locations.insert(
-            target.triple.clone(),
-            parameter_locations(block, &format!("{slug}_locations"))?,
-        );
+        preserved.insert(target.triple.clone(), list_field(block, &format!("{slug}_preserved"))?);
+        locations.insert(target.triple.clone(), parameter_locations(block, &format!("{slug}_locations"))?);
     }
     Ok(AssemblyV5 {
         symbol: label(block)?,
@@ -1131,26 +856,19 @@ fn parameter_locations(block: &BsolBlock, key: &str) -> Result<Vec<ParameterLoca
         .map(|item| match item {
             BsolListItem::InlineMap(map) => {
                 let has_register = map.entries.iter().any(|entry| entry.key == "register");
-                let has_stack = map
-                    .entries
-                    .iter()
-                    .any(|entry| entry.key == "stack_base" || entry.key == "stack_offset");
+                let has_stack =
+                    map.entries.iter().any(|entry| entry.key == "stack_base" || entry.key == "stack_offset");
                 match (has_register, has_stack) {
                     (true, false) => {
                         ensure_map_fields(map, &["register"])?;
-                        Ok(ParameterLocationV5::Register {
-                            register: map_string(map, "register")?,
-                        })
+                        Ok(ParameterLocationV5::Register { register: map_string(map, "register")? })
                     }
                     (false, true) => {
                         ensure_map_fields(map, &["stack_base", "stack_offset"])?;
                         let offset = map_string(map, "stack_offset")?
                             .parse::<u64>()
                             .map_err(|_| "`stack_offset` must be u64")?;
-                        Ok(ParameterLocationV5::Stack {
-                            base: map_string(map, "stack_base")?,
-                            offset,
-                        })
+                        Ok(ParameterLocationV5::Stack { base: map_string(map, "stack_base")?, offset })
                     }
                     _ => Err("parameter location must be exactly register or stack".into()),
                 }

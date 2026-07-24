@@ -23,10 +23,7 @@ impl PipelineNode {
         } else {
             TreeNode::with_children(
                 self.display_label(),
-                self.children
-                    .iter()
-                    .map(PipelineNode::to_tree_node)
-                    .collect(),
+                self.children.iter().map(PipelineNode::to_tree_node).collect(),
             )
         }
     }
@@ -43,11 +40,7 @@ pub struct PipelineTree {
 impl PipelineTree {
     pub fn phase_start(&mut self, depth: usize, label: impl Into<String>) {
         let label = label.into();
-        let node = PipelineNode {
-            label,
-            detail: None,
-            children: Vec::new(),
-        };
+        let node = PipelineNode { label, detail: None, children: Vec::new() };
         if depth == 0 {
             self.roots.push(node);
             self.stack = vec![vec![self.roots.len() - 1]];
@@ -64,12 +57,7 @@ impl PipelineTree {
         }
     }
 
-    pub fn phase_end(
-        &mut self,
-        depth: usize,
-        label: impl Into<String>,
-        duration: impl Into<String>,
-    ) {
+    pub fn phase_end(&mut self, depth: usize, label: impl Into<String>, duration: impl Into<String>) {
         let duration = duration.into();
         if let Some(path) = self.stack.get(depth).cloned()
             && let Some(node) = self.node_at_path_mut(&path)
@@ -84,18 +72,10 @@ impl PipelineTree {
 
     pub fn work_unit(&mut self, depth: usize, done: u64, total: u64, label: impl Into<String>) {
         let label = format!("[{done}/{total}] {}", label.into());
-        let node = PipelineNode {
-            label,
-            detail: None,
-            children: Vec::new(),
-        };
+        let node = PipelineNode { label, detail: None, children: Vec::new() };
         let parent_path = if depth == 0 {
             if self.roots.is_empty() {
-                self.roots.push(PipelineNode {
-                    label: "Work".into(),
-                    detail: None,
-                    children: vec![node],
-                });
+                self.roots.push(PipelineNode { label: "Work".into(), detail: None, children: vec![node] });
                 return;
             }
             vec![self.roots.len() - 1]

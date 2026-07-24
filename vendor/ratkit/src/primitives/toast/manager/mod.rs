@@ -16,17 +16,8 @@ impl Toast {
         }
     }
 
-    pub fn with_duration(
-        message: impl Into<String>,
-        level: ToastLevel,
-        duration: Duration,
-    ) -> Self {
-        Self {
-            message: message.into(),
-            level,
-            created_at: std::time::Instant::now(),
-            duration,
-        }
+    pub fn with_duration(message: impl Into<String>, level: ToastLevel, duration: Duration) -> Self {
+        Self { message: message.into(), level, created_at: std::time::Instant::now(), duration }
     }
 
     pub fn lifetime_percent(&self) -> f32 {
@@ -38,10 +29,7 @@ impl Toast {
 
 impl ToastManager {
     pub fn new() -> Self {
-        Self {
-            toasts: Vec::new(),
-            max_toasts: 5,
-        }
+        Self { toasts: Vec::new(), max_toasts: 5 }
     }
 
     pub fn add(&mut self, toast: Toast) {
@@ -89,11 +77,7 @@ impl ToastManager {
             let toast_y = y_offset.saturating_sub(TOAST_HEIGHT);
             let toast_x = frame_area.width.saturating_sub(TOAST_WIDTH + TOAST_MARGIN);
 
-            if x >= toast_x
-                && x < toast_x + TOAST_WIDTH
-                && y >= toast_y
-                && y < toast_y + TOAST_HEIGHT
-            {
+            if x >= toast_x && x < toast_x + TOAST_WIDTH && y >= toast_y && y < toast_y + TOAST_HEIGHT {
                 self.toasts.remove(i);
                 return true;
             }

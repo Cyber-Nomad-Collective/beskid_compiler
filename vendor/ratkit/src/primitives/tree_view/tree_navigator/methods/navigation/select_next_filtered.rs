@@ -32,12 +32,8 @@ impl TreeNavigator {
     ///     matches_filter(data, filter)
     /// });
     /// ```
-    pub fn select_next_filtered<T, F>(
-        &self,
-        nodes: &[TreeNode<T>],
-        state: &mut TreeViewState,
-        matcher: F,
-    ) where
+    pub fn select_next_filtered<T, F>(&self, nodes: &[TreeNode<T>], state: &mut TreeViewState, matcher: F)
+    where
         F: Fn(&T, &Option<String>) -> bool,
     {
         let visible_paths = get_visible_paths_filtered(nodes, state, matcher);

@@ -79,26 +79,19 @@ pub fn resolve_program_traced(
 }
 
 pub(super) fn path_segments(path: &Spanned<crate::hir::HirPath>) -> Vec<String> {
-    path.node
-        .segments
-        .iter()
-        .map(|segment| segment.node.name.node.name.clone())
-        .collect()
+    path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect()
 }
 
 pub(super) fn file_scoped_module_index(program: &Spanned<crate::hir::HirProgram>) -> Option<usize> {
     program.node.items.iter().position(|item| match &item.node {
         HirItem::ModuleDeclaration(def) => {
-            def.node.visibility.node == crate::hir::HirVisibility::Private
-                && def.node.attributes.is_empty()
+            def.node.visibility.node == crate::hir::HirVisibility::Private && def.node.attributes.is_empty()
         }
         _ => false,
     })
 }
 
-pub(super) fn file_scoped_module_path(
-    program: &Spanned<crate::hir::HirProgram>,
-) -> Option<Vec<String>> {
+pub(super) fn file_scoped_module_path(program: &Spanned<crate::hir::HirProgram>) -> Option<Vec<String>> {
     let index = file_scoped_module_index(program)?;
     let HirItem::ModuleDeclaration(def) = &program.node.items.get(index)?.node else {
         return None;

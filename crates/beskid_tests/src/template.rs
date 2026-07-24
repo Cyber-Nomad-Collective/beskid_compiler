@@ -11,11 +11,7 @@ use beskid_template::{
 fn workspace_template_packages_root() -> Option<PathBuf> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let candidate = manifest_dir.join("../../beskid_templates/packages");
-    if candidate.is_dir() {
-        Some(candidate)
-    } else {
-        None
-    }
+    if candidate.is_dir() { Some(candidate) } else { None }
 }
 
 fn write_inline_fixture(root: &std::path::Path) -> PathBuf {
@@ -83,8 +79,7 @@ fn substitutes_placeholders() {
 fn instantiates_inline_project_template() {
     let temp = tempfile::tempdir().expect("tempdir");
     let template_root = write_inline_fixture(temp.path());
-    let manifest =
-        beskid_template::load_manifest_from_template_root(&template_root).expect("manifest");
+    let manifest = beskid_template::load_manifest_from_template_root(&template_root).expect("manifest");
     let output = temp.path().join("out");
     let options = InstantiateOptions {
         template_root,
@@ -107,10 +102,7 @@ fn instantiates_inline_project_template() {
         .expect("read output")
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
-        .find(|path| {
-            path.extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("bproj"))
-        })
+        .find(|path| path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bproj")))
         .expect("instantiated .bproj manifest");
     let proj = fs::read_to_string(&proj_path).expect("read");
     assert!(proj.contains("MyGame"));
@@ -131,8 +123,7 @@ fn instantiates_packaged_template_when_present() {
         if !template_root.join(TEMPLATE_MANIFEST_REL).is_file() {
             continue;
         }
-        let manifest =
-            beskid_template::load_manifest_from_template_root(&template_root).expect("manifest");
+        let manifest = beskid_template::load_manifest_from_template_root(&template_root).expect("manifest");
         let temp = tempfile::tempdir().expect("tempdir");
         let output = temp.path().join("out");
         let options = InstantiateOptions {
@@ -155,12 +146,7 @@ fn instantiates_packaged_template_when_present() {
         let has_bproj = fs::read_dir(&output)
             .expect("read output")
             .filter_map(|entry| entry.ok())
-            .any(|entry| {
-                entry
-                    .path()
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("bproj"))
-            });
+            .any(|entry| entry.path().extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bproj")));
         assert!(has_bproj || output.read_dir().unwrap().next().is_some());
         return;
     }

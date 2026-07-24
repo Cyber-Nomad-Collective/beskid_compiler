@@ -12,14 +12,8 @@ use super::span::span_from_bounds;
 /// One decoded segment inside a string literal token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StringLiteralPart {
-    Text {
-        value: String,
-        span: SpanInfo,
-    },
-    RuntimeInterpolation {
-        expression_source: String,
-        span: SpanInfo,
-    },
+    Text { value: String, span: SpanInfo },
+    RuntimeInterpolation { expression_source: String, span: SpanInfo },
 }
 
 /// Decode a full `"..."` string literal token into its runtime value.
@@ -70,16 +64,12 @@ pub fn split_string_literal_parts(
     literal_span: SpanInfo,
 ) -> Result<Vec<StringLiteralPart>, ParseError> {
     let inner = string_literal_inner(token)?;
-    let mut pairs = BeskidParser::parse(Rule::StringLiteralValue, inner).map_err(|_| {
-        ParseError::UnexpectedRule {
-            expected: Some(Rule::StringLiteralValue),
-            found: Rule::StringLiteralValue,
-            span: literal_span,
-        }
+    let mut pairs = BeskidParser::parse(Rule::StringLiteralValue, inner).map_err(|_| ParseError::UnexpectedRule {
+        expected: Some(Rule::StringLiteralValue),
+        found: Rule::StringLiteralValue,
+        span: literal_span,
     })?;
-    let root = pairs.next().ok_or(ParseError::MissingPair {
-        expected: Rule::StringLiteralValue,
-    })?;
+    let root = pairs.next().ok_or(ParseError::MissingPair { expected: Rule::StringLiteralValue })?;
 
     let inner_offset = literal_span.start + 1;
 
@@ -107,16 +97,12 @@ fn string_literal_value_contents<'i>(pair: Pair<'i, Rule>, out: &mut Vec<Pair<'i
 }
 
 fn parse_string_literal_pair(token: &str) -> Result<Pair<'_, Rule>, ParseError> {
-    let mut pairs = BeskidParser::parse(Rule::StringLiteral, token).map_err(|_| {
-        ParseError::UnexpectedRule {
-            expected: Some(Rule::StringLiteral),
-            found: Rule::StringLiteral,
-            span: SpanInfo::default(),
-        }
+    let mut pairs = BeskidParser::parse(Rule::StringLiteral, token).map_err(|_| ParseError::UnexpectedRule {
+        expected: Some(Rule::StringLiteral),
+        found: Rule::StringLiteral,
+        span: SpanInfo::default(),
     })?;
-    let pair = pairs.next().ok_or(ParseError::MissingPair {
-        expected: Rule::StringLiteral,
-    })?;
+    let pair = pairs.next().ok_or(ParseError::MissingPair { expected: Rule::StringLiteral })?;
     if pairs.next().is_some() {
         return Err(ParseError::UnexpectedRule {
             expected: None,
@@ -156,18 +142,12 @@ fn split_string_content_segment(
             Rule::StringText => text.push_str(segment.as_str()),
             Rule::StringEscape => text.push_str(decode_string_escape(segment.as_str())?),
             Rule::StringInterpolation => {
-                let interpolation_span =
-                    offset_span(SpanInfo::from_span(&segment.as_span()), inner_offset);
-                flush_text_part(
-                    parts,
-                    &mut text,
-                    text_start,
-                    interpolation_span.start,
-                    input,
-                )?;
-                let expr = segment.into_inner().next().ok_or(ParseError::MissingPair {
-                    expected: Rule::InterpolationExpression,
-                })?;
+                let interpolation_span = offset_span(SpanInfo::from_span(&segment.as_span()), inner_offset);
+                flush_text_part(parts, &mut text, text_start, interpolation_span.start, input)?;
+                let expr = segment
+                    .into_inner()
+                    .next()
+                    .ok_or(ParseError::MissingPair { expected: Rule::InterpolationExpression })?;
                 let expr_span = offset_span(SpanInfo::from_span(&expr.as_span()), inner_offset);
                 parts.push(StringLiteralPart::RuntimeInterpolation {
                     expression_source: expr.as_str().trim().to_string(),
@@ -185,11 +165,7 @@ fn split_string_content_segment(
 }
 
 fn offset_span(span: SpanInfo, offset: usize) -> SpanInfo {
-    SpanInfo {
-        start: span.start.saturating_add(offset),
-        end: span.end.saturating_add(offset),
-        ..span
-    }
+    SpanInfo { start: span.start.saturating_add(offset), end: span.end.saturating_add(offset), ..span }
 }
 
 fn flush_text_part(
@@ -203,10 +179,7 @@ fn flush_text_part(
         return Ok(());
     }
     let span = span_from_absolute(input, start, end)?;
-    parts.push(StringLiteralPart::Text {
-        value: std::mem::take(text),
-        span,
-    });
+    parts.push(StringLiteralPart::Text { value: std::mem::take(text), span });
     Ok(())
 }
 
@@ -227,11 +200,7 @@ fn span_from_absolute(input: &str, start: usize, end: usize) -> Result<SpanInfo,
     span_from_bounds(input, start, end).ok_or(ParseError::UnexpectedRule {
         expected: None,
         found: Rule::StringText,
-        span: SpanInfo {
-            start,
-            end,
-            ..SpanInfo::default()
-        },
+        span: SpanInfo { start, end, ..SpanInfo::default() },
     })
 }
 

@@ -105,10 +105,7 @@ pub extern "C-unwind" fn rt_metrics_heap_live_bytes() -> usize {
 pub extern "C-unwind" fn rt_metrics_heap_fragmentation_bytes() -> usize {
     let mut out = 0usize;
     with_current_root(|root| {
-        out = root
-            .runtime_state
-            .heap_total_bytes
-            .saturating_sub(root.runtime_state.heap_live_bytes);
+        out = root.runtime_state.heap_total_bytes.saturating_sub(root.runtime_state.heap_live_bytes);
     });
     out
 }

@@ -35,10 +35,7 @@ pub mod projects;
 pub mod syntax_query;
 
 #[doc(hidden)]
-#[deprecated(
-    since = "0.5.0",
-    note = "renamed to `syntax_query`; use `beskid_analysis::syntax_query` instead"
-)]
+#[deprecated(since = "0.5.0", note = "renamed to `syntax_query`; use `beskid_analysis::syntax_query` instead")]
 pub mod query {
     pub use super::syntax_query::*;
 }
@@ -49,23 +46,20 @@ pub mod syntax;
 pub mod types;
 
 pub use analysis::{
-    AnalysisOptions, AnalysisResult, MietteReportError, Rule as AnalysisRule, RuleContext,
-    SemanticDiagnostic, Severity, builtin_rules, run_rules,
+    AnalysisOptions, AnalysisResult, MietteReportError, Rule as AnalysisRule, RuleContext, SemanticDiagnostic,
+    Severity, builtin_rules, run_rules,
 };
 pub use compilation_context::{CompilationContext, ProjectSessionHandle, module_roots_for_plan};
 pub use parser::{BeskidParser, Rule};
 pub use projects::{AssemblyDiscovery, AssemblyOptions, ProgramAssembly, effective_roots_for_plan};
-pub use projects::{
-    ProjectGraphBuildOptions, WorkspaceResolutionSummary, resolve_project_manifest_for_source_path,
-};
+pub use projects::{ProjectGraphBuildOptions, WorkspaceResolutionSummary, resolve_project_manifest_for_source_path};
 #[allow(deprecated)]
 pub use services::{
     AnalyzeInProjectOptions, analyze_program_with_options, analyze_source_with_compilation_context,
-    compile_plan_for_input_path, compile_plan_for_input_path_with_member,
-    resolve_input_with_pipeline,
+    compile_plan_for_input_path, compile_plan_for_input_path_with_member, resolve_input_with_pipeline,
 };
 pub use syntax::{AstNodeId, AstNodeKey, SyntaxGenerationId};
 pub use syntax_query::{
-    Ancestors, AstNode, Descendants, DynNodeRef, HirDescendants, HirNode, HirNodeKind, HirNodeRef,
-    HirQuery, HirVisit, HirWalker, NodeKind, Query, SyntaxNodeId, SyntaxSnapshot,
+    Ancestors, AstNode, Descendants, DynNodeRef, HirDescendants, HirNode, HirNodeKind, HirNodeRef, HirQuery, HirVisit,
+    HirWalker, NodeKind, Query, SyntaxNodeId, SyntaxSnapshot,
 };

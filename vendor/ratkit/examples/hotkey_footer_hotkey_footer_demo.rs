@@ -5,18 +5,14 @@ use ratatui::{
     Frame,
 };
 use ratkit::widgets::{HotkeyFooter, HotkeyItem};
-use ratkit::{
-    run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig,
-};
+use ratkit::{run_with_diagnostics, CoordinatorAction, CoordinatorApp, CoordinatorEvent, RunnerConfig};
 
 struct HotkeyFooterDemo;
 
 impl CoordinatorApp for HotkeyFooterDemo {
     fn on_event(&mut self, event: CoordinatorEvent) -> ratkit::LayoutResult<CoordinatorAction> {
         match event {
-            CoordinatorEvent::Keyboard(keyboard)
-                if keyboard.key_code == crossterm::event::KeyCode::Char('q') =>
-            {
+            CoordinatorEvent::Keyboard(keyboard) if keyboard.key_code == crossterm::event::KeyCode::Char('q') => {
                 Ok(CoordinatorAction::Quit)
             }
             _ => Ok(CoordinatorAction::Redraw),
@@ -30,11 +26,8 @@ impl CoordinatorApp for HotkeyFooterDemo {
             .constraints([Constraint::Min(0), Constraint::Length(1)])
             .split(area);
 
-        let body = Paragraph::new(Line::from("Footer on the bottom. Press q to quit.")).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Hotkey Footer "),
-        );
+        let body = Paragraph::new(Line::from("Footer on the bottom. Press q to quit."))
+            .block(Block::default().borders(Borders::ALL).title(" Hotkey Footer "));
         frame.render_widget(body, chunks[0]);
 
         let footer = HotkeyFooter::new(vec![

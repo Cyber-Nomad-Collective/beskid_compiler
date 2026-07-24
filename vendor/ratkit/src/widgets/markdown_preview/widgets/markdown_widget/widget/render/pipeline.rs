@@ -11,9 +11,7 @@ use crate::widgets::markdown_preview::widgets::markdown_widget::markdown_documen
 use crate::widgets::markdown_preview::widgets::markdown_widget::markdown_viewer_state_adapter::{
     markdown_display_to_viewer_display, markdown_scroll_to_viewer_scroll,
 };
-use crate::widgets::markdown_preview::widgets::markdown_widget::state::{
-    ParsedCache, RenderCache, TocState,
-};
+use crate::widgets::markdown_preview::widgets::markdown_widget::state::{ParsedCache, RenderCache, TocState};
 use crate::widgets::markdown_preview::widgets::markdown_widget::widget::features::filter::element_to_plain_text_for_filter;
 use crate::widgets::markdown_preview::widgets::markdown_widget::widget::features::selection::apply_selection_highlighting;
 use crate::widgets::markdown_preview::widgets::markdown_widget::widget::{
@@ -27,10 +25,7 @@ use ratatui::widgets::{Block, Borders, Widget};
 impl<'a> Widget for &mut MarkdownWidget<'a> {
     fn render(self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
         let (area, _pane_footer_area) = if self.has_pane {
-            let title = self
-                .pane_title
-                .clone()
-                .unwrap_or_else(|| "Markdown".to_string());
+            let title = self.pane_title.clone().unwrap_or_else(|| "Markdown".to_string());
             let pane = self.pane.take().unwrap_or_else(|| {
                 let mut p = Pane::new(title);
                 if let Some(color) = self.pane_color {
@@ -90,15 +85,8 @@ impl<'a> Widget for &mut MarkdownWidget<'a> {
 
         let (main_area, statusline_area) = if self.show_statusline && area.height > 1 {
             (
-                Rect {
-                    height: area.height.saturating_sub(1),
-                    ..area
-                },
-                Some(Rect {
-                    y: area.y + area.height.saturating_sub(1),
-                    height: 1,
-                    ..area
-                }),
+                Rect { height: area.height.saturating_sub(1), ..area },
+                Some(Rect { y: area.y + area.height.saturating_sub(1), height: 1, ..area }),
             )
         } else {
             (area, None)
@@ -109,11 +97,7 @@ impl<'a> Widget for &mut MarkdownWidget<'a> {
 
         self.scroll.update_viewport(content_area);
 
-        let line_num_width = if self.display.show_document_line_numbers() {
-            6
-        } else {
-            0
-        };
+        let line_num_width = if self.display.show_document_line_numbers() { 6 } else { 0 };
 
         let width = (content_area.width as usize).saturating_sub(line_num_width);
         let content_hash = hash_content(&self.content);
@@ -127,11 +111,8 @@ impl<'a> Widget for &mut MarkdownWidget<'a> {
                 use std::collections::hash_map::DefaultHasher;
                 use std::hash::{Hash, Hasher};
                 let mut hasher = DefaultHasher::new();
-                format!(
-                    "{:?}{:?}{:?}{:?}{:?}",
-                    t.primary, t.text, t.background, t.markdown.heading, t.markdown.code
-                )
-                .hash(&mut hasher);
+                format!("{:?}{:?}{:?}{:?}{:?}", t.primary, t.text, t.background, t.markdown.heading, t.markdown.code)
+                    .hash(&mut hasher);
                 hasher.finish()
             })
             .unwrap_or(0);
@@ -152,91 +133,70 @@ impl<'a> Widget for &mut MarkdownWidget<'a> {
                 })
                 .unwrap_or(false);
 
-        let (all_lines, line_boundaries, line_source_lines): (
-            Vec<Line<'static>>,
-            Vec<(usize, usize)>,
-            Vec<usize>,
-        ) = if render_cache_valid {
-            let cache = self.cache.render.as_ref().expect("render cache present");
-            (
-                cache.lines.clone(),
-                cache.line_boundaries.clone(),
-                cache.line_source_lines.clone(),
-            )
-        } else {
-            let parsed_cache_valid = self
-                .cache
-                .parsed
-                .as_ref()
-                .map(|c| c.content_hash == content_hash)
-                .unwrap_or(false);
-
-            let elements = if parsed_cache_valid {
-                self.cache
-                    .parsed
-                    .as_ref()
-                    .expect("parsed cache present")
-                    .elements
-                    .clone()
+        let (all_lines, line_boundaries, line_source_lines): (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<usize>) =
+            if render_cache_valid {
+                let cache = self.cache.render.as_ref().expect("render cache present");
+                (cache.lines.clone(), cache.line_boundaries.clone(), cache.line_source_lines.clone())
             } else {
-                let parsed = self.parse_elements();
-                self.cache.parsed = Some(ParsedCache {
-                    content_hash,
-                    elements: parsed.clone(),
-                });
-                parsed
-            };
+                let parsed_cache_valid =
+                    self.cache.parsed.as_ref().map(|c| c.content_hash == content_hash).unwrap_or(false);
 
-            let render_options = RenderOptions {
-                show_line_numbers,
-                theme,
-                app_theme: self.app_theme.as_ref(),
-                show_heading_collapse: self.display.show_heading_collapse,
-            };
+                let elements = if parsed_cache_valid {
+                    self.cache.parsed.as_ref().expect("parsed cache present").elements.clone()
+                } else {
+                    let parsed = self.parse_elements();
+                    self.cache.parsed = Some(ParsedCache { content_hash, elements: parsed.clone() });
+                    parsed
+                };
 
-            let filter_lower = self
-                .filter_mode
-                .then(|| self.filter.as_deref().unwrap_or("").to_lowercase());
+                let render_options = RenderOptions {
+                    show_line_numbers,
+                    theme,
+                    app_theme: self.app_theme.as_ref(),
+                    show_heading_collapse: self.display.show_heading_collapse,
+                };
 
-            let mut lines: Vec<Line<'static>> = Vec::new();
-            let mut boundaries: Vec<(usize, usize)> = Vec::new();
-            let mut source_lines: Vec<usize> = Vec::new();
+                let filter_lower = self.filter_mode.then(|| self.filter.as_deref().unwrap_or("").to_lowercase());
 
-            for (idx, element) in elements.iter().enumerate() {
-                if !should_render_line(element, idx, &self.collapse) {
-                    continue;
-                }
+                let mut lines: Vec<Line<'static>> = Vec::new();
+                let mut boundaries: Vec<(usize, usize)> = Vec::new();
+                let mut source_lines: Vec<usize> = Vec::new();
 
-                if let Some(ref filter) = filter_lower {
-                    let text = element_to_plain_text_for_filter(&element.kind).to_lowercase();
-                    if !text.contains(filter) {
+                for (idx, element) in elements.iter().enumerate() {
+                    if !should_render_line(element, idx, &self.collapse) {
                         continue;
                     }
+
+                    if let Some(ref filter) = filter_lower {
+                        let text = element_to_plain_text_for_filter(&element.kind).to_lowercase();
+                        if !text.contains(filter) {
+                            continue;
+                        }
+                    }
+
+                    let start_idx = lines.len();
+                    let rendered = render_with_options(element, width, render_options);
+                    let line_count = rendered.len();
+                    let source_line = element.source_line.max(1);
+                    lines.extend(rendered);
+                    source_lines.extend(std::iter::repeat(source_line).take(line_count));
+                    boundaries.push((start_idx, line_count));
                 }
 
-                let start_idx = lines.len();
-                let rendered = render_with_options(element, width, render_options);
-                let line_count = rendered.len();
-                let source_line = element.source_line.max(1);
-                lines.extend(rendered);
-                source_lines.extend(std::iter::repeat(source_line).take(line_count));
-                boundaries.push((start_idx, line_count));
-            }
+                self.cache.render = Some(RenderCache {
+                    content_hash,
+                    width,
+                    show_line_numbers,
+                    theme,
+                    app_theme_hash,
+                    show_heading_collapse,
+                    lines: lines.clone(),
+                    line_boundaries: boundaries.clone(),
+                    line_source_lines: source_lines.clone(),
+                });
 
-            self.cache.render = Some(RenderCache {
-                content_hash,
-                width,
-                show_line_numbers,
-                theme,
-                app_theme_hash,
-                show_heading_collapse,
-                lines: lines.clone(),
-                line_boundaries: boundaries.clone(),
-                line_source_lines: source_lines.clone(),
-            });
-
-            (lines, boundaries, source_lines)
-        };
+                (lines, boundaries, source_lines)
+            };
 
         self.scroll.update_total_lines(all_lines.len());
         self.rendered_lines = all_lines.clone();
@@ -250,12 +210,8 @@ impl<'a> Widget for &mut MarkdownWidget<'a> {
 
         let final_lines: Vec<Line<'static>> = if self.display.show_document_line_numbers() {
             let theme_colors = self.display.code_block_theme.colors();
-            let line_num_style = Style::default()
-                .fg(theme_colors.line_number)
-                .bg(theme_colors.background);
-            let border_style = Style::default()
-                .fg(theme_colors.border)
-                .bg(theme_colors.background);
+            let line_num_style = Style::default().fg(theme_colors.line_number).bg(theme_colors.background);
+            let border_style = Style::default().fg(theme_colors.border).bg(theme_colors.background);
 
             let mut visual_to_logical: Vec<(usize, bool)> = Vec::with_capacity(all_lines.len());
             for (logical_idx, (_start_idx, count)) in line_boundaries.iter().enumerate() {
@@ -269,10 +225,8 @@ impl<'a> Widget for &mut MarkdownWidget<'a> {
                 .enumerate()
                 .map(|(visual_idx, mut line)| {
                     let is_current = visual_idx == current_visual_line;
-                    let (logical_num, is_first) = visual_to_logical
-                        .get(visual_idx)
-                        .copied()
-                        .unwrap_or((visual_idx + 1, true));
+                    let (logical_num, is_first) =
+                        visual_to_logical.get(visual_idx).copied().unwrap_or((visual_idx + 1, true));
 
                     let (num_str, border_str) = if is_first {
                         (format!("{:>3} ", logical_num), "│ ".to_string())
@@ -284,11 +238,7 @@ impl<'a> Widget for &mut MarkdownWidget<'a> {
                     let border_span = Span::styled(border_str, border_style);
                     let mut new_spans = vec![num_span, border_span];
 
-                    let highlight_bg = if self.selection_active {
-                        CURRENT_LINE_DRAG_BG
-                    } else {
-                        CURRENT_LINE_BG
-                    };
+                    let highlight_bg = if self.selection_active { CURRENT_LINE_DRAG_BG } else { CURRENT_LINE_BG };
 
                     if is_current {
                         let mut content_width = 0usize;
@@ -297,16 +247,13 @@ impl<'a> Widget for &mut MarkdownWidget<'a> {
                             if span.content.contains('▋') {
                                 new_spans.push(span);
                             } else {
-                                new_spans
-                                    .push(Span::styled(span.content, span.style.bg(highlight_bg)));
+                                new_spans.push(Span::styled(span.content, span.style.bg(highlight_bg)));
                             }
                         }
                         let total_content_width = line_num_width + content_width;
                         if total_content_width < content_area.width as usize {
-                            let padding =
-                                " ".repeat(content_area.width as usize - total_content_width);
-                            new_spans
-                                .push(Span::styled(padding, Style::default().bg(highlight_bg)));
+                            let padding = " ".repeat(content_area.width as usize - total_content_width);
+                            new_spans.push(Span::styled(padding, Style::default().bg(highlight_bg)));
                         }
                     } else {
                         new_spans.append(&mut line.spans);
@@ -316,11 +263,7 @@ impl<'a> Widget for &mut MarkdownWidget<'a> {
                 })
                 .collect()
         } else {
-            let highlight_bg = if self.selection_active {
-                CURRENT_LINE_DRAG_BG
-            } else {
-                CURRENT_LINE_BG
-            };
+            let highlight_bg = if self.selection_active { CURRENT_LINE_DRAG_BG } else { CURRENT_LINE_BG };
 
             decorated_lines
                 .into_iter()
@@ -336,15 +279,13 @@ impl<'a> Widget for &mut MarkdownWidget<'a> {
                             if span.content.contains('▋') {
                                 new_spans.push(span);
                             } else {
-                                new_spans
-                                    .push(Span::styled(span.content, span.style.bg(highlight_bg)));
+                                new_spans.push(Span::styled(span.content, span.style.bg(highlight_bg)));
                             }
                         }
 
                         if content_width < content_area.width as usize {
                             let padding = " ".repeat(content_area.width as usize - content_width);
-                            new_spans
-                                .push(Span::styled(padding, Style::default().bg(highlight_bg)));
+                            new_spans.push(Span::styled(padding, Style::default().bg(highlight_bg)));
                         }
                         Line::from(new_spans)
                     } else {
@@ -354,16 +295,10 @@ impl<'a> Widget for &mut MarkdownWidget<'a> {
                 .collect()
         };
 
-        let markdown_document = markdown_lines_to_document_with_source_lines(
-            final_lines,
-            line_source_lines,
-            &self.content,
-        );
-        let viewer_scroll = markdown_scroll_to_viewer_scroll(
-            &self.scroll,
-            current_visual_line,
-            markdown_document.line_count(),
-        );
+        let markdown_document =
+            markdown_lines_to_document_with_source_lines(final_lines, line_source_lines, &self.content);
+        let viewer_scroll =
+            markdown_scroll_to_viewer_scroll(&self.scroll, current_visual_line, markdown_document.line_count());
         let mut viewer_display = markdown_display_to_viewer_display(&self.display);
         viewer_display.show_line_numbers = false;
         viewer_display.highlight_current_line = false;
@@ -377,9 +312,7 @@ impl<'a> Widget for &mut MarkdownWidget<'a> {
             auto_state.scroll_offset = self.toc_scroll_offset;
 
             let final_state = self.resolved_toc_state(&auto_state);
-            let toc = Toc::new(final_state)
-                .expanded(self.toc_hovered)
-                .config(self.toc_config.clone());
+            let toc = Toc::new(final_state).expanded(self.toc_hovered).config(self.toc_config.clone());
 
             toc.render(ov_area, buf);
         }
@@ -397,9 +330,8 @@ impl<'a> Widget for &mut MarkdownWidget<'a> {
                 height: content_area.height,
             };
 
-            let scrollbar = CustomScrollbar::new(&self.scroll)
-                .config(self.scrollbar_config.clone())
-                .show_percentage(false);
+            let scrollbar =
+                CustomScrollbar::new(&self.scroll).config(self.scrollbar_config.clone()).show_percentage(false);
 
             scrollbar.render(scrollbar_area, buf);
         }

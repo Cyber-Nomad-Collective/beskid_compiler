@@ -62,11 +62,7 @@ pub(super) fn apply_pending_cancels(s: &mut Scheduler) {
     }
 }
 
-pub fn fiber_spawn(
-    entry: extern "C" fn(*mut u8) -> i64,
-    env: *mut u8,
-    on_cancelled_slot: *mut *mut EventState,
-) -> i64 {
+pub fn fiber_spawn(entry: extern "C" fn(*mut u8) -> i64, env: *mut u8, on_cancelled_slot: *mut *mut EventState) -> i64 {
     let parent = tls::current_fiber_key();
     let spawned = tls::try_with_scheduler(|s| {
         let key = s.spawn_fiber(entry, env, on_cancelled_slot, parent);
@@ -76,12 +72,7 @@ pub fn fiber_spawn(
         return id;
     }
     PENDING_SPAWN.with(|p| {
-        p.borrow_mut().push(PendingSpawn {
-            entry,
-            env,
-            on_cancelled_slot,
-            parent,
-        });
+        p.borrow_mut().push(PendingSpawn { entry, env, on_cancelled_slot, parent });
     });
     // Parent must yield so pending spawns are applied before using child id.
     fiber_yield();

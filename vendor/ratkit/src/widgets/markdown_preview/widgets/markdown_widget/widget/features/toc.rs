@@ -45,10 +45,7 @@ impl<'a> MarkdownWidget<'a> {
         }
 
         let main_area = if self.show_statusline && total_area.height > 1 {
-            Rect {
-                height: total_area.height.saturating_sub(1),
-                ..total_area
-            }
+            Rect { height: total_area.height.saturating_sub(1), ..total_area }
         } else {
             total_area
         };
@@ -64,15 +61,10 @@ impl<'a> MarkdownWidget<'a> {
         };
 
         let toc_height = if self.toc_hovered {
-            Toc::required_height(&self.content, self.toc_config.show_border)
-                .min(main_area.height.saturating_sub(1))
+            Toc::required_height(&self.content, self.toc_config.show_border).min(main_area.height.saturating_sub(1))
         } else {
-            Toc::required_compact_height(
-                &self.content,
-                self.toc_config.line_spacing,
-                self.toc_config.show_border,
-            )
-            .min(main_area.height.saturating_sub(1))
+            Toc::required_compact_height(&self.content, self.toc_config.line_spacing, self.toc_config.show_border)
+                .min(main_area.height.saturating_sub(1))
         };
 
         if main_area.width <= toc_width + padding_right + 2 {
@@ -117,10 +109,7 @@ impl<'a> MarkdownWidget<'a> {
             return false;
         }
 
-        if event.column < toc_area.x
-            || event.column >= toc_area.x + toc_area.width
-            || event.row < toc_area.y
-        {
+        if event.column < toc_area.x || event.column >= toc_area.x + toc_area.width || event.row < toc_area.y {
             return false;
         }
 
@@ -129,17 +118,12 @@ impl<'a> MarkdownWidget<'a> {
         auto_state.hovered = self.toc_hovered;
         auto_state.hovered_entry = self.toc_hovered_entry;
         let toc_state = self.resolved_toc_state(&auto_state);
-        let toc = Toc::new(toc_state)
-            .expanded(self.toc_hovered)
-            .config(self.toc_config.clone());
+        let toc = Toc::new(toc_state).expanded(self.toc_hovered).config(self.toc_config.clone());
 
         if let Some(entry_idx) = toc.entry_at_position(event.column, event.row, toc_area) {
             if let Some(target_line) = toc.click_to_line(entry_idx) {
                 let new_offset = target_line.saturating_sub(2);
-                let max_offset = self
-                    .scroll
-                    .total_lines
-                    .saturating_sub(self.scroll.viewport_height);
+                let max_offset = self.scroll.total_lines.saturating_sub(self.scroll.viewport_height);
                 self.scroll.scroll_offset = new_offset.min(max_offset);
                 self.scroll.current_line = target_line.saturating_add(1);
                 self.toc_hovered_entry = Some(entry_idx);
@@ -182,9 +166,7 @@ impl<'a> MarkdownWidget<'a> {
                 auto_state.hovered = true;
                 auto_state.hovered_entry = self.toc_hovered_entry;
                 let toc_state = self.resolved_toc_state(&auto_state);
-                let toc = Toc::new(toc_state)
-                    .expanded(true)
-                    .config(self.toc_config.clone());
+                let toc = Toc::new(toc_state).expanded(true).config(self.toc_config.clone());
                 toc.entry_at_position(event.column, event.row, toc_area)
             };
             self.toc_hovered = true;
@@ -226,9 +208,7 @@ impl<'a> MarkdownWidget<'a> {
         auto_state.hovered = true;
         auto_state.hovered_entry = self.toc_hovered_entry;
         let toc_state = self.resolved_toc_state(&auto_state);
-        let toc = Toc::new(toc_state)
-            .expanded(true)
-            .config(self.toc_config.clone());
+        let toc = Toc::new(toc_state).expanded(true).config(self.toc_config.clone());
 
         self.toc_hovered_entry = toc.entry_at_position(x, y, toc_area);
     }
@@ -240,9 +220,7 @@ impl<'a> MarkdownWidget<'a> {
             auto_state.hovered = true;
             auto_state.hovered_entry = self.toc_hovered_entry;
             let toc_state = self.resolved_toc_state(&auto_state);
-            let toc = Toc::new(toc_state)
-                .expanded(true)
-                .config(self.toc_config.clone());
+            let toc = Toc::new(toc_state).expanded(true).config(self.toc_config.clone());
             toc.entry_at_position(event.column, event.row, toc_area)
         };
         self.toc_hovered = true;

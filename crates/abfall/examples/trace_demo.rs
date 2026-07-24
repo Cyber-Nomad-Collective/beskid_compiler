@@ -32,26 +32,13 @@ fn main() {
     println!("Creating linked list: 1 -> 2 -> 3");
 
     let node1 = {
-        let node3 = ctx.allocate(Node {
-            value: 3,
-            next: None,
-        });
-        let node2 = ctx.allocate(Node {
-            value: 2,
-            next: Some(node3.as_ptr()),
-        });
-        ctx.allocate(Node {
-            value: 1,
-            next: Some(node2.as_ptr()),
-        })
+        let node3 = ctx.allocate(Node { value: 3, next: None });
+        let node2 = ctx.allocate(Node { value: 2, next: Some(node3.as_ptr()) });
+        ctx.allocate(Node { value: 1, next: Some(node2.as_ptr()) })
         // node2 and node3 GcRoots are dropped here, but they're still reachable via node1
     };
 
-    println!(
-        "Allocations: {}, Bytes: {}",
-        ctx.allocation_count(),
-        ctx.bytes_allocated()
-    );
+    println!("Allocations: {}, Bytes: {}", ctx.allocation_count(), ctx.bytes_allocated());
 
     // Traverse the list
     println!("\nTraversing list:");
@@ -96,9 +83,6 @@ fn main() {
     if ctx.allocation_count() == 0 {
         println!("\n✓ Trace-based collection works correctly!");
     } else {
-        println!(
-            "\n✗ TEST FAILED: {} nodes not collected!",
-            ctx.allocation_count()
-        );
+        println!("\n✗ TEST FAILED: {} nodes not collected!", ctx.allocation_count());
     }
 }

@@ -17,8 +17,7 @@ const DEFAULT_PCKG_BASE: &str = "https://pckg.beskid-lang.org";
 const DEFAULT_BOOK_BASE: &str = "https://beskid-lang.org";
 const DEFAULT_SPEC_BASE: &str = "https://spec.beskid-lang.org/platform-spec";
 
-const CORELIB_SPEC_PATH: &str =
-    "/platform-spec/core-library/stability-and-api-shape/corelib-api-shape/";
+const CORELIB_SPEC_PATH: &str = "/platform-spec/core-library/stability-and-api-shape/corelib-api-shape/";
 pub fn handle_symbol_documentation_command(
     command: &str,
     arguments: Option<Vec<Value>>,
@@ -33,10 +32,7 @@ pub fn handle_symbol_documentation_command(
         return Ok(Some(json!({})));
     };
     let args = first_arg_object(&arguments).ok_or_else(missing_args)?;
-    let offset = args
-        .get("offset")
-        .and_then(Value::as_u64)
-        .ok_or_else(missing_args)? as usize;
+    let offset = args.get("offset").and_then(Value::as_u64).ok_or_else(missing_args)? as usize;
     let url = documentation_uri_for_offset(document, offset);
     Ok(Some(json!({ "url": url })))
 }
@@ -56,13 +52,9 @@ fn documentation_uri_for_offset(document: &Document, offset: usize) -> Option<St
     let source_path = hover.location_path.as_path();
 
     if let Some((package, version)) = package_from_materialized_path(source_path) {
-        let base =
-            std::env::var("BESKID_PCKG_BASE_URL").unwrap_or_else(|_| DEFAULT_PCKG_BASE.to_string());
+        let base = std::env::var("BESKID_PCKG_BASE_URL").unwrap_or_else(|_| DEFAULT_PCKG_BASE.to_string());
         let base = base.trim_end_matches('/');
-        let fragment = symbol_name
-            .as_deref()
-            .map(|s| format!("#{}", urlencoding_encode(s)))
-            .unwrap_or_default();
+        let fragment = symbol_name.as_deref().map(|s| format!("#{}", urlencoding_encode(s))).unwrap_or_default();
         return Some(format!("{base}/docs/{package}@{version}{fragment}"));
     }
 
@@ -70,8 +62,7 @@ fn documentation_uri_for_offset(document: &Document, offset: usize) -> Option<St
         return Some(absolute_spec_url(&spec_path));
     }
 
-    let book_base =
-        std::env::var("BESKID_BOOK_BASE_URL").unwrap_or_else(|_| DEFAULT_BOOK_BASE.to_string());
+    let book_base = std::env::var("BESKID_BOOK_BASE_URL").unwrap_or_else(|_| DEFAULT_BOOK_BASE.to_string());
     let book_base = book_base.trim_end_matches('/');
     if let Some(name) = symbol_name {
         return Some(format!("{book_base}/book/?q={}", urlencoding_encode(&name)));
@@ -80,25 +71,17 @@ fn documentation_uri_for_offset(document: &Document, offset: usize) -> Option<St
 }
 
 fn absolute_spec_url(spec_path: &str) -> String {
-    let spec_base =
-        std::env::var("BESKID_SPEC_BASE_URL").unwrap_or_else(|_| DEFAULT_SPEC_BASE.to_string());
+    let spec_base = std::env::var("BESKID_SPEC_BASE_URL").unwrap_or_else(|_| DEFAULT_SPEC_BASE.to_string());
     let spec_base = spec_base.trim_end_matches('/');
     if spec_path.starts_with("/platform-spec/") {
-        let site_root = spec_base
-            .strip_suffix("/platform-spec")
-            .unwrap_or(spec_base)
-            .trim_end_matches('/');
+        let site_root = spec_base.strip_suffix("/platform-spec").unwrap_or(spec_base).trim_end_matches('/');
         return format!("{site_root}{spec_path}");
     }
     format!("{spec_base}{}", normalize_spec_suffix(spec_path))
 }
 
 fn normalize_spec_suffix(spec_path: &str) -> String {
-    if spec_path.starts_with('/') {
-        spec_path.to_string()
-    } else {
-        format!("/{spec_path}")
-    }
+    if spec_path.starts_with('/') { spec_path.to_string() } else { format!("/{spec_path}") }
 }
 
 fn platform_spec_path_for_source(source_path: &Path) -> Option<String> {
@@ -161,10 +144,7 @@ fn urlencoding_encode(input: &str) -> String {
 
 pub fn uri_from_command_args(arguments: &Option<Vec<Value>>) -> Result<Uri> {
     let args = first_arg_object(arguments).ok_or_else(missing_args)?;
-    let uri_str = args
-        .get("uri")
-        .and_then(Value::as_str)
-        .ok_or_else(missing_args)?;
+    let uri_str = args.get("uri").and_then(Value::as_str).ok_or_else(missing_args)?;
     Uri::from_str(uri_str).map_err(|_| missing_args())
 }
 
@@ -174,9 +154,7 @@ mod tests {
 
     #[test]
     fn package_from_deps_path() {
-        let path = Path::new(
-            "/proj/obj/beskid/deps/src/corelib_console-bd3c8b5fe48c6cc8/src/Console/Style.bd",
-        );
+        let path = Path::new("/proj/obj/beskid/deps/src/corelib_console-bd3c8b5fe48c6cc8/src/Console/Style.bd");
         let (pkg, ver) = package_from_materialized_path(path).expect("parsed");
         assert_eq!(pkg, "corelib_console");
         assert_eq!(ver, "latest");

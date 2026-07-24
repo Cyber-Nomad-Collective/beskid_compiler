@@ -21,10 +21,8 @@ use syn::{Attribute, Fields, Generics, Item, Visibility, parse_file};
 use crate::emit_idents::rust_snake_to_beskid_field_camel;
 
 /// Default Rust sources under `beskid_analysis` (relative to the compiler workspace root).
-pub const DEFAULT_ANALYSIS_ALLOWLIST: &[&str] = &[
-    "crates/beskid_analysis/src/syntax/items/node.rs",
-    "crates/beskid_analysis/src/hir/item.rs",
-];
+pub const DEFAULT_ANALYSIS_ALLOWLIST: &[&str] =
+    &["crates/beskid_analysis/src/syntax/items/node.rs", "crates/beskid_analysis/src/hir/item.rs"];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenOptions {
@@ -40,12 +38,7 @@ pub struct GenOptions {
 
 impl Default for GenOptions {
     fn default() -> Self {
-        Self {
-            only_annotated: false,
-            emit_banner: true,
-            emit_reflect_stub: true,
-            item_allowlist: None,
-        }
+        Self { only_annotated: false, emit_banner: true, emit_reflect_stub: true, item_allowlist: None }
     }
 }
 
@@ -86,10 +79,7 @@ impl From<std::io::Error> for GenError {
 
 /// Resolve default allowlist paths against `compiler_workspace_root` (directory containing the workspace `Cargo.toml`).
 pub fn default_allowlist_paths(compiler_workspace_root: &Path) -> Vec<PathBuf> {
-    DEFAULT_ANALYSIS_ALLOWLIST
-        .iter()
-        .map(|rel| compiler_workspace_root.join(rel))
-        .collect()
+    DEFAULT_ANALYSIS_ALLOWLIST.iter().map(|rel| compiler_workspace_root.join(rel)).collect()
 }
 
 fn generics_is_empty(generics: &Generics) -> bool {
@@ -119,14 +109,8 @@ pub fn generate_from_paths(paths: &[PathBuf], options: &GenOptions) -> Result<St
 
     for path in paths_sorted {
         let src = fs::read_to_string(&path)?;
-        let file = parse_file(&src).map_err(|e| GenError::Parse {
-            path: path.clone(),
-            message: e.to_string(),
-        })?;
-        let label = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown.rs");
+        let file = parse_file(&src).map_err(|e| GenError::Parse { path: path.clone(), message: e.to_string() })?;
+        let label = path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown.rs");
         out.push_str(&format!("// --- {label} ---\n\n"));
         out.push_str(&emit_file(&file.items, options));
         if !out.ends_with('\n') {
@@ -161,10 +145,7 @@ fn item_has_beskid_reflect(item: &Item) -> bool {
 }
 
 fn is_beskid_reflect_attr(attr: &Attribute) -> bool {
-    attr.path()
-        .segments
-        .last()
-        .is_some_and(|s| s.ident == "beskid_reflect")
+    attr.path().segments.last().is_some_and(|s| s.ident == "beskid_reflect")
 }
 
 fn emit_item(item: &Item, options: &GenOptions) -> Option<String> {
@@ -215,10 +196,7 @@ fn emit_enum_variant(v: &syn::Variant) -> String {
             let names = tuple_variant_placeholder_names(uf.unnamed.len());
             let mut parts = Vec::new();
             for (i, _f) in uf.unnamed.iter().enumerate() {
-                let raw = names
-                    .get(i)
-                    .map(|s| s.as_str())
-                    .unwrap_or("variant_field_0");
+                let raw = names.get(i).map(|s| s.as_str()).unwrap_or("variant_field_0");
                 let n = rust_snake_to_beskid_field_camel(raw);
                 parts.push(format!("ReflectStub {n}"));
             }
@@ -270,11 +248,8 @@ pub fn parse_cli_args(args: &[OsString]) -> Result<CliInvocation, String> {
                     .get(i + 1)
                     .ok_or_else(|| "--items requires a comma-separated list".to_string())?
                     .to_string_lossy();
-                let set: BTreeSet<String> = list
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
+                let set: BTreeSet<String> =
+                    list.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
                 if set.is_empty() {
                     return Err("--items list was empty".to_string());
                 }
@@ -282,9 +257,7 @@ pub fn parse_cli_args(args: &[OsString]) -> Result<CliInvocation, String> {
                 i += 2;
             }
             "--out" => {
-                let p = args
-                    .get(i + 1)
-                    .ok_or_else(|| "--out requires a path".to_string())?;
+                let p = args.get(i + 1).ok_or_else(|| "--out requires a path".to_string())?;
                 out_path = Some(PathBuf::from(p));
                 i += 2;
             }
@@ -306,12 +279,7 @@ pub fn parse_cli_args(args: &[OsString]) -> Result<CliInvocation, String> {
         }
     }
     Ok(CliInvocation {
-        options: GenOptions {
-            only_annotated,
-            emit_banner,
-            emit_reflect_stub,
-            item_allowlist,
-        },
+        options: GenOptions { only_annotated, emit_banner, emit_reflect_stub, item_allowlist },
         out_path,
         paths,
     })
@@ -356,12 +324,8 @@ mod tests {
 
     #[test]
     fn golden_fixture_enum_and_struct() {
-        let fixture =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mirror_reflect.rs");
-        let options = GenOptions {
-            only_annotated: true,
-            ..Default::default()
-        };
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mirror_reflect.rs");
+        let options = GenOptions { only_annotated: true, ..Default::default() };
         let got = generate_from_paths(&[fixture], &options).expect("generate");
         let expected = include_str!("../tests/expected/mirror_reflect.generated.bd");
         assert_eq!(got, expected);
@@ -397,10 +361,7 @@ mod tests {
             pub enum Gamma { Y, }
         "#;
         let file = syn::parse_file(src).unwrap();
-        let options = GenOptions {
-            item_allowlist: Some(BTreeSet::from(["Gamma".to_string()])),
-            ..Default::default()
-        };
+        let options = GenOptions { item_allowlist: Some(BTreeSet::from(["Gamma".to_string()])), ..Default::default() };
         let got = emit_file(&file.items, &options);
         assert!(got.contains("pub enum Gamma"));
         assert!(!got.contains("Alpha"));

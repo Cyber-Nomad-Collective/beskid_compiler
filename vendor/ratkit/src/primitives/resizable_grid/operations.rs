@@ -1,6 +1,6 @@
 use crate::primitives::resizable_grid::types::{
-    LayoutNode, PaneId, ResizableGrid, SplitAxis, SplitDividerLayout, DEFAULT_SPLIT_PERCENT,
-    MAX_SPLIT_PERCENT, MIN_SPLIT_PERCENT,
+    LayoutNode, PaneId, ResizableGrid, SplitAxis, SplitDividerLayout, DEFAULT_SPLIT_PERCENT, MAX_SPLIT_PERCENT,
+    MIN_SPLIT_PERCENT,
 };
 use ratatui::layout::Rect;
 
@@ -13,12 +13,8 @@ impl ResizableGrid {
 
         self.nodes.push(LayoutNode::Pane { id: pane_id });
         self.nodes.push(LayoutNode::Pane { id: new_pane_id });
-        self.nodes[pane_index] = LayoutNode::Split {
-            axis,
-            ratio: DEFAULT_SPLIT_PERCENT,
-            first: first_index,
-            second: second_index,
-        };
+        self.nodes[pane_index] =
+            LayoutNode::Split { axis, ratio: DEFAULT_SPLIT_PERCENT, first: first_index, second: second_index };
 
         Some(new_pane_id)
     }
@@ -48,11 +44,7 @@ impl ResizableGrid {
             return false;
         };
 
-        let new_ratio = if is_first {
-            percent
-        } else {
-            100_u16.saturating_sub(percent)
-        };
+        let new_ratio = if is_first { percent } else { 100_u16.saturating_sub(percent) };
 
         *ratio = new_ratio.clamp(MIN_SPLIT_PERCENT, MAX_SPLIT_PERCENT);
         true
@@ -70,8 +62,7 @@ impl ResizableGrid {
                 LayoutNode::Pane { id } => {
                     if *id == pane_id {
                         let parent_index = parent_index?;
-                        let Some(LayoutNode::Split { first, .. }) = self.nodes.get(parent_index)
-                        else {
+                        let Some(LayoutNode::Split { first, .. }) = self.nodes.get(parent_index) else {
                             return None;
                         };
                         let is_first = *first == node_index;
@@ -203,8 +194,7 @@ impl ResizableGrid {
     pub fn update_divider_position(&mut self, _area: Rect) {}
 
     pub fn is_on_divider(&self, mouse_column: u16, mouse_row: u16, area: Rect) -> bool {
-        self.find_divider_at(mouse_column, mouse_row, area)
-            .is_some()
+        self.find_divider_at(mouse_column, mouse_row, area).is_some()
     }
 
     pub fn find_divider_at(&self, column: u16, row: u16, area: Rect) -> Option<usize> {
@@ -215,9 +205,7 @@ impl ResizableGrid {
             let rect = divider.area();
             match divider.axis() {
                 SplitAxis::Vertical => {
-                    let divider_x = rect.x.saturating_add(
-                        ((rect.width as u32 * divider.ratio() as u32) / 100) as u16,
-                    );
+                    let divider_x = rect.x.saturating_add(((rect.width as u32 * divider.ratio() as u32) / 100) as u16);
                     let distance = divider_x.abs_diff(column);
                     if distance <= threshold
                         && column <= divider_x.saturating_add(threshold)
@@ -228,9 +216,7 @@ impl ResizableGrid {
                     }
                 }
                 SplitAxis::Horizontal => {
-                    let divider_y = rect.y.saturating_add(
-                        ((rect.height as u32 * divider.ratio() as u32) / 100) as u16,
-                    );
+                    let divider_y = rect.y.saturating_add(((rect.height as u32 * divider.ratio() as u32) / 100) as u16);
                     let distance = divider_y.abs_diff(row);
                     if distance <= threshold
                         && row <= divider_y.saturating_add(threshold)
@@ -255,9 +241,7 @@ impl ResizableGrid {
         };
 
         let layouts = self.layout_dividers_internal(area);
-        let divider_layout = layouts
-            .iter()
-            .find(|divider| divider.split_index() == split_index);
+        let divider_layout = layouts.iter().find(|divider| divider.split_index() == split_index);
 
         if let Some(divider) = divider_layout {
             let rect = divider.area();
@@ -291,13 +275,7 @@ impl ResizableGrid {
                 continue;
             };
 
-            if let LayoutNode::Split {
-                axis,
-                ratio,
-                first,
-                second,
-            } = node
-            {
+            if let LayoutNode::Split { axis, ratio, first, second } = node {
                 dividers.push(SplitDividerLayout {
                     split_index: node_index,
                     axis: *axis,
@@ -309,12 +287,8 @@ impl ResizableGrid {
                     SplitAxis::Vertical => {
                         let first_width = ((node_area.width as u32 * *ratio as u32) / 100) as u16;
                         let second_width = node_area.width.saturating_sub(first_width);
-                        let first_area = Rect {
-                            x: node_area.x,
-                            y: node_area.y,
-                            width: first_width,
-                            height: node_area.height,
-                        };
+                        let first_area =
+                            Rect { x: node_area.x, y: node_area.y, width: first_width, height: node_area.height };
                         let second_area = Rect {
                             x: node_area.x.saturating_add(first_width),
                             y: node_area.y,
@@ -327,12 +301,8 @@ impl ResizableGrid {
                     SplitAxis::Horizontal => {
                         let first_height = ((node_area.height as u32 * *ratio as u32) / 100) as u16;
                         let second_height = node_area.height.saturating_sub(first_height);
-                        let first_area = Rect {
-                            x: node_area.x,
-                            y: node_area.y,
-                            width: node_area.width,
-                            height: first_height,
-                        };
+                        let first_area =
+                            Rect { x: node_area.x, y: node_area.y, width: node_area.width, height: first_height };
                         let second_area = Rect {
                             x: node_area.x,
                             y: node_area.y.saturating_add(first_height),

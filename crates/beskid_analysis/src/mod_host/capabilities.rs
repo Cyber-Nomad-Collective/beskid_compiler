@@ -24,10 +24,7 @@ pub(crate) fn enforce_capabilities(loaded: &[LoadedModArtifact]) -> Result<()> {
             }
         }
 
-        let available = capabilities
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
+        let available = capabilities.iter().map(String::as_str).collect::<HashSet<_>>();
         for registration in &artifact.registrations {
             if let Some(required) = required_capability(registration)
                 && !available.contains(required)
@@ -82,24 +79,14 @@ mod tests {
 
     #[test]
     fn allows_empty_or_unregistered_capabilities_for_mvp() {
-        let loaded = vec![LoadedModArtifact {
-            discovered: discovered(None),
-            descriptor: None,
-            registrations: Vec::new(),
-        }];
+        let loaded =
+            vec![LoadedModArtifact { discovered: discovered(None), descriptor: None, registrations: Vec::new() }];
 
         enforce_capabilities(&loaded).expect("empty registrations are allowed");
     }
 
-    fn loaded_with_caps(
-        capabilities: Option<Vec<String>>,
-        registration: ContractRegistration,
-    ) -> LoadedModArtifact {
-        LoadedModArtifact {
-            discovered: discovered(capabilities),
-            descriptor: None,
-            registrations: vec![registration],
-        }
+    fn loaded_with_caps(capabilities: Option<Vec<String>>, registration: ContractRegistration) -> LoadedModArtifact {
+        LoadedModArtifact { discovered: discovered(capabilities), descriptor: None, registrations: vec![registration] }
     }
 
     fn discovered(capabilities: Option<Vec<String>>) -> DiscoveredMod {

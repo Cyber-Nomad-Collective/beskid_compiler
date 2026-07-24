@@ -4,8 +4,7 @@
 //! state is delegated to `document_viewer::DisplaySettings`.
 
 use crate::widgets::{
-    document_viewer,
-    markdown_preview::widgets::markdown_widget::foundation::elements::CodeBlockTheme,
+    document_viewer, markdown_preview::widgets::markdown_widget::foundation::elements::CodeBlockTheme,
 };
 
 /// Display settings for markdown rendering.

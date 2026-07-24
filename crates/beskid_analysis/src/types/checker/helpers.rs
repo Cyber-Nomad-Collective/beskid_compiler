@@ -42,11 +42,7 @@ impl<'a> TypeChecker<'a> {
 
     pub(super) fn u8_array_type_id(&mut self) -> Option<TypeId> {
         let u8_id = self.primitive_type_id(HirPrimitiveType::U8)?;
-        Some(
-            self.type_table
-                .find_array_of(u8_id)
-                .unwrap_or_else(|| self.type_table.intern(TypeInfo::Array(u8_id))),
-        )
+        Some(self.type_table.find_array_of(u8_id).unwrap_or_else(|| self.type_table.intern(TypeInfo::Array(u8_id))))
     }
 
     pub(super) fn path_env(&self) -> PathTypeEnv<'_> {
@@ -61,20 +57,13 @@ impl<'a> TypeChecker<'a> {
     pub(super) fn resolved_value_at(&self, span: SpanInfo) -> Option<ResolvedValue> {
         if let Some(value) = self.resolution.span_index.lookup_value(span) {
             return Some(match value {
-                ResolvedValue::Item(item_id) => {
-                    ResolvedValue::Item(canonical_item_id(self.resolution, item_id))
-                }
+                ResolvedValue::Item(item_id) => ResolvedValue::Item(canonical_item_id(self.resolution, item_id)),
                 other => other,
             });
         }
-        let value = self
-            .resolution
-            .tables
-            .resolved_value_at(span, self.current_source_path.as_ref())?;
+        let value = self.resolution.tables.resolved_value_at(span, self.current_source_path.as_ref())?;
         Some(match value {
-            ResolvedValue::Item(item_id) => {
-                ResolvedValue::Item(canonical_item_id(self.resolution, item_id))
-            }
+            ResolvedValue::Item(item_id) => ResolvedValue::Item(canonical_item_id(self.resolution, item_id)),
             other => other,
         })
     }
@@ -83,11 +72,7 @@ impl<'a> TypeChecker<'a> {
         // A merged SpanIndex has no source identity. When type-checking a known unit, the
         // source-scoped resolution table is authoritative; otherwise a same-offset dependency
         // type can preempt the current unit before its scoped fact is considered.
-        if let Some(resolved_type) = self
-            .resolution
-            .tables
-            .resolved_type_at(span, self.current_source_path.as_ref())
-        {
+        if let Some(resolved_type) = self.resolution.tables.resolved_type_at(span, self.current_source_path.as_ref()) {
             return Some(resolved_type);
         }
         if let Some(resolved_type) = self.resolution.span_index.lookup_type(span) {
@@ -155,11 +140,7 @@ impl<'a> TypeChecker<'a> {
             return Some(signature);
         }
         Some(crate::types::result::FunctionSignature {
-            params: signature
-                .params
-                .iter()
-                .map(|param| self.substitute_type_id(*param, &mapping))
-                .collect(),
+            params: signature.params.iter().map(|param| self.substitute_type_id(*param, &mapping)).collect(),
             return_type: self.substitute_type_id(signature.return_type, &mapping),
         })
     }
@@ -189,11 +170,7 @@ impl<'a> TypeChecker<'a> {
             self.call_kinds.insert(node_id, kind);
         }
     }
-    pub(super) fn record_node_type(
-        &mut self,
-        node_id: crate::resolve::HirNodeId,
-        type_id: crate::types::TypeId,
-    ) {
+    pub(super) fn record_node_type(&mut self, node_id: crate::resolve::HirNodeId, type_id: crate::types::TypeId) {
         if node_id.is_valid() {
             self.node_types.insert(node_id, type_id);
         }
@@ -208,30 +185,20 @@ impl<'a> TypeChecker<'a> {
     }
 
     pub(super) fn local_id_for_span(&self, span: SpanInfo) -> Option<crate::resolve::LocalId> {
-        self.resolution
-            .tables
-            .local_id_for_span(span, self.current_source_path.as_ref())
+        self.resolution.tables.local_id_for_span(span, self.current_source_path.as_ref())
     }
 
     pub(super) fn item_id_for_span(&self, span: SpanInfo) -> Option<crate::resolve::ItemId> {
         if let Some(path) = &self.current_source_path
             && let Some(info) = self.resolution.items.iter().find(|info| {
                 info.span == span
-                    && info
-                        .source_path
-                        .as_ref()
-                        .is_some_and(|source| crate::paths::same_file(source, path))
+                    && info.source_path.as_ref().is_some_and(|source| crate::paths::same_file(source, path))
             })
         {
             return Some(info.id);
         }
 
-        let matches: Vec<_> = self
-            .resolution
-            .items
-            .iter()
-            .filter(|info| info.span == span)
-            .collect();
+        let matches: Vec<_> = self.resolution.items.iter().filter(|info| info.span == span).collect();
         match matches.as_slice() {
             [] => None,
             [single] => Some(single.id),
@@ -240,21 +207,15 @@ impl<'a> TypeChecker<'a> {
     }
 
     pub(super) fn item_id_for_name(&self, name: &str, kind: ItemKind) -> Option<ItemId> {
-        let matches: Vec<_> = self
-            .resolution
-            .items
-            .iter()
-            .filter(|info| info.name == name && info.kind == kind)
-            .collect();
+        let matches: Vec<_> =
+            self.resolution.items.iter().filter(|info| info.name == name && info.kind == kind).collect();
         match matches.as_slice() {
             [] => None,
             [single] => Some(single.id),
             many => {
                 if let Some(path) = &self.current_source_path
                     && let Some(info) = many.iter().rev().find(|info| {
-                        info.source_path
-                            .as_ref()
-                            .is_some_and(|source| crate::paths::same_file(source, path))
+                        info.source_path.as_ref().is_some_and(|source| crate::paths::same_file(source, path))
                     })
                 {
                     return Some(info.id);
@@ -281,11 +242,7 @@ impl<'a> TypeChecker<'a> {
             .map(|(name, _)| name.clone())
     }
 
-    pub(super) fn method_item_for_receiver(
-        &self,
-        receiver_type: TypeId,
-        method_name: &str,
-    ) -> Option<ItemId> {
+    pub(super) fn method_item_for_receiver(&self, receiver_type: TypeId, method_name: &str) -> Option<ItemId> {
         let receiver_item = self.named_item_id(receiver_type)?;
         self.methods_by_receiver
             .get(&(receiver_item, method_name.to_string()))
@@ -306,11 +263,7 @@ impl<'a> TypeChecker<'a> {
         names.iter().cloned().zip(args.iter().copied()).collect()
     }
 
-    pub(super) fn substitute_type_id(
-        &mut self,
-        type_id: TypeId,
-        mapping: &HashMap<String, TypeId>,
-    ) -> TypeId {
+    pub(super) fn substitute_type_id(&mut self, type_id: TypeId, mapping: &HashMap<String, TypeId>) -> TypeId {
         let info = self.type_table.get(type_id).cloned();
         match info {
             Some(TypeInfo::GenericParam(name)) => mapping.get(&name).copied().unwrap_or(type_id),
@@ -326,33 +279,18 @@ impl<'a> TypeChecker<'a> {
                         substituted
                     })
                     .collect();
-                if changed {
-                    self.type_table.intern(TypeInfo::Applied {
-                        base,
-                        args: new_args,
-                    })
-                } else {
-                    type_id
-                }
+                if changed { self.type_table.intern(TypeInfo::Applied { base, args: new_args }) } else { type_id }
             }
             Some(TypeInfo::Array(element)) => {
                 let substituted = self.substitute_type_id(element, mapping);
-                if substituted != element {
-                    self.type_table.intern(TypeInfo::Array(substituted))
-                } else {
-                    type_id
-                }
+                if substituted != element { self.type_table.intern(TypeInfo::Array(substituted)) } else { type_id }
             }
             _ => type_id,
         }
     }
 
     /// Widen `i32` to `i64` when paired with `i64` so integer literals compare with syscall counts.
-    pub(super) fn promote_binary_numeric_operands(
-        &self,
-        left: TypeId,
-        right: TypeId,
-    ) -> (TypeId, TypeId) {
+    pub(super) fn promote_binary_numeric_operands(&self, left: TypeId, right: TypeId) -> (TypeId, TypeId) {
         let Some(i64_id) = self.primitive_type_id(HirPrimitiveType::I64) else {
             return (left, right);
         };
@@ -408,9 +346,7 @@ impl<'a> TypeChecker<'a> {
         {
             return;
         }
-        if self.named_item_id(expected).is_some()
-            && self.named_item_id(expected) == self.named_item_id(actual)
-        {
+        if self.named_item_id(expected).is_some() && self.named_item_id(expected) == self.named_item_id(actual) {
             return;
         }
         if self.is_contract_compatible(expected, actual) {
@@ -422,19 +358,13 @@ impl<'a> TypeChecker<'a> {
         if self.is_numeric(expected) && self.is_numeric(actual) {
             return;
         }
-        self.errors.push(TypeError::TypeMismatch {
-            span,
-            expected,
-            actual,
-        });
+        self.errors.push(TypeError::TypeMismatch { span, expected, actual });
     }
 
     /// `u8[]` and `i64` Ptr handles share the same runtime representation (BYTES-001 ABI).
     fn is_byte_array_ptr_compatible(&mut self, expected: TypeId, actual: TypeId) -> bool {
-        let (Some(i64_id), Some(u8_arr)) = (
-            self.primitive_type_id(HirPrimitiveType::I64),
-            self.u8_array_type_id(),
-        ) else {
+        let (Some(i64_id), Some(u8_arr)) = (self.primitive_type_id(HirPrimitiveType::I64), self.u8_array_type_id())
+        else {
             return false;
         };
         (expected == i64_id && actual == u8_arr) || (expected == u8_arr && actual == i64_id)
@@ -447,12 +377,7 @@ impl<'a> TypeChecker<'a> {
         let Some(actual_item) = self.named_item_id(actual) else {
             return false;
         };
-        let Some(expected_info) = self
-            .resolution
-            .items
-            .iter()
-            .find(|info| info.id == expected_item)
-        else {
+        let Some(expected_info) = self.resolution.items.iter().find(|info| info.id == expected_item) else {
             return false;
         };
         if expected_info.kind != ItemKind::Contract {
@@ -462,18 +387,10 @@ impl<'a> TypeChecker<'a> {
             .tables
             .type_conformances
             .get(&actual_item)
-            .is_some_and(|entries| {
-                entries
-                    .iter()
-                    .any(|(contract_item, _)| *contract_item == expected_item)
-            })
+            .is_some_and(|entries| entries.iter().any(|(contract_item, _)| *contract_item == expected_item))
     }
 
-    pub(super) fn require_bool(
-        &mut self,
-        span: SpanInfo,
-        expression: &crate::syntax::Spanned<HirExpressionNode>,
-    ) {
+    pub(super) fn require_bool(&mut self, span: SpanInfo, expression: &crate::syntax::Spanned<HirExpressionNode>) {
         let type_id = self.type_expression(expression);
         let bool_id = self.primitive_type_id(HirPrimitiveType::Bool);
         if let (Some(type_id), Some(bool_id)) = (type_id, bool_id)
@@ -491,33 +408,21 @@ impl<'a> TypeChecker<'a> {
         matches!(
             self.type_table.get(type_id),
             Some(TypeInfo::Primitive(
-                HirPrimitiveType::I32
-                    | HirPrimitiveType::I64
-                    | HirPrimitiveType::U8
-                    | HirPrimitiveType::F64
+                HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8 | HirPrimitiveType::F64
             ))
         )
     }
 
     pub(super) fn is_bool(&self, type_id: TypeId) -> bool {
-        matches!(
-            self.type_table.get(type_id),
-            Some(TypeInfo::Primitive(HirPrimitiveType::Bool))
-        )
+        matches!(self.type_table.get(type_id), Some(TypeInfo::Primitive(HirPrimitiveType::Bool)))
     }
 
     pub(super) fn is_string(&self, type_id: TypeId) -> bool {
-        matches!(
-            self.type_table.get(type_id),
-            Some(TypeInfo::Primitive(HirPrimitiveType::String))
-        )
+        matches!(self.type_table.get(type_id), Some(TypeInfo::Primitive(HirPrimitiveType::String)))
     }
 
     pub(super) fn is_never(&self, type_id: TypeId) -> bool {
-        matches!(
-            self.type_table.get(type_id),
-            Some(TypeInfo::Primitive(HirPrimitiveType::Never))
-        )
+        matches!(self.type_table.get(type_id), Some(TypeInfo::Primitive(HirPrimitiveType::Never)))
     }
 
     pub(super) fn is_comparable(&self, type_id: TypeId) -> bool {
@@ -550,11 +455,8 @@ impl<'a> TypeChecker<'a> {
         if generic_param_count == 0 {
             return;
         }
-        let result_vars = (0..generic_param_count)
-            .map(|_| self.constraints.fresh_var())
-            .collect::<Vec<_>>();
-        self.constraints
-            .apply_generic(callee, arg_types.to_vec(), result_vars, span);
+        let result_vars = (0..generic_param_count).map(|_| self.constraints.fresh_var()).collect::<Vec<_>>();
+        self.constraints.apply_generic(callee, arg_types.to_vec(), result_vars, span);
     }
 }
 
@@ -569,36 +471,24 @@ mod tests {
 
     #[test]
     fn source_scoped_type_fact_wins_over_same_offset_span_index_entry() {
-        let span = SpanInfo {
-            start: 8,
-            end: 12,
-            ..SpanInfo::default()
-        };
+        let span = SpanInfo { start: 8, end: 12, ..SpanInfo::default() };
         let entry_path = PathBuf::from("src/entry.bd");
         let dependency_path = PathBuf::from("src/dependency.bd");
         let entry_type = ItemId(1);
         let dependency_type = ItemId(2);
         let mut resolution = Resolution::default();
 
+        resolution.tables.resolved_types.insert(span, ResolvedType::Item(entry_type));
         resolution
             .tables
-            .resolved_types
-            .insert(span, ResolvedType::Item(entry_type));
-        resolution.tables.scoped_resolved_types.insert(
-            dependency_path,
-            HashMap::from([(span, ResolvedType::Item(dependency_type))]),
-        );
+            .scoped_resolved_types
+            .insert(dependency_path, HashMap::from([(span, ResolvedType::Item(dependency_type))]));
         // The merged span index is source-less. It represents the same dependency fact that
         // previously preempted the entry unit before TypeChecker reached ResolutionTables.
-        resolution.span_index =
-            SpanIndex::build_from_maps(&[], &[(span, ResolvedType::Item(dependency_type))]);
+        resolution.span_index = SpanIndex::build_from_maps(&[], &[(span, ResolvedType::Item(dependency_type))]);
 
-        let checker = TypeChecker::new(&resolution, &UnitTypeSurface::default())
-            .with_source_path(&entry_path);
+        let checker = TypeChecker::new(&resolution, &UnitTypeSurface::default()).with_source_path(&entry_path);
 
-        assert_eq!(
-            checker.resolved_type_at(span),
-            Some(ResolvedType::Item(entry_type))
-        );
+        assert_eq!(checker.resolved_type_at(span), Some(ResolvedType::Item(entry_type)));
     }
 }

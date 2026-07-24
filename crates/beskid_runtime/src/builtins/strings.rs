@@ -46,10 +46,7 @@ pub extern "C-unwind" fn str_len(value: *const BeskidStr) -> usize {
 /// - `left` and `right` must be non-null handles; their `.ptr` must be non-null (even if len==0).
 /// - Performs byte-wise copy; inputs are assumed valid UTF-8.
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn str_concat(
-    left: *const BeskidStr,
-    right: *const BeskidStr,
-) -> *mut BeskidStr {
+pub extern "C-unwind" fn str_concat(left: *const BeskidStr, right: *const BeskidStr) -> *mut BeskidStr {
     if left.is_null() || right.is_null() {
         panic!("null string handle");
     }
@@ -74,10 +71,7 @@ pub extern "C-unwind" fn str_concat(
     #[cfg(feature = "metrics")]
     with_current_root(|root| {
         root.runtime_state.str_concat_calls = root.runtime_state.str_concat_calls.saturating_add(1);
-        root.runtime_state.str_concat_bytes = root
-            .runtime_state
-            .str_concat_bytes
-            .saturating_add(total_len);
+        root.runtime_state.str_concat_bytes = root.runtime_state.str_concat_bytes.saturating_add(total_len);
     });
 
     str_new(buffer.cast::<u8>(), total_len)
@@ -108,8 +102,7 @@ pub extern "C-unwind" fn str_eq(left: *const BeskidStr, right: *const BeskidStr)
             return usize::from(left_len == 0);
         }
         let equal = unsafe {
-            std::slice::from_raw_parts(left_ptr, left_len)
-                == std::slice::from_raw_parts(right_ptr, right_len)
+            std::slice::from_raw_parts(left_ptr, left_len) == std::slice::from_raw_parts(right_ptr, right_len)
         };
         return usize::from(equal);
     }
@@ -137,11 +130,7 @@ pub extern "C-unwind" fn str_from_i64(value: i64) -> *mut BeskidStr {
 /// `start` is a byte offset; `count` is the number of bytes to copy. Out-of-range
 /// inputs clamp to an empty or shorter slice rather than panicking.
 #[unsafe(no_mangle)]
-pub extern "C-unwind" fn str_slice(
-    value: *const BeskidStr,
-    start: usize,
-    count: usize,
-) -> *mut BeskidStr {
+pub extern "C-unwind" fn str_slice(value: *const BeskidStr, start: usize, count: usize) -> *mut BeskidStr {
     if value.is_null() {
         panic!("null string handle");
     }

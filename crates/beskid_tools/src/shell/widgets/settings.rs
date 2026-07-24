@@ -10,12 +10,9 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::shell::context::WidgetContext;
 use crate::shell::input::ShellInput;
-use crate::shell::key_bindings::{
-    BINDABLE_ACTIONS, ShortcutBindings, chord_from_key, display_chord,
-};
+use crate::shell::key_bindings::{BINDABLE_ACTIONS, ShortcutBindings, chord_from_key, display_chord};
 use crate::shell::settings::{
-    SettingKind, ToolSettingsRegistry, ToolsConfig, get_value, load_config, save_config,
-    save_path_for_scope, set_value,
+    SettingKind, ToolSettingsRegistry, ToolsConfig, get_value, load_config, save_config, save_path_for_scope, set_value,
 };
 use crate::shell::shortcut_clicks::ShortcutClickAction;
 use crate::shell::widget::{BeskidWidget, ShellAction, WidgetMeta};
@@ -79,8 +76,7 @@ impl SettingsWidgetState {
     }
 
     fn is_shortcuts_page(&self) -> bool {
-        self.active_page()
-            .is_some_and(|page| page.tool_id == "shortcuts")
+        self.active_page().is_some_and(|page| page.tool_id == "shortcuts")
     }
 
     fn field_count(&self) -> usize {
@@ -97,10 +93,7 @@ impl SettingsWidgetState {
             Ok(()) => {
                 self.saved_config = self.config.clone();
                 self.sync_bindings_to_host(ctx);
-                self.status = Some(format!(
-                    "Saved to {}",
-                    save_path_for_scope(ctx.scope).display()
-                ));
+                self.status = Some(format!("Saved to {}", save_path_for_scope(ctx.scope).display()));
             }
             Err(err) => self.status = Some(format!("Save failed: {err}")),
         }
@@ -131,19 +124,13 @@ pub struct SettingsWidget {
 
 impl Default for SettingsWidget {
     fn default() -> Self {
-        Self {
-            state: RefCell::new(SettingsWidgetState::default()),
-        }
+        Self { state: RefCell::new(SettingsWidgetState::default()) }
     }
 }
 
 impl BeskidWidget for SettingsWidget {
     fn meta(&self) -> WidgetMeta {
-        WidgetMeta {
-            id: "shell.settings",
-            title: "Settings",
-            icon: "⚙",
-        }
+        WidgetMeta { id: "shell.settings", title: "Settings", icon: "⚙" }
     }
 
     fn hotkeys(&self, _ctx: &WidgetContext<'_>) -> Vec<Hotkey> {
@@ -170,11 +157,7 @@ impl BeskidWidget for SettingsWidget {
                     state.bindings.set_chord(action.id, chord);
                     state.rebinding_action = None;
                     state.sync_bindings_to_host(ctx);
-                    state.status = Some(format!(
-                        "Bound {} to {}",
-                        action.label,
-                        display_chord(chord)
-                    ));
+                    state.status = Some(format!("Bound {} to {}", action.label, display_chord(chord)));
                     return ShellAction::Redraw;
                 }
             }
@@ -238,17 +221,12 @@ impl BeskidWidget for SettingsWidget {
                         let kind = desc.kind;
                         if kind == SettingKind::Bool {
                             let current = get_value(&state.config, &state.registry, tool_id, key);
-                            let next = if current == "true" {
-                                "false".into()
-                            } else {
-                                "true".into()
-                            };
+                            let next = if current == "true" { "false".into() } else { "true".into() };
                             set_value(&mut state.config, tool_id, key, next);
                             Some(ShellAction::Redraw)
                         } else if !state.editing {
                             state.editing = true;
-                            state.edit_buffer =
-                                get_value(&state.config, &state.registry, tool_id, key);
+                            state.edit_buffer = get_value(&state.config, &state.registry, tool_id, key);
                             Some(ShellAction::Redraw)
                         } else {
                             let value = state.edit_buffer.clone();
@@ -294,11 +272,7 @@ impl BeskidWidget for SettingsWidget {
             state.status = Some(format!("Press a key to bind {label} (Esc cancel)"));
         }
 
-        let page = state
-            .registry
-            .pages()
-            .get(state.active_page)
-            .or_else(|| state.registry.pages().first());
+        let page = state.registry.pages().get(state.active_page).or_else(|| state.registry.pages().first());
 
         let Some(page) = page else {
             frame.render_widget(
@@ -311,10 +285,7 @@ impl BeskidWidget for SettingsWidget {
 
         let mut lines = vec![Line::from(vec![
             Span::styled("Tool: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                format!("{} ({})", page.title, page.tool_id),
-                Style::default().fg(Color::Cyan),
-            ),
+            Span::styled(format!("{} ({})", page.title, page.tool_id), Style::default().fg(Color::Cyan)),
         ])];
 
         if state.is_shortcuts_page() {
@@ -339,9 +310,7 @@ impl BeskidWidget for SettingsWidget {
                 shortcut_click_rows.push((line_row, idx));
                 let prefix = if focused { "> " } else { "  " };
                 let style = if focused {
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
                 } else {
                     Style::default().add_modifier(Modifier::UNDERLINED)
                 };
@@ -380,9 +349,7 @@ impl BeskidWidget for SettingsWidget {
                 let focused = idx == state.focused_field;
                 let prefix = if focused { "> " } else { "  " };
                 let style = if focused {
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD)
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
                 };
@@ -402,10 +369,7 @@ impl BeskidWidget for SettingsWidget {
 
         if let Some(status) = &state.status {
             lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
-                status.clone(),
-                Style::default().fg(Color::Green),
-            )));
+            lines.push(Line::from(Span::styled(status.clone(), Style::default().fg(Color::Green))));
         }
 
         let page_tabs: Vec<_> = state
@@ -413,21 +377,12 @@ impl BeskidWidget for SettingsWidget {
             .pages()
             .iter()
             .enumerate()
-            .map(|(idx, p)| {
-                if idx == state.active_page {
-                    format!("[{}]", p.title)
-                } else {
-                    p.title.to_string()
-                }
-            })
+            .map(|(idx, p)| if idx == state.active_page { format!("[{}]", p.title) } else { p.title.to_string() })
             .collect();
 
         frame.render_widget(
-            Paragraph::new(lines).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(format!(" Settings — {} ", page_tabs.join(" | "))),
-            ),
+            Paragraph::new(lines)
+                .block(Block::default().borders(Borders::ALL).title(format!(" Settings — {} ", page_tabs.join(" | ")))),
             area,
         );
 
@@ -439,11 +394,7 @@ impl BeskidWidget for SettingsWidget {
                 height: area.height.saturating_sub(2),
             };
             for (row, index) in shortcut_click_rows {
-                ctx.shortcut_clicks.add_row(
-                    content,
-                    row,
-                    ShortcutClickAction::RebindShortcut(index),
-                );
+                ctx.shortcut_clicks.add_row(content, row, ShortcutClickAction::RebindShortcut(index));
             }
         }
     }

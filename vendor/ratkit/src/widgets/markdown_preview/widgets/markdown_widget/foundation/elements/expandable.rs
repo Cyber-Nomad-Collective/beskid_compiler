@@ -27,9 +27,7 @@ pub fn render_expandable(
 
         let hidden_count = lines.len().saturating_sub(max_lines);
         let toggle_text = format!("\u{25bc} Show more ({} hidden) ", hidden_count);
-        let toggle_style = Style::default()
-            .fg(toggle_color)
-            .add_modifier(Modifier::UNDERLINED);
+        let toggle_style = Style::default().fg(toggle_color).add_modifier(Modifier::UNDERLINED);
         result.push(Line::from(vec![Span::styled(toggle_text, toggle_style)]));
     } else {
         for line in lines {
@@ -38,9 +36,7 @@ pub fn render_expandable(
         }
 
         let toggle_text = "\u{25b2} Show less ";
-        let toggle_style = Style::default()
-            .fg(toggle_color)
-            .add_modifier(Modifier::UNDERLINED);
+        let toggle_style = Style::default().fg(toggle_color).add_modifier(Modifier::UNDERLINED);
         result.push(Line::from(vec![Span::styled(toggle_text, toggle_style)]));
     }
 
@@ -64,9 +60,7 @@ pub fn render_expand_toggle(
     // Use theme color for toggle buttons or fall back to blue
     let toggle_color = app_theme.map(|t| t.info).unwrap_or(Color::Blue);
 
-    let toggle_style = Style::default()
-        .fg(toggle_color)
-        .add_modifier(Modifier::UNDERLINED);
+    let toggle_style = Style::default().fg(toggle_color).add_modifier(Modifier::UNDERLINED);
 
     vec![Line::from(vec![Span::styled(toggle_text, toggle_style)])]
 }

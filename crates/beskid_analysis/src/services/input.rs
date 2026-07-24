@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use beskid_pipeline::PipelineObserver;
 
 use crate::projects::{
-    CompilePlan, PreparedProjectWorkspace, ProgramAssembly, UnresolvedDependencyPolicy,
-    WorkspaceResolutionSummary, plan_entry_path,
+    CompilePlan, PreparedProjectWorkspace, ProgramAssembly, UnresolvedDependencyPolicy, WorkspaceResolutionSummary,
+    plan_entry_path,
 };
 
 use super::project::{infer_manifest_from_input, resolve_project_with_policy};
@@ -109,9 +109,7 @@ pub fn resolve_input_with_policy(
         unresolved_dependency_policy,
         pipeline,
     )?;
-    let input_is_manifest = input
-        .map(|path| infer_manifest_from_input(path).is_some())
-        .unwrap_or(false);
+    let input_is_manifest = input.map(|path| infer_manifest_from_input(path).is_some()).unwrap_or(false);
     let mut compile_plan = resolved_project.compile_plan;
     let prepared_workspace = resolved_project.prepared_workspace;
     let workspace_summary = resolved_project.workspace_summary;
@@ -128,11 +126,7 @@ pub fn resolve_input_with_policy(
         && !input_is_manifest
         && input_path.is_file()
     {
-        materialized_input_path(
-            input_path,
-            compile_plan.as_ref(),
-            prepared_workspace.as_ref(),
-        )
+        materialized_input_path(input_path, compile_plan.as_ref(), prepared_workspace.as_ref())
     } else if let Some(plan) = compile_plan.as_ref() {
         let root = prepared_workspace
             .as_ref()
@@ -141,38 +135,22 @@ pub fn resolve_input_with_policy(
         plan_entry_path(plan, root)
     } else if let Some(input_path) = input {
         if input_is_manifest || !input_path.is_file() {
-            return Err(anyhow::anyhow!(
-                "no input file provided and no `.bproj` manifest discovered"
-            ));
+            return Err(anyhow::anyhow!("no input file provided and no `.bproj` manifest discovered"));
         }
         input_path.clone()
     } else {
-        return Err(anyhow::anyhow!(
-            "no input file provided and no `.bproj` manifest discovered"
-        ));
+        return Err(anyhow::anyhow!("no input file provided and no `.bproj` manifest discovered"));
     };
 
     let source = if source_path.is_file() {
-        fs::read_to_string(&source_path)
-            .with_context(|| format!("Failed to read file: {}", source_path.display()))?
-    } else if compile_plan
-        .as_ref()
-        .is_some_and(|plan| plan.target.entry.as_deref().unwrap_or("").trim().is_empty())
-    {
+        fs::read_to_string(&source_path).with_context(|| format!("Failed to read file: {}", source_path.display()))?
+    } else if compile_plan.as_ref().is_some_and(|plan| plan.target.entry.as_deref().unwrap_or("").trim().is_empty()) {
         String::new()
     } else {
-        fs::read_to_string(&source_path)
-            .with_context(|| format!("Failed to read file: {}", source_path.display()))?
+        fs::read_to_string(&source_path).with_context(|| format!("Failed to read file: {}", source_path.display()))?
     };
 
-    Ok(ResolvedInput {
-        source_path,
-        source,
-        compile_plan,
-        prepared_workspace,
-        workspace_summary,
-        assembly: None,
-    })
+    Ok(ResolvedInput { source_path, source, compile_plan, prepared_workspace, workspace_summary, assembly: None })
 }
 
 /// Preserve an explicit source-file selection when project resolution has a default manifest
@@ -186,13 +164,8 @@ fn materialized_input_path(
     let Some((plan, workspace)) = plan.zip(workspace) else {
         return input_path.to_path_buf();
     };
-    let canonical_input = input_path
-        .canonicalize()
-        .unwrap_or_else(|_| input_path.to_path_buf());
-    let canonical_source_root = plan
-        .source_root
-        .canonicalize()
-        .unwrap_or_else(|_| plan.source_root.clone());
+    let canonical_input = input_path.canonicalize().unwrap_or_else(|_| input_path.to_path_buf());
+    let canonical_source_root = plan.source_root.canonicalize().unwrap_or_else(|_| plan.source_root.clone());
     canonical_input
         .strip_prefix(canonical_source_root)
         .map(|relative| workspace.materialized_source_root.join(relative))
@@ -219,21 +192,15 @@ mod tests {
         let workspace_root = root.join("corelib");
         let manifest = workspace_root.join("CoreLib.bws");
         if !manifest.is_file() {
-            eprintln!(
-                "skip resolve_input_directory_with_compile_plan_uses_entry_file: {manifest:?} missing"
-            );
+            eprintln!("skip resolve_input_directory_with_compile_plan_uses_entry_file: {manifest:?} missing");
             return;
         }
         let previous = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(&workspace_root).expect("chdir");
-        let resolved = resolve_input(Some(&workspace_root), None, None, None, false, false)
-            .expect("resolve directory input");
+        let resolved =
+            resolve_input(Some(&workspace_root), None, None, None, false, false).expect("resolve directory input");
         std::env::set_current_dir(previous).expect("restore cwd");
-        assert!(
-            resolved.source_path.is_file(),
-            "expected entry file, got {}",
-            resolved.source_path.display()
-        );
+        assert!(resolved.source_path.is_file(), "expected entry file, got {}", resolved.source_path.display());
         assert!(resolved.compile_plan.is_some());
     }
 }

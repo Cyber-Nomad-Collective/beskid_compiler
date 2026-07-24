@@ -8,17 +8,9 @@ use ratatui::widgets::{Block, Borders};
 pub fn title_line(title: impl Into<String>) -> Line<'static> {
     let title = title.into();
     Line::from(vec![
-        Span::styled(
-            title.clone(),
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Span::styled(title.clone(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw(" "),
-        Span::styled(
-            "─".repeat(title.len().max(8)),
-            Style::default().fg(Color::DarkGray),
-        ),
+        Span::styled("─".repeat(title.len().max(8)), Style::default().fg(Color::DarkGray)),
     ])
 }
 
@@ -29,11 +21,7 @@ pub fn toolbar_block(title: impl Into<String>) -> Block<'static> {
         .borders(Borders::TOP)
         .border_style(Style::default().fg(Color::DarkGray))
         .title(title)
-        .title_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
+        .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
 }
 
 /// Dropdown / popover list container.

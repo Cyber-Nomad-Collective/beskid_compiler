@@ -17,10 +17,7 @@ fn runtime_panic_message_for_null_string_handle_is_stable() {
     let message = panic_text(std::panic::catch_unwind(|| {
         let _ = str_len(std::ptr::null());
     }));
-    assert!(
-        message.contains("null string handle"),
-        "expected null string handle panic message, got: {message}"
-    );
+    assert!(message.contains("null string handle"), "expected null string handle panic message, got: {message}");
 }
 
 #[test]
@@ -32,10 +29,7 @@ fn runtime_panic_message_for_invalid_utf8_is_stable() {
         }))
     });
 
-    assert!(
-        message.contains("invalid utf-8 string data"),
-        "expected invalid utf-8 panic message, got: {message}"
-    );
+    assert!(message.contains("invalid utf-8 string data"), "expected invalid utf-8 panic message, got: {message}");
 }
 
 #[test]
@@ -44,11 +38,9 @@ fn runtime_panic_message_for_event_capacity_is_stable() {
         let mut slot = std::ptr::null_mut();
         let _ = event_subscribe(&mut slot, std::ptr::dangling_mut::<u8>(), 1);
 
-        let text = panic_text(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-            || {
-                let _ = event_subscribe(&mut slot, std::ptr::dangling_mut::<u8>(), 1);
-            },
-        )));
+        let text = panic_text(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = event_subscribe(&mut slot, std::ptr::dangling_mut::<u8>(), 1);
+        })));
 
         unsafe {
             drop(Box::from_raw(slot));
@@ -57,8 +49,5 @@ fn runtime_panic_message_for_event_capacity_is_stable() {
         text
     });
 
-    assert!(
-        message.contains("event capacity exceeded"),
-        "expected capacity panic message, got: {message}"
-    );
+    assert!(message.contains("event capacity exceeded"), "expected capacity panic message, got: {message}");
 }

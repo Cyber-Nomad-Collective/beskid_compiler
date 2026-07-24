@@ -4,8 +4,7 @@ use crate::project_args::{PlainProgressArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_analysis::projects::UnresolvedDependencyPolicy;
 use beskid_tools::pipeline::{
-    CliProjectPipelineOptions, CliResolveOptions, resolve_project_with_cli_pipeline,
-    tui::CommandSummary,
+    CliProjectPipelineOptions, CliResolveOptions, resolve_project_with_cli_pipeline, tui::CommandSummary,
 };
 use clap::Args;
 

@@ -20,10 +20,7 @@ fn parses_nullary_enum_constructor_without_parens() {
 
 #[test]
 fn parses_qualified_enum_constructor() {
-    assert_parse(
-        Rule::EnumConstructorExpression,
-        "Capabilities.ColorModel::Indexed256()",
-    );
+    assert_parse(Rule::EnumConstructorExpression, "Capabilities.ColorModel::Indexed256()");
 }
 
 #[test]

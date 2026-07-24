@@ -19,38 +19,25 @@ pub fn draw_summary_chart_panel(frame: &mut Frame, area: Rect, summary: &Command
 
 /// Footer strip for summary / report modes.
 pub fn draw_summary_headline_footer(frame: &mut Frame, area: Rect, summary: &CommandSummary) {
-    let headline = Paragraph::new(summary.headline.as_str()).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(format!(" {} ", summary.title)),
-    );
+    let headline = Paragraph::new(summary.headline.as_str())
+        .block(Block::default().borders(Borders::ALL).title(format!(" {} ", summary.title)));
     frame.render_widget(headline, area);
 }
 
 fn draw_pie_chart(frame: &mut Frame, area: Rect, summary: &CommandSummary) {
-    let slices: Vec<PieSlice> = summary
-        .slices
-        .iter()
-        .map(|slice| PieSlice::new(slice.label.as_str(), slice.percent, slice.color))
-        .collect();
+    let slices: Vec<PieSlice> =
+        summary.slices.iter().map(|slice| PieSlice::new(slice.label.as_str(), slice.percent, slice.color)).collect();
     let chart = PieChart::new(slices)
         .show_legend(true)
         .show_percentages(true)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" {} ", summary.title)),
-        );
+        .block(Block::default().borders(Borders::ALL).title(format!(" {} ", summary.title)));
     chart.render(area, frame.buffer_mut());
 }
 
 fn draw_stats_table(frame: &mut Frame, area: Rect, summary: &CommandSummary) {
     if summary.stats.is_empty() {
-        let placeholder = Paragraph::new(summary.headline.as_str()).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" {} ", summary.title)),
-        );
+        let placeholder = Paragraph::new(summary.headline.as_str())
+            .block(Block::default().borders(Borders::ALL).title(format!(" {} ", summary.title)));
         frame.render_widget(placeholder, area);
         return;
     }
@@ -58,27 +45,14 @@ fn draw_stats_table(frame: &mut Frame, area: Rect, summary: &CommandSummary) {
         .stats
         .iter()
         .map(|stat| {
-            let style = stat
-                .color
-                .map(|color| Style::default().fg(color))
-                .unwrap_or_default();
+            let style = stat.color.map(|color| Style::default().fg(color)).unwrap_or_default();
             Row::new(vec![
                 Cell::from(stat.label.as_str()).style(style.add_modifier(Modifier::BOLD)),
                 Cell::from(stat.value.as_str()).style(style),
             ])
         })
         .collect();
-    let table = Table::new(
-        rows,
-        [
-            ratatui::layout::Constraint::Length(14),
-            ratatui::layout::Constraint::Min(4),
-        ],
-    )
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(format!(" {} ", summary.title)),
-    );
+    let table = Table::new(rows, [ratatui::layout::Constraint::Length(14), ratatui::layout::Constraint::Min(4)])
+        .block(Block::default().borders(Borders::ALL).title(format!(" {} ", summary.title)));
     frame.render_widget(table, area);
 }

@@ -25,22 +25,9 @@ pub enum FragmentBinding {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MatchError {
-    UnknownMacro {
-        name: String,
-        span: SpanInfo,
-    },
-    ArityMismatch {
-        name: String,
-        expected: usize,
-        actual: usize,
-        span: SpanInfo,
-    },
-    KindMismatch {
-        name: String,
-        parameter: String,
-        expected_kind: String,
-        span: SpanInfo,
-    },
+    UnknownMacro { name: String, span: SpanInfo },
+    ArityMismatch { name: String, expected: usize, actual: usize, span: SpanInfo },
+    KindMismatch { name: String, parameter: String, expected_kind: String, span: SpanInfo },
 }
 
 pub fn fragment_kind_keyword(kind: MacroFragmentKind) -> &'static str {
@@ -67,10 +54,7 @@ pub fn match_arguments(
     let name = macro_name_key(macro_name);
     let invocation_span = macro_name.span;
 
-    let expected_expr_args = parameters
-        .iter()
-        .filter(|p| p.node.kind.node != MacroFragmentKind::Block)
-        .count();
+    let expected_expr_args = parameters.iter().filter(|p| p.node.kind.node != MacroFragmentKind::Block).count();
     if expected_expr_args != args.len() {
         return Err(MatchError::ArityMismatch {
             name: name.clone(),
@@ -80,11 +64,7 @@ pub fn match_arguments(
         });
     }
 
-    if parameters
-        .iter()
-        .any(|p| p.node.kind.node == MacroFragmentKind::Block)
-        && block.is_none()
-    {
+    if parameters.iter().any(|p| p.node.kind.node == MacroFragmentKind::Block) && block.is_none() {
         return Err(MatchError::ArityMismatch {
             name: name.clone(),
             expected: expected_expr_args,
@@ -99,95 +79,43 @@ pub fn match_arguments(
         let param_name = param.node.name.node.name.clone();
         let kind = param.node.kind.node;
         let binding = match kind {
-            MacroFragmentKind::Block => FragmentBinding::Block(
-                block
-                    .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?
-                    .clone(),
-            ),
-            MacroFragmentKind::Expression => FragmentBinding::Expression(next_arg(
-                args,
-                &mut arg_index,
-                &name,
-                expected_expr_args,
-                invocation_span,
-            )?),
+            MacroFragmentKind::Block => {
+                FragmentBinding::Block(block.ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?.clone())
+            }
+            MacroFragmentKind::Expression => {
+                FragmentBinding::Expression(next_arg(args, &mut arg_index, &name, expected_expr_args, invocation_span)?)
+            }
             MacroFragmentKind::Statement => FragmentBinding::Statement(
-                expression_as_statement(&next_arg(
-                    args,
-                    &mut arg_index,
-                    &name,
-                    expected_expr_args,
-                    invocation_span,
-                )?)
-                .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
+                expression_as_statement(&next_arg(args, &mut arg_index, &name, expected_expr_args, invocation_span)?)
+                    .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
             ),
             MacroFragmentKind::Type => FragmentBinding::Type(
-                expression_as_type(&next_arg(
-                    args,
-                    &mut arg_index,
-                    &name,
-                    expected_expr_args,
-                    invocation_span,
-                )?)
-                .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
+                expression_as_type(&next_arg(args, &mut arg_index, &name, expected_expr_args, invocation_span)?)
+                    .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
             ),
             MacroFragmentKind::Identifier => FragmentBinding::Identifier(
-                expression_as_identifier(&next_arg(
-                    args,
-                    &mut arg_index,
-                    &name,
-                    expected_expr_args,
-                    invocation_span,
-                )?)
-                .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
+                expression_as_identifier(&next_arg(args, &mut arg_index, &name, expected_expr_args, invocation_span)?)
+                    .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
             ),
             MacroFragmentKind::Literal => FragmentBinding::Literal(
-                expression_as_literal(&next_arg(
-                    args,
-                    &mut arg_index,
-                    &name,
-                    expected_expr_args,
-                    invocation_span,
-                )?)
-                .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
+                expression_as_literal(&next_arg(args, &mut arg_index, &name, expected_expr_args, invocation_span)?)
+                    .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
             ),
             MacroFragmentKind::Pattern => FragmentBinding::Pattern(
-                expression_as_pattern(&next_arg(
-                    args,
-                    &mut arg_index,
-                    &name,
-                    expected_expr_args,
-                    invocation_span,
-                )?)
-                .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
+                expression_as_pattern(&next_arg(args, &mut arg_index, &name, expected_expr_args, invocation_span)?)
+                    .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
             ),
             MacroFragmentKind::Path => FragmentBinding::Path(
-                expression_as_path(&next_arg(
-                    args,
-                    &mut arg_index,
-                    &name,
-                    expected_expr_args,
-                    invocation_span,
-                )?)
-                .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
+                expression_as_path(&next_arg(args, &mut arg_index, &name, expected_expr_args, invocation_span)?)
+                    .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
             ),
             MacroFragmentKind::Item => FragmentBinding::Item(
-                expression_as_item(&next_arg(
-                    args,
-                    &mut arg_index,
-                    &name,
-                    expected_expr_args,
-                    invocation_span,
-                )?)
-                .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
+                expression_as_item(&next_arg(args, &mut arg_index, &name, expected_expr_args, invocation_span)?)
+                    .ok_or_else(|| kind_error(&name, &param_name, kind, param.span))?,
             ),
-            MacroFragmentKind::Node => FragmentBinding::Node(next_arg(
-                args,
-                &mut arg_index,
-                &name,
-                expected_expr_args,
-                invocation_span,
-            )?),
+            MacroFragmentKind::Node => {
+                FragmentBinding::Node(next_arg(args, &mut arg_index, &name, expected_expr_args, invocation_span)?)
+            }
         };
         bindings.push((param_name, binding));
     }
@@ -211,14 +139,12 @@ fn next_arg(
     expected: usize,
     span: SpanInfo,
 ) -> Result<Spanned<Expression>, MatchError> {
-    let expr = args
-        .get(*arg_index)
-        .ok_or_else(|| MatchError::ArityMismatch {
-            name: name.to_string(),
-            expected,
-            actual: args.len(),
-            span,
-        })?;
+    let expr = args.get(*arg_index).ok_or_else(|| MatchError::ArityMismatch {
+        name: name.to_string(),
+        expected,
+        actual: args.len(),
+        span,
+    })?;
     *arg_index += 1;
     Ok(expr.clone())
 }
@@ -230,9 +156,7 @@ fn expression_as_statement(expr: &Spanned<Expression>) -> Option<Spanned<Stateme
         }
         _ => Some(Spanned::new(
             Statement::Expression(Spanned::new(
-                crate::syntax::ExpressionStatement {
-                    expression: expr.clone(),
-                },
+                crate::syntax::ExpressionStatement { expression: expr.clone() },
                 expr.span,
             )),
             expr.span,
@@ -249,11 +173,7 @@ fn expression_as_type(expr: &Spanned<Expression>) -> Option<Spanned<Type>> {
 
 fn expression_as_identifier(expr: &Spanned<Expression>) -> Option<Spanned<Identifier>> {
     let path = expression_as_path(expr)?;
-    if path.node.segments.len() == 1 {
-        Some(path.node.segments[0].node.name.clone())
-    } else {
-        None
-    }
+    if path.node.segments.len() == 1 { Some(path.node.segments[0].node.name.clone()) } else { None }
 }
 
 fn expression_as_literal(expr: &Spanned<Expression>) -> Option<Spanned<crate::syntax::Literal>> {
@@ -265,32 +185,17 @@ fn expression_as_literal(expr: &Spanned<Expression>) -> Option<Spanned<crate::sy
 
 fn expression_as_pattern(expr: &Spanned<Expression>) -> Option<Spanned<Pattern>> {
     match &expr.node {
-        Expression::Literal(l) => Some(Spanned::new(
-            Pattern::Literal(l.node.literal.clone()),
-            expr.span,
-        )),
-        Expression::Path(p) if p.node.path.node.segments.len() == 1 => Some(Spanned::new(
-            Pattern::Identifier(p.node.path.node.segments[0].node.name.clone()),
-            expr.span,
-        )),
+        Expression::Literal(l) => Some(Spanned::new(Pattern::Literal(l.node.literal.clone()), expr.span)),
+        Expression::Path(p) if p.node.path.node.segments.len() == 1 => {
+            Some(Spanned::new(Pattern::Identifier(p.node.path.node.segments[0].node.name.clone()), expr.span))
+        }
         Expression::EnumConstructor(e) => {
-            let items: Vec<_> = e
-                .node
-                .args
-                .iter()
-                .filter_map(expression_as_pattern)
-                .collect();
+            let items: Vec<_> = e.node.args.iter().filter_map(expression_as_pattern).collect();
             if items.len() != e.node.args.len() {
                 return None;
             }
             Some(Spanned::new(
-                Pattern::Enum(Spanned::new(
-                    EnumPattern {
-                        path: e.node.path.clone(),
-                        items,
-                    },
-                    expr.span,
-                )),
+                Pattern::Enum(Spanned::new(EnumPattern { path: e.node.path.clone(), items }, expr.span)),
                 expr.span,
             ))
         }
@@ -306,9 +211,7 @@ fn expression_as_path(expr: &Spanned<Expression>) -> Option<Spanned<Path>> {
 }
 
 /// v1: `item` fragment actuals accept path expressions as `use` surrogates only.
-pub fn expression_as_item(
-    expr: &Spanned<Expression>,
-) -> Option<Spanned<crate::syntax::items::Node>> {
+pub fn expression_as_item(expr: &Spanned<Expression>) -> Option<Spanned<crate::syntax::items::Node>> {
     use crate::syntax::items::Node;
 
     match &expr.node {

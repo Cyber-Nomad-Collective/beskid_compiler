@@ -7,11 +7,7 @@ use crate::syntax_query::{HirNodeRef, HirQuery, HirVisit, HirWalker};
 use std::collections::{HashMap, HashSet};
 
 impl SemanticPipelineRule {
-    pub(super) fn stage3_control_flow_and_patterns(
-        &self,
-        ctx: &mut RuleContext,
-        hir: &Spanned<HirProgram>,
-    ) {
+    pub(super) fn stage3_control_flow_and_patterns(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {
         let enum_variants = self.collect_enum_variants(hir);
         let variant_to_enum = self.collect_variant_to_enum(hir);
 
@@ -49,10 +45,7 @@ impl SemanticPipelineRule {
         result
     }
 
-    fn collect_enum_variants(
-        &self,
-        hir: &Spanned<HirProgram>,
-    ) -> HashMap<String, HashMap<String, usize>> {
+    fn collect_enum_variants(&self, hir: &Spanned<HirProgram>) -> HashMap<String, HashMap<String, usize>> {
         let mut result = HashMap::new();
 
         for item in &hir.node.items {
@@ -142,17 +135,11 @@ impl SemanticPipelineRule {
         let Some(variants) = enum_variants.get(&enum_name) else {
             return;
         };
-        if variants
-            .keys()
-            .all(|variant| covered_variants.contains(variant))
-        {
+        if variants.keys().all(|variant| covered_variants.contains(variant)) {
             return;
         }
 
-        ctx.emit_issue(
-            match_expression.span,
-            SemanticIssueKind::MatchNonExhaustive { enum_name },
-        );
+        ctx.emit_issue(match_expression.span, SemanticIssueKind::MatchNonExhaustive { enum_name });
     }
 
     fn is_boolean_like_guard(&self, expression: &Spanned<HirExpressionNode>) -> bool {
@@ -204,10 +191,7 @@ impl SemanticPipelineRule {
                     return;
                 }
 
-                ctx.emit_issue(
-                    identifier.span,
-                    SemanticIssueKind::DuplicatePatternBinding { name },
-                );
+                ctx.emit_issue(identifier.span, SemanticIssueKind::DuplicatePatternBinding { name });
             }
             HirPattern::Enum(enum_pattern) => {
                 let enum_name = enum_pattern
@@ -224,10 +208,7 @@ impl SemanticPipelineRule {
                 let Some(variants) = enum_variants.get(&enum_name) else {
                     ctx.emit_issue(
                         enum_pattern.node.path.span,
-                        SemanticIssueKind::UnknownEnumPath {
-                            enum_name,
-                            variant_name,
-                        },
+                        SemanticIssueKind::UnknownEnumPath { enum_name, variant_name },
                     );
                     return;
                 };
@@ -235,10 +216,7 @@ impl SemanticPipelineRule {
                 let Some(expected_arity) = variants.get(&variant_name) else {
                     ctx.emit_issue(
                         enum_pattern.node.path.span,
-                        SemanticIssueKind::UnknownEnumPath {
-                            enum_name,
-                            variant_name,
-                        },
+                        SemanticIssueKind::UnknownEnumPath { enum_name, variant_name },
                     );
                     return;
                 };
@@ -277,21 +255,14 @@ impl<'a> ControlFlowVisitor<'a> {
         enum_variants: &'a HashMap<String, HashMap<String, usize>>,
         variant_to_enum: &'a HashMap<String, String>,
     ) -> Self {
-        Self {
-            rule,
-            ctx,
-            loop_depth: 0,
-            enum_variants,
-            variant_to_enum,
-        }
+        Self { rule, ctx, loop_depth: 0, enum_variants, variant_to_enum }
     }
 
     fn scan_unreachable_in_block(&mut self, block: &HirBlock) {
         let mut terminated = false;
         for statement in &block.statements {
             if terminated {
-                self.ctx
-                    .emit_issue(statement.span, SemanticIssueKind::UnreachableCode);
+                self.ctx.emit_issue(statement.span, SemanticIssueKind::UnreachableCode);
                 continue;
             }
             terminated = self.statement_terminates(statement);
@@ -303,8 +274,7 @@ impl<'a> ControlFlowVisitor<'a> {
             HirStatementNode::ReturnStatement(_) => true,
             HirStatementNode::BreakStatement(_) => {
                 if self.loop_depth == 0 {
-                    self.ctx
-                        .emit_issue(statement.span, SemanticIssueKind::BreakOutsideLoop);
+                    self.ctx.emit_issue(statement.span, SemanticIssueKind::BreakOutsideLoop);
                     false
                 } else {
                     true
@@ -312,8 +282,7 @@ impl<'a> ControlFlowVisitor<'a> {
             }
             HirStatementNode::ContinueStatement(_) => {
                 if self.loop_depth == 0 {
-                    self.ctx
-                        .emit_issue(statement.span, SemanticIssueKind::ContinueOutsideLoop);
+                    self.ctx.emit_issue(statement.span, SemanticIssueKind::ContinueOutsideLoop);
                     false
                 } else {
                     true
@@ -330,8 +299,7 @@ impl<'a> ControlFlowVisitor<'a> {
     }
 
     fn check_call_expression(&mut self, call_expression: &Spanned<crate::hir::HirCallExpression>) {
-        if let HirExpressionNode::PathExpression(path_expression) =
-            &call_expression.node.callee.node
+        if let HirExpressionNode::PathExpression(path_expression) = &call_expression.node.callee.node
             && path_expression.node.path.node.segments.len() == 1
             && let Some(name) = path_expression.node.path.node.segments.first()
         {
@@ -354,13 +322,9 @@ impl<'a> ControlFlowVisitor<'a> {
     ) {
         if constructor_expression.node.has_empty_parens
             && constructor_expression.node.args.is_empty()
-            && let Some(span) = Self::explicit_empty_constructor_parens_span(
-                constructor_expression,
-                self.ctx.source(),
-            )
+            && let Some(span) = Self::explicit_empty_constructor_parens_span(constructor_expression, self.ctx.source())
         {
-            self.ctx
-                .emit_issue(span, SemanticIssueKind::RedundantEnumConstructorParens);
+            self.ctx.emit_issue(span, SemanticIssueKind::RedundantEnumConstructorParens);
         }
         let enum_name = constructor_expression
             .node
@@ -372,21 +336,11 @@ impl<'a> ControlFlowVisitor<'a> {
             .last()
             .map(|segment| segment.node.name.node.name.clone())
             .unwrap_or_default();
-        let variant_name = constructor_expression
-            .node
-            .path
-            .node
-            .variant
-            .node
-            .name
-            .clone();
+        let variant_name = constructor_expression.node.path.node.variant.node.name.clone();
         let Some(variants) = self.enum_variants.get(&enum_name) else {
             self.ctx.emit_issue(
                 constructor_expression.node.path.span,
-                SemanticIssueKind::UnknownEnumPath {
-                    enum_name,
-                    variant_name,
-                },
+                SemanticIssueKind::UnknownEnumPath { enum_name, variant_name },
             );
             return;
         };
@@ -394,10 +348,7 @@ impl<'a> ControlFlowVisitor<'a> {
         let Some(expected_arity) = variants.get(&variant_name) else {
             self.ctx.emit_issue(
                 constructor_expression.node.path.span,
-                SemanticIssueKind::UnknownEnumPath {
-                    enum_name,
-                    variant_name,
-                },
+                SemanticIssueKind::UnknownEnumPath { enum_name, variant_name },
             );
             return;
         };
@@ -429,38 +380,21 @@ impl<'a> ControlFlowVisitor<'a> {
         }
 
         let source_slice = &source_bytes[path_end..expr_end];
-        let open = source_slice
-            .iter()
-            .position(|b| *b == b'(')
-            .map(|offset| path_end + offset);
-        let close = source_slice
-            .iter()
-            .rposition(|b| *b == b')')
-            .map(|offset| path_end + offset + 1);
+        let open = source_slice.iter().position(|b| *b == b'(').map(|offset| path_end + offset);
+        let close = source_slice.iter().rposition(|b| *b == b')').map(|offset| path_end + offset + 1);
 
         match (open, close) {
-            (Some(open), Some(close)) if open < close => {
-                Some(SpanInfo::from_byte_range_in_source(source, open, close))
-            }
+            (Some(open), Some(close)) if open < close => Some(SpanInfo::from_byte_range_in_source(source, open, close)),
             _ => None,
         }
     }
 
-    fn check_match_expression(
-        &mut self,
-        match_expression: &Spanned<crate::hir::HirMatchExpression>,
-    ) {
+    fn check_match_expression(&mut self, match_expression: &Spanned<crate::hir::HirMatchExpression>) {
         for arm in &match_expression.node.arms {
             let mut names = HashSet::new();
-            self.rule.collect_pattern_bindings(
-                self.ctx,
-                &arm.node.pattern,
-                &mut names,
-                self.enum_variants,
-            );
+            self.rule.collect_pattern_bindings(self.ctx, &arm.node.pattern, &mut names, self.enum_variants);
         }
-        self.rule
-            .check_match_semantics(self.ctx, match_expression, self.enum_variants);
+        self.rule.check_match_semantics(self.ctx, match_expression, self.enum_variants);
     }
 }
 
@@ -481,12 +415,8 @@ impl HirVisit for ControlFlowVisitor<'_> {
 
         if let Some(expression) = node.of::<HirExpressionNode>() {
             match expression {
-                HirExpressionNode::MatchExpression(match_expression) => {
-                    self.check_match_expression(match_expression)
-                }
-                HirExpressionNode::CallExpression(call_expression) => {
-                    self.check_call_expression(call_expression)
-                }
+                HirExpressionNode::MatchExpression(match_expression) => self.check_match_expression(match_expression),
+                HirExpressionNode::CallExpression(call_expression) => self.check_call_expression(call_expression),
                 HirExpressionNode::EnumConstructorExpression(constructor_expression) => {
                     self.check_enum_constructor_expression(constructor_expression)
                 }

@@ -25,10 +25,7 @@ pub fn record_disk_miss() {
 }
 
 pub fn disk_cache_stats() -> UnitCacheStats {
-    UnitCacheStats {
-        hits: DISK_HITS.load(Ordering::Relaxed),
-        misses: DISK_MISSES.load(Ordering::Relaxed),
-    }
+    UnitCacheStats { hits: DISK_HITS.load(Ordering::Relaxed), misses: DISK_MISSES.load(Ordering::Relaxed) }
 }
 
 /// Legacy path-bound fingerprint (tests only); production uses [`unit_content_fingerprint`].

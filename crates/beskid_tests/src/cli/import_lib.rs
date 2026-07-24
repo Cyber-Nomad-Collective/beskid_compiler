@@ -8,8 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use beskid_analysis::external_library::{
-    LibraryResolveError, default_registry, known_provider_ids,
-    merge_resolution_into_manifest_source,
+    LibraryResolveError, default_registry, known_provider_ids, merge_resolution_into_manifest_source,
 };
 use beskid_analysis::projects::parse_manifest as parse_project_manifest;
 
@@ -31,22 +30,16 @@ fn import_lib_libc_writes_link_block_and_roundtrips_through_parser() {
     let before = fs::read_to_string(&manifest_path).expect("read before");
 
     let registry = default_registry();
-    let resolution = registry
-        .resolve("c-posix", "linux", "libc")
-        .expect("resolve libc");
+    let resolution = registry.resolve("c-posix", "linux", "libc").expect("resolve libc");
     assert_eq!(resolution.link_args, vec!["-lc"]);
 
     let parsed_before = parse_project_manifest(&before).expect("parse before");
-    let outcome =
-        merge_resolution_into_manifest_source(&before, parsed_before.link.as_ref(), &resolution);
+    let outcome = merge_resolution_into_manifest_source(&before, parsed_before.link.as_ref(), &resolution);
 
     fs::write(&manifest_path, &outcome.updated_source).expect("write back");
 
     let after = fs::read_to_string(&manifest_path).expect("read after");
-    assert!(
-        after.contains("link {"),
-        "expected link block written, got:\n{after}",
-    );
+    assert!(after.contains("link {"), "expected link block written, got:\n{after}",);
     assert!(after.contains("libraries = [libc]"));
     assert_eq!(outcome.added_libraries, vec!["libc"]);
 
@@ -64,9 +57,7 @@ fn import_lib_is_idempotent_on_repeat_invocations() {
     let manifest_path = write_minimal_manifest(tmp.path());
 
     let registry = default_registry();
-    let resolution = registry
-        .resolve("c-posix", "linux", "libc")
-        .expect("resolve libc");
+    let resolution = registry.resolve("c-posix", "linux", "libc").expect("resolve libc");
 
     let initial = fs::read_to_string(&manifest_path).expect("read initial");
     let outcome_one = merge_resolution_into_manifest_source(&initial, None, &resolution);
@@ -74,12 +65,8 @@ fn import_lib_is_idempotent_on_repeat_invocations() {
 
     let first = fs::read_to_string(&manifest_path).expect("read after first import");
     let parsed_first = parse_project_manifest(&first).expect("parse first");
-    let outcome_two =
-        merge_resolution_into_manifest_source(&first, parsed_first.link.as_ref(), &resolution);
-    assert!(
-        outcome_two.added_libraries.is_empty(),
-        "second invocation should add nothing"
-    );
+    let outcome_two = merge_resolution_into_manifest_source(&first, parsed_first.link.as_ref(), &resolution);
+    assert!(outcome_two.added_libraries.is_empty(), "second invocation should add nothing");
     assert_eq!(outcome_two.updated_source, first);
 }
 
@@ -96,14 +83,11 @@ fn import_lib_merges_into_existing_link_block() {
     .expect("write ImportTest.bproj");
 
     let registry = default_registry();
-    let resolution = registry
-        .resolve("c-posix", "linux", "libc")
-        .expect("resolve libc");
+    let resolution = registry.resolve("c-posix", "linux", "libc").expect("resolve libc");
 
     let before = fs::read_to_string(&manifest_path).expect("read before");
     let parsed_before = parse_project_manifest(&before).expect("parse before");
-    let outcome =
-        merge_resolution_into_manifest_source(&before, parsed_before.link.as_ref(), &resolution);
+    let outcome = merge_resolution_into_manifest_source(&before, parsed_before.link.as_ref(), &resolution);
     fs::write(&manifest_path, &outcome.updated_source).expect("write merged");
 
     let after = fs::read_to_string(&manifest_path).expect("read after");
@@ -116,9 +100,7 @@ fn import_lib_merges_into_existing_link_block() {
 #[test]
 fn import_lib_rejects_unknown_provider() {
     let registry = default_registry();
-    let err = registry
-        .resolve("msvc", "linux", "libc")
-        .expect_err("msvc must be rejected by closed registry");
+    let err = registry.resolve("msvc", "linux", "libc").expect_err("msvc must be rejected by closed registry");
     match err {
         LibraryResolveError::UnknownProvider { provider, known } => {
             assert_eq!(provider, "msvc");
@@ -156,9 +138,7 @@ fn import_lib_writes_search_path_for_path_input() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let manifest_path = write_minimal_manifest(tmp.path());
     let registry = default_registry();
-    let resolution = registry
-        .resolve("c-posix", "linux", "/opt/local/lib/libfoo.so")
-        .expect("resolve path input");
+    let resolution = registry.resolve("c-posix", "linux", "/opt/local/lib/libfoo.so").expect("resolve path input");
     assert_eq!(resolution.search_paths.len(), 1);
 
     let before = fs::read_to_string(&manifest_path).expect("read before");

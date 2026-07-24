@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use beskid_isle::{
-    AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, LocalSlotId,
-    LoweringErrorKind, NodeFacts, NodeKind, OperatorFact, RangeFact,
+    AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, LocalSlotId, LoweringErrorKind, NodeFacts,
+    NodeKind, OperatorFact, RangeFact,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{Type, UserFuncName, types};
@@ -66,10 +66,7 @@ impl NodeFacts for BlockFacts {
     }
 
     fn local_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
-        (key == self.nodes[1] || key == self.nodes[3]).then_some(LocalSlotId {
-            owner_node: 0,
-            index: 0,
-        })
+        (key == self.nodes[1] || key == self.nodes[3]).then_some(LocalSlotId { owner_node: 0, index: 0 })
     }
 }
 
@@ -89,29 +86,17 @@ fn block_expression_sequences_statements_and_returns_typed_tail() {
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    let facts = BlockFacts {
-        nodes: keys("/tmp/BlockValue.bd", 19),
-        block_type: types::I32,
-    };
+    let facts = BlockFacts { nodes: keys("/tmp/BlockValue.bd", 19), block_type: types::I32 };
     let emitter = FunctionEmitter::new(isa.as_ref());
     let signature = emitter.signature([], [types::I32]);
     let function = emitter
-        .emit_expression(
-            UserFuncName::user(0, 32),
-            signature.clone(),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_expression(UserFuncName::user(0, 32), signature.clone(), &facts, facts.nodes[0])
         .expect("verified block expression");
     let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-    let function_id = module
-        .declare_function("block_value", Linkage::Local, &signature)
-        .expect("declare");
+    let function_id = module.declare_function("block_value", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
     context.func = function;
-    module
-        .define_function(function_id, &mut context)
-        .expect("define");
+    module.define_function(function_id, &mut context).expect("define");
     module.finalize_definitions().expect("finalize");
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
@@ -124,18 +109,10 @@ fn mismatched_block_tail_is_an_exact_keyed_error() {
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    let facts = BlockFacts {
-        nodes: keys("/tmp/BlockError.bd", 20),
-        block_type: types::I64,
-    };
+    let facts = BlockFacts { nodes: keys("/tmp/BlockError.bd", 20), block_type: types::I64 };
     let emitter = FunctionEmitter::new(isa.as_ref());
     let error = emitter
-        .emit_expression(
-            UserFuncName::user(0, 33),
-            emitter.signature([], [types::I64]),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_expression(UserFuncName::user(0, 33), emitter.signature([], [types::I64]), &facts, facts.nodes[0])
         .expect_err("semantic block type must equal tail type");
     let FunctionEmissionError::Lowering(error) = error else {
         panic!("expected lowering error");
@@ -170,14 +147,7 @@ impl NodeFacts for RangeForFacts {
             NodeKind::AssignExpression
         } else if key == self.nodes[11] {
             NodeKind::BinaryExpression
-        } else if [
-            self.nodes[10],
-            self.nodes[12],
-            self.nodes[13],
-            self.nodes[15],
-        ]
-        .contains(&key)
-        {
+        } else if [self.nodes[10], self.nodes[12], self.nodes[13], self.nodes[15]].contains(&key) {
             NodeKind::PathExpression
         } else if key == self.nodes[14] {
             NodeKind::ReturnStatement
@@ -188,9 +158,7 @@ impl NodeFacts for RangeForFacts {
     }
 
     fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
-        [self.nodes[2], self.nodes[5], self.nodes[6]]
-            .contains(&key)
-            .then_some(LiteralKind::Integer)
+        [self.nodes[2], self.nodes[5], self.nodes[6]].contains(&key).then_some(LiteralKind::Integer)
     }
 
     fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
@@ -249,53 +217,26 @@ impl NodeFacts for RangeForFacts {
     }
 
     fn local_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
-        if [
-            self.nodes[1],
-            self.nodes[10],
-            self.nodes[12],
-            self.nodes[15],
-        ]
-        .contains(&key)
-        {
-            Some(LocalSlotId {
-                owner_node: 0,
-                index: 0,
-            })
+        if [self.nodes[1], self.nodes[10], self.nodes[12], self.nodes[15]].contains(&key) {
+            Some(LocalSlotId { owner_node: 0, index: 0 })
         } else if key == self.nodes[3] || key == self.nodes[13] {
-            Some(LocalSlotId {
-                owner_node: 0,
-                index: 1,
-            })
+            Some(LocalSlotId { owner_node: 0, index: 1 })
         } else {
             None
         }
     }
 
     fn mutable_local_assignment_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
-        (key == self.nodes[9]).then_some(LocalSlotId {
-            owner_node: 0,
-            index: 0,
-        })
+        (key == self.nodes[9]).then_some(LocalSlotId { owner_node: 0, index: 0 })
     }
 
     fn range_fact(&self, key: AstNodeKey) -> Option<RangeFact> {
-        (key == self.nodes[4]).then_some(RangeFact::new(
-            self.nodes[5],
-            self.nodes[6],
-            self.step,
-            self.inclusive,
-        ))
+        (key == self.nodes[4]).then_some(RangeFact::new(self.nodes[5], self.nodes[6], self.step, self.inclusive))
     }
 }
 
 fn range_facts(start: i64, end: i64, step: i64, inclusive: bool) -> RangeForFacts {
-    RangeForFacts {
-        nodes: keys("/tmp/RangeFor.bd", 21),
-        start,
-        end,
-        step,
-        inclusive,
-    }
+    RangeForFacts { nodes: keys("/tmp/RangeFor.bd", 21), start, end, step, inclusive }
 }
 
 fn run_range(start: i64, end: i64, step: i64, inclusive: bool, index: u32) -> (i32, String) {
@@ -307,23 +248,14 @@ fn run_range(start: i64, end: i64, step: i64, inclusive: bool, index: u32) -> (i
     let emitter = FunctionEmitter::new(isa.as_ref());
     let signature = emitter.signature([], [types::I32]);
     let function = emitter
-        .emit_statement(
-            UserFuncName::user(0, index),
-            signature.clone(),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_statement(UserFuncName::user(0, index), signature.clone(), &facts, facts.nodes[0])
         .expect("verified range for");
     let clif = function.display().to_string();
     let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-    let function_id = module
-        .declare_function("range_for", Linkage::Local, &signature)
-        .expect("declare");
+    let function_id = module.declare_function("range_for", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
     context.func = function;
-    module
-        .define_function(function_id, &mut context)
-        .expect("define");
+    module.define_function(function_id, &mut context).expect("define");
     module.finalize_definitions().expect("finalize");
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
@@ -353,12 +285,7 @@ fn zero_step_range_is_an_exact_keyed_error() {
     let facts = range_facts(1, 4, 0, false);
     let emitter = FunctionEmitter::new(isa.as_ref());
     let error = emitter
-        .emit_statement(
-            UserFuncName::user(0, 36),
-            emitter.signature([], [types::I32]),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_statement(UserFuncName::user(0, 36), emitter.signature([], [types::I32]), &facts, facts.nodes[0])
         .expect_err("zero-step semantic range must not lower");
     let FunctionEmissionError::Lowering(error) = error else {
         panic!("expected lowering error");
@@ -415,17 +342,10 @@ fn iterator_for_reports_invalid_range_error() {
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    let facts = IteratorForFacts {
-        nodes: keys("/tmp/IteratorFor.bd", 22),
-    };
+    let facts = IteratorForFacts { nodes: keys("/tmp/IteratorFor.bd", 22) };
     let emitter = FunctionEmitter::new(isa.as_ref());
     let error = emitter
-        .emit_statement(
-            UserFuncName::user(0, 37),
-            emitter.signature([], [types::I32]),
-            &facts,
-            facts.nodes[0],
-        )
+        .emit_statement(UserFuncName::user(0, 37), emitter.signature([], [types::I32]), &facts, facts.nodes[0])
         .expect_err("iterator-for must report InvalidRangeFor");
     let FunctionEmissionError::Lowering(error) = error else {
         panic!("expected lowering error");

@@ -166,17 +166,11 @@ pub struct DirtyFlags {
 
 impl DirtyFlags {
     pub fn clean() -> Self {
-        Self {
-            layout_dirty: false,
-            elements_dirty: false,
-        }
+        Self { layout_dirty: false, elements_dirty: false }
     }
 
     pub fn all_dirty() -> Self {
-        Self {
-            layout_dirty: true,
-            elements_dirty: true,
-        }
+        Self { layout_dirty: true, elements_dirty: true }
     }
 
     pub fn set_layout_dirty(&mut self) {
@@ -206,11 +200,7 @@ impl Default for DirtyFlags {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseCaptureState {
     None,
-    Captured {
-        element_id: ElementId,
-        captured_at: Instant,
-        timeout: Option<Duration>,
-    },
+    Captured { element_id: ElementId, captured_at: Instant, timeout: Option<Duration> },
 }
 
 impl MouseCaptureState {
@@ -227,11 +217,9 @@ impl MouseCaptureState {
 
     pub fn is_expired(&self) -> bool {
         match self {
-            MouseCaptureState::Captured {
-                captured_at,
-                timeout: Some(duration),
-                ..
-            } => captured_at.elapsed() > *duration,
+            MouseCaptureState::Captured { captured_at, timeout: Some(duration), .. } => {
+                captured_at.elapsed() > *duration
+            }
             MouseCaptureState::Captured { timeout: None, .. } => false,
             MouseCaptureState::None => false,
         }
@@ -239,11 +227,7 @@ impl MouseCaptureState {
 
     pub fn remaining_time(&self) -> Option<Duration> {
         match self {
-            MouseCaptureState::Captured {
-                captured_at,
-                timeout: Some(duration),
-                ..
-            } => {
+            MouseCaptureState::Captured { captured_at, timeout: Some(duration), .. } => {
                 let elapsed = captured_at.elapsed();
                 if elapsed >= *duration {
                     Some(Duration::ZERO)
@@ -272,11 +256,7 @@ pub struct MouseSnapshot {
 
 impl MouseSnapshot {
     pub fn new(captured_element: Option<ElementId>, z_order_hits: Vec<(ElementId, Rect)>) -> Self {
-        Self {
-            captured_element,
-            z_order_hits,
-            captured_at: Instant::now(),
-        }
+        Self { captured_element, z_order_hits, captured_at: Instant::now() }
     }
 
     pub fn is_stale(&self, max_age: Duration) -> bool {
@@ -300,9 +280,5 @@ pub struct DiagnosticInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResizeDebounceState {
     Idle,
-    Pending {
-        pending_width: u16,
-        pending_height: u16,
-        scheduled_at: Instant,
-    },
+    Pending { pending_width: u16, pending_height: u16, scheduled_at: Instant },
 }

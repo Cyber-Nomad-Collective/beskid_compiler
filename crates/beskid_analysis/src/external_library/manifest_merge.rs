@@ -92,21 +92,12 @@ pub fn render_manifest_with_link(manifest_source: &str, merged: &ProjectLinkSect
 
 fn render_link_block_text(merged: &ProjectLinkSection) -> String {
     let mut block = String::from("link {\n");
-    block.push_str(&format!(
-        "  libraries = {}\n",
-        format_list_literal(&merged.libraries)
-    ));
+    block.push_str(&format!("  libraries = {}\n", format_list_literal(&merged.libraries)));
     if !merged.search_paths.is_empty() {
-        block.push_str(&format!(
-            "  searchPaths = {}\n",
-            format_string_list_literal(&merged.search_paths)
-        ));
+        block.push_str(&format!("  searchPaths = {}\n", format_string_list_literal(&merged.search_paths)));
     }
     if !merged.extra_args.is_empty() {
-        block.push_str(&format!(
-            "  extraArgs = {}\n",
-            format_string_list_literal(&merged.extra_args)
-        ));
+        block.push_str(&format!("  extraArgs = {}\n", format_string_list_literal(&merged.extra_args)));
     }
     block.push('}');
     block
@@ -158,11 +149,7 @@ fn is_safe_ident(value: &str) -> bool {
 /// Byte range `(start, end)` of the top-level `link { ... }` block, or `None`.
 fn find_top_level_link_block_range(source: &str) -> Option<(usize, usize)> {
     let document = parse_bsol_document(source).ok()?;
-    document
-        .blocks
-        .iter()
-        .find(|block| block.kind == "link")
-        .map(|block| (block.span.start, block.span.end))
+    document.blocks.iter().find(|block| block.kind == "link").map(|block| (block.span.start, block.span.end))
 }
 
 #[cfg(test)]
@@ -201,30 +188,18 @@ link {
   libraries = [pthread]
 }
 "#;
-        let existing = ProjectLinkSection {
-            libraries: vec!["pthread".to_string()],
-            ..Default::default()
-        };
-        let outcome =
-            merge_resolution_into_manifest_source(source, Some(&existing), &libc_resolution());
+        let existing = ProjectLinkSection { libraries: vec!["pthread".to_string()], ..Default::default() };
+        let outcome = merge_resolution_into_manifest_source(source, Some(&existing), &libc_resolution());
         assert!(outcome.had_existing_block);
-        assert!(
-            outcome
-                .updated_source
-                .contains("libraries = [pthread, libc]")
-        );
+        assert!(outcome.updated_source.contains("libraries = [pthread, libc]"));
         assert_eq!(outcome.added_libraries, vec!["libc"]);
     }
 
     #[test]
     fn idempotent_when_library_already_present() {
         let source = "project {\n  name = \"p\"\n  version = \"0.1.0\"\n}\n";
-        let existing = ProjectLinkSection {
-            libraries: vec!["libc".to_string()],
-            ..Default::default()
-        };
-        let outcome =
-            merge_resolution_into_manifest_source(source, Some(&existing), &libc_resolution());
+        let existing = ProjectLinkSection { libraries: vec!["libc".to_string()], ..Default::default() };
+        let outcome = merge_resolution_into_manifest_source(source, Some(&existing), &libc_resolution());
         assert!(outcome.added_libraries.is_empty());
         assert_eq!(outcome.merged_section.libraries, vec!["libc"]);
     }
@@ -240,11 +215,7 @@ link {
             search_paths: vec![PathBuf::from("/usr/lib")],
         };
         let outcome = merge_resolution_into_manifest_source(source, None, &resolution);
-        assert!(
-            outcome
-                .updated_source
-                .contains("searchPaths = [\"/usr/lib\"]")
-        );
+        assert!(outcome.updated_source.contains("searchPaths = [\"/usr/lib\"]"));
         assert_eq!(outcome.added_search_paths, vec![PathBuf::from("/usr/lib")]);
     }
 
