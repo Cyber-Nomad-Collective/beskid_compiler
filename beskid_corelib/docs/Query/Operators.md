@@ -28,5 +28,5 @@ pub type QueryState<T> {
 
 ## Policy
 
-- Import `Core.Optional` for optional query results; `Query.Contracts` is removed.
+- Import `Core.Optional` for optional query results; `Query.Contracts` has been removed (deprecated shim deleted per D-CORE-OPT-0003).
 - Prefer explicit `Collections.Array` helpers for production storage until query syntax lowering lands.
