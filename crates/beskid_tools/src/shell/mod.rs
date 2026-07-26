@@ -35,7 +35,7 @@ pub use chrome::ShellChrome;
 pub use context::WidgetContext;
 pub use control_mode::HiControlMode;
 pub use descriptor::WidgetDescriptor;
-pub use hi_compile::{HiCompileJob, HiCompileRegistrar, HiCompileRequest, is_in_process_command};
+pub use hi_compile::{HiCompileRegistrar, HiCompileRequest, is_in_process_command};
 pub use host::ShellHost;
 pub use host::WidgetRegistrar;
 pub use hotkeys::ShellHotkeys;
