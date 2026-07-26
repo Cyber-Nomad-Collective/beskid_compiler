@@ -38,6 +38,20 @@ fn format_golden_use_and_function() {
 }
 
 #[test]
+fn format_constant_definition_is_parse_preserving() {
+    let program = parse_program("const Answer = 42;").expect("parse constant");
+    let formatted = format_program(&program).expect("format constant");
+    assert_eq!(formatted, "const Answer = 42;\n");
+
+    let reparsed = parse_program(&formatted).expect("reparse formatted constant");
+    assert_eq!(
+        top_level_kinds(&reparsed.node.items),
+        ["constant"],
+        "formatter must preserve the constant top-level item kind"
+    );
+}
+
+#[test]
 fn format_if_while_use_parentheses_and_blank_line_before_let() {
     let src = r#"pub unit f() {
 if cond { return; }
@@ -243,6 +257,7 @@ fn top_level_kinds(items: &[beskid_analysis::syntax::Spanned<Node>]) -> Vec<&'st
         .iter()
         .map(|item| match item.node {
             Node::Function(_) => "function",
+            Node::ConstantDefinition(_) => "constant",
             Node::Method(_) => "method",
             Node::TypeDefinition(_) => "type",
             Node::ExtendTypeDefinition(_) => "extend_type",
