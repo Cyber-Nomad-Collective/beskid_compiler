@@ -1,10 +1,10 @@
 // Canonical Beskid process, environment, and filesystem operations.
 
 [Export(Abi:"C", Symbol:"process_exit")]
-pub never ProcessExit(i32 code) { Trap(9, NativePointer(0), 0); }
+pub never ProcessExit(i32 code) { process_exit(code); }
 
 [Export(Abi:"C", Symbol:"process_getpid")]
-pub i32 ProcessGetpid() { return 0; }
+pub i32 ProcessGetpid() { return process_getpid(); }
 
 [Export(Abi:"C", Symbol:"env_get")]
 pub pointer EnvGet(pointer key) { return NativePointer(0); }

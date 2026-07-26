@@ -5,7 +5,7 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::InlineModule;
 use crate::syntax::{
-    AttributeDeclaration, ContractDefinition, EnumDefinition, ExtendTypeDefinition, FunctionDefinition, HostDefinition,
+    AttributeDeclaration, ConstantDefinition, ContractDefinition, EnumDefinition, ExtendTypeDefinition, FunctionDefinition, HostDefinition,
     MacroDefinition, MethodDefinition, ModuleDeclaration, SpanInfo, Spanned, TestDefinition, TypeDefinition,
     UseDeclaration,
 };
@@ -19,6 +19,8 @@ pub enum Node {
     HostDefinition(Spanned<HostDefinition>),
     #[ast(child)]
     Function(Spanned<FunctionDefinition>),
+    #[ast(child)]
+    ConstantDefinition(Spanned<ConstantDefinition>),
     #[ast(child)]
     Method(Spanned<MethodDefinition>),
     #[ast(child)]
@@ -60,6 +62,10 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
         Rule::FunctionDefinition => {
             let node = FunctionDefinition::parse(pair)?;
             Ok(Spanned::new(Node::Function(node), span))
+        }
+        Rule::ConstantDefinition => {
+            let node = ConstantDefinition::parse(pair)?;
+            Ok(Spanned::new(Node::ConstantDefinition(node), span))
         }
         Rule::HostDefinition => {
             let node = HostDefinition::parse(pair)?;

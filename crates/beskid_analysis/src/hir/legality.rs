@@ -117,6 +117,9 @@ impl<'a> HirLegalityValidator<'a> {
     fn validate_item(&mut self, item: &Spanned<HirItem>) {
         self.check_span(item.span, "item");
         match &item.node {
+            // Constants are compile-time integer immediates; the HIR-free syntax facts own
+            // their use-site lowering and no runtime legality walk is required here.
+            HirItem::ConstantDefinition(_) => {}
             HirItem::FunctionDefinition(def) => {
                 self.check_span(def.span, "function_definition");
                 self.validate_applied_attributes(

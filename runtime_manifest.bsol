@@ -70,6 +70,10 @@ intrinsic "system_free" { symbol = "beskid_rt_v5_intrinsic_system_free" capabili
 intrinsic "tls_get" { symbol = "beskid_rt_v5_intrinsic_tls_get" capability = "runtime.bootstrap.tls_get" params = [] returns = pointer }
 intrinsic "tls_set" { symbol = "beskid_rt_v5_intrinsic_tls_set" capability = "runtime.bootstrap.tls_set" params = [{ name = value, type = pointer }] returns = void }
 intrinsic "trap" { symbol = "beskid_rt_v5_trap" capability = "runtime.bootstrap.trap" params = [{ name = code, type = u8 }, { name = message, type = pointer }, { name = message_len, type = usize }] returns = never }
+intrinsic "clock_monotonic_nanos" { symbol = "beskid_rt_v5_intrinsic_clock_monotonic_nanos" capability = "runtime.adapter.clock_monotonic_nanos" params = [] returns = i64 }
+intrinsic "clock_realtime_nanos" { symbol = "beskid_rt_v5_intrinsic_clock_realtime_nanos" capability = "runtime.adapter.clock_realtime_nanos" params = [] returns = i64 }
+intrinsic "process_exit" { symbol = "beskid_rt_v5_intrinsic_process_exit" capability = "runtime.adapter.process_exit" params = [{ name = code, type = i32 }] returns = never }
+intrinsic "process_getpid" { symbol = "beskid_rt_v5_intrinsic_process_getpid" capability = "runtime.adapter.process_getpid" params = [] returns = i32 }
 
 layout "BeskidAllocationRequest" { size = 24 alignment = 8 fields = [{ name = size, offset = 0, type = usize }, { name = alignment, offset = 8, type = usize }, { name = descriptor, offset = 16, type = pointer }] }
 layout "BeskidHandle" { size = 16 alignment = 8 fields = [{ name = slot, offset = 0, type = u32 }, { name = generation, offset = 4, type = u32 }, { name = owner_cookie, offset = 8, type = u64 }] }
@@ -84,15 +88,22 @@ layout "BeskidArchContextAarch64Darwin" { target = "aarch64-apple-darwin" size =
 layout "BeskidArchContextX86_64Windows" { target = "x86_64-pc-windows-msvc" size = 240 alignment = 16 fields = [{ name = rbx, offset = 0, type = u64 }, { name = rbp, offset = 8, type = u64 }, { name = rdi, offset = 16, type = u64 }, { name = rsi, offset = 24, type = u64 }, { name = r12, offset = 32, type = u64 }, { name = r13, offset = 40, type = u64 }, { name = r14, offset = 48, type = u64 }, { name = r15, offset = 56, type = u64 }, { name = rsp, offset = 64, type = u64 }, { name = rip, offset = 72, type = u64 }, { name = xmm6, offset = 80, type = v128 }, { name = xmm7, offset = 96, type = v128 }, { name = xmm8, offset = 112, type = v128 }, { name = xmm9, offset = 128, type = v128 }, { name = xmm10, offset = 144, type = v128 }, { name = xmm11, offset = 160, type = v128 }, { name = xmm12, offset = 176, type = v128 }, { name = xmm13, offset = 192, type = v128 }, { name = xmm14, offset = 208, type = v128 }, { name = xmm15, offset = 224, type = v128 }] }
 
 platform_import "_exit" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = status, type = i32 }] returns = never }
+platform_import "clock_gettime" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = clock_id, type = i32 }, { name = value, type = pointer }] returns = i32 }
+platform_import "getpid" { target = "x86_64-unknown-linux-gnu" library = libc params = [] returns = i32 }
 platform_import "mmap" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = address, type = pointer }, { name = length, type = usize }, { name = protection, type = i32 }, { name = flags, type = i32 }, { name = fd, type = i32 }, { name = offset, type = i64 }] returns = pointer }
 platform_import "munmap" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = address, type = pointer }, { name = length, type = usize }] returns = i32 }
 platform_import "write" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }] returns = isize }
 platform_import "_exit" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = status, type = i32 }] returns = never }
+platform_import "clock_gettime" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = clock_id, type = i32 }, { name = value, type = pointer }] returns = i32 }
+platform_import "getpid" { target = "aarch64-apple-darwin" library = libSystem params = [] returns = i32 }
 platform_import "mmap" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = address, type = pointer }, { name = length, type = usize }, { name = protection, type = i32 }, { name = flags, type = i32 }, { name = fd, type = i32 }, { name = offset, type = i64 }] returns = pointer }
 platform_import "munmap" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = address, type = pointer }, { name = length, type = usize }] returns = i32 }
 platform_import "write" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }] returns = isize }
 platform_import "ExitProcess" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = status, type = u32 }] returns = never }
+platform_import "GetCurrentProcessId" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [] returns = u32 }
 platform_import "GetStdHandle" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = selector, type = i32 }] returns = pointer }
+platform_import "GetSystemTimeAsFileTime" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = value, type = pointer }] returns = void }
+platform_import "GetTickCount64" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [] returns = u64 }
 platform_import "VirtualAlloc" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = address, type = pointer }, { name = size, type = usize }, { name = allocation_type, type = u32 }, { name = protection, type = u32 }] returns = pointer }
 platform_import "VirtualFree" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = address, type = pointer }, { name = size, type = usize }, { name = free_type, type = u32 }] returns = i32 }
 platform_import "WriteFile" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = handle, type = pointer }, { name = buffer, type = pointer }, { name = length, type = u32 }, { name = written, type = pointer }, { name = overlapped, type = pointer }] returns = i32 }

@@ -1106,6 +1106,14 @@ impl<'a> TypeChecker<'a> {
                     None
                 }
             }
+            HirBinaryOp::BitAnd => {
+                if matches!(self.type_table.get(left), Some(TypeInfo::Primitive(HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8 | HirPrimitiveType::Word))) {
+                    Some(left)
+                } else {
+                    self.errors.push(TypeError::InvalidBinaryOp { span: binary.span });
+                    None
+                }
+            }
             HirBinaryOp::IdentityEq | HirBinaryOp::IdentityNotEq => {
                 if self.is_identity_comparable(left) {
                     self.primitive_type_id(HirPrimitiveType::Bool)

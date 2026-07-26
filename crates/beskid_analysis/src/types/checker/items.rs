@@ -229,6 +229,9 @@ impl<'a> TypeChecker<'a> {
     pub(super) fn type_item(&mut self, item: &Spanned<HirItem>) {
         match &item.node {
             HirItem::HostDefinition(_) => {}
+            // Constants have an integer literal initializer and are emitted as immediate
+            // syntax facts, so they never acquire a legacy HIR item type/signature.
+            HirItem::ConstantDefinition(_) => {}
             HirItem::FunctionDefinition(def) => {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {

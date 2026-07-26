@@ -1,8 +1,9 @@
-use beskid_abi::abi_v5::{AbiManifestV5, SourceUnit, TargetMetadata};
+use beskid_abi::abi_v5::{AbiManifestV5, AbiType, SourceUnit, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
-    RuntimeCapabilityError, canonical_corelib_service_capability, canonical_corelib_service_source_path,
-    canonical_runtime_intrinsic_capability, canonical_runtime_sources, prove_canonical_runtime_corpus,
+    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CLOCKS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_PROCESS_SOURCE_PATH, RuntimeCapabilityError,
+    canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_runtime_intrinsic_capability,
+    canonical_runtime_sources, prove_canonical_runtime_corpus,
 };
 
 fn linux_manifest() -> AbiManifestV5 {
@@ -82,6 +83,64 @@ fn canonical_bootstrap_source_uses_only_manifest_owned_allocation_and_tls_primit
     assert!(source.contains("raw_word_load(pointer_add(tlsState, 8))"));
     assert!(source.contains("pub unit SetRootFrame(pointer tlsState, pointer rootFrame)"));
     assert!(source.contains("raw_word_store(pointer_add(tlsState, 8), NativeWord(rootFrame));"));
+}
+
+#[test]
+fn canonical_host_sources_use_manifest_owned_clock_and_process_adapters() {
+    let manifest = linux_manifest();
+    for (name, symbol, capability, result) in [
+        (
+            "clock_monotonic_nanos",
+            "beskid_rt_v5_intrinsic_clock_monotonic_nanos",
+            "runtime.adapter.clock_monotonic_nanos",
+            AbiType::I64,
+        ),
+        (
+            "clock_realtime_nanos",
+            "beskid_rt_v5_intrinsic_clock_realtime_nanos",
+            "runtime.adapter.clock_realtime_nanos",
+            AbiType::I64,
+        ),
+        (
+            "process_exit",
+            "beskid_rt_v5_intrinsic_process_exit",
+            "runtime.adapter.process_exit",
+            AbiType::Void,
+        ),
+        (
+            "process_getpid",
+            "beskid_rt_v5_intrinsic_process_getpid",
+            "runtime.adapter.process_getpid",
+            AbiType::I32,
+        ),
+    ] {
+        let intrinsic = manifest
+            .trusted_runtime_intrinsics
+            .iter()
+            .find(|intrinsic| intrinsic.name == name)
+            .unwrap_or_else(|| panic!("manifest must declare {name}"));
+        assert_eq!(intrinsic.symbol, symbol);
+        assert_eq!(intrinsic.capability, capability);
+        assert_eq!(intrinsic.result, result);
+        assert_eq!(intrinsic.noreturn, name == "process_exit");
+    }
+
+    let sources = canonical_runtime_sources();
+    let clocks = &sources
+        .iter()
+        .find(|unit| unit.logical_path == CANONICAL_CLOCKS_SOURCE_PATH)
+        .expect("canonical clock source")
+        .source;
+    assert!(clocks.contains("return clock_monotonic_nanos();"));
+    assert!(clocks.contains("return clock_realtime_nanos();"));
+
+    let process = &sources
+        .iter()
+        .find(|unit| unit.logical_path == CANONICAL_PROCESS_SOURCE_PATH)
+        .expect("canonical process source")
+        .source;
+    assert!(process.contains("process_exit(code);"));
+    assert!(process.contains("return process_getpid();"));
 }
 
 #[test]

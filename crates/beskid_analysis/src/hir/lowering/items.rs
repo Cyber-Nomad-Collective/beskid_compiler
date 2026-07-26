@@ -104,6 +104,7 @@ impl Lowerable for Spanned<AstItem> {
         let node = match &self.node {
             AstItem::HostDefinition(def) => HirItem::HostDefinition(def.clone()),
             AstItem::FunctionDefinition(def) => HirItem::FunctionDefinition(def.lower()),
+            AstItem::ConstantDefinition(def) => HirItem::ConstantDefinition(def.clone()),
             AstItem::MethodDefinition(def) => HirItem::MethodDefinition(def.lower()),
             AstItem::ExtendTypeDefinition(def) => HirItem::ExtendTypeDefinition(def.lower()),
             AstItem::TypeDefinition(def) => HirItem::TypeDefinition(def.lower()),
@@ -396,6 +397,7 @@ impl Lowerable for Spanned<syntax::InlineModule> {
                 let node = match &item.node {
                     syntax::Node::HostDefinition(def) => HirItem::HostDefinition(def.clone()),
                     syntax::Node::Function(def) => HirItem::FunctionDefinition(def.lower()),
+                    syntax::Node::ConstantDefinition(def) => HirItem::ConstantDefinition(def.clone()),
                     syntax::Node::Method(def) => HirItem::MethodDefinition(def.lower()),
                     syntax::Node::ExtendTypeDefinition(def) => HirItem::ExtendTypeDefinition(def.lower()),
                     syntax::Node::TypeDefinition(def) => HirItem::TypeDefinition(def.lower()),

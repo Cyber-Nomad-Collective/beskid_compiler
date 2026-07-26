@@ -79,7 +79,7 @@ pub use semantic_contract::{
     SpawnDiagnosticKind, SpawnEntryValidation, SpawnTarget, TestItem, TypedProgram, abi_type, aggregate_field_access,
     aggregate_layout, aggregate_literal_declaration, block_statement_nodes, call_abi_signature, call_argument_abi_type,
     call_arguments, call_lowering, callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target,
-    closure_environment, closure_signature, completion_candidates, control_flow, direct_callees,
+    closure_environment, closure_signature, completion_candidates, constant_integer, control_flow, direct_callees,
     dispatch_builtin_symbol, enum_constructor, enum_layout, enum_match, extern_contract_import_for_declaration,
     for_iterator_fact, format_ast_node_key, format_ast_node_site, format_source_span_range, generic_call_instantiation,
     generic_call_specialization, item_abi_signature, item_body, item_export_symbol, item_name, item_signature,

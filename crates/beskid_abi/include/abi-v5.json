@@ -218,6 +218,20 @@
   ],
   "intrinsics": [
     {
+      "name": "clock_monotonic_nanos",
+      "symbol": "beskid_rt_v5_intrinsic_clock_monotonic_nanos",
+      "capability": "runtime.adapter.clock_monotonic_nanos",
+      "params": [],
+      "result": "i64"
+    },
+    {
+      "name": "clock_realtime_nanos",
+      "symbol": "beskid_rt_v5_intrinsic_clock_realtime_nanos",
+      "capability": "runtime.adapter.clock_realtime_nanos",
+      "params": [],
+      "result": "i64"
+    },
+    {
       "name": "memory_compare",
       "symbol": "beskid_rt_v5_intrinsic_memory_compare",
       "capability": "runtime.bootstrap.memory_compare",
@@ -316,6 +330,25 @@
         }
       ],
       "result": "pointer"
+    },
+    {
+      "name": "process_exit",
+      "symbol": "beskid_rt_v5_intrinsic_process_exit",
+      "capability": "runtime.adapter.process_exit",
+      "params": [
+        {
+          "name": "code",
+          "type": "i32"
+        }
+      ],
+      "result": "never"
+    },
+    {
+      "name": "process_getpid",
+      "symbol": "beskid_rt_v5_intrinsic_process_getpid",
+      "capability": "runtime.adapter.process_getpid",
+      "params": [],
+      "result": "i32"
     },
     {
       "name": "raw_byte_load",
@@ -954,6 +987,29 @@
       "result": "never"
     },
     {
+      "symbol": "clock_gettime",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "clock_id",
+          "type": "i32"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "getpid",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [],
+      "result": "i32"
+    },
+    {
       "symbol": "mmap",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -1034,6 +1090,13 @@
       "result": "never"
     },
     {
+      "symbol": "GetCurrentProcessId",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [],
+      "result": "u32"
+    },
+    {
       "symbol": "GetStdHandle",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -1044,6 +1107,25 @@
         }
       ],
       "result": "pointer"
+    },
+    {
+      "symbol": "GetSystemTimeAsFileTime",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "symbol": "GetTickCount64",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [],
+      "result": "u64"
     },
     {
       "symbol": "VirtualAlloc",
@@ -1128,6 +1210,29 @@
         }
       ],
       "result": "never"
+    },
+    {
+      "symbol": "clock_gettime",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "clock_id",
+          "type": "i32"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "getpid",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [],
+      "result": "i32"
     },
     {
       "symbol": "mmap",

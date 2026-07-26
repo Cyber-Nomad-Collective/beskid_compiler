@@ -41,6 +41,7 @@ pub enum Item<P: Phase> {
     HostDefinition(Spanned<P::HostDefinition>),
     #[phase(from = "Function")]
     FunctionDefinition(Spanned<P::FunctionDefinition>),
+    ConstantDefinition(Spanned<P::ConstantDefinition>),
     #[phase(from = "Method")]
     MethodDefinition(Spanned<P::MethodDefinition>),
     ExtendTypeDefinition(Spanned<P::ExtendTypeDefinition>),
@@ -66,6 +67,7 @@ impl HirNode for Item<crate::hir::HirPhase> {
         match self {
             Item::HostDefinition(_) => {}
             Item::FunctionDefinition(def) => push(HirNodeRef(&def.node)),
+            Item::ConstantDefinition(_) => {}
             Item::MethodDefinition(def) => push(HirNodeRef(&def.node)),
             Item::ExtendTypeDefinition(def) => push(HirNodeRef(&def.node)),
             Item::TypeDefinition(def) => push(HirNodeRef(&def.node)),

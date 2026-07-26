@@ -3,11 +3,11 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::{Expression, Identifier, SpanInfo, Spanned, Type};
+use crate::syntax::{Expression, Identifier, Literal, LiteralExpression, PrimitiveType, SpanInfo, Spanned, Type};
 
 use beskid_ast_derive::AstNode;
 
-/// Local binding with optional type annotation and mandatory initializer.
+/// Local binding with either an explicit initializer or a type-directed zero initializer.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LetStatement {
     #[ast(skip)]
@@ -72,8 +72,35 @@ impl Parsable for LetStatement {
         }
 
         let name = Identifier::parse(name_pair.ok_or(ParseError::missing(Rule::Identifier))?)?;
-        let value = Expression::parse(value_pair.ok_or(ParseError::missing(Rule::Expression))?)?;
+        let value = match value_pair {
+            Some(value) => Expression::parse(value)?,
+            None => default_initializer(type_annotation.as_ref(), name.span)?,
+        };
 
         Ok(Spanned::new(Self { mutable, name, type_annotation, value }, span))
     }
+}
+
+/// Materialize the language-defined default as an ordinary syntax literal so every later
+/// semantic and ISLE phase follows the same path as an explicit initializer.
+fn default_initializer(type_annotation: Option<&Spanned<Type>>, span: SpanInfo) -> Result<Spanned<Expression>, ParseError> {
+    let primitive = type_annotation
+        .and_then(|annotation| match &annotation.node {
+            Type::Primitive(primitive) => Some(primitive.node),
+            _ => None,
+        })
+        .ok_or(ParseError::missing(Rule::Expression))?;
+    let literal = match primitive {
+        PrimitiveType::Bool => Literal::Bool(false),
+        PrimitiveType::I32 => Literal::Integer("0_i32".into()),
+        PrimitiveType::I64 | PrimitiveType::Pointer | PrimitiveType::Word => Literal::Integer("0_i64".into()),
+        PrimitiveType::U8 => Literal::Integer("0_u8".into()),
+        PrimitiveType::F64 => Literal::Float("0.0".into()),
+        PrimitiveType::Char => Literal::Char("'\\0'".into()),
+        PrimitiveType::String => Literal::String("\"\"".into()),
+        PrimitiveType::Unit | PrimitiveType::Never => return Err(ParseError::missing(Rule::Expression)),
+    };
+    let literal = Spanned::new(literal, span);
+    let literal = Spanned::new(LiteralExpression { literal }, span);
+    Ok(Spanned::new(Expression::Literal(literal), span))
 }

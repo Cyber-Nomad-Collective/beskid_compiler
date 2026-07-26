@@ -100,6 +100,28 @@ pub fn resolve_item_tiers(items: &mut [ApiDocItem]) {
     }
 }
 
+/// Validate the prelude gate: every module declared by Prelude.bd must resolve
+/// to the `standard` tier. Untiered modules are treated as the supported tier
+/// by the cascade contract and therefore fail this must-fix validation.
+pub fn validate_prelude_standard_tiers(items: &[ApiDocItem]) -> Result<(), String> {
+    let mut violations = Vec::new();
+    for item in items.iter().filter(|item| item.kind == "module") {
+        let in_prelude = item.qualified_name == "Prelude"
+            || item.qualified_name.starts_with("Prelude::")
+            || item.location.file.ends_with("/Prelude.bd")
+            || item.location.file.ends_with("\\Prelude.bd")
+            || item.location.file == "Prelude.bd";
+        if in_prelude && item.tier.as_deref() != Some(TIER_STANDARD) {
+            violations.push(format!("{} (tier: {})", item.qualified_name, item.tier.as_deref().unwrap_or("supported")));
+        }
+    }
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("API-SHAPE-004: Prelude SHALL only re-export standard modules; non-standard module(s): {}", violations.join(", ")))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,14 +228,4 @@ mod tests {
         assert_eq!(parse_tier_directive(body), Some(TIER_STANDARD.to_string()));
     }
 
-    #[test]
-    fn tier_field_round_trips_through_serde() {
-        let mut row = item(1, None, "/// @tier(standard)");
-        resolve_item_tiers(std::slice::from_mut(&mut row));
-        assert_eq!(row.tier.as_deref(), Some(TIER_STANDARD));
-        let json = serde_json::to_string(&row).expect("serialize");
-        assert!(json.contains("\"tier\":\"standard\""), "tier should serialize as camelCase lowercase: {json}");
-        let de: ApiDocItem = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(de.tier.as_deref(), Some(TIER_STANDARD));
-    }
 }

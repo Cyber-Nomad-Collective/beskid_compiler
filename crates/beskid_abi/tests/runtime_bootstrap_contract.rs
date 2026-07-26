@@ -71,12 +71,14 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 15);
+    assert_eq!(names.len(), 19);
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
     assert!(names.contains(&"tls_get"));
     assert!(names.contains(&"trap"));
+    assert!(names.contains(&"clock_monotonic_nanos"));
+    assert!(names.contains(&"process_getpid"));
     assert!(manifest.intrinsic_metadata("pointer_add").is_some());
 
     let mut unauthorized = manifest.clone();
@@ -166,9 +168,18 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
 #[test]
 fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
     let expected = [
-        vec!["_exit", "mmap", "munmap", "write"],
-        vec!["_exit", "mmap", "munmap", "write"],
-        vec!["ExitProcess", "GetStdHandle", "VirtualAlloc", "VirtualFree", "WriteFile"],
+        vec!["_exit", "clock_gettime", "getpid", "mmap", "munmap", "write"],
+        vec!["_exit", "clock_gettime", "getpid", "mmap", "munmap", "write"],
+        vec![
+            "ExitProcess",
+            "GetCurrentProcessId",
+            "GetStdHandle",
+            "GetSystemTimeAsFileTime",
+            "GetTickCount64",
+            "VirtualAlloc",
+            "VirtualFree",
+            "WriteFile",
+        ],
     ];
     let expected_libraries = ["libc", "libSystem", "kernel32"];
     for ((target, expected_symbols), expected_library) in

@@ -246,6 +246,10 @@ pub fn emit_host_platform_library_pair(
         .map(|entry| entry.symbol.as_str().to_owned())
         .collect::<Vec<_>>();
     provenance_symbols.extend([
+        "beskid_rt_v5_intrinsic_clock_monotonic_nanos".to_owned(),
+        "beskid_rt_v5_intrinsic_clock_realtime_nanos".to_owned(),
+        "beskid_rt_v5_intrinsic_process_exit".to_owned(),
+        "beskid_rt_v5_intrinsic_process_getpid".to_owned(),
         "beskid_rt_v5_intrinsic_system_allocate".to_owned(),
         "beskid_rt_v5_intrinsic_system_free".to_owned(),
         "beskid_rt_v5_intrinsic_tls_get".to_owned(),
@@ -387,8 +391,10 @@ fn compile_platform_objects(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/assembly").join(target.triple.as_str());
     let source = assembly_root.join(plan.assembly_source);
     let tls_source = assembly_root.join(plan.tls_source);
+    let adapter_source = assembly_root.join(plan.adapter_source);
     let object = output_dir.join(format!("{name}.platform.{}", plan.object_extension));
     let tls_object = output_dir.join(format!("{name}.platform_tls.{}", plan.object_extension));
+    let adapter_object = output_dir.join(format!("{name}.platform_host.{}", plan.object_extension));
     let mut assembly = Command::new(plan.assembly_program);
     assembly.args(&plan.assembly_args);
     if plan.assembly_output_before_source {
@@ -430,13 +436,34 @@ fn compile_platform_objects(
             detail: String::from_utf8_lossy(&output.stderr).into_owned(),
         });
     }
-    Ok(vec![object, tls_object])
+    let output = Command::new(plan.tls_program)
+        .args(&plan.tls_args)
+        .arg(&adapter_source)
+        .arg("-o")
+        .arg(&adapter_object)
+        .output()
+        .map_err(|_| AotError::LinkerUnavailable)?;
+    if !output.status.success() {
+        return Err(AotError::LinkFailed {
+            status: output.status.code().unwrap_or(-1),
+            command: format!(
+                "{} {:?} {} -o {}",
+                plan.tls_program,
+                plan.tls_args,
+                adapter_source.display(),
+                adapter_object.display()
+            ),
+            detail: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    Ok(vec![object, tls_object, adapter_object])
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PlatformObjectPlan {
     assembly_source: &'static str,
     tls_source: &'static str,
+    adapter_source: &'static str,
     assembly_program: &'static str,
     assembly_args: Vec<String>,
     assembly_output_before_source: bool,
@@ -453,6 +480,7 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
             (Arch::Aarch64, Os::Darwin) => Ok(PlatformObjectPlan {
                 assembly_source: "platform.S",
                 tls_source: "platform_tls.c",
+                adapter_source: "platform_host.c",
                 assembly_program: "clang",
                 assembly_args: vec!["-c".into(), "-arch".into(), "arm64".into()],
                 assembly_output_before_source: false,
@@ -463,6 +491,7 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
             (Arch::X86_64, Os::Linux) => Ok(PlatformObjectPlan {
                 assembly_source: "platform.S",
                 tls_source: "platform_tls.c",
+                adapter_source: "platform_host.c",
                 assembly_program: "clang",
                 assembly_args: vec!["-target".into(), target.to_owned(), "-fPIC".into(), "-c".into()],
                 assembly_output_before_source: false,
@@ -473,6 +502,7 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
             (Arch::X86_64, Os::Windows) => Ok(PlatformObjectPlan {
                 assembly_source: "platform.asm",
                 tls_source: "platform_tls.c",
+                adapter_source: "platform_host.c",
                 assembly_program: "llvm-ml",
                 assembly_args: vec!["--m64".into(), "/c".into(), "/X".into(), "/Fo".into()],
                 assembly_output_before_source: true,
@@ -496,6 +526,7 @@ fn platform_object_plan(target: &str) -> AotResult<PlatformObjectPlan> {
         "x86_64-pc-windows-msvc" => Ok(PlatformObjectPlan {
             assembly_source: "platform.asm",
             tls_source: "platform_tls.c",
+            adapter_source: "platform_host.c",
             assembly_program: "llvm-ml",
             assembly_args: vec!["--m64".into(), "/c".into(), "/X".into(), "/Fo".into()],
             assembly_output_before_source: true,
@@ -785,13 +816,22 @@ mod with_defaults_tests {
 
     #[test]
     fn linked_artifacts_require_an_exact_runtime_kit() {
-        let mut req = AotBuildRequest::with_defaults(
-            CodegenArtifact::default(),
-            BuildOutputKind::StaticLib,
-            PathBuf::from("/tmp/out.a"),
-            "Main",
-        );
-        req.runtime = None;
+        let req = AotBuildRequest {
+            artifact: CodegenArtifact::default(),
+            output_kind: BuildOutputKind::StaticLib,
+            output_path: PathBuf::from("/tmp/out.a"),
+            object_path: None,
+            target_triple: None,
+            profile: BuildProfile::Debug,
+            entrypoint: "Main".to_owned(),
+            export_policy: ExportPolicy::PublicOnly,
+            link_mode: LinkMode::Auto,
+            runtime: None,
+            verbose_link: false,
+            external_libraries: Vec::new(),
+            library_search_paths: Vec::new(),
+            pipeline: None,
+        };
 
         let error = validate_request(&req).expect_err("linked output must require a runtime kit");
         assert!(matches!(error, AotError::InvalidRequest { .. }));

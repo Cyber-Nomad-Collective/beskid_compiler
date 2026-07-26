@@ -309,7 +309,8 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         if entry.name.is_empty()
             || entry.symbol.is_empty()
             || !entry.symbol.starts_with("beskid_rt_v5_")
-            || entry.capability != format!("runtime.bootstrap.{}", entry.name)
+            || !(entry.capability == format!("runtime.bootstrap.{}", entry.name)
+                || entry.capability == format!("runtime.adapter.{}", entry.name))
         {
             return Err(format!("intrinsic {} has an invalid capability id", entry.name));
         }

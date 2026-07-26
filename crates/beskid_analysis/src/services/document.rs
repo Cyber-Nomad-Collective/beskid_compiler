@@ -51,6 +51,7 @@ pub enum AnalysisSymbolKind {
     Type,
     Enum,
     Contract,
+    Constant,
     Module,
     Use,
 }
@@ -272,6 +273,7 @@ fn completion_kind_from_symbol_kind(kind: AnalysisSymbolKind) -> CompletionKind 
         AnalysisSymbolKind::Type => CompletionKind::Struct,
         AnalysisSymbolKind::Enum => CompletionKind::Enum,
         AnalysisSymbolKind::Contract => CompletionKind::Interface,
+        AnalysisSymbolKind::Constant => CompletionKind::Variable,
         AnalysisSymbolKind::Module => CompletionKind::Module,
         AnalysisSymbolKind::Use => CompletionKind::Module,
     }
@@ -309,6 +311,7 @@ pub fn symbol_kind_name(kind: AnalysisSymbolKind) -> &'static str {
         AnalysisSymbolKind::Type => "type",
         AnalysisSymbolKind::Enum => "enum",
         AnalysisSymbolKind::Contract => "contract",
+        AnalysisSymbolKind::Constant => "constant",
         AnalysisSymbolKind::Module => "module",
         AnalysisSymbolKind::Use => "use",
     }
@@ -543,6 +546,12 @@ pub fn collect_document_symbols(snapshot: &DocumentAnalysisSnapshot) -> Vec<Docu
         .items
         .iter()
         .filter_map(|item| match &item.node {
+            Node::ConstantDefinition(definition) => Some(DocumentSymbolInfo {
+                name: definition.node.name.node.name.clone(),
+                kind: AnalysisSymbolKind::Constant,
+                selection_start: definition.node.name.span.start,
+                selection_end: definition.node.name.span.end,
+            }),
             Node::Function(definition) => Some(DocumentSymbolInfo {
                 name: definition.node.name.node.name.clone(),
                 kind: AnalysisSymbolKind::Function,

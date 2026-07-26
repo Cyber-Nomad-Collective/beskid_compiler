@@ -162,6 +162,13 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary mod type" });
                 }
             }
+            HirBinaryOp::BitAnd => {
+                if operand_clif_ty.is_int() {
+                    ctx.builder.ins().band(left, right)
+                } else {
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary bitwise AND type" });
+                }
+            }
             HirBinaryOp::And | HirBinaryOp::Or => {
                 let left_type =
                     resolve_monomorph_type_id(ctx.type_result, &ctx.codegen.active_generic_substitution, left_type);

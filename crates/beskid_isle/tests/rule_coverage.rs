@@ -261,6 +261,7 @@ fn binary_and_unary_operator_facts_have_isle_rules() {
     for operator in [
         "Or",
         "And",
+        "BitAnd",
         "IdentityEq",
         "IdentityNotEq",
         "Eq",

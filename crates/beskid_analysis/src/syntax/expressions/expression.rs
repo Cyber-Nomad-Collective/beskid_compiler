@@ -93,6 +93,7 @@ pub(crate) fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, 
         Rule::AssignmentExpression => super::assign_expression::parse_assignment_expression(pair),
         Rule::LogicalOrExpression
         | Rule::LogicalAndExpression
+        | Rule::BitwiseAndExpression
         | Rule::EqualityExpression
         | Rule::ComparisonExpression
         | Rule::AdditionExpression

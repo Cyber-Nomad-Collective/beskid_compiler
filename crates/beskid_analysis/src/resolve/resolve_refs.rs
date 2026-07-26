@@ -100,6 +100,9 @@ impl Resolver {
     fn resolve_item(&mut self, item: &Spanned<HirItem>) {
         match &item.node {
             HirItem::HostDefinition(_) => {}
+            // HIR-free constant facts are consumed before executable lowering; there are no
+            // types, locals, or references for the retired HIR resolver to traverse.
+            HirItem::ConstantDefinition(_) => {}
             HirItem::FunctionDefinition(def) => {
                 self.push_generic_scope();
                 for generic in &def.node.generics {

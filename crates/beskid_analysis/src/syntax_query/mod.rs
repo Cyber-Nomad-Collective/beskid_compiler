@@ -28,6 +28,7 @@ node_kinds!(
     Program,
     Node,
     FunctionDefinition,
+    ConstantDefinition,
     HostDefinition,
     HostBodyItem,
     RegistryBlock,

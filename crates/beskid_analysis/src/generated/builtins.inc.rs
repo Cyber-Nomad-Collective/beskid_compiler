@@ -572,4 +572,28 @@ define_builtins! {
         returns: Never,
         injected: true,
     },
+    &["clock_monotonic_nanos"] => {
+        symbol: "beskid_rt_v5_intrinsic_clock_monotonic_nanos",
+        params: [],
+        returns: U64,
+        injected: true,
+    },
+    &["clock_realtime_nanos"] => {
+        symbol: "beskid_rt_v5_intrinsic_clock_realtime_nanos",
+        params: [],
+        returns: U64,
+        injected: true,
+    },
+    &["process_exit"] => {
+        symbol: "beskid_rt_v5_intrinsic_process_exit",
+        params: [U64],
+        returns: Never,
+        injected: true,
+    },
+    &["process_getpid"] => {
+        symbol: "beskid_rt_v5_intrinsic_process_getpid",
+        params: [],
+        returns: U64,
+        injected: true,
+    },
 }

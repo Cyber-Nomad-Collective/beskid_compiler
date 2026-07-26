@@ -23,6 +23,7 @@ pub struct BinaryExpression {
 pub enum BinaryOp {
     Or,
     And,
+    BitAnd,
     IdentityEq,
     IdentityNotEq,
     Eq,
@@ -42,6 +43,7 @@ pub(crate) fn parse_binary_expression(pair: Pair<Rule>) -> Result<Spanned<Expres
     match pair.as_rule() {
         Rule::LogicalOrExpression => parse_chain(pair, &["||"]),
         Rule::LogicalAndExpression => parse_chain(pair, &["&&"]),
+        Rule::BitwiseAndExpression => parse_chain(pair, &["&"]),
         Rule::EqualityExpression => parse_chain(pair, &["===", "!==", "==", "!="]),
         Rule::ComparisonExpression => parse_chain(pair, &["<", "<=", ">", ">="]),
         Rule::AdditionExpression => parse_chain(pair, &["+", "-"]),
@@ -76,6 +78,7 @@ fn map_binary_op(op_text: &str) -> Result<BinaryOp, ParseError> {
     match op_text {
         "||" => Ok(BinaryOp::Or),
         "&&" => Ok(BinaryOp::And),
+        "&" => Ok(BinaryOp::BitAnd),
         "===" => Ok(BinaryOp::IdentityEq),
         "!==" => Ok(BinaryOp::IdentityNotEq),
         "==" => Ok(BinaryOp::Eq),

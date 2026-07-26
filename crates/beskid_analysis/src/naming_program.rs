@@ -55,6 +55,9 @@ fn walk_node(node: &Node, visit: &mut impl FnMut(NamingRole, &Spanned<Identifier
         Node::EnumDefinition(def) => walk_enum_definition(&def.node, visit),
         Node::ContractDefinition(def) => walk_contract_definition(&def.node, visit),
         Node::Function(def) => walk_function_definition(&def.node, visit),
+        // Constants retain their source spelling; canonical runtime layouts use established
+        // uppercase ABI names which are intentionally outside local-binding style rules.
+        Node::ConstantDefinition(_) => {}
         Node::Method(def) => walk_method_definition(&def.node, visit),
         Node::ExtendTypeDefinition(def) => walk_extend_type(&def.node, visit),
         Node::MacroDefinition(def) => {
@@ -74,6 +77,7 @@ fn walk_node_mut(node: &mut Node, visit: &mut impl FnMut(NamingRole, &mut Identi
         Node::EnumDefinition(def) => walk_enum_definition_mut(&mut def.node, visit),
         Node::ContractDefinition(def) => walk_contract_definition_mut(&mut def.node, visit),
         Node::Function(def) => walk_function_definition_mut(&mut def.node, visit),
+        Node::ConstantDefinition(_) => {}
         Node::Method(def) => walk_method_definition_mut(&mut def.node, visit),
         Node::ExtendTypeDefinition(def) => walk_extend_type_mut(&mut def.node, visit),
         Node::MacroDefinition(def) => visit(NamingRole::Macro, &mut def.node.name.node),

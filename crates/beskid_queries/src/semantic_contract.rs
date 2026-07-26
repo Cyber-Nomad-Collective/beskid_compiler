@@ -641,6 +641,7 @@ pub enum LiteralFact {
 pub enum OperatorFact {
     Or,
     And,
+    BitAnd,
     IdentityEq,
     IdentityNotEq,
     Eq,
@@ -1048,6 +1049,32 @@ fn resolved_local_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey)
     })
 }
 
+/// Resolve an unshadowed, same-module integer constant to its declared value.
+/// Constants have no storage slot: generated ISLE consumes this fact as an immediate.
+#[salsa::tracked]
+fn constant_integer_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<i64> {
+    with_node(db, syntax, key, |program, index, node| {
+        let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
+        let [segment] = path.path.node.segments.as_slice() else {
+            return None;
+        };
+        if !segment.node.type_args.is_empty()
+            || resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str()).is_some()
+        {
+            return None;
+        }
+        program.node.items.iter().find_map(|item| {
+            let beskid_analysis::syntax::Node::ConstantDefinition(constant) = &item.node else {
+                return None;
+            };
+            (constant.node.name.node.name == segment.node.name.node.name).then(|| match &constant.node.value.node {
+                beskid_analysis::syntax::Literal::Integer(value) => value.replace('_', "").parse::<i64>().ok(),
+                _ => None,
+            })?
+        })
+    })
+}
+
 #[salsa::tracked]
 fn local_slot_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<LocalSlot> {
     with_node(db, syntax, key, |_program, index, node| {
@@ -1289,6 +1316,11 @@ fn node_type_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> S
         if let Some(binding_type) = pattern_binding_semantic_type(db, program, index, key, node) {
             return Some(binding_type);
         }
+        if node.of::<beskid_analysis::syntax::PathExpression>().is_some()
+            && matches!(constant_integer(db, key), Ok(Some(_)))
+        {
+            return Some(Ok(SemanticTypeId::I32));
+        }
         if node.of::<beskid_analysis::syntax::MatchExpression>().is_some() && matches!(enum_match(db, key), Ok(Some(_)))
         {
             return Some(enum_match_result_semantic_type(db, key));
@@ -1471,7 +1503,7 @@ fn semantic_type_for_binary_operands(
         BinaryOp::Add if left == SemanticTypeId::STRING && right == SemanticTypeId::STRING => {
             Ok(SemanticTypeId::STRING)
         }
-        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod | BinaryOp::BitAnd
             if left == right && primitive_numeric(left) =>
         {
             Ok(left)
@@ -1561,6 +1593,11 @@ fn semantic_type_for_literal(literal: &beskid_analysis::syntax::Literal) -> Sema
         beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i32") => SemanticTypeId::I32,
         beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i64") => SemanticTypeId::I64,
         beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_u8") => SemanticTypeId::U8,
+        beskid_analysis::syntax::Literal::Integer(value)
+            if value.starts_with("0x") && integer_literal_u64(value).is_some_and(|number| number > i64::MAX as u64) =>
+        {
+            SemanticTypeId::WORD
+        }
         beskid_analysis::syntax::Literal::Integer(_) => SemanticTypeId::I32,
         beskid_analysis::syntax::Literal::Float(_) => SemanticTypeId::F64,
         beskid_analysis::syntax::Literal::String(_) => SemanticTypeId::STRING,
@@ -2688,7 +2725,7 @@ fn integer_literal_fits_abi(db: &dyn Db, key: AstNodeKey, expected: SemanticType
     let Some(text) = integer_literal_text(db, key)? else {
         return Ok(false);
     };
-    let value = text.replace('_', "").parse::<u64>().ok();
+    let value = integer_literal_u64(&text);
     Ok(match expected {
         SemanticTypeId::I32 => value.is_some_and(|value| i32::try_from(value).is_ok()),
         SemanticTypeId::I64 => value.is_some_and(|value| i64::try_from(value).is_ok()),
@@ -2716,6 +2753,17 @@ fn integer_literal_text(db: &dyn Db, key: AstNodeKey) -> Result<Option<Arc<str>>
 
 fn integer_has_explicit_abi_suffix(text: &str) -> bool {
     matches!(text.rsplit_once('_').map(|(_, suffix)| suffix), Some("i32" | "i64" | "u8"))
+}
+
+/// Parse a source integer's magnitude while preserving a hexadecimal word-sized bit pattern.
+///
+/// The caller is responsible for ABI suffix handling. Negative values are deliberately excluded:
+/// this helper is used only for selecting and checking unsigned ABI representations.
+fn integer_literal_u64(text: &str) -> Option<u64> {
+    match text.strip_prefix("0x") {
+        Some(digits) => u64::from_str_radix(&digits.replace('_', ""), 16).ok(),
+        None => text.replace('_', "").parse::<u64>().ok(),
+    }
 }
 
 #[salsa::tracked]
@@ -3038,7 +3086,7 @@ fn abi_type_for_binary_expression(
         {
             Ok(SemanticTypeId::BOOL)
         }
-        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod | BinaryOp::BitAnd
             if left_type == right_type && primitive_numeric(left_type) =>
         {
             Ok(left_type)
@@ -4586,6 +4634,7 @@ fn binary_operator(operator: beskid_analysis::syntax::BinaryOp) -> OperatorFact 
     match operator {
         beskid_analysis::syntax::BinaryOp::Or => OperatorFact::Or,
         beskid_analysis::syntax::BinaryOp::And => OperatorFact::And,
+        beskid_analysis::syntax::BinaryOp::BitAnd => OperatorFact::BitAnd,
         beskid_analysis::syntax::BinaryOp::IdentityEq => OperatorFact::IdentityEq,
         beskid_analysis::syntax::BinaryOp::IdentityNotEq => OperatorFact::IdentityNotEq,
         beskid_analysis::syntax::BinaryOp::Eq => OperatorFact::Eq,
@@ -5297,6 +5346,11 @@ fn push_nominal_receiver_candidates(
 /// local fact.
 pub fn resolved_local(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ResolvedLocal> {
     with_registered_syntax(db, key, resolved_local_tracked)
+}
+
+/// Integer immediate for an unshadowed module constant in the current source unit.
+pub fn constant_integer(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<i64> {
+    with_registered_syntax(db, key, constant_integer_tracked)
 }
 
 /// Return the deterministic owner-qualified slot for an exact local declaration identifier.

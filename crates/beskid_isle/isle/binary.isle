@@ -4,6 +4,8 @@
 (extern constructor clif_isub clif_isub)
 (decl clif_imul (Value Value) Value)
 (extern constructor clif_imul clif_imul)
+(decl clif_band (Value Value) Value)
+(extern constructor clif_band clif_band)
 (decl clif_sdiv (Value Value) Value)
 (extern constructor clif_sdiv clif_sdiv)
 (decl partial clif_srem (Value Value) Value)
@@ -72,6 +74,10 @@
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Mul))))
       (clif_imul (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.BitAnd))))
+      (clif_band (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Div))))

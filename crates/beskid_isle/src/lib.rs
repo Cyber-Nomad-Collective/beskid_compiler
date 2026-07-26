@@ -133,6 +133,7 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         | Syntax::LambdaExpression => UnsupportedTypedOperation,
 
         Syntax::Node
+        | Syntax::ConstantDefinition
         | Syntax::HostBodyItem
         | Syntax::ExtendTypeDefinition
         | Syntax::TypeDefinition
@@ -267,6 +268,7 @@ pub enum RuntimeIntrinsicKind {
 pub enum OperatorFact {
     Or,
     And,
+    BitAnd,
     IdentityEq,
     IdentityNotEq,
     Eq,
@@ -646,6 +648,10 @@ pub trait NodeFacts {
         None
     }
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64>;
+    /// Constant values are immediate and therefore have no local storage slot.
+    fn constant_integer(&self, _key: AstNodeKey) -> Option<i64> {
+        None
+    }
     fn boolean_literal(&self, _key: AstNodeKey) -> Option<bool> {
         None
     }
@@ -1395,6 +1401,11 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.builder.ins().imul(left, right)
     }
 
+    fn clif_band(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
+        self.builder.ins().band(left, right)
+    }
+
     fn clif_sdiv(&mut self, left: Value, right: Value) -> Value {
         if let Some((left, right)) = self.common_float_operands(left, right) {
             return self.builder.ins().fdiv(left, right);
@@ -1964,6 +1975,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn sequence_statements(&mut self, _head: (), _tail: ()) {}
 
     fn emit_local_read(&mut self, key: AstNodeKey) -> Option<Value> {
+        if let Some(value) = self.facts.constant_integer(key) {
+            let value_type = self.facts.scalar_type(key)?;
+            return Some(self.builder.ins().iconst(value_type, value));
+        }
         let slot = self.facts.local_slot(key)?;
         let (variable, _) = self.locals.get(&slot).copied()?;
         Some(self.builder.use_var(variable))

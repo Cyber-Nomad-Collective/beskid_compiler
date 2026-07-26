@@ -33,6 +33,7 @@ ReturnKeyword = { "return" }
 BreakKeyword = { "break" }
 ContinueKeyword = { "continue" }
 LetKeyword = { "let" }
+ConstKeyword = { "const" }
 MutKeyword = @{ "mut" ~ !(ASCII_ALPHANUMERIC | "_") }
 ModKeyword = { "mod" }
 UseKeyword = { "use" }
@@ -77,6 +78,7 @@ Keyword = {
       | BreakKeyword
       | ContinueKeyword
       | LetKeyword
+      | ConstKeyword
       | MutKeyword
       | ModKeyword
       | UseKeyword
@@ -102,7 +104,9 @@ Keyword = {
     ) ~ !ASCII_ALPHANUMERIC
 }
 
-IntegerLiteral = @{ "-"? ~ ASCII_DIGIT+ ~ ("_i32" | "_i64" | "_u8")? }
+DecimalIntegerBody = { ASCII_DIGIT+ ~ ("_" ~ ASCII_DIGIT+)* }
+HexIntegerBody = { ASCII_HEX_DIGIT+ ~ ("_" ~ ASCII_HEX_DIGIT+)* }
+IntegerLiteral = @{ "-"? ~ (("0x" ~ HexIntegerBody) | DecimalIntegerBody) ~ ("_i32" | "_i64" | "_u8")? }
 FloatLiteral = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 StringLiteral = @{ "\"" ~ StringContent* ~ "\"" }
 StringLiteralValueBody = ${ (StringContent)* }
@@ -141,7 +145,7 @@ Program = { SOI ~ ItemList ~ EOI }
 
 DocLineContent = { "///" ~ !("/") ~ (!(NEWLINE) ~ ANY)* ~ NEWLINE? }
 DocRun = @{ DocLineContent+ }
-InnerItem = _{ HostDefinition | MacroDefinition | FunctionDefinition | ImplBlock | ExtendTypeDefinition | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
+InnerItem = _{ HostDefinition | MacroDefinition | FunctionDefinition | ConstantDefinition | ImplBlock | ExtendTypeDefinition | TypeDefinition | EnumDefinition | ContractDefinition | TestDefinition | AttributeDeclaration | InlineModule | ModuleDeclaration | UseDeclaration }
 
 AttributeList = { Attribute+ }
 Attribute = { "[" ~ Identifier ~ ("(" ~ AttributeArgumentList? ~ ")")? ~ "]" }
@@ -183,6 +187,7 @@ BeskidType = { ArrowFunctionType | FunctionType | ArrayType | TypeName }
 // 4) DEFINITIONS
 ////////////////////////////////////////////////////////////
 FunctionDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ GenericParameters? ~ "(" ~ ParameterList? ~ ")" ~ Block }
+ConstantDefinition = { "const" ~ Identifier ~ "=" ~ IntegerLiteral ~ ";" }
 ReceiverType = { PrimitiveType | Path }
 ImplBlock = { "impl" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
 ExtendTypeDefinition = { "extend" ~ "type" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
@@ -256,7 +261,7 @@ LaunchStatement = { "launch" ~ Path ~ "(" ~ ArgumentList? ~ ")" ~ ";" }
 Statement = _{ LetStatement | ReturnStatement | BreakStatement | ContinueStatement | WhileStatement | ForStatement | IfStatement | WithStatement | LaunchStatement | ExpressionStatement }
 
 LetStatement = { TypedLetStatement | InferredLetStatement }
-TypedLetStatement = { MutKeyword? ~ BeskidType ~ Identifier ~ "=" ~ Expression ~ ";" }
+TypedLetStatement = { MutKeyword? ~ BeskidType ~ Identifier ~ ("=" ~ Expression)? ~ ";" }
 InferredLetStatement = { LetKeyword ~ MutKeyword? ~ Identifier ~ "=" ~ Expression ~ ";" }
 TypeAnnotation = { ":" ~ BeskidType }
 
@@ -286,7 +291,8 @@ LambdaBody = { BlockExpression | Expression }
 AssignmentOperator = { "=" | "+=" | "-=" }
 AssignmentExpression = { LogicalOrExpression ~ (AssignmentOperator ~ AssignmentExpression)? }
 LogicalOrExpression = { LogicalAndExpression ~ ("||" ~ LogicalAndExpression)* }
-LogicalAndExpression = { EqualityExpression ~ ("&&" ~ EqualityExpression)* }
+LogicalAndExpression = { BitwiseAndExpression ~ ("&&" ~ BitwiseAndExpression)* }
+BitwiseAndExpression = { EqualityExpression ~ ("&" ~ EqualityExpression)* }
 
 EqualityExpression = { ComparisonExpression ~ (("===" | "!==" | "==" | "!=") ~ ComparisonExpression)* }
 ComparisonExpression = { AdditionExpression ~ (("<=" | ">=" | "<" | ">") ~ AdditionExpression)* }

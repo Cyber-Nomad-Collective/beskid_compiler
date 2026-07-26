@@ -269,6 +269,70 @@ fn binary_rule_recurses_through_ast_keys_and_emits_iadd() {
 }
 
 #[test]
+fn integer_bitwise_and_rule_emits_band() {
+    struct BitwiseAndFacts {
+        root: AstNodeKey,
+        left: AstNodeKey,
+        right: AstNodeKey,
+    }
+    impl NodeFacts for BitwiseAndFacts {
+        fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+            if key == self.root {
+                Some(NodeKind::BinaryExpression)
+            } else if key == self.left || key == self.right {
+                Some(NodeKind::LiteralExpression)
+            } else {
+                None
+            }
+        }
+
+        fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+            (key == self.left || key == self.right).then_some(LiteralKind::Integer)
+        }
+
+        fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
+            (key == self.root).then_some(OperatorFact::BitAnd)
+        }
+
+        fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+            match (key == self.root, index) {
+                (true, 0) => Some(self.left),
+                (true, 1) => Some(self.right),
+                _ => None,
+            }
+        }
+
+        fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
+            if key == self.left { Some(47) } else if key == self.right { Some(31) } else { None }
+        }
+
+        fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
+            (key == self.root || key == self.left || key == self.right).then_some(types::I64)
+        }
+    }
+
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Main.bd"));
+    let generation = SyntaxGenerationId(3);
+    let node = |id| AstNodeKey { unit, generation, node: AstNodeId(id) };
+    let facts = BitwiseAndFacts { root: node(1), left: node(2), right: node(3) };
+    let mut function = Function::new();
+    let mut builder_context = FunctionBuilderContext::new();
+    {
+        let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
+        let block = builder.create_block();
+        builder.switch_to_block(block);
+        builder.seal_block(block);
+        let value = lower_expression(&mut IsleContext::new(&mut builder, &facts), facts.root).expect("bitwise AND rule");
+        builder.ins().return_(&[value]);
+        builder.finalize();
+    }
+
+    let clif = function.display().to_string();
+    assert!(clif.contains("band"), "{clif}");
+}
+
+#[test]
 fn grouped_expression_unwraps_child_and_emits_verified_stock_clif() {
     struct GroupedFacts {
         group: AstNodeKey,

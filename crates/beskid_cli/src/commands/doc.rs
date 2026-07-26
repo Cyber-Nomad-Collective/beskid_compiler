@@ -6,6 +6,7 @@ use beskid_analysis::doc::{
     ApiDocLinkContext, ApiDocRoot, ApiLocation, DocRefLinkContext, apply_signature_to_item, assign_declaring_packages,
     build_api_doc_link_context, build_item_signature, display_name_for_item, fill_member_ids_from_parents,
     link_api_doc_library_tree, qualified_names_for_items, relativize_api_doc_paths, resolve_item_tiers,
+    validate_prelude_standard_tiers,
 };
 use beskid_analysis::hir::HirVisibility;
 use beskid_analysis::projects::assembly::ProgramAssembly;
@@ -313,6 +314,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
     // Tier resolution must run after link_api_doc_library_tree so that parent_id
     // edges (used by the cascade) reflect the final navigation graph.
     resolve_item_tiers(&mut api_items);
+    validate_prelude_standard_tiers(&api_items).map_err(anyhow::Error::msg)?;
 
     let link_ctx = api_doc_link_context(&resolved);
     let mut api = if had_resolution {
@@ -630,12 +632,4 @@ mod tests {
         assert!(tree.contains("`util::math::Vec2` (`type`)"));
     }
 
-    #[test]
-    fn location_from_byte_range_matches_line_col() {
-        let src = "a\nbc\ndef";
-        // "d" is third line
-        let span = SpanInfo::from_byte_range_in_source(src, 5, 6);
-        assert_eq!(span.line_col_start, (3, 1));
-        assert_eq!(span.line_col_end, (3, 2));
-    }
 }

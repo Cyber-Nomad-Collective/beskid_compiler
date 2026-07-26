@@ -41,27 +41,35 @@ pub fn lower_canonical_runtime_prepared_syntax(
     target: TargetMetadata,
     isa: &dyn TargetIsa,
 ) -> Result<CodegenArtifact> {
-    let source = canonical_runtime_sources()
-        .into_iter()
+    let sources = canonical_runtime_sources();
+    let bootstrap = sources
+        .iter()
         .find(|unit| unit.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH)
+        .cloned()
         .ok_or_else(|| anyhow::anyhow!("canonical Bootstrap source is missing"))?;
     let root_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime/beskid");
-    let source_path = root_dir.join(&source.logical_path);
-    let program = parse_program_with_source_name(source_path.to_str().unwrap_or_default(), &source.source)
-        .map_err(|error| anyhow::anyhow!("canonical runtime parse failed: {error}"))?;
+    let bootstrap_path = root_dir.join(&bootstrap.logical_path);
+    let units = sources
+        .into_iter()
+        .map(|source| {
+            let path = root_dir.join(&source.logical_path);
+            let program = parse_program_with_source_name(path.to_str().unwrap_or_default(), &source.source)
+                .map_err(|error| anyhow::anyhow!("canonical runtime parse failed for {}: {error}", source.logical_path))?;
+            Ok(SourceUnit { logical_name: source.logical_path, path, source: source.source, program })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let bootstrap_index = units
+        .iter()
+        .position(|unit| unit.path == bootstrap_path)
+        .ok_or_else(|| anyhow::anyhow!("parsed canonical Bootstrap source is missing"))?;
     let generation = SyntaxGenerationId(1);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root_dir },
             dependencies: Vec::new(),
         },
-        Arc::new(vec![SourceUnit {
-            logical_name: source.logical_path,
-            path: source_path.clone(),
-            source: source.source,
-            program,
-        }]),
-        0,
+        Arc::new(units),
+        bootstrap_index,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
@@ -73,7 +81,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
         .map_err(|error| anyhow::anyhow!("canonical runtime intrinsic capability unavailable: {error:?}"))?;
     let typed = build_canonical_runtime_typed_program(db, project, generation, assembly, capability)
         .map_err(|error| anyhow::anyhow!("canonical runtime syntax preparation failed: {error}"))?;
-    let root = AstNodeKey { unit: SourceUnitId::new(db, source_path), generation, node: beskid_queries::AstNodeId(0) };
+    let root = AstNodeKey { unit: SourceUnitId::new(db, bootstrap_path), generation, node: beskid_queries::AstNodeId(0) };
     let input = CodegenInput::new(db, typed, Arc::from([root]), target, manifest)
         .map_err(|error| anyhow::anyhow!("canonical runtime CodegenInput failed: {error}"))?;
     let mut items = Vec::new();

@@ -174,6 +174,11 @@ impl Resolver {
             HirItem::HostDefinition(_) => {
                 return;
             }
+            // Module constants are resolved by generation-bound syntax facts, never as a
+            // callable or allocatable legacy resolver item.
+            HirItem::ConstantDefinition(_) => {
+                return;
+            }
             HirItem::FunctionDefinition(def) => {
                 (def.node.name.node.name.clone(), ItemKind::Function, def.node.visibility.node, None)
             }

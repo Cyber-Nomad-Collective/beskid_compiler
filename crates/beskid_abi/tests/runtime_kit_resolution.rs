@@ -253,3 +253,9 @@ fn install_prefix_derives_from_bin_layout_only() {
             )))
     );
 }
+
+#[test]
+fn install_prefix_rejects_executables_outside_the_bin_layout() {
+    let executable = PathBuf::from("/opt/beskid/tools/beskid_cli");
+    assert!(installed_runtime_prefix_for_executable(&executable).is_err());
+}

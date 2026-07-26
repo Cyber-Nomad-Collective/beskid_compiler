@@ -99,10 +99,10 @@ pub pointer GcAlloc(word size, word alignment) {
 
 // Canonical GC-tracked allocation entrypoint.
 //
-// `size` bytes are allocated from the GC heap and zero-filled. When `type_desc_ptr`
+// `size` bytes are allocated from the GC heap and zero-filled. When `descriptorPtr`
 // is non-null, the descriptor pointer is written at offset 0 as the object header.
 [Export(Abi:"C", Symbol:"alloc")]
-pub pointer Alloc(word size, pointer type_desc_ptr) {
+pub pointer Alloc(word size, pointer descriptorPtr) {
     if size == 0 {
         return NativePointer(0);
     }
@@ -113,8 +113,8 @@ pub pointer Alloc(word size, pointer type_desc_ptr) {
         pointer obj = GcAlloc(size, 8);
         if obj != NativePointer(0) {
             memory_set(obj, 0, size);
-            if type_desc_ptr != NativePointer(0) {
-                raw_word_store(obj, NativeWord(type_desc_ptr));
+            if descriptorPtr != NativePointer(0) {
+                raw_word_store(obj, NativeWord(descriptorPtr));
             }
             return obj;
         }
@@ -123,8 +123,8 @@ pub pointer Alloc(word size, pointer type_desc_ptr) {
     pointer obj = SystemAllocate(size, 8);
     if obj != NativePointer(0) {
         memory_set(obj, 0, size);
-        if type_desc_ptr != NativePointer(0) {
-            raw_word_store(obj, NativeWord(type_desc_ptr));
+        if descriptorPtr != NativePointer(0) {
+            raw_word_store(obj, NativeWord(descriptorPtr));
         }
     }
     return obj;

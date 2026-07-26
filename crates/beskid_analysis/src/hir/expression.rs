@@ -154,6 +154,7 @@ pub struct HirBinaryExpression {
 pub enum HirBinaryOp {
     Or,
     And,
+    BitAnd,
     IdentityEq,
     IdentityNotEq,
     Eq,

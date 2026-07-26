@@ -2,7 +2,7 @@
 
 use crate::syntax::{
     ArrayLiteralExpression, AssignExpression, AttributeDeclaration, BinaryExpression, BlockExpression, BreakStatement,
-    CallExpression, CodeStringLiteral, ContinueStatement, ContractDefinition, EnumConstructorExpression,
+    CallExpression, CodeStringLiteral, ConstantDefinition, ContinueStatement, ContractDefinition, EnumConstructorExpression,
     EnumDefinition, ExpressionStatement, ExtendTypeDefinition, ForStatement, FunctionDefinition, GroupedExpression,
     HostDefinition, IfStatement, IndexExpression, InlineModule, LambdaExpression, LaunchStatement, LetStatement,
     LiteralExpression, MacroDefinition, MacroInvocation, MacroMetavariable, MatchExpression, MemberExpression,
@@ -24,6 +24,7 @@ use super::{
 pub trait Phase {
     type HostDefinition;
     type FunctionDefinition;
+    type ConstantDefinition;
     type MethodDefinition;
     type ExtendTypeDefinition;
     type TypeDefinition;
@@ -80,6 +81,7 @@ pub struct HirPhase;
 impl Phase for AstPhase {
     type HostDefinition = HostDefinition;
     type FunctionDefinition = FunctionDefinition;
+    type ConstantDefinition = ConstantDefinition;
     type MethodDefinition = MethodDefinition;
     type ExtendTypeDefinition = ExtendTypeDefinition;
     type TypeDefinition = TypeDefinition;
@@ -128,6 +130,7 @@ impl Phase for AstPhase {
 impl Phase for HirPhase {
     type HostDefinition = HostDefinition;
     type FunctionDefinition = HirFunctionDefinition;
+    type ConstantDefinition = ConstantDefinition;
     type MethodDefinition = HirMethodDefinition;
     type ExtendTypeDefinition = HirExtendTypeDefinition;
     type TypeDefinition = HirTypeDefinition;

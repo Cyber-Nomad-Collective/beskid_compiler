@@ -2,7 +2,7 @@ use crate::doc::LeadingDocComment;
 use crate::format::emit::{Emit, EmitCtx, EmitError};
 use crate::format::items::helpers::emit_attribute_lines;
 use crate::syntax::{
-    HostBodyItem, HostDefinition, InlineModule, Node, Program, RegistryBlock, RegistryEntry, ScopeDefinition,
+    ConstantDefinition, HostBodyItem, HostDefinition, InlineModule, Literal, Node, Program, RegistryBlock, RegistryEntry, ScopeDefinition,
     ScopeHook, ScopeHookKind, Spanned,
 };
 use std::fmt::Write;
@@ -48,6 +48,7 @@ impl Emit for Node {
         match self {
             Node::HostDefinition(h) => h.emit(w, cx),
             Node::Function(f) => f.emit(w, cx),
+            Node::ConstantDefinition(c) => c.emit(w, cx),
             Node::Method(m) => m.emit(w, cx),
             Node::ExtendTypeDefinition(e) => e.emit(w, cx),
             Node::TypeDefinition(t) => t.emit(w, cx),
@@ -60,6 +61,28 @@ impl Emit for Node {
             Node::UseDeclaration(u) => u.emit(w, cx),
             Node::MacroDefinition(m) => m.emit(w, cx),
         }
+    }
+}
+
+impl Emit for ConstantDefinition {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        cx.token(w, "const")?;
+        cx.space(w)?;
+        self.name.emit(w, cx)?;
+        cx.space(w)?;
+        cx.token(w, "=")?;
+        cx.space(w)?;
+        match &self.value.node {
+            Literal::Integer(value) => cx.token(w, value)?,
+            _ => unreachable!("constant grammar accepts integer literals only"),
+        }
+        cx.token(w, ";")
+    }
+}
+
+impl Emit for Spanned<ConstantDefinition> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.node.emit(w, cx)
     }
 }
 

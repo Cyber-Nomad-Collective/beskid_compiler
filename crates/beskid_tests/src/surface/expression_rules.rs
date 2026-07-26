@@ -32,6 +32,16 @@ fn rejects_logical_and_expression_without_operands() {
 }
 
 #[test]
+fn parses_bitwise_and_expression_rule() {
+    assert_parse(Rule::BitwiseAndExpression, "47 & 31");
+}
+
+#[test]
+fn rejects_bitwise_and_expression_without_operands() {
+    assert_parse_fail(Rule::BitwiseAndExpression, "&");
+}
+
+#[test]
 fn parses_equality_expression_rule() {
     assert_parse(Rule::EqualityExpression, "1 == 2");
 }

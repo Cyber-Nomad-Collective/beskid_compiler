@@ -21,6 +21,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         })
     }
 
+    fn constant_integer(&self, key: AstNodeKey) -> Option<i64> {
+        self.query(constant_integer(self.db, key))
+    }
+
     fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
         let operator = self.query(operator_fact(self.db, key))?;
         let specialized_string_operands =
@@ -257,7 +261,11 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         let LiteralFact::Integer(text) = self.literal(key)? else {
             return None;
         };
-        text.split_once('_').map_or(text.as_ref(), |(value, _)| value).parse().ok()
+        let value = text.split_once('_').map_or(text.as_ref(), |(value, _)| value);
+        match value.strip_prefix("0x") {
+            Some(hexadecimal) => u64::from_str_radix(hexadecimal, 16).ok().map(|number| number as i64),
+            None => value.parse().ok(),
+        }
     }
 
     fn boolean_literal(&self, key: AstNodeKey) -> Option<bool> {

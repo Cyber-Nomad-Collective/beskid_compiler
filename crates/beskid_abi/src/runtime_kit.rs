@@ -40,6 +40,7 @@ pub fn exact_kit_metadata_path(prefix: &Path, target: &TargetMetadata, profile: 
 pub enum InstalledRuntimePrefixError {
     CurrentExe(std::io::Error),
     MissingParent { executable: PathBuf },
+    InvalidBinLayout { executable: PathBuf },
     MissingInstallPrefix { executable: PathBuf },
 }
 
@@ -51,6 +52,9 @@ impl std::fmt::Display for InstalledRuntimePrefixError {
             }
             Self::MissingParent { executable } => {
                 write!(formatter, "current executable has no parent: `{}`", executable.display())
+            }
+            Self::InvalidBinLayout { executable } => {
+                write!(formatter, "current executable is not installed under `<prefix>/bin`: `{}`", executable.display())
             }
             Self::MissingInstallPrefix { executable } => {
                 write!(formatter, "current executable has no install prefix: `{}`", executable.display())
@@ -75,6 +79,9 @@ pub fn installed_runtime_prefix_for_executable(executable: &Path) -> Result<Path
     let bin = executable
         .parent()
         .ok_or_else(|| InstalledRuntimePrefixError::MissingParent { executable: executable.to_path_buf() })?;
+    if bin.file_name().is_none_or(|name| name != "bin") {
+        return Err(InstalledRuntimePrefixError::InvalidBinLayout { executable: executable.to_path_buf() });
+    }
     bin.parent()
         .map(Path::to_path_buf)
         .ok_or_else(|| InstalledRuntimePrefixError::MissingInstallPrefix { executable: executable.to_path_buf() })
