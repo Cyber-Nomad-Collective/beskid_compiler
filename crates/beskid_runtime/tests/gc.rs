@@ -114,6 +114,7 @@ fn runtime_snapshot_reports_active_heap_state() {
 #[test]
 fn gc_state_builtins_report_and_control_active_heap() {
     with_runtime_scope(|heap, _| {
+        assert_eq!(gc_external_root_count(), 0);
         let ptr = alloc(32, std::ptr::null());
         let mut slot = ptr;
         gc_register_root(&mut slot as *mut *mut u8);
@@ -128,5 +129,6 @@ fn gc_state_builtins_report_and_control_active_heap() {
         assert_eq!(gc_collect_if_needed(), heap.bytes_allocated());
 
         gc_unregister_root(&mut slot as *mut *mut u8);
+        assert_eq!(gc_external_root_count(), 0);
     });
 }

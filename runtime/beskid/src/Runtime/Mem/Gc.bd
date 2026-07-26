@@ -351,13 +351,6 @@ pub word GcPhase() {
     return word(raw_byte_load(pointer_add(heap, 48)));
 }
 
-// Returns the number of registered external roots.
-[Export(Abi:"C", Symbol:"gc_external_root_count")]
-pub word GcExternalRootCount() {
-    // TODO: count from handles table.
-    return 0;
-}
-
 // Force a full mark/sweep collection.
 [Export(Abi:"C", Symbol:"gc_collect")]
 pub word GcCollect() {

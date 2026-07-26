@@ -203,6 +203,24 @@ fn canonical_runtime_source_owns_allocation_headers_and_lifo_root_frames() {
 }
 
 #[test]
+fn canonical_gc_exports_one_registry_backed_external_root_count() {
+    let sources = canonical_runtime_sources();
+    let gc = &sources
+        .iter()
+        .find(|unit| unit.logical_path == "Runtime/Mem/Gc.bd")
+        .expect("canonical GC source")
+        .source;
+
+    assert_eq!(
+        gc.matches("[Export(Abi:\"C\", Symbol:\"gc_external_root_count\")]").count(),
+        1,
+        "the canonical runtime must define one gc_external_root_count ABI export",
+    );
+    assert!(gc.contains("return raw_word_load(pointer_add(heap, ROOT_REGISTRY_OFFSET - 8));"));
+    assert!(!gc.contains("count from handles table"));
+}
+
+#[test]
 fn canonical_runtime_source_fail_closes_closure_descriptors_before_allocation_and_rooting() {
     let sources = canonical_runtime_sources();
     let source =

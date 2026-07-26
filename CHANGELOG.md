@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remove the duplicate canonical `gc_external_root_count` C-ABI export that
+  incorrectly returned handle-table occupancy; the sole export now reports the
+  GC root registry and is covered from empty through register/unregister.
 - Align the guarded-match formatter golden with canonical nullary enum
   constructor syntax, which omits redundant empty parentheses.
 - Restore formatter fixture classification for top-level `const` declarations,
