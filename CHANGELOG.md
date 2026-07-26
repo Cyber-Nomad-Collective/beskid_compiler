@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Align the guarded-match formatter golden with canonical nullary enum
+  constructor syntax, which omits redundant empty parentheses.
 - Restore formatter fixture classification for top-level `const` declarations,
   with a parse-format-reparse regression test for canonical constant emission.
 - Parse canonical runtime bitwise shifts and OR composition through the syntax-fact → ISLE path,

@@ -5,7 +5,7 @@ pub enum Foo
 
 pub unit Mg()
 {
-    let x = Foo::Bar();
+    let x = Foo::Bar;
     let v = match x
     {
         Foo::Bar when 1 == 1 => 1,

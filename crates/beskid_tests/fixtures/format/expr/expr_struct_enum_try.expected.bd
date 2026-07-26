@@ -18,7 +18,7 @@ pub i32 G()
 pub unit Combos()
 {
     let o = Opt::Some(1);
-    let n = Opt::None();
+    let n = Opt::None;
     let u = User
     {
         name: "a",
