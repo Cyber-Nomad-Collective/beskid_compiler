@@ -1,8 +1,8 @@
 // Canonical Beskid fiber-aware mutex.
 //
-// Each mutex is a slot in an embedded fixed-capacity table (no dynamic allocation).
-// Waiters queue as fiber IDs when running inside a scheduler; outside a scheduler,
-// lock/unlock still works for try_lock.
+// Each mutex is a slot in a scheduler-owned, separately allocated fixed-capacity
+// table. Waiters queue as fiber IDs when running inside a scheduler; outside a
+// scheduler, lock/unlock still works for try_lock.
 
 const MUTEX_TABLE_MAX = 32;
 
@@ -11,20 +11,16 @@ pub enum MutexState {
     Locked,
 }
 
-// ── Global mutex table (embedded in a static memory region) ──
-
-// Returns a pointer to the mutex table stored in the runtime state.
-pub pointer MutexTable() {
-    pointer state = RuntimeState();
-    if state == NativePointer(0) {
-        return NativePointer(0);
-    }
-    // Mutex table lives at offset 1280 in the runtime state.
-    // Layout: table_count: word, then MUTEX_TABLE_MAX slots of { locked: u8, waiters: [word * 8] }
-    return pointer_add(state, 1280);
-}
+// ── Scheduler-owned mutex table ─────────────────────────────────────
 
 const MUTEX_SLOT_SIZE = 40; // u8 locked + u8 pad + word owner + 8 * word waiters
+const MUTEX_TABLE_SIZE = 1288; // count word + MUTEX_TABLE_MAX slots
+
+// Returns the separately allocated mutex table owned by the active scheduler.
+// Mutex storage must never be derived from an undeclared RuntimeState offset.
+pub pointer MutexTable() {
+    return SchedulerMutexTable();
+}
 
 // Creates a mutex and returns its opaque ID (slot index).
 [Export(Abi:"C", Symbol:"mutex_create")]

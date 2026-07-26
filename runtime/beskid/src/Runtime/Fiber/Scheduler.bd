@@ -47,6 +47,8 @@ pub enum JoinOutcome {
 //   offset 1408: fiber_table[16] (16 * 128 bytes each)
 //   offset 3456: channel_table (pointer to a separately allocated, zeroed
 //                Channel.bd table)
+//   offset 3464: mutex_table (pointer to a separately allocated, zeroed
+//                Mutex.bd table)
 //
 // Each fiber record (128 bytes):
 //   offset   0: state (word)
@@ -73,7 +75,8 @@ const SCHEDULER_STATE_OFFSET = 32;
 // objects are separately allocated so a fixed ABI-v5 runtime state never
 // becomes backing storage for synchronization tables.
 const SCHEDULER_CHANNEL_STATE_OFFSET = 3456;
-const SCHEDULER_TABLE_SIZE = 3464;
+const SCHEDULER_MUTEX_STATE_OFFSET = 3464;
+const SCHEDULER_TABLE_SIZE = 3472;
 
 // Returns the scheduler table owned by the active ABI-v5 runtime state.
 pub pointer SchedTable() {
@@ -104,6 +107,28 @@ pub pointer SchedulerChannelTable() {
     }
     memory_set(table, 0, CHANNEL_TABLE_SIZE);
     raw_word_store(pointer_add(scheduler, SCHEDULER_CHANNEL_STATE_OFFSET), NativeWord(table));
+    return table;
+}
+
+// Returns the separately allocated mutex table owned by this scheduler.
+// As with channels, synchronization state is not embedded after the fixed
+// ABI-v5 runtime record; its lifetime follows the scheduler allocation.
+pub pointer SchedulerMutexTable() {
+    SchedInit();
+    pointer scheduler = SchedTable();
+    if scheduler == NativePointer(0) {
+        return NativePointer(0);
+    }
+    pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET)));
+    if table != NativePointer(0) {
+        return table;
+    }
+    table = SystemAllocate(MUTEX_TABLE_SIZE, 8);
+    if table == NativePointer(0) {
+        return NativePointer(0);
+    }
+    memory_set(table, 0, MUTEX_TABLE_SIZE);
+    raw_word_store(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET), NativeWord(table));
     return table;
 }
 
