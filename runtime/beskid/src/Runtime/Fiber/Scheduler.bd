@@ -367,6 +367,20 @@ pub i64 SchedulerSpawn(pointer entry, pointer environment, pointer cancelledSlot
     return i64(index);
 }
 
+// Initializes one capture-free syntax fiber dispatch through the canonical ABI-v5 runtime boundary.
+//
+// This ABI export is co-located with `SchedulerSpawn`: the canonical runtime lowerer follows
+// direct calls only within the compiled runtime unit, so placing the boundary in Bootstrap would
+// leave its scheduler implementation unreachable. The cancellation slot is initialized to null
+// before the scheduler receives ownership of the queued fiber record.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_fiber_spawn_with_cancel_slot")]
+pub i64 FiberSpawnWithCancelSlot(pointer entry, pointer environment, pointer cancelledSlot) {
+    if cancelledSlot != NativePointer(0) {
+        raw_word_store(cancelledSlot, 0);
+    }
+    return SchedulerSpawn(entry, environment, cancelledSlot);
+}
+
 // Drive one scheduling step. Returns true if work was done.
 pub bool SchedStep() {
     pointer table = SchedTable();

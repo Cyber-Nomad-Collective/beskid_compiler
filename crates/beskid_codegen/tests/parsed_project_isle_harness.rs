@@ -505,6 +505,10 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
     let artifact = with_db(|db| lower_canonical_runtime_prepared_syntax(db, target, isa.as_ref()))
         .expect("canonical runtime lowers through TypedProgram → CodegenInput → ISLE");
     assert!(!artifact.functions.is_empty(), "canonical Bootstrap must emit at least one verified function");
+    assert!(
+        artifact.exports.iter().any(|export| export.exported_symbol == "beskid_rt_v5_fiber_spawn_with_cancel_slot"),
+        "canonical runtime lowering must retain the Scheduler-owned fiber spawn ABI export",
+    );
     for function in &artifact.functions {
         verify_function(&function.function, isa.flags())
             .unwrap_or_else(|error| panic!("stock CLIF verifier rejected {}: {error}", function.name));

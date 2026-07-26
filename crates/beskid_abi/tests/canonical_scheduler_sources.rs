@@ -58,11 +58,11 @@ fn canonical_mutex_storage_is_scheduler_owned_and_cannot_alias_runtime_state() {
 
 #[test]
 fn canonical_v5_spawn_export_has_one_owner_and_enqueues_through_scheduler() {
-    let bootstrap = canonical_source(CANONICAL_BOOTSTRAP_SOURCE_PATH);
+    let scheduler = canonical_source(CANONICAL_SCHEDULER_SOURCE_PATH);
     let fiber = canonical_source(CANONICAL_FIBER_SOURCE_PATH);
 
-    assert_eq!(bootstrap.matches("Symbol:\"beskid_rt_v5_fiber_spawn_with_cancel_slot\"").count(), 1);
-    assert!(bootstrap.contains("return SchedulerSpawn(entry, environment, cancelledSlot);"));
+    assert_eq!(scheduler.matches("Symbol:\"beskid_rt_v5_fiber_spawn_with_cancel_slot\"").count(), 1);
+    assert!(scheduler.contains("return SchedulerSpawn(entry, environment, cancelledSlot);"));
     assert_eq!(fiber.matches("Symbol:\"fiber_spawn_with_cancel_slot\"").count(), 0);
     assert!(!fiber.contains("pub i64 FiberSpawnWithCancelSlot("));
 }

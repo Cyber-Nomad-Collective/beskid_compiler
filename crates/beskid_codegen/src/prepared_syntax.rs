@@ -81,11 +81,27 @@ pub fn lower_canonical_runtime_prepared_syntax(
         .map_err(|error| anyhow::anyhow!("canonical runtime intrinsic capability unavailable: {error:?}"))?;
     let typed = build_canonical_runtime_typed_program(db, project, generation, assembly, capability)
         .map_err(|error| anyhow::anyhow!("canonical runtime syntax preparation failed: {error}"))?;
-    let root = AstNodeKey { unit: SourceUnitId::new(db, bootstrap_path), generation, node: beskid_queries::AstNodeId(0) };
-    let input = CodegenInput::new(db, typed, Arc::from([root]), target, manifest)
+    // Runtime ABI exports may be implemented by their owning canonical module rather than
+    // Bootstrap. Lower every embedded runtime unit so direct calls remain unit-local and the
+    // resulting artifact retains the complete manifest-facing export surface.
+    let roots = assembly
+        .units()
+        .iter()
+        .map(|unit| AstNodeKey {
+            unit: SourceUnitId::new(db, unit.path.clone()),
+            generation,
+            node: beskid_queries::AstNodeId(0),
+        })
+        .collect::<Vec<_>>();
+    let input = CodegenInput::new(db, typed, Arc::from(roots), target, manifest)
         .map_err(|error| anyhow::anyhow!("canonical runtime CodegenInput failed: {error}"))?;
     let mut items = Vec::new();
-    for key in function_definitions(input.database(), root) {
+    for key in input
+        .roots()
+        .iter()
+        .copied()
+        .flat_map(|root| function_definitions(input.database(), root))
+    {
         let export = item_export_symbol(input.database(), key)
             .map_err(|error| anyhow::anyhow!("canonical runtime export validation failed: {error}"))?;
         let symbol =
@@ -95,7 +111,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
         }
     }
     if items.is_empty() {
-        anyhow::bail!("canonical Bootstrap source has no declared exports");
+        anyhow::bail!("canonical runtime source corpus has no declared exports");
     }
     let mut artifact = lower_syntax_program(&input, isa, &items)
         .map_err(|error| anyhow::anyhow!("canonical runtime ISLE lowering failed: {error}"))?;
