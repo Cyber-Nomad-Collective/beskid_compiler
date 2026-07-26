@@ -1,5 +1,5 @@
 use beskid_abi::runtime_source::{
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_FIBER_SOURCE_PATH, CANONICAL_SCHEDULER_SOURCE_PATH,
+    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CHANNEL_SOURCE_PATH, CANONICAL_FIBER_SOURCE_PATH, CANONICAL_SCHEDULER_SOURCE_PATH,
     canonical_runtime_sources,
 };
 
@@ -16,12 +16,28 @@ fn canonical_scheduler_owns_native_table_through_runtime_state_scheduler_field()
     let scheduler = canonical_source(CANONICAL_SCHEDULER_SOURCE_PATH);
 
     assert!(scheduler.contains("const SCHEDULER_STATE_OFFSET = 32;"));
-    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3456;"));
+    assert!(scheduler.contains("const SCHEDULER_CHANNEL_STATE_OFFSET = 3456;"));
+    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3464;"));
     assert!(scheduler.contains("return NativePointer(raw_word_load(pointer_add(state, SCHEDULER_STATE_OFFSET)));"));
     assert!(scheduler.contains("table = SystemAllocate(SCHEDULER_TABLE_SIZE, 8);"));
     assert!(scheduler.contains("memory_set(table, 0, SCHEDULER_TABLE_SIZE);"));
     assert!(scheduler.contains("raw_word_store(pointer_add(state, SCHEDULER_STATE_OFFSET), NativeWord(table));"));
     assert!(!scheduler.contains("pointer_add(state, 3072)"));
+}
+
+#[test]
+fn canonical_channel_storage_is_separately_allocated_and_cannot_alias_scheduler_records() {
+    let scheduler = canonical_source(CANONICAL_SCHEDULER_SOURCE_PATH);
+    let channel = canonical_source(CANONICAL_CHANNEL_SOURCE_PATH);
+
+    assert!(scheduler.contains("table = SystemAllocate(CHANNEL_TABLE_SIZE, 8);"));
+    assert!(scheduler.contains("memory_set(table, 0, CHANNEL_TABLE_SIZE);"));
+    assert!(scheduler.contains("raw_word_store(pointer_add(scheduler, SCHEDULER_CHANNEL_STATE_OFFSET), NativeWord(table));"));
+    assert!(channel.contains("const CHANNEL_TABLE_SIZE = 12296;"));
+    assert!(channel.contains("return SchedulerChannelTable();"));
+    assert!(!channel.contains("RuntimeState()"));
+    assert!(!channel.contains("pointer_add(state, 3072)"));
+    assert!(!scheduler.contains("pointer_add(table, 3072)"));
 }
 
 #[test]

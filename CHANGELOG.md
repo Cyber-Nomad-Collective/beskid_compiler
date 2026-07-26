@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Move canonical channel table storage out of undeclared `RuntimeState` offset
+  arithmetic into a separately allocated, zero-initialized scheduler-owned
+  object, with source-level ownership and non-aliasing regressions.
 - Remove the duplicate canonical `gc_external_root_count` C-ABI export that
   incorrectly returned handle-table occupancy; the sole export now reports the
   GC root registry and is covered from empty through register/unregister.

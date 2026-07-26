@@ -1,19 +1,18 @@
 // Canonical Beskid channel: bounded FIFO queue with i64 payloads.
 //
-// Channels are slots in an embedded fixed-capacity table. Each channel has a
-// ring buffer of i64 values, capacity limit, close flag, and wait lists.
+// Channels are slots in a scheduler-owned, separately allocated fixed-capacity
+// table. Each channel has a ring buffer of i64 values, capacity limit, close
+// flag, and wait lists.
 
 const CHANNEL_TABLE_MAX = 64;
 const CHANNEL_BUFFER_SIZE = 16; // ring buffer capacity per channel
 const CHANNEL_SLOT_SIZE = 192;  // header + ring buffer + wait lists
+const CHANNEL_TABLE_SIZE = 12296; // count word + CHANNEL_TABLE_MAX slots
 
-// Returns the channel table pointer (offset 3072 in runtime state).
+// Returns the separately allocated channel table owned by the active scheduler.
+// Channel storage must never be derived from an undeclared RuntimeState offset.
 pub pointer ChannelTable() {
-    pointer state = RuntimeState();
-    if state == NativePointer(0) {
-        return NativePointer(0);
-    }
-    return pointer_add(state, 3072);
+    return SchedulerChannelTable();
 }
 
 pub enum ChannelStatus {
