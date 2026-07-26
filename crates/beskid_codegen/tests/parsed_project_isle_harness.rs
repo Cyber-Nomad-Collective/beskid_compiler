@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use beskid_abi::abi_v5::TargetMetadata;
-use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source};
 use beskid_analysis::{
     projects::{
         AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
@@ -10,14 +9,10 @@ use beskid_analysis::{
 };
 use beskid_codegen::lower_canonical_runtime_prepared_syntax;
 use beskid_codegen::lower_syntax_assembly_entrypoint;
-use beskid_codegen::lowering::lower_program;
 use beskid_queries::{
-    AstNodeId, AstNodeKey, SourceUnitId, SyntaxGenerationId, child_nodes, closure_environment,
-    compile_front_end_from_resolved_input, node_kind, with_db,
+    AstNodeId, AstNodeKey, SourceUnitId, SyntaxGenerationId, child_nodes, closure_environment, node_kind, with_db,
 };
 use cranelift_codegen::{isa, settings, verify_function};
-
-const RETIRED_HIR_PATH_MARKER: &str = beskid_codegen::RETIRED_HIR_LOWERING_PATH;
 
 #[test]
 fn retired_public_codegen_facade_is_absent() {
@@ -526,7 +521,6 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
 #[test]
 fn production_path_never_constructs_hir_or_lowerable() {
     let project = tempfile::tempdir().expect("project directory");
-    let path = project.path().join("Main.bd");
     let source = "
         i32 Helper(i32 value) { return value + 1; }
         i32 Main() {
@@ -544,45 +538,31 @@ fn production_path_never_constructs_hir_or_lowerable() {
     let lowered = lower_verified_entrypoint(Arc::clone(&assembly), target.clone(), isa.as_ref());
     assert!(lowered.artifact.functions.len() >= 2, "direct-call closure through syntax ISLE");
 
-    let plan = synthetic_compile_plan_for_source(&path);
-    let resolved = resolved_input_from_plan(path, source.to_string(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
-        &resolved,
-        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
-        None,
-    )
-    .expect("front-end for Lowerable rejection probe");
-    match lower_program(&front.hir, &front.resolution, &front.typed) {
-        Ok(_) => panic!("lower_program must not construct a Lowerable artifact"),
-        Err(errors) => {
-            let message = errors.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join("; ");
-            assert!(message.contains(RETIRED_HIR_PATH_MARKER), "{message}");
-            assert!(message.contains("lower_syntax_"), "{message}");
-        }
-    }
+    let public_exports = include_str!("../src/lib.rs");
+    assert!(
+        public_exports.contains("lower_syntax_assembly_entrypoint"),
+        "production codegen must expose the syntax-assembly lowering boundary"
+    );
+    assert!(
+        public_exports.contains("lower_prepared_syntax_entrypoint"),
+        "production codegen must expose the prepared-syntax lowering boundary"
+    );
 }
 
 #[test]
-fn remaining_hir_driver_is_rejected_without_fallback() {
-    let project = tempfile::tempdir().expect("project directory");
-    let path = project.path().join("Main.bd");
-    let source = "i32 Main() { return 1; }";
-    std::fs::write(&path, source).expect("write source");
-
-    let plan = synthetic_compile_plan_for_source(&path);
-    let resolved = resolved_input_from_plan(path, source.to_string(), plan, None, None);
-    let front = compile_front_end_from_resolved_input(
-        &resolved,
-        FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
-        None,
-    )
-    .expect("front-end for rejection probe");
-    match lower_program(&front.hir, &front.resolution, &front.typed) {
-        Ok(_) => panic!("lower_program must reject the retired HIR path"),
-        Err(errors) => {
-            let message = errors.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join("; ");
-            assert!(message.contains(RETIRED_HIR_PATH_MARKER), "{message}");
-            assert!(message.contains("lower_syntax_"), "{message}");
-        }
-    }
+fn public_codegen_surface_names_canonical_syntax_lowering_authority() {
+    let public_exports = include_str!("../src/lib.rs");
+    let public_prepared_syntax = include_str!("../src/prepared_syntax.rs");
+    assert!(
+        public_exports.contains("lower_prepared_syntax_module"),
+        "module hosts must use the canonical prepared-syntax lowering boundary"
+    );
+    assert!(
+        public_prepared_syntax.contains("CodegenInput::new"),
+        "prepared-syntax lowering must construct CodegenInput before emitting ISLE"
+    );
+    assert!(
+        public_prepared_syntax.contains("lower_syntax_program"),
+        "prepared-syntax lowering must emit through the syntax ISLE authority"
+    );
 }

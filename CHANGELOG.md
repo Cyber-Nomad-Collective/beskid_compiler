@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Migrate AOT and parsed-project codegen tests to the production prepared-syntax
+  → `CodegenInput` → ISLE boundary, removing test reliance on the retired HIR
+  `lower_program` compatibility path.
 - Prepare-spine frontend assembly projects `SyntaxProgramAssembly` as the IDE/query
   authority (`PreparedCompilation::syntax_assembly`); LSP lifecycle binds facts from
   `FrontEndTypedResult::syntax_assembly` (post-mod-rewrite entry), and
