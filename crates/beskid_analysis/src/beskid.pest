@@ -67,7 +67,6 @@ Keyword = {
       | ImplKeyword
       | ExtendKeyword
       | MatchKeyword
-      | EventKeyword
       | WhenKeyword
       | IfKeyword
       | ElseKeyword
@@ -100,7 +99,6 @@ Keyword = {
       | SingleKeyword
       | TransientKeyword
       | GlobalKeyword
-      | ParentKeyword
     ) ~ !ASCII_ALPHANUMERIC
 }
 
@@ -291,11 +289,13 @@ LambdaBody = { BlockExpression | Expression }
 AssignmentOperator = { "=" | "+=" | "-=" }
 AssignmentExpression = { LogicalOrExpression ~ (AssignmentOperator ~ AssignmentExpression)? }
 LogicalOrExpression = { LogicalAndExpression ~ ("||" ~ LogicalAndExpression)* }
-LogicalAndExpression = { BitwiseAndExpression ~ ("&&" ~ BitwiseAndExpression)* }
+LogicalAndExpression = { BitwiseOrExpression ~ ("&&" ~ BitwiseOrExpression)* }
+BitwiseOrExpression = { BitwiseAndExpression ~ ("|" ~ BitwiseAndExpression)* }
 BitwiseAndExpression = { EqualityExpression ~ ("&" ~ EqualityExpression)* }
 
 EqualityExpression = { ComparisonExpression ~ (("===" | "!==" | "==" | "!=") ~ ComparisonExpression)* }
-ComparisonExpression = { AdditionExpression ~ (("<=" | ">=" | "<" | ">") ~ AdditionExpression)* }
+ComparisonExpression = { ShiftExpression ~ (("<=" | ">=" | "<" | ">") ~ ShiftExpression)* }
+ShiftExpression = { AdditionExpression ~ (("<<" | ">>") ~ AdditionExpression)* }
 AdditionExpression = { MultiplicationExpression ~ (("+" | "-") ~ MultiplicationExpression)* }
 MultiplicationExpression = { UnaryExpression ~ (("*" | "/" | "%") ~ UnaryExpression)* }
 

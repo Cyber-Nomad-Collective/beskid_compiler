@@ -6,6 +6,12 @@
 (extern constructor clif_imul clif_imul)
 (decl clif_band (Value Value) Value)
 (extern constructor clif_band clif_band)
+(decl clif_bor (Value Value) Value)
+(extern constructor clif_bor clif_bor)
+(decl clif_ishl (Value Value) Value)
+(extern constructor clif_ishl clif_ishl)
+(decl clif_ushr (Value Value) Value)
+(extern constructor clif_ushr clif_ushr)
 (decl clif_sdiv (Value Value) Value)
 (extern constructor clif_sdiv clif_sdiv)
 (decl partial clif_srem (Value Value) Value)
@@ -78,6 +84,18 @@
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.BitAnd))))
       (clif_band (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.BitOr))))
+      (clif_bor (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Shl))))
+      (clif_ishl (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.Shr))))
+      (clif_ushr (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Div))))

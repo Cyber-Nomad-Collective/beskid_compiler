@@ -90,7 +90,10 @@ pub(super) fn map_operator_fact(operator: beskid_queries::OperatorFact) -> Opera
     match operator {
         Syntax::Or => OperatorFact::Or,
         Syntax::And => OperatorFact::And,
+        Syntax::BitOr => OperatorFact::BitOr,
         Syntax::BitAnd => OperatorFact::BitAnd,
+        Syntax::Shl => OperatorFact::Shl,
+        Syntax::Shr => OperatorFact::Shr,
         Syntax::IdentityEq => OperatorFact::IdentityEq,
         Syntax::IdentityNotEq => OperatorFact::IdentityNotEq,
         Syntax::Eq => OperatorFact::Eq,

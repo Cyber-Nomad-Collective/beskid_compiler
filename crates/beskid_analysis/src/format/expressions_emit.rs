@@ -85,7 +85,10 @@ impl Emit for BinaryOp {
         let s = match self {
             BinaryOp::Or => "||",
             BinaryOp::And => "&&",
+            BinaryOp::BitOr => "|",
             BinaryOp::BitAnd => "&",
+            BinaryOp::Shl => "<<",
+            BinaryOp::Shr => ">>",
             BinaryOp::IdentityEq => "===",
             BinaryOp::IdentityNotEq => "!==",
             BinaryOp::Eq => "==",

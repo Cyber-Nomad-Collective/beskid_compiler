@@ -130,6 +130,30 @@ fn parses_sub_and_div_binary_expression() {
 }
 
 #[test]
+fn parses_integer_shift_expressions_before_addition_and_bitwise_and() {
+    let expr = parse_expression_ast("generation << 32 | slotIndex & 255");
+    let (left, op, right) = expect_binary(&expr.node, BinaryOp::BitOr);
+    expect_binary_op(op, BinaryOp::BitOr);
+    let (shift_left, shift_op, shift_right) = expect_binary(&left.node, BinaryOp::Shl);
+    expect_binary_op(shift_op, BinaryOp::Shl);
+    expect_identifier_path(&shift_left.node, "generation");
+    expect_integer_literal(&shift_right.node, "32");
+    let (and_left, and_op, and_right) = expect_binary(&right.node, BinaryOp::BitAnd);
+    expect_binary_op(and_op, BinaryOp::BitAnd);
+    expect_identifier_path(&and_left.node, "slotIndex");
+    expect_integer_literal(&and_right.node, "255");
+}
+
+#[test]
+fn parses_logical_right_shift_expression() {
+    let expr = parse_expression_ast("header >> 32");
+    let (left, op, right) = expect_binary(&expr.node, BinaryOp::Shr);
+    expect_binary_op(op, BinaryOp::Shr);
+    expect_identifier_path(&left.node, "header");
+    expect_integer_literal(&right.node, "32");
+}
+
+#[test]
 fn parses_string_interpolation_as_concat_expression() {
     let expr = parse_expression_ast("\"hi ${name}\"");
     let (left, op, right) = expect_binary(&expr.node, BinaryOp::Add);

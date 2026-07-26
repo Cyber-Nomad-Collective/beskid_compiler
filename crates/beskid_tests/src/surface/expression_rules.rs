@@ -42,6 +42,16 @@ fn rejects_bitwise_and_expression_without_operands() {
 }
 
 #[test]
+fn parses_shift_expression_rule() {
+    assert_parse(Rule::ShiftExpression, "generation << 32 >> 1");
+}
+
+#[test]
+fn rejects_shift_expression_without_operands() {
+    assert_parse_fail(Rule::ShiftExpression, "<<");
+}
+
+#[test]
 fn parses_equality_expression_rule() {
     assert_parse(Rule::EqualityExpression, "1 == 2");
 }

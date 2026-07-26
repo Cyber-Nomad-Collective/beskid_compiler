@@ -74,6 +74,21 @@ fn parses_function_with_mut_parameter_ast() {
 }
 
 #[test]
+fn parses_contextual_runtime_terms_as_pointer_parameter_names() {
+    let node = parse_node_ast("unit GcWriteBarrier(pointer parent, pointer event) {}");
+    match &node.node {
+        Node::Function(function) => {
+            assert_eq!(function.node.parameters.len(), 2);
+            assert_eq!(function.node.parameters[0].node.name.node.name, "parent");
+            assert_eq!(function.node.parameters[1].node.name.node.name, "event");
+            assert_type_primitive(&function.node.parameters[0].node.ty, beskid_analysis::syntax::PrimitiveType::Pointer);
+            assert_type_primitive(&function.node.parameters[1].node.ty, beskid_analysis::syntax::PrimitiveType::Pointer);
+        }
+        _ => panic!("expected function definition"),
+    }
+}
+
+#[test]
 fn parses_method_definition_ast() {
     let program = parse_program_ast("impl Point { i32 len() { return 0; } }");
     assert_eq!(program.node.items.len(), 1);

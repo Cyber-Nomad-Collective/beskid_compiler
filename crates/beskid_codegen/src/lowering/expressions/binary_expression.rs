@@ -169,6 +169,27 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirBinaryExpression {
                     return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary bitwise AND type" });
                 }
             }
+            HirBinaryOp::BitOr => {
+                if operand_clif_ty.is_int() {
+                    ctx.builder.ins().bor(left, right)
+                } else {
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary bitwise OR type" });
+                }
+            }
+            HirBinaryOp::Shl => {
+                if operand_clif_ty.is_int() {
+                    ctx.builder.ins().ishl(left, right)
+                } else {
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary shift-left type" });
+                }
+            }
+            HirBinaryOp::Shr => {
+                if operand_clif_ty.is_int() {
+                    ctx.builder.ins().ushr(left, right)
+                } else {
+                    return Err(CodegenError::UnsupportedNode { span: node.span, node: "binary shift-right type" });
+                }
+            }
             HirBinaryOp::And | HirBinaryOp::Or => {
                 let left_type =
                     resolve_monomorph_type_id(ctx.type_result, &ctx.codegen.active_generic_substitution, left_type);

@@ -152,7 +152,10 @@ impl Lowerable for Spanned<syntax::BinaryOp> {
             match self.node {
                 syntax::BinaryOp::Or => HirBinaryOp::Or,
                 syntax::BinaryOp::And => HirBinaryOp::And,
+                syntax::BinaryOp::BitOr => HirBinaryOp::BitOr,
                 syntax::BinaryOp::BitAnd => HirBinaryOp::BitAnd,
+                syntax::BinaryOp::Shl => HirBinaryOp::Shl,
+                syntax::BinaryOp::Shr => HirBinaryOp::Shr,
                 syntax::BinaryOp::IdentityEq => HirBinaryOp::IdentityEq,
                 syntax::BinaryOp::IdentityNotEq => HirBinaryOp::IdentityNotEq,
                 syntax::BinaryOp::Eq => HirBinaryOp::Eq,

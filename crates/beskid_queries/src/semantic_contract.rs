@@ -641,7 +641,10 @@ pub enum LiteralFact {
 pub enum OperatorFact {
     Or,
     And,
+    BitOr,
     BitAnd,
+    Shl,
+    Shr,
     IdentityEq,
     IdentityNotEq,
     Eq,
@@ -1503,8 +1506,13 @@ fn semantic_type_for_binary_operands(
         BinaryOp::Add if left == SemanticTypeId::STRING && right == SemanticTypeId::STRING => {
             Ok(SemanticTypeId::STRING)
         }
-        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod | BinaryOp::BitAnd
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod
             if left == right && primitive_numeric(left) =>
+        {
+            Ok(left)
+        }
+        BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::Shl | BinaryOp::Shr
+            if left == right && primitive_integer(left) =>
         {
             Ok(left)
         }
@@ -2428,6 +2436,10 @@ fn primitive_numeric(semantic_type: SemanticTypeId) -> bool {
     )
 }
 
+fn primitive_integer(semantic_type: SemanticTypeId) -> bool {
+    matches!(semantic_type, SemanticTypeId::I32 | SemanticTypeId::I64 | SemanticTypeId::U8 | SemanticTypeId::WORD)
+}
+
 fn expression_fact_target(kind: beskid_analysis::syntax_query::NodeKind) -> bool {
     use beskid_analysis::syntax_query::NodeKind;
 
@@ -3086,8 +3098,13 @@ fn abi_type_for_binary_expression(
         {
             Ok(SemanticTypeId::BOOL)
         }
-        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod | BinaryOp::BitAnd
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod
             if left_type == right_type && primitive_numeric(left_type) =>
+        {
+            Ok(left_type)
+        }
+        BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::Shl | BinaryOp::Shr
+            if left_type == right_type && primitive_integer(left_type) =>
         {
             Ok(left_type)
         }
@@ -4634,7 +4651,10 @@ fn binary_operator(operator: beskid_analysis::syntax::BinaryOp) -> OperatorFact 
     match operator {
         beskid_analysis::syntax::BinaryOp::Or => OperatorFact::Or,
         beskid_analysis::syntax::BinaryOp::And => OperatorFact::And,
+        beskid_analysis::syntax::BinaryOp::BitOr => OperatorFact::BitOr,
         beskid_analysis::syntax::BinaryOp::BitAnd => OperatorFact::BitAnd,
+        beskid_analysis::syntax::BinaryOp::Shl => OperatorFact::Shl,
+        beskid_analysis::syntax::BinaryOp::Shr => OperatorFact::Shr,
         beskid_analysis::syntax::BinaryOp::IdentityEq => OperatorFact::IdentityEq,
         beskid_analysis::syntax::BinaryOp::IdentityNotEq => OperatorFact::IdentityNotEq,
         beskid_analysis::syntax::BinaryOp::Eq => OperatorFact::Eq,

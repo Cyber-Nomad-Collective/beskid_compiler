@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Parse canonical runtime bitwise shifts and OR composition through the syntax-fact → ISLE path,
+  emit stock CLIF `ishl`/`ushr`/`bor`, and treat `parent` and `event` as contextual structural
+  terms so ABI-v5 runtime pointer parameters remain valid identifiers.
 - Map syntax-indexed constants through the explicit LSP document-symbol and semantic-token
   representations, preserving exhaustive syntax-fact presentation after `AnalysisSymbolKind`
   gained `Constant`.

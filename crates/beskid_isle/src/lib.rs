@@ -268,7 +268,10 @@ pub enum RuntimeIntrinsicKind {
 pub enum OperatorFact {
     Or,
     And,
+    BitOr,
     BitAnd,
+    Shl,
+    Shr,
     IdentityEq,
     IdentityNotEq,
     Eq,
@@ -1404,6 +1407,21 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn clif_band(&mut self, left: Value, right: Value) -> Value {
         let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().band(left, right)
+    }
+
+    fn clif_bor(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
+        self.builder.ins().bor(left, right)
+    }
+
+    fn clif_ishl(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
+        self.builder.ins().ishl(left, right)
+    }
+
+    fn clif_ushr(&mut self, left: Value, right: Value) -> Value {
+        let (left, right) = self.common_integer_operands(left, right);
+        self.builder.ins().ushr(left, right)
     }
 
     fn clif_sdiv(&mut self, left: Value, right: Value) -> Value {
