@@ -79,7 +79,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     let capability = canonical_runtime_intrinsic_capability(&manifest)
         .map_err(|error| anyhow::anyhow!("canonical runtime intrinsic capability unavailable: {error:?}"))?;
-    let typed = build_canonical_runtime_typed_program(db, project, generation, assembly, capability)
+    let typed = build_canonical_runtime_typed_program(db, project, generation, assembly.clone(), capability)
         .map_err(|error| anyhow::anyhow!("canonical runtime syntax preparation failed: {error}"))?;
     // Runtime ABI exports may be implemented by their owning canonical module rather than
     // Bootstrap. Lower every embedded runtime unit so direct calls remain unit-local and the
