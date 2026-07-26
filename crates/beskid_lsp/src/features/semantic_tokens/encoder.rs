@@ -7,6 +7,7 @@ const TOKEN_TYPE_STRUCT: u32 = 2;
 const TOKEN_TYPE_ENUM: u32 = 3;
 const TOKEN_TYPE_INTERFACE: u32 = 4;
 const TOKEN_TYPE_NAMESPACE: u32 = 5;
+const TOKEN_TYPE_VARIABLE: u32 = 6;
 
 const TOKEN_MODIFIER_DECLARATION: u32 = 1;
 
@@ -28,6 +29,7 @@ pub fn semantic_token_legend() -> SemanticTokensLegend {
             SemanticTokenType::ENUM,
             SemanticTokenType::INTERFACE,
             SemanticTokenType::NAMESPACE,
+            SemanticTokenType::VARIABLE,
         ],
         token_modifiers: vec![SemanticTokenModifier::DECLARATION],
     }
@@ -42,6 +44,7 @@ fn push_semantic_symbol_tokens(symbols: &[crate::session::store::SyntaxSymbol], 
             AnalysisSymbolKind::Type => TOKEN_TYPE_STRUCT,
             AnalysisSymbolKind::Enum => TOKEN_TYPE_ENUM,
             AnalysisSymbolKind::Contract => TOKEN_TYPE_INTERFACE,
+            AnalysisSymbolKind::Constant => TOKEN_TYPE_VARIABLE,
             AnalysisSymbolKind::Module | AnalysisSymbolKind::Use => TOKEN_TYPE_NAMESPACE,
         };
 
@@ -147,5 +150,19 @@ mod tests {
         assert_eq!(tokens[1].length, 6);
         assert_eq!(tokens[1].token_type, 2); // STRUCT is the third legend entry.
         assert_eq!(tokens[1].token_modifiers_bitset, 1);
+    }
+
+    #[test]
+    fn constant_symbols_use_the_variable_legend_entry() {
+        let text = "const answer = 42";
+        let tokens = build_semantic_tokens(
+            text,
+            &[SyntaxSymbol { name: "answer".into(), kind: AnalysisSymbolKind::Constant, start: 6, end: 12 }],
+            offset_to_position,
+        );
+
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].token_type, 6); // VARIABLE follows the existing fixed legend entries.
+        assert_eq!(tokens[0].token_modifiers_bitset, 1);
     }
 }

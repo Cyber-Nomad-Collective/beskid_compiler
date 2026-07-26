@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Map syntax-indexed constants through the explicit LSP document-symbol and semantic-token
+  representations, preserving exhaustive syntax-fact presentation after `AnalysisSymbolKind`
+  gained `Constant`.
 - Authorize only the compiler-embedded Foundation `Core.Error` source to import
   `__panic_str`, preserving the existing fail-closed Dynamic path for untrusted or unresolved
   calls while allowing its canonical enum-match error arm to derive the exact panic ABI
