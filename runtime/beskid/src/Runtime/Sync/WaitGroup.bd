@@ -1,15 +1,18 @@
 // Canonical Beskid WaitGroup counter with Add/Done/Wait.
 
 const WG_TABLE_MAX = 16;
-const WG_SLOT_SIZE = 16; // word counter + 8*word waiters stub
+// Every registered waiter is a scheduler fiber, and the active scheduler has
+// exactly 16 fiber records (`FIBER_TABLE_MAX`). Therefore 16 is an exact bound
+// for one group's simultaneously registered waiter identities, not a smaller
+// arbitrary queue that can contradict the scheduler's public capacity.
+const WG_WAITER_MAX = 16;
+const WG_SLOT_SIZE = 144; // counter + waiter_count + 16 waiter fiber IDs
+const WG_TABLE_SIZE = 2312; // count word + WG_TABLE_MAX slots
 
-// Returns the wait group table pointer (offset 2560 in runtime state).
+// Returns the separately allocated WaitGroup table owned by the active scheduler.
+// WaitGroup storage must never be derived from an undeclared RuntimeState offset.
 pub pointer WgTable() {
-    pointer state = RuntimeState();
-    if state == NativePointer(0) {
-        return NativePointer(0);
-    }
-    return pointer_add(state, 2560);
+    return SchedulerWaitGroupTable();
 }
 
 // Creates a wait group and returns its opaque ID.
@@ -25,8 +28,29 @@ pub pointer WaitGroupCreate() {
     }
     pointer slot = pointer_add(table, 8 + count * WG_SLOT_SIZE);
     raw_word_store(slot, 0);
+    raw_word_store(pointer_add(slot, 8), 0);
+    mut word waiter = 0;
+    while waiter < WG_WAITER_MAX {
+        raw_word_store(pointer_add(slot, 16 + waiter * 8), 0);
+        waiter = waiter + 1;
+    }
     raw_word_store(table, count + 1);
     return NativePointer(count);
+}
+
+// Queues every waiter registered on `slot` for the scheduler wake phase.
+// This is intentionally only the ownership/wake-recording half of cooperative
+// waiting: fiber context switching remains the scheduler's separate ABI work.
+pub unit WaitGroupWakeAll(pointer slot) {
+    word count = raw_word_load(pointer_add(slot, 8));
+    mut word i = 0;
+    while i < count {
+        WakeEnqueue(raw_word_load(pointer_add(slot, 16 + i * 8)));
+        raw_word_store(pointer_add(slot, 16 + i * 8), 0);
+        i = i + 1;
+    }
+    raw_word_store(pointer_add(slot, 8), 0);
+    return;
 }
 
 // Adds `delta` to the wait group counter.
@@ -64,6 +88,9 @@ pub unit WaitGroupDone(pointer id) {
         current = 0;
     }
     raw_word_store(slot, word(i64(word(current))));
+    if current == 0 {
+        WaitGroupWakeAll(slot);
+    }
     return;
 }
 
@@ -79,13 +106,22 @@ pub i32 WaitGroupWait(pointer id) {
         return 0;
     }
     pointer slot = pointer_add(table, 8 + slotIndex * WG_SLOT_SIZE);
-    mut word attempts = 0;
-    while attempts < 10000 {
-        i64 current = i64(raw_word_load(slot));
-        if current <= 0 {
-            return 0;
+    i64 current = i64(raw_word_load(slot));
+    if current <= 0 {
+        return 0;
+    }
+    word waiterCount = raw_word_load(pointer_add(slot, 8));
+    word currentFiber = word(FiberCurrentId());
+    mut word i = 0;
+    while i < waiterCount {
+        if raw_word_load(pointer_add(slot, 16 + i * 8)) == currentFiber {
+            return 1;
         }
-        attempts = attempts + 1;
+        i = i + 1;
+    }
+    if waiterCount < WG_WAITER_MAX {
+        raw_word_store(pointer_add(slot, 16 + waiterCount * 8), currentFiber);
+        raw_word_store(pointer_add(slot, 8), waiterCount + 1);
     }
     return 1;
 }

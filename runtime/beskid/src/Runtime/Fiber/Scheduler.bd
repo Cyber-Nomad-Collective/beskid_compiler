@@ -49,6 +49,8 @@ pub enum JoinOutcome {
 //                Channel.bd table)
 //   offset 3464: mutex_table (pointer to a separately allocated, zeroed
 //                Mutex.bd table)
+//   offset 3472: waitgroup_table (pointer to a separately allocated, zeroed
+//                WaitGroup.bd table)
 //
 // Each fiber record (128 bytes):
 //   offset   0: state (word)
@@ -76,7 +78,8 @@ const SCHEDULER_STATE_OFFSET = 32;
 // becomes backing storage for synchronization tables.
 const SCHEDULER_CHANNEL_STATE_OFFSET = 3456;
 const SCHEDULER_MUTEX_STATE_OFFSET = 3464;
-const SCHEDULER_TABLE_SIZE = 3472;
+const SCHEDULER_WAITGROUP_STATE_OFFSET = 3472;
+const SCHEDULER_TABLE_SIZE = 3480;
 
 // Returns the scheduler table owned by the active ABI-v5 runtime state.
 pub pointer SchedTable() {
@@ -129,6 +132,28 @@ pub pointer SchedulerMutexTable() {
     }
     memory_set(table, 0, MUTEX_TABLE_SIZE);
     raw_word_store(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET), NativeWord(table));
+    return table;
+}
+
+// Returns the separately allocated WaitGroup table owned by this scheduler.
+// The waiter registry is bounded by the scheduler's fiber-table capacity, so
+// it cannot overlap scheduler records or silently truncate registered waiters.
+pub pointer SchedulerWaitGroupTable() {
+    SchedInit();
+    pointer scheduler = SchedTable();
+    if scheduler == NativePointer(0) {
+        return NativePointer(0);
+    }
+    pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET)));
+    if table != NativePointer(0) {
+        return table;
+    }
+    table = SystemAllocate(WG_TABLE_SIZE, 8);
+    if table == NativePointer(0) {
+        return NativePointer(0);
+    }
+    memory_set(table, 0, WG_TABLE_SIZE);
+    raw_word_store(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET), NativeWord(table));
     return table;
 }
 

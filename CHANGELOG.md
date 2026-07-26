@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Move canonical WaitGroup state out of undeclared `RuntimeState` offset
+  arithmetic into a separately allocated scheduler-owned object. Its waiter
+  registry now matches the current sixteen-fiber scheduler bound and queues
+  every registered waiter once when `Done` reaches zero; the remaining
+  cooperative parking/context-switch execution work is intentionally separate.
 - Move canonical mutex table storage out of undeclared `RuntimeState` offset
   arithmetic into a separately allocated, zero-initialized scheduler-owned
   object, with source-level ownership and non-aliasing regressions.
