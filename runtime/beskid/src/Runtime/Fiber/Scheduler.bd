@@ -26,8 +26,11 @@ pub enum JoinOutcome {
     StackOverflow,
 }
 
-// Scheduler table embedded in BeskidRuntimeState at offset 3072+.
-// Layout (512 bytes):
+// Scheduler table allocated through `BeskidRuntimeState.scheduler` at offset 32.
+//
+// `BeskidRuntimeState` is a fixed ABI-v5 record (64 bytes); the scheduler table is
+// runtime-owned native storage and must never be embedded past that record.  The
+// table layout is 3456 bytes:
 //   offset    0: fiber_count (word)
 //   offset    8: main_fiber (word)
 //   offset   16: run_queue_head (word)
@@ -63,14 +66,16 @@ pub enum JoinOutcome {
 
 const FIBER_TABLE_MAX = 16;
 const FIBER_SLOT_SIZE = 128;
+const SCHEDULER_STATE_OFFSET = 32;
+const SCHEDULER_TABLE_SIZE = 3456;
 
-// Returns the scheduler table pointer.
+// Returns the scheduler table owned by the active ABI-v5 runtime state.
 pub pointer SchedTable() {
     pointer state = RuntimeState();
     if state == NativePointer(0) {
         return NativePointer(0);
     }
-    return pointer_add(state, 3072);
+    return NativePointer(raw_word_load(pointer_add(state, SCHEDULER_STATE_OFFSET)));
 }
 
 // Returns a fiber record pointer by index.
@@ -283,12 +288,29 @@ pub unit ApplyPendingWakes() {
 // Initialize the scheduler for the first time.
 pub unit SchedInit() {
     pointer table = SchedTable();
+    if table != NativePointer(0) { return; }
+    pointer state = RuntimeState();
+    table = SystemAllocate(SCHEDULER_TABLE_SIZE, 8);
     if table == NativePointer(0) { return; }
-    memory_set(table, 0, 3072);
+    memory_set(table, 0, SCHEDULER_TABLE_SIZE);
+    raw_word_store(pointer_add(state, SCHEDULER_STATE_OFFSET), NativeWord(table));
     word mainIdx = FiberAlloc(0, 0, 0, 0xFFFF);
     raw_word_store(pointer_add(table, 8), mainIdx);
     RunQueuePush(mainIdx);
     return;
+}
+
+// Registers work in the scheduler-owned table. Context switching is deliberately
+// outside this ownership slice; the queued record preserves the ABI-v5 spawn
+// boundary until that target-specific execution work is enabled.
+pub i64 SchedulerSpawn(pointer entry, pointer environment, pointer cancelledSlot) {
+    SchedInit();
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return -1; }
+    word index = FiberAlloc(NativeWord(entry), NativeWord(environment), NativeWord(cancelledSlot), 0xFFFF);
+    if index == 0xFFFF { return -1; }
+    RunQueuePush(index);
+    return i64(index);
 }
 
 // Drive one scheduling step. Returns true if work was done.

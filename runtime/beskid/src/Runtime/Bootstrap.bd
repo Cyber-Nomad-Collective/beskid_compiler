@@ -462,7 +462,7 @@ pub i64 FiberSpawnWithCancelSlot(pointer entry, pointer environment, pointer can
     if cancelledSlot != NativePointer(0) {
         raw_word_store(cancelledSlot, 0);
     }
-    return 0;
+    return SchedulerSpawn(entry, environment, cancelledSlot);
 }
 
 // Roots a closure environment through the actual TLS state installed for this runtime thread.

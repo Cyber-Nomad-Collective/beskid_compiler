@@ -8,16 +8,7 @@ pub i64 FiberSpawn(pointer entry, pointer argument) {
         return -1;
     }
     raw_word_store(cancelSlot, 0);
-    return FiberSpawnWithCancelSlot(entry, NativePointer(0), cancelSlot);
-}
-
-// Spawns a fiber with an explicit cancellation slot.
-[Export(Abi:"C", Symbol:"fiber_spawn_with_cancel_slot")]
-pub i64 FiberSpawnWithCancelSlot(pointer entry, pointer environment, pointer cancelledSlot) {
-    if cancelledSlot != NativePointer(0) {
-        raw_word_store(cancelledSlot, 0);
-    }
-    return 0; // Stub: real scheduler integration TBD
+    return SchedulerSpawn(entry, NativePointer(0), cancelSlot);
 }
 
 // Cancels a running fiber by ID.
