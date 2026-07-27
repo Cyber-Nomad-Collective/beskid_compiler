@@ -185,12 +185,12 @@ pub unit BeskidRegisterCallbacks(pointer entries, word count) {
 [Export(Abi:"C", Symbol:"install_callback_trampoline")]
 pub unit InstallCallbackTrampoline(pointer target, pointer handler) {
     if target == NativePointer(0) || handler == NativePointer(0) { return; }
-    pointer scope = CallbackEnterScope();
-    if scope == NativePointer(0) { return; }
+    pointer scopeSlot = CallbackEnterScope();
+    if scopeSlot == NativePointer(0) { return; }
     pointer selected = CallbackLookup(handler);
-    if selected == NativePointer(0) { CallbackLeaveScope(scope); return; }
+    if selected == NativePointer(0) { CallbackLeaveScope(scopeSlot); return; }
     raw_word_store(target, NativeWord(selected));
-    CallbackLeaveScope(scope);
+    CallbackLeaveScope(scopeSlot);
     return;
 }
 

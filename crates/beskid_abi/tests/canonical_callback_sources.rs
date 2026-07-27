@@ -44,6 +44,6 @@ fn canonical_trampoline_rejects_unregistered_targets_before_publication() {
     assert!(callbacks.contains("pub pointer CallbackLookup(pointer identity)"));
     assert!(callbacks.contains("if raw_word_load(entry) == NativeWord(identity)"));
     assert!(callbacks.contains("pointer selected = CallbackLookup(handler);"));
-    assert!(callbacks.contains("if selected == NativePointer(0) { CallbackLeaveScope(scope); return; }"));
+    assert!(callbacks.contains("if selected == NativePointer(0) { CallbackLeaveScope(scopeSlot); return; }"));
     assert!(callbacks.contains("raw_word_store(target, NativeWord(selected));"));
 }
