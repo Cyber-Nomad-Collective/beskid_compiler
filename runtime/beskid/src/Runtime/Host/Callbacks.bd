@@ -45,18 +45,18 @@ pub word CallbackRegistrationValid(pointer entries, word count) {
     return 1;
 }
 
-pub pointer CallbackEntries(pointer registry, word kind) {
+pub pointer CallbackEntries(pointer callbackState, word kind) {
     if kind == 0 {
-        return pointer_add(registry, CALLBACK_REGISTRY_CALLBACK_ENTRIES_OFFSET);
+        return pointer_add(callbackState, CALLBACK_REGISTRY_CALLBACK_ENTRIES_OFFSET);
     }
-    return pointer_add(registry, CALLBACK_REGISTRY_HANDLER_ENTRIES_OFFSET);
+    return pointer_add(callbackState, CALLBACK_REGISTRY_HANDLER_ENTRIES_OFFSET);
 }
 
-pub pointer CallbackEntryCountSlot(pointer registry, word kind) {
+pub pointer CallbackEntryCountSlot(pointer callbackState, word kind) {
     if kind == 0 {
-        return pointer_add(registry, CALLBACK_REGISTRY_CALLBACK_COUNT_OFFSET);
+        return pointer_add(callbackState, CALLBACK_REGISTRY_CALLBACK_COUNT_OFFSET);
     }
-    return pointer_add(registry, CALLBACK_REGISTRY_HANDLER_COUNT_OFFSET);
+    return pointer_add(callbackState, CALLBACK_REGISTRY_HANDLER_COUNT_OFFSET);
 }
 
 // Copies one already-published category into a new registry.  Registry rows
@@ -83,10 +83,10 @@ pub unit CallbackCopyEntries(pointer destination, pointer source, word kind) {
 // Writes one category with stable first-insertion order.  A repeated identity
 // updates that slot in place, so the last supplied value wins without creating
 // multiple competing callback or handler targets.
-pub unit CallbackInstallEntries(pointer registry, pointer entries, word count, word kind) {
-    pointer countSlot = CallbackEntryCountSlot(registry, kind);
+pub unit CallbackInstallEntries(pointer callbackState, pointer entries, word count, word kind) {
+    pointer countSlot = CallbackEntryCountSlot(callbackState, kind);
     mut word installed = raw_word_load(countSlot);
-    pointer destinationEntries = CallbackEntries(registry, kind);
+    pointer destinationEntries = CallbackEntries(callbackState, kind);
     mut word sourceIndex = 0;
     while sourceIndex < count {
         pointer source = pointer_add(entries, sourceIndex * CALLBACK_REGISTRY_ENTRY_SIZE);
@@ -133,12 +133,12 @@ pub pointer CallbackRegistryReplacement(pointer entries, word count, word kind) 
 }
 
 pub pointer CallbackLookup(pointer identity) {
-    pointer registry = CallbackRegistry();
+    pointer callbackState = CallbackRegistry();
     pointer state = RuntimeState();
-    if registry == NativePointer(0) || state == NativePointer(0) { return NativePointer(0); }
-    if raw_word_load(pointer_add(registry, CALLBACK_REGISTRY_OWNER_OFFSET)) != NativeWord(state) { return NativePointer(0); }
-    word count = raw_word_load(pointer_add(registry, CALLBACK_REGISTRY_CALLBACK_COUNT_OFFSET));
-    pointer entries = CallbackEntries(registry, 0);
+    if callbackState == NativePointer(0) || state == NativePointer(0) { return NativePointer(0); }
+    if raw_word_load(pointer_add(callbackState, CALLBACK_REGISTRY_OWNER_OFFSET)) != NativeWord(state) { return NativePointer(0); }
+    word count = raw_word_load(pointer_add(callbackState, CALLBACK_REGISTRY_CALLBACK_COUNT_OFFSET));
+    pointer entries = CallbackEntries(callbackState, 0);
     mut word index = 0;
     while index < count {
         pointer entry = pointer_add(entries, index * CALLBACK_REGISTRY_ENTRY_SIZE);
