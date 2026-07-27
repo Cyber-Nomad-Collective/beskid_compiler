@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 
+
+- Replace canonical composition sentinel exports with per-runtime, container-owned
+  frozen-plan storage. Registration and plural binding order are now validated
+  before activation; resolution is closed over that plan and foreign, stale,
+  null, or post-activation mutation attempts fail closed.
 - Replace canonical event runtime-state table addressing with lazily allocated,
   field-slot-owned subscription state. Resolved capacities, ordered lookup, and
   stable first-match removal now share the canonical Beskid ABI surface.

@@ -1,26 +1,170 @@
 // Canonical Beskid dependency composition primitives.
+//
+// A composition container owns only the compiler-emitted, already validated
+// plan for one runtime.  The source does not discover services, consult a
+// process-global registry, or manufacture an instance: `CompositionRegister`
+// and `CompositionBindPlural` are the plan-installation boundary used by
+// canonical lowering before launch.
+//
+// Container layout:
+//   0  owner runtime state
+//   8  status (configuring, active, or shut down)
+//   16 registration count
+//   24 registration pointer array (plan order)
+//   32 plural-binding count
+//   40 plural-binding rows `{ key, factory }` (plan order)
+//   48 activated registration count
+//   56 reserved
+
+const COMPOSITION_CONTAINER_SIZE = 64;
+const COMPOSITION_PLAN_ENTRY_MAX = 256;
+const COMPOSITION_CONFIGURING = 1;
+const COMPOSITION_ACTIVE = 2;
+const COMPOSITION_SHUT_DOWN = 3;
+const COMPOSITION_STATUS_OFFSET = 8;
+const COMPOSITION_REGISTRATION_COUNT_OFFSET = 16;
+const COMPOSITION_REGISTRATIONS_OFFSET = 24;
+const COMPOSITION_PLURAL_COUNT_OFFSET = 32;
+const COMPOSITION_PLURAL_BINDINGS_OFFSET = 40;
+const COMPOSITION_ACTIVATED_COUNT_OFFSET = 48;
+
+// Ownership is tied to the current ABI-v5 runtime rather than a global table.
+// A stale or foreign pointer cannot activate, mutate, or resolve a plan.
+pub word CompositionContainerValid(pointer container) {
+    if container == NativePointer(0) { return 0; }
+    pointer state = RuntimeState();
+    if state == NativePointer(0) { return 0; }
+    if raw_word_load(container) != NativeWord(state) { return 0; }
+    return 1;
+}
 
 [Export(Abi:"C", Symbol:"composition_container_create")]
-pub pointer CompositionContainerCreate() { return NativePointer(0); }
+pub pointer CompositionContainerCreate() {
+    pointer state = RuntimeState();
+    if state == NativePointer(0) { return NativePointer(0); }
+    pointer container = SystemAllocate(COMPOSITION_CONTAINER_SIZE, 8);
+    if container == NativePointer(0) { return NativePointer(0); }
+    pointer registrations = SystemAllocate(COMPOSITION_PLAN_ENTRY_MAX * 8, 8);
+    if registrations == NativePointer(0) {
+        SystemFree(container, COMPOSITION_CONTAINER_SIZE);
+        return NativePointer(0);
+    }
+    pointer pluralBindings = SystemAllocate(COMPOSITION_PLAN_ENTRY_MAX * 16, 8);
+    if pluralBindings == NativePointer(0) {
+        SystemFree(registrations, COMPOSITION_PLAN_ENTRY_MAX * 8);
+        SystemFree(container, COMPOSITION_CONTAINER_SIZE);
+        return NativePointer(0);
+    }
+    memory_set(container, 0, COMPOSITION_CONTAINER_SIZE);
+    memory_set(registrations, 0, COMPOSITION_PLAN_ENTRY_MAX * 8);
+    memory_set(pluralBindings, 0, COMPOSITION_PLAN_ENTRY_MAX * 16);
+    raw_word_store(container, NativeWord(state));
+    raw_word_store(pointer_add(container, COMPOSITION_STATUS_OFFSET), COMPOSITION_CONFIGURING);
+    raw_word_store(pointer_add(container, COMPOSITION_REGISTRATIONS_OFFSET), NativeWord(registrations));
+    raw_word_store(pointer_add(container, COMPOSITION_PLURAL_BINDINGS_OFFSET), NativeWord(pluralBindings));
+    return container;
+}
 
 [Export(Abi:"C", Symbol:"composition_container_drop")]
-pub unit CompositionContainerDrop(pointer container) { return; }
+pub unit CompositionContainerDrop(pointer container) {
+    if CompositionContainerValid(container) == 0 { return; }
+    pointer registrations = NativePointer(raw_word_load(pointer_add(container, COMPOSITION_REGISTRATIONS_OFFSET)));
+    pointer pluralBindings = NativePointer(raw_word_load(pointer_add(container, COMPOSITION_PLURAL_BINDINGS_OFFSET)));
+    if registrations != NativePointer(0) { SystemFree(registrations, COMPOSITION_PLAN_ENTRY_MAX * 8); }
+    if pluralBindings != NativePointer(0) { SystemFree(pluralBindings, COMPOSITION_PLAN_ENTRY_MAX * 16); }
+    raw_word_store(container, 0);
+    SystemFree(container, COMPOSITION_CONTAINER_SIZE);
+    return;
+}
 
+// Install one compiler-frozen registration in plan order.  Runtime accepts
+// neither a null service nor registration after activation.
 [Export(Abi:"C", Symbol:"composition_register")]
-pub bool CompositionRegister(pointer container, pointer service) { return false; }
+pub bool CompositionRegister(pointer container, pointer service) {
+    if CompositionContainerValid(container) == 0 || service == NativePointer(0) { return false; }
+    if raw_word_load(pointer_add(container, COMPOSITION_STATUS_OFFSET)) != COMPOSITION_CONFIGURING { return false; }
+    word count = raw_word_load(pointer_add(container, COMPOSITION_REGISTRATION_COUNT_OFFSET));
+    if count >= COMPOSITION_PLAN_ENTRY_MAX { return false; }
+    pointer registrations = NativePointer(raw_word_load(pointer_add(container, COMPOSITION_REGISTRATIONS_OFFSET)));
+    if registrations == NativePointer(0) { return false; }
+    raw_word_store(pointer_add(registrations, count * 8), NativeWord(service));
+    raw_word_store(pointer_add(container, COMPOSITION_REGISTRATION_COUNT_OFFSET), count + 1);
+    return true;
+}
 
 [Export(Abi:"C", Symbol:"composition_resolve")]
-pub pointer CompositionResolve(pointer container, pointer key) { return NativePointer(0); }
+pub pointer CompositionResolve(pointer container, pointer key) {
+    if CompositionContainerValid(container) == 0 || key == NativePointer(0) { return NativePointer(0); }
+    if raw_word_load(pointer_add(container, COMPOSITION_STATUS_OFFSET)) != COMPOSITION_ACTIVE { return NativePointer(0); }
+    pointer registrations = NativePointer(raw_word_load(pointer_add(container, COMPOSITION_REGISTRATIONS_OFFSET)));
+    word count = raw_word_load(pointer_add(container, COMPOSITION_REGISTRATION_COUNT_OFFSET));
+    if registrations == NativePointer(0) { return NativePointer(0); }
+    mut word index = 0;
+    while index < count {
+        if raw_word_load(pointer_add(registrations, index * 8)) == NativeWord(key) {
+            return key;
+        }
+        index = index + 1;
+    }
+    return NativePointer(0);
+}
 
+// The plural factory is a compiler-emitted plan value.  Returning only the
+// exact matching row keeps plural lookup ordered and closed over that plan.
 [Export(Abi:"C", Symbol:"composition_resolve_plural")]
-pub pointer CompositionResolvePlural(pointer container, pointer key) { return NativePointer(0); }
+pub pointer CompositionResolvePlural(pointer container, pointer key) {
+    if CompositionContainerValid(container) == 0 || key == NativePointer(0) { return NativePointer(0); }
+    if raw_word_load(pointer_add(container, COMPOSITION_STATUS_OFFSET)) != COMPOSITION_ACTIVE { return NativePointer(0); }
+    pointer pluralBindings = NativePointer(raw_word_load(pointer_add(container, COMPOSITION_PLURAL_BINDINGS_OFFSET)));
+    word count = raw_word_load(pointer_add(container, COMPOSITION_PLURAL_COUNT_OFFSET));
+    if pluralBindings == NativePointer(0) { return NativePointer(0); }
+    mut word index = 0;
+    while index < count {
+        if raw_word_load(pointer_add(pluralBindings, index * 16)) == NativeWord(key) {
+            return NativePointer(raw_word_load(pointer_add(pluralBindings, index * 16 + 8)));
+        }
+        index = index + 1;
+    }
+    return NativePointer(0);
+}
 
 [Export(Abi:"C", Symbol:"composition_bind_plural")]
-pub unit CompositionBindPlural(pointer container, pointer key, pointer factory) { return; }
+pub unit CompositionBindPlural(pointer container, pointer key, pointer factory) {
+    if CompositionContainerValid(container) == 0 || key == NativePointer(0) || factory == NativePointer(0) { return; }
+    if raw_word_load(pointer_add(container, COMPOSITION_STATUS_OFFSET)) != COMPOSITION_CONFIGURING { return; }
+    word count = raw_word_load(pointer_add(container, COMPOSITION_PLURAL_COUNT_OFFSET));
+    if count >= COMPOSITION_PLAN_ENTRY_MAX { return; }
+    pointer pluralBindings = NativePointer(raw_word_load(pointer_add(container, COMPOSITION_PLURAL_BINDINGS_OFFSET)));
+    if pluralBindings == NativePointer(0) { return; }
+    raw_word_store(pointer_add(pluralBindings, count * 16), NativeWord(key));
+    raw_word_store(pointer_add(pluralBindings, count * 16 + 8), NativeWord(factory));
+    raw_word_store(pointer_add(container, COMPOSITION_PLURAL_COUNT_OFFSET), count + 1);
+    return;
+}
 
+// Activation validates the complete frozen registration sequence before
+// publication.  It records its exact plan-order completion count, so failed
+// or incomplete plans never become active.
 [Export(Abi:"C", Symbol:"composition_launch")]
-pub bool CompositionLaunch(pointer container) { return false; }
+pub bool CompositionLaunch(pointer container) {
+    if CompositionContainerValid(container) == 0 { return false; }
+    if raw_word_load(pointer_add(container, COMPOSITION_STATUS_OFFSET)) != COMPOSITION_CONFIGURING { return false; }
+    pointer registrations = NativePointer(raw_word_load(pointer_add(container, COMPOSITION_REGISTRATIONS_OFFSET)));
+    word count = raw_word_load(pointer_add(container, COMPOSITION_REGISTRATION_COUNT_OFFSET));
+    if registrations == NativePointer(0) { return false; }
+    mut word index = 0;
+    while index < count {
+        if raw_word_load(pointer_add(registrations, index * 8)) == 0 { return false; }
+        index = index + 1;
+    }
+    raw_word_store(pointer_add(container, COMPOSITION_ACTIVATED_COUNT_OFFSET), index);
+    raw_word_store(pointer_add(container, COMPOSITION_STATUS_OFFSET), COMPOSITION_ACTIVE);
+    return true;
+}
 
+// Scope ownership is completed with the canonical fiber implementation.  The
+// present ABI keeps scope calls fail-closed until that frozen scope tree is
+// materialized by task 6.8.1e.2.
 [Export(Abi:"C", Symbol:"composition_scope_enter")]
 pub unit CompositionScopeEnter(pointer container) { return; }
 
@@ -30,5 +174,22 @@ pub unit CompositionScopeLeave() { return; }
 [Export(Abi:"C", Symbol:"composition_scope_depth")]
 pub i32 CompositionScopeDepth() { return 0; }
 
+// Teardown clears plan entries in reverse activation order, then invalidates
+// the state.  Later scope work supplies per-service disposal hooks; this
+// source never invents a dynamic destructor target.
 [Export(Abi:"C", Symbol:"composition_shutdown")]
-pub unit CompositionShutdown(pointer container) { return; }
+pub unit CompositionShutdown(pointer container) {
+    if CompositionContainerValid(container) == 0 { return; }
+    if raw_word_load(pointer_add(container, COMPOSITION_STATUS_OFFSET)) != COMPOSITION_ACTIVE { return; }
+    pointer registrations = NativePointer(raw_word_load(pointer_add(container, COMPOSITION_REGISTRATIONS_OFFSET)));
+    word activated = raw_word_load(pointer_add(container, COMPOSITION_ACTIVATED_COUNT_OFFSET));
+    if registrations != NativePointer(0) {
+        while activated > 0 {
+            activated = activated - 1;
+            raw_word_store(pointer_add(registrations, activated * 8), 0);
+        }
+    }
+    raw_word_store(pointer_add(container, COMPOSITION_ACTIVATED_COUNT_OFFSET), 0);
+    raw_word_store(pointer_add(container, COMPOSITION_STATUS_OFFSET), COMPOSITION_SHUT_DOWN);
+    return;
+}
