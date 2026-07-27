@@ -218,6 +218,20 @@
   ],
   "intrinsics": [
     {
+      "name": "arch_context_alignment",
+      "symbol": "beskid_rt_v5_intrinsic_arch_context_alignment",
+      "capability": "runtime.bootstrap.arch_context_alignment",
+      "params": [],
+      "result": "usize"
+    },
+    {
+      "name": "arch_context_size",
+      "symbol": "beskid_rt_v5_intrinsic_arch_context_size",
+      "capability": "runtime.bootstrap.arch_context_size",
+      "params": [],
+      "result": "usize"
+    },
+    {
       "name": "clock_monotonic_nanos",
       "symbol": "beskid_rt_v5_intrinsic_clock_monotonic_nanos",
       "capability": "runtime.adapter.clock_monotonic_nanos",
@@ -230,6 +244,50 @@
       "capability": "runtime.adapter.clock_realtime_nanos",
       "params": [],
       "result": "i64"
+    },
+    {
+      "name": "context_init",
+      "symbol": "beskid_arch_v5_context_init",
+      "capability": "runtime.bootstrap.context_init",
+      "params": [
+        {
+          "name": "context",
+          "type": "pointer"
+        },
+        {
+          "name": "stack_top",
+          "type": "pointer"
+        },
+        {
+          "name": "entry",
+          "type": "pointer"
+        },
+        {
+          "name": "argument",
+          "type": "pointer"
+        },
+        {
+          "name": "return_trampoline",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "name": "context_switch",
+      "symbol": "beskid_arch_v5_context_switch",
+      "capability": "runtime.bootstrap.context_switch",
+      "params": [
+        {
+          "name": "from",
+          "type": "pointer"
+        },
+        {
+          "name": "to",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
     },
     {
       "name": "memory_compare",

@@ -305,10 +305,11 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             return Err(format!("export {} is not ABI-v5 versioned", entry.symbol));
         }
     }
+    let assembly_symbols = manifest.assembly.iter().map(|entry| entry.symbol.as_str()).collect::<std::collections::HashSet<_>>();
     for entry in &manifest.intrinsics {
         if entry.name.is_empty()
             || entry.symbol.is_empty()
-            || !entry.symbol.starts_with("beskid_rt_v5_")
+            || (!entry.symbol.starts_with("beskid_rt_v5_") && !assembly_symbols.contains(entry.symbol.as_str()))
             || !(entry.capability == format!("runtime.bootstrap.{}", entry.name)
                 || entry.capability == format!("runtime.adapter.{}", entry.name))
         {

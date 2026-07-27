@@ -262,6 +262,8 @@ pub enum RuntimeIntrinsicKind {
     RawWordStore,
     RawByteLoad,
     RawByteStore,
+    ArchContextSize(u64),
+    ArchContextAlignment(u64),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1153,6 +1155,25 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             .collect()
     }
 
+    /// Re-materialize a compiler-owned canonical runtime module constant at
+    /// the exact ABI type required by a manifest-authorized intrinsic
+    /// argument. This deliberately mirrors the direct-call rule without
+    /// sharing its control path: the authority is restricted to an already
+    /// selected runtime intrinsic, an exact canonical PathExpression, and a
+    /// compiler-minted capability.
+    fn materialize_canonical_runtime_intrinsic_constant(&mut self, key: AstNodeKey, expected: Type) -> Option<Value> {
+        (self.facts.node_kind(key) == Some(NodeKind::PathExpression)).then_some(())?;
+        let value = self.facts.canonical_runtime_constant_integer(key)?;
+        if value < 0 || !expected.is_int() {
+            return None;
+        }
+        let width = expected.bits();
+        if width < 64 && u64::try_from(value).ok()? > ((1_u64 << width) - 1) {
+            return None;
+        }
+        Some(self.builder.ins().iconst(expected, value))
+    }
+
     fn emit_runtime_intrinsic_statement(&mut self, key: AstNodeKey) -> Option<()> {
         let Some(kind) = self.facts.runtime_intrinsic_kind(key) else {
             return self.direct_call_statement(key);
@@ -1174,7 +1195,14 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
                 let [destination, byte, length] = arguments.as_slice() else {
                     return None;
                 };
-                self.emit_memory_set(*destination, *byte, *length)
+                let pointer = self.builder.func.dfg.value_type(*destination);
+                let length_key = self.facts.call_arguments(key)?.get(2).copied()?;
+                let length = if self.builder.func.dfg.value_type(*length) == pointer {
+                    *length
+                } else {
+                    self.materialize_canonical_runtime_intrinsic_constant(length_key, pointer)?
+                };
+                self.emit_memory_set(*destination, *byte, length)
             }
             RuntimeIntrinsicKind::MemoryCopy => {
                 let [destination, source, length] = arguments.as_slice() else {
@@ -1790,6 +1818,9 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 } else {
                     None
                 }
+            }
+            RuntimeIntrinsicKind::ArchContextSize(value) | RuntimeIntrinsicKind::ArchContextAlignment(value) => {
+                arguments.is_empty().then(|| self.builder.ins().iconst(result, value as i64))
             }
             RuntimeIntrinsicKind::MemoryCopy
             | RuntimeIntrinsicKind::MemorySet

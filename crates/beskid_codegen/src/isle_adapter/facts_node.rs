@@ -183,6 +183,15 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn runtime_intrinsic_kind(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
         let (_, intrinsic) = self.runtime_intrinsic(key)?;
+        match intrinsic.name.as_str() {
+            "arch_context_size" => {
+                return Some(RuntimeIntrinsicKind::ArchContextSize(self.input.target_context_layout()?.size));
+            }
+            "arch_context_alignment" => {
+                return Some(RuntimeIntrinsicKind::ArchContextAlignment(self.input.target_context_layout()?.alignment));
+            }
+            _ => {}
+        }
         runtime_intrinsic_kind_for_name(intrinsic.name.as_str())
     }
 

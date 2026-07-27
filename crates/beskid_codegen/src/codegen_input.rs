@@ -88,6 +88,21 @@ impl<'db> CodegenInput<'db> {
         &self.abi_manifest
     }
 
+    /// The one context layout selected by the ABI-v5 target contract.
+    ///
+    /// Context storage is never inferred from a scheduler-record offset: the
+    /// compiler materializes this exact manifest record for canonical runtime
+    /// calls to `arch_context_size` and `arch_context_alignment`.
+    pub fn target_context_layout(&self) -> Option<&beskid_abi::abi_v5::AbiLayout> {
+        let name = match self.target.triple.as_str() {
+            "x86_64-unknown-linux-gnu" => "BeskidArchContextX86_64SysV",
+            "aarch64-apple-darwin" => "BeskidArchContextAarch64Darwin",
+            "x86_64-pc-windows-msvc" => "BeskidArchContextX86_64Windows",
+            _ => return None,
+        };
+        self.abi_manifest.layouts.iter().find(|layout| layout.name == name)
+    }
+
     /// Compiler-minted authority for direct ABI-v5 intrinsic imports.
     ///
     /// It is absent for every ordinary user program, including projects that imitate runtime

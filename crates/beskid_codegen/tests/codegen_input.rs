@@ -353,7 +353,7 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
     })
     .expect("canonical Scheduler SchedInit");
     let facts = SyntaxNodeFacts::new(&input);
-    for intrinsic_name in ["pointer_add", "raw_word_store"] {
+    for intrinsic_name in ["memory_set", "pointer_add", "raw_word_store"] {
         let call = find_node_matching(&db, sched_init, IndexedNodeKind::CallExpression, |call| {
             matches!(
                 beskid_queries::runtime_intrinsic_name(&db, call).ok().flatten(),

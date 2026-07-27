@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   direct-call ABI width under compiler-minted authority, while rejecting literal
   coercion and untrusted source. Runtime lowering now reports the first failed
   nested AST statement or expression instead of collapsing errors to its block.
+- Derive scheduler fiber-context allocation metadata and context entrypoints
+  exclusively from the selected ABI-v5 target manifest, including exact
+  assembly-export validation and generated ABI contract updates.
 
 - Move canonical WaitGroup state out of undeclared `RuntimeState` offset
   arithmetic into a separately allocated scheduler-owned object. Its waiter

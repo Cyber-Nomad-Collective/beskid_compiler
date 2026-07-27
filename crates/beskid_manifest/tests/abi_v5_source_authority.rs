@@ -85,7 +85,13 @@ fn v5_manifest_is_the_only_input_to_every_generated_artifact() {
             .unwrap();
     let manifest = load_v5_manifest_source(&source).expect("valid v5 source");
     assert_eq!(manifest.meta.abi_version, 5);
-    assert!(manifest.intrinsics.iter().all(|intrinsic| intrinsic.symbol.starts_with("beskid_rt_v5_")));
+    let assembly_symbols = manifest.assembly.iter().map(|entry| entry.symbol.as_str()).collect::<std::collections::HashSet<_>>();
+    assert!(
+        manifest
+            .intrinsics
+            .iter()
+            .all(|intrinsic| intrinsic.symbol.starts_with("beskid_rt_v5_") || assembly_symbols.contains(intrinsic.symbol.as_str()))
+    );
     let trap = manifest.exports.iter().find(|entry| entry.symbol == "beskid_rt_v5_trap").unwrap();
     assert_eq!(trap.params[0].name, "code");
     assert_eq!(trap.result, "never");

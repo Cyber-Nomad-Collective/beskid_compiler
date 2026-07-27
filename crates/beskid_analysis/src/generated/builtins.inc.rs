@@ -596,4 +596,28 @@ define_builtins! {
         returns: U64,
         injected: true,
     },
+    &["arch_context_size"] => {
+        symbol: "beskid_rt_v5_intrinsic_arch_context_size",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["arch_context_alignment"] => {
+        symbol: "beskid_rt_v5_intrinsic_arch_context_alignment",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["context_init"] => {
+        symbol: "beskid_arch_v5_context_init",
+        params: [Ptr, Ptr, Ptr, Ptr, Ptr],
+        returns: Unit,
+        injected: true,
+    },
+    &["context_switch"] => {
+        symbol: "beskid_arch_v5_context_switch",
+        params: [Ptr, Ptr],
+        returns: Unit,
+        injected: true,
+    },
 }

@@ -3,11 +3,9 @@
 // Design mirrors the Rust runtime: a round-robin run queue, fiber state machine,
 // pending spawn/cancel/detach queues, join snapshots, and wake lists.
 //
-// Platform context-switch assembly (beskid_arch_v5_context_init / context_switch)
-// is declared in runtime_manifest.bsol and compiled from assembly/*.S.
-// The Beskid runtime calls these through intrinsic declarations; until those
-// are added to the manifest, the context-switch entry points are documented here
-// with placeholder calls.
+// Platform context-switch assembly is declared by runtime_manifest.bsol. The
+// compiler materializes the selected BeskidArchContext layout for the canonical
+// source corpus; source never spells a target size, alignment, or assembly ABI.
 
 // ── Fiber State Constants ──────────────────────────────────────────
 pub enum FiberState {
@@ -68,7 +66,7 @@ pub enum JoinOutcome {
 //   offset  88: join_snapshot_outcome_value (i64)
 //   offset  96: stack_ptr (pointer)
 //   offset 104: arch_context (pointer) -- points to BeskidArchContext
-//   offset 112: arch_context_size (word) -- 176 for aarch64-darwin
+//   offset 112: arch_context_size (word) -- selected manifest layout size
 
 const FIBER_TABLE_MAX = 16;
 const FIBER_SLOT_SIZE = 128;
@@ -80,6 +78,31 @@ const SCHEDULER_CHANNEL_STATE_OFFSET = 3456;
 const SCHEDULER_MUTEX_STATE_OFFSET = 3464;
 const SCHEDULER_WAITGROUP_STATE_OFFSET = 3472;
 const SCHEDULER_TABLE_SIZE = 3480;
+
+// Returns the selected target's BeskidArchContext record size. This compiler-owned
+// intrinsic is available only to the canonical runtime corpus and is materialized
+// from runtime_manifest.bsol, never from a source-level target switch.
+pub word ArchContextSize() {
+    return arch_context_size();
+}
+
+// Returns the selected target's BeskidArchContext record alignment.
+pub word ArchContextAlignment() {
+    return arch_context_alignment();
+}
+
+// The sole assembly boundary for preparing a canonical fiber context. Its symbol,
+// signature, and target calling convention are all manifest-owned.
+pub unit ContextInit(pointer context, pointer stackTop, pointer entry, pointer argument, pointer returnTrampoline) {
+    context_init(context, stackTop, entry, argument, returnTrampoline);
+    return;
+}
+
+// The sole assembly boundary for saving and resuming a canonical fiber context.
+pub unit ContextSwitch(pointer from, pointer to) {
+    context_switch(from, to);
+    return;
+}
 
 // Returns the scheduler table owned by the active ABI-v5 runtime state.
 pub pointer SchedTable() {
@@ -178,6 +201,13 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
     }
     pointer fib = FiberRecord(count);
     memory_set(fib, 0, FIBER_SLOT_SIZE);
+    // Context storage is independent from the fixed scheduler record and derives
+    // both of its allocation parameters from the selected ABI-v5 target layout.
+    pointer context = SystemAllocate(ArchContextSize(), ArchContextAlignment());
+    if context == NativePointer(0) {
+        return 0xFFFF;
+    }
+    memory_set(context, 0, ArchContextSize());
     raw_word_store(fib, FiberState::Runnable);
     raw_word_store(pointer_add(fib, 8), entry);
     raw_word_store(pointer_add(fib, 16), arg);
@@ -185,6 +215,8 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
     raw_word_store(pointer_add(fib, 32), parent);
     raw_byte_store(pointer_add(fib, 40), 0); // detached
     raw_byte_store(pointer_add(fib, 41), 0); // cancelled
+    raw_word_store(pointer_add(fib, 104), NativeWord(context));
+    raw_word_store(pointer_add(fib, 112), ArchContextSize());
     raw_word_store(table, count + 1);
     return count;
 }

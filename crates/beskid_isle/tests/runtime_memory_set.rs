@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use beskid_isle::{AstNodeKey, CallKind, FunctionEmitter, LiteralKind, NodeFacts, NodeKind, RuntimeIntrinsicKind};
+use beskid_isle::{
+    AstNodeKey, CallKind, FunctionEmissionError, FunctionEmitter, LiteralKind, LoweringErrorKind, NodeFacts,
+    NodeKind, RuntimeIntrinsicKind,
+};
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::settings;
@@ -9,6 +12,64 @@ use target_lexicon::Triple;
 struct MemorySetFacts {
     nodes: [AstNodeKey; 5],
     pointer_type: cranelift_codegen::ir::Type,
+}
+
+struct CanonicalConstantMemorySetFacts {
+    nodes: [AstNodeKey; 5],
+    pointer_type: cranelift_codegen::ir::Type,
+    canonical_constant: Option<i64>,
+    length_is_path: bool,
+}
+
+struct RawWordStoreFacts {
+    nodes: [AstNodeKey; 4],
+    pointer_type: cranelift_codegen::ir::Type,
+}
+
+impl NodeFacts for RawWordStoreFacts {
+    fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+        if key == self.nodes[0] {
+            Some(NodeKind::ExpressionStatement)
+        } else if key == self.nodes[1] {
+            Some(NodeKind::CallExpression)
+        } else if self.nodes[2..].contains(&key) {
+            Some(NodeKind::LiteralExpression)
+        } else {
+            None
+        }
+    }
+
+    fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+        if key == self.nodes[0] {
+            [self.nodes[1]].get(usize::from(index)).copied()
+        } else {
+            None
+        }
+    }
+
+    fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
+        (key == self.nodes[1]).then_some(CallKind::RuntimeIntrinsic)
+    }
+
+    fn runtime_intrinsic_kind(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
+        (key == self.nodes[1]).then_some(RuntimeIntrinsicKind::RawWordStore)
+    }
+
+    fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        (key == self.nodes[1]).then(|| self.nodes[2..].to_vec())
+    }
+
+    fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+        self.nodes[2..].contains(&key).then_some(LiteralKind::Integer)
+    }
+
+    fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
+        if key == self.nodes[2] { Some(0) } else if key == self.nodes[3] { Some(1) } else { None }
+    }
+
+    fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
+        self.nodes[2..].contains(&key).then_some(self.pointer_type)
+    }
 }
 
 impl NodeFacts for MemorySetFacts {
@@ -57,11 +118,91 @@ impl NodeFacts for MemorySetFacts {
     }
 }
 
+impl NodeFacts for CanonicalConstantMemorySetFacts {
+    fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+        if key == self.nodes[0] {
+            Some(NodeKind::ExpressionStatement)
+        } else if key == self.nodes[1] {
+            Some(NodeKind::CallExpression)
+        } else if key == self.nodes[4] {
+            Some(if self.length_is_path { NodeKind::PathExpression } else { NodeKind::LiteralExpression })
+        } else if self.nodes[2..4].contains(&key) {
+            Some(NodeKind::LiteralExpression)
+        } else {
+            None
+        }
+    }
+
+    fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+        if key == self.nodes[0] {
+            [self.nodes[1]].get(usize::from(index)).copied()
+        } else {
+            None
+        }
+    }
+
+    fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
+        (key == self.nodes[1]).then_some(CallKind::RuntimeIntrinsic)
+    }
+
+    fn runtime_intrinsic_kind(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
+        (key == self.nodes[1]).then_some(RuntimeIntrinsicKind::MemorySet)
+    }
+
+    fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        (key == self.nodes[1]).then(|| self.nodes[2..].to_vec())
+    }
+
+    fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+        (self.nodes[2..4].contains(&key) || (!self.length_is_path && key == self.nodes[4]))
+            .then_some(LiteralKind::Integer)
+    }
+
+    fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
+        if key == self.nodes[2] { Some(0) } else if key == self.nodes[3] { Some(0x1ff) } else if !self.length_is_path && key == self.nodes[4] { Some(3480) } else { None }
+    }
+
+    fn constant_integer(&self, key: AstNodeKey) -> Option<i64> {
+        (key == self.nodes[4]).then_some(self.canonical_constant).flatten()
+    }
+
+    fn canonical_runtime_constant_integer(&self, key: AstNodeKey) -> Option<i64> {
+        (key == self.nodes[4]).then_some(self.canonical_constant).flatten()
+    }
+
+    fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
+        if key == self.nodes[2] { Some(self.pointer_type) } else if key == self.nodes[3] || key == self.nodes[4] { Some(types::I32) } else { None }
+    }
+}
+
 fn facts(pointer_type: cranelift_codegen::ir::Type) -> MemorySetFacts {
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/RuntimeMemorySet.bd"));
     let generation = SyntaxGenerationId(401);
     MemorySetFacts { nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }), pointer_type }
+}
+
+fn canonical_constant_facts(
+    pointer_type: cranelift_codegen::ir::Type,
+    canonical_constant: Option<i64>,
+    length_is_path: bool,
+) -> CanonicalConstantMemorySetFacts {
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/RuntimeMemorySetConstant.bd"));
+    let generation = SyntaxGenerationId(404);
+    CanonicalConstantMemorySetFacts {
+        nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }),
+        pointer_type,
+        canonical_constant,
+        length_is_path,
+    }
+}
+
+fn raw_word_store_facts(pointer_type: cranelift_codegen::ir::Type) -> RawWordStoreFacts {
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/RuntimeRawWordStore.bd"));
+    let generation = SyntaxGenerationId(402);
+    RawWordStoreFacts { nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }), pointer_type }
 }
 
 #[test]
@@ -96,4 +237,60 @@ fn runtime_memory_set_call_statement_reduces_word_byte_without_an_abi_import() {
     assert!(clif.contains("ireduce.i8"), "the ABI word byte must be reduced before the i8 store:\n{clif}");
     assert!(clif.contains("store"), "memory_set must lower to an inline store loop:\n{clif}");
     assert!(!clif.contains("beskid_rt_v5_intrinsic_memory_set"), "memory_set must not import an ABI helper:\n{clif}");
+}
+
+#[test]
+fn runtime_memory_set_materializes_a_canonical_constant_length_at_pointer_width() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let facts = canonical_constant_facts(isa.pointer_type(), Some(3480), true);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let function = emitter
+        .emit_statement(UserFuncName::user(0, 404), emitter.signature([], []), &facts, facts.nodes[0])
+        .expect("canonical module constant length must materialize at the memory_set ABI word width");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i64 3480") || clif.contains("iconst.i32 3480"), "{clif}");
+    assert!(clif.contains("store"), "memory_set must remain an inline store loop:\n{clif}");
+    assert!(!clif.contains("beskid_rt_v5_intrinsic_memory_set"), "memory_set must not import an ABI helper:\n{clif}");
+}
+
+#[test]
+fn runtime_memory_set_does_not_materialize_a_literal_length_as_a_runtime_constant() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    // Even a synthetic canonical-value claim cannot widen a literal. Only a
+    // canonical PathExpression is eligible for the manifest ABI rule.
+    let facts = canonical_constant_facts(isa.pointer_type(), Some(3480), false);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let error = emitter
+        .emit_statement(UserFuncName::user(0, 405), emitter.signature([], []), &facts, facts.nodes[0])
+        .expect_err("literal lengths must not receive canonical runtime ABI materialization");
+    let FunctionEmissionError::Lowering(error) = error else {
+        panic!("literal must fail lowering rather than verification");
+    };
+    assert_eq!(error.key(), facts.nodes[0]);
+    assert_eq!(error.kind(), LoweringErrorKind::MissingRuleOrFact);
+}
+
+#[test]
+fn runtime_raw_word_store_expression_statement_lowers_inline_without_an_abi_import() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let facts = raw_word_store_facts(isa.pointer_type());
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let function = emitter
+        .emit_statement(UserFuncName::user(0, 403), emitter.signature([], []), &facts, facts.nodes[0])
+        .expect("wrapped canonical runtime raw_word_store lowers as a statement");
+    let clif = function.display().to_string();
+    assert!(clif.contains("store"), "raw_word_store must lower to an inline store:\n{clif}");
+    assert!(
+        !clif.contains("beskid_rt_v5_intrinsic_raw_word_store"),
+        "raw_word_store must not import an ABI helper:\n{clif}"
+    );
 }

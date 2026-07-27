@@ -74,6 +74,16 @@ intrinsic "clock_monotonic_nanos" { symbol = "beskid_rt_v5_intrinsic_clock_monot
 intrinsic "clock_realtime_nanos" { symbol = "beskid_rt_v5_intrinsic_clock_realtime_nanos" capability = "runtime.adapter.clock_realtime_nanos" params = [] returns = i64 }
 intrinsic "process_exit" { symbol = "beskid_rt_v5_intrinsic_process_exit" capability = "runtime.adapter.process_exit" params = [{ name = code, type = i32 }] returns = never }
 intrinsic "process_getpid" { symbol = "beskid_rt_v5_intrinsic_process_getpid" capability = "runtime.adapter.process_getpid" params = [] returns = i32 }
+# Target context metadata is materialized by the compiler from the selected
+# `BeskidArchContext*` layout. These are not platform imports and cannot be
+# forged by application source.
+intrinsic "arch_context_size" { symbol = "beskid_rt_v5_intrinsic_arch_context_size" capability = "runtime.bootstrap.arch_context_size" params = [] returns = usize }
+intrinsic "arch_context_alignment" { symbol = "beskid_rt_v5_intrinsic_arch_context_alignment" capability = "runtime.bootstrap.arch_context_alignment" params = [] returns = usize }
+# These intrinsic names resolve to the exact assembly exports below. The
+# canonical scheduler is their only source authority; no Rust/host fallback is
+# admitted by the ABI contract.
+intrinsic "context_init" { symbol = "beskid_arch_v5_context_init" capability = "runtime.bootstrap.context_init" params = [{ name = context, type = pointer }, { name = stack_top, type = pointer }, { name = entry, type = pointer }, { name = argument, type = pointer }, { name = return_trampoline, type = pointer }] returns = void }
+intrinsic "context_switch" { symbol = "beskid_arch_v5_context_switch" capability = "runtime.bootstrap.context_switch" params = [{ name = from, type = pointer }, { name = to, type = pointer }] returns = void }
 
 layout "BeskidAllocationRequest" { size = 24 alignment = 8 fields = [{ name = size, offset = 0, type = usize }, { name = alignment, offset = 8, type = usize }, { name = descriptor, offset = 16, type = pointer }] }
 layout "BeskidHandle" { size = 16 alignment = 8 fields = [{ name = slot, offset = 0, type = u32 }, { name = generation, offset = 4, type = u32 }, { name = owner_cookie, offset = 8, type = u64 }] }
