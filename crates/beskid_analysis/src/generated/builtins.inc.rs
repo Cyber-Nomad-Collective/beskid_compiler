@@ -554,6 +554,18 @@ define_builtins! {
         returns: Unit,
         injected: true,
     },
+    &["guarded_stack_allocate"] => {
+        symbol: "beskid_rt_v5_intrinsic_guarded_stack_allocate",
+        params: [Usize],
+        returns: Ptr,
+        injected: true,
+    },
+    &["guarded_stack_free"] => {
+        symbol: "beskid_rt_v5_intrinsic_guarded_stack_free",
+        params: [Ptr, Usize],
+        returns: Unit,
+        injected: true,
+    },
     &["tls_get"] => {
         symbol: "beskid_rt_v5_intrinsic_tls_get",
         params: [],

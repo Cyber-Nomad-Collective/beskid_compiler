@@ -252,6 +252,8 @@ pub fn emit_host_platform_library_pair(
         "beskid_rt_v5_intrinsic_process_getpid".to_owned(),
         "beskid_rt_v5_intrinsic_system_allocate".to_owned(),
         "beskid_rt_v5_intrinsic_system_free".to_owned(),
+        "beskid_rt_v5_intrinsic_guarded_stack_allocate".to_owned(),
+        "beskid_rt_v5_intrinsic_guarded_stack_free".to_owned(),
         "beskid_rt_v5_intrinsic_tls_get".to_owned(),
         "beskid_rt_v5_intrinsic_tls_set".to_owned(),
     ]);

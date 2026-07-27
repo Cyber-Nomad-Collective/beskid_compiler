@@ -70,6 +70,11 @@ pub enum JoinOutcome {
 
 const FIBER_TABLE_MAX = 16;
 const FIBER_SLOT_SIZE = 128;
+// Guarded stacks are a scheduler-owned native reservation. The manifest-only
+// adapter derives the target's guard granularity; source owns the portable
+// usable-capacity policy and never addresses below the returned usable base.
+const FIBER_STACK_INITIAL_SIZE = 64 * 1024;
+const FIBER_STACK_MAX_SIZE = 8 * 1024 * 1024;
 const SCHEDULER_STATE_OFFSET = 32;
 // The scheduler owns pointers to optional synchronization state.  The pointed
 // objects are separately allocated so a fixed ABI-v5 runtime state never
@@ -89,6 +94,18 @@ pub word ArchContextSize() {
 // Returns the selected target's BeskidArchContext record alignment.
 pub word ArchContextAlignment() {
     return arch_context_alignment();
+}
+
+// Reserves a target-native guarded stack. The returned address is the first
+// writable usable byte; the inaccessible guard immediately precedes it.
+pub pointer GuardedStackAllocate(word usableSize) {
+    return guarded_stack_allocate(usableSize);
+}
+
+// Releases the original reservation without exposing its lower guard.
+pub unit GuardedStackFree(pointer usableBase, word usableSize) {
+    guarded_stack_free(usableBase, usableSize);
+    return;
 }
 
 // The sole assembly boundary for preparing a canonical fiber context. Its symbol,
@@ -207,6 +224,11 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
     if context == NativePointer(0) {
         return 0xFFFF;
     }
+    pointer stack = GuardedStackAllocate(FIBER_STACK_INITIAL_SIZE);
+    if stack == NativePointer(0) {
+        SystemFree(context, ArchContextSize());
+        return 0xFFFF;
+    }
     memory_set(context, 0, ArchContextSize());
     raw_word_store(fib, FiberState::Runnable);
     raw_word_store(pointer_add(fib, 8), entry);
@@ -215,6 +237,7 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
     raw_word_store(pointer_add(fib, 32), parent);
     raw_byte_store(pointer_add(fib, 40), 0); // detached
     raw_byte_store(pointer_add(fib, 41), 0); // cancelled
+    raw_word_store(pointer_add(fib, 96), NativeWord(stack));
     raw_word_store(pointer_add(fib, 104), NativeWord(context));
     raw_word_store(pointer_add(fib, 112), ArchContextSize());
     raw_word_store(table, count + 1);

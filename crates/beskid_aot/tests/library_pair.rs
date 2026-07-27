@@ -58,6 +58,8 @@ fn host_platform_pair_exports_canonical_runtime_and_host_platform_boundary() {
         "beskid_rt_v5_abi_version",
         "beskid_rt_v5_intrinsic_system_allocate",
         "beskid_rt_v5_intrinsic_system_free",
+        "beskid_rt_v5_intrinsic_guarded_stack_allocate",
+        "beskid_rt_v5_intrinsic_guarded_stack_free",
         "beskid_rt_v5_intrinsic_tls_get",
         "beskid_rt_v5_intrinsic_tls_set",
     ];
@@ -104,6 +106,8 @@ fn linux_host_platform_pair_exports_canonical_runtime_and_native_boundary() {
         "beskid_rt_v5_abi_version",
         "beskid_rt_v5_intrinsic_system_allocate",
         "beskid_rt_v5_intrinsic_system_free",
+        "beskid_rt_v5_intrinsic_guarded_stack_allocate",
+        "beskid_rt_v5_intrinsic_guarded_stack_free",
         "beskid_rt_v5_intrinsic_tls_get",
         "beskid_rt_v5_intrinsic_tls_set",
     ];
@@ -145,6 +149,8 @@ fn windows_host_platform_pair_emits_a_coff_import_library_for_the_shared_runtime
     for symbol in [
         "beskid_rt_v5_intrinsic_system_allocate",
         "beskid_rt_v5_intrinsic_system_free",
+        "beskid_rt_v5_intrinsic_guarded_stack_allocate",
+        "beskid_rt_v5_intrinsic_guarded_stack_free",
         "beskid_rt_v5_intrinsic_tls_get",
         "beskid_rt_v5_intrinsic_tls_set",
     ] {

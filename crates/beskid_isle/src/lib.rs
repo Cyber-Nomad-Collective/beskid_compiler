@@ -1148,11 +1148,25 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
     }
 
     fn runtime_intrinsic_arguments(&mut self, key: AstNodeKey) -> Option<Vec<Value>> {
-        self.facts
-            .call_arguments(key)?
-            .into_iter()
-            .map(|argument| generated::constructor_lower_expression(self, argument))
-            .collect()
+        let signature = self.facts.call_signature(key)?;
+        let argument_keys = self.facts.call_arguments(key)?;
+        if argument_keys.len() != signature.params.len() {
+            return None;
+        }
+        let mut arguments = Vec::with_capacity(argument_keys.len());
+        for (argument, parameter) in argument_keys.into_iter().zip(&signature.params) {
+            let value = generated::constructor_lower_expression(self, argument)?;
+            let value = if self.builder.func.dfg.value_type(value) != parameter.value_type
+                && self.facts.node_kind(argument) == Some(NodeKind::PathExpression)
+                && self.facts.canonical_runtime_constant_integer(argument).is_some()
+            {
+                self.materialize_canonical_runtime_intrinsic_constant(argument, parameter.value_type)?
+            } else {
+                value
+            };
+            arguments.push(value);
+        }
+        Some(arguments)
     }
 
     /// Re-materialize a compiler-owned canonical runtime module constant at

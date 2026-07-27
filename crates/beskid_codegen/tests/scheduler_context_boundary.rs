@@ -38,3 +38,28 @@ fn canonical_scheduler_context_boundary_is_manifest_derived() {
     assert!(scheduler.contains("raw_word_store(pointer_add(fib, 104), NativeWord(context));"));
     assert!(scheduler.contains("raw_word_store(pointer_add(fib, 112), ArchContextSize());"));
 }
+
+#[test]
+fn canonical_scheduler_uses_manifest_guarded_stacks_with_bounded_usable_storage() {
+    let manifest = linux_manifest();
+    let scheduler = canonical_runtime_sources()
+        .into_iter()
+        .find(|source| source.logical_path == CANONICAL_SCHEDULER_SOURCE_PATH)
+        .expect("canonical scheduler source")
+        .source;
+
+    assert!(
+        manifest
+            .trusted_runtime_intrinsics
+            .iter()
+            .any(|intrinsic| intrinsic.name == "guarded_stack_allocate"),
+        "the manifest must own guarded stack allocation",
+    );
+    assert!(scheduler.contains("const FIBER_STACK_INITIAL_SIZE = 64 * 1024;"));
+    assert!(scheduler.contains("const FIBER_STACK_MAX_SIZE = 8 * 1024 * 1024;"));
+    assert!(scheduler.contains("pub pointer GuardedStackAllocate(word usableSize)"));
+    assert!(scheduler.contains("return guarded_stack_allocate(usableSize);"));
+    assert!(scheduler.contains("pointer stack = GuardedStackAllocate(FIBER_STACK_INITIAL_SIZE);"));
+    assert!(scheduler.contains("raw_word_store(pointer_add(fib, 96), NativeWord(stack));"));
+    assert!(scheduler.contains("SystemFree(context, ArchContextSize());"));
+}

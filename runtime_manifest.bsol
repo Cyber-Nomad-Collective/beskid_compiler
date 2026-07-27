@@ -67,6 +67,11 @@ intrinsic "memory_copy" { symbol = "beskid_rt_v5_intrinsic_memory_copy" capabili
 intrinsic "memory_compare" { symbol = "beskid_rt_v5_intrinsic_memory_compare" capability = "runtime.bootstrap.memory_compare" params = [{ name = left, type = pointer }, { name = right, type = pointer }, { name = length, type = usize }] returns = i32 }
 intrinsic "system_allocate" { symbol = "beskid_rt_v5_intrinsic_system_allocate" capability = "runtime.bootstrap.system_allocate" params = [{ name = size, type = usize }, { name = alignment, type = usize }] returns = pointer }
 intrinsic "system_free" { symbol = "beskid_rt_v5_intrinsic_system_free" capability = "runtime.bootstrap.system_free" params = [{ name = address, type = pointer }, { name = size, type = usize }] returns = void }
+# Target-native guarded stack reservations are available only to the canonical
+# scheduler. The adapter returns the writable usable base; its lower guard is
+# retained by the native reservation and can be released only as one region.
+intrinsic "guarded_stack_allocate" { symbol = "beskid_rt_v5_intrinsic_guarded_stack_allocate" capability = "runtime.bootstrap.guarded_stack_allocate" params = [{ name = usable_size, type = usize }] returns = pointer }
+intrinsic "guarded_stack_free" { symbol = "beskid_rt_v5_intrinsic_guarded_stack_free" capability = "runtime.bootstrap.guarded_stack_free" params = [{ name = usable_base, type = pointer }, { name = usable_size, type = usize }] returns = void }
 intrinsic "tls_get" { symbol = "beskid_rt_v5_intrinsic_tls_get" capability = "runtime.bootstrap.tls_get" params = [] returns = pointer }
 intrinsic "tls_set" { symbol = "beskid_rt_v5_intrinsic_tls_set" capability = "runtime.bootstrap.tls_set" params = [{ name = value, type = pointer }] returns = void }
 intrinsic "trap" { symbol = "beskid_rt_v5_trap" capability = "runtime.bootstrap.trap" params = [{ name = code, type = u8 }, { name = message, type = pointer }, { name = message_len, type = usize }] returns = never }
@@ -101,12 +106,14 @@ platform_import "_exit" { target = "x86_64-unknown-linux-gnu" library = libc par
 platform_import "clock_gettime" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = clock_id, type = i32 }, { name = value, type = pointer }] returns = i32 }
 platform_import "getpid" { target = "x86_64-unknown-linux-gnu" library = libc params = [] returns = i32 }
 platform_import "mmap" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = address, type = pointer }, { name = length, type = usize }, { name = protection, type = i32 }, { name = flags, type = i32 }, { name = fd, type = i32 }, { name = offset, type = i64 }] returns = pointer }
+platform_import "mprotect" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = address, type = pointer }, { name = length, type = usize }, { name = protection, type = i32 }] returns = i32 }
 platform_import "munmap" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = address, type = pointer }, { name = length, type = usize }] returns = i32 }
 platform_import "write" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }] returns = isize }
 platform_import "_exit" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = status, type = i32 }] returns = never }
 platform_import "clock_gettime" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = clock_id, type = i32 }, { name = value, type = pointer }] returns = i32 }
 platform_import "getpid" { target = "aarch64-apple-darwin" library = libSystem params = [] returns = i32 }
 platform_import "mmap" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = address, type = pointer }, { name = length, type = usize }, { name = protection, type = i32 }, { name = flags, type = i32 }, { name = fd, type = i32 }, { name = offset, type = i64 }] returns = pointer }
+platform_import "mprotect" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = address, type = pointer }, { name = length, type = usize }, { name = protection, type = i32 }] returns = i32 }
 platform_import "munmap" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = address, type = pointer }, { name = length, type = usize }] returns = i32 }
 platform_import "write" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }] returns = isize }
 platform_import "ExitProcess" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = status, type = u32 }] returns = never }

@@ -5,7 +5,8 @@ use beskid_isle::{
     NodeKind, RuntimeIntrinsicKind,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
-use cranelift_codegen::ir::{UserFuncName, types};
+use cranelift_codegen::ir::{AbiParam, Signature, UserFuncName, types};
+use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings;
 use target_lexicon::Triple;
 
@@ -24,6 +25,12 @@ struct CanonicalConstantMemorySetFacts {
 struct RawWordStoreFacts {
     nodes: [AstNodeKey; 4],
     pointer_type: cranelift_codegen::ir::Type,
+}
+
+struct NestedRawWordStoreFacts {
+    nodes: [AstNodeKey; 6],
+    pointer_type: cranelift_codegen::ir::Type,
+    offset_is_path: bool,
 }
 
 impl NodeFacts for RawWordStoreFacts {
@@ -59,6 +66,10 @@ impl NodeFacts for RawWordStoreFacts {
         (key == self.nodes[1]).then(|| self.nodes[2..].to_vec())
     }
 
+    fn call_signature(&self, key: AstNodeKey) -> Option<Signature> {
+        (key == self.nodes[1]).then(|| intrinsic_signature(&[self.pointer_type, self.pointer_type]))
+    }
+
     fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
         self.nodes[2..].contains(&key).then_some(LiteralKind::Integer)
     }
@@ -69,6 +80,88 @@ impl NodeFacts for RawWordStoreFacts {
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
         self.nodes[2..].contains(&key).then_some(self.pointer_type)
+    }
+}
+
+impl NodeFacts for NestedRawWordStoreFacts {
+    fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
+        if key == self.nodes[0] {
+            Some(NodeKind::ExpressionStatement)
+        } else if key == self.nodes[1] || key == self.nodes[2] {
+            Some(NodeKind::CallExpression)
+        } else if key == self.nodes[4] {
+            Some(if self.offset_is_path { NodeKind::PathExpression } else { NodeKind::LiteralExpression })
+        } else if self.nodes[3] == key || self.nodes[5] == key {
+            Some(NodeKind::LiteralExpression)
+        } else {
+            None
+        }
+    }
+
+    fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
+        (key == self.nodes[0] && index == 0).then_some(self.nodes[1])
+    }
+
+    fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
+        (key == self.nodes[1] || key == self.nodes[2]).then_some(CallKind::RuntimeIntrinsic)
+    }
+
+    fn runtime_intrinsic_kind(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
+        if key == self.nodes[1] {
+            Some(RuntimeIntrinsicKind::RawWordStore)
+        } else if key == self.nodes[2] {
+            Some(RuntimeIntrinsicKind::PointerAdd)
+        } else {
+            None
+        }
+    }
+
+    fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        if key == self.nodes[1] {
+            Some(vec![self.nodes[2], self.nodes[5]])
+        } else if key == self.nodes[2] {
+            Some(vec![self.nodes[3], self.nodes[4]])
+        } else {
+            None
+        }
+    }
+
+    fn call_signature(&self, key: AstNodeKey) -> Option<Signature> {
+        (key == self.nodes[1] || key == self.nodes[2])
+            .then(|| intrinsic_signature(&[self.pointer_type, self.pointer_type]))
+    }
+
+    fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
+        (key == self.nodes[3] || key == self.nodes[5] || (key == self.nodes[4] && !self.offset_is_path))
+            .then_some(LiteralKind::Integer)
+    }
+
+    fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
+        if key == self.nodes[3] || key == self.nodes[5] {
+            Some(0)
+        } else if key == self.nodes[4] && !self.offset_is_path {
+            Some(32)
+        } else {
+            None
+        }
+    }
+
+    fn canonical_runtime_constant_integer(&self, key: AstNodeKey) -> Option<i64> {
+        (key == self.nodes[4] && self.offset_is_path).then_some(32)
+    }
+
+    fn constant_integer(&self, key: AstNodeKey) -> Option<i64> {
+        (key == self.nodes[4] && self.offset_is_path).then_some(32)
+    }
+
+    fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
+        if key == self.nodes[4] {
+            Some(types::I32)
+        } else if self.nodes[1..].contains(&key) {
+            Some(self.pointer_type)
+        } else {
+            None
+        }
     }
 }
 
@@ -103,6 +196,10 @@ impl NodeFacts for MemorySetFacts {
 
     fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
         (key == self.nodes[1]).then(|| self.nodes[2..].to_vec())
+    }
+
+    fn call_signature(&self, key: AstNodeKey) -> Option<Signature> {
+        (key == self.nodes[1]).then(|| intrinsic_signature(&[self.pointer_type, types::I8, self.pointer_type]))
     }
 
     fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
@@ -151,6 +248,10 @@ impl NodeFacts for CanonicalConstantMemorySetFacts {
 
     fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
         (key == self.nodes[1]).then(|| self.nodes[2..].to_vec())
+    }
+
+    fn call_signature(&self, key: AstNodeKey) -> Option<Signature> {
+        (key == self.nodes[1]).then(|| intrinsic_signature(&[self.pointer_type, types::I8, self.pointer_type]))
     }
 
     fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
@@ -203,6 +304,26 @@ fn raw_word_store_facts(pointer_type: cranelift_codegen::ir::Type) -> RawWordSto
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/RuntimeRawWordStore.bd"));
     let generation = SyntaxGenerationId(402);
     RawWordStoreFacts { nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }), pointer_type }
+}
+
+fn nested_raw_word_store_facts(
+    pointer_type: cranelift_codegen::ir::Type,
+    offset_is_path: bool,
+) -> NestedRawWordStoreFacts {
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/RuntimeNestedRawWordStore.bd"));
+    let generation = SyntaxGenerationId(406);
+    NestedRawWordStoreFacts {
+        nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }),
+        pointer_type,
+        offset_is_path,
+    }
+}
+
+fn intrinsic_signature(params: &[cranelift_codegen::ir::Type]) -> Signature {
+    let mut signature = Signature::new(CallConv::Fast);
+    signature.params.extend(params.iter().copied().map(AbiParam::new));
+    signature
 }
 
 #[test]
@@ -293,4 +414,39 @@ fn runtime_raw_word_store_expression_statement_lowers_inline_without_an_abi_impo
         !clif.contains("beskid_rt_v5_intrinsic_raw_word_store"),
         "raw_word_store must not import an ABI helper:\n{clif}"
     );
+}
+
+#[test]
+fn runtime_raw_word_store_materializes_a_nested_canonical_offset_at_pointer_width() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let facts = nested_raw_word_store_facts(isa.pointer_type(), true);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let function = emitter
+        .emit_statement(UserFuncName::user(0, 406), emitter.signature([], []), &facts, facts.nodes[0])
+        .expect("nested canonical pointer_add offset must materialize at the intrinsic ABI word width");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i64 32") || clif.contains("iconst.i32 32"), "{clif}");
+    assert!(clif.contains("iadd"), "pointer_add must remain inline:\n{clif}");
+    assert!(clif.contains("store"), "raw_word_store must remain inline:\n{clif}");
+}
+
+#[test]
+fn runtime_raw_word_store_does_not_materialize_a_nested_literal_offset() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let facts = nested_raw_word_store_facts(isa.pointer_type(), false);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let error = emitter
+        .emit_statement(UserFuncName::user(0, 407), emitter.signature([], []), &facts, facts.nodes[0])
+        .expect_err("literal offsets must not receive canonical runtime ABI materialization");
+    let FunctionEmissionError::Lowering(error) = error else {
+        panic!("literal offset must fail lowering rather than verification");
+    };
+    assert_eq!(error.key(), facts.nodes[0]);
+    assert_eq!(error.kind(), LoweringErrorKind::MissingRuleOrFact);
 }
