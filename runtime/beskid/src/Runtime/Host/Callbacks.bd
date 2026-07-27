@@ -1,38 +1,205 @@
 // Canonical Beskid callback registration.
+//
+// The registry belongs to the active ABI-v5 runtime through its manifest
+// `callback_registry` field.  It is never embedded in the runtime-state record:
+// each successful registration builds a complete, zeroed replacement and
+// publishes that pointer only after every supplied entry has been validated.
 
 const CallbackTableMax = 32;
+const CALLBACK_REGISTRY_STATE_OFFSET = 24;
+const CALLBACK_REGISTRY_SIZE = 1056;
+const CALLBACK_REGISTRY_OWNER_OFFSET = 0;
+const CALLBACK_REGISTRY_CALLBACK_COUNT_OFFSET = 8;
+const CALLBACK_REGISTRY_HANDLER_COUNT_OFFSET = 16;
+const CALLBACK_REGISTRY_CALLBACK_ENTRIES_OFFSET = 32;
+const CALLBACK_REGISTRY_HANDLER_ENTRIES_OFFSET = 544;
+const CALLBACK_REGISTRY_ENTRY_SIZE = 16;
+const TLS_ATTACH_DEPTH_OFFSET = 24;
 
-pub pointer CallbackTable() {
+// Returns the manifest-owned callback_registry field of the active runtime.
+// The named offset is the generated ABI-v5 field offset, not spare storage
+// beyond the runtime-state record.
+pub pointer CallbackRegistrySlot() {
     pointer state = RuntimeState();
     if state == NativePointer(0) { return NativePointer(0); }
-    return pointer_add(state, 33000);
+    return pointer_add(state, CALLBACK_REGISTRY_STATE_OFFSET);
+}
+
+pub pointer CallbackRegistry() {
+    pointer slot = CallbackRegistrySlot();
+    if slot == NativePointer(0) { return NativePointer(0); }
+    return NativePointer(raw_word_load(slot));
+}
+
+// An FFI registration row is `{ identity, target }`.  The validation pass is
+// intentionally separate from allocation and publication so invalid input
+// cannot alter the prior runtime-owned snapshot.
+pub word CallbackRegistrationValid(pointer entries, word count) {
+    if entries == NativePointer(0) || count == 0 || count > CallbackTableMax { return 0; }
+    mut word index = 0;
+    while index < count {
+        pointer entry = pointer_add(entries, index * CALLBACK_REGISTRY_ENTRY_SIZE);
+        if raw_word_load(entry) == 0 || raw_word_load(pointer_add(entry, 8)) == 0 { return 0; }
+        index = index + 1;
+    }
+    return 1;
+}
+
+pub pointer CallbackEntries(pointer registry, word kind) {
+    if kind == 0 {
+        return pointer_add(registry, CALLBACK_REGISTRY_CALLBACK_ENTRIES_OFFSET);
+    }
+    return pointer_add(registry, CALLBACK_REGISTRY_HANDLER_ENTRIES_OFFSET);
+}
+
+pub pointer CallbackEntryCountSlot(pointer registry, word kind) {
+    if kind == 0 {
+        return pointer_add(registry, CALLBACK_REGISTRY_CALLBACK_COUNT_OFFSET);
+    }
+    return pointer_add(registry, CALLBACK_REGISTRY_HANDLER_COUNT_OFFSET);
+}
+
+// Copies one already-published category into a new registry.  Registry rows
+// have already been de-duplicated, so a direct ordered copy preserves its
+// deterministic replacement result.
+pub unit CallbackCopyEntries(pointer destination, pointer source, word kind) {
+    if source == NativePointer(0) { return; }
+    pointer sourceCountSlot = CallbackEntryCountSlot(source, kind);
+    word count = raw_word_load(sourceCountSlot);
+    pointer sourceEntries = CallbackEntries(source, kind);
+    pointer destinationEntries = CallbackEntries(destination, kind);
+    mut word index = 0;
+    while index < count {
+        pointer from = pointer_add(sourceEntries, index * CALLBACK_REGISTRY_ENTRY_SIZE);
+        pointer to = pointer_add(destinationEntries, index * CALLBACK_REGISTRY_ENTRY_SIZE);
+        raw_word_store(to, raw_word_load(from));
+        raw_word_store(pointer_add(to, 8), raw_word_load(pointer_add(from, 8)));
+        index = index + 1;
+    }
+    raw_word_store(CallbackEntryCountSlot(destination, kind), count);
+    return;
+}
+
+// Writes one category with stable first-insertion order.  A repeated identity
+// updates that slot in place, so the last supplied value wins without creating
+// multiple competing callback or handler targets.
+pub unit CallbackInstallEntries(pointer registry, pointer entries, word count, word kind) {
+    pointer countSlot = CallbackEntryCountSlot(registry, kind);
+    mut word installed = raw_word_load(countSlot);
+    pointer destinationEntries = CallbackEntries(registry, kind);
+    mut word sourceIndex = 0;
+    while sourceIndex < count {
+        pointer source = pointer_add(entries, sourceIndex * CALLBACK_REGISTRY_ENTRY_SIZE);
+        word identity = raw_word_load(source);
+        word target = raw_word_load(pointer_add(source, 8));
+        mut word destinationIndex = 0;
+        mut word replaced = 0;
+        while destinationIndex < installed {
+            pointer destination = pointer_add(destinationEntries, destinationIndex * CALLBACK_REGISTRY_ENTRY_SIZE);
+            if raw_word_load(destination) == identity {
+                raw_word_store(pointer_add(destination, 8), target);
+                replaced = 1;
+            }
+            destinationIndex = destinationIndex + 1;
+        }
+        if replaced == 0 {
+            pointer destination = pointer_add(destinationEntries, installed * CALLBACK_REGISTRY_ENTRY_SIZE);
+            raw_word_store(destination, identity);
+            raw_word_store(pointer_add(destination, 8), target);
+            installed = installed + 1;
+        }
+        sourceIndex = sourceIndex + 1;
+    }
+    raw_word_store(countSlot, installed);
+    return;
+}
+
+// Validation precedes allocation; allocation and copying complete before this
+// function returns a candidate.  The caller performs the sole publication
+// store, preserving the previous registry on every failure path.
+pub pointer CallbackRegistryReplacement(pointer entries, word count, word kind) {
+    if CallbackRegistrationValid(entries, count) == 0 { return NativePointer(0); }
+    pointer state = RuntimeState();
+    if state == NativePointer(0) { return NativePointer(0); }
+    pointer previous = CallbackRegistry();
+    pointer replacement = SystemAllocate(CALLBACK_REGISTRY_SIZE, 8);
+    if replacement == NativePointer(0) { return NativePointer(0); }
+    memory_set(replacement, 0, CALLBACK_REGISTRY_SIZE);
+    raw_word_store(pointer_add(replacement, CALLBACK_REGISTRY_OWNER_OFFSET), NativeWord(state));
+    CallbackCopyEntries(replacement, previous, 0);
+    CallbackCopyEntries(replacement, previous, 1);
+    CallbackInstallEntries(replacement, entries, count, kind);
+    return replacement;
+}
+
+pub pointer CallbackLookup(pointer identity) {
+    pointer registry = CallbackRegistry();
+    pointer state = RuntimeState();
+    if registry == NativePointer(0) || state == NativePointer(0) { return NativePointer(0); }
+    if raw_word_load(pointer_add(registry, CALLBACK_REGISTRY_OWNER_OFFSET)) != NativeWord(state) { return NativePointer(0); }
+    word count = raw_word_load(pointer_add(registry, CALLBACK_REGISTRY_CALLBACK_COUNT_OFFSET));
+    pointer entries = CallbackEntries(registry, 0);
+    mut word index = 0;
+    while index < count {
+        pointer entry = pointer_add(entries, index * CALLBACK_REGISTRY_ENTRY_SIZE);
+        if raw_word_load(entry) == NativeWord(identity) {
+            return NativePointer(raw_word_load(pointer_add(entry, 8)));
+        }
+        index = index + 1;
+    }
+    return NativePointer(0);
+}
+
+// A nested callback entry increments the manifest-owned TLS attachment depth
+// and restores it on all local rejection/success paths.  Dynamic foreign
+// function invocation is intentionally not fabricated here: only a resolved
+// registry target is published for the native trampoline boundary.
+pub pointer CallbackEnterScope() {
+    pointer tls = CurrentThreadState();
+    pointer state = RuntimeState();
+    if tls == NativePointer(0) || state == NativePointer(0) { return NativePointer(0); }
+    if NativePointer(raw_word_load(tls)) != state { return NativePointer(0); }
+    pointer depth = pointer_add(tls, TLS_ATTACH_DEPTH_OFFSET);
+    raw_word_store(depth, raw_word_load(depth) + 1);
+    return tls;
+}
+
+pub unit CallbackLeaveScope(pointer tls) {
+    if tls == NativePointer(0) { return; }
+    pointer depth = pointer_add(tls, TLS_ATTACH_DEPTH_OFFSET);
+    word current = raw_word_load(depth);
+    if current > 0 { raw_word_store(depth, current - 1); }
+    return;
 }
 
 [Export(Abi:"C", Symbol:"beskid_register_callbacks")]
 pub unit BeskidRegisterCallbacks(pointer entries, word count) {
-    if entries == NativePointer(0) || count == 0 || count > CallbackTableMax { return; }
-    pointer table = CallbackTable();
-    if table == NativePointer(0) { return; }
-    mut word i = 0;
-    while i < count {
-        pointer src = pointer_add(entries, i * 16);
-        pointer dst = pointer_add(table, 8 + i * 16);
-        raw_word_store(dst, raw_word_load(src));
-        raw_word_store(pointer_add(dst, 8), raw_word_load(pointer_add(src, 8)));
-        i = i + 1;
-    }
-    raw_word_store(table, count);
+    pointer replacement = CallbackRegistryReplacement(entries, count, 0);
+    if replacement == NativePointer(0) { return; }
+    pointer slot = CallbackRegistrySlot();
+    if slot == NativePointer(0) { return; }
+    raw_word_store(slot, NativeWord(replacement));
     return;
 }
 
 [Export(Abi:"C", Symbol:"install_callback_trampoline")]
 pub unit InstallCallbackTrampoline(pointer target, pointer handler) {
     if target == NativePointer(0) || handler == NativePointer(0) { return; }
-    raw_word_store(target, NativeWord(handler));
+    pointer scope = CallbackEnterScope();
+    if scope == NativePointer(0) { return; }
+    pointer selected = CallbackLookup(handler);
+    if selected == NativePointer(0) { CallbackLeaveScope(scope); return; }
+    raw_word_store(target, NativeWord(selected));
+    CallbackLeaveScope(scope);
     return;
 }
 
 [Export(Abi:"C", Symbol:"beskid_register_handlers")]
-pub unit BeskidRegisterHandlers(pointer table, word count) {
+pub unit BeskidRegisterHandlers(pointer entries, word count) {
+    pointer replacement = CallbackRegistryReplacement(entries, count, 1);
+    if replacement == NativePointer(0) { return; }
+    pointer slot = CallbackRegistrySlot();
+    if slot == NativePointer(0) { return; }
+    raw_word_store(slot, NativeWord(replacement));
     return;
 }

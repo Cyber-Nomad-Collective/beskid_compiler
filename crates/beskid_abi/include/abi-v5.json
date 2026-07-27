@@ -290,6 +290,34 @@
       "result": "void"
     },
     {
+      "name": "guarded_stack_allocate",
+      "symbol": "beskid_rt_v5_intrinsic_guarded_stack_allocate",
+      "capability": "runtime.bootstrap.guarded_stack_allocate",
+      "params": [
+        {
+          "name": "usable_size",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "name": "guarded_stack_free",
+      "symbol": "beskid_rt_v5_intrinsic_guarded_stack_free",
+      "capability": "runtime.bootstrap.guarded_stack_free",
+      "params": [
+        {
+          "name": "usable_base",
+          "type": "pointer"
+        },
+        {
+          "name": "usable_size",
+          "type": "usize"
+        }
+      ],
+      "result": "void"
+    },
+    {
       "name": "memory_compare",
       "symbol": "beskid_rt_v5_intrinsic_memory_compare",
       "capability": "runtime.bootstrap.memory_compare",
@@ -664,7 +692,7 @@
           "type": "pointer"
         },
         {
-          "name": "handles",
+          "name": "callback_registry",
           "offset": 24,
           "type": "pointer"
         },
@@ -1100,6 +1128,26 @@
       "result": "pointer"
     },
     {
+      "symbol": "mprotect",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "protection",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "munmap",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -1323,6 +1371,26 @@
         }
       ],
       "result": "pointer"
+    },
+    {
+      "symbol": "mprotect",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "address",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        },
+        {
+          "name": "protection",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "munmap",

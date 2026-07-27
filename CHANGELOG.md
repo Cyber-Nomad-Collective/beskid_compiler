@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arithmetic into a scheduler-owned allocation. Hub registrations now support
   256 stable entries, replace an existing index in place, preserve ordering on
   removal, and keep the circular receive cursor valid.
+
+- Replace the canonical callback literal runtime-state table with a
+  manifest-declared, per-runtime registry. Callback and handler registration
+  now validate before publishing a complete replacement snapshot, resolve
+  duplicates deterministically, and reject unregistered trampoline targets.
 - Preserve canonical runtime module-constant layout values at their declared
   direct-call ABI width under compiler-minted authority, while rejecting literal
   coercion and untrusted source. Runtime lowering now reports the first failed
