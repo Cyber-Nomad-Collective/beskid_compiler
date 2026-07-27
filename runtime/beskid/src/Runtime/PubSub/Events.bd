@@ -1,48 +1,74 @@
 // Canonical Beskid event system.
 //
-// Events carry a fixed-capacity handler list. Each handler is a codegen-emitted
-// trampoline pointer. subscribe adds a handler, unsubscribe_first removes the first
-// match, get_handler retrieves by index, len returns count.
-
-const EventMax = 16;
-const EventSlotSize = 144;
-
-pub pointer EventTable() {
-    pointer state = RuntimeState();
-    if state == NativePointer(0) { return NativePointer(0); }
-    return pointer_add(state, 28000);
-}
+// An event field stores one pointer-sized slot in its owning object. That slot
+// is the event identity: it is null before the first subscription and retains
+// the separately allocated subscription state afterwards. No runtime-global
+// table participates in field event ownership.
+//
+// Event state layout:
+//   offset 0: resolved field capacity (word)
+//   offset 8: subscribed handler count (word)
+//   offset 16: ordered handler pointers (word[capacity])
 
 [Export(Abi:"C", Symbol:"event_get_handler")]
 pub pointer EventGetHandler(pointer event, u32 index) {
     if event == NativePointer(0) { return NativePointer(0); }
-    if word(index) >= raw_word_load(pointer_add(event, 128)) { return NativePointer(0); }
-    return NativePointer(raw_word_load(pointer_add(event, 8 + word(index) * 8)));
+    word count = raw_word_load(pointer_add(event, 8));
+    if word(index) >= count { return NativePointer(0); }
+    return NativePointer(raw_word_load(pointer_add(event, 16 + word(index) * 8)));
 }
 
 [Export(Abi:"C", Symbol:"event_len")]
-pub u32 EventLen(pointer event) {
+pub word EventLen(pointer event) {
     if event == NativePointer(0) { return 0; }
-    return u32(raw_word_load(pointer_add(event, 128)));
+    return raw_word_load(pointer_add(event, 8));
 }
 
+// Lazily allocate state through the field slot and append one handler. The
+// resolved field capacity is written once into that allocation and governs all
+// later subscriptions for the same field. A full field reports its existing
+// length and never overwrites a prior handler.
 [Export(Abi:"C", Symbol:"event_subscribe")]
-pub unit EventSubscribe(pointer event, pointer handler) {
-    if event == NativePointer(0) || handler == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(event, 128));
-    if count >= EventMax { return; }
-    raw_word_store(pointer_add(event, 8 + count * 8), NativeWord(handler));
-    raw_word_store(pointer_add(event, 128), count + 1);
-    raw_word_store(pointer_add(event, 136), word(count + 1));
-    return;
+pub word EventSubscribe(pointer eventSlot, pointer handler, word capacity) {
+    if eventSlot == NativePointer(0) || handler == NativePointer(0) || capacity == 0 { return 0; }
+    pointer event = NativePointer(raw_word_load(eventSlot));
+    if event == NativePointer(0) {
+        event = SystemAllocate(16 + capacity * 8, 8);
+        if event == NativePointer(0) { return 0; }
+        memory_set(event, 0, 16 + capacity * 8);
+        raw_word_store(event, capacity);
+        raw_word_store(eventSlot, NativeWord(event));
+    }
+    word count = raw_word_load(pointer_add(event, 8));
+    word resolvedCapacity = raw_word_load(event);
+    if count >= resolvedCapacity { return count; }
+    raw_word_store(pointer_add(event, 16 + count * 8), NativeWord(handler));
+    raw_word_store(pointer_add(event, 8), count + 1);
+    return count + 1;
 }
 
+// Remove the first matching handler from a field-owned state, compacting the
+// tail so indexed lookup preserves subscription order. The field slot itself
+// remains the allocation owner even after its final handler is removed.
 [Export(Abi:"C", Symbol:"event_unsubscribe_first")]
-pub unit EventUnsubscribeFirst(pointer event) {
-    if event == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(event, 128));
-    if count == 0 { return; }
-    raw_word_store(pointer_add(event, 128), count - 1);
-    raw_word_store(pointer_add(event, 8 + (count - 1) * 8), 0);
-    return;
+pub word EventUnsubscribeFirst(pointer eventSlot, pointer handler) {
+    if eventSlot == NativePointer(0) || handler == NativePointer(0) { return 0; }
+    pointer event = NativePointer(raw_word_load(eventSlot));
+    if event == NativePointer(0) { return 0; }
+    word count = raw_word_load(pointer_add(event, 8));
+    mut word index = 0;
+    while index < count {
+        if raw_word_load(pointer_add(event, 16 + index * 8)) == NativeWord(handler) {
+            while index + 1 < count {
+                word next = raw_word_load(pointer_add(event, 16 + (index + 1) * 8));
+                raw_word_store(pointer_add(event, 16 + index * 8), next);
+                index = index + 1;
+            }
+            raw_word_store(pointer_add(event, 16 + (count - 1) * 8), 0);
+            raw_word_store(pointer_add(event, 8), count - 1);
+            return 1;
+        }
+        index = index + 1;
+    }
+    return 0;
 }

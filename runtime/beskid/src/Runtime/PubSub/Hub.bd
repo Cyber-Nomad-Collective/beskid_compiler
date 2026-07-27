@@ -5,19 +5,22 @@
 // Built on top of the channel subsystem.
 
 const HUB_TABLE_MAX = 16;
-const HUB_ENTRY_MAX = 64;
-const HUB_SLOT_SIZE = 544;
+// Each hub retains up to 256 stable registrations. Re-registering an index
+// replaces its channel in-place; removal compacts in-order so cursor fairness
+// is deterministic and cannot be perturbed by a swap-remove.
+const HUB_ENTRY_MAX = 256;
+const HUB_SLOT_SIZE = 4112;
+const HUB_TABLE_SIZE = 65800;
 
 // Hub-specific ABI status codes (gapped; function-constant pattern from Concurrency.Status).
 pub i64 HubEmpty() { return 4; }
 pub i64 HubLimit() { return 5; }
 pub i64 HubNotFound() { return 6; }
 
-// Returns the hub table pointer (offset 19072 in runtime state).
+// Returns the separately allocated hub table owned by the active scheduler.
+// Hub storage must never be derived from an undeclared RuntimeState offset.
 pub pointer HubTable() {
-    pointer state = RuntimeState();
-    if state == NativePointer(0) { return NativePointer(0); }
-    return pointer_add(state, 19072);
+    return SchedulerHubTable();
 }
 
 pub pointer HubSlot(word index) {
@@ -26,7 +29,7 @@ pub pointer HubSlot(word index) {
     return pointer_add(table, 8 + index * HUB_SLOT_SIZE);
 }
 
-// Hub layout (544 bytes):
+// Hub layout (4112 bytes):
 //   offset   0: entry_count (word)
 //   offset   8: cursor (word) — round-robin position
 //   offset  16: entries[HUB_ENTRY_MAX] — each is { index: i64 (8), channel: i64 (8) }
@@ -49,6 +52,17 @@ pub i64 HubRegister(i64 hubId, i64 index, i64 channelId) {
     if hi >= HUB_TABLE_MAX { return HubNotFound(); }
     pointer hub = HubSlot(hi);
     word entryCount = raw_word_load(hub);
+    // An index identifies one registration.  Replacement is stable: it keeps
+    // the existing position and therefore preserves the circular poll order.
+    mut word existing = 0;
+    while existing < entryCount {
+        pointer existingEntry = pointer_add(hub, 16 + existing * 16);
+        if i64(raw_word_load(existingEntry)) == index {
+            raw_word_store(pointer_add(existingEntry, 8), word(channelId));
+            return ChannelStatus::Ok;
+        }
+        existing = existing + 1;
+    }
     if entryCount >= HUB_ENTRY_MAX { return HubLimit(); }
     pointer entry = pointer_add(hub, 16 + entryCount * 16);
     raw_word_store(entry, word(index));
@@ -68,13 +82,32 @@ pub i64 HubUnregister(i64 hubId, i64 index) {
         pointer entry = pointer_add(hub, 16 + i * 16);
         i64 entryIndex = i64(raw_word_load(entry));
         if entryIndex == index {
-            // Swap-remove.
-            word lastEntry = pointer_add(hub, 16 + (entryCount - 1) * 16);
-            raw_word_store(entry, raw_word_load(lastEntry));
-            raw_word_store(pointer_add(entry, 8), raw_word_load(pointer_add(lastEntry, 8)));
+            // Shift entries left to retain registration order.  Swap-removal
+            // would make round-robin delivery depend on the removed position.
+            mut word move = i;
+            while move + 1 < entryCount {
+                pointer nextEntry = pointer_add(hub, 16 + (move + 1) * 16);
+                pointer currentEntry = pointer_add(hub, 16 + move * 16);
+                raw_word_store(currentEntry, raw_word_load(nextEntry));
+                raw_word_store(pointer_add(currentEntry, 8), raw_word_load(pointer_add(nextEntry, 8)));
+                move = move + 1;
+            }
+            pointer lastEntry = pointer_add(hub, 16 + (entryCount - 1) * 16);
             raw_word_store(lastEntry, 0);
             raw_word_store(pointer_add(lastEntry, 8), 0);
-            raw_word_store(hub, entryCount - 1);
+            word remaining = entryCount - 1;
+            raw_word_store(hub, remaining);
+            if remaining == 0 {
+                raw_word_store(pointer_add(hub, 8), 0);
+            } else {
+                word cursor = raw_word_load(pointer_add(hub, 8));
+                // The next slot after a deletion is the deletion position,
+                // unless the cursor was earlier in the retained sequence.
+                if cursor > i {
+                    cursor = cursor - 1;
+                }
+                raw_word_store(pointer_add(hub, 8), cursor % remaining);
+            }
             return ChannelStatus::Ok;
         }
         i = i + 1;

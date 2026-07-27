@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+
+- Replace canonical event runtime-state table addressing with lazily allocated,
+  field-slot-owned subscription state. Resolved capacities, ordered lookup, and
+  stable first-match removal now share the canonical Beskid ABI surface.
+- Move canonical PubSub Hub storage out of undeclared `RuntimeState` offset
+  arithmetic into a scheduler-owned allocation. Hub registrations now support
+  256 stable entries, replace an existing index in place, preserve ordering on
+  removal, and keep the circular receive cursor valid.
 - Preserve canonical runtime module-constant layout values at their declared
   direct-call ABI width under compiler-minted authority, while rejecting literal
   coercion and untrusted source. Runtime lowering now reports the first failed
