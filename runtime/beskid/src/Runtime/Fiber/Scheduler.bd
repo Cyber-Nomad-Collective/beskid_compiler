@@ -73,8 +73,8 @@ const FIBER_SLOT_SIZE = 128;
 // Guarded stacks are a scheduler-owned native reservation. The manifest-only
 // adapter derives the target's guard granularity; source owns the portable
 // usable-capacity policy and never addresses below the returned usable base.
-const FIBER_STACK_INITIAL_SIZE = 64 * 1024;
-const FIBER_STACK_MAX_SIZE = 8 * 1024 * 1024;
+const FIBER_STACK_INITIAL_SIZE = 65536;
+const FIBER_STACK_MAX_SIZE = 8388608;
 const SCHEDULER_STATE_OFFSET = 32;
 // The scheduler owns pointers to optional synchronization state.  The pointed
 // objects are separately allocated so a fixed ABI-v5 runtime state never
