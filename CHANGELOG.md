@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve canonical runtime module-constant layout values at their declared
+  direct-call ABI width under compiler-minted authority, while rejecting literal
+  coercion and untrusted source. Runtime lowering now reports the first failed
+  nested AST statement or expression instead of collapsing errors to its block.
+
 - Move canonical WaitGroup state out of undeclared `RuntimeState` offset
   arithmetic into a separately allocated scheduler-owned object. Its waiter
   registry now matches the current sixteen-fiber scheduler bound and queues

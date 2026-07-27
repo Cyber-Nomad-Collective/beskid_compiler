@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
-use beskid_abi::abi_v5::TargetMetadata;
+use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_analysis::{
     projects::{
         AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
@@ -143,6 +143,37 @@ fn parsed_project_reaches_verified_isle_without_a_legacy_codegen_entrypoint() {
     ";
     let unsupported = parse_production_units(project.path(), &[("Unsupported.bd", "Main", unsupported_source)]);
     assert_unsupported_closed_failure(unsupported, target, isa.as_ref(), &["Unsupported.bd", "Block@"]);
+}
+
+#[test]
+fn parsed_direct_pointer_guard_with_unit_early_return_emits_verified_clif() {
+    // Keep this shape aligned with the canonical scheduler's initialization guard:
+    // `mut pointer table = SchedTable(); if table != NativePointer(0) { return; }`.
+    // The recursive conversion helper is never executed; it supplies the exact direct-call
+    // ABI shape so this test exercises statement lowering and imports rather than a host shim.
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "
+        pointer NativePointer(word value) { return NativePointer(value); }
+        pointer SchedTable() { return NativePointer(0); }
+        unit Main() {
+            mut pointer table = SchedTable();
+            if table != NativePointer(0) { return; }
+            return;
+        }
+    ";
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    let main = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Main#syntax_"))
+        .expect("Main artifact");
+    let clif = main.function.display().to_string();
+    assert!(clif.contains("call"), "direct SchedTable/NativePointer calls must lower: {clif}");
+    assert!(clif.contains("brif"), "the no-else pointer guard must branch in CLIF: {clif}");
 }
 
 #[test]
@@ -502,12 +533,27 @@ fn parsed_project_capturing_lambda_keeps_generation_safe_capture_facts_and_fails
 #[test]
 fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif() {
     let (target, isa) = x86_64_target_and_isa();
+    let expected_exports = AbiManifestV5::canonical_runtime(target.clone())
+        .exports
+        .into_iter()
+        .map(|entry| entry.symbol)
+        .collect::<BTreeSet<_>>();
     let artifact = with_db(|db| lower_canonical_runtime_prepared_syntax(db, target, isa.as_ref()))
         .expect("canonical runtime lowers through TypedProgram → CodegenInput → ISLE");
     assert!(!artifact.functions.is_empty(), "canonical Bootstrap must emit at least one verified function");
     assert!(
         artifact.exports.iter().any(|export| export.exported_symbol == "beskid_rt_v5_fiber_spawn_with_cancel_slot"),
         "canonical runtime lowering must retain the Scheduler-owned fiber spawn ABI export",
+    );
+    let actual_exports = artifact
+        .exports
+        .iter()
+        .map(|export| export.exported_symbol.clone())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(actual_exports, expected_exports, "canonical lowering publishes exactly the ABI manifest surface");
+    assert!(
+        !actual_exports.contains("gc_alloc"),
+        "generic runtime helper exports must not become ABI roots without a manifest declaration",
     );
     for function in &artifact.functions {
         verify_function(&function.function, isa.flags())

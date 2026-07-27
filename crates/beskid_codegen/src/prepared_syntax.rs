@@ -1,6 +1,6 @@
 //! Host-neutral prepared-syntax entrypoint lowering.
 
-use std::sync::Arc;
+use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use anyhow::Result;
 use beskid_abi::{
@@ -82,8 +82,9 @@ pub fn lower_canonical_runtime_prepared_syntax(
     let typed = build_canonical_runtime_typed_program(db, project, generation, assembly.clone(), capability)
         .map_err(|error| anyhow::anyhow!("canonical runtime syntax preparation failed: {error}"))?;
     // Runtime ABI exports may be implemented by their owning canonical module rather than
-    // Bootstrap. Lower every embedded runtime unit so direct calls remain unit-local and the
-    // resulting artifact retains the complete manifest-facing export surface.
+    // Bootstrap. Select every manifest-declared export across the embedded runtime units, then
+    // follow only direct calls from those entries. Lowering every function declaration would try
+    // to instantiate generic helpers that have no call-derived ABI specialization.
     let roots = assembly
         .units()
         .iter()
@@ -95,18 +96,45 @@ pub fn lower_canonical_runtime_prepared_syntax(
         .collect::<Vec<_>>();
     let input = CodegenInput::new(db, typed, Arc::from(roots), target, manifest)
         .map_err(|error| anyhow::anyhow!("canonical runtime CodegenInput failed: {error}"))?;
-    let mut items = Vec::new();
-    for key in input
-        .roots()
-        .iter()
-        .copied()
-        .flat_map(|root| function_definitions(input.database(), root))
-    {
+    let manifest_exports = input.abi_manifest().exports.iter().map(|entry| entry.symbol.as_str()).collect::<HashSet<_>>();
+    let mut exported_items = HashMap::new();
+    for key in input.roots().iter().copied().flat_map(|root| function_definitions(input.database(), root)) {
         let export = item_export_symbol(input.database(), key)
             .map_err(|error| anyhow::anyhow!("canonical runtime export validation failed: {error}"))?;
-        let symbol =
-            export.map(|symbol| symbol.0.to_string()).or_else(|| syntax_item_symbol(input.database(), &input, key));
-        if let Some(symbol) = symbol {
+        if let Some(export) = export
+            && manifest_exports.contains(&*export.0)
+        {
+            if exported_items.insert(export.0.to_string(), key).is_some() {
+                anyhow::bail!("canonical runtime declares duplicate ABI export `{}`", export.0);
+            }
+        }
+    }
+    let mut items = Vec::new();
+    let mut selected = HashSet::new();
+    for export in &input.abi_manifest().exports {
+        let entry = exported_items
+            .get(&export.symbol)
+            .copied()
+            .ok_or_else(|| anyhow::anyhow!("canonical runtime has no explicit source export for `{}`", export.symbol))?;
+        let program = input
+            .roots()
+            .iter()
+            .copied()
+            .find(|root| root.unit == entry.unit)
+            .ok_or_else(|| anyhow::anyhow!("canonical runtime export `{}` has no source root", export.symbol))?;
+        let reachable = reachable_items(input.database(), program, entry)
+            .map_err(|error| anyhow::anyhow!("canonical runtime reachability failed for `{}`: {error}", export.symbol))?
+            .ok_or_else(|| anyhow::anyhow!("incomplete direct-call facts for canonical runtime export `{}`", export.symbol))?;
+        for key in reachable.iter().copied() {
+            if !selected.insert(key) {
+                continue;
+            }
+            let symbol = item_export_symbol(input.database(), key)
+                .map_err(|error| anyhow::anyhow!("canonical runtime export validation failed: {error}"))?
+                .filter(|symbol| manifest_exports.contains(&*symbol.0))
+                .map(|symbol| symbol.0.to_string())
+                .or_else(|| syntax_item_symbol(input.database(), &input, key))
+                .ok_or_else(|| anyhow::anyhow!("canonical runtime reachable item has no syntax symbol"))?;
             items.push(SyntaxModuleItem { key, symbol });
         }
     }
@@ -115,7 +143,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
     }
     let mut artifact = lower_syntax_program(&input, isa, &items)
         .map_err(|error| anyhow::anyhow!("canonical runtime ISLE lowering failed: {error}"))?;
-    artifact.exports = syntax_export_entries(input.database(), &items)?;
+    artifact.exports = syntax_export_entries_matching(input.database(), &items, &manifest_exports)?;
     Ok(artifact)
 }
 
@@ -260,6 +288,14 @@ pub fn lower_prepared_syntax_module(
 /// every production syntax module artifact carry the same interop surface as canonical runtime
 /// lowering without reconstructing retired HIR state.
 fn syntax_export_entries(db: &dyn beskid_queries::Db, items: &[SyntaxModuleItem]) -> Result<Vec<ExportEntry>> {
+    syntax_export_entries_matching(db, items, &HashSet::new())
+}
+
+fn syntax_export_entries_matching(
+    db: &dyn beskid_queries::Db,
+    items: &[SyntaxModuleItem],
+    allowed_exports: &HashSet<&str>,
+) -> Result<Vec<ExportEntry>> {
     let mut exports = Vec::new();
     for item in items {
         let export = item_export_symbol(db, item.key)
@@ -267,6 +303,9 @@ fn syntax_export_entries(db: &dyn beskid_queries::Db, items: &[SyntaxModuleItem]
         let Some(export) = export else {
             continue;
         };
+        if !allowed_exports.is_empty() && !allowed_exports.contains(&*export.0) {
+            continue;
+        }
         let beskid_name = item_name(db, item.key)
             .map_err(|error| anyhow::anyhow!("syntax export name lookup failed: {error}"))?
             .ok_or_else(|| anyhow::anyhow!("syntax export has no declared function name"))?;

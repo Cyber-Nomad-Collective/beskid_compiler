@@ -9,6 +9,8 @@ use beskid_analysis::syntax::SyntaxGenerationId;
 
 use crate::{BeskidDatabase, Db, ProjectSession, SemanticError, SourceUnitId, TypedProgram};
 
+const CANONICAL_RUNTIME_CORPUS_BINDING: &str = "__beskid_canonical_runtime";
+
 /// Return the existing owner of a prepared syntax assembly when it has already
 /// been registered in this database, otherwise mint the first owner for it.
 ///
@@ -326,6 +328,43 @@ pub fn build_canonical_runtime_typed_program(
     }
 
     let mut typed = build_typed_program(db, project, generation, assembly)?;
+    attach_canonical_runtime_cross_unit_scope(db, &typed);
     typed.runtime_intrinsic_capability = Some(Arc::new(capability));
     Ok(typed)
+}
+
+/// Make the exact compiler-owned runtime corpus one private resolution scope.
+///
+/// Runtime source is split by ownership domain, while its Bootstrap helpers are
+/// intentionally shared by unqualified name. This scope is installed only after
+/// the whole embedded corpus has been byte-for-byte verified above. Ordinary
+/// assemblies keep their explicit-import-only resolution contract, and duplicate
+/// public names remain unresolved through `unique_imported_function`.
+fn attach_canonical_runtime_cross_unit_scope(db: &BeskidDatabase, typed: &TypedProgram) {
+    let units = typed
+        .assembly
+        .units()
+        .iter()
+        .map(|unit| SourceUnitId::new(db, unit.path.clone()))
+        .collect::<Vec<_>>();
+    let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    for owner in &units {
+        let imports = registry.imports.entry((*owner, typed.generation)).or_default();
+        for target in units.iter().copied().filter(|target| target != owner) {
+            if imports.iter().any(|import| {
+                import.target == target
+                    && import.binding == CANONICAL_RUNTIME_CORPUS_BINDING
+                    && import.has_explicit_alias
+            }) {
+                continue;
+            }
+            imports.push(crate::db::SyntaxImport {
+                path: vec![CANONICAL_RUNTIME_CORPUS_BINDING.to_owned()],
+                binding: CANONICAL_RUNTIME_CORPUS_BINDING.to_owned(),
+                has_explicit_alias: true,
+                target,
+                public: false,
+            });
+        }
+    }
 }

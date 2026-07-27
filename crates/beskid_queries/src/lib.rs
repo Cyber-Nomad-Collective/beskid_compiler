@@ -74,7 +74,7 @@ pub use semantic_contract::{
     CompletionContext, CompletionKind, ControlFlow, CorelibService, DispatchBuiltinSymbol, EnumConstructorFact,
     EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, ExportSymbol, ForIteratorFact,
     GenericCallInstantiation, GenericCallSpecialization, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot,
-    MutableLocalAssignment, OperatorFact, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic,
+    MutableLocalAssignment, OperatorFact, PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic,
     RuntimeIntrinsicName, SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId,
     SpawnDiagnosticKind, SpawnEntryValidation, SpawnTarget, TestItem, TypedProgram, abi_type, aggregate_field_access,
     aggregate_layout, aggregate_literal_declaration, block_statement_nodes, call_abi_signature, call_argument_abi_type,
@@ -84,7 +84,7 @@ pub use semantic_contract::{
     for_iterator_fact, format_ast_node_key, format_ast_node_site, format_source_span_range, generic_call_instantiation,
     generic_call_specialization, item_abi_signature, item_body, item_export_symbol, item_name, item_signature,
     literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver,
-    operator_fact, range_for_fact, reachable_items, resolved_item, resolved_local, runtime_intrinsic,
+    operator_fact, primitive_numeric_conversion, range_for_fact, reachable_items, resolved_item, resolved_local, runtime_intrinsic,
     runtime_intrinsic_name, spawn_entry_validation, spawn_legality, spawn_target, test_item, test_statement_nodes,
 };
 pub use session::{

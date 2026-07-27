@@ -307,6 +307,7 @@ pub enum ForIterableKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallKind {
     Direct,
+    PrimitiveNumericConversion,
     InlineLambda,
     RuntimeIntrinsic,
     Dynamic,
@@ -635,6 +636,7 @@ pub trait NodeFacts {
     fn call_kind(&self, _key: AstNodeKey) -> Option<CallKind> {
         None
     }
+    fn primitive_numeric_conversion(&self, _key: AstNodeKey) -> Option<(beskid_queries::SemanticTypeId, beskid_queries::SemanticTypeId)> { None }
     fn runtime_intrinsic_kind(&self, _key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
         None
     }
@@ -653,6 +655,12 @@ pub trait NodeFacts {
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64>;
     /// Constant values are immediate and therefore have no local storage slot.
     fn constant_integer(&self, _key: AstNodeKey) -> Option<i64> {
+        None
+    }
+    /// Compiler-minted canonical-runtime constants may be materialized at an
+    /// otherwise exact direct-call ABI argument type. Ordinary source never
+    /// receives this authority.
+    fn canonical_runtime_constant_integer(&self, _key: AstNodeKey) -> Option<i64> {
         None
     }
     fn boolean_literal(&self, _key: AstNodeKey) -> Option<bool> {
@@ -912,6 +920,19 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         }
     }
 
+    /// Lower one expression reached from an enclosing statement while retaining
+    /// its key when generated ISLE has neither a matching rule nor all required
+    /// facts.  This is diagnostic-only: success and existing semantic errors are
+    /// passed through unchanged.
+    fn lower_nested_expression(&mut self, key: AstNodeKey) -> Option<Value> {
+        generated::constructor_lower_expression(self, key).or_else(|| {
+            if self.pending_error.is_none() {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::MissingRuleOrFact });
+            }
+            None
+        })
+    }
+
     fn short_circuit(&mut self, key: AstNodeKey, branch_on_true: bool) -> Option<Value> {
         let left_key = self.facts.child(key, 0)?;
         let right_key = self.facts.child(key, 1)?;
@@ -953,13 +974,32 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         let mut arguments = Vec::with_capacity(argument_keys.len());
         for (argument, parameter) in argument_keys.into_iter().zip(&signature.params) {
             let value = generated::constructor_lower_expression(self, argument)?;
-            if self.builder.func.dfg.value_type(value) != parameter.value_type {
-                return None;
-            }
+            let value = if self.builder.func.dfg.value_type(value) == parameter.value_type {
+                value
+            } else {
+                self.materialize_canonical_runtime_direct_constant(argument, parameter.value_type)?
+            };
             arguments.push(value);
         }
         let call = self.builder.ins().call(function, &arguments);
         Some((call, signature))
+    }
+
+    /// Re-materialize a compiler-owned runtime layout constant at the exact
+    /// ABI type of its direct-call parameter.  The source grammar intentionally
+    /// keeps module constants untyped; this is therefore narrowly contextual,
+    /// requires compiler-minted authority, and never coerces arbitrary values.
+    fn materialize_canonical_runtime_direct_constant(&mut self, key: AstNodeKey, expected: Type) -> Option<Value> {
+        (self.facts.node_kind(key) == Some(NodeKind::PathExpression)).then_some(())?;
+        let value = self.facts.canonical_runtime_constant_integer(key)?;
+        if value < 0 || !expected.is_int() {
+            return None;
+        }
+        let width = expected.bits();
+        if width < 64 && u64::try_from(value).ok()? > ((1_u64 << width) - 1) {
+            return None;
+        }
+        Some(self.builder.ins().iconst(expected, value))
     }
 
     fn coerce_expression_to_string(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -1150,10 +1190,14 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         let pointer = self.builder.func.dfg.value_type(destination);
         if !pointer.is_int()
             || self.builder.func.dfg.value_type(length) != pointer
-            || self.builder.func.dfg.value_type(byte) != types::I8
         {
             return None;
         }
+        let byte_type = self.builder.func.dfg.value_type(byte);
+        if !byte_type.is_int() {
+            return None;
+        }
+        let byte = if byte_type == types::I8 { byte } else { self.builder.ins().ireduce(types::I8, byte) };
         let address = self.builder.declare_var(pointer);
         let remaining = self.builder.declare_var(pointer);
         self.builder.def_var(address, destination);
@@ -1542,8 +1586,25 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.direct_call(key)
     }
 
+    fn emit_primitive_numeric_conversion(&mut self, key: AstNodeKey) -> Option<Value> {
+        let (from, _to) = self.facts.primitive_numeric_conversion(key)?;
+        let argument = self.facts.call_arguments(key)?.into_iter().next()?;
+        let value = generated::constructor_lower_expression(self, argument)?;
+        let actual = self.builder.func.dfg.value_type(value);
+        let source = self.facts.scalar_type(argument)?;
+        let target = self.facts.scalar_type(key)?;
+        (source == actual).then_some(())?;
+        if actual == target { Some(value) } else if actual.bits() < target.bits() {
+            Some(if from == beskid_queries::SemanticTypeId::U8 { self.builder.ins().uextend(target, value) } else { self.builder.ins().sextend(target, value) })
+        } else if actual.bits() > target.bits() { Some(self.builder.ins().ireduce(target, value)) } else { None }
+    }
+
     fn emit_direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
         self.direct_call_statement(key)
+    }
+
+    fn emit_runtime_intrinsic_statement(&mut self, key: AstNodeKey) -> Option<()> {
+        IsleContext::emit_runtime_intrinsic_statement(self, key)
     }
 
     fn emit_dispatch_call(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -1680,7 +1741,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 return self.direct_call_statement(expression);
             }
         }
-        let value = generated::constructor_lower_expression(self, expression)?;
+        let value = self.lower_nested_expression(expression)?;
         self.discard_value(value);
         Some(())
     }
@@ -1971,6 +2032,19 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         Some(StatementCursor { block: key, index: 0 })
     }
 
+    /// Lower one statement reached through a generated cursor while preserving the
+    /// leaf key when no generated rule or fact matches.  Generated ISLE partial
+    /// rules otherwise return `None` through the cursor and the public entrypoint
+    /// can only report the enclosing block.
+    fn lower_nested_statement(&mut self, key: AstNodeKey) -> Option<()> {
+        generated::constructor_lower_statement(self, key).or_else(|| {
+            if self.pending_error.is_none() {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::MissingRuleOrFact });
+            }
+            None
+        })
+    }
+
     fn cursor_kind(&mut self, cursor: StatementCursor) -> Option<CursorKind> {
         let current = self.builder.current_block()?;
         if block_is_terminated(self.builder, current) {
@@ -2010,7 +2084,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             return None;
         }
         let (variable, expected_type) = self.locals.get(&slot).copied()?;
-        let value = generated::constructor_lower_expression(self, value_key)?;
+        let value = self.lower_nested_expression(value_key)?;
         if self.builder.func.dfg.value_type(value) != expected_type {
             return None;
         }

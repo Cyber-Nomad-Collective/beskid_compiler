@@ -100,7 +100,7 @@ pub pointer SchedulerChannelTable() {
     if scheduler == NativePointer(0) {
         return NativePointer(0);
     }
-    pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_CHANNEL_STATE_OFFSET)));
+    mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_CHANNEL_STATE_OFFSET)));
     if table != NativePointer(0) {
         return table;
     }
@@ -122,7 +122,7 @@ pub pointer SchedulerMutexTable() {
     if scheduler == NativePointer(0) {
         return NativePointer(0);
     }
-    pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET)));
+    mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET)));
     if table != NativePointer(0) {
         return table;
     }
@@ -144,7 +144,7 @@ pub pointer SchedulerWaitGroupTable() {
     if scheduler == NativePointer(0) {
         return NativePointer(0);
     }
-    pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET)));
+    mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET)));
     if table != NativePointer(0) {
         return table;
     }
@@ -366,7 +366,7 @@ pub unit ApplyPendingWakes() {
 
 // Initialize the scheduler for the first time.
 pub unit SchedInit() {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table != NativePointer(0) { return; }
     pointer state = RuntimeState();
     table = SystemAllocate(SCHEDULER_TABLE_SIZE, 8);

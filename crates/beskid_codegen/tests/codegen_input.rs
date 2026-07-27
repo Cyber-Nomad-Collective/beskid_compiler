@@ -8,10 +8,12 @@ use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
 };
 use beskid_analysis::services::parse_program_with_source_name;
-use beskid_codegen::{CodegenInput, CodegenInputError};
+use beskid_codegen::{CodegenInput, CodegenInputError, SyntaxNodeFacts};
+use beskid_isle::{CallKind, NodeFacts};
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, IndexedNodeKind, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    TypedProgram, build_canonical_runtime_typed_program, build_typed_program, child_nodes, node_kind,
+    TypedProgram, build_canonical_runtime_typed_program, build_typed_program, call_lowering, child_nodes,
+    item_name, node_kind,
 };
 
 fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata) {
@@ -251,6 +253,168 @@ fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
     assert!(
         user_input.runtime_intrinsic_for(user_root, "trap").is_none(),
         "user packages cannot invoke the trusted trap intrinsic"
+    );
+}
+
+#[test]
+fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemblies_do_not() {
+    let mut db = BeskidDatabase::default();
+    let directory = tempfile::tempdir().expect("runtime project").keep();
+    let sources = canonical_runtime_sources();
+    let units = sources
+        .iter()
+        .map(|source| {
+            let path = directory.join(&source.logical_path);
+            std::fs::create_dir_all(path.parent().expect("canonical source directory"))
+                .expect("create canonical source directory");
+            std::fs::write(&path, &source.source).expect("write canonical source");
+            let program = parse_program_with_source_name(path.to_str().unwrap(), &source.source)
+                .expect("parse canonical runtime source");
+            SourceUnit {
+                logical_name: source.logical_path.clone(),
+                path,
+                source: source.source.clone(),
+                program,
+            }
+        })
+        .collect::<Vec<_>>();
+    let bootstrap_index = units
+        .iter()
+        .position(|unit| unit.logical_name == CANONICAL_BOOTSTRAP_SOURCE_PATH)
+        .expect("Bootstrap source");
+    let bootstrap = units[bootstrap_index].path.clone();
+    let scheduler = units
+        .iter()
+        .find(|unit| unit.logical_name == "src/Runtime/Fiber/Scheduler.bd")
+        .expect("Scheduler source")
+        .path
+        .clone();
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: directory.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(units),
+        bootstrap_index,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let target = linux_target();
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let generation = SyntaxGenerationId(91);
+    let project = ProjectSession::new(
+        &db,
+        directory.clone(),
+        bootstrap,
+        "beskid-runtime-native".into(),
+        "canonical-runtime".into(),
+    );
+    let typed = build_canonical_runtime_typed_program(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_runtime_intrinsic_capability(&manifest).expect("compiler authority"),
+    )
+    .expect("exact canonical assembly");
+    let scheduler_root = AstNodeKey {
+        unit: SourceUnitId::new(&db, scheduler),
+        generation: typed.generation,
+        node: AstNodeId(0),
+    };
+    let roots = typed
+        .assembly
+        .units()
+        .iter()
+        .map(|unit| AstNodeKey {
+            unit: SourceUnitId::new(&db, unit.path.clone()),
+            generation: typed.generation,
+            node: AstNodeId(0),
+        })
+        .collect::<Vec<_>>();
+    let input = CodegenInput::new(&db, typed, Arc::from(roots), target, manifest)
+        .expect("canonical Scheduler codegen input");
+    let wrapper = find_node_matching(&db, scheduler_root, IndexedNodeKind::FunctionDefinition, |item| {
+        matches!(item_name(&db, item).ok().flatten().as_deref(), Some("FiberSpawnWithCancelSlot"))
+    })
+    .expect("Scheduler ABI wrapper");
+    let native_pointer_call = find_node_matching(&db, wrapper, IndexedNodeKind::CallExpression, |call| {
+        matches!(
+            call_lowering(&db, call).ok().flatten(),
+            Some(beskid_queries::CallLowering::Direct(declaration))
+                if matches!(item_name(&db, declaration).ok().flatten().as_deref(), Some("NativePointer"))
+        )
+    });
+    assert!(native_pointer_call.is_some(), "canonical Scheduler reaches Bootstrap NativePointer directly");
+
+    let sched_init = find_node_matching(&db, scheduler_root, IndexedNodeKind::FunctionDefinition, |item| {
+        matches!(item_name(&db, item).ok().flatten().as_deref(), Some("SchedInit"))
+    })
+    .expect("canonical Scheduler SchedInit");
+    let facts = SyntaxNodeFacts::new(&input);
+    for intrinsic_name in ["pointer_add", "raw_word_store"] {
+        let call = find_node_matching(&db, sched_init, IndexedNodeKind::CallExpression, |call| {
+            matches!(
+                beskid_queries::runtime_intrinsic_name(&db, call).ok().flatten(),
+                Some(name) if name.0.as_ref() == intrinsic_name
+            )
+        })
+        .unwrap_or_else(|| panic!("Scheduler SchedInit invokes {intrinsic_name}"));
+        assert!(
+            input.runtime_intrinsic_for(call, intrinsic_name).is_some(),
+            "the exact canonical Scheduler corpus must authorize {intrinsic_name}",
+        );
+        assert_eq!(
+            facts.call_kind(call),
+            Some(CallKind::RuntimeIntrinsic),
+            "manifest-authorized Scheduler {intrinsic_name} must never fall through to Dynamic",
+        );
+    }
+
+    let ordinary = tempfile::tempdir().expect("ordinary project").keep();
+    let helper_path = ordinary.join("Helper.bd");
+    let main_path = ordinary.join("Main.bd");
+    let helper = "pub pointer NativePointer(word value) { return value; }";
+    let main = "pointer Main() { return NativePointer(0); }";
+    let ordinary_assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: ordinary.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: "Helper".into(),
+                path: helper_path.clone(),
+                source: helper.into(),
+                program: parse_program_with_source_name(helper_path.to_str().unwrap(), helper).expect("parse helper"),
+            },
+            SourceUnit {
+                logical_name: "Main".into(),
+                path: main_path.clone(),
+                source: main.into(),
+                program: parse_program_with_source_name(main_path.to_str().unwrap(), main).expect("parse main"),
+            },
+        ]),
+        1,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let ordinary_generation = SyntaxGenerationId(92);
+    let ordinary_project =
+        ProjectSession::new(&db, ordinary.clone(), main_path.clone(), "App".into(), "ordinary".into());
+    let ordinary_typed =
+        build_typed_program(&mut db, ordinary_project, ordinary_generation, ordinary_assembly).expect("ordinary assembly");
+    let ordinary_root = AstNodeKey {
+        unit: SourceUnitId::new(&db, main_path),
+        generation: ordinary_typed.generation,
+        node: AstNodeId(0),
+    };
+    let ordinary_call = find_node(&db, ordinary_root, IndexedNodeKind::CallExpression).expect("ordinary call");
+    assert!(
+        !matches!(call_lowering(&db, ordinary_call).ok().flatten(), Some(beskid_queries::CallLowering::Direct(_))),
+        "ordinary assemblies retain explicit-import-only cross-unit resolution"
     );
 }
 

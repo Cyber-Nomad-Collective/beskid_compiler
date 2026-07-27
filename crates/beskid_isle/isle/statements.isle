@@ -19,17 +19,25 @@
 (decl sequence_statements (Unit Unit) Unit)
 (extern constructor sequence_statements sequence_statements)
 (decl partial lower_statement_cursor (StatementCursor) Unit)
+(decl partial lower_nested_statement (AstNodeKey) Unit)
+(extern constructor lower_nested_statement lower_nested_statement)
 
 (decl partial emit_expression_statement (AstNodeKey) Unit)
 (extern constructor emit_expression_statement emit_expression_statement)
 (decl partial emit_direct_call_statement (AstNodeKey) Unit)
 (extern constructor emit_direct_call_statement emit_direct_call_statement)
+(decl partial emit_runtime_intrinsic_statement (AstNodeKey) Unit)
+(extern constructor emit_runtime_intrinsic_statement emit_runtime_intrinsic_statement)
 (rule (lower_statement key @ (node_kind (NodeKind.ExpressionStatement)))
       (emit_expression_statement key))
 (rule (lower_statement key @ (and
         (node_kind (NodeKind.CallExpression))
         (call_kind (CallKind.Direct))))
       (emit_direct_call_statement key))
+(rule (lower_statement key @ (and
+        (node_kind (NodeKind.CallExpression))
+        (call_kind (CallKind.RuntimeIntrinsic))))
+      (emit_runtime_intrinsic_statement key))
 (rule (lower_statement key @ (node_kind (NodeKind.ReturnStatement)))
       (emit_return key))
 (rule (lower_statement key @ (node_kind (NodeKind.LetStatement)))
@@ -49,5 +57,5 @@
       (finish_statements))
 (rule (lower_statement_cursor cursor @ (cursor_kind (CursorKind.More)))
       (sequence_statements
-        (lower_statement (cursor_head cursor))
+        (lower_nested_statement (cursor_head cursor))
         (lower_statement_cursor (cursor_tail cursor))))

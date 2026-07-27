@@ -23,6 +23,10 @@ struct CallFacts {
     argument: AstNodeKey,
     callee: DirectCallee,
     signature: Signature,
+    argument_kind: NodeKind,
+    argument_type: cranelift_codegen::ir::Type,
+    call_type: cranelift_codegen::ir::Type,
+    canonical_constant: Option<i64>,
 }
 
 fn direct_callee_key() -> AstNodeKey {
@@ -39,7 +43,7 @@ impl NodeFacts for CallFacts {
         if key == self.call {
             Some(NodeKind::CallExpression)
         } else if key == self.argument {
-            Some(NodeKind::LiteralExpression)
+            Some(self.argument_kind)
         } else {
             None
         }
@@ -54,11 +58,27 @@ impl NodeFacts for CallFacts {
     }
 
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
-        (key == self.argument).then_some(41)
+        (key == self.argument && self.argument_kind == NodeKind::LiteralExpression).then_some(41)
+    }
+
+    fn constant_integer(&self, key: AstNodeKey) -> Option<i64> {
+        (key == self.argument && self.argument_kind == NodeKind::PathExpression)
+            .then_some(self.canonical_constant)
+            .flatten()
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
-        (key == self.argument || key == self.call).then_some(types::I32)
+        if key == self.argument {
+            Some(self.argument_type)
+        } else if key == self.call {
+            Some(self.call_type)
+        } else {
+            None
+        }
+    }
+
+    fn canonical_runtime_constant_integer(&self, key: AstNodeKey) -> Option<i64> {
+        (key == self.argument).then_some(self.canonical_constant).flatten()
     }
 
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
@@ -110,6 +130,10 @@ fn call_facts(isa: &dyn TargetIsa, callee: DirectCallee) -> CallFacts {
             returns: vec![AbiParam::new(types::I32)],
             call_conv: isa.default_call_conv(),
         },
+        argument_kind: NodeKind::LiteralExpression,
+        argument_type: types::I32,
+        call_type: types::I32,
+        canonical_constant: None,
     }
 }
 
@@ -148,6 +172,106 @@ fn direct_call_imports_semantic_callee_and_executes() {
     let code = importer.module.get_finalized_function(function_id);
     let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
     assert_eq!(run(), 42);
+}
+
+#[test]
+fn canonical_runtime_constant_materializes_at_direct_word_parameter_width() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let mut facts = call_facts(isa.as_ref(), DirectCallee::item(direct_callee_key()));
+    let word = isa.pointer_type();
+    facts.signature = Signature {
+        params: vec![AbiParam::new(word)],
+        returns: vec![AbiParam::new(word)],
+        call_conv: isa.default_call_conv(),
+    };
+    facts.call_type = word;
+    facts.argument_kind = NodeKind::PathExpression;
+    facts.canonical_constant = Some(3480);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let mut importer = importer(isa.clone(), facts.callee.clone());
+    let function = emitter
+        .emit_expression_with_call_importer(
+            UserFuncName::user(0, 20),
+            emitter.signature([], [word]),
+            &facts,
+            facts.call,
+            &mut importer,
+        )
+        .expect("compiler-owned constant must materialize at the direct ABI word width");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i64 3480") || clif.contains("iconst.i32 3480"), "{clif}");
+}
+
+#[test]
+fn canonical_runtime_constant_direct_abi_materialization_rejects_negative_values() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let mut facts = call_facts(isa.as_ref(), DirectCallee::item(direct_callee_key()));
+    let word = isa.pointer_type();
+    facts.signature = Signature {
+        params: vec![AbiParam::new(word)],
+        returns: vec![AbiParam::new(word)],
+        call_conv: isa.default_call_conv(),
+    };
+    facts.call_type = word;
+    facts.argument_kind = NodeKind::PathExpression;
+    facts.canonical_constant = Some(-1);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let mut importer = importer(isa.clone(), facts.callee.clone());
+    let error = emitter
+        .emit_expression_with_call_importer(
+            UserFuncName::user(0, 21),
+            emitter.signature([], [word]),
+            &facts,
+            facts.call,
+            &mut importer,
+        )
+        .expect_err("negative constants must not silently become unsigned ABI words");
+    let FunctionEmissionError::Lowering(error) = error else {
+        panic!("expected lowering error");
+    };
+    assert_eq!(error.key(), facts.call);
+    assert_eq!(error.kind(), LoweringErrorKind::MissingRuleOrFact);
+}
+
+#[test]
+fn canonical_runtime_literal_is_not_re_materialized_as_a_direct_word_argument() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let mut facts = call_facts(isa.as_ref(), DirectCallee::item(direct_callee_key()));
+    let word = isa.pointer_type();
+    facts.signature = Signature {
+        params: vec![AbiParam::new(word)],
+        returns: vec![AbiParam::new(word)],
+        call_conv: isa.default_call_conv(),
+    };
+    facts.call_type = word;
+    // Even a synthetic authority claim cannot widen a literal: only a path
+    // resolving to a canonical module constant may use the contextual rule.
+    facts.canonical_constant = Some(3480);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let mut importer = importer(isa.clone(), facts.callee.clone());
+    let error = emitter
+        .emit_expression_with_call_importer(
+            UserFuncName::user(0, 22),
+            emitter.signature([], [word]),
+            &facts,
+            facts.call,
+            &mut importer,
+        )
+        .expect_err("literals must not be implicitly widened by canonical constant authority");
+    let FunctionEmissionError::Lowering(error) = error else {
+        panic!("expected lowering error");
+    };
+    assert_eq!(error.key(), facts.call);
+    assert_eq!(error.kind(), LoweringErrorKind::MissingRuleOrFact);
 }
 
 #[test]

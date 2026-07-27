@@ -25,7 +25,7 @@ use beskid_queries::{
     for_iterator_fact, generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
     item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type,
     nominal_member_receiver, operator_fact, reachable_items, resolved_item, resolved_local, runtime_intrinsic,
-    spawn_entry_validation, spawn_legality, spawn_target, test_item,
+    primitive_numeric_conversion, spawn_entry_validation, spawn_legality, spawn_target, test_item,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -65,6 +65,19 @@ fn warm_point_query_uses_registered_expanded_syntax_without_reparse() {
     assert!(literal_fact(&db, literal).expect("warm literal").is_some());
     assert_eq!(node_type(&db, literal).expect("warm type"), Some(beskid_queries::SemanticTypeId::I32));
     assert_eq!(db.syntax_authority_counts(), (1, 1));
+}
+
+#[test]
+fn primitive_numeric_conversion_call_has_a_typed_result_without_dynamic_dispatch() {
+    let (db, _project, unit, generation, index) = setup("i64 Main(word index) { return i64(index); }");
+    let conversion = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_eq!(node_type(&db, conversion).expect("conversion type"), Some(SemanticTypeId::I64));
+    assert_eq!(abi_type(&db, conversion).expect("conversion ABI type"), Some(SemanticTypeId::I64));
+    assert_eq!(
+        primitive_numeric_conversion(&db, conversion).expect("conversion fact"),
+        Some(beskid_queries::PrimitiveNumericConversion { from: SemanticTypeId::WORD, to: SemanticTypeId::I64 })
+    );
 }
 
 #[test]

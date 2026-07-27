@@ -453,6 +453,12 @@ pub struct CastIntent {
     pub to: SemanticTypeId,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PrimitiveNumericConversion {
+    pub from: SemanticTypeId,
+    pub to: SemanticTypeId,
+}
+
 /// Control-flow facts established for one AST node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ControlFlow {
@@ -1305,6 +1311,11 @@ fn node_type_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> S
             return Some(abi_type_for_binary_expression(db, program, index, key, binary));
         }
         if node.of::<beskid_analysis::syntax::CallExpression>().is_some() {
+            match primitive_numeric_conversion(db, key) {
+                Ok(Some(conversion)) => return Some(Ok(conversion.to)),
+                Ok(None) => (),
+                Err(error) => return Some(Err(error)),
+            }
             match call_lowering(db, key) {
                 Ok(Some(CallLowering::Direct(_))) => (),
                 Ok(Some(_) | None) => return Some(Err(SemanticError::unavailable("node_type"))),
@@ -1618,6 +1629,41 @@ fn semantic_type_for_literal(literal: &beskid_analysis::syntax::Literal) -> Sema
 fn call_lowering_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<CallLowering> {
     with_node(db, syntax, key, |program, index, node| call_lowering_for_node(db, program, index, key, node))?
         .transpose()
+}
+
+#[salsa::tracked]
+fn primitive_numeric_conversion_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<PrimitiveNumericConversion> {
+    with_node(db, syntax, key, |program, index, node| {
+        let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
+        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else { return None; };
+        let [segment] = path.node.path.node.segments.as_slice() else { return None; };
+        let to = match segment.node.name.node.name.as_str() {
+            "i32" => SemanticTypeId::I32,
+            "i64" => SemanticTypeId::I64,
+            "u8" => SemanticTypeId::U8,
+            "word" => SemanticTypeId::WORD,
+            _ => return None,
+        };
+        (call.args.len() == 1).then_some(())?;
+        let argument = index
+            .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&call.args[0]))
+            .map(|node| AstNodeKey { node, ..key })?;
+        let from = match abi_type(db, argument) {
+            Ok(Some(from)) => from,
+            Ok(None) => return Some(Err(SemanticError::unavailable("primitive_numeric_conversion"))),
+            Err(error) => return Some(Err(error)),
+        };
+        Some(
+            primitive_integer(from)
+                .then_some(PrimitiveNumericConversion { from, to })
+                .ok_or_else(|| SemanticError::unavailable("primitive_numeric_conversion")),
+        )
+    })?
+    .transpose()
 }
 
 #[salsa::tracked]
@@ -2997,6 +3043,11 @@ fn abi_type_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> Se
             return abi_local_declaration_type(db, program, index, key, key.node);
         }
         if node.of::<beskid_analysis::syntax::CallExpression>().is_some() {
+            match primitive_numeric_conversion(db, key) {
+                Ok(Some(conversion)) => return Some(Ok(conversion.to)),
+                Ok(None) => (),
+                Err(error) => return Some(Err(error)),
+            }
             let lowering = match call_lowering(db, key) {
                 Ok(Some(lowering)) => lowering,
                 Ok(None) => return None,
@@ -5436,6 +5487,10 @@ pub fn nominal_member_receiver(db: &dyn Db, key: AstNodeKey) -> SemanticQueryRes
 /// unavailable. Stale, unregistered, and non-call nodes contain no fact.
 pub fn call_lowering(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CallLowering> {
     with_registered_syntax(db, key, call_lowering_tracked)
+}
+
+pub fn primitive_numeric_conversion(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<PrimitiveNumericConversion> {
+    with_registered_syntax(db, key, primitive_numeric_conversion_tracked)
 }
 
 /// Return the exact declared generic target for one current call with explicit terminal type

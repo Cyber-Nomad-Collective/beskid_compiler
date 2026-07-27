@@ -25,6 +25,15 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.query(constant_integer(self.db, key))
     }
 
+    fn canonical_runtime_constant_integer(&self, key: AstNodeKey) -> Option<i64> {
+        if self.node_kind(key) != Some(NodeKind::PathExpression)
+            || self.input.runtime_intrinsic_capability().is_none()
+        {
+            return None;
+        }
+        self.query(constant_integer(self.db, key))
+    }
+
     fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
         let operator = self.query(operator_fact(self.db, key))?;
         let specialized_string_operands =
@@ -137,6 +146,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
+        if self.query(beskid_queries::primitive_numeric_conversion(self.db, key)).is_some() {
+            return Some(CallKind::PrimitiveNumericConversion);
+        }
         if self.runtime_intrinsic(key).is_some() {
             return Some(CallKind::RuntimeIntrinsic);
         }
@@ -151,6 +163,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             Some(CallLowering::Direct(_) | CallLowering::CorelibService(_))
         )
         .then_some(CallKind::Direct)
+    }
+
+    fn primitive_numeric_conversion(&self, key: AstNodeKey) -> Option<(SemanticTypeId, SemanticTypeId)> {
+        self.query(beskid_queries::primitive_numeric_conversion(self.db, key)).map(|fact| (fact.from, fact.to))
     }
 
     fn dispatch_builtin_symbol(&self, key: AstNodeKey) -> Option<&'static str> {
