@@ -2,7 +2,10 @@
 
 use crate::parser::Rule;
 
-use super::{RepairCandidate, next_token_start, skip_ws, unbalanced_delimiters};
+use super::{
+    RepairCandidate, next_token_start, skip_ws, unbalanced_delimiters,
+    utils::{keyword_at, skip_string_or_char},
+};
 
 const PRIORITY_USE_MOD_SEMI_EOF: u8 = 42;
 const PRIORITY_USE_MOD_SEMI_BEFORE_NEXT: u8 = 43;
@@ -496,44 +499,4 @@ fn next_item_keyword_start(source: &str, from: usize) -> Option<usize> {
         pos = token + 1;
     }
     None
-}
-
-fn keyword_at(source: &str, pos: usize, keyword: &str) -> bool {
-    if pos + keyword.len() > source.len() {
-        return false;
-    }
-    let bytes = source.as_bytes();
-    if bytes.len() < pos + keyword.len() || &bytes[pos..pos + keyword.len()] != keyword.as_bytes() {
-        return false;
-    }
-    if pos > 0 {
-        let before = bytes[pos - 1];
-        if before.is_ascii_alphanumeric() || before == b'_' {
-            return false;
-        }
-    }
-    let after = pos + keyword.len();
-    if after < bytes.len() {
-        let next = bytes[after];
-        if next.is_ascii_alphanumeric() || next == b'_' {
-            return false;
-        }
-    }
-    true
-}
-
-fn skip_string_or_char(source: &str, start: usize) -> usize {
-    let quote = source.as_bytes()[start];
-    let mut i = start + 1;
-    while i < source.len() {
-        if source.as_bytes()[i] == b'\\' {
-            i = (i + 2).min(source.len());
-            continue;
-        }
-        if source.as_bytes()[i] == quote {
-            return i + 1;
-        }
-        i += 1;
-    }
-    source.len()
 }
