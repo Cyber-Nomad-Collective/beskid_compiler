@@ -103,10 +103,9 @@ pub fn lower_canonical_runtime_prepared_syntax(
             .map_err(|error| anyhow::anyhow!("canonical runtime export validation failed: {error}"))?;
         if let Some(export) = export
             && manifest_exports.contains(&*export.0)
+            && exported_items.insert(export.0.to_string(), key).is_some()
         {
-            if exported_items.insert(export.0.to_string(), key).is_some() {
-                anyhow::bail!("canonical runtime declares duplicate ABI export `{}`", export.0);
-            }
+            anyhow::bail!("canonical runtime declares duplicate ABI export `{}`", export.0);
         }
     }
     let mut items = Vec::new();

@@ -148,9 +148,7 @@ impl OperationsState {
                     created_at_unix_seconds: policy.created_at_unix_seconds,
                 };
                 operations.blocked_links.push(policy.clone());
-                operations
-                    .blocked_links
-                    .sort_by(|left, right| right.created_at_unix_seconds.cmp(&left.created_at_unix_seconds));
+                operations.blocked_links.sort_by_key(|policy| std::cmp::Reverse(policy.created_at_unix_seconds));
                 Ok(policy)
             }
         }
