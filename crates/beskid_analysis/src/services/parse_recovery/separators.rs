@@ -2,7 +2,13 @@
 
 use crate::parser::Rule;
 
-use super::{RepairCandidate, next_token_start, skip_ws};
+use super::{
+    RepairCandidate, next_token_start, skip_ws,
+    utils::{
+        has_ident_continue_at, ident_span_at, ident_span_before, is_ident_continue_byte,
+        is_ident_start, prev_non_ws_byte, token_end_before,
+    },
+};
 
 /// Generate separator insertion repairs near the Pest error locus.
 pub fn repairs(source: &str, error_pos: usize, _parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
@@ -216,84 +222,4 @@ fn already_has_fat_arrow_before(source: &str, before: usize) -> bool {
         pos -= 1;
     }
     pos >= 2 && &source[pos - 2..pos] == "=>"
-}
-
-fn token_end_before(source: &str, before: usize) -> Option<usize> {
-    let mut pos = before.min(source.len());
-    let bytes = source.as_bytes();
-    while pos > 0 && bytes[pos - 1].is_ascii_whitespace() {
-        pos -= 1;
-    }
-    if pos == 0 {
-        return None;
-    }
-    Some(pos)
-}
-
-fn prev_non_ws_byte(source: &str, before: usize) -> Option<u8> {
-    let end = token_end_before(source, before)?;
-    Some(source.as_bytes()[end - 1])
-}
-
-fn ident_span_before(source: &str, before: usize) -> Option<(usize, usize)> {
-    let end = token_end_before(source, before)?;
-    ident_span_ending_at(source, end)
-}
-
-fn ident_span_at(source: &str, pos: usize) -> Option<(usize, usize)> {
-    let pos = skip_ws(source, pos);
-    if pos >= source.len() {
-        return None;
-    }
-    let bytes = source.as_bytes();
-    if bytes[pos] == b'_' {
-        let end = if pos + 1 < source.len() && is_ident_continue_byte(bytes[pos + 1]) {
-            let mut end = pos + 2;
-            while end < source.len() && is_ident_continue_byte(bytes[end]) {
-                end += 1;
-            }
-            end
-        } else {
-            pos + 1
-        };
-        return Some((pos, end));
-    }
-    if !is_ident_start(bytes[pos]) {
-        return None;
-    }
-    let mut end = pos + 1;
-    while end < source.len() && is_ident_continue_byte(bytes[end]) {
-        end += 1;
-    }
-    Some((pos, end))
-}
-
-fn ident_span_ending_at(source: &str, end: usize) -> Option<(usize, usize)> {
-    if end == 0 {
-        return None;
-    }
-    let bytes = source.as_bytes();
-    if !is_ident_continue_byte(bytes[end - 1]) {
-        return None;
-    }
-    let mut start = end - 1;
-    while start > 0 && is_ident_continue_byte(bytes[start - 1]) {
-        start -= 1;
-    }
-    if !is_ident_start(bytes[start]) && bytes[start] != b'_' {
-        return None;
-    }
-    Some((start, end))
-}
-
-fn is_ident_start(b: u8) -> bool {
-    b.is_ascii_alphabetic()
-}
-
-fn is_ident_continue_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
-}
-
-fn has_ident_continue_at(bytes: &[u8], pos: usize) -> bool {
-    pos < bytes.len() && is_ident_continue_byte(bytes[pos])
 }
