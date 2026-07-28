@@ -105,15 +105,42 @@ impl CodegenContext {
     }
 
     /// Deduplicating pool for string literal globals; returns a stable symbol name for `bytes`.
+    ///
+    /// Empty Beskid strings still require an addressable backing byte: the runtime ABI accepts a
+    /// logical length of zero but rejects a null data pointer.  The sentinel is storage-only;
+    /// lowering continues to pass the source byte length to `str_new`.
     pub fn intern_string_literal(&mut self, bytes: &[u8]) -> String {
+        let storage = if bytes.is_empty() { &[0] } else { bytes };
         for (symbol, data) in &self.string_literals {
-            if data.as_slice() == bytes {
+            if data.as_slice() == storage {
                 return symbol.clone();
             }
         }
         let symbol = format!("__beskid_str_lit_{}", self.next_string_literal_id);
         self.next_string_literal_id += 1;
-        self.string_literals.insert(symbol.clone(), bytes.to_vec());
+        self.string_literals.insert(symbol.clone(), storage.to_vec());
         symbol
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CodegenContext;
+
+    #[test]
+    fn empty_string_literal_uses_addressable_sentinel_storage() {
+        let mut context = CodegenContext::new();
+        let symbol = context.intern_string_literal(b"");
+
+        assert_eq!(context.string_literals[&symbol], [0]);
+        assert_eq!(context.intern_string_literal(b""), symbol);
+    }
+
+    #[test]
+    fn non_empty_string_literal_preserves_source_bytes() {
+        let mut context = CodegenContext::new();
+        let symbol = context.intern_string_literal(b"beskid");
+
+        assert_eq!(context.string_literals[&symbol], b"beskid");
     }
 }
