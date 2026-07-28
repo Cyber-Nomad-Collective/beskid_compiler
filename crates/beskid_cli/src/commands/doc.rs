@@ -612,7 +612,6 @@ fn render_tree_node(node: &TreeNode, entries: &[DocEntry], depth: usize, out: &m
 #[cfg(test)]
 mod tests {
     use super::{DocEntry, render_structure_tree};
-    use beskid_analysis::syntax::SpanInfo;
 
     #[test]
     fn structure_tree_renders_nested_paths() {

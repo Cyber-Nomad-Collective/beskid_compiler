@@ -60,16 +60,6 @@ impl PckgClient {
         self.execute_json(request).await
     }
 
-    pub(crate) async fn send_no_body_bytes(
-        &self,
-        method: Method,
-        path: &str,
-        require_auth: bool,
-    ) -> Result<Vec<u8>, PckgError> {
-        let request = self.build_request(method, path, require_auth)?;
-        self.execute_bytes(request).await
-    }
-
     /// Send a request and return the raw [`reqwest::Response`] without
     /// consuming the body stream. The caller is responsible for streaming
     /// bytes from the response (e.g. via `.bytes_stream()`) and MUST
@@ -128,16 +118,4 @@ impl PckgClient {
         })
     }
 
-    async fn execute_bytes(&self, request: reqwest::RequestBuilder) -> Result<Vec<u8>, PckgError> {
-        let response = request.send().await?;
-        let status = response.status();
-        let bytes = response.bytes().await?;
-
-        if !status.is_success() {
-            let body = String::from_utf8_lossy(&bytes).to_string();
-            return Err(PckgError::from_api_error(status, body));
-        }
-
-        Ok(bytes.to_vec())
-    }
 }
