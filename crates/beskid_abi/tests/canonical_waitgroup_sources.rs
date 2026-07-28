@@ -17,7 +17,7 @@ fn canonical_waitgroup_storage_is_scheduler_owned_and_wakes_each_registered_wait
 
     assert!(scheduler.contains("const FIBER_TABLE_MAX = 16;"));
     assert!(scheduler.contains("const SCHEDULER_WAITGROUP_STATE_OFFSET = 3472;"));
-    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3480;"));
+    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3488;"));
     assert!(scheduler.contains("table = SystemAllocate(WG_TABLE_SIZE, 8);"));
     assert!(scheduler.contains("memory_set(table, 0, WG_TABLE_SIZE);"));
     assert!(scheduler.contains(

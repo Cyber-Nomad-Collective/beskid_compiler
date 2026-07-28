@@ -15,8 +15,8 @@ fn canonical_hub_storage_is_scheduler_owned_and_supports_stable_256_entry_regist
     let scheduler = canonical_source(CANONICAL_SCHEDULER_SOURCE_PATH);
     let hub = canonical_source(CANONICAL_HUB_SOURCE_PATH);
 
-    assert!(scheduler.contains("const SCHEDULER_HUB_STATE_OFFSET = 3488;"));
-    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3496;"));
+    assert!(scheduler.contains("const SCHEDULER_HUB_STATE_OFFSET = 3480;"));
+    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3488;"));
     assert!(scheduler.contains(
         "mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_HUB_STATE_OFFSET)));"
     ));

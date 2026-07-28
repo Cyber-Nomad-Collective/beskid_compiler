@@ -17,7 +17,7 @@ fn canonical_scheduler_owns_native_table_through_runtime_state_scheduler_field()
 
     assert!(scheduler.contains("const SCHEDULER_STATE_OFFSET = 32;"));
     assert!(scheduler.contains("const SCHEDULER_CHANNEL_STATE_OFFSET = 3456;"));
-    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3480;"));
+    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3488;"));
     assert!(scheduler.contains("mut pointer table = SchedTable();"));
     assert!(scheduler.contains("return NativePointer(raw_word_load(pointer_add(state, SCHEDULER_STATE_OFFSET)));"));
     assert!(scheduler.contains("table = SystemAllocate(SCHEDULER_TABLE_SIZE, 8);"));
@@ -50,7 +50,7 @@ fn canonical_mutex_storage_is_scheduler_owned_and_cannot_alias_runtime_state() {
     let mutex = canonical_source(CANONICAL_MUTEX_SOURCE_PATH);
 
     assert!(scheduler.contains("const SCHEDULER_MUTEX_STATE_OFFSET = 3464;"));
-    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3480;"));
+    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3488;"));
     assert!(scheduler.contains(
         "mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET)));"
     ));
