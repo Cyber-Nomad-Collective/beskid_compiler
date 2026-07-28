@@ -1,9 +1,9 @@
 use beskid_abi::abi_v5::{AbiManifestV5, AbiType, SourceUnit, TargetMetadata};
 use beskid_abi::runtime_source::{
     CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CLOCKS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_PROCESS_SOURCE_PATH, RuntimeCapabilityError,
-    canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_runtime_intrinsic_capability,
-    canonical_runtime_sources, prove_canonical_runtime_corpus,
+    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_GC_SOURCE_PATH, CANONICAL_PROCESS_SOURCE_PATH,
+    RuntimeCapabilityError, canonical_corelib_service_capability, canonical_corelib_service_source_path,
+    canonical_runtime_intrinsic_capability, canonical_runtime_sources, prove_canonical_runtime_corpus,
 };
 
 fn linux_manifest() -> AbiManifestV5 {
@@ -28,14 +28,18 @@ fn canonical_bootstrap_source_is_embedded_and_exports_the_v5_probe() {
 #[test]
 fn canonical_bootstrap_source_exports_the_v5_lifecycle_and_trap_wrappers() {
     let sources = canonical_runtime_sources();
-    let source = sources.iter().map(|unit| unit.source.as_str()).collect::<Vec<_>>().join("\n");
+    let source =
+        &sources.iter().find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH).expect("bootstrap source").source;
 
-    // Every manifest lifecycle/trap export is source-owned. Context-switch exports are
-    // intentionally supplied by target assembly and covered by their own assembly tests.
+    // Every manifest export is owned by some canonical runtime source. Ownership is corpus-wide,
+    // not bootstrap-only: scheduler exports such as the fiber spawn entry live in the scheduler
+    // unit. Context-switch exports are intentionally supplied by target assembly and covered by
+    // their own assembly tests.
     for export in &linux_manifest().exports {
+        let declaration = format!("Symbol:\"{}\"", export.symbol);
         assert!(
-            source.contains(&format!("Symbol:\"{}\"", export.symbol)),
-            "canonical runtime source must own manifest export {}",
+            sources.iter().any(|unit| unit.source.contains(&declaration)),
+            "canonical runtime corpus must own manifest export {}",
             export.symbol,
         );
     }
@@ -206,7 +210,7 @@ fn canonical_gc_exports_one_registry_backed_external_root_count() {
     let sources = canonical_runtime_sources();
     let gc = &sources
         .iter()
-        .find(|unit| unit.logical_path == "src/Runtime/Mem/Gc.bd")
+        .find(|unit| unit.logical_path == CANONICAL_GC_SOURCE_PATH)
         .expect("canonical GC source")
         .source;
 
