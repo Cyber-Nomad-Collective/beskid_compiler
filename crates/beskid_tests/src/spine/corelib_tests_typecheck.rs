@@ -73,6 +73,9 @@ corelib_typecheck_test!(core_results_tests_front_end_typechecks, "core/ResultsTe
 corelib_typecheck_test!(core_bytes_tests_front_end_typechecks, "core/BytesTests.bd");
 corelib_typecheck_test!(core_encoding_utf8_tests_front_end_typechecks, "core/EncodingUtf8Tests.bd");
 corelib_typecheck_test!(core_expression_body_tests_front_end_typechecks, "core/ExpressionBodyTests.bd");
+corelib_typecheck_test!(core_math_tests_front_end_typechecks, "core/MathTests.bd");
+corelib_typecheck_test!(core_random_tests_front_end_typechecks, "core/RandomTests.bd");
+corelib_typecheck_test!(core_args_tests_front_end_typechecks, "core/ArgsTests.bd");
 corelib_typecheck_test!(compiler_sdk_surface_tests_front_end_typechecks, "compiler-sdk/CompilerSdkSurfaceTests.bd");
 corelib_typecheck_test!(compiler_sdk_emitter_tests_front_end_typechecks, "compiler-sdk/CompilerSdkEmitterTests.bd");
 corelib_typecheck_test!(concurrency_status_abi_tests_front_end_typechecks, "concurrency/StatusAbiTests.bd");
