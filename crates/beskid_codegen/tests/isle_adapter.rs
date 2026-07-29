@@ -1723,10 +1723,13 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
         .parent()
         .expect("foundation src")
         .to_path_buf();
-    let source_path = foundation_src.join("Core/String/String.bd");
-    let source = std::fs::read_to_string(&source_path).expect("read Core.String");
+    // `Core/String/String.bd` is a hub that re-exports `Core.String.Core`, so its bodies are
+    // cross-unit delegations. The leaf helpers this test lowers live in the `Core` submodule.
+    let source_path = foundation_src.join("Core/String/Core.bd");
+    let source = std::fs::read_to_string(&source_path).expect("read Core.String.Core");
     let source_root = foundation_src;
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source).expect("parse Core.String");
+    let program =
+        parse_program_with_source_name(source_path.to_str().unwrap(), &source).expect("parse Core.String.Core");
     let entry = SourceUnitId::new(&*db, source_path.clone());
     let project = ProjectSession::new(
         &*db,
@@ -1738,7 +1741,7 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
     let generation = SyntaxGenerationId(96);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
-        Arc::new(vec![SourceUnit { logical_name: "Core/String/String.bd".into(), path: source_path, source, program }]),
+        Arc::new(vec![SourceUnit { logical_name: "Core/String/Core.bd".into(), path: source_path, source, program }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -1749,33 +1752,33 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
-    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed Core.String program");
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed Core.String.Core program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
-        .expect("generation-safe Core.String input");
+        .expect("generation-safe Core.String.Core input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
     // Leaf helpers that exercise dispatch builtins and string indexing without pulling the
-    // full String.bd call graph (Contains -> IndexOfFrom -> while/ByteAt).
+    // full call graph (Contains -> IndexOfFrom -> while/ByteAt).
     for name in ["Len", "IsEmpty", "ByteAt"] {
         let key = find_function_definitions(input.database(), root)
             .into_iter()
             .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("Core.String {name}"));
+            .unwrap_or_else(|| panic!("Core.String.Core {name}"));
         let module_items = if name == "IsEmpty" {
             let len = find_function_definitions(input.database(), root)
                 .into_iter()
                 .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Len"))
-                .expect("Core.String Len");
+                .expect("Core.String.Core Len");
             vec![SyntaxModuleItem { key: len, symbol: "Len".into() }, SyntaxModuleItem { key, symbol: name.into() }]
         } else {
             vec![SyntaxModuleItem { key, symbol: name.into() }]
         };
         lower_syntax_program(&input, isa.as_ref(), &module_items)
-            .unwrap_or_else(|error| panic!("Core.String {name} lowers through syntax ISLE: {error:?}"));
+            .unwrap_or_else(|error| panic!("Core.String.Core {name} lowers through syntax ISLE: {error:?}"));
     }
 }
 

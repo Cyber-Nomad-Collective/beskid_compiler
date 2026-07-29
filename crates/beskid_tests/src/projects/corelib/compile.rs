@@ -264,6 +264,8 @@ fn checked_in_compiler_sdk_collect_declares_mod_contracts() {
 fn checked_in_corelib_mvp_modules_reference_runtime_backed_symbols() {
     let results_mod = fs::read_to_string(foundation_src().join("Core/Results/Results.bd")).expect("read Core.Results");
     let string_mod = fs::read_to_string(foundation_src().join("Core/String/String.bd")).expect("read Core.String");
+    let string_core_mod =
+        fs::read_to_string(foundation_src().join("Core/String/Core.bd")).expect("read Core.String.Core");
     let output_mod = fs::read_to_string(foundation_src().join("Core/Output/Output.bd")).expect("read Core.Output");
 
     assert!(results_mod.contains("pub enum Result"), "Core.Results should define Result enum");
@@ -275,7 +277,11 @@ fn checked_in_corelib_mvp_modules_reference_runtime_backed_symbols() {
         results_mod.contains("pub bool IsOk") && results_mod.contains("pub bool IsError"),
         "Core.Results should expose Ok/Error predicates"
     );
-    assert!(string_mod.contains("__str_len"), "Core.String should use __str_len runtime builtin");
+    assert!(string_core_mod.contains("__str_len"), "Core.String.Core should use __str_len runtime builtin");
+    assert!(
+        string_mod.contains("pub mod Core.String.Core;") && string_mod.contains("Core.Len(text)"),
+        "Core.String hub should re-export Core.String.Core and delegate Len to it"
+    );
     let array_mod = fs::read_to_string(foundation_src().join("Collections/Array.bd")).expect("read Array");
     assert!(array_mod.contains("__array_len"), "Collections.Array should use __array_len for slice length");
     assert!(!output_mod.contains("__sys_print"), "Core.Output must not reference purged __sys_print builtins");
