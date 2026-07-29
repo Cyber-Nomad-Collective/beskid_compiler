@@ -116,8 +116,8 @@ impl RuntimeAuditMetadata {
         defined: impl IntoIterator<Item = &'a str>,
         undefined: impl IntoIterator<Item = &'a str>,
     ) -> Result<(), String> {
-        let defined = self.normalized_symbol_set("defined", defined)?;
-        let mut undefined = self.normalized_symbol_set("undefined", undefined)?;
+        let defined = self.collapsed_symbol_set(defined)?;
+        let mut undefined = self.collapsed_symbol_set(undefined)?;
         // `nm -u` reports references from every member of a static archive. A reference that is
         // also defined by another member is internally resolved when the archive is linked and
         // must not be treated as an external runtime dependency.
@@ -134,13 +134,30 @@ impl RuntimeAuditMetadata {
     ) -> Result<BTreeSet<String>, String> {
         let mut normalized = BTreeSet::new();
         for raw in symbols {
-            reject_forbidden_provenance(raw, &self.forbidden_rust_symbols)?;
-            let symbol = normalize_object_symbol(raw, &self.object_format, &self.symbol_prefix);
+            let symbol = self.normalized_symbol(raw)?;
             if !normalized.insert(symbol.clone()) {
                 return Err(format!("duplicate {table} symbol `{symbol}`"));
             }
         }
         Ok(normalized)
+    }
+
+    /// Normalize a linked-artifact symbol table in which one symbol legitimately repeats.
+    ///
+    /// `nm` walks every member of a static archive, so an import is reported once per referencing
+    /// member: the Linux platform objects import `mmap` for both the page-allocation intrinsics
+    /// and guarded scheduler stacks. Collapsing those repeats keeps the provenance and allowlist
+    /// checks exact while refusing to treat multi-member references as malformed input.
+    fn collapsed_symbol_set<'a>(
+        &self,
+        symbols: impl IntoIterator<Item = &'a str>,
+    ) -> Result<BTreeSet<String>, String> {
+        symbols.into_iter().map(|raw| self.normalized_symbol(raw)).collect()
+    }
+
+    fn normalized_symbol(&self, raw: &str) -> Result<String, String> {
+        reject_forbidden_provenance(raw, &self.forbidden_rust_symbols)?;
+        Ok(normalize_object_symbol(raw, &self.object_format, &self.symbol_prefix))
     }
 }
 
