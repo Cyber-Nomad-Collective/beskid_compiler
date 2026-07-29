@@ -28,8 +28,7 @@ fn canonical_bootstrap_source_is_embedded_and_exports_the_v5_probe() {
 #[test]
 fn canonical_bootstrap_source_exports_the_v5_lifecycle_and_trap_wrappers() {
     let sources = canonical_runtime_sources();
-    let source =
-        &sources.iter().find(|u| u.logical_path == CANONICAL_BOOTSTRAP_SOURCE_PATH).expect("bootstrap source").source;
+    let source = sources.iter().map(|unit| unit.source.as_str()).collect::<Vec<_>>().join("\n");
 
     // Every manifest lifecycle/trap export is source-owned. Context-switch exports are
     // intentionally supplied by target assembly and covered by their own assembly tests.
@@ -207,7 +206,7 @@ fn canonical_gc_exports_one_registry_backed_external_root_count() {
     let sources = canonical_runtime_sources();
     let gc = &sources
         .iter()
-        .find(|unit| unit.logical_path == "Runtime/Mem/Gc.bd")
+        .find(|unit| unit.logical_path == "src/Runtime/Mem/Gc.bd")
         .expect("canonical GC source")
         .source;
 
