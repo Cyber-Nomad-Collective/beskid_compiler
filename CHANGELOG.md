@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Allocate enum constructor values through ABI-v5 managed-object metadata rather
+  than returning pointers to constructor stack storage, preventing invalid enum
+  tags and JIT traps across function boundaries.
 
 
 - Replace canonical composition sentinel exports with per-runtime, container-owned

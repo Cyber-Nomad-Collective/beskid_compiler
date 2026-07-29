@@ -367,7 +367,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn managed_struct_allocation(&self, key: AstNodeKey) -> Option<ManagedStructAllocation> {
         Some(ManagedStructAllocation {
-            allocation_request_symbol: self.input.aggregate_static_plan(key)?.allocation_request_symbol.into(),
+            allocation_request_symbol: self
+                .input
+                .aggregate_static_plan(key)
+                .or_else(|| self.input.enum_static_plan(key))?
+                .allocation_request_symbol
+                .into(),
         })
     }
 

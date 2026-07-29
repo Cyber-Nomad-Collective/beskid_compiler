@@ -2331,13 +2331,20 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumVariant(variant_index) });
             return None;
         };
-        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-            StackSlotKind::ExplicitSlot,
-            layout.size,
-            layout.align_shift,
-        ));
+        let allocation = self.facts.managed_struct_allocation(key)?;
+        let pointer_type = self.facts.scalar_type(key)?;
+        if !pointer_type.is_int() {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
+            return None;
+        }
+        let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer_type)?;
+        let allocate =
+            self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer_type], Some(pointer_type))?;
+        let allocation_call = self.builder.ins().call(allocate, &[request]);
+        let object = self.builder.inst_results(allocation_call).first().copied()?;
+        self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
         let tag = self.builder.ins().iconst(layout.tag.value_type, variant.discriminant as i64);
-        self.builder.ins().stack_store(tag, slot, i32::try_from(layout.tag.offset).ok()?);
+        self.builder.ins().store(MemFlags::new(), tag, object, i32::try_from(layout.tag.offset).ok()?);
         match (variant.payload, self.facts.enum_payload(key)) {
             (Some(payload_layout), Some(payload_key)) => {
                 let payload = generated::constructor_lower_expression(self, payload_key)?;
@@ -2345,7 +2352,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
                     return None;
                 }
-                self.builder.ins().stack_store(payload, slot, i32::try_from(payload_layout.offset).ok()?);
+                self.builder.ins().store(MemFlags::new(), payload, object, i32::try_from(payload_layout.offset).ok()?);
             }
             (None, None) => {}
             _ => {
@@ -2353,12 +2360,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 return None;
             }
         }
-        let pointer_type = self.facts.scalar_type(key)?;
-        if !pointer_type.is_int() {
-            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
-            return None;
-        }
-        Some(self.builder.ins().stack_addr(pointer_type, slot, 0))
+        Some(object)
     }
 
     fn emit_match(&mut self, key: AstNodeKey) -> Option<Value> {

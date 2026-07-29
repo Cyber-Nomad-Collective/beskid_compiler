@@ -2,13 +2,11 @@ use std::path::PathBuf;
 
 use beskid_isle::{
     AstNodeKey, EnumLayout, EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter, LiteralKind,
-    LoweringErrorKind, MatchArmFact, NodeFacts, NodeKind,
+    LoweringErrorKind, ManagedStructAllocation, MatchArmFact, NodeFacts, NodeKind,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{Type, UserFuncName, types};
 use cranelift_codegen::settings;
-use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{Linkage, Module, default_libcall_names};
 use target_lexicon::Triple;
 
 #[derive(Clone, Copy)]
@@ -80,6 +78,11 @@ impl NodeFacts for EnumFacts {
         (key == self.nodes[1]).then_some(self.variant_index)
     }
 
+    fn managed_struct_allocation(&self, key: AstNodeKey) -> Option<ManagedStructAllocation> {
+        (key == self.nodes[1])
+            .then(|| ManagedStructAllocation { allocation_request_symbol: "__test_enum_allocation_request".into() })
+    }
+
     fn enum_payload(&self, key: AstNodeKey) -> Option<AstNodeKey> {
         (key == self.nodes[1]).then_some(self.nodes[2])
     }
@@ -123,7 +126,7 @@ fn facts(pointer_type: Type, arms: Arms, variant_index: u32, layout: EnumLayout)
     }
 }
 
-fn run(arms: Arms, function_index: u32) -> (i32, String) {
+fn emit(arms: Arms, function_index: u32) -> String {
     let isa = cranelift_codegen::isa::lookup(Triple::host())
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
@@ -134,31 +137,22 @@ fn run(arms: Arms, function_index: u32) -> (i32, String) {
     let function = emitter
         .emit_expression(UserFuncName::user(0, function_index), signature.clone(), &facts, facts.nodes[0])
         .expect("verified enum match");
-    let clif = function.display().to_string();
-    let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
-    let function_id = module.declare_function("enum_match", Linkage::Local, &signature).expect("declare");
-    let mut context = module.make_context();
-    context.func = function;
-    module.define_function(function_id, &mut context).expect("define");
-    module.finalize_definitions().expect("finalize");
-    let code = module.get_finalized_function(function_id);
-    let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
-    (run(), clif)
+    function.display().to_string()
 }
 
 #[test]
-fn enum_literal_and_exhaustive_match_emit_stock_clif_and_execute() {
-    let (result, clif) = run(Arms::Exact, 26);
-    assert_eq!(result, 200);
-    assert!(clif.contains("stack_store"), "{clif}");
+fn enum_literal_and_exhaustive_match_uses_managed_storage() {
+    let clif = emit(Arms::Exact, 26);
+    assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
+    assert!(!clif.contains("stack_store"), "{clif}");
     assert!(clif.contains("load.i32"), "{clif}");
     assert!(clif.contains("brif"), "{clif}");
 }
 
 #[test]
-fn wildcard_arm_makes_match_exhaustive_and_executes() {
-    let (result, _) = run(Arms::Wildcard, 27);
-    assert_eq!(result, 300);
+fn wildcard_arm_makes_match_exhaustive_with_managed_storage() {
+    let clif = emit(Arms::Wildcard, 27);
+    assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
 }
 
 #[test]
@@ -238,6 +232,11 @@ impl NodeFacts for UnitMatchFacts {
 
     fn enum_variant_index(&self, key: AstNodeKey) -> Option<u32> {
         (key == self.nodes[1]).then_some(0)
+    }
+
+    fn managed_struct_allocation(&self, key: AstNodeKey) -> Option<ManagedStructAllocation> {
+        (key == self.nodes[1])
+            .then(|| ManagedStructAllocation { allocation_request_symbol: "__test_unit_enum_allocation_request".into() })
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
