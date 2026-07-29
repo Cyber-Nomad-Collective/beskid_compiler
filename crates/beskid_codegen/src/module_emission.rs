@@ -342,7 +342,10 @@ fn collect_aggregate_static_plans(
     for item in items {
         collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
     }
-    nodes.into_iter().filter_map(|key| input.aggregate_static_plan(key)).collect()
+    nodes
+        .into_iter()
+        .filter_map(|key| input.aggregate_static_plan(key).or_else(|| input.enum_static_plan(key)))
+        .collect()
 }
 
 /// Resolve source-proven zero-argument entries without ever re-entering HIR lowering.

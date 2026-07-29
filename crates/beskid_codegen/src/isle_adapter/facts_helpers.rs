@@ -41,15 +41,16 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn enum_layout_for(&self, key: AstNodeKey) -> Option<EnumLayout> {
         let isa = self.isa?;
+        let allocation = self.input.enum_static_plan(key)?;
         let source = if self.query(enum_constructor(self.db, key)).is_some() {
             self.query(enum_layout(self.db, key))?
         } else {
             self.query(enum_match(self.db, key))?.layout
         };
         let tag_type = types::I32;
-        let tag = FieldLayout::new(tag_type, 0);
-        let mut alignment = tag_type.bytes();
-        let mut payload_offset = tag_type.bytes();
+        let tag = FieldLayout::new(tag_type, u32::try_from(allocation.fields.first()?.field_offset).ok()?);
+        let mut alignment = u32::try_from(allocation.object_alignment).ok()?;
+        let payload_offset = allocation.fields.get(1).and_then(|field| u32::try_from(field.field_offset).ok());
         let mut variants = Vec::with_capacity(source.variants.len());
         let mut payloads = Vec::with_capacity(source.variants.len());
         for variant in source.variants.iter() {
@@ -61,22 +62,19 @@ impl SyntaxNodeFacts<'_> {
             };
             if let Some(payload) = payload {
                 alignment = alignment.max(payload.bytes());
-                payload_offset = payload_offset.max(align_to(tag_type.bytes(), payload.bytes())?);
             }
             payloads.push(payload);
         }
-        let size = payloads
-            .iter()
-            .flatten()
-            .fold(tag_type.bytes(), |size, payload| size.max(payload_offset.saturating_add(payload.bytes())));
-        let size = align_to(size, alignment)?.max(1);
+        if payloads.iter().any(Option::is_some) && payload_offset.is_none() {
+            return None;
+        }
         for (index, payload) in payloads.into_iter().enumerate() {
             variants.push(EnumVariantLayout::new(
                 u64::try_from(index).ok()?,
-                payload.map(|value_type| FieldLayout::new(value_type, payload_offset)),
+                payload.map(|value_type| FieldLayout::new(value_type, payload_offset.expect("payload offset exists"))),
             ));
         }
-        Some(EnumLayout::new(size, alignment.ilog2() as u8, tag, variants))
+        Some(EnumLayout::new(u32::try_from(allocation.object_size).ok()?, alignment.ilog2() as u8, tag, variants))
     }
 
     pub(super) fn array_elements_for_literal(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {

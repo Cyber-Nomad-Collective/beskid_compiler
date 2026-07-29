@@ -425,7 +425,9 @@ fn parsed_enum_constructor_uses_source_layout_without_hir() {
         .expect("enum constructor lowers through syntax facts");
 
     let clif = function.display().to_string();
-    assert!(clif.contains("stack_store"));
+    assert!(input.enum_static_plan(constructor).is_some(), "enum static plan");
+    assert!(clif.contains("beskid_rt_v5_managed_object_allocate"));
+    assert!(!clif.contains("stack_store"));
     assert!(clif.contains("iconst.i32 1"));
 }
 
@@ -441,7 +443,8 @@ fn parsed_generic_enum_constructor_uses_concrete_source_layout_without_hir() {
         .expect("generic enum constructor lowers from its concrete use-site layout");
 
     let clif = function.display().to_string();
-    assert!(clif.contains("stack_store"), "{clif}");
+    assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
+    assert!(!clif.contains("stack_store"), "{clif}");
     assert!(clif.contains("iconst.i32 0"), "{clif}");
     assert!(clif.contains("iconst.i64 7"), "{clif}");
 }
@@ -458,7 +461,8 @@ fn parsed_nullary_enum_constructor_uses_source_layout_without_hir() {
         .expect("nullary enum constructor lowers through syntax facts");
 
     let clif = function.display().to_string();
-    assert!(clif.contains("stack_store"));
+    assert!(clif.contains("beskid_rt_v5_managed_object_allocate"));
+    assert!(!clif.contains("stack_store"));
     assert!(clif.contains("iconst.i32 0"));
 }
 
