@@ -1,6 +1,7 @@
 /// Runtime-backed syscall contract checks via `Core.Syscall` typed requests.
 
 use Testing.Assert;
+use Core.Syscall;
 use Core.Syscall.Descriptor;
 use Core.Syscall.StandardStream;
 use Core.Syscall.WriteRequest;
