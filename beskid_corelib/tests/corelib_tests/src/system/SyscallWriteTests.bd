@@ -33,8 +33,7 @@ test syscall_write_prints_newline {
     Core.Results.Result<i64, Core.Syscall.SyscallError> letter =
         Core.Syscall.Write(Core.Syscall.StdoutFd(), "a");
     Core.Results.Result<i64, Core.Syscall.SyscallError> newline =
-        Core.Syscall.Write(Core.Syscall.StdoutFd(), "
-");
+        Core.Syscall.Write(Core.Syscall.StdoutFd(), "\\n");
     Assert.True(Results.IsOk(letter), "letter write should succeed");
     Assert.True(Results.IsOk(newline), "newline write should succeed");
     match letter {
