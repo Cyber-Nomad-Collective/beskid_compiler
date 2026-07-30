@@ -83,7 +83,10 @@ impl Parsable for LetStatement {
 
 /// Materialize the language-defined default as an ordinary syntax literal so every later
 /// semantic and ISLE phase follows the same path as an explicit initializer.
-fn default_initializer(type_annotation: Option<&Spanned<Type>>, span: SpanInfo) -> Result<Spanned<Expression>, ParseError> {
+fn default_initializer(
+    type_annotation: Option<&Spanned<Type>>,
+    span: SpanInfo,
+) -> Result<Spanned<Expression>, ParseError> {
     let primitive = type_annotation
         .and_then(|annotation| match &annotation.node {
             Type::Primitive(primitive) => Some(primitive.node),

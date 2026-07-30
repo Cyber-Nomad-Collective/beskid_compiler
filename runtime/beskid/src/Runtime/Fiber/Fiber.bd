@@ -14,37 +14,88 @@ pub i64 FiberSpawn(pointer entry, pointer argument) {
 // Cancels a running fiber by ID.
 [Export(Abi:"C", Symbol:"fiber_cancel")]
 pub bool FiberCancel(i64 fiberId) {
-    return false; // Stub
+    if fiberId < 0 {
+        return false;
+    }
+    word index = word(fiberId);
+    if !FiberExists(index) {
+        return false;
+    }
+    word state = FiberState(index);
+    if state == FiberState::Done || state == FiberState::Cancelled {
+        return false;
+    }
+    pointer fib = FiberRecord(index);
+    pointer cancelSlot = NativePointer(raw_word_load(pointer_add(fib, 24)));
+    if cancelSlot != NativePointer(0) {
+        raw_word_store(cancelSlot, 1);
+    }
+    PendingCancelEnqueue(index);
+    return true;
 }
 
 // Yields the current fiber.
 [Export(Abi:"C", Symbol:"fiber_yield")]
 pub unit FiberYield() {
-    return; // Stub
+    word index = SchedulerCurrentFiber();
+    if index == FIBER_NONE || !FiberExists(index) {
+        return;
+    }
+    pointer fib = FiberRecord(index);
+    if raw_byte_load(pointer_add(fib, 41)) != 0 {
+        raw_word_store(fib, FiberState::Cancelled);
+        raw_word_store(pointer_add(fib, 48), JoinOutcome::Cancelled);
+        raw_word_store(pointer_add(fib, 56), 0);
+    } else {
+        FiberSetState(index, FiberState::Runnable);
+        RunQueuePush(index);
+    }
+    // The real target context transfer is intentionally not emulated here.
+    SchedulerSetCurrentFiber(FIBER_NONE);
+    return;
 }
 
 // Returns the current fiber ID (0 for main).
 [Export(Abi:"C", Symbol:"fiber_current_id")]
 pub i64 FiberCurrentId() {
-    return 0;
+    word index = SchedulerCurrentFiber();
+    if index == FIBER_NONE {
+        return -1;
+    }
+    return i64(index);
 }
 
 // Detaches a fiber (fire-and-forget).
 [Export(Abi:"C", Symbol:"fiber_detach")]
 pub unit FiberDetach(i64 fiberId) {
+    if fiberId < 0 {
+        return;
+    }
+    word index = word(fiberId);
+    if !FiberExists(index) {
+        return;
+    }
+    raw_byte_store(pointer_add(FiberRecord(index), 40), 1);
     return;
 }
 
 // Returns the join status of a fiber.
 [Export(Abi:"C", Symbol:"fiber_join_status")]
 pub i32 FiberJoinStatus(i64 fiberId) {
-    return 0; // 0 = still running
+    if fiberId < 0 {
+        return i32(JoinOutcome::Panicked);
+    }
+    return i32(FiberJoinStatusWord(word(fiberId)));
 }
 
 // Returns the join value of a completed fiber.
 [Export(Abi:"C", Symbol:"fiber_join_value")]
 pub i64 FiberJoinValue(i64 fiberId) {
-    return 0;
+    if fiberId < 0 || FiberJoinStatusWord(word(fiberId)) != JoinOutcome::Ok {
+        Trap(6, NativePointer(0), 0);
+        return 0;
+    }
+    return i64(raw_word_load(pointer_add(FiberRecord(word(fiberId)), 56)));
 }
 
 // Monotonic time in milliseconds since an arbitrary epoch.

@@ -53,8 +53,10 @@ pub fn lower_canonical_runtime_prepared_syntax(
         .into_iter()
         .map(|source| {
             let path = root_dir.join(&source.logical_path);
-            let program = parse_program_with_source_name(path.to_str().unwrap_or_default(), &source.source)
-                .map_err(|error| anyhow::anyhow!("canonical runtime parse failed for {}: {error}", source.logical_path))?;
+            let program =
+                parse_program_with_source_name(path.to_str().unwrap_or_default(), &source.source).map_err(|error| {
+                    anyhow::anyhow!("canonical runtime parse failed for {}: {error}", source.logical_path)
+                })?;
             Ok(SourceUnit { logical_name: source.logical_path, path, source: source.source, program })
         })
         .collect::<Result<Vec<_>>>()?;

@@ -18,8 +18,9 @@ fn module_integer_constant_is_a_single_source_declaration() {
 
 #[test]
 fn typed_uninitialized_word_local_is_lowered_to_a_word_zero_initializer() {
-    let program = parse_program_with_source_name("Runtime/Layout.bd", "word Slots() { word slotIndex; return slotIndex; }")
-        .expect("typed uninitialized local parses");
+    let program =
+        parse_program_with_source_name("Runtime/Layout.bd", "word Slots() { word slotIndex; return slotIndex; }")
+            .expect("typed uninitialized local parses");
     let Node::Function(function) = &program.node.items[0].node else {
         panic!("first item must be a function");
     };

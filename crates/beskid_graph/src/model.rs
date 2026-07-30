@@ -164,20 +164,14 @@ impl GraphDocument {
             nodes: Vec::new(),
             edges: Vec::new(),
             subgraphs: Vec::new(),
-            warnings: vec![GraphWarning {
-                code: GraphWarningCode::Empty,
-                message: message.to_owned(),
-            }],
+            warnings: vec![GraphWarning { code: GraphWarningCode::Empty, message: message.to_owned() }],
         };
         let revision = fingerprint_spec(&spec);
         Self {
             mermaid: format!("flowchart LR\n  empty[\"{message}\"]\n"),
             spec,
             revision,
-            metadata: GraphMetadata {
-                nodes: Vec::new(),
-                focused_project_uri: None,
-            },
+            metadata: GraphMetadata { nodes: Vec::new(), focused_project_uri: None },
         }
     }
 }

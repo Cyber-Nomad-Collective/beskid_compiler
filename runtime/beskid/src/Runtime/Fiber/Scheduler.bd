@@ -49,6 +49,10 @@ pub enum JoinOutcome {
 //                Mutex.bd table)
 //   offset 3472: waitgroup_table (pointer to a separately allocated, zeroed
 //                WaitGroup.bd table)
+//   offset 3480: current_fiber (word; 0xFFFF when no canonical fiber is
+//                executing on this scheduler thread)
+//   offset 3488: hub_table (pointer to a separately allocated, zeroed
+//                PubSub Hub.bd table)
 //
 // Each fiber record (128 bytes):
 //   offset   0: state (word)
@@ -70,6 +74,7 @@ pub enum JoinOutcome {
 
 const FIBER_TABLE_MAX = 16;
 const FIBER_SLOT_SIZE = 128;
+const FIBER_NONE = 0xFFFF;
 // Guarded stacks are a scheduler-owned native reservation. The manifest-only
 // adapter derives the target's guard granularity; source owns the portable
 // usable-capacity policy and never addresses below the returned usable base.
@@ -82,8 +87,9 @@ const SCHEDULER_STATE_OFFSET = 32;
 const SCHEDULER_CHANNEL_STATE_OFFSET = 3456;
 const SCHEDULER_MUTEX_STATE_OFFSET = 3464;
 const SCHEDULER_WAITGROUP_STATE_OFFSET = 3472;
-const SCHEDULER_HUB_STATE_OFFSET = 3480;
-const SCHEDULER_TABLE_SIZE = 3488;
+const SCHEDULER_CURRENT_FIBER_OFFSET = 3480;
+const SCHEDULER_HUB_STATE_OFFSET = 3488;
+const SCHEDULER_TABLE_SIZE = 3496;
 
 // Returns the selected target's BeskidArchContext record size. This compiler-owned
 // intrinsic is available only to the canonical runtime corpus and is materialized
@@ -229,6 +235,30 @@ pub pointer FiberRecord(word index) {
     return pointer_add(table, 1408 + index * FIBER_SLOT_SIZE);
 }
 
+// A handle is an index into the scheduler-owned fixed fiber table.  Never
+// form a record address for an absent/stale handle: join operations must fail
+// closed rather than read adjacent scheduler state.
+pub bool FiberExists(word index) {
+    pointer table = SchedTable();
+    if table == NativePointer(0) {
+        return false;
+    }
+    return index < raw_word_load(table);
+}
+
+// Stores a terminal stack-overflow outcome for an allocation that could not
+// obtain its context or guarded stack.  The handle is intentionally retained
+// in the one scheduler table so callers can observe status 3 without a fake
+// stack reservation or a second failure registry.
+pub unit FiberAllocationFailed(word index) {
+    pointer fib = FiberRecord(index);
+    memory_set(fib, 0, FIBER_SLOT_SIZE);
+    raw_word_store(fib, FiberState::Done);
+    raw_word_store(pointer_add(fib, 48), JoinOutcome::StackOverflow);
+    raw_word_store(pointer_add(fib, 56), 0);
+    return;
+}
+
 // Allocate a fiber slot. Returns the index or 0xFFFF on failure.
 pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
     pointer table = SchedTable();
@@ -245,12 +275,16 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
     // both of its allocation parameters from the selected ABI-v5 target layout.
     pointer context = SystemAllocate(ArchContextSize(), ArchContextAlignment());
     if context == NativePointer(0) {
-        return 0xFFFF;
+        FiberAllocationFailed(count);
+        raw_word_store(table, count + 1);
+        return count;
     }
     pointer stack = GuardedStackAllocate(FIBER_STACK_INITIAL_SIZE);
     if stack == NativePointer(0) {
         SystemFree(context, ArchContextSize());
-        return 0xFFFF;
+        FiberAllocationFailed(count);
+        raw_word_store(table, count + 1);
+        return count;
     }
     memory_set(context, 0, ArchContextSize());
     raw_word_store(fib, FiberState::Runnable);
@@ -265,6 +299,43 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
     raw_word_store(pointer_add(fib, 112), ArchContextSize());
     raw_word_store(table, count + 1);
     return count;
+}
+
+// Returns the public join status for one live scheduler record.  The five
+// values are ABI-stable: 0 normal, 1 cancelled, 2 panicked/stale, 3 allocation
+// or stack overflow, and 4 not yet terminal.
+pub word FiberJoinStatusWord(word index) {
+    if !FiberExists(index) {
+        return JoinOutcome::Panicked;
+    }
+    pointer fib = FiberRecord(index);
+    word state = raw_word_load(fib);
+    if state != FiberState::Done && state != FiberState::Cancelled {
+        return JoinOutcome::NotDone;
+    }
+    word outcome = raw_word_load(pointer_add(fib, 48));
+    if outcome == JoinOutcome::Ok || outcome == JoinOutcome::Cancelled || outcome == JoinOutcome::Panicked || outcome == JoinOutcome::StackOverflow {
+        return outcome;
+    }
+    return JoinOutcome::Panicked;
+}
+
+// The current handle is scheduler-owned rather than a second TLS/global
+// scheduler.  A no-fiber sentinel is never observable through the public ABI.
+pub word SchedulerCurrentFiber() {
+    pointer table = SchedTable();
+    if table == NativePointer(0) {
+        return FIBER_NONE;
+    }
+    return raw_word_load(pointer_add(table, SCHEDULER_CURRENT_FIBER_OFFSET));
+}
+
+pub unit SchedulerSetCurrentFiber(word index) {
+    pointer table = SchedTable();
+    if table != NativePointer(0) {
+        raw_word_store(pointer_add(table, SCHEDULER_CURRENT_FIBER_OFFSET), index);
+    }
+    return;
 }
 
 // ── Run Queue ──────────────────────────────────────────────────────
@@ -398,12 +469,18 @@ pub unit ApplyPendingCancels() {
     mut word i = 0;
     while i < count {
         word idx = raw_word_load(pointer_add(table, 616 + i * 8));
-        pointer fib = FiberRecord(idx);
-        raw_byte_store(pointer_add(fib, 41), 1); // cancelled
-        // Wake parked fiber if needed.
-        if FiberParked(idx) {
-            FiberSetState(idx, FiberState::Runnable);
-            RunQueuePush(idx);
+        if FiberExists(idx) {
+            pointer fib = FiberRecord(idx);
+            word state = FiberState(idx);
+            raw_byte_store(pointer_add(fib, 41), 1); // cancelled
+            // Queued and parked fibers reach a cancellation point at this
+            // scheduler step. A running fiber observes the same flag when it
+            // next yields or returns through its real target context path.
+            if state == FiberState::Runnable || state == FiberState::Parked {
+                raw_word_store(fib, FiberState::Cancelled);
+                raw_word_store(pointer_add(fib, 48), JoinOutcome::Cancelled);
+                raw_word_store(pointer_add(fib, 56), 0);
+            }
         }
         i = i + 1;
     }
@@ -453,20 +530,29 @@ pub unit SchedInit() {
     raw_word_store(pointer_add(state, SCHEDULER_STATE_OFFSET), NativeWord(table));
     word mainIdx = FiberAlloc(0, 0, 0, 0xFFFF);
     raw_word_store(pointer_add(table, 8), mainIdx);
-    RunQueuePush(mainIdx);
+    if FiberJoinStatusWord(mainIdx) != JoinOutcome::StackOverflow {
+        // Fiber 0 exists before main entry and is the initial current fiber;
+        // it is not pushed as a synthetic child job.
+        FiberSetState(mainIdx, FiberState::Running);
+        SchedulerSetCurrentFiber(mainIdx);
+    } else {
+        SchedulerSetCurrentFiber(FIBER_NONE);
+    }
     return;
 }
 
 // Registers work in the scheduler-owned table. Context switching is deliberately
 // outside this ownership slice; the queued record preserves the ABI-v5 spawn
-// boundary until that target-specific execution work is enabled.
+// boundary until the manifest-authorized target execution path is enabled.
 pub i64 SchedulerSpawn(pointer entry, pointer environment, pointer cancelledSlot) {
     SchedInit();
     pointer table = SchedTable();
     if table == NativePointer(0) { return -1; }
     word index = FiberAlloc(NativeWord(entry), NativeWord(environment), NativeWord(cancelledSlot), 0xFFFF);
-    if index == 0xFFFF { return -1; }
-    RunQueuePush(index);
+    if index == FIBER_NONE { return -1; }
+    if FiberJoinStatusWord(index) != JoinOutcome::StackOverflow {
+        RunQueuePush(index);
+    }
     return i64(index);
 }
 
@@ -513,30 +599,14 @@ pub bool SchedStep() {
     if next == 0xFFFF { return false; }
     if FiberParked(next) { return true; } // Skip parked.
 
-    pointer fib = FiberRecord(next);
     FiberSetState(next, FiberState::Running);
-    word entry = raw_word_load(pointer_add(fib, 8));
-    word arg = raw_word_load(pointer_add(fib, 16));
 
-    // ── Context Switch Boundary ──────────────────────────────────
-    // TODO: When beskid_arch_v5_context_init / context_switch are
-    // declared as intrinsics in runtime_manifest.bsol, replace this
-    // block with an actual context switch call. Until then, directly
-    // call the entry function (no stack switch — works only for
-    // leaf fibers that don't yield).
-    //
-    // For full scheduler operation:
-    //   beskid_arch_v5_context_init(ctx, stack, entry, arg, trampoline)
-    //   beskid_arch_v5_context_switch(from_ctx, to_ctx)
-
-    // Direct-call fallback (no stack switch):
-    i64 result = 0;
-    if entry != 0 {
-        // The entry is a native pointer — call it.
-        // Until intrinsics are wired, this is where a C shim would dispatch.
-        result = i64(entry);
-    }
-    FiberDone(next, result);
+    // This lifecycle slice deliberately does not claim a context transfer.
+    // The target-specific execution task must call ContextInit/ContextSwitch
+    // and complete the running record through FiberDone.  In particular, do
+    // not reinterpret an entry pointer as a return value or fabricate a
+    // direct-call execution path here.
+    SchedulerSetCurrentFiber(next);
 
     return true;
 }

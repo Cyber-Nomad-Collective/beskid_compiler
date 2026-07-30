@@ -35,7 +35,7 @@ pub mod status;
 pub mod wait_group;
 
 pub use builtins::{
-    CallbackTableEntry, HandlerTableEntry, alloc, array_len, array_new, beskid_register_callbacks,
+    CallbackTableEntry, HandlerTableEntry, alloc, args_count, args_get, array_len, array_new, beskid_register_callbacks,
     beskid_register_handlers, beskid_runtime_abi_version, channel_close, channel_create, channel_receive,
     channel_receive_status, channel_receive_value, channel_send, channel_try_receive, channel_try_send,
     composition_bind_plural, composition_container_create, composition_container_drop, composition_launch,

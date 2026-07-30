@@ -2,7 +2,8 @@
 
 use crate::parser::Rule;
 
-use super::{RepairCandidate, next_token_start, skip_ws, unbalanced_delimiters};
+use super::{candidate::RepairCandidate, lists, scan, syntax_primitives};
+use super::scan::{next_token_start, skip_ws, unbalanced_delimiters};
 
 const PRIORITY_USE_MOD_SEMI_EOF: u8 = 42;
 const PRIORITY_USE_MOD_SEMI_BEFORE_NEXT: u8 = 43;
@@ -11,19 +12,22 @@ const PRIORITY_ITEM_BRACE_EOF: u8 = 45;
 const PRIORITY_ITEM_BRACE_ERROR: u8 = 46;
 const PRIORITY_FN_BODY_STUB: u8 = 48;
 const PRIORITY_EMPTY_BODY_STUB: u8 = 49;
+const PRI_TYPE_FIELD_TRAILING_COMMA_DELETE: u8 = 50;
+const PRI_TYPE_FIELD_TRAILING_COMMA_FIX: u8 = 51;
+const PRI_ENUM_VARIANT_TRAILING_COMMA_DELETE: u8 = 52;
+const PRI_ENUM_VARIANT_TRAILING_COMMA_FIX: u8 = 53;
 
-const ITEM_START_KEYWORDS: &[&str] =
-    &["host", "macro", "impl", "extend", "type", "enum", "contract", "test", "attribute", "mod", "use"];
 
 /// Generate item-boundary repairs (closers / trailing `;`) near the Pest error locus.
-pub fn repairs(source: &str, error_pos: usize, _parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
-    let error_pos = error_pos.min(source.len());
+pub fn repairs(source: &str, error_pos: usize, parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
+    let error_pos = syntax_primitives::recovery_scan_pos(source, error_pos);
     let mut candidates = Vec::new();
     candidates.extend(unclosed_item_brace_repairs(source, error_pos));
+    candidates.extend(type_and_enum_field_list_repairs(source, error_pos));
     candidates.extend(use_mod_semicolon_repairs(source, error_pos));
     candidates.extend(contract_method_semicolon_repairs(source, error_pos));
-    candidates.extend(missing_function_body_repairs(source, error_pos));
-    candidates.extend(empty_stub_body_repairs(source, error_pos));
+    candidates.extend(missing_function_body_repairs(source, error_pos, parse_error));
+    candidates.extend(empty_stub_body_repairs(source, error_pos, parse_error));
     candidates
 }
 
@@ -83,13 +87,61 @@ fn use_mod_semicolon_repairs(source: &str, error_pos: usize) -> Vec<RepairCandid
         && next_item > decl_start
         && next_item <= source.len()
     {
+        let insert_at = syntax_primitives::recovery_insert_position(source, next_item);
         out.push(RepairCandidate::insert(
-            next_item,
+            insert_at,
             ";",
             "inserted semicolon before next top-level item keyword",
             PRIORITY_USE_MOD_SEMI_BEFORE_NEXT,
         ));
     }
+    out
+}
+
+fn type_and_enum_field_list_repairs(source: &str, error_pos: usize) -> Vec<RepairCandidate> {
+    let scan_pos = error_pos.min(source.len());
+    let Some(open_pos) = syntax_primitives::find_unclosed_delimiter_before(source, scan_pos, b'{', b'}') else {
+        return Vec::new();
+    };
+    let insert_at = scan::skip_ws(source, scan_pos);
+
+    let mut out = Vec::new();
+    match item_body_keyword_before_brace(source, open_pos) {
+        Some("type") => {
+            lists::trailing_separator_before_close_delimiter(
+                source,
+                scan_pos,
+                insert_at,
+                &mut out,
+                b'{',
+                b'}',
+                |_source, open, _scan_pos| item_body_keyword_before_brace(source, open) == Some("type"),
+                "field: word",
+                PRI_TYPE_FIELD_TRAILING_COMMA_DELETE,
+                PRI_TYPE_FIELD_TRAILING_COMMA_FIX,
+                "removed trailing comma in type field list",
+                "inserted placeholder type field after trailing comma",
+            );
+        }
+        Some("enum") => {
+            lists::trailing_separator_before_close_delimiter(
+                source,
+                scan_pos,
+                insert_at,
+                &mut out,
+                b'{',
+                b'}',
+                |_source, open, _scan_pos| item_body_keyword_before_brace(source, open) == Some("enum"),
+                "Value",
+                PRI_ENUM_VARIANT_TRAILING_COMMA_DELETE,
+                PRI_ENUM_VARIANT_TRAILING_COMMA_FIX,
+                "removed trailing comma in enum variant list",
+                "inserted placeholder enum variant after trailing comma",
+            );
+        }
+        _ => {}
+    }
+
     out
 }
 
@@ -116,7 +168,11 @@ fn contract_method_semicolon_repairs(source: &str, error_pos: usize) -> Vec<Repa
     )]
 }
 
-fn missing_function_body_repairs(source: &str, error_pos: usize) -> Vec<RepairCandidate> {
+fn missing_function_body_repairs(
+    source: &str,
+    error_pos: usize,
+    parse_error: &pest::error::Error<Rule>,
+) -> Vec<RepairCandidate> {
     if inside_contract_block(source, error_pos) {
         return Vec::new();
     }
@@ -124,6 +180,10 @@ fn missing_function_body_repairs(source: &str, error_pos: usize) -> Vec<RepairCa
         return Vec::new();
     };
     if !looks_like_signature_close_paren(source, close_paren) {
+        return Vec::new();
+    }
+
+    if !syntax_primitives::recovery_expected_or_follow_token_has_body_hint(parse_error) {
         return Vec::new();
     }
 
@@ -149,7 +209,15 @@ fn missing_function_body_repairs(source: &str, error_pos: usize) -> Vec<RepairCa
     )]
 }
 
-fn empty_stub_body_repairs(source: &str, error_pos: usize) -> Vec<RepairCandidate> {
+fn empty_stub_body_repairs(
+    source: &str,
+    error_pos: usize,
+    parse_error: &pest::error::Error<Rule>,
+) -> Vec<RepairCandidate> {
+    if !syntax_primitives::recovery_expected_or_follow_token_has_body_hint(parse_error) {
+        return Vec::new();
+    }
+
     if !error_near_eof(source, error_pos) {
         return Vec::new();
     }
@@ -196,15 +264,24 @@ fn item_body_opener_before(source: &str, brace_pos: usize) -> bool {
     if before.contains("extend type") {
         return true;
     }
-    if matches_item_keyword_before_brace(before, "type")
-        || matches_item_keyword_before_brace(before, "enum")
-        || matches_item_keyword_before_brace(before, "impl")
-        || matches_item_keyword_before_brace(before, "contract")
-        || matches_item_keyword_before_brace(before, "test")
-        || matches_item_keyword_before_brace(before, "attribute")
-    {
-        return true;
+    for keyword in syntax_primitives::ITEM_BODY_OPEN_KEYWORDS {
+        if *keyword == "extend" {
+            continue;
+        }
+        if *keyword == "host" {
+            continue;
+        }
+        if *keyword == "macro" {
+            continue;
+        }
+        if *keyword == "mod" {
+            continue;
+        }
+        if matches_item_keyword_before_brace(before, keyword) {
+            return true;
+        }
     }
+
     if matches_item_keyword_before_brace(before, "host") && before.ends_with(')') {
         return true;
     }
@@ -225,7 +302,7 @@ fn matches_item_keyword_before_brace(snippet: &str, keyword: &str) -> bool {
     let tail = &snippet[tail_start..];
     let mut pos = 0usize;
     while pos < tail.len() {
-        if keyword_at(tail, pos, keyword) {
+        if scan::keyword_at(tail, pos, keyword) {
             return true;
         }
         pos += 1;
@@ -243,11 +320,11 @@ fn find_use_or_mod_declaration(source: &str, error_pos: usize) -> Option<(ModDec
     let mut last: Option<(ModDeclKind, usize)> = None;
     let mut pos = 0usize;
     while pos < error_pos {
-        if keyword_at(source, pos, "use") {
+        if scan::keyword_at(source, pos, "use") {
             if !has_semicolon_in_range(source, pos, error_pos) {
                 last = Some((ModDeclKind::Path, pos));
             }
-        } else if keyword_at(source, pos, "mod") {
+        } else if scan::keyword_at(source, pos, "mod") {
             let kind = mod_declaration_kind(source, pos);
             if kind == ModDeclKind::Path && !has_semicolon_in_range(source, pos, error_pos) {
                 last = Some((kind, pos));
@@ -300,7 +377,7 @@ fn has_semicolon_in_range(source: &str, start: usize, end: usize) -> bool {
 fn inside_contract_block(source: &str, error_pos: usize) -> bool {
     let mut pos = 0usize;
     while pos < source.len() {
-        if !keyword_at(source, pos, "contract") {
+        if !scan::keyword_at(source, pos, "contract") {
             pos += 1;
             continue;
         }
@@ -323,7 +400,7 @@ fn find_next_brace_after(source: &str, from: usize) -> Option<usize> {
     let mut pos = skip_ws(source, from);
     while pos < source.len() {
         match source.as_bytes()[pos] {
-            b'"' | b'\'' => pos = skip_string_or_char(source, pos),
+            b'"' | b'\'' => pos = scan::skip_string_or_char(source, pos),
             b'/' if pos + 1 < source.len() && source.as_bytes()[pos + 1] == b'/' => {
                 pos += 2;
                 while pos < source.len() && source.as_bytes()[pos] != b'\n' {
@@ -352,7 +429,7 @@ fn find_matching_close_brace(source: &str, open: usize) -> Option<usize> {
     while pos < source.len() {
         match bytes[pos] {
             b'"' | b'\'' => {
-                pos = skip_string_or_char(source, pos);
+                pos = scan::skip_string_or_char(source, pos);
                 continue;
             }
             b'/' if pos + 1 < source.len() && bytes[pos + 1] == b'/' => {
@@ -451,6 +528,18 @@ fn empty_stub_kind(trimmed: &str) -> Option<&'static str> {
     if stub_has_keyword_ident(trimmed, "test") {
         return Some("inserted empty test body stub at end of file");
     }
+    if stub_has_keyword_ident(trimmed, "scope") {
+        return Some("inserted empty scope body stub at end of file");
+    }
+    if stub_has_keyword_ident(trimmed, "registry") {
+        return Some("inserted empty registry body stub at end of file");
+    }
+    if stub_has_keyword_ident(trimmed, "meta") {
+        return Some("inserted empty meta block stub at end of file");
+    }
+    if stub_has_keyword_ident(trimmed, "skip") {
+        return Some("inserted empty skip block stub at end of file");
+    }
     if stub_has_keyword_ident(trimmed, "attribute") {
         return Some("inserted empty attribute body stub at end of file");
     }
@@ -466,13 +555,40 @@ fn empty_stub_kind(trimmed: &str) -> Option<&'static str> {
 fn stub_has_keyword_ident(trimmed: &str, keyword: &str) -> bool {
     let mut i = 0usize;
     while i < trimmed.len() {
-        if keyword_at(trimmed, i, keyword) {
+        if scan::keyword_at(trimmed, i, keyword) {
             let after = skip_ws(trimmed, i + keyword.len());
             return next_token_start(trimmed, after).is_some();
         }
         i += 1;
     }
     false
+}
+
+fn item_body_keyword_before_brace(source: &str, brace_pos: usize) -> Option<&'static str> {
+    if brace_pos == 0 {
+        return None;
+    }
+
+    let mut best: Option<(usize, &str)> = None;
+    for (keyword, token) in [("type", "type"), ("enum", "enum")] {
+        if let Some(pos) = scan::find_keyword_backward(source, brace_pos, keyword) {
+            if brace_pos.saturating_sub(pos) > 384 {
+                continue;
+            }
+
+            if source[pos..brace_pos].contains('{') || source[pos..brace_pos].contains("}") {
+                continue;
+            }
+
+            if !best.map_or(true, |(best_pos, _)| pos > best_pos) {
+                continue;
+            }
+
+            best = Some((pos, token));
+        }
+    }
+
+    best.map(|(_, token)| token)
 }
 
 fn error_near_eof(source: &str, error_pos: usize) -> bool {
@@ -484,56 +600,16 @@ fn next_item_keyword_start(source: &str, from: usize) -> Option<usize> {
     let mut pos = from;
     while pos < source.len() {
         let token = next_token_start(source, pos)?;
-        if keyword_at(source, token, "pub") {
+        if scan::keyword_at(source, token, "pub") {
             pos = token + 3;
             continue;
         }
-        for kw in ITEM_START_KEYWORDS {
-            if keyword_at(source, token, kw) {
+        for kw in syntax_primitives::ITEM_START_KEYWORDS {
+            if scan::keyword_at(source, token, kw) {
                 return Some(token);
             }
         }
         pos = token + 1;
     }
     None
-}
-
-fn keyword_at(source: &str, pos: usize, keyword: &str) -> bool {
-    if pos + keyword.len() > source.len() {
-        return false;
-    }
-    let bytes = source.as_bytes();
-    if bytes.len() < pos + keyword.len() || &bytes[pos..pos + keyword.len()] != keyword.as_bytes() {
-        return false;
-    }
-    if pos > 0 {
-        let before = bytes[pos - 1];
-        if before.is_ascii_alphanumeric() || before == b'_' {
-            return false;
-        }
-    }
-    let after = pos + keyword.len();
-    if after < bytes.len() {
-        let next = bytes[after];
-        if next.is_ascii_alphanumeric() || next == b'_' {
-            return false;
-        }
-    }
-    true
-}
-
-fn skip_string_or_char(source: &str, start: usize) -> usize {
-    let quote = source.as_bytes()[start];
-    let mut i = start + 1;
-    while i < source.len() {
-        if source.as_bytes()[i] == b'\\' {
-            i = (i + 2).min(source.len());
-            continue;
-        }
-        if source.as_bytes()[i] == quote {
-            return i + 1;
-        }
-        i += 1;
-    }
-    source.len()
 }

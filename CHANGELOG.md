@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Refactor parser-recovery orchestration in `beskid_analysis` behind an explicit recovery-policy module, separating phase ordering from candidate application and making recovery pass structure explicit and easier to evolve.
+- Expand parser recovery synchronization coverage with grammar-level boundary heuristics for additional
+  syntax forms (`macro`, host/scope/registry constructs, `spawn`/`match`/`range`/`code`, and
+  qualifier-starting declaration forms), so sync repair candidates are generated for more complete
+  source-shape coverage while preserving existing insertion priorities.
+- Introduce a shared sync-boundary primitive in `syntax_primitives` and wire it into sync and
+  statement-start discovery so new statement/expression starters inherit common coverage rules across
+  recovery phases (including operator-led expression starts such as `-` and `!`), reducing duplicated
+  boundary heuristics and broadening recovery candidates for uncommon syntax forms.
+- Add a shared `recovery_scan_pos` entrypoint for recovery modules (`separators`, `delimiters`,
+  `items`, `sync`) so fallback parse positions (`Pos(0)`) consistently anchor insert/delete candidates at
+  source-tail boundaries before probing syntax heuristics.
+- Extend `recovery_scan_pos` adoption to the remaining high-volume statement and expression
+  recovery paths (`statements`, `expressions`, list separator helpers, and orchestration entrypoint),
+  and remove stale recovery-phase metadata (`kind`) to keep parser-recovery module wiring aligned
+  with the shared-primitive model.
+- Centralize primitive-type token heuristics into `syntax_primitives::PRIMITIVE_TYPE_KEYWORDS` and
+  consume them from scanner recovery (`looks_like_type_keyword`) so type-start detection now tracks
+  `PrimitiveType` grammar surface with a single source of truth.
+- Move sync boundary scanning into a dedicated `sync_primitives` recovery module and expand
+  syntax-boundary regression cases for expression starters, function-like constructs, and item-level
+  statements to harden parser recovery under broader syntax coverage (panic-mode path).
+- Harden expression-level recovery for incomplete member/index tails when parser fallback
+  failures report `Pos(0)` by anchoring member/index heuristics to tail syntax markers (`.` / `[`)
+  and shared prefix checks, so `receiver.` and `collection[` now recover with context-safe placeholders.
+
 - Migrate AOT and parsed-project codegen tests to the production prepared-syntax
   → `CodegenInput` → ISLE boundary, removing test reliance on the retired HIR
   `lower_program` compatibility path.
@@ -20,7 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-
+- Expand parse-recovery coverage across repeated-token and delimiter-heavy syntax by adding ANTLR-style single-token deletion checks that validate "delete then continue" against expected-token follow sets and lightweight expression-start context.
+- Move parser recovery core from a monolithic `mod.rs` implementation into domain-focused modules (`candidate`, `scan`, `expected_tokens`, `ranking`, `sync`, and new `heuristics`) so single-token/expected-token recovery stays reusable and easier to evolve.
+- Add matrix coverage for duplicate-token repair in call lists, arrays, tuples/parentheses, generics, and struct field lists, including tolerant assertions for real parse-candidate output.
+- Add a sync replacement credibility gate using a class-aware edit-distance heuristic so only close-token replacements are considered by default, reducing cross-surface noise while preserving valid typo-level recovery in syntax-heavy contexts.
 
 - Replace canonical composition sentinel exports with per-runtime, container-owned
   frozen-plan storage. Registration and plural binding order are now validated
@@ -33,11 +62,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arithmetic into a scheduler-owned allocation. Hub registrations now support
   256 stable entries, replace an existing index in place, preserve ordering on
   removal, and keep the circular receive cursor valid.
-
 - Replace the canonical callback literal runtime-state table with a
   manifest-declared, per-runtime registry. Callback and handler registration
   now validate before publishing a complete replacement snapshot, resolve
   duplicates deterministically, and reject unregistered trampoline targets.
+- Give the canonical scheduler one ABI-owned lifecycle record for fiber 0 and
+  spawned handles: cancellation, detach, current-id, exact join statuses, and
+  allocation-failure status `3` now share that record, while source no longer
+  pretends an entry pointer performs a target context switch.
 - Preserve canonical runtime module-constant layout values at their declared
   direct-call ABI width under compiler-minted authority, while rejecting literal
   coercion and untrusted source. Runtime lowering now reports the first failed
