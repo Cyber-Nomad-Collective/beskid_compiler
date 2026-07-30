@@ -16,7 +16,7 @@ pub ContractDefinition PubContract(string name, ContractNodeList items) {
 pub ContractNodeList ConsContractMethod(ContractMethodSignature signature, ContractNodeList tail) {
     return ContractNodeList::Cons(
         ContractNode::MethodSignature(signature),
-        tail,
+        tail
     );
 }
 

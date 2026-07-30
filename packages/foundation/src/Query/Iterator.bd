@@ -1,7 +1,6 @@
 /// Query.Iterator — contract-based iteration for Beskid collections.
 /// @tier(supported)
 /// Modeled after Rust's `Iterator` trait. Concrete iterators implement this contract.
-
 /// Marker contract for iterator implementations.
 ///
 /// Element-typed iteration is expressed by concrete generic iterators until contracts gain

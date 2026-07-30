@@ -89,7 +89,7 @@ write_internal_symbol() {
 
 /// Describes how a mod entrypoint is exported for AOT host binding.
 pub enum InternalSymbolType {
-    Callable(InternalSymbolCallable),
+    Callable(InternalSymbolCallable callable),
 }
 
 /// Callable ABI shape: parameter types in Beskid type syntax (schema for marshaling).
