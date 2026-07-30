@@ -10,7 +10,7 @@ use Core.String.Chars;
 use Core.String.Utf8;
 
 pub i64 Len(string text) {
-    return __str_len(text);
+    return Core.Len(text);
 }
 
 pub bool IsEmpty(string text) {
