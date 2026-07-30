@@ -125,6 +125,9 @@ impl AttachedRuntimeState {
         // runtime state this thread must attach to.
         let attached = unsafe { attach(state) };
         if attached.is_null() {
+            // SAFETY: process init succeeded on this record, so its shutdown must run before the
+            // reservation is released; the failed attach installed no thread state to detach.
+            unsafe { shutdown(state) };
             // SAFETY: the failed attach installed no thread state, so the reservation is unshared.
             unsafe { std::alloc::dealloc(state, layout) };
             return Err("ABI-v5 runtime kit failed to attach the current thread".into());
