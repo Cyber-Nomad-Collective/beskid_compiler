@@ -9,6 +9,13 @@ use beskid_abi::abi_v5::TargetMetadata;
 use beskid_abi::runtime_kit::{BuildProfile, RuntimeKitMetadata};
 use beskid_abi::runtime_source::resolve_canonical_runtime_kit;
 
+/// Manifest-owned record a host reserves for one activated ABI-v5 runtime.
+const RUNTIME_STATE_LAYOUT: &str = "BeskidRuntimeState";
+/// ABI-v5 embedder entrypoints that activate runtime state and attach the executing thread.
+const PROCESS_INIT_EXPORT: &str = "beskid_rt_v5_process_init";
+const PROCESS_SHUTDOWN_EXPORT: &str = "beskid_rt_v5_process_shutdown";
+const THREAD_ATTACH_EXPORT: &str = "beskid_rt_v5_thread_attach";
+
 /// Loaded shared runtime plus the exact metadata-approved JIT symbol map.
 pub struct JitRuntimeKit {
     _library: DynamicLibrary,
@@ -43,6 +50,97 @@ impl JitRuntimeKit {
 
     pub fn symbol_names(&self) -> impl Iterator<Item = &str> {
         self.symbols.iter().map(|(name, _)| name.as_str())
+    }
+
+    fn loader_required_symbol(&self, name: &str) -> Result<*const u8, String> {
+        self.symbols
+            .iter()
+            .find(|(symbol, _)| symbol == name)
+            .map(|(_, address)| *address)
+            .ok_or_else(|| format!("ABI-v5 runtime kit does not export the required loader symbol `{name}`"))
+    }
+}
+
+/// One caller-owned `BeskidRuntimeState` activated for the thread that runs JIT'd code.
+///
+/// `beskid_runtime_abi_v5.h` makes runtime-state ownership a host responsibility: the embedder
+/// reserves the manifest-layout record, stamps it through `beskid_rt_v5_process_init`, and attaches
+/// the executing thread with `beskid_rt_v5_thread_attach` before generated code reaches scheduler,
+/// heap, or root-frame state. The in-process JIT is such a host, so the engine performs that
+/// activation itself; without it every kit path that reads `RuntimeState()` fails closed with the
+/// ABI-v5 `runtime_internal_corruption` trap.
+pub(crate) struct AttachedRuntimeState {
+    state: *mut u8,
+    layout: std::alloc::Layout,
+    shutdown: unsafe extern "C" fn(*mut u8),
+}
+
+impl AttachedRuntimeState {
+    /// Reserve, initialize, and attach runtime state through the loaded kit's own exports.
+    pub(crate) fn attach(kit: &JitRuntimeKit) -> Result<Self, String> {
+        let record = kit
+            .metadata()
+            .abi_contract
+            .layouts
+            .iter()
+            .find(|layout| layout.name == RUNTIME_STATE_LAYOUT)
+            .ok_or_else(|| format!("ABI-v5 manifest is missing the `{RUNTIME_STATE_LAYOUT}` layout"))?;
+        let (size, alignment) = (usize::try_from(record.size), usize::try_from(record.alignment));
+        let (Ok(size), Ok(alignment)) = (size, alignment) else {
+            return Err(format!("`{RUNTIME_STATE_LAYOUT}` layout exceeds the host address width"));
+        };
+        if size == 0 {
+            return Err(format!("`{RUNTIME_STATE_LAYOUT}` layout must reserve a non-empty record"));
+        }
+        let layout = std::alloc::Layout::from_size_align(size, alignment)
+            .map_err(|error| format!("invalid `{RUNTIME_STATE_LAYOUT}` layout: {error}"))?;
+
+        let initialize = kit.loader_required_symbol(PROCESS_INIT_EXPORT)?;
+        let attach = kit.loader_required_symbol(THREAD_ATTACH_EXPORT)?;
+        let shutdown = kit.loader_required_symbol(PROCESS_SHUTDOWN_EXPORT)?;
+        // SAFETY: the three addresses come from the kit's validated loader-required exports, whose
+        // ABI-v5 signatures are frozen by the manifest this kit was audited against.
+        let (initialize, attach, shutdown) = unsafe {
+            (
+                std::mem::transmute::<*const u8, unsafe extern "C" fn(*mut u8) -> *mut u8>(initialize),
+                std::mem::transmute::<*const u8, unsafe extern "C" fn(*mut u8) -> *mut u8>(attach),
+                std::mem::transmute::<*const u8, unsafe extern "C" fn(*mut u8)>(shutdown),
+            )
+        };
+
+        // SAFETY: `layout` has a non-zero size taken from the validated manifest record.
+        let state = unsafe { std::alloc::alloc_zeroed(layout) };
+        if state.is_null() {
+            return Err(format!("failed to reserve a {size}-byte `{RUNTIME_STATE_LAYOUT}` record"));
+        }
+        // SAFETY: `state` is a zeroed, correctly aligned record of exactly the manifest size, and
+        // stays owned by this value until `Drop` runs the paired shutdown.
+        let initialized = unsafe { initialize(state) };
+        if initialized.is_null() {
+            // SAFETY: a failed init installed no thread state, so the reservation is unshared.
+            unsafe { std::alloc::dealloc(state, layout) };
+            return Err(format!("ABI-v5 runtime kit failed to initialize the `{RUNTIME_STATE_LAYOUT}` record"));
+        }
+        // SAFETY: init stamped the record it was handed, so the same reservation is still the
+        // runtime state this thread must attach to.
+        let attached = unsafe { attach(state) };
+        if attached.is_null() {
+            // SAFETY: the failed attach installed no thread state, so the reservation is unshared.
+            unsafe { std::alloc::dealloc(state, layout) };
+            return Err("ABI-v5 runtime kit failed to attach the current thread".into());
+        }
+        Ok(Self { state, layout, shutdown })
+    }
+}
+
+impl Drop for AttachedRuntimeState {
+    fn drop(&mut self) {
+        // SAFETY: shutdown detaches the thread state installed by `attach` before the reservation
+        // is released, and the loaded kit outlives this value.
+        unsafe {
+            (self.shutdown)(self.state);
+            std::alloc::dealloc(self.state, self.layout);
+        }
     }
 }
 

@@ -76,7 +76,7 @@ pub struct BeskidJitModule {
     module: JITModule,
     func_ids: HashMap<String, FuncId>,
     builtins_declared: bool,
-    _runtime_kit: JitRuntimeKit,
+    runtime_kit: JitRuntimeKit,
     exact_symbols: HashSet<String>,
 }
 
@@ -110,9 +110,14 @@ impl BeskidJitModule {
             module: JITModule::new(builder),
             func_ids: HashMap::new(),
             builtins_declared: false,
-            _runtime_kit: runtime,
+            runtime_kit: runtime,
             exact_symbols,
         })
+    }
+
+    /// Exact ABI-v5 runtime kit backing this module's imported runtime symbols.
+    pub(crate) fn runtime_kit(&self) -> &JitRuntimeKit {
+        &self.runtime_kit
     }
 
     /// Declare builtins (once), user funcs, externs, data, define bodies, finalize definitions.

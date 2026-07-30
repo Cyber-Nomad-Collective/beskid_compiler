@@ -9,6 +9,7 @@ pub enum ReflectSdkNodeKind {
     Program,
     Node,
     FunctionDefinition,
+    ConstantDefinition,
     MethodDefinition,
     TypeDefinition,
     EnumDefinition,

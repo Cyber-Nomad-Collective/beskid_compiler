@@ -91,6 +91,25 @@ fn symbol_list_rejects_non_abi_panic_export() {
 }
 
 #[test]
+fn static_archive_audit_collapses_per_member_import_references() {
+    // `nm -u` walks every archive member, so the Linux platform objects report `mmap` twice: once
+    // for the page-allocation intrinsics in platform.S and once for guarded scheduler stacks in
+    // platform_host.c. A repeated reference is not an undeclared dependency.
+    let audit = RuntimeProvenanceAudit::canonical(target("x86_64-unknown-linux-gnu")).unwrap();
+    let mut symbols = audit.fixture_symbol_list().unwrap();
+    symbols.undefined.extend(["mmap".to_string(), "munmap".to_string()]);
+    symbols.undefined.push("__tls_get_addr".to_string());
+
+    audit.verify_static_archive(&symbols).unwrap();
+
+    // Collapsing repeats must not weaken the allowlist itself.
+    let mut undeclared = symbols;
+    undeclared.undefined.push("__cxa_atexit".to_string());
+    let error = audit.verify_static_archive(&undeclared).unwrap_err();
+    assert!(error.to_string().contains("unexpected"), "unexpected allowlist error: {error}");
+}
+
+#[test]
 fn linux_shared_runtime_allows_only_documented_dynamic_loader_imports() {
     let loader_imports = [
         "_ITM_deregisterTMCloneTable",

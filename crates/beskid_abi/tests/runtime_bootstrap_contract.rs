@@ -71,7 +71,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 21);
+    assert_eq!(names.len(), 25);
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
@@ -171,8 +171,8 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
 #[test]
 fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
     let expected = [
-        vec!["_exit", "clock_gettime", "getpid", "mmap", "munmap", "write"],
-        vec!["_exit", "clock_gettime", "getpid", "mmap", "munmap", "write"],
+        vec!["_exit", "clock_gettime", "getpid", "mmap", "mprotect", "munmap", "write"],
+        vec!["_exit", "clock_gettime", "getpid", "mmap", "mprotect", "munmap", "write"],
         vec![
             "ExitProcess",
             "GetCurrentProcessId",
