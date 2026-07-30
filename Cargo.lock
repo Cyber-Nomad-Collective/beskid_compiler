@@ -604,6 +604,7 @@ dependencies = [
  "beskid_analysis",
  "beskid_aot",
  "beskid_codegen",
+ "beskid_host",
  "beskid_pipeline",
  "beskid_queries",
  "beskid_runtime",

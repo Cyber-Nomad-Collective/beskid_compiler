@@ -322,6 +322,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
+        if self.node_kind(key) == Some(NodeKind::MatchExpression) {
+            let arm = self.match_arms(key)?.into_iter().next()?;
+            return self.scalar_type(arm.body());
+        }
         if self.node_kind(key) == Some(NodeKind::StructLiteralExpression)
             && self.query(aggregate_literal_declaration(self.db, key)).is_some()
         {

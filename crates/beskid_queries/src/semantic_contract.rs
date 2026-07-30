@@ -874,6 +874,13 @@ fn unique_exported_function_in_unit(
     generation: SyntaxGenerationId,
     name: &str,
 ) -> Option<AstNodeKey> {
+    // A facade may publish its own forwarding function while also publicly
+    // exposing implementation modules with a same-named function. Its direct
+    // export is the authoritative qualified target; re-exports are only the
+    // fallback when the facade does not define that member itself.
+    if let Some(candidate) = unique_public_function_in_unit(db, unit, generation, name) {
+        return Some(candidate);
+    }
     let mut pending = vec![unit];
     let mut visited = std::collections::HashSet::new();
     let mut candidates = Vec::new();

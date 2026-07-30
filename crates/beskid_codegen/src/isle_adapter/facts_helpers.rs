@@ -19,8 +19,10 @@ impl SyntaxNodeFacts<'_> {
     pub(super) fn struct_layout_for_declaration(&self, declaration: AstNodeKey) -> Option<StructLayout> {
         let isa = self.isa?;
         let aggregate = self.query(aggregate_layout(self.db, declaration))?;
-        let mut size = 0_u32;
-        let mut alignment = 1_u32;
+        let header = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
+        let mut size = u32::try_from(header.size).ok()?;
+        let mut alignment = u32::try_from(header.alignment).ok()?;
+        (size >= 16 && alignment.is_power_of_two() && alignment > 0).then_some(())?;
         let mut fields = Vec::with_capacity(aggregate.fields.len());
         for (_, shape) in aggregate.fields.iter() {
             let value_type = match shape {
@@ -33,8 +35,6 @@ impl SyntaxNodeFacts<'_> {
             size = size.checked_add(value_type.bytes())?;
             alignment = alignment.max(field_alignment);
         }
-        // An empty nominal value still needs an addressable ABI-v5 reference. Keep its source
-        // layout empty while reserving one byte for the stack-backed literal representation.
         let size = align_to(size, alignment)?.max(1);
         Some(StructLayout::new(size, alignment.ilog2() as u8, fields))
     }

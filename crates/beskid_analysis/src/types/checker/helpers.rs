@@ -55,17 +55,23 @@ impl<'a> TypeChecker<'a> {
     }
 
     pub(super) fn resolved_value_at(&self, span: SpanInfo) -> Option<ResolvedValue> {
+        // The merged SpanIndex has no source identity. In a multi-unit Corelib
+        // assembly, a same-offset local from another unit can otherwise win and
+        // miss this checker's local type map. The source-scoped table is
+        // authoritative whenever a current unit is known.
+        if let Some(value) = self.resolution.tables.resolved_value_at(span, self.current_source_path.as_ref()) {
+            return Some(match value {
+                ResolvedValue::Item(item_id) => ResolvedValue::Item(canonical_item_id(self.resolution, item_id)),
+                other => other,
+            });
+        }
         if let Some(value) = self.resolution.span_index.lookup_value(span) {
             return Some(match value {
                 ResolvedValue::Item(item_id) => ResolvedValue::Item(canonical_item_id(self.resolution, item_id)),
                 other => other,
             });
         }
-        let value = self.resolution.tables.resolved_value_at(span, self.current_source_path.as_ref())?;
-        Some(match value {
-            ResolvedValue::Item(item_id) => ResolvedValue::Item(canonical_item_id(self.resolution, item_id)),
-            other => other,
-        })
+        None
     }
 
     pub(super) fn resolved_type_at(&self, span: SpanInfo) -> Option<ResolvedType> {

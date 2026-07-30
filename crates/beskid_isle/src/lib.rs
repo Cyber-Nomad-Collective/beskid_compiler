@@ -587,6 +587,10 @@ impl MatchArmFact {
     pub const fn wildcard(body: AstNodeKey) -> Self {
         Self { discriminant: None, body, binding: None }
     }
+
+    pub const fn body(self) -> AstNodeKey {
+        self.body
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -976,10 +980,23 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         let mut arguments = Vec::with_capacity(argument_keys.len());
         for (argument, parameter) in argument_keys.into_iter().zip(&signature.params) {
             let value = generated::constructor_lower_expression(self, argument)?;
-            let value = if self.builder.func.dfg.value_type(value) == parameter.value_type {
+            let value_type = self.builder.func.dfg.value_type(value);
+            let value = if value_type == parameter.value_type {
                 value
+            } else if let Some(value) =
+                self.materialize_canonical_runtime_direct_constant(argument, parameter.value_type)
+            {
+                value
+            } else if self.facts.scalar_type(argument) != Some(parameter.value_type) {
+                return None;
+            } else if value_type.is_int() && parameter.value_type.is_int() {
+                match value_type.bits().cmp(&parameter.value_type.bits()) {
+                    std::cmp::Ordering::Greater => self.builder.ins().ireduce(parameter.value_type, value),
+                    std::cmp::Ordering::Less => self.builder.ins().sextend(parameter.value_type, value),
+                    std::cmp::Ordering::Equal => value,
+                }
             } else {
-                self.materialize_canonical_runtime_direct_constant(argument, parameter.value_type)?
+                return None;
             };
             arguments.push(value);
         }
@@ -1911,9 +1928,18 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let initializer = self.facts.let_initializer(key)?;
         let value = generated::constructor_lower_expression(self, initializer)?;
         let value_type = self.facts.scalar_type(key)?;
-        if self.builder.func.dfg.value_type(value) != value_type {
+        let actual_type = self.builder.func.dfg.value_type(value);
+        let value = if actual_type == value_type {
+            value
+        } else if actual_type.is_int() && value_type.is_int() {
+            match actual_type.bits().cmp(&value_type.bits()) {
+                std::cmp::Ordering::Greater => self.builder.ins().ireduce(value_type, value),
+                std::cmp::Ordering::Less => self.builder.ins().sextend(value_type, value),
+                std::cmp::Ordering::Equal => value,
+            }
+        } else {
             return None;
-        }
+        };
         let variable = self.builder.declare_var(value_type);
         self.builder.def_var(variable, value);
         self.locals.insert(slot, (variable, value_type));
@@ -2130,9 +2156,18 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         }
         let (variable, expected_type) = self.locals.get(&slot).copied()?;
         let value = self.lower_nested_expression(value_key)?;
-        if self.builder.func.dfg.value_type(value) != expected_type {
+        let value_type = self.builder.func.dfg.value_type(value);
+        let value = if value_type == expected_type {
+            value
+        } else if value_type.is_int() && expected_type.is_int() {
+            match value_type.bits().cmp(&expected_type.bits()) {
+                std::cmp::Ordering::Greater => self.builder.ins().ireduce(expected_type, value),
+                std::cmp::Ordering::Less => self.builder.ins().sextend(expected_type, value),
+                std::cmp::Ordering::Equal => value,
+            }
+        } else {
             return None;
-        }
+        };
         self.builder.def_var(variable, value);
         Some(value)
     }
@@ -2250,10 +2285,19 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let mut values = Vec::with_capacity(fields.len());
         for (field_key, field_layout) in fields.into_iter().zip(&layout.fields) {
             let value = generated::constructor_lower_expression(self, field_key)?;
-            if self.builder.func.dfg.value_type(value) != field_layout.value_type {
+            let value_type = self.builder.func.dfg.value_type(value);
+            let value = if value_type == field_layout.value_type {
+                value
+            } else if value_type.is_int() && field_layout.value_type.is_int() {
+                match value_type.bits().cmp(&field_layout.value_type.bits()) {
+                    std::cmp::Ordering::Greater => self.builder.ins().ireduce(field_layout.value_type, value),
+                    std::cmp::Ordering::Less => self.builder.ins().sextend(field_layout.value_type, value),
+                    std::cmp::Ordering::Equal => value,
+                }
+            } else {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
                 return None;
-            }
+            };
             values.push((value, *field_layout));
         }
         let pointer_type = self.facts.scalar_type(key)?;
@@ -2348,10 +2392,19 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         match (variant.payload, self.facts.enum_payload(key)) {
             (Some(payload_layout), Some(payload_key)) => {
                 let payload = generated::constructor_lower_expression(self, payload_key)?;
-                if self.builder.func.dfg.value_type(payload) != payload_layout.value_type {
+                let payload_type = self.builder.func.dfg.value_type(payload);
+                let payload = if payload_type == payload_layout.value_type {
+                    payload
+                } else if payload_type.is_int() && payload_layout.value_type.is_int() {
+                    match payload_type.bits().cmp(&payload_layout.value_type.bits()) {
+                        std::cmp::Ordering::Greater => self.builder.ins().ireduce(payload_layout.value_type, payload),
+                        std::cmp::Ordering::Less => self.builder.ins().uextend(payload_layout.value_type, payload),
+                        std::cmp::Ordering::Equal => payload,
+                    }
+                } else {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
                     return None;
-                }
+                };
                 self.builder.ins().store(MemFlags::new(), payload, object, i32::try_from(payload_layout.offset).ok()?);
             }
             (None, None) => {}
@@ -2425,10 +2478,19 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             self.builder.seal_block(block);
             let binding = self.bind_match_arm_payload(key, &layout, scrutinee, &arm)?;
             let value = generated::constructor_lower_expression(self, arm.body)?;
-            if self.builder.func.dfg.value_type(value) != result_type {
+            let value_type = self.builder.func.dfg.value_type(value);
+            let value = if value_type == result_type {
+                value
+            } else if value_type.is_int() && result_type.is_int() {
+                match value_type.bits().cmp(&result_type.bits()) {
+                    std::cmp::Ordering::Greater => self.builder.ins().ireduce(result_type, value),
+                    std::cmp::Ordering::Less => self.builder.ins().sextend(result_type, value),
+                    std::cmp::Ordering::Equal => value,
+                }
+            } else {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                 return None;
-            }
+            };
             if let Some(binding) = binding {
                 self.locals.remove(&binding);
             }

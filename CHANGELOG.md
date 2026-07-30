@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Align managed aggregate field reads with the ABI-v5 object header, preventing
+  nested enum/struct values from reading descriptor metadata as source fields
+  and trapping during typed Corelib syscall requests.
 - Allocate enum constructor values through ABI-v5 managed-object metadata rather
   than returning pointers to constructor stack storage, preventing invalid enum
   tags and JIT traps across function boundaries.

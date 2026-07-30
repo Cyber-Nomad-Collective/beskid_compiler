@@ -1862,10 +1862,24 @@ pub Core.Results.Result<i64, Core.Syscall.SyscallError> Write() {
                 .is_some_and(|specialization| specialization.declaration == declaration)
         })
         .expect("Results.IsOk call");
+    let qualified_write = main_index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit: main_unit, generation, node })
+        .find(|call| {
+            matches!(
+                call_lowering(&db, *call).ok().flatten(),
+                Some(beskid_queries::CallLowering::Direct(declaration)) if declaration == write
+            )
+        })
+        .expect("qualified Core.Syscall.Write call");
 
     assert_eq!(
         item_abi_signature(&db, write).expect("Syscall.Write item ABI"),
         Some(ItemSignature { parameters: Arc::from([]), result: SemanticTypeId::POINTER })
+    );
+    assert_eq!(
+        call_lowering(&db, qualified_write).expect("qualified Core.Syscall.Write lowering"),
+        Some(beskid_queries::CallLowering::Direct(write))
     );
     assert_eq!(
         call_lowering(&db, call).expect("qualified Results.IsOk lowering"),
