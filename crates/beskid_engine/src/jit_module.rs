@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::runtime_kit::JitRuntimeKit;
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
-use beskid_abi::{BUILTIN_SPECS, is_dispatch_symbol};
+use beskid_abi::{all_builtin_specs, is_dispatch_symbol};
 use beskid_codegen::cranelift_host::{
     ExternDeclarationError, HostError, declare_builtin_imports, declare_user_functions,
     declare_validated_extern_imports, remap_testcase_externals,
@@ -241,7 +241,7 @@ fn validate_exact_symbol_references(artifact: &CodegenArtifact, approved: &HashS
 }
 
 fn is_runtime_builtin(symbol: &str) -> bool {
-    BUILTIN_SPECS.iter().any(|spec| spec.symbol == symbol) || is_dispatch_symbol(symbol)
+    all_builtin_specs().any(|spec| spec.symbol == symbol) || is_dispatch_symbol(symbol)
 }
 
 /// Addresses for soft builtins declared by [`declare_builtin_imports`].
@@ -253,6 +253,8 @@ fn process_linked_soft_builtins() -> Vec<(String, *const u8)> {
     // Keep in sync with `beskid_runtime_bridge` link_anchor / `BUILTIN_SPECS`.
     vec![
         ("alloc".into(), beskid_runtime::alloc as *const u8),
+        ("args_count".into(), beskid_runtime::args_count as *const u8),
+        ("args_get".into(), beskid_runtime::args_get as *const u8),
         ("beskid_register_callbacks".into(), beskid_runtime::beskid_register_callbacks as *const u8),
         ("beskid_register_handlers".into(), beskid_runtime::beskid_register_handlers as *const u8),
         ("beskid_runtime_abi_version".into(), beskid_runtime::beskid_runtime_abi_version as *const u8),

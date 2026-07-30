@@ -2,6 +2,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 mod alloc;
+mod args;
 mod arrays;
 mod bytes;
 pub mod callback;
@@ -25,6 +26,7 @@ mod wait_group;
 
 pub use crate::interop::register::{HandlerTableEntry, beskid_register_handlers};
 pub use alloc::alloc;
+pub use args::{args_count, args_get};
 pub use arrays::{array_len, array_new};
 pub use bytes::{bytes_compare, bytes_copy, bytes_from_str, bytes_get, bytes_set, str_from_bytes_utf8};
 pub use callback::{CallbackTableEntry, beskid_register_callbacks, install_callback_trampoline, registered_callbacks};

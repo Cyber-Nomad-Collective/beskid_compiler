@@ -381,13 +381,14 @@ pub fn render_analysis_builtins(manifest: &ManifestRoot) -> String {
     out
 }
 
-/// Render the analysis builtin surface plus manifest-owned ABI-v5 runtime intrinsic candidates.
+/// Render the analysis builtin surface plus manifest-owned ABI-v5 runtime intrinsic candidates
+/// and process-linked soft builtins.
 ///
 /// These entries make exact canonical-runtime calls resolvable by the syntax fact layer. They do
 /// not grant an ABI import: `CodegenInput::runtime_intrinsic_for` still requires the opaque
 /// canonical-runtime capability before codegen can emit the symbol.
 pub fn append_analysis_v5_intrinsics(base: &str, runtime: &crate::v5::RuntimeManifestV5) -> String {
-    const MARKER: &str = "// ABI-v5 canonical runtime intrinsic candidates\n";
+    const MARKER: &str = "// ABI-v5 canonical runtime declarations\n";
     let mut out = base.split_once(MARKER).map_or_else(|| base.to_owned(), |(prefix, _)| prefix.to_owned());
     if !out.trim_end().ends_with('}') {
         out.push_str("}\n");
@@ -405,6 +406,17 @@ pub fn append_analysis_v5_intrinsics(base: &str, runtime: &crate::v5::RuntimeMan
             true,
         );
     }
+    for builtin in &runtime.soft_builtins {
+        let params = builtin.params.iter().map(|parameter| v5_analysis_type(&parameter.ty)).collect::<Vec<_>>();
+        write_analysis_entry(
+            &mut intrinsic_entries,
+            std::slice::from_ref(&builtin.name),
+            &builtin.symbol,
+            &params,
+            &v5_analysis_type(&builtin.result),
+            true,
+        );
+    }
     out.insert_str(closing, &intrinsic_entries);
     out
 }
@@ -412,6 +424,7 @@ pub fn append_analysis_v5_intrinsics(base: &str, runtime: &crate::v5::RuntimeMan
 fn v5_analysis_type(ty: &str) -> String {
     match ty {
         "pointer" => "ptr".into(),
+        "string" => "string".into(),
         // The legacy resolver surface only distinguishes wide numeric scalar candidates. Exact
         // ABI widths come from the canonical manifest in syntax codegen, not this lookup table.
         "u8" | "u32" | "i32" | "i64" | "isize" => "u64".into(),

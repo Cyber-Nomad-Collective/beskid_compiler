@@ -1,11 +1,11 @@
 //! Top-level and inner items: declarations, modules, contracts, tests, and attributes.
 
 pub mod attribute;
+pub mod constant_definition;
 pub mod contract_definition;
 pub mod contract_embedding;
 pub mod contract_method_signature;
 pub mod contract_node;
-pub mod constant_definition;
 mod doc_attached_items;
 pub mod enum_definition;
 pub mod enum_variant;
@@ -25,11 +25,11 @@ pub mod type_definition;
 pub mod use_declaration;
 
 pub use attribute::{Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget};
+pub use constant_definition::ConstantDefinition;
 pub use contract_definition::ContractDefinition;
 pub use contract_embedding::ContractEmbedding;
 pub use contract_method_signature::ContractMethodSignature;
 pub use contract_node::ContractNode;
-pub use constant_definition::ConstantDefinition;
 pub use enum_definition::EnumDefinition;
 pub use enum_variant::EnumVariant;
 pub use extend_type::ExtendTypeDefinition;

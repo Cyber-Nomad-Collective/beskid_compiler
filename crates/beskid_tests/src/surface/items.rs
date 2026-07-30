@@ -81,8 +81,14 @@ fn parses_contextual_runtime_terms_as_pointer_parameter_names() {
             assert_eq!(function.node.parameters.len(), 2);
             assert_eq!(function.node.parameters[0].node.name.node.name, "parent");
             assert_eq!(function.node.parameters[1].node.name.node.name, "event");
-            assert_type_primitive(&function.node.parameters[0].node.ty, beskid_analysis::syntax::PrimitiveType::Pointer);
-            assert_type_primitive(&function.node.parameters[1].node.ty, beskid_analysis::syntax::PrimitiveType::Pointer);
+            assert_type_primitive(
+                &function.node.parameters[0].node.ty,
+                beskid_analysis::syntax::PrimitiveType::Pointer,
+            );
+            assert_type_primitive(
+                &function.node.parameters[1].node.ty,
+                beskid_analysis::syntax::PrimitiveType::Pointer,
+            );
         }
         _ => panic!("expected function definition"),
     }

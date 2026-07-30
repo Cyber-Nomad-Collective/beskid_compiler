@@ -118,7 +118,10 @@ pub fn validate_prelude_standard_tiers(items: &[ApiDocItem]) -> Result<(), Strin
     if violations.is_empty() {
         Ok(())
     } else {
-        Err(format!("API-SHAPE-004: Prelude SHALL only re-export standard modules; non-standard module(s): {}", violations.join(", ")))
+        Err(format!(
+            "API-SHAPE-004: Prelude SHALL only re-export standard modules; non-standard module(s): {}",
+            violations.join(", ")
+        ))
     }
 }
 
@@ -227,5 +230,4 @@ mod tests {
         let body = "/// @tier(supported)\n/// later thoughts\n/// @tier(standard)";
         assert_eq!(parse_tier_directive(body), Some(TIER_STANDARD.to_string()));
     }
-
 }

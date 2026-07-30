@@ -630,5 +630,4 @@ mod tests {
         assert!(tree.contains("`util::math::sum` (`function`)"));
         assert!(tree.contains("`util::math::Vec2` (`type`)"));
     }
-
 }
