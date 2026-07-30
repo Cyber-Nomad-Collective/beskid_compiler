@@ -55,6 +55,8 @@ fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata)
 /// complete embedded corpus, so every canonical test must assemble all of it. A single unit is
 /// rejected as corpus drift even when it carries real embedded runtime text.
 struct CanonicalRuntimeCorpus {
+    /// Owns the materialized corpus so it is removed when the test drops this value.
+    _tempdir: tempfile::TempDir,
     directory: PathBuf,
     units: Vec<SourceUnit>,
     entry_index: usize,
@@ -62,7 +64,8 @@ struct CanonicalRuntimeCorpus {
 
 impl CanonicalRuntimeCorpus {
     fn materialize() -> Self {
-        let directory = tempfile::tempdir().expect("runtime project").keep();
+        let tempdir = tempfile::tempdir().expect("runtime project");
+        let directory = tempdir.path().to_path_buf();
         let units = canonical_runtime_sources()
             .into_iter()
             .map(|source| {
@@ -79,7 +82,7 @@ impl CanonicalRuntimeCorpus {
             .iter()
             .position(|unit| unit.logical_name == CANONICAL_BOOTSTRAP_SOURCE_PATH)
             .expect("canonical corpus contains Bootstrap");
-        Self { directory, units, entry_index }
+        Self { _tempdir: tempdir, directory, units, entry_index }
     }
 
     fn unit_path(&self, logical_name: &str) -> PathBuf {

@@ -115,10 +115,15 @@ impl AttachedRuntimeState {
         }
         // SAFETY: `state` is a zeroed, correctly aligned record of exactly the manifest size, and
         // stays owned by this value until `Drop` runs the paired shutdown.
-        let attached = unsafe {
-            initialize(state);
-            attach(state)
-        };
+        let initialized = unsafe { initialize(state) };
+        if initialized.is_null() {
+            // SAFETY: a failed init installed no thread state, so the reservation is unshared.
+            unsafe { std::alloc::dealloc(state, layout) };
+            return Err(format!("ABI-v5 runtime kit failed to initialize the `{RUNTIME_STATE_LAYOUT}` record"));
+        }
+        // SAFETY: init stamped the record it was handed, so the same reservation is still the
+        // runtime state this thread must attach to.
+        let attached = unsafe { attach(state) };
         if attached.is_null() {
             // SAFETY: the failed attach installed no thread state, so the reservation is unshared.
             unsafe { std::alloc::dealloc(state, layout) };
