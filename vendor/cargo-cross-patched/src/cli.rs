@@ -643,11 +643,15 @@ Example: --rustflag '-C target-cpu=native' --rustflag '-C lto=thin'")]
     pub rustflags: Vec<String>,
 
     /// Rustc wrapper program (e.g., sccache, cachepot)
-    #[arg(long, env = "RUSTC_WRAPPER", value_name = "PATH",
+    // RUSTC_WRAPPER is resolved in `populate_env_arg_fallbacks` rather than through clap's
+    // `env` fallback: clap treats an env-provided value as explicitly supplied, which made an
+    // ambient RUSTC_WRAPPER (common in CI) conflict with an explicit `--enable-sccache`.
+    #[arg(long, value_name = "PATH",
           value_hint = ValueHint::ExecutablePath,
           conflicts_with = "enable_sccache", help_heading = "Compiler Options",
           long_help = "\
-Specify a rustc wrapper program (sccache, cachepot, etc) for compilation caching.")]
+Specify a rustc wrapper program (sccache, cachepot, etc) for compilation caching.
+Defaults to the RUSTC_WRAPPER environment variable unless --enable-sccache is given.")]
     pub rustc_wrapper: Option<PathBuf>,
 
     /// Skip cross-compilation toolchain setup
@@ -1814,6 +1818,13 @@ fn populate_env_arg_fallbacks(build_args: &mut BuildArgs) {
             build_args.passthrough_args = env_args;
         }
     }
+    // An ambient RUSTC_WRAPPER only applies when no wrapper choice was made on the command line;
+    // --enable-sccache wins, matching the wrapper precedence in `cargo::add_wrapper_env`.
+    if !build_args.enable_sccache && build_args.rustc_wrapper.is_none() {
+        if let Some(wrapper) = std::env::var_os("RUSTC_WRAPPER").filter(|value| !value.is_empty()) {
+            build_args.rustc_wrapper = Some(PathBuf::from(wrapper));
+        }
+    }
 }
 
 fn parse_passthrough_env_args(env_name: &str) -> Option<Vec<String>> {
@@ -2975,6 +2986,28 @@ mod tests {
         assert!(args.enable_sccache);
         assert_eq!(args.sccache_dir, Some(PathBuf::from("/tmp/sccache")));
         assert_eq!(args.sccache_cache_size, Some("10G".to_string()));
+    }
+
+    #[test]
+    fn test_ambient_rustc_wrapper_does_not_conflict_with_enable_sccache() {
+        std::env::set_var("RUSTC_WRAPPER", "sccache");
+        let with_sccache = parse(&["cargo-cross", "build", "--enable-sccache"]);
+        let without_sccache = parse(&["cargo-cross", "build"]);
+        let explicit_conflict = parse(&["cargo-cross", "build", "--enable-sccache", "--rustc-wrapper", "sccache"]);
+        std::env::remove_var("RUSTC_WRAPPER");
+
+        // --enable-sccache wins over the ambient wrapper instead of erroring.
+        let with_sccache = with_sccache.unwrap();
+        assert!(with_sccache.enable_sccache);
+        assert_eq!(with_sccache.rustc_wrapper, None);
+
+        // Without an explicit choice, the ambient wrapper is still honored.
+        let without_sccache = without_sccache.unwrap();
+        assert!(!without_sccache.enable_sccache);
+        assert_eq!(without_sccache.rustc_wrapper, Some(PathBuf::from("sccache")));
+
+        // Both flags on the command line remain a conflict.
+        assert!(explicit_conflict.is_err());
     }
 
     #[test]
