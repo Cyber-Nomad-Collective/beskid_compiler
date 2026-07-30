@@ -2,6 +2,7 @@
 /// @tier(standard)
 /// @ref(Core.Syscall.ReadWith) syscall-backed read path.
 
+use Core.Syscall;
 use Core.Syscall.SyscallError;
 use Core.Syscall.Descriptor;
 use Core.Syscall.StandardStream;
