@@ -20,30 +20,12 @@ pub(crate) struct RecoveryPhase {
 }
 
 const RECOVERY_PHASES: &[RecoveryPhase] = &[
-    RecoveryPhase {
-        strategy: sync::repairs,
-        max_candidates: 16,
-    },
-    RecoveryPhase {
-        strategy: delimiters::repairs,
-        max_candidates: 16,
-    },
-    RecoveryPhase {
-        strategy: statements::repairs,
-        max_candidates: 16,
-    },
-    RecoveryPhase {
-        strategy: items::repairs,
-        max_candidates: 16,
-    },
-    RecoveryPhase {
-        strategy: expressions::repairs,
-        max_candidates: 20,
-    },
-    RecoveryPhase {
-        strategy: separators::repairs,
-        max_candidates: 16,
-    },
+    RecoveryPhase { strategy: sync::repairs, max_candidates: 16 },
+    RecoveryPhase { strategy: delimiters::repairs, max_candidates: 16 },
+    RecoveryPhase { strategy: statements::repairs, max_candidates: 16 },
+    RecoveryPhase { strategy: items::repairs, max_candidates: 16 },
+    RecoveryPhase { strategy: expressions::repairs, max_candidates: 20 },
+    RecoveryPhase { strategy: separators::repairs, max_candidates: 16 },
 ];
 
 pub(crate) fn recovery_phases() -> &'static [RecoveryPhase] {

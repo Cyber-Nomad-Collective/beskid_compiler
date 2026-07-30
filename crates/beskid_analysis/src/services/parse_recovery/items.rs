@@ -2,8 +2,8 @@
 
 use crate::parser::Rule;
 
-use super::{candidate::RepairCandidate, lists, scan, syntax_primitives};
 use super::scan::{next_token_start, skip_ws, unbalanced_delimiters};
+use super::{candidate::RepairCandidate, lists, scan, syntax_primitives};
 
 const PRIORITY_USE_MOD_SEMI_EOF: u8 = 42;
 const PRIORITY_USE_MOD_SEMI_BEFORE_NEXT: u8 = 43;
@@ -16,7 +16,6 @@ const PRI_TYPE_FIELD_TRAILING_COMMA_DELETE: u8 = 50;
 const PRI_TYPE_FIELD_TRAILING_COMMA_FIX: u8 = 51;
 const PRI_ENUM_VARIANT_TRAILING_COMMA_DELETE: u8 = 52;
 const PRI_ENUM_VARIANT_TRAILING_COMMA_FIX: u8 = 53;
-
 
 /// Generate item-boundary repairs (closers / trailing `;`) near the Pest error locus.
 pub fn repairs(source: &str, error_pos: usize, parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
@@ -580,7 +579,7 @@ fn item_body_keyword_before_brace(source: &str, brace_pos: usize) -> Option<&'st
                 continue;
             }
 
-            if !best.map_or(true, |(best_pos, _)| pos > best_pos) {
+            if best.is_some_and(|(best_pos, _)| pos <= best_pos) {
                 continue;
             }
 

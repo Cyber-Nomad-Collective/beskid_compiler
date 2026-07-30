@@ -29,14 +29,9 @@ pub(crate) fn trailing_separator_before_close_delimiter<F>(
     }
 
     let through = syntax_primitives::matching_delimiter_close(source, open_pos, open, close).unwrap_or(source.len());
-    let Some(comma_pos) = syntax_primitives::trailing_separator_before_list_close(
-        source,
-        open_pos,
-        through,
-        open,
-        close,
-        b',',
-    ) else {
+    let Some(comma_pos) =
+        syntax_primitives::trailing_separator_before_list_close(source, open_pos, through, open, close, b',')
+    else {
         return;
     };
 
@@ -76,14 +71,9 @@ pub(crate) fn replace_trailing_separator_with_close_before_delimiter<F>(
     }
 
     let through = syntax_primitives::matching_delimiter_close(source, open_pos, open, close).unwrap_or(source.len());
-    let Some(comma_pos) = syntax_primitives::trailing_separator_before_list_close(
-        source,
-        open_pos,
-        through,
-        open,
-        close,
-        b',',
-    ) else {
+    let Some(comma_pos) =
+        syntax_primitives::trailing_separator_before_list_close(source, open_pos, through, open, close, b',')
+    else {
         return;
     };
 

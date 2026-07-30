@@ -52,17 +52,12 @@ pub fn parse_program_with_source_name_and_diagnostics(source_name: &str, source:
     };
     let fallback = pest_error_diagnostic(source_name, source, &parse_error);
 
-    if let Some((program, parse_diagnostics, recovered)) = recover_with_repair_candidates(
-        source_name,
-        source,
-        &parse_error,
-        |candidate_source| parse_program_strict(source_name, candidate_source),
-    ) {
-        return Ok(ParsedProgram {
-            program,
-            diagnostics: parse_diagnostics,
-            recovered,
-        });
+    if let Some((program, parse_diagnostics, recovered)) =
+        recover_with_repair_candidates(source_name, source, &parse_error, |candidate_source| {
+            parse_program_strict(source_name, candidate_source)
+        })
+    {
+        return Ok(ParsedProgram { program, diagnostics: parse_diagnostics, recovered });
     }
 
     Err(anyhow!(MietteReportError::new(fallback)))

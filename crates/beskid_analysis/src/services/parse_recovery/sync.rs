@@ -2,7 +2,9 @@
 
 use crate::parser::Rule;
 
-use super::{candidate::RepairCandidate, deletions, expected_tokens, ranking, scan, syntax_primitives, sync_primitives};
+use super::{
+    candidate::RepairCandidate, deletions, expected_tokens, ranking, scan, sync_primitives, syntax_primitives,
+};
 
 /// Generate boundary-aware statement boundary repairs (panic-mode style sync).
 pub fn repairs(source: &str, error_pos: usize, parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
@@ -15,27 +17,28 @@ pub fn repairs(source: &str, error_pos: usize, parse_error: &pest::error::Error<
     candidates.extend(replacement_token_repairs(source, error_pos, parse_error));
     candidates.extend(single_token_deletion_repairs(source, error_pos, parse_error));
 
-    if let Some(sync) = sync_boundary_candidate(source, error_pos, &sync_keywords, &sync_tokens) {
-        if !sync.suppress_semicolon && sync_primitives::should_insert_sync_semicolon(source, sync.pos, sync.boundary_char) {
-            let insert_at = syntax_primitives::recovery_insert_position(source, sync.pos);
-            candidates.push(RepairCandidate::insert(
-                insert_at,
-                ";",
-                "inserted statement terminator at a grammar synchronization boundary",
-                ranking::PRI_SYNC_BOUNDARY_SEMICOLON,
-            ));
-        }
+    if let Some(sync) = sync_boundary_candidate(source, error_pos, &sync_keywords, &sync_tokens)
+        && !sync.suppress_semicolon
+        && sync_primitives::should_insert_sync_semicolon(source, sync.pos, sync.boundary_char)
+    {
+        let insert_at = syntax_primitives::recovery_insert_position(source, sync.pos);
+        candidates.push(RepairCandidate::insert(
+            insert_at,
+            ";",
+            "inserted statement terminator at a grammar synchronization boundary",
+            ranking::PRI_SYNC_BOUNDARY_SEMICOLON,
+        ));
     }
 
-    if let Some(punct_pos) = first_non_ws_after(source, error_pos) {
-        if is_punct_like_recoverable(source.as_bytes()[punct_pos]) {
-            candidates.push(RepairCandidate::delete(
-                punct_pos,
-                1,
-                "removed unexpected punctuation while resynchronizing",
-                ranking::PRI_SYNC_DELETE_TOKEN,
-            ));
-        }
+    if let Some(punct_pos) = first_non_ws_after(source, error_pos)
+        && is_punct_like_recoverable(source.as_bytes()[punct_pos])
+    {
+        candidates.push(RepairCandidate::delete(
+            punct_pos,
+            1,
+            "removed unexpected punctuation while resynchronizing",
+            ranking::PRI_SYNC_DELETE_TOKEN,
+        ));
     }
 
     candidates
@@ -47,20 +50,12 @@ fn sync_boundary_candidate(
     sync_keywords: &[&'static str],
     sync_tokens: &[&'static str],
 ) -> Option<sync_primitives::SyncBoundary> {
-    if let Some(boundary) = sync_primitives::next_sync_boundary_with_follow_set(
-        source,
-        error_pos,
-        sync_keywords,
-        sync_tokens,
-    ) {
+    if let Some(boundary) =
+        sync_primitives::next_sync_boundary_with_follow_set(source, error_pos, sync_keywords, sync_tokens)
+    {
         return Some(boundary);
     }
-    sync_primitives::next_sync_boundary_with_follow_set(
-        source,
-        error_pos.saturating_add(1),
-        sync_keywords,
-        sync_tokens,
-    )
+    sync_primitives::next_sync_boundary_with_follow_set(source, error_pos.saturating_add(1), sync_keywords, sync_tokens)
 }
 
 fn expected_token_repairs(
@@ -86,7 +81,11 @@ fn expected_token_repairs(
     candidates
 }
 
-fn replacement_token_repairs(source: &str, error_pos: usize, parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
+fn replacement_token_repairs(
+    source: &str,
+    error_pos: usize,
+    parse_error: &pest::error::Error<Rule>,
+) -> Vec<RepairCandidate> {
     let Some((replace_pos, replace_len)) = token_span_at_error(source, error_pos) else {
         return Vec::new();
     };
@@ -139,13 +138,8 @@ fn single_token_deletion_repairs(
 }
 
 fn token_span_at_error(source: &str, error_pos: usize) -> Option<(usize, usize)> {
-    let pos = scan::next_token_start(source, error_pos).or_else(|| {
-        if error_pos < source.len() {
-            Some(error_pos)
-        } else {
-            None
-        }
-    })?;
+    let pos =
+        scan::next_token_start(source, error_pos).or(if error_pos < source.len() { Some(error_pos) } else { None })?;
     if pos >= source.len() {
         return None;
     }

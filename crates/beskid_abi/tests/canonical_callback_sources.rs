@@ -28,8 +28,12 @@ fn canonical_callback_and_handler_registration_validate_before_publishing_a_snap
     let callbacks = canonical_callbacks();
 
     assert!(callbacks.contains("pub word CallbackRegistrationValid(pointer entries, word count)"));
-    assert!(callbacks.contains("if entries == NativePointer(0) || count == 0 || count > CallbackTableMax { return 0; }"));
-    assert!(callbacks.contains("if raw_word_load(entry) == 0 || raw_word_load(pointer_add(entry, 8)) == 0 { return 0; }"));
+    assert!(
+        callbacks.contains("if entries == NativePointer(0) || count == 0 || count > CallbackTableMax { return 0; }")
+    );
+    assert!(
+        callbacks.contains("if raw_word_load(entry) == 0 || raw_word_load(pointer_add(entry, 8)) == 0 { return 0; }")
+    );
     assert!(callbacks.contains("pub pointer CallbackRegistryReplacement("));
     assert!(callbacks.contains("if CallbackRegistrationValid(entries, count) == 0 { return NativePointer(0); }"));
     assert!(callbacks.contains("raw_word_store(slot, NativeWord(replacement));"));

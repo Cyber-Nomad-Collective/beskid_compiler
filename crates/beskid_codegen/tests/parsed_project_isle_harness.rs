@@ -547,11 +547,7 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
         artifact.exports.iter().any(|export| export.exported_symbol == "beskid_rt_v5_fiber_spawn_with_cancel_slot"),
         "canonical runtime lowering must retain the Scheduler-owned fiber spawn ABI export",
     );
-    let actual_exports = artifact
-        .exports
-        .iter()
-        .map(|export| export.exported_symbol.clone())
-        .collect::<BTreeSet<_>>();
+    let actual_exports = artifact.exports.iter().map(|export| export.exported_symbol.clone()).collect::<BTreeSet<_>>();
     assert_eq!(actual_exports, expected_exports, "canonical lowering publishes exactly the ABI manifest surface");
     assert!(
         !actual_exports.contains("gc_alloc"),

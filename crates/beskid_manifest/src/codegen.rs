@@ -389,7 +389,10 @@ pub fn render_analysis_builtins(manifest: &ManifestRoot) -> String {
 /// canonical-runtime capability before codegen can emit the symbol.
 pub fn append_analysis_v5_intrinsics(base: &str, runtime: &crate::v5::RuntimeManifestV5) -> String {
     const MARKER: &str = "// ABI-v5 canonical runtime declarations\n";
-    let mut out = base.split_once(MARKER).map_or_else(|| base.to_owned(), |(prefix, _)| prefix.to_owned());
+    const LEGACY_MARKER: &str = "// ABI-v5 canonical runtime intrinsic candidates\n";
+    let generated_start =
+        [base.find(MARKER), base.find(LEGACY_MARKER)].into_iter().flatten().min().unwrap_or(base.len());
+    let mut out = base[..generated_start].to_owned();
     if !out.trim_end().ends_with('}') {
         out.push_str("}\n");
     }
@@ -1259,5 +1262,19 @@ mod tests {
             super::wrap_dispatch_return(&entry, "usize", "crate::builtins::fiber_now_millis()"),
             "Some(crate::builtins::fiber_now_millis())"
         );
+    }
+
+    #[test]
+    fn analysis_v5_intrinsics_replace_legacy_generated_section() {
+        let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime_manifest.bsol");
+        let source = std::fs::read_to_string(manifest_path).expect("read ABI-v5 manifest");
+        let runtime = crate::load_v5_manifest_source(&source).expect("load ABI-v5 manifest");
+        let base = "define_builtins! {\n// ABI-v5 canonical runtime intrinsic candidates\n    stale\n}\n";
+
+        let generated = super::append_analysis_v5_intrinsics(base, &runtime);
+
+        assert!(!generated.contains("canonical runtime intrinsic candidates"));
+        assert_eq!(generated.matches("canonical runtime declarations").count(), 1);
+        assert!(!generated.contains("stale"));
     }
 }

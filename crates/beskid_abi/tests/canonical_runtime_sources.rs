@@ -194,11 +194,8 @@ fn canonical_runtime_source_owns_allocation_headers_and_lifo_root_frames() {
 #[test]
 fn canonical_gc_exports_one_registry_backed_external_root_count() {
     let sources = canonical_runtime_sources();
-    let gc = &sources
-        .iter()
-        .find(|unit| unit.logical_path == "src/Runtime/Mem/Gc.bd")
-        .expect("canonical GC source")
-        .source;
+    let gc =
+        &sources.iter().find(|unit| unit.logical_path == "src/Runtime/Mem/Gc.bd").expect("canonical GC source").source;
 
     assert_eq!(
         gc.matches("[Export(Abi:\"C\", Symbol:\"gc_external_root_count\")]").count(),

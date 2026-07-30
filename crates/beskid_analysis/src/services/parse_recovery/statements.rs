@@ -2,24 +2,19 @@
 
 use crate::parser::Rule;
 
-use super::{candidate::RepairCandidate, scan, syntax_primitives};
 use super::scan::{next_token_start, skip_ws};
+use super::{candidate::RepairCandidate, scan, syntax_primitives};
 
 const PRI_CONTROL_FLOW_BODY: u8 = 74;
 const PRI_STATEMENT_TERMINATOR: u8 = 75;
 const PRI_PROGRAM_ROOT_TERMINATOR: u8 = 76;
-
 
 /// Generate statement-oriented repairs for incomplete control flow and terminated statements.
 pub fn repairs(source: &str, error_pos: usize, parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
     let error_pos = syntax_primitives::recovery_scan_pos(source, error_pos);
     let insert_at = recovery_insert_pos(source, error_pos);
     let statement_keywords = statement_recovery_keywords(parse_error);
-    let statement_starts = syntax_primitives::top_level_statement_starts(
-        source,
-        0,
-        &statement_keywords,
-    );
+    let statement_starts = syntax_primitives::top_level_statement_starts(source, 0, &statement_keywords);
     let mut candidates = Vec::new();
     control_flow_body_repairs(source, error_pos, insert_at, parse_error, &statement_starts, &mut candidates);
     statement_terminator_repairs(source, error_pos, insert_at, &statement_starts, &mut candidates);
@@ -107,7 +102,8 @@ fn statement_terminator_repairs(
         return;
     }
 
-    let Some((kw_pos, keyword)) = nearest_recent_keyword(source, error_pos, syntax_primitives::TERMINATOR_KEYWORDS) else {
+    let Some((kw_pos, keyword)) = nearest_recent_keyword(source, error_pos, syntax_primitives::TERMINATOR_KEYWORDS)
+    else {
         return;
     };
     if kw_pos + keyword.len() >= source.len() {
@@ -150,7 +146,11 @@ fn statement_terminator_repairs(
     ));
 }
 
-fn program_root_statement_terminator_repairs(source: &str, statement_starts: &[usize], candidates: &mut Vec<RepairCandidate>) {
+fn program_root_statement_terminator_repairs(
+    source: &str,
+    statement_starts: &[usize],
+    candidates: &mut Vec<RepairCandidate>,
+) {
     if statement_starts.is_empty() {
         return;
     }
@@ -214,7 +214,11 @@ fn control_flow_without_body(source: &str, kw_pos: usize, scan_to: usize) -> boo
         return true;
     }
 
-    !tail.contains('{') && !tail.ends_with('=') && !tail.ends_with(":=") && !tail.ends_with("=>") && !tail.ends_with(':')
+    !tail.contains('{')
+        && !tail.ends_with('=')
+        && !tail.ends_with(":=")
+        && !tail.ends_with("=>")
+        && !tail.ends_with(':')
 }
 
 fn control_flow_keyword_len(source: &str, kw_pos: usize) -> Option<usize> {
@@ -246,10 +250,10 @@ fn find_keyword_at_prefix(source: &str) -> Option<usize> {
         if source.len() >= start + keyword.len()
             && &source[start..start + keyword.len()] == *keyword
             && source.as_bytes().get(start + keyword.len()).is_none_or(|b| !b.is_ascii_alphanumeric() && *b != b'_')
+            && (start == 0
+                || !source.as_bytes()[start - 1].is_ascii_alphanumeric() && source.as_bytes()[start - 1] != b'_')
         {
-            if start == 0 || !source.as_bytes()[start - 1].is_ascii_alphanumeric() && source.as_bytes()[start - 1] != b'_' {
-                return Some(start);
-            }
+            return Some(start);
         }
     }
     None
@@ -266,10 +270,7 @@ fn control_flow_boundary(source: &str, error_pos: usize) -> bool {
     }
     let bytes = source.as_bytes();
     let before = error_pos.saturating_sub(1);
-    if !bytes
-        .get(before)
-        .is_some_and(|b| *b != b';' && *b != b'}')
-    {
+    if !bytes.get(before).is_some_and(|b| *b != b';' && *b != b'}') {
         return false;
     }
     true
@@ -304,11 +305,7 @@ fn statement_truncation_range(source: &str, kw_pos: usize, after_kw: usize, erro
     (end, end >= after_kw && end <= error_pos)
 }
 
-fn nearest_recent_keyword<'a>(
-    source: &'a str,
-    error_pos: usize,
-    keywords: &'a [&'a str],
-) -> Option<(usize, &'a str)> {
+fn nearest_recent_keyword<'a>(source: &'a str, error_pos: usize, keywords: &'a [&'a str]) -> Option<(usize, &'a str)> {
     let mut found: Option<(usize, &'a str)> = None;
     let limit = error_pos.min(source.len());
     for &keyword in keywords {

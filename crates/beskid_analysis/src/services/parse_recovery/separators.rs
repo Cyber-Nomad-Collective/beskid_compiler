@@ -2,7 +2,11 @@
 
 use crate::parser::Rule;
 
-use super::{candidate::RepairCandidate, scan::{self, next_token_start, skip_ws}, syntax_primitives};
+use super::{
+    candidate::RepairCandidate,
+    scan::{self, next_token_start, skip_ws},
+    syntax_primitives,
+};
 
 /// Generate separator insertion repairs near the Pest error locus.
 pub fn repairs(source: &str, error_pos: usize, _parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
@@ -99,7 +103,8 @@ fn fat_arrow_before_body(source: &str, next_token_pos: usize, out: &mut Vec<Repa
 }
 
 fn double_colon_enum_path(source: &str, error_pos: usize, out: &mut Vec<RepairCandidate>) {
-    let Some(probe) = next_token_start(source, error_pos).or_else(|| (error_pos < source.len()).then_some(error_pos)) else {
+    let Some(probe) = next_token_start(source, error_pos).or_else(|| (error_pos < source.len()).then_some(error_pos))
+    else {
         return;
     };
     let Some((_, prev_end)) = scan::ident_span_before(source, probe) else {

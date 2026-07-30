@@ -1,9 +1,9 @@
 //! Shared expected-token heuristics used by sync-style parser recovery.
 
+use super::{scan, syntax_primitives};
 use crate::parser::Rule;
 use pest::error::ErrorVariant;
 use std::collections::HashSet;
-use super::{scan, syntax_primitives};
 
 pub(crate) const MAX_EXPECTED_TOKEN_REPAIRS: usize = 6;
 pub(crate) const MAX_SIMPLE_REPLACEMENT_TEXT: usize = 12;
@@ -40,7 +40,7 @@ pub(crate) fn expected_token_candidates(
         scored.push((insert_text, reason, confidence));
     }
 
-    scored.sort_by(|a, b| b.2.cmp(&a.2));
+    scored.sort_by_key(|item| std::cmp::Reverse(item.2));
     scored.truncate(MAX_EXPECTED_TOKEN_REPAIRS);
     scored
 }
@@ -135,10 +135,7 @@ pub(crate) fn is_replacement_credible(replaced: &str, replacement: &str) -> bool
         (ReplacementTokenClass::Keyword, ReplacementTokenClass::Keyword) => {
             distance <= 2 && same_prefix_shape(replaced, replacement)
         }
-        (
-            ReplacementTokenClass::Identifier,
-            ReplacementTokenClass::Identifier | ReplacementTokenClass::Keyword,
-        ) => {
+        (ReplacementTokenClass::Identifier, ReplacementTokenClass::Identifier | ReplacementTokenClass::Keyword) => {
             distance <= 2 && same_prefix_shape(replaced, replacement)
         }
         (ReplacementTokenClass::Number, ReplacementTokenClass::Number) => distance <= 3,
@@ -421,7 +418,9 @@ fn expected_token_for_rule_fallback(rule: Rule) -> Option<(&'static str, &'stati
         "TypedLetStatement" => Some(("i32 value = 0;", "inserted parser-expected typed let statement", 52)),
         "ContractEmbedding" => Some(("Trait", "inserted parser-expected contract embedding", 52)),
         "ContractItem" => Some(("fn value() { }", "inserted parser-expected contract item", 52)),
-        "ContractMethodSignature" => Some(("i32 value() { }", "inserted parser-expected contract method signature", 52)),
+        "ContractMethodSignature" => {
+            Some(("i32 value() { }", "inserted parser-expected contract method signature", 52))
+        }
         "ContractItemWithDocs" => Some(("fn value() { }", "inserted parser-expected documented contract item", 52)),
         "CodeFenceOpen" => Some(("```txt\n", "inserted parser-expected code fence open", 40)),
         "CodeFenceClose" => Some(("```", "inserted parser-expected code fence close", 40)),
@@ -445,7 +444,7 @@ fn token_from_rule_family(rule_name: &str) -> Option<(&'static str, &'static str
 
 pub(crate) fn replacement_text_cost(a: &str, b: &str) -> u8 {
     let distance = replacement_levenshtein_distance(a, b);
-    (distance as u8).min(u8::MAX)
+    distance as u8
 }
 
 fn replacement_levenshtein_distance(left: &str, right: &str) -> u32 {
@@ -476,7 +475,7 @@ fn replacement_levenshtein_distance(left: &str, right: &str) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{expected_token_for_rule_fallback, MAX_SIMPLE_REPLACEMENT_TEXT};
+    use super::{MAX_SIMPLE_REPLACEMENT_TEXT, expected_token_for_rule_fallback};
     use crate::parser::Rule;
 
     #[test]
@@ -565,5 +564,4 @@ mod tests {
         assert!(super::is_replacement_credible("123", "1"));
         assert!(!super::is_replacement_credible("123", "while"));
     }
-
 }

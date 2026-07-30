@@ -1,23 +1,15 @@
 //! Shared sync/statement boundary primitives used by parse-recovery strategies.
 
-use super::{scan::{self, skip_ws}, expected_tokens};
+use super::{
+    expected_tokens,
+    scan::{self, skip_ws},
+};
 
 /// Control-flow starters used by statement-level heuristics.
 pub(crate) const CONTROL_FLOW_KEYWORDS: &[&str] = &["if", "else", "while", "for", "with", "match"];
 pub(crate) const CONTROL_EXPRESSION_KEYWORDS: &[&str] = &["if", "while", "for", "match"];
-pub(crate) const PRIMITIVE_TYPE_KEYWORDS: &[&str] = &[
-    "bool",
-    "i32",
-    "i64",
-    "u8",
-    "pointer",
-    "word",
-    "f64",
-    "char",
-    "string",
-    "unit",
-    "never",
-];
+pub(crate) const PRIMITIVE_TYPE_KEYWORDS: &[&str] =
+    &["bool", "i32", "i64", "u8", "pointer", "word", "f64", "char", "string", "unit", "never"];
 pub(crate) const TERMINATOR_KEYWORDS: &[&str] = &["let", "const", "return", "break", "continue", "launch"];
 
 pub(crate) const KEYWORDS: &[&str] = &[
@@ -154,11 +146,7 @@ pub(crate) fn derive_keyword_rule_token(rule_name: &str) -> Option<String> {
         out.push(c.to_ascii_lowercase());
     }
 
-    if out.is_empty() || !out.chars().next().unwrap_or(' ').is_ascii_alphabetic() {
-        None
-    } else {
-        Some(out)
-    }
+    if out.is_empty() || !out.chars().next().unwrap_or(' ').is_ascii_alphabetic() { None } else { Some(out) }
 }
 
 pub(crate) fn keyword_rule_token_or_derived(rule_name: &str) -> Option<&'static str> {
@@ -257,14 +245,9 @@ pub(crate) const BODY_OPENING_TOKEN_CLASSES: &[expected_tokens::ReplacementToken
 ];
 
 pub(crate) fn rule_family_fallback(rule_name: &str) -> Option<(&'static str, &'static str, u8)> {
-    if let Some(fallback) = RULE_FAMILY_FALLBACKS
-        .iter()
-        .find_map(|(name, token, reason, confidence)| {
-            rule_name
-                .contains(name)
-                .then_some((*token, *reason, *confidence))
-        })
-    {
+    if let Some(fallback) = RULE_FAMILY_FALLBACKS.iter().find_map(|(name, token, reason, confidence)| {
+        rule_name.contains(name).then_some((*token, *reason, *confidence))
+    }) {
         return Some(fallback);
     }
 
@@ -348,10 +331,16 @@ pub(crate) fn is_line_start(source: &str, pos: usize) -> bool {
 
 pub(crate) fn is_for_clause_in_keyword(source: &str, pos: usize) -> bool {
     let mut line_start = pos;
-    while line_start > 0 && source.as_bytes()[line_start - 1] != b'\n' && source.as_bytes()[line_start - 1].is_ascii_whitespace() {
+    while line_start > 0
+        && source.as_bytes()[line_start - 1] != b'\n'
+        && source.as_bytes()[line_start - 1].is_ascii_whitespace()
+    {
         line_start -= 1;
     }
-    if line_start > 0 && !source.as_bytes()[line_start - 1].is_ascii_whitespace() && source.as_bytes()[line_start - 1] != b'\n' {
+    if line_start > 0
+        && !source.as_bytes()[line_start - 1].is_ascii_whitespace()
+        && source.as_bytes()[line_start - 1] != b'\n'
+    {
         return false;
     }
 
@@ -462,16 +451,14 @@ pub(crate) fn recovery_follow_token_is_expected(
     parse_error: &pest::error::Error<crate::parser::Rule>,
     needle: &str,
 ) -> bool {
-    recovery_follow_tokens(parse_error).iter().any(|token| *token == needle)
+    recovery_follow_tokens(parse_error).contains(&needle)
 }
 
 pub(crate) fn recovery_expected_token_is_expected(
     parse_error: &pest::error::Error<crate::parser::Rule>,
     needle: &str,
 ) -> bool {
-    expected_tokens::expected_token_candidates(parse_error)
-        .iter()
-        .any(|(token, _, _)| *token == needle)
+    expected_tokens::expected_token_candidates(parse_error).iter().any(|(token, _, _)| *token == needle)
 }
 
 pub(crate) fn recovery_expected_token_has_any_class(
@@ -479,9 +466,7 @@ pub(crate) fn recovery_expected_token_has_any_class(
     needle_classes: &[expected_tokens::ReplacementTokenClass],
 ) -> bool {
     expected_tokens::expected_token_candidates(parse_error).iter().any(|(token, _, _)| {
-        needle_classes
-            .iter()
-            .any(|needle_class| expected_tokens::replacement_token_class(token) == *needle_class)
+        needle_classes.iter().any(|needle_class| expected_tokens::replacement_token_class(token) == *needle_class)
     })
 }
 
@@ -490,9 +475,7 @@ pub(crate) fn recovery_follow_token_has_any_class(
     needle_classes: &[expected_tokens::ReplacementTokenClass],
 ) -> bool {
     recovery_follow_tokens(parse_error).iter().any(|token| {
-        needle_classes
-            .iter()
-            .any(|needle_class| expected_tokens::replacement_token_class(token) == *needle_class)
+        needle_classes.iter().any(|needle_class| expected_tokens::replacement_token_class(token) == *needle_class)
     })
 }
 
@@ -621,7 +604,9 @@ pub(crate) fn recoverable_sync_boundary_start<'a>(
         }
     }
 
-    if is_recoverable_identifier_statement_starter(source, pos) || is_recoverable_expression_statement_starter(source, pos) {
+    if is_recoverable_identifier_statement_starter(source, pos)
+        || is_recoverable_expression_statement_starter(source, pos)
+    {
         return Some((None, false));
     }
 
@@ -662,12 +647,7 @@ pub(crate) fn top_level_statement_starts(source: &str, from: usize, keywords: &[
 }
 
 /// Find the most recent unmatched delimiter opener for a delimiter pair before `through`.
-pub(crate) fn find_unclosed_delimiter_before(
-    source: &str,
-    through: usize,
-    open: u8,
-    close: u8,
-) -> Option<usize> {
+pub(crate) fn find_unclosed_delimiter_before(source: &str, through: usize, open: u8, close: u8) -> Option<usize> {
     let through = through.min(source.len());
     if through == 0 || open == close {
         return None;
@@ -825,12 +805,7 @@ pub(crate) fn trailing_separator_before_list_close(
 }
 
 /// Find a matching close delimiter for `open_pos` by scanning forward with balanced nesting.
-pub(crate) fn matching_delimiter_close(
-    source: &str,
-    open_pos: usize,
-    open: u8,
-    close: u8,
-) -> Option<usize> {
+pub(crate) fn matching_delimiter_close(source: &str, open_pos: usize, open: u8, close: u8) -> Option<usize> {
     let bytes = source.as_bytes();
     if open_pos >= source.len() || open == close || bytes.get(open_pos) != Some(&open) {
         return None;
@@ -945,12 +920,11 @@ mod tests {
     fn primitive_type_keywords_cover_grammar_surface() {
         const GRAMMAR: &str = include_str!("../../beskid.pest");
 
-        let Some((_, raw)) = GRAMMAR
-            .lines()
-            .find_map(|line| line.split_once(" = ").filter(|(lhs, _)| *lhs == "PrimitiveType"))
-            else {
-                panic!("primitive type rule not found in grammar");
-            };
+        let Some((_, raw)) =
+            GRAMMAR.lines().find_map(|line| line.split_once(" = ").filter(|(lhs, _)| *lhs == "PrimitiveType"))
+        else {
+            panic!("primitive type rule not found in grammar");
+        };
 
         let rhs = raw.trim().trim_start_matches('{').trim_end_matches('}');
         let mut grammar_types: Vec<&str> = rhs

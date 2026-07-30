@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use beskid_isle::{
-    AstNodeKey, CallKind, FunctionEmissionError, FunctionEmitter, LiteralKind, LoweringErrorKind, NodeFacts,
-    NodeKind, RuntimeIntrinsicKind,
+    AstNodeKey, CallKind, FunctionEmissionError, FunctionEmitter, LiteralKind, LoweringErrorKind, NodeFacts, NodeKind,
+    RuntimeIntrinsicKind,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{AbiParam, Signature, UserFuncName, types};
@@ -47,11 +47,7 @@ impl NodeFacts for RawWordStoreFacts {
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
-        if key == self.nodes[0] {
-            [self.nodes[1]].get(usize::from(index)).copied()
-        } else {
-            None
-        }
+        if key == self.nodes[0] { [self.nodes[1]].get(usize::from(index)).copied() } else { None }
     }
 
     fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
@@ -75,7 +71,13 @@ impl NodeFacts for RawWordStoreFacts {
     }
 
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
-        if key == self.nodes[2] { Some(0) } else if key == self.nodes[3] { Some(1) } else { None }
+        if key == self.nodes[2] {
+            Some(0)
+        } else if key == self.nodes[3] {
+            Some(1)
+        } else {
+            None
+        }
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
@@ -179,11 +181,7 @@ impl NodeFacts for MemorySetFacts {
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
-        if key == self.nodes[0] {
-            [self.nodes[1]].get(usize::from(index)).copied()
-        } else {
-            None
-        }
+        if key == self.nodes[0] { [self.nodes[1]].get(usize::from(index)).copied() } else { None }
     }
 
     fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
@@ -207,11 +205,25 @@ impl NodeFacts for MemorySetFacts {
     }
 
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
-        if key == self.nodes[2] { Some(0) } else if key == self.nodes[3] { Some(0x1ff) } else if key == self.nodes[4] { Some(8) } else { None }
+        if key == self.nodes[2] {
+            Some(0)
+        } else if key == self.nodes[3] {
+            Some(0x1ff)
+        } else if key == self.nodes[4] {
+            Some(8)
+        } else {
+            None
+        }
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
-        if key == self.nodes[2] || key == self.nodes[4] { Some(self.pointer_type) } else if key == self.nodes[3] { Some(types::I64) } else { None }
+        if key == self.nodes[2] || key == self.nodes[4] {
+            Some(self.pointer_type)
+        } else if key == self.nodes[3] {
+            Some(types::I64)
+        } else {
+            None
+        }
     }
 }
 
@@ -231,11 +243,7 @@ impl NodeFacts for CanonicalConstantMemorySetFacts {
     }
 
     fn child(&self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {
-        if key == self.nodes[0] {
-            [self.nodes[1]].get(usize::from(index)).copied()
-        } else {
-            None
-        }
+        if key == self.nodes[0] { [self.nodes[1]].get(usize::from(index)).copied() } else { None }
     }
 
     fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
@@ -260,7 +268,15 @@ impl NodeFacts for CanonicalConstantMemorySetFacts {
     }
 
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
-        if key == self.nodes[2] { Some(0) } else if key == self.nodes[3] { Some(0x1ff) } else if !self.length_is_path && key == self.nodes[4] { Some(3480) } else { None }
+        if key == self.nodes[2] {
+            Some(0)
+        } else if key == self.nodes[3] {
+            Some(0x1ff)
+        } else if !self.length_is_path && key == self.nodes[4] {
+            Some(3480)
+        } else {
+            None
+        }
     }
 
     fn constant_integer(&self, key: AstNodeKey) -> Option<i64> {
@@ -272,7 +288,13 @@ impl NodeFacts for CanonicalConstantMemorySetFacts {
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
-        if key == self.nodes[2] { Some(self.pointer_type) } else if key == self.nodes[3] || key == self.nodes[4] { Some(types::I32) } else { None }
+        if key == self.nodes[2] {
+            Some(self.pointer_type)
+        } else if key == self.nodes[3] || key == self.nodes[4] {
+            Some(types::I32)
+        } else {
+            None
+        }
     }
 }
 
@@ -280,7 +302,10 @@ fn facts(pointer_type: cranelift_codegen::ir::Type) -> MemorySetFacts {
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/RuntimeMemorySet.bd"));
     let generation = SyntaxGenerationId(401);
-    MemorySetFacts { nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }), pointer_type }
+    MemorySetFacts {
+        nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }),
+        pointer_type,
+    }
 }
 
 fn canonical_constant_facts(
@@ -303,7 +328,10 @@ fn raw_word_store_facts(pointer_type: cranelift_codegen::ir::Type) -> RawWordSto
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/RuntimeRawWordStore.bd"));
     let generation = SyntaxGenerationId(402);
-    RawWordStoreFacts { nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }), pointer_type }
+    RawWordStoreFacts {
+        nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }),
+        pointer_type,
+    }
 }
 
 fn nested_raw_word_store_facts(

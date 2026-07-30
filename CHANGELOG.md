@@ -46,6 +46,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Complete generation-safe lowering facts for enum-valued aggregate-field matches and contextual
+  integer arguments in generic calls, while preserving fail-closed handling for unsupported
+  multi-field enum payloads.
+- Make the Corelib CLIF spine run by default with fourteen passing entrypoints, and repair Corelib
+  source/test syntax that relied on implicit generic receivers, immutable local reassignment,
+  unsupported XOR spelling, or unsupported generic contracts.
+- Parse hexadecimal module constants through the shared integer-magnitude helper so canonical
+  runtime guards retain generation-safe immediate facts during ISLE lowering.
+- Replace stale ABI-v5 analysis builtin sections during generation instead of appending duplicate
+  runtime declarations, with regression coverage for the legacy marker.
+- Isolate concurrent runtime-kit builds, temporary context-assembly outputs, and runtime-prefix
+  mutation tests so parallel gate execution cannot delete or redirect another test's artifacts.
 - Align managed aggregate field reads with the ABI-v5 object header, preventing
   nested enum/struct values from reading descriptor metadata as source fields
   and trapping during typed Corelib syscall requests.

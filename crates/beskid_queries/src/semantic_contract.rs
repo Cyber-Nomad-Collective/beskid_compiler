@@ -1084,7 +1084,9 @@ fn constant_integer_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKe
                 return None;
             };
             (constant.node.name.node.name == segment.node.name.node.name).then(|| match &constant.node.value.node {
-                beskid_analysis::syntax::Literal::Integer(value) => value.replace('_', "").parse::<i64>().ok(),
+                beskid_analysis::syntax::Literal::Integer(value) => {
+                    integer_literal_u64(value).map(|value| value as i64)
+                }
                 _ => None,
             })?
         })
@@ -1646,8 +1648,12 @@ fn primitive_numeric_conversion_tracked(
 ) -> SemanticQueryResult<PrimitiveNumericConversion> {
     with_node(db, syntax, key, |program, index, node| {
         let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
-        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else { return None; };
-        let [segment] = path.node.path.node.segments.as_slice() else { return None; };
+        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
+            return None;
+        };
+        let [segment] = path.node.path.node.segments.as_slice() else {
+            return None;
+        };
         let to = match segment.node.name.node.name.as_str() {
             "i32" => SemanticTypeId::I32,
             "i64" => SemanticTypeId::I64,
@@ -2761,8 +2767,13 @@ fn call_abi_signature_for_call(db: &dyn Db, key: AstNodeKey) -> Result<ItemSigna
                 }
                 Some(_) => return Err(SemanticError::unavailable("call_abi_signature")),
             }
-        } else if abi_type_from_syntax(db, declaration, &parameter.node.ty.node)? != actual {
-            return Err(SemanticError::unavailable("call_abi_signature"));
+        } else {
+            let expected = abi_type_from_syntax(db, declaration, &parameter.node.ty.node)?;
+            if expected != actual
+                && !(unsuffixed_integer_literal(db, argument)? && integer_literal_fits_abi(db, argument, expected)?)
+            {
+                return Err(SemanticError::unavailable("call_abi_signature"));
+            }
         }
     }
     let parameters = function
@@ -2932,7 +2943,7 @@ fn generic_abi_type(
     let generic = match syntax_type {
         beskid_analysis::syntax::Type::Complex(path) => {
             let [segment] = path.node.segments.as_slice() else {
-                return abi_type_from_syntax(db, declaration, syntax_type);
+                return item_abi_type_from_syntax(db, declaration, syntax_type);
             };
             segment.node.type_args.is_empty().then_some(segment.node.name.node.name.as_str())
         }
@@ -2941,7 +2952,7 @@ fn generic_abi_type(
     generic
         .and_then(|name| substitutions.get(name).copied())
         .map(Ok)
-        .unwrap_or_else(|| abi_type_from_syntax(db, declaration, syntax_type))
+        .unwrap_or_else(|| item_abi_type_from_syntax(db, declaration, syntax_type))
 }
 
 fn generic_type_name<'a>(syntax_type: &'a beskid_analysis::syntax::Type, generics: &[&str]) -> Option<&'a str> {
@@ -3674,6 +3685,34 @@ fn enum_match_scrutinee_layout(
     let beskid_analysis::syntax::Expression::Path(path) = &expression.scrutinee.node else {
         return None;
     };
+    if path.node.path.node.segments.len() == 2 {
+        let scrutinee = normalized_expression_node(
+            index,
+            index.direct_child_id(
+                program,
+                key.node,
+                beskid_analysis::syntax_query::DynNodeRef::from(&expression.scrutinee.node),
+            )?,
+        );
+        let access = match aggregate_field_access(db, AstNodeKey { node: scrutinee, ..key }) {
+            Ok(Some(access)) => access,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let layout = match aggregate_layout(db, access.declaration) {
+            Ok(Some(layout)) => layout,
+            Ok(None) => return Some(Err(SemanticError::unavailable("enum_match"))),
+            Err(error) => return Some(Err(error)),
+        };
+        let Some((_, AggregateFieldShape::Nominal(declaration))) = layout.fields.get(access.index as usize) else {
+            return Some(Err(SemanticError::unavailable("enum_match")));
+        };
+        return Some(
+            enum_layout(db, *declaration)
+                .and_then(|layout| layout.ok_or_else(|| SemanticError::unavailable("enum_match")))
+                .map(|layout| (*declaration, layout)),
+        );
+    }
     let [segment] = path.node.path.node.segments.as_slice() else {
         return None;
     };
@@ -3922,12 +3961,12 @@ fn abi_local_declaration_type(
         beskid_analysis::syntax_query::NodeKind::Parameter => index
             .node_at(program, parent)?
             .of::<beskid_analysis::syntax::Parameter>()
-            .map(|parameter| abi_type_from_syntax(db, key, &parameter.ty.node)),
+            .map(|parameter| item_abi_type_from_syntax(db, key, &parameter.ty.node)),
         beskid_analysis::syntax_query::NodeKind::LetStatement => {
             index.node_at(program, parent)?.of::<beskid_analysis::syntax::LetStatement>().map(|statement| {
                 statement.type_annotation.as_ref().map_or_else(
                     || Err(SemanticError::unavailable("abi_type")),
-                    |syntax_type| abi_type_from_syntax(db, key, &syntax_type.node),
+                    |syntax_type| item_abi_type_from_syntax(db, key, &syntax_type.node),
                 )
             })
         }

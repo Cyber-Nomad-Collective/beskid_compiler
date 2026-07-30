@@ -297,7 +297,9 @@ impl AbiManifestV5 {
             // The canonical scheduler may call only manifest-owned assembly context exports.
             // All other runtime intrinsic names remain version-prefixed, preventing a source
             // declaration from turning into an arbitrary ABI import.
-            if !intrinsic.symbol.starts_with(RUNTIME_SYMBOL_PREFIX) && !assembly_symbols.contains(intrinsic.symbol.as_str()) {
+            if !intrinsic.symbol.starts_with(RUNTIME_SYMBOL_PREFIX)
+                && !assembly_symbols.contains(intrinsic.symbol.as_str())
+            {
                 return Err(ManifestValidationError::UnversionedRuntimeSymbol { symbol: intrinsic.symbol.clone() });
             }
             if !intrinsic_symbols.insert(intrinsic.symbol.as_str()) {

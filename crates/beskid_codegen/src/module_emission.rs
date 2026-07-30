@@ -802,7 +802,11 @@ fn resolve_module_items(
             continue;
         }
         let Some(signatures) = specializations.get(&item.key) else {
-            return Err(emission_verification("generic item has no call-derived ABI specialization"));
+            return Err(emission_verification(format!(
+                "generic item `{}` ({}) has no call-derived ABI specialization",
+                item.symbol,
+                trace_key(db, item.key),
+            )));
         };
         for signature in signatures {
             let identity = specialization_identity(signature);

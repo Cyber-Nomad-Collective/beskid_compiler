@@ -26,8 +26,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn canonical_runtime_constant_integer(&self, key: AstNodeKey) -> Option<i64> {
-        if self.node_kind(key) != Some(NodeKind::PathExpression)
-            || self.input.runtime_intrinsic_capability().is_none()
+        if self.node_kind(key) != Some(NodeKind::PathExpression) || self.input.runtime_intrinsic_capability().is_none()
         {
             return None;
         }

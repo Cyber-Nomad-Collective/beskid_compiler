@@ -2,7 +2,11 @@
 
 use crate::parser::Rule;
 
-use super::{candidate::RepairCandidate, scan::{skip_ws, unbalanced_delimiters}, syntax_primitives};
+use super::{
+    candidate::RepairCandidate,
+    scan::{skip_ws, unbalanced_delimiters},
+    syntax_primitives,
+};
 
 /// Generate delimiter close/open repairs near the Pest error locus.
 pub fn repairs(source: &str, error_pos: usize, _parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {

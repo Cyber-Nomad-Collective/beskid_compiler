@@ -23,6 +23,7 @@ pub(crate) fn replacement_priority(confidence: u8, source_token: &str, replaceme
 pub(crate) fn expected_token_priority(confidence: u8) -> u8 {
     let confidence = confidence.min(100);
     let band = u16::from(100 - confidence);
-    let penalty = (band / u16::from(PRI_SYNC_EXPECTED_TOKEN_CONFIDENCE_BAND_WIDTH)).min(u16::from(PRI_SYNC_EXPECTED_TOKEN_BASE));
+    let penalty =
+        (band / u16::from(PRI_SYNC_EXPECTED_TOKEN_CONFIDENCE_BAND_WIDTH)).min(u16::from(PRI_SYNC_EXPECTED_TOKEN_BASE));
     PRI_SYNC_EXPECTED_TOKEN_BASE.saturating_sub(u8::try_from(penalty).unwrap_or(u8::MAX))
 }

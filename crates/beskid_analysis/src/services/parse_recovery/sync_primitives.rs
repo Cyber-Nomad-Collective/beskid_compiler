@@ -50,31 +50,17 @@ pub(crate) fn next_sync_boundary_with_follow_set(
                 continue;
             }
             b';' | b'}' | b')' | b']' | b'>' => {
-                return Some(SyncBoundary {
-                    pos,
-                    boundary_char: Some(bytes[pos]),
-                    suppress_semicolon: false,
-                });
+                return Some(SyncBoundary { pos, boundary_char: Some(bytes[pos]), suppress_semicolon: false });
             }
             _ => {
                 if let Some(_boundary_token_end) = follow_token_end(source, pos, follow_tokens) {
-                    return Some(SyncBoundary {
-                        pos,
-                        boundary_char: None,
-                        suppress_semicolon: false,
-                    });
+                    return Some(SyncBoundary { pos, boundary_char: None, suppress_semicolon: false });
                 }
 
-                if let Some((_, suppress_semicolon)) = syntax_primitives::recoverable_sync_boundary_start(
-                    source,
-                    pos,
-                    sync_keywords,
-                ) {
-                    return Some(SyncBoundary {
-                        pos,
-                        boundary_char: None,
-                        suppress_semicolon,
-                    });
+                if let Some((_, suppress_semicolon)) =
+                    syntax_primitives::recoverable_sync_boundary_start(source, pos, sync_keywords)
+                {
+                    return Some(SyncBoundary { pos, boundary_char: None, suppress_semicolon });
                 }
                 if scan::is_ident_start(bytes[pos]) || bytes[pos] == b'_' {
                     pos = scan::skip_identifier(source, pos);
@@ -93,7 +79,7 @@ fn follow_token_end(source: &str, pos: usize, follow_tokens: &[&'static str]) ->
         return None;
     }
 
-    let token_start = scan::next_token_start(source, pos).or_else(|| if pos < source.len() { Some(pos) } else { None })?;
+    let token_start = scan::next_token_start(source, pos).or(if pos < source.len() { Some(pos) } else { None })?;
     if token_start >= source.len() {
         return None;
     }
@@ -122,10 +108,10 @@ pub(crate) fn should_insert_sync_semicolon(source: &str, sync_pos: usize, bounda
         return false;
     }
 
-    if let Some(prev) = previous_non_ws_byte(source, sync_pos) {
-        if NON_SEMI_PREVIOUS.contains(&prev) {
-            return false;
-        }
+    if let Some(prev) = previous_non_ws_byte(source, sync_pos)
+        && NON_SEMI_PREVIOUS.contains(&prev)
+    {
+        return false;
     }
 
     true
@@ -137,11 +123,7 @@ fn previous_non_ws_byte(source: &str, before: usize) -> Option<u8> {
     while prev > 0 && bytes[prev - 1].is_ascii_whitespace() {
         prev -= 1;
     }
-    if prev == 0 {
-        None
-    } else {
-        Some(bytes[prev - 1])
-    }
+    if prev == 0 { None } else { Some(bytes[prev - 1]) }
 }
 
 #[cfg(test)]

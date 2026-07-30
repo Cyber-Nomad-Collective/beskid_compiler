@@ -235,8 +235,9 @@ impl NodeFacts for UnitMatchFacts {
     }
 
     fn managed_struct_allocation(&self, key: AstNodeKey) -> Option<ManagedStructAllocation> {
-        (key == self.nodes[1])
-            .then(|| ManagedStructAllocation { allocation_request_symbol: "__test_unit_enum_allocation_request".into() })
+        (key == self.nodes[1]).then(|| ManagedStructAllocation {
+            allocation_request_symbol: "__test_unit_enum_allocation_request".into(),
+        })
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {

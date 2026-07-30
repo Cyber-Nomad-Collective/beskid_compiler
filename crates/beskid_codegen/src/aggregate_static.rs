@@ -184,9 +184,12 @@ impl CodegenInput<'_> {
         }
         let object_size = align_to(size, alignment)?;
         let pointer_map_offsets = payload_is_pointer.then_some(payload_offset).into_iter().collect::<Vec<_>>();
-        let unit = self.typed_program().assembly.units().iter().position(|unit| {
-            paths_match(&unit.path, literal.unit.path(self.database()))
-        })?;
+        let unit = self
+            .typed_program()
+            .assembly
+            .units()
+            .iter()
+            .position(|unit| paths_match(&unit.path, literal.unit.path(self.database())))?;
         let identity = format!("enum_u{unit}_g{}_n{}", literal.generation.0, literal.node.0);
         Some(AggregateStaticPlan {
             literal,

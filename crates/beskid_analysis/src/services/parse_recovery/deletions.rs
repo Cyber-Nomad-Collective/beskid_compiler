@@ -23,18 +23,12 @@ fn direct_single_token_recovery(
     error_pos: usize,
     parse_error: &pest::error::Error<Rule>,
 ) -> Option<RepairCandidate> {
-    let Some((unexpected_pos, unexpected_len)) = token_span_at_error(source, error_pos) else {
-        return None;
-    };
-    let Some(next_start) = scan::next_token_start(source, unexpected_pos.saturating_add(unexpected_len)) else {
-        return None;
-    };
+    let (unexpected_pos, unexpected_len) = token_span_at_error(source, error_pos)?;
+    let next_start = scan::next_token_start(source, unexpected_pos.saturating_add(unexpected_len))?;
     if next_start >= source.len() || next_start <= unexpected_pos {
         return None;
     }
-    let Some(next_len) = scan::token_len_at_raw(source, next_start) else {
-        return None;
-    };
+    let next_len = scan::token_len_at_raw(source, next_start)?;
     let next_end = (next_start + next_len).min(source.len());
     let unexpected = &source[unexpected_pos..(unexpected_pos + unexpected_len).min(source.len())];
     let next_token = &source[next_start..next_end];
@@ -89,8 +83,8 @@ fn duplicate_token_repairs(source: &str, parse_error: &pest::error::Error<Rule>)
             };
             let next_end = (after_second + next_len).min(source.len());
             let next_token = &source[after_second..next_end];
-            let can_recover =
-                !next_token.is_empty() && heuristics::can_recover_single_token_deletion(source, after_second, first, next_token, parse_error);
+            let can_recover = !next_token.is_empty()
+                && heuristics::can_recover_single_token_deletion(source, after_second, first, next_token, parse_error);
             if can_recover {
                 candidates.push(RepairCandidate::delete(
                     pos,
@@ -107,13 +101,8 @@ fn duplicate_token_repairs(source: &str, parse_error: &pest::error::Error<Rule>)
 }
 
 fn token_span_at_error(source: &str, error_pos: usize) -> Option<(usize, usize)> {
-    let pos = scan::next_token_start(source, error_pos).or_else(|| {
-        if error_pos < source.len() {
-            Some(error_pos)
-        } else {
-            None
-        }
-    })?;
+    let pos =
+        scan::next_token_start(source, error_pos).or(if error_pos < source.len() { Some(error_pos) } else { None })?;
     if pos >= source.len() {
         return None;
     }

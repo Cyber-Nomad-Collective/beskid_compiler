@@ -21,11 +21,11 @@ use beskid_queries::{
     build_canonical_corelib_syscall_typed_program, build_typed_program,
     build_typed_program_with_corelib_syscall_services, call_abi_signature, call_arguments, call_lowering,
     callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target, closure_environment,
-    closure_signature, completion_candidates, control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
-    for_iterator_fact, generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
-    item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type,
-    nominal_member_receiver, operator_fact, reachable_items, resolved_item, resolved_local, runtime_intrinsic,
-    primitive_numeric_conversion, spawn_entry_validation, spawn_legality, spawn_target, test_item,
+    closure_signature, completion_candidates, constant_integer, control_flow, direct_callees, enum_constructor,
+    enum_layout, enum_match, for_iterator_fact, generic_call_instantiation, generic_call_specialization,
+    item_abi_signature, item_body, item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind,
+    node_span, node_type, nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items,
+    resolved_item, resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -65,6 +65,15 @@ fn warm_point_query_uses_registered_expanded_syntax_without_reparse() {
     assert!(literal_fact(&db, literal).expect("warm literal").is_some());
     assert_eq!(node_type(&db, literal).expect("warm type"), Some(beskid_queries::SemanticTypeId::I32));
     assert_eq!(db.syntax_authority_counts(), (1, 1));
+}
+
+#[test]
+fn module_hexadecimal_integer_constant_has_an_immediate_fact() {
+    let (db, _project, unit, generation, index) =
+        setup("const FIBER_NONE = 0xFFFF;\nword Main() { return FIBER_NONE; }");
+    let constant_path = key(unit, generation, &index, NodeKind::PathExpression, 0);
+
+    assert_eq!(constant_integer(&db, constant_path).expect("constant fact"), Some(0xFFFF));
 }
 
 #[test]
@@ -665,6 +674,33 @@ fn enum_match_keeps_source_ordered_nullary_variant_arms() {
             ]),
         })
     );
+}
+
+#[test]
+fn enum_match_accepts_enum_valued_aggregate_field_scrutinee() {
+    let source = r#"
+enum ChannelCapacity { Unbounded(), Bounded(i64 capacity) }
+type ChannelOptions { ChannelCapacity capacity }
+i64 EncodeCapacity(ChannelOptions options) {
+    return match options.capacity {
+        ChannelCapacity::Unbounded() => 0,
+        ChannelCapacity::Bounded(capacity) => capacity,
+    };
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::MatchExpression, 0);
+    let declaration = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
+    let projection = key(unit, generation, &index, NodeKind::PathExpression, 0);
+
+    assert!(aggregate_field_access(&db, projection).expect("aggregate field query").is_some());
+    let fact = enum_match(&db, expression)
+        .expect("aggregate field enum match query")
+        .expect("enum-valued aggregate field match fact");
+    assert_eq!(fact.declaration, declaration);
+    assert_eq!(fact.arms.len(), 2);
+    assert_eq!(fact.arms[0].variant_index, Some(0));
+    assert_eq!(fact.arms[1].variant_index, Some(1));
 }
 
 fn key(
@@ -2071,6 +2107,24 @@ unit Main() { Equal(Position(), 0, "initial position"); return; }
         call_abi_signature(&db, call).expect("nested generic call signature"),
         Some(ItemSignature {
             parameters: Arc::from([SemanticTypeId::I64, SemanticTypeId::I64, SemanticTypeId::STRING,]),
+            result: SemanticTypeId::UNIT,
+        })
+    );
+}
+
+#[test]
+fn explicit_generic_call_contextualizes_bare_integer_for_non_generic_i64_parameter() {
+    let source = r#"
+unit Register<T>(T receiver, i64 index, T value) { return; }
+unit Main() { Register<i64>(1_i64, 0, 2_i64); return; }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_eq!(
+        call_abi_signature(&db, call).expect("explicit generic call signature"),
+        Some(ItemSignature {
+            parameters: Arc::from([SemanticTypeId::I64, SemanticTypeId::I64, SemanticTypeId::I64]),
             result: SemanticTypeId::UNIT,
         })
     );

@@ -148,10 +148,7 @@ impl RuntimeAuditMetadata {
     /// member: the Linux platform objects import `mmap` for both the page-allocation intrinsics
     /// and guarded scheduler stacks. Collapsing those repeats keeps the provenance and allowlist
     /// checks exact while refusing to treat multi-member references as malformed input.
-    fn collapsed_symbol_set<'a>(
-        &self,
-        symbols: impl IntoIterator<Item = &'a str>,
-    ) -> Result<BTreeSet<String>, String> {
+    fn collapsed_symbol_set<'a>(&self, symbols: impl IntoIterator<Item = &'a str>) -> Result<BTreeSet<String>, String> {
         symbols.into_iter().map(|raw| self.normalized_symbol(raw)).collect()
     }
 

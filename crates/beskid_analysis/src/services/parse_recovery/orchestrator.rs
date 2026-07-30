@@ -13,7 +13,7 @@ use crate::syntax::SpanInfo;
 
 use super::candidate::RepairCandidate;
 use super::edit::apply_repair;
-use super::{scan, policy};
+use super::{policy, scan};
 
 /// Collect, phase-score, dedupe, and cap recovery source candidates with diagnostics.
 pub(crate) fn collect_repair_candidates(

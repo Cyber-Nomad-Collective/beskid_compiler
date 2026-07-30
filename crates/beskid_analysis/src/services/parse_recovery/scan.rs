@@ -1,8 +1,8 @@
 //! Shared scanner and token helper utilities.
 
+use super::syntax_primitives;
 use crate::parser::Rule;
 use pest::error::InputLocation;
-use super::syntax_primitives;
 
 /// Extract normalized parse byte position from pest errors.
 pub(crate) fn error_byte_pos(parse_error: &pest::error::Error<Rule>) -> usize {
@@ -64,41 +64,16 @@ pub(crate) fn is_close_delimiter_byte(byte: u8) -> bool {
 }
 
 pub(crate) fn is_delimiter_byte(byte: u8) -> bool {
-    is_open_delimiter_byte(byte)
-        || is_close_delimiter_byte(byte)
-        || matches!(byte, b',' | b';' | b':' | b'.' | b'`')
+    is_open_delimiter_byte(byte) || is_close_delimiter_byte(byte) || matches!(byte, b',' | b';' | b':' | b'.' | b'`')
 }
 
 pub(crate) fn is_operator_byte(byte: u8) -> bool {
-    matches!(
-        byte,
-        b'=' | b'<' | b'>' | b'!' | b'+' | b'-' | b'*' | b'/' | b'&' | b'|' | b'?' | b'%'
-    )
+    matches!(byte, b'=' | b'<' | b'>' | b'!' | b'+' | b'-' | b'*' | b'/' | b'&' | b'|' | b'?' | b'%')
 }
 
 const MULTI_CHAR_OPERATORS: &[&str] = &[
-    "===",
-    "!==",
-    "<<",
-    ">>",
-    "=>",
-    "==",
-    "!=",
-    ">=",
-    "<=",
-    "&&",
-    "||",
-    "+=",
-    "-=",
-    "*=",
-    "/=",
-    "%=",
-    "&=",
-    "|=",
-    "::",
-    "++",
-    "--",
-    "->",
+    "===", "!==", "<<", ">>", "=>", "==", "!=", ">=", "<=", "&&", "||", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "::",
+    "++", "--", "->",
 ];
 
 fn operator_token_len(source: &str, start: usize) -> Option<usize> {
@@ -258,9 +233,7 @@ pub(crate) fn ident_span_at(source: &str, pos: usize) -> Option<(usize, usize)> 
 
 /// Recognize primitive-like type starts in recovery heuristics.
 pub(crate) fn looks_like_type_keyword(source: &str, pos: usize) -> bool {
-    syntax_primitives::PRIMITIVE_TYPE_KEYWORDS
-        .iter()
-        .any(|kw| keyword_at(source, pos, kw))
+    syntax_primitives::PRIMITIVE_TYPE_KEYWORDS.iter().any(|kw| keyword_at(source, pos, kw))
 }
 
 /// Recognize expression-like tokens when inferring separators.
@@ -426,11 +399,7 @@ pub(crate) fn token_len_at_raw(source: &str, start: usize) -> Option<usize> {
         }
         start + fence_len
     } else if is_operator_byte(first) {
-        if let Some(len) = operator_token_len(source, start) {
-            start + len
-        } else {
-            start + 1
-        }
+        if let Some(len) = operator_token_len(source, start) { start + len } else { start + 1 }
     } else if is_ident_start(first) {
         skip_identifier(source, start)
     } else if first.is_ascii_digit() {
@@ -444,11 +413,7 @@ pub(crate) fn token_len_at_raw(source: &str, start: usize) -> Option<usize> {
         while cursor < source.len() && is_ident_continue(bytes[cursor]) {
             cursor += 1;
         }
-        if cursor == start.saturating_add(1) {
-            start + 1
-        } else {
-            cursor
-        }
+        if cursor == start.saturating_add(1) { start + 1 } else { cursor }
     } else {
         start + 1
     };

@@ -190,11 +190,11 @@ fn resolve_process_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(Strin
         // Cranelift's Mach-O import spelling carries the object-file leading
         // underscore, whereas dlsym expects the C source name.
         #[cfg(target_os = "macos")]
-        if addr.is_null() {
-            if let Some(symbol) = imp.symbol.strip_prefix('_') {
-                let c_symbol = CString::new(symbol).map_err(|_| format!("bad symbol: {symbol}"))?;
-                addr = unsafe { dlsym(RTLD_DEFAULT, c_symbol.as_ptr()) };
-            }
+        if addr.is_null()
+            && let Some(symbol) = imp.symbol.strip_prefix('_')
+        {
+            let c_symbol = CString::new(symbol).map_err(|_| format!("bad symbol: {symbol}"))?;
+            addr = unsafe { dlsym(RTLD_DEFAULT, c_symbol.as_ptr()) };
         }
         if addr.is_null() {
             let err = unsafe { CStr::from_ptr(dlerror()) };

@@ -151,8 +151,18 @@ pub struct GeneratedV5Artifacts {
 
 pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String> {
     let document = parse_bsol_document(source).map_err(|error| error.to_string())?;
-    let allowed_blocks =
-        ["manifest", "target", "export", "intrinsic", "soft_builtin", "layout", "platform_import", "assembly", "trap", "audit"];
+    let allowed_blocks = [
+        "manifest",
+        "target",
+        "export",
+        "intrinsic",
+        "soft_builtin",
+        "layout",
+        "platform_import",
+        "assembly",
+        "trap",
+        "audit",
+    ];
     if let Some(block) = document.blocks.iter().find(|block| !allowed_blocks.contains(&block.kind.as_str())) {
         return Err(format!("unknown top-level block `{}`", block.kind));
     }
@@ -270,19 +280,18 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
     let audit_block = one(&document.blocks, "audit")?;
     ensure_fields(audit_block, &["forbidden_symbol_families"])?;
     let audit = AuditV5 { forbidden_symbol_families: list_field(audit_block, "forbidden_symbol_families")? };
-    let result =
-        RuntimeManifestV5 {
-            meta,
-            targets,
-            exports,
-            intrinsics,
-            soft_builtins,
-            layouts,
-            platform_imports,
-            assembly,
-            traps,
-            audit,
-        };
+    let result = RuntimeManifestV5 {
+        meta,
+        targets,
+        exports,
+        intrinsics,
+        soft_builtins,
+        layouts,
+        platform_imports,
+        assembly,
+        traps,
+        audit,
+    };
     validate(&result)?;
     Ok(result)
 }
@@ -345,19 +354,26 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             return Err(format!("export {} is not ABI-v5 versioned", entry.symbol));
         }
     }
-    let known_soft_builtin_types = ["pointer", "usize", "isize", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "string", "void", "never"];
+    let known_soft_builtin_types = [
+        "pointer", "usize", "isize", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "string",
+        "void", "never",
+    ];
     for entry in &manifest.soft_builtins {
         if entry.name.is_empty()
             || !entry.name.starts_with("__")
             || entry.symbol.is_empty()
             || !known_soft_builtin_types.contains(&entry.result.as_str())
-            || entry.params.iter().any(|param| param.name.is_empty() || !known_soft_builtin_types.contains(&param.ty.as_str()))
+            || entry
+                .params
+                .iter()
+                .any(|param| param.name.is_empty() || !known_soft_builtin_types.contains(&param.ty.as_str()))
         {
             return Err(format!("soft builtin `{}` has an invalid declaration", entry.name));
         }
         unique(entry.params.iter().map(|param| param.name.as_str()), "soft builtin parameter")?;
     }
-    let assembly_symbols = manifest.assembly.iter().map(|entry| entry.symbol.as_str()).collect::<std::collections::HashSet<_>>();
+    let assembly_symbols =
+        manifest.assembly.iter().map(|entry| entry.symbol.as_str()).collect::<std::collections::HashSet<_>>();
     for entry in &manifest.intrinsics {
         if entry.name.is_empty()
             || entry.symbol.is_empty()

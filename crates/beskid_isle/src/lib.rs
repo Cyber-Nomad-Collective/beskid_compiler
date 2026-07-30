@@ -642,7 +642,12 @@ pub trait NodeFacts {
     fn call_kind(&self, _key: AstNodeKey) -> Option<CallKind> {
         None
     }
-    fn primitive_numeric_conversion(&self, _key: AstNodeKey) -> Option<(beskid_queries::SemanticTypeId, beskid_queries::SemanticTypeId)> { None }
+    fn primitive_numeric_conversion(
+        &self,
+        _key: AstNodeKey,
+    ) -> Option<(beskid_queries::SemanticTypeId, beskid_queries::SemanticTypeId)> {
+        None
+    }
     fn runtime_intrinsic_kind(&self, _key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
         None
     }
@@ -1247,9 +1252,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
 
     fn emit_memory_set(&mut self, destination: Value, byte: Value, length: Value) -> Option<()> {
         let pointer = self.builder.func.dfg.value_type(destination);
-        if !pointer.is_int()
-            || self.builder.func.dfg.value_type(length) != pointer
-        {
+        if !pointer.is_int() || self.builder.func.dfg.value_type(length) != pointer {
             return None;
         }
         let byte_type = self.builder.func.dfg.value_type(byte);
@@ -1653,9 +1656,19 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let source = self.facts.scalar_type(argument)?;
         let target = self.facts.scalar_type(key)?;
         (source == actual).then_some(())?;
-        if actual == target { Some(value) } else if actual.bits() < target.bits() {
-            Some(if from == beskid_queries::SemanticTypeId::U8 { self.builder.ins().uextend(target, value) } else { self.builder.ins().sextend(target, value) })
-        } else if actual.bits() > target.bits() { Some(self.builder.ins().ireduce(target, value)) } else { None }
+        if actual == target {
+            Some(value)
+        } else if actual.bits() < target.bits() {
+            Some(if from == beskid_queries::SemanticTypeId::U8 {
+                self.builder.ins().uextend(target, value)
+            } else {
+                self.builder.ins().sextend(target, value)
+            })
+        } else if actual.bits() > target.bits() {
+            Some(self.builder.ins().ireduce(target, value))
+        } else {
+            None
+        }
     }
 
     fn emit_direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
@@ -1901,7 +1914,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn emit_return(&mut self, key: AstNodeKey) -> Option<()> {
         if let Some(value_key) = self.facts.child(key, 0) {
-            let value = generated::constructor_lower_expression(self, value_key)?;
+            let value = self.lower_nested_expression(value_key)?;
             let expected = self.builder.func.signature.returns.first()?.value_type;
             let actual = self.builder.func.dfg.value_type(value);
             let value = if actual == expected {
@@ -1950,7 +1963,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let condition_key = self.facts.child(key, 0)?;
         let then_key = self.facts.child(key, 1)?;
         let else_key = self.facts.child(key, 2);
-        let condition = generated::constructor_lower_expression(self, condition_key)?;
+        let condition = self.lower_nested_expression(condition_key)?;
         let then_block = self.builder.create_block();
         let else_block = self.builder.create_block();
         let merge_block = self.builder.create_block();
@@ -1969,7 +1982,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
         self.builder.switch_to_block(then_block);
         self.builder.seal_block(then_block);
-        generated::constructor_lower_statement(self, then_key)?;
+        self.lower_nested_statement(then_key)?;
         if jump_from_current_if_unterminated(self.builder, merge_block) {
             merge_reachable = true;
         }
@@ -1977,7 +1990,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.builder.switch_to_block(else_block);
         self.builder.seal_block(else_block);
         if let Some(else_key) = else_key {
-            generated::constructor_lower_statement(self, else_key)?;
+            self.lower_nested_statement(else_key)?;
         }
         if jump_from_current_if_unterminated(self.builder, merge_block) {
             merge_reachable = true;

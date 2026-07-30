@@ -2,8 +2,8 @@
 
 use crate::parser::Rule;
 
-use super::{candidate::RepairCandidate, expected_tokens, lists, scan, syntax_primitives};
 use super::scan::{next_token_start, skip_ws, unbalanced_delimiters};
+use super::{candidate::RepairCandidate, expected_tokens, lists, scan, syntax_primitives};
 
 const PRI_MATCH_CLOSE: u8 = 60;
 const PRI_MATCH_ARROW: u8 = 61;
@@ -38,9 +38,10 @@ pub fn repairs(source: &str, error_pos: usize, parse_error: &pest::error::Error<
     let mut candidates = Vec::new();
     let error_pos = syntax_primitives::recovery_scan_pos(source, error_pos);
     let tail_pos = source.trim_end().len();
-    let insert_at = if error_pos >= tail_pos && tail_pos > 0 && source[..tail_pos].ends_with('.') {
-        tail_pos
-    } else if error_pos >= tail_pos && source[..tail_pos].ends_with('[') {
+    let insert_at = if error_pos >= tail_pos
+        && tail_pos > 0
+        && (source[..tail_pos].ends_with('.') || source[..tail_pos].ends_with('['))
+    {
         tail_pos
     } else {
         recovery_insert_pos(source, error_pos)
@@ -299,11 +300,7 @@ fn member_access_repairs(
 
 fn index_expression_repairs(source: &str, error_pos: usize, insert_at: usize, candidates: &mut Vec<RepairCandidate>) {
     let tail_pos = source.trim_end().len();
-    let seek_pos = if error_pos >= tail_pos && source[..tail_pos].ends_with('[') {
-        tail_pos
-    } else {
-        error_pos
-    };
+    let seek_pos = if error_pos >= tail_pos && source[..tail_pos].ends_with('[') { tail_pos } else { error_pos };
 
     let Some(bracket_open) = find_unclosed_bracket_before(source, seek_pos.saturating_add(1)) else {
         return;
@@ -318,11 +315,7 @@ fn index_expression_repairs(source: &str, error_pos: usize, insert_at: usize, ca
         return;
     }
     let scan_end = seek_pos.min(source.len());
-    let inside = if scan_end <= scan_pos {
-        ""
-    } else {
-        source[scan_pos..scan_end].trim()
-    };
+    let inside = if scan_end <= scan_pos { "" } else { source[scan_pos..scan_end].trim() };
     if inside.is_empty() {
         candidates.push(RepairCandidate::insert(
             insert_at,
@@ -331,12 +324,7 @@ fn index_expression_repairs(source: &str, error_pos: usize, insert_at: usize, ca
             PRI_INDEX_PLACEHOLDER,
         ));
     } else {
-        candidates.push(RepairCandidate::insert(
-            insert_at,
-            "]",
-            "closed incomplete index expression",
-            PRI_INDEX_CLOSE,
-        ));
+        candidates.push(RepairCandidate::insert(insert_at, "]", "closed incomplete index expression", PRI_INDEX_CLOSE));
     }
 }
 
@@ -362,9 +350,7 @@ fn control_expression_body_repairs(
     for &keyword in syntax_primitives::CONTROL_EXPRESSION_KEYWORDS {
         if let Some(pos) = scan::find_keyword_backward(source, error_pos, keyword) {
             latest = match latest {
-                Some((existing_pos, existing_keyword)) if existing_pos > pos => {
-                    Some((existing_pos, existing_keyword))
-                }
+                Some((existing_pos, existing_keyword)) if existing_pos > pos => Some((existing_pos, existing_keyword)),
                 _ => Some((pos, keyword)),
             };
         }
@@ -433,12 +419,7 @@ fn dot_access_prefix_looks_expression(source: &str, dot_pos: usize) -> bool {
         return false;
     }
 
-    scan::is_ident_start(prev)
-        || prev == b')'
-        || prev == b']'
-        || prev == b'}'
-        || prev == b'"'
-        || prev == b'\''
+    scan::is_ident_start(prev) || prev == b')' || prev == b']' || prev == b'}' || prev == b'"' || prev == b'\''
 }
 
 fn find_unclosed_bracket_before(source: &str, error_pos: usize) -> Option<usize> {
@@ -456,9 +437,7 @@ fn index_open_is_expression_context(source: &str, open: usize) -> bool {
             pos -= 1;
             continue;
         }
-        return scan::is_ident_continue(b)
-            || matches!(b, b')' | b']' | b'}')
-            || b.is_ascii_digit();
+        return scan::is_ident_continue(b) || matches!(b, b')' | b']' | b'}') || b.is_ascii_digit();
     }
 
     false
@@ -477,7 +456,7 @@ fn struct_field_separator_repairs(
         candidates,
         b'{',
         b'}',
-        |source, open, scan_pos| struct_brace_opens_literal_at(source, open, scan_pos),
+        struct_brace_opens_literal_at,
         "field: 0",
         PRI_STRUCT_TRAILING_COMMA_DELETE,
         PRI_STRUCT_TRAILING_COMMA_FIX,
@@ -876,7 +855,9 @@ fn inside_call_argument_list(source: &str, error_pos: usize) -> bool {
         return false;
     };
     let prefix = prefix_before(source, open);
-    (open > 0 && scan::is_ident_continue(source.as_bytes()[open - 1])) || prefix.ends_with('!') || prefix.ends_with("spawn")
+    (open > 0 && scan::is_ident_continue(source.as_bytes()[open - 1]))
+        || prefix.ends_with('!')
+        || prefix.ends_with("spawn")
 }
 
 fn inside_expression_argument_list(source: &str, open: usize, error_pos: usize) -> bool {

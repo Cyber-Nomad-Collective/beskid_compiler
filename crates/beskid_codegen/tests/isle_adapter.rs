@@ -1040,6 +1040,8 @@ fn parsed_mutable_range_accumulator_exposes_local_write_syntax_facts() {
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
 
     let target = facts.child(assignment, 0).expect("assignment target fact");
+    let value = facts.child(assignment, 1).expect("assignment value fact");
+    assert_eq!(facts.node_kind(value), Some(beskid_isle::NodeKind::BinaryExpression));
     let declaration = beskid_queries::resolved_local(db, target)
         .expect("assignment target resolution")
         .expect("assignment target local")
