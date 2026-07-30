@@ -2990,11 +2990,15 @@ mod tests {
 
     #[test]
     fn test_ambient_rustc_wrapper_does_not_conflict_with_enable_sccache() {
+        let previous_wrapper = std::env::var_os("RUSTC_WRAPPER");
         std::env::set_var("RUSTC_WRAPPER", "sccache");
         let with_sccache = parse(&["cargo-cross", "build", "--enable-sccache"]);
         let without_sccache = parse(&["cargo-cross", "build"]);
         let explicit_conflict = parse(&["cargo-cross", "build", "--enable-sccache", "--rustc-wrapper", "sccache"]);
-        std::env::remove_var("RUSTC_WRAPPER");
+        match previous_wrapper {
+            Some(value) => std::env::set_var("RUSTC_WRAPPER", value),
+            None => std::env::remove_var("RUSTC_WRAPPER"),
+        }
 
         // --enable-sccache wins over the ambient wrapper instead of erroring.
         let with_sccache = with_sccache.unwrap();
