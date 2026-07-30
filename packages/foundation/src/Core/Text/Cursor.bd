@@ -1,5 +1,7 @@
 /// Byte-indexed UTF-8 cursor for combinator parsing.
 
+use Core.String;
+
 pub type TextCursor {
     string source,
     i64 pos,
@@ -52,7 +54,7 @@ pub string DropSource(TextCursor c, i64 count) {
 
 pub TextCursor Advance(TextCursor c, i64 count) {
     i64 n = Len(c);
-    i64 next = c.pos + count;
+    mut i64 next = c.pos + count;
     if next > n {
         next = n;
     }

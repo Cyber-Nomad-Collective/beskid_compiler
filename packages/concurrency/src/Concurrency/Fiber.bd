@@ -13,13 +13,13 @@ pub type Fiber<T> {
 pub Core.Results.Result<T, FiberError> Join<T>(Fiber<T> self) {
     i64 raw_status = __fiber_join(self.handle);
     FiberJoinStatus status = FiberJoinStatus.FromI64(raw_status);
-    match status {
+    return match status {
         FiberJoinStatus::Ok => Result::Ok(__fiber_join_value(self.handle)),
         FiberJoinStatus::Cancelled => Result::Error(FiberError::Cancelled()),
         FiberJoinStatus::StackOverflow => Result::Error(FiberError::StackOverflow()),
         FiberJoinStatus::Panicked => Result::Error(FiberError::Panicked(raw_status)),
         FiberJoinStatus::NotDone => Result::Error(FiberError::Panicked(raw_status)),
-    }
+    };
 }
 
 /// Waives parent shutdown join; child panic still aborts the process in v1.
@@ -35,10 +35,10 @@ pub unit Cancel<T>(Fiber<T> self) {
 }
 
 pub FiberError MapJoinError(FiberJoinStatus status) {
-    match status {
+    return match status {
         FiberJoinStatus::Cancelled => FiberError::Cancelled(),
         FiberJoinStatus::StackOverflow => FiberError::StackOverflow(),
         FiberJoinStatus::Panicked => FiberError::Panicked(FiberJoinStatus.ToI64(status)),
         _ => FiberError::Panicked(FiberJoinStatus.ToI64(status)),
-    }
+    };
 }

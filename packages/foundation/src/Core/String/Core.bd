@@ -12,7 +12,7 @@ pub bool IsEmpty(string text) {
 }
 
 /// Returns the zero-based byte index of `needle` in `haystack` starting at `start`, or `-1`.
-pub i64 IndexOfFrom(string haystack, i64 start, string needle) {
+pub i64 IndexOfFrom(string haystack, mut i64 start, string needle) {
     i64 hlen = Len(haystack);
     i64 nlen = Len(needle);
     if nlen == 0 {
@@ -21,10 +21,10 @@ pub i64 IndexOfFrom(string haystack, i64 start, string needle) {
     if start < 0 {
         start = 0;
     }
-    i64 i = start;
+    mut i64 i = start;
     while !(i + nlen > hlen) {
-        i64 j = 0;
-        bool matched = true;
+        mut i64 j = 0;
+        mut bool matched = true;
         while j < nlen {
             if ByteAt(haystack, i + j) != ByteAt(needle, j) {
                 matched = false;

@@ -10,7 +10,7 @@ use Core.String.Chars;
 use Core.String.Utf8;
 
 pub i64 Len(string text) {
-    return Core.Len(text);
+    return __str_len(text);
 }
 
 pub bool IsEmpty(string text) {
@@ -72,4 +72,3 @@ pub string AppendUtf8Rune(string out, u8[] data, i64 start, i64 runeLen) {
 pub string FromUtf8CodeUnits(u8[] data) {
     return Utf8.FromUtf8CodeUnits(data);
 }
-

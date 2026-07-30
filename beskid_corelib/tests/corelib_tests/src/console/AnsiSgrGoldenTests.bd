@@ -23,9 +23,8 @@ test ansi_fg256_golden {
 
 test ansi_sgr_bold_prefix_golden {
     string esc = Ansi.Escape.Esc();
-    string prefix = Ansi.Sgr.IntoPrefix(Ansi.Sgr.Bold(Ansi.Sgr.Start()));
     string reset = Ansi.Escape.Csi("0", "m");
-    Assert.Contains(prefix, "[1m", "Sgr bold prefix should contain [1m");
+    Assert.Contains(Ansi.Sgr.IntoPrefix(Ansi.Sgr.Bold(Ansi.Sgr.Start())), "[1m", "Sgr bold prefix should contain [1m");
     Assert.Contains(reset, "${esc}[0m", "reset CSI should contain [0m");
 }
 

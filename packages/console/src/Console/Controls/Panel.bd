@@ -5,6 +5,7 @@ use Console.Controls.Contracts;
 use Console.Controls.Frame;
 use Console.Controls.RenderContext;
 use Console.Capabilities;
+use Core.String;
 
 pub type Panel : Contracts.PaddingProvider, Contracts.MarginProvider, Contracts.FramedControl, Contracts.ConsoleControl {
     string title,
@@ -105,8 +106,8 @@ pub string TopBorder(Panel panel, Frame.FrameChars frame, i32 innerWidth) {
     if panel.title == "" {
         return "${frame.topLeft}${Frame.Repeat(frame.top, innerWidth)}${frame.topRight}";
     }
-    i64 titleLen = Core.String.Len(panel.title);
-    i32 titleWidth = innerWidth - 2;
+    i32 titleLen = Core.String.Len(panel.title);
+    mut i32 titleWidth = innerWidth - 2;
     if titleWidth < 1 {
         titleWidth = 1;
     }
@@ -132,7 +133,7 @@ pub string TopBorder(Panel panel, Frame.FrameChars frame, i32 innerWidth) {
 pub string BodyLine(Panel panel, Frame.FrameChars frame, i32 innerWidth) {
     i32 pad = Console.Style.ResolvePadding(panel.padding, innerWidth + 2);
     i64 bodyLen = Core.String.Len(panel.body);
-    i32 padRight = innerWidth - bodyLen - pad;
+    mut i32 padRight = innerWidth - bodyLen - pad;
     if padRight < 0 {
         padRight = 0;
     }
@@ -141,7 +142,7 @@ pub string BodyLine(Panel panel, Frame.FrameChars frame, i32 innerWidth) {
 
 pub string Render(Panel panel, Console.ConsoleSize size) {
     Frame.FrameChars frame = Frame.ForHost(UseUnicodeFrame(panel));
-    i32 innerWidth = size.columns - 2;
+    mut i32 innerWidth = size.columns - 2;
     if innerWidth < 1 {
         innerWidth = 1;
     }

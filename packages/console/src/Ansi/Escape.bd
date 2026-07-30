@@ -31,11 +31,10 @@ pub string CsiSequence(string body, string finalByte) {
 
 /// CSI private-mode set (`h`) or reset (`l`), e.g. `?1049h`.
 pub string PrivateMode(string mode, bool enable) {
-    mut string tail = "h";
-    if !enable {
-        tail = "l";
+    if enable {
+        return CsiSequence("?" + mode, "h");
     }
-    return CsiSequence("?${mode}", tail);
+    return CsiSequence("?" + mode, "l");
 }
 
 /// DEC save/restore cursor (`ESC 7` / `ESC 8`).

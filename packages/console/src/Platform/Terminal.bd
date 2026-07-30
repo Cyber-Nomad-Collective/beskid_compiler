@@ -3,6 +3,7 @@ use Console.Capabilities;
 use Console.Capabilities.ColorModel;
 use Console.ConsoleMessage;
 use Concurrency.Channel;
+use Core.String;
 use Platform.Linux;
 use Platform.MacOS;
 use Platform.Windows;

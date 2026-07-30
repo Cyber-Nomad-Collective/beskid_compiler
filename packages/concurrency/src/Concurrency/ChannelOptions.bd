@@ -2,25 +2,18 @@
 /// Uses discriminated unions throughout — no bool flags or raw i64 bitfields.
 /// @tier(standard)
 
-/// Selects bounded vs unbounded channel capacity.
 pub enum ChannelCapacity {
     Unbounded,
     Bounded(i64 capacity),
 }
 
-/// Reader concurrency hint — selects internal queue optimization.
 pub enum ReaderHint {
-    /// Multiple readers may concurrently receive.
     Multiple,
-    /// Only one reader will ever receive from this channel.
     Single,
 }
 
-/// Writer concurrency hint — selects internal queue optimization.
 pub enum WriterHint {
-    /// Multiple writers may concurrently send.
     Multiple,
-    /// Only one writer will ever send to this channel.
     Single,
 }
 
