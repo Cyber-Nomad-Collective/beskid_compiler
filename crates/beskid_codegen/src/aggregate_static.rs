@@ -19,6 +19,21 @@ pub struct AggregateStaticField {
     pub field_offset: u64,
 }
 
+/// Header-relative object layout for a managed aggregate declaration.
+///
+/// This is the single source of truth for managed field offsets: allocation planning
+/// (`aggregate_static_plan`) and field access lowering must agree byte-for-byte, so both derive
+/// their offsets from here rather than recomputing them. Offsets are measured from the start of the
+/// object, i.e. they include the leading `BeskidObjectHeader`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AggregateObjectLayout {
+    pub declaration: AstNodeKey,
+    pub object_size: u64,
+    pub object_alignment: u64,
+    pub pointer_map_offsets: Arc<[u64]>,
+    pub fields: Arc<[AggregateStaticField]>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AggregateStaticPlan {
     pub literal: AstNodeKey,
@@ -84,19 +99,14 @@ fn write_word(bytes: &mut [u8], offset: usize, value: u64) -> Result<(), ModuleE
 }
 
 impl CodegenInput<'_> {
-    pub fn aggregate_static_plan(&self, literal: AstNodeKey) -> Option<AggregateStaticPlan> {
-        let declaration = aggregate_literal_declaration(self.database(), literal).ok().flatten()?;
+    /// Compute the header-relative field layout of a managed aggregate declaration.
+    ///
+    /// Field access lowering consumes this directly so that reads and writes address the same bytes
+    /// the allocation plan reserved.
+    pub fn aggregate_object_layout(&self, declaration: AstNodeKey) -> Option<AggregateObjectLayout> {
         let aggregate = aggregate_layout(self.database(), declaration).ok().flatten()?;
         let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
-        let descriptor = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidTypeDescriptor")?;
-        let request = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAllocationRequest")?;
-        if header.size < 16
-            || !valid_alignment(header.alignment)
-            || descriptor.size != 40
-            || descriptor.alignment != 8
-            || request.size != 24
-            || request.alignment != 8
-        {
+        if header.size < 16 || !valid_alignment(header.alignment) {
             return None;
         }
         let mut size = header.size;
@@ -119,6 +129,23 @@ impl CodegenInput<'_> {
             fields.push(AggregateStaticField { abi_type, field_offset });
         }
         let object_size = align_to(size, alignment)?;
+        Some(AggregateObjectLayout {
+            declaration,
+            object_size,
+            object_alignment: alignment,
+            pointer_map_offsets: pointer_map_offsets.into(),
+            fields: fields.into(),
+        })
+    }
+
+    pub fn aggregate_static_plan(&self, literal: AstNodeKey) -> Option<AggregateStaticPlan> {
+        let declaration = aggregate_literal_declaration(self.database(), literal).ok().flatten()?;
+        let descriptor = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidTypeDescriptor")?;
+        let request = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAllocationRequest")?;
+        if descriptor.size != 40 || descriptor.alignment != 8 || request.size != 24 || request.alignment != 8 {
+            return None;
+        }
+        let layout = self.aggregate_object_layout(declaration)?;
         let unit = self
             .typed_program()
             .assembly
@@ -131,10 +158,10 @@ impl CodegenInput<'_> {
             descriptor_symbol: format!("__beskid_aggregate_descriptor_{identity}"),
             pointer_map_symbol: format!("__beskid_aggregate_pointer_map_{identity}"),
             allocation_request_symbol: format!("__beskid_aggregate_allocation_request_{identity}"),
-            object_size,
-            object_alignment: alignment,
-            pointer_map_offsets: pointer_map_offsets.into(),
-            fields: fields.into(),
+            object_size: layout.object_size,
+            object_alignment: layout.object_alignment,
+            pointer_map_offsets: layout.pointer_map_offsets,
+            fields: layout.fields,
         })
     }
 

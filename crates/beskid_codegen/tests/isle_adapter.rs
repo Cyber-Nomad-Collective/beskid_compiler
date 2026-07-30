@@ -384,6 +384,44 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
 }
 
 #[test]
+fn managed_struct_field_access_uses_allocation_plan_offsets() {
+    // A managed aggregate is allocated behind a BeskidObjectHeader, so every field offset is
+    // header-relative. Field access previously recomputed offsets from zero and therefore read the
+    // header instead of the payload, which corrupted the loaded value (an enum tag read this way
+    // reaches an exhaustive-match default trap and aborts with SIGILL at run time).
+    let source = "type Point { i32 x, i32 y } i32 Main() { Point point = Point { x: 1, y: 2 }; return point.y; }";
+    let (input, isa, root) = item_fixture_with_root(source);
+    let literal =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::StructLiteralExpression).expect("literal");
+    let declaration =
+        beskid_queries::aggregate_literal_declaration(input.database(), literal).expect("query").expect("declaration");
+    let plan = input.aggregate_static_plan(literal).expect("aggregate static plan");
+    let layout = input.aggregate_object_layout(declaration).expect("aggregate object layout");
+
+    let header = input
+        .abi_manifest()
+        .layouts
+        .iter()
+        .find(|layout| layout.name == "BeskidObjectHeader")
+        .expect("object header layout");
+    assert_eq!(layout.fields.as_ref(), plan.fields.as_ref(), "construction and field access must share one layout");
+    assert_eq!(layout.object_size, plan.object_size);
+    assert_eq!(layout.object_alignment, plan.object_alignment);
+    assert!(
+        layout.fields.iter().all(|field| field.field_offset >= header.size),
+        "managed field offsets must clear the object header: {layout:?} header={header:?}"
+    );
+
+    let function = find_function_definition(input.database(), root).expect("Main definition in fixture assembly");
+    let clif = emit_isle_item(&input, isa.as_ref(), function).expect("field access lowers").display().to_string();
+    let y_offset = layout.fields.last().expect("second field").field_offset;
+    assert!(
+        clif.contains(&format!("+{y_offset}")),
+        "field read must address the offset the allocation reserved (+{y_offset}): {clif}"
+    );
+}
+
+#[test]
 fn parsed_enum_constructor_uses_source_layout_without_hir() {
     let mut db = BeskidDatabase::default();
     let directory = tempfile::tempdir().expect("project").keep();

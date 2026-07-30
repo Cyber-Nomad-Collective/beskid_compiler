@@ -3,40 +3,35 @@ use super::*;
 impl SyntaxNodeFacts<'_> {
     pub(super) fn struct_layout_for_literal(&self, key: AstNodeKey) -> Option<StructLayout> {
         let plan = self.input.aggregate_static_plan(key)?;
-        let fields = plan
-            .fields
+        self.struct_layout_from_object(plan.object_size, plan.object_alignment, &plan.fields)
+    }
+
+    pub(super) fn struct_layout_for_declaration(&self, declaration: AstNodeKey) -> Option<StructLayout> {
+        let layout = self.input.aggregate_object_layout(declaration)?;
+        self.struct_layout_from_object(layout.object_size, layout.object_alignment, &layout.fields)
+    }
+
+    /// Translate an ABI-v5 managed object layout into the ISLE struct layout.
+    ///
+    /// Both the literal (construction) and declaration (field access) paths route through here so a
+    /// field is always addressed at the header-relative offset the allocation reserved for it.
+    fn struct_layout_from_object(
+        &self,
+        object_size: u64,
+        object_alignment: u64,
+        fields: &[AggregateStaticField],
+    ) -> Option<StructLayout> {
+        let isa = self.isa?;
+        let fields = fields
             .iter()
             .map(|field| {
                 Some(FieldLayout::new(
-                    map_signature_type(self.isa?, field.abi_type)?,
+                    map_signature_type(isa, field.abi_type)?,
                     u32::try_from(field.field_offset).ok()?,
                 ))
             })
             .collect::<Option<Vec<_>>>()?;
-        Some(StructLayout::new(u32::try_from(plan.object_size).ok()?, plan.object_alignment.ilog2() as u8, fields))
-    }
-
-    pub(super) fn struct_layout_for_declaration(&self, declaration: AstNodeKey) -> Option<StructLayout> {
-        let isa = self.isa?;
-        let aggregate = self.query(aggregate_layout(self.db, declaration))?;
-        let mut size = 0_u32;
-        let mut alignment = 1_u32;
-        let mut fields = Vec::with_capacity(aggregate.fields.len());
-        for (_, shape) in aggregate.fields.iter() {
-            let value_type = match shape {
-                AggregateFieldShape::Scalar(semantic) => map_signature_type(isa, *semantic)?,
-                AggregateFieldShape::Nominal(_) => isa.pointer_type(),
-            };
-            let field_alignment = value_type.bytes().next_power_of_two();
-            size = align_to(size, field_alignment)?;
-            fields.push(FieldLayout::new(value_type, size));
-            size = size.checked_add(value_type.bytes())?;
-            alignment = alignment.max(field_alignment);
-        }
-        // An empty nominal value still needs an addressable ABI-v5 reference. Keep its source
-        // layout empty while reserving one byte for the stack-backed literal representation.
-        let size = align_to(size, alignment)?.max(1);
-        Some(StructLayout::new(size, alignment.ilog2() as u8, fields))
+        Some(StructLayout::new(u32::try_from(object_size).ok()?, object_alignment.ilog2() as u8, fields))
     }
 
     pub(super) fn enum_layout_for(&self, key: AstNodeKey) -> Option<EnumLayout> {

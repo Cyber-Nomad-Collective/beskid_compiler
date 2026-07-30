@@ -23,7 +23,8 @@ pub mod prepared_syntax;
 pub mod services;
 
 pub use aggregate_static::{
-    ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticField, AggregateStaticPlan, emit_aggregate_static_data,
+    ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateObjectLayout, AggregateStaticField, AggregateStaticPlan,
+    emit_aggregate_static_data,
 };
 pub use closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,

@@ -23,7 +23,7 @@ use cranelift_codegen::isa::TargetIsa;
 use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{FuncId, Module};
 
-use crate::CodegenInput;
+use crate::{AggregateStaticField, CodegenInput};
 
 mod context;
 mod emit;
