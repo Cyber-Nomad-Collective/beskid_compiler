@@ -1,8 +1,8 @@
 (decl clif_ineg (Value) Value)
 (extern constructor clif_ineg clif_ineg)
 
-(decl clif_bnot (Value) Value)
-(extern constructor clif_bnot clif_bnot)
+(decl clif_logical_not (Value) Value)
+(extern constructor clif_logical_not clif_logical_not)
 
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.UnaryExpression))
@@ -11,4 +11,4 @@
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.UnaryExpression))
         (operator_fact (OperatorFact.Not))))
-      (clif_bnot (lower_expression (child_at key 0))))
+      (clif_logical_not (lower_expression (child_at key 0))))

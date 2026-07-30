@@ -1618,10 +1618,14 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         if ty.is_float() { self.builder.ins().fneg(value) } else { self.builder.ins().ineg(value) }
     }
 
-    fn clif_bnot(&mut self, value: Value) -> Value {
-        let ty = self.builder.func.dfg.value_type(value);
-        let all_ones = self.builder.ins().iconst(ty, -1);
-        self.builder.ins().bxor(value, all_ones)
+    /// Lower `!operand`.
+    ///
+    /// `!` is bool-only in Beskid (the type checker rejects every other operand type), and `bool` is
+    /// an i8 carrying 0 or 1. Flipping every bit would turn `true` (1) into 254, which is still
+    /// truthy and compares unequal to `false`, so compare against zero instead: that yields the
+    /// canonical 0/1 bool and normalizes any non-canonical operand a load may produce.
+    fn clif_logical_not(&mut self, value: Value) -> Value {
+        self.builder.ins().icmp_imm(IntCC::Equal, value, 0)
     }
 
     fn emit_direct_call(&mut self, key: AstNodeKey) -> Option<Value> {

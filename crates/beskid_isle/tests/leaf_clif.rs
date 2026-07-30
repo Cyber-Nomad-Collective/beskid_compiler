@@ -668,8 +668,9 @@ fn boolean_not_executes_with_canonical_zero_or_one_result() {
     let code = module.get_finalized_function(function_id);
     let run: extern "C" fn() -> u8 = unsafe { std::mem::transmute(code) };
 
-    // Bitwise NOT on I8: !1 = 1 xor -1 = 254
-    assert_eq!(run(), 254);
+    // `!` is bool-only, so `!true` must be the canonical `false` (0). Flipping every bit would
+    // yield 254, which is still truthy and compares unequal to `false`.
+    assert_eq!(run(), 0);
 }
 
 #[test]
@@ -890,12 +891,12 @@ fn sdiv_traps_on_zero_divisor() {
 }
 
 #[test]
-fn bitwise_not_emits_bxor_with_all_ones() {
-    struct BnotFacts {
+fn logical_not_emits_zero_compare_instead_of_bitwise_not() {
+    struct NotFacts {
         root: AstNodeKey,
         value: AstNodeKey,
     }
-    impl NodeFacts for BnotFacts {
+    impl NodeFacts for NotFacts {
         fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
             if key == self.root {
                 Some(NodeKind::UnaryExpression)
@@ -907,7 +908,7 @@ fn bitwise_not_emits_bxor_with_all_ones() {
         }
 
         fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
-            (key == self.value).then_some(LiteralKind::Integer)
+            (key == self.value).then_some(LiteralKind::Boolean)
         }
 
         fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
@@ -919,41 +920,41 @@ fn bitwise_not_emits_bxor_with_all_ones() {
         }
 
         fn integer_literal(&self, _key: AstNodeKey) -> Option<i64> {
-            Some(42)
-        }
-
-        fn boolean_literal(&self, _key: AstNodeKey) -> Option<bool> {
             None
         }
 
+        fn boolean_literal(&self, key: AstNodeKey) -> Option<bool> {
+            (key == self.value).then_some(false)
+        }
+
         fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
-            (key == self.root || key == self.value).then_some(types::I32)
+            (key == self.root || key == self.value).then_some(types::I8)
         }
     }
 
     let db = BeskidDatabase::default();
-    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Bnot.bd"));
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/Not.bd"));
     let node = |id| AstNodeKey { unit, generation: SyntaxGenerationId(5), node: AstNodeId(id) };
-    let facts = BnotFacts { root: node(1), value: node(2) };
+    let facts = NotFacts { root: node(1), value: node(2) };
     let mut module = JITModule::new(JITBuilder::new(default_libcall_names()).expect("JIT"));
     let emitter = beskid_isle::FunctionEmitter::new(module.isa());
-    let signature = emitter.signature([], [types::I32]);
+    let signature = emitter.signature([], [types::I8]);
     let function = emitter
         .emit_expression(cranelift_codegen::ir::UserFuncName::user(0, 8), signature.clone(), &facts, facts.root)
-        .expect("verified bitwise not");
+        .expect("verified logical not");
 
     let clif = function.display().to_string();
-    assert!(clif.contains("bxor"), "expected bxor (bitwise XOR) in CLIF:\n{clif}");
-    assert!(clif.contains("iconst.i32 -1"), "expected iconst.i32 -1 (all-ones) in CLIF:\n{clif}");
-    assert!(!clif.contains("icmp"), "expected NO icmp (boolean compare) in CLIF:\n{clif}");
+    assert!(clif.contains("icmp"), "expected a compare against zero in CLIF:\n{clif}");
+    assert!(!clif.contains("bxor"), "expected NO bxor (bitwise NOT) in CLIF:\n{clif}");
+    assert!(!clif.contains("-1"), "expected NO all-ones constant in CLIF:\n{clif}");
 
-    let function_id = module.declare_function("bitwise_not", Linkage::Local, &signature).expect("declare");
+    let function_id = module.declare_function("logical_not", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
     context.func = function;
     module.define_function(function_id, &mut context).expect("define");
     module.finalize_definitions().expect("finalize");
     let code = module.get_finalized_function(function_id);
-    let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
+    let run: extern "C" fn() -> u8 = unsafe { std::mem::transmute(code) };
 
-    assert_eq!(run(), !42i32);
+    assert_eq!(run(), 1, "!false must be the canonical true (1)");
 }
