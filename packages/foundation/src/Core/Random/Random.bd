@@ -1,7 +1,6 @@
 /// Core.Random — pseudorandom number generation using PCG (Permuted Congruential Generator).
 /// @tier(supported)
 /// Takes `mut Random` and returns the generated value, advancing state in-place.
-
 /// PCG state: one 64-bit seed value with multiplier and increment.
 /// Algorithm: PCG RXS M XS 64-bit (minimal C implementation).
 pub type Random {
@@ -35,7 +34,8 @@ pub Random NewSeeded(i64 seed) {
 i64 NextState(mut Random self) {
     i64 old = self.state;
     self.state = old * multiplier() + increment();
-    i64 xorshifted = ((old / 32) ^ old) / 4194304;
+    i64 shifted = old / 32;
+    i64 xorshifted = ((shifted | old) - (shifted & old)) / 4194304;
     i64 rot = old / 67108864;
     i64 result = (xorshifted >> rot) | (xorshifted << ((-rot) & 63));
     return result;

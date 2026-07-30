@@ -2,19 +2,9 @@
 /// @tier(supported)
 /// Modeled after Rust's `Iterator` trait. Concrete iterators implement this contract.
 
-use Core.Optional.Option;
-
-/// Contract for types that can yield elements sequentially.
-/// @par(T) Element type produced by the iterator.
-pub contract Iterator<T> {
-    /// Returns the next element or `None` when exhausted.
-    Option<T> Next();
-}
-
-/// Returns true when the iterator still has elements.
-pub bool HasNext<T>(mut Iterator<T> it) {
-    return match it.Next() {
-        Option::Some(_) => true,
-        Option::None => false,
-    };
+/// Marker contract for iterator implementations.
+///
+/// Element-typed iteration is expressed by concrete generic iterators until contracts gain
+/// generic parameters in the language grammar.
+pub contract Iterator {
 }

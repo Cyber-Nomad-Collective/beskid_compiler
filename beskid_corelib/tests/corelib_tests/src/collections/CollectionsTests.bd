@@ -12,8 +12,8 @@ test list_module_import_smoke {
 
 test stack_push_updates_count {
     mut Stack<i64> stack = Stack.New<i64>();
-    stack = Stack.Push(stack, 42);
-    Assert.Equal(Stack.Count(stack), 1, "Stack.Count after push");
+    stack = Stack.Push<i64>(stack, 42);
+    Assert.Equal(Stack.Count<i64>(stack), 1, "Stack.Count after push");
 }
 
 test array_empty_reports_zero_length {

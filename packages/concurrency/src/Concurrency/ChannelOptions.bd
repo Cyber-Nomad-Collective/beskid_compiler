@@ -74,7 +74,7 @@ pub i64 EncodeCapacity(ChannelOptions options) {
 
 /// Encodes reader/writer hint flags for __channel_create.
 pub i64 EncodeFlags(ChannelOptions options) {
-    i64 flags = 0;
+    mut i64 flags = 0;
     if options.reader == ReaderHint::Single {
         flags = flags + 1;
     }

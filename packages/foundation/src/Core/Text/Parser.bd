@@ -20,48 +20,48 @@ use Core.Text.Parser.Mapper;
 /// consumers and generated parsers resolve them directly. Types remain at
 /// `Parser.Result.*`.
 
-pub bool IsOk(TextParseResult<string> result) {
+pub bool IsOk(Result.TextParseResult<string> result) {
     return Result.IsOk(result);
 }
 
-pub Cursor.TextCursor RestOnOk(TextParseResult<string> result, Cursor.TextCursor fallback) {
+pub Cursor.TextCursor RestOnOk(Result.TextParseResult<string> result, Cursor.TextCursor fallback) {
     return Result.RestOnOk(result, fallback);
 }
 
-pub TextParseResult<string> Fail(Cursor.TextCursor c, ParseErrorKind kind, string rule) {
+pub Result.TextParseResult<string> Fail(Cursor.TextCursor c, ParseErrorKind kind, string rule) {
     return Literals.Fail(c, kind, rule);
 }
 
-pub TextParseResult<string> Pure(string value, Cursor.TextCursor c) {
+pub Result.TextParseResult<string> Pure(string value, Cursor.TextCursor c) {
     return Flow.Pure(value, c);
 }
 
-pub TextParseResult<string> Literal(Cursor.TextCursor c, string text, string rule) {
+pub Result.TextParseResult<string> Literal(Cursor.TextCursor c, string text, string rule) {
     return Literals.Text(c, text, rule);
 }
 
-pub TextParseResult<string> Satisfy(Cursor.TextCursor c, string rule) {
+pub Result.TextParseResult<string> Satisfy(Cursor.TextCursor c, string rule) {
     return Literals.Any(c, rule);
 }
 
-pub TextParseResult<string> Choice2(
+pub Result.TextParseResult<string> Choice2(
     Cursor.TextCursor c,
     string rule,
-    TextParseResult<string> left,
-    TextParseResult<string> right
+    Result.TextParseResult<string> left,
+    Result.TextParseResult<string> right
 ) {
     return Combine.Or(c, rule, left, right);
 }
 
-pub TextParseResult<string> Map(
-    TextParseResult<string> result,
+pub Result.TextParseResult<string> Map(
+    Result.TextParseResult<string> result,
     string value
 ) {
     return Mapper.Map(result, value);
 }
 
-pub TextParseResult<string> Tap(
-    TextParseResult<string> result
+pub Result.TextParseResult<string> Tap(
+    Result.TextParseResult<string> result
 ) {
     return Mapper.Tap(result);
 }

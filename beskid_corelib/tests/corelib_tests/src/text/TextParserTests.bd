@@ -3,6 +3,10 @@ use Core.Text.Cursor;
 use Core.Text.Parser;
 use Testing.Assert;
 
+test parser_module_imports {
+    Assert.True(true, "parser modules resolve");
+}
+
 test literal_matches_using_cursor {
     Cursor.TextCursor c = Cursor.From("abc");
     Assert.True(Cursor.StartsWith(c, "ab"), "cursor prefix");

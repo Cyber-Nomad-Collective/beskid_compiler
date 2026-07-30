@@ -12,14 +12,14 @@ test hub_create_returns_handle {
 test hub_register_returns_result {
     Hub<i64> hub = Hub<i64>.Create();
     Channel<i64> ch = Channel<i64>.Create();
-    Core.Results.Result<Channel.SendOk, Concurrency.HubError> result = hub.Register(0, ch);
+    Core.Results.Result<Channel.SendOk, Concurrency.HubError> result = Hub.Register<i64>(hub, 0, ch);
     Assert.True(Results.IsOk(result) || Results.IsError(result), "Register returns a valid result");
 }
 
 test hub_unregister_does_not_panic {
     Hub<i64> hub = Hub<i64>.Create();
     Channel<i64> ch = Channel<i64>.Create();
-    Core.Results.Result<Channel.SendOk, Concurrency.HubError> registered = hub.Register(0, ch);
-    hub.Unregister(0);
+    Core.Results.Result<Channel.SendOk, Concurrency.HubError> registered = Hub.Register<i64>(hub, 0, ch);
+    Hub.Unregister<i64>(hub, 0);
     Assert.True(true, "Unregister completes");
 }

@@ -83,8 +83,8 @@ pub i32 ParsePositiveInt(string value, i32 defaultValue) {
         return defaultValue;
     }
     i64 len = Core.String.Len(value);
-    i64 i = 0;
-    i64 acc = 0;
+    mut i64 i = 0;
+    mut i64 acc = 0;
     while i < len {
         u8 b = Core.String.ByteAt(value, i);
         if b < 48 || b > 57 {

@@ -11,7 +11,7 @@ test channel_create_returns_handle {
 
 test channel_send_returns_result {
     Channel<i64> ch = Channel<i64>.Create();
-    Core.Results.Result<Channel.SendOk, Concurrency.ChannelError> result = ch.Send(42);
+    Core.Results.Result<Channel.SendOk, Concurrency.ChannelError> result = Channel.Send<i64>(ch, 42);
     Assert.True(Results.IsOk(result) || Results.IsError(result), "Send returns a valid result");
 }
 
@@ -19,25 +19,25 @@ test channel_receive_returns_result {
     Channel<i64> ch = Channel<i64>.Create();
     i64 sent = 42;
     i64 discarded = sent;
-    Core.Results.Result<Channel.SendOk, Concurrency.ChannelError> s = ch.Send(discarded);
-    Core.Results.Result<i64, Concurrency.ChannelError> result = ch.Receive();
+    Core.Results.Result<Channel.SendOk, Concurrency.ChannelError> s = Channel.Send<i64>(ch, discarded);
+    Core.Results.Result<i64, Concurrency.ChannelError> result = Channel.Receive<i64>(ch);
     Assert.True(Results.IsOk(result) || Results.IsError(result), "Receive returns a valid result");
 }
 
 test channel_try_send_returns_option {
     Channel<i64> ch = Channel<i64>.Create();
-    Core.Optional.Option<Channel.SendOk> result = ch.TrySend(99);
+    Core.Optional.Option<Channel.SendOk> result = Channel.TrySend<i64>(ch, 99);
     Assert.True(true, "TrySend returns Option");
 }
 
 test channel_try_receive_returns_option {
     Channel<i64> ch = Channel<i64>.Create();
-    Core.Optional.Option<i64> result = ch.TryReceive();
+    Core.Optional.Option<i64> result = Channel.TryReceive<i64>(ch);
     Assert.True(true, "TryReceive returns Option");
 }
 
 test channel_close_is_idempotent {
     Channel<i64> ch = Channel<i64>.Create();
-    ch.Close();
+    Channel.Close<i64>(ch);
     Assert.True(true, "Close completes without panic");
 }

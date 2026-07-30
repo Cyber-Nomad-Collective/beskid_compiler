@@ -7,9 +7,9 @@ use Testing.Assert;
 
 test wait_group_add_done_wait {
     WaitGroup group = WaitGroup.Create();
-    group.Add(2);
-    group.Done();
-    group.Done();
-    group.Wait();
+    WaitGroup.Add(group, 2);
+    WaitGroup.Done(group);
+    WaitGroup.Done(group);
+    WaitGroup.Wait(group);
     Assert.True(true, "wait group should complete after matching Done calls");
 }

@@ -19,7 +19,8 @@ pub Cursor.TextCursor WithWhiteSpaceParser(Cursor.TextCursor c, ParseContext ctx
     mut Cursor.TextCursor cur = c;
     while !Cursor.AtEnd(cur) {
         string ch = Cursor.Slice(cur, cur.pos, 1);
-        if ch == " " || ch == "\t" || ch == "\n" || ch == "\r" {
+        u8 byte = Core.String.ByteAt(ch, 0);
+        if ch == " " || byte == 9 || byte == 10 || byte == 13 {
             cur = Cursor.Advance(cur, 1);
         } else {
             break;

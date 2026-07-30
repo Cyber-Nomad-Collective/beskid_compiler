@@ -26,18 +26,18 @@ pub Core.Results.Result<SendOk, HubError> Register<T>(
     i64 index,
     Channel<T> channel
 ) {
-    i64 raw = __hub_register(self.handle, index, Channel.Handle(channel));
+    i64 raw = __hub_register(self.handle, index, Channel.Handle<T>(channel));
     Status status = Status.FromI64(raw);
     if status == Status::Ok {
-        return Result::Ok(SendOk { });
+        return Core.Results.Result<Concurrency.Channel.SendOk, Concurrency.HubError>::Ok(SendOk { });
     }
     if status == Status::HubLimit {
-        return Result::Error(HubError::Limit());
+        return Core.Results.Result<Concurrency.Channel.SendOk, Concurrency.HubError>::Error(HubError::Limit());
     }
     if status == Status::HubNotFound {
-        return Result::Error(HubError::Closed());
+        return Core.Results.Result<Concurrency.Channel.SendOk, Concurrency.HubError>::Error(HubError::Closed());
     }
-    return Result::Error(HubError::Closed());
+    return Core.Results.Result<Concurrency.Channel.SendOk, Concurrency.HubError>::Error(HubError::Closed());
 }
 
 pub unit Unregister<T>(Hub<T> self, i64 index) {
