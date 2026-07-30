@@ -1,7 +1,6 @@
 /// Construction options for Channel<T>.Create.
 /// Uses discriminated unions throughout — no bool flags or raw i64 bitfields.
 /// @tier(standard)
-
 /// Selects bounded vs unbounded channel capacity.
 pub enum ChannelCapacity {
     Unbounded,
