@@ -7,8 +7,9 @@ use beskid_queries::{
     CallLowering, GenericCallSpecialization, ItemSignature, SemanticTypeId, SourceUnitId, call_expression_nodes,
     call_lowering, child_nodes, closure_call_target, closure_environment, closure_signature,
     explicit_generic_call_specialization, extern_contract_import_for_declaration, format_ast_node_key,
-    generic_call_instantiation, generic_call_specialization, generic_call_specialization_in_item, item_abi_signature,
-    item_name, node_kind, node_span, resolved_item, spawn_entry_validation,
+    format_ast_node_trace, generic_call_instantiation, generic_call_specialization,
+    generic_call_specialization_in_item, item_abi_signature, item_name, node_kind, node_span, resolved_item,
+    spawn_entry_validation,
 };
 use cranelift_codegen::ir::{AbiParam, InstBuilder};
 use cranelift_codegen::ir::{
