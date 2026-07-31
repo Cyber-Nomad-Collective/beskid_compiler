@@ -118,6 +118,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stack storage from producing null Corelib string handles (CYB-158/CYB-159).
 - Make the native ABI-v5 runtime-kit matrix script enter the compiler workspace before
   running Cargo, so the Windows superproject workflow no longer fails before kit staging
+
+- Fix enum equality lowering in ISLE for generated tagged enum values by loading and comparing
+  discriminants when both operands expose matching enum layouts, while keeping scalar path behavior
+  unchanged in `clif_eq_discriminant`/`clif_ne_discriminant`.
   with a missing root-level `Cargo.toml` (CYB-112 follow-up).
 - Register the Corelib syscall read/write process symbols with the exact-kit JIT builder, so
   `Core.Output.WriteLine` links without treating process symbols as ABI-v5 runtime-kit exports.
