@@ -55,13 +55,16 @@ impl<'a> TypeChecker<'a> {
     }
 
     pub(super) fn resolved_value_at(&self, span: SpanInfo) -> Option<ResolvedValue> {
-        if let Some(value) = self.resolution.span_index.lookup_value(span) {
-            return Some(match value {
-                ResolvedValue::Item(item_id) => ResolvedValue::Item(canonical_item_id(self.resolution, item_id)),
-                other => other,
-            });
-        }
-        let value = self.resolution.tables.resolved_value_at(span, self.current_source_path.as_ref())?;
+        // A merged SpanIndex has no source identity: every unit's resolutions share one
+        // `(start, end)` keyspace, so a dependency path at the same byte range can preempt
+        // this unit's own value resolution. When type-checking a known unit the
+        // source-scoped resolution table is authoritative; the index stays as the fallback
+        // for spans it does not cover. Mirrors `resolved_type_at`.
+        let value = self
+            .resolution
+            .tables
+            .resolved_value_at(span, self.current_source_path.as_ref())
+            .or_else(|| self.resolution.span_index.lookup_value(span))?;
         Some(match value {
             ResolvedValue::Item(item_id) => ResolvedValue::Item(canonical_item_id(self.resolution, item_id)),
             other => other,
@@ -468,6 +471,30 @@ mod tests {
     use super::*;
     use crate::resolve::{Resolution, ResolvedType, SpanIndex};
     use crate::types::surface::UnitTypeSurface;
+
+    #[test]
+    fn source_scoped_value_fact_wins_over_same_offset_span_index_entry() {
+        let span = SpanInfo { start: 8, end: 12, ..SpanInfo::default() };
+        let entry_path = PathBuf::from("src/entry.bd");
+        let dependency_path = PathBuf::from("src/dependency.bd");
+        let entry_callee = ItemId(1);
+        let dependency_callee = ItemId(2);
+        let mut resolution = Resolution::default();
+
+        resolution.tables.resolved_values.insert(span, ResolvedValue::Item(entry_callee));
+        resolution
+            .tables
+            .scoped_resolved_values
+            .insert(dependency_path, HashMap::from([(span, ResolvedValue::Item(dependency_callee))]));
+        // The merged span index is source-less, so the dependency's call at the same byte
+        // range used to preempt the entry unit's own callee and the checker then validated
+        // the arguments against the wrong signature.
+        resolution.span_index = SpanIndex::build_from_maps(&[(span, ResolvedValue::Item(dependency_callee))], &[]);
+
+        let checker = TypeChecker::new(&resolution, &UnitTypeSurface::default()).with_source_path(&entry_path);
+
+        assert_eq!(checker.resolved_value_at(span), Some(ResolvedValue::Item(entry_callee)));
+    }
 
     #[test]
     fn source_scoped_type_fact_wins_over_same_offset_span_index_entry() {
