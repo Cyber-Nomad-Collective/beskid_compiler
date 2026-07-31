@@ -4673,6 +4673,14 @@ fn literal_fact_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -
 }
 
 #[salsa::tracked]
+fn clif_block_body_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
+    with_node(db, syntax, key, |_program, _index, node| {
+        let clif = node.of::<beskid_analysis::syntax::ClifBlockExpression>()?;
+        Some(Arc::from(clif.body.as_str()))
+    })
+}
+
+#[salsa::tracked]
 fn node_span_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<SourceSpan> {
     with_node(db, syntax, key, |_program, _index, node| node.span())
 }
@@ -5717,6 +5725,10 @@ pub fn child_nodes(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[Ast
 
 pub fn literal_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<LiteralFact> {
     with_registered_syntax(db, key, literal_fact_tracked)
+}
+
+pub fn clif_block_body(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
+    with_registered_syntax(db, key, clif_block_body_tracked)
 }
 
 pub fn node_span(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SourceSpan> {

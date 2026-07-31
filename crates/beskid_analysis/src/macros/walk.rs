@@ -108,6 +108,7 @@ pub fn map_expression(
             Expression::ArrayLiteral(n)
         }
         Expression::CodeString(c) => Expression::CodeString(c.clone()),
+        Expression::ClifBlock(c) => Expression::ClifBlock(c.clone()),
     };
     f(Spanned::new(mapped, span))
 }

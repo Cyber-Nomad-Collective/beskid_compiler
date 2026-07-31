@@ -46,6 +46,9 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirExpressionNode {
             HirExpressionNode::CodeStringExpression(_) => {
                 Err(CodegenError::UnsupportedNode { span: node.span, node: "code string expression" })
             }
+            HirExpressionNode::ClifBlockExpression(_) => {
+                Err(CodegenError::UnsupportedNode { span: node.span, node: "clif block expression" })
+            }
         }
     }
 }

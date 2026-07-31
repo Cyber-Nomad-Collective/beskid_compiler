@@ -184,6 +184,7 @@ impl Normalizer {
             }
             HirExpressionNode::MacroInvocation(_) | HirExpressionNode::MacroMetavariable(_) => {}
             HirExpressionNode::CodeStringExpression(_) => {}
+            HirExpressionNode::ClifBlockExpression(_) => {}
         }
     }
 }

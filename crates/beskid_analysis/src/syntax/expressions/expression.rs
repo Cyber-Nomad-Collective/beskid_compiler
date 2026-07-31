@@ -10,6 +10,7 @@ use super::assign_expression::AssignExpression;
 use super::binary_expression::{BinaryExpression, parse_binary_expression};
 use super::block_expression::parse_block_expression;
 use super::call_expression::parse_call_expression;
+use super::clif_block::parse_clif_block;
 use super::code_string::CodeStringLiteral;
 use super::enum_constructor_expression::parse_enum_constructor_expression;
 use super::grouped_expression::parse_grouped_expression;
@@ -71,6 +72,8 @@ pub enum Expression {
     ArrayLiteral(Spanned<super::array_literal_expression::ArrayLiteralExpression>),
     #[ast(child)]
     CodeString(Spanned<super::code_string::CodeStringLiteral>),
+    #[ast(child)]
+    ClifBlock(Spanned<super::clif_block::ClifBlockExpression>),
 }
 
 impl Parsable for Expression {
@@ -114,6 +117,7 @@ pub(crate) fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, 
         Rule::PrimaryExpression => parse_primary_expression(pair),
         Rule::GroupedExpression => parse_grouped_expression(pair),
         Rule::BlockExpression => parse_block_expression(pair),
+        Rule::ClifBlockExpression => parse_clif_block(pair),
         Rule::EnumConstructorExpression => parse_enum_constructor_expression(pair),
         Rule::StructLiteralExpression => parse_struct_literal_expression(pair),
         Rule::ArrayLiteralExpression => parse_array_literal_expression(pair),

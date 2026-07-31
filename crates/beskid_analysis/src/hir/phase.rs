@@ -2,12 +2,13 @@
 
 use crate::syntax::{
     ArrayLiteralExpression, AssignExpression, AttributeDeclaration, BinaryExpression, BlockExpression, BreakStatement,
-    CallExpression, CodeStringLiteral, ConstantDefinition, ContinueStatement, ContractDefinition, EnumConstructorExpression,
-    EnumDefinition, ExpressionStatement, ExtendTypeDefinition, ForStatement, FunctionDefinition, GroupedExpression,
-    HostDefinition, IfStatement, IndexExpression, InlineModule, LambdaExpression, LaunchStatement, LetStatement,
-    LiteralExpression, MacroDefinition, MacroInvocation, MacroMetavariable, MatchExpression, MemberExpression,
-    MethodDefinition, ModuleDeclaration, PathExpression, ReturnStatement, SpawnExpression, StructLiteralExpression,
-    TestDefinition, TryExpression, TypeDefinition, UnaryExpression, UseDeclaration, WhileStatement, WithStatement,
+    CallExpression, ClifBlockExpression, CodeStringLiteral, ConstantDefinition, ContinueStatement, ContractDefinition,
+    EnumConstructorExpression, EnumDefinition, ExpressionStatement, ExtendTypeDefinition, ForStatement,
+    FunctionDefinition, GroupedExpression, HostDefinition, IfStatement, IndexExpression, InlineModule,
+    LambdaExpression, LaunchStatement, LetStatement, LiteralExpression, MacroDefinition, MacroInvocation,
+    MacroMetavariable, MatchExpression, MemberExpression, MethodDefinition, ModuleDeclaration, PathExpression,
+    ReturnStatement, SpawnExpression, StructLiteralExpression, TestDefinition, TryExpression, TypeDefinition,
+    UnaryExpression, UseDeclaration, WhileStatement, WithStatement,
 };
 
 use super::{
@@ -60,6 +61,7 @@ pub trait Phase {
     type IndexExpression;
     type ArrayLiteralExpression;
     type CodeStringLiteral;
+    type ClifBlockExpression;
     type EnumConstructorExpression;
     type BlockExpression;
     type GroupedExpression;
@@ -117,6 +119,7 @@ impl Phase for AstPhase {
     type IndexExpression = IndexExpression;
     type ArrayLiteralExpression = ArrayLiteralExpression;
     type CodeStringLiteral = CodeStringLiteral;
+    type ClifBlockExpression = ClifBlockExpression;
     type EnumConstructorExpression = EnumConstructorExpression;
     type BlockExpression = BlockExpression;
     type GroupedExpression = GroupedExpression;
@@ -166,6 +169,7 @@ impl Phase for HirPhase {
     type IndexExpression = HirIndexExpression;
     type ArrayLiteralExpression = HirArrayLiteralExpression;
     type CodeStringLiteral = CodeStringLiteral;
+    type ClifBlockExpression = ClifBlockExpression;
     type EnumConstructorExpression = HirEnumConstructorExpression;
     type BlockExpression = HirBlockExpression;
     type GroupedExpression = HirGroupedExpression;

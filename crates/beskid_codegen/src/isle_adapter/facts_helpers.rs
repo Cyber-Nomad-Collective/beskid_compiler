@@ -189,6 +189,10 @@ impl SyntaxNodeFacts<'_> {
         })
     }
 
+    pub(super) fn clif_block_body_for(&self, key: AstNodeKey) -> Option<String> {
+        self.query(clif_block_body(self.db, key)).map(|body| body.as_ref().to_string())
+    }
+
     pub(super) fn children(&self, key: AstNodeKey) -> Vec<AstNodeKey> {
         let children = self.raw_children(key);
         let children = if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::TestDefinition) {

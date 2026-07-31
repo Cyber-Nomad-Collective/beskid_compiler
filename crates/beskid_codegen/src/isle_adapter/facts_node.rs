@@ -282,6 +282,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         Some(parameters)
     }
 
+    fn clif_block_body(&self, key: AstNodeKey) -> Option<String> {
+        self.clif_block_body_for(key)
+    }
+
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
         let LiteralFact::Integer(text) = self.literal(key)? else {
             return None;

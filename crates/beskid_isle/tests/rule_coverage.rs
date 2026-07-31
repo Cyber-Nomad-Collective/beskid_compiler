@@ -158,6 +158,7 @@ fn every_isle_lowered_kind_has_verified_clif_evidence() {
         (NodeKind::BlockExpression, isle_tests.join("block_sequence.rs")),
         (NodeKind::ForStatement, isle_tests.join("block_range_for.rs")),
         (NodeKind::SpawnExpression, codegen_tests.join("parsed_project_isle_harness.rs")),
+        (NodeKind::ClifBlock, isle_tests.join("clif_block.rs")),
     ];
 
     assert_eq!(evidence.len(), NodeKind::ALL.len(), "CLIF evidence table must cover every NodeKind exactly once");

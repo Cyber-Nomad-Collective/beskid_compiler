@@ -78,6 +78,7 @@ pub struct BeskidJitModule {
     builtins_declared: bool,
     runtime_kit: JitRuntimeKit,
     exact_symbols: HashSet<String>,
+    import_allowlist: HashSet<String>,
 }
 
 impl BeskidJitModule {
@@ -99,6 +100,7 @@ impl BeskidJitModule {
         // Soft builtins are process-linked (`beskid_runtime`), not ABI-v5 kit exports.
         // Validation already allowlists them; Cranelift still needs concrete addresses.
         let exact_symbols: HashSet<String> = symbols.iter().map(|(name, _)| name.clone()).collect();
+        let import_allowlist: HashSet<String> = runtime.metadata().import_allowlist.iter().cloned().collect();
         for (name, addr) in process_linked_soft_builtins() {
             if exact_symbols.contains(&name) {
                 continue;
@@ -112,6 +114,7 @@ impl BeskidJitModule {
             builtins_declared: false,
             runtime_kit: runtime,
             exact_symbols,
+            import_allowlist,
         })
     }
 
@@ -131,7 +134,7 @@ impl BeskidJitModule {
         artifact: &CodegenArtifact,
         pipeline: Option<&dyn PipelineObserver>,
     ) -> Result<(), JitError> {
-        validate_exact_symbol_references(artifact, &self.exact_symbols)?;
+        validate_exact_symbol_references(artifact, &self.exact_symbols, &self.import_allowlist)?;
         if !self.builtins_declared {
             declare_builtin_imports(&mut self.module, &mut self.func_ids)?;
             self.builtins_declared = true;
@@ -140,6 +143,7 @@ impl BeskidJitModule {
         declare_user_functions(&mut self.module, artifact, Linkage::Local, &mut self.func_ids)?;
         declare_exact_runtime_imports(&mut self.module, artifact, &self.exact_symbols, &mut self.func_ids)?;
         declare_validated_extern_imports(&mut self.module, artifact, &mut self.func_ids)?;
+        declare_import_allowlist_symbols(&mut self.module, artifact, &self.import_allowlist, &mut self.func_ids)?;
 
         emit_string_literals(&mut self.module, artifact)?;
         emit_type_descriptors(&mut self.module, artifact)?;
@@ -215,7 +219,34 @@ fn declare_exact_runtime_imports(
     Ok(())
 }
 
-fn validate_exact_symbol_references(artifact: &CodegenArtifact, approved: &HashSet<String>) -> Result<(), JitError> {
+/// Declare TestCase externals that match the runtime kit import_allowlist but aren't
+/// already declared (e.g. C library math functions from clif blocks).
+fn declare_import_allowlist_symbols(
+    module: &mut JITModule,
+    artifact: &CodegenArtifact,
+    allowlist: &HashSet<String>,
+    func_ids: &mut HashMap<String, FuncId>,
+) -> Result<(), JitError> {
+    for function in &artifact.functions {
+        for (_, ext_func) in function.function.dfg.ext_funcs.iter() {
+            let cranelift_codegen::ir::ExternalName::TestCase(name) = &ext_func.name else {
+                continue;
+            };
+            let symbol = String::from_utf8_lossy(name.raw()).to_string();
+            if func_ids.contains_key(&symbol) || !allowlist.contains(&symbol) {
+                continue;
+            }
+            let sig = &function.function.dfg.signatures[ext_func.signature];
+            let id = module
+                .declare_function(&symbol, cranelift_module::Linkage::Import, sig)
+                .map_err(|e| JitError::RuntimeKit(format!("failed to declare import '{symbol}': {e}")))?;
+            func_ids.insert(symbol, id);
+        }
+    }
+    Ok(())
+}
+
+fn validate_exact_symbol_references(artifact: &CodegenArtifact, approved: &HashSet<String>, imports: &HashSet<String>) -> Result<(), JitError> {
     let defined = artifact.functions.iter().map(|function| function.name.as_str()).collect::<HashSet<_>>();
     for function in &artifact.functions {
         for (_, external) in function.function.dfg.ext_funcs.iter() {
@@ -228,6 +259,7 @@ fn validate_exact_symbol_references(artifact: &CodegenArtifact, approved: &HashS
             // export allowlist. Match AOT `linking::validate::is_runtime_builtin`.
             if defined.contains(symbol.as_ref())
                 || approved.contains(symbol.as_ref())
+                || imports.contains(symbol.as_ref())
                 || is_runtime_builtin(symbol.as_ref())
             {
                 continue;
