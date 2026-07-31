@@ -5,6 +5,14 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifndef MAP_ANON
+#ifdef MAP_ANONYMOUS
+#define MAP_ANON MAP_ANONYMOUS
+#else
+#define MAP_ANON 0x1000
+#endif
+#endif
+
 #define BESKID_GUARDED_STACK_MIN (64u * 1024u)
 #define BESKID_GUARDED_STACK_MAX (8u * 1024u * 1024u)
 #define BESKID_GUARDED_STACK_GUARD (16u * 1024u)
