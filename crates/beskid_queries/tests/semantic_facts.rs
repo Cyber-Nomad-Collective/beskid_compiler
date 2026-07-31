@@ -24,8 +24,8 @@ use beskid_queries::{
     closure_signature, completion_candidates, control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
     for_iterator_fact, generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
     item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type,
-    nominal_member_receiver, operator_fact, reachable_items, resolved_item, resolved_local, runtime_intrinsic,
-    primitive_numeric_conversion, spawn_entry_validation, spawn_legality, spawn_target, test_item,
+    nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items, resolved_item,
+    resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -1051,6 +1051,63 @@ fn imported_assembly_module_call_resolves_through_its_use_binding() {
     assert_eq!(
         call_lowering(&db, call).expect("imported module call"),
         Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+}
+
+#[test]
+fn hub_declaration_shadows_the_same_name_reached_through_its_public_reexport() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/hub-shadowing/project/src");
+    let casing_path = root.join("Core/Text/Casing.bd");
+    let hub_path = root.join("Core/String/String.bd");
+    let core_path = root.join("Core/String/Core.bd");
+    // The Corelib `Core.String` hub declares flat helpers *and* re-exports the child module
+    // those helpers delegate to, so both units export `Len`. The hub's own declaration is the
+    // nearer route and must win instead of leaving `String.Len` permanently ambiguous.
+    let casing_source = "use Core.String;\ni64 Width(string text) { return String.Len(text); }";
+    let hub_source =
+        "pub mod Core.String.Core;\nuse Core.String.Core;\npub i64 Len(string text) { return Core.Len(text); }";
+    let core_source = "pub i64 Len(string text) { return 1; }";
+    let sources = [(&casing_path, casing_source), (&hub_path, hub_source), (&core_path, core_source)];
+    let units = sources
+        .iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            path: (*path).clone(),
+            source: (*source).to_string(),
+            program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
+        })
+        .collect::<Vec<_>>();
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(units.clone()),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let casing_unit = SourceUnitId::new(&db, casing_path);
+    let hub_unit = SourceUnitId::new(&db, hub_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        casing_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(31);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let casing_index = SyntaxIndex::from_program(&units[0].program, generation);
+    let hub_index = SyntaxIndex::from_program(&units[1].program, generation);
+    let call = key(casing_unit, generation, &casing_index, NodeKind::CallExpression, 0);
+    let hub_declaration = key(hub_unit, generation, &hub_index, NodeKind::FunctionDefinition, 0);
+
+    assert_eq!(
+        call_lowering(&db, call).expect("hub helper call"),
+        Some(beskid_queries::CallLowering::Direct(hub_declaration))
     );
 }
 
