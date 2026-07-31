@@ -384,6 +384,44 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
 }
 
 #[test]
+fn managed_struct_field_access_uses_allocation_plan_offsets() {
+    // A managed aggregate is allocated behind a BeskidObjectHeader, so every field offset is
+    // header-relative. Field access previously recomputed offsets from zero and therefore read the
+    // header instead of the payload, which corrupted the loaded value (an enum tag read this way
+    // reaches an exhaustive-match default trap and aborts with SIGILL at run time).
+    let source = "type Point { i32 x, i32 y } i32 Main() { Point point = Point { x: 1, y: 2 }; return point.y; }";
+    let (input, isa, root) = item_fixture_with_root(source);
+    let literal =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::StructLiteralExpression).expect("literal");
+    let declaration =
+        beskid_queries::aggregate_literal_declaration(input.database(), literal).expect("query").expect("declaration");
+    let plan = input.aggregate_static_plan(literal).expect("aggregate static plan");
+    let layout = input.aggregate_object_layout(declaration).expect("aggregate object layout");
+
+    let header = input
+        .abi_manifest()
+        .layouts
+        .iter()
+        .find(|layout| layout.name == "BeskidObjectHeader")
+        .expect("object header layout");
+    assert_eq!(layout.fields.as_ref(), plan.fields.as_ref(), "construction and field access must share one layout");
+    assert_eq!(layout.object_size, plan.object_size);
+    assert_eq!(layout.object_alignment, plan.object_alignment);
+    assert!(
+        layout.fields.iter().all(|field| field.field_offset >= header.size),
+        "managed field offsets must clear the object header: {layout:?} header={header:?}"
+    );
+
+    let function = find_function_definition(input.database(), root).expect("Main definition in fixture assembly");
+    let clif = emit_isle_item(&input, isa.as_ref(), function).expect("field access lowers").display().to_string();
+    let y_offset = layout.fields.last().expect("second field").field_offset;
+    assert!(
+        clif.contains(&format!("+{y_offset}")),
+        "field read must address the offset the allocation reserved (+{y_offset}): {clif}"
+    );
+}
+
+#[test]
 fn parsed_enum_constructor_uses_source_layout_without_hir() {
     let mut db = BeskidDatabase::default();
     let directory = tempfile::tempdir().expect("project").keep();
@@ -1723,10 +1761,13 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
         .parent()
         .expect("foundation src")
         .to_path_buf();
-    let source_path = foundation_src.join("Core/String/String.bd");
-    let source = std::fs::read_to_string(&source_path).expect("read Core.String");
+    // `Core/String/String.bd` is a hub that re-exports `Core.String.Core`, so its bodies are
+    // cross-unit delegations. The leaf helpers this test lowers live in the `Core` submodule.
+    let source_path = foundation_src.join("Core/String/Core.bd");
+    let source = std::fs::read_to_string(&source_path).expect("read Core.String.Core");
     let source_root = foundation_src;
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source).expect("parse Core.String");
+    let program =
+        parse_program_with_source_name(source_path.to_str().unwrap(), &source).expect("parse Core.String.Core");
     let entry = SourceUnitId::new(&*db, source_path.clone());
     let project = ProjectSession::new(
         &*db,
@@ -1738,7 +1779,7 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
     let generation = SyntaxGenerationId(96);
     let assembly = Arc::new(SyntaxProgramAssembly::new(
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
-        Arc::new(vec![SourceUnit { logical_name: "Core/String/String.bd".into(), path: source_path, source, program }]),
+        Arc::new(vec![SourceUnit { logical_name: "Core/String/Core.bd".into(), path: source_path, source, program }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
@@ -1749,33 +1790,33 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
-    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed Core.String program");
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed Core.String.Core program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
-        .expect("generation-safe Core.String input");
+        .expect("generation-safe Core.String.Core input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
     // Leaf helpers that exercise dispatch builtins and string indexing without pulling the
-    // full String.bd call graph (Contains -> IndexOfFrom -> while/ByteAt).
+    // full call graph (Contains -> IndexOfFrom -> while/ByteAt).
     for name in ["Len", "IsEmpty", "ByteAt"] {
         let key = find_function_definitions(input.database(), root)
             .into_iter()
             .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("Core.String {name}"));
+            .unwrap_or_else(|| panic!("Core.String.Core {name}"));
         let module_items = if name == "IsEmpty" {
             let len = find_function_definitions(input.database(), root)
                 .into_iter()
                 .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Len"))
-                .expect("Core.String Len");
+                .expect("Core.String.Core Len");
             vec![SyntaxModuleItem { key: len, symbol: "Len".into() }, SyntaxModuleItem { key, symbol: name.into() }]
         } else {
             vec![SyntaxModuleItem { key, symbol: name.into() }]
         };
         lower_syntax_program(&input, isa.as_ref(), &module_items)
-            .unwrap_or_else(|error| panic!("Core.String {name} lowers through syntax ISLE: {error:?}"));
+            .unwrap_or_else(|error| panic!("Core.String.Core {name} lowers through syntax ISLE: {error:?}"));
     }
 }
 

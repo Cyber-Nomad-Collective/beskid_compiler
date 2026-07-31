@@ -142,7 +142,9 @@ fn parsed_project_reaches_verified_isle_without_a_legacy_codegen_entrypoint() {
         }
     ";
     let unsupported = parse_production_units(project.path(), &[("Unsupported.bd", "Main", unsupported_source)]);
-    assert_unsupported_closed_failure(unsupported, target, isa.as_ref(), &["Unsupported.bd", "Block@"]);
+    // `lower_nested_statement` retains the leaf statement key, so the closed failure must name the
+    // `let` that spawns the parameterized lambda rather than the enclosing function body block.
+    assert_unsupported_closed_failure(unsupported, target, isa.as_ref(), &["Unsupported.bd", "LetStatement@"]);
 }
 
 #[test]

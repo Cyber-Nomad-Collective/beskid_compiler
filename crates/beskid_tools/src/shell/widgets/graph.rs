@@ -116,10 +116,59 @@ impl BeskidWidget for GraphCompileWidget {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    use super::*;
+    use crate::shell::key_bindings::ShortcutBindings;
+    use crate::shell::layout::{EMBEDDED_HI_V2, parse_v2};
+    use crate::shell::palette::CommandPaletteState;
+    use crate::shell::primitives::TreeNode;
+    use crate::shell::shortcut_clicks::ShortcutClickTargets;
+    use crate::tui::shell::state::ShellState;
+
+    /// The compile-graph widget must hand its whole `area` to the pipeline tree, so the tree's
+    /// bordered block owns row 0 instead of a title row being carved off above it.
     #[test]
     fn compile_graph_uses_full_area_for_pipeline_tree() {
-        let source = include_str!("graph.rs");
-        assert!(source.contains("draw_pipeline_tree(\n            frame,\n            area,"));
-        assert!(!source.contains("title_line(\"Compile graph\")"));
+        let backend = TestBackend::new(60, 10);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut shell_state =
+            ShellState { tree_nodes: vec![TreeNode::new("Resolve manifest".to_string())], ..Default::default() };
+        let scope =
+            ShellScope::Project { root: PathBuf::from("/tmp/p"), manifest: PathBuf::from("/tmp/p/beskid.bproj") };
+        let layout = parse_v2(EMBEDDED_HI_V2).expect("board");
+        let mut palette = CommandPaletteState::default();
+        let mut key_bindings = ShortcutBindings::platform_defaults();
+        let mut shortcut_clicks = ShortcutClickTargets::default();
+        let mut pending_shortcut_rebind = None;
+        let mut ctx = WidgetContext::new(
+            &scope,
+            &layout,
+            &mut shell_state,
+            &mut palette,
+            "",
+            &mut key_bindings,
+            &mut shortcut_clicks,
+            &mut pending_shortcut_rebind,
+        );
+
+        terminal
+            .draw(|frame| {
+                GraphCompileWidget.render(frame.area(), frame, &mut ctx);
+            })
+            .expect("draw");
+
+        let buffer = terminal.backend().buffer();
+        let width = usize::from(buffer.area.width);
+        let first_row: String = buffer.content.iter().take(width).map(|cell| cell.symbol()).collect();
+        let text: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+
+        assert!(first_row.starts_with('┌'), "pipeline tree block must own row 0, got {first_row:?}");
+        assert!(first_row.contains(StageFocus::from_stage_label("").title()), "tree title on row 0, got {first_row:?}");
+        assert!(text.contains("Resolve manifest"), "tree nodes must render, got {text:?}");
+        assert!(!text.contains("Compile graph"), "no separate title row above the tree, got {text:?}");
     }
 }

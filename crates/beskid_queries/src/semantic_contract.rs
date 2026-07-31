@@ -868,28 +868,56 @@ fn resolve_type_qualified_imported_function(
 /// Resolve a public module member through its defining syntax unit or an explicit public
 /// re-export. This is intentionally limited to assembly-registered `pub use` edges, so a
 /// private implementation import cannot become visible through its parent module.
+///
+/// Re-export distance decides precedence: a declaration in the named unit shadows the same name
+/// reached through that unit's public re-exports. Hub modules define a flat helper *and*
+/// re-export the child module the helper delegates to (`Core.String.Len` next to
+/// `pub mod Core.String.Core`), so collecting every route as a peer would make the hub's own
+/// surface permanently ambiguous. Ambiguity between routes at the same distance still fails
+/// closed.
 fn unique_exported_function_in_unit(
     db: &dyn Db,
     unit: SourceUnitId,
     generation: SyntaxGenerationId,
     name: &str,
 ) -> Option<AstNodeKey> {
-    let mut pending = vec![unit];
+    nearest_reexport_route(db, unit, generation, |db, current, generation| {
+        unique_public_function_in_unit(db, current, generation, name)
+    })
+}
+
+/// Walk public re-export edges breadth-first and return the single candidate at the shallowest
+/// distance that yields one. More than one candidate at that distance is a genuine ambiguity and
+/// resolves to nothing.
+fn nearest_reexport_route(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    candidate_in_unit: impl Fn(&dyn Db, SourceUnitId, SyntaxGenerationId) -> Option<AstNodeKey>,
+) -> Option<AstNodeKey> {
+    let mut frontier = vec![unit];
     let mut visited = std::collections::HashSet::new();
-    let mut candidates = Vec::new();
-    while let Some(current) = pending.pop() {
-        if !visited.insert(current) {
-            continue;
+    visited.insert(unit);
+    while !frontier.is_empty() {
+        let mut candidates: Vec<AstNodeKey> = Vec::new();
+        let mut next = Vec::new();
+        for current in frontier {
+            if let Some(candidate) = candidate_in_unit(db, current, generation)
+                && !candidates.contains(&candidate)
+            {
+                candidates.push(candidate);
+            }
+            next.extend(
+                public_reexport_units(db, current, generation).into_iter().filter(|target| visited.insert(*target)),
+            );
         }
-        if let Some(candidate) = unique_public_function_in_unit(db, current, generation, name) {
-            candidates.push(candidate);
+        match candidates.as_slice() {
+            [candidate] => return Some(*candidate),
+            [] => frontier = next,
+            _ => return None,
         }
-        pending.extend(public_reexport_units(db, current, generation));
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+    None
 }
 
 fn public_reexport_units(db: &dyn Db, unit: SourceUnitId, generation: SyntaxGenerationId) -> Vec<SourceUnitId> {

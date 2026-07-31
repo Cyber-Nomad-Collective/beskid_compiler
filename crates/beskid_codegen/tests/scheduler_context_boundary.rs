@@ -55,8 +55,10 @@ fn canonical_scheduler_uses_manifest_guarded_stacks_with_bounded_usable_storage(
             .any(|intrinsic| intrinsic.name == "guarded_stack_allocate"),
         "the manifest must own guarded stack allocation",
     );
-    assert!(scheduler.contains("const FIBER_STACK_INITIAL_SIZE = 64 * 1024;"));
-    assert!(scheduler.contains("const FIBER_STACK_MAX_SIZE = 8 * 1024 * 1024;"));
+    // `ConstantDefinition` binds a single `IntegerLiteral`, so the scheduler owns these
+    // bounds as pre-folded literals rather than constant expressions.
+    assert!(scheduler.contains("const FIBER_STACK_INITIAL_SIZE = 65536;"));
+    assert!(scheduler.contains("const FIBER_STACK_MAX_SIZE = 8388608;"));
     assert!(scheduler.contains("pub pointer GuardedStackAllocate(word usableSize)"));
     assert!(scheduler.contains("return guarded_stack_allocate(usableSize);"));
     assert!(scheduler.contains("pointer stack = GuardedStackAllocate(FIBER_STACK_INITIAL_SIZE);"));

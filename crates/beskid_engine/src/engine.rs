@@ -6,6 +6,7 @@ use beskid_codegen::{CodegenArtifact, ExternImport};
 use beskid_pipeline::PipelineObserver;
 
 use crate::jit_module::{BeskidJitModule, JitError};
+use crate::runtime_kit::AttachedRuntimeState;
 
 #[derive(Clone)]
 struct RuntimeKitSelection {
@@ -15,8 +16,12 @@ struct RuntimeKitSelection {
 }
 
 /// Owns an exact ABI-v5 runtime-kit selection and a [`BeskidJitModule`].
+///
+/// Field order is load-bearing: `runtime_state` detaches the calling thread before `jit` releases
+/// the loaded runtime kit that owns those exports.
 pub struct Engine {
     runtime_kit: RuntimeKitSelection,
+    _runtime_state: AttachedRuntimeState,
     jit: BeskidJitModule,
 }
 
@@ -41,7 +46,16 @@ impl Engine {
         profile: RuntimeKitProfile,
     ) -> Result<Self, JitError> {
         let jit = BeskidJitModule::new_with_runtime_kit(prefix, &target, profile, &[])?;
-        Ok(Self { runtime_kit: RuntimeKitSelection { prefix: prefix.to_path_buf(), target, profile }, jit })
+        // JIT'd code executes in this process against the kit just loaded, so the engine is the
+        // ABI-v5 host: it owns the runtime-state reservation and the thread attachment that
+        // scheduler, heap, and root-frame access require. Attaching here keeps that activation
+        // alive across the per-artifact module rebuilds below, which never unload the kit.
+        let runtime_state = AttachedRuntimeState::attach(jit.runtime_kit()).map_err(JitError::RuntimeKit)?;
+        Ok(Self {
+            runtime_kit: RuntimeKitSelection { prefix: prefix.to_path_buf(), target, profile },
+            _runtime_state: runtime_state,
+            jit,
+        })
     }
 
     /// Exact ABI-v5 target selected by this engine's validated runtime kit.

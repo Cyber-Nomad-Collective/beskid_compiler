@@ -1,9 +1,5 @@
 use super::*;
 
-pub(super) fn align_to(value: u32, alignment: u32) -> Option<u32> {
-    value.checked_add(alignment.checked_sub(1)?).map(|value| value / alignment * alignment)
-}
-
 pub(super) fn semantic_type_for_runtime_intrinsic(
     intrinsic: &beskid_abi::abi_v5::RuntimeIntrinsic,
 ) -> Option<SemanticTypeId> {
