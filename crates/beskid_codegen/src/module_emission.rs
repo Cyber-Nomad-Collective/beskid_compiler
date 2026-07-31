@@ -665,43 +665,43 @@ fn trace_item_facts(input: &CodegenInput<'_>, item: AstNodeKey, symbols: &HashMa
         return;
     }
     let db = input.database();
+    let source_labels = input
+        .typed_program()
+        .assembly
+        .units()
+        .iter()
+        .map(|unit| {
+            let unit_id = SourceUnitId::new(db, unit.path.clone());
+            (unit_id, unit.logical_name.clone())
+        })
+        .collect::<HashMap<SourceUnitId, String>>();
     let mut visited = HashSet::new();
-    trace_node_facts(db, item, symbols, &mut visited);
+    trace_node_facts(db, item, symbols, &source_labels, &mut visited, 0);
 }
 
 fn trace_node_facts(
     db: &dyn beskid_queries::Db,
     key: AstNodeKey,
     symbols: &HashMap<DirectCallee, String>,
+    source_labels: &HashMap<SourceUnitId, String>,
     visited: &mut HashSet<AstNodeKey>,
+    depth: usize,
 ) {
     if !visited.insert(key) {
         return;
     }
-    let node = trace_key(db, key);
+    let source_label = source_labels.get(&key.unit).map(String::as_str).unwrap_or("<unknown>");
+    let indent = "  ".repeat(depth);
+    let site = format_ast_node_trace(db, key, source_label);
+    let key_label = trace_key(db, key);
+    crate::isle_trace::event(|| format!("{indent}at {site}"));
     let kind =
         node_kind(db, key).ok().flatten().map(|kind| format!("{kind:?}")).unwrap_or_else(|| "<missing>".to_owned());
-    let span = node_span(db, key)
-        .ok()
-        .flatten()
-        .map(|span| {
-            format!(
-                "{}:{}-{}:{} bytes={}-{}",
-                span.line_col_start.0,
-                span.line_col_start.1,
-                span.line_col_end.0,
-                span.line_col_end.1,
-                span.start,
-                span.end
-            )
-        })
-        .unwrap_or_else(|| "<missing>".to_owned());
-    crate::isle_trace::event(|| format!("event=ast.node key={node} kind={kind} span={span}"));
     if kind == "MatchExpression" {
         let fact = beskid_queries::enum_match(db, key)
             .map(|fact| format!("{fact:?}"))
             .unwrap_or_else(|error| format!("error:{error}"));
-        crate::isle_trace::event(|| format!("event=match.fact key={node} fact={fact}"));
+        crate::isle_trace::event(|| format!("{indent}  event=match.fact key={key_label} fact={fact}"));
     }
 
     if let Ok(Some(lowering)) = call_lowering(db, key) {
@@ -710,7 +710,7 @@ fn trace_node_facts(
             .flatten()
             .map(|arguments| arguments.iter().map(|argument| trace_key(db, *argument)).collect::<Vec<_>>().join(","))
             .unwrap_or_else(|| "<missing>".to_owned());
-        crate::isle_trace::event(|| format!("event=call.arguments key={node} arguments=[{arguments}]"));
+        crate::isle_trace::event(|| format!("{indent}  event=call.arguments key={key_label} arguments=[{arguments}]"));
         let (lowering_name, callee) = match lowering {
             CallLowering::Direct(declaration) => {
                 let callee = generic_call_specialization(db, key)
@@ -739,12 +739,14 @@ fn trace_node_facts(
                 let callee_display = format_callee_for_trace(db, &callee);
                 crate::isle_trace::event(|| {
                     format!(
-                        "event=call.fact key={node} lowering={lowering_name} callee={callee_display} module_import={import}"
+                        "{indent}  event=call.fact key={key_label} lowering={lowering_name} callee={callee_display} module_import={import}"
                     )
                 });
             }
             None => crate::isle_trace::event(|| {
-                format!("event=call.fact key={node} lowering={lowering_name} callee=<unavailable> module_import=<none>")
+                format!(
+                    "{indent}  event=call.fact key={key_label} lowering={lowering_name} callee=<unavailable> module_import=<none>"
+                )
             }),
         }
     }
@@ -752,15 +754,15 @@ fn trace_node_facts(
     match child_nodes(db, key) {
         Ok(Some(children)) => {
             for child in children.iter().copied() {
-                trace_node_facts(db, child, symbols, visited);
+                trace_node_facts(db, child, symbols, source_labels, visited, depth + 1);
             }
         }
-        Ok(None) => {
-            crate::isle_trace::event(|| format!("event=isle.missing rule=child_nodes key={node} detail=unavailable"))
-        }
-        Err(error) => {
-            crate::isle_trace::event(|| format!("event=isle.missing rule=child_nodes key={node} detail={error}"))
-        }
+        Ok(None) => crate::isle_trace::event(|| {
+            format!("{indent}  event=isle.missing rule=child_nodes key={key_label} detail=unavailable")
+        }),
+        Err(error) => crate::isle_trace::event(|| {
+            format!("{indent}  event=isle.missing rule=child_nodes key={key_label} detail={error}")
+        }),
     }
 }
 
