@@ -49,10 +49,7 @@ fn canonical_scheduler_uses_manifest_guarded_stacks_with_bounded_usable_storage(
         .source;
 
     assert!(
-        manifest
-            .trusted_runtime_intrinsics
-            .iter()
-            .any(|intrinsic| intrinsic.name == "guarded_stack_allocate"),
+        manifest.trusted_runtime_intrinsics.iter().any(|intrinsic| intrinsic.name == "guarded_stack_allocate"),
         "the manifest must own guarded stack allocation",
     );
     // `ConstantDefinition` binds a single `IntegerLiteral`, so the scheduler owns these

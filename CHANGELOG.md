@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Preserve exact runtime-intrinsic result ABIs, array element types, nested call-result argument
+  ABIs, integer-width array stores, and integer-to-float typed-local initialization through
+  syntax-to-ISLE lowering.
+- Emit mutable locals from Pest repetition/sequence generation and mark reassigned Base64/Regex
+  locals mutable, keeping generated parser source aligned with Beskid immutability rules.
+- Treat the final expression statement of a block expression as its value rather than lowering it
+  twice as an ordinary statement.
+- Propagate concrete call-derived ABI specializations through nested generic calls during syntax
+  module emission, so generic helpers and ABI-erased nominal type arguments retain matching
+  declarations, imports, signatures, and result types without consulting legacy HIR.
+- Resolve exact fully qualified type paths through the generation-bound module registry, with
+  ambiguity rejected, so generic enum constructors such as `Core.Results.Result<...>::Ok` retain
+  their source layout facts without requiring a redundant `use Core.Results`.
+- Preserve ordered multi-field enum payload layouts, constructor arguments, and match bindings
+  through Salsa facts and ISLE managed-object lowering, including generic enums that combine
+  substituted fields with qualified nominal fields.
+- Resolve exact fully qualified function paths through the generation-bound module registry when
+  no import route exists, rejecting ambiguous module targets and exports.
+- Refactor parser-recovery orchestration in `beskid_analysis` behind an explicit recovery-policy module, separating phase ordering from candidate application and making recovery pass structure explicit and easier to evolve.
+- Expand parser recovery synchronization coverage with grammar-level boundary heuristics for additional
+  syntax forms (`macro`, host/scope/registry constructs, `spawn`/`match`/`range`/`code`, and
+  qualifier-starting declaration forms), so sync repair candidates are generated for more complete
+  source-shape coverage while preserving existing insertion priorities.
+- Introduce a shared sync-boundary primitive in `syntax_primitives` and wire it into sync and
+  statement-start discovery so new statement/expression starters inherit common coverage rules across
+  recovery phases (including operator-led expression starts such as `-` and `!`), reducing duplicated
+  boundary heuristics and broadening recovery candidates for uncommon syntax forms.
+- Add a shared `recovery_scan_pos` entrypoint for recovery modules (`separators`, `delimiters`,
+  `items`, `sync`) so fallback parse positions (`Pos(0)`) consistently anchor insert/delete candidates at
+  source-tail boundaries before probing syntax heuristics.
+- Extend `recovery_scan_pos` adoption to the remaining high-volume statement and expression
+  recovery paths (`statements`, `expressions`, list separator helpers, and orchestration entrypoint),
+  and remove stale recovery-phase metadata (`kind`) to keep parser-recovery module wiring aligned
+  with the shared-primitive model.
+- Centralize primitive-type token heuristics into `syntax_primitives::PRIMITIVE_TYPE_KEYWORDS` and
+  consume them from scanner recovery (`looks_like_type_keyword`) so type-start detection now tracks
+  `PrimitiveType` grammar surface with a single source of truth.
+- Move sync boundary scanning into a dedicated `sync_primitives` recovery module and expand
+  syntax-boundary regression cases for expression starters, function-like constructs, and item-level
+  statements to harden parser recovery under broader syntax coverage (panic-mode path).
+- Harden expression-level recovery for incomplete member/index tails when parser fallback
+  failures report `Pos(0)` by anchoring member/index heuristics to tail syntax markers (`.` / `[`)
+  and shared prefix checks, so `receiver.` and `collection[` now recover with context-safe placeholders.
+
 - Migrate AOT and parsed-project codegen tests to the production prepared-syntax
   → `CodegenInput` → ISLE boundary, removing test reliance on the retired HIR
   `lower_program` compatibility path.
@@ -20,10 +64,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Route Corelib terminal detection through the canonical host dispatch instead of direct
+  platform C-runtime imports, keeping exact ABI-v5 runtime-kit symbol validation closed.
+- Run threshold-triggered GC before allocating a new object so the allocation cannot be reclaimed
+  before its caller has an opportunity to publish or root it.
+- Store each runtime string header and its copied UTF-8 bytes in one GC allocation, ensuring a
+  rooted string handle retains its contents.
+- Declare Console Panel title-fill counters mutable before their negative-width clamping assignments.
+- Preserve exact source-order block statement facts without pointer identity lookups, and prevent
+  singleton ancestor blocks from being misclassified as descendant aggregate field accesses.
+- Lower ordered integer, boolean, and character literal matches through dedicated scalar-match
+  facts and direct CLIF switches, keeping wildcard/default handling separate from enum layouts.
+- Lower typed lets from exact non-generic direct-call results using the same proven query key for
+  initializer emission, and apply exact numeric call-parameter ABI coercions to typed local
+  arguments as well as literals.
+- Lower annotated aggregate-parameter field assignments by resolving delegated path wrappers and
+  deriving assignment result types from their targets.
+- Preserve enum-match facts through delegated `Expression::Match` wrappers.
+- Lower non-dispatch generated-manifest builtins through an explicit direct-call authority and
+  import identity, and complete array/generic integer ABI facts plus Core Input/console mutability
+  and imports needed by the stock-verifier-clean Corelib CLIF path.
+- Complete Core Bytes lowering through the canonical runtime byte accessors, preserve the typed
+  UTF-8 result before matching, narrow console file descriptors at the platform FFI boundary, and
+  add manifest-generated `f64` ABI/runtime support for floor, ceiling, square root, and logarithm.
+- Make byte subslice bounds explicitly mutable, route Hex encoding and decoding through the
+  canonical Slice accessors, and use imported nominal Time types consistently in Corelib gates.
+- Normalize Console scan/attribute mutation and facade imports, and teach syntax ISLE array
+  assignment to address dynamically sized ABI-v5 `BeskidArray` backing storage with runtime bounds.
+- Stop stale process host registrations from overriding canonical WaitGroup dispatch tags 46 and 47,
+  preventing `WaitGroup.Create`/`Wait` from routing into process adapters and aborting on a null string handle.
+- Complete generation-safe lowering facts for enum-valued aggregate-field matches and contextual
+  integer arguments in generic calls, while preserving fail-closed handling for unsupported
+  multi-field enum payloads.
+- Make the Corelib CLIF spine run by default with fourteen passing entrypoints, and repair Corelib
+  source/test syntax that relied on implicit generic receivers, immutable local reassignment,
+  unsupported XOR spelling, or unsupported generic contracts.
+- Parse hexadecimal module constants through the shared integer-magnitude helper so canonical
+  runtime guards retain generation-safe immediate facts during ISLE lowering.
+- Replace stale ABI-v5 analysis builtin sections during generation instead of appending duplicate
+  runtime declarations, with regression coverage for the legacy marker.
+- Isolate concurrent runtime-kit builds, temporary context-assembly outputs, and runtime-prefix
+  mutation tests so parallel gate execution cannot delete or redirect another test's artifacts.
+- Align managed aggregate field reads with the ABI-v5 object header, preventing
+  nested enum/struct values from reading descriptor metadata as source fields
+  and trapping during typed Corelib syscall requests.
 - Allocate enum constructor values through ABI-v5 managed-object metadata rather
   than returning pointers to constructor stack storage, preventing invalid enum
   tags and JIT traps across function boundaries.
 
+- Expand parse-recovery coverage across repeated-token and delimiter-heavy syntax by adding ANTLR-style single-token deletion checks that validate "delete then continue" against expected-token follow sets and lightweight expression-start context.
+- Move parser recovery core from a monolithic `mod.rs` implementation into domain-focused modules (`candidate`, `scan`, `expected_tokens`, `ranking`, `sync`, and new `heuristics`) so single-token/expected-token recovery stays reusable and easier to evolve.
+- Add matrix coverage for duplicate-token repair in call lists, arrays, tuples/parentheses, generics, and struct field lists, including tolerant assertions for real parse-candidate output.
+- Add a sync replacement credibility gate using a class-aware edit-distance heuristic so only close-token replacements are considered by default, reducing cross-surface noise while preserving valid typo-level recovery in syntax-heavy contexts.
 
 - Replace canonical composition sentinel exports with per-runtime, container-owned
   frozen-plan storage. Registration and plural binding order are now validated
@@ -36,11 +128,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arithmetic into a scheduler-owned allocation. Hub registrations now support
   256 stable entries, replace an existing index in place, preserve ordering on
   removal, and keep the circular receive cursor valid.
-
 - Replace the canonical callback literal runtime-state table with a
   manifest-declared, per-runtime registry. Callback and handler registration
   now validate before publishing a complete replacement snapshot, resolve
   duplicates deterministically, and reject unregistered trampoline targets.
+- Give the canonical scheduler one ABI-owned lifecycle record for fiber 0 and
+  spawned handles: cancellation, detach, current-id, exact join statuses, and
+  allocation-failure status `3` now share that record, while source no longer
+  pretends an entry pointer performs a target context switch.
 - Preserve canonical runtime module-constant layout values at their declared
   direct-call ABI width under compiler-minted authority, while rejecting literal
   coercion and untrusted source. Runtime lowering now reports the first failed
@@ -89,6 +184,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stack storage from producing null Corelib string handles (CYB-158/CYB-159).
 - Make the native ABI-v5 runtime-kit matrix script enter the compiler workspace before
   running Cargo, so the Windows superproject workflow no longer fails before kit staging
+
+- Fix enum equality lowering in ISLE for generated tagged enum values by loading and comparing
+  discriminants when both operands expose matching enum layouts, while keeping scalar path behavior
+  unchanged in `clif_eq_discriminant`/`clif_ne_discriminant`.
   with a missing root-level `Cargo.toml` (CYB-112 follow-up).
 - Register the Corelib syscall read/write process symbols with the exact-kit JIT builder, so
   `Core.Output.WriteLine` links without treating process symbols as ABI-v5 runtime-kit exports.

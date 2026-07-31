@@ -17,12 +17,13 @@ fn canonical_waitgroup_storage_is_scheduler_owned_and_wakes_each_registered_wait
 
     assert!(scheduler.contains("const FIBER_TABLE_MAX = 16;"));
     assert!(scheduler.contains("const SCHEDULER_WAITGROUP_STATE_OFFSET = 3472;"));
-    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3488;"));
+    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3496;"));
     assert!(scheduler.contains("table = SystemAllocate(WG_TABLE_SIZE, 8);"));
     assert!(scheduler.contains("memory_set(table, 0, WG_TABLE_SIZE);"));
-    assert!(scheduler.contains(
-        "raw_word_store(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET), NativeWord(table));"
-    ));
+    assert!(
+        scheduler
+            .contains("raw_word_store(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET), NativeWord(table));")
+    );
 
     assert!(wait_group.contains("const WG_WAITER_MAX = 16;"));
     assert!(wait_group.contains("const WG_SLOT_SIZE = 144;"));

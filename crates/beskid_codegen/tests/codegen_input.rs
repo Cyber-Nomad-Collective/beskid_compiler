@@ -14,8 +14,8 @@ use beskid_codegen::{CodegenInput, CodegenInputError, SyntaxNodeFacts};
 use beskid_isle::{CallKind, NodeFacts};
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, IndexedNodeKind, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    TypedProgram, build_canonical_runtime_typed_program, build_typed_program, call_lowering, child_nodes,
-    item_name, node_kind,
+    TypedProgram, build_canonical_runtime_typed_program, build_typed_program, call_lowering, child_nodes, item_name,
+    node_kind,
 };
 
 fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata) {
@@ -364,8 +364,8 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
     let ordinary_generation = SyntaxGenerationId(92);
     let ordinary_project =
         ProjectSession::new(&db, ordinary.clone(), main_path.clone(), "App".into(), "ordinary".into());
-    let ordinary_typed =
-        build_typed_program(&mut db, ordinary_project, ordinary_generation, ordinary_assembly).expect("ordinary assembly");
+    let ordinary_typed = build_typed_program(&mut db, ordinary_project, ordinary_generation, ordinary_assembly)
+        .expect("ordinary assembly");
     let ordinary_root = AstNodeKey {
         unit: SourceUnitId::new(&db, main_path),
         generation: ordinary_typed.generation,

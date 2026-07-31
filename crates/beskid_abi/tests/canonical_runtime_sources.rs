@@ -2,8 +2,8 @@ use beskid_abi::abi_v5::{AbiManifestV5, AbiType, SourceUnit, TargetMetadata};
 use beskid_abi::runtime_source::{
     CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CLOCKS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
     CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_PROCESS_SOURCE_PATH, RuntimeCapabilityError,
-    canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_runtime_intrinsic_capability,
-    canonical_runtime_sources, prove_canonical_runtime_corpus,
+    canonical_corelib_service_capability, canonical_corelib_service_source_path,
+    canonical_runtime_intrinsic_capability, canonical_runtime_sources, prove_canonical_runtime_corpus,
 };
 
 fn linux_manifest() -> AbiManifestV5 {
@@ -100,18 +100,8 @@ fn canonical_host_sources_use_manifest_owned_clock_and_process_adapters() {
             "runtime.adapter.clock_realtime_nanos",
             AbiType::I64,
         ),
-        (
-            "process_exit",
-            "beskid_rt_v5_intrinsic_process_exit",
-            "runtime.adapter.process_exit",
-            AbiType::Void,
-        ),
-        (
-            "process_getpid",
-            "beskid_rt_v5_intrinsic_process_getpid",
-            "runtime.adapter.process_getpid",
-            AbiType::I32,
-        ),
+        ("process_exit", "beskid_rt_v5_intrinsic_process_exit", "runtime.adapter.process_exit", AbiType::Void),
+        ("process_getpid", "beskid_rt_v5_intrinsic_process_getpid", "runtime.adapter.process_getpid", AbiType::I32),
     ] {
         let intrinsic = manifest
             .trusted_runtime_intrinsics
@@ -204,11 +194,8 @@ fn canonical_runtime_source_owns_allocation_headers_and_lifo_root_frames() {
 #[test]
 fn canonical_gc_exports_one_registry_backed_external_root_count() {
     let sources = canonical_runtime_sources();
-    let gc = &sources
-        .iter()
-        .find(|unit| unit.logical_path == "src/Runtime/Mem/Gc.bd")
-        .expect("canonical GC source")
-        .source;
+    let gc =
+        &sources.iter().find(|unit| unit.logical_path == "src/Runtime/Mem/Gc.bd").expect("canonical GC source").source;
 
     assert_eq!(
         gc.matches("[Export(Abi:\"C\", Symbol:\"gc_external_root_count\")]").count(),

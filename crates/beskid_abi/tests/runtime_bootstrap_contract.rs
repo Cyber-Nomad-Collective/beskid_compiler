@@ -71,7 +71,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 25);
+    assert_eq!(names.len(), 34);
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));

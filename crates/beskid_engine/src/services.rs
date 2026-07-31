@@ -179,6 +179,9 @@ fn run_syntax_jitted_entrypoint(
     // heap/root on the first `with_current_root` call instead of aborting with "no active runtime
     // root".
     beskid_runtime::gc::enable_aot_main_bootstrap();
+    if beskid_host::beskid_host_register_all() != 0 {
+        return Err(anyhow::anyhow!("failed to register JIT host dispatch handlers"));
+    }
     let output = JitCallable::execute_as_i64(ptr, return_kind);
     Ok(JitCallable::format_i64_result(output, return_kind))
 }

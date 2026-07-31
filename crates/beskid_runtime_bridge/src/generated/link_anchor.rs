@@ -29,6 +29,10 @@ pub fn anchor_kernel_exports() {
     let _ = beskid_runtime::gc_unregister_root as *const () as usize;
     let _ = beskid_runtime::gc_unroot_handle as *const () as usize;
     let _ = beskid_runtime::gc_write_barrier as *const () as usize;
+    let _ = beskid_runtime::math_ceil as *const () as usize;
+    let _ = beskid_runtime::math_floor as *const () as usize;
+    let _ = beskid_runtime::math_log as *const () as usize;
+    let _ = beskid_runtime::math_sqrt as *const () as usize;
     let _ = beskid_runtime::interop_dispatch_ptr as *const () as usize;
     let _ = beskid_runtime::interop_dispatch_unit as *const () as usize;
     let _ = beskid_runtime::interop_dispatch_usize as *const () as usize;

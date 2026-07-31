@@ -1,6 +1,7 @@
 //! Hermetic production of installed ABI-v5 runtime kits.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow, bail};
@@ -10,6 +11,8 @@ use beskid_abi::runtime_provenance::{RuntimeProvenanceAudit, parse_symbol_list};
 use beskid_abi::runtime_source::{
     build_canonical_runtime_kit, canonical_runtime_source_hash, resolve_canonical_runtime_kit,
 };
+
+static NATIVE_STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeKitProfile {
@@ -51,8 +54,12 @@ pub struct RuntimeKitBuildOptions {
 pub fn build_native_host(prefix: PathBuf, profile: RuntimeKitProfile) -> Result<ResolvedRuntimeKit> {
     let target = beskid_abi::runtime_kit::host_runtime_target()
         .map_err(|error| anyhow!("unsupported ABI-v5 native host: {error}"))?;
-    let staging =
-        std::env::temp_dir().join(format!("beskid-native-runtime-{}-{}", std::process::id(), profile.as_str()));
+    let sequence = NATIVE_STAGING_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let staging = std::env::temp_dir().join(format!(
+        "beskid-native-runtime-{}-{}-{sequence}",
+        std::process::id(),
+        profile.as_str()
+    ));
     if staging.exists() {
         std::fs::remove_dir_all(&staging)
             .map_err(|error| anyhow!("remove stale runtime staging {}: {error}", staging.display()))?;

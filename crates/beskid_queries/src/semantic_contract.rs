@@ -1067,17 +1067,24 @@ fn constant_integer_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKe
         let [segment] = path.path.node.segments.as_slice() else {
             return None;
         };
-        if !segment.node.type_args.is_empty()
-            || resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str()).is_some()
-        {
+        if !segment.node.type_args.is_empty() {
             return None;
+        }
+        if let Some(declaration) = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str()) {
+            let Some(parent) = parent_node(index, declaration) else {
+                return None;
+            };
+            if index.kind(parent) != Some(beskid_analysis::syntax_query::NodeKind::ConstantDefinition) {
+                return None;
+            }
         }
         program.node.items.iter().find_map(|item| {
             let beskid_analysis::syntax::Node::ConstantDefinition(constant) = &item.node else {
                 return None;
             };
             (constant.node.name.node.name == segment.node.name.node.name).then(|| match &constant.node.value.node {
-                beskid_analysis::syntax::Literal::Integer(value) => value.replace('_', "").parse::<i64>().ok(),
+                beskid_analysis::syntax::Literal::Integer(value) => integer_literal_u64(value)
+                    .and_then(|value| i64::try_from(value).ok()),
                 _ => None,
             })?
         })
@@ -1639,8 +1646,12 @@ fn primitive_numeric_conversion_tracked(
 ) -> SemanticQueryResult<PrimitiveNumericConversion> {
     with_node(db, syntax, key, |program, index, node| {
         let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
-        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else { return None; };
-        let [segment] = path.node.path.node.segments.as_slice() else { return None; };
+        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
+            return None;
+        };
+        let [segment] = path.node.path.node.segments.as_slice() else {
+            return None;
+        };
         let to = match segment.node.name.node.name.as_str() {
             "i32" => SemanticTypeId::I32,
             "i64" => SemanticTypeId::I64,

@@ -35,11 +35,11 @@ pub mod status;
 pub mod wait_group;
 
 pub use builtins::{
-    CallbackTableEntry, HandlerTableEntry, alloc, array_len, array_new, beskid_register_callbacks,
-    beskid_register_handlers, beskid_runtime_abi_version, channel_close, channel_create, channel_receive,
-    channel_receive_status, channel_receive_value, channel_send, channel_try_receive, channel_try_send,
-    composition_bind_plural, composition_container_create, composition_container_drop, composition_launch,
-    composition_register, composition_resolve, composition_resolve_plural, composition_scope_depth,
+    CallbackTableEntry, HandlerTableEntry, alloc, args_count, args_get, array_len, array_new,
+    beskid_register_callbacks, beskid_register_handlers, beskid_runtime_abi_version, channel_close, channel_create,
+    channel_receive, channel_receive_status, channel_receive_value, channel_send, channel_try_receive,
+    channel_try_send, composition_bind_plural, composition_container_create, composition_container_drop,
+    composition_launch, composition_register, composition_resolve, composition_resolve_plural, composition_scope_depth,
     composition_scope_enter, composition_scope_leave, composition_shutdown, dynamic_cast_checked, dynamic_cell_create,
     dynamic_cell_wrap, dynamic_map_aot, dynamic_map_fallback, dynamic_object_alloc, event_get_handler, event_len,
     event_subscribe, event_unsubscribe_first, fiber_cancel, fiber_current_id, fiber_detach, fiber_join,
@@ -47,10 +47,10 @@ pub use builtins::{
     fiber_spawn_with_cancel_slot, fiber_yield, gc_bytes_allocated, gc_collect, gc_collect_if_needed,
     gc_external_root_count, gc_object_count, gc_phase, gc_register_root, gc_root_handle, gc_unregister_root,
     gc_unroot_handle, gc_write_barrier, hub_create, hub_register, hub_unregister, hub_wait_receive,
-    hub_wait_receive_index, hub_wait_receive_status, hub_wait_receive_value, install_callback_trampoline, mutex_create,
-    mutex_lock, mutex_try_lock, mutex_unlock, panic, panic_str, registered_callbacks, str_concat, str_eq, str_from_i64,
-    str_len, str_new, syscall_read, syscall_write, test_bytes_len, test_bytes_ptr, wait_group_add, wait_group_create,
-    wait_group_done, wait_group_wait,
+    hub_wait_receive_index, hub_wait_receive_status, hub_wait_receive_value, install_callback_trampoline, math_ceil,
+    math_floor, math_log, math_sqrt, mutex_create, mutex_lock, mutex_try_lock, mutex_unlock, panic, panic_str,
+    registered_callbacks, str_concat, str_eq, str_from_i64, str_len, str_new, syscall_read, syscall_write,
+    test_bytes_len, test_bytes_ptr, wait_group_add, wait_group_create, wait_group_done, wait_group_wait,
 };
 
 #[cfg(feature = "metrics")]

@@ -2,13 +2,28 @@
 
 use crate::parser::Rule;
 
-use super::{RepairCandidate, skip_ws, unbalanced_delimiters};
+use super::{
+    candidate::RepairCandidate,
+    scan::{skip_ws, unbalanced_delimiters},
+    syntax_primitives,
+};
 
 /// Generate delimiter close/open repairs near the Pest error locus.
 pub fn repairs(source: &str, error_pos: usize, _parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
     let mut candidates = Vec::new();
-    let error_pos = error_pos.min(source.len());
+    let error_pos = syntax_primitives::recovery_scan_pos(source, error_pos);
     let insert_at = delimiter_insert_pos(source, error_pos);
+    let eof = source.len();
+
+    let boundary_closers = unmatched_delimiter_suffix(source, insert_at);
+    if !boundary_closers.is_empty() {
+        candidates.push(RepairCandidate::insert_text(
+            insert_at,
+            boundary_closers.clone(),
+            "inserted missing delimiter closes at parse boundary",
+            9,
+        ));
+    }
 
     let (paren, bracket, brace, angle) = unbalanced_delimiters(source, error_pos);
 
@@ -101,11 +116,21 @@ pub fn repairs(source: &str, error_pos: usize, _parse_error: &pest::error::Error
         candidates.push(RepairCandidate::insert(source.len(), "\n```\n", "inserted missing code fence closer", 19));
     }
 
+    let eof_closers = unmatched_delimiter_suffix(source, eof);
+    if !eof_closers.is_empty() && eof_closers != boundary_closers {
+        candidates.push(RepairCandidate::insert_text(
+            eof,
+            eof_closers,
+            "inserted missing delimiter closes at end of file",
+            9,
+        ));
+    }
+
     candidates
 }
 
 fn delimiter_insert_pos(source: &str, error_pos: usize) -> usize {
-    let pos = skip_ws(source, error_pos);
+    let pos = skip_ws(source, syntax_primitives::recovery_scan_pos(source, error_pos));
     if pos >= source.len() { source.len() } else { pos }
 }
 
@@ -235,4 +260,77 @@ fn has_unclosed_code_fence(source: &str) -> bool {
         }
     }
     fence_count % 2 == 1
+}
+
+fn unmatched_delimiter_suffix(source: &str, through: usize) -> String {
+    let through = through.min(source.len());
+    let bytes = source.as_bytes();
+    let mut stack: Vec<u8> = Vec::new();
+    let mut i = 0usize;
+    while i < through {
+        match bytes[i] {
+            b'"' => {
+                i += 1;
+                while i < through {
+                    if bytes[i] == b'\\' {
+                        i = (i + 2).min(through);
+                        continue;
+                    }
+                    if bytes[i] == b'"' {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+            b'\'' => {
+                i += 1;
+                while i < through {
+                    if bytes[i] == b'\\' {
+                        i = (i + 2).min(through);
+                        continue;
+                    }
+                    if bytes[i] == b'\'' {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+            b'/' if i + 1 < through && bytes[i + 1] == b'/' => {
+                i += 2;
+                while i < through && bytes[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            b'/' if i + 1 < through && bytes[i + 1] == b'*' => {
+                i += 2;
+                while i + 1 < through && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                    i += 1;
+                }
+                i = (i + 2).min(through);
+                continue;
+            }
+            b'(' => stack.push(b')'),
+            b'[' => stack.push(b']'),
+            b'{' => stack.push(b'}'),
+            b'<' => stack.push(b'>'),
+            b')' | b']' | b'}' | b'>' => {
+                if matches!(stack.last(), Some(top) if *top == bytes[i]) {
+                    let _ = stack.pop();
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    let mut out = String::new();
+    while let Some(close) = stack.pop() {
+        out.push(close as char);
+    }
+    out
 }

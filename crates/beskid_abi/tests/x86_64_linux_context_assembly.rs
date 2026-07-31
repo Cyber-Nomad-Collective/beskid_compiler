@@ -3,16 +3,21 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, render_runtime_asm_include};
+
+static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 struct TempDir(PathBuf);
 
 impl TempDir {
     fn new() -> Self {
         let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let path = std::env::temp_dir().join(format!("beskid-x86-64-context-{}-{nonce}", std::process::id()));
+        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("beskid-x86-64-context-{}-{nonce}-{sequence}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         Self(path)
     }

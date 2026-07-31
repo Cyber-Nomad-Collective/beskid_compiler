@@ -56,8 +56,8 @@ impl<'a> TypeChecker<'a> {
 
     pub(super) fn resolved_value_at(&self, span: SpanInfo) -> Option<ResolvedValue> {
         // A merged SpanIndex has no source identity: every unit's resolutions share one
-        // `(start, end)` keyspace, so a dependency path at the same byte range can preempt
-        // this unit's own value resolution. When type-checking a known unit the
+        // `(start, end)` keyspace, so a same-offset local or path from another unit can
+        // preempt this unit's own value resolution. When type-checking a known unit the
         // source-scoped resolution table is authoritative; the index stays as the fallback
         // for spans it does not cover. Mirrors `resolved_type_at`.
         let value = self

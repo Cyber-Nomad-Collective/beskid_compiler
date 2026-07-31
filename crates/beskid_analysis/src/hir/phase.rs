@@ -2,12 +2,13 @@
 
 use crate::syntax::{
     ArrayLiteralExpression, AssignExpression, AttributeDeclaration, BinaryExpression, BlockExpression, BreakStatement,
-    CallExpression, CodeStringLiteral, ConstantDefinition, ContinueStatement, ContractDefinition, EnumConstructorExpression,
-    EnumDefinition, ExpressionStatement, ExtendTypeDefinition, ForStatement, FunctionDefinition, GroupedExpression,
-    HostDefinition, IfStatement, IndexExpression, InlineModule, LambdaExpression, LaunchStatement, LetStatement,
-    LiteralExpression, MacroDefinition, MacroInvocation, MacroMetavariable, MatchExpression, MemberExpression,
-    MethodDefinition, ModuleDeclaration, PathExpression, ReturnStatement, SpawnExpression, StructLiteralExpression,
-    TestDefinition, TryExpression, TypeDefinition, UnaryExpression, UseDeclaration, WhileStatement, WithStatement,
+    CallExpression, CodeStringLiteral, ConstantDefinition, ContinueStatement, ContractDefinition,
+    EnumConstructorExpression, EnumDefinition, ExpressionStatement, ExtendTypeDefinition, ForStatement,
+    FunctionDefinition, GroupedExpression, HostDefinition, IfStatement, IndexExpression, InlineModule,
+    LambdaExpression, LaunchStatement, LetStatement, LiteralExpression, MacroDefinition, MacroInvocation,
+    MacroMetavariable, MatchExpression, MemberExpression, MethodDefinition, ModuleDeclaration, PathExpression,
+    ReturnStatement, SpawnExpression, StructLiteralExpression, TestDefinition, TryExpression, TypeDefinition,
+    UnaryExpression, UseDeclaration, WhileStatement, WithStatement,
 };
 
 use super::{

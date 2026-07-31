@@ -26,8 +26,9 @@ use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, CastIntent, Db, ProjectSession, SourceUnitId, SyntaxGenerationId,
     aggregate_field_access, build_canonical_corelib_syscall_typed_program, build_canonical_runtime_typed_program,
     build_typed_program, build_typed_program_with_corelib_services, call_abi_signature, call_lowering, child_nodes,
-    closure_environment, enum_constructor, enum_layout, enum_match, format_ast_node_site, item_body, item_name,
-    literal_fact, mutable_local_assignment, node_kind, node_type, spawn_target, test_statement_nodes,
+    closure_environment, enum_constructor, enum_layout, enum_match, format_ast_node_site, generic_call_specialization,
+    item_body, item_name, literal_fact, mutable_local_assignment, node_kind, node_type, spawn_target,
+    test_statement_nodes,
 };
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::isa;
@@ -92,6 +93,25 @@ fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
         .expect("parsed expression lowers through generated ISLE");
 
     assert!(function.display().to_string().contains("iconst.i32 42"));
+}
+
+#[test]
+fn parsed_single_return_struct_field_body_exposes_its_return_statement() {
+    let (input, _isa, root) = item_fixture_with_root(
+        "pub type TextCursor { string source, i64 pos, } pub i64 Position(TextCursor c) { return c.pos; }",
+    );
+    let position = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Position"))
+        .expect("Position item");
+    let body = item_body(input.database(), position).expect("Position body query").expect("Position body");
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+
+    assert_eq!(facts.statement_count(body), Some(1), "Position body must expose its return statement");
+    assert_eq!(
+        facts.child(body, 0).and_then(|statement| facts.node_kind(statement)),
+        Some(beskid_isle::NodeKind::ReturnStatement)
+    );
 }
 
 #[test]
@@ -1078,6 +1098,8 @@ fn parsed_mutable_range_accumulator_exposes_local_write_syntax_facts() {
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
 
     let target = facts.child(assignment, 0).expect("assignment target fact");
+    let value = facts.child(assignment, 1).expect("assignment value fact");
+    assert_eq!(facts.node_kind(value), Some(beskid_isle::NodeKind::BinaryExpression));
     let declaration = beskid_queries::resolved_local(db, target)
         .expect("assignment target resolution")
         .expect("assignment target local")
@@ -2246,6 +2268,94 @@ fn parsed_program_specializes_zero_argument_generic_factory_without_hir() {
         artifact.functions.iter().any(|function| function.name.starts_with("Create#generic_")),
         "generic factory must emit a mangled specialization, not a bare Item identity"
     );
+}
+
+#[test]
+fn parsed_program_propagates_call_derived_abi_through_nested_generic_calls() {
+    let (input, isa, root) = item_fixture_with_root(
+        "T[] Identity<T>(T[] value) { return value; } T[] Outer<T>(T[] value) { T[] copy = value; return Identity<T>(copy); } i64[] Main(i64[] values) { return Outer<i64>(values); }",
+    );
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            symbol: item_name(input.database(), key).expect("item name query").expect("function name").to_string(),
+            key,
+        })
+        .collect::<Vec<_>>();
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("the concrete Outer<i64> ABI must propagate to Identity<T>");
+
+    beskid_codegen::validate_artifact(&artifact).expect("nested generic imports must resolve");
+    assert!(
+        artifact.functions.iter().any(|function| function.name.starts_with("Identity#generic_")),
+        "the nested generic callee must receive a concrete ABI specialization"
+    );
+    assert!(
+        artifact.functions.iter().any(|function| function.name.starts_with("Outer#generic_")),
+        "the directly called generic item must retain its specialization"
+    );
+}
+
+#[test]
+fn parsed_program_specializes_inferred_generic_from_call_and_negative_literal_arguments() {
+    let (input, isa, root) = item_fixture_with_root(
+        "unit Equal<T>(T actual, T expected, string because) { return; } i64 Compare() { return 0_i64; } unit Main() { Equal(Compare(), -1, \"compare\"); return; }",
+    );
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            symbol: item_name(input.database(), key).expect("item name query").expect("function name").to_string(),
+            key,
+        })
+        .collect::<Vec<_>>();
+    let equal_call = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::CallExpression)
+        .into_iter()
+        .find(|call| {
+            matches!(
+                call_lowering(input.database(), *call),
+                Ok(Some(beskid_queries::CallLowering::Direct(declaration)))
+                    if item_name(input.database(), declaration).ok().flatten().as_deref() == Some("Equal")
+            )
+        })
+        .expect("Equal call");
+    assert!(
+        call_abi_signature(input.database(), equal_call)
+            .unwrap_or_else(|error| panic!("Equal call ABI query failed: {error}"))
+            .is_some(),
+        "Equal call must have an inferred ABI signature"
+    );
+    assert!(
+        generic_call_specialization(input.database(), equal_call).expect("generic specialization query").is_some(),
+        "Equal must have an inferred ABI specialization"
+    );
+
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("the exact call result and negative literal must specialize Equal<i64>");
+
+    beskid_codegen::validate_artifact(&artifact).expect("inferred generic assertion imports must resolve");
+    assert!(
+        artifact.functions.iter().any(|function| function.name.starts_with("Equal#generic_")),
+        "the inferred generic assertion must receive an i64 ABI specialization"
+    );
+}
+
+#[test]
+fn parsed_program_lowers_typed_let_from_non_generic_direct_call_result() {
+    let (input, isa, root) = item_fixture_with_root(
+        "string Echo() { return \"ok\"; } string Main() { string value = Echo(); return value; }",
+    );
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            symbol: item_name(input.database(), key).expect("item name query").expect("function name").to_string(),
+            key,
+        })
+        .collect::<Vec<_>>();
+
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("a typed let must retain the exact ABI of its non-generic direct-call initializer");
+
+    beskid_codegen::validate_artifact(&artifact).expect("typed direct-call let imports must resolve");
 }
 
 #[test]

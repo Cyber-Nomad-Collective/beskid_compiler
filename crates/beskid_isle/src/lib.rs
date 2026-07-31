@@ -638,7 +638,12 @@ pub trait NodeFacts {
     fn call_kind(&self, _key: AstNodeKey) -> Option<CallKind> {
         None
     }
-    fn primitive_numeric_conversion(&self, _key: AstNodeKey) -> Option<(beskid_queries::SemanticTypeId, beskid_queries::SemanticTypeId)> { None }
+    fn primitive_numeric_conversion(
+        &self,
+        _key: AstNodeKey,
+    ) -> Option<(beskid_queries::SemanticTypeId, beskid_queries::SemanticTypeId)> {
+        None
+    }
     fn runtime_intrinsic_kind(&self, _key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
         None
     }
@@ -1230,9 +1235,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
 
     fn emit_memory_set(&mut self, destination: Value, byte: Value, length: Value) -> Option<()> {
         let pointer = self.builder.func.dfg.value_type(destination);
-        if !pointer.is_int()
-            || self.builder.func.dfg.value_type(length) != pointer
-        {
+        if !pointer.is_int() || self.builder.func.dfg.value_type(length) != pointer {
             return None;
         }
         let byte_type = self.builder.func.dfg.value_type(byte);
@@ -1557,12 +1560,68 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.builder.ins().icmp(IntCC::Equal, left, right)
     }
 
+    fn clif_eq_discriminant(
+        &mut self,
+        left: Value,
+        right: Value,
+        left_key: AstNodeKey,
+        right_key: AstNodeKey,
+    ) -> Value {
+        if let (Some(left_layout), Some(right_layout)) =
+            (self.facts.enum_layout(left_key), self.facts.enum_layout(right_key))
+        {
+            if left_layout.variants == right_layout.variants
+                && left_layout.tag.value_type == right_layout.tag.value_type
+            {
+                let Ok(left_offset) = i32::try_from(left_layout.tag.offset) else {
+                    return self.clif_eq(left, right);
+                };
+                let Ok(right_offset) = i32::try_from(right_layout.tag.offset) else {
+                    return self.clif_eq(left, right);
+                };
+                let left_tag = self.builder.ins().load(left_layout.tag.value_type, MemFlags::new(), left, left_offset);
+                let right_tag =
+                    self.builder.ins().load(right_layout.tag.value_type, MemFlags::new(), right, right_offset);
+                return self.builder.ins().icmp(IntCC::Equal, left_tag, right_tag);
+            }
+        }
+        self.clif_eq(left, right)
+    }
+
     fn clif_ne(&mut self, left: Value, right: Value) -> Value {
         if let Some((left, right)) = self.common_float_operands(left, right) {
             return self.builder.ins().fcmp(FloatCC::NotEqual, left, right);
         }
         let (left, right) = self.common_integer_operands(left, right);
         self.builder.ins().icmp(IntCC::NotEqual, left, right)
+    }
+
+    fn clif_ne_discriminant(
+        &mut self,
+        left: Value,
+        right: Value,
+        left_key: AstNodeKey,
+        right_key: AstNodeKey,
+    ) -> Value {
+        if let (Some(left_layout), Some(right_layout)) =
+            (self.facts.enum_layout(left_key), self.facts.enum_layout(right_key))
+        {
+            if left_layout.variants == right_layout.variants
+                && left_layout.tag.value_type == right_layout.tag.value_type
+            {
+                let Ok(left_offset) = i32::try_from(left_layout.tag.offset) else {
+                    return self.clif_ne(left, right);
+                };
+                let Ok(right_offset) = i32::try_from(right_layout.tag.offset) else {
+                    return self.clif_ne(left, right);
+                };
+                let left_tag = self.builder.ins().load(left_layout.tag.value_type, MemFlags::new(), left, left_offset);
+                let right_tag =
+                    self.builder.ins().load(right_layout.tag.value_type, MemFlags::new(), right, right_offset);
+                return self.builder.ins().icmp(IntCC::NotEqual, left_tag, right_tag);
+            }
+        }
+        self.clif_ne(left, right)
     }
 
     fn clif_slt(&mut self, left: Value, right: Value) -> Value {
@@ -1640,9 +1699,19 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let source = self.facts.scalar_type(argument)?;
         let target = self.facts.scalar_type(key)?;
         (source == actual).then_some(())?;
-        if actual == target { Some(value) } else if actual.bits() < target.bits() {
-            Some(if from == beskid_queries::SemanticTypeId::U8 { self.builder.ins().uextend(target, value) } else { self.builder.ins().sextend(target, value) })
-        } else if actual.bits() > target.bits() { Some(self.builder.ins().ireduce(target, value)) } else { None }
+        if actual == target {
+            Some(value)
+        } else if actual.bits() < target.bits() {
+            Some(if from == beskid_queries::SemanticTypeId::U8 {
+                self.builder.ins().uextend(target, value)
+            } else {
+                self.builder.ins().sextend(target, value)
+            })
+        } else if actual.bits() > target.bits() {
+            Some(self.builder.ins().ireduce(target, value))
+        } else {
+            None
+        }
     }
 
     fn emit_direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
@@ -1928,7 +1997,13 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let condition_key = self.facts.child(key, 0)?;
         let then_key = self.facts.child(key, 1)?;
         let else_key = self.facts.child(key, 2);
-        let condition = generated::constructor_lower_expression(self, condition_key)?;
+        let condition = match crate::lower_expression(self, condition_key) {
+            Ok(value) => value,
+            Err(error) => {
+                self.pending_error = Some(error);
+                return None;
+            }
+        };
         let then_block = self.builder.create_block();
         let else_block = self.builder.create_block();
         let merge_block = self.builder.create_block();
@@ -2335,20 +2410,13 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumVariant(variant_index) });
             return None;
         };
-        let allocation = self.facts.managed_struct_allocation(key)?;
-        let pointer_type = self.facts.scalar_type(key)?;
-        if !pointer_type.is_int() {
-            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
-            return None;
-        }
-        let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer_type)?;
-        let allocate =
-            self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer_type], Some(pointer_type))?;
-        let allocation_call = self.builder.ins().call(allocate, &[request]);
-        let object = self.builder.inst_results(allocation_call).first().copied()?;
-        self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
+        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            layout.size,
+            layout.align_shift,
+        ));
         let tag = self.builder.ins().iconst(layout.tag.value_type, variant.discriminant as i64);
-        self.builder.ins().store(MemFlags::new(), tag, object, i32::try_from(layout.tag.offset).ok()?);
+        self.builder.ins().stack_store(tag, slot, i32::try_from(layout.tag.offset).ok()?);
         match (variant.payload, self.facts.enum_payload(key)) {
             (Some(payload_layout), Some(payload_key)) => {
                 let payload = generated::constructor_lower_expression(self, payload_key)?;
@@ -2356,7 +2424,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
                     return None;
                 }
-                self.builder.ins().store(MemFlags::new(), payload, object, i32::try_from(payload_layout.offset).ok()?);
+                self.builder.ins().stack_store(payload, slot, i32::try_from(payload_layout.offset).ok()?);
             }
             (None, None) => {}
             _ => {
@@ -2364,7 +2432,12 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 return None;
             }
         }
-        Some(object)
+        let pointer_type = self.facts.scalar_type(key)?;
+        if !pointer_type.is_int() {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
+            return None;
+        }
+        Some(self.builder.ins().stack_addr(pointer_type, slot, 0))
     }
 
     fn emit_match(&mut self, key: AstNodeKey) -> Option<Value> {

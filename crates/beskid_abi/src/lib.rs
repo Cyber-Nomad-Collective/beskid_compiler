@@ -15,6 +15,15 @@ pub mod version;
 
 pub use abi_types::{AbiParamKind, AbiReturnKind, BuiltinFnSpec};
 pub use generated::builtins::BUILTIN_SPECS;
+
+/// Every process-linked runtime builtin accepted by lowering and the JIT.
+///
+/// `BUILTIN_SPECS` is the remaining ABI-v4 transition table. ABI-v5-owned soft builtin rows are
+/// generated from `runtime_manifest.bsol` and are intentionally appended here rather than copied
+/// into that legacy snapshot.
+pub fn all_builtin_specs() -> impl Iterator<Item = &'static BuiltinFnSpec> {
+    BUILTIN_SPECS.iter().chain(generated::abi_v5_contract::ABI_V5_SOFT_BUILTINS.iter())
+}
 pub use generated::dispatch_lookup::{
     DISPATCH_ENVELOPE_HEADER_SIZE, DISPATCH_PAD_OFFSET, DISPATCH_PAYLOAD_OFFSET, DISPATCH_TAG_OFFSET,
     DISPATCH_TYPE_DESC_OFFSET, DispatchReturnGroup, DispatchRoute, dispatch_route_for_symbol, is_dispatch_symbol,

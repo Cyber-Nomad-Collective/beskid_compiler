@@ -2,6 +2,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 mod alloc;
+mod args;
 mod arrays;
 mod bytes;
 pub mod callback;
@@ -14,6 +15,7 @@ mod fiber;
 mod gc;
 mod gc_roots;
 mod hub;
+mod math;
 #[cfg(feature = "metrics")]
 mod metrics;
 mod mutex;
@@ -25,6 +27,7 @@ mod wait_group;
 
 pub use crate::interop::register::{HandlerTableEntry, beskid_register_handlers};
 pub use alloc::alloc;
+pub use args::{args_count, args_get};
 pub use arrays::{array_len, array_new};
 pub use bytes::{bytes_compare, bytes_copy, bytes_from_str, bytes_get, bytes_set, str_from_bytes_utf8};
 pub use callback::{CallbackTableEntry, beskid_register_callbacks, install_callback_trampoline, registered_callbacks};
@@ -54,6 +57,7 @@ pub use hub::{
     hub_create, hub_register, hub_unregister, hub_wait_receive, hub_wait_receive_index, hub_wait_receive_status,
     hub_wait_receive_value,
 };
+pub use math::{math_ceil, math_floor, math_log, math_sqrt};
 #[cfg(feature = "metrics")]
 pub use metrics::*;
 pub use mutex::{mutex_create, mutex_lock, mutex_try_lock, mutex_unlock};
