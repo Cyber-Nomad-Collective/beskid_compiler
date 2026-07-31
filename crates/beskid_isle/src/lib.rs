@@ -74,6 +74,7 @@ node_kinds!(
     BlockExpression,
     ForStatement,
     SpawnExpression,
+    LambdaExpression,
 );
 
 /// Exhaustive disposition of an expanded-syntax kind at the generated ISLE boundary.
@@ -120,6 +121,7 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         Syntax::Block | Syntax::BlockExpression => IsleLowered(NodeKind::BlockExpression),
         Syntax::ForStatement => IsleLowered(NodeKind::ForStatement),
         Syntax::SpawnExpression => IsleLowered(NodeKind::SpawnExpression),
+        Syntax::LambdaExpression => IsleLowered(NodeKind::LambdaExpression),
 
         Syntax::HostDefinition
         | Syntax::RegistryBlock
@@ -129,8 +131,7 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         | Syntax::WithStatement
         | Syntax::LaunchStatement
         | Syntax::CodeStringLiteral
-        | Syntax::TryExpression
-        | Syntax::LambdaExpression => UnsupportedTypedOperation,
+        | Syntax::TryExpression => UnsupportedTypedOperation,
 
         Syntax::Node
         | Syntax::ConstantDefinition
@@ -195,12 +196,11 @@ pub fn syntax_node_kind_catalogue()
 /// This list must stay equal to every [`SyntaxNodeClassification::UnsupportedTypedOperation`]
 /// entry in [`syntax_node_kind_catalogue`] — no silent catch-all arm may hide new kinds.
 ///
-/// For Beskid 0.4 / W4.1 these kinds are intentionally release-rejected (not pending ports):
+/// For Beskid 0.4 these kinds are intentionally release-rejected (not pending ports):
 /// host composition declarations and `with`/`launch` wait on composition-container facts;
 /// fenced `code` strings stay unsupported in both paths; raw `try` desugars to `match` before
-/// codegen; freestanding lambda values are owned by W4.2 (`CYB-25`). `MethodDefinition` and
-/// `SpawnExpression` are production-supported [`IsleLowered`][SyntaxNodeClassification::IsleLowered]
-/// forms outside this roster.
+/// codegen. `MethodDefinition`, `SpawnExpression`, and `LambdaExpression` are production-supported
+/// [`IsleLowered`][SyntaxNodeClassification::IsleLowered] forms outside this roster.
 pub const UNSUPPORTED_TYPED_OPERATION_KINDS: &[beskid_queries::IndexedNodeKind] = &[
     beskid_queries::IndexedNodeKind::HostDefinition,
     beskid_queries::IndexedNodeKind::RegistryBlock,
@@ -211,7 +211,6 @@ pub const UNSUPPORTED_TYPED_OPERATION_KINDS: &[beskid_queries::IndexedNodeKind] 
     beskid_queries::IndexedNodeKind::LaunchStatement,
     beskid_queries::IndexedNodeKind::CodeStringLiteral,
     beskid_queries::IndexedNodeKind::TryExpression,
-    beskid_queries::IndexedNodeKind::LambdaExpression,
 ];
 
 /// Syntax kinds currently classified as unsupported typed operations, in catalogue order.
@@ -292,6 +291,8 @@ pub enum OperatorFact {
     StringAdd,
     StringEq,
     StringNotEq,
+    EnumEq,
+    EnumNotEq,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -341,6 +342,8 @@ pub enum DirectCallee {
     CorelibService(&'static str),
     /// One generated ABI-v5 fiber entry trampoline, keyed by its source `spawn` expression.
     SpawnTrampoline(AstNodeKey),
+    /// One generated ABI-v5 closure entry trampoline, keyed by its source `LambdaExpression`.
+    LambdaTrampoline(AstNodeKey),
 }
 
 impl DirectCallee {
@@ -362,6 +365,10 @@ impl DirectCallee {
 
     pub const fn spawn_trampoline(spawn: AstNodeKey) -> Self {
         Self::SpawnTrampoline(spawn)
+    }
+
+    pub const fn lambda_trampoline(lambda: AstNodeKey) -> Self {
+        Self::LambdaTrampoline(lambda)
     }
 }
 
@@ -408,6 +415,16 @@ pub struct InlineLambdaCall {
     pub closure_environment: Option<InlineClosureEnvironment>,
 }
 
+/// Exact source entry selected for one freestanding lambda expression lowering leaf.
+///
+/// Capture-free entries keep a null environment. Capture-proven entries carry artifact-owned
+/// allocate/store/root authority; unsupported capture shapes remain unavailable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LambdaEntry {
+    pub trampoline: DirectCallee,
+    pub closure_environment: Option<InlineClosureEnvironment>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallImportError {
     UnknownCallee,
@@ -443,8 +460,8 @@ impl ArrayLayout {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FieldLayout {
-    value_type: Type,
-    offset: u32,
+    pub value_type: Type,
+    pub offset: u32,
 }
 
 impl FieldLayout {
@@ -507,8 +524,8 @@ impl StructLayout {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EnumVariantLayout {
-    discriminant: u64,
-    payload: Option<FieldLayout>,
+    pub discriminant: u64,
+    pub payload: Option<FieldLayout>,
 }
 
 impl EnumVariantLayout {
@@ -519,10 +536,10 @@ impl EnumVariantLayout {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EnumLayout {
-    size: u32,
-    align_shift: u8,
-    tag: FieldLayout,
-    variants: Vec<EnumVariantLayout>,
+    pub size: u32,
+    pub align_shift: u8,
+    pub tag: FieldLayout,
+    pub variants: Vec<EnumVariantLayout>,
 }
 
 impl EnumLayout {
@@ -530,7 +547,7 @@ impl EnumLayout {
         Self { size, align_shift, tag, variants }
     }
 
-    fn is_valid(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         let Some(alignment) = 1_u32.checked_shl(u32::from(self.align_shift)) else {
             return false;
         };
@@ -638,7 +655,12 @@ pub trait NodeFacts {
     fn call_kind(&self, _key: AstNodeKey) -> Option<CallKind> {
         None
     }
-    fn primitive_numeric_conversion(&self, _key: AstNodeKey) -> Option<(beskid_queries::SemanticTypeId, beskid_queries::SemanticTypeId)> { None }
+    fn primitive_numeric_conversion(
+        &self,
+        _key: AstNodeKey,
+    ) -> Option<(beskid_queries::SemanticTypeId, beskid_queries::SemanticTypeId)> {
+        None
+    }
     fn runtime_intrinsic_kind(&self, _key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
         None
     }
@@ -714,6 +736,12 @@ pub trait NodeFacts {
     fn enum_layout(&self, _key: AstNodeKey) -> Option<EnumLayout> {
         None
     }
+    /// Enum layout suitable for binary comparison: resolves the common enum type of
+    /// both operands so discriminant comparison can load the correct tag at the correct
+    /// offset. Returns None when either operand is not an enum value.
+    fn binary_enum_layout(&self, _key: AstNodeKey) -> Option<EnumLayout> {
+        None
+    }
     fn enum_variant_index(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
@@ -727,6 +755,9 @@ pub trait NodeFacts {
         None
     }
     fn spawn_entry(&self, _key: AstNodeKey) -> Option<SpawnEntry> {
+        None
+    }
+    fn lambda_entry(&self, _key: AstNodeKey) -> Option<LambdaEntry> {
         None
     }
     fn local_slot(&self, _key: AstNodeKey) -> Option<LocalSlotId> {
@@ -1230,9 +1261,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
 
     fn emit_memory_set(&mut self, destination: Value, byte: Value, length: Value) -> Option<()> {
         let pointer = self.builder.func.dfg.value_type(destination);
-        if !pointer.is_int()
-            || self.builder.func.dfg.value_type(length) != pointer
-        {
+        if !pointer.is_int() || self.builder.func.dfg.value_type(length) != pointer {
             return None;
         }
         let byte_type = self.builder.func.dfg.value_type(byte);
@@ -1311,7 +1340,88 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
     }
 }
 
+/// Compare semantics the ISLE constructors dispatch through.
+enum CompareOp {
+    Eq,
+    Ne,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+}
+
+impl CompareOp {
+    fn intcc(self, ty: Type) -> IntCC {
+        use IntCC::*;
+        let signed = ty != types::I8;
+        match self {
+            CompareOp::Eq => Equal,
+            CompareOp::Ne => NotEqual,
+            CompareOp::Lt if signed => SignedLessThan,
+            CompareOp::Lt => UnsignedLessThan,
+            CompareOp::Lte if signed => SignedLessThanOrEqual,
+            CompareOp::Lte => UnsignedLessThanOrEqual,
+            CompareOp::Gt if signed => SignedGreaterThan,
+            CompareOp::Gt => UnsignedGreaterThan,
+            CompareOp::Gte if signed => SignedGreaterThanOrEqual,
+            CompareOp::Gte => UnsignedGreaterThanOrEqual,
+        }
+    }
+
+    fn fcmpcc(self) -> FloatCC {
+        match self {
+            CompareOp::Eq => FloatCC::Equal,
+            CompareOp::Ne => FloatCC::NotEqual,
+            CompareOp::Lt => FloatCC::LessThan,
+            CompareOp::Lte => FloatCC::LessThanOrEqual,
+            CompareOp::Gt => FloatCC::GreaterThan,
+            CompareOp::Gte => FloatCC::GreaterThanOrEqual,
+        }
+    }
+}
+
 impl IsleContext<'_, '_, '_, '_> {
+    /// Single entry-point for all integer/float comparison lowerings.
+    fn lower_compare(&mut self, left: Value, right: Value, op: CompareOp) -> Value {
+        if let Some((left, right)) = self.common_float_operands(left, right) {
+            return self.builder.ins().fcmp(op.fcmpcc(), left, right);
+        }
+        let (left, right) = self.common_integer_operands(left, right);
+        let ty = self.builder.func.dfg.value_type(left);
+        self.builder.ins().icmp(op.intcc(ty), left, right)
+    }
+
+    /// Compare two enum values by loading and comparing their discriminants.
+    /// The common enum layout is resolved via `NodeFacts::binary_enum_layout`.
+    fn lower_enum_discriminant_compare(&mut self, key: AstNodeKey, invert: bool) -> Option<Value> {
+        let layout = self.facts.binary_enum_layout(key)?;
+        if !layout.is_valid() {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
+            return None;
+        }
+        let left_key = self.facts.child(key, 0)?;
+        let right_key = self.facts.child(key, 1)?;
+        let left = generated::constructor_lower_expression(self, left_key)?;
+        let right = generated::constructor_lower_expression(self, right_key)?;
+        if !self.builder.func.dfg.value_type(left).is_int() || !self.builder.func.dfg.value_type(right).is_int() {
+            return None;
+        }
+        let left_tag = self.builder.ins().load(
+            layout.tag.value_type,
+            MemFlags::new(),
+            left,
+            i32::try_from(layout.tag.offset).ok()?,
+        );
+        let right_tag = self.builder.ins().load(
+            layout.tag.value_type,
+            MemFlags::new(),
+            right,
+            i32::try_from(layout.tag.offset).ok()?,
+        );
+        let cc = if invert { IntCC::NotEqual } else { IntCC::Equal };
+        Some(self.builder.ins().icmp(cc, left_tag, right_tag))
+    }
+
     /// Bring syntax integer operands to their common CLIF width before a binary operation.
     ///
     /// Beskid only exposes `u8` at byte width, so byte operands are zero-extended while wider
@@ -1334,11 +1444,6 @@ impl IsleContext<'_, '_, '_, '_> {
             }
         };
         (widen(self.builder, left, left_type), widen(self.builder, right, right_type))
-    }
-
-    /// Beskid maps `u8`/`bool` to CLIF `i8`; ordered compares and quotients must be unsigned.
-    fn integer_ordered_cc(ty: Type, signed: IntCC, unsigned: IntCC) -> IntCC {
-        if ty == types::I8 { unsigned } else { signed }
     }
 
     fn common_float_operands(&mut self, left: Value, right: Value) -> Option<(Value, Value)> {
@@ -1550,59 +1655,37 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn clif_eq(&mut self, left: Value, right: Value) -> Value {
-        if let Some((left, right)) = self.common_float_operands(left, right) {
-            return self.builder.ins().fcmp(FloatCC::Equal, left, right);
-        }
-        let (left, right) = self.common_integer_operands(left, right);
-        self.builder.ins().icmp(IntCC::Equal, left, right)
+        self.lower_compare(left, right, CompareOp::Eq)
     }
 
     fn clif_ne(&mut self, left: Value, right: Value) -> Value {
-        if let Some((left, right)) = self.common_float_operands(left, right) {
-            return self.builder.ins().fcmp(FloatCC::NotEqual, left, right);
-        }
-        let (left, right) = self.common_integer_operands(left, right);
-        self.builder.ins().icmp(IntCC::NotEqual, left, right)
+        self.lower_compare(left, right, CompareOp::Ne)
     }
 
     fn clif_slt(&mut self, left: Value, right: Value) -> Value {
-        if let Some((left, right)) = self.common_float_operands(left, right) {
-            return self.builder.ins().fcmp(FloatCC::LessThan, left, right);
-        }
-        let (left, right) = self.common_integer_operands(left, right);
-        let ty = self.builder.func.dfg.value_type(left);
-        let cc = Self::integer_ordered_cc(ty, IntCC::SignedLessThan, IntCC::UnsignedLessThan);
-        self.builder.ins().icmp(cc, left, right)
+        self.lower_compare(left, right, CompareOp::Lt)
     }
 
     fn clif_sle(&mut self, left: Value, right: Value) -> Value {
-        if let Some((left, right)) = self.common_float_operands(left, right) {
-            return self.builder.ins().fcmp(FloatCC::LessThanOrEqual, left, right);
-        }
-        let (left, right) = self.common_integer_operands(left, right);
-        let ty = self.builder.func.dfg.value_type(left);
-        let cc = Self::integer_ordered_cc(ty, IntCC::SignedLessThanOrEqual, IntCC::UnsignedLessThanOrEqual);
-        self.builder.ins().icmp(cc, left, right)
+        self.lower_compare(left, right, CompareOp::Lte)
     }
 
     fn clif_sgt(&mut self, left: Value, right: Value) -> Value {
-        if let Some((left, right)) = self.common_float_operands(left, right) {
-            return self.builder.ins().fcmp(FloatCC::GreaterThan, left, right);
-        }
-        let (left, right) = self.common_integer_operands(left, right);
-        let ty = self.builder.func.dfg.value_type(left);
-        let cc = Self::integer_ordered_cc(ty, IntCC::SignedGreaterThan, IntCC::UnsignedGreaterThan);
-        self.builder.ins().icmp(cc, left, right)
+        self.lower_compare(left, right, CompareOp::Gt)
     }
 
     fn clif_sge(&mut self, left: Value, right: Value) -> Value {
-        if let Some((left, right)) = self.common_float_operands(left, right) {
-            return self.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, left, right);
-        }
-        let (left, right) = self.common_integer_operands(left, right);
-        let ty = self.builder.func.dfg.value_type(left);
-        let cc = Self::integer_ordered_cc(ty, IntCC::SignedGreaterThanOrEqual, IntCC::UnsignedGreaterThanOrEqual);
-        self.builder.ins().icmp(cc, left, right)
+        self.lower_compare(left, right, CompareOp::Gte)
+    }
+
+    /// Compare two enum values by loading and comparing their discriminants.
+    /// The common enum layout is resolved via `NodeFacts::binary_enum_layout`.
+    fn clif_enum_eq(&mut self, key: AstNodeKey) -> Option<Value> {
+        self.lower_enum_discriminant_compare(key, false)
+    }
+
+    fn clif_enum_ne(&mut self, key: AstNodeKey) -> Option<Value> {
+        self.lower_enum_discriminant_compare(key, true)
     }
 
     fn clif_short_circuit_or(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -1636,9 +1719,19 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let source = self.facts.scalar_type(argument)?;
         let target = self.facts.scalar_type(key)?;
         (source == actual).then_some(())?;
-        if actual == target { Some(value) } else if actual.bits() < target.bits() {
-            Some(if from == beskid_queries::SemanticTypeId::U8 { self.builder.ins().uextend(target, value) } else { self.builder.ins().sextend(target, value) })
-        } else if actual.bits() > target.bits() { Some(self.builder.ins().ireduce(target, value)) } else { None }
+        if actual == target {
+            Some(value)
+        } else if actual.bits() < target.bits() {
+            Some(if from == beskid_queries::SemanticTypeId::U8 {
+                self.builder.ins().uextend(target, value)
+            } else {
+                self.builder.ins().sextend(target, value)
+            })
+        } else if actual.bits() > target.bits() {
+            Some(self.builder.ins().ireduce(target, value))
+        } else {
+            None
+        }
     }
 
     fn emit_direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
@@ -1651,19 +1744,41 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn emit_dispatch_call(&mut self, key: AstNodeKey) -> Option<Value> {
         let symbol = self.facts.dispatch_builtin_symbol(key)?;
-        let route = beskid_abi::dispatch_route_for_symbol(symbol)?;
         let arguments = self
             .facts
             .call_arguments(key)?
             .into_iter()
             .map(|argument| generated::constructor_lower_expression(self, argument))
             .collect::<Option<Vec<_>>>()?;
-        let returns_value = !matches!(route.group, beskid_abi::DispatchReturnGroup::Unit);
-        match dispatch::emit_dispatch_call(self.builder, route, &arguments, returns_value) {
-            Ok(Some(value)) => Some(value),
-            // Unit-returning builtins are emitted as statements, not expression values.
-            Ok(None) | Err(_) => None,
+        // Dispatch route (interop envelope) — string operations, syscalls, etc.
+        if let Some(route) = beskid_abi::dispatch_route_for_symbol(symbol) {
+            let returns_value = !matches!(route.group, beskid_abi::DispatchReturnGroup::Unit);
+            return match dispatch::emit_dispatch_call(self.builder, route, &arguments, returns_value) {
+                Ok(Some(value)) => Some(value),
+                Ok(None) | Err(_) => None,
+            };
         }
+        // No dispatch route — treat as a direct extern call (math builtins, etc.).
+        let signature = self.facts.call_signature(key)?;
+        let mut ext_sig = cranelift_codegen::ir::Signature::new(CallConv::SystemV);
+        for arg in &signature.params {
+            ext_sig.params.push(*arg);
+        }
+        for ret in &signature.returns {
+            ext_sig.returns.push(*ret);
+        }
+        let sig_ref = self.builder.func.import_signature(ext_sig);
+        let func_ref = self.builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
+            name: ExternalName::user(
+                0,
+                symbol.as_bytes().iter().fold(0, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u32)),
+            ),
+            signature: sig_ref,
+            colocated: false,
+            patchable: false,
+        });
+        let call = self.builder.ins().call(func_ref, &arguments);
+        self.builder.inst_results(call).first().copied()
     }
 
     fn emit_spawn(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -1709,6 +1824,36 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.builder.ins().call(runtime_entry, &[entry_ptr, environment, cancel_slot_address]);
         let entry_call = self.builder.ins().call(trampoline, &[environment]);
         self.builder.inst_results(entry_call).first().copied()
+    }
+
+    /// Lower a freestanding [`LambdaExpression`] to a closure value.
+    ///
+    /// Capture-free lambdas return the trampoline function pointer directly. Capturing
+    /// lambdas allocate and populate an ABI-v5 closure environment at the expression site
+    /// before returning the trampoline function pointer; the trampoline loads captures
+    /// from the environment at its first-parameter pointer.
+    fn emit_lambda(&mut self, key: AstNodeKey) -> Option<Value> {
+        let entry = self.facts.lambda_entry(key)?;
+        let pointer = dispatch::pointer_type();
+        let mut signature = Signature::new(self.builder.func.signature.call_conv);
+        // The trampoline always receives the environment pointer as its first argument.
+        signature.params.push(AbiParam::new(pointer));
+        // Return type is a pointer (the function pointer itself for the closure struct).
+        signature.returns.push(AbiParam::new(pointer));
+        let trampoline =
+            match self.call_importer.as_deref_mut()?.import(self.builder, entry.trampoline.clone(), &signature) {
+                Ok(function) => function,
+                Err(CallImportError::UnknownCallee) => {
+                    self.pending_error =
+                        Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(entry.trampoline) });
+                    return None;
+                }
+            };
+        let entry_ptr = self.builder.ins().func_addr(pointer, trampoline);
+        if let Some(closure) = &entry.closure_environment {
+            self.emit_inline_closure_environment(closure)?;
+        }
+        Some(entry_ptr)
     }
 
     fn emit_string_concat(&mut self, key: AstNodeKey) -> Option<Value> {

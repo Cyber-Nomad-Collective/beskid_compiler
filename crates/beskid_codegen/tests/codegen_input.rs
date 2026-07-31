@@ -12,8 +12,8 @@ use beskid_codegen::{CodegenInput, CodegenInputError, SyntaxNodeFacts};
 use beskid_isle::{CallKind, NodeFacts};
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, IndexedNodeKind, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    TypedProgram, build_canonical_runtime_typed_program, build_typed_program, call_lowering, child_nodes,
-    item_name, node_kind,
+    TypedProgram, build_canonical_runtime_typed_program, build_typed_program, call_lowering, child_nodes, item_name,
+    node_kind,
 };
 
 fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata) {
@@ -46,6 +46,45 @@ fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata)
     (db, typed, root, target)
 }
 
+/// Build an assembly containing the full canonical runtime corpus so
+/// `build_canonical_runtime_typed_program` can verify the exact source match.
+/// Returns the source-root directory path (the temp dir is kept alive by the test).
+fn canonical_runtime_assembly_fixture(
+    db: &BeskidDatabase,
+    generation: SyntaxGenerationId,
+) -> (std::path::PathBuf, Arc<SyntaxProgramAssembly>) {
+    let directory = tempfile::tempdir().expect("runtime project").keep().to_path_buf();
+    let sources = canonical_runtime_sources();
+    let mut units = Vec::with_capacity(sources.len());
+    for source in &sources {
+        let file_path = directory.join(&source.logical_path);
+        if let Some(parent) = file_path.parent() {
+            std::fs::create_dir_all(parent).expect("create runtime source dir");
+        }
+        std::fs::write(&file_path, &source.source).expect("write canonical source");
+        let program = parse_program_with_source_name(file_path.to_str().unwrap(), &source.source)
+            .expect("parse canonical source");
+        units.push(SourceUnit {
+            logical_name: source.logical_path.clone(),
+            path: file_path,
+            source: source.source.clone(),
+            program,
+        });
+    }
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: directory.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(units),
+        sources.len().saturating_sub(1),
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    (directory, assembly)
+}
+
 #[test]
 fn ordinary_syntax_programs_cannot_import_runtime_intrinsics() {
     let (db, typed, root, target) = input_fixture();
@@ -61,31 +100,11 @@ fn ordinary_syntax_programs_cannot_import_runtime_intrinsics() {
 #[test]
 fn exact_canonical_assembly_carries_intrinsic_authority_to_codegen() {
     let mut db = BeskidDatabase::default();
-    let directory = tempfile::tempdir().expect("runtime project").keep();
-    let source = canonical_runtime_sources().pop().expect("embedded source");
-    let source_path = directory.join("Bootstrap.bd");
-    std::fs::write(&source_path, &source.source).expect("write canonical source");
-    let program =
-        parse_program_with_source_name(source_path.to_str().unwrap(), &source.source).expect("parse canonical source");
+    let generation = SyntaxGenerationId(1);
+    let (directory, assembly) = canonical_runtime_assembly_fixture(&db, generation);
+    let source_path = directory.join(CANONICAL_BOOTSTRAP_SOURCE_PATH);
     let project =
         ProjectSession::new(&db, directory.clone(), source_path.clone(), "beskid-runtime-native".into(), "lock".into());
-    let generation = SyntaxGenerationId(1);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry { dependency_name: None, source_root: directory },
-            dependencies: Vec::new(),
-        },
-        Arc::new(vec![SourceUnit {
-            logical_name: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(),
-            path: source_path.clone(),
-            source: source.source,
-            program,
-        }]),
-        0,
-        AssemblyDiscovery::ImportClosure,
-        Arc::new(ModuleIndex::empty()),
-        false,
-    ));
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
@@ -108,31 +127,11 @@ fn exact_canonical_assembly_carries_intrinsic_authority_to_codegen() {
 #[test]
 fn canonical_runtime_source_can_import_manifest_owned_intrinsics() {
     let mut db = BeskidDatabase::default();
-    let directory = tempfile::tempdir().expect("runtime project").keep();
-    let source = canonical_runtime_sources().pop().expect("embedded source");
-    let source_path = directory.join("Bootstrap.bd");
-    std::fs::write(&source_path, &source.source).expect("write canonical source");
-    let program =
-        parse_program_with_source_name(source_path.to_str().unwrap(), &source.source).expect("parse canonical source");
+    let generation = SyntaxGenerationId(1);
+    let (directory, assembly) = canonical_runtime_assembly_fixture(&db, generation);
+    let source_path = directory.join(CANONICAL_BOOTSTRAP_SOURCE_PATH);
     let project =
         ProjectSession::new(&db, directory.clone(), source_path.clone(), "beskid-runtime-native".into(), "lock".into());
-    let generation = SyntaxGenerationId(1);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry { dependency_name: None, source_root: directory },
-            dependencies: Vec::new(),
-        },
-        Arc::new(vec![SourceUnit {
-            logical_name: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(),
-            path: source_path.clone(),
-            source: source.source,
-            program,
-        }]),
-        0,
-        AssemblyDiscovery::ImportClosure,
-        Arc::new(ModuleIndex::empty()),
-        false,
-    ));
     let target = linux_target();
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     let typed = build_canonical_runtime_typed_program(
@@ -158,31 +157,11 @@ fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
     use beskid_queries::{item_signature, runtime_intrinsic_name};
 
     let mut db = BeskidDatabase::default();
-    let directory = tempfile::tempdir().expect("runtime project").keep();
-    let source = canonical_runtime_sources().pop().expect("embedded source");
-    let source_path = directory.join("Bootstrap.bd");
-    std::fs::write(&source_path, &source.source).expect("write canonical source");
-    let program =
-        parse_program_with_source_name(source_path.to_str().unwrap(), &source.source).expect("parse canonical source");
+    let generation = SyntaxGenerationId(2);
+    let (directory, assembly) = canonical_runtime_assembly_fixture(&db, generation);
+    let source_path = directory.join(CANONICAL_BOOTSTRAP_SOURCE_PATH);
     let project =
         ProjectSession::new(&db, directory.clone(), source_path.clone(), "beskid-runtime-native".into(), "lock".into());
-    let generation = SyntaxGenerationId(2);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
-        EffectiveCompilationRoots {
-            host: RootEntry { dependency_name: None, source_root: directory },
-            dependencies: Vec::new(),
-        },
-        Arc::new(vec![SourceUnit {
-            logical_name: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(),
-            path: source_path.clone(),
-            source: source.source,
-            program,
-        }]),
-        0,
-        AssemblyDiscovery::ImportClosure,
-        Arc::new(ModuleIndex::empty()),
-        false,
-    ));
     let target = linux_target();
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     let typed = build_canonical_runtime_typed_program(
@@ -270,18 +249,11 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
             std::fs::write(&path, &source.source).expect("write canonical source");
             let program = parse_program_with_source_name(path.to_str().unwrap(), &source.source)
                 .expect("parse canonical runtime source");
-            SourceUnit {
-                logical_name: source.logical_path.clone(),
-                path,
-                source: source.source.clone(),
-                program,
-            }
+            SourceUnit { logical_name: source.logical_path.clone(), path, source: source.source.clone(), program }
         })
         .collect::<Vec<_>>();
-    let bootstrap_index = units
-        .iter()
-        .position(|unit| unit.logical_name == CANONICAL_BOOTSTRAP_SOURCE_PATH)
-        .expect("Bootstrap source");
+    let bootstrap_index =
+        units.iter().position(|unit| unit.logical_name == CANONICAL_BOOTSTRAP_SOURCE_PATH).expect("Bootstrap source");
     let bootstrap = units[bootstrap_index].path.clone();
     let scheduler = units
         .iter()
@@ -318,11 +290,8 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
         canonical_runtime_intrinsic_capability(&manifest).expect("compiler authority"),
     )
     .expect("exact canonical assembly");
-    let scheduler_root = AstNodeKey {
-        unit: SourceUnitId::new(&db, scheduler),
-        generation: typed.generation,
-        node: AstNodeId(0),
-    };
+    let scheduler_root =
+        AstNodeKey { unit: SourceUnitId::new(&db, scheduler), generation: typed.generation, node: AstNodeId(0) };
     let roots = typed
         .assembly
         .units()
@@ -333,8 +302,8 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
             node: AstNodeId(0),
         })
         .collect::<Vec<_>>();
-    let input = CodegenInput::new(&db, typed, Arc::from(roots), target, manifest)
-        .expect("canonical Scheduler codegen input");
+    let input =
+        CodegenInput::new(&db, typed, Arc::from(roots), target, manifest).expect("canonical Scheduler codegen input");
     let wrapper = find_node_matching(&db, scheduler_root, IndexedNodeKind::FunctionDefinition, |item| {
         matches!(item_name(&db, item).ok().flatten().as_deref(), Some("FiberSpawnWithCancelSlot"))
     })
@@ -404,8 +373,8 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
     let ordinary_generation = SyntaxGenerationId(92);
     let ordinary_project =
         ProjectSession::new(&db, ordinary.clone(), main_path.clone(), "App".into(), "ordinary".into());
-    let ordinary_typed =
-        build_typed_program(&mut db, ordinary_project, ordinary_generation, ordinary_assembly).expect("ordinary assembly");
+    let ordinary_typed = build_typed_program(&mut db, ordinary_project, ordinary_generation, ordinary_assembly)
+        .expect("ordinary assembly");
     let ordinary_root = AstNodeKey {
         unit: SourceUnitId::new(&db, main_path),
         generation: ordinary_typed.generation,

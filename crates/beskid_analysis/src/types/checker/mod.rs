@@ -291,6 +291,7 @@ impl<'a> TypeChecker<'a> {
             BuiltinType::String => self.primitive_type_id(HirPrimitiveType::String),
             BuiltinType::Unit => self.primitive_type_id(HirPrimitiveType::Unit),
             BuiltinType::Never => self.primitive_type_id(HirPrimitiveType::Never),
+            BuiltinType::F64 => self.primitive_type_id(HirPrimitiveType::F64),
             _ => self.primitive_type_id(HirPrimitiveType::I64),
         }
     }

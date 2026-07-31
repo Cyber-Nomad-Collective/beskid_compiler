@@ -112,7 +112,10 @@ impl Normalizer {
             let HirExpressionNode::TryExpression(mut try_expr) = original.node else {
                 unreachable!("guarded by TryExpression match");
             };
-            self.visit_expression(&mut try_expr.node.expr);
+            self.visit_expression(&mut try_expr.node.body);
+            if let Some(block) = &mut try_expr.node.catch_block {
+                self.visit_block(block);
+            }
             let target = self.try_targets.get(&original.span);
             *expr = desugar_try_expression(try_expr, original.span, target);
             self.visit_expression(expr);

@@ -3,6 +3,8 @@
 (extern constructor emit_block_expression emit_block_expression)
 (decl partial emit_spawn (AstNodeKey) Value)
 (extern constructor emit_spawn emit_spawn)
+(decl partial emit_lambda (AstNodeKey) Value)
+(extern constructor emit_lambda emit_lambda)
 
 (rule (lower_expression key @ (node_kind (NodeKind.GroupedExpression)))
       (lower_expression (child_at key 0)))
@@ -10,3 +12,5 @@
       (emit_block_expression key))
 (rule (lower_expression key @ (node_kind (NodeKind.SpawnExpression)))
       (emit_spawn key))
+(rule (lower_expression key @ (node_kind (NodeKind.LambdaExpression)))
+      (emit_lambda key))

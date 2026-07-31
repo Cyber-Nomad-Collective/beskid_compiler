@@ -171,8 +171,12 @@ pub fn graph_mermaid_project_deps(
 ) -> Arc<GraphDocument> {
     let _ = graph_fingerprint_project_deps(db, session, manifest_gen, manifest_path.clone());
     record_query_hit();
-    let graph = build_project_graph_with_options(Path::new(&manifest_path), ProjectGraphBuildOptions::default())
-        .expect("project graph");
+    let graph = match build_project_graph_with_options(Path::new(&manifest_path), ProjectGraphBuildOptions::default()) {
+        Ok(g) => g,
+        Err(e) => {
+            return Arc::new(GraphDocument::empty(GraphKind::ProjectDeps, &e.to_string()));
+        }
+    };
     Arc::new(from_project_graph(&graph).expect("mermaid"))
 }
 
@@ -186,17 +190,27 @@ pub fn graph_mermaid_workspace(
     let _ = (db, session, manifest_gen);
     record_query_miss();
     let path = Path::new(&workspace_manifest);
-    let text = std::fs::read_to_string(path).expect("workspace manifest");
-    let manifest = parse_workspace_manifest(&text).expect("workspace parse");
-    let workspace_dir = path.parent().expect("workspace dir");
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) => return Arc::new(GraphDocument::empty(GraphKind::Workspace, &e.to_string())),
+    };
+    let manifest = match parse_workspace_manifest(&text) {
+        Ok(m) => m,
+        Err(e) => return Arc::new(GraphDocument::empty(GraphKind::Workspace, &e.to_string())),
+    };
+    let Some(workspace_dir) = path.parent() else {
+        return Arc::new(GraphDocument::empty(GraphKind::Workspace, "missing parent directory"));
+    };
     let mut members = Vec::new();
     for member in &manifest.members {
         let member_dir = workspace_dir.join(&member.path);
         let Ok(member_manifest) = project_manifest_for_member_dir(&member_dir) else {
             continue;
         };
-        let graph = build_project_graph_with_options(&member_manifest, ProjectGraphBuildOptions::default())
-            .expect("member graph");
+        let graph = match build_project_graph_with_options(&member_manifest, ProjectGraphBuildOptions::default()) {
+            Ok(g) => g,
+            Err(_) => continue,
+        };
         members.push((member.name.clone(), graph));
     }
     Arc::new(from_workspace(&manifest.workspace.name, &members).expect("workspace mermaid"))

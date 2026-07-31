@@ -66,7 +66,10 @@ fn compiler_trace_reports_syntax_facts_without_source_literal_payloads() {
 
     let trace = String::from_utf8(output.stderr).expect("UTF-8 trace output");
     assert!(trace.contains("beskid-isle-trace event=entry.selected"));
-    assert!(trace.contains("event=ast.node key="));
+    assert!(
+        trace.contains("at ") && trace.contains(".bd:"),
+        "ast.node traces must use `at <file>:<line>:<col> (<Construct>)` format, got:\n{trace}"
+    );
     assert!(trace.contains("event=call.fact key="));
     assert!(trace.contains("lowering=Direct"));
     assert!(

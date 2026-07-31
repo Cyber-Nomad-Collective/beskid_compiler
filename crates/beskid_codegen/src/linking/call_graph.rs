@@ -145,7 +145,7 @@ fn collect_calls_in_expression(
             }
         }
         HirExpressionNode::TryExpression(try_expr) => {
-            collect_calls_in_expression(&try_expr.node.expr, resolution, type_result, source_path, out);
+            collect_calls_in_expression(&try_expr.node.body, resolution, type_result, source_path, out);
         }
         HirExpressionNode::SpawnExpression(spawn) => {
             collect_spawn_entry_callees(&spawn.node.callee, resolution, source_path, out);
