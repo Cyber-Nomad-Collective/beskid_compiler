@@ -37,12 +37,13 @@ pub(super) fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Op
     Some(emitter.signature(parameters, returns))
 }
 
-pub(super) fn specialization_identity(signature: &ItemSignature) -> std::sync::Arc<[u32]> {
-    signature
-        .parameters
+pub(super) fn specialization_identity(specialization: &GenericCallSpecialization) -> std::sync::Arc<[u32]> {
+    specialization
+        .arguments
         .iter()
         .map(|semantic| semantic.0)
-        .chain(std::iter::once(signature.result.0))
+        .chain(specialization.signature.parameters.iter().map(|semantic| semantic.0))
+        .chain(std::iter::once(specialization.signature.result.0))
         .collect::<Vec<_>>()
         .into()
 }

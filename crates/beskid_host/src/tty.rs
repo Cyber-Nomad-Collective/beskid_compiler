@@ -1,5 +1,7 @@
 //! Terminal geometry host builtin for corelib console.
 
+use std::io::IsTerminal;
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[repr(C)]
 struct Winsize {
@@ -27,13 +29,25 @@ fn linux_tty_winsize(fd: i32) -> i64 {
             lateout("r11") _,
         );
     }
-    if result != 0 || ws.ws_col == 0 || ws.ws_row == 0 {
+    if result != 0 {
         return 0;
+    }
+    if ws.ws_col == 0 || ws.ws_row == 0 {
+        return (80_i64 << 16) | 24;
     }
     ((ws.ws_col as i64) << 16) | (ws.ws_row as i64)
 }
 
-/// Terminal size packed as `(columns << 16) | rows`, or `0` when unavailable.
+fn standard_stream_is_terminal(fd: i64) -> bool {
+    match fd {
+        0 => std::io::stdin().is_terminal(),
+        1 => std::io::stdout().is_terminal(),
+        2 => std::io::stderr().is_terminal(),
+        _ => false,
+    }
+}
+
+/// Terminal size packed as `(columns << 16) | rows`, or `0` when `fd` is not a terminal.
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn tty_winsize(fd: i64) -> i64 {
     if fd < 0 || fd > i32::MAX as i64 {
@@ -45,7 +59,6 @@ pub extern "C-unwind" fn tty_winsize(fd: i64) -> i64 {
     }
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     {
-        let _ = fd;
-        0
+        if standard_stream_is_terminal(fd) { (80_i64 << 16) | 24 } else { 0 }
     }
 }

@@ -59,6 +59,7 @@ pub fn builtin_signature(
         let ty = match param {
             AbiParamKind::Ptr => pointer,
             AbiParamKind::I64 => types::I64,
+            AbiParamKind::F64 => types::F64,
         };
         sig.params.push(AbiParam::new(ty));
     }
@@ -67,6 +68,7 @@ pub fn builtin_signature(
         AbiReturnKind::Ptr => sig.returns.push(AbiParam::new(pointer)),
         AbiReturnKind::I64 => sig.returns.push(AbiParam::new(types::I64)),
         AbiReturnKind::I32 => sig.returns.push(AbiParam::new(types::I32)),
+        AbiReturnKind::F64 => sig.returns.push(AbiParam::new(types::F64)),
     }
     sig
 }

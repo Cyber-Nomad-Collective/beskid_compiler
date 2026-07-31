@@ -687,6 +687,50 @@
         }
       ],
       "result": "string"
+    },
+    {
+      "name": "__math_ceil",
+      "symbol": "math_ceil",
+      "params": [
+        {
+          "name": "value",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "name": "__math_floor",
+      "symbol": "math_floor",
+      "params": [
+        {
+          "name": "value",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "name": "__math_log",
+      "symbol": "math_log",
+      "params": [
+        {
+          "name": "value",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "name": "__math_sqrt",
+      "symbol": "math_sqrt",
+      "params": [
+        {
+          "name": "value",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
     }
   ],
   "layouts": [

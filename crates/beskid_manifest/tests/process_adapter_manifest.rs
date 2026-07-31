@@ -31,3 +31,21 @@ fn process_adapter_intrinsics_have_the_canonical_abi_v5_contract() {
         assert_eq!(intrinsic.result, result);
     }
 }
+
+#[test]
+fn console_terminal_detection_uses_the_canonical_runtime_adapter() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for platform in ["Linux", "MacOS", "Windows"] {
+        let source = fs::read_to_string(root.join(format!("corelib/packages/console/src/Platform/{platform}.bd")))
+            .unwrap_or_else(|error| panic!("read {platform} terminal adapter: {error}"));
+
+        assert!(
+            !source.contains("[Extern(") && !source.contains("isatty"),
+            "{platform} terminal detection must not bypass the exact ABI-v5 runtime kit"
+        );
+        assert!(
+            source.contains("__tty_winsize"),
+            "{platform} terminal detection must use the canonical terminal adapter"
+        );
+    }
+}

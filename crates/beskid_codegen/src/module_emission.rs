@@ -4,10 +4,11 @@ use std::time::Instant;
 use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
 use beskid_queries::{
-    CallLowering, ItemSignature, SemanticTypeId, SourceUnitId, call_lowering, child_nodes, closure_call_target,
-    closure_environment, closure_signature, extern_contract_import_for_declaration, format_ast_node_key,
-    generic_call_specialization, item_abi_signature, item_name, node_kind, node_span, resolved_item,
-    spawn_entry_validation,
+    CallLowering, GenericCallSpecialization, ItemSignature, SemanticTypeId, SourceUnitId, call_expression_nodes,
+    call_lowering, child_nodes, closure_call_target, closure_environment, closure_signature,
+    explicit_generic_call_specialization, extern_contract_import_for_declaration, format_ast_node_key,
+    generic_call_instantiation, generic_call_specialization, generic_call_specialization_in_item, item_abi_signature,
+    item_name, node_kind, node_span, resolved_item, spawn_entry_validation,
 };
 use cranelift_codegen::ir::{AbiParam, InstBuilder};
 use cranelift_codegen::ir::{
@@ -54,7 +55,7 @@ struct ResolvedSyntaxModuleItem {
     key: AstNodeKey,
     symbol: String,
     callee: DirectCallee,
-    specialization: Option<ItemSignature>,
+    specialization: Option<GenericCallSpecialization>,
 }
 
 #[derive(Debug, Clone)]
@@ -205,6 +206,8 @@ fn lower_resolved_syntax_program(
     }
     let runtime_intrinsics = runtime_intrinsic_symbols(input);
     symbols.extend(runtime_intrinsics.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
+    let manifest_builtins = manifest_builtin_symbols(input, items);
+    symbols.extend(manifest_builtins.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
     let corelib_services = corelib_service_symbols(input, items);
     symbols.extend(corelib_services.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
     let extern_contracts = extern_contract_symbols(input, items);
@@ -292,6 +295,7 @@ fn lower_resolved_syntax_program(
     }
     let mut extern_imports = runtime_intrinsics
         .into_values()
+        .chain(manifest_builtins.into_values())
         .chain(corelib_services.into_values())
         .chain((!trampolines.is_empty()).then_some(ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT.to_owned()))
         .map(|symbol| ExternImport { symbol, abi: Some("C".into()), library: None })
@@ -344,7 +348,15 @@ fn collect_aggregate_static_plans(
     }
     nodes
         .into_iter()
-        .filter_map(|key| input.aggregate_static_plan(key).or_else(|| input.enum_static_plan(key)))
+        .filter_map(|key| {
+            input.aggregate_static_plan(key).or_else(|| input.enum_static_plan(key)).or_else(|| {
+                items.iter().find_map(|item| {
+                    item.specialization
+                        .as_ref()
+                        .and_then(|specialization| input.enum_static_plan_in_item(key, item.key, specialization))
+                })
+            })
+        })
         .collect()
 }
 
@@ -684,22 +696,36 @@ fn trace_node_facts(
         })
         .unwrap_or_else(|| "<missing>".to_owned());
     crate::isle_trace::event(|| format!("event=ast.node key={node} kind={kind} span={span}"));
+    if kind == "MatchExpression" {
+        let fact = beskid_queries::enum_match(db, key)
+            .map(|fact| format!("{fact:?}"))
+            .unwrap_or_else(|error| format!("error:{error}"));
+        crate::isle_trace::event(|| format!("event=match.fact key={node} fact={fact}"));
+    }
 
     if let Ok(Some(lowering)) = call_lowering(db, key) {
+        let arguments = beskid_queries::call_arguments(db, key)
+            .ok()
+            .flatten()
+            .map(|arguments| arguments.iter().map(|argument| trace_key(db, *argument)).collect::<Vec<_>>().join(","))
+            .unwrap_or_else(|| "<missing>".to_owned());
+        crate::isle_trace::event(|| format!("event=call.arguments key={node} arguments=[{arguments}]"));
         let (lowering_name, callee) = match lowering {
             CallLowering::Direct(declaration) => {
                 let callee = generic_call_specialization(db, key)
                     .ok()
                     .flatten()
+                    .or_else(|| explicit_generic_call_specialization(db, key).ok().flatten())
                     .map(|specialization| {
                         DirectCallee::specialized_item(
                             specialization.declaration,
-                            specialization_identity(&specialization.signature),
+                            specialization_identity(&specialization),
                         )
                     })
                     .unwrap_or_else(|| DirectCallee::item(declaration));
                 ("Direct", Some(callee))
             }
+            CallLowering::ManifestBuiltin(symbol) => ("ManifestBuiltin", Some(DirectCallee::manifest_builtin(symbol))),
             CallLowering::Dynamic => ("Dynamic", None),
             CallLowering::Runtime(intrinsic) => ("Runtime", Some(DirectCallee::runtime_intrinsic(intrinsic.0))),
             CallLowering::CorelibService(service) => {
@@ -767,6 +793,7 @@ fn format_callee_for_trace(db: &dyn beskid_queries::Db, callee: &DirectCallee) -
             format_abi_identity(abi_identity)
         ),
         DirectCallee::RuntimeIntrinsic(index) => format!("RuntimeIntrinsic({index})"),
+        DirectCallee::ManifestBuiltin(symbol) => format!("ManifestBuiltin({symbol})"),
         DirectCallee::CorelibService(symbol) => format!("CorelibService({symbol})"),
         DirectCallee::SpawnTrampoline(spawn) => {
             format!("SpawnTrampoline({})", trace_key(db, *spawn))
@@ -779,10 +806,15 @@ fn resolve_module_items(
     source_items: &[SyntaxModuleItem],
 ) -> Result<Vec<ResolvedSyntaxModuleItem>, SyntaxModuleEmissionError> {
     let db = input.database();
-    let mut specializations = HashMap::<AstNodeKey, Vec<ItemSignature>>::new();
+    let mut specializations = HashMap::<AstNodeKey, Vec<GenericCallSpecialization>>::new();
+    let mut scanned_units = HashSet::new();
     for item in source_items {
         collect_generic_call_specializations(db, item.key, &mut specializations)?;
+        if scanned_units.insert((item.key.unit, item.key.generation)) {
+            collect_indexed_generic_call_specializations(db, item.key, &mut specializations)?;
+        }
     }
+    collect_contextual_generic_call_specializations(db, &mut specializations)?;
 
     let mut resolved = Vec::with_capacity(source_items.len());
     for item in source_items {
@@ -801,38 +833,138 @@ fn resolve_module_items(
             // syntax body. They deliberately do not require a call-derived function ABI.
             continue;
         }
-        let Some(signatures) = specializations.get(&item.key) else {
+        let Some(item_specializations) = specializations.get(&item.key) else {
             return Err(emission_verification(format!(
                 "generic item `{}` ({}) has no call-derived ABI specialization",
                 item.symbol,
                 trace_key(db, item.key),
             )));
         };
-        for signature in signatures {
-            let identity = specialization_identity(signature);
+        for specialization in item_specializations {
+            let identity = specialization_identity(specialization);
             resolved.push(ResolvedSyntaxModuleItem {
                 key: item.key,
-                symbol: format!("{}#generic_{}", item.symbol, specialization_mangle(signature)),
+                symbol: format!("{}#generic_{}", item.symbol, specialization_mangle(specialization)),
                 callee: DirectCallee::specialized_item(item.key, identity),
-                specialization: Some(signature.clone()),
+                specialization: Some(specialization.clone()),
             });
         }
     }
     Ok(resolved)
 }
 
+fn collect_indexed_generic_call_specializations(
+    db: &dyn beskid_queries::Db,
+    authority: AstNodeKey,
+    specializations: &mut HashMap<AstNodeKey, Vec<GenericCallSpecialization>>,
+) -> Result<(), SyntaxModuleEmissionError> {
+    for key in call_expression_nodes(db, authority).iter().copied() {
+        let specialization = match generic_call_specialization(db, key) {
+            Ok(Some(specialization)) => Some(specialization),
+            Ok(None) => match explicit_generic_call_specialization(db, key) {
+                Ok(specialization) => specialization,
+                Err(error) if error.is_unavailable() => None,
+                Err(error) => return Err(emission_verification(error.to_string())),
+            },
+            Err(error) if error.is_unavailable() => match explicit_generic_call_specialization(db, key) {
+                Ok(specialization) => specialization,
+                Err(error) if error.is_unavailable() => None,
+                Err(error) => return Err(emission_verification(error.to_string())),
+            },
+            Err(error) => return Err(emission_verification(error.to_string())),
+        };
+        if let Some(specialization) = specialization {
+            let item_specializations = specializations.entry(specialization.declaration).or_default();
+            if !item_specializations.contains(&specialization) {
+                item_specializations.push(specialization);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_contextual_generic_call_specializations(
+    db: &dyn beskid_queries::Db,
+    specializations: &mut HashMap<AstNodeKey, Vec<GenericCallSpecialization>>,
+) -> Result<(), SyntaxModuleEmissionError> {
+    let mut pending = specializations
+        .iter()
+        .flat_map(|(item, specializations)| {
+            specializations.iter().cloned().map(|specialization| (*item, specialization))
+        })
+        .collect::<Vec<_>>();
+    let mut visited = HashSet::new();
+    while let Some((item, specialization)) = pending.pop() {
+        if !visited.insert((item, specialization.clone())) {
+            continue;
+        }
+        collect_contextual_generic_calls_in_node(db, item, item, &specialization, specializations, &mut pending)?;
+    }
+    Ok(())
+}
+
+fn collect_contextual_generic_calls_in_node(
+    db: &dyn beskid_queries::Db,
+    item: AstNodeKey,
+    key: AstNodeKey,
+    item_specialization: &GenericCallSpecialization,
+    specializations: &mut HashMap<AstNodeKey, Vec<GenericCallSpecialization>>,
+    pending: &mut Vec<(AstNodeKey, GenericCallSpecialization)>,
+) -> Result<(), SyntaxModuleEmissionError> {
+    let specialization = match generic_call_specialization_in_item(db, key, item, item_specialization) {
+        Ok(specialization) => specialization,
+        Err(error) if error.is_unavailable() => {
+            crate::isle_trace::event(|| {
+                format!(
+                    "event=isle.missing rule=contextual_generic_call_specialization call={} item={} detail={error}",
+                    trace_key(db, key),
+                    trace_key(db, item),
+                )
+            });
+            None
+        }
+        Err(error) => return Err(emission_verification(error.to_string())),
+    };
+    if let Some(specialization) = specialization {
+        let item_specializations = specializations.entry(specialization.declaration).or_default();
+        if !item_specializations.contains(&specialization) {
+            item_specializations.push(specialization.clone());
+            pending.push((specialization.declaration, specialization));
+        }
+    }
+    if let Some(children) = child_nodes(db, key).map_err(|error| emission_verification(error.to_string()))? {
+        for child in children.iter().copied() {
+            collect_contextual_generic_calls_in_node(db, item, child, item_specialization, specializations, pending)?;
+        }
+    }
+    Ok(())
+}
+
 fn collect_generic_call_specializations(
     db: &dyn beskid_queries::Db,
     key: AstNodeKey,
-    specializations: &mut HashMap<AstNodeKey, Vec<ItemSignature>>,
+    specializations: &mut HashMap<AstNodeKey, Vec<GenericCallSpecialization>>,
 ) -> Result<(), SyntaxModuleEmissionError> {
-    if let Some(specialization) =
-        generic_call_specialization(db, key).map_err(|error| emission_verification(error.to_string()))?
-    {
-        let signatures = specializations.entry(specialization.declaration).or_default();
-        if !signatures.contains(&specialization.signature) {
-            signatures.push(specialization.signature);
+    let specialization = match generic_call_specialization(db, key) {
+        Ok(specialization) => specialization,
+        Err(error) if error.is_unavailable() => None,
+        Err(error) => return Err(emission_verification(error.to_string())),
+    };
+    if let Some(specialization) = specialization {
+        let item_specializations = specializations.entry(specialization.declaration).or_default();
+        if !item_specializations.contains(&specialization) {
+            item_specializations.push(specialization);
         }
+    } else if let Ok(Some(instantiation)) = generic_call_instantiation(db, key) {
+        let lowering =
+            call_lowering(db, key).map(|fact| format!("{fact:?}")).unwrap_or_else(|error| format!("error:{error}"));
+        crate::isle_trace::event(|| {
+            format!(
+                "event=isle.missing rule=generic_call_specialization call={} declaration={} lowering={lowering}",
+                trace_key(db, key),
+                trace_key(db, instantiation.declaration),
+            )
+        });
     }
     if let Some(children) = child_nodes(db, key).map_err(|error| emission_verification(error.to_string()))? {
         for child in children.iter().copied() {
@@ -842,18 +974,19 @@ fn collect_generic_call_specializations(
     Ok(())
 }
 
-fn specialization_identity(signature: &ItemSignature) -> std::sync::Arc<[u32]> {
-    signature
-        .parameters
+fn specialization_identity(specialization: &GenericCallSpecialization) -> std::sync::Arc<[u32]> {
+    specialization
+        .arguments
         .iter()
         .map(|semantic| semantic.0)
-        .chain(std::iter::once(signature.result.0))
+        .chain(specialization.signature.parameters.iter().map(|semantic| semantic.0))
+        .chain(std::iter::once(specialization.signature.result.0))
         .collect::<Vec<_>>()
         .into()
 }
 
-fn specialization_mangle(signature: &ItemSignature) -> String {
-    specialization_identity(signature).iter().map(u32::to_string).collect::<Vec<_>>().join("_")
+fn specialization_mangle(specialization: &GenericCallSpecialization) -> String {
+    specialization_identity(specialization).iter().map(u32::to_string).collect::<Vec<_>>().join("_")
 }
 
 /// Syntax-ISLE adapter over the existing artifact-owned literal pool.
@@ -906,6 +1039,28 @@ fn runtime_intrinsic_symbols(input: &CodegenInput<'_>) -> HashMap<DirectCallee, 
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn manifest_builtin_symbols(
+    input: &CodegenInput<'_>,
+    items: &[ResolvedSyntaxModuleItem],
+) -> HashMap<DirectCallee, String> {
+    let mut symbols = HashSet::new();
+    for item in items {
+        collect_manifest_builtin_callees(input.database(), item.key, &mut symbols);
+    }
+    symbols.into_iter().map(|symbol| (DirectCallee::manifest_builtin(symbol), symbol.to_owned())).collect()
+}
+
+fn collect_manifest_builtin_callees(db: &dyn beskid_queries::Db, key: AstNodeKey, callees: &mut HashSet<&'static str>) {
+    if let Ok(Some(CallLowering::ManifestBuiltin(symbol))) = call_lowering(db, key) {
+        callees.insert(symbol);
+    }
+    if let Ok(Some(children)) = child_nodes(db, key) {
+        for child in children.iter().copied() {
+            collect_manifest_builtin_callees(db, child, callees);
+        }
+    }
 }
 
 fn collect_extern_contract_callees(

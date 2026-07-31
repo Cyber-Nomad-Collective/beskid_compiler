@@ -35,16 +35,17 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn operator_fact(&self, key: AstNodeKey) -> Option<OperatorFact> {
         let operator = self.query(operator_fact(self.db, key))?;
+        let left_is_string = self.child(key, 0).is_some_and(|operand| self.contextual_expression_is_string(operand));
+        let right_is_string = self.child(key, 1).is_some_and(|operand| self.contextual_expression_is_string(operand));
         let specialized_string_operands =
             matches!(operator, beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq)
-                && self.child(key, 0).and_then(|operand| self.specialized_direct_parameter_type(operand))
-                    == Some(SemanticTypeId::STRING)
-                && self.child(key, 1).and_then(|operand| self.specialized_direct_parameter_type(operand))
-                    == Some(SemanticTypeId::STRING);
-        Some(match (operator, specialized_string_operands) {
-            (beskid_queries::OperatorFact::Eq, true) => OperatorFact::StringEq,
-            (beskid_queries::OperatorFact::NotEq, true) => OperatorFact::StringNotEq,
-            (operator, _) => map_operator_fact(operator),
+                && left_is_string
+                && right_is_string;
+        Some(match operator {
+            beskid_queries::OperatorFact::Add if left_is_string || right_is_string => OperatorFact::StringAdd,
+            beskid_queries::OperatorFact::Eq if specialized_string_operands => OperatorFact::StringEq,
+            beskid_queries::OperatorFact::NotEq if specialized_string_operands => OperatorFact::StringNotEq,
+            operator => map_operator_fact(operator),
         })
     }
 
@@ -89,7 +90,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         match kind {
             NodeKind::BlockExpression => {
                 let nodes = self.query(block_statement_nodes(self.db, key))?;
-                let len = nodes.len();
+                let len =
+                    if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::BlockExpression) {
+                        nodes.len().saturating_sub(1)
+                    } else {
+                        nodes.len()
+                    };
                 if len > u8::MAX as usize {
                     return None;
                 }
@@ -107,7 +113,21 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         }
     }
 
+    fn block_result(&self, key: AstNodeKey) -> Option<AstNodeKey> {
+        (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::BlockExpression)).then_some(())?;
+        let statement = self.query(block_statement_nodes(self.db, key))?.last().copied()?;
+        (self.query(node_kind(self.db, statement)) == Some(beskid_queries::IndexedNodeKind::ExpressionStatement))
+            .then_some(())?;
+        self.raw_children(statement).into_iter().find_map(|child| self.unwrap_transparent(child))
+    }
+
     fn let_initializer(&self, key: AstNodeKey) -> Option<AstNodeKey> {
+        if let Some(fact) = self.query(typed_let_call_result(self.db, key)) {
+            return Some(fact.initializer);
+        }
+        if let Some(initializer) = self.query(semantic_let_initializer(self.db, key)) {
+            return Some(initializer);
+        }
         (self.node_kind(key) == Some(NodeKind::LetStatement))
             .then(|| self.children(key).last().copied())?
             .and_then(|initializer| self.unwrap_transparent(initializer))
@@ -159,7 +179,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         }
         matches!(
             self.query(call_lowering(self.db, key)),
-            Some(CallLowering::Direct(_) | CallLowering::CorelibService(_))
+            Some(CallLowering::Direct(_) | CallLowering::ManifestBuiltin(_) | CallLowering::CorelibService(_))
         )
         .then_some(CallKind::Direct)
     }
@@ -173,7 +193,16 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn expression_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
-        self.specialized_direct_parameter_type(key).or_else(|| self.scalar_semantic_type(key))
+        self.contextual_expression_is_string(key)
+            .then_some(SemanticTypeId::STRING)
+            .or_else(|| self.specialized_direct_parameter_type(key))
+            .or_else(|| self.scalar_semantic_type(key))
+            .or_else(|| self.query(call_abi_signature(self.db, key)).map(|signature| signature.result))
+            .or_else(|| {
+                let (item, item_specialization) = self.item_specializations.iter().next()?;
+                self.query(generic_call_specialization_in_item(self.db, key, *item, item_specialization))
+                    .map(|specialization| specialization.signature.result)
+            })
     }
 
     fn index_target_is_string(&self, key: AstNodeKey) -> bool {
@@ -199,6 +228,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             return Some(DirectCallee::runtime_intrinsic(index));
         }
         let lowering = self.query(call_lowering(self.db, key))?;
+        if let CallLowering::ManifestBuiltin(symbol) = lowering {
+            return Some(DirectCallee::manifest_builtin(symbol));
+        }
         if let CallLowering::CorelibService(service) = lowering {
             self.input.corelib_service_capability()?;
             return Some(DirectCallee::corelib_service(service.symbol));
@@ -206,10 +238,17 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         let CallLowering::Direct(declaration) = lowering else {
             return None;
         };
-        if let Some(specialization) = self.query(generic_call_specialization(self.db, key)) {
+        let specialization = self
+            .query(generic_call_specialization(self.db, key))
+            .or_else(|| self.query(explicit_generic_call_specialization(self.db, key)))
+            .or_else(|| {
+                let (item, item_specialization) = self.item_specializations.iter().next()?;
+                self.query(generic_call_specialization_in_item(self.db, key, *item, item_specialization))
+            });
+        if let Some(specialization) = specialization {
             return Some(DirectCallee::specialized_item(
                 specialization.declaration,
-                specialization_identity(&specialization.signature),
+                specialization_identity(&specialization),
             ));
         }
         Some(DirectCallee::item(declaration))
@@ -219,7 +258,15 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if let Some((_, intrinsic)) = self.runtime_intrinsic(key) {
             return signature_for_runtime_intrinsic(self.isa?, intrinsic);
         }
-        signature_for_item(self.isa?, self.query(call_abi_signature(self.db, key))?)
+        let signature = self
+            .query(call_abi_signature(self.db, key))
+            .or_else(|| self.query(explicit_generic_call_specialization(self.db, key)).map(|fact| fact.signature))
+            .or_else(|| {
+                let (item, item_specialization) = self.item_specializations.iter().next()?;
+                self.query(generic_call_specialization_in_item(self.db, key, *item, item_specialization))
+                    .map(|specialization| specialization.signature)
+            })?;
+        signature_for_item(self.isa?, signature)
     }
 
     fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
@@ -265,6 +312,19 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn array_layout(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
         self.array_layout_for_literal(key)
+    }
+
+    fn runtime_array_layout(&self, key: AstNodeKey) -> Option<RuntimeArrayLayout> {
+        if self.node_kind(key) != Some(NodeKind::IndexExpression) || self.index_target_is_string(key) {
+            return None;
+        }
+        let pointer = self.isa?.pointer_type();
+        Some(RuntimeArrayLayout::new(
+            self.scalar_type(key).unwrap_or(pointer),
+            pointer.bytes(),
+            0,
+            pointer.bytes() as i32,
+        ))
     }
 
     fn function_parameters(&self, key: AstNodeKey) -> Option<Vec<ParameterSlot>> {
@@ -321,8 +381,33 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
+        if self.contextual_expression_is_string(key) {
+            return self.isa.map(|isa| isa.pointer_type());
+        }
+        if self.node_kind(key) == Some(NodeKind::AssignExpression) {
+            return self.child(key, 0).and_then(|target| self.scalar_type(target));
+        }
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::BlockExpression) {
+            return self.block_result(key).and_then(|result| self.scalar_type(result));
+        }
+        if self.node_kind(key) == Some(NodeKind::LetStatement) {
+            let initializer = self.let_initializer(key)?;
+            if let Some(semantic) = self.item_specializations.iter().find_map(|(item, specialization)| {
+                self.query(generic_call_specialization_in_item(self.db, initializer, *item, specialization))
+                    .map(|specialization| specialization.signature.result)
+            }) {
+                return map_signature_type(self.isa?, semantic);
+            }
+            if let Some(semantic) = self.scalar_semantic_type(key) {
+                return map_signature_type(self.isa?, semantic);
+            }
+            return self.scalar_type(initializer);
+        }
+        if let Some(fact) = self.query(typed_let_call_result(self.db, key)) {
+            return map_signature_type(self.isa?, fact.abi_type);
+        }
         if self.node_kind(key) == Some(NodeKind::MatchExpression) {
-            let arm = self.match_arms(key)?.into_iter().next()?;
+            let arm = self.match_arms(key).or_else(|| self.scalar_match_arms(key))?.into_iter().next()?;
             return self.scalar_type(arm.body());
         }
         if self.node_kind(key) == Some(NodeKind::StructLiteralExpression)
@@ -334,14 +419,25 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             return self.isa.map(|isa| isa.pointer_type());
         }
         if self.node_kind(key) == Some(NodeKind::EnumLiteralExpression)
-            && self.query(enum_constructor(self.db, key)).is_some()
+            && (self.query(enum_constructor(self.db, key)).is_some()
+                || self.item_specializations.iter().any(|(item, specialization)| {
+                    self.query(enum_constructor_in_item(self.db, key, *item, specialization)).is_some()
+                }))
         {
             return self.isa.map(|isa| isa.pointer_type());
         }
         let semantic = self
             .query(call_argument_abi_type(self.db, key))
             .or_else(|| self.scalar_semantic_type(key))
-            .or_else(|| Some(self.query(call_abi_signature(self.db, key))?.result))?;
+            .or_else(|| self.query(call_abi_signature(self.db, key)).map(|signature| signature.result))
+            .or_else(|| {
+                self.query(explicit_generic_call_specialization(self.db, key)).map(|fact| fact.signature.result)
+            })
+            .or_else(|| {
+                let (item, item_specialization) = self.item_specializations.iter().next()?;
+                self.query(generic_call_specialization_in_item(self.db, key, *item, item_specialization))
+                    .map(|specialization| specialization.signature.result)
+            })?;
         if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING) {
             return self.isa.map(|isa| isa.pointer_type());
         }
@@ -373,7 +469,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             allocation_request_symbol: self
                 .input
                 .aggregate_static_plan(key)
-                .or_else(|| self.input.enum_static_plan(key))?
+                .or_else(|| self.input.enum_static_plan(key))
+                .or_else(|| {
+                    self.item_specializations.iter().find_map(|(item, specialization)| {
+                        self.input.enum_static_plan_in_item(key, *item, specialization)
+                    })
+                })?
                 .allocation_request_symbol
                 .into(),
         })
@@ -394,11 +495,24 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn enum_variant_index(&self, key: AstNodeKey) -> Option<u32> {
-        self.query(enum_constructor(self.db, key)).map(|constructor| constructor.variant_index)
+        self.query(enum_constructor(self.db, key))
+            .or_else(|| {
+                self.item_specializations.iter().find_map(|(item, specialization)| {
+                    self.query(enum_constructor_in_item(self.db, key, *item, specialization))
+                        .map(|(constructor, _)| constructor)
+                })
+            })
+            .map(|constructor| constructor.variant_index)
     }
 
-    fn enum_payload(&self, key: AstNodeKey) -> Option<AstNodeKey> {
-        self.query(enum_constructor(self.db, key))?.payload
+    fn enum_payloads(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        let constructor = self.query(enum_constructor(self.db, key)).or_else(|| {
+            self.item_specializations.iter().find_map(|(item, specialization)| {
+                self.query(enum_constructor_in_item(self.db, key, *item, specialization))
+                    .map(|(constructor, _)| constructor)
+            })
+        })?;
+        Some(constructor.payloads.to_vec())
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
@@ -406,24 +520,41 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         fact.arms
             .iter()
             .map(|arm| {
-                let binding = match arm.binding {
-                    Some(binding) => {
-                        let slot = self.query(local_slot(self.db, binding.declaration))?;
-                        let value_type = match binding.payload {
-                            AggregateFieldShape::Scalar(semantic) => map_signature_type(self.isa?, semantic)?,
-                            AggregateFieldShape::Nominal(_) => self.isa?.pointer_type(),
-                        };
-                        Some(MatchArmBindingFact {
-                            slot: LocalSlotId { owner_node: slot.owner.node.0, index: slot.index },
-                            value_type,
-                        })
-                    }
-                    None => None,
-                };
+                let bindings = arm
+                    .bindings
+                    .iter()
+                    .map(|binding| match binding {
+                        None => Some(None),
+                        Some(binding) => {
+                            let slot = self.query(local_slot(self.db, binding.declaration))?;
+                            let value_type = match binding.payload {
+                                AggregateFieldShape::Scalar(semantic) => map_signature_type(self.isa?, semantic)?,
+                                AggregateFieldShape::Nominal(_) => self.isa?.pointer_type(),
+                            };
+                            Some(Some(MatchArmBindingFact {
+                                slot: LocalSlotId { owner_node: slot.owner.node.0, index: slot.index },
+                                value_type,
+                            }))
+                        }
+                    })
+                    .collect::<Option<Vec<_>>>()?;
                 Some(match arm.variant_index {
-                    Some(variant) => MatchArmFact::variant_with_binding(u64::from(variant), arm.body, binding),
-                    None if binding.is_none() => MatchArmFact::wildcard(arm.body),
+                    Some(variant) => MatchArmFact::variant_with_bindings(u64::from(variant), arm.body, bindings),
+                    None if bindings.is_empty() => MatchArmFact::wildcard(arm.body),
                     None => return None,
+                })
+            })
+            .collect()
+    }
+
+    fn scalar_match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
+        self.query(scalar_match(self.db, key))?
+            .arms
+            .iter()
+            .map(|arm| {
+                Some(match arm.discriminant {
+                    Some(discriminant) => MatchArmFact::variant(discriminant, arm.body),
+                    None => MatchArmFact::wildcard(arm.body),
                 })
             })
             .collect()

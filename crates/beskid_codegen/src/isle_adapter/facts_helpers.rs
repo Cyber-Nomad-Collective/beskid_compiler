@@ -41,38 +41,44 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn enum_layout_for(&self, key: AstNodeKey) -> Option<EnumLayout> {
         let isa = self.isa?;
-        let allocation = self.input.enum_static_plan(key)?;
-        let source = if self.query(enum_constructor(self.db, key)).is_some() {
+        let contextual = self.item_specializations.iter().find_map(|(item, specialization)| {
+            self.query(enum_constructor_in_item(self.db, key, *item, specialization))
+                .map(|(_, layout)| (item, specialization, layout))
+        });
+        let allocation = self.input.enum_static_plan(key).or_else(|| {
+            contextual
+                .as_ref()
+                .and_then(|(item, specialization, _)| self.input.enum_static_plan_in_item(key, **item, specialization))
+        })?;
+        let source = if let Some((_, _, layout)) = contextual {
+            layout
+        } else if self.query(enum_constructor(self.db, key)).is_some() {
             self.query(enum_layout(self.db, key))?
         } else {
             self.query(enum_match(self.db, key))?.layout
         };
         let tag_type = types::I32;
-        let tag = FieldLayout::new(tag_type, u32::try_from(allocation.fields.first()?.field_offset).ok()?);
+        let tag_offset = u32::try_from(allocation.fields.first()?.field_offset).ok()?;
+        let tag = FieldLayout::new(tag_type, tag_offset);
         let mut alignment = u32::try_from(allocation.object_alignment).ok()?;
-        let payload_offset = allocation.fields.get(1).and_then(|field| u32::try_from(field.field_offset).ok());
         let mut variants = Vec::with_capacity(source.variants.len());
-        let mut payloads = Vec::with_capacity(source.variants.len());
-        for variant in source.variants.iter() {
-            let payload = match variant.fields.as_ref() {
-                [] => None,
-                [(_, AggregateFieldShape::Scalar(semantic))] => Some(map_signature_type(isa, *semantic)?),
-                [(_, AggregateFieldShape::Nominal(_))] => Some(isa.pointer_type()),
-                _ => return None,
-            };
-            if let Some(payload) = payload {
-                alignment = alignment.max(payload.bytes());
+        let payload_start = tag_offset.checked_add(tag_type.bytes())?;
+        for (index, variant) in source.variants.iter().enumerate() {
+            let mut cursor = payload_start;
+            let mut fields = Vec::with_capacity(variant.fields.len());
+            for (_, shape) in variant.fields.iter() {
+                let value_type = match shape {
+                    AggregateFieldShape::Scalar(semantic) => map_signature_type(isa, *semantic)?,
+                    AggregateFieldShape::Nominal(_) => isa.pointer_type(),
+                };
+                let field_alignment = value_type.bytes().next_power_of_two();
+                alignment = alignment.max(field_alignment);
+                cursor = align_to(cursor, field_alignment)?;
+                fields.push(FieldLayout::new(value_type, cursor));
+                cursor = cursor.checked_add(value_type.bytes())?;
             }
-            payloads.push(payload);
-        }
-        if payloads.iter().any(Option::is_some) && payload_offset.is_none() {
-            return None;
-        }
-        for (index, payload) in payloads.into_iter().enumerate() {
-            variants.push(EnumVariantLayout::new(
-                u64::try_from(index).ok()?,
-                payload.map(|value_type| FieldLayout::new(value_type, payload_offset.expect("payload offset exists"))),
-            ));
+            (u64::from(cursor) <= allocation.object_size).then_some(())?;
+            variants.push(EnumVariantLayout::with_fields(u64::try_from(index).ok()?, fields));
         }
         Some(EnumLayout::new(u32::try_from(allocation.object_size).ok()?, alignment.ilog2() as u8, tag, variants))
     }
@@ -112,7 +118,7 @@ impl SyntaxNodeFacts<'_> {
                     let specialization = self
                         .item_specializations
                         .get(&key)
-                        .and_then(|signature| signature.parameters.get(parameters.len()))
+                        .and_then(|specialization| specialization.signature.parameters.get(parameters.len()))
                         .copied();
                     let value_type = specialization
                         .or_else(|| {

@@ -698,4 +698,28 @@ define_builtins! {
         returns: String,
         injected: true,
     },
+    &["__math_floor"] => {
+        symbol: "math_floor",
+        params: [F64],
+        returns: F64,
+        injected: true,
+    },
+    &["__math_ceil"] => {
+        symbol: "math_ceil",
+        params: [F64],
+        returns: F64,
+        injected: true,
+    },
+    &["__math_sqrt"] => {
+        symbol: "math_sqrt",
+        params: [F64],
+        returns: F64,
+        injected: true,
+    },
+    &["__math_log"] => {
+        symbol: "math_log",
+        params: [F64],
+        returns: F64,
+        injected: true,
+    },
 }

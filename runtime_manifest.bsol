@@ -106,6 +106,10 @@ intrinsic "context_switch" { symbol = "beskid_arch_v5_context_switch" capability
 # intentionally absent from its exported-symbol allowlist. `string` lowers as an ABI pointer.
 soft_builtin "__args_count" { symbol = "args_count" params = [] returns = i64 }
 soft_builtin "__args_get" { symbol = "args_get" params = [{ name = index, type = i64 }] returns = string }
+soft_builtin "__math_floor" { symbol = "math_floor" params = [{ name = value, type = f64 }] returns = f64 }
+soft_builtin "__math_ceil" { symbol = "math_ceil" params = [{ name = value, type = f64 }] returns = f64 }
+soft_builtin "__math_sqrt" { symbol = "math_sqrt" params = [{ name = value, type = f64 }] returns = f64 }
+soft_builtin "__math_log" { symbol = "math_log" params = [{ name = value, type = f64 }] returns = f64 }
 
 layout "BeskidAllocationRequest" { size = 24 alignment = 8 fields = [{ name = size, offset = 0, type = usize }, { name = alignment, offset = 8, type = usize }, { name = descriptor, offset = 16, type = pointer }] }
 layout "BeskidHandle" { size = 16 alignment = 8 fields = [{ name = slot, offset = 0, type = u32 }, { name = generation, offset = 4, type = u32 }, { name = owner_cookie, offset = 8, type = u64 }] }

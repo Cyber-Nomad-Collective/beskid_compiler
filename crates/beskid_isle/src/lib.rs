@@ -334,6 +334,8 @@ pub enum DirectCallee {
         abi_identity: std::sync::Arc<[u32]>,
     },
     RuntimeIntrinsic(u32),
+    /// One exact non-dispatch builtin exported by the generated ABI manifest.
+    ManifestBuiltin(&'static str),
     /// One compiler-authorized Corelib syscall ABI service, identified by its manifest symbol.
     ///
     /// This is intentionally distinct from [`Self::RuntimeIntrinsic`]: Corelib source authority
@@ -354,6 +356,10 @@ impl DirectCallee {
 
     pub const fn runtime_intrinsic(index: u32) -> Self {
         Self::RuntimeIntrinsic(index)
+    }
+
+    pub const fn manifest_builtin(symbol: &'static str) -> Self {
+        Self::ManifestBuiltin(symbol)
     }
 
     pub const fn corelib_service(symbol: &'static str) -> Self {
@@ -419,6 +425,24 @@ pub struct ArrayLayout {
     stride: u32,
     length: u32,
     align_shift: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RuntimeArrayLayout {
+    element_type: Type,
+    stride: u32,
+    data_offset: i32,
+    length_offset: i32,
+}
+
+impl RuntimeArrayLayout {
+    pub const fn new(element_type: Type, stride: u32, data_offset: i32, length_offset: i32) -> Self {
+        Self { element_type, stride, data_offset, length_offset }
+    }
+
+    fn is_valid(self) -> bool {
+        self.element_type.bytes() > 0 && self.stride >= self.element_type.bytes()
+    }
 }
 
 impl ArrayLayout {
@@ -505,15 +529,19 @@ impl StructLayout {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EnumVariantLayout {
     discriminant: u64,
-    payload: Option<FieldLayout>,
+    fields: Vec<FieldLayout>,
 }
 
 impl EnumVariantLayout {
-    pub const fn new(discriminant: u64, payload: Option<FieldLayout>) -> Self {
-        Self { discriminant, payload }
+    pub fn new(discriminant: u64, payload: Option<FieldLayout>) -> Self {
+        Self { discriminant, fields: payload.into_iter().collect() }
+    }
+
+    pub fn with_fields(discriminant: u64, fields: Vec<FieldLayout>) -> Self {
+        Self { discriminant, fields }
     }
 }
 
@@ -550,10 +578,12 @@ impl EnumLayout {
         let mut discriminants = HashSet::with_capacity(self.variants.len());
         self.variants.iter().all(|variant| {
             let discriminant_fits = tag_bits == 64 || variant.discriminant < (1_u64 << tag_bits);
-            let payload_is_valid = variant.payload.is_none_or(|payload| {
-                aggregate_field_is_valid(self.size, alignment, payload) && !aggregate_fields_overlap(self.tag, payload)
+            let fields_are_valid = variant.fields.iter().enumerate().all(|(index, field)| {
+                aggregate_field_is_valid(self.size, alignment, *field)
+                    && !aggregate_fields_overlap(self.tag, *field)
+                    && !variant.fields[..index].iter().any(|other| aggregate_fields_overlap(*field, *other))
             });
-            discriminant_fits && payload_is_valid && discriminants.insert(variant.discriminant)
+            discriminant_fits && fields_are_valid && discriminants.insert(variant.discriminant)
         })
     }
 }
@@ -564,31 +594,35 @@ pub struct MatchArmBindingFact {
     pub value_type: Type,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MatchArmFact {
     discriminant: Option<u64>,
     body: AstNodeKey,
-    binding: Option<MatchArmBindingFact>,
+    bindings: Vec<Option<MatchArmBindingFact>>,
 }
 
 impl MatchArmFact {
-    pub const fn variant(discriminant: u64, body: AstNodeKey) -> Self {
-        Self { discriminant: Some(discriminant), body, binding: None }
+    pub fn variant(discriminant: u64, body: AstNodeKey) -> Self {
+        Self { discriminant: Some(discriminant), body, bindings: Vec::new() }
     }
 
-    pub const fn variant_with_binding(
+    pub fn variant_with_binding(discriminant: u64, body: AstNodeKey, binding: Option<MatchArmBindingFact>) -> Self {
+        Self { discriminant: Some(discriminant), body, bindings: binding.map(Some).into_iter().collect() }
+    }
+
+    pub fn variant_with_bindings(
         discriminant: u64,
         body: AstNodeKey,
-        binding: Option<MatchArmBindingFact>,
+        bindings: Vec<Option<MatchArmBindingFact>>,
     ) -> Self {
-        Self { discriminant: Some(discriminant), body, binding }
+        Self { discriminant: Some(discriminant), body, bindings }
     }
 
-    pub const fn wildcard(body: AstNodeKey) -> Self {
-        Self { discriminant: None, body, binding: None }
+    pub fn wildcard(body: AstNodeKey) -> Self {
+        Self { discriminant: None, body, bindings: Vec::new() }
     }
 
-    pub const fn body(self) -> AstNodeKey {
+    pub const fn body(&self) -> AstNodeKey {
         self.body
     }
 }
@@ -705,6 +739,9 @@ pub trait NodeFacts {
     fn array_layout(&self, _key: AstNodeKey) -> Option<ArrayLayout> {
         None
     }
+    fn runtime_array_layout(&self, _key: AstNodeKey) -> Option<RuntimeArrayLayout> {
+        None
+    }
     fn struct_fields(&self, _key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
         None
     }
@@ -729,7 +766,13 @@ pub trait NodeFacts {
     fn enum_payload(&self, _key: AstNodeKey) -> Option<AstNodeKey> {
         None
     }
+    fn enum_payloads(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        Some(self.enum_payload(key).into_iter().collect())
+    }
     fn match_arms(&self, _key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
+        None
+    }
+    fn scalar_match_arms(&self, _key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
         None
     }
     fn range_fact(&self, _key: AstNodeKey) -> Option<RangeFact> {
@@ -971,7 +1014,8 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
     fn import_direct_call(&mut self, key: AstNodeKey) -> Option<(cranelift_codegen::ir::Inst, Signature)> {
         let callee = self.facts.direct_callee(key)?;
         let signature = self.facts.call_signature(key)?;
-        let function = match self.call_importer.as_deref_mut()?.import(self.builder, callee.clone(), &signature) {
+        let importer = self.call_importer.as_deref_mut()?;
+        let function = match importer.import(self.builder, callee.clone(), &signature) {
             Ok(function) => function,
             Err(CallImportError::UnknownCallee) => {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(callee) });
@@ -1373,26 +1417,43 @@ impl IsleContext<'_, '_, '_, '_> {
         layout: &EnumLayout,
         scrutinee: Value,
         arm: &MatchArmFact,
-    ) -> Option<Option<LocalSlotId>> {
-        let Some(binding) = arm.binding else {
-            return Some(None);
+    ) -> Option<Vec<LocalSlotId>> {
+        if arm.bindings.is_empty() {
+            return Some(Vec::new());
         };
         let discriminant = arm.discriminant?;
-        let payload_layout = layout.variants.iter().find(|variant| variant.discriminant == discriminant)?.payload?;
-        if payload_layout.value_type != binding.value_type || self.locals.contains_key(&binding.slot) {
+        let fields = &layout.variants.iter().find(|variant| variant.discriminant == discriminant)?.fields;
+        if fields.len() != arm.bindings.len()
+            || fields.iter().zip(&arm.bindings).any(|(field, binding)| {
+                binding.is_some_and(|binding| {
+                    field.value_type != binding.value_type || self.locals.contains_key(&binding.slot)
+                })
+            })
+        {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
             return None;
         }
-        let payload = self.builder.ins().load(
-            payload_layout.value_type,
-            MemFlags::new(),
-            scrutinee,
-            i32::try_from(payload_layout.offset).ok()?,
-        );
-        let variable = self.builder.declare_var(binding.value_type);
-        self.builder.def_var(variable, payload);
-        self.locals.insert(binding.slot, (variable, binding.value_type));
-        Some(Some(binding.slot))
+        let mut slots = Vec::new();
+        for (field, binding) in fields.iter().zip(&arm.bindings) {
+            let Some(binding) = binding else {
+                continue;
+            };
+            if slots.contains(&binding.slot) {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+                return None;
+            }
+            let payload = self.builder.ins().load(
+                field.value_type,
+                MemFlags::new(),
+                scrutinee,
+                i32::try_from(field.offset).ok()?,
+            );
+            let variable = self.builder.declare_var(binding.value_type);
+            self.builder.def_var(variable, payload);
+            self.locals.insert(binding.slot, (variable, binding.value_type));
+            slots.push(binding.slot);
+        }
+        Some(slots)
     }
 
     /// Prefer a proven local receiver slot (nominal `local.field` paths). Fall back to
@@ -1410,6 +1471,126 @@ impl IsleContext<'_, '_, '_, '_> {
             generated::constructor_lower_expression(self, base_key)?
         };
         self.builder.func.dfg.value_type(base).is_int().then_some(base)
+    }
+
+    fn emit_scalar_match(&mut self, key: AstNodeKey) -> Option<Value> {
+        let arms = self.facts.scalar_match_arms(key)?;
+        if arms.is_empty() {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+            return None;
+        }
+        let mut covered = HashSet::with_capacity(arms.len());
+        let wildcard_index = arms.iter().position(|arm| arm.discriminant.is_none());
+        if wildcard_index.is_some_and(|index| index + 1 != arms.len())
+            || arms.iter().filter(|arm| arm.discriminant.is_none()).count() > 1
+            || arms.iter().filter_map(|arm| arm.discriminant).any(|value| !covered.insert(value))
+        {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+            return None;
+        }
+        let scrutinee_key = self.facts.child(key, 0)?;
+        let scrutinee = generated::constructor_lower_expression(self, scrutinee_key)?;
+        if !self.builder.func.dfg.value_type(scrutinee).is_int() {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+            return None;
+        }
+        let result_type =
+            self.facts.scalar_type(key).or_else(|| arms.iter().find_map(|arm| self.facts.scalar_type(arm.body)))?;
+        let merge = self.builder.create_block();
+        self.builder.append_block_param(merge, result_type);
+        let arm_blocks = arms.iter().map(|_| self.builder.create_block()).collect::<Vec<_>>();
+        let trap = wildcard_index.is_none().then(|| self.builder.create_block());
+        let default =
+            wildcard_index.map_or_else(|| trap.expect("trap block exists without wildcard"), |index| arm_blocks[index]);
+        let mut switch = Switch::new();
+        for (arm, block) in arms.iter().zip(&arm_blocks) {
+            if let Some(discriminant) = arm.discriminant {
+                switch.set_entry(u128::from(discriminant), *block);
+            }
+        }
+        switch.emit(self.builder, scrutinee, default);
+        for (arm, block) in arms.into_iter().zip(arm_blocks) {
+            self.builder.switch_to_block(block);
+            self.builder.seal_block(block);
+            let value = generated::constructor_lower_expression(self, arm.body)?;
+            let value_type = self.builder.func.dfg.value_type(value);
+            let value = if value_type == result_type {
+                value
+            } else if value_type.is_int() && result_type.is_int() {
+                match value_type.bits().cmp(&result_type.bits()) {
+                    std::cmp::Ordering::Greater => self.builder.ins().ireduce(result_type, value),
+                    std::cmp::Ordering::Less => self.builder.ins().sextend(result_type, value),
+                    std::cmp::Ordering::Equal => value,
+                }
+            } else {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+                return None;
+            };
+            self.builder.ins().jump(merge, &[value.into()]);
+        }
+        if let Some(trap) = trap {
+            self.builder.switch_to_block(trap);
+            self.builder.seal_block(trap);
+            self.builder.ins().trap(TrapCode::unwrap_user(1));
+        }
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        self.builder.block_params(merge).first().copied()
+    }
+
+    fn emit_scalar_match_statement(&mut self, key: AstNodeKey) -> Option<()> {
+        let arms = self.facts.scalar_match_arms(key)?;
+        if arms.is_empty() {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+            return None;
+        }
+        let mut covered = HashSet::with_capacity(arms.len());
+        let wildcard_index = arms.iter().position(|arm| arm.discriminant.is_none());
+        if wildcard_index.is_some_and(|index| index + 1 != arms.len())
+            || arms.iter().filter(|arm| arm.discriminant.is_none()).count() > 1
+            || arms.iter().filter_map(|arm| arm.discriminant).any(|value| !covered.insert(value))
+        {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+            return None;
+        }
+        let scrutinee_key = self.facts.child(key, 0)?;
+        let scrutinee = generated::constructor_lower_expression(self, scrutinee_key)?;
+        if !self.builder.func.dfg.value_type(scrutinee).is_int() {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
+            return None;
+        }
+        let merge = self.builder.create_block();
+        let arm_blocks = arms.iter().map(|_| self.builder.create_block()).collect::<Vec<_>>();
+        let trap = wildcard_index.is_none().then(|| self.builder.create_block());
+        let default =
+            wildcard_index.map_or_else(|| trap.expect("trap block exists without wildcard"), |index| arm_blocks[index]);
+        let mut switch = Switch::new();
+        for (arm, block) in arms.iter().zip(&arm_blocks) {
+            if let Some(discriminant) = arm.discriminant {
+                switch.set_entry(u128::from(discriminant), *block);
+            }
+        }
+        switch.emit(self.builder, scrutinee, default);
+        let mut merge_reachable = false;
+        for (arm, block) in arms.into_iter().zip(arm_blocks) {
+            self.builder.switch_to_block(block);
+            self.builder.seal_block(block);
+            generated::constructor_lower_statement(self, arm.body)?;
+            if jump_from_current_if_unterminated(self.builder, merge) {
+                merge_reachable = true;
+            }
+        }
+        if let Some(trap) = trap {
+            self.builder.switch_to_block(trap);
+            self.builder.seal_block(trap);
+            self.builder.ins().trap(TrapCode::unwrap_user(1));
+        }
+        self.builder.switch_to_block(merge);
+        self.builder.seal_block(merge);
+        if !merge_reachable {
+            self.builder.ins().trap(TrapCode::unwrap_user(1));
+        }
+        Some(())
     }
 }
 
@@ -1640,8 +1821,8 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn clif_bnot(&mut self, value: Value) -> Value {
         let ty = self.builder.func.dfg.value_type(value);
-        let all_ones = self.builder.ins().iconst(ty, -1);
-        self.builder.ins().bxor(value, all_ones)
+        let zero = self.builder.ins().iconst(ty, 0);
+        self.builder.ins().icmp(IntCC::Equal, value, zero)
     }
 
     fn emit_direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -1779,7 +1960,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         if self.facts.index_target_is_string(key) {
             return Some(IndexTarget::String);
         }
-        if self.facts.array_layout(key).is_some() {
+        if self.facts.array_layout(key).is_some() || self.facts.runtime_array_layout(key).is_some() {
             return Some(IndexTarget::Array);
         }
         None
@@ -1950,6 +2131,8 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 std::cmp::Ordering::Less => self.builder.ins().sextend(value_type, value),
                 std::cmp::Ordering::Equal => value,
             }
+        } else if actual_type.is_int() && value_type.is_float() {
+            self.builder.ins().fcvt_from_sint(value_type, value)
         } else {
             return None;
         };
@@ -2212,8 +2395,15 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn emit_index_read(&mut self, key: AstNodeKey) -> Option<Value> {
-        let layout = self.facts.array_layout(key)?;
-        if !layout.is_valid() || self.facts.scalar_type(key)? != layout.element_type {
+        let static_layout = self.facts.array_layout(key);
+        let runtime_layout = self.facts.runtime_array_layout(key);
+        let element_type = static_layout
+            .map(|layout| layout.element_type)
+            .or_else(|| runtime_layout.map(|layout| layout.element_type))?;
+        if static_layout.is_some_and(|layout| !layout.is_valid())
+            || runtime_layout.is_some_and(|layout| !layout.is_valid())
+            || self.facts.scalar_type(key).is_some_and(|expected| expected != element_type)
+        {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
             return None;
         }
@@ -2226,30 +2416,45 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         if !index_type.is_int() || !pointer_type.is_int() {
             return None;
         }
-        let out_of_bounds =
-            self.builder.ins().icmp_imm(IntCC::UnsignedGreaterThanOrEqual, index, i64::from(layout.length));
-        self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
-        let pointer_index = if index_type.bits() < pointer_type.bits() {
+        let (data, length, stride) = if let Some(layout) = static_layout {
+            let length = self.builder.ins().iconst(pointer_type, i64::from(layout.length));
+            (base, length, layout.stride)
+        } else {
+            let layout = runtime_layout?;
+            let data = self.builder.ins().load(pointer_type, MemFlags::trusted(), base, layout.data_offset);
+            let length = self.builder.ins().load(pointer_type, MemFlags::trusted(), base, layout.length_offset);
+            (data, length, layout.stride)
+        };
+        let comparable_index = if index_type.bits() < pointer_type.bits() {
             self.builder.ins().uextend(pointer_type, index)
         } else if index_type.bits() > pointer_type.bits() {
             self.builder.ins().ireduce(pointer_type, index)
         } else {
             index
         };
-        let offset = if layout.stride == 1 {
-            pointer_index
+        let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, comparable_index, length);
+        self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
+        let offset = if stride == 1 {
+            comparable_index
         } else {
-            self.builder.ins().imul_imm(pointer_index, i64::from(layout.stride))
+            self.builder.ins().imul_imm(comparable_index, i64::from(stride))
         };
-        let address = self.builder.ins().iadd(base, offset);
-        Some(self.builder.ins().load(layout.element_type, MemFlags::new(), address, 0))
+        let address = self.builder.ins().iadd(data, offset);
+        Some(self.builder.ins().load(element_type, MemFlags::new(), address, 0))
     }
 
     fn emit_index_assign(&mut self, key: AstNodeKey) -> Option<Value> {
         let target = self.facts.child(key, 0)?;
         let value_key = self.facts.child(key, 1)?;
-        let layout = self.facts.array_layout(target)?;
-        if !layout.is_valid() || self.facts.scalar_type(key)? != layout.element_type {
+        let static_layout = self.facts.array_layout(target);
+        let runtime_layout = self.facts.runtime_array_layout(target);
+        let element_type = static_layout
+            .map(|layout| layout.element_type)
+            .or_else(|| runtime_layout.map(|layout| layout.element_type))?;
+        if static_layout.is_some_and(|layout| !layout.is_valid())
+            || runtime_layout.is_some_and(|layout| !layout.is_valid())
+            || self.facts.scalar_type(key).is_some_and(|expected| expected != element_type)
+        {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
             return None;
         }
@@ -2258,31 +2463,48 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let base = generated::constructor_lower_expression(self, base_key)?;
         let index = generated::constructor_lower_expression(self, index_key)?;
         let value = generated::constructor_lower_expression(self, value_key)?;
-        if self.builder.func.dfg.value_type(value) != layout.element_type {
+        let value_type = self.builder.func.dfg.value_type(value);
+        let value = if value_type == element_type {
+            value
+        } else if value_type.is_int() && element_type.is_int() {
+            match value_type.bits().cmp(&element_type.bits()) {
+                std::cmp::Ordering::Greater => self.builder.ins().ireduce(element_type, value),
+                std::cmp::Ordering::Less => self.builder.ins().sextend(element_type, value),
+                std::cmp::Ordering::Equal => value,
+            }
+        } else {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
             return None;
-        }
+        };
         let index_type = self.builder.func.dfg.value_type(index);
         let pointer_type = self.builder.func.dfg.value_type(base);
         if !index_type.is_int() || !pointer_type.is_int() {
             return None;
         }
-        let out_of_bounds =
-            self.builder.ins().icmp_imm(IntCC::UnsignedGreaterThanOrEqual, index, i64::from(layout.length));
-        self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
-        let pointer_index = if index_type.bits() < pointer_type.bits() {
+        let (data, length, stride) = if let Some(layout) = static_layout {
+            let length = self.builder.ins().iconst(pointer_type, i64::from(layout.length));
+            (base, length, layout.stride)
+        } else {
+            let layout = runtime_layout?;
+            let data = self.builder.ins().load(pointer_type, MemFlags::trusted(), base, layout.data_offset);
+            let length = self.builder.ins().load(pointer_type, MemFlags::trusted(), base, layout.length_offset);
+            (data, length, layout.stride)
+        };
+        let comparable_index = if index_type.bits() < pointer_type.bits() {
             self.builder.ins().uextend(pointer_type, index)
         } else if index_type.bits() > pointer_type.bits() {
             self.builder.ins().ireduce(pointer_type, index)
         } else {
             index
         };
-        let offset = if layout.stride == 1 {
-            pointer_index
+        let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, comparable_index, length);
+        self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
+        let offset = if stride == 1 {
+            comparable_index
         } else {
-            self.builder.ins().imul_imm(pointer_index, i64::from(layout.stride))
+            self.builder.ins().imul_imm(comparable_index, i64::from(stride))
         };
-        let address = self.builder.ins().iadd(base, offset);
+        let address = self.builder.ins().iadd(data, offset);
         self.builder.ins().store(MemFlags::new(), value, address, 0);
         Some(value)
     }
@@ -2382,8 +2604,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             return None;
         }
         let variant_index = self.facts.enum_variant_index(key)?;
-        let Some(variant) = usize::try_from(variant_index).ok().and_then(|index| layout.variants.get(index)).copied()
-        else {
+        let Some(variant) = usize::try_from(variant_index).ok().and_then(|index| layout.variants.get(index)) else {
             self.pending_error =
                 Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumVariant(variant_index) });
             return None;
@@ -2402,34 +2623,35 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
         let tag = self.builder.ins().iconst(layout.tag.value_type, variant.discriminant as i64);
         self.builder.ins().store(MemFlags::new(), tag, object, i32::try_from(layout.tag.offset).ok()?);
-        match (variant.payload, self.facts.enum_payload(key)) {
-            (Some(payload_layout), Some(payload_key)) => {
-                let payload = generated::constructor_lower_expression(self, payload_key)?;
-                let payload_type = self.builder.func.dfg.value_type(payload);
-                let payload = if payload_type == payload_layout.value_type {
-                    payload
-                } else if payload_type.is_int() && payload_layout.value_type.is_int() {
-                    match payload_type.bits().cmp(&payload_layout.value_type.bits()) {
-                        std::cmp::Ordering::Greater => self.builder.ins().ireduce(payload_layout.value_type, payload),
-                        std::cmp::Ordering::Less => self.builder.ins().uextend(payload_layout.value_type, payload),
-                        std::cmp::Ordering::Equal => payload,
-                    }
-                } else {
-                    self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
-                    return None;
-                };
-                self.builder.ins().store(MemFlags::new(), payload, object, i32::try_from(payload_layout.offset).ok()?);
-            }
-            (None, None) => {}
-            _ => {
+        let payloads = self.facts.enum_payloads(key)?;
+        if variant.fields.len() != payloads.len() {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
+            return None;
+        }
+        for (payload_layout, payload_key) in variant.fields.iter().zip(payloads) {
+            let payload = generated::constructor_lower_expression(self, payload_key)?;
+            let payload_type = self.builder.func.dfg.value_type(payload);
+            let payload = if payload_type == payload_layout.value_type {
+                payload
+            } else if payload_type.is_int() && payload_layout.value_type.is_int() {
+                match payload_type.bits().cmp(&payload_layout.value_type.bits()) {
+                    std::cmp::Ordering::Greater => self.builder.ins().ireduce(payload_layout.value_type, payload),
+                    std::cmp::Ordering::Less => self.builder.ins().uextend(payload_layout.value_type, payload),
+                    std::cmp::Ordering::Equal => payload,
+                }
+            } else {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
                 return None;
-            }
+            };
+            self.builder.ins().store(MemFlags::new(), payload, object, i32::try_from(payload_layout.offset).ok()?);
         }
         Some(object)
     }
 
     fn emit_match(&mut self, key: AstNodeKey) -> Option<Value> {
+        if self.facts.scalar_match_arms(key).is_some() {
+            return self.emit_scalar_match(key);
+        }
         let layout = self.facts.enum_layout(key)?;
         if !layout.is_valid() {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
@@ -2504,7 +2726,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                 return None;
             };
-            if let Some(binding) = binding {
+            for binding in binding {
                 self.locals.remove(&binding);
             }
             self.builder.ins().jump(merge, &[value.into()]);
@@ -2520,6 +2742,9 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn emit_match_statement(&mut self, key: AstNodeKey) -> Option<()> {
+        if self.facts.scalar_match_arms(key).is_some() {
+            return self.emit_scalar_match_statement(key);
+        }
         let layout = self.facts.enum_layout(key)?;
         if !layout.is_valid() {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
@@ -2579,7 +2804,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             self.builder.seal_block(block);
             let binding = self.bind_match_arm_payload(key, &layout, scrutinee, &arm)?;
             generated::constructor_lower_statement(self, arm.body)?;
-            if let Some(binding) = binding {
+            if let Some(final_statement) = self.facts.block_result(arm.body) {
+                generated::constructor_lower_statement(self, final_statement)?;
+            }
+            for binding in binding {
                 self.locals.remove(&binding);
             }
             if jump_from_current_if_unterminated(self.builder, merge) {

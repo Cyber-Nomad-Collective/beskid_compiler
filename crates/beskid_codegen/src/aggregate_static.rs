@@ -1,10 +1,11 @@
 //! ABI-v5 static allocation metadata for managed aggregate literals.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use beskid_queries::{
-    AggregateFieldShape, AstNodeKey, SemanticTypeId, aggregate_layout, aggregate_literal_declaration, enum_layout,
-    enum_match,
+    AggregateFieldShape, AstNodeKey, EnumLayoutFact, GenericCallSpecialization, SemanticTypeId, aggregate_layout,
+    aggregate_literal_declaration, enum_constructor_in_item, enum_layout, enum_match,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -145,6 +146,24 @@ impl CodegenInput<'_> {
             .ok()
             .flatten()
             .or_else(|| enum_match(self.database(), literal).ok().flatten().map(|fact| fact.layout))?;
+        self.enum_static_plan_from_layout(literal, &layout)
+    }
+
+    pub fn enum_static_plan_in_item(
+        &self,
+        literal: AstNodeKey,
+        item: AstNodeKey,
+        specialization: &GenericCallSpecialization,
+    ) -> Option<AggregateStaticPlan> {
+        let (_, layout) = enum_constructor_in_item(self.database(), literal, item, specialization).ok().flatten()?;
+        self.enum_static_plan_from_layout(literal, &layout)
+    }
+
+    fn enum_static_plan_from_layout(
+        &self,
+        literal: AstNodeKey,
+        layout: &EnumLayoutFact,
+    ) -> Option<AggregateStaticPlan> {
         let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
         if header.size < 16 || !valid_alignment(header.alignment) {
             return None;
@@ -154,36 +173,31 @@ impl CodegenInput<'_> {
         size = align_to(size, 4)?;
         let tag_offset = size;
         size = size.checked_add(4)?;
-        let mut payload_offset = size;
-        let mut payload_size = 0_u64;
-        let mut payload_alignment = 1_u64;
-        let mut payload_is_pointer = false;
+        let payload_start = size;
+        let mut max_variant_end = payload_start;
+        let mut pointer_map_offsets = BTreeSet::new();
         for variant in layout.variants.iter() {
-            let shape = match variant.fields.as_ref() {
-                [] => continue,
-                [(_, shape)] => shape,
-                _ => return None,
-            };
-            let (field_size, field_alignment, pointer) = match shape {
-                AggregateFieldShape::Scalar(semantic) => scalar_layout(self.target().pointer_width, *semantic)?,
-                AggregateFieldShape::Nominal(_) => scalar_layout(self.target().pointer_width, SemanticTypeId::POINTER)?,
-            };
-            payload_size = payload_size.max(field_size);
-            payload_alignment = payload_alignment.max(field_alignment);
-            payload_is_pointer |= pointer;
+            let mut cursor = payload_start;
+            for (_, shape) in variant.fields.iter() {
+                let (field_size, field_alignment, pointer) = match shape {
+                    AggregateFieldShape::Scalar(semantic) => scalar_layout(self.target().pointer_width, *semantic)?,
+                    AggregateFieldShape::Nominal(_) => {
+                        scalar_layout(self.target().pointer_width, SemanticTypeId::POINTER)?
+                    }
+                };
+                alignment = alignment.max(field_alignment);
+                cursor = align_to(cursor, field_alignment)?;
+                if pointer {
+                    pointer_map_offsets.insert(cursor);
+                }
+                cursor = cursor.checked_add(field_size)?;
+            }
+            max_variant_end = max_variant_end.max(cursor);
         }
-        let mut fields = vec![AggregateStaticField { abi_type: SemanticTypeId::I32, field_offset: tag_offset }];
-        if payload_size > 0 {
-            alignment = alignment.max(payload_alignment);
-            payload_offset = align_to(payload_offset, payload_alignment)?;
-            size = payload_offset.checked_add(payload_size)?;
-            fields.push(AggregateStaticField {
-                abi_type: if payload_is_pointer { SemanticTypeId::POINTER } else { SemanticTypeId::I64 },
-                field_offset: payload_offset,
-            });
-        }
+        let fields = vec![AggregateStaticField { abi_type: SemanticTypeId::I32, field_offset: tag_offset }];
+        size = max_variant_end;
         let object_size = align_to(size, alignment)?;
-        let pointer_map_offsets = payload_is_pointer.then_some(payload_offset).into_iter().collect::<Vec<_>>();
+        let pointer_map_offsets = pointer_map_offsets.into_iter().collect::<Vec<_>>();
         let unit = self
             .typed_program()
             .assembly

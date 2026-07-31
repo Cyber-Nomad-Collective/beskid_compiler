@@ -9,7 +9,7 @@ pub struct SyntaxNodeFacts<'db> {
     pub(super) db: &'db dyn Db,
     pub(super) input: &'db CodegenInput<'db>,
     pub(super) isa: Option<&'db dyn TargetIsa>,
-    pub(super) item_specializations: HashMap<AstNodeKey, ItemSignature>,
+    pub(super) item_specializations: HashMap<AstNodeKey, GenericCallSpecialization>,
 }
 
 impl<'db> SyntaxNodeFacts<'db> {
@@ -25,9 +25,14 @@ impl<'db> SyntaxNodeFacts<'db> {
         input: &'db CodegenInput<'db>,
         isa: &'db dyn TargetIsa,
         item: AstNodeKey,
-        signature: ItemSignature,
+        specialization: GenericCallSpecialization,
     ) -> Self {
-        Self { db: input.database(), input, isa: Some(isa), item_specializations: HashMap::from([(item, signature)]) }
+        Self {
+            db: input.database(),
+            input,
+            isa: Some(isa),
+            item_specializations: HashMap::from([(item, specialization)]),
+        }
     }
 
     pub(super) fn query<T>(&self, result: beskid_queries::SemanticQueryResult<T>) -> Option<T> {
@@ -66,9 +71,24 @@ impl<'db> SyntaxNodeFacts<'db> {
     }
 
     pub(super) fn specialized_direct_parameter_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
-        (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)).then_some(())?;
-        let declaration = self.query(resolved_local(self.db, key))?.declaration;
-        let slot = self.query(local_slot(self.db, declaration))?;
-        self.item_specializations.get(&slot.owner)?.parameters.get(usize::try_from(slot.index).ok()?).copied()
+        self.item_specializations
+            .iter()
+            .find_map(|(item, specialization)| specialized_local_abi_type(self.db, key, *item, specialization))
+    }
+
+    pub(super) fn contextual_expression_is_string(&self, key: AstNodeKey) -> bool {
+        if self.query(abi_type(self.db, key)) == Some(SemanticTypeId::STRING)
+            || self.query(node_type(self.db, key)) == Some(SemanticTypeId::STRING)
+            || self.specialized_direct_parameter_type(key) == Some(SemanticTypeId::STRING)
+            || matches!(self.query(literal_fact(self.db, key)), Some(LiteralFact::String(_)))
+        {
+            return true;
+        }
+        if self.query(node_kind(self.db, key)) != Some(beskid_queries::IndexedNodeKind::BinaryExpression) {
+            return false;
+        }
+        matches!(self.query(operator_fact(self.db, key)), Some(beskid_queries::OperatorFact::StringAdd))
+            || (self.query(operator_fact(self.db, key)) == Some(beskid_queries::OperatorFact::Add)
+                && self.children(key).into_iter().any(|child| self.contextual_expression_is_string(child)))
     }
 }

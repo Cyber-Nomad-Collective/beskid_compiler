@@ -416,6 +416,7 @@ impl std::fmt::Display for SemanticTypeId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CallLowering {
     Direct(AstNodeKey),
+    ManifestBuiltin(&'static str),
     Dynamic,
     Runtime(RuntimeIntrinsic),
     CorelibService(CorelibService),
@@ -443,6 +444,9 @@ pub struct GenericCallInstantiation {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GenericCallSpecialization {
     pub declaration: AstNodeKey,
+    /// Concrete generic arguments in declaration order. Unlike the ABI signature, this preserves
+    /// arguments that occur only beneath erased nominal pointer types.
+    pub arguments: Arc<[SemanticTypeId]>,
     pub signature: ItemSignature,
 }
 
@@ -530,16 +534,12 @@ pub struct EnumVariantLayoutFact {
     pub fields: Arc<[(Arc<str>, AggregateFieldShape)]>,
 }
 
-/// Exact enum declaration, source-order variant, and payload selected by a constructor.
-///
-/// The current generated ISLE enum emitter represents at most one payload value per variant.
-/// Constructors with more than one source field deliberately remain unavailable instead of
-/// silently dropping data while that emitter is extended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Exact enum declaration, source-order variant, and ordered payloads selected by a constructor.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EnumConstructorFact {
     pub declaration: AstNodeKey,
     pub variant_index: u32,
-    pub payload: Option<AstNodeKey>,
+    pub payloads: Arc<[AstNodeKey]>,
 }
 
 /// One direct identifier payload binding consumed by the generated enum-match emitter.
@@ -552,14 +552,11 @@ pub struct EnumMatchBindingFact {
 }
 
 /// One source arm consumed by the generated enum-match emitter.
-///
-/// Guards and nested, literal, or multi-payload destructuring remain unavailable until the
-/// generated ISLE emitter has explicit representations for them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EnumMatchArmFact {
     pub variant_index: Option<u32>,
     pub body: AstNodeKey,
-    pub binding: Option<EnumMatchBindingFact>,
+    pub bindings: Arc<[Option<EnumMatchBindingFact>]>,
 }
 
 /// Exact enum declaration and source-ordered arms selected by a `match` expression.
@@ -572,6 +569,27 @@ pub struct EnumMatchFact {
     /// without reconstructing type arguments from retired HIR artifacts.
     pub layout: EnumLayoutFact,
     pub arms: Arc<[EnumMatchArmFact]>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ScalarMatchArmFact {
+    pub discriminant: Option<u64>,
+    pub body: AstNodeKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ScalarMatchFact {
+    pub scrutinee: AstNodeKey,
+    pub semantic_type: SemanticTypeId,
+    pub arms: Arc<[ScalarMatchArmFact]>,
+}
+
+/// Exact initializer and ABI established by an explicitly typed `let` whose value is a
+/// non-generic direct call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TypedLetCallResultFact {
+    pub initializer: AstNodeKey,
+    pub abi_type: SemanticTypeId,
 }
 
 /// Exact linker symbol declared by a syntax `[Export(Symbol:"...")]` attribute.
@@ -765,6 +783,31 @@ fn resolve_item_declaration_candidate(
             .or_else(|| unique_imported_function(db, key, name));
     }
     let module_path = module_path.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
+    let exact_module = {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let hidden_by_alias = registry
+            .imports
+            .get(&(key.unit, key.generation))
+            .into_iter()
+            .flatten()
+            .any(|import| import.has_explicit_alias && module_path.starts_with(&import.path));
+        if hidden_by_alias {
+            None
+        } else {
+            registry.modules.get(&(key.generation, module_path.clone())).and_then(|targets| {
+                let [target] = targets.as_slice() else {
+                    return None;
+                };
+                Some(*target)
+            })
+        }
+    };
+    if let Some(target_unit) = exact_module
+        && let Some(declaration) =
+            unique_exported_function_in_unit(db, target_unit, key.generation, &name.node.name.node.name)
+    {
+        return Some(declaration);
+    }
     let Some(target_unit) = resolve_qualified_module_unit(db, key, &module_path) else {
         return resolve_type_qualified_imported_function(db, key, path);
     };
@@ -893,6 +936,8 @@ fn unique_exported_function_in_unit(
         }
         pending.extend(public_reexport_units(db, current, generation));
     }
+    let mut seen = HashSet::new();
+    candidates.retain(|candidate| seen.insert(*candidate));
     let [candidate] = candidates.as_slice() else {
         return None;
     };
@@ -1326,7 +1371,7 @@ fn node_type_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> S
                 Err(error) => return Some(Err(error)),
             }
             match call_lowering(db, key) {
-                Ok(Some(CallLowering::Direct(_))) => (),
+                Ok(Some(CallLowering::Direct(_) | CallLowering::ManifestBuiltin(_))) => (),
                 Ok(Some(_) | None) => return Some(Err(SemanticError::unavailable("node_type"))),
                 Err(error) => return Some(Err(error)),
             };
@@ -1412,7 +1457,7 @@ fn pattern_binding_fact(
     };
     fact.arms
         .iter()
-        .filter_map(|arm| arm.binding)
+        .flat_map(|arm| arm.bindings.iter().flatten().copied())
         .find(|binding| binding.declaration.node == declaration)
         .map(Ok)
         .or_else(|| Some(Err(SemanticError::unavailable("pattern_binding"))))
@@ -1442,6 +1487,9 @@ fn semantic_type_for_node(
             binary.op.node,
             &binary.right.node,
         ));
+    }
+    if let Some(index_expression) = node.of::<beskid_analysis::syntax::IndexExpression>() {
+        return Some(array_element_type_for_index_target(program, index, reference, &index_expression.target.node));
     }
     if let Some(match_expression) = node.of::<beskid_analysis::syntax::MatchExpression>() {
         let mut result = None;
@@ -1492,8 +1540,48 @@ fn semantic_type_for_expression(
             binary.node.op.node,
             &binary.node.right.node,
         ),
+        beskid_analysis::syntax::Expression::Index(index_expression) => {
+            array_element_type_for_index_target(program, index, reference, &index_expression.node.target.node)
+        }
         _ => Err(SemanticError::unavailable("node_type")),
     }
+}
+
+fn array_element_type_for_index_target(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    reference: beskid_analysis::syntax::AstNodeId,
+    target: &beskid_analysis::syntax::Expression,
+) -> Result<SemanticTypeId, SemanticError> {
+    let beskid_analysis::syntax::Expression::Path(path) = target else {
+        return Err(SemanticError::unavailable("node_type"));
+    };
+    let [segment] = path.node.path.node.segments.as_slice() else {
+        return Err(SemanticError::unavailable("node_type"));
+    };
+    if !segment.node.type_args.is_empty() {
+        return Err(SemanticError::unavailable("node_type"));
+    }
+    let declaration = resolve_lexical_declaration(program, index, reference, segment.node.name.node.name.as_str())
+        .ok_or_else(|| SemanticError::unavailable("node_type"))?;
+    let parent = parent_node(index, declaration).ok_or_else(|| SemanticError::unavailable("node_type"))?;
+    let syntax_type = match index.kind(parent) {
+        Some(beskid_analysis::syntax_query::NodeKind::Parameter) => index
+            .node_at(program, parent)
+            .and_then(|node| node.of::<beskid_analysis::syntax::Parameter>())
+            .map(|parameter| &parameter.ty.node),
+        Some(beskid_analysis::syntax_query::NodeKind::LetStatement) => index
+            .node_at(program, parent)
+            .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
+            .and_then(|statement| statement.type_annotation.as_ref())
+            .map(|syntax_type| &syntax_type.node),
+        _ => None,
+    }
+    .ok_or_else(|| SemanticError::unavailable("node_type"))?;
+    let beskid_analysis::syntax::Type::Array(element) = syntax_type else {
+        return Err(SemanticError::unavailable("node_type"));
+    };
+    semantic_type_from_syntax(&element.node)
 }
 
 fn semantic_type_for_binary_operands(
@@ -1822,14 +1910,18 @@ fn call_lowering_for_node(
                 } else {
                     Ok(CallLowering::Direct(declaration))
                 }
-            } else if imported_call_receiver_exists(db, key, path)
-                || (path.segments.iter().all(|segment| segment.node.type_args.is_empty())
-                    && beskid_analysis::builtins::builtin_for_path(
-                        &path.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>(),
-                    )
-                    .is_some())
-            {
+            } else if imported_call_receiver_exists(db, key, path) {
                 Ok(CallLowering::Dynamic)
+            } else if path.segments.iter().all(|segment| segment.node.type_args.is_empty())
+                && let Some((_, spec)) = beskid_analysis::builtins::builtin_for_path(
+                    &path.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>(),
+                )
+            {
+                if dispatch_route_for_symbol(spec.runtime_symbol).is_some() {
+                    Ok(CallLowering::Dynamic)
+                } else {
+                    Ok(CallLowering::ManifestBuiltin(spec.runtime_symbol))
+                }
             } else if let Some(declaration) = resolve_local_extern_contract_method(program, index, key, path) {
                 Ok(CallLowering::Direct(declaration))
             } else {
@@ -2100,7 +2192,10 @@ fn generic_call_specialization_tracked(
         };
         let declaration = match lowering {
             CallLowering::Direct(declaration) => declaration,
-            CallLowering::Dynamic | CallLowering::Runtime(_) | CallLowering::CorelibService(_) => {
+            CallLowering::ManifestBuiltin(_)
+            | CallLowering::Dynamic
+            | CallLowering::Runtime(_)
+            | CallLowering::CorelibService(_) => {
                 return None;
             }
         };
@@ -2112,7 +2207,15 @@ fn generic_call_specialization_tracked(
             return None;
         }
         let signature = call_abi_signature(db, key).ok().flatten()?;
-        Some(Ok(GenericCallSpecialization { declaration, signature }))
+        let arguments = generic_call_instantiation(db, key)
+            .ok()
+            .flatten()
+            .filter(|instantiation| instantiation.arguments.len() == function.generics.len())
+            .map(|instantiation| instantiation.arguments)
+            .or_else(|| generic_arguments_from_applied_call_arguments(db, key, declaration).ok())
+            .or_else(|| generic_arguments_from_expected_call_result(db, key, declaration).ok())
+            .or_else(|| generic_arguments_from_signature(db, declaration, &signature).ok())?;
+        Some(Ok(GenericCallSpecialization { declaration, arguments, signature }))
     })?
     .transpose()
 }
@@ -2258,7 +2361,14 @@ fn generic_call_instantiation_for_node(
     (function.generics.len() == usize::from(argument_count)).then_some(())?;
     let mut concrete_arguments = Vec::with_capacity(argument_syntax.len());
     for (argument, generic) in argument_syntax.iter().zip(function.generics.iter()) {
-        match abi_type_from_syntax(db, key, &argument.node) {
+        match abi_type_from_syntax(db, key, &argument.node)
+            .or_else(|_| item_abi_type_from_syntax(db, key, &argument.node))
+            .or_else(|_| {
+                aggregate_shape_from_applied_type(db, key, &argument.node).map(|shape| match shape {
+                    AggregateFieldShape::Scalar(semantic) => semantic,
+                    AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+                })
+            }) {
             Ok(concrete) => concrete_arguments.push(concrete),
             Err(_) if type_syntax_is_generic_parameter_reference(&argument.node, generic.node.name.as_str()) => {}
             Err(_) => return None,
@@ -2329,6 +2439,80 @@ fn cast_intents_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<Arc<[CastIntent]>> {
     with_node(db, syntax, key, |program, index, node| cast_intents_for_node(db, program, index, key, node))?.transpose()
+}
+
+#[salsa::tracked]
+fn typed_let_call_result_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<TypedLetCallResultFact> {
+    with_node(db, syntax, key, |program, index, node| {
+        let statement = node.of::<beskid_analysis::syntax::LetStatement>()?;
+        let expected = statement
+            .type_annotation
+            .as_ref()
+            .ok_or_else(|| SemanticError::unavailable("typed_let_call_result"))
+            .and_then(|annotation| item_abi_type_from_syntax(db, key, &annotation.node));
+        let value = index
+            .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&statement.value))
+            .ok_or_else(|| SemanticError::unavailable("typed_let_call_result"));
+        Some(expected.and_then(|expected| {
+            let wrapper = value?;
+            let concrete = {
+                let expression = index
+                    .node_at(program, wrapper)
+                    .and_then(|node| node.of::<beskid_analysis::syntax::Expression>())
+                    .ok_or_else(|| SemanticError::unavailable("typed_let_call_result"))?;
+                index
+                    .direct_child_id(program, wrapper, beskid_analysis::syntax_query::DynNodeRef::from(expression))
+                    .or_else(|| index.children(wrapper).and_then(|children| children.first()).copied())
+                    .ok_or_else(|| SemanticError::unavailable("typed_let_call_result"))
+            }?;
+            let initializer = AstNodeKey { node: concrete, ..key };
+            let candidates = [AstNodeKey { node: wrapper, ..key }, initializer];
+            let direct = candidates.into_iter().find_map(|candidate| match call_lowering(db, candidate) {
+                Ok(Some(CallLowering::Direct(declaration))) if !function_declares_generics(db, declaration) => {
+                    Some(candidate)
+                }
+                Ok(Some(CallLowering::ManifestBuiltin(_) | CallLowering::CorelibService(_))) => Some(candidate),
+                _ => None,
+            });
+            let intrinsic =
+                candidates.into_iter().find(|candidate| matches!(runtime_intrinsic(db, *candidate), Ok(Some(_))));
+            let (initializer, actual) = if let Some(query_key) = direct {
+                let actual = call_abi_signature(db, query_key)?
+                    .map(|signature| signature.result)
+                    .ok_or_else(|| SemanticError::unavailable("typed_let_call_result"))?;
+                (query_key, actual)
+            } else if let Some(query_key) = intrinsic {
+                let actual =
+                    abi_type(db, query_key)?.ok_or_else(|| SemanticError::unavailable("typed_let_call_result"))?;
+                (query_key, actual)
+            } else {
+                return Err(SemanticError::unavailable("typed_let_call_result"));
+            };
+            if actual != expected {
+                return Err(SemanticError::unavailable("typed_let_call_result"));
+            }
+            Ok(TypedLetCallResultFact { initializer, abi_type: expected })
+        }))
+    })?
+    .transpose()
+}
+
+#[salsa::tracked]
+fn let_initializer_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
+    with_node(db, syntax, key, |program, index, node| {
+        let statement = node.of::<beskid_analysis::syntax::LetStatement>()?;
+        let wrapper = index.direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(&statement.value),
+        )?;
+        let concrete = index.children(wrapper).and_then(|children| children.first()).copied()?;
+        Some(AstNodeKey { node: concrete, ..key })
+    })
 }
 
 fn cast_intents_for_node(
@@ -2702,17 +2886,45 @@ fn call_abi_signature_tracked(
 }
 
 fn call_abi_signature_for_call(db: &dyn Db, key: AstNodeKey) -> Result<ItemSignature, SemanticError> {
+    call_abi_signature_for_call_in_item(db, key, None)
+}
+
+fn call_abi_signature_for_call_in_item(
+    db: &dyn Db,
+    key: AstNodeKey,
+    item_specialization: Option<(AstNodeKey, &GenericCallSpecialization)>,
+) -> Result<ItemSignature, SemanticError> {
     let declaration = match call_lowering(db, key)? {
         Some(CallLowering::Direct(declaration)) => declaration,
         Some(CallLowering::CorelibService(service)) => {
             return corelib_service_abi_signature(service)
                 .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
         }
+        Some(CallLowering::ManifestBuiltin(symbol)) => {
+            return manifest_builtin_abi_signature(symbol)
+                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
+        }
         Some(CallLowering::Dynamic) => {
             return dispatch_builtin_abi_signature(db, key)
                 .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
         }
-        Some(CallLowering::Runtime(_)) | None => {
+        Some(CallLowering::Runtime(intrinsic)) => {
+            let spec = usize::try_from(intrinsic.0)
+                .ok()
+                .and_then(|index| beskid_analysis::builtins::builtin_specs().get(index))
+                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            let parameters = spec
+                .params
+                .iter()
+                .copied()
+                .map(builtin_type_to_semantic)
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            let result = builtin_type_to_semantic(spec.returns)
+                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            return Ok(ItemSignature { parameters: parameters.into(), result });
+        }
+        None => {
             return Err(SemanticError::unavailable("call_abi_signature"));
         }
     };
@@ -2735,14 +2947,27 @@ fn call_abi_signature_for_call(db: &dyn Db, key: AstNodeKey) -> Result<ItemSigna
     }
     let generic_names = function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
     let mut substitutions = HashMap::new();
-    if let Some(instantiation) = generic_call_instantiation(db, key)?
-        && !instantiation.arguments.is_empty()
+    let contextual_substitutions = item_specialization
+        .map(|(item, specialization)| generic_item_substitutions_from_specialization(db, item, specialization))
+        .transpose()?
+        .unwrap_or_default();
+    if let Some(call_path) = node_call_path(db, key)
+        && let Some(argument_syntax) = explicit_generic_type_argument_syntax(&call_path)
     {
-        if instantiation.arguments.len() != generic_names.len() {
+        if argument_syntax.len() != generic_names.len() {
             return Err(SemanticError::unavailable("call_abi_signature"));
         }
-        for (generic, argument) in generic_names.iter().zip(instantiation.arguments.iter()) {
-            substitutions.insert((*generic).to_owned(), *argument);
+        for (generic, argument) in generic_names.iter().zip(argument_syntax.iter()) {
+            let concrete = match abi_type_from_syntax(db, key, &argument.node) {
+                Ok(concrete) => Some(concrete),
+                Err(_) => item_abi_type_from_syntax(db, key, &argument.node).ok().or_else(|| {
+                    generic_parameter_reference_name(&argument.node)
+                        .and_then(|name| contextual_substitutions.get(name).copied())
+                }),
+            };
+            if let Some(concrete) = concrete {
+                substitutions.insert((*generic).to_owned(), concrete);
+            }
         }
     }
     // A bare integer starts at the language default `i32`, but carries no explicit ABI suffix.
@@ -2750,8 +2975,21 @@ fn call_abi_signature_for_call(db: &dyn Db, key: AstNodeKey) -> Result<ItemSigna
     // the binding and the bare literal can inherit it if its magnitude fits.
     let mut provisional_integer_substitutions = HashSet::new();
     for (parameter, argument) in function.parameters.iter().zip(arguments.iter().copied()) {
-        let actual = abi_type(db, argument)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
-        if let Some(generic) = generic_type_name(&parameter.node.ty.node, &generic_names) {
+        let generic = generic_type_name(&parameter.node.ty.node, &generic_names);
+        let contextual = item_specialization
+            .and_then(|(item, specialization)| contextual_expression_source_abi(db, argument, item, specialization));
+        let actual = match contextual {
+            Some(actual) => Some(actual),
+            None => expression_source_abi(db, argument)?,
+        }
+        .or_else(|| {
+            generic
+                .is_none()
+                .then(|| generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions).ok())
+                .flatten()
+        });
+        let actual = actual.ok_or_else(|| SemanticError::unavailable("contextual_call_argument_abi"))?;
+        if let Some(generic) = generic {
             let bare_integer = unsuffixed_integer_literal(db, argument)?;
             match substitutions.get(generic).copied() {
                 None => {
@@ -2787,6 +3025,412 @@ fn call_abi_signature_for_call(db: &dyn Db, key: AstNodeKey) -> Result<ItemSigna
     Ok(ItemSignature { parameters: parameters.into(), result })
 }
 
+fn expression_source_abi(db: &dyn Db, mut expression: AstNodeKey) -> Result<Option<SemanticTypeId>, SemanticError> {
+    loop {
+        if enum_constructor(db, expression).is_ok_and(|fact| fact.is_some())
+            || aggregate_literal_declaration(db, expression).is_ok_and(|fact| fact.is_some())
+        {
+            return Ok(Some(SemanticTypeId::POINTER));
+        }
+        match abi_type(db, expression) {
+            Ok(Some(semantic)) => return Ok(Some(semantic)),
+            Ok(None) => {}
+            Err(error) if error.is_unavailable() => {}
+            Err(error) => return Err(error),
+        }
+        match node_type(db, expression) {
+            Ok(Some(semantic)) => return Ok(Some(semantic)),
+            Ok(None) => {}
+            Err(error) if error.is_unavailable() => {}
+            Err(error) => return Err(error),
+        }
+        match call_abi_signature(db, expression) {
+            Ok(Some(signature)) => return Ok(Some(signature.result)),
+            Ok(None) => {}
+            Err(error) if error.is_unavailable() => {}
+            Err(error) => return Err(error),
+        }
+        if unsuffixed_integer_literal(db, expression)? {
+            return Ok(Some(SemanticTypeId::I32));
+        }
+        let Some(children) = child_nodes(db, expression)? else {
+            return Ok(None);
+        };
+        let [child] = children.as_ref() else {
+            return Ok(None);
+        };
+        expression = *child;
+    }
+}
+
+fn contextual_expression_source_abi(
+    db: &dyn Db,
+    mut expression: AstNodeKey,
+    item: AstNodeKey,
+    specialization: &GenericCallSpecialization,
+) -> Option<SemanticTypeId> {
+    loop {
+        if let Some(semantic) = specialized_local_abi_type(db, expression, item, specialization) {
+            return Some(semantic);
+        }
+        if let Ok(call_signature) = call_abi_signature_for_call_in_item(db, expression, Some((item, specialization))) {
+            return Some(call_signature.result);
+        }
+        let children = child_nodes(db, expression).ok().flatten()?;
+        let [child] = children.as_ref() else {
+            return None;
+        };
+        expression = *child;
+    }
+}
+
+fn node_call_path(db: &dyn Db, key: AstNodeKey) -> Option<beskid_analysis::syntax::Path> {
+    let syntax = db.syntax_unit(key.unit)?;
+    syntax.accepts_key(db, key).then_some(())?;
+    let call = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), key.node)?
+        .of::<beskid_analysis::syntax::CallExpression>()?;
+    let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
+        return None;
+    };
+    Some(path.node.path.node.clone())
+}
+
+fn generic_parameter_reference_name(syntax_type: &beskid_analysis::syntax::Type) -> Option<&str> {
+    let beskid_analysis::syntax::Type::Complex(path) = syntax_type else {
+        return None;
+    };
+    let [segment] = path.node.segments.as_slice() else {
+        return None;
+    };
+    segment.node.type_args.is_empty().then_some(segment.node.name.node.name.as_str())
+}
+
+fn generic_item_substitutions(
+    db: &dyn Db,
+    item: AstNodeKey,
+    signature: &ItemSignature,
+) -> Result<HashMap<String, SemanticTypeId>, SemanticError> {
+    let syntax = db.syntax_unit(item.unit).ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+    let function = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), item.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+    let generic_names = function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
+    let mut substitutions = HashMap::new();
+    for (parameter, concrete) in function.parameters.iter().zip(signature.parameters.iter().copied()) {
+        if let Some(generic) = generic_type_name(&parameter.node.ty.node, &generic_names) {
+            substitutions.insert(generic.to_owned(), concrete);
+        }
+    }
+    if let Some(return_type) = function.return_type.as_ref()
+        && let Some(generic) = generic_type_name(&return_type.node, &generic_names)
+    {
+        substitutions.insert(generic.to_owned(), signature.result);
+    }
+    Ok(substitutions)
+}
+
+fn generic_item_substitutions_from_specialization(
+    db: &dyn Db,
+    item: AstNodeKey,
+    specialization: &GenericCallSpecialization,
+) -> Result<HashMap<String, SemanticTypeId>, SemanticError> {
+    if specialization.declaration != item {
+        return Err(SemanticError::unavailable("generic_item_substitutions"));
+    }
+    let syntax = db.syntax_unit(item.unit).ok_or_else(|| SemanticError::unavailable("generic_item_substitutions"))?;
+    let function = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), item.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("generic_item_substitutions"))?;
+    if function.generics.len() != specialization.arguments.len() {
+        return Err(SemanticError::unavailable("generic_item_substitutions"));
+    }
+    Ok(function
+        .generics
+        .iter()
+        .zip(specialization.arguments.iter().copied())
+        .map(|(generic, concrete)| (generic.node.name.to_string(), concrete))
+        .collect())
+}
+
+fn generic_arguments_from_signature(
+    db: &dyn Db,
+    item: AstNodeKey,
+    signature: &ItemSignature,
+) -> Result<Arc<[SemanticTypeId]>, SemanticError> {
+    let syntax = db.syntax_unit(item.unit).ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+    let function = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), item.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+    let substitutions = generic_item_substitutions(db, item, signature)?;
+    function
+        .generics
+        .iter()
+        .map(|generic| {
+            substitutions
+                .get(generic.node.name.as_str())
+                .copied()
+                .ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Into::into)
+}
+
+fn generic_arguments_from_applied_call_arguments(
+    db: &dyn Db,
+    key: AstNodeKey,
+    declaration: AstNodeKey,
+) -> Result<Arc<[SemanticTypeId]>, SemanticError> {
+    let syntax =
+        db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+    let function = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+    let arguments = call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+    let generic_names = function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
+    let mut substitutions = HashMap::new();
+    for (parameter, argument) in function.parameters.iter().zip(arguments.iter().copied()) {
+        let beskid_analysis::syntax::Type::Complex(parameter_path) = &parameter.node.ty.node else {
+            continue;
+        };
+        let parameter_arguments = &parameter_path
+            .node
+            .segments
+            .last()
+            .ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?
+            .node
+            .type_args;
+        let argument_type = explicit_local_annotation_type(db, argument)
+            .ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+        let beskid_analysis::syntax::Type::Complex(argument_path) = argument_type else {
+            continue;
+        };
+        let applied_arguments = &argument_path
+            .node
+            .segments
+            .last()
+            .ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?
+            .node
+            .type_args;
+        if parameter_arguments.len() != applied_arguments.len() {
+            continue;
+        }
+        for (parameter_argument, applied_argument) in parameter_arguments.iter().zip(applied_arguments.iter()) {
+            let Some(name) = generic_parameter_reference_name(&parameter_argument.node) else {
+                continue;
+            };
+            if !generic_names.contains(&name) {
+                continue;
+            }
+            let concrete = abi_type_from_syntax(db, argument, &applied_argument.node)
+                .or_else(|_| item_abi_type_from_syntax(db, argument, &applied_argument.node))?;
+            substitutions.insert(name.to_owned(), concrete);
+        }
+    }
+    generic_names
+        .iter()
+        .map(|name| {
+            substitutions.get(*name).copied().ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Into::into)
+}
+
+fn explicit_local_annotation_type(db: &dyn Db, mut expression: AstNodeKey) -> Option<beskid_analysis::syntax::Type> {
+    let declaration = loop {
+        if let Some(local) = resolved_local(db, expression).ok().flatten() {
+            break local.declaration;
+        }
+        let children = child_nodes(db, expression).ok().flatten()?;
+        let [child] = children.as_ref() else {
+            return None;
+        };
+        expression = *child;
+    };
+    let syntax = db.syntax_unit(declaration.unit)?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let parent = parent_node(index, declaration.node)?;
+    match index.kind(parent)? {
+        beskid_analysis::syntax_query::NodeKind::Parameter => index
+            .node_at(program, parent)?
+            .of::<beskid_analysis::syntax::Parameter>()
+            .map(|parameter| parameter.ty.node.clone()),
+        beskid_analysis::syntax_query::NodeKind::LetStatement => index
+            .node_at(program, parent)?
+            .of::<beskid_analysis::syntax::LetStatement>()?
+            .type_annotation
+            .as_ref()
+            .map(|annotation| annotation.node.clone()),
+        _ => None,
+    }
+}
+
+fn generic_arguments_from_expected_call_result(
+    db: &dyn Db,
+    key: AstNodeKey,
+    declaration: AstNodeKey,
+) -> Result<Arc<[SemanticTypeId]>, SemanticError> {
+    let declaration_syntax =
+        db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+    let function = declaration_syntax
+        .syntax_index(db)
+        .node_at(declaration_syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+    let return_type =
+        function.return_type.as_ref().ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+    let beskid_analysis::syntax::Type::Complex(return_path) = &return_type.node else {
+        return Err(SemanticError::unavailable("generic_call_arguments"));
+    };
+    let source_syntax = db.syntax_unit(key.unit).ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+    let program = source_syntax.expanded_program(db);
+    let index = source_syntax.syntax_index(db);
+    let mut current =
+        parent_node(index, key.node).ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+    while matches!(
+        index.kind(current),
+        Some(beskid_analysis::syntax_query::NodeKind::Expression | beskid_analysis::syntax_query::NodeKind::Statement)
+    ) {
+        current = parent_node(index, current).ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+    }
+    let expected = match index.kind(current) {
+        Some(beskid_analysis::syntax_query::NodeKind::LetStatement) => index
+            .node_at(program, current)
+            .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
+            .and_then(|statement| statement.type_annotation.as_ref())
+            .map(|annotation| &annotation.node),
+        Some(beskid_analysis::syntax_query::NodeKind::ReturnStatement) => {
+            let mut item =
+                parent_node(index, current).ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+            while index.kind(item) != Some(beskid_analysis::syntax_query::NodeKind::FunctionDefinition) {
+                item = parent_node(index, item).ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+            }
+            index
+                .node_at(program, item)
+                .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+                .and_then(|item| item.return_type.as_ref())
+                .map(|annotation| &annotation.node)
+        }
+        _ => None,
+    }
+    .ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+    let beskid_analysis::syntax::Type::Complex(expected_path) = expected else {
+        return Err(SemanticError::unavailable("generic_call_arguments"));
+    };
+    let return_arguments = &return_path
+        .node
+        .segments
+        .last()
+        .ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?
+        .node
+        .type_args;
+    let expected_arguments = &expected_path
+        .node
+        .segments
+        .last()
+        .ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?
+        .node
+        .type_args;
+    if return_arguments.len() != expected_arguments.len() {
+        return Err(SemanticError::unavailable("generic_call_arguments"));
+    }
+    let generic_names = function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
+    let mut substitutions = HashMap::new();
+    for (returned, applied) in return_arguments.iter().zip(expected_arguments.iter()) {
+        let Some(name) = generic_parameter_reference_name(&returned.node) else {
+            continue;
+        };
+        let concrete = abi_type_from_syntax(db, key, &applied.node)
+            .or_else(|_| item_abi_type_from_syntax(db, key, &applied.node))?;
+        substitutions.insert(name.to_owned(), concrete);
+    }
+    generic_names
+        .iter()
+        .map(|name| {
+            substitutions.get(*name).copied().ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Into::into)
+}
+
+fn contextual_explicit_generic_arguments(
+    db: &dyn Db,
+    key: AstNodeKey,
+    item: AstNodeKey,
+    item_specialization: &GenericCallSpecialization,
+) -> Option<Arc<[SemanticTypeId]>> {
+    let path = node_call_path(db, key)?;
+    let argument_syntax = explicit_generic_type_argument_syntax(&path)?;
+    let substitutions = generic_item_substitutions_from_specialization(db, item, item_specialization).ok()?;
+    argument_syntax
+        .iter()
+        .map(|argument| {
+            abi_type_from_syntax(db, key, &argument.node)
+                .ok()
+                .or_else(|| item_abi_type_from_syntax(db, key, &argument.node).ok())
+                .or_else(|| {
+                    aggregate_shape_from_applied_type(db, key, &argument.node).ok().map(|shape| match shape {
+                        AggregateFieldShape::Scalar(semantic) => semantic,
+                        AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+                    })
+                })
+                .or_else(|| {
+                    generic_parameter_reference_name(&argument.node).and_then(|name| substitutions.get(name).copied())
+                })
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(Into::into)
+}
+
+pub fn specialized_local_abi_type(
+    db: &dyn Db,
+    mut expression: AstNodeKey,
+    item: AstNodeKey,
+    specialization: &GenericCallSpecialization,
+) -> Option<SemanticTypeId> {
+    loop {
+        if let Some(declaration) = resolved_local(db, expression).ok().flatten().map(|local| local.declaration) {
+            let slot = local_slot(db, declaration).ok().flatten()?;
+            (slot.owner == item).then_some(())?;
+            let syntax = db.syntax_unit(declaration.unit)?;
+            let program = syntax.expanded_program(db);
+            let index = syntax.syntax_index(db);
+            let parent = parent_node(index, declaration.node)?;
+            return match index.kind(parent)? {
+                beskid_analysis::syntax_query::NodeKind::Parameter => {
+                    let parameter = index.node_at(program, parent)?.of::<beskid_analysis::syntax::Parameter>()?;
+                    let substitutions =
+                        generic_item_substitutions_from_specialization(db, item, specialization).ok()?;
+                    generic_abi_type(db, item, &parameter.ty.node, &substitutions).ok()
+                }
+                beskid_analysis::syntax_query::NodeKind::LetStatement => {
+                    let statement = index.node_at(program, parent)?.of::<beskid_analysis::syntax::LetStatement>()?;
+                    let annotation = statement.type_annotation.as_ref()?;
+                    let substitutions =
+                        generic_item_substitutions_from_specialization(db, item, specialization).ok()?;
+                    generic_abi_type(db, item, &annotation.node, &substitutions).ok()
+                }
+                _ => None,
+            };
+        }
+        let children = child_nodes(db, expression).ok().flatten()?;
+        let [child] = children.as_ref() else {
+            return None;
+        };
+        expression = *child;
+    }
+}
+
 /// Whether a source expression is a bare integer literal without an ABI suffix.
 ///
 /// This follows only singleton syntax wrappers, so compound arithmetic, casts, calls, and arrays
@@ -2816,7 +3460,12 @@ fn integer_literal_text(db: &dyn Db, key: AstNodeKey) -> Result<Option<Arc<str>>
         let Some(children) = child_nodes(db, key)? else {
             return Ok(None);
         };
-        let [child] = children.as_ref() else {
+        let value_children = children
+            .iter()
+            .copied()
+            .filter(|child| node_kind(db, *child).ok().flatten() != Some(IndexedNodeKind::UnaryOp))
+            .collect::<Vec<_>>();
+        let [child] = value_children.as_slice() else {
             return Ok(None);
         };
         return integer_literal_text(db, *child);
@@ -2874,15 +3523,19 @@ fn call_argument_abi_type_tracked(
                         current = parent;
                         continue;
                     };
-                    if integer_literal_text(db, arguments[argument_index])?.is_none() {
-                        return Err(SemanticError::unavailable("call_argument_abi_type"));
-                    }
                     let signature = call_abi_signature(db, parent_key)?
                         .ok_or_else(|| SemanticError::unavailable("call_argument_abi_type"))?;
-                    return signature
+                    let expected = signature
                         .parameters
                         .get(argument_index)
                         .copied()
+                        .ok_or_else(|| SemanticError::unavailable("call_argument_abi_type"))?;
+                    let literal = integer_literal_text(db, arguments[argument_index])?.is_some();
+                    let actual = expression_source_abi(db, key)?;
+                    let numeric_local =
+                        actual.is_some_and(|actual| primitive_integer(actual) && primitive_integer(expected));
+                    return (literal || numeric_local)
+                        .then_some(expected)
                         .ok_or_else(|| SemanticError::unavailable("call_argument_abi_type"));
                 }
                 current = parent;
@@ -2899,10 +3552,12 @@ fn call_argument_abi_type_tracked(
 /// canonical-runtime intrinsic authority.
 fn dispatch_builtin_abi_signature(db: &dyn Db, key: AstNodeKey) -> Option<ItemSignature> {
     let symbol = dispatch_builtin_symbol(db, key).ok().flatten()?;
-    let (_, spec) = beskid_analysis::builtins::builtin_specs()
-        .iter()
-        .enumerate()
-        .find(|(_, candidate)| candidate.runtime_symbol == symbol.0)?;
+    manifest_builtin_abi_signature(symbol.0)
+}
+
+fn manifest_builtin_abi_signature(symbol: &str) -> Option<ItemSignature> {
+    let spec =
+        beskid_analysis::builtins::builtin_specs().iter().find(|candidate| candidate.runtime_symbol == symbol)?;
     let parameters = spec.params.iter().copied().map(builtin_type_to_semantic).collect::<Option<Vec<_>>>()?;
     let result = builtin_type_to_semantic(spec.returns)?;
     Some(ItemSignature { parameters: parameters.into(), result })
@@ -2915,6 +3570,7 @@ fn builtin_type_to_semantic(ty: beskid_analysis::builtins::BuiltinType) -> Optio
         BuiltinType::Ptr => SemanticTypeId::POINTER,
         BuiltinType::Usize => SemanticTypeId::WORD,
         BuiltinType::U64 => SemanticTypeId::I64,
+        BuiltinType::F64 => SemanticTypeId::F64,
         BuiltinType::Unit => SemanticTypeId::UNIT,
         BuiltinType::Never => SemanticTypeId::NEVER,
     })
@@ -3071,7 +3727,11 @@ fn abi_type_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> Se
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            let CallLowering::Direct(_) = lowering else {
+            let (CallLowering::Direct(_)
+            | CallLowering::ManifestBuiltin(_)
+            | CallLowering::Runtime(_)
+            | CallLowering::CorelibService(_)) = lowering
+            else {
                 return Some(Err(SemanticError::unavailable("abi_type")));
             };
             let signature = match call_abi_signature(db, key) {
@@ -3191,7 +3851,8 @@ fn abi_type_from_syntax(
     match syntax_type {
         Type::Primitive(_) => semantic_type_from_syntax(syntax_type),
         Type::Complex(path) => nominal_aggregate_abi_type(db, key, &path.node),
-        Type::Array(_) | Type::Function { .. } => Err(SemanticError::unavailable("abi_type")),
+        Type::Array(_) => Ok(SemanticTypeId::POINTER),
+        Type::Function { .. } => Err(SemanticError::unavailable("abi_type")),
     }
 }
 
@@ -3239,7 +3900,16 @@ fn aggregate_field_access_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<AggregateFieldAccess> {
     with_node(db, syntax, key, |program, index, node| {
-        let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
+        if !matches!(
+            index.kind(key.node),
+            Some(
+                beskid_analysis::syntax_query::NodeKind::PathExpression
+                    | beskid_analysis::syntax_query::NodeKind::MemberExpression
+            )
+        ) {
+            return None;
+        }
+        let path = path_expression(node)?;
         let [receiver, field] = path.path.node.segments.as_slice() else {
             return None;
         };
@@ -3257,6 +3927,26 @@ fn aggregate_field_access_tracked(
         Some(Ok(AggregateFieldAccess { declaration, receiver, index }))
     })?
     .transpose()
+}
+
+fn path_expression(
+    mut node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Option<&beskid_analysis::syntax::PathExpression> {
+    loop {
+        if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
+            return Some(path);
+        }
+        if let Some(beskid_analysis::syntax::Expression::Path(path)) = node.of::<beskid_analysis::syntax::Expression>()
+        {
+            return Some(&path.node);
+        }
+        let mut children = node.children_iter();
+        let child = children.next()?;
+        if children.next().is_some() {
+            return None;
+        }
+        node = child;
+    }
 }
 
 /// Resolve the smallest generation-safe member receiver: an unqualified local with an explicit
@@ -3296,13 +3986,34 @@ fn enum_layout_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) ->
         if let Some(definition) = node.of::<beskid_analysis::syntax::EnumDefinition>() {
             return Some(enum_layout_from_definition(db, program, index, key, definition, None));
         }
-        node.of::<beskid_analysis::syntax::EnumConstructorExpression>().map(|constructor| {
+        enum_constructor_expression(node).map(|constructor| {
             let type_path = contextual_enum_constructor_type_path(program, index, key, constructor)
                 .unwrap_or(&constructor.path.node.type_path.node);
             instantiated_enum_layout_for_path(db, key, type_path)
         })
     })?
     .transpose()
+}
+
+fn enum_constructor_expression(
+    mut node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Option<&beskid_analysis::syntax::EnumConstructorExpression> {
+    loop {
+        if let Some(constructor) = node.of::<beskid_analysis::syntax::EnumConstructorExpression>() {
+            return Some(constructor);
+        }
+        if let Some(beskid_analysis::syntax::Expression::EnumConstructor(constructor)) =
+            node.of::<beskid_analysis::syntax::Expression>()
+        {
+            return Some(&constructor.node);
+        }
+        let mut children = node.children_iter();
+        let child = children.next()?;
+        if children.next().is_some() {
+            return None;
+        }
+        node = child;
+    }
 }
 
 /// Return an explicitly applied enum type from the immediate typed context of a genericless
@@ -3428,6 +4139,10 @@ fn aggregate_shape_from_applied_type(
         }
         beskid_analysis::syntax::Type::Complex(path) => resolve_type_declaration(db, use_key, &path.node)
             .map(AggregateFieldShape::Nominal)
+            .or_else(|| {
+                (item_abi_type_from_syntax(db, use_key, syntax_type).ok() == Some(SemanticTypeId::POINTER))
+                    .then_some(AggregateFieldShape::Scalar(SemanticTypeId::POINTER))
+            })
             .ok_or_else(|| SemanticError::unavailable("enum_layout")),
         beskid_analysis::syntax::Type::Array(_) => Ok(AggregateFieldShape::Scalar(SemanticTypeId::POINTER)),
         beskid_analysis::syntax::Type::Function { .. } => Err(SemanticError::unavailable("enum_layout")),
@@ -3478,7 +4193,7 @@ fn enum_field_layout(
     let substituted = match (&field.node.ty.node, substitutions) {
         (beskid_analysis::syntax::Type::Complex(path), Some(substitutions)) => {
             let [segment] = path.node.segments.as_slice() else {
-                return Err(SemanticError::unavailable("enum_layout"));
+                return aggregate_field_layout(db, program, index, declaration, field);
             };
             segment
                 .node
@@ -3502,7 +4217,7 @@ fn enum_constructor_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<EnumConstructorFact> {
     with_node(db, syntax, key, |program, index, node| {
-        let constructor = node.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
+        let constructor = enum_constructor_expression(node)?;
         let type_path = contextual_enum_constructor_type_path(program, index, key, constructor)
             .unwrap_or(&constructor.path.node.type_path.node);
         let declaration =
@@ -3521,24 +4236,28 @@ fn enum_constructor_tracked(
             return Some(Err(SemanticError::unavailable("enum_constructor")));
         };
         let variant = &layout.variants[variant_index];
-        if variant.fields.len() != constructor.args.len() || variant.fields.len() > 1 {
+        if variant.fields.len() != constructor.args.len() {
             return Some(Err(SemanticError::unavailable("enum_constructor")));
         }
-        let payload = constructor
+        let payloads = constructor
             .args
-            .first()
+            .iter()
             .map(|argument| {
                 index
                     .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
                     .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
                     .ok_or_else(|| SemanticError::unavailable("enum_constructor"))
             })
-            .transpose();
+            .collect::<Result<Vec<_>, _>>();
+        let payloads = match payloads {
+            Ok(payloads) => payloads,
+            Err(error) => return Some(Err(error)),
+        };
         let variant_index = match u32::try_from(variant_index) {
             Ok(variant_index) => variant_index,
             Err(_) => return Some(Err(SemanticError::unavailable("enum_constructor"))),
         };
-        Some(payload.map(|payload| EnumConstructorFact { declaration, variant_index, payload }))
+        Some(Ok(EnumConstructorFact { declaration, variant_index, payloads: payloads.into() }))
     })?
     .transpose()
 }
@@ -3546,11 +4265,11 @@ fn enum_constructor_tracked(
 #[salsa::tracked]
 fn enum_match_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<EnumMatchFact> {
     with_node(db, syntax, key, |program, index, node| {
-        let expression = node.of::<beskid_analysis::syntax::MatchExpression>()?;
+        let expression = match_expression(node)?;
         let (declaration, layout) = match enum_match_scrutinee_layout(db, program, index, key, expression) {
             Some(Ok(fact)) => fact,
             Some(Err(error)) => return Some(Err(error)),
-            None => return Some(Err(SemanticError::unavailable("enum_match"))),
+            None => return Some(Err(SemanticError::unavailable("enum_match_scrutinee"))),
         };
         let mut arms = Vec::with_capacity(expression.arms.len());
         for arm in &expression.arms {
@@ -3573,7 +4292,7 @@ fn enum_match_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> 
                 Err(error) => return Some(Err(error)),
             };
             let arm_fact = match &arm.node.pattern.node {
-                beskid_analysis::syntax::Pattern::Wildcard => Ok((None, None)),
+                beskid_analysis::syntax::Pattern::Wildcard => Ok((None, Arc::from([]))),
                 beskid_analysis::syntax::Pattern::Enum(pattern) => {
                     if !enum_pattern_targets_declaration(db, declaration, &pattern.node.path.node.type_path.node) {
                         return Some(Err(SemanticError::unavailable("enum_match")));
@@ -3584,58 +4303,156 @@ fn enum_match_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> 
                     else {
                         return Some(Err(SemanticError::unavailable("enum_match")));
                     };
-                    if variant.fields.len() != pattern.node.items.len() || variant.fields.len() > 1 {
+                    if variant.fields.len() != pattern.node.items.len() {
                         return Some(Err(SemanticError::unavailable("enum_match")));
                     }
-                    let binding = match pattern.node.items.as_slice() {
-                        [] => None,
-                        [item] if matches!(item.node, beskid_analysis::syntax::Pattern::Wildcard) => None,
-                        [item] if matches!(item.node, beskid_analysis::syntax::Pattern::Identifier(_)) => {
-                            let Some(pattern_node) = index
-                                .direct_child_id(
-                                    program,
-                                    arm_node,
-                                    beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.pattern),
-                                )
-                                .and_then(|node| {
-                                    index.direct_child_id(
+                    let enum_pattern_node = index
+                        .direct_child_id(
+                            program,
+                            arm_node,
+                            beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.pattern),
+                        )
+                        .and_then(|node| {
+                            index.direct_child_id(
+                                program,
+                                node,
+                                beskid_analysis::syntax_query::DynNodeRef::from(pattern),
+                            )
+                        });
+                    let Some(enum_pattern_node) = enum_pattern_node else {
+                        return Some(Err(SemanticError::unavailable("enum_match")));
+                    };
+                    let bindings = pattern
+                        .node
+                        .items
+                        .iter()
+                        .zip(variant.fields.iter())
+                        .map(|(item, (_, payload))| match &item.node {
+                            beskid_analysis::syntax::Pattern::Wildcard => Ok(None),
+                            beskid_analysis::syntax::Pattern::Identifier(_) => {
+                                let declaration = index
+                                    .direct_child_id(
                                         program,
-                                        node,
-                                        beskid_analysis::syntax_query::DynNodeRef::from(pattern),
-                                    )
-                                })
-                                .and_then(|node| {
-                                    index.direct_child_id(
-                                        program,
-                                        node,
+                                        enum_pattern_node,
                                         beskid_analysis::syntax_query::DynNodeRef::from(item),
                                     )
-                                })
-                                .and_then(|node| index.children(node)?.first().copied())
-                            else {
-                                return Some(Err(SemanticError::unavailable("enum_match")));
-                            };
-                            Some(EnumMatchBindingFact {
-                                declaration: AstNodeKey { node: pattern_node, ..key },
-                                payload: variant.fields[0].1,
-                            })
-                        }
-                        _ => return Some(Err(SemanticError::unavailable("enum_match"))),
+                                    .and_then(|node| index.children(node)?.first().copied())
+                                    .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+                                Ok(Some(EnumMatchBindingFact {
+                                    declaration: AstNodeKey { node: declaration, ..key },
+                                    payload: *payload,
+                                }))
+                            }
+                            _ => Err(SemanticError::unavailable("enum_match")),
+                        })
+                        .collect::<Result<Vec<_>, _>>();
+                    let bindings = match bindings {
+                        Ok(bindings) => bindings,
+                        Err(error) => return Some(Err(error)),
                     };
                     let Ok(variant_index) = u32::try_from(variant_index) else {
                         return Some(Err(SemanticError::unavailable("enum_match")));
                     };
-                    Ok((Some(variant_index), binding))
+                    Ok((Some(variant_index), Arc::from(bindings)))
                 }
                 _ => Err(SemanticError::unavailable("enum_match")),
             };
-            let (variant_index, binding) = match arm_fact {
+            let (variant_index, bindings) = match arm_fact {
                 Ok(fact) => fact,
                 Err(error) => return Some(Err(error)),
             };
-            arms.push(EnumMatchArmFact { variant_index, body, binding });
+            arms.push(EnumMatchArmFact { variant_index, body, bindings });
         }
         Some(Ok(EnumMatchFact { declaration, layout, arms: arms.into() }))
+    })?
+    .transpose()
+}
+
+fn match_expression(
+    mut node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Option<&beskid_analysis::syntax::MatchExpression> {
+    loop {
+        if let Some(expression) = node.of::<beskid_analysis::syntax::MatchExpression>() {
+            return Some(expression);
+        }
+        if let Some(beskid_analysis::syntax::Expression::Match(expression)) =
+            node.of::<beskid_analysis::syntax::Expression>()
+        {
+            return Some(&expression.node);
+        }
+        let mut children = node.children_iter();
+        let child = children.next()?;
+        if children.next().is_some() {
+            return None;
+        }
+        node = child;
+    }
+}
+
+#[salsa::tracked]
+fn scalar_match_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<ScalarMatchFact> {
+    with_node(db, syntax, key, |program, index, node| {
+        let expression = match_expression(node)?;
+        let scrutinee_node = index
+            .direct_child_id(
+                program,
+                key.node,
+                beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()),
+            )
+            .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
+            .ok_or_else(|| SemanticError::unavailable("scalar_match"));
+        let scrutinee = match scrutinee_node {
+            Ok(scrutinee) => scrutinee,
+            Err(error) => return Some(Err(error)),
+        };
+        let semantic_type = match abi_type(db, scrutinee) {
+            Ok(Some(semantic_type)) if primitive_integer(semantic_type) || semantic_type == SemanticTypeId::CHAR => {
+                semantic_type
+            }
+            Ok(_) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let mut arms = Vec::with_capacity(expression.arms.len());
+        for arm in &expression.arms {
+            if arm.node.guard.is_some() {
+                return Some(Err(SemanticError::unavailable("scalar_match")));
+            }
+            let arm_node =
+                match index.direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(arm)) {
+                    Some(arm_node) => arm_node,
+                    None => return Some(Err(SemanticError::unavailable("scalar_match"))),
+                };
+            let body = match index.direct_child_id(
+                program,
+                arm_node,
+                beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.value),
+            ) {
+                Some(body) => AstNodeKey { node: normalized_expression_node(index, body), ..key },
+                None => return Some(Err(SemanticError::unavailable("scalar_match"))),
+            };
+            let discriminant = match &arm.node.pattern.node {
+                beskid_analysis::syntax::Pattern::Wildcard => None,
+                beskid_analysis::syntax::Pattern::Literal(literal) => {
+                    let value = match &literal.node {
+                        beskid_analysis::syntax::Literal::Integer(text) => integer_literal_u64(text),
+                        beskid_analysis::syntax::Literal::Bool(value) if semantic_type == SemanticTypeId::BOOL => {
+                            Some(u64::from(*value))
+                        }
+                        beskid_analysis::syntax::Literal::Char(text) if semantic_type == SemanticTypeId::CHAR => {
+                            text.trim_matches('\'').chars().next().map(|value| u64::from(value))
+                        }
+                        _ => None,
+                    };
+                    match value {
+                        Some(value) => Some(value),
+                        None => return Some(Err(SemanticError::unavailable("scalar_match"))),
+                    }
+                }
+                _ => return None,
+            };
+            arms.push(ScalarMatchArmFact { discriminant, body });
+        }
+        Some(Ok(ScalarMatchFact { scrutinee, semantic_type, arms: arms.into() }))
     })?
     .transpose()
 }
@@ -3681,6 +4498,22 @@ fn enum_match_scrutinee_layout(
                 .and_then(|layout| layout.ok_or_else(|| SemanticError::unavailable("enum_match")))
                 .map(|layout| (declaration, layout)),
         );
+    }
+    if let beskid_analysis::syntax::Expression::Call(_) = &expression.scrutinee.node {
+        let scrutinee = normalized_expression_node(
+            index,
+            index.direct_child_id(
+                program,
+                key.node,
+                beskid_analysis::syntax_query::DynNodeRef::from(&expression.scrutinee.node),
+            )?,
+        );
+        let specialization = match generic_call_specialization(db, AstNodeKey { node: scrutinee, ..key }) {
+            Ok(Some(specialization)) => specialization,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        return Some(enum_layout_for_generic_call_result(db, &specialization));
     }
     let beskid_analysis::syntax::Expression::Path(path) = &expression.scrutinee.node else {
         return None;
@@ -3752,6 +4585,115 @@ fn enum_match_scrutinee_layout(
     };
     let declaration = resolve_type_declaration(db, key, &path.node)?;
     Some(instantiated_enum_layout_for_path(db, key, &path.node).map(|layout| (declaration, layout)))
+}
+
+pub fn enum_layout_for_generic_call_result(
+    db: &dyn Db,
+    specialization: &GenericCallSpecialization,
+) -> Result<(AstNodeKey, EnumLayoutFact), SemanticError> {
+    let function_syntax = db
+        .syntax_unit(specialization.declaration.unit)
+        .ok_or_else(|| SemanticError::unavailable("enum_match_scrutinee"))?;
+    let function = function_syntax
+        .syntax_index(db)
+        .node_at(function_syntax.expanded_program(db), specialization.declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("enum_match_scrutinee"))?;
+    let return_type =
+        function.return_type.as_ref().ok_or_else(|| SemanticError::unavailable("enum_match_scrutinee"))?;
+    let beskid_analysis::syntax::Type::Complex(return_path) = &return_type.node else {
+        return Err(SemanticError::unavailable("enum_match_scrutinee"));
+    };
+    let declaration = resolve_type_declaration(db, specialization.declaration, &return_path.node)
+        .ok_or_else(|| SemanticError::unavailable("enum_match_scrutinee"))?;
+    let enum_syntax =
+        db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable("enum_match_scrutinee"))?;
+    let enum_program = enum_syntax.expanded_program(db);
+    let enum_index = enum_syntax.syntax_index(db);
+    let definition = enum_index
+        .node_at(enum_program, declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::EnumDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("enum_match_scrutinee"))?;
+    let terminal =
+        return_path.node.segments.last().ok_or_else(|| SemanticError::unavailable("enum_match_scrutinee"))?;
+    if terminal.node.type_args.len() != definition.generics.len() {
+        return Err(SemanticError::unavailable("enum_match_scrutinee"));
+    }
+    let function_generics = function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
+    let substitutions = definition
+        .generics
+        .iter()
+        .zip(terminal.node.type_args.iter())
+        .map(|(generic, argument)| {
+            let shape = generic_parameter_reference_name(&argument.node)
+                .and_then(|name| function_generics.iter().position(|candidate| *candidate == name))
+                .and_then(|index| specialization.arguments.get(index).copied())
+                .map(AggregateFieldShape::Scalar)
+                .map(Ok)
+                .unwrap_or_else(|| aggregate_shape_from_applied_type(db, specialization.declaration, &argument.node))?;
+            Ok((generic.node.name.clone(), shape))
+        })
+        .collect::<Result<HashMap<_, _>, SemanticError>>()?;
+    let layout =
+        enum_layout_from_definition(db, enum_program, enum_index, declaration, definition, Some(&substitutions))?;
+    Ok((declaration, layout))
+}
+
+/// Resolve an enum constructor inside one exact generic item specialization.
+///
+/// This is the contextual counterpart to [`enum_constructor`]: constructors such as
+/// `Result::Error(...)` in a function returning `Result<T, string>` cannot have a concrete
+/// payload layout until the caller-derived substitution for `T` is retained.
+pub fn enum_constructor_in_item(
+    db: &dyn Db,
+    key: AstNodeKey,
+    item: AstNodeKey,
+    specialization: &GenericCallSpecialization,
+) -> Result<Option<(EnumConstructorFact, EnumLayoutFact)>, SemanticError> {
+    if item != specialization.declaration || key.unit != item.unit || key.generation != item.generation {
+        return Ok(None);
+    }
+    let syntax = db.syntax_unit(key.unit).filter(|syntax| syntax.generation(db) == key.generation);
+    let Some(syntax) = syntax else {
+        return Ok(None);
+    };
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let Some(node) = index.node_at(program, key.node) else {
+        return Ok(None);
+    };
+    let Some(constructor) = enum_constructor_expression(node) else {
+        return Ok(None);
+    };
+    let type_path = contextual_enum_constructor_type_path(program, index, key, constructor)
+        .unwrap_or(&constructor.path.node.type_path.node);
+    let declaration =
+        resolve_type_declaration(db, key, type_path).ok_or_else(|| SemanticError::unavailable("enum_constructor"))?;
+    let (result_declaration, layout) = enum_layout_for_generic_call_result(db, specialization)?;
+    if declaration != result_declaration {
+        return Ok(None);
+    }
+    let variant_name = constructor.path.node.variant.node.name.as_str();
+    let variant_index = layout
+        .variants
+        .iter()
+        .position(|variant| variant.name.as_ref() == variant_name)
+        .ok_or_else(|| SemanticError::unavailable("enum_constructor"))?;
+    if layout.variants[variant_index].fields.len() != constructor.args.len() {
+        return Err(SemanticError::unavailable("enum_constructor"));
+    }
+    let payloads = constructor
+        .args
+        .iter()
+        .map(|argument| {
+            index
+                .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
+                .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
+                .ok_or_else(|| SemanticError::unavailable("enum_constructor"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let variant_index = u32::try_from(variant_index).map_err(|_| SemanticError::unavailable("enum_constructor"))?;
+    Ok(Some((EnumConstructorFact { declaration, variant_index, payloads: payloads.into() }, layout)))
 }
 
 fn aggregate_field_layout(
@@ -3998,6 +4940,8 @@ fn resolve_type_declaration(db: &dyn Db, key: AstNodeKey, path: &beskid_analysis
                 .into_iter()
                 .filter_map(|target| unique_exported_type_in_unit(db, target, key.generation, name, generic_arity)),
         );
+        let mut seen = HashSet::new();
+        candidates.retain(|candidate| seen.insert(*candidate));
         let [declaration] = candidates.as_slice() else {
             return None;
         };
@@ -4005,6 +4949,20 @@ fn resolve_type_declaration(db: &dyn Db, key: AstNodeKey, path: &beskid_analysis
     }
     let module_path =
         module_path.iter().map(|segment| segment.node.name.node.name.as_str()).map(str::to_owned).collect::<Vec<_>>();
+    let exact_module = {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        registry.modules.get(&(key.generation, module_path.clone())).and_then(|targets| {
+            let [target] = targets.as_slice() else {
+                return None;
+            };
+            Some(*target)
+        })
+    };
+    if let Some(unit) = exact_module
+        && let Some(declaration) = unique_exported_type_in_unit(db, unit, key.generation, name, generic_arity)
+    {
+        return Some(declaration);
+    }
     if let Some(unit) = resolve_qualified_module_unit(db, key, &module_path)
         && let Some(declaration) = unique_exported_type_in_unit(db, unit, key.generation, name, generic_arity)
     {
@@ -4882,14 +5840,16 @@ fn block_statement_nodes_tracked(
             let block = index.node_at(program, block_key)?.of::<beskid_analysis::syntax::Block>()?;
             (block_key, block)
         };
-        Some(
-            block
-                .statements
+        Some((|| {
+            let wrappers =
+                index.children(block_key).ok_or_else(|| SemanticError::unavailable("block_statement_nodes"))?;
+            if wrappers.len() != block.statements.len() {
+                return Err(SemanticError::unavailable("block_statement_nodes"));
+            }
+            wrappers
                 .iter()
-                .map(|statement| {
-                    let wrapper = index
-                        .direct_child_id(program, block_key, beskid_analysis::syntax_query::DynNodeRef::from(statement))
-                        .ok_or_else(|| SemanticError::unavailable("block_statement_nodes"))?;
+                .copied()
+                .map(|wrapper| {
                     let [statement] =
                         index.children(wrapper).ok_or_else(|| SemanticError::unavailable("block_statement_nodes"))?
                     else {
@@ -4898,8 +5858,8 @@ fn block_statement_nodes_tracked(
                     Ok(AstNodeKey { node: *statement, ..key })
                 })
                 .collect::<Result<Vec<_>, _>>()
-                .map(Arc::from),
-        )
+                .map(Arc::from)
+        })())
     })?
     .transpose()
 }
@@ -5554,12 +6514,102 @@ pub fn generic_call_specialization(db: &dyn Db, key: AstNodeKey) -> SemanticQuer
     with_registered_syntax(db, key, generic_call_specialization_tracked)
 }
 
+/// Derive a specialization solely from a complete, explicit source type application.
+pub fn explicit_generic_call_specialization(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<GenericCallSpecialization> {
+    let Some(instantiation) = generic_call_instantiation(db, key)? else {
+        return Ok(None);
+    };
+    let declaration = instantiation.declaration;
+    let syntax = db
+        .syntax_unit(declaration.unit)
+        .ok_or_else(|| SemanticError::unavailable("explicit_generic_call_specialization"))?;
+    let function = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("explicit_generic_call_specialization"))?;
+    if function.generics.len() != instantiation.arguments.len() {
+        return Err(SemanticError::unavailable("explicit_generic_call_specialization"));
+    }
+    let substitutions = function
+        .generics
+        .iter()
+        .zip(instantiation.arguments.iter().copied())
+        .map(|(generic, argument)| (generic.node.name.to_string(), argument))
+        .collect::<HashMap<_, _>>();
+    let parameters = function
+        .parameters
+        .iter()
+        .map(|parameter| generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions))
+        .collect::<Result<Vec<_>, _>>()?;
+    let result = function.return_type.as_ref().map_or(Ok(SemanticTypeId::UNIT), |return_type| {
+        generic_abi_type(db, declaration, &return_type.node, &substitutions)
+    })?;
+    Ok(Some(GenericCallSpecialization {
+        declaration,
+        arguments: instantiation.arguments,
+        signature: ItemSignature { parameters: parameters.into(), result },
+    }))
+}
+
+/// Derive a nested generic call specialization under one exact caller ABI specialization.
+///
+/// This is the contextual counterpart of [`generic_call_specialization`]: it is used while
+/// emitting a concrete generic item, where references to that item's type parameters have an
+/// ABI identity supplied by the originating call.
+pub fn generic_call_specialization_in_item(
+    db: &dyn Db,
+    key: AstNodeKey,
+    item: AstNodeKey,
+    item_specialization: &GenericCallSpecialization,
+) -> SemanticQueryResult<GenericCallSpecialization> {
+    let Some(CallLowering::Direct(declaration)) = call_lowering(db, key)? else {
+        return Ok(None);
+    };
+    if !function_declares_generics(db, declaration) {
+        return Ok(None);
+    }
+    let signature = call_abi_signature_for_call_in_item(db, key, Some((item, item_specialization)))?;
+    let generic_arity = db
+        .syntax_unit(declaration.unit)
+        .and_then(|syntax| {
+            syntax
+                .syntax_index(db)
+                .node_at(syntax.expanded_program(db), declaration.node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+                .map(|function| function.generics.len())
+        })
+        .ok_or_else(|| SemanticError::unavailable("generic_call_arguments"))?;
+    let arguments = generic_call_instantiation(db, key)?
+        .filter(|instantiation| instantiation.arguments.len() == generic_arity)
+        .map(|instantiation| instantiation.arguments)
+        .or_else(|| contextual_explicit_generic_arguments(db, key, item, item_specialization))
+        .or_else(|| generic_arguments_from_signature(db, declaration, &signature).ok());
+    let Some(arguments) = arguments else {
+        return Err(SemanticError::unavailable("generic_call_arguments"));
+    };
+    Ok(Some(GenericCallSpecialization { declaration, arguments, signature }))
+}
+
 /// Return numeric cast intents proven by an exact typed-let constraint.
 ///
 /// Inferred, complex, non-numeric, and other unported coercion contexts remain explicitly
 /// unavailable. Stale, unregistered, and non-expression nodes contain no fact.
 pub fn cast_intents(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[CastIntent]>> {
     with_registered_syntax(db, key, cast_intents_tracked)
+}
+
+/// Return the concrete direct-call initializer and exact result ABI for an explicitly typed let.
+pub fn typed_let_call_result(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<TypedLetCallResultFact> {
+    with_registered_syntax(db, key, typed_let_call_result_tracked)
+}
+
+/// Return the concrete expression node stored behind a let statement's syntax wrapper.
+pub fn let_initializer(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
+    with_registered_syntax(db, key, let_initializer_tracked)
 }
 
 /// Return AST-derived fall-through facts for executable nodes in the current generation.
@@ -5626,6 +6676,11 @@ pub fn enum_constructor(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Enu
 /// binding and control-flow representation.
 pub fn enum_match(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumMatchFact> {
     with_registered_syntax(db, key, enum_match_tracked)
+}
+
+/// Return ordered integer-like literal and wildcard arms for a scalar match expression.
+pub fn scalar_match(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ScalarMatchFact> {
+    with_registered_syntax(db, key, scalar_match_tracked)
 }
 
 /// Return the scalar ABI representation for one current syntax node.
@@ -5731,6 +6786,24 @@ pub fn node_kind(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<IndexedNod
 
 pub fn child_nodes(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[AstNodeKey]>> {
     with_registered_syntax(db, key, child_nodes_tracked)
+}
+
+/// Return every indexed call expression in the current source unit.
+///
+/// Module specialization discovery uses this exact syntax inventory because the deliberately
+/// narrow `child_nodes` fact does not promise a complete recursive walk through every statement
+/// wrapper.
+pub fn call_expression_nodes(db: &dyn Db, authority: AstNodeKey) -> Arc<[AstNodeKey]> {
+    let Some(syntax) = db.syntax_unit(authority.unit).filter(|syntax| syntax.generation(db) == authority.generation)
+    else {
+        return Arc::new([]);
+    };
+    syntax
+        .syntax_index(db)
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::CallExpression)
+        .map(|node| AstNodeKey { node, ..authority })
+        .collect::<Vec<_>>()
+        .into()
 }
 
 pub fn literal_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<LiteralFact> {

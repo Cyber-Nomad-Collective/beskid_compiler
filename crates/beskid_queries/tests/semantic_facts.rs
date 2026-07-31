@@ -16,16 +16,17 @@ use beskid_queries::{
     AggregateFieldShape, AstNodeKey, BeskidDatabase, CaptureStorageClass, ClosureAllocationStatus, ClosureCallTarget,
     ClosureCapture, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement, CompletionContext,
     EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, ItemSignature, LocalSlot,
-    MutableLocalAssignment, OperatorFact, ProjectSession, SemanticError, SemanticTypeId, SourceUnitId,
-    SpawnDiagnosticKind, SpawnEntryValidation, SyntaxGenerationId, abi_type, aggregate_field_access, aggregate_layout,
-    build_canonical_corelib_syscall_typed_program, build_typed_program,
-    build_typed_program_with_corelib_syscall_services, call_abi_signature, call_arguments, call_lowering,
-    callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target, closure_environment,
-    closure_signature, completion_candidates, constant_integer, control_flow, direct_callees, enum_constructor,
-    enum_layout, enum_match, for_iterator_fact, generic_call_instantiation, generic_call_specialization,
-    item_abi_signature, item_body, item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind,
-    node_span, node_type, nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items,
-    resolved_item, resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
+    MutableLocalAssignment, OperatorFact, ProjectSession, ScalarMatchArmFact, ScalarMatchFact, SemanticError,
+    SemanticTypeId, SourceUnitId, SpawnDiagnosticKind, SpawnEntryValidation, SyntaxGenerationId, abi_type,
+    aggregate_field_access, aggregate_layout, build_canonical_corelib_syscall_typed_program, build_typed_program,
+    build_typed_program_with_corelib_syscall_services, call_abi_signature, call_argument_abi_type, call_arguments,
+    call_lowering, callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target,
+    closure_environment, closure_signature, completion_candidates, constant_integer, control_flow, direct_callees,
+    enum_constructor, enum_layout, enum_match, for_iterator_fact, generic_call_instantiation,
+    generic_call_specialization, item_abi_signature, item_body, item_signature, literal_fact, local_slot,
+    mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver, operator_fact,
+    primitive_numeric_conversion, reachable_items, resolved_item, resolved_local, runtime_intrinsic, scalar_match,
+    spawn_entry_validation, spawn_legality, spawn_target, test_item,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -211,7 +212,12 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
         NodeKind::PathExpression,
         main_source.find("Core.Text.Regex.Generated.ParseDigit").expect("unbound fully-qualified module"),
     );
-    assert_eq!(resolved_item(&db, fully_qualified).expect("unbound fully-qualified module"), None);
+    assert_eq!(
+        resolved_item(&db, fully_qualified).expect("unbound fully-qualified module"),
+        Some(beskid_queries::ResolvedItem {
+            declaration: key(generated_unit, generation, &generated_index, NodeKind::FunctionDefinition, 0),
+        })
+    );
     assert_eq!(
         resolved_item(&db, parse_digit).expect("declared module member"),
         Some(beskid_queries::ResolvedItem {
@@ -306,6 +312,7 @@ unit Main() {
         generic_call_specialization(&db, call).expect("generic direct-field specialization"),
         Some(beskid_queries::GenericCallSpecialization {
             declaration: key(unit, generation, &index, NodeKind::FunctionDefinition, 0),
+            arguments: Arc::from([SemanticTypeId::I64]),
             signature: ItemSignature {
                 parameters: Arc::from([SemanticTypeId::I64, SemanticTypeId::I64]),
                 result: SemanticTypeId::UNIT,
@@ -422,7 +429,11 @@ fn enum_layout_instantiates_concrete_generic_result_payloads() {
     );
     assert_eq!(
         enum_constructor(&db, constructor).expect("concrete generic constructor query"),
-        Some(beskid_queries::EnumConstructorFact { declaration: result, variant_index: 0, payload: Some(payload) }),
+        Some(beskid_queries::EnumConstructorFact {
+            declaration: result,
+            variant_index: 0,
+            payloads: Arc::from([payload]),
+        }),
     );
 }
 
@@ -636,17 +647,23 @@ fn enum_constructor_selects_the_source_variant_and_single_payload() {
 
     assert_eq!(
         enum_constructor(&db, constructor).expect("enum constructor query"),
-        Some(beskid_queries::EnumConstructorFact { declaration, variant_index: 1, payload: Some(payload) })
+        Some(beskid_queries::EnumConstructorFact { declaration, variant_index: 1, payloads: Arc::from([payload]) })
     );
 }
 
 #[test]
-fn enum_constructor_rejects_multiple_payloads_until_isle_has_a_multi_field_shape() {
+fn enum_constructor_preserves_multiple_payloads_in_source_order() {
     let source = "enum Pair { Value(i32 left, i32 right) } i32 Main() { Pair pair = Pair::Value(1, 2); return 0; }";
     let (db, _project, unit, generation, index) = setup(source);
     let constructor = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 0);
+    let declaration = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
+    let left = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    let right = key(unit, generation, &index, NodeKind::LiteralExpression, 1);
 
-    assert_unavailable(enum_constructor(&db, constructor));
+    assert_eq!(
+        enum_constructor(&db, constructor).expect("multi-payload enum constructor"),
+        Some(beskid_queries::EnumConstructorFact { declaration, variant_index: 0, payloads: Arc::from([left, right]) })
+    );
 }
 
 #[test]
@@ -669,8 +686,34 @@ fn enum_match_keeps_source_ordered_nullary_variant_arms() {
                 ]),
             },
             arms: Arc::from([
-                EnumMatchArmFact { variant_index: Some(0), body: first_body, binding: None },
-                EnumMatchArmFact { variant_index: Some(1), body: second_body, binding: None },
+                EnumMatchArmFact { variant_index: Some(0), body: first_body, bindings: Arc::from([]) },
+                EnumMatchArmFact { variant_index: Some(1), body: second_body, bindings: Arc::from([]) },
+            ]),
+        })
+    );
+}
+
+#[test]
+fn scalar_match_keeps_ordered_integer_literals_and_terminal_wildcard() {
+    let source = r#"string Punctuation(u8 value) {
+        return match value { 32 => " ", 33 => "!", _ => "" };
+    }"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::MatchExpression, 0);
+    let scrutinee = key(unit, generation, &index, NodeKind::PathExpression, 0);
+    let first_body = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    let second_body = key(unit, generation, &index, NodeKind::LiteralExpression, 1);
+    let wildcard_body = key(unit, generation, &index, NodeKind::LiteralExpression, 2);
+
+    assert_eq!(
+        scalar_match(&db, expression).expect("scalar match query"),
+        Some(ScalarMatchFact {
+            scrutinee,
+            semantic_type: SemanticTypeId::U8,
+            arms: Arc::from([
+                ScalarMatchArmFact { discriminant: Some(32), body: first_body },
+                ScalarMatchArmFact { discriminant: Some(33), body: second_body },
+                ScalarMatchArmFact { discriminant: None, body: wildcard_body },
             ]),
         })
     );
@@ -1929,6 +1972,7 @@ pub Core.Results.Result<i64, Core.Syscall.SyscallError> Write() {
         generic_call_specialization(&db, call).expect("generic Results.IsOk specialization"),
         Some(beskid_queries::GenericCallSpecialization {
             declaration,
+            arguments: Arc::from([SemanticTypeId::I64, SemanticTypeId::POINTER]),
             signature: ItemSignature { parameters: Arc::from([SemanticTypeId::POINTER]), result: SemanticTypeId::BOOL },
         })
     );
@@ -2085,6 +2129,7 @@ unit Main() { Equal(1, 1, "because"); return; }
         generic_call_specialization(&db, call).expect("inferred generic specialization"),
         Some(beskid_queries::GenericCallSpecialization {
             declaration: key(unit, generation, &index, NodeKind::FunctionDefinition, 0),
+            arguments: Arc::from([SemanticTypeId::I32]),
             signature: ItemSignature {
                 parameters: Arc::from([SemanticTypeId::I32, SemanticTypeId::I32, SemanticTypeId::STRING,]),
                 result: SemanticTypeId::UNIT,
@@ -2552,6 +2597,34 @@ i32 Main() {
     )
     .expect("syntax update");
     assert_eq!(call_arguments(&db, outer_call).expect("stale arguments"), None);
+}
+
+#[test]
+fn negative_integer_call_argument_inherits_the_parameter_abi() {
+    let source = "i64 Identity(i64 value) { return value; } i64 Main() { return Identity(-5); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let unary = key(unit, generation, &index, NodeKind::UnaryExpression, 0);
+
+    assert_eq!(call_argument_abi_type(&db, unary).expect("negative argument ABI"), Some(SemanticTypeId::I64));
+}
+
+#[test]
+fn explicit_generic_array_result_has_pointer_abi_specialization() {
+    let source = r#"
+T[] Empty<T>() { return __array_new(8, 0); }
+unit Main() { i64[] values = Empty<i64>(); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 1);
+    let binding = key(unit, generation, &index, NodeKind::LetStatement, 0);
+    let expected = ItemSignature { parameters: Arc::from([]), result: SemanticTypeId::POINTER };
+
+    assert_eq!(call_abi_signature(&db, call).expect("array call ABI"), Some(expected.clone()));
+    assert_eq!(
+        generic_call_specialization(&db, call).expect("array specialization").map(|fact| fact.signature),
+        Some(expected)
+    );
+    assert_eq!(abi_type(&db, binding).expect("array local ABI"), Some(SemanticTypeId::POINTER));
 }
 
 #[test]

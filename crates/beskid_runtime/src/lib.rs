@@ -47,10 +47,10 @@ pub use builtins::{
     fiber_spawn_with_cancel_slot, fiber_yield, gc_bytes_allocated, gc_collect, gc_collect_if_needed,
     gc_external_root_count, gc_object_count, gc_phase, gc_register_root, gc_root_handle, gc_unregister_root,
     gc_unroot_handle, gc_write_barrier, hub_create, hub_register, hub_unregister, hub_wait_receive,
-    hub_wait_receive_index, hub_wait_receive_status, hub_wait_receive_value, install_callback_trampoline, mutex_create,
-    mutex_lock, mutex_try_lock, mutex_unlock, panic, panic_str, registered_callbacks, str_concat, str_eq, str_from_i64,
-    str_len, str_new, syscall_read, syscall_write, test_bytes_len, test_bytes_ptr, wait_group_add, wait_group_create,
-    wait_group_done, wait_group_wait,
+    hub_wait_receive_index, hub_wait_receive_status, hub_wait_receive_value, install_callback_trampoline, math_ceil,
+    math_floor, math_log, math_sqrt, mutex_create, mutex_lock, mutex_try_lock, mutex_unlock, panic, panic_str,
+    registered_callbacks, str_concat, str_eq, str_from_i64, str_len, str_new, syscall_read, syscall_write,
+    test_bytes_len, test_bytes_ptr, wait_group_add, wait_group_create, wait_group_done, wait_group_wait,
 };
 
 #[cfg(feature = "metrics")]

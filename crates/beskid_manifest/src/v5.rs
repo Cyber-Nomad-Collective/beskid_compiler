@@ -625,7 +625,8 @@ pub const ABI_V5_TRAPS: &[(&str, u8)] = &[\n{trap_rows}];\n",
 fn soft_builtin_param_kind(ty: &str) -> &'static str {
     match ty {
         "pointer" | "string" => "crate::AbiParamKind::Ptr",
-        "usize" | "isize" | "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64" | "f32" | "f64" => {
+        "f64" => "crate::AbiParamKind::F64",
+        "usize" | "isize" | "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64" | "f32" => {
             "crate::AbiParamKind::I64"
         }
         other => panic!("invalid soft builtin parameter type `{other}`"),
@@ -638,7 +639,8 @@ fn soft_builtin_return_kind(ty: &str) -> &'static str {
         "never" => "crate::AbiReturnKind::Never",
         "pointer" | "string" => "crate::AbiReturnKind::Ptr",
         "i32" | "u32" | "i8" | "u8" | "i16" | "u16" => "crate::AbiReturnKind::I32",
-        "usize" | "isize" | "i64" | "u64" | "f32" | "f64" => "crate::AbiReturnKind::I64",
+        "f64" => "crate::AbiReturnKind::F64",
+        "usize" | "isize" | "i64" | "u64" | "f32" => "crate::AbiReturnKind::I64",
         other => panic!("invalid soft builtin result type `{other}`"),
     }
 }

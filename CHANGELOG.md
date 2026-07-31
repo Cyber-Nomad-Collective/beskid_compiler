@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Preserve exact runtime-intrinsic result ABIs, array element types, nested call-result argument
+  ABIs, integer-width array stores, and integer-to-float typed-local initialization through
+  syntax-to-ISLE lowering.
+- Emit mutable locals from Pest repetition/sequence generation and mark reassigned Base64/Regex
+  locals mutable, keeping generated parser source aligned with Beskid immutability rules.
+- Treat the final expression statement of a block expression as its value rather than lowering it
+  twice as an ordinary statement.
+- Propagate concrete call-derived ABI specializations through nested generic calls during syntax
+  module emission, so generic helpers and ABI-erased nominal type arguments retain matching
+  declarations, imports, signatures, and result types without consulting legacy HIR.
+- Resolve exact fully qualified type paths through the generation-bound module registry, with
+  ambiguity rejected, so generic enum constructors such as `Core.Results.Result<...>::Ok` retain
+  their source layout facts without requiring a redundant `use Core.Results`.
+- Preserve ordered multi-field enum payload layouts, constructor arguments, and match bindings
+  through Salsa facts and ISLE managed-object lowering, including generic enums that combine
+  substituted fields with qualified nominal fields.
+- Resolve exact fully qualified function paths through the generation-bound module registry when
+  no import route exists, rejecting ambiguous module targets and exports.
 - Refactor parser-recovery orchestration in `beskid_analysis` behind an explicit recovery-policy module, separating phase ordering from candidate application and making recovery pass structure explicit and easier to evolve.
 - Expand parser recovery synchronization coverage with grammar-level boundary heuristics for additional
   syntax forms (`macro`, host/scope/registry constructs, `spawn`/`match`/`range`/`code`, and
@@ -46,6 +64,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Route Corelib terminal detection through the canonical host dispatch instead of direct
+  platform C-runtime imports, keeping exact ABI-v5 runtime-kit symbol validation closed.
+- Run threshold-triggered GC before allocating a new object so the allocation cannot be reclaimed
+  before its caller has an opportunity to publish or root it.
+- Store each runtime string header and its copied UTF-8 bytes in one GC allocation, ensuring a
+  rooted string handle retains its contents.
+- Declare Console Panel title-fill counters mutable before their negative-width clamping assignments.
+- Preserve exact source-order block statement facts without pointer identity lookups, and prevent
+  singleton ancestor blocks from being misclassified as descendant aggregate field accesses.
+- Lower ordered integer, boolean, and character literal matches through dedicated scalar-match
+  facts and direct CLIF switches, keeping wildcard/default handling separate from enum layouts.
+- Lower typed lets from exact non-generic direct-call results using the same proven query key for
+  initializer emission, and apply exact numeric call-parameter ABI coercions to typed local
+  arguments as well as literals.
+- Lower annotated aggregate-parameter field assignments by resolving delegated path wrappers and
+  deriving assignment result types from their targets.
+- Preserve enum-match facts through delegated `Expression::Match` wrappers.
+- Lower non-dispatch generated-manifest builtins through an explicit direct-call authority and
+  import identity, and complete array/generic integer ABI facts plus Core Input/console mutability
+  and imports needed by the stock-verifier-clean Corelib CLIF path.
+- Complete Core Bytes lowering through the canonical runtime byte accessors, preserve the typed
+  UTF-8 result before matching, narrow console file descriptors at the platform FFI boundary, and
+  add manifest-generated `f64` ABI/runtime support for floor, ceiling, square root, and logarithm.
+- Make byte subslice bounds explicitly mutable, route Hex encoding and decoding through the
+  canonical Slice accessors, and use imported nominal Time types consistently in Corelib gates.
+- Normalize Console scan/attribute mutation and facade imports, and teach syntax ISLE array
+  assignment to address dynamically sized ABI-v5 `BeskidArray` backing storage with runtime bounds.
+- Stop stale process host registrations from overriding canonical WaitGroup dispatch tags 46 and 47,
+  preventing `WaitGroup.Create`/`Wait` from routing into process adapters and aborting on a null string handle.
 - Complete generation-safe lowering facts for enum-valued aggregate-field matches and contextual
   integer arguments in generic calls, while preserving fail-closed handling for unsupported
   multi-field enum payloads.
