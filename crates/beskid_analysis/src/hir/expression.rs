@@ -258,7 +258,11 @@ pub struct HirGroupedExpression {
 #[ast(kind = "TryExpression")]
 pub struct HirTryExpression {
     #[ast(child)]
-    pub expr: Box<Spanned<ExpressionNode<HirPhase>>>,
+    pub body: Box<Spanned<ExpressionNode<HirPhase>>>,
+    #[ast(child)]
+    pub error_variable: Option<Spanned<HirIdentifier>>,
+    #[ast(child)]
+    pub catch_block: Option<Spanned<HirBlock>>,
 }
 
 #[derive(beskid_ast_derive::HirNode)]

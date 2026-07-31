@@ -42,6 +42,16 @@ impl SyntaxNodeFacts<'_> {
         } else {
             self.query(enum_match(self.db, key))?.layout
         };
+        self.build_enum_layout(isa, allocation, source)
+    }
+
+    /// Build an `EnumLayout` from a static plan and source layout fact.
+    fn build_enum_layout(
+        &self,
+        isa: &dyn TargetIsa,
+        allocation: AggregateStaticPlan,
+        source: beskid_queries::EnumLayoutFact,
+    ) -> Option<EnumLayout> {
         let tag_type = types::I32;
         let tag = FieldLayout::new(tag_type, u32::try_from(allocation.fields.first()?.field_offset).ok()?);
         let mut alignment = u32::try_from(allocation.object_alignment).ok()?;

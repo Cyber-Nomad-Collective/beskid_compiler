@@ -11,6 +11,7 @@ pub enum BuiltinType {
     Ptr,
     Usize,
     U64,
+    F64,
     Unit,
     Never,
 }

@@ -155,7 +155,7 @@ fn collect_invalid_try_targets_in_expression(
     spans: &mut Vec<SpanInfo>,
 ) {
     if let HirExpressionNode::TryExpression(try_expr) = &expr.node
-        && checker.try_desugar_target_for_operand(&try_expr.node.expr).is_none()
+        && checker.try_desugar_target_for_operand(&try_expr.node.body).is_none()
     {
         spans.push(expr.span);
     }
@@ -248,7 +248,7 @@ fn collect_try_targets_in_expression(
     map: &mut HashMap<SpanInfo, TryDesugarTarget>,
 ) {
     if let HirExpressionNode::TryExpression(try_expr) = &expr.node
-        && let Some(target) = checker.try_desugar_target_for_operand(&try_expr.node.expr)
+        && let Some(target) = checker.try_desugar_target_for_operand(&try_expr.node.body)
     {
         map.insert(expr.span, target);
     }

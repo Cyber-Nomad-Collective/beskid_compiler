@@ -7,8 +7,9 @@ use crate::types::try_desugar::TryDesugarTarget;
 
 const TRY_OK_BINDING_OFFSET: usize = 10;
 const TRY_OK_PATTERN_OFFSET: usize = 11;
-const TRY_ERR_ARM_OFFSET: usize = 12;
-const TRY_MATCH_OFFSET: usize = 13;
+const TRY_ERR_VAR_OFFSET: usize = 12;
+const TRY_ERR_ARM_OFFSET: usize = 13;
+const TRY_MATCH_OFFSET: usize = 14;
 const TRY_PANIC_CALLEE_OFFSET: usize = 20;
 const TRY_PANIC_MSG_OFFSET: usize = 21;
 
@@ -41,7 +42,8 @@ pub(super) fn desugar_try_expression(
         target.map(|t| (t.type_name.as_str(), t.ok_variant.as_str())).unwrap_or(("Result", "Ok"));
     let ok_binding_span = offset_span(parent_span, TRY_OK_BINDING_OFFSET);
     let ok_pattern_span = offset_span(parent_span, TRY_OK_PATTERN_OFFSET);
-    let wildcard_arm_span = offset_span(parent_span, TRY_ERR_ARM_OFFSET);
+    let err_var_span = offset_span(parent_span, TRY_ERR_VAR_OFFSET);
+    let err_arm_span = offset_span(parent_span, TRY_ERR_ARM_OFFSET);
     let match_span = offset_span(parent_span, TRY_MATCH_OFFSET);
     let ok_binding = hir_identifier(format!("__try_ok_{}", parent_span.start), ok_binding_span);
 
@@ -80,18 +82,91 @@ pub(super) fn desugar_try_expression(
         ok_pattern_span,
     );
 
-    let err_arm = Spanned::new(
-        HirMatchArm {
-            pattern: Spanned::new(HirPattern::Wildcard, wildcard_arm_span),
-            guard: None,
-            value: hir_panic_call_expr(wildcard_arm_span),
-        },
-        wildcard_arm_span,
-    );
+    let err_arm =
+        if let (Some(error_variable), Some(catch_block)) = (try_expr.node.error_variable, try_expr.node.catch_block) {
+            // `try { body } catch(err) { handler }` — explicit catch handler.
+            Spanned::new(
+                HirMatchArm {
+                    pattern: Spanned::new(
+                        HirPattern::Enum(Spanned::new(
+                            HirEnumPattern {
+                                path: Spanned::new(
+                                    HirEnumPath {
+                                        type_path: Spanned::new(
+                                            HirPath {
+                                                segments: vec![Spanned::new(
+                                                    HirPathSegment {
+                                                        name: hir_identifier(type_name, err_arm_span),
+                                                        type_args: Vec::new(),
+                                                    },
+                                                    err_arm_span,
+                                                )],
+                                            },
+                                            err_arm_span,
+                                        ),
+                                        variant: hir_identifier("Error", err_arm_span),
+                                    },
+                                    err_arm_span,
+                                ),
+                                items: vec![Spanned::new(HirPattern::Identifier(error_variable), err_var_span)],
+                            },
+                            err_arm_span,
+                        )),
+                        err_arm_span,
+                    ),
+                    guard: None,
+                    value: Spanned::new(
+                        HirExpressionNode::BlockExpression(Spanned::new(
+                            crate::hir::HirBlockExpression { block: catch_block },
+                            err_arm_span,
+                        )),
+                        err_arm_span,
+                    ),
+                },
+                err_arm_span,
+            )
+        } else {
+            // `expr?` — fallback: wrap error back into Result shape for propagation.
+            let err_var = hir_identifier(format!("__try_err_{}", parent_span.start), err_var_span);
+            Spanned::new(
+                HirMatchArm {
+                    pattern: Spanned::new(
+                        HirPattern::Enum(Spanned::new(
+                            HirEnumPattern {
+                                path: Spanned::new(
+                                    HirEnumPath {
+                                        type_path: Spanned::new(
+                                            HirPath {
+                                                segments: vec![Spanned::new(
+                                                    HirPathSegment {
+                                                        name: hir_identifier(type_name, err_arm_span),
+                                                        type_args: Vec::new(),
+                                                    },
+                                                    err_arm_span,
+                                                )],
+                                            },
+                                            err_arm_span,
+                                        ),
+                                        variant: hir_identifier("Error", err_arm_span),
+                                    },
+                                    err_arm_span,
+                                ),
+                                items: vec![Spanned::new(HirPattern::Identifier(err_var.clone()), err_var_span)],
+                            },
+                            err_arm_span,
+                        )),
+                        err_arm_span,
+                    ),
+                    guard: None,
+                    value: hir_panic_call_expr(err_arm_span),
+                },
+                err_arm_span,
+            )
+        };
 
     Spanned::new(
         HirExpressionNode::MatchExpression(Spanned::new(
-            HirMatchExpression { scrutinee: try_expr.node.expr, arms: vec![ok_arm, err_arm] },
+            HirMatchExpression { scrutinee: try_expr.node.body, arms: vec![ok_arm, err_arm] },
             match_span,
         )),
         match_span,

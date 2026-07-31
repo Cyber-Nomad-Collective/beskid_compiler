@@ -68,6 +68,16 @@ struct SpawnTrampoline {
     symbol: String,
 }
 
+/// One freestanding lambda lowered to its own trampoline function.
+#[derive(Debug, Clone)]
+struct LambdaTrampoline {
+    lambda: AstNodeKey,
+    lambda_body: AstNodeKey,
+    target_signature: Signature,
+    closure_captures: Option<Vec<beskid_isle::InlineCaptureField>>,
+    symbol: String,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SyntaxModuleEmissionError {
     #[error("module declaration failed: {0}")]
@@ -217,9 +227,17 @@ fn lower_resolved_syntax_program(
             .map(|trampoline| (DirectCallee::spawn_trampoline(trampoline.spawn), trampoline.symbol.clone())),
     );
 
+    let lambda_trampolines = resolve_lambda_trampolines(input, isa, items, &symbols)?;
+    symbols.extend(
+        lambda_trampolines
+            .iter()
+            .map(|trampoline| (DirectCallee::lambda_trampoline(trampoline.lambda), trampoline.symbol.clone())),
+    );
+
     let mut context = CodegenContext::new();
-    let lambda_count = trampolines.iter().filter(|trampoline| trampoline.lambda_body.is_some()).count();
-    let mut functions = Vec::with_capacity(items.len() + trampolines.len() + lambda_count);
+    let lambda_count =
+        trampolines.iter().filter(|trampoline| trampoline.lambda_body.is_some()).count() + lambda_trampolines.len();
+    let mut functions = Vec::with_capacity(items.len() + trampolines.len() + lambda_count + lambda_trampolines.len());
     for trampoline in &trampolines {
         if let Some(body) = trampoline.lambda_body {
             let result = trampoline
@@ -244,6 +262,25 @@ fn lower_resolved_syntax_program(
             name: trampoline.symbol.clone(),
             function: emit_spawn_trampoline(trampoline, isa)?,
         });
+    }
+    for trampoline in &lambda_trampolines {
+        let result = trampoline
+            .target_signature
+            .returns
+            .first()
+            .map(|parameter| parameter.value_type)
+            .ok_or_else(|| emission_verification("lambda entry must return an ABI value"))?;
+        let function = {
+            let mut importer = ArtifactCallImporter { symbols: &symbols };
+            if let Some(captures) = &trampoline.closure_captures {
+                emit_isle_closure_lambda_entry(input, isa, trampoline.lambda_body, result, captures, &mut importer)
+                    .map_err(|error| emission_error(input, error))?
+            } else {
+                emit_isle_expression_with_call_importer(input, isa, trampoline.lambda_body, result, &mut importer)
+                    .map_err(|error| emission_error(input, error))?
+            }
+        };
+        functions.push(crate::LoweredFunction { name: trampoline.symbol.clone(), function });
     }
     for item in items {
         trace_item_facts(input, item.key, &symbols);
@@ -302,7 +339,7 @@ fn lower_resolved_syntax_program(
         }
     }
 
-    let closure_static_plans = collect_closure_static_plans(input, items, &trampolines);
+    let closure_static_plans = collect_closure_static_plans(input, items, &trampolines, &lambda_trampolines);
     if !closure_static_plans.is_empty() {
         for symbol in
             [ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT]
@@ -356,6 +393,7 @@ fn collect_closure_static_plans(
     input: &CodegenInput<'_>,
     items: &[ResolvedSyntaxModuleItem],
     trampolines: &[SpawnTrampoline],
+    lambda_trampolines: &[LambdaTrampoline],
 ) -> Vec<ClosureStaticPlan> {
     let db = input.database();
     let mut plans = Vec::new();
@@ -369,6 +407,13 @@ fn collect_closure_static_plans(
         if trampoline.closure_captures.is_some()
             && let Ok(Some(validation)) = spawn_entry_validation(db, trampoline.spawn)
             && let Some(authority) = input.closure_lowering_authority(trampoline.spawn, validation.target)
+        {
+            push_plan(authority.plan);
+        }
+    }
+    for trampoline in lambda_trampolines {
+        if trampoline.closure_captures.is_some()
+            && let Some(authority) = input.closure_lowering_authority(trampoline.lambda, trampoline.lambda)
         {
             push_plan(authority.plan);
         }
@@ -535,6 +580,101 @@ fn spawn_trampoline_symbol(target_symbol: &str, spawn: AstNodeKey) -> String {
         spawn.generation.0,
         spawn.node.0,
     )
+}
+
+/// Resolve trampoline entries for every freestanding [`LambdaExpression`] in the syntax tree.
+///
+/// Capture-free lambdas emit a simple entry function. Capturing lambdas require
+/// generation-safe allocate/store/root authority before the entry is emitted.
+fn resolve_lambda_trampolines(
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    items: &[ResolvedSyntaxModuleItem],
+    _symbols: &HashMap<DirectCallee, String>,
+) -> Result<Vec<LambdaTrampoline>, SyntaxModuleEmissionError> {
+    let db = input.database();
+    let mut lambdas = Vec::new();
+    let mut visited = HashSet::new();
+    for item in items {
+        collect_lambda_nodes(db, item.key, &mut visited, &mut lambdas);
+    }
+    let mut trampolines = Vec::new();
+    for lambda in lambdas {
+        let Some(lambda_sig) =
+            closure_signature(db, lambda).map_err(|error| emission_verification(error.to_string()))?
+        else {
+            continue;
+        };
+        let Some(mut signature) = spawn_target_signature(isa, lambda_sig.callable) else {
+            continue;
+        };
+        // Collect closure captures if present.
+        let closure_captures = {
+            let Some(environment) =
+                closure_environment(db, lambda).map_err(|error| emission_verification(error.to_string()))?
+            else {
+                continue;
+            };
+            if environment.captures.is_empty() {
+                None
+            } else {
+                let Some(authority) = input.closure_lowering_authority(lambda, lambda) else {
+                    continue;
+                };
+                let Some(captures) = authority
+                    .plan
+                    .captures
+                    .iter()
+                    .map(|field| {
+                        Some(beskid_isle::InlineCaptureField {
+                            local_slot: beskid_isle::LocalSlotId {
+                                owner_node: field.capture.slot.owner.node.0,
+                                index: field.capture.slot.index,
+                            },
+                            field_offset: u32::try_from(field.field_offset).ok()?,
+                            pointer_map_index: field.pointer_map_index,
+                            value_type: map_spawn_capture_type(isa, field.abi_type)?,
+                        })
+                    })
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    continue;
+                };
+                Some(captures)
+            }
+        };
+        if closure_captures.is_some() {
+            signature.params.insert(0, AbiParam::new(isa.pointer_type()));
+        }
+        let symbol = format!("__beskid_lambda_entry_syntax_g{}_n{}", lambda.generation.0, lambda.node.0);
+        trampolines.push(LambdaTrampoline {
+            lambda,
+            lambda_body: lambda_sig.body,
+            target_signature: signature,
+            closure_captures,
+            symbol,
+        });
+    }
+    Ok(trampolines)
+}
+
+fn collect_lambda_nodes(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    visited: &mut HashSet<AstNodeKey>,
+    lambdas: &mut Vec<AstNodeKey>,
+) {
+    if !visited.insert(key) {
+        return;
+    }
+    if node_kind(db, key).ok().flatten() == Some(beskid_queries::IndexedNodeKind::LambdaExpression) {
+        lambdas.push(key);
+    }
+    if let Ok(Some(children)) = child_nodes(db, key) {
+        for child in children.iter().copied() {
+            collect_lambda_nodes(db, child, visited, lambdas);
+        }
+    }
 }
 
 fn collect_spawn_nodes(
@@ -770,6 +910,9 @@ fn format_callee_for_trace(db: &dyn beskid_queries::Db, callee: &DirectCallee) -
         DirectCallee::CorelibService(symbol) => format!("CorelibService({symbol})"),
         DirectCallee::SpawnTrampoline(spawn) => {
             format!("SpawnTrampoline({})", trace_key(db, *spawn))
+        }
+        DirectCallee::LambdaTrampoline(lambda) => {
+            format!("LambdaTrampoline({})", trace_key(db, *lambda))
         }
     }
 }

@@ -5,6 +5,8 @@ use crate::syntax::expressions::span::span_from_bounds;
 use crate::syntax::{SpanInfo, Spanned};
 use pest::iterators::Pair;
 
+use crate::syntax::Identifier;
+
 use super::array_literal_expression::parse_array_literal_expression;
 use super::assign_expression::AssignExpression;
 use super::binary_expression::{BinaryExpression, parse_binary_expression};
@@ -131,6 +133,32 @@ pub(crate) fn parse_expression(pair: Pair<Rule>) -> Result<Spanned<Expression>, 
             Ok(Spanned::new(Expression::MacroMetavariable(node), span))
         }
         Rule::Path => parse_path_expression(pair),
+        Rule::TryBlockExpression => {
+            let mut inner = pair.into_inner();
+            let body_pair = inner.next().ok_or(ParseError::missing(Rule::Block))?;
+            let body_expr = parse_block_expression(body_pair)?;
+            let error_var_pair = inner.next().ok_or(ParseError::missing(Rule::Identifier))?;
+            let error_var = Identifier::parse(error_var_pair)?;
+            let catch_block_pair = inner.next().ok_or(ParseError::missing(Rule::Block))?;
+            let catch_span = SpanInfo::from_span(&catch_block_pair.as_span());
+            let catch_expr = parse_block_expression(catch_block_pair)?;
+            let catch_block = match catch_expr.node {
+                Expression::Block(block) => block,
+                _ => {
+                    return Err(ParseError::UnexpectedRule {
+                        expected: Some(Rule::Block),
+                        found: Rule::Block,
+                        span: catch_span,
+                    });
+                }
+            };
+            let try_node = TryExpression {
+                expr: Box::new(body_expr),
+                error_variable: Some(error_var),
+                catch_block: Some(catch_block),
+            };
+            Ok(Spanned::new(Expression::Try(Spanned::new(try_node, span)), span))
+        }
         _ => Err(ParseError::unexpected_rule(pair, None)),
     }
 }
@@ -156,7 +184,7 @@ pub(crate) fn parse_postfix_expression(pair: Pair<Rule>) -> Result<Spanned<Expre
             Rule::SubscriptOperator => parse_index_expression(expr, operator)?,
             Rule::TryOperator => {
                 let expr_span = expr.span;
-                let try_node = TryExpression { expr: Box::new(expr) };
+                let try_node = TryExpression { expr: Box::new(expr), error_variable: None, catch_block: None };
                 Spanned::new(Expression::Try(Spanned::new(try_node, expr_span)), expr_span)
             }
             _ => return Err(ParseError::unexpected_rule(operator, None)),

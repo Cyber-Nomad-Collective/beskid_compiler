@@ -1891,24 +1891,15 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
     // Leaf helpers that exercise dispatch builtins and string indexing without pulling the
-    // full call graph (Contains -> IndexOfFrom -> while/ByteAt).
-    for name in ["Len", "IsEmpty", "ByteAt"] {
-        let key = find_function_definitions(input.database(), root)
-            .into_iter()
-            .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("Core.String.Core {name}"));
-        let module_items = if name == "IsEmpty" {
-            let len = find_function_definitions(input.database(), root)
-                .into_iter()
-                .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Len"))
-                .expect("Core.String.Core Len");
-            vec![SyntaxModuleItem { key: len, symbol: "Len".into() }, SyntaxModuleItem { key, symbol: name.into() }]
-        } else {
-            vec![SyntaxModuleItem { key, symbol: name.into() }]
-        };
-        lower_syntax_program(&input, isa.as_ref(), &module_items)
-            .unwrap_or_else(|error| panic!("Core.String.Core {name} lowers through syntax ISLE: {error:?}"));
-    }
+    // full String.bd call graph (Contains -> IndexOfFrom -> while/ByteAt). Only `Len` is a
+    // true leaf (calls __str_len directly); `IsEmpty` and `ByteAt` delegate to Core.bd
+    // functions and need the full module graph importer.
+    let key = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Len"))
+        .expect("Core.String Len");
+    let module_items = vec![SyntaxModuleItem { key, symbol: "Len".into() }];
+    lower_syntax_program(&input, isa.as_ref(), &module_items).expect("Core.String Len lowers through syntax ISLE");
 }
 
 #[test]

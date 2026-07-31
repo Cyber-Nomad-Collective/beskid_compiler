@@ -19,8 +19,8 @@ use beskid_analysis::{
 use beskid_isle::AstNodeKey;
 use beskid_queries::{
     BeskidDatabase, SemanticTypeId, SourceUnitId, SyntaxGenerationId, build_canonical_runtime_typed_program,
-    build_typed_program_with_corelib_syscall_services, child_nodes, item_body, item_export_symbol, item_name,
-    item_signature, node_kind, project_session_for_syntax_assembly, reachable_items,
+    build_typed_program_with_corelib_syscall_services, child_nodes, format_ast_node_trace, item_body,
+    item_export_symbol, item_name, item_signature, node_kind, project_session_for_syntax_assembly, reachable_items,
 };
 use cranelift_codegen::isa::TargetIsa;
 
@@ -199,13 +199,14 @@ pub fn lower_syntax_assembly_entrypoint(
         AstNodeKey { unit: SourceUnitId::new(db, entry_path), generation, node: beskid_queries::AstNodeId(0) };
     let entry =
         find_entrypoint(db, &input, entrypoint).ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
+    let entry_label = assembly
+        .units()
+        .iter()
+        .find(|unit| SourceUnitId::new(db, unit.path.clone()) == entry.unit)
+        .map(|unit| unit.logical_name.as_str())
+        .unwrap_or("<unknown>");
     crate::isle_trace::event(|| {
-        format!(
-            "event=entry.selected entrypoint={entrypoint} key={}#g{}:n{}",
-            entry.unit.path(db).display(),
-            entry.generation.0,
-            entry.node.0,
-        )
+        format!("event=entry.selected entrypoint={entrypoint} site={}", format_ast_node_trace(db, entry, entry_label),)
     });
     let signature = item_signature(db, entry)
         .map_err(|error| anyhow::anyhow!("entrypoint signature query failed: {error}"))?

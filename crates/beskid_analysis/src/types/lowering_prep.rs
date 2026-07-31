@@ -468,7 +468,7 @@ impl<'a> PrepWalker<'a> {
                     self.walk_expression(e);
                 }
             }
-            HirExpressionNode::TryExpression(t) => self.walk_expression(&t.node.expr),
+            HirExpressionNode::TryExpression(t) => self.walk_expression(&t.node.body),
             HirExpressionNode::SpawnExpression(s) => self.walk_expression(&s.node.callee),
             _ => {}
         }

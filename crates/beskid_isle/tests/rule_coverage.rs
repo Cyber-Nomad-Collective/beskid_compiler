@@ -92,7 +92,6 @@ fn unsupported_kinds_are_intentionally_release_rejected_for_0_4() {
         (Syntax::LaunchStatement, "composition launch bracket waits on container facts (W5/composition)"),
         (Syntax::CodeStringLiteral, "fenced code strings unsupported in both HIR and ISLE paths"),
         (Syntax::TryExpression, "raw try desugars to match before codegen; out of ISLE scope"),
-        (Syntax::LambdaExpression, "freestanding lambda values owned by W4.2 CYB-25"),
     ];
 
     assert_eq!(
@@ -158,6 +157,7 @@ fn every_isle_lowered_kind_has_verified_clif_evidence() {
         (NodeKind::BlockExpression, isle_tests.join("block_sequence.rs")),
         (NodeKind::ForStatement, isle_tests.join("block_range_for.rs")),
         (NodeKind::SpawnExpression, codegen_tests.join("parsed_project_isle_harness.rs")),
+        (NodeKind::LambdaExpression, codegen_tests.join("parsed_project_isle_harness.rs")),
     ];
 
     assert_eq!(evidence.len(), NodeKind::ALL.len(), "CLIF evidence table must cover every NodeKind exactly once");
@@ -192,7 +192,6 @@ fn every_unsupported_kind_has_rejection_evidence_or_codex_blocker() {
         (Syntax::LaunchStatement, Present("isle_adapter.rs")),
         (Syntax::CodeStringLiteral, Present("isle_adapter.rs")),
         (Syntax::TryExpression, Present("isle_adapter.rs")),
-        (Syntax::LambdaExpression, Present("isle_adapter.rs")),
     ];
 
     assert_eq!(
@@ -245,7 +244,7 @@ fn typed_operation_families_have_explicit_classifications() {
         assert_eq!(classify_syntax_node_kind(syntax), IsleLowered(isle));
     }
 
-    assert_eq!(classify_syntax_node_kind(Syntax::LambdaExpression), UnsupportedTypedOperation);
+    assert_eq!(classify_syntax_node_kind(Syntax::LambdaExpression), IsleLowered(NodeKind::LambdaExpression));
     assert_eq!(classify_syntax_node_kind(Syntax::SpawnExpression), IsleLowered(NodeKind::SpawnExpression));
     assert_eq!(classify_syntax_node_kind(Syntax::Identifier), Structural);
 }
@@ -283,6 +282,8 @@ fn binary_and_unary_operator_facts_have_isle_rules() {
         "StringAdd",
         "StringEq",
         "StringNotEq",
+        "EnumEq",
+        "EnumNotEq",
     ] {
         assert!(source.contains(&format!("OperatorFact.{operator}")), "missing ISLE rule for {operator}");
     }

@@ -17,10 +17,10 @@ corelib_tests_project := "corelib/beskid_corelib/tests/corelib_tests"
 default:
     @just --list
 
-# Run every corelib_tests target via release beskid_cli (shared Salsa session).
+# Run every corelib_tests target via the installed beskid_cli (shared Salsa session).
 corelib:
-    cargo build -p beskid_cli --release --quiet
-    "{{root}}/target/release/beskid_cli" test \
+    just replace
+    "$HOME/.beskid/bin/beskid" test \
         --project "{{corelib_tests_project}}" \
         --all-targets
 

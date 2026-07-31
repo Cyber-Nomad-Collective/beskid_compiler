@@ -7,7 +7,9 @@ use beskid_codegen::cranelift_host::{
     declare_referenced_builtin_imports, declare_user_functions_with_link_symbols_and_linkage,
     declare_validated_extern_imports, remap_testcase_externals,
 };
-use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors, validate_artifact};
+#[cfg(debug_assertions)]
+use beskid_codegen::validate_artifact;
+use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
 use cranelift_codegen::settings::Configurable;

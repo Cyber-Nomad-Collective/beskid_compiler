@@ -33,6 +33,21 @@
 (decl partial clif_short_circuit_and (AstNodeKey) Value)
 (extern constructor clif_short_circuit_and clif_short_circuit_and)
 
+;; Enum discriminant comparison for value equality on enum types.
+(decl partial clif_enum_eq (AstNodeKey) Value)
+(extern constructor clif_enum_eq clif_enum_eq)
+(decl partial clif_enum_ne (AstNodeKey) Value)
+(extern constructor clif_enum_ne clif_enum_ne)
+
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.EnumEq))))
+      (clif_enum_eq key))
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.BinaryExpression))
+        (operator_fact (OperatorFact.EnumNotEq))))
+      (clif_enum_ne key))
+
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.IdentityEq))))

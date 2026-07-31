@@ -57,6 +57,8 @@ SingleKeyword = { "single" }
 TransientKeyword = { "transient" }
 GlobalKeyword = { "global" }
 ParentKeyword = { "parent" }
+TryKeyword = { "try" }
+CatchKeyword = { "catch" }
 
 Keyword = {
     (
@@ -99,6 +101,8 @@ Keyword = {
       | SingleKeyword
       | TransientKeyword
       | GlobalKeyword
+      | TryKeyword
+      | CatchKeyword
     ) ~ !ASCII_ALPHANUMERIC
 }
 
@@ -309,13 +313,14 @@ CallOperator = { "(" ~ ArgumentList? ~ ")" }
 MemberAccess = { "." ~ Identifier }
 SubscriptOperator = { "[" ~ Expression ~ "]" }
 TryOperator = { "?" }
+TryBlockExpression = { TryKeyword ~ Block ~ CatchKeyword ~ "(" ~ Identifier ~ ")" ~ Block }
 
 MacroInvocation = { Identifier ~ "!" ~ "(" ~ MacroArgumentList? ~ ")"? ~ MacroInvocationBlock? }
 MacroArgumentList = { Expression ~ ("," ~ Expression)* }
 MacroInvocationBlock = { Block }
 MacroMetavariable = { "$" ~ Identifier }
 
-PrimaryExpression = { MacroInvocation | MacroMetavariable | CodeExpression | Literal | GroupedExpression | BlockExpression | EnumConstructorExpression | StructLiteralExpression | ArrayLiteralExpression | Path }
+PrimaryExpression = { TryBlockExpression | MacroInvocation | MacroMetavariable | CodeExpression | Literal | GroupedExpression | BlockExpression | EnumConstructorExpression | StructLiteralExpression | ArrayLiteralExpression | Path }
 
 EnumConstructorExpression = { enum_constructor_nullary | enum_constructor_with_args }
 enum_constructor_nullary = { EnumPath ~ !"(" }

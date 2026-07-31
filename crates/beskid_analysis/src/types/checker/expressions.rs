@@ -141,7 +141,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn type_try_expression(&mut self, try_expr: &Spanned<crate::hir::HirTryExpression>) -> Option<TypeId> {
-        let target_type = self.type_expression(&try_expr.node.expr)?;
+        let target_type = self.type_expression(&try_expr.node.body)?;
         let Some(result_item_id) = self.named_item_id(target_type) else {
             self.errors.push(TypeError::InvalidTryTarget { span: try_expr.span });
             return None;

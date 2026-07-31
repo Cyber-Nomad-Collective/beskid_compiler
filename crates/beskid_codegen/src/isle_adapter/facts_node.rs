@@ -41,10 +41,16 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                     == Some(SemanticTypeId::STRING)
                 && self.child(key, 1).and_then(|operand| self.specialized_direct_parameter_type(operand))
                     == Some(SemanticTypeId::STRING);
-        Some(match (operator, specialized_string_operands) {
-            (beskid_queries::OperatorFact::Eq, true) => OperatorFact::StringEq,
-            (beskid_queries::OperatorFact::NotEq, true) => OperatorFact::StringNotEq,
-            (operator, _) => map_operator_fact(operator),
+        let specialized_enum_operands =
+            matches!(operator, beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq)
+                && !specialized_string_operands
+                && self.binary_enum_layout(key).is_some();
+        Some(match (operator, specialized_string_operands, specialized_enum_operands) {
+            (beskid_queries::OperatorFact::Eq, _, true) => OperatorFact::EnumEq,
+            (beskid_queries::OperatorFact::NotEq, _, true) => OperatorFact::EnumNotEq,
+            (beskid_queries::OperatorFact::Eq, true, _) => OperatorFact::StringEq,
+            (beskid_queries::OperatorFact::NotEq, true, _) => OperatorFact::StringNotEq,
+            (operator, _, _) => map_operator_fact(operator),
         })
     }
 
@@ -393,6 +399,44 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.enum_layout_for(key)
     }
 
+    fn binary_enum_layout(&self, key: AstNodeKey) -> Option<EnumLayout> {
+        let left_key = self.child(key, 0)?;
+        let right_key = self.child(key, 1)?;
+        // Try to get the enum layout from either operand. Enum-literal operands
+        // (constructors) have a registered static plan and produce the full layout.
+        // Path-expression operands that name an enum variable don't have a static
+        // plan; we use the literal's layout and verify type compatibility.
+        let layout = self.enum_layout_for(left_key).or_else(|| self.enum_layout_for(right_key))?;
+        // When both operands are literals, verify tag layouts agree.
+        if let Some(right_layout) = self.enum_layout_for(right_key).or_else(|| self.enum_layout_for(left_key))
+            && (layout.tag.offset != right_layout.tag.offset || layout.tag.value_type != right_layout.tag.value_type)
+        {
+            return None;
+        }
+        // When one operand is a path expression, verify its semantic type matches
+        // the literal's type (both must be the same enum).
+        let left_type = self.scalar_semantic_type(left_key)?;
+        let right_type = self.scalar_semantic_type(right_key)?;
+        // Only nominal (non-primitive) types can be enums; primitive equality is
+        // handled by the integer/float comparison path.
+        if left_type != right_type
+            || matches!(
+                left_type,
+                SemanticTypeId::I32
+                    | SemanticTypeId::I64
+                    | SemanticTypeId::U8
+                    | SemanticTypeId::F64
+                    | SemanticTypeId::BOOL
+                    | SemanticTypeId::CHAR
+                    | SemanticTypeId::UNIT
+                    | SemanticTypeId::NEVER
+            )
+        {
+            return None;
+        }
+        Some(layout)
+    }
+
     fn enum_variant_index(&self, key: AstNodeKey) -> Option<u32> {
         self.query(enum_constructor(self.db, key)).map(|constructor| constructor.variant_index)
     }
@@ -455,5 +499,41 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             _ => return None,
         };
         Some(beskid_isle::SpawnEntry { trampoline: DirectCallee::spawn_trampoline(key), closure_environment })
+    }
+
+    fn lambda_entry(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {
+        let environment = self.query(closure_environment(self.db, key))?;
+        let _lambda = self.query(closure_signature(self.db, key))?;
+        // Only support capture-free or fully-resolved capture environments.
+        let closure_environment = if environment.captures.is_empty() {
+            None
+        } else {
+            let Some(authority) = self.input.closure_lowering_authority(key, key) else {
+                return None;
+            };
+            let captures = authority
+                .plan
+                .captures
+                .iter()
+                .map(|field| {
+                    Some(beskid_isle::InlineCaptureField {
+                        local_slot: beskid_isle::LocalSlotId {
+                            owner_node: field.capture.slot.owner.node.0,
+                            index: field.capture.slot.index,
+                        },
+                        field_offset: u32::try_from(field.field_offset).ok()?,
+                        pointer_map_index: field.pointer_map_index,
+                        value_type: map_signature_type(self.isa?, field.abi_type)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(beskid_isle::InlineClosureEnvironment {
+                allocation_request_symbol: authority.plan.allocation_request_symbol.clone().into(),
+                descriptor_symbol: authority.plan.descriptor_symbol.clone().into(),
+                root_slot_index: authority.root.slot_index,
+                captures,
+            })
+        };
+        Some(beskid_isle::LambdaEntry { trampoline: DirectCallee::lambda_trampoline(key), closure_environment })
     }
 }

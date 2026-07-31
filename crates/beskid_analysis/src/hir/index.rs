@@ -156,7 +156,7 @@ fn max_hir_node_id_expression(expr: &Spanned<HirExpressionNode>, mut max: u32) -
             }
             max
         }
-        HirExpressionNode::TryExpression(t) => max_hir_node_id_expression(&t.node.expr, max),
+        HirExpressionNode::TryExpression(t) => max_hir_node_id_expression(&t.node.body, max),
         HirExpressionNode::SpawnExpression(s) => max_hir_node_id_expression(&s.node.callee, max),
         _ => max,
     }
@@ -317,7 +317,7 @@ fn reset_expression_node_ids(expr: &mut Spanned<HirExpressionNode>) {
                 reset_expression_node_ids(e);
             }
         }
-        HirExpressionNode::TryExpression(t) => reset_expression_node_ids(&mut t.node.expr),
+        HirExpressionNode::TryExpression(t) => reset_expression_node_ids(&mut t.node.body),
         HirExpressionNode::SpawnExpression(s) => reset_expression_node_ids(&mut s.node.callee),
         _ => {}
     }
@@ -460,7 +460,7 @@ fn index_expression(expr: &mut Spanned<HirExpressionNode>, r#gen: &mut IdGen) {
                 index_expression(e, r#gen);
             }
         }
-        HirExpressionNode::TryExpression(t) => index_expression(&mut t.node.expr, r#gen),
+        HirExpressionNode::TryExpression(t) => index_expression(&mut t.node.body, r#gen),
         HirExpressionNode::SpawnExpression(s) => index_expression(&mut s.node.callee, r#gen),
         _ => {}
     }

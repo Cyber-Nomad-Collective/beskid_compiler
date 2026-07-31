@@ -61,6 +61,22 @@ pub fn format_source_span_range(span: SourceSpan) -> String {
     format!("{}:{}-{}:{}", span.line_col_start.0, span.line_col_start.1, span.line_col_end.0, span.line_col_end.1)
 }
 
+/// Format a source-level trace entry as `<source_label>:<line>:<col> (<Construct>)`.
+///
+/// `source_label` is a short name for the containing source unit (typically the logical path
+/// from the assembly). This intentionally omits the generation-safe `#gN:nN` suffix and byte
+/// range so that `at`-style traces remain readable under `BESKID_COMPILER_TRACE`.
+pub fn format_ast_node_trace(db: &dyn Db, key: AstNodeKey, source_label: &str) -> String {
+    let construct =
+        node_kind(db, key).ok().flatten().map(|kind| format!("{kind:?}")).unwrap_or_else(|| "Unknown".to_owned());
+    let position = node_span(db, key)
+        .ok()
+        .flatten()
+        .map(|span| format!("{}:{}", span.line_col_start.0, span.line_col_start.1))
+        .unwrap_or_else(|| "?:?".to_owned());
+    format!("{source_label}:{position} ({construct})")
+}
+
 #[cfg(test)]
 mod ast_node_site_format_tests {
     use super::{SourceSpan, format_source_span_range};
@@ -1100,12 +1116,22 @@ fn constant_integer_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKe
         {
             return None;
         }
+        if let Some(declaration) =
+            resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())
+        {
+            let parent = parent_node(index, declaration)?;
+            if index.kind(parent) != Some(beskid_analysis::syntax_query::NodeKind::ConstantDefinition) {
+                return None;
+            }
+        }
         program.node.items.iter().find_map(|item| {
             let beskid_analysis::syntax::Node::ConstantDefinition(constant) = &item.node else {
                 return None;
             };
             (constant.node.name.node.name == segment.node.name.node.name).then(|| match &constant.node.value.node {
-                beskid_analysis::syntax::Literal::Integer(value) => value.replace('_', "").parse::<i64>().ok(),
+                beskid_analysis::syntax::Literal::Integer(value) => {
+                    integer_literal_u64(value).and_then(|value| i64::try_from(value).ok())
+                }
                 _ => None,
             })?
         })
@@ -1667,8 +1693,12 @@ fn primitive_numeric_conversion_tracked(
 ) -> SemanticQueryResult<PrimitiveNumericConversion> {
     with_node(db, syntax, key, |program, index, node| {
         let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
-        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else { return None; };
-        let [segment] = path.node.path.node.segments.as_slice() else { return None; };
+        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
+            return None;
+        };
+        let [segment] = path.node.path.node.segments.as_slice() else {
+            return None;
+        };
         let to = match segment.node.name.node.name.as_str() {
             "i32" => SemanticTypeId::I32,
             "i64" => SemanticTypeId::I64,
@@ -1856,8 +1886,13 @@ fn call_lowering_for_node(
             // Extern/contract members and other receivers without a syntax method
             // declaration remain Dynamic rather than unavailable, matching Path
             // import/builtin fallback so production JIT/AOT can emit the call.
+            // Module-qualified calls like `Core.IsEmpty(text)` parse as Member
+            // expressions — flatten the member into a module path for direct resolution.
             Ok(method_declaration_for_member_receiver(db, program, index, key, call, member)
                 .map(CallLowering::Direct)
+                .or_else(|| {
+                    flatten_member_as_path_declaration(db, program, index, key, member).map(CallLowering::Direct)
+                })
                 .unwrap_or(CallLowering::Dynamic))
         }
         _ => Err(SemanticError::unavailable("call_lowering")),
@@ -2005,6 +2040,29 @@ fn method_declaration_for_member_receiver(
             .map(|(declaration, _)| declaration)
     })?;
     unique_nominal_method_declaration(db, declaration, &member.node.member.node.name)
+}
+
+/// Module-qualified calls like `Core.IsEmpty(text)` parse as `MemberExpression` where the
+/// receiver is a `PathExpression` (e.g., `Core`) and the member is the callee name (e.g.,
+/// `IsEmpty`). When the receiver isn't a nominal type, flatten the expression into a
+/// two-segment path and resolve it as a direct item declaration.
+fn flatten_member_as_path_declaration(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    member: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::MemberExpression>,
+) -> Option<AstNodeKey> {
+    let beskid_analysis::syntax::Expression::Path(receiver) = &member.node.target.node else {
+        return None;
+    };
+    let mut segments = receiver.node.path.node.segments.clone();
+    segments.push(beskid_analysis::syntax::Spanned::new(
+        beskid_analysis::syntax::PathSegment { name: member.node.member.clone(), type_args: Vec::new() },
+        member.node.member.span,
+    ));
+    let path = beskid_analysis::syntax::Spanned::new(beskid_analysis::syntax::Path { segments }, member.span);
+    resolve_item_declaration(db, program, index, key, &path.node)
 }
 
 /// Resolve an ordinary `local.Method()` spelling only when `local` resolves to an explicitly
@@ -2925,6 +2983,7 @@ fn builtin_type_to_semantic(ty: beskid_analysis::builtins::BuiltinType) -> Optio
         BuiltinType::Ptr => SemanticTypeId::POINTER,
         BuiltinType::Usize => SemanticTypeId::WORD,
         BuiltinType::U64 => SemanticTypeId::I64,
+        BuiltinType::F64 => SemanticTypeId::F64,
         BuiltinType::Unit => SemanticTypeId::UNIT,
         BuiltinType::Never => SemanticTypeId::NEVER,
     })

@@ -385,7 +385,7 @@ impl Resolver {
                 self.resolve_expression(&grouped_expr.node.expr);
             }
             HirExpressionNode::TryExpression(try_expr) => {
-                self.resolve_expression(&try_expr.node.expr);
+                self.resolve_expression(&try_expr.node.body);
             }
             HirExpressionNode::SpawnExpression(spawn_expr) => {
                 self.resolve_expression(&spawn_expr.node.callee);
