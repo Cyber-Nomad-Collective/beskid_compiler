@@ -87,4 +87,20 @@ if rg -n --glob '*.rs' -- '\bbootstrap_dispatch_handlers\b' "$workspace/crates";
   exit 1
 fi
 
+# The bridge archive was a source-tree fallback. The retirement gate must
+# reject its reintroduction at the workspace boundary, not merely its linkage
+# from a currently known caller.
+if [[ -e "$workspace/crates/beskid_runtime_bridge" ]]; then
+  echo "retired beskid_runtime_bridge package remains in the canonical workspace" >&2
+  exit 1
+fi
+if [[ -e "$workspace/scripts/ensure-runtime-bridge.sh" ]]; then
+  echo "retired runtime bridge build helper remains in the canonical workspace" >&2
+  exit 1
+fi
+if rg -n --fixed-strings 'crates/beskid_runtime_bridge' "$workspace/Cargo.toml" >/dev/null; then
+  echo "canonical workspace still declares the retired runtime bridge" >&2
+  exit 1
+fi
+
 echo "HIR-free ABI-v5 retirement gate category test passed"

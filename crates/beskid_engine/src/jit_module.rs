@@ -250,7 +250,7 @@ fn is_runtime_builtin(symbol: &str) -> bool {
 /// `interop_dispatch_*` / `panic_str` live in process-linked `beskid_runtime` and must be
 /// registered on the JIT builder or Cranelift fails with `can't resolve symbol`.
 fn process_linked_soft_builtins() -> Vec<(String, *const u8)> {
-    // Keep in sync with `beskid_runtime_bridge` link_anchor / `BUILTIN_SPECS`.
+    // Keep this process-linked compatibility list in sync with `BUILTIN_SPECS`.
     vec![
         ("alloc".into(), beskid_runtime::alloc as *const u8),
         ("beskid_register_callbacks".into(), beskid_runtime::beskid_register_callbacks as *const u8),

@@ -855,16 +855,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "beskid_runtime_bridge"
-version = "0.1.0"
-dependencies = [
- "beskid_host",
- "beskid_manifest",
- "beskid_runtime",
- "beskid_runtime_handlers",
-]
-
-[[package]]
 name = "beskid_runtime_handlers"
 version = "0.1.0"
 dependencies = [
