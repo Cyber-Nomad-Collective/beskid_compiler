@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reject primitive numeric conversion facts whose semantic source or target
+  differs from the source syntax before generated ISLE can emit CLIF.
 - Allocate enum constructor values through ABI-v5 managed-object metadata rather
   than returning pointers to constructor stack storage, preventing invalid enum
   tags and JIT traps across function boundaries.

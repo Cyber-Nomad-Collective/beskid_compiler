@@ -638,7 +638,16 @@ pub trait NodeFacts {
     fn call_kind(&self, _key: AstNodeKey) -> Option<CallKind> {
         None
     }
-    fn primitive_numeric_conversion(&self, _key: AstNodeKey) -> Option<(beskid_queries::SemanticTypeId, beskid_queries::SemanticTypeId)> { None }
+    fn primitive_numeric_conversion(
+        &self,
+        _key: AstNodeKey,
+    ) -> Option<(beskid_queries::SemanticTypeId, beskid_queries::SemanticTypeId)> {
+        None
+    }
+    /// Exact semantic type used to validate a primitive conversion fact before it reaches CLIF.
+    fn semantic_type(&self, _key: AstNodeKey) -> Option<beskid_queries::SemanticTypeId> {
+        None
+    }
     fn runtime_intrinsic_kind(&self, _key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
         None
     }
@@ -1230,9 +1239,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
 
     fn emit_memory_set(&mut self, destination: Value, byte: Value, length: Value) -> Option<()> {
         let pointer = self.builder.func.dfg.value_type(destination);
-        if !pointer.is_int()
-            || self.builder.func.dfg.value_type(length) != pointer
-        {
+        if !pointer.is_int() || self.builder.func.dfg.value_type(length) != pointer {
             return None;
         }
         let byte_type = self.builder.func.dfg.value_type(byte);
@@ -1308,6 +1315,18 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
         self.builder.switch_to_block(exit);
         self.builder.seal_block(exit);
         Some(())
+    }
+}
+
+fn primitive_numeric_conversion_type_matches(ty: Type, semantic: beskid_queries::SemanticTypeId) -> bool {
+    match semantic {
+        beskid_queries::SemanticTypeId::I32 => ty == types::I32,
+        beskid_queries::SemanticTypeId::I64 => ty == types::I64,
+        beskid_queries::SemanticTypeId::U8 => ty == types::I8,
+        // `word` is target-pointer-width, which is always a 32- or 64-bit integer in the
+        // supported ABI-v5 target set. The frontend adapter supplies that exact width.
+        beskid_queries::SemanticTypeId::WORD => ty.is_int() && matches!(ty.bits(), 32 | 64),
+        _ => false,
     }
 }
 
@@ -1633,16 +1652,30 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn emit_primitive_numeric_conversion(&mut self, key: AstNodeKey) -> Option<Value> {
-        let (from, _to) = self.facts.primitive_numeric_conversion(key)?;
+        let (from, to) = self.facts.primitive_numeric_conversion(key)?;
         let argument = self.facts.call_arguments(key)?.into_iter().next()?;
         let value = generated::constructor_lower_expression(self, argument)?;
         let actual = self.builder.func.dfg.value_type(value);
         let source = self.facts.scalar_type(argument)?;
         let target = self.facts.scalar_type(key)?;
         (source == actual).then_some(())?;
-        if actual == target { Some(value) } else if actual.bits() < target.bits() {
-            Some(if from == beskid_queries::SemanticTypeId::U8 { self.builder.ins().uextend(target, value) } else { self.builder.ins().sextend(target, value) })
-        } else if actual.bits() > target.bits() { Some(self.builder.ins().ireduce(target, value)) } else { None }
+        (self.facts.semantic_type(argument)? == from && self.facts.semantic_type(key)? == to).then_some(())?;
+        (primitive_numeric_conversion_type_matches(source, from)
+            && primitive_numeric_conversion_type_matches(target, to))
+        .then_some(())?;
+        if actual == target {
+            Some(value)
+        } else if actual.bits() < target.bits() {
+            Some(if from == beskid_queries::SemanticTypeId::U8 {
+                self.builder.ins().uextend(target, value)
+            } else {
+                self.builder.ins().sextend(target, value)
+            })
+        } else if actual.bits() > target.bits() {
+            Some(self.builder.ins().ireduce(target, value))
+        } else {
+            None
+        }
     }
 
     fn emit_direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
