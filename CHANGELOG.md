@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve the canonical multi-unit `SchedulerSpawn` word-to-`i64` conversion
+  fact through `CodegenInput` into generated ISLE coverage.
 - Reject primitive numeric conversion facts whose semantic source or target
   differs from the source syntax before generated ISLE can emit CLIF.
 - Allocate enum constructor values through ABI-v5 managed-object metadata rather
