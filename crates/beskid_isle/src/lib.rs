@@ -2134,9 +2134,14 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         }
         let (variable, expected_type) = self.locals.get(&slot).copied()?;
         let value = self.lower_nested_expression(value_key)?;
-        if self.builder.func.dfg.value_type(value) != expected_type {
+        let actual_type = self.builder.func.dfg.value_type(value);
+        let value = if actual_type == expected_type {
+            value
+        } else if actual_type == types::I32 && expected_type == types::I64 {
+            self.builder.ins().sextend(expected_type, value)
+        } else {
             return None;
-        }
+        };
         self.builder.def_var(variable, value);
         Some(value)
     }

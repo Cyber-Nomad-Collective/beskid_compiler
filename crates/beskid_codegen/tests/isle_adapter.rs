@@ -1123,6 +1123,19 @@ fn parsed_mutable_string_local_exposes_local_write_syntax_facts() {
 }
 
 #[test]
+fn parsed_mutable_i64_assignment_widens_unsuffixed_integer_literal_through_syntax_isle() {
+    let (input, isa, root) = item_fixture_with_root("i64 Main() { mut i64 value = 1_i64; value = 0; return value; }");
+    let main = find_function_definition(input.database(), root).expect("Main item");
+
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("mutable i64 assignment must lower through syntax ISLE");
+    let clif = artifact.functions[0].function.display().to_string();
+
+    assert!(clif.contains("iconst.i32 0"), "unsuffixed integer literal must retain its source width: {clif}");
+    assert!(clif.contains("sextend.i64"), "assignment must widen the literal to the mutable local type: {clif}");
+}
+
+#[test]
 fn parsed_pointer_signature_uses_the_target_pointer_type_without_hir() {
     let (input, isa, item) = item_fixture("pointer Echo(pointer value) { return value; }");
 
@@ -1799,22 +1812,29 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    // Leaf helpers that exercise dispatch builtins and string indexing without pulling the
-    // full call graph (Contains -> IndexOfFrom -> while/ByteAt).
-    for name in ["Len", "IsEmpty", "ByteAt"] {
+    // Leaf helpers exercise dispatch builtins and string indexing; IndexOfFrom additionally
+    // covers mutable i64 assignment in the canonical Core.String corpus.
+    for name in ["Len", "IsEmpty", "ByteAt", "IndexOfFrom"] {
         let key = find_function_definitions(input.database(), root)
             .into_iter()
             .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some(name))
             .unwrap_or_else(|| panic!("Core.String.Core {name}"));
-        let module_items = if name == "IsEmpty" {
-            let len = find_function_definitions(input.database(), root)
-                .into_iter()
-                .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Len"))
-                .expect("Core.String.Core Len");
-            vec![SyntaxModuleItem { key: len, symbol: "Len".into() }, SyntaxModuleItem { key, symbol: name.into() }]
-        } else {
-            vec![SyntaxModuleItem { key, symbol: name.into() }]
+        let dependencies = match name {
+            "IsEmpty" => &["Len"][..],
+            "IndexOfFrom" => &["Len", "ByteAt"][..],
+            _ => &[][..],
         };
+        let mut module_items = dependencies
+            .iter()
+            .map(|dependency| {
+                let dependency_key = find_function_definitions(input.database(), root)
+                    .into_iter()
+                    .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some(*dependency))
+                    .unwrap_or_else(|| panic!("Core.String.Core {dependency}"));
+                SyntaxModuleItem { key: dependency_key, symbol: (*dependency).into() }
+            })
+            .collect::<Vec<_>>();
+        module_items.push(SyntaxModuleItem { key, symbol: name.into() });
         lower_syntax_program(&input, isa.as_ref(), &module_items)
             .unwrap_or_else(|error| panic!("Core.String.Core {name} lowers through syntax ISLE: {error:?}"));
     }
