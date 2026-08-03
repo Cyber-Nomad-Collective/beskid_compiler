@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Retire the unused `beskid_runtime_bridge` static archive package and its
+  source-tree build/CI compatibility helpers; the retirement gate now rejects
+  restoring the bridge package or workspace member.
+
 ### Changed
 
 - Migrate AOT and parsed-project codegen tests to the production prepared-syntax
