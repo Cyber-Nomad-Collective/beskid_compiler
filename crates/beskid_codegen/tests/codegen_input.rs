@@ -13,9 +13,9 @@ use beskid_analysis::services::parse_program_with_source_name;
 use beskid_codegen::{CodegenInput, CodegenInputError, SyntaxNodeFacts};
 use beskid_isle::{CallKind, NodeFacts};
 use beskid_queries::{
-    AstNodeId, AstNodeKey, BeskidDatabase, IndexedNodeKind, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    TypedProgram, build_canonical_runtime_typed_program, build_typed_program, call_lowering, child_nodes,
-    item_name, node_kind,
+    AstNodeId, AstNodeKey, BeskidDatabase, IndexedNodeKind, ProjectSession, SemanticTypeId, SourceUnitId,
+    SyntaxGenerationId, TypedProgram, build_canonical_runtime_typed_program, build_typed_program, call_lowering,
+    child_nodes, item_name, node_kind, primitive_numeric_conversion,
 };
 
 fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, TargetMetadata) {
@@ -307,6 +307,24 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
         )
     });
     assert!(native_pointer_call.is_some(), "canonical Scheduler reaches Bootstrap NativePointer directly");
+
+    let scheduler_spawn = find_node_matching(&db, scheduler_root, IndexedNodeKind::FunctionDefinition, |item| {
+        matches!(item_name(&db, item).ok().flatten().as_deref(), Some("SchedulerSpawn"))
+    })
+    .expect("canonical SchedulerSpawn implementation");
+    let word_to_i64 = find_node_matching(&db, scheduler_spawn, IndexedNodeKind::CallExpression, |call| {
+        matches!(
+            primitive_numeric_conversion(&db, call).ok().flatten(),
+            Some(beskid_queries::PrimitiveNumericConversion { from: SemanticTypeId::WORD, to: SemanticTypeId::I64 })
+        )
+    })
+    .expect("SchedulerSpawn word → i64 conversion fact");
+    let facts = SyntaxNodeFacts::new(&input);
+    assert_eq!(
+        facts.call_kind(word_to_i64),
+        Some(CallKind::PrimitiveNumericConversion),
+        "multi-unit CodegenInput must expose SchedulerSpawn's source-owned conversion to generated ISLE"
+    );
 
     let sched_init = find_node_matching(&db, scheduler_root, IndexedNodeKind::FunctionDefinition, |item| {
         matches!(item_name(&db, item).ok().flatten().as_deref(), Some("SchedInit"))
