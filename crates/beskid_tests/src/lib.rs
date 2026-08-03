@@ -21,13 +21,7 @@ pub mod support;
 pub mod surface;
 
 #[cfg(test)]
-pub mod analysis;
-
-#[cfg(test)]
 pub mod runtime;
-
-#[cfg(test)]
-pub mod codegen;
 
 #[cfg(test)]
 pub mod composition;

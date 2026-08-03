@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- Retire the HIR-based analysis and legacy Rust-codegen suites from
+  `beskid_tests`; generated-syntax `CodegenInput` → ISLE regression suites are
+  now the maintained codegen authority, and the HIR-free gate asserts that the
+  retired suites cannot be reintroduced.
 - Retire the unused `beskid_runtime_bridge` static archive package and its
   source-tree build/CI compatibility helpers; the retirement gate now rejects
   restoring the bridge package or workspace member.

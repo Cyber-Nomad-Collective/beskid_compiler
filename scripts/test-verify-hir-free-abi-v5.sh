@@ -103,4 +103,18 @@ if rg -n --fixed-strings 'crates/beskid_runtime_bridge' "$workspace/Cargo.toml" 
   exit 1
 fi
 
+# The syntax-query and CodegenInput → ISLE suites replace the retired HIR
+# analysis suite. Keeping its directory in the workspace would silently keep
+# an executable consumer for the retired HIR lowering API, so make its
+# absence part of the retirement contract rather than an informal cleanup.
+if find "$workspace/crates/beskid_tests/src/analysis" -type f -print -quit 2>/dev/null | grep -q .; then
+  echo "retired HIR test suite remains: $workspace/crates/beskid_tests/src/analysis" >&2
+  exit 1
+fi
+
+if find "$workspace/crates/beskid_tests/src/codegen" -type f -print -quit 2>/dev/null | grep -q .; then
+  echo "retired HIR codegen test suite remains: $workspace/crates/beskid_tests/src/codegen" >&2
+  exit 1
+fi
+
 echo "HIR-free ABI-v5 retirement gate category test passed"
