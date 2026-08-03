@@ -26,8 +26,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn canonical_runtime_constant_integer(&self, key: AstNodeKey) -> Option<i64> {
-        if self.node_kind(key) != Some(NodeKind::PathExpression)
-            || self.input.runtime_intrinsic_capability().is_none()
+        if self.node_kind(key) != Some(NodeKind::PathExpression) || self.input.runtime_intrinsic_capability().is_none()
         {
             return None;
         }
@@ -167,6 +166,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn primitive_numeric_conversion(&self, key: AstNodeKey) -> Option<(SemanticTypeId, SemanticTypeId)> {
         self.query(beskid_queries::primitive_numeric_conversion(self.db, key)).map(|fact| (fact.from, fact.to))
+    }
+
+    fn semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        self.scalar_semantic_type(key)
     }
 
     fn dispatch_builtin_symbol(&self, key: AstNodeKey) -> Option<&'static str> {

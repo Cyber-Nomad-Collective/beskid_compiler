@@ -5,7 +5,7 @@ use beskid_isle::{
     AstNodeKey, CallImportError, CallImporter, CallKind, DirectCallee, FunctionEmissionError, FunctionEmitter,
     LiteralKind, LoweringErrorKind, NodeFacts, NodeKind,
 };
-use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
+use beskid_queries::{AstNodeId, BeskidDatabase, SemanticTypeId, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{AbiParam, FuncRef, Signature, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
@@ -27,6 +27,9 @@ struct CallFacts {
     argument_type: cranelift_codegen::ir::Type,
     call_type: cranelift_codegen::ir::Type,
     canonical_constant: Option<i64>,
+    primitive_conversion: Option<(SemanticTypeId, SemanticTypeId)>,
+    semantic_argument_type: Option<SemanticTypeId>,
+    semantic_call_type: Option<SemanticTypeId>,
 }
 
 fn direct_callee_key() -> AstNodeKey {
@@ -54,7 +57,25 @@ impl NodeFacts for CallFacts {
     }
 
     fn call_kind(&self, key: AstNodeKey) -> Option<CallKind> {
-        (key == self.call).then_some(CallKind::Direct)
+        (key == self.call).then_some(if self.primitive_conversion.is_some() {
+            CallKind::PrimitiveNumericConversion
+        } else {
+            CallKind::Direct
+        })
+    }
+
+    fn primitive_numeric_conversion(&self, key: AstNodeKey) -> Option<(SemanticTypeId, SemanticTypeId)> {
+        (key == self.call).then_some(self.primitive_conversion).flatten()
+    }
+
+    fn semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        if key == self.argument {
+            self.semantic_argument_type
+        } else if key == self.call {
+            self.semantic_call_type
+        } else {
+            None
+        }
     }
 
     fn integer_literal(&self, key: AstNodeKey) -> Option<i64> {
@@ -134,7 +155,34 @@ fn call_facts(isa: &dyn TargetIsa, callee: DirectCallee) -> CallFacts {
         argument_type: types::I32,
         call_type: types::I32,
         canonical_constant: None,
+        primitive_conversion: None,
+        semantic_argument_type: None,
+        semantic_call_type: None,
     }
+}
+
+#[test]
+fn primitive_numeric_conversion_rejects_a_fact_whose_semantic_type_does_not_match_the_syntax_type() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let mut facts = call_facts(isa.as_ref(), DirectCallee::item(direct_callee_key()));
+    facts.call_type = types::I64;
+    facts.primitive_conversion = Some((SemanticTypeId::WORD, SemanticTypeId::I64));
+    facts.semantic_argument_type = Some(SemanticTypeId::I64);
+    facts.semantic_call_type = Some(SemanticTypeId::I64);
+
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let error = emitter
+        .emit_expression(UserFuncName::user(0, 23), emitter.signature([], [types::I64]), &facts, facts.call)
+        .expect_err("a mismatched conversion fact must fail before generating CLIF");
+
+    let FunctionEmissionError::Lowering(error) = error else {
+        panic!("expected lowering error");
+    };
+    assert_eq!(error.key(), facts.call);
+    assert_eq!(error.kind(), LoweringErrorKind::MissingRuleOrFact);
 }
 
 fn importer(isa: std::sync::Arc<dyn TargetIsa>, expected: DirectCallee) -> KnownCallImporter {
