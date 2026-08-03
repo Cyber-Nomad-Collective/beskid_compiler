@@ -1124,15 +1124,17 @@ fn parsed_mutable_string_local_exposes_local_write_syntax_facts() {
 
 #[test]
 fn parsed_mutable_i64_assignment_widens_unsuffixed_integer_literal_through_syntax_isle() {
-    let (input, isa, root) = item_fixture_with_root("i64 Main() { mut i64 value = 1_i64; value = 0; return value; }");
+    let (input, isa, root) = item_fixture_with_root("i64 Main() { mut i64 value = 1_i64; value = -1; return value; }");
     let main = find_function_definition(input.database(), root).expect("Main item");
 
     let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
         .expect("mutable i64 assignment must lower through syntax ISLE");
     let clif = artifact.functions[0].function.display().to_string();
 
-    assert!(clif.contains("iconst.i32 0"), "unsuffixed integer literal must retain its source width: {clif}");
-    assert!(clif.contains("sextend.i64"), "assignment must widen the literal to the mutable local type: {clif}");
+    assert!(clif.contains("iconst.i32 1"), "negative unsuffixed literal magnitude must retain its source width: {clif}");
+    assert!(clif.contains("ineg"), "negative unsuffixed literal must lower before widening: {clif}");
+    assert!(clif.contains("sextend.i64"), "assignment must sign-extend the literal to the mutable local type: {clif}");
+    assert!(clif.contains("return"), "the function must return the mutable local after its assignment: {clif}");
 }
 
 #[test]
