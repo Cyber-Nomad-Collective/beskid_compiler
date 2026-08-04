@@ -28,7 +28,10 @@ pub struct ArrayStaticPlan {
     pub length: u64,
 }
 
-pub fn emit_array_static_data<M: Module>(module: &mut M, plan: &ArrayStaticPlan) -> ModuleResult<(DataId, DataId, DataId)> {
+pub fn emit_array_static_data<M: Module>(
+    module: &mut M,
+    plan: &ArrayStaticPlan,
+) -> ModuleResult<(DataId, DataId, DataId)> {
     let pointer_map = module.declare_data(&plan.pointer_map_symbol, Linkage::Local, false, false)?;
     let element = module.declare_data(&plan.element_descriptor_symbol, Linkage::Local, false, false)?;
     let request = module.declare_data(&plan.allocation_request_symbol, Linkage::Local, false, false)?;
@@ -100,8 +103,10 @@ impl CodegenInput<'_> {
             return None;
         }
         let (stride, alignment, pointer) = scalar_layout(self.target().pointer_width, element_type)?;
-        let descriptor = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidArrayElementDescriptor")?;
-        let request = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidArrayAllocationRequest")?;
+        let descriptor =
+            self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidArrayElementDescriptor")?;
+        let request =
+            self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidArrayAllocationRequest")?;
         if descriptor.size != 32 || descriptor.alignment != 8 || request.size != 32 || request.alignment != 8 {
             return None;
         }
@@ -111,7 +116,12 @@ impl CodegenInput<'_> {
             .units()
             .iter()
             .position(|unit| unit.path == literal.unit.path(self.database()))?;
-        let identity = format!("u{unit}_g{}_n{}", literal.generation.0, literal.node.0);
+        let namespace = self
+            .artifact_namespace()
+            .chars()
+            .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
+            .collect::<String>();
+        let identity = format!("{namespace}_u{unit}_g{}_n{}", literal.generation.0, literal.node.0);
         Some(ArrayStaticPlan {
             literal,
             pointer_map_symbol: format!("__beskid_array_pointer_map_{identity}"),

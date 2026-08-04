@@ -155,7 +155,7 @@ pub fn emit_isle_item_with_services_specialization<'db>(
     input: &'db CodegenInput<'db>,
     isa: &'db dyn TargetIsa,
     item: AstNodeKey,
-    specialization: ItemSignature,
+    specialization: beskid_queries::GenericSpecializationInstance,
     string_interner: &mut dyn StringInterner,
     importer: &mut dyn CallImporter,
 ) -> Result<cranelift_codegen::ir::Function, FunctionEmissionError> {
@@ -164,7 +164,7 @@ pub fn emit_isle_item_with_services_specialization<'db>(
         .ok()
         .flatten()
         .ok_or_else(|| FunctionEmissionError::verification(item, "item has no syntax body"))?;
-    let signature = signature_for_item(isa, specialization.clone())
+    let signature = signature_for_item(isa, specialization.signature.clone())
         .ok_or_else(|| FunctionEmissionError::verification(item, "generic item specialization is unavailable"))?;
     let emitter = FunctionEmitter::new(isa);
     let facts = SyntaxNodeFacts::new_with_item_specialization(input, isa, item, specialization);

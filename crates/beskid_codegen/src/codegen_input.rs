@@ -28,6 +28,7 @@ pub struct CodegenInput<'db> {
     roots: Arc<[AstNodeKey]>,
     target: TargetMetadata,
     abi_manifest: AbiManifestV5,
+    artifact_namespace: Arc<str>,
 }
 
 impl<'db> CodegenInput<'db> {
@@ -65,7 +66,7 @@ impl<'db> CodegenInput<'db> {
             }
         }
 
-        Ok(Self { db, typed_program, roots, target, abi_manifest })
+        Ok(Self { db, typed_program, roots, target, abi_manifest, artifact_namespace: Arc::from("module") })
     }
 
     pub fn database(&self) -> &'db dyn Db {
@@ -86,6 +87,24 @@ impl<'db> CodegenInput<'db> {
 
     pub fn abi_manifest(&self) -> &AbiManifestV5 {
         &self.abi_manifest
+    }
+
+    /// Bind all source-owned static artifacts to one caller-selected module emission session.
+    /// The namespace is not a language symbol and is only used to prevent collisions when a
+    /// long-lived Cranelift module receives more than one source artifact.
+    pub fn with_artifact_namespace(&self, artifact_namespace: Arc<str>) -> Self {
+        Self {
+            db: self.db,
+            typed_program: self.typed_program.clone(),
+            roots: self.roots.clone(),
+            target: self.target.clone(),
+            abi_manifest: self.abi_manifest.clone(),
+            artifact_namespace,
+        }
+    }
+
+    pub fn artifact_namespace(&self) -> &str {
+        &self.artifact_namespace
     }
 
     /// The one context layout selected by the ABI-v5 target contract.

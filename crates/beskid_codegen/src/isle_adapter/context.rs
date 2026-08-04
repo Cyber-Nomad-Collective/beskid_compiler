@@ -9,7 +9,7 @@ pub struct SyntaxNodeFacts<'db> {
     pub(super) db: &'db dyn Db,
     pub(super) input: &'db CodegenInput<'db>,
     pub(super) isa: Option<&'db dyn TargetIsa>,
-    pub(super) item_specializations: HashMap<AstNodeKey, ItemSignature>,
+    pub(super) item_specializations: HashMap<AstNodeKey, beskid_queries::GenericSpecializationInstance>,
 }
 
 impl<'db> SyntaxNodeFacts<'db> {
@@ -25,9 +25,14 @@ impl<'db> SyntaxNodeFacts<'db> {
         input: &'db CodegenInput<'db>,
         isa: &'db dyn TargetIsa,
         item: AstNodeKey,
-        signature: ItemSignature,
+        specialization: beskid_queries::GenericSpecializationInstance,
     ) -> Self {
-        Self { db: input.database(), input, isa: Some(isa), item_specializations: HashMap::from([(item, signature)]) }
+        Self {
+            db: input.database(),
+            input,
+            isa: Some(isa),
+            item_specializations: HashMap::from([(item, specialization)]),
+        }
     }
 
     pub(super) fn query<T>(&self, result: beskid_queries::SemanticQueryResult<T>) -> Option<T> {
@@ -69,6 +74,6 @@ impl<'db> SyntaxNodeFacts<'db> {
         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)).then_some(())?;
         let declaration = self.query(resolved_local(self.db, key))?.declaration;
         let slot = self.query(local_slot(self.db, declaration))?;
-        self.item_specializations.get(&slot.owner)?.parameters.get(usize::try_from(slot.index).ok()?).copied()
+        self.item_specializations.get(&slot.owner)?.signature.parameters.get(usize::try_from(slot.index).ok()?).copied()
     }
 }

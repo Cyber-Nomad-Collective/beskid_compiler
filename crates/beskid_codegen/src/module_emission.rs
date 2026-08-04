@@ -4,9 +4,10 @@ use std::time::Instant;
 use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
 use beskid_queries::{
-    CallLowering, ItemSignature, SemanticTypeId, SourceUnitId, call_lowering, child_nodes, closure_call_target,
-    closure_environment, closure_signature, extern_contract_import_for_declaration, format_ast_node_key,
-    generic_call_specialization, item_abi_signature, item_name, node_kind, node_span, resolved_item,
+    CallLowering, GenericSpecializationInstance, GenericSubstitution, ItemSignature, SemanticTypeId, SourceUnitId,
+    call_lowering, child_nodes, closure_call_target, closure_environment, closure_signature,
+    extern_contract_import_for_declaration, format_ast_node_key, generic_call_specialization, generic_call_template,
+    generic_specialization_instance, item_abi_signature, item_name, node_kind, node_span, resolved_item,
     spawn_entry_validation,
 };
 use cranelift_codegen::ir::{AbiParam, InstBuilder};
@@ -20,8 +21,7 @@ use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module, ModuleE
 
 use crate::aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticPlan, emit_aggregate_static_data};
 use crate::array_static::{
-    ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ArrayStaticPlan,
-    emit_array_static_data,
+    ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ArrayStaticPlan, emit_array_static_data,
 };
 use crate::closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
@@ -50,6 +50,29 @@ pub struct SyntaxModuleItem {
     pub symbol: String,
 }
 
+/// State owned by a long-lived Cranelift module while it receives source artifacts.
+///
+/// A session supplies one namespace for source-owned metadata and remembers function handles by
+/// final symbol. Re-emitting the same source artifact therefore returns its existing handles
+/// rather than redeclaring a conflicting module symbol. Callers that emit independent artifacts
+/// choose distinct namespaces; the convenience API below keeps the historical one-shot behavior.
+#[derive(Debug, Clone)]
+pub struct ModuleEmissionSession {
+    namespace: std::sync::Arc<str>,
+    callees: HashMap<DirectCallee, FuncId>,
+    source_artifacts: HashSet<String>,
+}
+
+impl ModuleEmissionSession {
+    pub fn new(namespace: impl Into<std::sync::Arc<str>>) -> Self {
+        Self { namespace: namespace.into(), callees: HashMap::new(), source_artifacts: HashSet::new() }
+    }
+
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+}
+
 /// One fully declared syntax item after generic source declarations have been expanded into
 /// exact ABI specializations.  The callee key is the same structural identity produced by ISLE
 /// call facts, keeping declaration and import selection generation-safe.
@@ -58,7 +81,7 @@ struct ResolvedSyntaxModuleItem {
     key: AstNodeKey,
     symbol: String,
     callee: DirectCallee,
-    specialization: Option<ItemSignature>,
+    specialization: Option<GenericSpecializationInstance>,
 }
 
 #[derive(Debug, Clone)]
@@ -328,11 +351,9 @@ fn lower_resolved_syntax_program(
     }
     let array_static_plans = collect_array_static_plans(input, items);
     if !array_static_plans.is_empty() {
-        for symbol in [
-            ABI_V5_ARRAY_ALLOCATE_ROOTED,
-            ABI_V5_ARRAY_CONSTRUCTION_FINISH,
-            "beskid_rt_v5_array_write_barrier",
-        ] {
+        for symbol in
+            [ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, "beskid_rt_v5_array_write_barrier"]
+        {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
                 extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
             }
@@ -805,7 +826,7 @@ fn resolve_module_items(
     source_items: &[SyntaxModuleItem],
 ) -> Result<Vec<ResolvedSyntaxModuleItem>, SyntaxModuleEmissionError> {
     let db = input.database();
-    let mut specializations = HashMap::<AstNodeKey, Vec<ItemSignature>>::new();
+    let mut specializations = HashMap::<AstNodeKey, Vec<GenericSpecializationInstance>>::new();
     for item in source_items {
         // A generic declaration body has no concrete substitution environment of its own.
         // Walking it once here falsely treats `T`-dependent call sites as executable source and
@@ -842,46 +863,17 @@ fn resolve_module_items(
             // selected entrypoint's call graph).
             continue;
         };
-        for signature in signatures {
-            reject_uninstantiated_nested_generic_call(db, item.key, signature)?;
-            let identity = specialization_identity(signature);
+        for specialization in signatures {
+            let identity = specialization_identity(&specialization.signature);
             resolved.push(ResolvedSyntaxModuleItem {
                 key: item.key,
-                symbol: format!("{}#generic_{}", item.symbol, specialization_mangle(signature)),
+                symbol: format!("{}#generic_{}", item.symbol, specialization_mangle(&specialization.signature)),
                 callee: DirectCallee::specialized_item(item.key, identity),
-                specialization: Some(signature.clone()),
+                specialization: Some(specialization.clone()),
             });
         }
     }
     Ok(resolved)
-}
-
-/// Fail closed until semantic facts expose a substitution-aware nested-specialization worklist.
-///
-/// A source generic body cannot be lowered once with type variables substituted "later". Doing
-/// so either creates an import for the wrong specialisation or silently omits a nested generic
-/// callee. The first such call is therefore a keyed deterministic diagnostic, rather than a
-/// speculative traversal. Non-nested generic specialisations remain materialised normally.
-fn reject_uninstantiated_nested_generic_call(
-    db: &dyn beskid_queries::Db,
-    item: AstNodeKey,
-    signature: &ItemSignature,
-) -> Result<(), SyntaxModuleEmissionError> {
-    let mut visited = HashSet::new();
-    let mut nodes = Vec::new();
-    collect_ast_nodes(db, item, &mut visited, &mut nodes);
-    for node in nodes {
-        if let Some(declaration) = direct_generic_call_declaration(db, node)? {
-            return Err(emission_verification(format!(
-                "nested generic call requires substitution worklist: item={} specialization={} call={} declaration={}",
-                format_declaration_for_trace(db, item),
-                format_abi_identity(&specialization_identity(signature)),
-                trace_key(db, node),
-                format_declaration_for_trace(db, declaration),
-            )));
-        }
-    }
-    Ok(())
 }
 
 /// Return true only for a declaration body with a declaration-level, non-generic ABI.
@@ -898,26 +890,77 @@ fn is_concrete_executable_item(
     {
         return Ok(false);
     }
-    Ok(item_abi_signature(db, key)
-        .map_err(|error| emission_verification(error.to_string()))?
-        .is_some())
+    Ok(item_abi_signature(db, key).map_err(|error| emission_verification(error.to_string()))?.is_some())
 }
 
 fn collect_generic_call_specializations(
     db: &dyn beskid_queries::Db,
     key: AstNodeKey,
-    specializations: &mut HashMap<AstNodeKey, Vec<ItemSignature>>,
+    specializations: &mut HashMap<AstNodeKey, Vec<GenericSpecializationInstance>>,
+) -> Result<(), SyntaxModuleEmissionError> {
+    collect_generic_call_specializations_in_environment(db, key, None, specializations)
+}
+
+/// Traverse an executable source body with an optional immutable enclosing specialization.
+/// Nested calls of the explicit `inner<T>(...)` form are materialized using the enclosing
+/// bindings, then their body is queued in the same pass.  This replaces the old diagnostic-only
+/// guard with a finite `(declaration, substitutions)` worklist.
+fn collect_generic_call_specializations_in_environment(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    environment: Option<&GenericSpecializationInstance>,
+    specializations: &mut HashMap<AstNodeKey, Vec<GenericSpecializationInstance>>,
 ) -> Result<(), SyntaxModuleEmissionError> {
     if let Some(declaration) = direct_generic_call_declaration(db, key)? {
-        let specialization = generic_call_specialization(db, key)
-            .map_err(|error| emission_verification(error.to_string()))?
-            .ok_or_else(|| {
+        let specialization = if let Some(template) =
+            generic_call_template(db, key).map_err(|error| emission_verification(error.to_string()))?
+        {
+            let enclosing = environment.ok_or_else(|| {
                 emission_verification(format!(
-                    "generic direct call has no provable ABI specialization: call={} declaration={}",
+                    "generic call template has no enclosing specialization: call={} declaration={}",
                     trace_key(db, key),
-                    format_declaration_for_trace(db, declaration),
+                    format_declaration_for_trace(db, declaration)
                 ))
             })?;
+            let bindings = template
+                .parameters
+                .iter()
+                .zip(template.parameter_arguments.iter())
+                .map(|(target, argument)| {
+                    enclosing
+                        .substitutions
+                        .iter()
+                        .find(|binding| binding.parameter.as_ref() == argument.as_ref())
+                        .cloned()
+                        .map(|binding| GenericSubstitution { parameter: target.clone(), argument: binding.argument })
+                })
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| {
+                    emission_verification(format!(
+                        "nested generic call references an unbound parameter: call={} declaration={}",
+                        trace_key(db, key),
+                        format_declaration_for_trace(db, declaration)
+                    ))
+                })?;
+            generic_specialization_instance(db, template.declaration, bindings.into())
+                .map_err(|error| emission_verification(error.to_string()))?
+                .ok_or_else(|| emission_verification("nested generic specialization is unavailable"))?
+        } else {
+            let specialization = generic_call_specialization(db, key)
+                .map_err(|error| emission_verification(error.to_string()))?
+                .ok_or_else(|| {
+                    emission_verification(format!(
+                        "generic direct call has no provable ABI specialization: call={} declaration={}",
+                        trace_key(db, key),
+                        format_declaration_for_trace(db, declaration)
+                    ))
+                })?;
+            GenericSpecializationInstance {
+                declaration: specialization.declaration,
+                signature: specialization.signature,
+                substitutions: specialization.substitutions,
+            }
+        };
         if specialization.declaration != declaration {
             return Err(emission_verification(format!(
                 "generic direct call specialization resolved a different declaration: call={} expected={} actual={}",
@@ -926,14 +969,22 @@ fn collect_generic_call_specializations(
                 format_declaration_for_trace(db, specialization.declaration),
             )));
         }
-        let signatures = specializations.entry(declaration).or_default();
-        if !signatures.contains(&specialization.signature) {
-            signatures.push(specialization.signature);
+        let instances = specializations.entry(declaration).or_default();
+        if !instances.contains(&specialization) {
+            instances.push(specialization.clone());
+            // Only a newly discovered instance can add new nested work. This makes recursive
+            // generic helpers finite without relying on a source-body traversal order.
+            collect_generic_call_specializations_in_environment(
+                db,
+                declaration,
+                Some(&specialization),
+                specializations,
+            )?;
         }
     }
     if let Some(children) = child_nodes(db, key).map_err(|error| emission_verification(error.to_string()))? {
         for child in children.iter().copied() {
-            collect_generic_call_specializations(db, child, specializations)?;
+            collect_generic_call_specializations_in_environment(db, child, environment, specializations)?;
         }
     }
     Ok(())
@@ -1179,6 +1230,51 @@ pub fn emit_syntax_program<M: Module>(
         module.clear_context(&mut context);
     }
     Ok(by_callee)
+}
+
+/// Emit source into a reusable module session.
+///
+/// The session namespaces both function and source-static identities before ordinary lowering.
+/// Its artifact key is the complete ordered source item list, so a repeat request is served from
+/// the cached `DirectCallee` handles and does not attempt a second Cranelift declaration.
+pub fn emit_syntax_program_in_session<M: Module>(
+    module: &mut M,
+    session: &mut ModuleEmissionSession,
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    items: &[SyntaxModuleItem],
+    linkage: Linkage,
+) -> Result<HashMap<DirectCallee, FuncId>, SyntaxModuleEmissionError> {
+    let namespace = session
+        .namespace()
+        .chars()
+        .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
+        .collect::<String>();
+    let artifact_key =
+        format!("{namespace}:{}", items.iter().map(|item| item.symbol.as_str()).collect::<Vec<_>>().join(","));
+    if session.source_artifacts.contains(&artifact_key) {
+        let resolved = resolve_module_items(input, items)?;
+        return resolved
+            .into_iter()
+            .map(|item| {
+                session
+                    .callees
+                    .get(&item.callee)
+                    .copied()
+                    .map(|id| (item.callee, id))
+                    .ok_or_else(|| emission_verification("module emission session cache is missing a declared callee"))
+            })
+            .collect();
+    }
+    let namespaced_input = input.with_artifact_namespace(session.namespace.clone());
+    let namespaced_items = items
+        .iter()
+        .map(|item| SyntaxModuleItem { key: item.key, symbol: format!("__beskid_{namespace}_{}", item.symbol) })
+        .collect::<Vec<_>>();
+    let emitted = emit_syntax_program(module, &namespaced_input, isa, &namespaced_items, linkage)?;
+    session.callees.extend(emitted.iter().map(|(callee, id)| (callee.clone(), *id)));
+    session.source_artifacts.insert(artifact_key);
+    Ok(emitted)
 }
 
 /// Emit artifact-owned closure descriptor/pointer-map/allocation-request data.

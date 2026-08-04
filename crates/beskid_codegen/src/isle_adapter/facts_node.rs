@@ -210,6 +210,28 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         let CallLowering::Direct(declaration) = lowering else {
             return None;
         };
+        if let Some(template) = self.query(generic_call_template(self.db, key)) {
+            let enclosing = self.item_specializations.values().next()?;
+            let substitutions = template
+                .parameters
+                .iter()
+                .zip(template.parameter_arguments.iter())
+                .map(|(target, argument)| {
+                    enclosing.substitutions.iter().find(|binding| binding.parameter.as_ref() == argument.as_ref()).map(
+                        |binding| beskid_queries::GenericSubstitution {
+                            parameter: target.clone(),
+                            argument: binding.argument,
+                        },
+                    )
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let specialization =
+                self.query(generic_specialization_instance(self.db, template.declaration, substitutions.into()))?;
+            return Some(DirectCallee::specialized_item(
+                specialization.declaration,
+                specialization_identity(&specialization.signature),
+            ));
+        }
         if let Some(specialization) = self.query(generic_call_specialization(self.db, key)) {
             return Some(DirectCallee::specialized_item(
                 specialization.declaration,

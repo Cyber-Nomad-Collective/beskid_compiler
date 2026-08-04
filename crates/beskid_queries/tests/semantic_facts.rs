@@ -23,10 +23,9 @@ use beskid_queries::{
     callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target, closure_environment,
     closure_signature, completion_candidates, control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
     for_iterator_fact, generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
-    item_signature, literal_fact, local_initializer_abi_type, local_slot, mutable_local_assignment, node_kind, node_span,
-    node_type,
-    nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items, resolved_item,
-    resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
+    item_signature, literal_fact, local_initializer_abi_type, local_slot, mutable_local_assignment, node_kind,
+    node_span, node_type, nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items,
+    resolved_item, resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -302,6 +301,10 @@ unit Main() {
                 parameters: Arc::from([SemanticTypeId::I64, SemanticTypeId::I64]),
                 result: SemanticTypeId::UNIT,
             },
+            substitutions: Arc::from([beskid_queries::GenericSubstitution {
+                parameter: Arc::from("T"),
+                argument: SemanticTypeId::I64,
+            }]),
         })
     );
 }
@@ -1765,6 +1768,7 @@ unit Main() {
     Hub<i64>.Create();
     Hub.Create();
 }
+
 "#;
     let hub_source = r#"
 type Hub<T> { i64 value }
@@ -1938,6 +1942,7 @@ pub Core.Results.Result<i64, Core.Syscall.SyscallError> Write() {
         Some(beskid_queries::GenericCallSpecialization {
             declaration,
             signature: ItemSignature { parameters: Arc::from([SemanticTypeId::POINTER]), result: SemanticTypeId::BOOL },
+            substitutions: Arc::from([]),
         })
     );
 }
@@ -2097,6 +2102,10 @@ unit Main() { Equal(1, 1, "because"); return; }
                 parameters: Arc::from([SemanticTypeId::I32, SemanticTypeId::I32, SemanticTypeId::STRING,]),
                 result: SemanticTypeId::UNIT,
             },
+            substitutions: Arc::from([beskid_queries::GenericSubstitution {
+                parameter: Arc::from("T"),
+                argument: SemanticTypeId::I32,
+            }]),
         })
     );
 }
@@ -3930,10 +3939,7 @@ fn local_initializer_abi_type_contextualizes_only_bare_integer_literals_at_exact
     let second = key(unit, generation, &index, NodeKind::LiteralExpression, 1);
 
     assert_eq!(local_initializer_abi_type(&db, first).expect("typed let literal"), Some(SemanticTypeId::I64));
-    assert_eq!(
-        local_initializer_abi_type(&db, second).expect("typed assignment literal"),
-        Some(SemanticTypeId::I64)
-    );
+    assert_eq!(local_initializer_abi_type(&db, second).expect("typed assignment literal"), Some(SemanticTypeId::I64));
 
     let inferred = "i32 Main() { let value = 0; return value; }";
     let (db, _project, unit, generation, index) = setup(inferred);

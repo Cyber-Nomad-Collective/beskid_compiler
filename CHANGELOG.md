@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Carry immutable generic specialization environments through semantic facts and module emission.
+  Nested explicit generic calls now enter a declaration-instance worklist keyed by declaration and
+  substitutions, while `ModuleEmissionSession` namespaces source artifacts and reuses declared
+  callee handles for repeated long-lived-module emission. Source verification remains pending the
+  scheduled Cargo/Clippy pass.
+
 - Generate manifest-owned ABI-v5 bindings for the exact `Core.Args`
   `__args_count` and `__args_get` services on Linux x64, macOS arm64, and
   Windows x64. Validation now rejects missing or duplicate target bindings,
