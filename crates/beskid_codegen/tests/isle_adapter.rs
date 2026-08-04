@@ -2236,6 +2236,53 @@ fn parsed_program_specializes_an_inferred_generic_call_without_hir() {
 }
 
 #[test]
+fn parsed_program_emits_only_call_derived_generic_specializations_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "i32 Keep<T>(T value) { return 7; } i32 Unused<T>(T value) { return 0; } i32 Main() { return Keep(1); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: items[0], symbol: "Keep".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Unused".into() },
+            SyntaxModuleItem { key: items[2], symbol: "Main".into() },
+        ],
+    )
+    .expect("only the generic declaration proven by an actual direct call is materialized");
+
+    assert!(
+        artifact.functions.iter().any(|function| function.name.starts_with("Keep#generic_")),
+        "the actual generic call must materialize its exact call-derived ABI specialization"
+    );
+    assert!(
+        artifact.functions.iter().all(|function| !function.name.starts_with("Unused#generic_")),
+        "a generic declaration without an actual direct call must not be materialized"
+    );
+}
+
+#[test]
+fn parsed_program_rejects_a_generic_direct_call_without_a_provable_specialization() {
+    let (input, isa, root) =
+        item_fixture_with_root("unit Missing<T>() { return; } unit Main() { Missing(); }");
+    let items = find_function_definitions(input.database(), root);
+
+    let error = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: items[0], symbol: "Missing".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
+        ],
+    )
+    .expect_err("a generic direct call without source-proven arguments must fail closed");
+
+    assert!(error.to_string().contains("generic direct call has no provable ABI specialization"), "{error}");
+}
+
+#[test]
 fn parsed_program_specializes_generic_string_not_equal_as_content_comparison() {
     let (input, isa, root) = item_fixture_with_root(
         "unit NotEqual<T>(T actual, T expected) { if actual != expected { return; } return; } unit Main() { NotEqual(\"left\", \"right\"); }",

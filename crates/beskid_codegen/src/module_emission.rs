@@ -802,7 +802,12 @@ fn resolve_module_items(
             continue;
         }
         let Some(signatures) = specializations.get(&item.key) else {
-            return Err(emission_verification("generic item has no call-derived ABI specialization"));
+            // Generic declarations do not have an executable ABI on their own.  They enter a
+            // module only when the same source traversal has proven a concrete direct-call ABI.
+            // A direct generic call without that proof is rejected while collecting below, so
+            // this is only an uncalled declaration (for example a Corelib helper outside the
+            // selected entrypoint's call graph).
+            continue;
         };
         for signature in signatures {
             let identity = specialization_identity(signature);
@@ -822,10 +827,25 @@ fn collect_generic_call_specializations(
     key: AstNodeKey,
     specializations: &mut HashMap<AstNodeKey, Vec<ItemSignature>>,
 ) -> Result<(), SyntaxModuleEmissionError> {
-    if let Some(specialization) =
-        generic_call_specialization(db, key).map_err(|error| emission_verification(error.to_string()))?
-    {
-        let signatures = specializations.entry(specialization.declaration).or_default();
+    if let Some(declaration) = direct_generic_call_declaration(db, key)? {
+        let specialization = generic_call_specialization(db, key)
+            .map_err(|error| emission_verification(error.to_string()))?
+            .ok_or_else(|| {
+                emission_verification(format!(
+                    "generic direct call has no provable ABI specialization: call={} declaration={}",
+                    trace_key(db, key),
+                    format_declaration_for_trace(db, declaration),
+                ))
+            })?;
+        if specialization.declaration != declaration {
+            return Err(emission_verification(format!(
+                "generic direct call specialization resolved a different declaration: call={} expected={} actual={}",
+                trace_key(db, key),
+                format_declaration_for_trace(db, declaration),
+                format_declaration_for_trace(db, specialization.declaration),
+            )));
+        }
+        let signatures = specializations.entry(declaration).or_default();
         if !signatures.contains(&specialization.signature) {
             signatures.push(specialization.signature);
         }
@@ -836,6 +856,44 @@ fn collect_generic_call_specializations(
         }
     }
     Ok(())
+}
+
+/// Returns the declaration only for a source call that has resolved directly to a generic
+/// function with no declaration-level ABI.  This keeps module emission constrained to the same
+/// semantic call facts that ISLE uses for `DirectCallee::SpecializedItem`; unresolved calls stay
+/// unavailable rather than being guessed from syntax.
+fn direct_generic_call_declaration(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+) -> Result<Option<AstNodeKey>, SyntaxModuleEmissionError> {
+    if node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?
+        != Some(beskid_queries::IndexedNodeKind::CallExpression)
+    {
+        return Ok(None);
+    }
+    let lowering = match call_lowering(db, key) {
+        Ok(Some(lowering)) => lowering,
+        Ok(None) => return Ok(None),
+        // `generic_call_specialization` deliberately leaves unavailable call sites out of the
+        // fact set (for example unresolved Core.Output paths).  They cannot prove a direct
+        // generic declaration and must not broaden module emission.
+        Err(error) if error.is_unavailable() => return Ok(None),
+        Err(error) => return Err(emission_verification(error.to_string())),
+    };
+    let CallLowering::Direct(declaration) = lowering else {
+        return Ok(None);
+    };
+    if node_kind(db, declaration).map_err(|error| emission_verification(error.to_string()))?
+        != Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
+    {
+        return Ok(None);
+    }
+    match item_abi_signature(db, declaration).map_err(|error| emission_verification(error.to_string()))? {
+        Some(_) => Ok(None),
+        // Function definitions are ABI-less only when generic.  The generic call fact below
+        // must now prove one exact ABI shape, otherwise the caller is rejected fail-closed.
+        None => Ok(Some(declaration)),
+    }
 }
 
 fn specialization_identity(signature: &ItemSignature) -> std::sync::Arc<[u32]> {
