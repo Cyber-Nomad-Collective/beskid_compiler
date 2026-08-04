@@ -13,18 +13,18 @@ use beskid_analysis::projects::{
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex, SyntaxSnapshot};
 use beskid_queries::{
-    AggregateFieldShape, AstNodeKey, BeskidDatabase, CaptureStorageClass, ClosureAllocationStatus, ClosureCallTarget,
-    ClosureCapture, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement, CompletionContext,
-    EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, GenericSpecializationInstance,
-    ItemSignature, LocalSlot, MutableLocalAssignment, OperatorFact, ProjectSession, SemanticError, SemanticTypeId,
-    SourceUnitId,
+    AggregateFieldShape, AstNodeKey, BeskidDatabase, CallLowering, CaptureStorageClass, ClosureAllocationStatus,
+    ClosureCallTarget, ClosureCapture, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
+    CompletionContext, EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact,
+    GenericSpecializationInstance, ItemSignature, LocalSlot, MutableLocalAssignment, OperatorFact, ProjectSession,
+    SemanticError, SemanticTypeId, SourceUnitId,
     SpawnDiagnosticKind, SpawnEntryValidation, SyntaxGenerationId, abi_type, aggregate_field_access, aggregate_layout,
     build_canonical_corelib_syscall_typed_program, build_typed_program,
     build_typed_program_with_corelib_syscall_services, call_abi_signature, call_arguments, call_lowering,
     callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target, closure_environment,
     closure_signature, completion_candidates, control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
-    for_iterator_fact, generic_call_instantiation, generic_call_specialization, generic_specialization_identity,
-    item_abi_signature, item_body,
+    for_iterator_fact, generic_call_instantiation, generic_call_specialization, generic_call_template,
+    generic_specialization_identity, item_abi_signature, item_body,
     item_signature, literal_fact, local_initializer_abi_type, local_slot, mutable_local_assignment, node_kind,
     node_span, node_type, nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
@@ -2093,6 +2093,37 @@ unit Main() { Channel<i64> ch = Create<i64>(); return; }
     assert_eq!(
         call_abi_signature(&db, nested).expect("nested call ABI"),
         Some(ItemSignature { parameters: Arc::from([SemanticTypeId::POINTER]), result: SemanticTypeId::POINTER })
+    );
+}
+
+#[test]
+fn concrete_nominal_type_argument_is_not_a_nested_generic_call_template() {
+    let source = r#"
+type ConsoleMessage { i64 kind }
+type Channel<T> { i64 handle }
+Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; }
+Channel<ConsoleMessage> MessagesChannel() { return Create<ConsoleMessage>(); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let create = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let call = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .find(|call| {
+            matches!(call_lowering(&db, *call).ok().flatten(), Some(CallLowering::Direct(declaration)) if declaration == create)
+        })
+        .expect("Create<ConsoleMessage> call");
+
+    assert_eq!(
+        generic_call_template(&db, call).expect("concrete nominal type argument query"),
+        None,
+        "only a type argument bound by the enclosing generic declaration is a deferred template"
+    );
+    assert!(
+        generic_call_specialization(&db, call)
+            .expect("concrete nominal generic specialization")
+            .is_some(),
+        "the concrete nominal call must be specialized directly"
     );
 }
 
