@@ -8,6 +8,7 @@ use beskid_runtime::{
     gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier, leave_runtime_scope, set_current_heap,
     set_current_root, snapshot_gc, str_concat, str_from_i64,
 };
+use beskid_runtime::builtins::str_slice;
 
 fn with_runtime_scope<R>(f: impl FnOnce(&Arc<Heap>, &mut RuntimeRoot) -> R) -> R {
     let heap = Heap::off();
@@ -96,6 +97,25 @@ fn concatenated_string_reclaims_all_managed_buffers_after_handoffs() {
         gc_unroot_handle(combined_handle);
         assert!(heap.force_collect() < bytes_after_build, "unreachable concatenation must release every buffer");
         assert_eq!(heap.bytes_allocated(), 0, "str_concat must not retain any construction roots");
+    });
+}
+
+#[test]
+fn nonzero_string_slice_retains_its_managed_buffer_after_source_unroots() {
+    with_runtime_scope(|heap, _| {
+        let source = str_from_i64(12345);
+        let slice = str_slice(source, 1, 3);
+        let source_handle = gc_root_handle(source.cast());
+        let slice_handle = gc_root_handle(slice.cast());
+        gc_unroot_handle(source_handle);
+
+        heap.force_collect();
+        let bytes = unsafe { std::slice::from_raw_parts((*slice).ptr, (*slice).len) };
+        assert_eq!(bytes, b"234", "rooted nonzero slice must retain its source buffer");
+
+        gc_unroot_handle(slice_handle);
+        heap.force_collect();
+        assert_eq!(heap.bytes_allocated(), 0, "slice and source buffer must both reclaim after unrooting");
     });
 }
 

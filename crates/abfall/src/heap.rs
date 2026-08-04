@@ -47,15 +47,17 @@ struct BeskidAllocationRegistry {
 struct BeskidAllocationMappings {
     payload_to_header: HashMap<usize, usize>,
     header_to_payload: HashMap<usize, usize>,
+    payload_sizes: HashMap<usize, usize>,
     construction_roots: HashSet<usize>,
     composite_children: HashMap<usize, HashSet<usize>>,
 }
 
 impl BeskidAllocationRegistry {
-    fn register(&self, payload: *mut u8, header: *mut GcHeader, has_construction_root: bool) {
+    fn register(&self, payload: *mut u8, header: *mut GcHeader, payload_size: usize, has_construction_root: bool) {
         let mut mappings = self.mappings.lock();
         mappings.payload_to_header.insert(payload as usize, header as usize);
         mappings.header_to_payload.insert(header as usize, payload as usize);
+        mappings.payload_sizes.insert(payload as usize, payload_size);
         if has_construction_root {
             mappings.construction_roots.insert(payload as usize);
         }
@@ -65,6 +67,7 @@ impl BeskidAllocationRegistry {
         let mut mappings = self.mappings.lock();
         if let Some(payload) = mappings.header_to_payload.remove(&(header as usize)) {
             mappings.payload_to_header.remove(&payload);
+            mappings.payload_sizes.remove(&payload);
             mappings.construction_roots.remove(&payload);
             mappings.composite_children.remove(&payload);
             for children in mappings.composite_children.values_mut() {
@@ -73,8 +76,21 @@ impl BeskidAllocationRegistry {
         }
     }
 
+    fn owner_payload(mappings: &BeskidAllocationMappings, payload: *mut u8) -> Option<usize> {
+        let address = payload as usize;
+        mappings.payload_to_header.contains_key(&address).then_some(address).or_else(|| {
+            mappings.payload_sizes.iter().find_map(|(base, size)| {
+                let end = base.saturating_add(*size);
+                (*base < address && address < end).then_some(*base)
+            })
+        })
+    }
+
     fn header_for(&self, payload: *mut u8) -> Option<*mut GcHeader> {
-        self.mappings.lock().payload_to_header.get(&(payload as usize)).copied().map(|header| header as *mut GcHeader)
+        let mappings = self.mappings.lock();
+        Self::owner_payload(&mappings, payload)
+            .and_then(|base| mappings.payload_to_header.get(&base).copied())
+            .map(|header| header as *mut GcHeader)
     }
 
     fn owns(&self, payload: *mut u8) -> bool {
@@ -96,9 +112,9 @@ impl BeskidAllocationRegistry {
         }
         let mut mappings = self.mappings.lock();
         if mappings.payload_to_header.contains_key(&(parent as usize))
-            && mappings.payload_to_header.contains_key(&(child as usize))
+            && let Some(child_owner) = Self::owner_payload(&mappings, child)
         {
-            mappings.composite_children.entry(parent as usize).or_default().insert(child as usize);
+            mappings.composite_children.entry(parent as usize).or_default().insert(child_owner);
         }
     }
 
@@ -552,7 +568,7 @@ impl Heap {
             }
         }
 
-        self.beskid_allocations.register(payload_ptr, header_ptr, true);
+        self.beskid_allocations.register(payload_ptr, header_ptr, size, true);
 
         BeskidAllocation { heap: self, payload_ptr }
     }
