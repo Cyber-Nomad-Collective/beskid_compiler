@@ -398,7 +398,7 @@ fn generation_is_invariant_under_nonsemantic_collection_order() {
     let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
     let manifest = load_v5_manifest_source(&source).unwrap();
     let expected = generate_v5_artifacts(&manifest).unwrap();
-    let mut permuted = manifest;
+    let mut permuted = manifest.clone();
     permuted.targets.reverse();
     permuted.exports.reverse();
     permuted.intrinsics.reverse();
@@ -412,6 +412,15 @@ fn generation_is_invariant_under_nonsemantic_collection_order() {
     permuted.traps.reverse();
     permuted.audit.forbidden_symbol_families.reverse();
     assert_eq!(generate_v5_artifacts(&permuted).unwrap(), expected);
+
+    let mut imports_in_one_order = manifest.clone();
+    imports_in_one_order.corelib_services[0].target_bindings[0].os_imports = vec!["write".into(), "mmap".into()];
+    let mut imports_in_another_order = imports_in_one_order.clone();
+    imports_in_another_order.corelib_services[0].target_bindings[0].os_imports.reverse();
+    assert_eq!(
+        generate_v5_artifacts(&imports_in_one_order).unwrap(),
+        generate_v5_artifacts(&imports_in_another_order).unwrap()
+    );
 }
 
 #[test]

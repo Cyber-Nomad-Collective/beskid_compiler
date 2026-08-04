@@ -866,6 +866,9 @@ fn canonicalized(manifest: &RuntimeManifestV5) -> RuntimeManifestV5 {
     value.corelib_services.sort_by(|a, b| a.name.cmp(&b.name));
     for service in &mut value.corelib_services {
         service.target_bindings.sort_by(|a, b| a.target.cmp(&b.target));
+        for binding in &mut service.target_bindings {
+            binding.os_imports.sort();
+        }
     }
     value.assembly.sort_by(|a, b| a.symbol.cmp(&b.symbol));
     value.traps.sort_by_key(|trap| trap.code);
