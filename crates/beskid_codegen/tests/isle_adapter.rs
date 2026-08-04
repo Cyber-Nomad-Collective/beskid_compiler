@@ -1124,6 +1124,20 @@ fn parsed_mutable_string_local_exposes_local_write_syntax_facts() {
 }
 
 #[test]
+fn parsed_i64_local_initializers_and_assignments_contextualize_unsuffixed_integer_literals() {
+    let (input, isa, root) = item_fixture_with_root(
+        "i64 Main(mut i64 start) { i64 offset = 0; start = 0; return start + offset; }",
+    );
+    let item = named_function(&input, root, "Main");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("explicit i64 local initializer and assignment lower through syntax ISLE without widening");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i64 0"), "{clif}");
+    assert!(!clif.contains("sextend"), "contextual literals must not become implicit numeric widening: {clif}");
+}
+
+#[test]
 fn parsed_pointer_signature_uses_the_target_pointer_type_without_hir() {
     let (input, isa, item) = item_fixture("pointer Echo(pointer value) { return value; }");
 

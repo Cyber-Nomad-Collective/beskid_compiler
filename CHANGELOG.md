@@ -44,6 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Contextually type unsuffixed integer literals only at explicitly typed local
+  initializer and mutable-local assignment boundaries. Generated syntax ISLE
+  now emits the destination's exact ABI width without an implicit numeric
+  widening conversion, while inferred locals, explicit literal suffixes,
+  compound values, immutable destinations, and out-of-range values fail closed.
+
 - Fail closed unless the ABI-v5 Core.Args manifest contains exactly
   `__args_count` and `__args_get`, and unless every target binding implements
   its canonical generated adapter symbol.
