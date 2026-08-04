@@ -19,6 +19,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module, ModuleError, ModuleResult};
 
 use crate::aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticPlan, emit_aggregate_static_data};
+use crate::array_static::{ABI_V5_ARRAY_ALLOCATE, ArrayStaticPlan, emit_array_static_data};
 use crate::closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
     ClosureStaticPlan, emit_closure_static_data,
@@ -322,6 +323,14 @@ fn lower_resolved_syntax_program(
             library: None,
         });
     }
+    let array_static_plans = collect_array_static_plans(input, items);
+    if !array_static_plans.is_empty() {
+        for symbol in [ABI_V5_ARRAY_ALLOCATE, "beskid_rt_v5_array_write_barrier"] {
+            if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
+                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
+            }
+        }
+    }
 
     Ok(CodegenArtifact {
         functions,
@@ -329,8 +338,18 @@ fn lower_resolved_syntax_program(
         extern_imports,
         closure_static_plans,
         aggregate_static_plans,
+        array_static_plans,
         ..CodegenArtifact::default()
     })
+}
+
+fn collect_array_static_plans(input: &CodegenInput<'_>, items: &[ResolvedSyntaxModuleItem]) -> Vec<ArrayStaticPlan> {
+    let mut visited = HashSet::new();
+    let mut nodes = Vec::new();
+    for item in items {
+        collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
+    }
+    nodes.into_iter().filter_map(|key| input.array_static_plan(key)).collect()
 }
 
 fn collect_aggregate_static_plans(
@@ -1013,6 +1032,9 @@ pub fn emit_syntax_program<M: Module>(
     for plan in &artifact.aggregate_static_plans {
         emit_aggregate_static_data(module, plan)?;
     }
+    for plan in &artifact.array_static_plans {
+        emit_array_static_data(module, plan)?;
+    }
     let mut by_callee = HashMap::with_capacity(items.len());
     let mut by_symbol = HashMap::with_capacity(artifact.functions.len());
     for lowered in &artifact.functions {
@@ -1046,6 +1068,9 @@ pub fn emit_closure_static_plans<M: Module>(module: &mut M, artifact: &CodegenAr
     }
     for plan in &artifact.aggregate_static_plans {
         emit_aggregate_static_data(module, plan)?;
+    }
+    for plan in &artifact.array_static_plans {
+        emit_array_static_data(module, plan)?;
     }
     Ok(())
 }

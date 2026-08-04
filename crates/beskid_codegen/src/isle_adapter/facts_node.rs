@@ -271,6 +271,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.array_layout_for_literal(key)
     }
 
+    fn managed_array_allocation(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedArrayAllocation> {
+        Some(beskid_isle::ManagedArrayAllocation {
+            allocation_request_symbol: self.input.array_static_plan(key)?.allocation_request_symbol.into(),
+        })
+    }
+
     fn function_parameters(&self, key: AstNodeKey) -> Option<Vec<ParameterSlot>> {
         let mut parameters = Vec::new();
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition) {

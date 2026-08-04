@@ -6,7 +6,7 @@ use beskid_analysis::syntax::try_decode_string_literal_token;
 use beskid_isle::{
     AstNodeKey, CallImporter, CallKind, DirectCallee, EmissionServices, EnumLayout, EnumVariantLayout, FieldLayout,
     FunctionEmissionError, FunctionEmitter, InlineCaptureField, InlineClosureEnvironment, InlineLambdaCall,
-    ItemStatementEmission, LiteralKind, LocalSlotId, ManagedStructAllocation, MatchArmBindingFact, MatchArmFact,
+    ItemStatementEmission, LiteralKind, LocalSlotId, ManagedArrayAllocation, ManagedStructAllocation, MatchArmBindingFact, MatchArmFact,
     NodeFacts, NodeKind, OperatorFact, ParameterSlot, RuntimeIntrinsicKind, Signature, StringInterner, StructLayout,
 };
 use beskid_queries::{

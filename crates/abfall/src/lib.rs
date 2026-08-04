@@ -39,7 +39,7 @@ mod ptr;
 mod roots;
 mod trace;
 
-pub use beskid::TypeDescriptor;
+pub use beskid::{ArrayElementDescriptor, TypeDescriptor};
 pub use cell::GcCell;
 pub use gc::{GcContext, HeapSessionGuard, enter_heap_session, with_current_heap};
 pub use heap::{GcHeapStats, GcOptions, GcPhase, Heap};

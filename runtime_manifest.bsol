@@ -46,6 +46,7 @@ export "beskid_rt_v5_thread_attach" { params = [{ name = runtime, type = pointer
 export "beskid_rt_v5_thread_detach" { params = [{ name = thread, type = pointer }] returns = void }
 export "beskid_rt_v5_managed_object_allocate" { params = [{ name = request, type = pointer }] returns = pointer }
 export "beskid_rt_v5_array_allocate" { params = [{ name = request, type = pointer }] returns = pointer }
+export "beskid_rt_v5_array_write_barrier" { params = [{ name = array, type = pointer }, { name = value, type = pointer }] returns = u8 }
 export "beskid_rt_v5_closure_environment_allocate" { params = [{ name = request, type = pointer }] returns = pointer }
 export "beskid_rt_v5_closure_capture_store" { params = [{ name = environment, type = pointer }, { name = descriptor, type = pointer }, { name = map_index, type = usize }, { name = value, type = pointer }] returns = u8 }
 export "beskid_rt_v5_closure_environment_root" { params = [{ name = tls_state, type = pointer }, { name = slot_index, type = usize }, { name = environment, type = pointer }] returns = u8 }

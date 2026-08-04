@@ -40,6 +40,7 @@ pub struct CodegenArtifact {
     pub string_literals: HashMap<String, Vec<u8>>,
     pub closure_static_plans: Vec<crate::closure_static::ClosureStaticPlan>,
     pub aggregate_static_plans: Vec<crate::aggregate_static::AggregateStaticPlan>,
+    pub array_static_plans: Vec<crate::array_static::ArrayStaticPlan>,
     pub extern_imports: Vec<ExternImport>,
     pub exports: Vec<crate::lowering::expressions::export::ExportEntry>,
 }
