@@ -3042,6 +3042,82 @@ fn exact_assembled_generic_nominal_envelope(
     Some(SemanticTypeId::POINTER)
 }
 
+/// Prove an ABI representation for one unsuffixed integer literal used as the entire initializer
+/// of an explicitly typed local, or as the entire RHS of a mutable local assignment.
+///
+/// This is contextual typing for literals, not a conversion: the source literal has no ABI suffix
+/// and is emitted directly at the destination's exact ABI width. Inferred declarations, explicit
+/// literal suffixes, compound expressions, immutable destinations, and non-integer destination
+/// representations fail closed rather than receiving an implicit numeric widening.
+#[salsa::tracked]
+fn local_initializer_abi_type_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SemanticTypeId> {
+    with_node(db, syntax, key, |program, index, _node| {
+        Some((|| {
+            if !unsuffixed_integer_literal(db, key)? {
+                return Err(SemanticError::unavailable("local_initializer_abi_type"));
+            }
+            let mut current = key.node;
+            while let Some(parent) = index.metadata_for(key.generation, current).and_then(|meta| meta.parent) {
+                let parent_key = AstNodeKey { node: parent, ..key };
+                let parent_node = index
+                    .node_at(program, parent)
+                    .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+
+                if let Some(binding) = parent_node.of::<beskid_analysis::syntax::LetStatement>() {
+                    let initializer = index
+                        .direct_child_id(
+                            program,
+                            parent,
+                            beskid_analysis::syntax_query::DynNodeRef::from(&binding.value),
+                        )
+                        .map(|node| AstNodeKey { node, ..key })
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                    if integer_literal_text(db, initializer)?.is_none() {
+                        return Err(SemanticError::unavailable("local_initializer_abi_type"));
+                    }
+                    let annotation = binding
+                        .type_annotation
+                        .as_ref()
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                    let expected = abi_type_from_syntax(db, parent_key, &annotation.node)?;
+                    return integer_literal_fits_abi(db, initializer, expected)?
+                        .then_some(expected)
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"));
+                }
+
+                if let Some(assignment) = parent_node.of::<beskid_analysis::syntax::AssignExpression>() {
+                    let value = index
+                        .direct_child_id(
+                            program,
+                            parent,
+                            beskid_analysis::syntax_query::DynNodeRef::from(assignment.value.as_ref()),
+                        )
+                        .map(|node| AstNodeKey { node, ..key })
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                    if integer_literal_text(db, value)?.is_none() {
+                        return Err(SemanticError::unavailable("local_initializer_abi_type"));
+                    }
+                    let write = mutable_local_assignment(db, parent_key)?
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                    let expected = abi_type(db, write.declaration)?
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                    return integer_literal_fits_abi(db, value, expected)?
+                        .then_some(expected)
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"));
+                }
+
+                current = parent;
+            }
+            Err(SemanticError::unavailable("local_initializer_abi_type"))
+        })())
+    })?
+    .transpose()
+}
+
 #[salsa::tracked]
 fn abi_type_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
@@ -5623,6 +5699,15 @@ pub fn abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTyp
 /// all other expressions remain unavailable rather than being implicitly coerced.
 pub fn call_argument_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, call_argument_abi_type_tracked)
+}
+
+/// Return the exact ABI selected for a bare integer literal at a typed local initializer or
+/// mutable local-assignment boundary.
+///
+/// This fact never performs a numeric conversion: it is unavailable for inferred locals,
+/// explicit literal suffixes, compound values, immutable destinations, and out-of-range values.
+pub fn local_initializer_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
+    with_registered_syntax(db, key, local_initializer_abi_type_tracked)
 }
 
 /// Return the exact lambda parameters and outer lexical captures in source order.

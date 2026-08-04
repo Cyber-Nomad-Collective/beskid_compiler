@@ -142,6 +142,7 @@ impl SyntaxNodeFacts<'_> {
         }
         self.query(cast_intents(self.db, key))
             .and_then(|intents| intents.first().map(|intent| intent.to))
+            .or_else(|| self.query(local_initializer_abi_type(self.db, key)))
             .or_else(|| self.query(abi_type(self.db, key)))
             .or_else(|| self.query(node_type(self.db, key)))
             .or_else(|| {

@@ -23,7 +23,8 @@ use beskid_queries::{
     callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target, closure_environment,
     closure_signature, completion_candidates, control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
     for_iterator_fact, generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
-    item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type,
+    item_signature, literal_fact, local_initializer_abi_type, local_slot, mutable_local_assignment, node_kind, node_span,
+    node_type,
     nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items, resolved_item,
     resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
 };
@@ -3919,6 +3920,30 @@ fn immutable_local_assignment_is_an_explicit_unavailable_syntax_fact() {
     let (db, _project, unit, generation, index) = setup(source);
     let assignment = key(unit, generation, &index, NodeKind::AssignExpression, 0);
     assert_unavailable(mutable_local_assignment(&db, assignment));
+}
+
+#[test]
+fn local_initializer_abi_type_contextualizes_only_bare_integer_literals_at_exact_local_boundaries() {
+    let source = "i64 Main(mut i64 start) { i64 offset = 0; start = 1; return start + offset; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let first = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    let second = key(unit, generation, &index, NodeKind::LiteralExpression, 1);
+
+    assert_eq!(local_initializer_abi_type(&db, first).expect("typed let literal"), Some(SemanticTypeId::I64));
+    assert_eq!(
+        local_initializer_abi_type(&db, second).expect("typed assignment literal"),
+        Some(SemanticTypeId::I64)
+    );
+
+    let inferred = "i32 Main() { let value = 0; return value; }";
+    let (db, _project, unit, generation, index) = setup(inferred);
+    let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    assert_unavailable(local_initializer_abi_type(&db, literal));
+
+    let explicitly_suffixed = "i64 Main() { i64 value = 0_i32; return value; }";
+    let (db, _project, unit, generation, index) = setup(explicitly_suffixed);
+    let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    assert_unavailable(local_initializer_abi_type(&db, literal));
 }
 
 #[test]

@@ -83,7 +83,8 @@ pub use semantic_contract::{
     dispatch_builtin_symbol, enum_constructor, enum_layout, enum_match, extern_contract_import_for_declaration,
     for_iterator_fact, format_ast_node_key, format_ast_node_site, format_source_span_range, generic_call_instantiation,
     generic_call_specialization, item_abi_signature, item_body, item_export_symbol, item_name, item_signature,
-    literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver,
+    literal_fact, local_initializer_abi_type, local_slot, mutable_local_assignment, node_kind, node_span, node_type,
+    nominal_member_receiver,
     operator_fact, primitive_numeric_conversion, range_for_fact, reachable_items, resolved_item, resolved_local, runtime_intrinsic,
     runtime_intrinsic_name, spawn_entry_validation, spawn_legality, spawn_target, test_item, test_statement_nodes,
 };
