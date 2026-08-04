@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prevent concurrent Phase B collection from sweeping intrusive heap nodes while allocations or
+  marking barriers are active. Mutator transactions now use an epoch-stamped phase admission
+  handshake with RAII lifecycle cleanup, and sweep drains work published as admission closes.
 - Preserve the canonical multi-unit `SchedulerSpawn` word-to-`i64` conversion
   fact through `CodegenInput` into generated ISLE coverage.
 - Reject primitive numeric conversion facts whose semantic source or target

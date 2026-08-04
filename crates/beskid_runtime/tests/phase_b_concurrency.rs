@@ -4,10 +4,14 @@
 //! The Phase B switch is opted-in per test via [`set_runtime_phase`]; the suite leaves Phase A
 //! invariants intact for unrelated tests.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::thread;
-use std::time::Duration;
+use std::{
+    sync::{
+        Arc, Barrier,
+        atomic::{AtomicUsize, Ordering},
+    },
+    thread,
+    time::Duration,
+};
 
 use abfall::{GcOptions, Heap};
 use beskid_runtime::{
@@ -161,6 +165,11 @@ fn pointer_channel_cross_thread_with_phase_b_mutators() {
 
     let received_count = Arc::new(AtomicUsize::new(0));
     let received_count_consumer = Arc::clone(&received_count);
+    let start = Arc::new(Barrier::new(2));
+    let producer_start = Arc::clone(&start);
+    let consumer_start = Arc::clone(&start);
+
+    const ITEMS: usize = 128;
 
     let channel_id = with_scope(&heap, |_| channel_create(8, 0));
 
@@ -169,7 +178,8 @@ fn pointer_channel_cross_thread_with_phase_b_mutators() {
         .spawn(move || {
             let mut root = RuntimeRoot::new(Arc::clone(&producer_heap));
             let _attach = attach_phase_b_mutator(&producer_heap, &mut root as *mut _);
-            for i in 0..32 {
+            producer_start.wait();
+            for i in 0..ITEMS {
                 let ptr = alloc(16, std::ptr::null());
                 assert!(!ptr.is_null(), "producer alloc #{i}");
                 let status = channel_send_ptr(channel_id, ptr);
@@ -184,6 +194,7 @@ fn pointer_channel_cross_thread_with_phase_b_mutators() {
         .spawn(move || {
             let mut root = RuntimeRoot::new(Arc::clone(&consumer_heap));
             let _attach = attach_phase_b_mutator(&consumer_heap, &mut root as *mut _);
+            consumer_start.wait();
             loop {
                 let mut out: *mut u8 = std::ptr::null_mut();
                 let status = channel_receive_ptr(channel_id, &mut out);
@@ -192,9 +203,7 @@ fn pointer_channel_cross_thread_with_phase_b_mutators() {
                 }
                 assert!(!out.is_null(), "received pointer should be non-null");
                 received_count_consumer.fetch_add(1, Ordering::SeqCst);
-                if received_count_consumer.load(Ordering::Relaxed).is_multiple_of(8) {
-                    let _ = gc_collect();
-                }
+                let _ = gc_collect();
             }
         })
         .expect("spawn consumer");
@@ -202,7 +211,7 @@ fn pointer_channel_cross_thread_with_phase_b_mutators() {
     producer.join().expect("producer join");
     consumer.join().expect("consumer join");
 
-    assert_eq!(received_count.load(Ordering::SeqCst), 32);
+    assert_eq!(received_count.load(Ordering::SeqCst), ITEMS);
 
     with_scope(&heap, |_| {
         let _ = gc_collect();

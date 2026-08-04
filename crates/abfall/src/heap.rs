@@ -3,17 +3,24 @@
 //! This module provides the heap structure that stores GC-managed objects
 //! and implements the mark and sweep phases of garbage collection.
 
-use crate::beskid::{BeskidObject, TypeDescriptor};
-use crate::gc_box::{GcBox, GcHeader};
-use crate::ptr::GcRoot;
-use crate::roots::ExternalRootSet;
-use crate::trace::{Trace, Tracer};
-use std::collections::HashMap;
-use std::ptr::null_mut;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
-use std::thread::JoinHandle;
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    ptr::null_mut,
+    sync::{
+        Arc,
+        atomic::{AtomicPtr, AtomicUsize, Ordering},
+    },
+    thread::JoinHandle,
+    time::Duration,
+};
+
+use crate::{
+    beskid::{BeskidObject, TypeDescriptor},
+    gc_box::{GcBox, GcHeader},
+    ptr::GcRoot,
+    roots::ExternalRootSet,
+    trace::{Trace, Tracer},
+};
 
 /// Send-safe wrapper for raw pointer queue
 struct GrayQueue(Vec<*const GcHeader>);
@@ -142,6 +149,21 @@ pub enum GcPhase {
     Sweeping = 2,
 }
 
+const GC_PHASE_BITS: usize = 2;
+const GC_PHASE_MASK: usize = (1 << GC_PHASE_BITS) - 1;
+
+fn gc_state(phase: GcPhase, epoch: usize) -> usize {
+    (epoch << GC_PHASE_BITS) | phase as usize
+}
+
+fn state_phase(state: usize) -> GcPhase {
+    GcPhase::from((state & GC_PHASE_MASK) as u8)
+}
+
+fn state_epoch(state: usize) -> usize {
+    state >> GC_PHASE_BITS
+}
+
 impl From<u8> for GcPhase {
     fn from(value: u8) -> Self {
         match value {
@@ -184,16 +206,39 @@ pub struct Heap {
     current_threshold: AtomicUsize,
     /// Gray queue for incremental marking
     gray_queue: parking_lot::Mutex<GrayQueue>,
-    /// Current GC phase
-    phase: AtomicU8,
+    /// Current GC phase and collection epoch. The epoch prevents an Idle → Marking → Sweeping
+    /// → Idle cycle from looking unchanged to a mutator admission retry.
+    phase_state: AtomicUsize,
     /// Background GC thread handle
     bg_thread: StartStopJoinHandle,
     /// Number of assist mutators or write-barriers active.
     busy_marking_count: std::sync::atomic::AtomicUsize,
+    /// Number of mutator operations that may touch allocation metadata or publish mark work.
+    active_mutator_count: AtomicUsize,
     /// Runtime-registered roots and temporary handles.
     external_roots: ExternalRootSet,
     /// Ownership and pointer-to-header lookup for opaque Beskid payloads.
     beskid_allocations: BeskidAllocationRegistry,
+}
+
+struct MutatorOperationGuard<'a> {
+    heap: &'a Heap,
+    busy_marking: bool,
+}
+
+impl Drop for MutatorOperationGuard<'_> {
+    fn drop(&mut self) {
+        if self.busy_marking {
+            self.heap.busy_marking_count.fetch_sub(1, Ordering::AcqRel);
+        }
+        self.heap.leave_mutator_operation();
+    }
+}
+
+impl MutatorOperationGuard<'_> {
+    fn is_marking(&self) -> bool {
+        self.busy_marking
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -351,9 +396,10 @@ impl Heap {
             bytes_allocated: AtomicUsize::new(0),
             current_threshold,
             gray_queue: parking_lot::Mutex::new(GrayQueue::new()),
-            phase: AtomicU8::new(GcPhase::Idle as u8),
+            phase_state: AtomicUsize::new(gc_state(GcPhase::Idle, 0)),
             bg_thread: StartStopJoinHandle::new(),
             busy_marking_count: std::sync::atomic::AtomicUsize::new(0),
+            active_mutator_count: AtomicUsize::new(0),
             external_roots: ExternalRootSet::default(),
             beskid_allocations: BeskidAllocationRegistry::default(),
         });
@@ -364,11 +410,17 @@ impl Heap {
     }
 
     pub fn allocate<T: Trace>(&self, data: T) -> GcRoot<T> {
-        // Mutator assist: help with marking if enabled
-        if self.options.assist_work_budget > 0 && self.check_is_marking_and_increment_busy() {
-            self.do_mark_incremental(self.options.assist_work_budget);
-            self.decrement_busy_marking();
+        // Mutator assist: help with marking if enabled. The RAII transaction keeps sweep closed
+        // until the local work is fully published, including during unwinding.
+        if self.options.assist_work_budget > 0 {
+            self.with_mutator_operation(|is_marking| {
+                if is_marking {
+                    self.do_mark_incremental(self.options.assist_work_budget);
+                }
+            });
         }
+
+        let _mutator = self.enter_mutator_operation();
 
         let ptr = GcBox::new(data);
         let header_ptr = unsafe { &(*ptr.as_ptr()).header as *const GcHeader as *mut GcHeader };
@@ -380,10 +432,15 @@ impl Heap {
 
     /// Allocate an opaque Beskid payload tracked by descriptor metadata.
     pub fn allocate_beskid(&self, size: usize, type_desc_ptr: *const u8) -> *mut u8 {
-        if self.options.assist_work_budget > 0 && self.check_is_marking_and_increment_busy() {
-            self.do_mark_incremental(self.options.assist_work_budget);
-            self.decrement_busy_marking();
+        if self.options.assist_work_budget > 0 {
+            self.with_mutator_operation(|is_marking| {
+                if is_marking {
+                    self.do_mark_incremental(self.options.assist_work_budget);
+                }
+            });
         }
+
+        let _mutator = self.enter_mutator_operation();
 
         let type_desc = type_desc_ptr.cast::<TypeDescriptor>();
         let obj = BeskidObject { heap: self as *const Self, type_desc, bytes: vec![0u8; size].into_boxed_slice() };
@@ -469,15 +526,18 @@ impl Heap {
 
     /// Dijkstra insertion barrier for raw Beskid payload pointers.
     pub fn write_barrier(&self, _dst_obj: *mut u8, value_ptr: *mut u8) {
-        if value_ptr.is_null() || !self.check_is_marking_and_increment_busy() {
+        if value_ptr.is_null() {
             return;
         }
-        let tracer = Tracer::new();
-        self.mark_payload_ptr(value_ptr, &tracer);
-        if tracer.has_work() {
-            self.merge_work(&tracer);
-        }
-        self.decrement_busy_marking();
+        self.with_mutator_operation(|is_marking| {
+            if is_marking {
+                let tracer = Tracer::new();
+                self.mark_payload_ptr(value_ptr, &tracer);
+                if tracer.has_work() {
+                    self.merge_work(&tracer);
+                }
+            }
+        });
     }
 
     pub fn force_collect(&self) -> usize {
@@ -513,7 +573,7 @@ impl Heap {
     }
 
     pub fn gc_phase(&self) -> GcPhase {
-        GcPhase::from(self.phase.load(Ordering::Acquire))
+        state_phase(self.phase_state.load(Ordering::Acquire))
     }
 
     pub fn collection_threshold(&self) -> usize {
@@ -534,35 +594,89 @@ impl Heap {
         }
     }
 
-    pub fn check_is_marking_and_increment_busy(&self) -> bool {
-        self.busy_marking_count.fetch_add(1, Ordering::AcqRel);
-        if self.is_marking() {
-            true
-        } else {
-            self.busy_marking_count.fetch_sub(1, Ordering::AcqRel);
-            false
+    fn enter_mutator_operation(&self) -> MutatorOperationGuard<'_> {
+        loop {
+            let before = self.phase_state.load(Ordering::SeqCst);
+            if state_phase(before) == GcPhase::Sweeping {
+                std::thread::yield_now();
+                continue;
+            }
+
+            self.active_mutator_count.fetch_add(1, Ordering::SeqCst);
+            let after = self.phase_state.load(Ordering::SeqCst);
+            if before == after {
+                let busy_marking = state_phase(before) == GcPhase::Marking;
+                if busy_marking {
+                    self.busy_marking_count.fetch_add(1, Ordering::AcqRel);
+                }
+                return MutatorOperationGuard { heap: self, busy_marking };
+            }
+
+            self.leave_mutator_operation();
         }
     }
 
-    pub fn decrement_busy_marking(&self) {
-        self.busy_marking_count.fetch_sub(1, Ordering::AcqRel);
+    /// Run a full mutator transaction against one stable phase/epoch snapshot. The token stays
+    /// alive through `operation`, so a collection that starts after admission cannot sweep until
+    /// all mutation and mark publication work has completed.
+    pub(crate) fn with_mutator_operation<R>(&self, operation: impl FnOnce(bool) -> R) -> R {
+        let guard = self.enter_mutator_operation();
+        operation(guard.is_marking())
+    }
+
+    fn leave_mutator_operation(&self) {
+        self.active_mutator_count.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    fn wait_for_mutator_quiescence(&self) {
+        while self.active_mutator_count.load(Ordering::SeqCst) != 0 {
+            std::thread::yield_now();
+        }
     }
 
     /// Try to transition to marking phase
     fn try_start_marking(&self) -> bool {
-        self.phase
-            .compare_exchange(GcPhase::Idle as u8, GcPhase::Marking as u8, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+        loop {
+            let state = self.phase_state.load(Ordering::Acquire);
+            if state_phase(state) != GcPhase::Idle {
+                return false;
+            }
+            let next = gc_state(GcPhase::Marking, state_epoch(state).wrapping_add(1));
+            if self.phase_state.compare_exchange(state, next, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+                return true;
+            }
+        }
     }
 
     /// Transition to sweeping phase
     fn start_sweeping(&self) {
-        self.phase.store(GcPhase::Sweeping as u8, Ordering::Release);
+        loop {
+            let state = self.phase_state.load(Ordering::SeqCst);
+            match state_phase(state) {
+                GcPhase::Sweeping => return,
+                GcPhase::Marking => {
+                    let next = gc_state(GcPhase::Sweeping, state_epoch(state));
+                    if self.phase_state.compare_exchange(state, next, Ordering::SeqCst, Ordering::Acquire).is_ok() {
+                        return;
+                    }
+                }
+                GcPhase::Idle => panic!("cannot start sweeping while the collector is idle"),
+            }
+        }
     }
 
     /// Transition back to idle phase
     fn finish_gc(&self) {
-        self.phase.store(GcPhase::Idle as u8, Ordering::Release);
+        loop {
+            let state = self.phase_state.load(Ordering::Acquire);
+            if state_phase(state) == GcPhase::Idle {
+                return;
+            }
+            let next = gc_state(GcPhase::Idle, state_epoch(state));
+            if self.phase_state.compare_exchange(state, next, Ordering::Release, Ordering::Acquire).is_ok() {
+                return;
+            }
+        }
     }
 
     pub(crate) fn try_mark_full(&self) -> bool {
@@ -583,6 +697,17 @@ impl Heap {
     }
 
     pub(crate) fn sweep_and_finish(&self) -> usize {
+        // Close admission before checking the participant count. A mutator that joined while the
+        // phase was still Marking either finishes before this wait returns or observes Sweeping,
+        // backs out, and retries after collection.
+        self.start_sweeping();
+        self.wait_for_mutator_quiescence();
+
+        // A barrier admitted immediately before Sweeping may have published gray work after the
+        // marking loop's final empty check. Drain that closed set before reclaiming any headers.
+        let tracer = Tracer::new();
+        self.do_mark_work_full(&tracer);
+
         let live_bytes = self.do_sweep();
         self.update_threshold(live_bytes);
         self.finish_gc();
@@ -692,7 +817,7 @@ impl Heap {
     }
 
     fn do_sweep(&self) -> usize {
-        self.start_sweeping();
+        debug_assert_eq!(self.gc_phase(), GcPhase::Sweeping, "sweep requires closed mutator admission");
 
         let mut freed = 0;
 
@@ -815,5 +940,73 @@ fn background_gc_thread(heap: Arc<Heap>, c: StopCondition) {
             // Sweeping phase and finish
             heap.sweep_and_finish();
         }
+    }
+}
+
+#[cfg(test)]
+mod transaction_tests {
+    use std::sync::{
+        Arc, Barrier,
+        atomic::{AtomicBool, Ordering},
+    };
+
+    use super::*;
+
+    #[test]
+    fn marking_transaction_keeps_its_marking_snapshot_until_sweep_can_finish() {
+        let heap = Heap::off();
+        assert!(heap.mark_for_tests());
+
+        let entered = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let worker_heap = Arc::clone(&heap);
+        let worker_entered = Arc::clone(&entered);
+        let worker_release = Arc::clone(&release);
+        let worker = std::thread::spawn(move || {
+            worker_heap.with_mutator_operation(|is_marking| {
+                assert!(is_marking, "admitted transaction must retain the marking snapshot");
+                worker_entered.wait();
+                worker_release.wait();
+            });
+        });
+
+        entered.wait();
+        let sweep_done = Arc::new(AtomicBool::new(false));
+        let sweep_heap = Arc::clone(&heap);
+        let sweep_done_worker = Arc::clone(&sweep_done);
+        let sweeper = std::thread::spawn(move || {
+            sweep_heap.sweep_and_finish();
+            sweep_done_worker.store(true, Ordering::Release);
+        });
+
+        while heap.gc_phase() != GcPhase::Sweeping {
+            std::thread::yield_now();
+        }
+        assert!(!sweep_done.load(Ordering::Acquire), "sweep must wait for the admitted marking transaction");
+
+        release.wait();
+        worker.join().expect("marking worker");
+        sweeper.join().expect("sweeper");
+        assert!(sweep_done.load(Ordering::Acquire));
+        assert_eq!(heap.gc_phase(), GcPhase::Idle);
+    }
+
+    #[test]
+    fn panicking_marking_transaction_releases_sweep_admission() {
+        let heap = Heap::off();
+        assert!(heap.mark_for_tests());
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            heap.with_mutator_operation(|is_marking| {
+                assert!(is_marking);
+                panic!("test trace panic");
+            });
+        }));
+        assert!(result.is_err());
+
+        heap.sweep_and_finish();
+        assert_eq!(heap.gc_phase(), GcPhase::Idle);
+        assert_eq!(heap.active_mutator_count.load(Ordering::Acquire), 0);
+        assert_eq!(heap.busy_marking_count.load(Ordering::Acquire), 0);
     }
 }
