@@ -59,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Give every native ABI-v5 runtime-kit build its own staging directory. Parallel
+  same-profile callers can no longer delete a peer build's static archive before
+  it is published into the exact installed prefix.
+
 - Rebind typed-array ISLE execution fixtures through concrete `JITModule`
   function and data imports before definition. The coverage now executes array
   indexing and indexed stores on macOS arm64 without relying on unsupported
