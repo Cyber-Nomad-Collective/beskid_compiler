@@ -34,6 +34,8 @@ pub fn emit_array_static_data<M: Module>(module: &mut M, plan: &ArrayStaticPlan)
 
     let mut pointer_map_bytes = Vec::with_capacity(plan.pointer_map_offsets.len().max(1) * 8);
     if plan.pointer_map_offsets.is_empty() {
+        // Keep the unused local data object non-empty for object-module backends;
+        // the descriptor itself deliberately retains a null map pointer below.
         pointer_map_bytes.extend_from_slice(&0u64.to_le_bytes());
     } else {
         for offset in plan.pointer_map_offsets.iter().copied() {
@@ -51,8 +53,13 @@ pub fn emit_array_static_data<M: Module>(module: &mut M, plan: &ArrayStaticPlan)
     write_word(&mut element_bytes, 24, plan.pointer_map_offsets.len() as u64)?;
     let mut element_data = DataDescription::new();
     element_data.define(element_bytes.into_boxed_slice());
-    let pointer_map_address = module.declare_data_in_data(pointer_map, &mut element_data);
-    element_data.write_data_addr(16, pointer_map_address, 0);
+    // The ABI contract requires a null map pointer when the count is zero; a
+    // placeholder data object's address would be malformed metadata even though
+    // it is never scanned.
+    if !plan.pointer_map_offsets.is_empty() {
+        let pointer_map_address = module.declare_data_in_data(pointer_map, &mut element_data);
+        element_data.write_data_addr(16, pointer_map_address, 0);
+    }
     module.define_data(element, &element_data)?;
 
     // BeskidArrayAllocationRequest { element, length, flags=0, reserved=0 }.
