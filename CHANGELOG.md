@@ -62,7 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Serialize the ABI-v5 JIT integration tests' temporary installed-prefix
   contexts so the CodegenInput missing-manifest route deterministically reaches
   its intended exact-kit validation instead of racing another test's process
-  environment restoration.
+  environment restoration. Scheduler JIT execution now stages the same explicit
+  native kit rather than attempting to derive a prefix from Cargo's test binary.
 
 - Declare the canonical rooted typed-array allocation, construction-root release,
   and pointer write-barrier exports in the embedded runtime corpus so source

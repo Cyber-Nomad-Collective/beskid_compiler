@@ -1,12 +1,12 @@
 #![cfg(unix)]
 
+mod support;
+
 use std::collections::BTreeSet;
-use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, canonical_source_hash};
 use beskid_abi::runtime_kit::{BuildProfile, RuntimeKitBuildRequest, build_runtime_kit};
@@ -15,41 +15,9 @@ use beskid_codegen::{CodegenArtifact, ExternImport, LoweredFunction};
 use beskid_engine::{BeskidJitModule, Engine, JitRuntimeKit};
 use cranelift_codegen::ir::{AbiParam, ExternalName, Function, InstBuilder, Signature, types};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+use support::runtime_prefix::RuntimePrefixContext;
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-// `BESKID_RUNTIME_PREFIX` is process-global. These integration tests run concurrently in the
-// same test binary, so every temporary installed-prefix context must hold this lock from the
-// environment update through the call that resolves the exact kit.
-static RUNTIME_PREFIX_LOCK: Mutex<()> = Mutex::new(());
-
-struct RuntimePrefixContext {
-    previous: Option<OsString>,
-    _lock: MutexGuard<'static, ()>,
-}
-
-impl RuntimePrefixContext {
-    fn install(prefix: &Path) -> Self {
-        let lock = RUNTIME_PREFIX_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let previous = std::env::var_os("BESKID_RUNTIME_PREFIX");
-        // SAFETY: the process-wide lock prevents concurrent reads or writes in this integration
-        // target, and Drop restores the exact pre-test value before releasing that lock.
-        unsafe { std::env::set_var("BESKID_RUNTIME_PREFIX", prefix) };
-        Self { previous, _lock: lock }
-    }
-}
-
-impl Drop for RuntimePrefixContext {
-    fn drop(&mut self) {
-        // SAFETY: `RuntimePrefixContext::install` holds the process-wide lock for this mutation.
-        unsafe {
-            if let Some(value) = &self.previous {
-                std::env::set_var("BESKID_RUNTIME_PREFIX", value);
-            } else {
-                std::env::remove_var("BESKID_RUNTIME_PREFIX");
-            }
-        }
-    }
-}
 
 struct TestDir(PathBuf);
 
