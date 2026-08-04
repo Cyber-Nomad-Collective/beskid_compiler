@@ -1,18 +1,37 @@
 //! AOT compile and execute helpers shared by runtime integration tests.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use abfall::Heap;
-use beskid_aot::{AotRunRequest, BuildProfile, build_and_run, default_runtime_strategy};
+use beskid_aot::{AotRunRequest, BuildProfile, build_and_run, installed_runtime_strategy};
 use beskid_runtime::{
     RuntimeRoot, clear_current_heap, clear_current_root, enter_runtime_scope, leave_runtime_scope, scheduler_init,
     set_current_heap, set_current_root,
 };
+use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
 use crate::test_harness::temp_case_dir;
 
 const TEST_SOURCE_PATH: &str = "<beskid_tests>";
+
+/// One real, exact native ABI-v5 kit shared by executable-linking tests in this process.
+///
+/// Cargo runs this suite from `target/.../deps`, which intentionally is not an installed
+/// `<prefix>/bin` layout. Tests must therefore select an explicit staged prefix rather than
+/// weakening production discovery or mutating a process-global environment variable.
+static TEST_RUNTIME_KIT_PREFIX: OnceLock<tempfile::TempDir> = OnceLock::new();
+
+fn test_runtime_kit_prefix() -> &'static Path {
+    TEST_RUNTIME_KIT_PREFIX
+        .get_or_init(|| {
+            let prefix = tempfile::tempdir().expect("create exact ABI-v5 runtime-kit prefix");
+            build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
+                .expect("stage exact native ABI-v5 runtime kit for executable-linking tests");
+            prefix
+        })
+        .path()
+}
 
 pub fn compile_artifact(source: &str) -> beskid_codegen::CodegenArtifact {
     beskid_engine::services::prepare_jit_module(Path::new(TEST_SOURCE_PATH), source)
@@ -27,8 +46,8 @@ pub fn validate_lowered(source: &str) {
 pub fn build_aot_exe(source: &str, case_name: &str) -> (PathBuf, beskid_aot::AotRunResult) {
     let artifact = compile_artifact(source);
     let output_dir = temp_case_dir(case_name);
-    let runtime = default_runtime_strategy(BuildProfile::Debug, None)
-        .expect("tests that link executables require an installed ABI-v5 runtime kit");
+    let runtime = installed_runtime_strategy(test_runtime_kit_prefix(), BuildProfile::Debug, None)
+        .expect("tests that link executables require the staged exact ABI-v5 runtime kit");
     let result = build_and_run(AotRunRequest {
         artifact,
         entrypoint: "Main".to_owned(),

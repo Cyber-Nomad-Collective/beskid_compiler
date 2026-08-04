@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stage one explicit native ABI-v5 kit for the `beskid_tests` executable-linking
+  helpers and pass its exact prefix to the installed-kit strategy. AOT execution
+  tests no longer attempt to treat Cargo's `target/.../deps` test executable as
+  an installed toolchain.
+
 - Give every native ABI-v5 runtime-kit build its own staging directory. Parallel
   same-profile callers can no longer delete a peer build's static archive before
   it is published into the exact installed prefix.
