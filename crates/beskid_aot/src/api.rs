@@ -461,6 +461,30 @@ fn compile_platform_objects(
     Ok(vec![object, tls_object, adapter_object])
 }
 
+fn compile_core_args_entry_adapter(target: &str, output_dir: &std::path::Path, name: &str) -> AotResult<PathBuf> {
+    let plan = platform_object_plan(target)?;
+    let assembly_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/assembly").join(target);
+    let source = assembly_root.join(if target.contains("windows") { "args_entry.asm" } else { "args_entry.S" });
+    let object = output_dir.join(format!("{name}.core_args_entry.{}", plan.object_extension));
+    let mut command = Command::new(plan.assembly_program);
+    command.args(&plan.assembly_args);
+    if plan.assembly_output_before_source {
+        command.arg(&object).arg(&source);
+    } else {
+        command.arg(&source).arg("-o").arg(&object);
+    }
+    let output = command.output().map_err(|_| AotError::LinkerUnavailable)?;
+    if !output.status.success() {
+        return Err(AotError::LinkFailed {
+            status: output.status.code().unwrap_or(-1),
+            command: format!("{:?}", command),
+            detail: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    Ok(object)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PlatformObjectPlan {
     assembly_source: &'static str,
@@ -565,6 +589,7 @@ mod platform_object_tests {
 struct ObjectStageResult {
     object_path: PathBuf,
     exported_symbols: Vec<String>,
+    additional_object_paths: Vec<PathBuf>,
 }
 
 /// Emit a single object file; fails unless `req.output_kind` is [`BuildOutputKind::ObjectOnly`].
@@ -641,12 +666,22 @@ fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageResult> {
     let target = detect_target(req.target_triple.as_deref())?;
     let object_path = req.object_path.clone().unwrap_or_else(|| req.output_path.with_extension(target.object_ext));
 
+    let uses_core_args = req.output_kind == BuildOutputKind::Exe
+        && req.artifact.extern_imports.iter().any(|import| {
+            matches!(import.symbol.as_str(), "beskid_rt_v5_args_count" | "beskid_rt_v5_args_get")
+        });
     let exports = req.artifact.exports.clone();
     let all_symbols = req
         .artifact
         .functions
         .iter()
-        .map(|function| beskid_codegen::lowering::expressions::export::object_link_symbol(&function.name, &exports))
+        .map(|function| {
+            if uses_core_args && function.name.split('#').next().is_some_and(|name| name == "Main") {
+                "beskid_program_main".to_owned()
+            } else {
+                beskid_codegen::lowering::expressions::export::object_link_symbol(&function.name, &exports)
+            }
+        })
         .collect::<Vec<_>>();
     let export_table = ExportTable::from_artifact(&req.artifact);
     let export_policy = export_table.resolve_export_policy(&req.export_policy);
@@ -656,15 +691,28 @@ fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageResult> {
     let mut object_module = BeskidObjectModule::new(req.target_triple.as_deref())?;
     let obs = req.pipeline.as_deref();
     observe_phase_result(obs, AOT_EMIT_OBJECT, || {
-        object_module.compile_artifact_with_exports(&req.artifact, &exported_symbol_set, obs)
+        object_module.compile_artifact_with_exports_and_args_entry(&req.artifact, &exported_symbol_set, uses_core_args, obs)
     })?;
 
     object_module.finalize_to_path(&object_path)?;
 
-    Ok(ObjectStageResult { object_path, exported_symbols })
+    let additional_object_paths = if uses_core_args {
+        vec![compile_core_args_entry_adapter(&target.triple, object_path.parent().unwrap_or_else(|| std::path::Path::new(".")), "beskid")?]
+    } else {
+        Vec::new()
+    };
+    Ok(ObjectStageResult { object_path, exported_symbols, additional_object_paths })
 }
 
 fn ensure_entrypoint_exported(req: &AotBuildRequest, exported_symbols: &[String]) -> AotResult<()> {
+    if req.output_kind == BuildOutputKind::Exe
+        && req.artifact.extern_imports.iter().any(|import| {
+            matches!(import.symbol.as_str(), "beskid_rt_v5_args_count" | "beskid_rt_v5_args_get")
+        })
+        && exported_symbols.iter().any(|symbol| symbol == "beskid_program_main")
+    {
+        return Ok(());
+    }
     let native = native_link_entrypoint(&req.entrypoint);
     if exported_symbols.iter().any(|sym| symbol_matches_entrypoint(sym, &req.entrypoint, native)) {
         return Ok(());
@@ -698,7 +746,7 @@ fn link_stage(
             output_kind: req.output_kind,
             output_path: req.output_path.clone(),
             object_path: object_stage.object_path.clone(),
-            additional_object_paths: Vec::new(),
+            additional_object_paths: object_stage.additional_object_paths.clone(),
             runtime_staticlib: Some(runtime.staticlib_path.clone()),
             host_staticlib: None,
             entrypoint_symbol: native_link_entrypoint(&req.entrypoint).to_owned(),

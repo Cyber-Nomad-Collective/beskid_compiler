@@ -98,9 +98,9 @@ corelib_service "__args_count" {
   params = []
   returns = i64
   target_bindings = [
-    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_args_count", os_imports = [] },
-    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_args_count", os_imports = [] },
-    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_args_count", os_imports = [] }
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_args_count", os_imports = [mmap] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_args_count", os_imports = [mmap] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_args_count", os_imports = [VirtualAlloc] }
   ]
 }
 corelib_service "__args_get" {
@@ -108,9 +108,9 @@ corelib_service "__args_get" {
   params = [{ name = index, type = i64 }]
   returns = string
   target_bindings = [
-    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_args_get", os_imports = [] },
-    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_args_get", os_imports = [] },
-    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_args_get", os_imports = [] }
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_args_get", os_imports = [mmap] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_args_get", os_imports = [mmap] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_args_get", os_imports = [VirtualAlloc] }
   ]
 }
 

@@ -1439,17 +1439,23 @@
         {
           "target": "aarch64-apple-darwin",
           "implementation": "beskid_rt_v5_args_count",
-          "osImports": []
+          "osImports": [
+            "mmap"
+          ]
         },
         {
           "target": "x86_64-pc-windows-msvc",
           "implementation": "beskid_rt_v5_args_count",
-          "osImports": []
+          "osImports": [
+            "VirtualAlloc"
+          ]
         },
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_args_count",
-          "osImports": []
+          "osImports": [
+            "mmap"
+          ]
         }
       ]
     },
@@ -1467,17 +1473,23 @@
         {
           "target": "aarch64-apple-darwin",
           "implementation": "beskid_rt_v5_args_get",
-          "osImports": []
+          "osImports": [
+            "mmap"
+          ]
         },
         {
           "target": "x86_64-pc-windows-msvc",
           "implementation": "beskid_rt_v5_args_get",
-          "osImports": []
+          "osImports": [
+            "VirtualAlloc"
+          ]
         },
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_args_get",
-          "osImports": []
+          "osImports": [
+            "mmap"
+          ]
         }
       ]
     }
