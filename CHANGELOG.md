@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Generate manifest-owned ABI-v5 bindings for the exact `Core.Args`
+  `__args_count` and `__args_get` services on Linux x64, macOS arm64, and
+  Windows x64. Validation now rejects missing or duplicate target bindings,
+  signature drift, duplicate services, and undeclared target OS imports, while
+  checked-in Rust, C, JSON, and audit artifacts remain source-fresh.
+
 - Authorize only the byte-identical canonical Foundation `Core/Args/Args.bd`
   source to import `__args_count() -> i64` and `__args_get(i64) -> string`
   through the existing source-scoped `CorelibService` path; copied, altered,

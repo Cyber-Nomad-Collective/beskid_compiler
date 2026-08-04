@@ -6,6 +6,7 @@
 #define BESKID_RUNTIME_ABI_VERSION 5
 #define BESKID_TRAP_EXIT_STATUS 101
 #define BESKID_TRAP_DIAGNOSTIC "beskid runtime trap v5"
+struct BeskidStr;
 #define BESKID_ALLOCATION_REQUEST_SIZE 24
 #define BESKID_ALLOCATION_REQUEST_ALIGNMENT 8
 #define BESKID_ALLOCATION_REQUEST_SIZE_OFFSET 0
@@ -116,7 +117,7 @@ uint8_t beskid_rt_v5_closure_capture_store(void * environment, void * descriptor
 void * beskid_rt_v5_closure_environment_allocate(void * request);
 uint8_t beskid_rt_v5_closure_environment_root(void * tls_state, size_t slot_index, void * environment);
 uint8_t beskid_rt_v5_closure_environment_root_current(size_t slot_index, void * environment);
-uintptr_t beskid_rt_v5_fiber_spawn_with_cancel_slot(void * entry, void * environment, void * cancelled_slot);
+int64_t beskid_rt_v5_fiber_spawn_with_cancel_slot(void * entry, void * environment, void * cancelled_slot);
 void * beskid_rt_v5_managed_object_allocate(void * request);
 void * beskid_rt_v5_process_init(void * config);
 void beskid_rt_v5_process_shutdown(void * runtime);
@@ -125,4 +126,6 @@ void beskid_rt_v5_thread_detach(void * thread);
 _Noreturn void beskid_rt_v5_trap(uint8_t code, void * message, size_t message_len);
 void beskid_arch_v5_context_init(void * context, void * stack_top, void * entry, void * argument, void * return_trampoline);
 void beskid_arch_v5_context_switch(void * from, void * to);
+int64_t beskid_rt_v5_args_count(void);
+struct BeskidStr * beskid_rt_v5_args_get(int64_t index);
 #endif

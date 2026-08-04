@@ -1429,6 +1429,59 @@
       "result": "isize"
     }
   ],
+  "corelibServices": [
+    {
+      "name": "__args_count",
+      "adapter": "beskid_rt_v5_args_count",
+      "params": [],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_args_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_args_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_args_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__args_get",
+      "adapter": "beskid_rt_v5_args_get",
+      "params": [
+        {
+          "name": "index",
+          "type": "i64"
+        }
+      ],
+      "result": "string",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_args_get",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_args_get",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_args_get",
+          "osImports": []
+        }
+      ]
+    }
+  ],
   "assembly": [
     {
       "symbol": "beskid_arch_v5_context_init",

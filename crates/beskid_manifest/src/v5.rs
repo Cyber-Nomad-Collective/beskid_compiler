@@ -82,6 +82,24 @@ pub struct PlatformImportV5 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CorelibServiceV5 {
+    pub name: String,
+    pub adapter: String,
+    pub params: Vec<ParameterV5>,
+    pub result: String,
+    pub target_bindings: Vec<TargetAdapterBindingV5>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetAdapterBindingV5 {
+    pub target: String,
+    pub implementation: String,
+    pub os_imports: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AssemblyV5 {
     pub symbol: String,
     pub params: Vec<ParameterV5>,
@@ -118,6 +136,7 @@ pub struct RuntimeManifestV5 {
     pub intrinsics: Vec<IntrinsicV5>,
     pub layouts: Vec<LayoutV5>,
     pub platform_imports: Vec<PlatformImportV5>,
+    pub corelib_services: Vec<CorelibServiceV5>,
     pub assembly: Vec<AssemblyV5>,
     pub traps: Vec<TrapV5>,
     pub audit: AuditV5,
@@ -133,10 +152,27 @@ pub struct GeneratedV5Artifacts {
     pub audit_json: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GeneratedAuditV5<'a> {
+    forbidden_symbol_families: &'a [String],
+    corelib_services: &'a [CorelibServiceV5],
+}
+
 pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String> {
     let document = parse_bsol_document(source).map_err(|error| error.to_string())?;
-    let allowed_blocks =
-        ["manifest", "target", "export", "intrinsic", "layout", "platform_import", "assembly", "trap", "audit"];
+    let allowed_blocks = [
+        "manifest",
+        "target",
+        "export",
+        "intrinsic",
+        "layout",
+        "platform_import",
+        "corelib_service",
+        "assembly",
+        "trap",
+        "audit",
+    ];
     if let Some(block) = document.blocks.iter().find(|block| !allowed_blocks.contains(&block.kind.as_str())) {
         return Err(format!("unknown top-level block `{}`", block.kind));
     }
@@ -231,6 +267,18 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let corelib_services = blocks(&document.blocks, "corelib_service")
+        .map(|block| {
+            ensure_fields(block, &["adapter", "params", "returns", "target_bindings"])?;
+            Ok(CorelibServiceV5 {
+                name: label(block)?,
+                adapter: string_field(block, "adapter")?,
+                params: parameters(block, "params")?,
+                result: string_field(block, "returns")?,
+                target_bindings: target_adapter_bindings(block)?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let assembly = blocks(&document.blocks, "assembly")
         .map(|block| parse_assembly(block, &targets))
         .collect::<Result<Vec<_>, _>>()?;
@@ -243,8 +291,18 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
     let audit_block = one(&document.blocks, "audit")?;
     ensure_fields(audit_block, &["forbidden_symbol_families"])?;
     let audit = AuditV5 { forbidden_symbol_families: list_field(audit_block, "forbidden_symbol_families")? };
-    let result =
-        RuntimeManifestV5 { meta, targets, exports, intrinsics, layouts, platform_imports, assembly, traps, audit };
+    let result = RuntimeManifestV5 {
+        meta,
+        targets,
+        exports,
+        intrinsics,
+        layouts,
+        platform_imports,
+        corelib_services,
+        assembly,
+        traps,
+        audit,
+    };
     validate(&result)?;
     Ok(result)
 }
@@ -267,6 +325,17 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         }
     }
     let target_names = manifest.targets.iter().map(|target| target.triple.as_str()).collect::<BTreeSet<_>>();
+    for service in &manifest.corelib_services {
+        let mut binding_targets = BTreeSet::new();
+        for binding in &service.target_bindings {
+            if !binding_targets.insert(binding.target.as_str()) {
+                return Err(format!("duplicate corelib service `{}` target binding", service.name));
+            }
+        }
+        if binding_targets != target_names {
+            return Err(format!("corelib service `{}` target bindings are incomplete", service.name));
+        }
+    }
     if manifest
         .layouts
         .iter()
@@ -299,13 +368,30 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     unique(manifest.exports.iter().map(|entry| entry.symbol.as_str()), "export")?;
     unique(manifest.intrinsics.iter().map(|entry| entry.name.as_str()), "intrinsic")?;
     unique(manifest.intrinsics.iter().map(|entry| entry.symbol.as_str()), "intrinsic linker symbol")?;
+    unique(manifest.corelib_services.iter().map(|entry| entry.name.as_str()), "corelib service")?;
+    for (name, adapter, params, result) in [
+        ("__args_count", "beskid_rt_v5_args_count", &[][..], "i64"),
+        ("__args_get", "beskid_rt_v5_args_get", &["i64"][..], "string"),
+    ] {
+        let service = manifest
+            .corelib_services
+            .iter()
+            .find(|service| service.name == name)
+            .ok_or_else(|| format!("missing corelib service `{name}` adapter binding"))?;
+        let actual_params = service.params.iter().map(|param| param.ty.as_str()).collect::<Vec<_>>();
+        if service.adapter != adapter || actual_params != params || service.result != result {
+            let signature = if params.is_empty() { "[]".to_string() } else { format!("[{}]", params.join(", ")) };
+            return Err(format!("corelib service `{name}` signature must be {signature} -> {result}"));
+        }
+    }
     unique(manifest.layouts.iter().map(|entry| (entry.target.as_deref(), entry.name.as_str())), "layout")?;
     for entry in &manifest.exports {
         if entry.symbol.is_empty() || (!entry.symbol.contains("_v5_") && !entry.symbol.ends_with("_v5")) {
             return Err(format!("export {} is not ABI-v5 versioned", entry.symbol));
         }
     }
-    let assembly_symbols = manifest.assembly.iter().map(|entry| entry.symbol.as_str()).collect::<std::collections::HashSet<_>>();
+    let assembly_symbols =
+        manifest.assembly.iter().map(|entry| entry.symbol.as_str()).collect::<std::collections::HashSet<_>>();
     for entry in &manifest.intrinsics {
         if entry.name.is_empty()
             || entry.symbol.is_empty()
@@ -323,6 +409,23 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     for entry in &manifest.platform_imports {
         if entry.symbol.is_empty() || entry.library.is_empty() {
             return Err("platform import symbol/library cannot be empty".into());
+        }
+    }
+    let declared_target_imports = manifest
+        .platform_imports
+        .iter()
+        .map(|entry| (entry.target.as_str(), entry.symbol.as_str()))
+        .collect::<BTreeSet<_>>();
+    for service in &manifest.corelib_services {
+        for binding in &service.target_bindings {
+            for import in &binding.os_imports {
+                if !declared_target_imports.contains(&(binding.target.as_str(), import.as_str())) {
+                    return Err(format!(
+                        "corelib service `{}` binding for `{}` names undeclared OS import `{import}`",
+                        service.name, binding.target
+                    ));
+                }
+            }
         }
     }
     let known_types = [
@@ -427,7 +530,10 @@ pub fn generate_v5_artifacts(manifest: &RuntimeManifestV5) -> Result<GeneratedV5
         gnu_asm,
         masm,
         abi_json: canonical_json(&manifest)?,
-        audit_json: canonical_json(&manifest.audit)?,
+        audit_json: canonical_json(&GeneratedAuditV5 {
+            forbidden_symbol_families: &manifest.audit.forbidden_symbol_families,
+            corelib_services: &manifest.corelib_services,
+        })?,
     })
 }
 
@@ -488,6 +594,26 @@ fn render_rust(
         .chain(masm)
         .map(|(target, source)| format!("    ({target:?}, {source:?}),\n"))
         .collect::<String>();
+    let corelib_service_binding_rows = manifest
+        .corelib_services
+        .iter()
+        .flat_map(|service| {
+            service.target_bindings.iter().map(|binding| {
+                let params = service.params.iter().map(|param| format!("{:?}", param.ty)).collect::<Vec<_>>().join(", ");
+                let os_imports = binding.os_imports.iter().map(|import| format!("{import:?}")).collect::<Vec<_>>().join(", ");
+                format!(
+                    "    GeneratedCorelibServiceBinding {{ service: {:?}, adapter: {:?}, params: &[{}], result: {:?}, target: {:?}, implementation: {:?}, os_imports: &[{}] }},\n",
+                    service.name,
+                    service.adapter,
+                    params,
+                    service.result,
+                    binding.target,
+                    binding.implementation,
+                    os_imports,
+                )
+            })
+        })
+        .collect::<String>();
     format!(
         "// @generated from runtime_manifest.bsol; do not edit.\n\
 pub const ABI_V5_SOURCE_JSON: &str = r#\"{json}\"#;\n\
@@ -508,6 +634,17 @@ pub struct GeneratedTarget {{\n\
 }}\n\
 pub const ABI_V5_TARGETS: &[GeneratedTarget] = &[\n{target_rows}];\n\
 pub const ABI_V5_ASM_INCLUDES: &[(&str, &str)] = &[\n{asm_rows}];\n\
+#[derive(Debug, Clone, Copy)]\n\
+pub struct GeneratedCorelibServiceBinding {{\n\
+    pub service: &'static str,\n\
+    pub adapter: &'static str,\n\
+    pub params: &'static [&'static str],\n\
+    pub result: &'static str,\n\
+    pub target: &'static str,\n\
+    pub implementation: &'static str,\n\
+    pub os_imports: &'static [&'static str],\n\
+}}\n\
+pub const ABI_V5_CORELIB_SERVICE_BINDINGS: &[GeneratedCorelibServiceBinding] = &[\n{corelib_service_binding_rows}];\n\
 pub const ABI_V5_TYPES: &[(&str, crate::abi_v5::AbiType)] = &[\n\
     (\"void\", crate::abi_v5::AbiType::Void),\n\
     (\"never\", crate::abi_v5::AbiType::Void),\n\
@@ -541,6 +678,9 @@ fn render_c_header(manifest: &RuntimeManifestV5) -> String {
     writeln!(out, "#define BESKID_RUNTIME_ABI_VERSION {}", manifest.meta.abi_version).unwrap();
     writeln!(out, "#define BESKID_TRAP_EXIT_STATUS {}", manifest.meta.trap_exit_status).unwrap();
     writeln!(out, "#define BESKID_TRAP_DIAGNOSTIC {:?}", manifest.meta.trap_diagnostic).unwrap();
+    if manifest.corelib_services.iter().any(|service| service.result == "string") {
+        out.push_str("struct BeskidStr;\n");
+    }
     for layout in &manifest.layouts {
         let name = macro_name(layout.name.strip_prefix("Beskid").unwrap_or(&layout.name));
         writeln!(out, "#define BESKID_{name}_SIZE {}", layout.size).unwrap();
@@ -577,6 +717,19 @@ fn render_c_header(manifest: &RuntimeManifestV5) -> String {
                 .join(", ")
         )
         .unwrap();
+    }
+    for service in &manifest.corelib_services {
+        let params = if service.params.is_empty() {
+            "void".into()
+        } else {
+            service
+                .params
+                .iter()
+                .map(|param| format!("{} {}", corelib_service_c_type(&param.ty), param.name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        writeln!(out, "{} {}({});", corelib_service_c_type(&service.result), service.adapter, params).unwrap();
     }
     out.push_str("#endif\n");
     out
@@ -650,8 +803,16 @@ fn c_type(ty: &str) -> &'static str {
         "u8" => "uint8_t",
         "i32" => "int32_t",
         "u32" => "uint32_t",
+        "i64" => "int64_t",
         "u64" => "uint64_t",
         _ => "uintptr_t",
+    }
+}
+
+fn corelib_service_c_type(ty: &str) -> &'static str {
+    match ty {
+        "string" => "struct BeskidStr *",
+        _ => c_type(ty),
     }
 }
 fn macro_name(value: &str) -> String {
@@ -685,6 +846,10 @@ fn canonicalized(manifest: &RuntimeManifestV5) -> RuntimeManifestV5 {
         layout.fields.sort_by_key(|field| field.offset);
     }
     value.platform_imports.sort_by(|a, b| a.target.cmp(&b.target).then_with(|| a.symbol.cmp(&b.symbol)));
+    value.corelib_services.sort_by(|a, b| a.name.cmp(&b.name));
+    for service in &mut value.corelib_services {
+        service.target_bindings.sort_by(|a, b| a.target.cmp(&b.target));
+    }
     value.assembly.sort_by(|a, b| a.symbol.cmp(&b.symbol));
     value.traps.sort_by_key(|trap| trap.code);
     value.audit.forbidden_symbol_families.sort();
@@ -786,6 +951,23 @@ fn parameters(block: &BsolBlock, key: &str) -> Result<Vec<ParameterV5>, String> 
         })
         .collect()
 }
+
+fn target_adapter_bindings(block: &BsolBlock) -> Result<Vec<TargetAdapterBindingV5>, String> {
+    list_items(block, "target_bindings")?
+        .iter()
+        .map(|item| match item {
+            BsolListItem::InlineMap(map) => {
+                ensure_map_fields(map, &["target", "implementation", "os_imports"])?;
+                Ok(TargetAdapterBindingV5 {
+                    target: map_string(map, "target")?,
+                    implementation: map_string(map, "implementation")?,
+                    os_imports: map_string_list(map, "os_imports")?,
+                })
+            }
+            _ => Err("`target_bindings` entries must be inline maps".into()),
+        })
+        .collect()
+}
 fn fields(block: &BsolBlock) -> Result<Vec<FieldV5>, String> {
     list_items(block, "fields")?
         .iter()
@@ -808,6 +990,22 @@ fn map_string(map: &bsol::BsolInlineMap, key: &str) -> Result<String, String> {
         .find(|entry| entry.key == key)
         .ok_or_else(|| format!("inline map missing `{key}`"))
         .and_then(|entry| string_value(&entry.value))
+}
+
+fn map_string_list(map: &bsol::BsolInlineMap, key: &str) -> Result<Vec<String>, String> {
+    let value =
+        map.entries.iter().find(|entry| entry.key == key).ok_or_else(|| format!("inline map missing `{key}`"))?;
+    let BsolValue::BracketList(list) = &value.value else {
+        return Err(format!("inline map `{key}` must be a list"));
+    };
+    list.items
+        .iter()
+        .map(|item| match item {
+            BsolListItem::Ident(value) => Ok(value.clone()),
+            BsolListItem::QuotedString(value) => Ok(value.value.clone()),
+            _ => Err(format!("inline map `{key}` entries must be identifiers or strings")),
+        })
+        .collect()
 }
 fn ensure_map_fields(map: &bsol::BsolInlineMap, allowed: &[&str]) -> Result<(), String> {
     let mut seen = BTreeSet::new();

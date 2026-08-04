@@ -213,6 +213,8 @@ fn reject_forbidden_provenance(raw: &str, forbidden: &[String]) -> Result<(), St
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SourceAudit {
     forbidden_symbol_families: Vec<String>,
+    #[serde(rename = "corelibServices")]
+    _corelib_services: serde_json::Value,
 }
 
 fn forbidden_symbol_families() -> Vec<String> {
@@ -292,6 +294,8 @@ struct SourceContract {
     layouts: Vec<SourceLayout>,
     platform_imports: Vec<SourcePlatformImport>,
     assembly: Vec<SourceAssembly>,
+    #[serde(rename = "corelibServices")]
+    _corelib_services: serde_json::Value,
     #[serde(rename = "traps")]
     _traps: serde_json::Value,
     #[serde(rename = "meta")]

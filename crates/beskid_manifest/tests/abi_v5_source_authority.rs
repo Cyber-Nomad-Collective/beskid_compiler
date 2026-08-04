@@ -2,6 +2,29 @@ use std::fs;
 
 use beskid_manifest::{generate_v5_artifacts, load_v5_manifest_source};
 
+const CORE_ARGS_SERVICES: &str = r#"
+corelib_service "__args_count" {
+  adapter = "beskid_rt_v5_args_count"
+  params = []
+  returns = i64
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_args_count", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_args_count", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_args_count", os_imports = [] }
+  ]
+}
+corelib_service "__args_get" {
+  adapter = "beskid_rt_v5_args_get"
+  params = [{ name = index, type = i64 }]
+  returns = string
+  target_bindings = [
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_args_get", os_imports = [] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_args_get", os_imports = [] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_args_get", os_imports = [] }
+  ]
+}
+"#;
+
 #[allow(dead_code)]
 const MANIFEST: &str = r#"
 manifest {
@@ -85,13 +108,10 @@ fn v5_manifest_is_the_only_input_to_every_generated_artifact() {
             .unwrap();
     let manifest = load_v5_manifest_source(&source).expect("valid v5 source");
     assert_eq!(manifest.meta.abi_version, 5);
-    let assembly_symbols = manifest.assembly.iter().map(|entry| entry.symbol.as_str()).collect::<std::collections::HashSet<_>>();
-    assert!(
-        manifest
-            .intrinsics
-            .iter()
-            .all(|intrinsic| intrinsic.symbol.starts_with("beskid_rt_v5_") || assembly_symbols.contains(intrinsic.symbol.as_str()))
-    );
+    let assembly_symbols =
+        manifest.assembly.iter().map(|entry| entry.symbol.as_str()).collect::<std::collections::HashSet<_>>();
+    assert!(manifest.intrinsics.iter().all(|intrinsic| intrinsic.symbol.starts_with("beskid_rt_v5_")
+        || assembly_symbols.contains(intrinsic.symbol.as_str())));
     let trap = manifest.exports.iter().find(|entry| entry.symbol == "beskid_rt_v5_trap").unwrap();
     assert_eq!(trap.params[0].name, "code");
     assert_eq!(trap.result, "never");
@@ -155,6 +175,99 @@ fn intrinsic_linker_symbols_are_explicit_and_unique() {
         load_v5_manifest_source(&duplicate)
             .expect_err("duplicate linker symbols must be rejected")
             .contains("intrinsic linker symbol")
+    );
+}
+
+#[test]
+fn core_args_adapter_bindings_generate_exact_target_facts() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+
+    let manifest = load_v5_manifest_source(&source).expect("Core.Args services are valid ABI-v5 manifest facts");
+    let artifacts = generate_v5_artifacts(&manifest).expect("Core.Args binding artifacts");
+
+    assert!(artifacts.rust.contains("ABI_V5_CORELIB_SERVICE_BINDINGS"));
+    assert!(artifacts.rust.contains("beskid_rt_v5_args_count"));
+    assert!(artifacts.rust.contains("beskid_rt_v5_args_get"));
+    assert!(artifacts.c_header.contains("beskid_rt_v5_args_count(void)"));
+    assert!(artifacts.c_header.contains("beskid_rt_v5_args_get(int64_t index)"));
+    assert!(artifacts.abi_json.contains("\"corelibServices\""));
+    assert!(artifacts.audit_json.contains("\"corelibServices\""));
+}
+
+#[test]
+fn core_args_adapter_binding_rejects_a_missing_target() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let missing = source.replacen(
+        "    { target = \"aarch64-apple-darwin\", implementation = \"beskid_rt_v5_args_count\", os_imports = [] },\n",
+        "",
+        1,
+    );
+
+    assert_eq!(
+        load_v5_manifest_source(&missing).expect_err("missing target binding must be rejected"),
+        "corelib service `__args_count` target bindings are incomplete"
+    );
+}
+
+#[test]
+fn core_args_adapter_binding_rejects_a_duplicate_service() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    source.push_str(CORE_ARGS_SERVICES);
+
+    assert_eq!(
+        load_v5_manifest_source(&source).expect_err("duplicate adapter service must be rejected"),
+        "duplicate corelib service"
+    );
+}
+
+#[test]
+fn core_args_adapter_binding_rejects_a_duplicate_target() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let duplicated = source.replacen(
+        "    { target = \"x86_64-unknown-linux-gnu\", implementation = \"beskid_rt_v5_args_count\", os_imports = [] },",
+        "    { target = \"x86_64-unknown-linux-gnu\", implementation = \"beskid_rt_v5_args_count\", os_imports = [] },\n    { target = \"x86_64-unknown-linux-gnu\", implementation = \"beskid_rt_v5_args_count\", os_imports = [] },",
+        1,
+    );
+
+    assert_eq!(
+        load_v5_manifest_source(&duplicated).expect_err("duplicate target binding must be rejected"),
+        "duplicate corelib service `__args_count` target binding"
+    );
+}
+
+#[test]
+fn core_args_adapter_binding_rejects_a_signature_mismatch() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let mismatched = source.replacen(
+        "corelib_service \"__args_get\" {\n  adapter = \"beskid_rt_v5_args_get\"\n  params = [{ name = index, type = i64 }]",
+        "corelib_service \"__args_get\" {\n  adapter = \"beskid_rt_v5_args_get\"\n  params = []",
+        1,
+    );
+
+    assert_eq!(
+        load_v5_manifest_source(&mismatched).expect_err("signature mismatch must be rejected"),
+        "corelib service `__args_get` signature must be [i64] -> string"
+    );
+}
+
+#[test]
+fn core_args_adapter_binding_rejects_an_undeclared_target_import() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let undeclared = source.replacen(
+        "{ target = \"aarch64-apple-darwin\", implementation = \"beskid_rt_v5_args_count\", os_imports = [] }",
+        "{ target = \"aarch64-apple-darwin\", implementation = \"beskid_rt_v5_args_count\", os_imports = [missing_args_import] }",
+        1,
+    );
+
+    assert_eq!(
+        load_v5_manifest_source(&undeclared).expect_err("undeclared target import must be rejected"),
+        "corelib service `__args_count` binding for `aarch64-apple-darwin` names undeclared OS import `missing_args_import`"
     );
 }
 
