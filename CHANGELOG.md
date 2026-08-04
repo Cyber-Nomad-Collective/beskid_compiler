@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Close two remaining Phase B GC publication races: opaque Beskid allocation now returns a
+  must-use construction owner that protects a fresh payload until explicit publication (and
+  releases on drop), while marking waits for Idle-admitted mutations before it snapshots roots.
 - Prevent concurrent Phase B collection from sweeping intrusive heap nodes while allocations or
   marking barriers are active. Mutator transactions now use an epoch-stamped phase admission
   handshake with RAII lifecycle cleanup, and sweep drains work published as admission closes.

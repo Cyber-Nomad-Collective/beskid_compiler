@@ -12,12 +12,13 @@ const ABI_OK: i32 = DYNAMIC_OK;
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn dynamic_cell_create(shape_id: u32, payload: *mut u8) -> *mut DynamicCell {
     with_current_heap_and_root(|heap, root| {
-        let ptr = heap.allocate_beskid(DynamicCell::SIZE, std::ptr::null());
+        let allocation = heap.allocate_beskid(DynamicCell::SIZE, std::ptr::null());
+        let ptr = allocation.as_ptr();
         root.runtime_state.allocation_counter += 1;
         // Safety: fresh allocation sized for `DynamicCell`.
         let cell = unsafe { &mut *(ptr as *mut DynamicCell) };
         *cell = DynamicCell { shape_id, flags: 0, payload };
-        ptr as *mut DynamicCell
+        allocation.publish() as *mut DynamicCell
     })
 }
 
