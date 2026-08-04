@@ -9,6 +9,7 @@
 //! work so observers match [`beskid_pipeline::phases::JIT_RUN_PHASE_ORDER`] when mods are active.
 
 pub mod aggregate_static;
+pub mod array_static;
 pub mod closure_static;
 pub mod codegen_input;
 pub mod cranelift_host;
@@ -26,6 +27,7 @@ pub use aggregate_static::{
     ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateObjectLayout, AggregateStaticField, AggregateStaticPlan,
     emit_aggregate_static_data,
 };
+pub use array_static::{ABI_V5_ARRAY_ALLOCATE, ArrayStaticPlan, emit_array_static_data};
 pub use closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
     ClosureCaptureStaticField, ClosureLoweringAuthority, ClosureRootAuthority, ClosureStaticDataHandles,
