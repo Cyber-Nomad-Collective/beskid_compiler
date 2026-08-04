@@ -4,7 +4,7 @@
 //! and implements the mark and sweep phases of garbage collection.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ptr::null_mut,
     sync::{
         Arc,
@@ -47,19 +47,24 @@ struct BeskidAllocationRegistry {
 struct BeskidAllocationMappings {
     payload_to_header: HashMap<usize, usize>,
     header_to_payload: HashMap<usize, usize>,
+    construction_roots: HashSet<usize>,
 }
 
 impl BeskidAllocationRegistry {
-    fn register(&self, payload: *mut u8, header: *mut GcHeader) {
+    fn register(&self, payload: *mut u8, header: *mut GcHeader, has_construction_root: bool) {
         let mut mappings = self.mappings.lock();
         mappings.payload_to_header.insert(payload as usize, header as usize);
         mappings.header_to_payload.insert(header as usize, payload as usize);
+        if has_construction_root {
+            mappings.construction_roots.insert(payload as usize);
+        }
     }
 
     fn unregister(&self, header: *mut GcHeader) {
         let mut mappings = self.mappings.lock();
         if let Some(payload) = mappings.header_to_payload.remove(&(header as usize)) {
             mappings.payload_to_header.remove(&payload);
+            mappings.construction_roots.remove(&payload);
         }
     }
 
@@ -69,6 +74,15 @@ impl BeskidAllocationRegistry {
 
     fn owns(&self, payload: *mut u8) -> bool {
         !payload.is_null() && self.mappings.lock().payload_to_header.contains_key(&(payload as usize))
+    }
+
+    fn take_construction_root(&self, payload: *mut u8) -> Option<*mut GcHeader> {
+        let mut mappings = self.mappings.lock();
+        if mappings.construction_roots.remove(&(payload as usize)) {
+            mappings.payload_to_header.get(&(payload as usize)).copied().map(|header| header as *mut GcHeader)
+        } else {
+            None
+        }
     }
 }
 
@@ -231,7 +245,6 @@ pub struct Heap {
 pub struct BeskidAllocation<'heap> {
     heap: &'heap Heap,
     payload_ptr: *mut u8,
-    header_ptr: *mut GcHeader,
 }
 
 impl BeskidAllocation<'_> {
@@ -256,15 +269,18 @@ impl BeskidAllocation<'_> {
         });
         self.payload_ptr
     }
+
+    /// Return a raw ABI pointer while retaining its construction root until a later hand-off.
+    pub fn into_raw_rooted(self) -> *mut u8 {
+        let payload_ptr = self.payload_ptr;
+        std::mem::forget(self);
+        payload_ptr
+    }
 }
 
 impl Drop for BeskidAllocation<'_> {
     fn drop(&mut self) {
-        // SAFETY: this owner is created with exactly one construction root.  It can only be
-        // dropped while that root keeps the allocation header alive.
-        unsafe {
-            (*self.header_ptr).dec_root();
-        }
+        self.heap.release_construction_root(self.payload_ptr);
     }
 }
 
@@ -507,9 +523,9 @@ impl Heap {
             }
         }
 
-        self.beskid_allocations.register(payload_ptr, header_ptr);
+        self.beskid_allocations.register(payload_ptr, header_ptr, true);
 
-        BeskidAllocation { heap: self, payload_ptr, header_ptr }
+        BeskidAllocation { heap: self, payload_ptr }
     }
 
     fn insert_allocation(&self, header_ptr: *mut GcHeader) {
@@ -587,6 +603,20 @@ impl Heap {
                 }
             }
         });
+        self.release_construction_root(value_ptr);
+    }
+
+    /// Finish a raw-ABI allocation hand-off after the caller has made it reachable.
+    pub fn publish_raw_beskid(&self, payload_ptr: *mut u8) {
+        self.write_barrier(std::ptr::null_mut(), payload_ptr);
+    }
+
+    fn release_construction_root(&self, payload_ptr: *mut u8) {
+        if let Some(header_ptr) = self.beskid_allocations.take_construction_root(payload_ptr) {
+            // SAFETY: the registry removal is exclusive and the construction root keeps this
+            // header alive through the decrement.
+            unsafe { (*header_ptr).dec_root() };
+        }
     }
 
     pub fn force_collect(&self) -> usize {
@@ -691,7 +721,7 @@ impl Heap {
                 return false;
             }
             let next = gc_state(GcPhase::Marking, state_epoch(state).wrapping_add(1));
-            if self.phase_state.compare_exchange(state, next, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+            if self.phase_state.compare_exchange(state, next, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
                 return true;
             }
         }
@@ -1140,5 +1170,26 @@ mod transaction_tests {
             !heap.owns_beskid_payload(payload),
             "removing the published root must reclaim the payload; construction ownership cannot leak"
         );
+    }
+
+    #[test]
+    fn raw_beskid_pointer_stays_rooted_until_external_hand_off() {
+        let heap = Heap::off();
+        let payload = heap.allocate_beskid(16, std::ptr::null()).into_raw_rooted();
+
+        assert!(heap.mark_for_tests());
+        heap.sweep_for_tests();
+        assert!(heap.owns_beskid_payload(payload), "raw ABI return must retain its construction root");
+
+        let mut root_slot = payload;
+        heap.external_roots().register_root(&mut root_slot);
+        heap.publish_raw_beskid(payload);
+        assert!(heap.mark_for_tests());
+        heap.sweep_for_tests();
+        assert!(heap.owns_beskid_payload(payload), "registered root must take over raw allocation liveness");
+
+        heap.external_roots().unregister_root(&mut root_slot);
+        heap.force_collect();
+        assert!(!heap.owns_beskid_payload(payload), "published raw allocation must not retain its construction root");
     }
 }

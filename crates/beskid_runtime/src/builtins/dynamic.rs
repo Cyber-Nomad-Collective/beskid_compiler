@@ -18,7 +18,7 @@ pub extern "C-unwind" fn dynamic_cell_create(shape_id: u32, payload: *mut u8) ->
         // Safety: fresh allocation sized for `DynamicCell`.
         let cell = unsafe { &mut *(ptr as *mut DynamicCell) };
         *cell = DynamicCell { shape_id, flags: 0, payload };
-        allocation.publish() as *mut DynamicCell
+        allocation.into_raw_rooted().cast::<DynamicCell>()
     })
 }
 

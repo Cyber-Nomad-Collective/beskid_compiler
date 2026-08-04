@@ -5,7 +5,7 @@ use beskid_runtime::{dynamic::DynamicCell, dynamic_cell_create, gc_object_count}
 fn dynamic_cell_create_allocates_through_runtime_arena() {
     with_runtime_scope(|heap, root| {
         let before = gc_object_count();
-        let payload = heap.allocate_beskid(8, std::ptr::null());
+        let payload = heap.allocate_beskid(8, std::ptr::null()).into_raw_rooted();
         root.runtime_state.allocation_counter += 1;
 
         let cell_ptr = dynamic_cell_create(42, payload);

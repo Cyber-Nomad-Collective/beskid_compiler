@@ -28,14 +28,22 @@ fn with_runtime_scope<R>(f: impl FnOnce(&Arc<Heap>, &mut RuntimeRoot) -> R) -> R
 }
 
 #[test]
-fn alloc_without_roots_is_reclaimed() {
+fn alloc_remains_live_until_root_handoff_then_is_reclaimed() {
     with_runtime_scope(|heap, _| {
         let ptr = alloc(32, std::ptr::null());
         assert!(!ptr.is_null());
         let before_collect = heap.bytes_allocated();
         assert!(before_collect > 0);
+        heap.force_collect();
+        assert!(
+            heap.owns_beskid_payload(ptr),
+            "raw ABI allocation must retain its construction root before the caller can install a root"
+        );
+
+        let handle = gc_root_handle(ptr);
+        gc_unroot_handle(handle);
         let after = heap.force_collect();
-        assert!(after < before_collect, "unrooted object should be reclaimed");
+        assert!(after < before_collect, "root handoff must release the construction root");
     });
 }
 

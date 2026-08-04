@@ -15,9 +15,9 @@ pub extern "C-unwind" fn alloc(size: usize, type_desc_ptr: *const u8) -> *mut u8
             root.runtime_state.alloc_bytes = root.runtime_state.alloc_bytes.saturating_add(size);
         }
         collect_if_needed(root);
-        // The raw runtime ABI has no ownership carrier.  Keep the construction root through the
-        // allocation safepoint, then publish the payload to the caller's generated-code root
-        // protocol.
-        allocation.publish()
+        // The raw ABI cannot prove its next instruction installs a root.  Preserve the
+        // construction root until a root registration, handle insertion, or write barrier
+        // explicitly publishes this payload.
+        allocation.into_raw_rooted()
     })
 }
