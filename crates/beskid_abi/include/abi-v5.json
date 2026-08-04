@@ -66,6 +66,44 @@
       "result": "u32"
     },
     {
+      "symbol": "beskid_rt_v5_array_allocate_rooted",
+      "params": [
+        {
+          "name": "request",
+          "type": "pointer"
+        },
+        {
+          "name": "root_handle_out",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "beskid_rt_v5_array_construction_finish",
+      "params": [
+        {
+          "name": "root_handle",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_array_write_barrier",
+      "params": [
+        {
+          "name": "array",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
       "symbol": "beskid_rt_v5_closure_capture_store",
       "params": [
         {
@@ -585,6 +623,62 @@
           "name": "descriptor",
           "offset": 16,
           "type": "pointer"
+        }
+      ]
+    },
+    {
+      "name": "BeskidArrayAllocationRequest",
+      "target": null,
+      "size": 32,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "element",
+          "offset": 0,
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "offset": 8,
+          "type": "usize"
+        },
+        {
+          "name": "flags",
+          "offset": 16,
+          "type": "u32"
+        },
+        {
+          "name": "reserved",
+          "offset": 20,
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "BeskidArrayElementDescriptor",
+      "target": null,
+      "size": 32,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "stride",
+          "offset": 0,
+          "type": "usize"
+        },
+        {
+          "name": "alignment",
+          "offset": 8,
+          "type": "usize"
+        },
+        {
+          "name": "pointer_map",
+          "offset": 16,
+          "type": "pointer"
+        },
+        {
+          "name": "pointer_count",
+          "offset": 24,
+          "type": "usize"
         }
       ]
     },
