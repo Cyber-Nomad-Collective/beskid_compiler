@@ -6,11 +6,12 @@
 //! For non-traced types (primitives, etc.), use `std::cell::Cell<T>` directly since
 //! they cannot contain GC pointers and don't need write barriers.
 
+use std::cell::UnsafeCell;
+
 use crate::{
     gc::with_current_context,
     trace::{Trace, Tracer},
 };
-use std::cell::UnsafeCell;
 
 /// Cell for storing GC-traceable values with write barrier
 ///
@@ -40,19 +41,24 @@ impl<T: Trace + Copy> GcCell<T> {
     /// If marking is in progress, traces the new value to shade
     /// any GC pointers gray, preventing premature collection.
     pub fn set(&self, new_value: T) {
-        // Dijkstra write barrier: shade new pointer gray
-        // (To avoid race-conditions, we don't check is_marking here; overhead should be minimal)
+        let mut stored = false;
         unsafe {
             let new_ref = &new_value;
             with_current_context(|ctx| {
-                if ctx.heap.check_is_marking_and_increment_busy() {
-                    // Trace new value to shade it gray
-                    new_ref.trace(&ctx.local_gray);
-                    ctx.heap.merge_work(&ctx.local_gray);
-                    ctx.heap.decrement_busy_marking();
-                }
+                ctx.heap.with_mutator_operation(|is_marking| {
+                    if is_marking {
+                        // Trace new value to shade it gray before storing it, while sweep
+                        // admission remains closed by the mutator transaction.
+                        new_ref.trace(&ctx.local_gray);
+                        ctx.heap.merge_work(&ctx.local_gray);
+                    }
+                    *self.value.get() = new_value;
+                    stored = true;
+                });
             });
-            *self.value.get() = new_value;
+            if !stored {
+                *self.value.get() = new_value;
+            }
         }
     }
 }
