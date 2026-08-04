@@ -1,6 +1,7 @@
 use beskid_abi::BeskidArray;
 
 use super::alloc::alloc;
+use crate::gc::with_current_heap;
 
 /// Allocate a [`BeskidArray`] header with zero-filled element backing storage.
 #[unsafe(no_mangle)]
@@ -29,6 +30,9 @@ pub extern "C-unwind" fn array_new(elem_size: usize, len: usize) -> *mut BeskidA
 
     unsafe {
         target.write(BeskidArray { ptr: data_ptr, len, cap: len });
+    }
+    if len != 0 {
+        with_current_heap(|heap| heap.publish_composite_beskid_edge(target.cast(), data_ptr));
     }
     target
 }

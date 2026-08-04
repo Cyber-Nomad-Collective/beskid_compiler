@@ -48,6 +48,7 @@ struct BeskidAllocationMappings {
     payload_to_header: HashMap<usize, usize>,
     header_to_payload: HashMap<usize, usize>,
     construction_roots: HashSet<usize>,
+    composite_children: HashMap<usize, HashSet<usize>>,
 }
 
 impl BeskidAllocationRegistry {
@@ -65,6 +66,10 @@ impl BeskidAllocationRegistry {
         if let Some(payload) = mappings.header_to_payload.remove(&(header as usize)) {
             mappings.payload_to_header.remove(&payload);
             mappings.construction_roots.remove(&payload);
+            mappings.composite_children.remove(&payload);
+            for children in mappings.composite_children.values_mut() {
+                children.remove(&payload);
+            }
         }
     }
 
@@ -83,6 +88,30 @@ impl BeskidAllocationRegistry {
         } else {
             None
         }
+    }
+
+    fn add_composite_edge(&self, parent: *mut u8, child: *mut u8) {
+        if parent.is_null() || child.is_null() {
+            return;
+        }
+        let mut mappings = self.mappings.lock();
+        if mappings.payload_to_header.contains_key(&(parent as usize))
+            && mappings.payload_to_header.contains_key(&(child as usize))
+        {
+            mappings.composite_children.entry(parent as usize).or_default().insert(child as usize);
+        }
+    }
+
+    fn composite_children(&self, parent: *mut u8) -> Vec<*mut u8> {
+        self.mappings
+            .lock()
+            .composite_children
+            .get(&(parent as usize))
+            .into_iter()
+            .flatten()
+            .copied()
+            .map(|child| child as *mut u8)
+            .collect()
     }
 }
 
@@ -609,6 +638,21 @@ impl Heap {
     /// Finish a raw-ABI allocation hand-off after the caller has made it reachable.
     pub fn publish_raw_beskid(&self, payload_ptr: *mut u8) {
         self.write_barrier(std::ptr::null_mut(), payload_ptr);
+    }
+
+    /// Record a GC-visible composite edge before releasing the child's construction root.
+    ///
+    /// Runtime-owned layouts such as arrays, strings, and dynamic cells store raw managed
+    /// pointers without a codegen descriptor. This side-table is their one tracing authority.
+    pub fn publish_composite_beskid_edge(&self, parent_ptr: *mut u8, child_ptr: *mut u8) {
+        self.beskid_allocations.add_composite_edge(parent_ptr, child_ptr);
+        self.write_barrier(parent_ptr, child_ptr);
+    }
+
+    pub(crate) fn mark_composite_children(&self, parent_ptr: *mut u8, tracer: &Tracer) {
+        for child_ptr in self.beskid_allocations.composite_children(parent_ptr) {
+            self.mark_payload_ptr(child_ptr, tracer);
+        }
     }
 
     fn release_construction_root(&self, payload_ptr: *mut u8) {

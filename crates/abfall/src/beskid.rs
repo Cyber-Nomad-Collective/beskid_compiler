@@ -43,6 +43,11 @@ pub struct BeskidObject {
 
 unsafe impl Trace for BeskidObject {
     fn trace(&self, tracer: &Tracer) {
+        if !self.heap.is_null() {
+            // Runtime composites without generated descriptors register their managed child
+            // pointers in Heap's canonical side-table before their construction roots release.
+            unsafe { &*self.heap }.mark_composite_children(self.bytes.as_ptr() as *mut u8, tracer);
+        }
         if self.type_desc.is_null() {
             return;
         }
