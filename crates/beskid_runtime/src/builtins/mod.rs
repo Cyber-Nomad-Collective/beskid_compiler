@@ -26,8 +26,8 @@ mod wait_group;
 pub use crate::interop::register::{HandlerTableEntry, beskid_register_handlers};
 pub use alloc::alloc;
 pub use arrays::{
-    ArrayAllocationRequest, array_len, array_new, beskid_rt_v5_array_allocate,
-    beskid_rt_v5_array_allocate_rooted, beskid_rt_v5_array_construction_finish,
+    ArrayAllocationRequest, array_len, array_new, beskid_rt_v5_array_allocate_rooted,
+    beskid_rt_v5_array_construction_finish,
     beskid_rt_v5_array_write_barrier,
 };
 pub use bytes::{bytes_compare, bytes_copy, bytes_from_str, bytes_get, bytes_set, str_from_bytes_utf8};

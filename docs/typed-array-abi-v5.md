@@ -24,7 +24,7 @@ pointer map from element size and no HIR/Lowerable fallback is allowed.
 
 ## Required acceptance evidence (intentionally unexecuted in the source-first phase)
 
-1. A scalar `i32[]` literal emits a static request, calls `beskid_rt_v5_array_allocate`, loads
+1. A scalar `i32[]` literal emits a static request, calls `beskid_rt_v5_array_allocate_rooted`, loads
    `BeskidArray.ptr`, roots before nested element lowering, and produces stock-verified CLIF
    without a stack-backed array literal.
 2. A `string[]`/pointer literal emits map `[0]`, writes every element, calls the array write

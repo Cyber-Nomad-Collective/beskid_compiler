@@ -1248,7 +1248,7 @@ pub fn emit_syntax_program_in_session<M: Module>(
     // Never cache by surface symbol alone: the same user symbol may represent a different AST
     // generation or a generic instance with ABI-equal but semantically different substitutions.
     let artifact_key = format!(
-        "{namespace}:{}",
+        "{namespace}:linkage={linkage:?}:{}",
         resolved
             .iter()
             .map(|item| format!("{:?}:{}:{:?}", item.key, item.symbol, item.callee))

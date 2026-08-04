@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   observe the allocation. Generic module identities now include ordered substitutions, and session
   namespaces cover closure, aggregate, array, and string static data.
 
+- Remove the unsafe unrooted typed-array allocator from the ABI-v5 manifest/runtime surface.
+  Generic specialization identity uses a full length-delimited parameter encoding, and module
+  session cache keys include linkage policy as well as source item identity.
+
 - Generate manifest-owned ABI-v5 bindings for the exact `Core.Args`
   `__args_count` and `__args_get` services on Linux x64, macOS arm64, and
   Windows x64. Validation now rejects missing or duplicate target bindings,

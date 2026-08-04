@@ -490,9 +490,11 @@ pub fn generic_specialization_identity(instance: &GenericSpecializationInstance)
         u32::try_from(instance.substitutions.len()).unwrap_or(u32::MAX),
     ];
     for binding in instance.substitutions.iter() {
-        let name_hash =
-            binding.parameter.bytes().fold(0u32, |hash, byte| hash.wrapping_mul(16777619) ^ u32::from(byte));
-        identity.extend([name_hash, binding.argument.0]);
+        // Encode every UTF-8 byte with a length delimiter. This is deliberately not a hash:
+        // distinct source parameter names cannot collide in the module identity.
+        identity.push(u32::try_from(binding.parameter.len()).unwrap_or(u32::MAX));
+        identity.extend(binding.parameter.bytes().map(u32::from));
+        identity.push(binding.argument.0);
     }
     identity.push(u32::MAX);
     identity.extend(instance.signature.parameters.iter().map(|semantic| semantic.0));

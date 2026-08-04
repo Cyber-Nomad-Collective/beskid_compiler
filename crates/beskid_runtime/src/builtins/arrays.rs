@@ -96,19 +96,6 @@ fn allocate_typed_array_constructing(
     })
 }
 
-/// Allocate a descriptor-backed managed array through the ABI-v5 native runtime.
-///
-/// This is intentionally separate from the historical `array_new(element_size, len)` surface:
-/// generic byte allocation has no pointer-map authority and therefore cannot represent managed
-/// reference elements. Invalid requests return null and no descriptor is synthesized from size.
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn beskid_rt_v5_array_allocate(request: *const ArrayAllocationRequest) -> *mut BeskidArray {
-    // ABI-v5 typed arrays must be constructed through the rooted transaction. Returning an
-    // unrooted raw array would re-open the publish-before-root window for concurrent GC.
-    let _ = request;
-    std::ptr::null_mut()
-}
-
 /// Allocate an array and publish a temporary root before generated code can lower any element.
 ///
 /// `root_handle_out` is an ABI-owned stack slot. The caller must pass its token to
