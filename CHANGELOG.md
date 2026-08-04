@@ -50,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   widening conversion, while inferred locals, explicit literal suffixes,
   compound values, immutable destinations, and out-of-range values fail closed.
 
+- Materialize generic syntax functions only from canonical direct-call ABI
+  specialization facts. Uncalled generic declarations are omitted from module emission,
+  while direct calls with absent or ambiguous specialization evidence now fail closed with
+  their call and declaration identities.
+
 - Fail closed unless the ABI-v5 Core.Args manifest contains exactly
   `__args_count` and `__args_get`, and unless every target binding implements
   its canonical generated adapter symbol.
