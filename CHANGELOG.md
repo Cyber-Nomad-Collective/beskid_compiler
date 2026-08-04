@@ -59,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Declare the canonical rooted typed-array allocation, construction-root release,
+  and pointer write-barrier exports in the embedded runtime corpus so source
+  authority remains complete for the ABI-v5 construction transaction.
+
 - Contextually type unsuffixed integer literals only at explicitly typed local
   initializer and mutable-local assignment boundaries. Generated syntax ISLE
   now emits the destination's exact ABI width without an implicit numeric

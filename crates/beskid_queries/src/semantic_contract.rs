@@ -17,6 +17,8 @@ use beskid_analysis::syntax::SyntaxGenerationId;
 use crate::db::Db;
 use crate::inputs::ProjectSession;
 
+mod call_abi;
+
 /// Source-unit identity, interned by a normalized absolute logical path.
 #[salsa::interned(constructor = intern_path, no_lifetime, debug)]
 pub struct SourceUnitId {
@@ -1899,6 +1901,13 @@ fn call_lowering_for_node(
                 } else {
                     Ok(CallLowering::Direct(declaration))
                 }
+            } else if canonical_runtime_intrinsic_scope(db, key)
+                && let Some(intrinsic) = runtime_intrinsic(db, key).ok().flatten()
+            {
+                // The manifest-owned builtin index is the Salsa fact that separates canonical
+                // runtime intrinsics from ordinary Dynamic calls. Codegen still requires its
+                // separate canonical-source capability before it can emit this classification.
+                Ok(CallLowering::Runtime(intrinsic))
             } else if imported_call_receiver_exists(db, key, path)
                 || (path.segments.iter().all(|segment| segment.node.type_args.is_empty())
                     && beskid_analysis::builtins::builtin_for_path(
@@ -1924,6 +1933,18 @@ fn call_lowering_for_node(
         }
         _ => Err(SemanticError::unavailable("call_lowering")),
     })
+}
+
+/// Runtime intrinsic lowering is available only to the exact embedded corpus. The typed-program
+/// constructor installs this private scope after byte-for-byte corpus validation; app/corelib
+/// source that merely resolves a builtin remains Dynamic.
+fn canonical_runtime_intrinsic_scope(db: &dyn Db, key: AstNodeKey) -> bool {
+    db.syntax_dependency_registry()
+        .lock()
+        .expect("syntax dependency registry")
+        .imports
+        .get(&(key.unit, key.generation))
+        .is_some_and(|imports| imports.iter().any(|entry| entry.binding == "__beskid_canonical_runtime"))
 }
 
 /// Resolve `Contract.method` when `Contract` is an `[Extern]` contract in the current unit.
@@ -2826,7 +2847,8 @@ fn call_abi_signature_for_call(db: &dyn Db, key: AstNodeKey) -> Result<ItemSigna
             return dispatch_builtin_abi_signature(db, key)
                 .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
         }
-        Some(CallLowering::Runtime(_)) | None => {
+        Some(CallLowering::Runtime(RuntimeIntrinsic(index))) => return call_abi::runtime_intrinsic_signature(index),
+        None => {
             return Err(SemanticError::unavailable("call_abi_signature"));
         }
         Some(CallLowering::Direct(_)) => {}
@@ -2976,6 +2998,15 @@ fn integer_literal_text(db: &dyn Db, key: AstNodeKey) -> Result<Option<Arc<str>>
     }
 }
 
+fn contextual_constant_integer(db: &dyn Db, key: AstNodeKey) -> Result<Option<i64>, SemanticError> {
+    if let Some(value) = constant_integer(db, key)? {
+        return Ok(Some(value));
+    }
+    let Some(children) = child_nodes(db, key)? else { return Ok(None); };
+    let [child] = children.as_ref() else { return Ok(None); };
+    contextual_constant_integer(db, *child)
+}
+
 fn integer_has_explicit_abi_suffix(text: &str) -> bool {
     matches!(text.rsplit_once('_').map(|(_, suffix)| suffix), Some("i32" | "i64" | "u8"))
 }
@@ -3037,6 +3068,48 @@ fn call_argument_abi_type_tracked(
                 current = parent;
             }
             Err(SemanticError::unavailable("call_argument_abi_type"))
+        })())
+    })?
+    .transpose()
+}
+
+/// Contextual ABI for an unsuffixed integer literal used directly as one operand of a
+/// homogeneous primitive-integer binary expression. This is representation selection, not
+/// widening: the sibling must already prove the exact ABI type.
+#[salsa::tracked]
+fn binary_operand_abi_type_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SemanticTypeId> {
+    with_node(db, syntax, key, |_program, index, _node| {
+        Some((|| {
+            if integer_literal_text(db, key)?.is_none() {
+                return Err(SemanticError::unavailable("binary_operand_abi_type"));
+            }
+            let mut parent = index.metadata_for(key.generation, key.node).and_then(|meta| meta.parent);
+            while parent.is_some_and(|node| index.kind(node) != Some(beskid_analysis::syntax_query::NodeKind::BinaryExpression)) {
+                parent = parent.and_then(|node| index.metadata_for(key.generation, node).and_then(|meta| meta.parent));
+            }
+            let parent = parent.ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))?;
+            let mut branch = key.node;
+            while index.metadata_for(key.generation, branch).and_then(|meta| meta.parent) != Some(parent) {
+                branch = index
+                    .metadata_for(key.generation, branch)
+                    .and_then(|meta| meta.parent)
+                    .ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))?;
+            }
+            let children = index.children(parent).ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))?;
+            let sibling = children
+                .iter()
+                .copied()
+                .filter(|child| *child != branch)
+                .find(|child| index.kind(*child) != Some(beskid_analysis::syntax_query::NodeKind::BinaryOp))
+                .ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))?;
+            let expected = abi_type(db, AstNodeKey { node: sibling, ..key })?
+                .ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))?;
+            (primitive_integer(expected) && integer_literal_fits_abi(db, key, expected)?).then_some(expected)
+                .ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))
         })())
     })?
     .transpose()
@@ -3278,7 +3351,8 @@ fn local_initializer_abi_type_tracked(
 ) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, _node| {
         Some((|| {
-            if !unsuffixed_integer_literal(db, key)? {
+            let contextual_constant = contextual_constant_integer(db, key)?.is_some();
+            if !unsuffixed_integer_literal(db, key)? && !contextual_constant {
                 return Err(SemanticError::unavailable("local_initializer_abi_type"));
             }
             let mut current = key.node;
@@ -3297,7 +3371,7 @@ fn local_initializer_abi_type_tracked(
                         )
                         .map(|node| AstNodeKey { node, ..key })
                         .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
-                    if integer_literal_text(db, initializer)?.is_none() {
+                    if integer_literal_text(db, initializer)?.is_none() && contextual_constant_integer(db, initializer)?.is_none() {
                         return Err(SemanticError::unavailable("local_initializer_abi_type"));
                     }
                     let annotation = binding
@@ -3305,7 +3379,8 @@ fn local_initializer_abi_type_tracked(
                         .as_ref()
                         .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
                     let expected = abi_type_from_syntax(db, parent_key, &annotation.node)?;
-                    return integer_literal_fits_abi(db, initializer, expected)?
+                    return (contextual_constant_integer(db, initializer)?.is_some()
+                        || integer_literal_fits_abi(db, initializer, expected)?)
                         .then_some(expected)
                         .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"));
                 }
@@ -3319,14 +3394,14 @@ fn local_initializer_abi_type_tracked(
                         )
                         .map(|node| AstNodeKey { node, ..key })
                         .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
-                    if integer_literal_text(db, value)?.is_none() {
+                    if integer_literal_text(db, value)?.is_none() && contextual_constant_integer(db, value)?.is_none() {
                         return Err(SemanticError::unavailable("local_initializer_abi_type"));
                     }
                     let write = mutable_local_assignment(db, parent_key)?
                         .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
                     let expected = abi_type(db, write.declaration)?
                         .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
-                    return integer_literal_fits_abi(db, value, expected)?
+                    return (contextual_constant_integer(db, value)?.is_some() || integer_literal_fits_abi(db, value, expected)?)
                         .then_some(expected)
                         .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"));
                 }
@@ -3451,6 +3526,18 @@ fn abi_type_for_binary_expression(
         .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     let left_type = abi_type(db, left)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     let right_type = abi_type(db, right)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    if left_type != right_type {
+        if integer_literal_text(db, left)?.is_some() && primitive_integer(right_type) {
+            return integer_literal_fits_abi(db, left, right_type)?
+                .then_some(right_type)
+                .ok_or_else(|| SemanticError::unavailable("abi_type"));
+        }
+        if integer_literal_text(db, right)?.is_some() && primitive_integer(left_type) {
+            return integer_literal_fits_abi(db, right, left_type)?
+                .then_some(left_type)
+                .ok_or_else(|| SemanticError::unavailable("abi_type"));
+        }
+    }
     use beskid_analysis::syntax::BinaryOp;
     match binary.op.node {
         BinaryOp::Add if left_type == SemanticTypeId::STRING && right_type == SemanticTypeId::STRING => {
@@ -5927,6 +6014,10 @@ pub fn abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTyp
 /// all other expressions remain unavailable rather than being implicitly coerced.
 pub fn call_argument_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, call_argument_abi_type_tracked)
+}
+
+pub fn binary_operand_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
+    with_registered_syntax(db, key, binary_operand_abi_type_tracked)
 }
 
 /// Return the exact ABI selected for a bare integer literal at a typed local initializer or

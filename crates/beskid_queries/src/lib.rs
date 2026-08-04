@@ -78,7 +78,7 @@ pub use semantic_contract::{
     PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
     SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnosticKind,
     SpawnEntryValidation, SpawnTarget, TestItem, TypedProgram, abi_type, aggregate_field_access, aggregate_layout,
-    aggregate_literal_declaration, block_statement_nodes, call_abi_signature, call_argument_abi_type, call_arguments,
+    aggregate_literal_declaration, binary_operand_abi_type, block_statement_nodes, call_abi_signature, call_argument_abi_type, call_arguments,
     call_lowering, callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target,
     closure_environment, closure_signature, completion_candidates, constant_integer, control_flow, direct_callees,
     dispatch_builtin_symbol, enum_constructor, enum_layout, enum_match, extern_contract_import_for_declaration,
