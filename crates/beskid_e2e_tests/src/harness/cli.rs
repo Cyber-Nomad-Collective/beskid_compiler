@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 static CORELIB_ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
+static BUILT_DEBUG_CLI: OnceLock<()> = OnceLock::new();
 static STAGED_DEBUG_KIT: OnceLock<Mutex<()>> = OnceLock::new();
 
 pub struct BeskidCliInvoker {
@@ -132,13 +133,36 @@ fn resolve_cli_binary() -> PathBuf {
         return binary;
     }
 
+    ensure_current_default_cli_binary();
     let fallback = default_binary_path();
-    assert!(
-        fallback.is_file(),
-        "Beskid CLI binary not found at {}. Build it first (`cargo build -p beskid_cli`) or set BESKID_CLI_BIN.",
-        fallback.display()
-    );
+    assert!(fallback.is_file(), "Beskid CLI binary missing after `cargo build -p beskid_cli`: {}", fallback.display());
     fallback
+}
+
+/// Build the default CLI through Cargo before the harness stages a runtime kit.
+///
+/// Cargo owns freshness through its dependency fingerprints, including generated ABI artifacts.
+/// An explicit `BESKID_CLI_BIN` remains an override for callers that deliberately provide a
+/// different executable.
+fn ensure_current_default_cli_binary() {
+    BUILT_DEBUG_CLI.get_or_init(|| {
+        let workspace = workspace_root();
+        let output = build_current_cli_command(&workspace)
+            .output()
+            .unwrap_or_else(|error| panic!("invoke `cargo build -p beskid_cli` for e2e harness: {error}"));
+        assert!(
+            output.status.success(),
+            "building current Beskid CLI for e2e harness failed\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    });
+}
+
+fn build_current_cli_command(workspace: &Path) -> Command {
+    let mut command = Command::new("cargo");
+    command.current_dir(workspace).args(["build", "-p", "beskid_cli"]);
+    command
 }
 
 fn default_binary_path() -> PathBuf {
@@ -157,4 +181,18 @@ fn binary_name() -> &'static str {
 fn unique_corelib_root() -> PathBuf {
     let nonce = CORELIB_ROOT_COUNTER.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join("beskid_e2e_corelib").join(format!("{}_{}", std::process::id(), nonce))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_cli_build_command_targets_the_workspace_cli_package() {
+        let command = build_current_cli_command(&workspace_root());
+
+        assert_eq!(command.get_program(), "cargo");
+        assert_eq!(command.get_args().collect::<Vec<_>>(), ["build", "-p", "beskid_cli"].map(std::ffi::OsStr::new));
+        assert_eq!(command.get_current_dir(), Some(workspace_root().as_path()));
+    }
 }
