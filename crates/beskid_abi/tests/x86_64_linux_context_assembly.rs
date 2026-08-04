@@ -51,6 +51,26 @@ fn output(command: &mut Command) -> std::process::Output {
     output
 }
 
+#[cfg(target_os = "macos")]
+fn macos_x86_64_runner_available() -> bool {
+    // macOS cannot execute the Linux ELF harness.  The compatibility run below instead links a
+    // Mach-O x86_64 variant of the same SysV context assembly, which requires Rosetta on an
+    // Apple-silicon host.  Keep the ELF object checks independent of this optional execution.
+    Command::new("arch")
+        .args(["-x86_64", "/usr/bin/true"])
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[cfg(target_os = "macos")]
+fn macos_x86_64_clang() -> Command {
+    // Invoke xcrun as the driver rather than resolving clang and executing that path directly:
+    // the wrapper supplies the selected macOS SDK's system headers and linker search paths.
+    let mut command = Command::new("xcrun");
+    command.args(["--sdk", "macosx", "clang"]);
+    command
+}
+
 #[test]
 fn elf_object_exports_exactly_two_symbols_and_saves_the_manifest_preserved_set() {
     let temp = TempDir::new();
@@ -166,7 +186,19 @@ int main(void) {
 "#,
     )
     .unwrap();
+    // Native Linux CI links and executes the ELF harness below.  macOS cannot execute an ELF
+    // binary, so it validates the same source through an x86_64 Mach-O compatibility harness
+    // only when Rosetta is installed.  Object-level ELF coverage above always remains required.
+    #[cfg(target_os = "macos")]
+    if !macos_x86_64_runner_available() {
+        eprintln!("skipping x86_64 context runtime execution: Rosetta is unavailable (ELF object checks still ran)");
+        return;
+    }
+
     let executable = temp.0.join("context_harness");
+    #[cfg(target_os = "macos")]
+    let mut clang = macos_x86_64_clang();
+    #[cfg(target_os = "linux")]
     let mut clang = Command::new("clang");
     if cfg!(target_os = "macos") {
         clang.args(["-arch", "x86_64", "-D__BESKID_TEST_MACHO=1"]);
