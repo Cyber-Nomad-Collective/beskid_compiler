@@ -16,9 +16,20 @@ use target_lexicon::Triple;
 // fake allocator below owns test backing storage; production requests are emitted by codegen.
 static ARRAY_REQUEST: [u8; 32] = [0; 32];
 
-unsafe extern "C" fn test_array_allocate(_request: *const u8) -> *mut beskid_abi::BeskidArray {
+unsafe extern "C" fn test_array_allocate_rooted(
+    _request: *const u8,
+    root_handle_out: *mut usize,
+) -> *mut beskid_abi::BeskidArray {
+    if !root_handle_out.is_null() {
+        // SAFETY: fixture allocates the same pointer-sized output slot as ISLE lowering.
+        unsafe { root_handle_out.write(0) };
+    }
     let backing = Box::leak(vec![0_u8; 3 * std::mem::size_of::<i32>()].into_boxed_slice());
     Box::into_raw(Box::new(beskid_abi::BeskidArray { ptr: backing.as_mut_ptr(), len: 3, cap: 3 }))
+}
+
+unsafe extern "C" fn test_array_construction_finish(_root_handle: *mut u8) -> u8 {
+    1
 }
 
 struct ArrayFacts {
@@ -159,14 +170,15 @@ fn array_literal_and_index_emit_checked_stock_clif_and_execute() {
         .emit_expression(UserFuncName::user(0, 20), signature.clone(), &facts, facts.nodes[0])
         .expect("verified array index");
     let clif = function.display().to_string();
-    assert!(clif.contains("beskid_rt_v5_array_allocate"), "{clif}");
+    assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
     assert!(!clif.contains("stack_store"), "{clif}");
     assert!(clif.contains("trapnz"), "{clif}");
     assert!(clif.contains("load.i32"), "{clif}");
 
     let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
     builder.symbol("__array_memory_request", ARRAY_REQUEST.as_ptr());
-    builder.symbol("beskid_rt_v5_array_allocate", test_array_allocate as *const u8);
+    builder.symbol("beskid_rt_v5_array_allocate_rooted", test_array_allocate_rooted as *const u8);
+    builder.symbol("beskid_rt_v5_array_construction_finish", test_array_construction_finish as *const u8);
     let mut module = JITModule::new(builder);
     let function_id = module.declare_function("array_index", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
@@ -197,7 +209,8 @@ fn array_index_assignment_emits_checked_stock_clif_store_and_executes() {
 
     let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
     builder.symbol("__array_memory_request", ARRAY_REQUEST.as_ptr());
-    builder.symbol("beskid_rt_v5_array_allocate", test_array_allocate as *const u8);
+    builder.symbol("beskid_rt_v5_array_allocate_rooted", test_array_allocate_rooted as *const u8);
+    builder.symbol("beskid_rt_v5_array_construction_finish", test_array_construction_finish as *const u8);
     let mut module = JITModule::new(builder);
     let function_id = module.declare_function("array_index_assign", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();

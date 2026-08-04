@@ -19,7 +19,10 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module, ModuleError, ModuleResult};
 
 use crate::aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticPlan, emit_aggregate_static_data};
-use crate::array_static::{ABI_V5_ARRAY_ALLOCATE, ArrayStaticPlan, emit_array_static_data};
+use crate::array_static::{
+    ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ArrayStaticPlan,
+    emit_array_static_data,
+};
 use crate::closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
     ClosureStaticPlan, emit_closure_static_data,
@@ -325,7 +328,11 @@ fn lower_resolved_syntax_program(
     }
     let array_static_plans = collect_array_static_plans(input, items);
     if !array_static_plans.is_empty() {
-        for symbol in [ABI_V5_ARRAY_ALLOCATE, "beskid_rt_v5_array_write_barrier"] {
+        for symbol in [
+            ABI_V5_ARRAY_ALLOCATE_ROOTED,
+            ABI_V5_ARRAY_CONSTRUCTION_FINISH,
+            "beskid_rt_v5_array_write_barrier",
+        ] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
                 extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
             }
@@ -800,7 +807,14 @@ fn resolve_module_items(
     let db = input.database();
     let mut specializations = HashMap::<AstNodeKey, Vec<ItemSignature>>::new();
     for item in source_items {
-        collect_generic_call_specializations(db, item.key, &mut specializations)?;
+        // A generic declaration body has no concrete substitution environment of its own.
+        // Walking it once here falsely treats `T`-dependent call sites as executable source and
+        // can reject a program before a real direct-call instantiation reaches it. Only concrete
+        // entry items seed the collection; each emitted generic item is represented solely by a
+        // call-derived `DirectCallee::SpecializedItem` identity below.
+        if is_concrete_executable_item(db, item.key)? {
+            collect_generic_call_specializations(db, item.key, &mut specializations)?;
+        }
     }
 
     let mut resolved = Vec::with_capacity(source_items.len());
@@ -829,6 +843,7 @@ fn resolve_module_items(
             continue;
         };
         for signature in signatures {
+            reject_uninstantiated_nested_generic_call(db, item.key, signature)?;
             let identity = specialization_identity(signature);
             resolved.push(ResolvedSyntaxModuleItem {
                 key: item.key,
@@ -839,6 +854,53 @@ fn resolve_module_items(
         }
     }
     Ok(resolved)
+}
+
+/// Fail closed until semantic facts expose a substitution-aware nested-specialization worklist.
+///
+/// A source generic body cannot be lowered once with type variables substituted "later". Doing
+/// so either creates an import for the wrong specialisation or silently omits a nested generic
+/// callee. The first such call is therefore a keyed deterministic diagnostic, rather than a
+/// speculative traversal. Non-nested generic specialisations remain materialised normally.
+fn reject_uninstantiated_nested_generic_call(
+    db: &dyn beskid_queries::Db,
+    item: AstNodeKey,
+    signature: &ItemSignature,
+) -> Result<(), SyntaxModuleEmissionError> {
+    let mut visited = HashSet::new();
+    let mut nodes = Vec::new();
+    collect_ast_nodes(db, item, &mut visited, &mut nodes);
+    for node in nodes {
+        if let Some(declaration) = direct_generic_call_declaration(db, node)? {
+            return Err(emission_verification(format!(
+                "nested generic call requires substitution worklist: item={} specialization={} call={} declaration={}",
+                format_declaration_for_trace(db, item),
+                format_abi_identity(&specialization_identity(signature)),
+                trace_key(db, node),
+                format_declaration_for_trace(db, declaration),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Return true only for a declaration body with a declaration-level, non-generic ABI.
+///
+/// Absence of an ABI is *not* treated as generic generally: non-function syntax declarations
+/// are structural and have no executable body. Keeping this predicate explicit is the boundary
+/// that prevents the specialization collector from scanning generic source as concrete code.
+fn is_concrete_executable_item(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+) -> Result<bool, SyntaxModuleEmissionError> {
+    if node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?
+        != Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
+    {
+        return Ok(false);
+    }
+    Ok(item_abi_signature(db, key)
+        .map_err(|error| emission_verification(error.to_string()))?
+        .is_some())
 }
 
 fn collect_generic_call_specializations(

@@ -12,7 +12,8 @@ use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, Mo
 
 use crate::CodegenInput;
 
-pub const ABI_V5_ARRAY_ALLOCATE: &str = "beskid_rt_v5_array_allocate";
+pub const ABI_V5_ARRAY_ALLOCATE_ROOTED: &str = "beskid_rt_v5_array_allocate_rooted";
+pub const ABI_V5_ARRAY_CONSTRUCTION_FINISH: &str = "beskid_rt_v5_array_construction_finish";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArrayStaticPlan {
@@ -44,6 +45,9 @@ pub fn emit_array_static_data<M: Module>(module: &mut M, plan: &ArrayStaticPlan)
     }
     let mut pointer_map_data = DataDescription::new();
     pointer_map_data.define(pointer_map_bytes.into_boxed_slice());
+    // Pointer-map entries are native words read by the runtime.  `define` does not imply an ABI
+    // alignment, so make the object constraint explicit for every target object backend.
+    pointer_map_data.set_align(8);
     module.define_data(pointer_map, &pointer_map_data)?;
 
     // BeskidArrayElementDescriptor { stride, alignment, pointer_map, pointer_count }.
@@ -53,6 +57,8 @@ pub fn emit_array_static_data<M: Module>(module: &mut M, plan: &ArrayStaticPlan)
     write_word(&mut element_bytes, 24, plan.pointer_map_offsets.len() as u64)?;
     let mut element_data = DataDescription::new();
     element_data.define(element_bytes.into_boxed_slice());
+    // Manifest freezes BeskidArrayElementDescriptor at 8-byte alignment.
+    element_data.set_align(8);
     // The ABI contract requires a null map pointer when the count is zero; a
     // placeholder data object's address would be malformed metadata even though
     // it is never scanned.
@@ -67,6 +73,8 @@ pub fn emit_array_static_data<M: Module>(module: &mut M, plan: &ArrayStaticPlan)
     write_word(&mut request_bytes, 8, plan.length)?;
     let mut request_data = DataDescription::new();
     request_data.define(request_bytes.into_boxed_slice());
+    // Manifest freezes BeskidArrayAllocationRequest at 8-byte alignment.
+    request_data.set_align(8);
     let element_address = module.declare_data_in_data(element, &mut request_data);
     request_data.write_data_addr(0, element_address, 0);
     module.define_data(request, &request_data)?;

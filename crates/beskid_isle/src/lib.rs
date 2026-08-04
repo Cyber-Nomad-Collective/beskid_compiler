@@ -2196,8 +2196,14 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         }
         let pointer = dispatch::pointer_type();
         let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer)?;
-        let allocate = self.import_runtime_helper("beskid_rt_v5_array_allocate", &[pointer], Some(pointer))?;
-        let allocation_call = self.builder.ins().call(allocate, &[request]);
+        let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            pointer.bytes(),
+            pointer.bytes().ilog2() as u8,
+        ));
+        let root_slot_address = self.builder.ins().stack_addr(pointer, root_slot, 0);
+        let allocate = self.import_runtime_helper("beskid_rt_v5_array_allocate_rooted", &[pointer, pointer], Some(pointer))?;
+        let allocation_call = self.builder.ins().call(allocate, &[request, root_slot_address]);
         let array = self.builder.inst_results(allocation_call).first().copied()?;
         self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
         // `BeskidArray.ptr` remains at offset zero.  The backing bytes are owned by the same
@@ -2220,6 +2226,13 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                 self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
             }
         }
+        // The allocation was rooted before the first nested element was lowered. Release only
+        // after every store and pointer-publication barrier has completed.
+        let root_handle = self.builder.ins().stack_load(pointer, root_slot, 0);
+        let finish = self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
+        let finish_call = self.builder.ins().call(finish, &[root_handle]);
+        let released = self.builder.inst_results(finish_call).first().copied()?;
+        self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
         Some(array)
     }
 

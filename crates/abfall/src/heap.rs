@@ -3,7 +3,7 @@
 //! This module provides the heap structure that stores GC-managed objects
 //! and implements the mark and sweep phases of garbage collection.
 
-use crate::beskid::{ArrayElementDescriptor, BeskidArrayMetadata, BeskidObject, TypeDescriptor};
+use crate::beskid::{AlignedBytes, ArrayElementDescriptor, BeskidArrayMetadata, BeskidObject, TypeDescriptor};
 use crate::gc_box::{GcBox, GcHeader};
 use crate::ptr::GcRoot;
 use crate::roots::ExternalRootSet;
@@ -401,7 +401,7 @@ impl Heap {
         }
 
         let type_desc = type_desc_ptr.cast::<TypeDescriptor>();
-        let obj = BeskidObject { heap: self as *const Self, type_desc, bytes: vec![0u8; size].into_boxed_slice(), array: None };
+        let obj = BeskidObject { heap: self as *const Self, type_desc, bytes: AlignedBytes::zeroed(size), array: None };
         let ptr = GcBox::new_with_root(obj, false);
         let header_ptr = unsafe { &(*ptr.as_ptr()).header as *const GcHeader as *mut GcHeader };
         self.insert_allocation(header_ptr);
@@ -445,7 +445,7 @@ impl Heap {
         let obj = BeskidObject {
             heap: self as *const Self,
             type_desc: std::ptr::null(),
-            bytes: vec![0u8; total_size].into_boxed_slice(),
+            bytes: AlignedBytes::zeroed(total_size),
             array: Some(BeskidArrayMetadata { descriptor, length, data_offset: header_size }),
         };
         let ptr = GcBox::new_with_root(obj, false);

@@ -3,6 +3,36 @@
 use crate::Heap;
 use crate::trace::{Trace, Tracer};
 
+/// Zeroed byte storage with native-word alignment.
+///
+/// ABI-v5 array headers are cast to `BeskidArray` by the native runtime. A `Box<[u8]>` has only
+/// byte alignment, whereas this storage is aligned at least as strongly as every supported
+/// `BeskidArray` field. The length remains byte-exact and is never rounded for tracing bounds.
+pub(crate) struct AlignedBytes {
+    words: Box<[usize]>,
+    byte_len: usize,
+}
+
+impl AlignedBytes {
+    pub(crate) fn zeroed(byte_len: usize) -> Self {
+        let word = std::mem::size_of::<usize>();
+        let words = byte_len.saturating_add(word - 1) / word;
+        Self { words: vec![0usize; words].into_boxed_slice(), byte_len }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.byte_len
+    }
+
+    pub(crate) fn as_ptr(&self) -> *const u8 {
+        self.words.as_ptr().cast()
+    }
+
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.words.as_mut_ptr().cast()
+    }
+}
+
 /// Descriptor blob emitted by `beskid_codegen::module_emission::build_descriptor_data`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -61,7 +91,7 @@ impl TypeDescriptor {
 pub struct BeskidObject {
     pub(crate) heap: *const Heap,
     pub(crate) type_desc: *const TypeDescriptor,
-    pub(crate) bytes: Box<[u8]>,
+    pub(crate) bytes: AlignedBytes,
     /// Present only for ABI-v5 typed arrays.  This is intentionally stored with the allocation,
     /// rather than reconstructed from an array header or generic element size during tracing.
     pub(crate) array: Option<BeskidArrayMetadata>,

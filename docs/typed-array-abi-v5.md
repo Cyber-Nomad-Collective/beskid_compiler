@@ -1,9 +1,11 @@
 # ABI-v5 typed managed arrays
 
-`beskid_rt_v5_array_allocate(BeskidArrayAllocationRequest*)` is the only native allocation
-entrypoint for syntax-lowered managed array literals. The historical `array_new(element_size,
-length)` entrypoint remains a byte-storage compatibility surface and is not sufficient authority
-for pointer-bearing elements.
+`beskid_rt_v5_array_allocate_rooted(BeskidArrayAllocationRequest*, pointer)` is the native
+allocation entrypoint for syntax-lowered managed array literals. It publishes a temporary root
+before the first nested element expression is lowered; generated code calls
+`beskid_rt_v5_array_construction_finish` only after all element writes and barriers complete.
+The historical `array_new(element_size, length)` entrypoint remains a byte-storage compatibility
+surface and is not sufficient authority for pointer-bearing elements.
 
 The request references immutable compiler-emitted `BeskidArrayElementDescriptor` data:
 
@@ -23,7 +25,8 @@ pointer map from element size and no HIR/Lowerable fallback is allowed.
 ## Required acceptance evidence (intentionally unexecuted in the source-first phase)
 
 1. A scalar `i32[]` literal emits a static request, calls `beskid_rt_v5_array_allocate`, loads
-   `BeskidArray.ptr`, and produces stock-verified CLIF without a stack-backed array literal.
+   `BeskidArray.ptr`, roots before nested element lowering, and produces stock-verified CLIF
+   without a stack-backed array literal.
 2. A `string[]`/pointer literal emits map `[0]`, writes every element, calls the array write
    barrier, survives forced GC, and supports a later collection after the original expression has
    returned.

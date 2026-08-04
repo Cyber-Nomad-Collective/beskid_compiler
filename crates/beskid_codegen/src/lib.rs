@@ -27,7 +27,10 @@ pub use aggregate_static::{
     ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateObjectLayout, AggregateStaticField, AggregateStaticPlan,
     emit_aggregate_static_data,
 };
-pub use array_static::{ABI_V5_ARRAY_ALLOCATE, ArrayStaticPlan, emit_array_static_data};
+pub use array_static::{
+    ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ArrayStaticPlan,
+    emit_array_static_data,
+};
 pub use closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
     ClosureCaptureStaticField, ClosureLoweringAuthority, ClosureRootAuthority, ClosureStaticDataHandles,

@@ -49,14 +49,10 @@ fn valid_element_descriptor(descriptor: &ArrayElementDescriptor) -> bool {
     true
 }
 
-/// Allocate a descriptor-backed managed array through the ABI-v5 native runtime.
-///
-/// This is intentionally separate from the historical `array_new(elem_size, len)` surface:
-/// generic byte allocation has no pointer-map authority and therefore cannot represent managed
-/// reference elements.  Invalid requests return null; callers must trap/root explicitly and no
-/// descriptor is synthesized from element size.
-#[unsafe(no_mangle)]
-pub extern "C-unwind" fn beskid_rt_v5_array_allocate(request: *const ArrayAllocationRequest) -> *mut BeskidArray {
+fn allocate_typed_array(
+    request: *const ArrayAllocationRequest,
+    root_handle_out: Option<*mut usize>,
+) -> *mut BeskidArray {
     if request.is_null() {
         return std::ptr::null_mut();
     }
@@ -86,11 +82,56 @@ pub extern "C-unwind" fn beskid_rt_v5_array_allocate(request: *const ArrayAlloca
         let array = payload.cast::<BeskidArray>();
         // SAFETY: header is uniquely owned until returned to generated code.
         unsafe { array.write(BeskidArray { ptr: data, len: request.length, cap: request.length }) };
+        if let Some(root_handle_out) = root_handle_out {
+            let handle = root.heap.external_roots().push_handle(array.cast());
+            // SAFETY: the rooted ABI entrypoint requires a writable native-word stack slot.
+            unsafe { root_handle_out.write(handle as usize) };
+        }
         root.runtime_state.allocation_counter = root.runtime_state.allocation_counter.saturating_add(1);
         let live_bytes = heap.bytes_allocated();
         root.runtime_state.heap_total_bytes = root.runtime_state.heap_total_bytes.saturating_add(header_size).max(live_bytes);
         root.runtime_state.heap_live_bytes = live_bytes;
         array
+    })
+}
+
+/// Allocate a descriptor-backed managed array through the ABI-v5 native runtime.
+///
+/// This is intentionally separate from the historical `array_new(element_size, len)` surface:
+/// generic byte allocation has no pointer-map authority and therefore cannot represent managed
+/// reference elements. Invalid requests return null and no descriptor is synthesized from size.
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn beskid_rt_v5_array_allocate(request: *const ArrayAllocationRequest) -> *mut BeskidArray {
+    allocate_typed_array(request, None)
+}
+
+/// Allocate an array and publish a temporary root before generated code can lower any element.
+///
+/// `root_handle_out` is an ABI-owned stack slot. The caller must pass its token to
+/// [`beskid_rt_v5_array_construction_finish`] after every element store/barrier is complete.
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn beskid_rt_v5_array_allocate_rooted(
+    request: *const ArrayAllocationRequest,
+    root_handle_out: *mut usize,
+) -> *mut BeskidArray {
+    if root_handle_out.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: caller supplied a valid native-word output slot under the ABI contract.
+    unsafe { root_handle_out.write(usize::MAX) };
+    allocate_typed_array(request, Some(root_handle_out))
+}
+
+/// Release the temporary root established by the rooted array allocator.
+#[unsafe(no_mangle)]
+pub extern "C-unwind" fn beskid_rt_v5_array_construction_finish(root_handle: *mut u8) -> u8 {
+    let root_handle = root_handle as usize;
+    if root_handle == usize::MAX {
+        return 0;
+    }
+    with_current_heap_and_root(|_heap, root| {
+        root.heap.external_roots().drop_handle(root_handle as u64);
+        1
     })
 }
 
