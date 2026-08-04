@@ -1336,12 +1336,10 @@ fn altered_foundation_args_module_cannot_emit_args_imports() {
         .into_iter()
         .find(|source| source.logical_path == CANONICAL_CORELIB_ARGS_SOURCE_PATH)
         .expect("embedded Core.Args source");
-    let directory = tempfile::tempdir().expect("altered Core.Args project").keep();
-    let source_path = directory.join("obj/beskid/deps/src/foundation/Core/Args/Args.bd");
+    let source_path = canonical_corelib_service_source_path(CANONICAL_CORELIB_ARGS_SOURCE_PATH)
+        .expect("compiler-owned Core.Args path");
     let altered = format!("{}\n// altered", source.source);
-    std::fs::create_dir_all(source_path.parent().expect("Core.Args parent")).expect("create Core.Args parent");
-    std::fs::write(&source_path, &altered).expect("write altered Core.Args source");
-    let (input, isa, root) = core_args_fixture(source_path.clone(), altered, Arc::from([source_path]));
+    let (input, isa, root) = core_args_fixture(source_path, altered, Arc::from([]));
 
     assert_args_module_cannot_emit_imports(&input, isa.as_ref(), root);
 }
@@ -3154,17 +3152,16 @@ fn assert_args_module_cannot_emit_imports(
     isa: &dyn cranelift_codegen::isa::TargetIsa,
     root: AstNodeKey,
 ) {
-    let result = lower_syntax_program(
+    let error = lower_syntax_program(
         input,
         isa,
         &[SyntaxModuleItem { key: named_function(input, root, "ProgramName"), symbol: "ProgramName".into() }],
+    )
+    .expect_err("untrusted Core.Args source must fail module emission before any ABI import is emitted");
+    assert!(
+        error.to_string().contains("MissingRuleOrFact"),
+        "untrusted Core.Args must fail closed through generated ISLE: {error}"
     );
-    if let Ok(artifact) = result {
-        assert!(
-            artifact.extern_imports.iter().all(|import| !matches!(import.symbol.as_str(), "args_count" | "args_get")),
-            "untrusted Core.Args source must never emit Args ABI imports"
-        );
-    }
 }
 
 fn canonical_foundation_assert_fixture()
