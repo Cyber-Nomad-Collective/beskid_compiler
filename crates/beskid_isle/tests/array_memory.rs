@@ -2,14 +2,16 @@ use std::path::PathBuf;
 
 use beskid_isle::{
     ArrayLayout, AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, LoweringErrorKind,
-    ManagedArrayAllocation, NodeFacts,
-    NodeKind,
+    ManagedArrayAllocation, NodeFacts, NodeKind,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
-use cranelift_codegen::ir::{UserFuncName, types};
+use cranelift_codegen::ir::{ExternalName, Function, GlobalValueData, UserFuncName, types};
+use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
+use std::collections::BTreeMap;
+use std::sync::Arc;
 use target_lexicon::Triple;
 
 // Static request symbol used by the source-only typed-array lowering acceptance fixture. The
@@ -30,6 +32,81 @@ unsafe extern "C" fn test_array_allocate_rooted(
 
 unsafe extern "C" fn test_array_construction_finish(_root_handle: *mut u8) -> u8 {
     1
+}
+
+/// Rebind test-only symbolic references through the concrete JIT module.
+///
+/// The emitter deliberately uses `ExternalName::TestCase` while constructing standalone CLIF,
+/// but `JITModule` only materializes relocations for module-owned `ExternalName::User` imports.
+/// Rewriting the fixture's two runtime imports and its request-data global through module
+/// declarations preserves an execution test on every host instead of treating the CLIF display
+/// check as execution evidence.
+fn bind_array_fixture_symbols(module: &mut JITModule, function: &mut Function) {
+    let request = module
+        .declare_data("__array_memory_request", Linkage::Import, false, false)
+        .expect("declare fixture request data");
+    let request_global = module.declare_data_in_func(request, function);
+    let request_global = function.global_values[request_global].clone();
+
+    for (_, global) in function.global_values.iter_mut() {
+        let GlobalValueData::Symbol { name: ExternalName::TestCase(name), .. } = global else {
+            continue;
+        };
+        if name.raw() == b"__array_memory_request" {
+            *global = request_global.clone();
+        }
+    }
+
+    let imports = function
+        .dfg
+        .ext_funcs
+        .iter()
+        .filter_map(|(_, import)| match &import.name {
+            ExternalName::TestCase(name)
+                if matches!(
+                    name.raw(),
+                    b"beskid_rt_v5_array_allocate_rooted" | b"beskid_rt_v5_array_construction_finish"
+                ) =>
+            {
+                Some((
+                    String::from_utf8(name.raw().to_vec()).expect("ASCII fixture import"),
+                    function.dfg.signatures[import.signature].clone(),
+                ))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut bound_names = BTreeMap::<String, ExternalName>::new();
+    for (symbol, signature) in imports {
+        let id = module.declare_function(&symbol, Linkage::Import, &signature).expect("declare fixture import");
+        let imported = module.declare_func_in_func(id, function);
+        bound_names.insert(symbol, function.dfg.ext_funcs[imported].name.clone());
+    }
+    for (_, import) in function.dfg.ext_funcs.iter_mut() {
+        let ExternalName::TestCase(name) = &import.name else {
+            continue;
+        };
+        if let Some(bound) = bound_names.get(std::str::from_utf8(name.raw()).expect("ASCII fixture import")) {
+            import.name = bound.clone();
+        }
+    }
+}
+
+fn execute_array_fixture(isa: Arc<dyn TargetIsa>, name: &str, mut function: Function) -> i32 {
+    let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
+    builder.symbol("__array_memory_request", ARRAY_REQUEST.as_ptr());
+    builder.symbol("beskid_rt_v5_array_allocate_rooted", test_array_allocate_rooted as *const u8);
+    builder.symbol("beskid_rt_v5_array_construction_finish", test_array_construction_finish as *const u8);
+    let mut module = JITModule::new(builder);
+    bind_array_fixture_symbols(&mut module, &mut function);
+    let function_id = module.declare_function(name, Linkage::Local, &function.signature).expect("declare");
+    let mut context = module.make_context();
+    context.func = function;
+    module.define_function(function_id, &mut context).expect("define");
+    module.finalize_definitions().expect("finalize");
+    let code = module.get_finalized_function(function_id);
+    let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
+    run()
 }
 
 struct ArrayFacts {
@@ -175,19 +252,7 @@ fn array_literal_and_index_emit_checked_stock_clif_and_execute() {
     assert!(clif.contains("trapnz"), "{clif}");
     assert!(clif.contains("load.i32"), "{clif}");
 
-    let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
-    builder.symbol("__array_memory_request", ARRAY_REQUEST.as_ptr());
-    builder.symbol("beskid_rt_v5_array_allocate_rooted", test_array_allocate_rooted as *const u8);
-    builder.symbol("beskid_rt_v5_array_construction_finish", test_array_construction_finish as *const u8);
-    let mut module = JITModule::new(builder);
-    let function_id = module.declare_function("array_index", Linkage::Local, &signature).expect("declare");
-    let mut context = module.make_context();
-    context.func = function;
-    module.define_function(function_id, &mut context).expect("define");
-    module.finalize_definitions().expect("finalize");
-    let code = module.get_finalized_function(function_id);
-    let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
-    assert_eq!(run(), 20);
+    assert_eq!(execute_array_fixture(isa, "array_index", function), 20);
 }
 
 #[test]
@@ -207,19 +272,7 @@ fn array_index_assignment_emits_checked_stock_clif_store_and_executes() {
     assert!(clif.contains("store"), "{clif}");
     assert!(!clif.contains("load.i32"), "{clif}");
 
-    let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
-    builder.symbol("__array_memory_request", ARRAY_REQUEST.as_ptr());
-    builder.symbol("beskid_rt_v5_array_allocate_rooted", test_array_allocate_rooted as *const u8);
-    builder.symbol("beskid_rt_v5_array_construction_finish", test_array_construction_finish as *const u8);
-    let mut module = JITModule::new(builder);
-    let function_id = module.declare_function("array_index_assign", Linkage::Local, &signature).expect("declare");
-    let mut context = module.make_context();
-    context.func = function;
-    module.define_function(function_id, &mut context).expect("define");
-    module.finalize_definitions().expect("finalize");
-    let code = module.get_finalized_function(function_id);
-    let run: extern "C" fn() -> i32 = unsafe { std::mem::transmute(code) };
-    assert_eq!(run(), 99);
+    assert_eq!(execute_array_fixture(isa, "array_index_assign", function), 99);
 }
 
 #[test]

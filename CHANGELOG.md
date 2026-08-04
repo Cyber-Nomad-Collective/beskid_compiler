@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Rebind typed-array ISLE execution fixtures through concrete `JITModule`
+  function and data imports before definition. The coverage now executes array
+  indexing and indexed stores on macOS arm64 without relying on unsupported
+  raw Cranelift test-case relocations.
+
 - Serialize the ABI-v5 JIT integration tests' temporary installed-prefix
   contexts so the CodegenInput missing-manifest route deterministically reaches
   its intended exact-kit validation instead of racing another test's process
