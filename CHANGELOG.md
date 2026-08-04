@@ -70,6 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   while direct calls with absent or ambiguous specialization evidence now fail closed with
   their call and declaration identities.
 
+- Lock local declarations and path/field/index assignments to their generated
+  syntax → `CodegenInput` → ISLE dispatch rules, preventing canonical Core.String,
+  input, and ANSI source from regressing to a missing-rule failure or a retired HIR path.
+
 - Fail closed unless the ABI-v5 Core.Args manifest contains exactly
   `__args_count` and `__args_get`, and unless every target binding implements
   its canonical generated adapter symbol.
