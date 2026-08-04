@@ -59,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reconcile the selected Corelib syntax-to-ISLE gate with the canonical test
+  entrypoint names, so every configured probe now resolves to a maintained
+  Corelib test before exercising lowering.
+
 - Serialize the vendored `cargo-cross` tests that temporarily set
   `CARGO_PASSTHROUGH_ARGS`, preventing parallel tests from clearing each
   other's process-global fixture before parsing it.
