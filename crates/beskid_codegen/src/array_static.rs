@@ -7,10 +7,13 @@
 
 use std::sync::Arc;
 
-use beskid_queries::{AstNodeKey, IndexedNodeKind, SemanticTypeId, child_nodes, node_kind, node_type};
+use beskid_queries::{
+    AstNodeKey, IndexedNodeKind, SemanticTypeId, child_nodes, empty_array_literal_element_abi_type, node_kind,
+    node_type,
+};
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
-use crate::CodegenInput;
+use crate::{CodegenInput, aggregate_static::paths_match};
 
 pub const ABI_V5_ARRAY_ALLOCATE_ROOTED: &str = "beskid_rt_v5_array_allocate_rooted";
 pub const ABI_V5_ARRAY_CONSTRUCTION_FINISH: &str = "beskid_rt_v5_array_construction_finish";
@@ -85,23 +88,27 @@ pub fn emit_array_static_data<M: Module>(
 }
 
 impl CodegenInput<'_> {
-    /// Create source-authorized typed-array metadata for a non-empty literal.
+    /// Create source-authorized typed-array metadata.
     ///
-    /// Empty array literals remain unavailable until syntax facts carry an explicitly declared
-    /// element type. Guessing from a machine-word default would reintroduce untraced pointers.
+    /// A non-empty literal proves its element ABI from every element. An empty literal is valid
+    /// only when the semantic contract proves it is the direct value of a declared nominal
+    /// aggregate `T[]` field. Guessing from a machine-word default would reintroduce untraced
+    /// pointers, so all other empty literals remain unavailable.
     pub fn array_static_plan(&self, literal: AstNodeKey) -> Option<ArrayStaticPlan> {
         (node_kind(self.database(), literal).ok().flatten() == Some(IndexedNodeKind::ArrayLiteralExpression))
             .then_some(())?;
         let elements = child_nodes(self.database(), literal).ok().flatten()?;
-        let first = *elements.first()?;
-        let element_type = node_type(self.database(), first).ok().flatten()?;
-        if !elements
-            .iter()
-            .copied()
-            .all(|element| node_type(self.database(), element).ok().flatten() == Some(element_type))
-        {
-            return None;
-        }
+        let element_type = match elements.first().copied() {
+            Some(first) => {
+                let element_type = node_type(self.database(), first).ok().flatten()?;
+                elements
+                    .iter()
+                    .copied()
+                    .all(|element| node_type(self.database(), element).ok().flatten() == Some(element_type))
+                    .then_some(element_type)?
+            }
+            None => empty_array_literal_element_abi_type(self.database(), literal).ok().flatten()?,
+        };
         let (stride, alignment, pointer) = scalar_layout(self.target().pointer_width, element_type)?;
         let descriptor =
             self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidArrayElementDescriptor")?;
@@ -115,7 +122,7 @@ impl CodegenInput<'_> {
             .assembly
             .units()
             .iter()
-            .position(|unit| unit.path.as_path() == literal.unit.path(self.database()).as_path())?;
+            .position(|unit| paths_match(&unit.path, literal.unit.path(self.database())))?;
         let namespace = self
             .artifact_namespace()
             .chars()

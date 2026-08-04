@@ -251,7 +251,7 @@ fn align_to(value: u64, alignment: u64) -> Option<u64> {
     valid_alignment(alignment).then_some(())?;
     value.checked_add(alignment - 1).map(|value| value & !(alignment - 1))
 }
-fn paths_match(left: &std::path::Path, right: &std::path::Path) -> bool {
+pub(crate) fn paths_match(left: &std::path::Path, right: &std::path::Path) -> bool {
     left.canonicalize().unwrap_or_else(|_| left.to_path_buf())
         == right.canonicalize().unwrap_or_else(|_| right.to_path_buf())
 }

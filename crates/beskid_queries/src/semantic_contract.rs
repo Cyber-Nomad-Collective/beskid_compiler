@@ -3628,6 +3628,55 @@ fn aggregate_literal_declaration_tracked(
     })
 }
 
+/// Derive the element ABI of an empty array literal only from its direct nominal aggregate-field
+/// context.  An empty literal carries no element expression from which to infer a representation,
+/// so standalone, local-inferred, nested, and mismatched-field uses remain unavailable.  The
+/// enclosing aggregate declaration and its exact declared `T[]` field are the sole authority.
+#[salsa::tracked]
+fn empty_array_literal_element_abi_type_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SemanticTypeId> {
+    with_node(db, syntax, key, |program, index, node| {
+        let array = node.of::<beskid_analysis::syntax::ArrayLiteralExpression>()?;
+        if !array.elements.is_empty() {
+            return None;
+        }
+
+        // The AST preserves the direct `StructLiteralField -> Expression -> []` ownership chain.
+        // Do not walk arbitrary ancestors: that would turn contextual syntax into inference.
+        let expression = parent_node(index, key.node)?;
+        if index.kind(expression) != Some(beskid_analysis::syntax_query::NodeKind::Expression) {
+            return None;
+        }
+        let field_node = parent_node(index, expression)?;
+        let literal_node = parent_node(index, field_node)?;
+        let field = index.node_at(program, field_node)?.of::<beskid_analysis::syntax::StructLiteralField>()?;
+        if index.kind(literal_node) != Some(beskid_analysis::syntax_query::NodeKind::StructLiteralExpression) {
+            return None;
+        }
+
+        let literal = AstNodeKey { node: literal_node, ..key };
+        let declaration = aggregate_literal_declaration(db, literal).ok().flatten()?;
+        let declaration_syntax =
+            db.syntax_unit(declaration.unit).filter(|unit| unit.generation(db) == declaration.generation)?;
+        let definition = declaration_syntax
+            .syntax_index(db)
+            .node_at(declaration_syntax.expanded_program(db), declaration.node)?
+            .of::<beskid_analysis::syntax::TypeDefinition>()?;
+        let declared_field = definition.fields.iter().find(|candidate| {
+            candidate.node.kind == beskid_analysis::syntax::FieldKind::Value
+                && candidate.node.name.node.name == field.name.node.name
+        })?;
+        let beskid_analysis::syntax::Type::Array(element) = &declared_field.node.ty.node else {
+            return Some(Err(SemanticError::unavailable("empty_array_literal_element_abi_type")));
+        };
+        Some(abi_type_from_syntax(db, declaration, &element.node))
+    })?
+    .transpose()
+}
+
 #[salsa::tracked]
 fn aggregate_field_access_tracked(
     db: &dyn Db,
@@ -5974,6 +6023,12 @@ pub fn aggregate_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Agg
 /// Return the current nominal `type` declaration constructed by a struct literal.
 pub fn aggregate_literal_declaration(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
     with_registered_syntax(db, key, aggregate_literal_declaration_tracked)
+}
+
+/// Return the source-proven element ABI for an empty array literal used directly as a declared
+/// nominal aggregate field.  No inferred or otherwise context-free empty array receives a fact.
+pub fn empty_array_literal_element_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
+    with_registered_syntax(db, key, empty_array_literal_element_abi_type_tracked)
 }
 
 /// Return the exact field selected by a direct nominal local receiver member expression.
