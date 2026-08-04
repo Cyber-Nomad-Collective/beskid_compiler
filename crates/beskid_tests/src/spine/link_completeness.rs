@@ -19,7 +19,7 @@ use crate::projects::fixture_harness::{
     with_project_test_env,
 };
 #[cfg(feature = "slow")]
-use beskid_codegen::LinkSymbol;
+use beskid_codegen::CodegenArtifact;
 #[cfg(feature = "slow")]
 use beskid_codegen::lowering::lower_program_with_assembly;
 
@@ -136,113 +136,47 @@ fn corelib_assert_equal_i64_link_plan_validates() {
     });
 }
 
-/// `ansi_cursor_builder_home` must reach the Capabilities/Terminal symbol chain via link plan.
+/// The ANSI cursor builder must travel through the production syntax-only link surface.
+///
+/// This deliberately replaces the retired HIR `LinkPlan` probe. The generated ISLE artifact is
+/// the executable link-plan authority: a successful HIR link plan says nothing about whether a
+/// `CodegenInput` can select every syntax lowering rule required by the canonical corelib.
 #[cfg(feature = "slow")]
 #[test]
-fn link_plan_includes_capabilities_terminal_chain_for_ansi_cursor_builder_home() {
-    with_project_test_env(&corelib_tests_project_root(), || {
-        let resolved = resolve_corelib_tests_entry_with_assembly("console/AnsiEscapeTests.bd");
-        let front = compile_front_end_from_resolved_input(
-            &resolved,
-            FrontEndOptions { with_semantic_diagnostics: false, ..Default::default() },
-            None,
-        )
-        .expect("front-end");
+fn ansi_cursor_builder_home_syntax_isle_link_plan_validates() {
+    let artifact = lower_corelib_tests_entrypoint("console/AnsiBuildersTests.bd", "ansi_cursor_builder_home");
+    validate_artifact(&artifact).expect("ansi_cursor_builder_home syntax ISLE link plan must validate");
 
-        let assembly = resolved.assembly.as_ref().expect("assembly");
-        let def_index = FunctionDefIndex::build(&front.resolution, &assembly.hir_units);
-        let link_plan = LinkPlan::build_for_entrypoint(
-            &front.hir,
-            "ansi_cursor_builder_home",
-            Some(&assembly.entry_unit().path),
-            &front.resolution,
-            &front.typed,
-            &def_index,
+    for expected_symbol in ["Home#syntax_", "IntoSequence#syntax_", "WhenEnabled#syntax_", "Esc#syntax_"] {
+        assert!(
+            artifact.functions.iter().any(|function| function.name.contains(expected_symbol)),
+            "syntax link closure must retain {expected_symbol}; emitted {:?}",
+            artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>()
         );
+    }
+}
 
-        let reachable: Vec<String> = link_plan
-            .callees
-            .iter()
-            .chain(link_plan.entries.iter())
-            .filter_map(|symbol| match symbol {
-                LinkSymbol::Function { item, .. } | LinkSymbol::Method { item, .. } => {
-                    beskid_analysis::resolve::qualified_name(&front.resolution, *item)
-                }
-                LinkSymbol::Test { item, .. } => beskid_analysis::resolve::qualified_name(&front.resolution, *item),
-            })
-            .collect();
+/// Byte-level regression for the normative `ESC [` CSI framing in `Ansi.Escape`.
+///
+/// The sequence is assembled at runtime, so it has no one `ESC[1;31m` static global. The golden
+/// locks the exact ISLE-owned fragments instead: `Esc()` owns the one-byte ESC control character,
+/// while the entry test owns the CSI body, final byte, and expected-message suffix.
+#[cfg(feature = "slow")]
+#[test]
+fn ansi_csi_bold_red_syntax_isle_preserves_csi_byte_golden() {
+    let artifact = lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
+    validate_artifact(&artifact).expect("ansi_csi_bold_red syntax ISLE link plan must validate");
 
-        for needle in ["ShouldEmitAnsi", "ProbeStdout", "IntoSequence", "WhenEnabled", "IsAtty", "Esc"] {
-            assert!(
-                reachable.iter().any(|name| name.contains(needle)),
-                "link plan should reach `{needle}`, have: {reachable:?}"
-            );
-        }
-
-        for needle in ["ShouldEmitAnsi", "ProbeStdout", "EnvFlagSet"] {
-            let items: Vec<_> = front
-                .resolution
-                .items
-                .iter()
-                .filter(|info| info.name.contains(needle) && info.kind == beskid_analysis::resolve::ItemKind::Function)
-                .collect();
-            assert!(!items.is_empty(), "expected function item for {needle}, have none");
-            for info in &items {
-                assert!(
-                    front.typed.function_signatures.contains_key(&info.id),
-                    "missing signature for {} id {:?} span {:?} source {:?}",
-                    info.name,
-                    info.id,
-                    info.span,
-                    info.source_path
-                );
-                assert!(
-                    def_index.function(info.id).is_some(),
-                    "def_index missing {} id {:?} span {:?} source {:?}",
-                    info.name,
-                    info.id,
-                    info.span,
-                    info.source_path
-                );
-            }
-        }
-
-        for symbol in link_plan.callees.iter().chain(link_plan.entries.iter()) {
-            let item = match symbol {
-                LinkSymbol::Function { item, .. } | LinkSymbol::Method { item, .. } | LinkSymbol::Test { item, .. } => {
-                    *item
-                }
-            };
-            assert!(
-                front.typed.function_signatures.contains_key(&item),
-                "link plan item {:?} ({:?}) missing function signature",
-                item,
-                beskid_analysis::resolve::qualified_name(&front.resolution, item)
-            );
-        }
-
-        let artifact = lower_program_with_assembly_for_entrypoint(
-            &front.hir,
-            &front.resolution,
-            &front.typed,
-            Some(assembly),
-            Some("ansi_cursor_builder_home"),
-        )
-        .expect("lower ansi_cursor_builder_home");
-        validate_artifact(&artifact).expect("ansi_cursor_builder_home link plan must validate");
-    });
+    assert_literal_byte_goldens(&artifact, &[b"\x1b", b"1;31", b"m", b"[1;31m"]);
 }
 
 #[cfg(feature = "slow")]
-#[test]
-fn ansi_csi_bold_red_link_plan_validates() {
-    let artifact = lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
-    validate_artifact(&artifact).expect("ansi_csi_bold_red link plan must validate");
-}
-
-#[cfg(feature = "slow")]
-#[test]
-fn dump_ansi_csi_bold_red_clif() {
-    let artifact = lower_corelib_tests_entrypoint("console/AnsiEscapeTests.bd", "ansi_csi_bold_red");
-    println!("{}", beskid_codegen::render_clif(&artifact));
+fn assert_literal_byte_goldens(artifact: &CodegenArtifact, expected_literals: &[&[u8]]) {
+    let emitted = artifact.string_literals.values().map(Vec::as_slice).collect::<Vec<_>>();
+    for expected in expected_literals {
+        assert!(
+            emitted.contains(expected),
+            "missing byte golden {expected:?}; emitted {emitted:?}"
+        );
+    }
 }

@@ -59,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Replace the remaining ANSI corelib HIR link-plan probe with the canonical
+  `SyntaxProgramAssembly` → `CodegenInput` → generated-ISLE route. The ANSI
+  CSI bold-red regression now asserts the emitted ESC, CSI body, final byte,
+  and expected-message literal bytes rather than relying on a diagnostic CLIF
+  dump.
+
 - Stage one explicit native ABI-v5 kit for the `beskid_tests` executable-linking
   helpers and pass its exact prefix to the installed-kit strategy. AOT execution
   tests no longer attempt to treat Cargo's `target/.../deps` test executable as
