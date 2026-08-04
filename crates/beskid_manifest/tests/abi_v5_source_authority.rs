@@ -263,12 +263,31 @@ fn core_args_adapter_bindings_generate_exact_target_facts() {
         ]
     );
     assert!(artifacts.rust.contains("ABI_V5_CORELIB_SERVICE_BINDINGS"));
+    assert!(artifacts.rust.contains("ABI_V5_CORE_ARGS_ENTRY_ADAPTERS"));
+    assert!(artifacts.rust.contains("process_lifetime_copied_beskid_str_arena"));
     assert!(artifacts.rust.contains("beskid_rt_v5_args_count"));
     assert!(artifacts.rust.contains("beskid_rt_v5_args_get"));
     assert!(artifacts.c_header.contains("beskid_rt_v5_args_count(void)"));
     assert!(artifacts.c_header.contains("beskid_rt_v5_args_get(int64_t index)"));
     assert!(artifacts.abi_json.contains("\"corelibServices\""));
     assert!(artifacts.audit_json.contains("\"corelibServices\""));
+    assert!(artifacts.audit_json.contains("\"entryAdapters\""));
+    assert_eq!(
+        manifest.entry_adapters.iter().map(|adapter| (adapter.target.as_str(), adapter.executable_entry.as_str(), adapter.capture.as_str(), adapter.handoff.as_str())).collect::<Vec<_>>(),
+        vec![
+            ("x86_64-unknown-linux-gnu", "main", "utf8_argv", "beskid_rt_v5_args_handoff_utf8"),
+            ("aarch64-apple-darwin", "main", "utf8_argv", "beskid_rt_v5_args_handoff_utf8"),
+            ("x86_64-pc-windows-msvc", "wmain", "utf16_wargv", "beskid_rt_v5_args_handoff_utf16"),
+        ]
+    );
+}
+
+#[test]
+fn core_args_entry_adapter_rejects_missing_generated_provenance() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let source = source.replacen("  entry_source = \"args_entry.S\"\n", "", 1);
+    assert!(load_v5_manifest_source(&source).expect_err("entry adapter source is mandatory").contains("missing `entry_source`"));
 }
 
 #[test]

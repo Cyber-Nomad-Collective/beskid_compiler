@@ -114,6 +114,39 @@ corelib_service "__args_get" {
   ]
 }
 
+# The executable boundary is part of Core.Args authority. AOT selects this
+# generated record; it must not infer target entry conventions from strings.
+entry_adapter "Core.Args" {
+  target = "x86_64-unknown-linux-gnu"
+  executable_entry = main
+  program_entry = beskid_program_main
+  capture = utf8_argv
+  handoff = beskid_rt_v5_args_handoff_utf8
+  ownership = process_lifetime_copied_beskid_str_arena
+  entry_source = "args_entry.S"
+  os_imports = [mmap]
+}
+entry_adapter "Core.Args" {
+  target = "aarch64-apple-darwin"
+  executable_entry = main
+  program_entry = beskid_program_main
+  capture = utf8_argv
+  handoff = beskid_rt_v5_args_handoff_utf8
+  ownership = process_lifetime_copied_beskid_str_arena
+  entry_source = "args_entry.S"
+  os_imports = [mmap]
+}
+entry_adapter "Core.Args" {
+  target = "x86_64-pc-windows-msvc"
+  executable_entry = wmain
+  program_entry = beskid_program_main
+  capture = utf16_wargv
+  handoff = beskid_rt_v5_args_handoff_utf16
+  ownership = process_lifetime_copied_beskid_str_arena
+  entry_source = "args_entry.asm"
+  os_imports = [VirtualAlloc]
+}
+
 layout "BeskidAllocationRequest" { size = 24 alignment = 8 fields = [{ name = size, offset = 0, type = usize }, { name = alignment, offset = 8, type = usize }, { name = descriptor, offset = 16, type = pointer }] }
 layout "BeskidHandle" { size = 16 alignment = 8 fields = [{ name = slot, offset = 0, type = u32 }, { name = generation, offset = 4, type = u32 }, { name = owner_cookie, offset = 8, type = u64 }] }
 layout "BeskidObjectHeader" { size = 16 alignment = 8 fields = [{ name = descriptor, offset = 0, type = pointer }, { name = gc_word, offset = 8, type = usize }] }

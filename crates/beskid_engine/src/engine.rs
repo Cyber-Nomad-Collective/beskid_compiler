@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use beskid_abi::abi_v5::TargetMetadata;
+use beskid_abi::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS;
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
 use beskid_codegen::{CodegenArtifact, ExternImport};
 use beskid_pipeline::PipelineObserver;
@@ -85,6 +86,9 @@ impl Engine {
         artifact: &CodegenArtifact,
         pipeline: Option<&dyn PipelineObserver>,
     ) -> Result<(), JitError> {
+        if requires_explicit_jit_arguments(artifact) {
+            return Err(JitError::Isa("Core.Args requires explicit JIT arguments".to_owned()));
+        }
         let runtime_externs = beskid_codegen::referenced_extern_imports(artifact)
             .into_iter()
             .filter(|entry| !self.jit.is_exact_runtime_symbol(&entry.symbol))
@@ -150,6 +154,29 @@ impl Engine {
     #[doc(hidden)]
     pub fn jit_module_mut(&mut self) -> &mut cranelift_jit::JITModule {
         self.jit.module()
+    }
+}
+
+fn requires_explicit_jit_arguments(artifact: &CodegenArtifact) -> bool {
+    artifact.extern_imports.iter().any(|import| {
+        ABI_V5_CORELIB_SERVICE_BINDINGS
+            .iter()
+            .any(|binding| binding.service.starts_with("__args_") && binding.adapter == import.symbol)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::requires_explicit_jit_arguments;
+    use beskid_codegen::{CodegenArtifact, ExternImport};
+
+    #[test]
+    fn core_args_has_no_ambient_jit_zero_vector() {
+        let artifact = CodegenArtifact {
+            extern_imports: vec![ExternImport { symbol: "beskid_rt_v5_args_count".into(), abi: Some("C".into()), library: None }],
+            ..Default::default()
+        };
+        assert!(requires_explicit_jit_arguments(&artifact));
     }
 }
 
