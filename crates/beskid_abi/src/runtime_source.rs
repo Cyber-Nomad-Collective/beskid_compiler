@@ -31,6 +31,8 @@ pub const CANONICAL_SYSCALLS_SOURCE_PATH: &str = "src/Runtime/Io/Syscalls.bd";
 
 /// Canonical Foundation syscall facade eligible for Corelib service authority.
 pub const CANONICAL_CORELIB_SYSCALL_SOURCE_PATH: &str = "Core/Syscall/Syscall.bd";
+/// Canonical Foundation process-argument facade eligible for its two private ABI-v5 services.
+pub const CANONICAL_CORELIB_ARGS_SOURCE_PATH: &str = "Core/Args/Args.bd";
 /// Canonical Foundation assertion helper eligible to import the panic runtime service.
 pub const CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH: &str = "Testing/Assert.bd";
 /// Canonical Foundation output helper eligible to import the panic runtime service.
@@ -75,6 +77,8 @@ const CANONICAL_SYSCALLS_SOURCE: &str =
 
 const CANONICAL_CORELIB_SYSCALL_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Syscall/Syscall.bd"));
+const CANONICAL_CORELIB_ARGS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Args/Args.bd"));
 const CANONICAL_FOUNDATION_ASSERT_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Testing/Assert.bd"));
 const CANONICAL_FOUNDATION_OUTPUT_SOURCE: &str =
@@ -124,6 +128,10 @@ pub fn canonical_corelib_syscall_sources() -> Vec<SourceUnit> {
 pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
     let mut sources = canonical_corelib_syscall_sources();
     sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_ARGS_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_ARGS_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
         logical_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
         source: CANONICAL_FOUNDATION_ASSERT_SOURCE.into(),
     });
@@ -150,6 +158,7 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
 pub fn canonical_corelib_service_source_path(logical_path: &str) -> Option<std::path::PathBuf> {
     let relative = match logical_path {
         CANONICAL_CORELIB_SYSCALL_SOURCE_PATH => "Core/Syscall/Syscall.bd",
+        CANONICAL_CORELIB_ARGS_SOURCE_PATH => "Core/Args/Args.bd",
         CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH => "Testing/Assert.bd",
         CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH => "Core/Output/Output.bd",
         CANONICAL_FOUNDATION_ERROR_SOURCE_PATH => "Core/Error/Error.bd",
@@ -205,6 +214,8 @@ const CORELIB_SERVICES: &[CorelibService] = &[
         symbol: "syscall_read_bytes",
         source_path: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
     },
+    CorelibService { name: "__args_count", symbol: "args_count", source_path: CANONICAL_CORELIB_ARGS_SOURCE_PATH },
+    CorelibService { name: "__args_get", symbol: "args_get", source_path: CANONICAL_CORELIB_ARGS_SOURCE_PATH },
     CorelibService { name: "__panic_str", symbol: "panic_str", source_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH },
     CorelibService { name: "__panic_str", symbol: "panic_str", source_path: CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH },
     CorelibService { name: "__panic_str", symbol: "panic_str", source_path: CANONICAL_FOUNDATION_ERROR_SOURCE_PATH },
@@ -423,4 +434,35 @@ pub fn canonical_corelib_syscall_service_capability(
     manifest: &AbiManifestV5,
 ) -> Result<CorelibServiceCapability, RuntimeCapabilityError> {
     canonical_corelib_service_capability(manifest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical_args_source_exposes_exactly_count_and_get_services() {
+        let source = canonical_corelib_service_sources()
+            .into_iter()
+            .find(|source| source.logical_path == CANONICAL_CORELIB_ARGS_SOURCE_PATH)
+            .expect("compiler embeds canonical Core.Args source");
+        assert!(source.source.contains("__args_count()"));
+        assert!(source.source.contains("__args_get(i)"));
+
+        let target = crate::abi_v5::TargetMetadata::supported()
+            .into_iter()
+            .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+            .expect("linux target");
+        let manifest = AbiManifestV5::canonical_runtime(target);
+        let capability = canonical_corelib_service_capability(&manifest).expect("Corelib service capability");
+        let args_services = capability
+            .services()
+            .iter()
+            .filter(|service| service.source_path == CANONICAL_CORELIB_ARGS_SOURCE_PATH)
+            .map(|service| (service.name, service.symbol))
+            .collect::<Vec<_>>();
+
+        assert_eq!(args_services, [("__args_count", "args_count"), ("__args_get", "args_get")]);
+        assert!(capability.service_for_source(CANONICAL_CORELIB_ARGS_SOURCE_PATH, "__args_all").is_none());
+    }
 }

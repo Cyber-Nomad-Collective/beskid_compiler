@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Authorize only the byte-identical canonical Foundation `Core/Args/Args.bd`
+  source to import `__args_count() -> i64` and `__args_get(i64) -> string`
+  through the existing source-scoped `CorelibService` path; copied, altered,
+  symlinked, and user-authored spellings fail closed before CodegenInput/ISLE
+  can select an ABI import.
+
 ### Removed
 
 - Retire the HIR-based analysis and legacy Rust-codegen suites from

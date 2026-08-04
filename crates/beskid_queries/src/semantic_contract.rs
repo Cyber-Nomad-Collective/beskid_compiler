@@ -2929,9 +2929,9 @@ fn builtin_type_to_semantic(ty: beskid_analysis::builtins::BuiltinType) -> Optio
         BuiltinType::Never => SemanticTypeId::NEVER,
     })
 }
-/// ABI facts for the compiler-embedded Corelib syscall facade. These are deliberately available
+/// ABI facts for compiler-embedded Corelib service facades. These are deliberately available
 /// only after [`CallLowering::CorelibService`] has proved the current source corpus; user source
-/// that merely spells one of these names remains dynamic and receives no import signature.
+/// that merely spells one of these names remains unauthorized and receives no import signature.
 fn corelib_service_abi_signature(service: CorelibService) -> Option<ItemSignature> {
     let (parameters, result) = match service.name {
         "__syscall_write" => (vec![SemanticTypeId::I64, SemanticTypeId::STRING], SemanticTypeId::I64),
@@ -2939,6 +2939,8 @@ fn corelib_service_abi_signature(service: CorelibService) -> Option<ItemSignatur
         "__syscall_write_bytes" => (vec![SemanticTypeId::I64, SemanticTypeId::POINTER], SemanticTypeId::I64),
         "__syscall_read_bytes" => (vec![SemanticTypeId::I64, SemanticTypeId::I64], SemanticTypeId::POINTER),
         "__panic_str" => (vec![SemanticTypeId::STRING], SemanticTypeId::NEVER),
+        "__args_count" => (vec![], SemanticTypeId::I64),
+        "__args_get" => (vec![SemanticTypeId::I64], SemanticTypeId::STRING),
         _ => return None,
     };
     Some(ItemSignature { parameters: parameters.into(), result })
