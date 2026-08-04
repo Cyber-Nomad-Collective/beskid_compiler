@@ -59,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Normalize Darwin native-runtime provenance imports at the ABI policy boundary.
+  The staged Mach-O adapter's canonical `exit` and `tlv_bootstrap` imports now
+  match the manifest-derived allowlist, while undeclared imports remain rejected.
+
 - Re-enable the multi-unit Corelib `Console.Controls.Frame.Repeat` JIT
   regression after repeated prepared-syntax → CodegenInput → engine execution
   proved the former missing-expression-type ordering failure is no longer
