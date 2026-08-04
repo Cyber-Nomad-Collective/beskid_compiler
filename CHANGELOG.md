@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Re-enable the multi-unit Corelib `Console.Controls.Frame.Repeat` JIT
+  regression after repeated prepared-syntax → CodegenInput → engine execution
+  proved the former missing-expression-type ordering failure is no longer
+  reproducible.
+
 - Replace the remaining ANSI corelib HIR link-plan probe with the canonical
   `SyntaxProgramAssembly` → `CodegenInput` → generated-ISLE route. The ANSI
   CSI bold-red regression now asserts the emitted ESC, CSI body, final byte,
