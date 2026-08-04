@@ -1,10 +1,12 @@
 #![cfg(unix)]
 
 use std::collections::BTreeSet;
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, canonical_source_hash};
 use beskid_abi::runtime_kit::{BuildProfile, RuntimeKitBuildRequest, build_runtime_kit};
@@ -15,6 +17,39 @@ use cranelift_codegen::ir::{AbiParam, ExternalName, Function, InstBuilder, Signa
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+// `BESKID_RUNTIME_PREFIX` is process-global. These integration tests run concurrently in the
+// same test binary, so every temporary installed-prefix context must hold this lock from the
+// environment update through the call that resolves the exact kit.
+static RUNTIME_PREFIX_LOCK: Mutex<()> = Mutex::new(());
+
+struct RuntimePrefixContext {
+    previous: Option<OsString>,
+    _lock: MutexGuard<'static, ()>,
+}
+
+impl RuntimePrefixContext {
+    fn install(prefix: &Path) -> Self {
+        let lock = RUNTIME_PREFIX_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous = std::env::var_os("BESKID_RUNTIME_PREFIX");
+        // SAFETY: the process-wide lock prevents concurrent reads or writes in this integration
+        // target, and Drop restores the exact pre-test value before releasing that lock.
+        unsafe { std::env::set_var("BESKID_RUNTIME_PREFIX", prefix) };
+        Self { previous, _lock: lock }
+    }
+}
+
+impl Drop for RuntimePrefixContext {
+    fn drop(&mut self) {
+        // SAFETY: `RuntimePrefixContext::install` holds the process-wide lock for this mutation.
+        unsafe {
+            if let Some(value) = &self.previous {
+                std::env::set_var("BESKID_RUNTIME_PREFIX", value);
+            } else {
+                std::env::remove_var("BESKID_RUNTIME_PREFIX");
+            }
+        }
+    }
+}
 
 struct TestDir(PathBuf);
 
@@ -277,19 +312,10 @@ fn engine_try_new_fails_closed_when_exact_debug_manifest_is_missing() {
         return;
     };
     let empty = TestDir::new();
-    let previous = std::env::var_os("BESKID_RUNTIME_PREFIX");
-    // SAFETY: this integration target serializes around the process environment and restores it.
-    unsafe { std::env::set_var("BESKID_RUNTIME_PREFIX", empty.path()) };
+    let _runtime_prefix = RuntimePrefixContext::install(empty.path());
     let error = match Engine::try_new() {
         Ok(_) => panic!("missing exact kit must fail closed"),
         Err(error) => error,
-    };
-    unsafe {
-        if let Some(value) = previous {
-            std::env::set_var("BESKID_RUNTIME_PREFIX", value);
-        } else {
-            std::env::remove_var("BESKID_RUNTIME_PREFIX");
-        }
     };
     let message = error.to_string();
     let expected =
@@ -307,19 +333,10 @@ fn codegen_input_route_fails_closed_when_exact_kit_manifest_is_missing() {
         return;
     };
     let empty = TestDir::new();
-    let previous = std::env::var_os("BESKID_RUNTIME_PREFIX");
-    // SAFETY: this integration target serializes around the process environment and restores it.
-    unsafe { std::env::set_var("BESKID_RUNTIME_PREFIX", empty.path()) };
+    let _runtime_prefix = RuntimePrefixContext::install(empty.path());
     let error =
         beskid_engine::services::run_entrypoint(Path::new("missing-kit.bd"), "i64 Main() { return 1; }", "Main")
             .expect_err("CodegenInput JIT route must fail closed without an exact kit");
-    unsafe {
-        if let Some(value) = previous {
-            std::env::set_var("BESKID_RUNTIME_PREFIX", value);
-        } else {
-            std::env::remove_var("BESKID_RUNTIME_PREFIX");
-        }
-    };
     let message = error.to_string();
     let expected =
         empty.path().join("lib/beskid-runtime/abi-5").join(target.triple.as_str()).join("debug").join("abi.json");
@@ -341,19 +358,10 @@ fn codegen_input_route_fails_closed_when_exact_kit_is_tampered() {
     let shared = install_kit(tampered.path(), &target, true, false, canonical_hash());
     fs::write(shared, b"tampered shared runtime").unwrap();
 
-    let previous = std::env::var_os("BESKID_RUNTIME_PREFIX");
-    // SAFETY: this integration target serializes around the process environment and restores it.
-    unsafe { std::env::set_var("BESKID_RUNTIME_PREFIX", tampered.path()) };
+    let _runtime_prefix = RuntimePrefixContext::install(tampered.path());
     let error =
         beskid_engine::services::run_entrypoint(Path::new("tampered-kit.bd"), "i64 Main() { return 1; }", "Main")
             .expect_err("CodegenInput JIT route must reject a tampered exact kit");
-    unsafe {
-        if let Some(value) = previous {
-            std::env::set_var("BESKID_RUNTIME_PREFIX", value);
-        } else {
-            std::env::remove_var("BESKID_RUNTIME_PREFIX");
-        }
-    };
     let message = error.to_string();
     assert!(
         message.contains("runtime kit")
