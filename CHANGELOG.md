@@ -38,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restrict `Core.Args` service authority to the compiler-owned regular file at
+  its exact canonical path. Loader-proven materialized copies and symlink
+  aliases now fail closed, while existing materialized Foundation services keep
+  their established authorization behavior.
+
 - Preserve the canonical multi-unit `SchedulerSpawn` word-to-`i64` conversion
   fact through `CodegenInput` into generated ISLE coverage.
 - Reject primitive numeric conversion facts whose semantic source or target

@@ -5,8 +5,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
-    canonical_corelib_service_capability, canonical_corelib_service_source_path,
+    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, canonical_corelib_service_capability,
+    canonical_corelib_service_source_path, canonical_corelib_service_sources,
     canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources,
     canonical_runtime_intrinsic_capability, canonical_runtime_sources,
 };
@@ -1264,6 +1265,98 @@ fn materialized_foundation_syscall_facade_imports_its_authorized_write_service()
         function.display().to_string().contains("call"),
         "the trusted materialized facade must import syscall_write"
     );
+}
+
+#[test]
+fn canonical_foundation_args_module_emits_only_the_authorized_args_imports() {
+    let source = canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == CANONICAL_CORELIB_ARGS_SOURCE_PATH)
+        .expect("embedded Core.Args source");
+    let source_path = canonical_corelib_service_source_path(CANONICAL_CORELIB_ARGS_SOURCE_PATH)
+        .expect("compiler-owned Core.Args path");
+    let (input, isa, root) = core_args_fixture(source_path, source.source, Arc::from([]));
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[SyntaxModuleItem { key: named_function(&input, root, "ProgramName"), symbol: "ProgramName".into() }],
+    )
+    .expect("canonical Core.Args module emits through syntax ISLE");
+    let mut imports = artifact
+        .extern_imports
+        .iter()
+        .map(|import| import.symbol.as_str())
+        .collect::<Vec<_>>();
+    imports.sort_unstable();
+    assert_eq!(
+        imports,
+        vec!["args_count", "args_get"],
+        "the canonical Core.Args module is the sole source authorized to import both ABI services"
+    );
+}
+
+#[test]
+fn copied_materialized_foundation_args_module_cannot_emit_args_imports() {
+    let source = canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == CANONICAL_CORELIB_ARGS_SOURCE_PATH)
+        .expect("embedded Core.Args source");
+    let directory = tempfile::tempdir().expect("copied materialized Core.Args project").keep();
+    let source_path = directory.join("obj/beskid/deps/src/foundation/Core/Args/Args.bd");
+    std::fs::create_dir_all(source_path.parent().expect("Core.Args parent")).expect("create Core.Args parent");
+    std::fs::write(&source_path, &source.source).expect("write copied Core.Args source");
+    let (input, isa, root) = core_args_fixture(source_path.clone(), source.source, Arc::from([source_path]));
+
+    assert_args_module_cannot_emit_imports(&input, isa.as_ref(), root);
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinked_expected_materialized_foundation_args_module_cannot_emit_args_imports() {
+    let source = canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == CANONICAL_CORELIB_ARGS_SOURCE_PATH)
+        .expect("embedded Core.Args source");
+    let directory = tempfile::tempdir().expect("symlinked materialized Core.Args project").keep();
+    let target_path = directory.join("target/Args.bd");
+    let source_path = directory.join("obj/beskid/deps/src/foundation/Core/Args/Args.bd");
+    std::fs::create_dir_all(target_path.parent().expect("target parent")).expect("create target parent");
+    std::fs::create_dir_all(source_path.parent().expect("Core.Args parent")).expect("create Core.Args parent");
+    std::fs::write(&target_path, &source.source).expect("write symlink target");
+    std::os::unix::fs::symlink(&target_path, &source_path).expect("link expected materialized Core.Args path");
+    let (input, isa, root) = core_args_fixture(source_path.clone(), source.source, Arc::from([source_path]));
+
+    assert_args_module_cannot_emit_imports(&input, isa.as_ref(), root);
+}
+
+#[test]
+fn altered_foundation_args_module_cannot_emit_args_imports() {
+    let source = canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == CANONICAL_CORELIB_ARGS_SOURCE_PATH)
+        .expect("embedded Core.Args source");
+    let directory = tempfile::tempdir().expect("altered Core.Args project").keep();
+    let source_path = directory.join("obj/beskid/deps/src/foundation/Core/Args/Args.bd");
+    let altered = format!("{}\n// altered", source.source);
+    std::fs::create_dir_all(source_path.parent().expect("Core.Args parent")).expect("create Core.Args parent");
+    std::fs::write(&source_path, &altered).expect("write altered Core.Args source");
+    let (input, isa, root) = core_args_fixture(source_path.clone(), altered, Arc::from([source_path]));
+
+    assert_args_module_cannot_emit_imports(&input, isa.as_ref(), root);
+}
+
+#[test]
+fn user_args_named_module_cannot_emit_args_imports() {
+    let directory = tempfile::tempdir().expect("user Core.Args project").keep();
+    let source_path = directory.join("Core/Args/Args.bd");
+    let source =
+        "pub string ProgramName() { i64 count = __args_count(); if count < 1 { return \"\"; } return __args_get(0); }";
+    std::fs::create_dir_all(source_path.parent().expect("Core.Args parent")).expect("create Core.Args parent");
+    std::fs::write(&source_path, source).expect("write user Core.Args source");
+    let (input, isa, root) = core_args_fixture(source_path, source.into(), Arc::from([]));
+
+    assert_args_module_cannot_emit_imports(&input, isa.as_ref(), root);
 }
 
 #[test]
@@ -2986,6 +3079,92 @@ fn materialized_corelib_syscall_fixture()
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
     (input, isa, root)
+}
+
+fn core_args_fixture(
+    source_path: std::path::PathBuf,
+    source: String,
+    trusted_corelib_service_paths: Arc<[std::path::PathBuf]>,
+) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+    let mut db = Box::new(BeskidDatabase::default());
+    let source_root = source_path.parent().expect("Core.Args source parent").to_path_buf();
+    let program =
+        parse_program_with_source_name(source_path.to_str().unwrap(), &source).expect("parse Core.Args source");
+    let entry = SourceUnitId::new(&*db, source_path.clone());
+    let project = ProjectSession::new(
+        &*db,
+        source_root.clone(),
+        source_path.clone(),
+        "beskid-foundation".into(),
+        "core-args-authority".into(),
+    );
+    let generation = SyntaxGenerationId(98);
+    let assembly = ProgramAssembly {
+        roots: EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root },
+            dependencies: Vec::new(),
+        },
+        units: Arc::new(vec![SourceUnit {
+            logical_name: CANONICAL_CORELIB_ARGS_SOURCE_PATH.into(),
+            path: source_path,
+            source,
+            program,
+        }]),
+        hir_units: Arc::new(Vec::new()),
+        entry_index: 0,
+        discovery: AssemblyDiscovery::ImportClosure,
+        module_index: Arc::new(ModuleIndex::empty()),
+        has_std_dependency: false,
+        trusted_corelib_service_paths,
+    };
+    let syntax = Arc::new(SyntaxProgramAssembly::from(&assembly));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        syntax,
+        canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
+    )
+    .expect("Core.Args typed program");
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
+    let leaked: &'static BeskidDatabase = Box::leak(db);
+    let input =
+        CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest).expect("generation-safe Core.Args input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    (input, isa, root)
+}
+
+fn named_function(input: &CodegenInput<'_>, root: AstNodeKey, name: &str) -> AstNodeKey {
+    find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some(name))
+        .unwrap_or_else(|| panic!("Core.Args source contains {name}"))
+}
+
+fn assert_args_module_cannot_emit_imports(
+    input: &CodegenInput<'_>,
+    isa: &dyn cranelift_codegen::isa::TargetIsa,
+    root: AstNodeKey,
+) {
+    let result = lower_syntax_program(
+        input,
+        isa,
+        &[SyntaxModuleItem { key: named_function(input, root, "ProgramName"), symbol: "ProgramName".into() }],
+    );
+    if let Ok(artifact) = result {
+        assert!(
+            artifact.extern_imports.iter().all(|import| !matches!(import.symbol.as_str(), "args_count" | "args_get")),
+            "untrusted Core.Args source must never emit Args ABI imports"
+        );
+    }
 }
 
 fn canonical_foundation_assert_fixture()
