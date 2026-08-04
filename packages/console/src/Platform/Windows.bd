@@ -11,7 +11,8 @@ pub bool IsAtty(i64 fd) {
     if fd > 2147483647 {
         return false;
     }
-    return Ucrt._isatty(fd) == 1;
+    // `_isatty` receives a C `int`; retain the public i64 API while making the FFI width explicit.
+    return Ucrt._isatty(i32(fd)) == 1;
 }
 
 pub Console.ConsoleSize Winsize() {
