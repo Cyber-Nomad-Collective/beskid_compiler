@@ -12,6 +12,18 @@ struct BeskidStr;
 #define BESKID_ALLOCATION_REQUEST_SIZE_OFFSET 0
 #define BESKID_ALLOCATION_REQUEST_ALIGNMENT_OFFSET 8
 #define BESKID_ALLOCATION_REQUEST_DESCRIPTOR_OFFSET 16
+#define BESKID_ARRAY_ALLOCATION_REQUEST_SIZE 32
+#define BESKID_ARRAY_ALLOCATION_REQUEST_ALIGNMENT 8
+#define BESKID_ARRAY_ALLOCATION_REQUEST_ELEMENT_OFFSET 0
+#define BESKID_ARRAY_ALLOCATION_REQUEST_LENGTH_OFFSET 8
+#define BESKID_ARRAY_ALLOCATION_REQUEST_FLAGS_OFFSET 16
+#define BESKID_ARRAY_ALLOCATION_REQUEST_RESERVED_OFFSET 20
+#define BESKID_ARRAY_ELEMENT_DESCRIPTOR_SIZE 32
+#define BESKID_ARRAY_ELEMENT_DESCRIPTOR_ALIGNMENT 8
+#define BESKID_ARRAY_ELEMENT_DESCRIPTOR_STRIDE_OFFSET 0
+#define BESKID_ARRAY_ELEMENT_DESCRIPTOR_ALIGNMENT_OFFSET 8
+#define BESKID_ARRAY_ELEMENT_DESCRIPTOR_POINTER_MAP_OFFSET 16
+#define BESKID_ARRAY_ELEMENT_DESCRIPTOR_POINTER_COUNT_OFFSET 24
 #define BESKID_HANDLE_SIZE 16
 #define BESKID_HANDLE_ALIGNMENT 8
 #define BESKID_HANDLE_SLOT_OFFSET 0
@@ -113,6 +125,9 @@ struct BeskidStr;
 int32_t beskid_library_attach_v5(void * runtime);
 void beskid_library_detach_v5(void * runtime);
 uint32_t beskid_rt_v5_abi_version(void);
+void * beskid_rt_v5_array_allocate_rooted(void * request, void * root_handle_out);
+uint8_t beskid_rt_v5_array_construction_finish(void * root_handle);
+uint8_t beskid_rt_v5_array_write_barrier(void * array, void * value);
 uint8_t beskid_rt_v5_closure_capture_store(void * environment, void * descriptor, size_t map_index, void * value);
 void * beskid_rt_v5_closure_environment_allocate(void * request);
 uint8_t beskid_rt_v5_closure_environment_root(void * tls_state, size_t slot_index, void * environment);
