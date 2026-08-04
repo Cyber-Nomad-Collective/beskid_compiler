@@ -35,8 +35,7 @@ impl Drop for EnvironmentVariableGuard {
 
 /// Loop / mut probes for ABI-v5 JIT. Integer accumulation avoids the ABI-v4
 /// `interop_dispatch_*` / `__str_len` path removed from the exact runtime kit.
-/// Full string-loop coverage remains in `corelib_repeat_jit` (ignored until
-/// multi-unit string codegen is stable).
+/// The multi-unit string-loop regression lives in `corelib_repeat_jit`.
 
 #[test]
 fn jit_repeat_string_accumulation_with_mut() {
@@ -88,8 +87,11 @@ pub i64 Main() { return Repeat(1, 4); }
 }
 
 #[test]
-#[ignore = "cross-module call_lowering is unavailable until its AST/Salsa port is complete"]
 fn jit_repeat_cross_module_string_len_without_mut() {
+    let prefix = tempfile::tempdir().expect("exact kit prefix");
+    build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).expect("publish exact native kit");
+    let _runtime_prefix = EnvironmentVariableGuard::set("BESKID_RUNTIME_PREFIX", prefix.path());
+
     let source = r#"
 mod Frame {
     pub i64 Repeat(i64 unit, i64 count) {

@@ -826,9 +826,92 @@ fn resolve_item_declaration_candidate(
     }
     let module_path = module_path.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
     let Some(target_unit) = resolve_qualified_module_unit(db, key, &module_path) else {
+        if path.segments[..path.segments.len() - 1].iter().all(|segment| segment.node.type_args.is_empty())
+            && let Some(declaration) = resolve_inline_module_item_declaration(program, index, key, path)
+        {
+            return Some(declaration);
+        }
         return resolve_type_qualified_imported_function(db, key, path);
     };
     unique_exported_function_in_unit(db, target_unit, key.generation, &name.node.name.node.name)
+}
+
+/// Resolve a qualified function below a lexical inline-module path in the current syntax unit.
+///
+/// Inline modules do not have an assembly `SourceUnitId`, so they cannot appear in the dependency
+/// registry used for imported module resolution.  Their namespace is nevertheless fully indexed
+/// in the current `SyntaxUnitInput`: walk exact direct `InlineModule` children from the nearest
+/// lexical module scope outward, then select one exact function in the resulting scope.  Ambiguous
+/// paths remain unavailable; this is deliberately not a name-based dynamic fallback.
+fn resolve_inline_module_item_declaration(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<AstNodeKey> {
+    let (terminal, module_path) = path.segments.split_last()?;
+    if module_path.is_empty() || !terminal.node.type_args.is_empty() {
+        return None;
+    }
+    let module_names = module_path.iter().map(|segment| segment.node.name.node.name.as_str()).collect::<Vec<_>>();
+    let function_name = terminal.node.name.node.name.as_str();
+
+    let mut scope = module_scope(index, key.node)?;
+    loop {
+        let mut current = scope;
+        let mut path_exists = true;
+        for module_name in &module_names {
+            let Some(module) = unique_inline_module_in_scope(program, index, current, module_name) else {
+                path_exists = false;
+                break;
+            };
+            current = module;
+        }
+        if !path_exists {
+            scope = outer_module_scope(index, scope)?;
+            continue;
+        }
+        let functions = index
+            .ids_of_kind(beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+            .filter(|candidate| {
+                module_scope(index, *candidate) == Some(current)
+                    && index
+                        .node_at(program, *candidate)
+                        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+                        .is_some_and(|function| function.name.node.name == function_name)
+            })
+            .collect::<Vec<_>>();
+        if let [declaration] = functions.as_slice() {
+            return Some(AstNodeKey { node: *declaration, ..key });
+        }
+        // An existing lexical module with a missing or ambiguous terminal must not fall through
+        // to an outer namespace or import route and silently select a different callable.
+        return None;
+    }
+}
+
+fn unique_inline_module_in_scope(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    scope: beskid_analysis::syntax::AstNodeId,
+    name: &str,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    let modules = index
+        .ids_of_kind(beskid_analysis::syntax_query::NodeKind::InlineModule)
+        .filter(|candidate| {
+            // `module_scope(candidate)` returns the inline module itself.  Its declaration
+            // belongs to the enclosing scope, so start the ancestor lookup at its parent.
+            outer_module_scope(index, *candidate) == Some(scope)
+                && index
+                    .node_at(program, *candidate)
+                    .and_then(|node| node.of::<beskid_analysis::syntax::InlineModule>())
+                    .is_some_and(|module| module.name.node.name == name)
+        })
+        .collect::<Vec<_>>();
+    let [module] = modules.as_slice() else {
+        return None;
+    };
+    Some(*module)
 }
 
 /// Resolve a qualified module path from an exact current import and, when required, explicit
