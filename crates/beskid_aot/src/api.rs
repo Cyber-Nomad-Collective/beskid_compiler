@@ -591,6 +591,7 @@ struct ObjectStageResult {
     object_path: PathBuf,
     exported_symbols: Vec<String>,
     additional_object_paths: Vec<PathBuf>,
+    executable_entry: Option<String>,
 }
 
 /// Emit a single object file; fails unless `req.output_kind` is [`BuildOutputKind::ObjectOnly`].
@@ -699,7 +700,7 @@ fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageResult> {
     } else {
         Vec::new()
     };
-    Ok(ObjectStageResult { object_path, exported_symbols, additional_object_paths })
+    Ok(ObjectStageResult { object_path, exported_symbols, additional_object_paths, executable_entry: entry_adapter.map(|adapter| adapter.executable_entry.to_owned()) })
 }
 
 fn ensure_entrypoint_exported(req: &AotBuildRequest, exported_symbols: &[String]) -> AotResult<()> {
@@ -744,7 +745,7 @@ fn link_stage(
             additional_object_paths: object_stage.additional_object_paths.clone(),
             runtime_staticlib: Some(runtime.staticlib_path.clone()),
             host_staticlib: None,
-            entrypoint_symbol: native_link_entrypoint(&req.entrypoint).to_owned(),
+            entrypoint_symbol: object_stage.executable_entry.clone().unwrap_or_else(|| native_link_entrypoint(&req.entrypoint).to_owned()),
             exported_symbols: object_stage.exported_symbols.clone(),
             link_mode: req.link_mode,
             verbose: req.verbose_link,
@@ -757,7 +758,7 @@ fn link_stage(
 fn validate_request(req: &AotBuildRequest) -> AotResult<()> {
     validate_extern_libraries(&req.artifact, &req.external_libraries)?;
     if artifact_uses_core_args(&req.artifact) && req.output_kind != BuildOutputKind::Exe {
-        return Err(AotError::InvalidRequest { message: "Core.Args requires executable output".to_owned() });
+        return Err(AotError::InvalidRequest { message: "Core.Args requires executable arguments".to_owned() });
     }
 
     if req.artifact.functions.is_empty() && requires_lowered_functions(req.output_kind) {
@@ -914,7 +915,18 @@ mod with_defaults_tests {
                 verbose_link: false, external_libraries: Vec::new(), library_search_paths: Vec::new(), pipeline: None,
             };
             let error = validate_request(&req).expect_err("Core.Args must have an executable entry adapter");
-            assert!(matches!(error, AotError::InvalidRequest { message } if message == "Core.Args requires executable output"));
+            assert!(matches!(error, AotError::InvalidRequest { message } if message == "Core.Args requires executable arguments"));
         }
+    }
+
+    #[test]
+    fn core_args_windows_link_entry_is_owned_by_the_manifest_adapter() {
+        let mut artifact = CodegenArtifact::default();
+        artifact.extern_imports.push(beskid_codegen::ExternImport {
+            symbol: "beskid_rt_v5_args_count".into(), abi: Some("C".into()), library: None,
+        });
+        let adapter = core_args_entry_adapter(&artifact, "x86_64-pc-windows-msvc")
+            .expect("generated adapter lookup").expect("Core.Args adapter");
+        assert_eq!(adapter.executable_entry, "wmain");
     }
 }
