@@ -106,7 +106,7 @@ impl SyntaxNodeFacts<'_> {
                     let specialization = self
                         .item_specializations
                         .get(&key)
-                        .and_then(|signature| signature.parameters.get(parameters.len()))
+                        .and_then(|specialization| specialization.signature.parameters.get(parameters.len()))
                         .copied();
                     let value_type = specialization
                         .or_else(|| {

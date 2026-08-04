@@ -968,9 +968,9 @@ fn closure_static_plan_is_generation_bound_and_never_claims_tls_or_root_frame_au
 
     let scalar =
         input.closure_static_plan(lambdas[0]).expect("current scalar capture receives a static descriptor plan");
-    assert_eq!(scalar.descriptor_symbol, "__beskid_closure_descriptor_u0_g21_n20");
-    assert_eq!(scalar.pointer_map_symbol, "__beskid_closure_pointer_map_u0_g21_n20");
-    assert_eq!(scalar.allocation_request_symbol, "__beskid_closure_allocation_request_u0_g21_n20");
+    assert_eq!(scalar.descriptor_symbol, "__beskid_closure_descriptor_module_u0_g21_n20");
+    assert_eq!(scalar.pointer_map_symbol, "__beskid_closure_pointer_map_module_u0_g21_n20");
+    assert_eq!(scalar.allocation_request_symbol, "__beskid_closure_allocation_request_module_u0_g21_n20");
     assert_eq!(scalar.object_size, 24, "16-byte header plus aligned i32 field");
     assert_eq!(scalar.object_alignment, 8);
     assert!(scalar.pointer_map_offsets.is_empty());
@@ -1135,6 +1135,21 @@ fn parsed_i64_local_initializers_and_assignments_contextualize_unsuffixed_intege
     let clif = function.display().to_string();
     assert!(clif.contains("iconst.i64 0"), "{clif}");
     assert!(!clif.contains("sextend"), "contextual literals must not become implicit numeric widening: {clif}");
+}
+
+#[test]
+fn parsed_i32_variable_assignment_to_i64_local_requires_explicit_conversion() {
+    let (input, isa, root) = item_fixture_with_root(
+        "i64 Main() { mut i32 source = 0; mut i64 destination = 0_i64; destination = source; return destination; }",
+    );
+    let item = named_function(&input, root, "Main");
+
+    let error = emit_isle_item(&input, isa.as_ref(), item)
+        .expect_err("an i32 variable must not implicitly widen during mutable i64 assignment");
+    let rendered = error.display_with_db(input.database());
+
+    assert!(rendered.contains("MissingRuleOrFact"), "{rendered}");
+    assert!(rendered.contains("AssignExpression@"), "{rendered}");
 }
 
 #[test]
@@ -2293,7 +2308,9 @@ fn parsed_program_rejects_a_generic_direct_call_without_a_provable_specializatio
     )
     .expect_err("a generic direct call without source-proven arguments must fail closed");
 
-    assert!(error.to_string().contains("generic direct call has no provable ABI specialization"), "{error}");
+    let rendered = error.to_string();
+    assert!(rendered.contains("MissingRuleOrFact"), "{rendered}");
+    assert!(rendered.contains("CallExpression@"), "{rendered}");
 }
 
 #[test]

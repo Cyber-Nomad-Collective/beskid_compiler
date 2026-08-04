@@ -484,8 +484,10 @@ pub struct GenericCallTemplate {
 /// same pointer ABI. The identity therefore records declaration generation plus every ordered
 /// source parameter name and concrete semantic argument.
 pub fn generic_specialization_identity(instance: &GenericSpecializationInstance) -> Arc<[u32]> {
+    let generation = instance.declaration.generation.0;
     let mut identity = vec![
-        instance.declaration.generation.0,
+        (generation >> 32) as u32,
+        generation as u32,
         instance.declaration.node.0,
         u32::try_from(instance.substitutions.len()).unwrap_or(u32::MAX),
     ];
@@ -2186,7 +2188,7 @@ fn generic_call_specialization_tracked(
         if function.generics.is_empty() {
             return None;
         }
-        let instance = generic_specialization_instance_for_call(db, key).ok().flatten()?;
+        let instance = generic_specialization_instance_for_call(db, key).ok()?;
         Some(Ok(GenericCallSpecialization {
             declaration: instance.declaration,
             signature: instance.signature,
@@ -2902,6 +2904,17 @@ fn generic_specialization_instance_for_call(
             return Err(SemanticError::unavailable("call_abi_signature"));
         }
     }
+    if generic_names.iter().any(|generic| {
+        !substitutions.contains_key(*generic)
+            && !function
+                .parameters
+                .iter()
+                .map(|parameter| &parameter.node.ty.node)
+                .chain(function.return_type.iter().map(|return_type| &return_type.node))
+                .any(|syntax_type| type_syntax_mentions_generic_parameter(syntax_type, generic))
+    }) {
+        return Err(SemanticError::unavailable("call_abi_signature"));
+    }
     let parameters = function
         .parameters
         .iter()
@@ -2919,7 +2932,7 @@ fn generic_specialization_instance_for_call(
                 .copied()
                 .map(|argument| GenericSubstitution { parameter: Arc::from(parameter), argument })
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Vec<_>>();
     Ok(GenericSpecializationInstance { declaration, signature, substitutions: substitutions.into() })
 }
 
@@ -3102,6 +3115,32 @@ fn generic_type_name<'a>(syntax_type: &'a beskid_analysis::syntax::Type, generic
     };
     let name = segment.node.name.node.name.as_str();
     segment.node.type_args.is_empty().then_some(name).filter(|name| generics.contains(name))
+}
+
+fn type_syntax_mentions_generic_parameter(
+    syntax_type: &beskid_analysis::syntax::Type,
+    parameter: &str,
+) -> bool {
+    match syntax_type {
+        beskid_analysis::syntax::Type::Primitive(_) => false,
+        beskid_analysis::syntax::Type::Complex(path) => path.node.segments.iter().any(|segment| {
+            segment.node.name.node.name == parameter
+                || segment
+                    .node
+                    .type_args
+                    .iter()
+                    .any(|argument| type_syntax_mentions_generic_parameter(&argument.node, parameter))
+        }),
+        beskid_analysis::syntax::Type::Array(element) => {
+            type_syntax_mentions_generic_parameter(&element.node, parameter)
+        }
+        beskid_analysis::syntax::Type::Function { return_type, parameters } => {
+            type_syntax_mentions_generic_parameter(&return_type.node, parameter)
+                || parameters
+                    .iter()
+                    .any(|parameter_type| type_syntax_mentions_generic_parameter(&parameter_type.node, parameter))
+        }
+    }
 }
 
 fn generic_parameter_reference_name(syntax_type: &beskid_analysis::syntax::Type) -> Option<&str> {

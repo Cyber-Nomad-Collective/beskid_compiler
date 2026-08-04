@@ -841,7 +841,6 @@ fn resolve_module_items(
             collect_generic_call_specializations(db, item.key, &mut specializations)?;
         }
     }
-
     let mut resolved = Vec::with_capacity(source_items.len());
     for item in source_items {
         if item_abi_signature(db, item.key).ok().flatten().is_some() {
@@ -889,11 +888,6 @@ fn is_concrete_executable_item(
     db: &dyn beskid_queries::Db,
     key: AstNodeKey,
 ) -> Result<bool, SyntaxModuleEmissionError> {
-    if node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?
-        != Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
-    {
-        return Ok(false);
-    }
     Ok(item_abi_signature(db, key).map_err(|error| emission_verification(error.to_string()))?.is_some())
 }
 

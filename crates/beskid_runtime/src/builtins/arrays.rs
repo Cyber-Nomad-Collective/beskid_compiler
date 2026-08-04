@@ -20,7 +20,7 @@ fn valid_element_descriptor(descriptor: &ArrayElementDescriptor) -> bool {
     if descriptor.stride == 0 || !descriptor.alignment.is_power_of_two() || descriptor.alignment == 0 {
         return false;
     }
-    if descriptor.stride % descriptor.alignment != 0 {
+    if !descriptor.stride.is_multiple_of(descriptor.alignment) {
         return false;
     }
     if descriptor.pointer_count == 0 {

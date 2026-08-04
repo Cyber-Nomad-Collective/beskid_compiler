@@ -15,14 +15,16 @@ use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex, SyntaxSna
 use beskid_queries::{
     AggregateFieldShape, AstNodeKey, BeskidDatabase, CaptureStorageClass, ClosureAllocationStatus, ClosureCallTarget,
     ClosureCapture, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement, CompletionContext,
-    EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, ItemSignature, LocalSlot,
-    MutableLocalAssignment, OperatorFact, ProjectSession, SemanticError, SemanticTypeId, SourceUnitId,
+    EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, GenericSpecializationInstance,
+    ItemSignature, LocalSlot, MutableLocalAssignment, OperatorFact, ProjectSession, SemanticError, SemanticTypeId,
+    SourceUnitId,
     SpawnDiagnosticKind, SpawnEntryValidation, SyntaxGenerationId, abi_type, aggregate_field_access, aggregate_layout,
     build_canonical_corelib_syscall_typed_program, build_typed_program,
     build_typed_program_with_corelib_syscall_services, call_abi_signature, call_arguments, call_lowering,
     callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target, closure_environment,
     closure_signature, completion_candidates, control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
-    for_iterator_fact, generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
+    for_iterator_fact, generic_call_instantiation, generic_call_specialization, generic_specialization_identity,
+    item_abi_signature, item_body,
     item_signature, literal_fact, local_initializer_abi_type, local_slot, mutable_local_assignment, node_kind,
     node_span, node_type, nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
@@ -78,6 +80,26 @@ fn primitive_numeric_conversion_call_has_a_typed_result_without_dynamic_dispatch
         primitive_numeric_conversion(&db, conversion).expect("conversion fact"),
         Some(beskid_queries::PrimitiveNumericConversion { from: SemanticTypeId::WORD, to: SemanticTypeId::I64 })
     );
+}
+
+#[test]
+fn generic_specialization_identity_distinguishes_high_generation_bits() {
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Generic.bd"));
+    let instance = |generation| GenericSpecializationInstance {
+        declaration: AstNodeKey {
+            unit,
+            generation: SyntaxGenerationId(generation),
+            node: beskid_analysis::syntax::AstNodeId(7),
+        },
+        signature: ItemSignature { parameters: Arc::from([SemanticTypeId::I64]), result: SemanticTypeId::I64 },
+        substitutions: Arc::from([]),
+    };
+
+    let low = generic_specialization_identity(&instance(1));
+    let high = generic_specialization_identity(&instance((1_u64 << 32) | 1));
+
+    assert_ne!(low, high, "distinct syntax generations must not share a specialized module identity");
 }
 
 #[test]
