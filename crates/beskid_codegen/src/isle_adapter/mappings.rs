@@ -33,14 +33,10 @@ pub(super) fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Op
     Some(emitter.signature(parameters, returns))
 }
 
-pub(super) fn specialization_identity(signature: &ItemSignature) -> std::sync::Arc<[u32]> {
-    signature
-        .parameters
-        .iter()
-        .map(|semantic| semantic.0)
-        .chain(std::iter::once(signature.result.0))
-        .collect::<Vec<_>>()
-        .into()
+pub(super) fn specialization_identity(
+    specialization: &beskid_queries::GenericSpecializationInstance,
+) -> std::sync::Arc<[u32]> {
+    beskid_queries::generic_specialization_identity(specialization)
 }
 
 pub(super) fn signature_for_runtime_intrinsic(

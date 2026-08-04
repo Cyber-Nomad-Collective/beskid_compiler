@@ -217,7 +217,9 @@ fn typed_array_descriptor_keeps_pointer_elements_alive_across_forced_gc() {
         pointer_map: pointer_offsets.as_ptr(),
         pointer_count: pointer_offsets.len(),
     };
-    let parent = heap.allocate_beskid_array(3 * std::mem::size_of::<usize>(), descriptor, 1);
+    let (parent, construction_root) = heap
+        .allocate_beskid_array_constructing(3 * std::mem::size_of::<usize>(), descriptor, 1, |_| {})
+        .expect("typed array construction allocation");
     let child = heap.allocate_beskid(16, std::ptr::null());
     assert!(heap.owns_beskid_payload(parent));
     assert!(heap.owns_beskid_payload(child));
@@ -228,6 +230,7 @@ fn typed_array_descriptor_keeps_pointer_elements_alive_across_forced_gc() {
 
     let mut parent_slot = parent;
     heap.external_roots().register_root(&mut parent_slot as *mut *mut u8);
+    heap.external_roots().drop_handle(construction_root);
     let before = heap.bytes_allocated();
     heap.force_collect();
     assert_eq!(heap.bytes_allocated(), before, "typed array must trace the child through its persistent descriptor");

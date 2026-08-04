@@ -478,6 +478,28 @@ pub struct GenericCallTemplate {
     pub parameter_arguments: Arc<[Arc<str>]>,
 }
 
+/// Stable module identity for a materialized generic declaration.
+///
+/// ABI signatures alone are not sufficient: distinct nominal substitutions may lower to the
+/// same pointer ABI. The identity therefore records declaration generation plus every ordered
+/// source parameter name and concrete semantic argument.
+pub fn generic_specialization_identity(instance: &GenericSpecializationInstance) -> Arc<[u32]> {
+    let mut identity = vec![
+        instance.declaration.generation.0,
+        instance.declaration.node.0,
+        u32::try_from(instance.substitutions.len()).unwrap_or(u32::MAX),
+    ];
+    for binding in instance.substitutions.iter() {
+        let name_hash =
+            binding.parameter.bytes().fold(0u32, |hash, byte| hash.wrapping_mul(16777619) ^ u32::from(byte));
+        identity.extend([name_hash, binding.argument.0]);
+    }
+    identity.push(u32::MAX);
+    identity.extend(instance.signature.parameters.iter().map(|semantic| semantic.0));
+    identity.push(instance.signature.result.0);
+    identity.into()
+}
+
 /// One semantic cast required while lowering an AST node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CastIntent {

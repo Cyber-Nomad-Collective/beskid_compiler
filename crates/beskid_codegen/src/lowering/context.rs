@@ -67,6 +67,7 @@ pub struct CodegenContext {
     pub current_source_path: Option<PathBuf>,
     /// Active generic parameter substitution while lowering a monomorphized function body.
     pub active_generic_substitution: HashMap<String, TypeId>,
+    artifact_namespace: String,
     next_string_literal_id: usize,
 }
 
@@ -74,6 +75,12 @@ impl CodegenContext {
     /// Empty context (no functions or literals yet).
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Construct a source-artifact accumulator whose private static symbols cannot collide with
+    /// another emission into the same long-lived module.
+    pub fn new_with_artifact_namespace(namespace: impl Into<String>) -> Self {
+        Self { artifact_namespace: namespace.into(), ..Self::default() }
     }
 
     /// Whether a symbol name was already lowered into [`Self::lowered_functions`].
@@ -117,7 +124,11 @@ impl CodegenContext {
                 return symbol.clone();
             }
         }
-        let symbol = format!("__beskid_str_lit_{}", self.next_string_literal_id);
+        let symbol = if self.artifact_namespace.is_empty() {
+            format!("__beskid_str_lit_{}", self.next_string_literal_id)
+        } else {
+            format!("__beskid_{}_str_lit_{}", self.artifact_namespace, self.next_string_literal_id)
+        };
         self.next_string_literal_id += 1;
         self.string_literals.insert(symbol.clone(), storage.to_vec());
         symbol

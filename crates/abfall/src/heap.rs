@@ -421,22 +421,23 @@ impl Heap {
         payload_ptr
     }
 
-    /// Allocate one ABI-v5 typed array as a single GC-owned object.
+    /// Allocate a typed array under a construction root before publishing it to the collector.
     ///
-    /// The returned payload begins with the stable three-word `BeskidArray` header.  Its backing
-    /// bytes follow that header in the same allocation; the immutable element pointer map is
-    /// retained with the GC object, not inferred from `stride` during marking.
-    pub fn allocate_beskid_array(
+    /// The registry is installed before the external handle so a concurrent root scan can trace
+    /// the object, and the intrusive allocation-list publication happens last. Callers must keep
+    /// the returned handle until every pointer element has been written and barriered.
+    pub fn allocate_beskid_array_constructing(
         &self,
         header_size: usize,
         descriptor: ArrayElementDescriptor,
         length: usize,
-    ) -> *mut u8 {
+        initialize: impl FnOnce(*mut u8),
+    ) -> Option<(*mut u8, u64)> {
         let Some(data_size) = descriptor.stride.checked_mul(length) else {
-            return null_mut();
+            return None;
         };
         let Some(total_size) = header_size.checked_add(data_size) else {
-            return null_mut();
+            return None;
         };
         if self.options.assist_work_budget > 0 && self.check_is_marking_and_increment_busy() {
             self.do_mark_incremental(self.options.assist_work_budget);
@@ -450,10 +451,17 @@ impl Heap {
         };
         let ptr = GcBox::new_with_root(obj, false);
         let header_ptr = unsafe { &(*ptr.as_ptr()).header as *const GcHeader as *mut GcHeader };
-        self.insert_allocation(header_ptr);
         let payload_ptr = unsafe { (*ptr.as_ptr()).data.bytes.as_ptr() as *mut u8 };
+        // Finish the ABI-visible header while this allocation is still private. A collector can
+        // only observe the object after the external construction root and heap-list publication
+        // below, so it never traces partially initialized header storage.
+        initialize(payload_ptr);
         self.beskid_allocations.register(payload_ptr, total_size, header_ptr);
-        payload_ptr
+        // This handle must precede publication: a collector which reaches `head` can now also
+        // reach the complete (zeroed) object through its construction root.
+        let handle = self.external_roots.push_handle(payload_ptr);
+        self.insert_allocation(header_ptr);
+        Some((payload_ptr, handle))
     }
 
     fn insert_allocation(&self, header_ptr: *mut GcHeader) {

@@ -229,13 +229,18 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                 self.query(generic_specialization_instance(self.db, template.declaration, substitutions.into()))?;
             return Some(DirectCallee::specialized_item(
                 specialization.declaration,
-                specialization_identity(&specialization.signature),
+                specialization_identity(&specialization),
             ));
         }
         if let Some(specialization) = self.query(generic_call_specialization(self.db, key)) {
+            let specialization = beskid_queries::GenericSpecializationInstance {
+                declaration: specialization.declaration,
+                signature: specialization.signature,
+                substitutions: specialization.substitutions,
+            };
             return Some(DirectCallee::specialized_item(
                 specialization.declaration,
-                specialization_identity(&specialization.signature),
+                specialization_identity(&specialization),
             ));
         }
         Some(DirectCallee::item(declaration))

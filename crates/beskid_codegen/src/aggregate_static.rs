@@ -152,7 +152,7 @@ impl CodegenInput<'_> {
             .units()
             .iter()
             .position(|unit| paths_match(&unit.path, literal.unit.path(self.database())))?;
-        let identity = format!("u{unit}_g{}_n{}", literal.generation.0, literal.node.0);
+        let identity = format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), literal.generation.0, literal.node.0);
         Some(AggregateStaticPlan {
             literal,
             descriptor_symbol: format!("__beskid_aggregate_descriptor_{identity}"),
@@ -214,7 +214,7 @@ impl CodegenInput<'_> {
         let unit = self.typed_program().assembly.units().iter().position(|unit| {
             paths_match(&unit.path, literal.unit.path(self.database()))
         })?;
-        let identity = format!("enum_u{unit}_g{}_n{}", literal.generation.0, literal.node.0);
+        let identity = format!("{}_enum_u{unit}_g{}_n{}", artifact_namespace(self), literal.generation.0, literal.node.0);
         Some(AggregateStaticPlan {
             literal,
             descriptor_symbol: format!("__beskid_aggregate_descriptor_{identity}"),
@@ -239,6 +239,11 @@ fn scalar_layout(pointer_width: u8, ty: SemanticTypeId) -> Option<(u64, u64, boo
         _ => None,
     }
 }
+
+fn artifact_namespace(input: &CodegenInput<'_>) -> String {
+    input.artifact_namespace().chars().map(|character| if character.is_ascii_alphanumeric() { character } else { '_' }).collect()
+}
+
 fn valid_alignment(value: u64) -> bool {
     value.is_power_of_two() && value > 0
 }

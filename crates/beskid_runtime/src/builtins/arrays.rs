@@ -49,9 +49,9 @@ fn valid_element_descriptor(descriptor: &ArrayElementDescriptor) -> bool {
     true
 }
 
-fn allocate_typed_array(
+fn allocate_typed_array_constructing(
     request: *const ArrayAllocationRequest,
-    root_handle_out: Option<*mut usize>,
+    root_handle_out: *mut usize,
 ) -> *mut BeskidArray {
     if request.is_null() {
         return std::ptr::null_mut();
@@ -73,23 +73,24 @@ fn allocate_typed_array(
         return std::ptr::null_mut();
     }
     with_current_heap_and_root(|heap, root| {
-        let payload = heap.allocate_beskid_array(header_size, descriptor, request.length);
-        if payload.is_null() {
+        let Some((payload, handle)) =
+            heap.allocate_beskid_array_constructing(header_size, descriptor, request.length, |payload| {
+                // SAFETY: the heap has reserved the exact header plus backing size but has not
+                // published this object to the collector yet.
+                let data = unsafe { payload.add(header_size) };
+                let array = payload.cast::<BeskidArray>();
+                unsafe { array.write(BeskidArray { ptr: data, len: request.length, cap: request.length }) };
+            })
+        else {
             return std::ptr::null_mut();
-        }
-        // SAFETY: `allocate_beskid_array` reserved exactly header_size + backing bytes.
-        let data = unsafe { payload.add(header_size) };
+        };
         let array = payload.cast::<BeskidArray>();
-        // SAFETY: header is uniquely owned until returned to generated code.
-        unsafe { array.write(BeskidArray { ptr: data, len: request.length, cap: request.length }) };
-        if let Some(root_handle_out) = root_handle_out {
-            let handle = root.heap.external_roots().push_handle(array.cast());
-            // SAFETY: the rooted ABI entrypoint requires a writable native-word stack slot.
-            unsafe { root_handle_out.write(handle as usize) };
-        }
+        // SAFETY: heap installed this construction root before publishing the allocation.
+        unsafe { root_handle_out.write(handle as usize) };
         root.runtime_state.allocation_counter = root.runtime_state.allocation_counter.saturating_add(1);
         let live_bytes = heap.bytes_allocated();
-        root.runtime_state.heap_total_bytes = root.runtime_state.heap_total_bytes.saturating_add(header_size).max(live_bytes);
+        root.runtime_state.heap_total_bytes =
+            root.runtime_state.heap_total_bytes.saturating_add(header_size).max(live_bytes);
         root.runtime_state.heap_live_bytes = live_bytes;
         array
     })
@@ -102,7 +103,10 @@ fn allocate_typed_array(
 /// reference elements. Invalid requests return null and no descriptor is synthesized from size.
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn beskid_rt_v5_array_allocate(request: *const ArrayAllocationRequest) -> *mut BeskidArray {
-    allocate_typed_array(request, None)
+    // ABI-v5 typed arrays must be constructed through the rooted transaction. Returning an
+    // unrooted raw array would re-open the publish-before-root window for concurrent GC.
+    let _ = request;
+    std::ptr::null_mut()
 }
 
 /// Allocate an array and publish a temporary root before generated code can lower any element.
@@ -119,7 +123,7 @@ pub extern "C-unwind" fn beskid_rt_v5_array_allocate_rooted(
     }
     // SAFETY: caller supplied a valid native-word output slot under the ABI contract.
     unsafe { root_handle_out.write(usize::MAX) };
-    allocate_typed_array(request, Some(root_handle_out))
+    allocate_typed_array_constructing(request, root_handle_out)
 }
 
 /// Release the temporary root established by the rooted array allocator.

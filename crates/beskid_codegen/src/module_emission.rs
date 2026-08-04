@@ -7,8 +7,8 @@ use beskid_queries::{
     CallLowering, GenericSpecializationInstance, GenericSubstitution, ItemSignature, SemanticTypeId, SourceUnitId,
     call_lowering, child_nodes, closure_call_target, closure_environment, closure_signature,
     extern_contract_import_for_declaration, format_ast_node_key, generic_call_specialization, generic_call_template,
-    generic_specialization_instance, item_abi_signature, item_name, node_kind, node_span, resolved_item,
-    spawn_entry_validation,
+    generic_specialization_identity, generic_specialization_instance, item_abi_signature, item_name, node_kind,
+    node_span, resolved_item, spawn_entry_validation,
 };
 use cranelift_codegen::ir::{AbiParam, InstBuilder};
 use cranelift_codegen::ir::{
@@ -244,7 +244,7 @@ fn lower_resolved_syntax_program(
             .map(|trampoline| (DirectCallee::spawn_trampoline(trampoline.spawn), trampoline.symbol.clone())),
     );
 
-    let mut context = CodegenContext::new();
+    let mut context = CodegenContext::new_with_artifact_namespace(input.artifact_namespace().to_owned());
     let lambda_count = trampolines.iter().filter(|trampoline| trampoline.lambda_body.is_some()).count();
     let mut functions = Vec::with_capacity(items.len() + trampolines.len() + lambda_count);
     for trampoline in &trampolines {
@@ -741,7 +741,11 @@ fn trace_node_facts(
                     .map(|specialization| {
                         DirectCallee::specialized_item(
                             specialization.declaration,
-                            specialization_identity(&specialization.signature),
+                            generic_specialization_identity(&GenericSpecializationInstance {
+                                declaration: specialization.declaration,
+                                signature: specialization.signature.clone(),
+                                substitutions: specialization.substitutions.clone(),
+                            }),
                         )
                     })
                     .unwrap_or_else(|| DirectCallee::item(declaration));
@@ -864,10 +868,10 @@ fn resolve_module_items(
             continue;
         };
         for specialization in signatures {
-            let identity = specialization_identity(&specialization.signature);
+            let identity = generic_specialization_identity(specialization);
             resolved.push(ResolvedSyntaxModuleItem {
                 key: item.key,
-                symbol: format!("{}#generic_{}", item.symbol, specialization_mangle(&specialization.signature)),
+                symbol: format!("{}#generic_{}", item.symbol, specialization_mangle(specialization)),
                 callee: DirectCallee::specialized_item(item.key, identity),
                 specialization: Some(specialization.clone()),
             });
@@ -1028,18 +1032,8 @@ fn direct_generic_call_declaration(
     }
 }
 
-fn specialization_identity(signature: &ItemSignature) -> std::sync::Arc<[u32]> {
-    signature
-        .parameters
-        .iter()
-        .map(|semantic| semantic.0)
-        .chain(std::iter::once(signature.result.0))
-        .collect::<Vec<_>>()
-        .into()
-}
-
-fn specialization_mangle(signature: &ItemSignature) -> String {
-    specialization_identity(signature).iter().map(u32::to_string).collect::<Vec<_>>().join("_")
+fn specialization_mangle(instance: &GenericSpecializationInstance) -> String {
+    generic_specialization_identity(instance).iter().map(u32::to_string).collect::<Vec<_>>().join("_")
 }
 
 /// Syntax-ISLE adapter over the existing artifact-owned literal pool.
@@ -1250,10 +1244,18 @@ pub fn emit_syntax_program_in_session<M: Module>(
         .chars()
         .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
         .collect::<String>();
-    let artifact_key =
-        format!("{namespace}:{}", items.iter().map(|item| item.symbol.as_str()).collect::<Vec<_>>().join(","));
+    let resolved = resolve_module_items(input, items)?;
+    // Never cache by surface symbol alone: the same user symbol may represent a different AST
+    // generation or a generic instance with ABI-equal but semantically different substitutions.
+    let artifact_key = format!(
+        "{namespace}:{}",
+        resolved
+            .iter()
+            .map(|item| format!("{:?}:{}:{:?}", item.key, item.symbol, item.callee))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
     if session.source_artifacts.contains(&artifact_key) {
-        let resolved = resolve_module_items(input, items)?;
         return resolved
             .into_iter()
             .map(|item| {
