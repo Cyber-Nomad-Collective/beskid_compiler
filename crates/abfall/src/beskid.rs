@@ -28,9 +28,6 @@ impl AlignedBytes {
         self.words.as_ptr().cast()
     }
 
-    pub(crate) fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.words.as_mut_ptr().cast()
-    }
 }
 
 /// Descriptor blob emitted by `beskid_codegen::module_emission::build_descriptor_data`.

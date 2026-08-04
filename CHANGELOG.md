@@ -65,6 +65,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   widening conversion, while inferred locals, explicit literal suffixes,
   compound values, immutable destinations, and out-of-range values fail closed.
 
+- Lock the generated syntax-ISLE regression boundary against implicitly
+  widening an `i32` variable during assignment to a mutable `i64` local.
+
+- Restore type-safe semantic generic-specialization facts, preserving every
+  `SyntaxGenerationId` bit in their structural identity, rejecting unprovable
+  unused generic parameters, and collecting specializations reachable from
+  executable test definitions.
+
+- Resolve strict compiler lint failures in ABI-v5 array descriptor validation
+  and the managed-heap helper implementation.
+
 - Materialize generic syntax functions only from canonical direct-call ABI
   specialization facts. Uncalled generic declarations are omitted from module emission,
   while direct calls with absent or ambiguous specialization evidence now fail closed with

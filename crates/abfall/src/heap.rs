@@ -433,12 +433,8 @@ impl Heap {
         length: usize,
         initialize: impl FnOnce(*mut u8),
     ) -> Option<(*mut u8, u64)> {
-        let Some(data_size) = descriptor.stride.checked_mul(length) else {
-            return None;
-        };
-        let Some(total_size) = header_size.checked_add(data_size) else {
-            return None;
-        };
+        let data_size = descriptor.stride.checked_mul(length)?;
+        let total_size = header_size.checked_add(data_size)?;
         if self.options.assist_work_budget > 0 && self.check_is_marking_and_increment_busy() {
             self.do_mark_incremental(self.options.assist_work_budget);
             self.decrement_busy_marking();

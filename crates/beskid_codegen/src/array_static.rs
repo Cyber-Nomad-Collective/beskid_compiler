@@ -115,7 +115,7 @@ impl CodegenInput<'_> {
             .assembly
             .units()
             .iter()
-            .position(|unit| unit.path == literal.unit.path(self.database()))?;
+            .position(|unit| unit.path.as_path() == literal.unit.path(self.database()).as_path())?;
         let namespace = self
             .artifact_namespace()
             .chars()
