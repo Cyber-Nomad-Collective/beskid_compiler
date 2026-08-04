@@ -221,6 +221,53 @@ pub struct Heap {
     beskid_allocations: BeskidAllocationRegistry,
 }
 
+/// An unpublished opaque Beskid allocation.
+///
+/// Fresh payloads carry one construction root.  The owner must be retained until the payload is
+/// installed in a GC root or in an already reachable object, then consumed with
+/// [`BeskidAllocation::publish`].  Dropping an unpublished allocation releases that temporary
+/// root, so abandoning a partially-built object cannot leak it.
+#[must_use = "an opaque Beskid allocation must be published after rooting it, or dropped"]
+pub struct BeskidAllocation<'heap> {
+    heap: &'heap Heap,
+    payload_ptr: *mut u8,
+    header_ptr: *mut GcHeader,
+}
+
+impl BeskidAllocation<'_> {
+    /// Borrow the payload while its construction root is still held.
+    pub fn as_ptr(&self) -> *mut u8 {
+        self.payload_ptr
+    }
+
+    /// Release the construction root after the caller has published this payload.
+    pub fn publish(self) -> *mut u8 {
+        // If marking already started, the root scan necessarily ran before this object could be
+        // published.  Mark it before releasing the construction root.  If marking starts after
+        // this transaction, its quiescent root snapshot still observes the construction root.
+        self.heap.with_mutator_operation(|is_marking| {
+            if is_marking {
+                let tracer = Tracer::new();
+                self.heap.mark_payload_ptr(self.payload_ptr, &tracer);
+                if tracer.has_work() {
+                    self.heap.merge_work(&tracer);
+                }
+            }
+        });
+        self.payload_ptr
+    }
+}
+
+impl Drop for BeskidAllocation<'_> {
+    fn drop(&mut self) {
+        // SAFETY: this owner is created with exactly one construction root.  It can only be
+        // dropped while that root keeps the allocation header alive.
+        unsafe {
+            (*self.header_ptr).dec_root();
+        }
+    }
+}
+
 struct MutatorOperationGuard<'a> {
     heap: &'a Heap,
     busy_marking: bool,
@@ -431,7 +478,7 @@ impl Heap {
     }
 
     /// Allocate an opaque Beskid payload tracked by descriptor metadata.
-    pub fn allocate_beskid(&self, size: usize, type_desc_ptr: *const u8) -> *mut u8 {
+    pub fn allocate_beskid(&self, size: usize, type_desc_ptr: *const u8) -> BeskidAllocation<'_> {
         if self.options.assist_work_budget > 0 {
             self.with_mutator_operation(|is_marking| {
                 if is_marking {
@@ -444,7 +491,9 @@ impl Heap {
 
         let type_desc = type_desc_ptr.cast::<TypeDescriptor>();
         let obj = BeskidObject { heap: self as *const Self, type_desc, bytes: vec![0u8; size].into_boxed_slice() };
-        let ptr = GcBox::new_with_root(obj, false);
+        // The returned owner holds a construction root until the caller publishes the payload.
+        // This closes the mark -> allocate -> sweep gap for partially initialized objects.
+        let ptr = GcBox::new_with_root(obj, true);
         let header_ptr = unsafe { &(*ptr.as_ptr()).header as *const GcHeader as *mut GcHeader };
         self.insert_allocation(header_ptr);
 
@@ -460,7 +509,7 @@ impl Heap {
 
         self.beskid_allocations.register(payload_ptr, header_ptr);
 
-        payload_ptr
+        BeskidAllocation { heap: self, payload_ptr, header_ptr }
     }
 
     fn insert_allocation(&self, header_ptr: *mut GcHeader) {
@@ -683,6 +732,11 @@ impl Heap {
         if !self.try_start_marking() {
             return false;
         }
+
+        // An Idle admission may have begun mutating just before the phase transition.  Wait for
+        // that transaction before taking the root snapshot; later admissions observe Marking and
+        // publish through the insertion barrier instead.
+        self.wait_for_mutator_quiescence();
 
         {
             let tracer = Tracer::new();
@@ -916,6 +970,9 @@ fn background_gc_thread(heap: Arc<Heap>, c: StopCondition) {
     {
         // Check if we should start a collection
         if heap.should_collect() && heap.try_start_marking() {
+            // Match the foreground protocol: root scanning starts only after every transaction
+            // admitted while Idle has completed its mutation.
+            heap.wait_for_mutator_quiescence();
             // STW pause: scan roots
             heap.do_mark_roots(&tracer);
 
@@ -1008,5 +1065,80 @@ mod transaction_tests {
         assert_eq!(heap.gc_phase(), GcPhase::Idle);
         assert_eq!(heap.active_mutator_count.load(Ordering::Acquire), 0);
         assert_eq!(heap.busy_marking_count.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn marking_waits_for_idle_transaction_before_scanning_roots() {
+        let heap = Heap::off();
+        let entered = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let worker_heap = Arc::clone(&heap);
+        let worker_entered = Arc::clone(&entered);
+        let worker_release = Arc::clone(&release);
+        let worker = std::thread::spawn(move || {
+            worker_heap.with_mutator_operation(|is_marking| {
+                assert!(!is_marking, "worker must be admitted from Idle for this transition test");
+                worker_entered.wait();
+                worker_release.wait();
+            });
+        });
+
+        entered.wait();
+        let marking_finished = Arc::new(AtomicBool::new(false));
+        let collector_heap = Arc::clone(&heap);
+        let collector_finished = Arc::clone(&marking_finished);
+        let collector = std::thread::spawn(move || {
+            assert!(collector_heap.mark_for_tests());
+            collector_finished.store(true, Ordering::Release);
+        });
+
+        while heap.gc_phase() != GcPhase::Marking {
+            std::thread::yield_now();
+        }
+        assert!(
+            !marking_finished.load(Ordering::Acquire),
+            "the collector must not scan roots while an Idle-admitted mutation is active"
+        );
+
+        release.wait();
+        worker.join().expect("idle worker");
+        collector.join().expect("collector");
+        assert!(marking_finished.load(Ordering::Acquire));
+        heap.sweep_for_tests();
+    }
+
+    #[test]
+    fn beskid_allocation_stays_rooted_until_publication() {
+        let heap = Heap::off();
+        assert!(heap.mark_for_tests());
+
+        let allocation = heap.allocate_beskid(16, std::ptr::null());
+        let payload = allocation.as_ptr();
+
+        // This is the formerly unsafe sequence: a white, unrooted allocation was swept before
+        // the caller had an opportunity to publish it.
+        heap.sweep_for_tests();
+        assert!(
+            heap.owns_beskid_payload(payload),
+            "the allocation owner must protect a fresh payload through an in-progress sweep"
+        );
+
+        assert!(heap.mark_for_tests());
+        let mut root_slot = payload;
+        heap.external_roots().register_root(&mut root_slot);
+        allocation.publish();
+
+        heap.sweep_for_tests();
+        assert!(
+            heap.owns_beskid_payload(payload),
+            "a payload published into an external root must survive the sweep that raced its construction"
+        );
+
+        heap.external_roots().unregister_root(&mut root_slot);
+        heap.force_collect();
+        assert!(
+            !heap.owns_beskid_payload(payload),
+            "removing the published root must reclaim the payload; construction ownership cannot leak"
+        );
     }
 }
