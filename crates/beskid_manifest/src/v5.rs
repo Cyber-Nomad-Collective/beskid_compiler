@@ -369,6 +369,15 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     unique(manifest.intrinsics.iter().map(|entry| entry.name.as_str()), "intrinsic")?;
     unique(manifest.intrinsics.iter().map(|entry| entry.symbol.as_str()), "intrinsic linker symbol")?;
     unique(manifest.corelib_services.iter().map(|entry| entry.name.as_str()), "corelib service")?;
+    let expected_corelib_services = ["__args_count", "__args_get"].into_iter().collect::<BTreeSet<_>>();
+    if let Some(unexpected) = manifest
+        .corelib_services
+        .iter()
+        .map(|service| service.name.as_str())
+        .find(|name| !expected_corelib_services.contains(name))
+    {
+        return Err(format!("unexpected corelib service `{unexpected}`"));
+    }
     for (name, adapter, params, result) in [
         ("__args_count", "beskid_rt_v5_args_count", &[][..], "i64"),
         ("__args_get", "beskid_rt_v5_args_get", &["i64"][..], "string"),
@@ -382,6 +391,14 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         if service.adapter != adapter || actual_params != params || service.result != result {
             let signature = if params.is_empty() { "[]".to_string() } else { format!("[{}]", params.join(", ")) };
             return Err(format!("corelib service `{name}` signature must be {signature} -> {result}"));
+        }
+        for binding in &service.target_bindings {
+            if binding.implementation != adapter {
+                return Err(format!(
+                    "corelib service `{name}` binding for `{}` must implement `{adapter}`",
+                    binding.target
+                ));
+            }
         }
     }
     unique(manifest.layouts.iter().map(|entry| (entry.target.as_deref(), entry.name.as_str())), "layout")?;

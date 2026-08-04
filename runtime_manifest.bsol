@@ -91,8 +91,8 @@ intrinsic "context_init" { symbol = "beskid_arch_v5_context_init" capability = "
 intrinsic "context_switch" { symbol = "beskid_arch_v5_context_switch" capability = "runtime.bootstrap.context_switch" params = [{ name = from, type = pointer }, { name = to, type = pointer }] returns = void }
 
 # Foundation Core.Args services bind to one generated ABI-v5 adapter per
-# supported target. Argument-vector capture is handed in by the executable or
-# JIT entry boundary, so these bindings authorize no direct target OS imports.
+# supported target. This Task 3 declaration models generated binding authority
+# only; it authorizes no direct target OS imports.
 corelib_service "__args_count" {
   adapter = "beskid_rt_v5_args_count"
   params = []

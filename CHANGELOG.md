@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fail closed unless the ABI-v5 Core.Args manifest contains exactly
+  `__args_count` and `__args_get`, and unless every target binding implements
+  its canonical generated adapter symbol.
+
 - Restrict `Core.Args` service authority to the compiler-owned regular file at
   its exact canonical path. Loader-proven materialized copies and symlink
   aliases now fail closed, while existing materialized Foundation services keep
