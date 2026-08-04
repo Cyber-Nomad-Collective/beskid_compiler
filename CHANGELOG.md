@@ -59,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Serialize the vendored `cargo-cross` tests that temporarily set
+  `CARGO_PASSTHROUGH_ARGS`, preventing parallel tests from clearing each
+  other's process-global fixture before parsing it.
+
 - Normalize Darwin native-runtime provenance imports at the ABI policy boundary.
   The staged Mach-O adapter's canonical `exit` and `tlv_bootstrap` imports now
   match the manifest-derived allowlist, while undeclared imports remain rejected.

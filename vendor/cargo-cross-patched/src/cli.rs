@@ -1938,7 +1938,13 @@ pub fn print_version() {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
+
+    // Rust tests share one process environment. Tests which temporarily set the
+    // same variable must not run concurrently and clear each other's input.
+    static CARGO_PASSTHROUGH_ARGS_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     fn parse(args: &[&str]) -> Result<Args> {
         let args: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
@@ -2086,6 +2092,7 @@ mod tests {
 
     #[test]
     fn test_parse_exec_command_from_env_passthrough() {
+        let _environment = CARGO_PASSTHROUGH_ARGS_LOCK.lock().expect("environment lock is not poisoned");
         std::env::set_var("CARGO_PASSTHROUGH_ARGS", "-- env FOO=bar");
         let args = parse_exec(&["cargo-cross", "exec", "-t", "x86_64-unknown-linux-musl"]).unwrap();
         assert_eq!(args.args.command, Command::exec());
@@ -2195,6 +2202,7 @@ mod tests {
 
     #[test]
     fn test_parse_passthrough_args_from_env_with_legacy_separator() {
+        let _environment = CARGO_PASSTHROUGH_ARGS_LOCK.lock().expect("environment lock is not poisoned");
         std::env::set_var("CARGO_PASSTHROUGH_ARGS", "-- --foo --bar");
         let args = parse(&["cargo-cross", "build"]).unwrap();
         assert_eq!(args.passthrough_args, vec!["--foo", "--bar"]);
