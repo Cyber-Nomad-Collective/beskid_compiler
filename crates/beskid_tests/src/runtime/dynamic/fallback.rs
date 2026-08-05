@@ -21,7 +21,7 @@ fn dynamic_fallback_mapping_succeeds_for_registered_shapes() {
     register_mapping(SRC_SHAPE, DST_SHAPE, vec![FieldStep { src_offset: 0, dst_offset: 0, size: 8 }]);
 
     with_runtime_scope(|heap, root| {
-        let payload = heap.allocate_beskid(std::mem::size_of::<Payload>(), std::ptr::null());
+        let payload = heap.allocate_beskid(std::mem::size_of::<Payload>(), std::ptr::null()).into_raw_rooted();
         root.runtime_state.allocation_counter += 1;
         unsafe {
             *(payload as *mut Payload) = Payload { value: 42 };

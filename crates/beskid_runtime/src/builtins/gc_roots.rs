@@ -20,6 +20,8 @@ pub extern "C-unwind" fn gc_register_root(ptr_addr: *mut *mut u8) {
     }
     with_current_root(|root| {
         root.heap.external_roots().register_root(ptr_addr);
+        // The registered slot is visible before this releases a raw allocation's temporary root.
+        root.heap.publish_raw_beskid(unsafe { *ptr_addr });
     });
 }
 

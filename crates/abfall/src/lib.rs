@@ -42,7 +42,7 @@ mod trace;
 pub use beskid::{ArrayElementDescriptor, TypeDescriptor};
 pub use cell::GcCell;
 pub use gc::{GcContext, HeapSessionGuard, enter_heap_session, with_current_heap};
-pub use heap::{GcHeapStats, GcOptions, GcPhase, Heap};
+pub use heap::{BeskidAllocation, GcHeapStats, GcOptions, GcPhase, Heap};
 pub use ptr::{GcPtr, GcRoot};
 pub use roots::ExternalRootSet;
 pub use trace::{Trace, Tracer};

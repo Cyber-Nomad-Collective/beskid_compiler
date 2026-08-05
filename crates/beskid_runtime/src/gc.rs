@@ -270,7 +270,9 @@ pub fn with_current_heap_and_root<R>(f: impl FnOnce(&Heap, &mut RuntimeRoot) -> 
 }
 
 pub fn store_handle(root: &mut RuntimeRoot, ptr: *mut u8) -> u64 {
-    root.heap.external_roots().push_handle(ptr)
+    let handle = root.heap.external_roots().push_handle(ptr);
+    root.heap.publish_raw_beskid(ptr);
+    handle
 }
 
 pub fn drop_handle(root: &mut RuntimeRoot, handle: u64) {

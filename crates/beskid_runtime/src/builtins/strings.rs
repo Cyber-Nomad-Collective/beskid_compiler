@@ -1,5 +1,6 @@
 #[cfg(feature = "metrics")]
 use crate::gc::with_current_root;
+use crate::gc::with_current_heap;
 use beskid_abi::BeskidStr;
 
 use super::alloc::alloc;
@@ -28,6 +29,7 @@ pub extern "C-unwind" fn str_new(ptr: *const u8, len: usize) -> *mut BeskidStr {
     unsafe {
         target.write(BeskidStr { ptr, len });
     }
+    with_current_heap(|heap| heap.publish_composite_beskid_edge(target.cast(), ptr as *mut u8));
     target
 }
 

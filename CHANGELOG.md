@@ -147,6 +147,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aliases now fail closed, while existing materialized Foundation services keep
   their established authorization behavior.
 
+- Close Phase B GC publication races: opaque Beskid allocation has a must-use construction
+  owner, and raw ABI returns retain that root until an external-root, handle, or insertion-barrier
+  hand-off explicitly publishes the payload. Marking waits for Idle-admitted mutations before its
+  root snapshot, and the admission/start transition uses one sequentially consistent ordering.
+  Runtime arrays, strings, and dynamic cells now register the same canonical GC-visible composite
+  edge before releasing an embedded allocation's construction root.
+- Prevent concurrent Phase B collection from sweeping intrusive heap nodes while allocations or
+  marking barriers are active. Mutator transactions now use an epoch-stamped phase admission
+  handshake with RAII lifecycle cleanup, and sweep drains work published as admission closes.
 - Preserve the canonical multi-unit `SchedulerSpawn` word-to-`i64` conversion
   fact through `CodegenInput` into generated ISLE coverage.
 - Reject primitive numeric conversion facts whose semantic source or target

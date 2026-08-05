@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use abfall::{Heap, TypeDescriptor};
 use beskid_runtime::{
-    RuntimeRoot, alloc, clear_current_heap, clear_current_root, enter_runtime_scope, force_collect, gc_bytes_allocated,
+    RuntimeRoot, alloc, array_new, clear_current_heap, clear_current_root, dynamic_cell_create, enter_runtime_scope,
+    force_collect, gc_bytes_allocated,
     gc_collect, gc_collect_if_needed, gc_external_root_count, gc_object_count, gc_phase, gc_register_root,
     gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier, leave_runtime_scope, set_current_heap,
-    set_current_root, snapshot_gc,
+    set_current_root, snapshot_gc, str_concat, str_from_i64,
 };
+use beskid_runtime::builtins::str_slice;
 
 fn with_runtime_scope<R>(f: impl FnOnce(&Arc<Heap>, &mut RuntimeRoot) -> R) -> R {
     let heap = Heap::off();
@@ -28,14 +30,108 @@ fn with_runtime_scope<R>(f: impl FnOnce(&Arc<Heap>, &mut RuntimeRoot) -> R) -> R
 }
 
 #[test]
-fn alloc_without_roots_is_reclaimed() {
+fn alloc_remains_live_until_root_handoff_then_is_reclaimed() {
     with_runtime_scope(|heap, _| {
         let ptr = alloc(32, std::ptr::null());
         assert!(!ptr.is_null());
         let before_collect = heap.bytes_allocated();
         assert!(before_collect > 0);
+        heap.force_collect();
+        assert!(
+            heap.owns_beskid_payload(ptr),
+            "raw ABI allocation must retain its construction root before the caller can install a root"
+        );
+
+        let handle = gc_root_handle(ptr);
+        gc_unroot_handle(handle);
         let after = heap.force_collect();
-        assert!(after < before_collect, "unrooted object should be reclaimed");
+        assert!(after < before_collect, "root handoff must release the construction root");
+    });
+}
+
+#[test]
+fn array_composite_reclaims_header_and_buffer_after_outer_handoff() {
+    with_runtime_scope(|heap, _| {
+        let array = array_new(1, 16);
+        let bytes_after_build = heap.bytes_allocated();
+        let handle = gc_root_handle(array.cast());
+        heap.force_collect();
+        assert_eq!(heap.bytes_allocated(), bytes_after_build, "rooted array must trace its buffer");
+
+        gc_unroot_handle(handle);
+        assert!(heap.force_collect() < bytes_after_build, "unreachable array must release its buffer too");
+        assert_eq!(heap.bytes_allocated(), 0, "array composite must not retain a construction root");
+    });
+}
+
+#[test]
+fn string_composite_reclaims_header_and_buffer_after_outer_handoff() {
+    with_runtime_scope(|heap, _| {
+        let value = str_from_i64(42);
+        let bytes_after_build = heap.bytes_allocated();
+        let handle = gc_root_handle(value.cast());
+        heap.force_collect();
+        assert_eq!(heap.bytes_allocated(), bytes_after_build, "rooted string must trace its buffer");
+
+        gc_unroot_handle(handle);
+        assert!(heap.force_collect() < bytes_after_build, "unreachable string must release its buffer too");
+        assert_eq!(heap.bytes_allocated(), 0, "string composite must not retain a construction root");
+    });
+}
+
+#[test]
+fn concatenated_string_reclaims_all_managed_buffers_after_handoffs() {
+    with_runtime_scope(|heap, _| {
+        let left = str_from_i64(12);
+        let right = str_from_i64(34);
+        let combined = str_concat(left, right);
+        let bytes_after_build = heap.bytes_allocated();
+        let left_handle = gc_root_handle(left.cast());
+        let right_handle = gc_root_handle(right.cast());
+        let combined_handle = gc_root_handle(combined.cast());
+        heap.force_collect();
+        assert_eq!(heap.bytes_allocated(), bytes_after_build, "all rooted strings must trace their buffers");
+
+        gc_unroot_handle(left_handle);
+        gc_unroot_handle(right_handle);
+        gc_unroot_handle(combined_handle);
+        assert!(heap.force_collect() < bytes_after_build, "unreachable concatenation must release every buffer");
+        assert_eq!(heap.bytes_allocated(), 0, "str_concat must not retain any construction roots");
+    });
+}
+
+#[test]
+fn nonzero_string_slice_retains_its_managed_buffer_after_source_unroots() {
+    with_runtime_scope(|heap, _| {
+        let source = str_from_i64(12345);
+        let slice = str_slice(source, 1, 3);
+        let source_handle = gc_root_handle(source.cast());
+        let slice_handle = gc_root_handle(slice.cast());
+        gc_unroot_handle(source_handle);
+
+        heap.force_collect();
+        let bytes = unsafe { std::slice::from_raw_parts((*slice).ptr, (*slice).len) };
+        assert_eq!(bytes, b"234", "rooted nonzero slice must retain its source buffer");
+
+        gc_unroot_handle(slice_handle);
+        heap.force_collect();
+        assert_eq!(heap.bytes_allocated(), 0, "slice and source buffer must both reclaim after unrooting");
+    });
+}
+
+#[test]
+fn dynamic_composite_reclaims_cell_and_payload_after_outer_handoff() {
+    with_runtime_scope(|heap, _| {
+        let payload = alloc(16, std::ptr::null());
+        let cell = dynamic_cell_create(7, payload);
+        let bytes_after_build = heap.bytes_allocated();
+        let handle = gc_root_handle(cell.cast());
+        heap.force_collect();
+        assert_eq!(heap.bytes_allocated(), bytes_after_build, "rooted dynamic cell must trace its payload");
+
+        gc_unroot_handle(handle);
+        assert!(heap.force_collect() < bytes_after_build, "unreachable dynamic cell must release its payload too");
+        assert_eq!(heap.bytes_allocated(), 0, "dynamic composite must not retain a construction root");
     });
 }
 

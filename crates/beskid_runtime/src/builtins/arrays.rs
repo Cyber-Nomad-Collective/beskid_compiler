@@ -4,6 +4,7 @@ use beskid_abi::BeskidArray;
 use crate::gc::with_current_heap_and_root;
 
 use super::alloc::alloc;
+use crate::gc::with_current_heap;
 
 /// ABI-v5 request whose field order is frozen by `runtime_manifest.bsol`.
 #[repr(C)]
@@ -172,6 +173,9 @@ pub extern "C-unwind" fn array_new(elem_size: usize, len: usize) -> *mut BeskidA
 
     unsafe {
         target.write(BeskidArray { ptr: data_ptr, len, cap: len });
+    }
+    if len != 0 {
+        with_current_heap(|heap| heap.publish_composite_beskid_edge(target.cast(), data_ptr));
     }
     target
 }
