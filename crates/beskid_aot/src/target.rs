@@ -24,6 +24,18 @@ pub fn detect_target(triple_override: Option<&str>) -> AotResult<TargetInfo> {
         host.triple
     };
 
+    // ABI-v5 owns this target even when the vendored `cargo-cross` catalog does not.  Do not
+    // make COFF object emission depend on an auxiliary tool's target list.
+    if triple == "x86_64-pc-windows-msvc" {
+        return Ok(TargetInfo {
+            triple,
+            object_ext: "obj",
+            static_lib_ext: "lib",
+            shared_lib_ext: "dll",
+            exe_ext: "exe",
+        });
+    }
+
     let config = get_target_config(&triple)
         .ok_or_else(|| AotError::UnsupportedOutputKind { target: triple.clone(), kind: BuildOutputKind::ObjectOnly })?;
 
@@ -97,5 +109,15 @@ mod tests {
         };
 
         assert_eq!(output_filename("hello", BuildOutputKind::StaticLib, &target), "hello.lib");
+    }
+
+    #[test]
+    fn recognizes_the_canonical_windows_abi_v5_target_without_cargo_cross_metadata() {
+        let target = detect_target(Some("x86_64-pc-windows-msvc")).expect("canonical Windows target");
+
+        assert_eq!(target.object_ext, "obj");
+        assert_eq!(target.static_lib_ext, "lib");
+        assert_eq!(target.shared_lib_ext, "dll");
+        assert_eq!(target.exe_ext, "exe");
     }
 }

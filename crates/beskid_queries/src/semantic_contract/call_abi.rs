@@ -28,6 +28,7 @@ fn builtin_type_to_semantic(ty: beskid_analysis::builtins::BuiltinType) -> Optio
         BuiltinType::Ptr => SemanticTypeId::POINTER,
         BuiltinType::Usize => SemanticTypeId::WORD,
         BuiltinType::U64 => SemanticTypeId::I64,
+        BuiltinType::F64 => SemanticTypeId::F64,
         BuiltinType::Unit => SemanticTypeId::UNIT,
         BuiltinType::Never => SemanticTypeId::NEVER,
     })

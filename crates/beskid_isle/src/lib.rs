@@ -19,6 +19,7 @@ pub use cranelift_codegen::ir::{
     UserFuncName, Value,
 };
 use cranelift_codegen::ir::{ExternalName, GlobalValueData};
+use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::verify_function;
 use cranelift_frontend::FunctionBuilder;
@@ -1697,8 +1698,48 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         self.lower_compare(left, right, CompareOp::Eq)
     }
 
+    fn clif_eq_discriminant(
+        &mut self,
+        left: Value,
+        right: Value,
+        left_key: AstNodeKey,
+        right_key: AstNodeKey,
+    ) -> Value {
+        if let (Some(left_layout), Some(right_layout)) = (self.facts.enum_layout(left_key), self.facts.enum_layout(right_key))
+            && left_layout.variants == right_layout.variants
+            && left_layout.tag.value_type == right_layout.tag.value_type
+            && let (Ok(left_offset), Ok(right_offset)) =
+                (i32::try_from(left_layout.tag.offset), i32::try_from(right_layout.tag.offset))
+        {
+            let left_tag = self.builder.ins().load(left_layout.tag.value_type, MemFlags::new(), left, left_offset);
+            let right_tag = self.builder.ins().load(right_layout.tag.value_type, MemFlags::new(), right, right_offset);
+            return self.builder.ins().icmp(IntCC::Equal, left_tag, right_tag);
+        }
+        self.clif_eq(left, right)
+    }
+
     fn clif_ne(&mut self, left: Value, right: Value) -> Value {
         self.lower_compare(left, right, CompareOp::Ne)
+    }
+
+    fn clif_ne_discriminant(
+        &mut self,
+        left: Value,
+        right: Value,
+        left_key: AstNodeKey,
+        right_key: AstNodeKey,
+    ) -> Value {
+        if let (Some(left_layout), Some(right_layout)) = (self.facts.enum_layout(left_key), self.facts.enum_layout(right_key))
+            && left_layout.variants == right_layout.variants
+            && left_layout.tag.value_type == right_layout.tag.value_type
+            && let (Ok(left_offset), Ok(right_offset)) =
+                (i32::try_from(left_layout.tag.offset), i32::try_from(right_layout.tag.offset))
+        {
+            let left_tag = self.builder.ins().load(left_layout.tag.value_type, MemFlags::new(), left, left_offset);
+            let right_tag = self.builder.ins().load(right_layout.tag.value_type, MemFlags::new(), right, right_offset);
+            return self.builder.ins().icmp(IntCC::NotEqual, left_tag, right_tag);
+        }
+        self.clif_ne(left, right)
     }
 
     fn clif_slt(&mut self, left: Value, right: Value) -> Value {
@@ -1816,10 +1857,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         }
         let sig_ref = self.builder.func.import_signature(ext_sig);
         let func_ref = self.builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::user(
-                0,
-                symbol.as_bytes().iter().fold(0, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u32)),
-            ),
+            name: ExternalName::testcase(symbol),
             signature: sig_ref,
             colocated: false,
             patchable: false,
@@ -2390,13 +2428,9 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let (variable, expected_type) = self.locals.get(&slot).copied()?;
         let value = self.lower_nested_expression(value_key)?;
         let actual_type = self.builder.func.dfg.value_type(value);
-        let value = if actual_type == expected_type {
-            value
-        } else if actual_type == types::I32 && expected_type == types::I64 {
-            self.builder.ins().sextend(expected_type, value)
-        } else {
+        if actual_type != expected_type {
             return None;
-        };
+        }
         self.builder.def_var(variable, value);
         Some(value)
     }
