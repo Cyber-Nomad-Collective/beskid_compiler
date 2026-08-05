@@ -3352,15 +3352,15 @@ fn generic_abi_type(
     syntax_type: &beskid_analysis::syntax::Type,
     substitutions: &HashMap<String, SemanticTypeId>,
 ) -> Result<SemanticTypeId, SemanticError> {
-    if let beskid_analysis::syntax::Type::Complex(path) = syntax_type {
-        if path.node.segments.iter().any(|segment| {
+    if let beskid_analysis::syntax::Type::Complex(path) = syntax_type
+        && path.node.segments.iter().any(|segment| {
             segment.node.type_args.iter().any(|argument| {
                 type_syntax_mentions_generic_parameter(&argument.node, "T")
                     || substitutions.keys().any(|name| type_syntax_mentions_generic_parameter(&argument.node, name))
             })
-        }) {
-            return Ok(SemanticTypeId::POINTER);
-        }
+        })
+    {
+        return Ok(SemanticTypeId::POINTER);
     }
     let generic = match syntax_type {
         beskid_analysis::syntax::Type::Complex(path) => {
