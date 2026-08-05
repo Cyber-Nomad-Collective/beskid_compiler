@@ -69,6 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep the generated syntax-node inventory and SDK reflection kinds aligned with
+  the CLIF block expression syntax surface.
+
 - Resolve the Salsa semantic type of a nested direct call when generic
   specialization receives its enclosing expression node, preventing Corelib
   generic-call collection from failing on otherwise well-typed arguments.

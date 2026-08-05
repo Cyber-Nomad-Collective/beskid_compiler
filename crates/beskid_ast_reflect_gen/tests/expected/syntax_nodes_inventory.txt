@@ -12,6 +12,7 @@ Block
 BlockExpression
 BreakStatement
 CallExpression
+ClifBlockExpression
 CodeStringLiteral
 CodeStringSegment
 ConstantDefinition
