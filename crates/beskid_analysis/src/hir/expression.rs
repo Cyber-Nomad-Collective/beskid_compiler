@@ -57,6 +57,8 @@ pub enum ExpressionNode<P: Phase> {
     ArrayLiteralExpression(Spanned<P::ArrayLiteralExpression>),
     #[phase(from = "CodeString")]
     CodeStringExpression(Spanned<P::CodeStringLiteral>),
+    #[phase(from = "ClifBlock")]
+    ClifBlockExpression(Spanned<P::ClifBlockExpression>),
 }
 
 #[derive(beskid_ast_derive::HirNode)]
@@ -102,6 +104,7 @@ impl HirNode for ExpressionNode<HirPhase> {
             ExpressionNode::IndexExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::ArrayLiteralExpression(expr) => push(HirNodeRef(&expr.node)),
             ExpressionNode::CodeStringExpression(_) => {}
+            ExpressionNode::ClifBlockExpression(_) => {}
             ExpressionNode::MacroInvocation(_) | ExpressionNode::MacroMetavariable(_) => {}
         }
     }

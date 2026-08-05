@@ -98,6 +98,7 @@ impl<'a> TypeChecker<'a> {
             HirExpressionNode::IndexExpression(index_expr) => self.type_index_expression(index_expr),
             HirExpressionNode::ArrayLiteralExpression(lit) => self.type_array_literal_expression(lit),
             HirExpressionNode::CodeStringExpression(_) => self.primitive_type_id(HirPrimitiveType::String),
+            HirExpressionNode::ClifBlockExpression(_) => self.primitive_type_id(HirPrimitiveType::Unit),
         };
 
         if let Some(type_id) = type_id {

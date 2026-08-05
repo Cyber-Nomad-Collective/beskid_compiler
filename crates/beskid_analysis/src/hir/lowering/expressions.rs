@@ -48,6 +48,7 @@ impl Lowerable for Spanned<syntax::Expression> {
                 HirExpressionNode::ArrayLiteralExpression(Spanned::new(hir, node.span))
             }
             syntax::Expression::CodeString(code) => lower_code_string_expression(code),
+            syntax::Expression::ClifBlock(c) => HirExpressionNode::ClifBlockExpression(c.clone()),
         };
         Spanned::new(node, self.span)
     }

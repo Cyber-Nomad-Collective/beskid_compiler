@@ -518,7 +518,15 @@ impl Emit for Expression {
             Expression::Index(i) => i.emit(w, cx),
             Expression::ArrayLiteral(a) => a.emit(w, cx),
             Expression::CodeString(c) => c.emit(w, cx),
+            Expression::ClifBlock(c) => c.emit(w, cx),
         }
+    }
+}
+
+impl Emit for Spanned<crate::syntax::ClifBlockExpression> {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        write!(w, "clif {{ {} }}", self.node.body)?;
+        Ok(())
     }
 }
 

@@ -89,7 +89,7 @@ pub use semantic_contract::{
     local_initializer_abi_type, local_slot, mutable_local_assignment, node_kind, node_span, node_type,
     nominal_member_receiver, operator_fact, primitive_numeric_conversion, range_for_fact, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation, spawn_legality,
-    spawn_target, test_item, test_statement_nodes,
+    spawn_target, test_item, test_statement_nodes, clif_block_body,
 };
 pub use session::{
     compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,

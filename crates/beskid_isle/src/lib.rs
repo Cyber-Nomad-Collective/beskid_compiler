@@ -75,6 +75,7 @@ node_kinds!(
     ForStatement,
     SpawnExpression,
     LambdaExpression,
+    ClifBlock,
 );
 
 /// Exhaustive disposition of an expanded-syntax kind at the generated ISLE boundary.
@@ -122,6 +123,7 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         Syntax::ForStatement => IsleLowered(NodeKind::ForStatement),
         Syntax::SpawnExpression => IsleLowered(NodeKind::SpawnExpression),
         Syntax::LambdaExpression => IsleLowered(NodeKind::LambdaExpression),
+        Syntax::ClifBlockExpression => IsleLowered(NodeKind::ClifBlock),
 
         Syntax::HostDefinition
         | Syntax::RegistryBlock
@@ -796,6 +798,10 @@ pub trait NodeFacts {
     fn function_parameters(&self, _key: AstNodeKey) -> Option<Vec<ParameterSlot>> {
         None
     }
+    /// Raw body text of a clif block expression.
+    fn clif_block_body(&self, _key: AstNodeKey) -> Option<String> {
+        None
+    }
 }
 
 /// Generation-safe local slot and scalar type for one emitted function parameter.
@@ -904,6 +910,7 @@ pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
     call_importer: Option<&'interner mut dyn CallImporter>,
     loop_stack: Vec<LoopTargets>,
     locals: HashMap<LocalSlotId, (Variable, Type)>,
+    pub function_param_values: Vec<Value>,
     pending_error: Option<LoweringError>,
 }
 
@@ -916,6 +923,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             call_importer: None,
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            function_param_values: Vec::new(),
             pending_error: None,
         }
     }
@@ -932,6 +940,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             call_importer: None,
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            function_param_values: Vec::new(),
             pending_error: None,
         }
     }
@@ -948,6 +957,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             call_importer: Some(call_importer),
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            function_param_values: Vec::new(),
             pending_error: None,
         }
     }
@@ -965,6 +975,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             call_importer,
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            function_param_values: Vec::new(),
             pending_error: None,
         }
     }
@@ -2063,6 +2074,72 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         lowered
     }
 
+    fn emit_clif_block(&mut self, key: AstNodeKey) -> Option<Value> {
+        let body = self.facts.clif_block_body(key)?;
+        let result_type = self.facts.scalar_type(key)
+            .unwrap_or_else(|| self.builder.func.signature.returns.first().map(|r| r.value_type).unwrap_or(types::I64));
+
+        let mut result: Option<Value> = None;
+
+        for line in body.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            if let Some(rest) = line.strip_prefix("return") {
+                let rest = rest.trim();
+                if let Some(param_ref) = rest.strip_prefix('%') {
+                    if let Ok(index) = param_ref.trim().parse::<usize>() {
+                        result = self.function_param_values.get(index).copied();
+                    }
+                }
+            } else if let Some(rest) = line.strip_prefix("call") {
+                let rest = rest.trim();
+                if let Some(symbol_part) = rest.strip_prefix('@') {
+                    let symbol_end = symbol_part
+                        .find(|c: char| c.is_whitespace() || c == '(')
+                        .unwrap_or(symbol_part.len());
+                    let symbol = &symbol_part[..symbol_end];
+                    let args_str = symbol_part[symbol_end..].trim();
+                    let args_str = args_str.strip_prefix('(').unwrap_or(args_str);
+                    let args_str = args_str.strip_suffix(')').unwrap_or(args_str);
+
+                    let mut args = Vec::new();
+                    for arg in args_str.split(',') {
+                        let arg = arg.trim();
+                        if let Some(num) = arg.strip_prefix('%') {
+                            if let Ok(index) = num.trim().parse::<usize>() {
+                                if let Some(value) = self.function_param_values.get(index).copied() {
+                                    args.push(value);
+                                }
+                            }
+                        }
+                    }
+
+                    let mut signature = Signature::new(self.builder.func.signature.call_conv);
+                    for arg in &args {
+                        signature.params.push(AbiParam::new(self.builder.func.dfg.value_type(*arg)));
+                    }
+                    signature.returns.push(AbiParam::new(result_type));
+
+                    let sig_ref = self.builder.func.import_signature(signature);
+                    let func_ref = self.builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
+                        name: ExternalName::testcase(symbol),
+                        signature: sig_ref,
+                        colocated: false,
+                        patchable: false,
+                    });
+
+                    let call = self.builder.ins().call(func_ref, &args);
+                    result = self.builder.inst_results(call).first().copied();
+                }
+            }
+        }
+
+        result
+    }
+
     fn emit_return(&mut self, key: AstNodeKey) -> Option<()> {
         if let Some(value_key) = self.facts.child(key, 0) {
             let value = generated::constructor_lower_expression(self, value_key)?;
@@ -3106,6 +3183,7 @@ fn materialize_parameters(
         let variable = context.builder.declare_var(parameter.value_type);
         context.builder.def_var(variable, value);
         context.locals.insert(parameter.slot, (variable, parameter.value_type));
+        context.function_param_values.push(value);
     }
     Ok(())
 }

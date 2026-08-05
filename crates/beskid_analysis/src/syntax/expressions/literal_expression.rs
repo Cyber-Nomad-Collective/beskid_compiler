@@ -220,7 +220,10 @@ fn remap_expression_spans(expression: &mut Spanned<Expression>, offset: usize, s
                 remap_expression_spans(element, offset, source);
             }
         }
-        Expression::MacroInvocation(_) | Expression::MacroMetavariable(_) | Expression::CodeString(_) => {}
+        Expression::MacroInvocation(_)
+        | Expression::MacroMetavariable(_)
+        | Expression::CodeString(_)
+        | Expression::ClifBlock(_) => {}
     }
 }
 

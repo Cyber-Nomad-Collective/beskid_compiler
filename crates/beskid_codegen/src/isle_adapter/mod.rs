@@ -19,7 +19,7 @@ use beskid_queries::{
     generic_call_specialization, generic_call_template, generic_specialization_instance, item_abi_signature,
     item_body, literal_fact, local_initializer_abi_type, local_slot, mutable_local_assignment,
     node_kind, node_type, nominal_member_receiver, operator_fact, range_for_fact, resolved_item, resolved_local,
-    runtime_intrinsic_name, spawn_entry_validation, test_statement_nodes,
+    clif_block_body, runtime_intrinsic_name, spawn_entry_validation, test_statement_nodes,
 };
 use cranelift_codegen::ir::{FuncRef, Type, UserFuncName, types};
 use cranelift_codegen::isa::TargetIsa;

@@ -14,3 +14,9 @@
       (emit_spawn key))
 (rule (lower_expression key @ (node_kind (NodeKind.LambdaExpression)))
       (emit_lambda key))
+
+(decl partial emit_clif_block (AstNodeKey) Value)
+(extern constructor emit_clif_block emit_clif_block)
+
+(rule (lower_expression key @ (node_kind (NodeKind.ClifBlock)))
+      (emit_clif_block key))

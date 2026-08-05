@@ -241,5 +241,6 @@ fn scan_expression_residuals(
             }
         }
         Expression::CodeString(_) => {}
+        Expression::ClifBlock(_) => {}
     }
 }

@@ -41,6 +41,7 @@ PubKeyword = { "pub" }
 TestKeyword = { "test" }
 SkipKeyword = { "skip" }
 SpawnKeyword = { "spawn" }
+ClifKeyword = { "clif" }
 AsyncKeyword = { "async" }
 AwaitKeyword = { "await" }
 CodeKeyword = { "code" }
@@ -87,6 +88,7 @@ Keyword = {
       | TestKeyword
       | SkipKeyword
       | SpawnKeyword
+      | ClifKeyword
       | AsyncKeyword
       | AwaitKeyword
       | HostKeyword
@@ -320,7 +322,9 @@ MacroArgumentList = { Expression ~ ("," ~ Expression)* }
 MacroInvocationBlock = { Block }
 MacroMetavariable = { "$" ~ Identifier }
 
-PrimaryExpression = { TryBlockExpression | MacroInvocation | MacroMetavariable | CodeExpression | Literal | GroupedExpression | BlockExpression | EnumConstructorExpression | StructLiteralExpression | ArrayLiteralExpression | Path }
+PrimaryExpression = { TryBlockExpression | MacroInvocation | MacroMetavariable | CodeExpression | ClifBlockExpression | Literal | GroupedExpression | BlockExpression | EnumConstructorExpression | StructLiteralExpression | ArrayLiteralExpression | Path }
+
+ClifBlockExpression = { ClifKeyword ~ "{" ~ (!"}" ~ ANY)* ~ "}" }
 
 EnumConstructorExpression = { enum_constructor_nullary | enum_constructor_with_args }
 enum_constructor_nullary = { EnumPath ~ !"(" }

@@ -984,6 +984,12 @@ fn resolve_module_items(
             collect_generic_call_specializations(db, item.key, &mut specializations)?;
         }
     }
+    // Also collect specializations from entry-point roots (test files) that may
+    // call generic functions defined in this module with concrete type arguments.
+    for root in input.roots() {
+        collect_generic_call_specializations(db, *root, &mut specializations)?;
+    }
+
     let mut resolved = Vec::with_capacity(source_items.len());
     for item in source_items {
         if item_abi_signature(db, item.key).ok().flatten().is_some() {

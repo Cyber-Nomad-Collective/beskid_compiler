@@ -495,6 +495,9 @@ impl<'a> HirLegalityValidator<'a> {
             HirExpressionNode::CodeStringExpression(code) => {
                 self.check_span(code.span, "code_string_expression");
             }
+            HirExpressionNode::ClifBlockExpression(clif) => {
+                self.check_span(clif.span, "clif_block_expression");
+            }
         }
     }
 
