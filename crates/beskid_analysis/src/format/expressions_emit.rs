@@ -524,7 +524,7 @@ impl Emit for Expression {
 }
 
 impl Emit for Spanned<crate::syntax::ClifBlockExpression> {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+    fn emit<W: Write>(&self, w: &mut W, _cx: &mut EmitCtx) -> Result<(), EmitError> {
         write!(w, "clif {{ {} }}", self.node.body)?;
         Ok(())
     }

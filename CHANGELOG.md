@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep the syntax formatter warning-free when rendering CLIF block expressions.
+
 - Restore manifest-owned process adapter and Core.Math declarations, regenerating
   the ABI-v5 contract from the authoritative runtime manifest. Composite runtime
   allocations now retain and trace explicit managed child edges through GC.
