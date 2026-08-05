@@ -181,9 +181,10 @@ fn beskid_descriptor_trace_keeps_child_payload_alive() {
     };
 
     let parent = heap.allocate_beskid(16, (&desc as *const TypeDescriptor).cast::<u8>());
-    let child = heap.allocate_beskid(16, std::ptr::null());
+    let child_allocation = heap.allocate_beskid(16, std::ptr::null());
+    let child = child_allocation.as_ptr();
     let parent_ptr = parent.as_ptr();
-    let child_ptr = child.as_ptr();
+    let child_ptr = child;
     // SAFETY: the local descriptor and pointer map remain alive for this test.
     assert_eq!(unsafe { desc.pointer_map() }, &pointer_offsets);
     assert!(heap.owns_beskid_payload(parent_ptr));
@@ -195,7 +196,7 @@ fn beskid_descriptor_trace_keeps_child_payload_alive() {
     let mut parent_slot = parent_ptr;
     heap.external_roots().register_root(&mut parent_slot as *mut *mut u8);
     parent.publish();
-    child.publish();
+    child_allocation.publish();
     let before = heap.bytes_allocated();
     heap.force_collect();
     assert_eq!(
@@ -224,13 +225,15 @@ fn typed_array_descriptor_keeps_pointer_elements_alive_across_forced_gc() {
     let (parent, construction_root) = heap
         .allocate_beskid_array_constructing(3 * std::mem::size_of::<usize>(), descriptor, 1, |_| {})
         .expect("typed array construction allocation");
-    let child = heap.allocate_beskid(16, std::ptr::null());
+    let child_allocation = heap.allocate_beskid(16, std::ptr::null());
+    let child = child_allocation.as_ptr();
     assert!(heap.owns_beskid_payload(parent));
     assert!(heap.owns_beskid_payload(child));
     // SAFETY: typed-array allocation reserves the header then exactly one pointer-sized element.
     unsafe {
         std::ptr::write_unaligned(parent.add(3 * std::mem::size_of::<usize>()).cast::<*mut u8>(), child);
     }
+    child_allocation.publish();
 
     let mut parent_slot = parent;
     heap.external_roots().register_root(&mut parent_slot as *mut *mut u8);

@@ -8,10 +8,10 @@ use crate::gc_box::{GcBox, GcHeader};
 use crate::ptr::GcRoot;
 use crate::roots::ExternalRootSet;
 use crate::trace::{Trace, Tracer};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::ptr::null_mut;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -40,6 +40,7 @@ struct BeskidAllocationRegistry {
 struct BeskidAllocationMappings {
     payload_to_header: BTreeMap<usize, AllocationRange>,
     header_to_payload: BTreeMap<usize, usize>,
+    construction_roots: HashSet<usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -49,19 +50,23 @@ struct AllocationRange {
 }
 
 impl BeskidAllocationRegistry {
-    fn register(&self, payload: *mut u8, payload_len: usize, header: *mut GcHeader) {
+    fn register(&self, payload: *mut u8, payload_len: usize, header: *mut GcHeader, has_construction_root: bool) {
         let Some(end_exclusive) = (payload as usize).checked_add(payload_len) else {
             return;
         };
         let mut mappings = self.mappings.lock();
         mappings.payload_to_header.insert(payload as usize, AllocationRange { header: header as usize, end_exclusive });
         mappings.header_to_payload.insert(header as usize, payload as usize);
+        if has_construction_root {
+            mappings.construction_roots.insert(payload as usize);
+        }
     }
 
     fn unregister(&self, header: *mut GcHeader) {
         let mut mappings = self.mappings.lock();
         if let Some(payload) = mappings.header_to_payload.remove(&(header as usize)) {
             mappings.payload_to_header.remove(&payload);
+            mappings.construction_roots.remove(&payload);
         }
     }
 
@@ -77,6 +82,15 @@ impl BeskidAllocationRegistry {
 
     fn owns(&self, payload: *mut u8) -> bool {
         !payload.is_null() && self.header_for(payload).is_some()
+    }
+
+    fn take_construction_root(&self, payload: *mut u8) -> Option<*mut GcHeader> {
+        let mut mappings = self.mappings.lock();
+        if mappings.construction_roots.remove(&(payload as usize)) {
+            mappings.payload_to_header.get(&(payload as usize)).map(|range| range.header as *mut GcHeader)
+        } else {
+            None
+        }
     }
 }
 
@@ -157,6 +171,21 @@ pub enum GcPhase {
     Sweeping = 2,
 }
 
+const GC_PHASE_BITS: usize = 2;
+const GC_PHASE_MASK: usize = (1 << GC_PHASE_BITS) - 1;
+
+fn gc_state(phase: GcPhase, epoch: usize) -> usize {
+    (epoch << GC_PHASE_BITS) | phase as usize
+}
+
+fn state_phase(state: usize) -> GcPhase {
+    GcPhase::from((state & GC_PHASE_MASK) as u8)
+}
+
+fn state_epoch(state: usize) -> usize {
+    state >> GC_PHASE_BITS
+}
+
 impl From<u8> for GcPhase {
     fn from(value: u8) -> Self {
         match value {
@@ -199,16 +228,70 @@ pub struct Heap {
     current_threshold: AtomicUsize,
     /// Gray queue for incremental marking
     gray_queue: parking_lot::Mutex<GrayQueue>,
-    /// Current GC phase
-    phase: AtomicU8,
+    /// Current GC phase plus a collection epoch, preventing an ABA phase observation.
+    phase_state: AtomicUsize,
     /// Background GC thread handle
     bg_thread: StartStopJoinHandle,
     /// Number of assist mutators or write-barriers active.
     busy_marking_count: std::sync::atomic::AtomicUsize,
+    /// Mutator transactions that may publish roots or marking work.
+    active_mutator_count: AtomicUsize,
     /// Runtime-registered roots and temporary handles.
     external_roots: ExternalRootSet,
     /// Ownership and pointer-to-header lookup for opaque Beskid payloads.
     beskid_allocations: BeskidAllocationRegistry,
+}
+
+/// An opaque Beskid allocation kept rooted until it is published to the heap.
+#[must_use = "an opaque Beskid allocation must be published or dropped"]
+pub struct BeskidAllocation<'heap> {
+    heap: &'heap Heap,
+    payload_ptr: *mut u8,
+}
+
+impl BeskidAllocation<'_> {
+    pub fn as_ptr(&self) -> *mut u8 {
+        self.payload_ptr
+    }
+
+    pub fn publish(self) -> *mut u8 {
+        self.heap.publish_raw_beskid(self.payload_ptr);
+        let payload_ptr = self.payload_ptr;
+        std::mem::forget(self);
+        payload_ptr
+    }
+
+    pub fn into_raw_rooted(self) -> *mut u8 {
+        let payload_ptr = self.payload_ptr;
+        std::mem::forget(self);
+        payload_ptr
+    }
+}
+
+impl Drop for BeskidAllocation<'_> {
+    fn drop(&mut self) {
+        self.heap.release_construction_root(self.payload_ptr);
+    }
+}
+
+struct MutatorOperationGuard<'a> {
+    heap: &'a Heap,
+    busy_marking: bool,
+}
+
+impl Drop for MutatorOperationGuard<'_> {
+    fn drop(&mut self) {
+        if self.busy_marking {
+            self.heap.busy_marking_count.fetch_sub(1, Ordering::AcqRel);
+        }
+        self.heap.active_mutator_count.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+impl MutatorOperationGuard<'_> {
+    fn is_marking(&self) -> bool {
+        self.busy_marking
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -366,9 +449,10 @@ impl Heap {
             bytes_allocated: AtomicUsize::new(0),
             current_threshold,
             gray_queue: parking_lot::Mutex::new(GrayQueue::new()),
-            phase: AtomicU8::new(GcPhase::Idle as u8),
+            phase_state: AtomicUsize::new(gc_state(GcPhase::Idle, 0)),
             bg_thread: StartStopJoinHandle::new(),
             busy_marking_count: std::sync::atomic::AtomicUsize::new(0),
+            active_mutator_count: AtomicUsize::new(0),
             external_roots: ExternalRootSet::default(),
             beskid_allocations: BeskidAllocationRegistry::default(),
         });
@@ -379,12 +463,15 @@ impl Heap {
     }
 
     pub fn allocate<T: Trace>(&self, data: T) -> GcRoot<T> {
-        // Mutator assist: help with marking if enabled
-        if self.options.assist_work_budget > 0 && self.check_is_marking_and_increment_busy() {
-            self.do_mark_incremental(self.options.assist_work_budget);
-            self.decrement_busy_marking();
+        if self.options.assist_work_budget > 0 {
+            self.with_mutator_operation(|is_marking| {
+                if is_marking {
+                    self.do_mark_incremental(self.options.assist_work_budget);
+                }
+            });
         }
 
+        let _mutator = self.enter_mutator_operation();
         let ptr = GcBox::new(data);
         let header_ptr = unsafe { &(*ptr.as_ptr()).header as *const GcHeader as *mut GcHeader };
         self.insert_allocation(header_ptr);
@@ -394,15 +481,19 @@ impl Heap {
     }
 
     /// Allocate an opaque Beskid payload tracked by descriptor metadata.
-    pub fn allocate_beskid(&self, size: usize, type_desc_ptr: *const u8) -> *mut u8 {
-        if self.options.assist_work_budget > 0 && self.check_is_marking_and_increment_busy() {
-            self.do_mark_incremental(self.options.assist_work_budget);
-            self.decrement_busy_marking();
+    pub fn allocate_beskid(&self, size: usize, type_desc_ptr: *const u8) -> BeskidAllocation<'_> {
+        if self.options.assist_work_budget > 0 {
+            self.with_mutator_operation(|is_marking| {
+                if is_marking {
+                    self.do_mark_incremental(self.options.assist_work_budget);
+                }
+            });
         }
 
+        let _mutator = self.enter_mutator_operation();
         let type_desc = type_desc_ptr.cast::<TypeDescriptor>();
         let obj = BeskidObject { heap: self as *const Self, type_desc, bytes: AlignedBytes::zeroed(size), array: None };
-        let ptr = GcBox::new_with_root(obj, false);
+        let ptr = GcBox::new_with_root(obj, true);
         let header_ptr = unsafe { &(*ptr.as_ptr()).header as *const GcHeader as *mut GcHeader };
         self.insert_allocation(header_ptr);
 
@@ -416,9 +507,9 @@ impl Heap {
             }
         }
 
-        self.beskid_allocations.register(payload_ptr, size, header_ptr);
+        self.beskid_allocations.register(payload_ptr, size, header_ptr, true);
 
-        payload_ptr
+        BeskidAllocation { heap: self, payload_ptr }
     }
 
     /// Allocate a typed array under a construction root before publishing it to the collector.
@@ -435,10 +526,14 @@ impl Heap {
     ) -> Option<(*mut u8, u64)> {
         let data_size = descriptor.stride.checked_mul(length)?;
         let total_size = header_size.checked_add(data_size)?;
-        if self.options.assist_work_budget > 0 && self.check_is_marking_and_increment_busy() {
-            self.do_mark_incremental(self.options.assist_work_budget);
-            self.decrement_busy_marking();
+        if self.options.assist_work_budget > 0 {
+            self.with_mutator_operation(|is_marking| {
+                if is_marking {
+                    self.do_mark_incremental(self.options.assist_work_budget);
+                }
+            });
         }
+        let _mutator = self.enter_mutator_operation();
         let obj = BeskidObject {
             heap: self as *const Self,
             type_desc: std::ptr::null(),
@@ -452,7 +547,7 @@ impl Heap {
         // only observe the object after the external construction root and heap-list publication
         // below, so it never traces partially initialized header storage.
         initialize(payload_ptr);
-        self.beskid_allocations.register(payload_ptr, total_size, header_ptr);
+        self.beskid_allocations.register(payload_ptr, total_size, header_ptr, false);
         // This handle must precede publication: a collector which reaches `head` can now also
         // reach the complete (zeroed) object through its construction root.
         let handle = self.external_roots.push_handle(payload_ptr);
@@ -523,15 +618,31 @@ impl Heap {
 
     /// Dijkstra insertion barrier for raw Beskid payload pointers.
     pub fn write_barrier(&self, _dst_obj: *mut u8, value_ptr: *mut u8) {
-        if value_ptr.is_null() || !self.check_is_marking_and_increment_busy() {
+        if value_ptr.is_null() {
             return;
         }
-        let tracer = Tracer::new();
-        self.mark_payload_ptr(value_ptr, &tracer);
-        if tracer.has_work() {
-            self.merge_work(&tracer);
+        self.with_mutator_operation(|is_marking| {
+            if is_marking {
+                let tracer = Tracer::new();
+                self.mark_payload_ptr(value_ptr, &tracer);
+                if tracer.has_work() {
+                    self.merge_work(&tracer);
+                }
+            }
+        });
+    }
+
+    /// Finish a raw ABI allocation hand-off after the caller has made it reachable.
+    pub fn publish_raw_beskid(&self, payload_ptr: *mut u8) {
+        self.write_barrier(std::ptr::null_mut(), payload_ptr);
+        self.release_construction_root(payload_ptr);
+    }
+
+    fn release_construction_root(&self, payload_ptr: *mut u8) {
+        if let Some(header_ptr) = self.beskid_allocations.take_construction_root(payload_ptr) {
+            // SAFETY: the construction root keeps the registered allocation alive until this decrement.
+            unsafe { (*header_ptr).dec_root() };
         }
-        self.decrement_busy_marking();
     }
 
     pub fn force_collect(&self) -> usize {
@@ -567,7 +678,7 @@ impl Heap {
     }
 
     pub fn gc_phase(&self) -> GcPhase {
-        GcPhase::from(self.phase.load(Ordering::Acquire))
+        state_phase(self.phase_state.load(Ordering::Acquire))
     }
 
     pub fn collection_threshold(&self) -> usize {
@@ -588,41 +699,89 @@ impl Heap {
         }
     }
 
-    pub fn check_is_marking_and_increment_busy(&self) -> bool {
-        self.busy_marking_count.fetch_add(1, Ordering::AcqRel);
-        if self.is_marking() {
-            true
-        } else {
-            self.busy_marking_count.fetch_sub(1, Ordering::AcqRel);
-            false
+    fn enter_mutator_operation(&self) -> MutatorOperationGuard<'_> {
+        loop {
+            let before = self.phase_state.load(Ordering::SeqCst);
+            if state_phase(before) == GcPhase::Sweeping {
+                std::thread::yield_now();
+                continue;
+            }
+
+            self.active_mutator_count.fetch_add(1, Ordering::SeqCst);
+            if self.phase_state.load(Ordering::SeqCst) == before {
+                let busy_marking = state_phase(before) == GcPhase::Marking;
+                if busy_marking {
+                    self.busy_marking_count.fetch_add(1, Ordering::AcqRel);
+                }
+                return MutatorOperationGuard { heap: self, busy_marking };
+            }
+
+            self.active_mutator_count.fetch_sub(1, Ordering::SeqCst);
         }
     }
 
-    pub fn decrement_busy_marking(&self) {
-        self.busy_marking_count.fetch_sub(1, Ordering::AcqRel);
+    pub(crate) fn with_mutator_operation<R>(&self, operation: impl FnOnce(bool) -> R) -> R {
+        let guard = self.enter_mutator_operation();
+        operation(guard.is_marking())
+    }
+
+    fn wait_for_mutator_quiescence(&self) {
+        while self.active_mutator_count.load(Ordering::SeqCst) != 0 {
+            std::thread::yield_now();
+        }
     }
 
     /// Try to transition to marking phase
     fn try_start_marking(&self) -> bool {
-        self.phase
-            .compare_exchange(GcPhase::Idle as u8, GcPhase::Marking as u8, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+        loop {
+            let state = self.phase_state.load(Ordering::Acquire);
+            if state_phase(state) != GcPhase::Idle {
+                return false;
+            }
+            let next = gc_state(GcPhase::Marking, state_epoch(state).wrapping_add(1));
+            if self.phase_state.compare_exchange(state, next, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                return true;
+            }
+        }
     }
 
     /// Transition to sweeping phase
     fn start_sweeping(&self) {
-        self.phase.store(GcPhase::Sweeping as u8, Ordering::Release);
+        loop {
+            let state = self.phase_state.load(Ordering::SeqCst);
+            match state_phase(state) {
+                GcPhase::Sweeping => return,
+                GcPhase::Marking => {
+                    let next = gc_state(GcPhase::Sweeping, state_epoch(state));
+                    if self.phase_state.compare_exchange(state, next, Ordering::SeqCst, Ordering::Acquire).is_ok() {
+                        return;
+                    }
+                }
+                GcPhase::Idle => panic!("cannot start sweeping while the collector is idle"),
+            }
+        }
     }
 
     /// Transition back to idle phase
     fn finish_gc(&self) {
-        self.phase.store(GcPhase::Idle as u8, Ordering::Release);
+        loop {
+            let state = self.phase_state.load(Ordering::Acquire);
+            if state_phase(state) == GcPhase::Idle {
+                return;
+            }
+            let next = gc_state(GcPhase::Idle, state_epoch(state));
+            if self.phase_state.compare_exchange(state, next, Ordering::Release, Ordering::Acquire).is_ok() {
+                return;
+            }
+        }
     }
 
     pub(crate) fn try_mark_full(&self) -> bool {
         if !self.try_start_marking() {
             return false;
         }
+
+        self.wait_for_mutator_quiescence();
 
         {
             let tracer = Tracer::new();
@@ -637,6 +796,11 @@ impl Heap {
     }
 
     pub(crate) fn sweep_and_finish(&self) -> usize {
+        self.start_sweeping();
+        self.wait_for_mutator_quiescence();
+
+        let tracer = Tracer::new();
+        self.do_mark_work_full(&tracer);
         let live_bytes = self.do_sweep();
         self.update_threshold(live_bytes);
         self.finish_gc();
