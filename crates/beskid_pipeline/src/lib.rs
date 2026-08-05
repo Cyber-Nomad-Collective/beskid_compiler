@@ -20,6 +20,24 @@ use std::sync::Arc;
 pub use phases::*;
 pub use timing::TimedPipelineObserver;
 
+/// Floor for workers that execute compiler phases which traverse the complete semantic graph.
+///
+/// This policy belongs in the pipeline leaf crate so command entrypoints and internal worker
+/// pools cannot silently diverge. The environment may request a larger stack, never a smaller
+/// one.
+pub const COMPILER_STACK_SIZE: usize = 64 * 1024 * 1024;
+
+/// Resolve the compiler worker stack size, honoring `RUST_MIN_STACK` only above the floor.
+pub fn compiler_stack_size() -> usize {
+    resolve_compiler_stack_size(std::env::var("RUST_MIN_STACK").ok().as_deref())
+}
+
+fn resolve_compiler_stack_size(requested: Option<&str>) -> usize {
+    requested
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .map_or(COMPILER_STACK_SIZE, |size| size.max(COMPILER_STACK_SIZE))
+}
+
 /// A single pipeline observation (phase boundaries or fine-grained work units).
 #[derive(Debug, Clone)]
 pub enum PipelineEvent {
@@ -147,3 +165,22 @@ pub fn report_progress<O: PipelineObserver + ?Sized>(
 
 /// Shared handle for stages that take owned requests (e.g. AOT build).
 pub type SharedPipelineObserver = Arc<dyn PipelineObserver>;
+
+#[cfg(test)]
+mod tests {
+    use super::{COMPILER_STACK_SIZE, resolve_compiler_stack_size};
+
+    #[test]
+    fn compiler_stack_policy_never_uses_a_smaller_requested_stack() {
+        assert_eq!(resolve_compiler_stack_size(None), COMPILER_STACK_SIZE);
+        assert_eq!(resolve_compiler_stack_size(Some("1048576")), COMPILER_STACK_SIZE);
+        assert_eq!(resolve_compiler_stack_size(Some("0")), COMPILER_STACK_SIZE);
+        assert_eq!(resolve_compiler_stack_size(Some("invalid")), COMPILER_STACK_SIZE);
+    }
+
+    #[test]
+    fn compiler_stack_policy_accepts_a_larger_requested_stack() {
+        let requested = COMPILER_STACK_SIZE * 2;
+        assert_eq!(resolve_compiler_stack_size(Some(&format!(" {requested} "))), requested);
+    }
+}

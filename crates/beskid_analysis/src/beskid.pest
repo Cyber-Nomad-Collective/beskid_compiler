@@ -334,7 +334,7 @@ ArrayLiteralExpression = { "[" ~ ExpressionList? ~ "]" }
 
 CallExpression = { Identifier ~ "(" ~ ArgumentList? ~ ")" }
 ArgumentList = { Expression ~ ("," ~ Expression)* }
-ExpressionList = { Expression ~ ("," ~ Expression)* }
+ExpressionList = { Expression ~ ("," ~ Expression)* ~ ","? }
 
 MatchExpression = { "match" ~ Expression ~ "{" ~ (MatchArm ~ ("," ~ MatchArm?)*)? ~ "}" }
 MatchArm = { Pattern ~ MatchGuard? ~ "=>" ~ Expression }

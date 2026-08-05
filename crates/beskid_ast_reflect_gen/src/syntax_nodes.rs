@@ -94,7 +94,7 @@ pub struct FieldMirror {
 #[derive(Debug, Clone)]
 pub struct EnumVariantMirror {
     pub name: String,
-    /// Rust `///` lines on the variant plus a trailing `@variant(…)` shape summary (`beskid_doc.pest`).
+/// Rust `///` lines on the variant. Its `@variant(…)` shape summary is emitted on the enclosing enum.
     pub rust_doc_lines: Vec<String>,
     pub shape: VariantShape,
 }
@@ -178,22 +178,6 @@ fn field_sdk_doc_lines(attrs: &[Attribute], beskid_ty: &str, stub_note: Option<&
         lines.push(sanitize_doc_directive_suffix(&format!("ReflectStub in Mod SDK ({note}).")));
     }
     lines
-}
-
-fn variant_sdk_summary_line(name: &str, shape: &VariantShape) -> String {
-    let suffix = match shape {
-        VariantShape::Unit => "unit variant (no payload).".into(),
-        VariantShape::Tuple(fs) if fs.is_empty() => "empty tuple payload.".into(),
-        VariantShape::Tuple(fs) => {
-            let ps: Vec<String> = fs.iter().map(|f| format!("{} ({})", f.name, f.beskid_ty)).collect();
-            format!("tuple payload: {}.", ps.join(", "))
-        }
-        VariantShape::Struct(fs) => {
-            let ps: Vec<String> = fs.iter().map(|f| format!("{}: {}", f.name, f.beskid_ty)).collect();
-            format!("struct payload: {}.", ps.join(", "))
-        }
-    };
-    doc_variant_line(name, &suffix)
 }
 
 fn variant_index_suffix(shape: &VariantShape) -> String {
@@ -339,9 +323,7 @@ fn parse_enum_variant(
             VariantShape::Struct(out)
         }
     };
-    let mut rust_doc_lines = doc_lines_from_attrs(&v.attrs);
-    rust_doc_lines.push(variant_sdk_summary_line(&name, &shape));
-    EnumVariantMirror { name, rust_doc_lines, shape }
+    EnumVariantMirror { name, rust_doc_lines: doc_lines_from_attrs(&v.attrs), shape }
 }
 
 fn struct_fields(
@@ -958,6 +940,26 @@ mod tests {
         for (name, parsed) in &decls {
             let text = emit_type_bd(name, parsed);
             assert!(!text.contains(stub), "emitted `{name}` must not use {stub}; use concrete Nodes helpers instead");
+        }
+    }
+
+    #[test]
+    fn enum_variant_directives_stay_in_the_enclosing_doc_block() {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let analysis_src = manifest.join("../beskid_analysis/src");
+        let files = syntax_helpers::load_syntax_files(&analysis_src).expect("load");
+        let helpers = syntax_helpers::build_helper_paths(&files);
+        let (decls, _) = collect_declarations(&analysis_src, Some(&helpers)).expect("collect");
+        let host_body_item = decls.get("HostBodyItem").expect("HostBodyItem mirror");
+        let text = emit_type_bd("HostBodyItem", host_body_item);
+        let enum_start = text.find("pub enum HostBodyItem").expect("enum declaration");
+
+        assert!(text.matches("@variant(").count() >= 4, "all variant summaries must be retained");
+        for (offset, _) in text.match_indices("@variant(") {
+            assert!(
+                offset < enum_start,
+                "@variant directives are valid only in the enclosing enum documentation, not variant documentation:\n{text}"
+            );
         }
     }
 }

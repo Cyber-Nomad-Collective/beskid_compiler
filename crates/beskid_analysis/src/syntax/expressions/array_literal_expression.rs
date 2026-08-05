@@ -30,3 +30,25 @@ pub(crate) fn parse_array_literal_expression(pair: Pair<Rule>) -> Result<Spanned
 
     Ok(Spanned::new(Expression::ArrayLiteral(literal), span))
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::services::parse_program_with_source_name;
+    use crate::syntax::{Expression, Node, Statement};
+
+    #[test]
+    fn parses_array_literal_with_a_trailing_comma() {
+        let program = parse_program_with_source_name("Arrays.bd", "i64[] Values() { return [1, 2,]; }")
+            .expect("array literal with a trailing comma parses");
+        let Node::Function(function) = &program.node.items[0].node else {
+            panic!("expected function");
+        };
+        let Statement::Return(return_statement) = &function.node.body.node.statements[0].node else {
+            panic!("expected return statement");
+        };
+        let Some(Expression::ArrayLiteral(array)) = return_statement.node.value.as_ref().map(|value| &value.node) else {
+            panic!("expected array literal");
+        };
+        assert_eq!(array.node.elements.len(), 2);
+    }
+}

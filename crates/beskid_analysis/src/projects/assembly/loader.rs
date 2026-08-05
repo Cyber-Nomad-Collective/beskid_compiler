@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use beskid_pipeline::{PipelineObserver, phases::PROGRAM_ASSEMBLE, report_progress};
+use beskid_pipeline::{PipelineObserver, compiler_stack_size, phases::PROGRAM_ASSEMBLE, report_progress};
 use rayon::prelude::*;
 use thiserror::Error;
 
@@ -244,6 +244,7 @@ pub fn assemble_program_with_materializer(
         std::env::var("BESKID_ASSEMBLY_THREADS").ok().and_then(|value| value.parse().ok()).unwrap_or(default_threads);
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(thread_cap.max(1))
+        .stack_size(compiler_stack_size())
         .build()
         .map_err(|err| AssemblyError::Parse { path: entry_path.to_path_buf(), message: err.to_string() })?;
 

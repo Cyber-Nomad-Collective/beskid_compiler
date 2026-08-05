@@ -5,6 +5,8 @@ use std::env;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use beskid_pipeline::COMPILER_STACK_SIZE;
+
 use crate::projects::fixture_harness::{
     corelib_tests_project_root, typecheck_corelib_tests_entry, with_project_test_env,
 };
@@ -68,6 +70,10 @@ pub fn run_with_timeout(label: &str, timeout: Duration, f: impl FnOnce() + Send 
     let (done_tx, done_rx) = mpsc::channel();
     std::thread::Builder::new()
         .name(format!("corelib-spine-{label}"))
+        // Corelib assembly walks deeply nested syntax and semantic structures. Keep the
+        // gate worker aligned with the compiler entrypoint rather than the small Rust
+        // test-thread default.
+        .stack_size(COMPILER_STACK_SIZE)
         .spawn(move || {
             f();
             let _ = done_tx.send(());

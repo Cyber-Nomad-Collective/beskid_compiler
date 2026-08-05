@@ -5,22 +5,7 @@
 //! `RUST_MIN_STACK` cannot grow the main thread on any platform. Binaries therefore run their real
 //! work on an explicitly sized worker thread instead of the stack the loader handed them.
 
-/// Floor for the worker stack that drives compilation.
-///
-/// Corelib lowering already needs several MiB (see the 8 MiB integration-test stack), so this keeps
-/// generous headroom for the deepest canonical corpus emission rather than tracking observed peaks.
-pub const COMPILER_STACK_SIZE: usize = 64 * 1024 * 1024;
-
-/// Resolve the worker stack size, honouring `RUST_MIN_STACK` only when it asks for more room.
-pub fn compiler_stack_size() -> usize {
-    resolve_compiler_stack_size(std::env::var("RUST_MIN_STACK").ok().as_deref())
-}
-
-fn resolve_compiler_stack_size(requested: Option<&str>) -> usize {
-    requested
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .map_or(COMPILER_STACK_SIZE, |size| size.max(COMPILER_STACK_SIZE))
-}
+use beskid_pipeline::compiler_stack_size;
 
 /// Run a binary's entry closure on a worker thread with a stack sized for compilation.
 ///
@@ -52,24 +37,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unset_rust_min_stack_uses_the_compiler_floor() {
-        assert_eq!(resolve_compiler_stack_size(None), COMPILER_STACK_SIZE);
-    }
-
-    #[test]
-    fn smaller_or_unparsable_rust_min_stack_never_lowers_the_floor() {
-        assert_eq!(resolve_compiler_stack_size(Some("1048576")), COMPILER_STACK_SIZE);
-        assert_eq!(resolve_compiler_stack_size(Some("0")), COMPILER_STACK_SIZE);
-        assert_eq!(resolve_compiler_stack_size(Some("plenty")), COMPILER_STACK_SIZE);
-        assert_eq!(resolve_compiler_stack_size(Some("")), COMPILER_STACK_SIZE);
-    }
-
-    #[test]
-    fn larger_rust_min_stack_wins() {
-        let requested = COMPILER_STACK_SIZE * 2;
-        assert_eq!(resolve_compiler_stack_size(Some(&format!(" {requested} "))), requested);
-    }
-
     #[test]
     fn worker_stack_outgrows_the_windows_main_thread_reserve() {
         // 8 MiB of frames overflows both the Windows 1 MiB main-thread reserve and the 2 MiB
