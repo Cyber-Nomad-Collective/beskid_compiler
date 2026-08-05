@@ -65,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore `soft_builtin` as an ABI-v5 manifest-owned source construct for
+  process-linked Core.Args services, and regenerate the checked-in Rust/JSON
+  artifacts from that authority.
+
 - Restore the Phase-B GC mutator transaction and opaque-allocation ownership
   contract after integration, while preserving the rooted typed-array allocator.
   Opaque payloads now remain construction-rooted until explicit publication, and

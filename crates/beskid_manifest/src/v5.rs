@@ -55,6 +55,15 @@ pub struct IntrinsicV5 {
     pub result: String,
 }
 
+/// Process-linked runtime operation outside the exact runtime-kit export surface.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SoftBuiltinV5 {
+    pub name: String,
+    pub symbol: String,
+    pub params: Vec<ParameterV5>,
+    pub result: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FieldV5 {
     pub name: String,
@@ -149,6 +158,7 @@ pub struct RuntimeManifestV5 {
     pub targets: Vec<TargetV5>,
     pub exports: Vec<FunctionV5>,
     pub intrinsics: Vec<IntrinsicV5>,
+    pub soft_builtins: Vec<SoftBuiltinV5>,
     pub layouts: Vec<LayoutV5>,
     pub platform_imports: Vec<PlatformImportV5>,
     pub corelib_services: Vec<CorelibServiceV5>,
@@ -183,6 +193,7 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         "target",
         "export",
         "intrinsic",
+        "soft_builtin",
         "layout",
         "platform_import",
         "corelib_service",
@@ -256,6 +267,17 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
                 name: label(block)?,
                 symbol: string_field(block, "symbol")?,
                 capability: string_field(block, "capability")?,
+                params: parameters(block, "params")?,
+                result: string_field(block, "returns")?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let soft_builtins = blocks(&document.blocks, "soft_builtin")
+        .map(|block| {
+            ensure_fields(block, &["symbol", "params", "returns"])?;
+            Ok(SoftBuiltinV5 {
+                name: label(block)?,
+                symbol: string_field(block, "symbol")?,
                 params: parameters(block, "params")?,
                 result: string_field(block, "returns")?,
             })
@@ -342,6 +364,7 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         targets,
         exports,
         intrinsics,
+        soft_builtins,
         layouts,
         platform_imports,
         corelib_services,
@@ -450,6 +473,8 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     unique(manifest.exports.iter().map(|entry| entry.symbol.as_str()), "export")?;
     unique(manifest.intrinsics.iter().map(|entry| entry.name.as_str()), "intrinsic")?;
     unique(manifest.intrinsics.iter().map(|entry| entry.symbol.as_str()), "intrinsic linker symbol")?;
+    unique(manifest.soft_builtins.iter().map(|entry| entry.name.as_str()), "soft builtin")?;
+    unique(manifest.soft_builtins.iter().map(|entry| entry.symbol.as_str()), "soft builtin linker symbol")?;
     unique(manifest.corelib_services.iter().map(|entry| entry.name.as_str()), "corelib service")?;
     let expected_corelib_services = ["__args_count", "__args_get"].into_iter().collect::<BTreeSet<_>>();
     if let Some(unexpected) = manifest
@@ -539,8 +564,19 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     }
     let known_types = [
         "void", "never", "pointer", "usize", "isize", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "v128",
-        "f32", "f64",
+        "f32", "f64", "string",
     ];
+    for entry in &manifest.soft_builtins {
+        if entry.name.is_empty()
+            || !entry.name.starts_with("__")
+            || entry.symbol.is_empty()
+            || !known_types.contains(&entry.result.as_str())
+            || entry.params.iter().any(|param| param.name.is_empty() || !known_types.contains(&param.ty.as_str()))
+        {
+            return Err(format!("soft builtin `{}` has an invalid declaration", entry.name));
+        }
+        unique(entry.params.iter().map(|param| param.name.as_str()), "soft builtin parameter")?;
+    }
     for (owner, params, result) in manifest
         .exports
         .iter()
@@ -704,6 +740,24 @@ fn render_rust(
         .chain(masm)
         .map(|(target, source)| format!("    ({target:?}, {source:?}),\n"))
         .collect::<String>();
+    let soft_builtin_rows = manifest
+        .soft_builtins
+        .iter()
+        .map(|builtin| {
+            let params = builtin
+                .params
+                .iter()
+                .map(|parameter| soft_builtin_param_kind(&parameter.ty))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "    crate::BuiltinFnSpec {{ symbol: {:?}, params: &[{}], returns: {} }},\n",
+                builtin.symbol,
+                params,
+                soft_builtin_return_kind(&builtin.result),
+            )
+        })
+        .collect::<String>();
     let corelib_service_binding_rows = manifest
         .corelib_services
         .iter()
@@ -748,6 +802,8 @@ pub struct GeneratedTarget {{\n\
 }}\n\
 pub const ABI_V5_TARGETS: &[GeneratedTarget] = &[\n{target_rows}];\n\
 pub const ABI_V5_ASM_INCLUDES: &[(&str, &str)] = &[\n{asm_rows}];\n\
+/// Process-linked soft builtins declared by the ABI-v5 source manifest.\n\
+pub const ABI_V5_SOFT_BUILTINS: &[crate::BuiltinFnSpec] = &[\n{soft_builtin_rows}];\n\
 #[derive(Debug, Clone, Copy)]\n\
 pub struct GeneratedCorelibServiceBinding {{\n\
     pub service: &'static str,\n\
@@ -795,6 +851,27 @@ pub const ABI_V5_TRAPS: &[(&str, u8)] = &[\n{trap_rows}];\n",
         manifest.meta.trap_exit_status,
         manifest.meta.trap_diagnostic
     )
+}
+
+fn soft_builtin_param_kind(ty: &str) -> &'static str {
+    match ty {
+        "pointer" | "string" => "crate::AbiParamKind::Ptr",
+        "usize" | "isize" | "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64" | "f32" | "f64" => {
+            "crate::AbiParamKind::I64"
+        }
+        other => panic!("invalid soft builtin parameter type `{other}`"),
+    }
+}
+
+fn soft_builtin_return_kind(ty: &str) -> &'static str {
+    match ty {
+        "void" => "crate::AbiReturnKind::Void",
+        "never" => "crate::AbiReturnKind::Never",
+        "pointer" | "string" => "crate::AbiReturnKind::Ptr",
+        "i32" | "u32" | "i8" | "u8" | "i16" | "u16" => "crate::AbiReturnKind::I32",
+        "usize" | "isize" | "i64" | "u64" | "f32" | "f64" => "crate::AbiReturnKind::I64",
+        other => panic!("invalid soft builtin result type `{other}`"),
+    }
 }
 
 fn render_c_header(manifest: &RuntimeManifestV5) -> String {
@@ -967,6 +1044,7 @@ fn canonicalized(manifest: &RuntimeManifestV5) -> RuntimeManifestV5 {
     value.targets.sort_by(|a, b| a.triple.cmp(&b.triple));
     value.exports.sort_by(|a, b| a.symbol.cmp(&b.symbol));
     value.intrinsics.sort_by(|a, b| a.name.cmp(&b.name));
+    value.soft_builtins.sort_by(|a, b| a.name.cmp(&b.name));
     value.layouts.sort_by(|a, b| a.target.cmp(&b.target).then_with(|| a.name.cmp(&b.name)));
     for layout in &mut value.layouts {
         layout.fields.sort_by_key(|field| field.offset);

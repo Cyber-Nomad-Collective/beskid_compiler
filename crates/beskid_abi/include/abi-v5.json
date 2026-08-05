@@ -328,105 +328,6 @@
       "result": "void"
     },
     {
-      "name": "env_get",
-      "symbol": "beskid_rt_v5_intrinsic_env_get",
-      "capability": "runtime.adapter.env_get",
-      "params": [
-        {
-          "name": "key",
-          "type": "pointer"
-        }
-      ],
-      "result": "pointer"
-    },
-    {
-      "name": "env_getcwd",
-      "symbol": "beskid_rt_v5_intrinsic_env_getcwd",
-      "capability": "runtime.adapter.env_getcwd",
-      "params": [],
-      "result": "pointer"
-    },
-    {
-      "name": "env_set",
-      "symbol": "beskid_rt_v5_intrinsic_env_set",
-      "capability": "runtime.adapter.env_set",
-      "params": [
-        {
-          "name": "key",
-          "type": "pointer"
-        },
-        {
-          "name": "value",
-          "type": "pointer"
-        }
-      ],
-      "result": "i32"
-    },
-    {
-      "name": "fs_delete",
-      "symbol": "beskid_rt_v5_intrinsic_fs_delete",
-      "capability": "runtime.adapter.fs_delete",
-      "params": [
-        {
-          "name": "path",
-          "type": "pointer"
-        }
-      ],
-      "result": "i32"
-    },
-    {
-      "name": "fs_exists",
-      "symbol": "beskid_rt_v5_intrinsic_fs_exists",
-      "capability": "runtime.adapter.fs_exists",
-      "params": [
-        {
-          "name": "path",
-          "type": "pointer"
-        }
-      ],
-      "result": "i32"
-    },
-    {
-      "name": "fs_mkdir",
-      "symbol": "beskid_rt_v5_intrinsic_fs_mkdir",
-      "capability": "runtime.adapter.fs_mkdir",
-      "params": [
-        {
-          "name": "path",
-          "type": "pointer"
-        }
-      ],
-      "result": "i32"
-    },
-    {
-      "name": "fs_read_text",
-      "symbol": "beskid_rt_v5_intrinsic_fs_read_text",
-      "capability": "runtime.adapter.fs_read_text",
-      "params": [
-        {
-          "name": "path",
-          "type": "pointer"
-        }
-      ],
-      "result": "pointer"
-    },
-    {
-      "name": "fs_write_text",
-      "symbol": "beskid_rt_v5_intrinsic_fs_write_text",
-      "capability": "runtime.adapter.fs_write_text",
-      "params": [
-        {
-          "name": "path",
-          "type": "pointer"
-        },
-        {
-          "name": "content",
-          "type": "pointer"
-        }
-      ],
-      "result": "i32"
-    },
-    {
       "name": "guarded_stack_allocate",
       "symbol": "beskid_rt_v5_intrinsic_guarded_stack_allocate",
       "capability": "runtime.bootstrap.guarded_stack_allocate",
@@ -699,13 +600,6 @@
         }
       ],
       "result": "never"
-    },
-    {
-      "name": "tty_winsize",
-      "symbol": "beskid_rt_v5_intrinsic_tty_winsize",
-      "capability": "runtime.adapter.tty_winsize",
-      "params": [],
-      "result": "pointer"
     }
   ],
   "softBuiltins": [
@@ -725,50 +619,6 @@
         }
       ],
       "result": "string"
-    },
-    {
-      "name": "__math_ceil",
-      "symbol": "math_ceil",
-      "params": [
-        {
-          "name": "value",
-          "type": "f64"
-        }
-      ],
-      "result": "f64"
-    },
-    {
-      "name": "__math_floor",
-      "symbol": "math_floor",
-      "params": [
-        {
-          "name": "value",
-          "type": "f64"
-        }
-      ],
-      "result": "f64"
-    },
-    {
-      "name": "__math_log",
-      "symbol": "math_log",
-      "params": [
-        {
-          "name": "value",
-          "type": "f64"
-        }
-      ],
-      "result": "f64"
-    },
-    {
-      "name": "__math_sqrt",
-      "symbol": "math_sqrt",
-      "params": [
-        {
-          "name": "value",
-          "type": "f64"
-        }
-      ],
-      "result": "f64"
     }
   ],
   "layouts": [
@@ -1336,6 +1186,34 @@
       "result": "never"
     },
     {
+      "symbol": "atan2",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "y",
+          "type": "f64"
+        },
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "ceil",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
       "symbol": "clock_gettime",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -1352,11 +1230,83 @@
       "result": "i32"
     },
     {
+      "symbol": "cos",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "fabs",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "floor",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
       "symbol": "getpid",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
       "params": [],
       "result": "i32"
+    },
+    {
+      "symbol": "log",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "log10",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "log2",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
     },
     {
       "symbol": "mmap",
@@ -1425,6 +1375,58 @@
         }
       ],
       "result": "i32"
+    },
+    {
+      "symbol": "pow",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "base",
+          "type": "f64"
+        },
+        {
+          "name": "exp",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "sin",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "sqrt",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "tan",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
     },
     {
       "symbol": "write",
@@ -1569,6 +1571,158 @@
       "result": "i32"
     },
     {
+      "symbol": "atan2",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "y",
+          "type": "f64"
+        },
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "ceil",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "cos",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "fabs",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "floor",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "log",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "log10",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "log2",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "pow",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "base",
+          "type": "f64"
+        },
+        {
+          "name": "exp",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "sin",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "sqrt",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "tan",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
       "symbol": "_exit",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -1579,6 +1733,34 @@
         }
       ],
       "result": "never"
+    },
+    {
+      "symbol": "atan2",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libm",
+      "params": [
+        {
+          "name": "y",
+          "type": "f64"
+        },
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "ceil",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libm",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
     },
     {
       "symbol": "clock_gettime",
@@ -1597,11 +1779,83 @@
       "result": "i32"
     },
     {
+      "symbol": "cos",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libm",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "fabs",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libm",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "floor",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libm",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
       "symbol": "getpid",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
       "params": [],
       "result": "i32"
+    },
+    {
+      "symbol": "log",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libm",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "log10",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libm",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "log2",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libm",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
     },
     {
       "symbol": "mmap",
@@ -1670,6 +1924,58 @@
         }
       ],
       "result": "i32"
+    },
+    {
+      "symbol": "pow",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libm",
+      "params": [
+        {
+          "name": "base",
+          "type": "f64"
+        },
+        {
+          "name": "exp",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "sin",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libm",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "sqrt",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libm",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
+    },
+    {
+      "symbol": "tan",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libm",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "result": "f64"
     },
     {
       "symbol": "write",

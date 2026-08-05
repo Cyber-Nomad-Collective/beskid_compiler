@@ -93,6 +93,11 @@ intrinsic "arch_context_alignment" { symbol = "beskid_rt_v5_intrinsic_arch_conte
 intrinsic "context_init" { symbol = "beskid_arch_v5_context_init" capability = "runtime.bootstrap.context_init" params = [{ name = context, type = pointer }, { name = stack_top, type = pointer }, { name = entry, type = pointer }, { name = argument, type = pointer }, { name = return_trampoline, type = pointer }] returns = void }
 intrinsic "context_switch" { symbol = "beskid_arch_v5_context_switch" capability = "runtime.bootstrap.context_switch" params = [{ name = from, type = pointer }, { name = to, type = pointer }] returns = void }
 
+# Process-linked runtime services remain outside the exact runtime-kit export
+# allowlist, but have one manifest-owned declaration for analysis and JIT linking.
+soft_builtin "__args_count" { symbol = "args_count" params = [] returns = i64 }
+soft_builtin "__args_get" { symbol = "args_get" params = [{ name = index, type = i64 }] returns = string }
+
 # Foundation Core.Args services bind to one generated ABI-v5 adapter per
 # supported target. This Task 3 declaration models generated binding authority
 # only; it authorizes no direct target OS imports.
