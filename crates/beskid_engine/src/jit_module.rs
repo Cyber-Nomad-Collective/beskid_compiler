@@ -289,8 +289,6 @@ fn process_linked_soft_builtins() -> Vec<(String, *const u8)> {
     // Keep this process-linked compatibility list in sync with `BUILTIN_SPECS`.
     vec![
         ("alloc".into(), beskid_runtime::alloc as *const u8),
-        ("args_count".into(), beskid_runtime::args_count as *const u8),
-        ("args_get".into(), beskid_runtime::args_get as *const u8),
         ("beskid_register_callbacks".into(), beskid_runtime::beskid_register_callbacks as *const u8),
         ("beskid_register_handlers".into(), beskid_runtime::beskid_register_handlers as *const u8),
         ("beskid_runtime_abi_version".into(), beskid_runtime::beskid_runtime_abi_version as *const u8),
@@ -317,10 +315,10 @@ fn process_linked_soft_builtins() -> Vec<(String, *const u8)> {
         ("gc_unregister_root".into(), beskid_runtime::gc_unregister_root as *const u8),
         ("gc_unroot_handle".into(), beskid_runtime::gc_unroot_handle as *const u8),
         ("gc_write_barrier".into(), beskid_runtime::gc_write_barrier as *const u8),
-        ("math_ceil".into(), beskid_runtime::math_ceil as *const u8),
-        ("math_floor".into(), beskid_runtime::math_floor as *const u8),
-        ("math_log".into(), beskid_runtime::math_log as *const u8),
-        ("math_sqrt".into(), beskid_runtime::math_sqrt as *const u8),
+        ("math_ceil".into(), beskid_runtime::builtins::math_ceil as *const u8),
+        ("math_floor".into(), beskid_runtime::builtins::math_floor as *const u8),
+        ("math_log".into(), beskid_runtime::builtins::math_log as *const u8),
+        ("math_sqrt".into(), beskid_runtime::builtins::math_sqrt as *const u8),
         ("interop_dispatch_ptr".into(), beskid_runtime::interop_dispatch_ptr as *const u8),
         ("interop_dispatch_unit".into(), beskid_runtime::interop_dispatch_unit as *const u8),
         ("interop_dispatch_usize".into(), beskid_runtime::interop_dispatch_usize as *const u8),

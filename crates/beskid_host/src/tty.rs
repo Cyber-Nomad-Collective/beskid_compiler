@@ -1,5 +1,6 @@
 //! Terminal geometry host builtin for corelib console.
 
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 use std::io::IsTerminal;
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
@@ -38,6 +39,7 @@ fn linux_tty_winsize(fd: i32) -> i64 {
     ((ws.ws_col as i64) << 16) | (ws.ws_row as i64)
 }
 
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 fn standard_stream_is_terminal(fd: i64) -> bool {
     match fd {
         0 => std::io::stdin().is_terminal(),

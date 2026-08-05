@@ -54,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Align JIT soft-builtin registration with the ABI-v5 Core.Args contract: JIT no
+  longer supplies ambient process arguments, while numeric math exports remain
+  registered through the runtime builtin module. Linux x64 terminal fallback code
+  is now correctly target-gated for warnings-as-errors CI builds.
 - Migrate AOT and parsed-project codegen tests to the production prepared-syntax
   → `CodegenInput` → ISLE boundary, removing test reliance on the retired HIR
   `lower_program` compatibility path.

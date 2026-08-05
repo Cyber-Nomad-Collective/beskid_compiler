@@ -14,6 +14,7 @@ mod fiber;
 mod gc;
 mod gc_roots;
 mod hub;
+mod math;
 #[cfg(feature = "metrics")]
 mod metrics;
 mod mutex;
@@ -57,6 +58,7 @@ pub use hub::{
     hub_create, hub_register, hub_unregister, hub_wait_receive, hub_wait_receive_index, hub_wait_receive_status,
     hub_wait_receive_value,
 };
+pub use math::{math_ceil, math_floor, math_log, math_sqrt};
 #[cfg(feature = "metrics")]
 pub use metrics::*;
 pub use mutex::{mutex_create, mutex_lock, mutex_try_lock, mutex_unlock};
