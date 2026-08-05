@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use beskid_abi::{AbiParamKind, AbiReturnKind, BUILTIN_SPECS};
+use beskid_abi::{AbiParamKind, AbiReturnKind, all_builtin_specs};
 use cranelift_codegen::ir::{AbiParam, ExternalName, Signature, UserExternalName, types};
 use cranelift_codegen::isa::CallConv;
 use cranelift_module::{FuncId, FuncOrDataId, Linkage, Module, ModuleError};
@@ -59,6 +59,7 @@ pub fn builtin_signature(
         let ty = match param {
             AbiParamKind::Ptr => pointer,
             AbiParamKind::I64 => types::I64,
+            AbiParamKind::F64 => types::F64,
         };
         sig.params.push(AbiParam::new(ty));
     }
@@ -67,6 +68,7 @@ pub fn builtin_signature(
         AbiReturnKind::Ptr => sig.returns.push(AbiParam::new(pointer)),
         AbiReturnKind::I64 => sig.returns.push(AbiParam::new(types::I64)),
         AbiReturnKind::I32 => sig.returns.push(AbiParam::new(types::I32)),
+        AbiReturnKind::F64 => sig.returns.push(AbiParam::new(types::F64)),
     }
     sig
 }
@@ -79,7 +81,7 @@ pub fn declare_builtin_imports<M: Module>(
     let pointer = module.isa().pointer_type();
     let call_conv = module.isa().default_call_conv();
 
-    for spec in BUILTIN_SPECS {
+    for spec in all_builtin_specs() {
         let signature = builtin_signature(pointer, call_conv, spec.params, spec.returns);
         let id = module.declare_function(spec.symbol, Linkage::Import, &signature)?;
         func_ids.insert(spec.symbol.to_owned(), id);
@@ -110,7 +112,7 @@ pub fn declare_referenced_builtin_imports<M: Module>(
     let pointer = module.isa().pointer_type();
     let call_conv = module.isa().default_call_conv();
 
-    for spec in BUILTIN_SPECS {
+    for spec in all_builtin_specs() {
         if !referenced.contains(spec.symbol) || func_ids.contains_key(spec.symbol) {
             continue;
         }

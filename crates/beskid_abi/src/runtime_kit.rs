@@ -54,7 +54,11 @@ impl std::fmt::Display for InstalledRuntimePrefixError {
                 write!(formatter, "current executable has no parent: `{}`", executable.display())
             }
             Self::InvalidBinLayout { executable } => {
-                write!(formatter, "current executable is not installed under `<prefix>/bin`: `{}`", executable.display())
+                write!(
+                    formatter,
+                    "current executable is not installed under `<prefix>/bin`: `{}`",
+                    executable.display()
+                )
             }
             Self::MissingInstallPrefix { executable } => {
                 write!(formatter, "current executable has no install prefix: `{}`", executable.display())

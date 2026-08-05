@@ -5,9 +5,9 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::items::InlineModule;
 use crate::syntax::{
-    AttributeDeclaration, ConstantDefinition, ContractDefinition, EnumDefinition, ExtendTypeDefinition, FunctionDefinition, HostDefinition,
-    MacroDefinition, MethodDefinition, ModuleDeclaration, SpanInfo, Spanned, TestDefinition, TypeDefinition,
-    UseDeclaration,
+    AttributeDeclaration, ConstantDefinition, ContractDefinition, EnumDefinition, ExtendTypeDefinition,
+    FunctionDefinition, HostDefinition, MacroDefinition, MethodDefinition, ModuleDeclaration, SpanInfo, Spanned,
+    TestDefinition, TypeDefinition, UseDeclaration,
 };
 
 use beskid_ast_derive::AstNode;

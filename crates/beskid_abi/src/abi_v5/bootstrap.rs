@@ -161,10 +161,7 @@ impl RuntimeAuditMetadata {
     /// member: the Linux platform objects import `mmap` for both the page-allocation intrinsics
     /// and guarded scheduler stacks. Collapsing those repeats keeps the provenance and allowlist
     /// checks exact while refusing to treat multi-member references as malformed input.
-    fn collapsed_symbol_set<'a>(
-        &self,
-        symbols: impl IntoIterator<Item = &'a str>,
-    ) -> Result<BTreeSet<String>, String> {
+    fn collapsed_symbol_set<'a>(&self, symbols: impl IntoIterator<Item = &'a str>) -> Result<BTreeSet<String>, String> {
         symbols.into_iter().map(|raw| self.normalized_symbol(raw)).collect()
     }
 
@@ -314,6 +311,8 @@ struct SourceContract {
     targets: Vec<SourceTarget>,
     exports: Vec<SourceFunction>,
     intrinsics: Vec<SourceIntrinsic>,
+    #[serde(rename = "softBuiltins")]
+    _soft_builtins: Vec<SourceSoftBuiltin>,
     layouts: Vec<SourceLayout>,
     platform_imports: Vec<SourcePlatformImport>,
     assembly: Vec<SourceAssembly>,
@@ -369,6 +368,18 @@ struct SourceIntrinsic {
     capability: String,
     params: Vec<SourceParameter>,
     result: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceSoftBuiltin {
+    #[serde(rename = "name")]
+    _name: String,
+    #[serde(rename = "symbol")]
+    _symbol: String,
+    #[serde(rename = "params")]
+    _params: Vec<SourceParameter>,
+    #[serde(rename = "result")]
+    _result: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

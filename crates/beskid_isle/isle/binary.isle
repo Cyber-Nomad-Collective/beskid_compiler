@@ -15,7 +15,11 @@
 (decl clif_sdiv (Value Value) Value)
 (extern constructor clif_sdiv clif_sdiv)
 (decl partial clif_srem (Value Value) Value)
+(decl clif_eq_discriminant (Value Value AstNodeKey AstNodeKey) Value)
+(decl clif_ne_discriminant (Value Value AstNodeKey AstNodeKey) Value)
 (extern constructor clif_srem clif_srem)
+(extern constructor clif_eq_discriminant clif_eq_discriminant)
+(extern constructor clif_ne_discriminant clif_ne_discriminant)
 (decl clif_eq (Value Value) Value)
 (extern constructor clif_eq clif_eq)
 (decl clif_ne (Value Value) Value)
@@ -59,11 +63,19 @@
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Eq))))
-      (clif_eq (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+      (clif_eq_discriminant
+        (lower_expression (child_at key 0))
+        (lower_expression (child_at key 1))
+        (child_at key 0)
+        (child_at key 1)))
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.NotEq))))
-      (clif_ne (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+      (clif_ne_discriminant
+        (lower_expression (child_at key 0))
+        (lower_expression (child_at key 1))
+        (child_at key 0)
+        (child_at key 1)))
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Lt))))

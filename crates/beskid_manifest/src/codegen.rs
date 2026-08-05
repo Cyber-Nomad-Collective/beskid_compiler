@@ -114,6 +114,7 @@ pub fn render_abi_builtins(manifest: &ManifestRoot) -> String {
             AbiReturnKind::Ptr => "AbiReturnKind::Ptr",
             AbiReturnKind::I64 => "AbiReturnKind::I64",
             AbiReturnKind::I32 => "AbiReturnKind::I32",
+            AbiReturnKind::F64 => "AbiReturnKind::F64",
             AbiReturnKind::Never => "AbiReturnKind::Never",
         };
         if params == "EMPTY" {
@@ -381,14 +382,18 @@ pub fn render_analysis_builtins(manifest: &ManifestRoot) -> String {
     out
 }
 
-/// Render the analysis builtin surface plus manifest-owned ABI-v5 runtime intrinsic candidates.
+/// Render the analysis builtin surface plus manifest-owned ABI-v5 runtime intrinsic candidates
+/// and process-linked soft builtins.
 ///
 /// These entries make exact canonical-runtime calls resolvable by the syntax fact layer. They do
 /// not grant an ABI import: `CodegenInput::runtime_intrinsic_for` still requires the opaque
 /// canonical-runtime capability before codegen can emit the symbol.
 pub fn append_analysis_v5_intrinsics(base: &str, runtime: &crate::v5::RuntimeManifestV5) -> String {
-    const MARKER: &str = "// ABI-v5 canonical runtime intrinsic candidates\n";
-    let mut out = base.split_once(MARKER).map_or_else(|| base.to_owned(), |(prefix, _)| prefix.to_owned());
+    const MARKER: &str = "// ABI-v5 canonical runtime declarations\n";
+    const LEGACY_MARKER: &str = "// ABI-v5 canonical runtime intrinsic candidates\n";
+    let generated_start =
+        [base.find(MARKER), base.find(LEGACY_MARKER)].into_iter().flatten().min().unwrap_or(base.len());
+    let mut out = base[..generated_start].to_owned();
     if !out.trim_end().ends_with('}') {
         out.push_str("}\n");
     }
@@ -405,6 +410,17 @@ pub fn append_analysis_v5_intrinsics(base: &str, runtime: &crate::v5::RuntimeMan
             true,
         );
     }
+    for builtin in &runtime.soft_builtins {
+        let params = builtin.params.iter().map(|parameter| v5_analysis_type(&parameter.ty)).collect::<Vec<_>>();
+        write_analysis_entry(
+            &mut intrinsic_entries,
+            std::slice::from_ref(&builtin.name),
+            &builtin.symbol,
+            &params,
+            &v5_analysis_type(&builtin.result),
+            true,
+        );
+    }
     out.insert_str(closing, &intrinsic_entries);
     out
 }
@@ -412,6 +428,7 @@ pub fn append_analysis_v5_intrinsics(base: &str, runtime: &crate::v5::RuntimeMan
 fn v5_analysis_type(ty: &str) -> String {
     match ty {
         "pointer" => "ptr".into(),
+        "string" => "string".into(),
         // The legacy resolver surface only distinguishes wide numeric scalar candidates. Exact
         // ABI widths come from the canonical manifest in syntax codegen, not this lookup table.
         "u8" | "u32" | "i32" | "i64" | "isize" => "u64".into(),
@@ -533,6 +550,7 @@ fn symbol_const_suffix(symbol: &str) -> String {
 enum AbiParamKind {
     Ptr,
     I64,
+    F64,
 }
 
 #[derive(Clone, Copy)]
@@ -541,6 +559,7 @@ enum AbiReturnKind {
     Ptr,
     I64,
     I32,
+    F64,
     Never,
 }
 
@@ -549,6 +568,7 @@ fn manifest_param_kinds(params: &[String]) -> Vec<AbiParamKind> {
         .iter()
         .map(|param| match param.as_str() {
             "ptr" | "string" => AbiParamKind::Ptr,
+            "f64" => AbiParamKind::F64,
             _ => AbiParamKind::I64,
         })
         .collect()
@@ -560,6 +580,7 @@ fn manifest_return_abi(returns: &str) -> AbiReturnKind {
         "ptr" => AbiReturnKind::Ptr,
         "never" => AbiReturnKind::Never,
         "i32" => AbiReturnKind::I32,
+        "f64" => AbiReturnKind::F64,
         _ => AbiReturnKind::I64,
     }
 }
@@ -570,6 +591,7 @@ fn analysis_type_ident(param: &str) -> String {
         "ptr" => "Ptr".to_string(),
         "usize" => "Usize".to_string(),
         "u64" | "i64" | "i32" => "U64".to_string(),
+        "f64" => "F64".to_string(),
         "unit" | "void" => "Unit".to_string(),
         "never" => "Never".to_string(),
         other => other.to_string(),
@@ -1206,6 +1228,7 @@ fn format_param_array(params: &[AbiParamKind]) -> String {
         .map(|kind| match kind {
             AbiParamKind::Ptr => "AbiParamKind::Ptr",
             AbiParamKind::I64 => "AbiParamKind::I64",
+            AbiParamKind::F64 => "AbiParamKind::F64",
         })
         .collect::<Vec<_>>()
         .join(", ");
@@ -1246,5 +1269,19 @@ mod tests {
             super::wrap_dispatch_return(&entry, "usize", "crate::builtins::fiber_now_millis()"),
             "Some(crate::builtins::fiber_now_millis())"
         );
+    }
+
+    #[test]
+    fn analysis_v5_intrinsics_replace_legacy_generated_section() {
+        let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime_manifest.bsol");
+        let source = std::fs::read_to_string(manifest_path).expect("read ABI-v5 manifest");
+        let runtime = crate::load_v5_manifest_source(&source).expect("load ABI-v5 manifest");
+        let base = "define_builtins! {\n// ABI-v5 canonical runtime intrinsic candidates\n    stale\n}\n";
+
+        let generated = super::append_analysis_v5_intrinsics(base, &runtime);
+
+        assert!(!generated.contains("canonical runtime intrinsic candidates"));
+        assert_eq!(generated.matches("canonical runtime declarations").count(), 1);
+        assert!(!generated.contains("stale"));
     }
 }

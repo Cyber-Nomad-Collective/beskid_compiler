@@ -33,6 +33,14 @@ void beskid_rt_v5_args_handoff_utf8(int64_t argc, const char *const *argv) {
 int64_t beskid_rt_v5_args_count(void) { return beskid_args.count; }
 struct BeskidStr *beskid_rt_v5_args_get(int64_t index) { if (index < 0 || index >= beskid_args.count) beskid_args_trap(2, "Core.Args argument index is out of range"); return &beskid_args.values[index]; }
 
+#ifndef MAP_ANON
+#ifdef MAP_ANONYMOUS
+#define MAP_ANON MAP_ANONYMOUS
+#else
+#define MAP_ANON 0x1000
+#endif
+#endif
+
 #define BESKID_GUARDED_STACK_MIN (64u * 1024u)
 #define BESKID_GUARDED_STACK_MAX (8u * 1024u * 1024u)
 #define BESKID_GUARDED_STACK_GUARD (16u * 1024u)

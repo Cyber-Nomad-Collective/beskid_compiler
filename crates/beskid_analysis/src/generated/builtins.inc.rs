@@ -481,7 +481,7 @@ define_builtins! {
         returns: U64,
         injected: true,
     },
-// ABI-v5 canonical runtime intrinsic candidates
+// ABI-v5 canonical runtime declarations
     &["native_word_from_pointer"] => {
         symbol: "beskid_rt_v5_intrinsic_native_word_from_pointer",
         params: [Ptr],
@@ -608,6 +608,60 @@ define_builtins! {
         returns: U64,
         injected: true,
     },
+    &["env_get"] => {
+        symbol: "beskid_rt_v5_intrinsic_env_get",
+        params: [Ptr],
+        returns: Ptr,
+        injected: true,
+    },
+    &["env_set"] => {
+        symbol: "beskid_rt_v5_intrinsic_env_set",
+        params: [Ptr, Ptr],
+        returns: U64,
+        injected: true,
+    },
+    &["env_getcwd"] => {
+        symbol: "beskid_rt_v5_intrinsic_env_getcwd",
+        params: [],
+        returns: Ptr,
+        injected: true,
+    },
+    &["fs_read_text"] => {
+        symbol: "beskid_rt_v5_intrinsic_fs_read_text",
+        params: [Ptr],
+        returns: Ptr,
+        injected: true,
+    },
+    &["fs_write_text"] => {
+        symbol: "beskid_rt_v5_intrinsic_fs_write_text",
+        params: [Ptr, Ptr],
+        returns: U64,
+        injected: true,
+    },
+    &["fs_exists"] => {
+        symbol: "beskid_rt_v5_intrinsic_fs_exists",
+        params: [Ptr],
+        returns: U64,
+        injected: true,
+    },
+    &["fs_mkdir"] => {
+        symbol: "beskid_rt_v5_intrinsic_fs_mkdir",
+        params: [Ptr],
+        returns: U64,
+        injected: true,
+    },
+    &["fs_delete"] => {
+        symbol: "beskid_rt_v5_intrinsic_fs_delete",
+        params: [Ptr],
+        returns: U64,
+        injected: true,
+    },
+    &["tty_winsize"] => {
+        symbol: "beskid_rt_v5_intrinsic_tty_winsize",
+        params: [],
+        returns: Ptr,
+        injected: true,
+    },
     &["arch_context_size"] => {
         symbol: "beskid_rt_v5_intrinsic_arch_context_size",
         params: [],
@@ -630,6 +684,42 @@ define_builtins! {
         symbol: "beskid_arch_v5_context_switch",
         params: [Ptr, Ptr],
         returns: Unit,
+        injected: true,
+    },
+    &["__args_count"] => {
+        symbol: "args_count",
+        params: [],
+        returns: U64,
+        injected: true,
+    },
+    &["__args_get"] => {
+        symbol: "args_get",
+        params: [U64],
+        returns: String,
+        injected: true,
+    },
+    &["__math_floor"] => {
+        symbol: "math_floor",
+        params: [F64],
+        returns: F64,
+        injected: true,
+    },
+    &["__math_ceil"] => {
+        symbol: "math_ceil",
+        params: [F64],
+        returns: F64,
+        injected: true,
+    },
+    &["__math_sqrt"] => {
+        symbol: "math_sqrt",
+        params: [F64],
+        returns: F64,
+        injected: true,
+    },
+    &["__math_log"] => {
+        symbol: "math_log",
+        params: [F64],
+        returns: F64,
         injected: true,
     },
 }

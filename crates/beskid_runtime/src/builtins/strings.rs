@@ -5,11 +5,11 @@ use beskid_abi::BeskidStr;
 
 use super::alloc::alloc;
 
-/// Allocate a BeskidStr header that points to an existing UTF-8 byte buffer.
+/// Allocate a self-contained BeskidStr and copy an existing UTF-8 byte buffer into it.
 ///
 /// Safety/contract (v0.1):
 /// - `ptr` must be non-null (even if `len` is 0) and point to at least `len` bytes.
-/// - The buffer is not copied; lifetime is managed by the caller or points to static data.
+/// - The returned header and bytes share one GC allocation, so rooting the handle retains its data.
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn str_new(ptr: *const u8, len: usize) -> *mut BeskidStr {
     if ptr.is_null() {
@@ -20,14 +20,16 @@ pub extern "C-unwind" fn str_new(ptr: *const u8, len: usize) -> *mut BeskidStr {
         panic!("invalid utf-8 string data");
     }
 
-    let size = std::mem::size_of::<BeskidStr>();
-    let allocation = alloc(size, std::ptr::null());
+    let header_size = std::mem::size_of::<BeskidStr>();
+    let allocation = alloc(header_size.saturating_add(len), std::ptr::null());
     if allocation.is_null() {
         panic!("string allocation failed");
     }
     let target = allocation.cast::<BeskidStr>();
+    let data = unsafe { allocation.add(header_size) };
     unsafe {
-        target.write(BeskidStr { ptr, len });
+        std::ptr::copy_nonoverlapping(ptr, data, len);
+        target.write(BeskidStr { ptr: data, len });
     }
     with_current_heap(|heap| heap.publish_composite_beskid_edge(target.cast(), ptr as *mut u8));
     target
@@ -42,7 +44,7 @@ pub extern "C-unwind" fn str_len(value: *const BeskidStr) -> usize {
     unsafe { (*value).len }
 }
 
-/// Concatenate two BeskidStr values by allocating a fresh data buffer and header.
+/// Concatenate two BeskidStr values into a fresh self-contained string allocation.
 ///
 /// Safety/contract (v0.1):
 /// - `left` and `right` must be non-null handles; their `.ptr` must be non-null (even if len==0).
@@ -60,14 +62,10 @@ pub extern "C-unwind" fn str_concat(left: *const BeskidStr, right: *const Beskid
     }
 
     let total_len = left_len.saturating_add(right_len);
-    let buffer = alloc(total_len, std::ptr::null()).cast::<u8>();
-    if buffer.is_null() {
-        panic!("string concat allocation failed");
-    }
-
+    let mut buffer = Vec::with_capacity(total_len);
     unsafe {
-        std::ptr::copy_nonoverlapping(left_ptr, buffer, left_len);
-        std::ptr::copy_nonoverlapping(right_ptr, buffer.add(left_len), right_len);
+        buffer.extend_from_slice(std::slice::from_raw_parts(left_ptr, left_len));
+        buffer.extend_from_slice(std::slice::from_raw_parts(right_ptr, right_len));
     }
 
     #[cfg(feature = "metrics")]
@@ -76,7 +74,7 @@ pub extern "C-unwind" fn str_concat(left: *const BeskidStr, right: *const Beskid
         root.runtime_state.str_concat_bytes = root.runtime_state.str_concat_bytes.saturating_add(total_len);
     });
 
-    str_new(buffer.cast::<u8>(), total_len)
+    str_new(buffer.as_ptr(), total_len)
 }
 
 /// Content equality comparison for two `BeskidStr` values.

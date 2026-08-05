@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, canonical_source_hash};
@@ -18,6 +19,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use support::runtime_prefix::RuntimePrefixContext;
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static RUNTIME_PREFIX_ENV: Mutex<()> = Mutex::new(());
 
 struct TestDir(PathBuf);
 
@@ -276,6 +278,7 @@ fn engine_uses_only_the_configured_exact_runtime_kit() {
 
 #[test]
 fn engine_try_new_fails_closed_when_exact_debug_manifest_is_missing() {
+    let _environment = RUNTIME_PREFIX_ENV.lock().expect("runtime prefix environment lock");
     let Some(target) = host_target() else {
         return;
     };
@@ -297,6 +300,7 @@ fn engine_try_new_fails_closed_when_exact_debug_manifest_is_missing() {
 
 #[test]
 fn codegen_input_route_fails_closed_when_exact_kit_manifest_is_missing() {
+    let _environment = RUNTIME_PREFIX_ENV.lock().expect("runtime prefix environment lock");
     let Some(target) = host_target() else {
         return;
     };
@@ -319,6 +323,7 @@ fn codegen_input_route_fails_closed_when_exact_kit_manifest_is_missing() {
 
 #[test]
 fn codegen_input_route_fails_closed_when_exact_kit_is_tampered() {
+    let _environment = RUNTIME_PREFIX_ENV.lock().expect("runtime prefix environment lock");
     let Some(target) = host_target() else {
         return;
     };

@@ -2,7 +2,8 @@
 
 use crate::parser::Rule;
 
-use super::{RepairCandidate, next_token_start, skip_ws, unbalanced_delimiters};
+use super::scan::{next_token_start, skip_ws, unbalanced_delimiters};
+use super::{candidate::RepairCandidate, expected_tokens, lists, scan, syntax_primitives};
 
 const PRI_MATCH_CLOSE: u8 = 60;
 const PRI_MATCH_ARROW: u8 = 61;
@@ -14,21 +15,51 @@ const PRI_STRUCT_FIELD_COLON: u8 = 66;
 const PRI_STRUCT_VALUE_STUB: u8 = 67;
 const PRI_ARRAY_CLOSE: u8 = 68;
 const PRI_CALL_CLOSE: u8 = 69;
-const PRI_GROUPED_CLOSE: u8 = 70;
-const PRI_ENUM_CTOR_CLOSE: u8 = 71;
-const PRI_PATTERN_CLOSE: u8 = 72;
+const PRI_CALL_TRAILING_COMMA_DELETE: u8 = 70;
+const PRI_CALL_TRAILING_COMMA_FIX: u8 = 71;
+const PRI_ARRAY_TRAILING_COMMA_DELETE: u8 = 72;
+const PRI_ARRAY_TRAILING_COMMA_FIX: u8 = 73;
+const PRI_GROUPED_CLOSE: u8 = 74;
+const PRI_ENUM_CTOR_CLOSE: u8 = 75;
+const PRI_PATTERN_CLOSE: u8 = 76;
+const PRI_ANGLE_LIST_TRAILING_COMMA_DELETE: u8 = 77;
+const PRI_ANGLE_LIST_TRAILING_COMMA_FIX: u8 = 78;
+const PRI_ANGLE_LIST_TRAILING_COMMA_REPLACE: u8 = 79;
+const PRI_STRUCT_TRAILING_COMMA_DELETE: u8 = 80;
+const PRI_STRUCT_TRAILING_COMMA_FIX: u8 = 81;
+const PRI_EXPR_EXPECTED_OPERATOR: u8 = 82;
+const PRI_MEMBER_ACCESS_STUB: u8 = 83;
+const PRI_INDEX_CLOSE: u8 = 84;
+const PRI_INDEX_PLACEHOLDER: u8 = 85;
+const PRI_EXPR_CONTROL_BODY: u8 = 86;
 
 /// Generate expression- and pattern-oriented repairs near the Pest error locus.
-pub fn repairs(source: &str, error_pos: usize, _parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
+pub fn repairs(source: &str, error_pos: usize, parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
     let mut candidates = Vec::new();
-    let error_pos = error_pos.min(source.len());
-    let insert_at = recovery_insert_pos(source, error_pos);
+    let error_pos = syntax_primitives::recovery_scan_pos(source, error_pos);
+    let tail_pos = source.trim_end().len();
+    let insert_at = if error_pos >= tail_pos
+        && tail_pos > 0
+        && (source[..tail_pos].ends_with('.') || source[..tail_pos].ends_with('['))
+    {
+        tail_pos
+    } else {
+        recovery_insert_pos(source, error_pos)
+    };
 
     match_repairs(source, error_pos, insert_at, &mut candidates);
     lambda_repairs(source, error_pos, insert_at, &mut candidates);
     struct_literal_repairs(source, error_pos, insert_at, &mut candidates);
+    struct_field_separator_repairs(source, error_pos, insert_at, &mut candidates);
     array_literal_repairs(source, error_pos, insert_at, &mut candidates);
     paren_expression_repairs(source, error_pos, insert_at, &mut candidates);
+    paren_argument_separator_repairs(source, error_pos, insert_at, &mut candidates);
+    bracket_argument_separator_repairs(source, error_pos, insert_at, &mut candidates);
+    expression_operator_repairs(source, error_pos, insert_at, parse_error, &mut candidates);
+    member_access_repairs(source, error_pos, insert_at, parse_error, &mut candidates);
+    index_expression_repairs(source, error_pos, insert_at, &mut candidates);
+    control_expression_body_repairs(source, error_pos, insert_at, parse_error, &mut candidates);
+    angle_list_separator_repairs(source, error_pos, insert_at, &mut candidates);
 
     candidates
 }
@@ -180,8 +211,308 @@ fn paren_expression_repairs(source: &str, error_pos: usize, insert_at: usize, ca
     }
 }
 
+fn paren_argument_separator_repairs(
+    source: &str,
+    error_pos: usize,
+    insert_at: usize,
+    candidates: &mut Vec<RepairCandidate>,
+) {
+    lists::trailing_separator_before_close_delimiter(
+        source,
+        error_pos,
+        insert_at,
+        candidates,
+        b'(',
+        b')',
+        |source, open, scan_pos| {
+            inside_expression_argument_list(source, open, scan_pos)
+                || inside_grouped_expression(source, scan_pos)
+                || inside_pattern_list(source, scan_pos)
+        },
+        "0",
+        PRI_CALL_TRAILING_COMMA_DELETE,
+        PRI_CALL_TRAILING_COMMA_FIX,
+        "removed trailing comma in expression argument list",
+        "inserted placeholder argument after trailing comma",
+    );
+}
+
+fn expression_operator_repairs(
+    source: &str,
+    error_pos: usize,
+    insert_at: usize,
+    parse_error: &pest::error::Error<Rule>,
+    candidates: &mut Vec<RepairCandidate>,
+) {
+    if !expression_expected_after_operator(parse_error) {
+        return;
+    }
+
+    let Some(prev) = scan::prev_non_ws_byte(source, error_pos) else {
+        return;
+    };
+    if !scan::is_operator_byte(prev) {
+        return;
+    }
+
+    candidates.push(RepairCandidate::insert(
+        insert_at,
+        "0",
+        "inserted placeholder expression after trailing operator",
+        PRI_EXPR_EXPECTED_OPERATOR,
+    ));
+}
+
+fn member_access_repairs(
+    source: &str,
+    error_pos: usize,
+    insert_at: usize,
+    _parse_error: &pest::error::Error<Rule>,
+    candidates: &mut Vec<RepairCandidate>,
+) {
+    let tail_pos = source.trim_end().len();
+    let dot_pos = if error_pos > 0 && error_pos <= source.len() && source.as_bytes()[error_pos - 1] == b'.' {
+        error_pos - 1
+    } else if error_pos >= tail_pos && tail_pos > 0 && source.as_bytes()[tail_pos.saturating_sub(1)] == b'.' {
+        tail_pos.saturating_sub(1)
+    } else {
+        return;
+    };
+
+    let Some(prev) = scan::prev_non_ws_byte(source, dot_pos.saturating_add(1)) else {
+        return;
+    };
+    if prev != b'.' {
+        return;
+    }
+
+    if !dot_access_prefix_looks_expression(source, dot_pos) {
+        return;
+    }
+
+    candidates.push(RepairCandidate::insert(
+        insert_at,
+        "field",
+        "inserted placeholder member access field",
+        PRI_MEMBER_ACCESS_STUB,
+    ));
+}
+
+fn index_expression_repairs(source: &str, error_pos: usize, insert_at: usize, candidates: &mut Vec<RepairCandidate>) {
+    let tail_pos = source.trim_end().len();
+    let seek_pos = if error_pos >= tail_pos && source[..tail_pos].ends_with('[') { tail_pos } else { error_pos };
+
+    let Some(bracket_open) = find_unclosed_bracket_before(source, seek_pos.saturating_add(1)) else {
+        return;
+    };
+
+    if !index_open_is_expression_context(source, bracket_open) {
+        return;
+    }
+
+    let scan_pos = skip_ws(source, bracket_open + 1);
+    if scan_pos > source.len() {
+        return;
+    }
+    let scan_end = seek_pos.min(source.len());
+    let inside = if scan_end <= scan_pos { "" } else { source[scan_pos..scan_end].trim() };
+    if inside.is_empty() {
+        candidates.push(RepairCandidate::insert(
+            insert_at,
+            "0]",
+            "inserted index placeholder and closed bracket",
+            PRI_INDEX_PLACEHOLDER,
+        ));
+    } else {
+        candidates.push(RepairCandidate::insert(insert_at, "]", "closed incomplete index expression", PRI_INDEX_CLOSE));
+    }
+}
+
+fn control_expression_body_repairs(
+    source: &str,
+    error_pos: usize,
+    insert_at: usize,
+    parse_error: &pest::error::Error<Rule>,
+    candidates: &mut Vec<RepairCandidate>,
+) {
+    if !syntax_primitives::recovery_expected_or_follow_token_has_body_hint(parse_error)
+        && !syntax_primitives::recovery_source_has_fallback_control_flow_hint(
+            source,
+            error_pos,
+            syntax_primitives::CONTROL_EXPRESSION_KEYWORDS,
+        )
+    {
+        return;
+    }
+
+    let mut latest = None::<(usize, &str)>;
+
+    for &keyword in syntax_primitives::CONTROL_EXPRESSION_KEYWORDS {
+        if let Some(pos) = scan::find_keyword_backward(source, error_pos, keyword) {
+            latest = match latest {
+                Some((existing_pos, existing_keyword)) if existing_pos > pos => Some((existing_pos, existing_keyword)),
+                _ => Some((pos, keyword)),
+            };
+        }
+    }
+
+    let Some((kw_pos, keyword)) = latest else {
+        return;
+    };
+
+    let prefix = prefix_before(source, kw_pos);
+    if prefix.ends_with('.') {
+        return;
+    }
+
+    if kw_pos + keyword.len() >= source.len() || kw_pos + keyword.len() >= error_pos {
+        return;
+    }
+
+    let after_keyword = skip_ws(source, kw_pos + keyword.len());
+    if source[after_keyword..error_pos].contains('{') {
+        return;
+    }
+
+    let near_tail = source[after_keyword..error_pos].trim_end();
+    if near_tail.is_empty() {
+        return;
+    }
+
+    candidates.push(RepairCandidate::insert(
+        insert_at,
+        " { }",
+        "inserted placeholder control-expression body",
+        PRI_EXPR_CONTROL_BODY,
+    ));
+}
+
+fn expression_expected_after_operator(parse_error: &pest::error::Error<Rule>) -> bool {
+    syntax_primitives::recovery_expected_token_has_any_class(
+        parse_error,
+        &[
+            expected_tokens::ReplacementTokenClass::Identifier,
+            expected_tokens::ReplacementTokenClass::Number,
+            expected_tokens::ReplacementTokenClass::StringLike,
+            expected_tokens::ReplacementTokenClass::Keyword,
+            expected_tokens::ReplacementTokenClass::Delimiter,
+        ],
+    )
+}
+
+fn dot_access_prefix_looks_expression(source: &str, dot_pos: usize) -> bool {
+    if dot_pos == 0 {
+        return false;
+    }
+
+    let bytes = source.as_bytes();
+    let mut pos = dot_pos;
+    pos = pos.saturating_sub(1);
+    while pos > 0 && bytes[pos].is_ascii_whitespace() {
+        pos -= 1;
+    }
+
+    let Some(prev) = bytes.get(pos).copied() else {
+        return false;
+    };
+    if prev == b'.' || prev == b':' || prev == b'(' || prev == b',' {
+        return false;
+    }
+
+    scan::is_ident_start(prev) || prev == b')' || prev == b']' || prev == b'}' || prev == b'"' || prev == b'\''
+}
+
+fn find_unclosed_bracket_before(source: &str, error_pos: usize) -> Option<usize> {
+    syntax_primitives::find_unclosed_delimiter_before(source, error_pos, b'[', b']')
+}
+
+fn index_open_is_expression_context(source: &str, open: usize) -> bool {
+    let Some(mut pos) = open.checked_sub(1) else {
+        return false;
+    };
+
+    while pos > 0 {
+        let b = source.as_bytes()[pos];
+        if b.is_ascii_whitespace() {
+            pos -= 1;
+            continue;
+        }
+        return scan::is_ident_continue(b) || matches!(b, b')' | b']' | b'}') || b.is_ascii_digit();
+    }
+
+    false
+}
+
+fn struct_field_separator_repairs(
+    source: &str,
+    error_pos: usize,
+    insert_at: usize,
+    candidates: &mut Vec<RepairCandidate>,
+) {
+    lists::trailing_separator_before_close_delimiter(
+        source,
+        error_pos,
+        insert_at,
+        candidates,
+        b'{',
+        b'}',
+        struct_brace_opens_literal_at,
+        "field: 0",
+        PRI_STRUCT_TRAILING_COMMA_DELETE,
+        PRI_STRUCT_TRAILING_COMMA_FIX,
+        "removed trailing comma in struct literal field list",
+        "inserted placeholder struct field after trailing comma",
+    );
+}
+
+fn bracket_argument_separator_repairs(
+    source: &str,
+    error_pos: usize,
+    insert_at: usize,
+    candidates: &mut Vec<RepairCandidate>,
+) {
+    lists::trailing_separator_before_close_delimiter(
+        source,
+        error_pos,
+        insert_at,
+        candidates,
+        b'[',
+        b']',
+        inside_expression_array_list,
+        "0",
+        PRI_ARRAY_TRAILING_COMMA_DELETE,
+        PRI_ARRAY_TRAILING_COMMA_FIX,
+        "removed trailing comma in expression array list",
+        "inserted placeholder array item after trailing comma",
+    );
+}
+
+fn angle_list_separator_repairs(
+    source: &str,
+    error_pos: usize,
+    insert_at: usize,
+    candidates: &mut Vec<RepairCandidate>,
+) {
+    lists::replace_trailing_separator_with_close_before_delimiter(
+        source,
+        error_pos,
+        insert_at,
+        candidates,
+        b'<',
+        b'>',
+        inside_generic_or_type_angle_list,
+        "T",
+        PRI_ANGLE_LIST_TRAILING_COMMA_DELETE,
+        PRI_ANGLE_LIST_TRAILING_COMMA_REPLACE,
+        PRI_ANGLE_LIST_TRAILING_COMMA_FIX,
+        "removed trailing comma in generic or type angle list",
+        "closed generic/type angle list trailing comma",
+        "inserted placeholder generic entry after trailing comma",
+    );
+}
+
 fn find_match_block_brace(source: &str, through: usize) -> Option<usize> {
-    let match_kw = find_keyword_backward(source, through, "match")?;
+    let match_kw = scan::find_keyword_backward(source, through, "match")?;
     let after_kw = skip_ws(source, match_kw + "match".len());
     let brace = find_next_brace_after_expression(source, after_kw, through)?;
     if through > brace { Some(brace) } else { None }
@@ -201,8 +532,8 @@ fn find_next_brace_after_expression(source: &str, from: usize, limit: usize) -> 
                 pos = skip_balanced_token(source, pos, limit)?;
             }
             _ => {
-                if is_identifier_start(source.as_bytes(), pos) {
-                    pos = skip_identifier(source, pos);
+                if scan::is_ident_start(source.as_bytes()[pos]) {
+                    pos = scan::skip_identifier(source, pos);
                 } else {
                     pos += 1;
                 }
@@ -378,7 +709,7 @@ fn lambda_arrow_is_parameter_tail(source: &str, arrow: usize) -> bool {
         if b.is_ascii_whitespace() {
             continue;
         }
-        return b == b')' || is_identifier_part(source.as_bytes(), pos);
+        return b == b')' || scan::is_ident_continue(b);
     }
     false
 }
@@ -409,7 +740,7 @@ fn struct_brace_opens_literal(source: &str, brace: usize) -> bool {
         if b == b')' || b == b']' || b == b'}' || b == b'=' || b == b'>' || b == b':' {
             return false;
         }
-        return is_identifier_part(source.as_bytes(), pos);
+        return scan::is_ident_continue(b);
     }
     false
 }
@@ -524,31 +855,52 @@ fn inside_call_argument_list(source: &str, error_pos: usize) -> bool {
         return false;
     };
     let prefix = prefix_before(source, open);
-    is_identifier_part(source.as_bytes(), open.saturating_sub(1)) || prefix.ends_with('!') || prefix.ends_with("spawn")
+    (open > 0 && scan::is_ident_continue(source.as_bytes()[open - 1]))
+        || prefix.ends_with('!')
+        || prefix.ends_with("spawn")
+}
+
+fn inside_expression_argument_list(source: &str, open: usize, error_pos: usize) -> bool {
+    if !inside_call_argument_list(source, error_pos) {
+        return false;
+    }
+
+    let before_open = source[..open].trim_end();
+    if before_open.ends_with('!') {
+        return true;
+    }
+
+    true
+}
+
+fn inside_expression_array_list(source: &str, open: usize, error_pos: usize) -> bool {
+    if !inside_unclosed_array_literal(source, error_pos) {
+        return false;
+    }
+
+    array_bracket_opens_literal(source, open)
+}
+
+fn inside_generic_or_type_angle_list(source: &str, open: usize, _scan_pos: usize) -> bool {
+    let prefix = prefix_before(source, open);
+    if prefix.is_empty() {
+        return false;
+    }
+
+    let trimmed = prefix.trim_end();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let prev = trimmed.as_bytes()[trimmed.len() - 1];
+    prev.is_ascii_alphanumeric() || prev == b'_' || prev == b'.' || prev == b':' || prev == b'>' || prev == b')'
+}
+
+fn struct_brace_opens_literal_at(source: &str, open: usize, scan_pos: usize) -> bool {
+    find_struct_literal_brace(source, scan_pos).is_some_and(|struct_open| struct_open == open)
 }
 
 fn find_unclosed_paren_before(source: &str, error_pos: usize) -> Option<usize> {
-    let (paren, _, _, _) = unbalanced_delimiters(source, error_pos);
-    if paren <= 0 {
-        return None;
-    }
-    let bytes = source.as_bytes();
-    let mut depth = 0i32;
-    let mut i = error_pos.min(source.len());
-    while i > 0 {
-        i -= 1;
-        match bytes[i] {
-            b')' => depth += 1,
-            b'(' => {
-                if depth == 0 {
-                    return Some(i);
-                }
-                depth -= 1;
-            }
-            _ => {}
-        }
-    }
-    None
+    syntax_primitives::find_unclosed_delimiter_before(source, error_pos, b'(', b')')
 }
 
 fn paren_prefix_has_enum_path(source: &str, open_paren: usize) -> bool {
@@ -570,49 +922,4 @@ fn prefix_before(source: &str, pos: usize) -> &str {
         }
     }
     source[start..end].trim()
-}
-
-fn find_keyword_backward(source: &str, through: usize, keyword: &str) -> Option<usize> {
-    let bytes = source.as_bytes();
-    let kw = keyword.as_bytes();
-    if through < kw.len() {
-        return None;
-    }
-    let max_start = through.min(source.len()) - kw.len();
-    let mut start = max_start;
-    loop {
-        if &bytes[start..start + kw.len()] == kw {
-            let before_ok = start == 0 || !is_identifier_part(bytes, start - 1);
-            let end = start + kw.len();
-            let after_ok = end >= source.len() || !is_identifier_part(bytes, end);
-            if before_ok && after_ok {
-                return Some(start);
-            }
-        }
-        if start == 0 {
-            break;
-        }
-        start -= 1;
-    }
-    None
-}
-
-fn is_identifier_start(bytes: &[u8], pos: usize) -> bool {
-    bytes.get(pos).is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
-}
-
-fn is_identifier_part(bytes: &[u8], pos: usize) -> bool {
-    bytes.get(pos).is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
-}
-
-fn skip_identifier(source: &str, pos: usize) -> usize {
-    let bytes = source.as_bytes();
-    let mut i = pos;
-    if i < source.len() && (bytes[i].is_ascii_alphabetic() || bytes[i] == b'_') {
-        i += 1;
-        while i < source.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
-            i += 1;
-        }
-    }
-    i
 }

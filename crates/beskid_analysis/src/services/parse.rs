@@ -11,7 +11,7 @@ use crate::parsing::parsable::Parsable;
 use crate::syntax::{Program, Spanned};
 
 use super::diagnostics_emit::{parse_error_diagnostic, pest_error_diagnostic};
-use super::parse_recovery::collect_repair_candidates;
+use super::parse_recovery::recover_with_repair_candidates;
 
 /// Result of parser recovery: always includes diagnostics captured while building the program.
 #[derive(Debug, Clone)]
@@ -52,17 +52,12 @@ pub fn parse_program_with_source_name_and_diagnostics(source_name: &str, source:
     };
     let fallback = pest_error_diagnostic(source_name, source, &parse_error);
 
-    for (candidate_source, mut parse_diagnostics) in collect_repair_candidates(source_name, source, &parse_error) {
-        if let Ok(program) = parse_program_strict(source_name, &candidate_source) {
-            if candidate_source == source {
-                parse_diagnostics.clear();
-            }
-            return Ok(ParsedProgram {
-                program,
-                diagnostics: parse_diagnostics,
-                recovered: candidate_source != source,
-            });
-        }
+    if let Some((program, parse_diagnostics, recovered)) =
+        recover_with_repair_candidates(source_name, source, &parse_error, |candidate_source| {
+            parse_program_strict(source_name, candidate_source)
+        })
+    {
+        return Ok(ParsedProgram { program, diagnostics: parse_diagnostics, recovered });
     }
 
     Err(anyhow!(MietteReportError::new(fallback)))

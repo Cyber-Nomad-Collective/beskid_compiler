@@ -5,6 +5,7 @@
 pub enum AbiParamKind {
     Ptr,
     I64,
+    F64,
 }
 
 /// Builtin return slot shape (including [`AbiReturnKind::Never`] for diverging calls).
@@ -14,6 +15,7 @@ pub enum AbiReturnKind {
     Ptr,
     I64,
     I32,
+    F64,
     Never,
 }
 

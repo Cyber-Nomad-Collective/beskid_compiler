@@ -1387,6 +1387,7 @@ impl Lowerable<NodeLoweringContext<'_, '_>> for HirCallExpression {
                     BuiltinType::Ptr => pointer_type(),
                     BuiltinType::String => pointer_type(),
                     BuiltinType::Usize | BuiltinType::U64 => types::I64,
+                    BuiltinType::F64 => types::F64,
                     BuiltinType::Unit | BuiltinType::Never => {
                         return Err(CodegenError::UnsupportedNode {
                             span: node.span,

@@ -110,24 +110,7 @@ unsafe extern "C" fn host_dispatch_tty_winsize(enum_ptr: *const u8) -> i64 {
     }
 }
 
-/// # Safety
-///
-/// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
-unsafe extern "C" fn host_dispatch_process_last_exit_code(_enum_ptr: *const u8) -> i64 {
-    crate::process_last_exit_code()
-}
-
-/// # Safety
-///
-/// `enum_ptr` must reference a valid dispatch envelope for the duration of the call.
-unsafe extern "C" fn host_dispatch_process_run(enum_ptr: *const u8) -> i64 {
-    unsafe {
-        let p0 = *(enum_ptr.add(16) as *const *const BeskidStr);
-        crate::process_run(p0)
-    }
-}
-
-const HOST_HANDLERS: [HandlerTableEntry; 13] = [
+const HOST_HANDLERS: [HandlerTableEntry; 11] = [
     HandlerTableEntry { group: 0, tag: 1, fn_ptr: host_dispatch_fs_write_text as *const u8 },
     HandlerTableEntry { group: 1, tag: 3, fn_ptr: host_dispatch_env_get as *const u8 },
     HandlerTableEntry { group: 1, tag: 4, fn_ptr: host_dispatch_env_getcwd as *const u8 },
@@ -139,8 +122,6 @@ const HOST_HANDLERS: [HandlerTableEntry; 13] = [
     HandlerTableEntry { group: 3, tag: 40, fn_ptr: host_dispatch_process_exit as *const u8 },
     HandlerTableEntry { group: 3, tag: 41, fn_ptr: host_dispatch_process_getpid as *const u8 },
     HandlerTableEntry { group: 3, tag: 45, fn_ptr: host_dispatch_tty_winsize as *const u8 },
-    HandlerTableEntry { group: 3, tag: 46, fn_ptr: host_dispatch_process_last_exit_code as *const u8 },
-    HandlerTableEntry { group: 3, tag: 47, fn_ptr: host_dispatch_process_run as *const u8 },
 ];
 
 /// Register all host dispatch handlers with the language runtime.

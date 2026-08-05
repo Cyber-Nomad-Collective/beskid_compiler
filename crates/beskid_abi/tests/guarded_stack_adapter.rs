@@ -17,8 +17,7 @@ fn linux_adapter_reserves_an_inaccessible_lower_guard_and_enforces_stack_bounds(
     let temp = temp_dir();
     let harness = temp.join("guarded_stack_harness.c");
     let executable = temp.join("guarded_stack_harness");
-    let adapter = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("assembly/x86_64-unknown-linux-gnu/platform_host.c");
+    let adapter = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assembly/x86_64-unknown-linux-gnu/platform_host.c");
     fs::write(
         &harness,
         r#"
