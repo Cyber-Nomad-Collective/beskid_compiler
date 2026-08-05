@@ -60,6 +60,7 @@ pub enum ReflectSdkNodeKind {
     ArrayLiteralExpression,
     CodeStringLiteral,
     CodeStringSegment,
+    ClifBlockExpression,
     EnumConstructorExpression,
     BlockExpression,
     GroupedExpression,
