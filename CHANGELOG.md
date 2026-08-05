@@ -69,6 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve calls through capture-free lambda local bindings from their
+  generation-bound lexical initializer, preserving the syntax/ISLE closure
+  path without materializing an unused runtime trampoline pointer.
+
 - Keep the generated syntax-node inventory and SDK reflection kinds aligned with
   the CLIF block expression syntax surface.
 

@@ -179,25 +179,11 @@ fn unsupported_typed_operation_reports_deterministic_span_bearing_missing_rule()
 }
 
 #[test]
-fn unsupported_lambda_reports_deterministic_span_bearing_missing_rule() {
-    let (input, isa, root) =
-        item_fixture_with_root("i32 Main(i32 outer) { let add = (i32 inner) => outer + inner; return outer; }");
-    let lambda = find_node(input.database(), root, beskid_queries::IndexedNodeKind::LambdaExpression)
-        .expect("lambda expression");
-
+fn lambda_is_classified_for_generation_safe_isle_lowering() {
     assert_eq!(
         beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::LambdaExpression),
-        beskid_isle::SyntaxNodeClassification::UnsupportedTypedOperation,
+        beskid_isle::SyntaxNodeClassification::IsleLowered(beskid_isle::NodeKind::LambdaExpression),
     );
-
-    let error = emit_isle_expression(&input, isa.as_ref(), lambda, types::I64)
-        .expect_err("unsupported lambda must not route around generated ISLE");
-    let first = error.display_with_db(input.database());
-    let repeated = error.display_with_db(input.database());
-
-    assert_eq!(first, repeated);
-    assert!(first.contains("MissingRuleOrFact"), "{first}");
-    assert!(first.contains("LambdaExpression@"), "{first}");
 }
 
 #[test]
@@ -319,7 +305,7 @@ fn closure_captures_and_spawn_target_are_independent_semantic_facts() {
 
     assert_eq!(
         beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::LambdaExpression,),
-        beskid_isle::SyntaxNodeClassification::UnsupportedTypedOperation,
+        beskid_isle::SyntaxNodeClassification::IsleLowered(beskid_isle::NodeKind::LambdaExpression,),
     );
     assert_eq!(
         beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::SpawnExpression,),
@@ -982,6 +968,29 @@ fn parsed_zero_capture_immediate_lambda_call_lowers_without_a_runtime_closure() 
 
     let function = emit_isle_item(&input, isa.as_ref(), item)
         .expect("zero-capture immediate lambda call lowers through syntax facts");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i32 41"), "{clif}");
+    assert!(clif.contains("iadd"), "{clif}");
+}
+
+#[test]
+fn parsed_zero_capture_stored_lambda_call_lowers_through_generation_bound_local_callable_fact() {
+    let (input, isa, root) =
+        item_fixture_with_root("i32 Main() { let add = (i32 value) => value + 1; return add(41); }");
+    let db = input.database();
+    let item = find_function_definition(db, root).expect("Main item");
+    let call = find_node(db, root, beskid_queries::IndexedNodeKind::CallExpression).expect("stored lambda call");
+    let target = beskid_queries::closure_call_target(db, call)
+        .expect("closure call target query")
+        .expect("stored lambda target");
+    let environment = beskid_queries::closure_environment(db, target.lambda)
+        .expect("closure environment")
+        .expect("lambda environment");
+    assert!(environment.captures.is_empty());
+    assert_eq!(environment.parameters.len(), 1);
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("stored zero-capture lambda call lowers through syntax facts");
     let clif = function.display().to_string();
     assert!(clif.contains("iconst.i32 41"), "{clif}");
     assert!(clif.contains("iadd"), "{clif}");

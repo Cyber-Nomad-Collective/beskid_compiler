@@ -3274,6 +3274,31 @@ fn closure_call_target_and_spawn_entry_validation_use_only_current_syntax_facts(
 }
 
 #[test]
+fn stored_lambda_call_resolves_its_lexical_initializer_without_hir() {
+    let source = "i32 Main() { let add = (i32 value) => value + 1; return add(7); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let lambda = key(unit, generation, &index, NodeKind::LambdaExpression, 0);
+    let body = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::BinaryExpression,
+        source.find("value + 1").expect("lambda body"),
+    );
+
+    assert_eq!(
+        closure_call_target(&db, call).expect("stored closure call target"),
+        Some(ClosureCallTarget {
+            call,
+            lambda,
+            body,
+            callable: ItemSignature { parameters: Arc::from([SemanticTypeId::I32]), result: SemanticTypeId::I32 },
+        })
+    );
+}
+
+#[test]
 fn spawn_target_preserves_lambda_operand_and_capture_environment() {
     let source = r#"i32 Main(i32 outer) {
     let task = spawn ((i32 inner) => outer + inner);

@@ -1839,7 +1839,9 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         if self.facts.semantic_type(argument) != Some(from) || self.facts.semantic_type(key) != Some(to) {
             self.pending_error = Some(LoweringError {
                 key,
-                kind: LoweringErrorKind::InvalidPrimitiveNumericConversion("semantic facts differ from conversion fact"),
+                kind: LoweringErrorKind::InvalidPrimitiveNumericConversion(
+                    "semantic facts differ from conversion fact",
+                ),
             });
             return None;
         }
@@ -2250,6 +2252,15 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             return None;
         }
         let initializer = self.facts.let_initializer(key)?;
+        if self.facts.node_kind(initializer) == Some(NodeKind::LambdaExpression)
+            && self.facts.lambda_entry(initializer)?.closure_environment.is_none()
+        {
+            // A capture-free lambda bound only through its lexical declaration is consumed by
+            // `InlineLambda` at each resolved call site. Do not materialize an otherwise unused
+            // trampoline pointer here: that would make the local initializer depend on a module
+            // import even though the generation-bound closure-call fact already owns the body.
+            return Some(());
+        }
         let value = generated::constructor_lower_expression(self, initializer)?;
         let value_type = self.facts.scalar_type(key)?;
         if self.builder.func.dfg.value_type(value) != value_type {

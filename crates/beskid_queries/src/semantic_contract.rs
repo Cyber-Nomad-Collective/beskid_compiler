@@ -4987,8 +4987,31 @@ fn closure_call_target_tracked(
 ) -> SemanticQueryResult<ClosureCallTarget> {
     let lambda = with_node(db, syntax, key, |program, index, node| {
         let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
-        index
+        let callee = index
             .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()))
+            .map(|node| normalized_expression_node(index, node))?;
+        let callee_node = index.node_at(program, callee)?;
+        if callee_node.of::<beskid_analysis::syntax::LambdaExpression>().is_some() {
+            return Some(AstNodeKey { node: callee, ..key });
+        }
+
+        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
+            return None;
+        };
+        let [segment] = path.node.path.node.segments.as_slice() else {
+            return None;
+        };
+        if !segment.node.type_args.is_empty() {
+            return None;
+        }
+        let declaration = resolve_lexical_declaration(program, index, callee, segment.node.name.node.name.as_str())?;
+        let binding = parent_node(index, declaration)
+            .and_then(|parent| index.node_at(program, parent)?.of::<beskid_analysis::syntax::LetStatement>())?;
+        if !expression_is_lambda(&binding.value.node) {
+            return None;
+        }
+        index
+            .direct_child_id(program, parent_node(index, declaration)?, beskid_analysis::syntax_query::DynNodeRef::from(&binding.value))
             .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
     })?;
     let Some(lambda) = lambda else {
