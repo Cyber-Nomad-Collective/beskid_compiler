@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Carry immutable generic specialization environments through semantic facts and module emission.
+  Nested explicit generic calls now enter a declaration-instance worklist keyed by declaration and
+  substitutions, while `ModuleEmissionSession` namespaces source artifacts and reuses declared
+  callee handles for repeated long-lived-module emission. Source verification remains pending the
+  scheduled Cargo/Clippy pass.
+
+- Publish typed managed arrays only through the rooted construction transaction: the ABI header,
+  allocation registry, and external construction root are established before the collector can
+  observe the allocation. Generic module identities now include ordered substitutions, and session
+  namespaces cover closure, aggregate, array, and string static data.
+
+- Remove the unsafe unrooted typed-array allocator from the ABI-v5 manifest/runtime surface.
+  Generic specialization identity uses a full length-delimited parameter encoding, and module
+  session cache keys include linkage policy as well as source item identity.
+
 - Generate manifest-owned ABI-v5 bindings for the exact `Core.Args`
   `__args_count` and `__args_get` services on Linux x64, macOS arm64, and
   Windows x64. Validation now rejects missing or duplicate target bindings,
@@ -43,6 +58,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DocumentAnalysisSnapshot` remains CLI-doc-only (CYB-65).
 
 ### Fixed
+
+- Contextually type unsuffixed integer literals only at explicitly typed local
+  initializer and mutable-local assignment boundaries. Generated syntax ISLE
+  now emits the destination's exact ABI width without an implicit numeric
+  widening conversion, while inferred locals, explicit literal suffixes,
+  compound values, immutable destinations, and out-of-range values fail closed.
+
+- Lock the generated syntax-ISLE regression boundary against implicitly
+  widening an `i32` variable during assignment to a mutable `i64` local.
+
+- Restore type-safe semantic generic-specialization facts, preserving every
+  `SyntaxGenerationId` bit in their structural identity, rejecting unprovable
+  unused generic parameters, and collecting specializations reachable from
+  executable test definitions.
+
+- Resolve strict compiler lint failures in ABI-v5 array descriptor validation
+  and the managed-heap helper implementation.
+
+- Materialize generic syntax functions only from canonical direct-call ABI
+  specialization facts. Uncalled generic declarations are omitted from module emission,
+  while direct calls with absent or ambiguous specialization evidence now fail closed with
+  their call and declaration identities.
+
+- Lock local declarations and path/field/index assignments to their generated
+  syntax → `CodegenInput` → ISLE dispatch rules, preventing canonical Core.String,
+  input, and ANSI source from regressing to a missing-rule failure or a retired HIR path.
 
 - Fail closed unless the ABI-v5 Core.Args manifest contains exactly
   `__args_count` and `__args_get`, and unless every target binding implements

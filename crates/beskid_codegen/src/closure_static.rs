@@ -259,7 +259,12 @@ fn closure_identity(input: &CodegenInput<'_>, lambda: AstNodeKey) -> Option<Stri
     let key_path = lambda.unit.path(input.database());
     let unit_index =
         input.typed_program().assembly.units().iter().position(|unit| paths_match(&unit.path, key_path))?;
-    Some(format!("u{unit_index}_g{}_n{}", lambda.generation.0, lambda.node.0))
+    let namespace = input
+        .artifact_namespace()
+        .chars()
+        .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
+        .collect::<String>();
+    Some(format!("{namespace}_u{unit_index}_g{}_n{}", lambda.generation.0, lambda.node.0))
 }
 
 /// Reserve one deterministic root-slot owner identity for a lowering site.

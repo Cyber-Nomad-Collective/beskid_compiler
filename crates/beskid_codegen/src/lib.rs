@@ -9,6 +9,7 @@
 //! work so observers match [`beskid_pipeline::phases::JIT_RUN_PHASE_ORDER`] when mods are active.
 
 pub mod aggregate_static;
+pub mod array_static;
 pub mod closure_static;
 pub mod codegen_input;
 pub mod cranelift_host;
@@ -25,6 +26,9 @@ pub mod services;
 pub use aggregate_static::{
     ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateObjectLayout, AggregateStaticField, AggregateStaticPlan,
     emit_aggregate_static_data,
+};
+pub use array_static::{
+    ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ArrayStaticPlan, emit_array_static_data,
 };
 pub use closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
@@ -48,8 +52,8 @@ pub use lowering::{
     mapping_pair_eligible, object_link_symbol, pointer_type, require_mapping_eligible, shape_id_for_item,
 };
 pub use module_emission::{
-    DescriptorHandles, SyntaxModuleItem, emit_closure_static_plans, emit_string_literals, emit_type_descriptors,
-    lower_syntax_program,
+    DescriptorHandles, ModuleEmissionSession, SyntaxModuleItem, emit_closure_static_plans, emit_string_literals,
+    emit_syntax_program_in_session, emit_type_descriptors, lower_syntax_program,
 };
 pub use prepared_syntax::{
     PreparedSyntaxEntrypoint, lower_canonical_runtime_prepared_syntax, lower_prepared_syntax_entrypoint,

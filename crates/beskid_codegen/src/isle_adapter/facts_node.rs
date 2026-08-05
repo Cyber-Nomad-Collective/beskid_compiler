@@ -216,10 +216,37 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         let CallLowering::Direct(declaration) = lowering else {
             return None;
         };
-        if let Some(specialization) = self.query(generic_call_specialization(self.db, key)) {
+        if let Some(template) = self.query(generic_call_template(self.db, key)) {
+            let enclosing = self.item_specializations.values().next()?;
+            let substitutions = template
+                .parameters
+                .iter()
+                .zip(template.parameter_arguments.iter())
+                .map(|(target, argument)| {
+                    enclosing.substitutions.iter().find(|binding| binding.parameter.as_ref() == argument.as_ref()).map(
+                        |binding| beskid_queries::GenericSubstitution {
+                            parameter: target.clone(),
+                            argument: binding.argument,
+                        },
+                    )
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let specialization =
+                self.query(generic_specialization_instance(self.db, template.declaration, substitutions.into()))?;
             return Some(DirectCallee::specialized_item(
                 specialization.declaration,
-                specialization_identity(&specialization.signature),
+                specialization_identity(&specialization),
+            ));
+        }
+        if let Some(specialization) = self.query(generic_call_specialization(self.db, key)) {
+            let specialization = beskid_queries::GenericSpecializationInstance {
+                declaration: specialization.declaration,
+                signature: specialization.signature,
+                substitutions: specialization.substitutions,
+            };
+            return Some(DirectCallee::specialized_item(
+                specialization.declaration,
+                specialization_identity(&specialization),
             ));
         }
         Some(DirectCallee::item(declaration))
@@ -275,6 +302,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn array_layout(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
         self.array_layout_for_literal(key)
+    }
+
+    fn managed_array_allocation(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedArrayAllocation> {
+        Some(beskid_isle::ManagedArrayAllocation {
+            allocation_request_symbol: self.input.array_static_plan(key)?.allocation_request_symbol.into(),
+        })
     }
 
     fn function_parameters(&self, key: AstNodeKey) -> Option<Vec<ParameterSlot>> {

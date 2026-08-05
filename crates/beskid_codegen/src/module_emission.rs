@@ -4,10 +4,11 @@ use std::time::Instant;
 use beskid_analysis::types::TypeId;
 use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterner};
 use beskid_queries::{
-    CallLowering, ItemSignature, SemanticTypeId, SourceUnitId, call_lowering, child_nodes, closure_call_target,
-    closure_environment, closure_signature, extern_contract_import_for_declaration, format_ast_node_key,
-    generic_call_specialization, item_abi_signature, item_name, node_kind, node_span, resolved_item,
-    spawn_entry_validation,
+    CallLowering, GenericSpecializationInstance, GenericSubstitution, ItemSignature, SemanticTypeId, SourceUnitId,
+    call_lowering, child_nodes, closure_call_target, closure_environment, closure_signature,
+    extern_contract_import_for_declaration, format_ast_node_key, generic_call_specialization, generic_call_template,
+    generic_specialization_identity, generic_specialization_instance, item_abi_signature, item_name, node_kind,
+    node_span, resolved_item, spawn_entry_validation,
 };
 use cranelift_codegen::ir::{AbiParam, InstBuilder};
 use cranelift_codegen::ir::{
@@ -19,6 +20,9 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module, ModuleError, ModuleResult};
 
 use crate::aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateStaticPlan, emit_aggregate_static_data};
+use crate::array_static::{
+    ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ArrayStaticPlan, emit_array_static_data,
+};
 use crate::closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
     ClosureStaticPlan, emit_closure_static_data,
@@ -46,6 +50,29 @@ pub struct SyntaxModuleItem {
     pub symbol: String,
 }
 
+/// State owned by a long-lived Cranelift module while it receives source artifacts.
+///
+/// A session supplies one namespace for source-owned metadata and remembers function handles by
+/// final symbol. Re-emitting the same source artifact therefore returns its existing handles
+/// rather than redeclaring a conflicting module symbol. Callers that emit independent artifacts
+/// choose distinct namespaces; the convenience API below keeps the historical one-shot behavior.
+#[derive(Debug, Clone)]
+pub struct ModuleEmissionSession {
+    namespace: std::sync::Arc<str>,
+    callees: HashMap<DirectCallee, FuncId>,
+    source_artifacts: HashSet<String>,
+}
+
+impl ModuleEmissionSession {
+    pub fn new(namespace: impl Into<std::sync::Arc<str>>) -> Self {
+        Self { namespace: namespace.into(), callees: HashMap::new(), source_artifacts: HashSet::new() }
+    }
+
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+}
+
 /// One fully declared syntax item after generic source declarations have been expanded into
 /// exact ABI specializations.  The callee key is the same structural identity produced by ISLE
 /// call facts, keeping declaration and import selection generation-safe.
@@ -54,7 +81,7 @@ struct ResolvedSyntaxModuleItem {
     key: AstNodeKey,
     symbol: String,
     callee: DirectCallee,
-    specialization: Option<ItemSignature>,
+    specialization: Option<GenericSpecializationInstance>,
 }
 
 #[derive(Debug, Clone)]
@@ -234,7 +261,7 @@ fn lower_resolved_syntax_program(
             .map(|trampoline| (DirectCallee::lambda_trampoline(trampoline.lambda), trampoline.symbol.clone())),
     );
 
-    let mut context = CodegenContext::new();
+    let mut context = CodegenContext::new_with_artifact_namespace(input.artifact_namespace().to_owned());
     let lambda_count =
         trampolines.iter().filter(|trampoline| trampoline.lambda_body.is_some()).count() + lambda_trampolines.len();
     let mut functions = Vec::with_capacity(items.len() + trampolines.len() + lambda_count + lambda_trampolines.len());
@@ -359,6 +386,16 @@ fn lower_resolved_syntax_program(
             library: None,
         });
     }
+    let array_static_plans = collect_array_static_plans(input, items);
+    if !array_static_plans.is_empty() {
+        for symbol in
+            [ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, "beskid_rt_v5_array_write_barrier"]
+        {
+            if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
+                extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
+            }
+        }
+    }
 
     Ok(CodegenArtifact {
         functions,
@@ -366,8 +403,18 @@ fn lower_resolved_syntax_program(
         extern_imports,
         closure_static_plans,
         aggregate_static_plans,
+        array_static_plans,
         ..CodegenArtifact::default()
     })
+}
+
+fn collect_array_static_plans(input: &CodegenInput<'_>, items: &[ResolvedSyntaxModuleItem]) -> Vec<ArrayStaticPlan> {
+    let mut visited = HashSet::new();
+    let mut nodes = Vec::new();
+    for item in items {
+        collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
+    }
+    nodes.into_iter().filter_map(|key| input.array_static_plan(key)).collect()
 }
 
 fn collect_aggregate_static_plans(
@@ -834,7 +881,11 @@ fn trace_node_facts(
                     .map(|specialization| {
                         DirectCallee::specialized_item(
                             specialization.declaration,
-                            specialization_identity(&specialization.signature),
+                            generic_specialization_identity(&GenericSpecializationInstance {
+                                declaration: specialization.declaration,
+                                signature: specialization.signature.clone(),
+                                substitutions: specialization.substitutions.clone(),
+                            }),
                         )
                     })
                     .unwrap_or_else(|| DirectCallee::item(declaration));
@@ -922,11 +973,17 @@ fn resolve_module_items(
     source_items: &[SyntaxModuleItem],
 ) -> Result<Vec<ResolvedSyntaxModuleItem>, SyntaxModuleEmissionError> {
     let db = input.database();
-    let mut specializations = HashMap::<AstNodeKey, Vec<ItemSignature>>::new();
+    let mut specializations = HashMap::<AstNodeKey, Vec<GenericSpecializationInstance>>::new();
     for item in source_items {
-        collect_generic_call_specializations(db, item.key, &mut specializations)?;
+        // A generic declaration body has no concrete substitution environment of its own.
+        // Walking it once here falsely treats `T`-dependent call sites as executable source and
+        // can reject a program before a real direct-call instantiation reaches it. Only concrete
+        // entry items seed the collection; each emitted generic item is represented solely by a
+        // call-derived `DirectCallee::SpecializedItem` identity below.
+        if is_concrete_executable_item(db, item.key)? {
+            collect_generic_call_specializations(db, item.key, &mut specializations)?;
+        }
     }
-
     let mut resolved = Vec::with_capacity(source_items.len());
     for item in source_items {
         if item_abi_signature(db, item.key).ok().flatten().is_some() {
@@ -945,54 +1002,175 @@ fn resolve_module_items(
             continue;
         }
         let Some(signatures) = specializations.get(&item.key) else {
-            return Err(emission_verification("generic item has no call-derived ABI specialization"));
+            // Generic declarations do not have an executable ABI on their own.  They enter a
+            // module only when the same source traversal has proven a concrete direct-call ABI.
+            // A direct generic call without that proof is rejected while collecting below, so
+            // this is only an uncalled declaration (for example a Corelib helper outside the
+            // selected entrypoint's call graph).
+            continue;
         };
-        for signature in signatures {
-            let identity = specialization_identity(signature);
+        for specialization in signatures {
+            let identity = generic_specialization_identity(specialization);
             resolved.push(ResolvedSyntaxModuleItem {
                 key: item.key,
-                symbol: format!("{}#generic_{}", item.symbol, specialization_mangle(signature)),
+                symbol: format!("{}#generic_{}", item.symbol, specialization_mangle(specialization)),
                 callee: DirectCallee::specialized_item(item.key, identity),
-                specialization: Some(signature.clone()),
+                specialization: Some(specialization.clone()),
             });
         }
     }
     Ok(resolved)
 }
 
+/// Return true only for a declaration body with a declaration-level, non-generic ABI.
+///
+/// Absence of an ABI is *not* treated as generic generally: non-function syntax declarations
+/// are structural and have no executable body. Keeping this predicate explicit is the boundary
+/// that prevents the specialization collector from scanning generic source as concrete code.
+fn is_concrete_executable_item(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+) -> Result<bool, SyntaxModuleEmissionError> {
+    Ok(item_abi_signature(db, key).map_err(|error| emission_verification(error.to_string()))?.is_some())
+}
+
 fn collect_generic_call_specializations(
     db: &dyn beskid_queries::Db,
     key: AstNodeKey,
-    specializations: &mut HashMap<AstNodeKey, Vec<ItemSignature>>,
+    specializations: &mut HashMap<AstNodeKey, Vec<GenericSpecializationInstance>>,
 ) -> Result<(), SyntaxModuleEmissionError> {
-    if let Some(specialization) =
-        generic_call_specialization(db, key).map_err(|error| emission_verification(error.to_string()))?
-    {
-        let signatures = specializations.entry(specialization.declaration).or_default();
-        if !signatures.contains(&specialization.signature) {
-            signatures.push(specialization.signature);
+    collect_generic_call_specializations_in_environment(db, key, None, specializations)
+}
+
+/// Traverse an executable source body with an optional immutable enclosing specialization.
+/// Nested calls of the explicit `inner<T>(...)` form are materialized using the enclosing
+/// bindings, then their body is queued in the same pass.  This replaces the old diagnostic-only
+/// guard with a finite `(declaration, substitutions)` worklist.
+fn collect_generic_call_specializations_in_environment(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    environment: Option<&GenericSpecializationInstance>,
+    specializations: &mut HashMap<AstNodeKey, Vec<GenericSpecializationInstance>>,
+) -> Result<(), SyntaxModuleEmissionError> {
+    if let Some(declaration) = direct_generic_call_declaration(db, key)? {
+        let specialization = if let Some(template) =
+            generic_call_template(db, key).map_err(|error| emission_verification(error.to_string()))?
+        {
+            let enclosing = environment.ok_or_else(|| {
+                emission_verification(format!(
+                    "generic call template has no enclosing specialization: call={} declaration={}",
+                    trace_key(db, key),
+                    format_declaration_for_trace(db, declaration)
+                ))
+            })?;
+            let bindings = template
+                .parameters
+                .iter()
+                .zip(template.parameter_arguments.iter())
+                .map(|(target, argument)| {
+                    enclosing
+                        .substitutions
+                        .iter()
+                        .find(|binding| binding.parameter.as_ref() == argument.as_ref())
+                        .cloned()
+                        .map(|binding| GenericSubstitution { parameter: target.clone(), argument: binding.argument })
+                })
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| {
+                    emission_verification(format!(
+                        "nested generic call references an unbound parameter: call={} declaration={}",
+                        trace_key(db, key),
+                        format_declaration_for_trace(db, declaration)
+                    ))
+                })?;
+            generic_specialization_instance(db, template.declaration, bindings.into())
+                .map_err(|error| emission_verification(error.to_string()))?
+                .ok_or_else(|| emission_verification("nested generic specialization is unavailable"))?
+        } else {
+            let specialization = generic_call_specialization(db, key)
+                .map_err(|error| emission_verification(error.to_string()))?
+                .ok_or_else(|| {
+                    emission_verification(format!(
+                        "generic direct call has no provable ABI specialization: call={} declaration={}",
+                        trace_key(db, key),
+                        format_declaration_for_trace(db, declaration)
+                    ))
+                })?;
+            GenericSpecializationInstance {
+                declaration: specialization.declaration,
+                signature: specialization.signature,
+                substitutions: specialization.substitutions,
+            }
+        };
+        if specialization.declaration != declaration {
+            return Err(emission_verification(format!(
+                "generic direct call specialization resolved a different declaration: call={} expected={} actual={}",
+                trace_key(db, key),
+                format_declaration_for_trace(db, declaration),
+                format_declaration_for_trace(db, specialization.declaration),
+            )));
+        }
+        let instances = specializations.entry(declaration).or_default();
+        if !instances.contains(&specialization) {
+            instances.push(specialization.clone());
+            // Only a newly discovered instance can add new nested work. This makes recursive
+            // generic helpers finite without relying on a source-body traversal order.
+            collect_generic_call_specializations_in_environment(
+                db,
+                declaration,
+                Some(&specialization),
+                specializations,
+            )?;
         }
     }
     if let Some(children) = child_nodes(db, key).map_err(|error| emission_verification(error.to_string()))? {
         for child in children.iter().copied() {
-            collect_generic_call_specializations(db, child, specializations)?;
+            collect_generic_call_specializations_in_environment(db, child, environment, specializations)?;
         }
     }
     Ok(())
 }
 
-fn specialization_identity(signature: &ItemSignature) -> std::sync::Arc<[u32]> {
-    signature
-        .parameters
-        .iter()
-        .map(|semantic| semantic.0)
-        .chain(std::iter::once(signature.result.0))
-        .collect::<Vec<_>>()
-        .into()
+/// Returns the declaration only for a source call that has resolved directly to a generic
+/// function with no declaration-level ABI.  This keeps module emission constrained to the same
+/// semantic call facts that ISLE uses for `DirectCallee::SpecializedItem`; unresolved calls stay
+/// unavailable rather than being guessed from syntax.
+fn direct_generic_call_declaration(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+) -> Result<Option<AstNodeKey>, SyntaxModuleEmissionError> {
+    if node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?
+        != Some(beskid_queries::IndexedNodeKind::CallExpression)
+    {
+        return Ok(None);
+    }
+    let lowering = match call_lowering(db, key) {
+        Ok(Some(lowering)) => lowering,
+        Ok(None) => return Ok(None),
+        // `generic_call_specialization` deliberately leaves unavailable call sites out of the
+        // fact set (for example unresolved Core.Output paths).  They cannot prove a direct
+        // generic declaration and must not broaden module emission.
+        Err(error) if error.is_unavailable() => return Ok(None),
+        Err(error) => return Err(emission_verification(error.to_string())),
+    };
+    let CallLowering::Direct(declaration) = lowering else {
+        return Ok(None);
+    };
+    if node_kind(db, declaration).map_err(|error| emission_verification(error.to_string()))?
+        != Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
+    {
+        return Ok(None);
+    }
+    match item_abi_signature(db, declaration).map_err(|error| emission_verification(error.to_string()))? {
+        Some(_) => Ok(None),
+        // Function definitions are ABI-less only when generic.  The generic call fact below
+        // must now prove one exact ABI shape, otherwise the caller is rejected fail-closed.
+        None => Ok(Some(declaration)),
+    }
 }
 
-fn specialization_mangle(signature: &ItemSignature) -> String {
-    specialization_identity(signature).iter().map(u32::to_string).collect::<Vec<_>>().join("_")
+fn specialization_mangle(instance: &GenericSpecializationInstance) -> String {
+    generic_specialization_identity(instance).iter().map(u32::to_string).collect::<Vec<_>>().join("_")
 }
 
 /// Syntax-ISLE adapter over the existing artifact-owned literal pool.
@@ -1156,6 +1334,9 @@ pub fn emit_syntax_program<M: Module>(
     for plan in &artifact.aggregate_static_plans {
         emit_aggregate_static_data(module, plan)?;
     }
+    for plan in &artifact.array_static_plans {
+        emit_array_static_data(module, plan)?;
+    }
     let mut by_callee = HashMap::with_capacity(items.len());
     let mut by_symbol = HashMap::with_capacity(artifact.functions.len());
     for lowered in &artifact.functions {
@@ -1182,6 +1363,59 @@ pub fn emit_syntax_program<M: Module>(
     Ok(by_callee)
 }
 
+/// Emit source into a reusable module session.
+///
+/// The session namespaces both function and source-static identities before ordinary lowering.
+/// Its artifact key is the complete ordered source item list, so a repeat request is served from
+/// the cached `DirectCallee` handles and does not attempt a second Cranelift declaration.
+pub fn emit_syntax_program_in_session<M: Module>(
+    module: &mut M,
+    session: &mut ModuleEmissionSession,
+    input: &CodegenInput<'_>,
+    isa: &dyn TargetIsa,
+    items: &[SyntaxModuleItem],
+    linkage: Linkage,
+) -> Result<HashMap<DirectCallee, FuncId>, SyntaxModuleEmissionError> {
+    let namespace = session
+        .namespace()
+        .chars()
+        .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
+        .collect::<String>();
+    let resolved = resolve_module_items(input, items)?;
+    // Never cache by surface symbol alone: the same user symbol may represent a different AST
+    // generation or a generic instance with ABI-equal but semantically different substitutions.
+    let artifact_key = format!(
+        "{namespace}:linkage={linkage:?}:{}",
+        resolved
+            .iter()
+            .map(|item| format!("{:?}:{}:{:?}", item.key, item.symbol, item.callee))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    if session.source_artifacts.contains(&artifact_key) {
+        return resolved
+            .into_iter()
+            .map(|item| {
+                session
+                    .callees
+                    .get(&item.callee)
+                    .copied()
+                    .map(|id| (item.callee, id))
+                    .ok_or_else(|| emission_verification("module emission session cache is missing a declared callee"))
+            })
+            .collect();
+    }
+    let namespaced_input = input.with_artifact_namespace(session.namespace.clone());
+    let namespaced_items = items
+        .iter()
+        .map(|item| SyntaxModuleItem { key: item.key, symbol: format!("__beskid_{namespace}_{}", item.symbol) })
+        .collect::<Vec<_>>();
+    let emitted = emit_syntax_program(module, &namespaced_input, isa, &namespaced_items, linkage)?;
+    session.callees.extend(emitted.iter().map(|(callee, id)| (callee.clone(), *id)));
+    session.source_artifacts.insert(artifact_key);
+    Ok(emitted)
+}
+
 /// Emit artifact-owned closure descriptor/pointer-map/allocation-request data.
 pub fn emit_closure_static_plans<M: Module>(module: &mut M, artifact: &CodegenArtifact) -> ModuleResult<()> {
     for plan in &artifact.closure_static_plans {
@@ -1189,6 +1423,9 @@ pub fn emit_closure_static_plans<M: Module>(module: &mut M, artifact: &CodegenAr
     }
     for plan in &artifact.aggregate_static_plans {
         emit_aggregate_static_data(module, plan)?;
+    }
+    for plan in &artifact.array_static_plans {
+        emit_array_static_data(module, plan)?;
     }
     Ok(())
 }

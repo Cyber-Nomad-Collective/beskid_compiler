@@ -249,6 +249,34 @@ fn typed_operation_families_have_explicit_classifications() {
     assert_eq!(classify_syntax_node_kind(Syntax::Identifier), Structural);
 }
 
+/// The canonical corelib manifests depend on local declarations and mutable writes.
+/// Keep their source syntax on the generated ISLE route: `CodegenInput` supplies facts,
+/// and these rules select the existing constructor implementations without a HIR fallback.
+#[test]
+fn generated_isle_routes_local_declarations_and_assignments() {
+    let isle = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("isle");
+    let statements = fs::read_to_string(isle.join("statements.isle")).expect("read statement ISLE rules");
+    let memory = fs::read_to_string(isle.join("memory.isle")).expect("read memory ISLE rules");
+
+    assert!(
+        statements.contains("(rule (lower_statement key @ (node_kind (NodeKind.LetStatement)))\n      (emit_local_let key))"),
+        "LetStatement must dispatch through generated ISLE"
+    );
+
+    for (target, constructor) in [
+        ("PathExpression", "emit_local_assign"),
+        ("FieldExpression", "emit_field_assign"),
+        ("IndexExpression", "emit_index_assign"),
+    ] {
+        assert!(
+            memory.contains(&format!(
+                "(node_kind (NodeKind.AssignExpression))\n        (assignment_target_kind (NodeKind.{target}))))\n      ({constructor} key)"
+            )),
+            "AssignExpression targeting {target} must dispatch through generated ISLE"
+        );
+    }
+}
+
 #[test]
 fn binary_and_unary_operator_facts_have_isle_rules() {
     let isle = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("isle");

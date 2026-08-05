@@ -15,17 +15,19 @@ use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex, SyntaxSna
 use beskid_queries::{
     AggregateFieldShape, AstNodeKey, BeskidDatabase, CaptureStorageClass, ClosureAllocationStatus, ClosureCallTarget,
     ClosureCapture, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement, CompletionContext,
-    EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, ItemSignature, LocalSlot,
-    MutableLocalAssignment, OperatorFact, ProjectSession, SemanticError, SemanticTypeId, SourceUnitId,
+    EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, GenericSpecializationInstance,
+    ItemSignature, LocalSlot, MutableLocalAssignment, OperatorFact, ProjectSession, SemanticError, SemanticTypeId,
+    SourceUnitId,
     SpawnDiagnosticKind, SpawnEntryValidation, SyntaxGenerationId, abi_type, aggregate_field_access, aggregate_layout,
     build_canonical_corelib_syscall_typed_program, build_typed_program,
     build_typed_program_with_corelib_syscall_services, call_abi_signature, call_arguments, call_lowering,
     callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target, closure_environment,
     closure_signature, completion_candidates, control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
-    for_iterator_fact, generic_call_instantiation, generic_call_specialization, item_abi_signature, item_body,
-    item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type,
-    nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items, resolved_item,
-    resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
+    for_iterator_fact, generic_call_instantiation, generic_call_specialization, generic_specialization_identity,
+    item_abi_signature, item_body,
+    item_signature, literal_fact, local_initializer_abi_type, local_slot, mutable_local_assignment, node_kind,
+    node_span, node_type, nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items,
+    resolved_item, resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -78,6 +80,26 @@ fn primitive_numeric_conversion_call_has_a_typed_result_without_dynamic_dispatch
         primitive_numeric_conversion(&db, conversion).expect("conversion fact"),
         Some(beskid_queries::PrimitiveNumericConversion { from: SemanticTypeId::WORD, to: SemanticTypeId::I64 })
     );
+}
+
+#[test]
+fn generic_specialization_identity_distinguishes_high_generation_bits() {
+    let db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Generic.bd"));
+    let instance = |generation| GenericSpecializationInstance {
+        declaration: AstNodeKey {
+            unit,
+            generation: SyntaxGenerationId(generation),
+            node: beskid_analysis::syntax::AstNodeId(7),
+        },
+        signature: ItemSignature { parameters: Arc::from([SemanticTypeId::I64]), result: SemanticTypeId::I64 },
+        substitutions: Arc::from([]),
+    };
+
+    let low = generic_specialization_identity(&instance(1));
+    let high = generic_specialization_identity(&instance((1_u64 << 32) | 1));
+
+    assert_ne!(low, high, "distinct syntax generations must not share a specialized module identity");
 }
 
 #[test]
@@ -301,6 +323,10 @@ unit Main() {
                 parameters: Arc::from([SemanticTypeId::I64, SemanticTypeId::I64]),
                 result: SemanticTypeId::UNIT,
             },
+            substitutions: Arc::from([beskid_queries::GenericSubstitution {
+                parameter: Arc::from("T"),
+                argument: SemanticTypeId::I64,
+            }]),
         })
     );
 }
@@ -1764,6 +1790,7 @@ unit Main() {
     Hub<i64>.Create();
     Hub.Create();
 }
+
 "#;
     let hub_source = r#"
 type Hub<T> { i64 value }
@@ -1937,6 +1964,7 @@ pub Core.Results.Result<i64, Core.Syscall.SyscallError> Write() {
         Some(beskid_queries::GenericCallSpecialization {
             declaration,
             signature: ItemSignature { parameters: Arc::from([SemanticTypeId::POINTER]), result: SemanticTypeId::BOOL },
+            substitutions: Arc::from([]),
         })
     );
 }
@@ -2096,6 +2124,10 @@ unit Main() { Equal(1, 1, "because"); return; }
                 parameters: Arc::from([SemanticTypeId::I32, SemanticTypeId::I32, SemanticTypeId::STRING,]),
                 result: SemanticTypeId::UNIT,
             },
+            substitutions: Arc::from([beskid_queries::GenericSubstitution {
+                parameter: Arc::from("T"),
+                argument: SemanticTypeId::I32,
+            }]),
         })
     );
 }
@@ -3919,6 +3951,27 @@ fn immutable_local_assignment_is_an_explicit_unavailable_syntax_fact() {
     let (db, _project, unit, generation, index) = setup(source);
     let assignment = key(unit, generation, &index, NodeKind::AssignExpression, 0);
     assert_unavailable(mutable_local_assignment(&db, assignment));
+}
+
+#[test]
+fn local_initializer_abi_type_contextualizes_only_bare_integer_literals_at_exact_local_boundaries() {
+    let source = "i64 Main(mut i64 start) { i64 offset = 0; start = 1; return start + offset; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let first = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    let second = key(unit, generation, &index, NodeKind::LiteralExpression, 1);
+
+    assert_eq!(local_initializer_abi_type(&db, first).expect("typed let literal"), Some(SemanticTypeId::I64));
+    assert_eq!(local_initializer_abi_type(&db, second).expect("typed assignment literal"), Some(SemanticTypeId::I64));
+
+    let inferred = "i32 Main() { let value = 0; return value; }";
+    let (db, _project, unit, generation, index) = setup(inferred);
+    let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    assert_unavailable(local_initializer_abi_type(&db, literal));
+
+    let explicitly_suffixed = "i64 Main() { i64 value = 0_i32; return value; }";
+    let (db, _project, unit, generation, index) = setup(explicitly_suffixed);
+    let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    assert_unavailable(local_initializer_abi_type(&db, literal));
 }
 
 #[test]

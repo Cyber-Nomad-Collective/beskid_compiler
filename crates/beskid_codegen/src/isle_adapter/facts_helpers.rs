@@ -88,12 +88,11 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn array_layout_for_literal(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
-        let elements = self.array_elements_for_literal(key)?;
-        if !elements.is_empty() {
-            return None;
-        }
-        let pointer = self.isa?.pointer_type();
-        Some(beskid_isle::ArrayLayout::new(pointer, pointer.bytes(), 0, pointer.bytes().ilog2() as u8))
+        let plan = self.input.array_static_plan(key)?;
+        let element = map_signature_type(self.isa?, plan.element_type)?;
+        let stride = u32::try_from(plan.stride).ok()?;
+        let length = u32::try_from(plan.length).ok()?;
+        Some(beskid_isle::ArrayLayout::new(element, stride, length, plan.alignment.ilog2() as u8))
     }
 
     pub(super) fn runtime_intrinsic(&self, key: AstNodeKey) -> Option<(u32, &beskid_abi::abi_v5::RuntimeIntrinsic)> {
@@ -117,7 +116,7 @@ impl SyntaxNodeFacts<'_> {
                     let specialization = self
                         .item_specializations
                         .get(&key)
-                        .and_then(|signature| signature.parameters.get(parameters.len()))
+                        .and_then(|specialization| specialization.signature.parameters.get(parameters.len()))
                         .copied();
                     let value_type = specialization
                         .or_else(|| {
@@ -152,6 +151,7 @@ impl SyntaxNodeFacts<'_> {
         }
         self.query(cast_intents(self.db, key))
             .and_then(|intents| intents.first().map(|intent| intent.to))
+            .or_else(|| self.query(local_initializer_abi_type(self.db, key)))
             .or_else(|| self.query(abi_type(self.db, key)))
             .or_else(|| self.query(node_type(self.db, key)))
             .or_else(|| {

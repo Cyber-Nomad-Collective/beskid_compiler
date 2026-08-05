@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use abfall::{GcCell, GcContext, GcPtr, Heap, Trace, Tracer, TypeDescriptor};
+use abfall::{ArrayElementDescriptor, GcCell, GcContext, GcPtr, Heap, Trace, Tracer, TypeDescriptor};
 
 // Simple acyclic node type for graph tracing tests
 struct Node {
@@ -203,6 +203,40 @@ fn beskid_descriptor_trace_keeps_child_payload_alive() {
     heap.external_roots().unregister_root(&mut parent_slot as *mut *mut u8);
     let after = heap.force_collect();
     assert!(after < before, "removing the parent root should allow parent and child payloads to be reclaimed");
+    assert!(!heap.owns_beskid_payload(parent));
+    assert!(!heap.owns_beskid_payload(child));
+}
+
+#[test]
+fn typed_array_descriptor_keeps_pointer_elements_alive_across_forced_gc() {
+    let heap = Heap::off();
+    let pointer_offsets = [0usize];
+    let descriptor = ArrayElementDescriptor {
+        stride: std::mem::size_of::<*mut u8>(),
+        alignment: std::mem::align_of::<*mut u8>(),
+        pointer_map: pointer_offsets.as_ptr(),
+        pointer_count: pointer_offsets.len(),
+    };
+    let (parent, construction_root) = heap
+        .allocate_beskid_array_constructing(3 * std::mem::size_of::<usize>(), descriptor, 1, |_| {})
+        .expect("typed array construction allocation");
+    let child = heap.allocate_beskid(16, std::ptr::null());
+    assert!(heap.owns_beskid_payload(parent));
+    assert!(heap.owns_beskid_payload(child));
+    // SAFETY: typed-array allocation reserves the header then exactly one pointer-sized element.
+    unsafe {
+        std::ptr::write_unaligned(parent.add(3 * std::mem::size_of::<usize>()).cast::<*mut u8>(), child);
+    }
+
+    let mut parent_slot = parent;
+    heap.external_roots().register_root(&mut parent_slot as *mut *mut u8);
+    heap.external_roots().drop_handle(construction_root);
+    let before = heap.bytes_allocated();
+    heap.force_collect();
+    assert_eq!(heap.bytes_allocated(), before, "typed array must trace the child through its persistent descriptor");
+
+    heap.external_roots().unregister_root(&mut parent_slot as *mut *mut u8);
+    heap.force_collect();
     assert!(!heap.owns_beskid_payload(parent));
     assert!(!heap.owns_beskid_payload(child));
 }

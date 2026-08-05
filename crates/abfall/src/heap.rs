@@ -3,12 +3,12 @@
 //! This module provides the heap structure that stores GC-managed objects
 //! and implements the mark and sweep phases of garbage collection.
 
-use crate::beskid::{BeskidObject, TypeDescriptor};
+use crate::beskid::{AlignedBytes, ArrayElementDescriptor, BeskidArrayMetadata, BeskidObject, TypeDescriptor};
 use crate::gc_box::{GcBox, GcHeader};
 use crate::ptr::GcRoot;
 use crate::roots::ExternalRootSet;
 use crate::trace::{Trace, Tracer};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::ptr::null_mut;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
@@ -38,14 +38,23 @@ struct BeskidAllocationRegistry {
 
 #[derive(Default)]
 struct BeskidAllocationMappings {
-    payload_to_header: HashMap<usize, usize>,
-    header_to_payload: HashMap<usize, usize>,
+    payload_to_header: BTreeMap<usize, AllocationRange>,
+    header_to_payload: BTreeMap<usize, usize>,
+}
+
+#[derive(Clone, Copy)]
+struct AllocationRange {
+    header: usize,
+    end_exclusive: usize,
 }
 
 impl BeskidAllocationRegistry {
-    fn register(&self, payload: *mut u8, header: *mut GcHeader) {
+    fn register(&self, payload: *mut u8, payload_len: usize, header: *mut GcHeader) {
+        let Some(end_exclusive) = (payload as usize).checked_add(payload_len) else {
+            return;
+        };
         let mut mappings = self.mappings.lock();
-        mappings.payload_to_header.insert(payload as usize, header as usize);
+        mappings.payload_to_header.insert(payload as usize, AllocationRange { header: header as usize, end_exclusive });
         mappings.header_to_payload.insert(header as usize, payload as usize);
     }
 
@@ -57,11 +66,17 @@ impl BeskidAllocationRegistry {
     }
 
     fn header_for(&self, payload: *mut u8) -> Option<*mut GcHeader> {
-        self.mappings.lock().payload_to_header.get(&(payload as usize)).copied().map(|header| header as *mut GcHeader)
+        let address = payload as usize;
+        let mappings = self.mappings.lock();
+        mappings
+            .payload_to_header
+            .range(..=address)
+            .next_back()
+            .and_then(|(_, range)| (address < range.end_exclusive).then_some(range.header as *mut GcHeader))
     }
 
     fn owns(&self, payload: *mut u8) -> bool {
-        !payload.is_null() && self.mappings.lock().payload_to_header.contains_key(&(payload as usize))
+        !payload.is_null() && self.header_for(payload).is_some()
     }
 }
 
@@ -386,7 +401,7 @@ impl Heap {
         }
 
         let type_desc = type_desc_ptr.cast::<TypeDescriptor>();
-        let obj = BeskidObject { heap: self as *const Self, type_desc, bytes: vec![0u8; size].into_boxed_slice() };
+        let obj = BeskidObject { heap: self as *const Self, type_desc, bytes: AlignedBytes::zeroed(size), array: None };
         let ptr = GcBox::new_with_root(obj, false);
         let header_ptr = unsafe { &(*ptr.as_ptr()).header as *const GcHeader as *mut GcHeader };
         self.insert_allocation(header_ptr);
@@ -401,9 +416,48 @@ impl Heap {
             }
         }
 
-        self.beskid_allocations.register(payload_ptr, header_ptr);
+        self.beskid_allocations.register(payload_ptr, size, header_ptr);
 
         payload_ptr
+    }
+
+    /// Allocate a typed array under a construction root before publishing it to the collector.
+    ///
+    /// The registry is installed before the external handle so a concurrent root scan can trace
+    /// the object, and the intrusive allocation-list publication happens last. Callers must keep
+    /// the returned handle until every pointer element has been written and barriered.
+    pub fn allocate_beskid_array_constructing(
+        &self,
+        header_size: usize,
+        descriptor: ArrayElementDescriptor,
+        length: usize,
+        initialize: impl FnOnce(*mut u8),
+    ) -> Option<(*mut u8, u64)> {
+        let data_size = descriptor.stride.checked_mul(length)?;
+        let total_size = header_size.checked_add(data_size)?;
+        if self.options.assist_work_budget > 0 && self.check_is_marking_and_increment_busy() {
+            self.do_mark_incremental(self.options.assist_work_budget);
+            self.decrement_busy_marking();
+        }
+        let obj = BeskidObject {
+            heap: self as *const Self,
+            type_desc: std::ptr::null(),
+            bytes: AlignedBytes::zeroed(total_size),
+            array: Some(BeskidArrayMetadata { descriptor, length, data_offset: header_size }),
+        };
+        let ptr = GcBox::new_with_root(obj, false);
+        let header_ptr = unsafe { &(*ptr.as_ptr()).header as *const GcHeader as *mut GcHeader };
+        let payload_ptr = unsafe { (*ptr.as_ptr()).data.bytes.as_ptr() as *mut u8 };
+        // Finish the ABI-visible header while this allocation is still private. A collector can
+        // only observe the object after the external construction root and heap-list publication
+        // below, so it never traces partially initialized header storage.
+        initialize(payload_ptr);
+        self.beskid_allocations.register(payload_ptr, total_size, header_ptr);
+        // This handle must precede publication: a collector which reaches `head` can now also
+        // reach the complete (zeroed) object through its construction root.
+        let handle = self.external_roots.push_handle(payload_ptr);
+        self.insert_allocation(header_ptr);
+        Some((payload_ptr, handle))
     }
 
     fn insert_allocation(&self, header_ptr: *mut GcHeader) {

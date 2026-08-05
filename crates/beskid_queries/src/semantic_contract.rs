@@ -460,6 +460,64 @@ pub struct GenericCallInstantiation {
 pub struct GenericCallSpecialization {
     pub declaration: AstNodeKey,
     pub signature: ItemSignature,
+    /// Immutable, declaration-ordered bindings used to derive this ABI shape.  Keeping the
+    /// environment with the identity is what lets a later body walk substitute `T` in a nested
+    /// generic call instead of lowering the declaration once as though `T` were concrete.
+    pub substitutions: Arc<[GenericSubstitution]>,
+}
+
+/// One concrete binding in a generic specialization environment.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GenericSubstitution {
+    pub parameter: Arc<str>,
+    pub argument: SemanticTypeId,
+}
+
+/// A fully materializable generic declaration instance.  This is deliberately detached from a
+/// call node: module emission may discover the same instance from several callers but declares
+/// exactly one item for its `(declaration, substitutions)` identity.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GenericSpecializationInstance {
+    pub declaration: AstNodeKey,
+    pub signature: ItemSignature,
+    pub substitutions: Arc<[GenericSubstitution]>,
+}
+
+/// A nested generic call whose source type arguments refer to the enclosing declaration's
+/// generic parameters.  `parameter_arguments` are resolved only while walking a concrete
+/// [`GenericSpecializationInstance`]; they are never guessed from an uninstantiated body.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GenericCallTemplate {
+    pub declaration: AstNodeKey,
+    /// Declaration-ordered generic parameter names of the nested callee.
+    pub parameters: Arc<[Arc<str>]>,
+    pub parameter_arguments: Arc<[Arc<str>]>,
+}
+
+/// Stable module identity for a materialized generic declaration.
+///
+/// ABI signatures alone are not sufficient: distinct nominal substitutions may lower to the
+/// same pointer ABI. The identity therefore records declaration generation plus every ordered
+/// source parameter name and concrete semantic argument.
+pub fn generic_specialization_identity(instance: &GenericSpecializationInstance) -> Arc<[u32]> {
+    let generation = instance.declaration.generation.0;
+    let mut identity = vec![
+        (generation >> 32) as u32,
+        generation as u32,
+        instance.declaration.node.0,
+        u32::try_from(instance.substitutions.len()).unwrap_or(u32::MAX),
+    ];
+    for binding in instance.substitutions.iter() {
+        // Encode every UTF-8 byte with a length delimiter. This is deliberately not a hash:
+        // distinct source parameter names cannot collide in the module identity.
+        identity.push(u32::try_from(binding.parameter.len()).unwrap_or(u32::MAX));
+        identity.extend(binding.parameter.bytes().map(u32::from));
+        identity.push(binding.argument.0);
+    }
+    identity.push(u32::MAX);
+    identity.extend(instance.signature.parameters.iter().map(|semantic| semantic.0));
+    identity.push(instance.signature.result.0);
+    identity.into()
 }
 
 /// One semantic cast required while lowering an AST node.
@@ -2184,8 +2242,46 @@ fn generic_call_specialization_tracked(
         if function.generics.is_empty() {
             return None;
         }
-        let signature = call_abi_signature(db, key).ok().flatten()?;
-        Some(Ok(GenericCallSpecialization { declaration, signature }))
+        let instance = generic_specialization_instance_for_call(db, key).ok()?;
+        Some(Ok(GenericCallSpecialization {
+            declaration: instance.declaration,
+            signature: instance.signature,
+            substitutions: instance.substitutions,
+        }))
+    })?
+    .transpose()
+}
+
+#[salsa::tracked]
+fn generic_call_template_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<GenericCallTemplate> {
+    with_node(db, syntax, key, |program, index, node| {
+        let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
+        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
+            return None;
+        };
+        let argument_syntax = explicit_generic_type_argument_syntax(&path.node.path.node)?;
+        let declaration = resolve_item_declaration_candidate(db, program, index, key, &path.node.path.node)?;
+        let declaration_syntax = db.syntax_unit(declaration.unit)?;
+        let function = declaration_syntax
+            .syntax_index(db)
+            .node_at(declaration_syntax.expanded_program(db), declaration.node)?
+            .of::<beskid_analysis::syntax::FunctionDefinition>()?;
+        (function.generics.len() == argument_syntax.len()).then_some(())?;
+        let parameter_arguments = argument_syntax
+            .iter()
+            .map(|argument| generic_parameter_reference_name(&argument.node).map(Arc::<str>::from))
+            .collect::<Option<Vec<_>>>()?;
+        let parameters =
+            function.generics.iter().map(|generic| Arc::<str>::from(generic.node.name.as_str())).collect::<Vec<_>>();
+        Some(Ok(GenericCallTemplate {
+            declaration,
+            parameters: parameters.into(),
+            parameter_arguments: parameter_arguments.into(),
+        }))
     })?
     .transpose()
 }
@@ -2775,8 +2871,7 @@ fn call_abi_signature_tracked(
 }
 
 fn call_abi_signature_for_call(db: &dyn Db, key: AstNodeKey) -> Result<ItemSignature, SemanticError> {
-    let declaration = match call_lowering(db, key)? {
-        Some(CallLowering::Direct(declaration)) => declaration,
+    match call_lowering(db, key)? {
         Some(CallLowering::CorelibService(service)) => {
             return corelib_service_abi_signature(service)
                 .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
@@ -2788,6 +2883,21 @@ fn call_abi_signature_for_call(db: &dyn Db, key: AstNodeKey) -> Result<ItemSigna
         Some(CallLowering::Runtime(_)) | None => {
             return Err(SemanticError::unavailable("call_abi_signature"));
         }
+        Some(CallLowering::Direct(_)) => {}
+    }
+    Ok(generic_specialization_instance_for_call(db, key)?.signature)
+}
+
+/// Derive the concrete declaration environment and ABI shape for one direct generic call.
+///
+/// This is shared by call facts and module worklist construction so the latter never tries to
+/// reconstruct substitutions from mangled ABI types.
+fn generic_specialization_instance_for_call(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Result<GenericSpecializationInstance, SemanticError> {
+    let Some(CallLowering::Direct(declaration)) = call_lowering(db, key)? else {
+        return Err(SemanticError::unavailable("generic_specialization_instance"));
     };
     let declaration_syntax =
         db.syntax_unit(declaration.unit).ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
@@ -2796,10 +2906,14 @@ fn call_abi_signature_for_call(db: &dyn Db, key: AstNodeKey) -> Result<ItemSigna
         .node_at(declaration_syntax.expanded_program(db), declaration.node)
         .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
     let Some(function) = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>() else {
-        return item_abi_signature(db, declaration)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
+        let signature =
+            item_abi_signature(db, declaration)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+        return Ok(GenericSpecializationInstance { declaration, signature, substitutions: Arc::from([]) });
     };
     if function.generics.is_empty() {
-        return item_abi_signature(db, declaration)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
+        let signature =
+            item_abi_signature(db, declaration)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+        return Ok(GenericSpecializationInstance { declaration, signature, substitutions: Arc::from([]) });
     }
 
     let arguments = call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
@@ -2844,6 +2958,17 @@ fn call_abi_signature_for_call(db: &dyn Db, key: AstNodeKey) -> Result<ItemSigna
             return Err(SemanticError::unavailable("call_abi_signature"));
         }
     }
+    if generic_names.iter().any(|generic| {
+        !substitutions.contains_key(*generic)
+            && !function
+                .parameters
+                .iter()
+                .map(|parameter| &parameter.node.ty.node)
+                .chain(function.return_type.iter().map(|return_type| &return_type.node))
+                .any(|syntax_type| type_syntax_mentions_generic_parameter(syntax_type, generic))
+    }) {
+        return Err(SemanticError::unavailable("call_abi_signature"));
+    }
     let parameters = function
         .parameters
         .iter()
@@ -2852,7 +2977,17 @@ fn call_abi_signature_for_call(db: &dyn Db, key: AstNodeKey) -> Result<ItemSigna
     let result = function.return_type.as_ref().map_or(Ok(SemanticTypeId::UNIT), |return_type| {
         generic_abi_type(db, declaration, &return_type.node, &substitutions)
     })?;
-    Ok(ItemSignature { parameters: parameters.into(), result })
+    let signature = ItemSignature { parameters: parameters.into(), result };
+    let substitutions = generic_names
+        .into_iter()
+        .filter_map(|parameter| {
+            substitutions
+                .get(parameter)
+                .copied()
+                .map(|argument| GenericSubstitution { parameter: Arc::from(parameter), argument })
+        })
+        .collect::<Vec<_>>();
+    Ok(GenericSpecializationInstance { declaration, signature, substitutions: substitutions.into() })
 }
 
 /// Whether a source expression is a bare integer literal without an ABI suffix.
@@ -3037,6 +3172,88 @@ fn generic_type_name<'a>(syntax_type: &'a beskid_analysis::syntax::Type, generic
     segment.node.type_args.is_empty().then_some(name).filter(|name| generics.contains(name))
 }
 
+fn type_syntax_mentions_generic_parameter(
+    syntax_type: &beskid_analysis::syntax::Type,
+    parameter: &str,
+) -> bool {
+    match syntax_type {
+        beskid_analysis::syntax::Type::Primitive(_) => false,
+        beskid_analysis::syntax::Type::Complex(path) => path.node.segments.iter().any(|segment| {
+            segment.node.name.node.name == parameter
+                || segment
+                    .node
+                    .type_args
+                    .iter()
+                    .any(|argument| type_syntax_mentions_generic_parameter(&argument.node, parameter))
+        }),
+        beskid_analysis::syntax::Type::Array(element) => {
+            type_syntax_mentions_generic_parameter(&element.node, parameter)
+        }
+        beskid_analysis::syntax::Type::Function { return_type, parameters } => {
+            type_syntax_mentions_generic_parameter(&return_type.node, parameter)
+                || parameters
+                    .iter()
+                    .any(|parameter_type| type_syntax_mentions_generic_parameter(&parameter_type.node, parameter))
+        }
+    }
+}
+
+fn generic_parameter_reference_name(syntax_type: &beskid_analysis::syntax::Type) -> Option<&str> {
+    let beskid_analysis::syntax::Type::Complex(path) = syntax_type else {
+        return None;
+    };
+    let [segment] = path.node.segments.as_slice() else {
+        return None;
+    };
+    segment.node.type_args.is_empty().then_some(segment.node.name.node.name.as_str())
+}
+
+/// Materialize a generic declaration with an already-proven immutable environment.
+///
+/// The caller must obtain `substitutions` from a source call fact or an enclosing instance;
+/// this function checks arity and derives the ABI directly from the declaration syntax.
+pub fn generic_specialization_instance(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+    substitutions: Arc<[GenericSubstitution]>,
+) -> SemanticQueryResult<GenericSpecializationInstance> {
+    let Some(syntax) = db.syntax_unit(declaration.unit) else { return Ok(None) };
+    if !syntax.accepts_key(db, declaration) {
+        return Ok(None);
+    }
+    let Some(function) = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+    else {
+        return Ok(None);
+    };
+    if substitutions.len() > function.generics.len() {
+        return Ok(None);
+    }
+    let mut environment = HashMap::with_capacity(substitutions.len());
+    for binding in substitutions.iter() {
+        if !function.generics.iter().any(|generic| generic.node.name.as_str() == binding.parameter.as_ref())
+            || environment.insert(binding.parameter.to_string(), binding.argument).is_some()
+        {
+            return Ok(None);
+        }
+    }
+    let parameters = function
+        .parameters
+        .iter()
+        .map(|parameter| generic_abi_type(db, declaration, &parameter.node.ty.node, &environment))
+        .collect::<Result<Vec<_>, _>>()?;
+    let result = function.return_type.as_ref().map_or(Ok(SemanticTypeId::UNIT), |return_type| {
+        generic_abi_type(db, declaration, &return_type.node, &environment)
+    })?;
+    Ok(Some(GenericSpecializationInstance {
+        declaration,
+        signature: ItemSignature { parameters: parameters.into(), result },
+        substitutions,
+    }))
+}
+
 fn abi_signature_from_syntax(
     db: &dyn Db,
     key: AstNodeKey,
@@ -3099,6 +3316,82 @@ fn exact_assembled_generic_nominal_envelope(
         nominal.node.type_args.len(),
     )?;
     Some(SemanticTypeId::POINTER)
+}
+
+/// Prove an ABI representation for one unsuffixed integer literal used as the entire initializer
+/// of an explicitly typed local, or as the entire RHS of a mutable local assignment.
+///
+/// This is contextual typing for literals, not a conversion: the source literal has no ABI suffix
+/// and is emitted directly at the destination's exact ABI width. Inferred declarations, explicit
+/// literal suffixes, compound expressions, immutable destinations, and non-integer destination
+/// representations fail closed rather than receiving an implicit numeric widening.
+#[salsa::tracked]
+fn local_initializer_abi_type_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SemanticTypeId> {
+    with_node(db, syntax, key, |program, index, _node| {
+        Some((|| {
+            if !unsuffixed_integer_literal(db, key)? {
+                return Err(SemanticError::unavailable("local_initializer_abi_type"));
+            }
+            let mut current = key.node;
+            while let Some(parent) = index.metadata_for(key.generation, current).and_then(|meta| meta.parent) {
+                let parent_key = AstNodeKey { node: parent, ..key };
+                let parent_node = index
+                    .node_at(program, parent)
+                    .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+
+                if let Some(binding) = parent_node.of::<beskid_analysis::syntax::LetStatement>() {
+                    let initializer = index
+                        .direct_child_id(
+                            program,
+                            parent,
+                            beskid_analysis::syntax_query::DynNodeRef::from(&binding.value),
+                        )
+                        .map(|node| AstNodeKey { node, ..key })
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                    if integer_literal_text(db, initializer)?.is_none() {
+                        return Err(SemanticError::unavailable("local_initializer_abi_type"));
+                    }
+                    let annotation = binding
+                        .type_annotation
+                        .as_ref()
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                    let expected = abi_type_from_syntax(db, parent_key, &annotation.node)?;
+                    return integer_literal_fits_abi(db, initializer, expected)?
+                        .then_some(expected)
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"));
+                }
+
+                if let Some(assignment) = parent_node.of::<beskid_analysis::syntax::AssignExpression>() {
+                    let value = index
+                        .direct_child_id(
+                            program,
+                            parent,
+                            beskid_analysis::syntax_query::DynNodeRef::from(assignment.value.as_ref()),
+                        )
+                        .map(|node| AstNodeKey { node, ..key })
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                    if integer_literal_text(db, value)?.is_none() {
+                        return Err(SemanticError::unavailable("local_initializer_abi_type"));
+                    }
+                    let write = mutable_local_assignment(db, parent_key)?
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                    let expected = abi_type(db, write.declaration)?
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                    return integer_literal_fits_abi(db, value, expected)?
+                        .then_some(expected)
+                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"));
+                }
+
+                current = parent;
+            }
+            Err(SemanticError::unavailable("local_initializer_abi_type"))
+        })())
+    })?
+    .transpose()
 }
 
 #[salsa::tracked]
@@ -5597,6 +5890,13 @@ pub fn generic_call_specialization(db: &dyn Db, key: AstNodeKey) -> SemanticQuer
     with_registered_syntax(db, key, generic_call_specialization_tracked)
 }
 
+/// Return a nested generic call that forwards enclosing type parameters explicitly in source.
+/// Concrete calls use [`generic_call_specialization`] instead; templates cannot be executed
+/// until module emission supplies the enclosing instance environment.
+pub fn generic_call_template(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<GenericCallTemplate> {
+    with_registered_syntax(db, key, generic_call_template_tracked)
+}
+
 /// Return numeric cast intents proven by an exact typed-let constraint.
 ///
 /// Inferred, complex, non-numeric, and other unported coercion contexts remain explicitly
@@ -5682,6 +5982,15 @@ pub fn abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTyp
 /// all other expressions remain unavailable rather than being implicitly coerced.
 pub fn call_argument_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, call_argument_abi_type_tracked)
+}
+
+/// Return the exact ABI selected for a bare integer literal at a typed local initializer or
+/// mutable local-assignment boundary.
+///
+/// This fact never performs a numeric conversion: it is unavailable for inferred locals,
+/// explicit literal suffixes, compound values, immutable destinations, and out-of-range values.
+pub fn local_initializer_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
+    with_registered_syntax(db, key, local_initializer_abi_type_tracked)
 }
 
 /// Return the exact lambda parameters and outer lexical captures in source order.

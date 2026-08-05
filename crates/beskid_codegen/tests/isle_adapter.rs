@@ -968,9 +968,9 @@ fn closure_static_plan_is_generation_bound_and_never_claims_tls_or_root_frame_au
 
     let scalar =
         input.closure_static_plan(lambdas[0]).expect("current scalar capture receives a static descriptor plan");
-    assert_eq!(scalar.descriptor_symbol, "__beskid_closure_descriptor_u0_g21_n20");
-    assert_eq!(scalar.pointer_map_symbol, "__beskid_closure_pointer_map_u0_g21_n20");
-    assert_eq!(scalar.allocation_request_symbol, "__beskid_closure_allocation_request_u0_g21_n20");
+    assert_eq!(scalar.descriptor_symbol, "__beskid_closure_descriptor_module_u0_g21_n20");
+    assert_eq!(scalar.pointer_map_symbol, "__beskid_closure_pointer_map_module_u0_g21_n20");
+    assert_eq!(scalar.allocation_request_symbol, "__beskid_closure_allocation_request_module_u0_g21_n20");
     assert_eq!(scalar.object_size, 24, "16-byte header plus aligned i32 field");
     assert_eq!(scalar.object_alignment, 8);
     assert!(scalar.pointer_map_offsets.is_empty());
@@ -1121,6 +1121,35 @@ fn parsed_mutable_string_local_exposes_local_write_syntax_facts() {
         facts.mutable_local_assignment_slot(assignment),
         Some(beskid_isle::LocalSlotId { owner_node: slot.owner.node.0, index: slot.index })
     );
+}
+
+#[test]
+fn parsed_i64_local_initializers_and_assignments_contextualize_unsuffixed_integer_literals() {
+    let (input, isa, root) = item_fixture_with_root(
+        "i64 Main(mut i64 start) { i64 offset = 0; start = 0; return start + offset; }",
+    );
+    let item = named_function(&input, root, "Main");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("explicit i64 local initializer and assignment lower through syntax ISLE without widening");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i64 0"), "{clif}");
+    assert!(!clif.contains("sextend"), "contextual literals must not become implicit numeric widening: {clif}");
+}
+
+#[test]
+fn parsed_i32_variable_assignment_to_i64_local_requires_explicit_conversion() {
+    let (input, isa, root) = item_fixture_with_root(
+        "i64 Main() { mut i32 source = 0; mut i64 destination = 0_i64; destination = source; return destination; }",
+    );
+    let item = named_function(&input, root, "Main");
+
+    let error = emit_isle_item(&input, isa.as_ref(), item)
+        .expect_err("an i32 variable must not implicitly widen during mutable i64 assignment");
+    let rendered = error.display_with_db(input.database());
+
+    assert!(rendered.contains("MissingRuleOrFact"), "{rendered}");
+    assert!(rendered.contains("AssignExpression@"), "{rendered}");
 }
 
 #[test]
@@ -2224,6 +2253,55 @@ fn parsed_program_specializes_an_inferred_generic_call_without_hir() {
         artifact.functions.iter().any(|function| function.name.starts_with("Equal#generic_")),
         "generic source items must use a mangled specialization identity"
     );
+}
+
+#[test]
+fn parsed_program_emits_only_call_derived_generic_specializations_without_hir() {
+    let (input, isa, root) = item_fixture_with_root(
+        "i32 Keep<T>(T value) { return 7; } i32 Unused<T>(T value) { return 0; } i32 Main() { return Keep(1); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: items[0], symbol: "Keep".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Unused".into() },
+            SyntaxModuleItem { key: items[2], symbol: "Main".into() },
+        ],
+    )
+    .expect("only the generic declaration proven by an actual direct call is materialized");
+
+    assert!(
+        artifact.functions.iter().any(|function| function.name.starts_with("Keep#generic_")),
+        "the actual generic call must materialize its exact call-derived ABI specialization"
+    );
+    assert!(
+        artifact.functions.iter().all(|function| !function.name.starts_with("Unused#generic_")),
+        "a generic declaration without an actual direct call must not be materialized"
+    );
+}
+
+#[test]
+fn parsed_program_rejects_a_generic_direct_call_without_a_provable_specialization() {
+    let (input, isa, root) =
+        item_fixture_with_root("unit Missing<T>() { return; } unit Main() { Missing(); }");
+    let items = find_function_definitions(input.database(), root);
+
+    let error = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: items[0], symbol: "Missing".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Main".into() },
+        ],
+    )
+    .expect_err("a generic direct call without source-proven arguments must fail closed");
+
+    let rendered = error.to_string();
+    assert!(rendered.contains("MissingRuleOrFact"), "{rendered}");
+    assert!(rendered.contains("CallExpression@"), "{rendered}");
 }
 
 #[test]

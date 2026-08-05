@@ -498,6 +498,15 @@ pub struct ManagedStructAllocation {
     pub allocation_request_symbol: Arc<str>,
 }
 
+/// Source-authorized static request used to allocate one typed array through ABI-v5.
+///
+/// The request owns the element pointer-map identity. ISLE must not reconstruct this from a
+/// CLIF value type or an element size because that would lose persistent GC reachability.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ManagedArrayAllocation {
+    pub allocation_request_symbol: Arc<str>,
+}
+
 impl StructLayout {
     pub fn new(size: u32, align_shift: u8, fields: Vec<FieldLayout>) -> Self {
         Self { size, align_shift, fields }
@@ -720,6 +729,9 @@ pub trait NodeFacts {
         None
     }
     fn array_layout(&self, _key: AstNodeKey) -> Option<ArrayLayout> {
+        None
+    }
+    fn managed_array_allocation(&self, _key: AstNodeKey) -> Option<ManagedArrayAllocation> {
         None
     }
     fn struct_fields(&self, _key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
@@ -2309,15 +2321,26 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn emit_array_literal(&mut self, key: AstNodeKey) -> Option<Value> {
         let elements = self.facts.array_elements(key)?;
         let layout = self.facts.array_layout(key)?;
+        let allocation = self.facts.managed_array_allocation(key)?;
         if !layout.is_valid() || usize::try_from(layout.length).ok()? != elements.len() {
             self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidArrayLayout });
             return None;
         }
-        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+        let pointer = dispatch::pointer_type();
+        let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer)?;
+        let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
             StackSlotKind::ExplicitSlot,
-            layout.byte_size()?.max(1),
-            layout.align_shift,
+            pointer.bytes(),
+            pointer.bytes().ilog2() as u8,
         ));
+        let root_slot_address = self.builder.ins().stack_addr(pointer, root_slot, 0);
+        let allocate = self.import_runtime_helper("beskid_rt_v5_array_allocate_rooted", &[pointer, pointer], Some(pointer))?;
+        let allocation_call = self.builder.ins().call(allocate, &[request, root_slot_address]);
+        let array = self.builder.inst_results(allocation_call).first().copied()?;
+        self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
+        // `BeskidArray.ptr` remains at offset zero.  The backing bytes are owned by the same
+        // descriptor-backed GC allocation; they are never a stack temporary.
+        let data = self.builder.ins().load(pointer, MemFlags::new(), array, 0);
         for (index, element) in elements.into_iter().enumerate() {
             let value = generated::constructor_lower_expression(self, element)?;
             if self.builder.func.dfg.value_type(value) != layout.element_type {
@@ -2326,10 +2349,23 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             }
             let offset =
                 u32::try_from(index).ok()?.checked_mul(layout.stride).and_then(|offset| i32::try_from(offset).ok())?;
-            self.builder.ins().stack_store(value, slot, offset);
+            let address = self.builder.ins().iadd_imm(data, i64::from(offset));
+            self.builder.ins().store(MemFlags::new(), value, address, 0);
+            if layout.element_type == pointer {
+                let barrier = self.import_runtime_helper("beskid_rt_v5_array_write_barrier", &[pointer, pointer], Some(types::I8))?;
+                let barrier_call = self.builder.ins().call(barrier, &[array, value]);
+                let published = self.builder.inst_results(barrier_call).first().copied()?;
+                self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
+            }
         }
-        let pointer_type = self.facts.scalar_type(key)?;
-        Some(self.builder.ins().stack_addr(pointer_type, slot, 0))
+        // The allocation was rooted before the first nested element was lowered. Release only
+        // after every store and pointer-publication barrier has completed.
+        let root_handle = self.builder.ins().stack_load(pointer, root_slot, 0);
+        let finish = self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
+        let finish_call = self.builder.ins().call(finish, &[root_handle]);
+        let released = self.builder.inst_results(finish_call).first().copied()?;
+        self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
+        Some(array)
     }
 
     fn emit_index_read(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -2347,9 +2383,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         if !index_type.is_int() || !pointer_type.is_int() {
             return None;
         }
-        let out_of_bounds =
-            self.builder.ins().icmp_imm(IntCC::UnsignedGreaterThanOrEqual, index, i64::from(layout.length));
-        self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
+        self.builder.ins().trapz(base, TrapCode::unwrap_user(1));
         let pointer_index = if index_type.bits() < pointer_type.bits() {
             self.builder.ins().uextend(pointer_type, index)
         } else if index_type.bits() > pointer_type.bits() {
@@ -2357,12 +2391,16 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         } else {
             index
         };
+        let length = self.builder.ins().load(pointer_type, MemFlags::new(), base, i32::try_from(pointer_type.bytes()).ok()?);
+        let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, pointer_index, length);
+        self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
         let offset = if layout.stride == 1 {
             pointer_index
         } else {
             self.builder.ins().imul_imm(pointer_index, i64::from(layout.stride))
         };
-        let address = self.builder.ins().iadd(base, offset);
+        let data = self.builder.ins().load(pointer_type, MemFlags::new(), base, 0);
+        let address = self.builder.ins().iadd(data, offset);
         Some(self.builder.ins().load(layout.element_type, MemFlags::new(), address, 0))
     }
 
@@ -2388,9 +2426,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         if !index_type.is_int() || !pointer_type.is_int() {
             return None;
         }
-        let out_of_bounds =
-            self.builder.ins().icmp_imm(IntCC::UnsignedGreaterThanOrEqual, index, i64::from(layout.length));
-        self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
+        self.builder.ins().trapz(base, TrapCode::unwrap_user(1));
         let pointer_index = if index_type.bits() < pointer_type.bits() {
             self.builder.ins().uextend(pointer_type, index)
         } else if index_type.bits() > pointer_type.bits() {
@@ -2398,13 +2434,23 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         } else {
             index
         };
+        let length = self.builder.ins().load(pointer_type, MemFlags::new(), base, i32::try_from(pointer_type.bytes()).ok()?);
+        let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, pointer_index, length);
+        self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
         let offset = if layout.stride == 1 {
             pointer_index
         } else {
             self.builder.ins().imul_imm(pointer_index, i64::from(layout.stride))
         };
-        let address = self.builder.ins().iadd(base, offset);
+        let data = self.builder.ins().load(pointer_type, MemFlags::new(), base, 0);
+        let address = self.builder.ins().iadd(data, offset);
         self.builder.ins().store(MemFlags::new(), value, address, 0);
+        if layout.element_type == pointer_type {
+            let barrier = self.import_runtime_helper("beskid_rt_v5_array_write_barrier", &[pointer_type, pointer_type], Some(types::I8))?;
+            let barrier_call = self.builder.ins().call(barrier, &[base, value]);
+            let published = self.builder.inst_results(barrier_call).first().copied()?;
+            self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
+        }
         Some(value)
     }
 

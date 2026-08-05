@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use beskid_isle::{
-    ArrayLayout, AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, LoweringErrorKind, NodeFacts,
+    ArrayLayout, AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, LoweringErrorKind,
+    ManagedArrayAllocation, NodeFacts,
     NodeKind,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
@@ -10,6 +11,26 @@ use cranelift_codegen::settings;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
 use target_lexicon::Triple;
+
+// Static request symbol used by the source-only typed-array lowering acceptance fixture. The
+// fake allocator below owns test backing storage; production requests are emitted by codegen.
+static ARRAY_REQUEST: [u8; 32] = [0; 32];
+
+unsafe extern "C" fn test_array_allocate_rooted(
+    _request: *const u8,
+    root_handle_out: *mut usize,
+) -> *mut beskid_abi::BeskidArray {
+    if !root_handle_out.is_null() {
+        // SAFETY: fixture allocates the same pointer-sized output slot as ISLE lowering.
+        unsafe { root_handle_out.write(0) };
+    }
+    let backing = Box::leak(vec![0_u8; 3 * std::mem::size_of::<i32>()].into_boxed_slice());
+    Box::into_raw(Box::new(beskid_abi::BeskidArray { ptr: backing.as_mut_ptr(), len: 3, cap: 3 }))
+}
+
+unsafe extern "C" fn test_array_construction_finish(_root_handle: *mut u8) -> u8 {
+    1
+}
 
 struct ArrayFacts {
     nodes: [AstNodeKey; 8],
@@ -110,6 +131,18 @@ impl NodeFacts for ArrayFacts {
             _ => None,
         }
     }
+
+    fn managed_array_allocation(&self, key: AstNodeKey) -> Option<ManagedArrayAllocation> {
+        match self.root {
+            Root::IndexRead if key == self.nodes[1] => {
+                Some(ManagedArrayAllocation { allocation_request_symbol: "__array_memory_request".into() })
+            }
+            Root::IndexAssign if key == self.nodes[2] => {
+                Some(ManagedArrayAllocation { allocation_request_symbol: "__array_memory_request".into() })
+            }
+            _ => None,
+        }
+    }
 }
 
 fn facts(pointer_type: cranelift_codegen::ir::Type, length: u32, root: Root) -> ArrayFacts {
@@ -137,11 +170,16 @@ fn array_literal_and_index_emit_checked_stock_clif_and_execute() {
         .emit_expression(UserFuncName::user(0, 20), signature.clone(), &facts, facts.nodes[0])
         .expect("verified array index");
     let clif = function.display().to_string();
-    assert!(clif.contains("stack_store"), "{clif}");
+    assert!(clif.contains("beskid_rt_v5_array_allocate_rooted"), "{clif}");
+    assert!(!clif.contains("stack_store"), "{clif}");
     assert!(clif.contains("trapnz"), "{clif}");
     assert!(clif.contains("load.i32"), "{clif}");
 
-    let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
+    let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
+    builder.symbol("__array_memory_request", ARRAY_REQUEST.as_ptr());
+    builder.symbol("beskid_rt_v5_array_allocate_rooted", test_array_allocate_rooted as *const u8);
+    builder.symbol("beskid_rt_v5_array_construction_finish", test_array_construction_finish as *const u8);
+    let mut module = JITModule::new(builder);
     let function_id = module.declare_function("array_index", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
     context.func = function;
@@ -169,7 +207,11 @@ fn array_index_assignment_emits_checked_stock_clif_store_and_executes() {
     assert!(clif.contains("store"), "{clif}");
     assert!(!clif.contains("load.i32"), "{clif}");
 
-    let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
+    let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
+    builder.symbol("__array_memory_request", ARRAY_REQUEST.as_ptr());
+    builder.symbol("beskid_rt_v5_array_allocate_rooted", test_array_allocate_rooted as *const u8);
+    builder.symbol("beskid_rt_v5_array_construction_finish", test_array_construction_finish as *const u8);
+    let mut module = JITModule::new(builder);
     let function_id = module.declare_function("array_index_assign", Linkage::Local, &signature).expect("declare");
     let mut context = module.make_context();
     context.func = function;
