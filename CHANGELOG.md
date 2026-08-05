@@ -68,7 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reconcile the selected Corelib syntax-to-ISLE gate with the canonical test
   entrypoint names, so every configured probe now resolves to a maintained
   Corelib test before exercising lowering.
-
 - Classify a generic call as a deferred template only when each explicit
   type argument is an actual generic parameter of its enclosing function.
   Concrete nominal calls such as `Channel<ConsoleMessage>.Create()` now
