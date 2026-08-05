@@ -1705,7 +1705,8 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         left_key: AstNodeKey,
         right_key: AstNodeKey,
     ) -> Value {
-        if let (Some(left_layout), Some(right_layout)) = (self.facts.enum_layout(left_key), self.facts.enum_layout(right_key))
+        if let (Some(left_layout), Some(right_layout)) =
+            (self.facts.enum_layout(left_key), self.facts.enum_layout(right_key))
             && left_layout.variants == right_layout.variants
             && left_layout.tag.value_type == right_layout.tag.value_type
             && let (Ok(left_offset), Ok(right_offset)) =
@@ -1729,7 +1730,8 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         left_key: AstNodeKey,
         right_key: AstNodeKey,
     ) -> Value {
-        if let (Some(left_layout), Some(right_layout)) = (self.facts.enum_layout(left_key), self.facts.enum_layout(right_key))
+        if let (Some(left_layout), Some(right_layout)) =
+            (self.facts.enum_layout(left_key), self.facts.enum_layout(right_key))
             && left_layout.variants == right_layout.variants
             && left_layout.tag.value_type == right_layout.tag.value_type
             && let (Ok(left_offset), Ok(right_offset)) =

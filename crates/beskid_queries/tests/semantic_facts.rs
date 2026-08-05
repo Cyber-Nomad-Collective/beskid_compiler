@@ -24,9 +24,9 @@ use beskid_queries::{
     closure_environment, closure_signature, completion_candidates, contextual_integer_literal_abi_type, control_flow,
     direct_callees, enum_constructor, enum_layout, enum_match, for_iterator_fact, generic_call_instantiation,
     generic_call_specialization, generic_call_template, generic_specialization_identity, item_abi_signature, item_body,
-    item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind,
-    node_span, node_type, nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items,
-    resolved_item, resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
+    item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type,
+    nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items, resolved_item,
+    resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {

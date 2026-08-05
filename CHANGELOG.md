@@ -65,6 +65,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Accept the manifest-owned Core.Args entry-adapter records when loading the
+  generated ABI-v5 source and provenance audit contracts.
+
+- Remove the stale local-initializer semantic-fact re-export and preserve the
+  ABI-v5 `f64` mapping for intrinsic call signatures.
+
+- Recognize the canonical ABI-v5 Windows target independently of the vendored
+  `cargo-cross` target catalog, restoring COFF object emission for native
+  runtime-kit staging.
+
 - Keep the syntax formatter warning-free when rendering CLIF block expressions.
 
 - Restore manifest-owned process adapter and Core.Math declarations, regenerating
@@ -134,9 +144,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Contextually type unsuffixed integer literals only at explicitly typed local
   initializer and mutable-local assignment boundaries. Generated syntax ISLE
-  now emits the destination's exact ABI width without an implicit numeric
-  widening conversion, while inferred locals, explicit literal suffixes,
-  compound values, immutable destinations, and out-of-range values fail closed.
+  now enforces the destination's exact ABI width and rejects variable-width
+  assignment without an explicit primitive conversion, while inferred locals,
+  explicit literal suffixes, compound values, immutable destinations, and
+  out-of-range values fail closed.
 
 - Lock the generated syntax-ISLE regression boundary against implicitly
   widening an `i32` variable during assignment to a mutable `i64` local.

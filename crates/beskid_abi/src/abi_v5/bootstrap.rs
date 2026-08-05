@@ -235,6 +235,8 @@ struct SourceAudit {
     forbidden_symbol_families: Vec<String>,
     #[serde(rename = "corelibServices")]
     _corelib_services: serde_json::Value,
+    #[serde(rename = "entryAdapters")]
+    _entry_adapters: serde_json::Value,
 }
 
 fn forbidden_symbol_families() -> Vec<String> {
@@ -318,6 +320,8 @@ struct SourceContract {
     assembly: Vec<SourceAssembly>,
     #[serde(rename = "corelibServices")]
     _corelib_services: serde_json::Value,
+    #[serde(rename = "entryAdapters")]
+    _entry_adapters: serde_json::Value,
     #[serde(rename = "traps")]
     _traps: serde_json::Value,
     #[serde(rename = "meta")]
