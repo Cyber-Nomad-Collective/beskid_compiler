@@ -77,7 +77,8 @@ pub use semantic_contract::{
     GenericSubstitution, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, MutableLocalAssignment, OperatorFact,
     PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
     SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnosticKind,
-    SpawnEntryValidation, SpawnTarget, TestItem, TypedProgram, abi_type, aggregate_field_access, aggregate_layout,
+    SpawnEntryValidation, SpawnTarget, TestItem, TryExpressionFact, TypedProgram, abi_type, aggregate_field_access,
+    aggregate_layout,
     aggregate_literal_declaration, binary_operand_abi_type, block_statement_nodes, call_abi_signature,
     call_argument_abi_type, call_arguments, call_lowering, callable_signature, capture_storage, cast_intents,
     child_nodes, clif_block_body, closure_call_target, closure_environment, closure_signature, completion_candidates,
@@ -89,7 +90,7 @@ pub use semantic_contract::{
     item_body, item_export_symbol, item_name, item_signature, literal_fact, local_slot, mutable_local_assignment,
     node_kind, node_span, node_type, nominal_member_receiver, operator_fact, primitive_numeric_conversion,
     range_for_fact, reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name,
-    spawn_entry_validation, spawn_legality, spawn_target, test_item, test_statement_nodes,
+    spawn_entry_validation, spawn_legality, spawn_target, test_item, test_statement_nodes, try_expression_fact,
 };
 pub use session::{
     compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,

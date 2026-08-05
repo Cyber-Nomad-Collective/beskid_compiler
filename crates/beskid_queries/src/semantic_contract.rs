@@ -561,6 +561,21 @@ pub struct ForIteratorFact {
     pub element_type: SemanticTypeId,
 }
 
+/// Syntax-proven payload/error shapes for one postfix `Result` propagation expression.
+///
+/// The operand must be a direct, explicitly typed function parameter with the exact
+/// `Result<TPayload, TError>` syntax. The enclosing function must return `Result<_, TError>`
+/// using the same error syntax. Other propagation forms remain unavailable until they have
+/// their own syntax facts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TryExpressionFact {
+    pub expression: AstNodeKey,
+    pub operand: AstNodeKey,
+    pub payload_type: SemanticTypeId,
+    pub error_type: SemanticTypeId,
+    pub enclosing_return: SemanticTypeId,
+}
+
 /// Callable item signature expressed entirely in semantic type identities.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ItemSignature {
@@ -1986,6 +2001,126 @@ fn for_iterator_fact_tracked(
         }
     })?
     .transpose()
+}
+
+#[salsa::tracked]
+fn try_expression_fact_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<TryExpressionFact> {
+    with_node(db, syntax, key, |program, index, node| {
+        Some(try_expression_fact_for_node(program, index, key, node))
+    })?
+    .transpose()
+}
+
+fn try_expression_fact_for_node(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Result<TryExpressionFact, SemanticError> {
+    let try_expression =
+        node.of::<beskid_analysis::syntax::TryExpression>().ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let operand = index
+        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(try_expression.expr.as_ref()))
+        .map(|node| normalized_expression_node(index, node))
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let operand_node = index
+        .node_at(program, operand)
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let path = operand_node
+        .of::<beskid_analysis::syntax::PathExpression>()
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let [segment] = path.path.node.segments.as_slice() else {
+        return Err(SemanticError::unavailable("try_expression"));
+    };
+    if !segment.node.type_args.is_empty() {
+        return Err(SemanticError::unavailable("try_expression"));
+    }
+    let declaration = resolve_lexical_declaration(program, index, operand, segment.node.name.node.name.as_str())
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let parameter = parent_node(index, declaration)
+        .filter(|parent| index.kind(*parent) == Some(beskid_analysis::syntax_query::NodeKind::Parameter))
+        .and_then(|parent| index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::Parameter>()))
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let parameter_type = &parameter.ty;
+    let (payload, error) = result_type_parts(&parameter_type.node).ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let function = nearest_ancestor(index, key.node, |kind| {
+        kind == beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+    })
+    .and_then(|function| index.node_at(program, function).and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>()))
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let return_type = function
+        .return_type
+        .as_ref()
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let (_return_payload, return_error) =
+        result_type_parts(&return_type.node).ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    if !same_type_syntax(&error.node, &return_error.node) {
+        return Err(SemanticError::unavailable("try_expression"));
+    }
+
+    Ok(TryExpressionFact {
+        expression: key,
+        operand: AstNodeKey { node: operand, ..key },
+        payload_type: semantic_type_from_syntax(&payload.node)?,
+        error_type: semantic_type_from_syntax(&error.node)?,
+        enclosing_return: semantic_type_from_syntax(&return_type.node)?,
+    })
+}
+
+fn result_type_parts(
+    syntax_type: &beskid_analysis::syntax::Type,
+) -> Option<(&beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>, &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>)> {
+    let beskid_analysis::syntax::Type::Complex(path) = syntax_type else {
+        return None;
+    };
+    let [segment] = path.node.segments.as_slice() else {
+        return None;
+    };
+    if segment.node.name.node.name != "Result" {
+        return None;
+    }
+    let [payload, error] = segment.node.type_args.as_slice() else {
+        return None;
+    };
+    Some((payload, error))
+}
+
+fn same_type_syntax(left: &beskid_analysis::syntax::Type, right: &beskid_analysis::syntax::Type) -> bool {
+    use beskid_analysis::syntax::Type;
+
+    match (left, right) {
+        (Type::Primitive(left), Type::Primitive(right)) => left.node == right.node,
+        (Type::Complex(left), Type::Complex(right)) => {
+            left.node.segments.len() == right.node.segments.len()
+                && left.node.segments.iter().zip(&right.node.segments).all(|(left, right)| {
+                    left.node.name.node.name == right.node.name.node.name
+                        && left.node.type_args.len() == right.node.type_args.len()
+                        && left
+                            .node
+                            .type_args
+                            .iter()
+                            .zip(&right.node.type_args)
+                            .all(|(left, right)| same_type_syntax(&left.node, &right.node))
+                })
+        }
+        (Type::Array(left), Type::Array(right)) => same_type_syntax(&left.node, &right.node),
+        (
+            Type::Function { return_type: left_return, parameters: left_parameters },
+            Type::Function { return_type: right_return, parameters: right_parameters },
+        ) => {
+            same_type_syntax(&left_return.node, &right_return.node)
+                && left_parameters.len() == right_parameters.len()
+                && left_parameters
+                    .iter()
+                    .zip(right_parameters)
+                    .all(|(left, right)| same_type_syntax(&left.node, &right.node))
+        }
+        _ => false,
+    }
 }
 
 fn call_lowering_for_node(
@@ -6275,6 +6410,14 @@ pub fn range_for_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Range
 /// unregistered nodes, and non-for statements contain no fact.
 pub fn for_iterator_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ForIteratorFact> {
     with_registered_syntax(db, key, for_iterator_fact_tracked)
+}
+
+/// Return the payload, error, and enclosing-return ABI facts for postfix `Result` propagation.
+///
+/// The query accepts only a direct local parameter operand and an enclosing function returning
+/// the same syntactic `Result<_, TError>` error shape. All other forms fail closed as unavailable.
+pub fn try_expression_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<TryExpressionFact> {
+    with_registered_syntax(db, key, try_expression_fact_tracked)
 }
 
 /// Return the declaration identifier for the receiver of an exact `local.Method()` path.

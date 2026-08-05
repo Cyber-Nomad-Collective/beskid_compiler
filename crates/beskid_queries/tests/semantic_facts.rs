@@ -18,6 +18,7 @@ use beskid_queries::{
     CompletionContext, EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact,
     GenericSpecializationInstance, ItemSignature, LocalSlot, MutableLocalAssignment, OperatorFact, ProjectSession,
     SemanticError, SemanticTypeId, SourceUnitId, SpawnDiagnosticKind, SpawnEntryValidation, SyntaxGenerationId,
+    TryExpressionFact,
     abi_type, aggregate_field_access, aggregate_layout, build_canonical_corelib_syscall_typed_program,
     build_typed_program, build_typed_program_with_corelib_syscall_services, call_abi_signature, call_arguments,
     call_lowering, callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target,
@@ -27,6 +28,7 @@ use beskid_queries::{
     item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type,
     nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items, resolved_item,
     resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
+    try_expression_fact,
 };
 
 fn assert_unavailable<T>(result: Result<Option<T>, SemanticError>) {
@@ -78,6 +80,24 @@ fn primitive_numeric_conversion_call_has_a_typed_result_without_dynamic_dispatch
     assert_eq!(
         primitive_numeric_conversion(&db, conversion).expect("conversion fact"),
         Some(beskid_queries::PrimitiveNumericConversion { from: SemanticTypeId::WORD, to: SemanticTypeId::I64 })
+    );
+}
+
+#[test]
+fn try_expression_fact_resolves_result_payload_and_enclosing_error_return() {
+    let source = "Result<i32, Error> Main(Result<i32, Error> value) { return value?; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::TryExpression, 0);
+
+    assert_eq!(
+        try_expression_fact(&db, expression).expect("try expression query"),
+        Some(TryExpressionFact {
+            expression,
+            operand: key(unit, generation, &index, NodeKind::PathExpression, 0),
+            payload_type: SemanticTypeId::I32,
+            error_type: SemanticTypeId::POINTER,
+            enclosing_return: SemanticTypeId::POINTER,
+        })
     );
 }
 

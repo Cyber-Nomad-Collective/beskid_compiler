@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Expose a generation-bound Salsa fact for the grammar-supported postfix
+  `Result` propagation form (`value?`). It derives payload and error ABI types
+  only for directly typed `Result<T, E>` parameters whose enclosing function
+  returns `Result<_, E>` with a structurally matching error type; unsupported
+  shapes remain unavailable rather than reaching HIR or a fallback path.
+
 - Carry immutable generic specialization environments through semantic facts and module emission.
   Nested explicit generic calls now enter a declaration-instance worklist keyed by declaration and
   substitutions, while `ModuleEmissionSession` namespaces source artifacts and reuses declared
