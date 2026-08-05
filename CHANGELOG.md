@@ -69,6 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve the Salsa semantic type of a nested direct call when generic
+  specialization receives its enclosing expression node, preventing Corelib
+  generic-call collection from failing on otherwise well-typed arguments.
+
 - Derive native runtime provenance from the ABI-v5 manifest's complete target
   definition set. Core.Args service implementations and the selected native
   entry handoff are now accepted without widening the public export or loader
