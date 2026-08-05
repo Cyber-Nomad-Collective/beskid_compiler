@@ -139,10 +139,11 @@ impl SyntaxNodeFacts<'_> {
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::ForStatement) {
             return self.query(for_iterator_fact(self.db, key)).map(|fact| fact.element_type);
         }
-        self.query(cast_intents(self.db, key))
+        self.specialized_direct_parameter_type(key)
+            .or_else(|| self.query(cast_intents(self.db, key))
             .and_then(|intents| intents.first().map(|intent| intent.to))
             .or_else(|| self.query(binary_operand_abi_type(self.db, key)))
-            .or_else(|| self.query(local_initializer_abi_type(self.db, key)))
+            .or_else(|| self.query(contextual_integer_literal_abi_type(self.db, key)))
             .or_else(|| self.query(abi_type(self.db, key)))
             .or_else(|| self.query(node_type(self.db, key)))
             .or_else(|| {
@@ -166,7 +167,7 @@ impl SyntaxNodeFacts<'_> {
                             })
                     },
                 )?
-            })
+            }))
             .or_else(|| {
                 self.query(aggregate_field_access(self.db, key)).and_then(|access| {
                     self.query(aggregate_layout(self.db, access.declaration))?

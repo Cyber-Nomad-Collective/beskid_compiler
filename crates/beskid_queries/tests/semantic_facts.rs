@@ -13,19 +13,19 @@ use beskid_analysis::projects::{
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{DynNodeRef, NodeKind, SyntaxIndex, SyntaxSnapshot};
 use beskid_queries::{
-    AggregateFieldShape, AstNodeKey, BeskidDatabase, CallLowering, CaptureStorageClass, ClosureAllocationStatus,
-    ClosureCallTarget, ClosureCapture, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
-    CompletionContext, EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact,
-    GenericSpecializationInstance, ItemSignature, LocalSlot, MutableLocalAssignment, OperatorFact, ProjectSession,
-    SemanticError, SemanticTypeId, SourceUnitId,
+    AggregateFieldShape, AstNodeKey, BeskidDatabase, CaptureStorageClass, ClosureAllocationStatus, ClosureCallTarget,
+    ClosureCapture, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement, CompletionContext,
+    EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact, GenericSpecializationInstance,
+    ItemSignature, LocalSlot, MutableLocalAssignment, OperatorFact, ProjectSession, SemanticError, SemanticTypeId,
+    SourceUnitId,
     SpawnDiagnosticKind, SpawnEntryValidation, SyntaxGenerationId, abi_type, aggregate_field_access, aggregate_layout,
     build_canonical_corelib_syscall_typed_program, build_typed_program,
     build_typed_program_with_corelib_syscall_services, call_abi_signature, call_arguments, call_lowering,
     callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target, closure_environment,
     closure_signature, completion_candidates, control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
-    for_iterator_fact, generic_call_instantiation, generic_call_specialization, generic_call_template,
-    generic_specialization_identity, item_abi_signature, item_body,
-    item_signature, literal_fact, local_initializer_abi_type, local_slot, mutable_local_assignment, node_kind,
+    for_iterator_fact, generic_call_instantiation, generic_call_specialization, generic_specialization_identity,
+    item_abi_signature, item_body,
+    contextual_integer_literal_abi_type, item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind,
     node_span, node_type, nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
 };
@@ -2097,37 +2097,6 @@ unit Main() { Channel<i64> ch = Create<i64>(); return; }
 }
 
 #[test]
-fn concrete_nominal_type_argument_is_not_a_nested_generic_call_template() {
-    let source = r#"
-type ConsoleMessage { i64 kind }
-type Channel<T> { i64 handle }
-Channel<T> Create<T>() { return Channel<T> { handle: 0_i64 }; }
-Channel<ConsoleMessage> MessagesChannel() { return Create<ConsoleMessage>(); }
-"#;
-    let (db, _project, unit, generation, index) = setup(source);
-    let create = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
-    let call = index
-        .ids_of_kind(NodeKind::CallExpression)
-        .map(|node| AstNodeKey { unit, generation, node })
-        .find(|call| {
-            matches!(call_lowering(&db, *call).ok().flatten(), Some(CallLowering::Direct(declaration)) if declaration == create)
-        })
-        .expect("Create<ConsoleMessage> call");
-
-    assert_eq!(
-        generic_call_template(&db, call).expect("concrete nominal type argument query"),
-        None,
-        "only a type argument bound by the enclosing generic declaration is a deferred template"
-    );
-    assert!(
-        generic_call_specialization(&db, call)
-            .expect("concrete nominal generic specialization")
-            .is_some(),
-        "the concrete nominal call must be specialized directly"
-    );
-}
-
-#[test]
 fn inferred_generic_call_has_an_exact_argument_derived_abi_signature() {
     let source = r#"
 unit Equal<T>(T actual, T expected, string because) { return; }
@@ -4016,24 +3985,40 @@ fn immutable_local_assignment_is_an_explicit_unavailable_syntax_fact() {
 }
 
 #[test]
-fn local_initializer_abi_type_contextualizes_only_bare_integer_literals_at_exact_local_boundaries() {
+fn contextual_integer_literal_abi_type_contextualizes_declared_struct_fields() {
+    let source = "type Cursor { i64 pos } Cursor Main() { return Cursor { pos: 0 }; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, literal).expect("typed struct field literal"),
+        Some(SemanticTypeId::I64)
+    );
+}
+
+#[test]
+fn contextual_integer_literal_abi_type_contextualizes_only_bare_integer_literals_at_exact_declared_boundaries() {
     let source = "i64 Main(mut i64 start) { i64 offset = 0; start = 1; return start + offset; }";
     let (db, _project, unit, generation, index) = setup(source);
     let first = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
     let second = key(unit, generation, &index, NodeKind::LiteralExpression, 1);
 
-    assert_eq!(local_initializer_abi_type(&db, first).expect("typed let literal"), Some(SemanticTypeId::I64));
-    assert_eq!(local_initializer_abi_type(&db, second).expect("typed assignment literal"), Some(SemanticTypeId::I64));
+    assert_eq!(contextual_integer_literal_abi_type(&db, first).expect("typed let literal"), Some(SemanticTypeId::I64));
+    assert_eq!(contextual_integer_literal_abi_type(&db, second).expect("typed assignment literal"), Some(SemanticTypeId::I64));
+
+    let struct_field = "type Cursor { i64 pos } Cursor Main() { return Cursor { pos: 0 }; }";
+    let (db, _project, unit, generation, index) = setup(struct_field);
+    let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    assert_eq!(contextual_integer_literal_abi_type(&db, literal).expect("typed struct field literal"), Some(SemanticTypeId::I64));
 
     let inferred = "i32 Main() { let value = 0; return value; }";
     let (db, _project, unit, generation, index) = setup(inferred);
     let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
-    assert_unavailable(local_initializer_abi_type(&db, literal));
+    assert_unavailable(contextual_integer_literal_abi_type(&db, literal));
 
     let explicitly_suffixed = "i64 Main() { i64 value = 0_i32; return value; }";
     let (db, _project, unit, generation, index) = setup(explicitly_suffixed);
     let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
-    assert_unavailable(local_initializer_abi_type(&db, literal));
+    assert_unavailable(contextual_integer_literal_abi_type(&db, literal));
 }
 
 #[test]

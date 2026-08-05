@@ -33,7 +33,6 @@ use crate::projects::fixture_harness::{
 
 use super::corelib_spine_harness::run_corelib_typecheck_matrix;
 
-#[ignore = "corelib spine codegen/typecheck blocked by syntax-ISLE gaps and corelib parse fixture errors"]
 #[test]
 fn corelib_tests_front_end_typechecks_matrix() {
     run_corelib_typecheck_matrix();

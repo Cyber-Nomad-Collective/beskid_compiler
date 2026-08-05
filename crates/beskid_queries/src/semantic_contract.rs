@@ -1519,7 +1519,9 @@ fn enum_match_result_semantic_type(db: &dyn Db, key: AstNodeKey) -> Result<Seman
     let fact = enum_match(db, key)?.ok_or_else(|| SemanticError::unavailable("node_type"))?;
     let mut result = None;
     for arm in fact.arms.iter() {
-        let arm_type = node_type(db, arm.body)?.ok_or_else(|| SemanticError::unavailable("node_type"))?;
+        let arm_type = contextual_integer_literal_abi_type(db, arm.body)?
+            .or(node_type(db, arm.body)?)
+            .ok_or_else(|| SemanticError::unavailable("node_type"))?;
         if result.replace(arm_type).is_some_and(|previous| previous != arm_type) {
             return Err(SemanticError::unavailable("node_type"));
         }
@@ -2292,7 +2294,10 @@ fn generic_call_specialization_tracked(
         if function.generics.is_empty() {
             return None;
         }
-        let instance = generic_specialization_instance_for_call(db, key).ok()?;
+        let instance = match generic_specialization_instance_for_call(db, key) {
+            Ok(instance) => instance,
+            Err(error) => return Some(Err(error)),
+        };
         Some(Ok(GenericCallSpecialization {
             declaration: instance.declaration,
             signature: instance.signature,
@@ -2638,6 +2643,28 @@ fn expected_cast_type(
         );
     }
 
+    if let Some(return_id) =
+        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::ReturnStatement)
+    {
+        let mut item_id = parent_node(index, return_id)?;
+        while !matches!(
+            index.kind(item_id)?,
+            beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+        ) {
+            item_id = parent_node(index, item_id)?;
+        }
+        let item = index.node_at(program, item_id)?;
+        let return_type = item
+            .of::<beskid_analysis::syntax::FunctionDefinition>()
+            .and_then(|function| function.return_type.as_ref().map(|annotation| &annotation.node))
+            .or_else(|| {
+                item.of::<beskid_analysis::syntax::MethodDefinition>()
+                    .and_then(|method| method.return_type.as_ref().map(|annotation| &annotation.node))
+            })?;
+        return Some(semantic_type_from_syntax(return_type));
+    }
+
     let call_id =
         nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::CallExpression)?;
     let call = index.node_at(program, call_id)?.of::<beskid_analysis::syntax::CallExpression>()?;
@@ -2649,8 +2676,8 @@ fn expected_cast_type(
     let expected = match &call.callee.node {
         beskid_analysis::syntax::Expression::Path(path) => {
             let path = &path.node.path.node;
-            if let Some(declaration) = resolve_item_declaration(db, program, index, key, path) {
-                item_signature(db, declaration)
+            if resolve_item_declaration(db, program, index, key, path).is_some() {
+                call_abi_signature(db, AstNodeKey { node: call_id, ..key })
                     .ok()
                     .flatten()
                     .and_then(|signature| signature.parameters.get(argument_index).copied())
@@ -2998,7 +3025,12 @@ fn generic_specialization_instance_for_call(
     // the binding and the bare literal can inherit it if its magnitude fits.
     let mut provisional_integer_substitutions = HashSet::new();
     for (parameter, argument) in function.parameters.iter().zip(arguments.iter().copied()) {
-        let actual = abi_type(db, argument)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+        let actual = match abi_type(db, argument) {
+            Ok(abi) => abi.or(node_type(db, argument)?),
+            Err(error) if error.is_unavailable() => node_type(db, argument)?,
+            Err(error) => return Err(error),
+        }
+        .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
         if let Some(generic) = generic_type_name(&parameter.node.ty.node, &generic_names) {
             let bare_integer = unsuffixed_integer_literal(db, argument)?;
             match substitutions.get(generic).copied() {
@@ -3015,7 +3047,7 @@ fn generic_specialization_instance_for_call(
                 }
                 Some(_) => return Err(SemanticError::unavailable("call_abi_signature")),
             }
-        } else if abi_type_from_syntax(db, declaration, &parameter.node.ty.node)? != actual {
+        } else if generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions)? != actual {
             return Err(SemanticError::unavailable("call_abi_signature"));
         }
     }
@@ -3257,6 +3289,17 @@ fn generic_abi_type(
     syntax_type: &beskid_analysis::syntax::Type,
     substitutions: &HashMap<String, SemanticTypeId>,
 ) -> Result<SemanticTypeId, SemanticError> {
+    if let beskid_analysis::syntax::Type::Complex(path) = syntax_type {
+        if path.node.segments.iter().any(|segment| {
+            segment
+                .node
+                .type_args
+                .iter()
+                .any(|argument| type_syntax_mentions_generic_parameter(&argument.node, "T") || substitutions.keys().any(|name| type_syntax_mentions_generic_parameter(&argument.node, name)))
+        }) {
+            return Ok(SemanticTypeId::POINTER);
+        }
+    }
     let generic = match syntax_type {
         beskid_analysis::syntax::Type::Complex(path) => {
             let [segment] = path.node.segments.as_slice() else {
@@ -3429,15 +3472,15 @@ fn exact_assembled_generic_nominal_envelope(
     Some(SemanticTypeId::POINTER)
 }
 
-/// Prove an ABI representation for one unsuffixed integer literal used as the entire initializer
-/// of an explicitly typed local, or as the entire RHS of a mutable local assignment.
+/// Prove an ABI representation for one unsuffixed integer literal at an exact declared boundary:
+/// an explicitly typed local, mutable-local assignment, or nominal struct-literal field.
 ///
 /// This is contextual typing for literals, not a conversion: the source literal has no ABI suffix
 /// and is emitted directly at the destination's exact ABI width. Inferred declarations, explicit
 /// literal suffixes, compound expressions, immutable destinations, and non-integer destination
 /// representations fail closed rather than receiving an implicit numeric widening.
 #[salsa::tracked]
-fn local_initializer_abi_type_tracked(
+fn contextual_integer_literal_abi_type_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
@@ -3446,16 +3489,16 @@ fn local_initializer_abi_type_tracked(
         Some((|| {
             let contextual_constant = contextual_constant_integer(db, key)?.is_some();
             if !unsuffixed_integer_literal(db, key)? && !contextual_constant {
-                return Err(SemanticError::unavailable("local_initializer_abi_type"));
+                return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
             }
             let mut current = key.node;
             while let Some(parent) = index.metadata_for(key.generation, current).and_then(|meta| meta.parent) {
                 let parent_key = AstNodeKey { node: parent, ..key };
-                let parent_node = index
+                let parent_syntax = index
                     .node_at(program, parent)
-                    .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                    .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
 
-                if let Some(binding) = parent_node.of::<beskid_analysis::syntax::LetStatement>() {
+                if let Some(binding) = parent_syntax.of::<beskid_analysis::syntax::LetStatement>() {
                     let initializer = index
                         .direct_child_id(
                             program,
@@ -3463,22 +3506,22 @@ fn local_initializer_abi_type_tracked(
                             beskid_analysis::syntax_query::DynNodeRef::from(&binding.value),
                         )
                         .map(|node| AstNodeKey { node, ..key })
-                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
                     if integer_literal_text(db, initializer)?.is_none() && contextual_constant_integer(db, initializer)?.is_none() {
-                        return Err(SemanticError::unavailable("local_initializer_abi_type"));
+                        return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
                     }
                     let annotation = binding
                         .type_annotation
                         .as_ref()
-                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
                     let expected = abi_type_from_syntax(db, parent_key, &annotation.node)?;
                     return (contextual_constant_integer(db, initializer)?.is_some()
                         || integer_literal_fits_abi(db, initializer, expected)?)
                         .then_some(expected)
-                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"));
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"));
                 }
 
-                if let Some(assignment) = parent_node.of::<beskid_analysis::syntax::AssignExpression>() {
+                if let Some(assignment) = parent_syntax.of::<beskid_analysis::syntax::AssignExpression>() {
                     let value = index
                         .direct_child_id(
                             program,
@@ -3486,22 +3529,89 @@ fn local_initializer_abi_type_tracked(
                             beskid_analysis::syntax_query::DynNodeRef::from(assignment.value.as_ref()),
                         )
                         .map(|node| AstNodeKey { node, ..key })
-                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
                     if integer_literal_text(db, value)?.is_none() && contextual_constant_integer(db, value)?.is_none() {
-                        return Err(SemanticError::unavailable("local_initializer_abi_type"));
+                        return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
                     }
                     let write = mutable_local_assignment(db, parent_key)?
-                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
                     let expected = abi_type(db, write.declaration)?
-                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"))?;
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
                     return (contextual_constant_integer(db, value)?.is_some() || integer_literal_fits_abi(db, value, expected)?)
                         .then_some(expected)
-                        .ok_or_else(|| SemanticError::unavailable("local_initializer_abi_type"));
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"));
+                }
+
+                if parent_syntax.of::<beskid_analysis::syntax::ReturnStatement>().is_some() {
+                    if integer_literal_text(db, key)?.is_none() && contextual_constant_integer(db, key)?.is_none() {
+                        return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
+                    }
+                    let mut item = parent;
+                    while !matches!(
+                        index.kind(item),
+                        Some(beskid_analysis::syntax_query::NodeKind::FunctionDefinition | beskid_analysis::syntax_query::NodeKind::MethodDefinition)
+                    ) {
+                        item = parent_node(index, item).ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
+                    }
+                    let item_key = AstNodeKey { node: item, ..key };
+                    let item_syntax = index.node_at(program, item).ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
+                    let annotation = item_syntax.of::<beskid_analysis::syntax::FunctionDefinition>()
+                        .and_then(|function| function.return_type.as_ref().map(|ty| &ty.node))
+                        .or_else(|| item_syntax.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref().map(|ty| &ty.node)))
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
+                    let expected = abi_type_from_syntax(db, item_key, annotation)?;
+                    return (primitive_integer(expected) && (contextual_constant_integer(db, key)?.is_some() || integer_literal_fits_abi(db, key, expected)?))
+                        .then_some(expected)
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"));
+                }
+
+                if let Some(field) = parent_syntax.of::<beskid_analysis::syntax::StructLiteralField>() {
+                    let value = index
+                        .direct_child_id(
+                            program,
+                            parent,
+                            beskid_analysis::syntax_query::DynNodeRef::from(&field.value),
+                        )
+                        .map(|node| AstNodeKey { node, ..key })
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
+                    if integer_literal_text(db, value)?.is_none() && contextual_constant_integer(db, value)?.is_none() {
+                        return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
+                    }
+                    let literal_node = parent_node(index, parent)
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
+                    if index.kind(literal_node) != Some(beskid_analysis::syntax_query::NodeKind::StructLiteralExpression) {
+                        return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
+                    }
+                    let literal_key = AstNodeKey { node: literal_node, ..key };
+                    let declaration = aggregate_literal_declaration(db, literal_key)?
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
+                    let declaration_syntax = db
+                        .syntax_unit(declaration.unit)
+                        .filter(|unit| unit.generation(db) == declaration.generation)
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
+                    let definition = declaration_syntax
+                        .syntax_index(db)
+                        .node_at(declaration_syntax.expanded_program(db), declaration.node)
+                        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
+                    let declared = definition
+                        .fields
+                        .iter()
+                        .find(|candidate| {
+                            candidate.node.kind == beskid_analysis::syntax::FieldKind::Value
+                                && candidate.node.name.node.name == field.name.node.name
+                        })
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
+                    let expected = abi_type_from_syntax(db, declaration, &declared.node.ty.node)?;
+                    return (primitive_integer(expected)
+                        && (contextual_constant_integer(db, value)?.is_some() || integer_literal_fits_abi(db, value, expected)?))
+                    .then_some(expected)
+                    .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"));
                 }
 
                 current = parent;
             }
-            Err(SemanticError::unavailable("local_initializer_abi_type"))
+            Err(SemanticError::unavailable("contextual_integer_literal_abi_type"))
         })())
     })?
     .transpose()
@@ -4223,6 +4333,25 @@ fn enum_match_scrutinee_layout(
     let beskid_analysis::syntax::Expression::Path(path) = &expression.scrutinee.node else {
         return None;
     };
+    if path.node.path.node.segments.len() == 2 {
+        let scrutinee = index.direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(expression.scrutinee.as_ref()),
+        )?;
+        let scrutinee = normalized_expression_node(index, scrutinee);
+        let access = aggregate_field_access(db, AstNodeKey { node: scrutinee, ..key }).ok().flatten()?;
+        let layout = aggregate_layout(db, access.declaration).ok().flatten()?;
+        let field = layout.fields.get(usize::try_from(access.index).ok()?)?;
+        let AggregateFieldShape::Nominal(declaration) = field.1 else {
+            return None;
+        };
+        return Some(
+            enum_layout(db, declaration)
+                .and_then(|layout| layout.ok_or_else(|| SemanticError::unavailable("enum_match")))
+                .map(|layout| (declaration, layout)),
+        );
+    }
     let [segment] = path.node.path.node.segments.as_slice() else {
         return None;
     };
@@ -4649,7 +4778,10 @@ fn semantic_type_from_syntax(syntax_type: &beskid_analysis::syntax::Type) -> Res
             PrimitiveType::Unit => SemanticTypeId::UNIT,
             PrimitiveType::Never => SemanticTypeId::NEVER,
         }),
-        Type::Complex(_) | Type::Array(_) | Type::Function { .. } => Err(SemanticError::unavailable("item_signature")),
+        // ABI-v5 passes every nominal aggregate and array by managed reference.  This source
+        // signature fact records the representation, while layout queries retain nominal identity.
+        Type::Complex(_) | Type::Array(_) => Ok(SemanticTypeId::POINTER),
+        Type::Function { .. } => Err(SemanticError::unavailable("item_signature")),
     }
 }
 
@@ -6168,13 +6300,12 @@ pub fn binary_operand_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryRes
     with_registered_syntax(db, key, binary_operand_abi_type_tracked)
 }
 
-/// Return the exact ABI selected for a bare integer literal at a typed local initializer or
-/// mutable local-assignment boundary.
+/// Return the exact ABI selected for a bare integer literal at a declared contextual boundary.
 ///
 /// This fact never performs a numeric conversion: it is unavailable for inferred locals,
 /// explicit literal suffixes, compound values, immutable destinations, and out-of-range values.
-pub fn local_initializer_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
-    with_registered_syntax(db, key, local_initializer_abi_type_tracked)
+pub fn contextual_integer_literal_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
+    with_registered_syntax(db, key, contextual_integer_literal_abi_type_tracked)
 }
 
 /// Return the exact lambda parameters and outer lexical captures in source order.

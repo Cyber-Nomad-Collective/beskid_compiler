@@ -16,7 +16,7 @@ use beskid_queries::{
     call_argument_abi_type, call_arguments, call_lowering, cast_intents, child_nodes, closure_call_target,
     closure_environment, constant_integer, dispatch_builtin_symbol, enum_constructor, enum_layout, enum_match,
     for_iterator_fact, generic_call_specialization, generic_call_template, generic_specialization_instance,
-    item_abi_signature, item_body, literal_fact, local_initializer_abi_type, local_slot, mutable_local_assignment,
+    contextual_integer_literal_abi_type, item_abi_signature, item_body, literal_fact, local_slot, mutable_local_assignment,
     node_kind, node_type, nominal_member_receiver, operator_fact, range_for_fact, resolved_item, resolved_local,
     runtime_intrinsic_name, spawn_entry_validation, test_statement_nodes,
 };
