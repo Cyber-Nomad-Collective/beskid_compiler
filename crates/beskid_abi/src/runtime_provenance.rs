@@ -29,6 +29,10 @@ pub struct RuntimeProvenanceAudit {
     pub required_exports: Vec<String>,
     pub allowed_imports: Vec<String>,
     pub allowed_exports: Vec<String>,
+    /// Every symbol that may be defined by the target's native runtime artifact. This includes
+    /// public ABI exports plus target-owned Core.Args bridge symbols; the latter are deliberately
+    /// not loader requirements or public runtime exports.
+    pub allowed_defined_symbols: Vec<String>,
     pub forbidden_symbol_families: Vec<String>,
 }
 
@@ -38,11 +42,27 @@ impl RuntimeProvenanceAudit {
         let manifest = AbiManifestV5::canonical_runtime(target.clone());
         let metadata = RuntimeAuditMetadata::for_manifest(&manifest, &canonical_runtime_source_hash())?;
         let required_exports = metadata.loader_required_exports.clone();
+        let mut allowed_defined_symbols = metadata.allowed_exports.clone();
+        allowed_defined_symbols.extend(
+            crate::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
+                .iter()
+                .filter(|binding| binding.target == target.triple.as_str())
+                .map(|binding| binding.implementation.into()),
+        );
+        allowed_defined_symbols.extend(
+            crate::generated::abi_v5_contract::ABI_V5_CORE_ARGS_ENTRY_ADAPTERS
+                .iter()
+                .filter(|adapter| adapter.target == target.triple.as_str())
+                .map(|adapter| adapter.handoff.into()),
+        );
+        allowed_defined_symbols.sort();
+        allowed_defined_symbols.dedup();
         Ok(Self {
             target: target.triple.as_str().into(),
             required_exports,
             allowed_imports: metadata.allowed_imports,
             allowed_exports: metadata.allowed_exports,
+            allowed_defined_symbols,
             forbidden_symbol_families: metadata.forbidden_rust_symbols,
         })
     }
@@ -59,7 +79,7 @@ impl RuntimeProvenanceAudit {
         let prefix = metadata.symbol_prefix;
         Ok(SymbolList {
             target: self.target.clone(),
-            defined: self.allowed_exports.iter().map(|symbol| format!("{prefix}{symbol}")).collect(),
+            defined: self.allowed_defined_symbols.iter().map(|symbol| format!("{prefix}{symbol}")).collect(),
             undefined: self.allowed_imports.iter().map(|symbol| format!("{prefix}{symbol}")).collect(),
         })
     }
@@ -110,7 +130,7 @@ impl RuntimeProvenanceAudit {
         allowed_imports.dedup();
         RuntimeAuditMetadata {
             allowed_imports,
-            allowed_exports: self.allowed_exports.clone(),
+            allowed_exports: self.allowed_defined_symbols.clone(),
             loader_required_exports: self.required_exports.clone(),
             forbidden_rust_symbols: self.forbidden_symbol_families.clone(),
             object_format: target_object_format(&self.target)?,

@@ -41,6 +41,34 @@ fn portable_fixture_uses_each_targets_native_symbol_spelling() {
 }
 
 #[test]
+fn canonical_audit_accepts_only_manifest_owned_core_args_definitions() {
+    for metadata in TargetMetadata::supported() {
+        let audit = RuntimeProvenanceAudit::canonical(metadata.clone()).unwrap();
+        let mut symbols = audit.fixture_symbol_list().unwrap();
+        let target = metadata.triple.as_str();
+
+        symbols.defined.extend(
+            beskid_abi::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
+                .iter()
+                .filter(|binding| binding.target == target)
+                .map(|binding| format!("{}{}", metadata.symbol_prefix, binding.implementation)),
+        );
+        symbols.defined.extend(
+            beskid_abi::generated::abi_v5_contract::ABI_V5_CORE_ARGS_ENTRY_ADAPTERS
+                .iter()
+                .filter(|adapter| adapter.target == target)
+                .map(|adapter| format!("{}{}", metadata.symbol_prefix, adapter.handoff)),
+        );
+
+        audit.verify(&symbols).unwrap();
+
+        symbols.defined.push(format!("{}beskid_rt_v5_undeclared", metadata.symbol_prefix));
+        let error = audit.verify(&symbols).unwrap_err();
+        assert!(error.to_string().contains("unexpected"), "unexpected allowlist error: {error}");
+    }
+}
+
+#[test]
 fn darwin_matrix_adapter_symbols_match_the_canonical_import_policy() {
     let audit = RuntimeProvenanceAudit::canonical(target("aarch64-apple-darwin")).unwrap();
     let raw_archive_symbols = SymbolList {

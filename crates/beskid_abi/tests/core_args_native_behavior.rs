@@ -1,7 +1,7 @@
 #![cfg(all(target_os = "macos", target_arch = "aarch64"))]
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -12,7 +12,7 @@ fn temp_dir() -> PathBuf {
     path
 }
 
-fn compile(temp: &PathBuf, name: &str, source: &str, entry: bool) -> PathBuf {
+fn compile(temp: &Path, name: &str, source: &str, entry: bool) -> PathBuf {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let harness = temp.join(format!("{name}.c"));
     let executable = temp.join(name);

@@ -1459,6 +1459,26 @@
       "result": "f64"
     },
     {
+      "symbol": "memcpy",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "destination",
+          "type": "pointer"
+        },
+        {
+          "name": "source",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
       "symbol": "mmap",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -1565,6 +1585,18 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "strlen",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize"
     },
     {
       "symbol": "tan",
@@ -1861,6 +1893,18 @@
       "result": "f64"
     },
     {
+      "symbol": "strlen",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize"
+    },
+    {
       "symbol": "tan",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -2008,6 +2052,26 @@
       "result": "f64"
     },
     {
+      "symbol": "memcpy",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "destination",
+          "type": "pointer"
+        },
+        {
+          "name": "source",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
       "symbol": "mmap",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -2114,6 +2178,18 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "strlen",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize"
     },
     {
       "symbol": "tan",
@@ -2224,7 +2300,9 @@
       "ownership": "process_lifetime_copied_beskid_str_arena",
       "entrySource": "args_entry.S",
       "osImports": [
-        "mmap"
+        "memcpy",
+        "mmap",
+        "strlen"
       ]
     },
     {
@@ -2237,7 +2315,8 @@
       "ownership": "process_lifetime_copied_beskid_str_arena",
       "entrySource": "args_entry.asm",
       "osImports": [
-        "VirtualAlloc"
+        "VirtualAlloc",
+        "strlen"
       ]
     },
     {
@@ -2250,7 +2329,9 @@
       "ownership": "process_lifetime_copied_beskid_str_arena",
       "entrySource": "args_entry.S",
       "osImports": [
-        "mmap"
+        "memcpy",
+        "mmap",
+        "strlen"
       ]
     }
   ],

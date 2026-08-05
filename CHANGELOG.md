@@ -69,6 +69,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Derive native runtime provenance from the ABI-v5 manifest's complete target
+  definition set. Core.Args service implementations and the selected native
+  entry handoff are now accepted without widening the public export or loader
+  requirement contracts; undeclared definitions still fail closed.
+
+- Declare the `memcpy` and `strlen` dependencies emitted by the native
+  Core.Args adapters in the target ABI-v5 import contract, so static runtime
+  archive provenance remains exact rather than relying on compiler built-in
+  lowering.
+
+- Update the ABI-v5 platform-import contract witness for the declared math
+  adapters and their target libraries, preserving exact import-set validation
+  across Darwin, Linux, and Windows.
+
+- Bring parse-recovery sync and grammar-rule keyword registries in line with
+  the grammar's `clif`, `try`, and `catch` surfaces, restoring the
+  grammar-completeness gate.
+
 - Restore canonical runtime-kit syntax lowering by giving array annotations their
   ABI-v5 managed-pointer fact, using valid Beskid `i64` syscall result types,
   and resolving primitive conversion result facts from the conversion node

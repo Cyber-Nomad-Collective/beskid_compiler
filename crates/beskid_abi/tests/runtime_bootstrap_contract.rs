@@ -175,30 +175,63 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
 
 #[test]
 fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
-    let expected = [
-        vec!["_exit", "clock_gettime", "getpid", "mmap", "mprotect", "munmap", "write"],
-        vec!["_exit", "clock_gettime", "getpid", "mmap", "mprotect", "munmap", "write"],
-        vec![
-            "ExitProcess",
-            "GetCurrentProcessId",
-            "GetStdHandle",
-            "GetSystemTimeAsFileTime",
-            "GetTickCount64",
-            "VirtualAlloc",
-            "VirtualFree",
-            "WriteFile",
-        ],
+    let unix_imports = [
+        "_exit", "atan2", "ceil", "clock_gettime", "cos", "fabs", "floor", "getpid", "log", "log10", "log2",
+        "memcpy", "mmap", "mprotect", "munmap", "pow", "sin", "sqrt", "strlen", "tan", "write",
     ];
-    let expected_libraries = ["libc", "libSystem", "kernel32"];
-    for ((target, expected_symbols), expected_library) in
-        supported_targets().into_iter().zip(expected).zip(expected_libraries)
-    {
+    let windows_imports = [
+        "ExitProcess",
+        "GetCurrentProcessId",
+        "GetStdHandle",
+        "GetSystemTimeAsFileTime",
+        "GetTickCount64",
+        "VirtualAlloc",
+        "VirtualFree",
+        "WriteFile",
+        "atan2",
+        "ceil",
+        "cos",
+        "fabs",
+        "floor",
+        "log",
+        "log10",
+        "log2",
+        "pow",
+        "sin",
+        "sqrt",
+        "strlen",
+        "tan",
+    ];
+    let math_imports = ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
+    let windows_ucrt_imports = [
+        "atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "strlen", "tan",
+    ];
+    for target in supported_targets() {
+        let is_windows = target.triple.as_str() == "x86_64-pc-windows-msvc";
+        let (expected_symbols, expected_library) = match target.triple.as_str() {
+            "aarch64-apple-darwin" => (&unix_imports[..], None),
+            "x86_64-unknown-linux-gnu" => (&unix_imports[..], Some(("libc", "libm"))),
+            "x86_64-pc-windows-msvc" => (&windows_imports[..], Some(("kernel32", "ucrt"))),
+            unsupported => panic!("unsupported target in contract test: {unsupported}"),
+        };
         let mut manifest = AbiManifestV5::canonical_runtime(target);
         assert_eq!(
             manifest.platform_imports.iter().map(|entry| entry.symbol.as_str()).collect::<Vec<_>>(),
             expected_symbols
         );
-        assert!(manifest.platform_imports.iter().all(|entry| entry.library == expected_library));
+        match expected_library {
+            None => assert!(manifest.platform_imports.iter().all(|entry| entry.library == "libSystem")),
+            Some((platform, math)) => {
+                let adapter_imports = if is_windows {
+                    &windows_ucrt_imports[..]
+                } else {
+                    &math_imports[..]
+                };
+                assert!(manifest.platform_imports.iter().all(|entry| {
+                    entry.library == if adapter_imports.contains(&entry.symbol.as_str()) { math } else { platform }
+                }));
+            }
+        }
         manifest.platform_imports.pop();
         assert!(matches!(manifest.validate(), Err(ManifestValidationError::InvalidPlatformImportSet { .. })));
     }

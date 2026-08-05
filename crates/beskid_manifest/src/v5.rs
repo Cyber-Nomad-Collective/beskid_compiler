@@ -407,15 +407,29 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         }
     }
     let expected_entry_adapters = [
-        ("x86_64-unknown-linux-gnu", "main", "utf8_argv", "beskid_rt_v5_args_handoff_utf8", "args_entry.S", "mmap"),
-        ("aarch64-apple-darwin", "main", "utf8_argv", "beskid_rt_v5_args_handoff_utf8", "args_entry.S", "mmap"),
+        (
+            "x86_64-unknown-linux-gnu",
+            "main",
+            "utf8_argv",
+            "beskid_rt_v5_args_handoff_utf8",
+            "args_entry.S",
+            &["memcpy", "mmap", "strlen"][..],
+        ),
+        (
+            "aarch64-apple-darwin",
+            "main",
+            "utf8_argv",
+            "beskid_rt_v5_args_handoff_utf8",
+            "args_entry.S",
+            &["memcpy", "mmap", "strlen"][..],
+        ),
         (
             "x86_64-pc-windows-msvc",
             "wmain",
             "utf16_wargv",
             "beskid_rt_v5_args_handoff_utf16",
             "args_entry.asm",
-            "VirtualAlloc",
+            &["VirtualAlloc", "strlen"][..],
         ),
     ];
     if manifest.entry_adapters.len() != expected_entry_adapters.len()
@@ -424,7 +438,7 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         return Err("Core.Args requires exactly one generated entry adapter per target".into());
     }
     unique(manifest.entry_adapters.iter().map(|adapter| adapter.target.as_str()), "Core.Args entry adapter target")?;
-    for (target, executable_entry, capture, handoff, entry_source, import) in expected_entry_adapters {
+    for (target, executable_entry, capture, handoff, entry_source, imports) in expected_entry_adapters {
         let adapter = manifest
             .entry_adapters
             .iter()
@@ -436,7 +450,7 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             || adapter.program_entry != "beskid_program_main"
             || adapter.ownership != "process_lifetime_copied_beskid_str_arena"
             || adapter.entry_source != entry_source
-            || adapter.os_imports != [import]
+            || adapter.os_imports != imports
         {
             return Err(format!("Core.Args entry adapter for `{target}` violates generated provenance"));
         }

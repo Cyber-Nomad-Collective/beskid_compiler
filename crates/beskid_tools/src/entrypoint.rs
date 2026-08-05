@@ -37,7 +37,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[test]
     fn worker_stack_outgrows_the_windows_main_thread_reserve() {
         // 8 MiB of frames overflows both the Windows 1 MiB main-thread reserve and the 2 MiB
         // default thread stack, so completing here proves the worker owns the requested stack.

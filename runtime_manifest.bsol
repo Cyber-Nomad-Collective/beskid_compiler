@@ -147,7 +147,7 @@ entry_adapter "Core.Args" {
   handoff = beskid_rt_v5_args_handoff_utf8
   ownership = process_lifetime_copied_beskid_str_arena
   entry_source = "args_entry.S"
-  os_imports = [mmap]
+  os_imports = [memcpy, mmap, strlen]
 }
 entry_adapter "Core.Args" {
   target = "aarch64-apple-darwin"
@@ -157,7 +157,7 @@ entry_adapter "Core.Args" {
   handoff = beskid_rt_v5_args_handoff_utf8
   ownership = process_lifetime_copied_beskid_str_arena
   entry_source = "args_entry.S"
-  os_imports = [mmap]
+  os_imports = [memcpy, mmap, strlen]
 }
 entry_adapter "Core.Args" {
   target = "x86_64-pc-windows-msvc"
@@ -167,7 +167,7 @@ entry_adapter "Core.Args" {
   handoff = beskid_rt_v5_args_handoff_utf16
   ownership = process_lifetime_copied_beskid_str_arena
   entry_source = "args_entry.asm"
-  os_imports = [VirtualAlloc]
+  os_imports = [VirtualAlloc, strlen]
 }
 
 layout "BeskidAllocationRequest" { size = 24 alignment = 8 fields = [{ name = size, offset = 0, type = usize }, { name = alignment, offset = 8, type = usize }, { name = descriptor, offset = 16, type = pointer }] }
@@ -193,6 +193,8 @@ platform_import "getpid" { target = "x86_64-unknown-linux-gnu" library = libc pa
 platform_import "mmap" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = address, type = pointer }, { name = length, type = usize }, { name = protection, type = i32 }, { name = flags, type = i32 }, { name = fd, type = i32 }, { name = offset, type = i64 }] returns = pointer }
 platform_import "mprotect" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = address, type = pointer }, { name = length, type = usize }, { name = protection, type = i32 }] returns = i32 }
 platform_import "munmap" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = address, type = pointer }, { name = length, type = usize }] returns = i32 }
+platform_import "memcpy" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = destination, type = pointer }, { name = source, type = pointer }, { name = length, type = usize }] returns = pointer }
+platform_import "strlen" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = value, type = pointer }] returns = usize }
 platform_import "write" { target = "x86_64-unknown-linux-gnu" library = libc params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }] returns = isize }
 
 platform_import "floor" { target = "x86_64-unknown-linux-gnu" library = libm params = [{ name = x, type = f64 }] returns = f64 }
@@ -213,6 +215,8 @@ platform_import "getpid" { target = "aarch64-apple-darwin" library = libSystem p
 platform_import "mmap" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = address, type = pointer }, { name = length, type = usize }, { name = protection, type = i32 }, { name = flags, type = i32 }, { name = fd, type = i32 }, { name = offset, type = i64 }] returns = pointer }
 platform_import "mprotect" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = address, type = pointer }, { name = length, type = usize }, { name = protection, type = i32 }] returns = i32 }
 platform_import "munmap" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = address, type = pointer }, { name = length, type = usize }] returns = i32 }
+platform_import "memcpy" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = destination, type = pointer }, { name = source, type = pointer }, { name = length, type = usize }] returns = pointer }
+platform_import "strlen" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = value, type = pointer }] returns = usize }
 platform_import "write" { target = "aarch64-apple-darwin" library = libSystem params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = length, type = usize }] returns = isize }
 
 # C library math functions for clif block support.
@@ -249,6 +253,7 @@ platform_import "pow" { target = "x86_64-pc-windows-msvc" library = ucrt params 
 platform_import "VirtualAlloc" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = address, type = pointer }, { name = size, type = usize }, { name = allocation_type, type = u32 }, { name = protection, type = u32 }] returns = pointer }
 platform_import "VirtualFree" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = address, type = pointer }, { name = size, type = usize }, { name = free_type, type = u32 }] returns = i32 }
 platform_import "WriteFile" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = handle, type = pointer }, { name = buffer, type = pointer }, { name = length, type = u32 }, { name = written, type = pointer }, { name = overlapped, type = pointer }] returns = i32 }
+platform_import "strlen" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = value, type = pointer }] returns = usize }
 
 assembly "beskid_arch_v5_context_init" {
   params = [{ name = context, type = pointer }, { name = stack_top, type = pointer }, { name = entry, type = pointer }, { name = argument, type = pointer }, { name = return_trampoline, type = pointer }]

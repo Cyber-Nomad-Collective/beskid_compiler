@@ -165,25 +165,6 @@ fn requires_explicit_jit_arguments(artifact: &CodegenArtifact) -> bool {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::requires_explicit_jit_arguments;
-    use beskid_codegen::{CodegenArtifact, ExternImport};
-
-    #[test]
-    fn core_args_has_no_ambient_jit_zero_vector() {
-        let artifact = CodegenArtifact {
-            extern_imports: vec![ExternImport {
-                symbol: "beskid_rt_v5_args_count".into(),
-                abi: Some("C".into()),
-                library: None,
-            }],
-            ..Default::default()
-        };
-        assert!(requires_explicit_jit_arguments(&artifact));
-    }
-}
-
 impl Default for Engine {
     fn default() -> Self {
         Self::new()
@@ -217,7 +198,10 @@ fn resolve_process_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(Strin
     let mut result = Vec::with_capacity(imports.len());
     for imp in imports {
         let c_sym = CString::new(imp.symbol.as_str()).map_err(|_| format!("bad symbol: {}", imp.symbol))?;
+        #[cfg(target_os = "macos")]
         let mut addr = unsafe { dlsym(RTLD_DEFAULT, c_sym.as_ptr()) };
+        #[cfg(not(target_os = "macos"))]
+        let addr = unsafe { dlsym(RTLD_DEFAULT, c_sym.as_ptr()) };
         // Cranelift's Mach-O import spelling carries the object-file leading
         // underscore, whereas dlsym expects the C source name.
         #[cfg(target_os = "macos")]
@@ -392,4 +376,23 @@ pub fn resolve_for_tests(requests: &[(&str, &str)]) -> Result<Vec<*const u8>, St
         })
         .collect();
     resolve_extern_symbols(&imports).map(|v| v.into_iter().map(|(_, p)| p).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::requires_explicit_jit_arguments;
+    use beskid_codegen::{CodegenArtifact, ExternImport};
+
+    #[test]
+    fn core_args_has_no_ambient_jit_zero_vector() {
+        let artifact = CodegenArtifact {
+            extern_imports: vec![ExternImport {
+                symbol: "beskid_rt_v5_args_count".into(),
+                abi: Some("C".into()),
+                library: None,
+            }],
+            ..Default::default()
+        };
+        assert!(requires_explicit_jit_arguments(&artifact));
+    }
 }

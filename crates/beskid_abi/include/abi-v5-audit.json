@@ -90,7 +90,9 @@
       "ownership": "process_lifetime_copied_beskid_str_arena",
       "entrySource": "args_entry.S",
       "osImports": [
-        "mmap"
+        "memcpy",
+        "mmap",
+        "strlen"
       ]
     },
     {
@@ -103,7 +105,8 @@
       "ownership": "process_lifetime_copied_beskid_str_arena",
       "entrySource": "args_entry.asm",
       "osImports": [
-        "VirtualAlloc"
+        "VirtualAlloc",
+        "strlen"
       ]
     },
     {
@@ -116,7 +119,9 @@
       "ownership": "process_lifetime_copied_beskid_str_arena",
       "entrySource": "args_entry.S",
       "osImports": [
-        "mmap"
+        "memcpy",
+        "mmap",
+        "strlen"
       ]
     }
   ]
