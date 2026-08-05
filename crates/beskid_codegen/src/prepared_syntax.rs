@@ -1,6 +1,9 @@
 //! Host-neutral prepared-syntax entrypoint lowering.
 
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use anyhow::Result;
 use beskid_abi::{
@@ -53,8 +56,10 @@ pub fn lower_canonical_runtime_prepared_syntax(
         .into_iter()
         .map(|source| {
             let path = root_dir.join(&source.logical_path);
-            let program = parse_program_with_source_name(path.to_str().unwrap_or_default(), &source.source)
-                .map_err(|error| anyhow::anyhow!("canonical runtime parse failed for {}: {error}", source.logical_path))?;
+            let program =
+                parse_program_with_source_name(path.to_str().unwrap_or_default(), &source.source).map_err(|error| {
+                    anyhow::anyhow!("canonical runtime parse failed for {}: {error}", source.logical_path)
+                })?;
             Ok(SourceUnit { logical_name: source.logical_path, path, source: source.source, program })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -96,7 +101,8 @@ pub fn lower_canonical_runtime_prepared_syntax(
         .collect::<Vec<_>>();
     let input = CodegenInput::new(db, typed, Arc::from(roots), target, manifest)
         .map_err(|error| anyhow::anyhow!("canonical runtime CodegenInput failed: {error}"))?;
-    let manifest_exports = input.abi_manifest().exports.iter().map(|entry| entry.symbol.as_str()).collect::<HashSet<_>>();
+    let manifest_exports =
+        input.abi_manifest().exports.iter().map(|entry| entry.symbol.as_str()).collect::<HashSet<_>>();
     let mut exported_items = HashMap::new();
     for key in input.roots().iter().copied().flat_map(|root| function_definitions(input.database(), root)) {
         let export = item_export_symbol(input.database(), key)
@@ -111,10 +117,9 @@ pub fn lower_canonical_runtime_prepared_syntax(
     let mut items = Vec::new();
     let mut selected = HashSet::new();
     for export in &input.abi_manifest().exports {
-        let entry = exported_items
-            .get(&export.symbol)
-            .copied()
-            .ok_or_else(|| anyhow::anyhow!("canonical runtime has no explicit source export for `{}`", export.symbol))?;
+        let entry = exported_items.get(&export.symbol).copied().ok_or_else(|| {
+            anyhow::anyhow!("canonical runtime has no explicit source export for `{}`", export.symbol)
+        })?;
         let program = input
             .roots()
             .iter()
@@ -123,7 +128,9 @@ pub fn lower_canonical_runtime_prepared_syntax(
             .ok_or_else(|| anyhow::anyhow!("canonical runtime export `{}` has no source root", export.symbol))?;
         let reachable = reachable_items(input.database(), program, entry)
             .map_err(|error| anyhow::anyhow!("canonical runtime reachability failed for `{}`: {error}", export.symbol))?
-            .ok_or_else(|| anyhow::anyhow!("incomplete direct-call facts for canonical runtime export `{}`", export.symbol))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("incomplete direct-call facts for canonical runtime export `{}`", export.symbol)
+            })?;
         for key in reachable.iter().copied() {
             if !selected.insert(key) {
                 continue;

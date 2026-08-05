@@ -353,12 +353,7 @@ pub fn build_canonical_runtime_typed_program(
 /// assemblies keep their explicit-import-only resolution contract, and duplicate
 /// public names remain unresolved through `unique_imported_function`.
 fn attach_canonical_runtime_cross_unit_scope(db: &BeskidDatabase, typed: &TypedProgram) {
-    let units = typed
-        .assembly
-        .units()
-        .iter()
-        .map(|unit| SourceUnitId::new(db, unit.path.clone()))
-        .collect::<Vec<_>>();
+    let units = typed.assembly.units().iter().map(|unit| SourceUnitId::new(db, unit.path.clone())).collect::<Vec<_>>();
     let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     for owner in &units {
         let imports = registry.imports.entry((*owner, typed.generation)).or_default();
