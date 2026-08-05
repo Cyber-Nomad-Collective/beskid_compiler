@@ -4214,7 +4214,8 @@ fn array_index_element_abi_type_tracked(
     with_node(db, syntax, key, |program, index, node| {
         let (index_node, indexed) = if let Some(indexed) = node.of::<beskid_analysis::syntax::IndexExpression>() {
             (key.node, indexed)
-        } else if let Some(assignment) = node.of::<beskid_analysis::syntax::AssignExpression>() {
+        } else {
+            let assignment = node.of::<beskid_analysis::syntax::AssignExpression>()?;
             if assignment.op.node != beskid_analysis::syntax::AssignOp::Assign {
                 return Some(Err(SemanticError::unavailable("array_index_element_abi_type")));
             }
@@ -4226,8 +4227,6 @@ fn array_index_element_abi_type_tracked(
                 )
                 .map(|target| normalized_expression_node(index, target))?;
             (target, index.node_at(program, target)?.of::<beskid_analysis::syntax::IndexExpression>()?)
-        } else {
-            return None;
         };
         let target = index
             .direct_child_id(
@@ -5330,7 +5329,11 @@ fn closure_call_target_tracked(
             return None;
         }
         index
-            .direct_child_id(program, parent_node(index, declaration)?, beskid_analysis::syntax_query::DynNodeRef::from(&binding.value))
+            .direct_child_id(
+                program,
+                parent_node(index, declaration)?,
+                beskid_analysis::syntax_query::DynNodeRef::from(&binding.value),
+            )
             .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
     })?;
     let Some(lambda) = lambda else {
