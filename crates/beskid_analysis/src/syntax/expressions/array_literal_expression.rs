@@ -46,7 +46,8 @@ mod tests {
         let Statement::Return(return_statement) = &function.node.body.node.statements[0].node else {
             panic!("expected return statement");
         };
-        let Some(Expression::ArrayLiteral(array)) = return_statement.node.value.as_ref().map(|value| &value.node) else {
+        let Some(Expression::ArrayLiteral(array)) = return_statement.node.value.as_ref().map(|value| &value.node)
+        else {
             panic!("expected array literal");
         };
         assert_eq!(array.node.elements.len(), 2);

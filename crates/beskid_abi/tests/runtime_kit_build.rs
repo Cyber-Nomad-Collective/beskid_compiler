@@ -106,8 +106,10 @@ fn core_args_native_adapters_are_present_for_every_manifest_target() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let manifest = beskid_abi::abi_v5::AbiManifestV5::canonical_runtime(linux_target());
     for target in beskid_abi::abi_v5::TargetMetadata::supported() {
-        let source = fs::read_to_string(root.join("crates/beskid_abi/assembly").join(target.triple.as_str()).join("platform_host.c"))
-            .expect("target platform host source");
+        let source = fs::read_to_string(
+            root.join("crates/beskid_abi/assembly").join(target.triple.as_str()).join("platform_host.c"),
+        )
+        .expect("target platform host source");
         assert!(source.contains("beskid_rt_v5_args_count"), "{:?} is missing args count", target.triple);
         assert!(source.contains("beskid_rt_v5_args_get"), "{:?} is missing args get", target.triple);
         assert!(source.contains("beskid_rt_v5_args_handoff"), "{:?} is missing args handoff", target.triple);

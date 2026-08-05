@@ -246,7 +246,11 @@ fn declare_import_allowlist_symbols(
     Ok(())
 }
 
-fn validate_exact_symbol_references(artifact: &CodegenArtifact, approved: &HashSet<String>, imports: &HashSet<String>) -> Result<(), JitError> {
+fn validate_exact_symbol_references(
+    artifact: &CodegenArtifact,
+    approved: &HashSet<String>,
+    imports: &HashSet<String>,
+) -> Result<(), JitError> {
     let defined = artifact.functions.iter().map(|function| function.name.as_str()).collect::<HashSet<_>>();
     for function in &artifact.functions {
         for (_, external) in function.function.dfg.ext_funcs.iter() {

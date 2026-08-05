@@ -17,16 +17,14 @@ use beskid_queries::{
     ClosureCallTarget, ClosureCapture, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
     CompletionContext, EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact,
     GenericSpecializationInstance, ItemSignature, LocalSlot, MutableLocalAssignment, OperatorFact, ProjectSession,
-    SemanticError, SemanticTypeId, SourceUnitId,
-    SpawnDiagnosticKind, SpawnEntryValidation, SyntaxGenerationId, abi_type, aggregate_field_access, aggregate_layout,
-    build_canonical_corelib_syscall_typed_program, build_typed_program,
-    build_typed_program_with_corelib_syscall_services, call_abi_signature, call_arguments, call_lowering,
-    callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target, closure_environment,
-    closure_signature, completion_candidates, control_flow, direct_callees, enum_constructor, enum_layout, enum_match,
-    contextual_integer_literal_abi_type, for_iterator_fact, generic_call_instantiation,
-    generic_call_specialization, generic_call_template, generic_specialization_identity, item_abi_signature,
-    item_body, item_signature, literal_fact, local_initializer_abi_type, local_slot, mutable_local_assignment,
-    node_kind,
+    SemanticError, SemanticTypeId, SourceUnitId, SpawnDiagnosticKind, SpawnEntryValidation, SyntaxGenerationId,
+    abi_type, aggregate_field_access, aggregate_layout, build_canonical_corelib_syscall_typed_program,
+    build_typed_program, build_typed_program_with_corelib_syscall_services, call_abi_signature, call_arguments,
+    call_lowering, callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target,
+    closure_environment, closure_signature, completion_candidates, contextual_integer_literal_abi_type, control_flow,
+    direct_callees, enum_constructor, enum_layout, enum_match, for_iterator_fact, generic_call_instantiation,
+    generic_call_specialization, generic_call_template, generic_specialization_identity, item_abi_signature, item_body,
+    item_signature, literal_fact, local_initializer_abi_type, local_slot, mutable_local_assignment, node_kind,
     node_span, node_type, nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items,
     resolved_item, resolved_local, runtime_intrinsic, spawn_entry_validation, spawn_legality, spawn_target, test_item,
 };
@@ -2121,9 +2119,7 @@ Channel<ConsoleMessage> MessagesChannel() { return Create<ConsoleMessage>(); }
         "only a type argument bound by the enclosing generic declaration is a deferred template"
     );
     assert!(
-        generic_call_specialization(&db, call)
-            .expect("concrete nominal generic specialization")
-            .is_some(),
+        generic_call_specialization(&db, call).expect("concrete nominal generic specialization").is_some(),
         "the concrete nominal call must be specialized directly"
     );
 }
@@ -4035,12 +4031,18 @@ fn contextual_integer_literal_abi_type_contextualizes_only_bare_integer_literals
     let second = key(unit, generation, &index, NodeKind::LiteralExpression, 1);
 
     assert_eq!(contextual_integer_literal_abi_type(&db, first).expect("typed let literal"), Some(SemanticTypeId::I64));
-    assert_eq!(contextual_integer_literal_abi_type(&db, second).expect("typed assignment literal"), Some(SemanticTypeId::I64));
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, second).expect("typed assignment literal"),
+        Some(SemanticTypeId::I64)
+    );
 
     let struct_field = "type Cursor { i64 pos } Cursor Main() { return Cursor { pos: 0 }; }";
     let (db, _project, unit, generation, index) = setup(struct_field);
     let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
-    assert_eq!(contextual_integer_literal_abi_type(&db, literal).expect("typed struct field literal"), Some(SemanticTypeId::I64));
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, literal).expect("typed struct field literal"),
+        Some(SemanticTypeId::I64)
+    );
 
     let inferred = "i32 Main() { let value = 0; return value; }";
     let (db, _project, unit, generation, index) = setup(inferred);

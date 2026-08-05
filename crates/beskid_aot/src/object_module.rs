@@ -110,7 +110,9 @@ impl BeskidObjectModule {
             artifact,
             &mut self.func_ids,
             |name| {
-                if let Some(program_entry) = entry_adapter_program.filter(|_| name.split('#').next().is_some_and(|logical| logical == "Main")) {
+                if let Some(program_entry) =
+                    entry_adapter_program.filter(|_| name.split('#').next().is_some_and(|logical| logical == "Main"))
+                {
                     program_entry.to_owned()
                 } else {
                     beskid_codegen::lowering::expressions::export::object_link_symbol(name, &exports)

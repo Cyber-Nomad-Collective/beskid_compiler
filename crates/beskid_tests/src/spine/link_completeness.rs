@@ -174,9 +174,6 @@ fn ansi_csi_bold_red_syntax_isle_preserves_csi_byte_golden() {
 fn assert_literal_byte_goldens(artifact: &CodegenArtifact, expected_literals: &[&[u8]]) {
     let emitted = artifact.string_literals.values().map(Vec::as_slice).collect::<Vec<_>>();
     for expected in expected_literals {
-        assert!(
-            emitted.contains(expected),
-            "missing byte golden {expected:?}; emitted {emitted:?}"
-        );
+        assert!(emitted.contains(expected), "missing byte golden {expected:?}; emitted {emitted:?}");
     }
 }

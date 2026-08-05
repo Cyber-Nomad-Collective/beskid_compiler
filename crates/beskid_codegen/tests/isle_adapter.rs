@@ -1154,9 +1154,8 @@ fn parsed_mutable_string_local_exposes_local_write_syntax_facts() {
 
 #[test]
 fn parsed_i64_local_initializers_and_assignments_contextualize_unsuffixed_integer_literals() {
-    let (input, isa, root) = item_fixture_with_root(
-        "i64 Main(mut i64 start) { i64 offset = 0; start = 0; return start + offset; }",
-    );
+    let (input, isa, root) =
+        item_fixture_with_root("i64 Main(mut i64 start) { i64 offset = 0; start = 0; return start + offset; }");
     let item = named_function(&input, root, "Main");
 
     let function = emit_isle_item(&input, isa.as_ref(), item)
@@ -1341,11 +1340,7 @@ fn canonical_foundation_args_module_emits_only_the_authorized_args_imports() {
         &[SyntaxModuleItem { key: named_function(&input, root, "ProgramName"), symbol: "ProgramName".into() }],
     )
     .expect("canonical Core.Args module emits through syntax ISLE");
-    let mut imports = artifact
-        .extern_imports
-        .iter()
-        .map(|import| import.symbol.as_str())
-        .collect::<Vec<_>>();
+    let mut imports = artifact.extern_imports.iter().map(|import| import.symbol.as_str()).collect::<Vec<_>>();
     imports.sort_unstable();
     assert_eq!(
         imports,
@@ -2314,8 +2309,7 @@ fn parsed_program_emits_only_call_derived_generic_specializations_without_hir() 
 
 #[test]
 fn parsed_program_rejects_a_generic_direct_call_without_a_provable_specialization() {
-    let (input, isa, root) =
-        item_fixture_with_root("unit Missing<T>() { return; } unit Main() { Missing(); }");
+    let (input, isa, root) = item_fixture_with_root("unit Missing<T>() { return; } unit Main() { Missing(); }");
     let items = find_function_definitions(input.database(), root);
 
     let error = lower_syntax_program(

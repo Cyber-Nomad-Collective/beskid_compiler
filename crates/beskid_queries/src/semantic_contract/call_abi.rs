@@ -16,8 +16,8 @@ pub(super) fn runtime_intrinsic_signature(index: u32) -> Result<ItemSignature, S
         .map(builtin_type_to_semantic)
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
-    let result = builtin_type_to_semantic(spec.returns)
-        .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+    let result =
+        builtin_type_to_semantic(spec.returns).ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
     Ok(ItemSignature { parameters: parameters.into(), result })
 }
 

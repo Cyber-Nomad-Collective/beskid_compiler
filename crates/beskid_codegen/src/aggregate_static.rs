@@ -211,10 +211,14 @@ impl CodegenInput<'_> {
         }
         let object_size = align_to(size, alignment)?;
         let pointer_map_offsets = payload_is_pointer.then_some(payload_offset).into_iter().collect::<Vec<_>>();
-        let unit = self.typed_program().assembly.units().iter().position(|unit| {
-            paths_match(&unit.path, literal.unit.path(self.database()))
-        })?;
-        let identity = format!("{}_enum_u{unit}_g{}_n{}", artifact_namespace(self), literal.generation.0, literal.node.0);
+        let unit = self
+            .typed_program()
+            .assembly
+            .units()
+            .iter()
+            .position(|unit| paths_match(&unit.path, literal.unit.path(self.database())))?;
+        let identity =
+            format!("{}_enum_u{unit}_g{}_n{}", artifact_namespace(self), literal.generation.0, literal.node.0);
         Some(AggregateStaticPlan {
             literal,
             descriptor_symbol: format!("__beskid_aggregate_descriptor_{identity}"),
@@ -241,7 +245,11 @@ fn scalar_layout(pointer_width: u8, ty: SemanticTypeId) -> Option<(u64, u64, boo
 }
 
 fn artifact_namespace(input: &CodegenInput<'_>) -> String {
-    input.artifact_namespace().chars().map(|character| if character.is_ascii_alphanumeric() { character } else { '_' }).collect()
+    input
+        .artifact_namespace()
+        .chars()
+        .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
+        .collect()
 }
 
 fn valid_alignment(value: u64) -> bool {

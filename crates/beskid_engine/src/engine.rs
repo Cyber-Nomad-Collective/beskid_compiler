@@ -173,7 +173,11 @@ mod tests {
     #[test]
     fn core_args_has_no_ambient_jit_zero_vector() {
         let artifact = CodegenArtifact {
-            extern_imports: vec![ExternImport { symbol: "beskid_rt_v5_args_count".into(), abi: Some("C".into()), library: None }],
+            extern_imports: vec![ExternImport {
+                symbol: "beskid_rt_v5_args_count".into(),
+                abi: Some("C".into()),
+                library: None,
+            }],
             ..Default::default()
         };
         assert!(requires_explicit_jit_arguments(&artifact));

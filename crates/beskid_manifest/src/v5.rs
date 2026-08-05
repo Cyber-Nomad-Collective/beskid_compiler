@@ -299,7 +299,19 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         .collect::<Result<Vec<_>, String>>()?;
     let entry_adapters = blocks(&document.blocks, "entry_adapter")
         .map(|block| {
-            ensure_fields(block, &["target", "executable_entry", "program_entry", "capture", "handoff", "ownership", "entry_source", "os_imports"])?;
+            ensure_fields(
+                block,
+                &[
+                    "target",
+                    "executable_entry",
+                    "program_entry",
+                    "capture",
+                    "handoff",
+                    "ownership",
+                    "entry_source",
+                    "os_imports",
+                ],
+            )?;
             Ok(EntryAdapterV5 {
                 name: label(block)?,
                 target: string_field(block, "target")?,
@@ -374,7 +386,14 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     let expected_entry_adapters = [
         ("x86_64-unknown-linux-gnu", "main", "utf8_argv", "beskid_rt_v5_args_handoff_utf8", "args_entry.S", "mmap"),
         ("aarch64-apple-darwin", "main", "utf8_argv", "beskid_rt_v5_args_handoff_utf8", "args_entry.S", "mmap"),
-        ("x86_64-pc-windows-msvc", "wmain", "utf16_wargv", "beskid_rt_v5_args_handoff_utf16", "args_entry.asm", "VirtualAlloc"),
+        (
+            "x86_64-pc-windows-msvc",
+            "wmain",
+            "utf16_wargv",
+            "beskid_rt_v5_args_handoff_utf16",
+            "args_entry.asm",
+            "VirtualAlloc",
+        ),
     ];
     if manifest.entry_adapters.len() != expected_entry_adapters.len()
         || manifest.entry_adapters.iter().any(|adapter| adapter.name != "Core.Args")
@@ -383,11 +402,19 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     }
     unique(manifest.entry_adapters.iter().map(|adapter| adapter.target.as_str()), "Core.Args entry adapter target")?;
     for (target, executable_entry, capture, handoff, entry_source, import) in expected_entry_adapters {
-        let adapter = manifest.entry_adapters.iter().find(|adapter| adapter.target == target)
+        let adapter = manifest
+            .entry_adapters
+            .iter()
+            .find(|adapter| adapter.target == target)
             .ok_or_else(|| format!("missing Core.Args entry adapter for `{target}`"))?;
-        if adapter.executable_entry != executable_entry || adapter.capture != capture || adapter.handoff != handoff
-            || adapter.program_entry != "beskid_program_main" || adapter.ownership != "process_lifetime_copied_beskid_str_arena"
-            || adapter.entry_source != entry_source || adapter.os_imports != [import] {
+        if adapter.executable_entry != executable_entry
+            || adapter.capture != capture
+            || adapter.handoff != handoff
+            || adapter.program_entry != "beskid_program_main"
+            || adapter.ownership != "process_lifetime_copied_beskid_str_arena"
+            || adapter.entry_source != entry_source
+            || adapter.os_imports != [import]
+        {
             return Err(format!("Core.Args entry adapter for `{target}` violates generated provenance"));
         }
     }
@@ -503,7 +530,10 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     for adapter in &manifest.entry_adapters {
         for import in &adapter.os_imports {
             if !declared_target_imports.contains(&(adapter.target.as_str(), import.as_str())) {
-                return Err(format!("Core.Args entry adapter for `{}` names undeclared OS import `{import}`", adapter.target));
+                return Err(format!(
+                    "Core.Args entry adapter for `{}` names undeclared OS import `{import}`",
+                    adapter.target
+                ));
             }
         }
     }

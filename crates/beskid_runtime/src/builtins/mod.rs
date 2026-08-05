@@ -27,8 +27,7 @@ pub use crate::interop::register::{HandlerTableEntry, beskid_register_handlers};
 pub use alloc::alloc;
 pub use arrays::{
     ArrayAllocationRequest, array_len, array_new, beskid_rt_v5_array_allocate_rooted,
-    beskid_rt_v5_array_construction_finish,
-    beskid_rt_v5_array_write_barrier,
+    beskid_rt_v5_array_construction_finish, beskid_rt_v5_array_write_barrier,
 };
 pub use bytes::{bytes_compare, bytes_copy, bytes_from_str, bytes_get, bytes_set, str_from_bytes_utf8};
 pub use callback::{CallbackTableEntry, beskid_register_callbacks, install_callback_trampoline, registered_callbacks};

@@ -1,6 +1,6 @@
+use crate::gc::with_current_heap;
 #[cfg(feature = "metrics")]
 use crate::gc::with_current_root;
-use crate::gc::with_current_heap;
 use beskid_abi::BeskidStr;
 
 use super::alloc::alloc;

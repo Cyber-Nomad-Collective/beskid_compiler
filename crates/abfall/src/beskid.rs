@@ -27,7 +27,6 @@ impl AlignedBytes {
     pub(crate) fn as_ptr(&self) -> *const u8 {
         self.words.as_ptr().cast()
     }
-
 }
 
 /// Descriptor blob emitted by `beskid_codegen::module_emission::build_descriptor_data`.
@@ -126,9 +125,8 @@ unsafe impl Trace for BeskidObject {
         // compiler owns the static descriptor/map for the module lifetime.
         let offsets = unsafe { std::slice::from_raw_parts(descriptor.pointer_map, descriptor.pointer_count) };
         for index in 0..array.length {
-            let Some(element_base) = index
-                .checked_mul(descriptor.stride)
-                .and_then(|offset| array.data_offset.checked_add(offset))
+            let Some(element_base) =
+                index.checked_mul(descriptor.stride).and_then(|offset| array.data_offset.checked_add(offset))
             else {
                 return;
             };

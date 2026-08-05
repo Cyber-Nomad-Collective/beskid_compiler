@@ -104,18 +104,8 @@ fn canonical_host_sources_use_manifest_owned_clock_and_process_adapters() {
             "runtime.adapter.clock_realtime_nanos",
             AbiType::I64,
         ),
-        (
-            "process_exit",
-            "beskid_rt_v5_intrinsic_process_exit",
-            "runtime.adapter.process_exit",
-            AbiType::Void,
-        ),
-        (
-            "process_getpid",
-            "beskid_rt_v5_intrinsic_process_getpid",
-            "runtime.adapter.process_getpid",
-            AbiType::I32,
-        ),
+        ("process_exit", "beskid_rt_v5_intrinsic_process_exit", "runtime.adapter.process_exit", AbiType::Void),
+        ("process_getpid", "beskid_rt_v5_intrinsic_process_getpid", "runtime.adapter.process_getpid", AbiType::I32),
     ] {
         let intrinsic = manifest
             .trusted_runtime_intrinsics
@@ -208,11 +198,8 @@ fn canonical_runtime_source_owns_allocation_headers_and_lifo_root_frames() {
 #[test]
 fn canonical_gc_exports_one_registry_backed_external_root_count() {
     let sources = canonical_runtime_sources();
-    let gc = &sources
-        .iter()
-        .find(|unit| unit.logical_path == CANONICAL_GC_SOURCE_PATH)
-        .expect("canonical GC source")
-        .source;
+    let gc =
+        &sources.iter().find(|unit| unit.logical_path == CANONICAL_GC_SOURCE_PATH).expect("canonical GC source").source;
 
     assert_eq!(
         gc.matches("[Export(Abi:\"C\", Symbol:\"gc_external_root_count\")]").count(),

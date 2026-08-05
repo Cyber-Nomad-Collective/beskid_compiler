@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
 use abfall::{Heap, TypeDescriptor};
+use beskid_runtime::builtins::str_slice;
 use beskid_runtime::{
     RuntimeRoot, alloc, array_new, clear_current_heap, clear_current_root, dynamic_cell_create, enter_runtime_scope,
-    force_collect, gc_bytes_allocated,
-    gc_collect, gc_collect_if_needed, gc_external_root_count, gc_object_count, gc_phase, gc_register_root,
-    gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier, leave_runtime_scope, set_current_heap,
-    set_current_root, snapshot_gc, str_concat, str_from_i64,
+    force_collect, gc_bytes_allocated, gc_collect, gc_collect_if_needed, gc_external_root_count, gc_object_count,
+    gc_phase, gc_register_root, gc_root_handle, gc_unregister_root, gc_unroot_handle, gc_write_barrier,
+    leave_runtime_scope, set_current_heap, set_current_root, snapshot_gc, str_concat, str_from_i64,
 };
-use beskid_runtime::builtins::str_slice;
 
 fn with_runtime_scope<R>(f: impl FnOnce(&Arc<Heap>, &mut RuntimeRoot) -> R) -> R {
     let heap = Heap::off();

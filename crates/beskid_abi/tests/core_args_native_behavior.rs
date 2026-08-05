@@ -18,9 +18,10 @@ fn compile(temp: &PathBuf, name: &str, source: &str, entry: bool) -> PathBuf {
     let executable = temp.join(name);
     fs::write(&harness, source).expect("write Core.Args harness");
     let mut command = Command::new("clang");
-    command.args(["-std=c11", "-arch", "arm64"])
-        .arg(root.join("assembly/aarch64-apple-darwin/platform_host.c"));
-    if entry { command.arg(root.join("assembly/aarch64-apple-darwin/args_entry.S")); }
+    command.args(["-std=c11", "-arch", "arm64"]).arg(root.join("assembly/aarch64-apple-darwin/platform_host.c"));
+    if entry {
+        command.arg(root.join("assembly/aarch64-apple-darwin/args_entry.S"));
+    }
     let output = command.arg(&harness).arg("-o").arg(&executable).output().expect("invoke clang");
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     executable
@@ -29,7 +30,10 @@ fn compile(temp: &PathBuf, name: &str, source: &str, entry: bool) -> PathBuf {
 #[test]
 fn executable_entry_preserves_argv_zero_order_and_main_return_abi() {
     let temp = temp_dir();
-    let executable = compile(&temp, "entry", r#"
+    let executable = compile(
+        &temp,
+        "entry",
+        r#"
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -44,7 +48,9 @@ int beskid_program_main(void) {
   if (zero->len == 0 || memcmp(one->ptr, "alpha", 5) || one->len != 5 || memcmp(two->ptr, "beta", 4) || two->len != 4) return 11;
   return 47;
 }
-"#, true);
+"#,
+        true,
+    );
     let output = Command::new(&executable).args(["alpha", "beta"]).output().expect("run Core.Args executable");
     assert_eq!(output.status.code(), Some(47), "{}", String::from_utf8_lossy(&output.stderr));
     let _ = fs::remove_dir_all(temp);
@@ -53,7 +59,10 @@ int beskid_program_main(void) {
 #[test]
 fn copied_arguments_outlive_input_and_bounds_trap_is_stable() {
     let temp = temp_dir();
-    let executable = compile(&temp, "direct", r#"
+    let executable = compile(
+        &temp,
+        "direct",
+        r#"
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -74,7 +83,9 @@ int main(void) {
   if (!WIFEXITED(status) || WEXITSTATUS(status) != 101) return 12;
   return 0;
 }
-"#, false);
+"#,
+        false,
+    );
     let output = Command::new(&executable).output().expect("run Core.Args direct harness");
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     let _ = fs::remove_dir_all(temp);
@@ -86,7 +97,9 @@ fn windows_six_utf16_unit_witness_has_deterministic_utf8_replacement() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let harness = temp.join("utf16_witness.c");
     let executable = temp.join("utf16_witness");
-    fs::write(&harness, r#"
+    fs::write(
+        &harness,
+        r#"
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -99,10 +112,17 @@ int main(void) {
   if (beskid_args_write_utf8(output, input) != output + sizeof expected) return 11;
   return memcmp(output, expected, sizeof expected) == 0 ? 0 : 12;
 }
-"#).expect("write UTF-16 witness");
+"#,
+    )
+    .expect("write UTF-16 witness");
     let output = Command::new("clang")
-        .args(["-std=c11", "-I"]).arg(root.join("assembly/common"))
-        .arg(&harness).arg("-o").arg(&executable).output().expect("compile UTF-16 witness");
+        .args(["-std=c11", "-I"])
+        .arg(root.join("assembly/common"))
+        .arg(&harness)
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .expect("compile UTF-16 witness");
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     let output = Command::new(&executable).output().expect("run UTF-16 witness");
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));

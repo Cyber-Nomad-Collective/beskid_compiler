@@ -19,12 +19,12 @@ pub mod shell;
 pub mod toolchain;
 pub mod tui;
 
+pub use beskid_pipeline::{COMPILER_STACK_SIZE, compiler_stack_size};
 pub use corelib::{CorelibProvisioning, ensure_bundled_corelib};
 pub use diagnostics::{
     format_diagnostic, format_report, print_pretty_parse_error, print_pretty_pest_error, print_report,
     print_semantic_diagnostics, report_from_anyhow,
 };
-pub use beskid_pipeline::{COMPILER_STACK_SIZE, compiler_stack_size};
 pub use entrypoint::run_on_compiler_stack;
 pub use logging::init as init_logging;
 pub use pipeline::{

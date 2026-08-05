@@ -260,7 +260,8 @@ fn generated_isle_routes_local_declarations_and_assignments() {
     let memory = fs::read_to_string(isle.join("memory.isle")).expect("read memory ISLE rules");
 
     assert!(
-        statements.contains("(rule (lower_statement key @ (node_kind (NodeKind.LetStatement)))\n      (emit_local_let key))"),
+        statements
+            .contains("(rule (lower_statement key @ (node_kind (NodeKind.LetStatement)))\n      (emit_local_let key))"),
         "LetStatement must dispatch through generated ISLE"
     );
 

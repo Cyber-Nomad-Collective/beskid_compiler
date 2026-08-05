@@ -61,10 +61,7 @@ fn macos_x86_64_runner_available() -> bool {
     // macOS cannot execute the Linux ELF harness.  The compatibility run below instead links a
     // Mach-O x86_64 variant of the same SysV context assembly, which requires Rosetta on an
     // Apple-silicon host.  Keep the ELF object checks independent of this optional execution.
-    Command::new("arch")
-        .args(["-x86_64", "/usr/bin/true"])
-        .status()
-        .is_ok_and(|status| status.success())
+    Command::new("arch").args(["-x86_64", "/usr/bin/true"]).status().is_ok_and(|status| status.success())
 }
 
 #[cfg(target_os = "macos")]

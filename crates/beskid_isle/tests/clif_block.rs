@@ -6,7 +6,10 @@ use cranelift_codegen::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use target_lexicon::Triple;
 
-struct ClifBlockFacts { block_node: AstNodeKey, body: &'static str }
+struct ClifBlockFacts {
+    block_node: AstNodeKey,
+    body: &'static str,
+}
 
 impl NodeFacts for ClifBlockFacts {
     fn node_kind(&self, n: AstNodeKey) -> Option<NodeKind> {
@@ -24,7 +27,9 @@ impl NodeFacts for ClifBlockFacts {
             value_type: types::F64,
         }])
     }
-    fn integer_literal(&self, _: AstNodeKey) -> Option<i64> { None }
+    fn integer_literal(&self, _: AstNodeKey) -> Option<i64> {
+        None
+    }
 }
 
 fn make_isa() -> std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa> {

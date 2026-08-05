@@ -1415,7 +1415,7 @@ impl CompareOp {
             CompareOp::Lte => FloatCC::LessThanOrEqual,
             CompareOp::Gt => FloatCC::GreaterThan,
             CompareOp::Gte => FloatCC::GreaterThanOrEqual,
-}
+        }
     }
 }
 
@@ -2076,7 +2076,9 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
     fn emit_clif_block(&mut self, key: AstNodeKey) -> Option<Value> {
         let body = self.facts.clif_block_body(key)?;
-        let result_type = self.facts.scalar_type(key)
+        let result_type = self
+            .facts
+            .scalar_type(key)
             .unwrap_or_else(|| self.builder.func.signature.returns.first().map(|r| r.value_type).unwrap_or(types::I64));
 
         let mut result: Option<Value> = None;
@@ -2097,9 +2099,8 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             } else if let Some(rest) = line.strip_prefix("call") {
                 let rest = rest.trim();
                 if let Some(symbol_part) = rest.strip_prefix('@') {
-                    let symbol_end = symbol_part
-                        .find(|c: char| c.is_whitespace() || c == '(')
-                        .unwrap_or(symbol_part.len());
+                    let symbol_end =
+                        symbol_part.find(|c: char| c.is_whitespace() || c == '(').unwrap_or(symbol_part.len());
                     let symbol = &symbol_part[..symbol_end];
                     let args_str = symbol_part[symbol_end..].trim();
                     let args_str = args_str.strip_prefix('(').unwrap_or(args_str);
@@ -2416,7 +2417,8 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             pointer.bytes().ilog2() as u8,
         ));
         let root_slot_address = self.builder.ins().stack_addr(pointer, root_slot, 0);
-        let allocate = self.import_runtime_helper("beskid_rt_v5_array_allocate_rooted", &[pointer, pointer], Some(pointer))?;
+        let allocate =
+            self.import_runtime_helper("beskid_rt_v5_array_allocate_rooted", &[pointer, pointer], Some(pointer))?;
         let allocation_call = self.builder.ins().call(allocate, &[request, root_slot_address]);
         let array = self.builder.inst_results(allocation_call).first().copied()?;
         self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
@@ -2434,7 +2436,11 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             let address = self.builder.ins().iadd_imm(data, i64::from(offset));
             self.builder.ins().store(MemFlags::new(), value, address, 0);
             if layout.element_type == pointer {
-                let barrier = self.import_runtime_helper("beskid_rt_v5_array_write_barrier", &[pointer, pointer], Some(types::I8))?;
+                let barrier = self.import_runtime_helper(
+                    "beskid_rt_v5_array_write_barrier",
+                    &[pointer, pointer],
+                    Some(types::I8),
+                )?;
                 let barrier_call = self.builder.ins().call(barrier, &[array, value]);
                 let published = self.builder.inst_results(barrier_call).first().copied()?;
                 self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
@@ -2443,7 +2449,8 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         // The allocation was rooted before the first nested element was lowered. Release only
         // after every store and pointer-publication barrier has completed.
         let root_handle = self.builder.ins().stack_load(pointer, root_slot, 0);
-        let finish = self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
+        let finish =
+            self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
         let finish_call = self.builder.ins().call(finish, &[root_handle]);
         let released = self.builder.inst_results(finish_call).first().copied()?;
         self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
@@ -2473,7 +2480,8 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         } else {
             index
         };
-        let length = self.builder.ins().load(pointer_type, MemFlags::new(), base, i32::try_from(pointer_type.bytes()).ok()?);
+        let length =
+            self.builder.ins().load(pointer_type, MemFlags::new(), base, i32::try_from(pointer_type.bytes()).ok()?);
         let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, pointer_index, length);
         self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
         let offset = if layout.stride == 1 {
@@ -2516,7 +2524,8 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         } else {
             index
         };
-        let length = self.builder.ins().load(pointer_type, MemFlags::new(), base, i32::try_from(pointer_type.bytes()).ok()?);
+        let length =
+            self.builder.ins().load(pointer_type, MemFlags::new(), base, i32::try_from(pointer_type.bytes()).ok()?);
         let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, pointer_index, length);
         self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
         let offset = if layout.stride == 1 {
@@ -2528,7 +2537,11 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
         let address = self.builder.ins().iadd(data, offset);
         self.builder.ins().store(MemFlags::new(), value, address, 0);
         if layout.element_type == pointer_type {
-            let barrier = self.import_runtime_helper("beskid_rt_v5_array_write_barrier", &[pointer_type, pointer_type], Some(types::I8))?;
+            let barrier = self.import_runtime_helper(
+                "beskid_rt_v5_array_write_barrier",
+                &[pointer_type, pointer_type],
+                Some(types::I8),
+            )?;
             let barrier_call = self.builder.ins().call(barrier, &[base, value]);
             let published = self.builder.inst_results(barrier_call).first().copied()?;
             self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
