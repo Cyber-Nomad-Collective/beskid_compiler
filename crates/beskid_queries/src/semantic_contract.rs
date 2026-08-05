@@ -2010,55 +2010,43 @@ fn try_expression_fact_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<TryExpressionFact> {
     with_node(db, syntax, key, |program, index, node| {
-        Some(try_expression_fact_for_node(program, index, key, node))
+        Some(try_expression_fact_for_node(db, program, index, key, node))
     })?
     .transpose()
 }
 
 fn try_expression_fact_for_node(
+    db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     node: beskid_analysis::syntax_query::DynNodeRef<'_>,
 ) -> Result<TryExpressionFact, SemanticError> {
-    let try_expression =
-        node.of::<beskid_analysis::syntax::TryExpression>().ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    let operand = index
-        .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(try_expression.expr.as_ref()))
-        .map(|node| normalized_expression_node(index, node))
-        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    let operand_node = index
-        .node_at(program, operand)
-        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    let path = operand_node
-        .of::<beskid_analysis::syntax::PathExpression>()
-        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    let [segment] = path.path.node.segments.as_slice() else {
-        return Err(SemanticError::unavailable("try_expression"));
-    };
-    if !segment.node.type_args.is_empty() {
-        return Err(SemanticError::unavailable("try_expression"));
-    }
-    let declaration = resolve_lexical_declaration(program, index, operand, segment.node.name.node.name.as_str())
-        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let (operand, declaration) = try_operand_parameter_declaration(program, index, key, node)?;
     let parameter = parent_node(index, declaration)
         .filter(|parent| index.kind(*parent) == Some(beskid_analysis::syntax_query::NodeKind::Parameter))
-        .and_then(|parent| index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::Parameter>()))
+        .and_then(|parent| {
+            index.node_at(program, parent).and_then(|node| node.of::<beskid_analysis::syntax::Parameter>())
+        })
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
     let parameter_type = &parameter.ty;
-    let (payload, error) = result_type_parts(&parameter_type.node).ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    let function = nearest_ancestor(index, key.node, |kind| {
-        kind == beskid_analysis::syntax_query::NodeKind::FunctionDefinition
-    })
-    .and_then(|function| index.node_at(program, function).and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>()))
+    let result_definition = canonical_result_definition_for_type(db, key, &parameter_type.node)
         .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    let return_type = function
-        .return_type
-        .as_ref()
-        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    let (_return_payload, return_error) =
-        result_type_parts(&return_type.node).ok_or_else(|| SemanticError::unavailable("try_expression"))?;
-    if !same_type_syntax(&error.node, &return_error.node) {
+    let (payload, error) =
+        result_type_parts(&parameter_type.node).ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let function =
+        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+            .and_then(|function| {
+                index
+                    .node_at(program, function)
+                    .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+            })
+            .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let return_type = function.return_type.as_ref().ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    if canonical_result_definition_for_type(db, key, &return_type.node) != Some(result_definition) {
+        return Err(SemanticError::unavailable("try_expression"));
+    }
+    if !same_type_syntax(&parameter_type.node, &return_type.node) {
         return Err(SemanticError::unavailable("try_expression"));
     }
 
@@ -2071,9 +2059,108 @@ fn try_expression_fact_for_node(
     })
 }
 
+/// Resolve the one Result definition that generated `value?` lowering may trust.
+///
+/// A `Result<T, E>` spelling alone is not an ABI contract: a user declaration with the same
+/// name can reorder, add, or change variants. The propagation emitter assumes exactly the
+/// canonical `Ok(T value), Error(E error)` two-variant object representation, so establish the
+/// declaration identity and its generic field shapes before it receives any layout facts.
+fn canonical_result_definition_for_type(
+    db: &dyn Db,
+    use_key: AstNodeKey,
+    syntax_type: &beskid_analysis::syntax::Type,
+) -> Option<AstNodeKey> {
+    let beskid_analysis::syntax::Type::Complex(path) = syntax_type else {
+        return None;
+    };
+    let [segment] = path.node.segments.as_slice() else {
+        return None;
+    };
+    if segment.node.name.node.name != "Result" || segment.node.type_args.len() != 2 {
+        return None;
+    }
+    let declaration = resolve_type_declaration(db, use_key, &path.node)?;
+    let syntax = db.syntax_unit(declaration.unit)?;
+    if syntax.generation(db) != declaration.generation {
+        return None;
+    }
+    let definition = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)?
+        .of::<beskid_analysis::syntax::EnumDefinition>()?;
+    let [payload_parameter, error_parameter] = definition.generics.as_slice() else {
+        return None;
+    };
+    let [ok, error] = definition.variants.as_slice() else {
+        return None;
+    };
+    (definition.name.node.name == "Result"
+        && canonical_result_variant(&ok.node, "Ok", "value", payload_parameter)
+        && canonical_result_variant(&error.node, "Error", "error", error_parameter))
+    .then_some(declaration)
+}
+
+fn canonical_result_variant(
+    variant: &beskid_analysis::syntax::EnumVariant,
+    name: &str,
+    field_name: &str,
+    generic_parameter: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Identifier>,
+) -> bool {
+    let [field] = variant.fields.as_slice() else {
+        return false;
+    };
+    variant.name.node.name == name
+        && field.node.kind == beskid_analysis::syntax::FieldKind::Value
+        && field.node.name.node.name == field_name
+        && type_syntax_is_generic_parameter_reference(&field.node.ty.node, generic_parameter.node.name.as_str())
+}
+
+/// Resolve the only operand shape currently eligible for syntax `Result` propagation.
+///
+/// Reusing this guard for both the propagation fact and the concrete enum-layout query keeps
+/// layout authority tied to the same direct, explicitly typed function parameter; local values,
+/// calls, members, and inferred types do not gain a layout fallback.
+fn try_operand_parameter_declaration(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Result<(beskid_analysis::syntax::AstNodeId, beskid_analysis::syntax::AstNodeId), SemanticError> {
+    let try_expression = node
+        .of::<beskid_analysis::syntax::TryExpression>()
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let operand = index
+        .direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(try_expression.expr.as_ref()),
+        )
+        .map(|node| normalized_expression_node(index, node))
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let operand_node = index.node_at(program, operand).ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let path = operand_node
+        .of::<beskid_analysis::syntax::PathExpression>()
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    let [segment] = path.path.node.segments.as_slice() else {
+        return Err(SemanticError::unavailable("try_expression"));
+    };
+    if !segment.node.type_args.is_empty() {
+        return Err(SemanticError::unavailable("try_expression"));
+    }
+    let declaration = resolve_lexical_declaration(program, index, operand, segment.node.name.node.name.as_str())
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    parent_node(index, declaration)
+        .filter(|parent| index.kind(*parent) == Some(beskid_analysis::syntax_query::NodeKind::Parameter))
+        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+    Ok((operand, declaration))
+}
+
 fn result_type_parts(
     syntax_type: &beskid_analysis::syntax::Type,
-) -> Option<(&beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>, &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>)> {
+) -> Option<(
+    &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>,
+    &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>,
+)> {
     let beskid_analysis::syntax::Type::Complex(path) = syntax_type else {
         return None;
     };
@@ -3865,6 +3952,16 @@ fn abi_type_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> Se
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
             return Some(abi_type_for_binary_expression(db, program, index, key, binary));
         }
+        if node.of::<beskid_analysis::syntax::AssignExpression>().is_some() {
+            // An index assignment is expression-valued only after the same declared-array fact
+            // that authorizes its element store proves the destination representation. Other
+            // assignment shapes intentionally retain no syntax ABI fact here.
+            return match array_index_element_abi_type(db, key) {
+                Ok(Some(element)) => Some(Ok(element)),
+                Ok(None) => None,
+                Err(error) => Some(Err(error)),
+            };
+        }
         if node.of::<beskid_analysis::syntax::Identifier>().is_some() {
             return abi_local_declaration_type(db, program, index, key, key.node);
         }
@@ -4102,6 +4199,75 @@ fn empty_array_literal_element_abi_type_tracked(
     .transpose()
 }
 
+/// Return the element ABI for an indexed, explicitly declared local array.
+///
+/// Array literals own allocation metadata, but an index operation may address an array supplied
+/// by a parameter or constructed by a runtime intrinsic. In that case the declaration's `T[]`
+/// syntax is the only authority for the element representation. Inferred, non-local, generic,
+/// string, and stale targets deliberately remain unavailable.
+#[salsa::tracked]
+fn array_index_element_abi_type_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SemanticTypeId> {
+    with_node(db, syntax, key, |program, index, node| {
+        let (index_node, indexed) = if let Some(indexed) = node.of::<beskid_analysis::syntax::IndexExpression>() {
+            (key.node, indexed)
+        } else if let Some(assignment) = node.of::<beskid_analysis::syntax::AssignExpression>() {
+            if assignment.op.node != beskid_analysis::syntax::AssignOp::Assign {
+                return Some(Err(SemanticError::unavailable("array_index_element_abi_type")));
+            }
+            let target = index
+                .direct_child_id(
+                    program,
+                    key.node,
+                    beskid_analysis::syntax_query::DynNodeRef::from(assignment.target.as_ref()),
+                )
+                .map(|target| normalized_expression_node(index, target))?;
+            (target, index.node_at(program, target)?.of::<beskid_analysis::syntax::IndexExpression>()?)
+        } else {
+            return None;
+        };
+        let target = index
+            .direct_child_id(
+                program,
+                index_node,
+                beskid_analysis::syntax_query::DynNodeRef::from(indexed.target.as_ref()),
+            )
+            .map(|target| normalized_expression_node(index, target))?;
+        let target = index.node_at(program, target)?.of::<beskid_analysis::syntax::PathExpression>()?;
+        let [segment] = target.path.node.segments.as_slice() else {
+            return Some(Err(SemanticError::unavailable("array_index_element_abi_type")));
+        };
+        if !segment.node.type_args.is_empty() {
+            return Some(Err(SemanticError::unavailable("array_index_element_abi_type")));
+        }
+        let declaration =
+            resolve_lexical_declaration(program, index, index_node, segment.node.name.node.name.as_str())?;
+        let parent = parent_node(index, declaration)?;
+        let array_type = match index.kind(parent)? {
+            beskid_analysis::syntax_query::NodeKind::Parameter => index
+                .node_at(program, parent)?
+                .of::<beskid_analysis::syntax::Parameter>()
+                .map(|parameter| &parameter.ty.node),
+            beskid_analysis::syntax_query::NodeKind::LetStatement => index
+                .node_at(program, parent)?
+                .of::<beskid_analysis::syntax::LetStatement>()
+                .and_then(|statement| statement.type_annotation.as_ref().map(|annotation| &annotation.node)),
+            _ => None,
+        }
+        .ok_or_else(|| SemanticError::unavailable("array_index_element_abi_type"));
+        Some(array_type.and_then(|array_type| {
+            let beskid_analysis::syntax::Type::Array(element) = array_type else {
+                return Err(SemanticError::unavailable("array_index_element_abi_type"));
+            };
+            abi_type_from_syntax(db, AstNodeKey { node: declaration, ..key }, &element.node)
+        }))
+    })?
+    .transpose()
+}
+
 #[salsa::tracked]
 fn aggregate_field_access_tracked(
     db: &dyn Db,
@@ -4166,11 +4332,29 @@ fn enum_layout_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) ->
         if let Some(definition) = node.of::<beskid_analysis::syntax::EnumDefinition>() {
             return Some(enum_layout_from_definition(db, program, index, key, definition, None));
         }
-        node.of::<beskid_analysis::syntax::EnumConstructorExpression>().map(|constructor| {
-            let type_path = contextual_enum_constructor_type_path(program, index, key, constructor)
-                .unwrap_or(&constructor.path.node.type_path.node);
-            instantiated_enum_layout_for_path(db, key, type_path)
-        })
+        node.of::<beskid_analysis::syntax::EnumConstructorExpression>()
+            .map(|constructor| {
+                let type_path = contextual_enum_constructor_type_path(program, index, key, constructor)
+                    .unwrap_or(&constructor.path.node.type_path.node);
+                instantiated_enum_layout_for_path(db, key, type_path)
+            })
+            .or_else(|| {
+                node.of::<beskid_analysis::syntax::TryExpression>().map(|_| {
+                    // The layout is available only after the full propagation fact has proven the
+                    // Result/error contract. Re-read the parameter annotation solely to instantiate
+                    // the existing canonical enum-layout machinery for that exact source path.
+                    try_expression_fact_for_node(db, program, index, key, node)?;
+                    let (_, declaration) = try_operand_parameter_declaration(program, index, key, node)?;
+                    let parameter = parent_node(index, declaration)
+                        .and_then(|parent| index.node_at(program, parent))
+                        .and_then(|parameter| parameter.of::<beskid_analysis::syntax::Parameter>())
+                        .ok_or_else(|| SemanticError::unavailable("try_expression"))?;
+                    let beskid_analysis::syntax::Type::Complex(path) = &parameter.ty.node else {
+                        return Err(SemanticError::unavailable("try_expression"));
+                    };
+                    instantiated_enum_layout_for_path(db, key, &path.node)
+                })
+            })
     })?
     .transpose()
 }
@@ -6415,7 +6599,7 @@ pub fn for_iterator_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Fo
 /// Return the payload, error, and enclosing-return ABI facts for postfix `Result` propagation.
 ///
 /// The query accepts only a direct local parameter operand and an enclosing function returning
-/// the same syntactic `Result<_, TError>` error shape. All other forms fail closed as unavailable.
+/// the same syntactic `Result<TPayload, TError>` instantiation. All other forms fail closed as unavailable.
 pub fn try_expression_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<TryExpressionFact> {
     with_registered_syntax(db, key, try_expression_fact_tracked)
 }
@@ -6515,6 +6699,11 @@ pub fn aggregate_literal_declaration(db: &dyn Db, key: AstNodeKey) -> SemanticQu
 /// nominal aggregate field.  No inferred or otherwise context-free empty array receives a fact.
 pub fn empty_array_literal_element_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
     with_registered_syntax(db, key, empty_array_literal_element_abi_type_tracked)
+}
+
+/// Return the source-proven element ABI for indexing an explicitly declared local array.
+pub fn array_index_element_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
+    with_registered_syntax(db, key, array_index_element_abi_type_tracked)
 }
 
 /// Return the exact field selected by a direct nominal local receiver member expression.

@@ -203,10 +203,10 @@ fn unsupported_code_string_reports_deterministic_span_bearing_missing_rule() {
     assert!(first.contains("CodeStringLiteral@"), "{first}");
 }
 
-/// CYB-106: every remaining UnsupportedTypedOperation host/try kind has a span-bearing
+/// CYB-106: every remaining UnsupportedTypedOperation host kind has a span-bearing
 /// `MissingRuleOrFact` regression (construct `@` span, no HIR fallback).
 #[test]
-fn unsupported_host_composition_and_try_report_deterministic_span_bearing_missing_rule() {
+fn unsupported_host_composition_reports_deterministic_span_bearing_missing_rule() {
     const HOST_COMPOSITION_SOURCE: &str = r#"
 host AppHost() {
     registry {
@@ -232,16 +232,6 @@ i32 Main() {
     return 0;
 }
 "#;
-    const TRY_SOURCE: &str = r#"
-enum Result { Ok(i32 value), Error(i32 code) }
-
-i32 Main() {
-    Result r = Result::Ok(1);
-    i32 value = r?;
-    return value;
-}
-"#;
-
     for (source, kind, construct) in [
         (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::HostDefinition, "HostDefinition@"),
         (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::RegistryBlock, "RegistryBlock@"),
@@ -250,7 +240,6 @@ i32 Main() {
         (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::ScopeHook, "ScopeHook@"),
         (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::WithStatement, "WithStatement@"),
         (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::LaunchStatement, "LaunchStatement@"),
-        (TRY_SOURCE, beskid_queries::IndexedNodeKind::TryExpression, "TryExpression@"),
     ] {
         assert_eq!(
             beskid_isle::classify_syntax_node_kind(kind),
@@ -501,6 +490,37 @@ fn parsed_generic_enum_constructor_uses_concrete_source_layout_without_hir() {
     assert!(!clif.contains("stack_store"), "{clif}");
     assert!(clif.contains("iconst.i32 0"), "{clif}");
     assert!(clif.contains("iconst.i64 7"), "{clif}");
+}
+
+#[test]
+fn parsed_result_try_lowers_to_verified_syntax_isle_control_flow() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<i32, Error> Main(Result<i32, Error> value) { i32 output = value?; return Result::Ok(output); }",
+    );
+    let item = find_function_definition(input.database(), root).expect("Main definition");
+
+    let function =
+        emit_isle_item(&input, isa.as_ref(), item).expect("Result propagation lowers through generated syntax ISLE");
+    let clif = function.display().to_string();
+
+    assert!(clif.contains("brif"), "try propagation must branch on the Result discriminant: {clif}");
+    assert!(!clif.contains("call_indirect"), "try propagation must not dynamically dispatch: {clif}");
+    assert!(!clif.contains("beskid_rt_v5_result"), "try propagation must not import a result runtime helper: {clif}");
+}
+
+#[test]
+fn parsed_result_try_rejects_noncanonical_result_definition_before_clif() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Err(TError error) } Result<i32, Error> Main(Result<i32, Error> value) { i32 output = value?; return Result::Ok(output); }",
+    );
+    let item = find_function_definition(input.database(), root).expect("Main definition");
+
+    let error = emit_isle_item(&input, isa.as_ref(), item)
+        .expect_err("a Result lookalike must be rejected before generated CLIF emission");
+    let rendered = error.display_with_db(input.database());
+
+    assert!(rendered.contains("MissingRuleOrFact"), "{rendered}");
+    assert!(rendered.contains("LetStatement@"), "{rendered}");
 }
 
 #[test]

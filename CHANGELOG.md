@@ -9,11 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Expose a generation-bound Salsa fact for the grammar-supported postfix
-  `Result` propagation form (`value?`). It derives payload and error ABI types
-  only for directly typed `Result<T, E>` parameters whose enclosing function
-  returns `Result<_, E>` with a structurally matching error type; unsupported
-  shapes remain unavailable rather than reaching HIR or a fallback path.
+- Lower the grammar-supported postfix `Result` propagation form (`value?`)
+  through generation-bound Salsa facts and generated ISLE. Only the exact
+  canonical `Result<T, E> { Ok(T value), Error(E error) }` definition and an
+  identical enclosing `Result<T, E>` return instantiation are accepted; all
+  lookalike, stale, and layout-incompatible forms fail closed.
+
+- Derive declared-array index-assignment layout and result ABI from explicit
+  `T[]` parameter or local annotations, enabling verified bounds-checked
+  stores without treating compound assignments or inferred arrays as supported.
 
 - Carry immutable generic specialization environments through semantic facts and module emission.
   Nested explicit generic calls now enter a declaration-instance worklist keyed by declaration and

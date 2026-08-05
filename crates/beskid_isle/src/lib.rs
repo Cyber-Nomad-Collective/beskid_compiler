@@ -76,6 +76,7 @@ node_kinds!(
     ForStatement,
     SpawnExpression,
     LambdaExpression,
+    TryExpression,
     ClifBlock,
 );
 
@@ -124,6 +125,7 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         Syntax::ForStatement => IsleLowered(NodeKind::ForStatement),
         Syntax::SpawnExpression => IsleLowered(NodeKind::SpawnExpression),
         Syntax::LambdaExpression => IsleLowered(NodeKind::LambdaExpression),
+        Syntax::TryExpression => IsleLowered(NodeKind::TryExpression),
         Syntax::ClifBlockExpression => IsleLowered(NodeKind::ClifBlock),
 
         Syntax::HostDefinition
@@ -133,8 +135,7 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         | Syntax::ScopeHook
         | Syntax::WithStatement
         | Syntax::LaunchStatement
-        | Syntax::CodeStringLiteral
-        | Syntax::TryExpression => UnsupportedTypedOperation,
+        | Syntax::CodeStringLiteral => UnsupportedTypedOperation,
 
         Syntax::Node
         | Syntax::ConstantDefinition
@@ -201,8 +202,8 @@ pub fn syntax_node_kind_catalogue()
 ///
 /// For Beskid 0.4 these kinds are intentionally release-rejected (not pending ports):
 /// host composition declarations and `with`/`launch` wait on composition-container facts;
-/// fenced `code` strings stay unsupported in both paths; raw `try` desugars to `match` before
-/// codegen. `MethodDefinition`, `SpawnExpression`, and `LambdaExpression` are production-supported
+/// fenced `code` strings stay unsupported in both paths. `MethodDefinition`, `SpawnExpression`,
+/// `LambdaExpression`, and syntax-proven `TryExpression` are production-supported
 /// [`IsleLowered`][SyntaxNodeClassification::IsleLowered] forms outside this roster.
 pub const UNSUPPORTED_TYPED_OPERATION_KINDS: &[beskid_queries::IndexedNodeKind] = &[
     beskid_queries::IndexedNodeKind::HostDefinition,
@@ -213,7 +214,6 @@ pub const UNSUPPORTED_TYPED_OPERATION_KINDS: &[beskid_queries::IndexedNodeKind] 
     beskid_queries::IndexedNodeKind::WithStatement,
     beskid_queries::IndexedNodeKind::LaunchStatement,
     beskid_queries::IndexedNodeKind::CodeStringLiteral,
-    beskid_queries::IndexedNodeKind::TryExpression,
 ];
 
 /// Syntax kinds currently classified as unsupported typed operations, in catalogue order.
@@ -675,6 +675,13 @@ pub trait NodeFacts {
     }
     /// Exact semantic type used to validate a primitive conversion fact before it reaches CLIF.
     fn semantic_type(&self, _key: AstNodeKey) -> Option<beskid_queries::SemanticTypeId> {
+        None
+    }
+    /// Syntax/Salsa-proven Result propagation facts for postfix `value?`.
+    ///
+    /// Implementations must return `None` for stale, foreign, unsupported, or otherwise
+    /// unproven nodes so generated ISLE fails closed before CLIF.
+    fn try_expression_fact(&self, _key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
         None
     }
     fn runtime_intrinsic_kind(&self, _key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
@@ -2760,6 +2767,67 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
             }
         }
         Some(object)
+    }
+
+    /// Branch over a syntax-proven `Result<T, E>` propagation expression.
+    ///
+    /// The error path returns the original managed enum object unchanged, while the success path
+    /// loads the canonical first-variant payload. No runtime helper or replacement error object is
+    /// synthesized at this boundary.
+    fn emit_try_expression(&mut self, key: AstNodeKey) -> Option<Value> {
+        let fact = self.facts.try_expression_fact(key)?;
+        if fact.expression != key {
+            return None;
+        }
+        let layout = self.facts.enum_layout(key)?;
+        let Some(success) = layout.variants.first().copied() else {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
+            return None;
+        };
+        let Some(payload) = success.payload else {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
+            return None;
+        };
+        if !layout.is_valid() || layout.variants.len() != 2 || !layout.tag.value_type.is_int() {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
+            return None;
+        }
+        let operand = generated::constructor_lower_expression(self, fact.operand)?;
+        let operand_type = self.builder.func.dfg.value_type(operand);
+        let payload_type = self.facts.scalar_type(key)?;
+        let return_type = self.builder.func.signature.returns.first()?.value_type;
+        if !operand_type.is_int() || payload.value_type != payload_type || return_type != operand_type {
+            self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
+            return None;
+        }
+
+        let tag = self.builder.ins().load(
+            layout.tag.value_type,
+            MemFlags::new(),
+            operand,
+            i32::try_from(layout.tag.offset).ok()?,
+        );
+        let success_tag = self.builder.ins().iconst(layout.tag.value_type, success.discriminant as i64);
+        let is_success = self.builder.ins().icmp(IntCC::Equal, tag, success_tag);
+        let success_block = self.builder.create_block();
+        let error_block = self.builder.create_block();
+        let merge_block = self.builder.create_block();
+        self.builder.append_block_param(merge_block, payload_type);
+        self.builder.ins().brif(is_success, success_block, &[], error_block, &[]);
+
+        self.builder.switch_to_block(success_block);
+        self.builder.seal_block(success_block);
+        let value =
+            self.builder.ins().load(payload_type, MemFlags::new(), operand, i32::try_from(payload.offset).ok()?);
+        self.builder.ins().jump(merge_block, &[value.into()]);
+
+        self.builder.switch_to_block(error_block);
+        self.builder.seal_block(error_block);
+        self.builder.ins().return_(&[operand]);
+
+        self.builder.switch_to_block(merge_block);
+        self.builder.seal_block(merge_block);
+        self.builder.block_params(merge_block).first().copied()
     }
 
     fn emit_match(&mut self, key: AstNodeKey) -> Option<Value> {

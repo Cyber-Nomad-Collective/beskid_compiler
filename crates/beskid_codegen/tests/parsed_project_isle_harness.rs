@@ -533,6 +533,37 @@ fn parsed_project_capturing_lambda_keeps_generation_safe_capture_facts_and_fails
 }
 
 #[test]
+fn parsed_project_declared_array_index_assignment_reaches_verified_syntax_isle() {
+    // `args` is deliberately a declared array parameter, not an array literal. Index writes must
+    // derive their element layout from the generation-bound declaration, rather than relying on
+    // literal-only allocation metadata.
+    let project = tempfile::tempdir().expect("project directory");
+    let source = "
+        string[] Store(string[] values, string value) {
+            values[0] = value;
+            return values;
+        }
+        string[] Main() {
+            string[] values = [\"before\"];
+            return Store(values, \"after\");
+        }
+    ";
+    let assembly = parse_production_units(project.path(), &[("ArrayWrite.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    let store = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Store#syntax_"))
+        .expect("Store artifact function");
+    let clif = store.function.display().to_string();
+    assert!(clif.contains("store"), "array assignment must emit a checked element store: {clif}");
+    assert!(clif.contains("trap"), "array assignment must retain bounds/null guards: {clif}");
+}
+
+#[test]
 fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif() {
     let (target, isa) = x86_64_target_and_isa();
     let expected_exports = AbiManifestV5::canonical_runtime(target.clone())

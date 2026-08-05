@@ -180,6 +180,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         self.query(abi_type(self.db, key)).or_else(|| self.scalar_semantic_type(key))
     }
 
+    fn try_expression_fact(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
+        self.query(try_expression_fact(self.db, key))
+    }
+
     fn dispatch_builtin_symbol(&self, key: AstNodeKey) -> Option<&'static str> {
         self.query(dispatch_builtin_symbol(self.db, key)).map(|symbol| symbol.0)
     }
@@ -303,7 +307,11 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn array_layout(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
-        self.array_layout_for_literal(key)
+        self.array_layout_for_literal(key).or_else(|| {
+            let element_type = map_signature_type(self.isa?, self.query(array_index_element_abi_type(self.db, key))?)?;
+            let stride = element_type.bytes();
+            Some(beskid_isle::ArrayLayout::new(element_type, stride, 0, stride.ilog2() as u8))
+        })
     }
 
     fn managed_array_allocation(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedArrayAllocation> {
@@ -370,6 +378,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<Type> {
+        if let Some(try_expression) = self.try_expression_fact(key) {
+            return map_signature_type(self.isa?, try_expression.payload_type);
+        }
         if self.node_kind(key) == Some(NodeKind::StructLiteralExpression)
             && self.query(aggregate_literal_declaration(self.db, key)).is_some()
         {

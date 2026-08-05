@@ -18,12 +18,12 @@ use beskid_queries::{
     CompletionContext, EnumLayoutFact, EnumMatchArmFact, EnumMatchFact, EnumVariantLayoutFact,
     GenericSpecializationInstance, ItemSignature, LocalSlot, MutableLocalAssignment, OperatorFact, ProjectSession,
     SemanticError, SemanticTypeId, SourceUnitId, SpawnDiagnosticKind, SpawnEntryValidation, SyntaxGenerationId,
-    TryExpressionFact,
-    abi_type, aggregate_field_access, aggregate_layout, build_canonical_corelib_syscall_typed_program,
-    build_typed_program, build_typed_program_with_corelib_syscall_services, call_abi_signature, call_arguments,
-    call_lowering, callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target,
-    closure_environment, closure_signature, completion_candidates, contextual_integer_literal_abi_type, control_flow,
-    direct_callees, enum_constructor, enum_layout, enum_match, for_iterator_fact, generic_call_instantiation,
+    TryExpressionFact, abi_type, aggregate_field_access, aggregate_layout,
+    build_canonical_corelib_syscall_typed_program, build_typed_program,
+    build_typed_program_with_corelib_syscall_services, call_abi_signature, call_arguments, call_lowering,
+    callable_signature, capture_storage, cast_intents, child_nodes, closure_call_target, closure_environment,
+    closure_signature, completion_candidates, contextual_integer_literal_abi_type, control_flow, direct_callees,
+    enum_constructor, enum_layout, enum_match, for_iterator_fact, generic_call_instantiation,
     generic_call_specialization, generic_call_template, generic_specialization_identity, item_abi_signature, item_body,
     item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type,
     nominal_member_receiver, operator_fact, primitive_numeric_conversion, reachable_items, resolved_item,
@@ -85,7 +85,7 @@ fn primitive_numeric_conversion_call_has_a_typed_result_without_dynamic_dispatch
 
 #[test]
 fn try_expression_fact_resolves_result_payload_and_enclosing_error_return() {
-    let source = "Result<i32, Error> Main(Result<i32, Error> value) { return value?; }";
+    let source = "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<i32, Error> Main(Result<i32, Error> value) { return value?; }";
     let (db, _project, unit, generation, index) = setup(source);
     let expression = key(unit, generation, &index, NodeKind::TryExpression, 0);
 
@@ -99,6 +99,33 @@ fn try_expression_fact_resolves_result_payload_and_enclosing_error_return() {
             enclosing_return: SemanticTypeId::POINTER,
         })
     );
+}
+
+#[test]
+fn try_expression_fact_rejects_differing_result_payload_instantiation() {
+    let source = "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<i64, Error> Main(Result<i32, Error> value) { return value?; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::TryExpression, 0);
+
+    assert_unavailable(try_expression_fact(&db, expression));
+}
+
+#[test]
+fn try_expression_fact_rejects_result_lookalike_without_the_canonical_error_variant() {
+    let source = "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Err(TError error) } Result<i32, Error> Main(Result<i32, Error> value) { return value?; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::TryExpression, 0);
+
+    assert_unavailable(try_expression_fact(&db, expression));
+}
+
+#[test]
+fn try_expression_fact_rejects_result_with_swapped_payload_and_error_representations() {
+    let source = "enum Error { Failed() } enum Result<TValue, TError> { Ok(TError value), Error(TValue error) } Result<i32, Error> Main(Result<i32, Error> value) { return value?; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::TryExpression, 0);
+
+    assert_unavailable(try_expression_fact(&db, expression));
 }
 
 #[test]
@@ -4173,6 +4200,28 @@ fn array_annotations_have_pointer_abi_facts_for_locals_and_bindings() {
 
     assert_eq!(abi_type(&db, local).expect("array local ABI"), Some(SemanticTypeId::POINTER));
     assert_eq!(abi_type(&db, binding).expect("array binding ABI"), Some(SemanticTypeId::POINTER));
+}
+
+#[test]
+fn declared_array_index_assignment_has_its_proven_element_abi() {
+    let source = "string[] Store(string[] values, string value) { values[0] = value; return values; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let assignment = key(unit, generation, &index, NodeKind::AssignExpression, 0);
+
+    assert_eq!(
+        abi_type(&db, assignment).expect("declared array assignment ABI"),
+        Some(SemanticTypeId::STRING),
+        "only the declared string[] target may supply the assignment result ABI"
+    );
+}
+
+#[test]
+fn declared_array_compound_index_assignment_has_no_element_abi_fact() {
+    let source = "i32[] Store(i32[] values, i32 value) { values[0] += value; return values; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let assignment = key(unit, generation, &index, NodeKind::AssignExpression, 0);
+
+    assert_unavailable(abi_type(&db, assignment));
 }
 
 #[test]

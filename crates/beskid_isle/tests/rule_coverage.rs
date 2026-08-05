@@ -91,7 +91,6 @@ fn unsupported_kinds_are_intentionally_release_rejected_for_0_4() {
         (Syntax::WithStatement, "composition scope bracket waits on container facts (W5/composition)"),
         (Syntax::LaunchStatement, "composition launch bracket waits on container facts (W5/composition)"),
         (Syntax::CodeStringLiteral, "fenced code strings unsupported in both HIR and ISLE paths"),
-        (Syntax::TryExpression, "raw try desugars to match before codegen; out of ISLE scope"),
     ];
 
     assert_eq!(
@@ -192,7 +191,6 @@ fn every_unsupported_kind_has_rejection_evidence_or_codex_blocker() {
         (Syntax::WithStatement, Present("isle_adapter.rs")),
         (Syntax::LaunchStatement, Present("isle_adapter.rs")),
         (Syntax::CodeStringLiteral, Present("isle_adapter.rs")),
-        (Syntax::TryExpression, Present("isle_adapter.rs")),
     ];
 
     assert_eq!(

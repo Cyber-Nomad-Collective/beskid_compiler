@@ -37,11 +37,9 @@ impl SyntaxNodeFacts<'_> {
     pub(super) fn enum_layout_for(&self, key: AstNodeKey) -> Option<EnumLayout> {
         let isa = self.isa?;
         let allocation = self.input.enum_static_plan(key)?;
-        let source = if self.query(enum_constructor(self.db, key)).is_some() {
-            self.query(enum_layout(self.db, key))?
-        } else {
-            self.query(enum_match(self.db, key))?.layout
-        };
+        let source = self
+            .query(enum_layout(self.db, key))
+            .or_else(|| self.query(enum_match(self.db, key)).map(|fact| fact.layout))?;
         self.build_enum_layout(isa, allocation, source)
     }
 
