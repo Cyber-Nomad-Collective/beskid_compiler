@@ -95,6 +95,10 @@ pub struct BeskidObject {
 
 unsafe impl Trace for BeskidObject {
     fn trace(&self, tracer: &Tracer) {
+        if !self.heap.is_null() {
+            // SAFETY: heap is injected by Heap allocation and outlives managed objects.
+            unsafe { &*self.heap }.mark_composite_children(self.bytes.as_ptr() as *mut u8, tracer);
+        }
         if !self.type_desc.is_null() {
             // SAFETY: `type_desc` points to static descriptor data emitted by codegen.
             let descriptor = unsafe { *self.type_desc };

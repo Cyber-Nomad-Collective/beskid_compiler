@@ -65,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore manifest-owned process adapter and Core.Math declarations, regenerating
+  the ABI-v5 contract from the authoritative runtime manifest. Composite runtime
+  allocations now retain and trace explicit managed child edges through GC.
+
 - Restore `soft_builtin` as an ABI-v5 manifest-owned source construct for
   process-linked Core.Args services, and regenerate the checked-in Rust/JSON
   artifacts from that authority.

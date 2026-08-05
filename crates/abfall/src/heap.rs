@@ -8,7 +8,7 @@ use crate::gc_box::{GcBox, GcHeader};
 use crate::ptr::GcRoot;
 use crate::roots::ExternalRootSet;
 use crate::trace::{Trace, Tracer};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ptr::null_mut;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
@@ -41,6 +41,7 @@ struct BeskidAllocationMappings {
     payload_to_header: BTreeMap<usize, AllocationRange>,
     header_to_payload: BTreeMap<usize, usize>,
     construction_roots: HashSet<usize>,
+    composite_children: BTreeMap<usize, BTreeSet<usize>>,
 }
 
 #[derive(Clone, Copy)]
@@ -67,17 +68,27 @@ impl BeskidAllocationRegistry {
         if let Some(payload) = mappings.header_to_payload.remove(&(header as usize)) {
             mappings.payload_to_header.remove(&payload);
             mappings.construction_roots.remove(&payload);
+            mappings.composite_children.remove(&payload);
+            for children in mappings.composite_children.values_mut() {
+                children.remove(&payload);
+            }
         }
     }
 
-    fn header_for(&self, payload: *mut u8) -> Option<*mut GcHeader> {
+    fn owner_payload(mappings: &BeskidAllocationMappings, payload: *mut u8) -> Option<usize> {
         let address = payload as usize;
-        let mappings = self.mappings.lock();
         mappings
             .payload_to_header
             .range(..=address)
             .next_back()
-            .and_then(|(_, range)| (address < range.end_exclusive).then_some(range.header as *mut GcHeader))
+            .and_then(|(base, range)| (address < range.end_exclusive).then_some(*base))
+    }
+
+    fn header_for(&self, payload: *mut u8) -> Option<*mut GcHeader> {
+        let mappings = self.mappings.lock();
+        Self::owner_payload(&mappings, payload)
+            .and_then(|base| mappings.payload_to_header.get(&base))
+            .map(|range| range.header as *mut GcHeader)
     }
 
     fn owns(&self, payload: *mut u8) -> bool {
@@ -91,6 +102,30 @@ impl BeskidAllocationRegistry {
         } else {
             None
         }
+    }
+
+    fn add_composite_edge(&self, parent: *mut u8, child: *mut u8) {
+        if parent.is_null() || child.is_null() {
+            return;
+        }
+        let mut mappings = self.mappings.lock();
+        if mappings.payload_to_header.contains_key(&(parent as usize))
+            && let Some(child_owner) = Self::owner_payload(&mappings, child)
+        {
+            mappings.composite_children.entry(parent as usize).or_default().insert(child_owner);
+        }
+    }
+
+    fn composite_children(&self, parent: *mut u8) -> Vec<*mut u8> {
+        self.mappings
+            .lock()
+            .composite_children
+            .get(&(parent as usize))
+            .into_iter()
+            .flatten()
+            .copied()
+            .map(|child| child as *mut u8)
+            .collect()
     }
 }
 
@@ -636,6 +671,19 @@ impl Heap {
     pub fn publish_raw_beskid(&self, payload_ptr: *mut u8) {
         self.write_barrier(std::ptr::null_mut(), payload_ptr);
         self.release_construction_root(payload_ptr);
+    }
+
+    /// Record a raw managed edge that has no descriptor-owned storage map.
+    pub fn publish_composite_beskid_edge(&self, parent_ptr: *mut u8, child_ptr: *mut u8) {
+        self.beskid_allocations.add_composite_edge(parent_ptr, child_ptr);
+        self.write_barrier(parent_ptr, child_ptr);
+        self.release_construction_root(child_ptr);
+    }
+
+    pub(crate) fn mark_composite_children(&self, parent_ptr: *mut u8, tracer: &Tracer) {
+        for child_ptr in self.beskid_allocations.composite_children(parent_ptr) {
+            self.mark_payload_ptr(child_ptr, tracer);
+        }
     }
 
     fn release_construction_root(&self, payload_ptr: *mut u8) {
