@@ -69,6 +69,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore canonical runtime-kit syntax lowering by giving array annotations their
+  ABI-v5 managed-pointer fact, using valid Beskid `i64` syscall result types,
+  and resolving primitive conversion result facts from the conversion node
+  rather than its input context. ISLE now reports the specific invariant when
+  a proven numeric conversion cannot be emitted.
+
 - Accept the manifest-owned Core.Args entry-adapter records when loading the
   generated ABI-v5 source and provenance audit contracts.
 

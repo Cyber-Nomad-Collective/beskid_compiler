@@ -4024,6 +4024,17 @@ fn contextual_integer_literal_abi_type_contextualizes_declared_struct_fields() {
 }
 
 #[test]
+fn array_annotations_have_pointer_abi_facts_for_locals_and_bindings() {
+    let source = "unit Main() { u8[] bytes = __array_new(1, 0); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let local = key(unit, generation, &index, NodeKind::LetStatement, 0);
+    let binding = key(unit, generation, &index, NodeKind::Identifier, 1);
+
+    assert_eq!(abi_type(&db, local).expect("array local ABI"), Some(SemanticTypeId::POINTER));
+    assert_eq!(abi_type(&db, binding).expect("array binding ABI"), Some(SemanticTypeId::POINTER));
+}
+
+#[test]
 fn contextual_integer_literal_abi_type_contextualizes_only_bare_integer_literals_at_exact_declared_boundaries() {
     let source = "i64 Main(mut i64 start) { i64 offset = 0; start = 1; return start + offset; }";
     let (db, _project, unit, generation, index) = setup(source);

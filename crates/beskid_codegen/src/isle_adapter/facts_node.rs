@@ -175,7 +175,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
-        self.scalar_semantic_type(key)
+        // A call's result type belongs to the call node itself. In particular, a primitive
+        // conversion's argument-context fact describes its input, not its result.
+        self.query(abi_type(self.db, key)).or_else(|| self.scalar_semantic_type(key))
     }
 
     fn dispatch_builtin_symbol(&self, key: AstNodeKey) -> Option<&'static str> {

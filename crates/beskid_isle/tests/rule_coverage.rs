@@ -217,7 +217,7 @@ fn every_unsupported_kind_has_rejection_evidence_or_codex_blocker() {
 #[test]
 fn typed_operation_families_have_explicit_classifications() {
     use IndexedNodeKind as Syntax;
-    use SyntaxNodeClassification::{IsleLowered, Structural, UnsupportedTypedOperation};
+    use SyntaxNodeClassification::{IsleLowered, Structural};
 
     for (syntax, isle) in [
         // Semantic call subfamilies are covered independently in the codegen adapter tests.

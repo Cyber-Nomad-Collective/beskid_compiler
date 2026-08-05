@@ -6,7 +6,7 @@ use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterne
 use beskid_queries::{
     CallLowering, GenericSpecializationInstance, GenericSubstitution, ItemSignature, SemanticTypeId, SourceUnitId,
     call_lowering, child_nodes, closure_call_target, closure_environment, closure_signature,
-    extern_contract_import_for_declaration, format_ast_node_key, generic_call_specialization, generic_call_template,
+    extern_contract_import_for_declaration, format_ast_node_key, format_ast_node_site, generic_call_specialization, generic_call_template,
     generic_specialization_identity, generic_specialization_instance, item_abi_signature, item_name, node_kind,
     node_span, resolved_item, spawn_entry_validation,
 };
@@ -981,13 +981,23 @@ fn resolve_module_items(
         // entry items seed the collection; each emitted generic item is represented solely by a
         // call-derived `DirectCallee::SpecializedItem` identity below.
         if is_concrete_executable_item(db, item.key)? {
-            collect_generic_call_specializations(db, item.key, &mut specializations)?;
+            collect_generic_call_specializations(db, item.key, &mut specializations).map_err(|error| {
+                emission_verification(format!(
+                    "generic specialization collection failed for {}: {error}",
+                    format_declaration_for_trace(db, item.key)
+                ))
+            })?;
         }
     }
     // Also collect specializations from entry-point roots (test files) that may
     // call generic functions defined in this module with concrete type arguments.
     for root in input.roots() {
-        collect_generic_call_specializations(db, *root, &mut specializations)?;
+        collect_generic_call_specializations(db, *root, &mut specializations).map_err(|error| {
+            emission_verification(format!(
+                "generic specialization collection failed for root {}: {error}",
+                format_declaration_for_trace(db, *root)
+            ))
+        })?;
     }
 
     let mut resolved = Vec::with_capacity(source_items.len());
@@ -1037,7 +1047,14 @@ fn is_concrete_executable_item(
     db: &dyn beskid_queries::Db,
     key: AstNodeKey,
 ) -> Result<bool, SyntaxModuleEmissionError> {
-    Ok(item_abi_signature(db, key).map_err(|error| emission_verification(error.to_string()))?.is_some())
+    Ok(item_abi_signature(db, key)
+        .map_err(|error| {
+            emission_verification(format!(
+                "item ABI signature is unavailable for {}: {error}",
+                format_declaration_for_trace(db, key)
+            ))
+        })?
+        .is_some())
 }
 
 fn collect_generic_call_specializations(
@@ -1058,7 +1075,12 @@ fn collect_generic_call_specializations_in_environment(
     environment: Option<&GenericSpecializationInstance>,
     specializations: &mut HashMap<AstNodeKey, Vec<GenericSpecializationInstance>>,
 ) -> Result<(), SyntaxModuleEmissionError> {
-    if let Some(declaration) = direct_generic_call_declaration(db, key)? {
+    if let Some(declaration) = direct_generic_call_declaration(db, key).map_err(|error| {
+            emission_verification(format!(
+                "generic call analysis failed at {}: {error}",
+                format_ast_node_site(db, key)
+            ))
+    })? {
         let specialization = if let Some(template) =
             generic_call_template(db, key).map_err(|error| emission_verification(error.to_string()))?
         {

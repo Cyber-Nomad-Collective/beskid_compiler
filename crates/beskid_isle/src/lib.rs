@@ -892,6 +892,7 @@ pub enum LoweringErrorKind {
     MissingRuleOrFact,
     StringMaterialization(StringMaterializationError),
     UnknownCallee(DirectCallee),
+    InvalidPrimitiveNumericConversion(&'static str),
     InvalidArrayLayout,
     InvalidStructLayout,
     InvalidStructField(u32),
@@ -1798,17 +1799,59 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     }
 
     fn emit_primitive_numeric_conversion(&mut self, key: AstNodeKey) -> Option<Value> {
-        let (from, to) = self.facts.primitive_numeric_conversion(key)?;
-        let argument = self.facts.call_arguments(key)?.into_iter().next()?;
+        let Some((from, to)) = self.facts.primitive_numeric_conversion(key) else {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidPrimitiveNumericConversion("conversion fact is unavailable"),
+            });
+            return None;
+        };
+        let Some(argument) = self.facts.call_arguments(key).and_then(|arguments| arguments.into_iter().next()) else {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidPrimitiveNumericConversion("single argument fact is unavailable"),
+            });
+            return None;
+        };
         let value = generated::constructor_lower_expression(self, argument)?;
         let actual = self.builder.func.dfg.value_type(value);
-        let source = self.facts.scalar_type(argument)?;
-        let target = self.facts.scalar_type(key)?;
-        (source == actual).then_some(())?;
-        (self.facts.semantic_type(argument)? == from && self.facts.semantic_type(key)? == to).then_some(())?;
-        (primitive_numeric_conversion_type_matches(source, from)
-            && primitive_numeric_conversion_type_matches(target, to))
-        .then_some(())?;
+        let Some(source) = self.facts.scalar_type(argument) else {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidPrimitiveNumericConversion("argument scalar type is unavailable"),
+            });
+            return None;
+        };
+        let Some(target) = self.facts.scalar_type(key) else {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidPrimitiveNumericConversion("target scalar type is unavailable"),
+            });
+            return None;
+        };
+        if source != actual {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidPrimitiveNumericConversion("argument CLIF type differs from its fact"),
+            });
+            return None;
+        }
+        if self.facts.semantic_type(argument) != Some(from) || self.facts.semantic_type(key) != Some(to) {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidPrimitiveNumericConversion("semantic facts differ from conversion fact"),
+            });
+            return None;
+        }
+        if !primitive_numeric_conversion_type_matches(source, from)
+            || !primitive_numeric_conversion_type_matches(target, to)
+        {
+            self.pending_error = Some(LoweringError {
+                key,
+                kind: LoweringErrorKind::InvalidPrimitiveNumericConversion("CLIF widths differ from semantic facts"),
+            });
+            return None;
+        }
         if actual == target {
             Some(value)
         } else if actual.bits() < target.bits() {
@@ -2131,10 +2174,10 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
 
             if let Some(rest) = line.strip_prefix("return") {
                 let rest = rest.trim();
-                if let Some(param_ref) = rest.strip_prefix('%') {
-                    if let Ok(index) = param_ref.trim().parse::<usize>() {
-                        result = self.function_param_values.get(index).copied();
-                    }
+                if let Some(param_ref) = rest.strip_prefix('%')
+                    && let Ok(index) = param_ref.trim().parse::<usize>()
+                {
+                    result = self.function_param_values.get(index).copied();
                 }
             } else if let Some(rest) = line.strip_prefix("call") {
                 let rest = rest.trim();
@@ -2149,12 +2192,11 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
                     let mut args = Vec::new();
                     for arg in args_str.split(',') {
                         let arg = arg.trim();
-                        if let Some(num) = arg.strip_prefix('%') {
-                            if let Ok(index) = num.trim().parse::<usize>() {
-                                if let Some(value) = self.function_param_values.get(index).copied() {
-                                    args.push(value);
-                                }
-                            }
+                        if let Some(num) = arg.strip_prefix('%')
+                            && let Ok(index) = num.trim().parse::<usize>()
+                            && let Some(value) = self.function_param_values.get(index).copied()
+                        {
+                            args.push(value);
                         }
                     }
 
@@ -2905,6 +2947,9 @@ impl LoweringError {
                 format!("StringMaterialization({error})")
             }
             LoweringErrorKind::UnknownCallee(callee) => format!("UnknownCallee({callee:?})"),
+            LoweringErrorKind::InvalidPrimitiveNumericConversion(reason) => {
+                format!("InvalidPrimitiveNumericConversion({reason})")
+            }
             LoweringErrorKind::InvalidArrayLayout => "InvalidArrayLayout".to_owned(),
             LoweringErrorKind::InvalidStructLayout => "InvalidStructLayout".to_owned(),
             LoweringErrorKind::InvalidStructField(index) => {

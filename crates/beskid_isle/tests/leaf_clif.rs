@@ -1024,7 +1024,7 @@ fn logical_not_emits_zero_compare_instead_of_bitwise_not() {
 /// Enum equality operators (EnumEq/EnumNotEq) route through `clif_enum_eq`/`clif_enum_ne`
 /// which load the tag from each operand at the layout-specified offset and compare them.
 #[test]
-fn enum_equality_compares_discriminant_tags() {
+fn enum_equality_compares_discriminant_tags_primary() {
     struct EnumEqFacts {
         root: AstNodeKey,
         left: AstNodeKey,
@@ -1111,7 +1111,7 @@ fn enum_equality_compares_discriminant_tags() {
 
 /// Verifies `EnumNotEq` lowers to a negated discriminant comparison.
 #[test]
-fn enum_not_equality_compares_discriminant_tags_negated() {
+fn enum_not_equality_compares_discriminant_tags_negated_primary() {
     struct EnumNeFacts {
         root: AstNodeKey,
         left: AstNodeKey,

@@ -5,22 +5,22 @@
 
 // Writes `len` bytes from `buffer` to file descriptor `fd`.
 [Export(Abi:"C", Symbol:"syscall_write")]
-pub isize SyscallWrite(i32 fd, pointer buffer, word len) {
+pub i64 SyscallWrite(i32 fd, pointer buffer, word len) {
     return -1;
 }
 
 [Export(Abi:"C", Symbol:"syscall_read")]
-pub isize SyscallRead(i32 fd, pointer buffer, word len) {
+pub i64 SyscallRead(i32 fd, pointer buffer, word len) {
     return -1;
 }
 
 [Export(Abi:"C", Symbol:"syscall_write_bytes")]
-pub isize SyscallWriteBytes(i32 fd, pointer data, word len) {
+pub i64 SyscallWriteBytes(i32 fd, pointer data, word len) {
     return SyscallWrite(fd, data, len);
 }
 
 [Export(Abi:"C", Symbol:"syscall_read_bytes")]
-pub isize SyscallReadBytes(i32 fd, pointer data, word len) {
+pub i64 SyscallReadBytes(i32 fd, pointer data, word len) {
     return SyscallRead(fd, data, len);
 }
 
