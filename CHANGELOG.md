@@ -69,6 +69,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entrypoint names, so every configured probe now resolves to a maintained
   Corelib test before exercising lowering.
 
+- Classify a generic call as a deferred template only when each explicit
+  type argument is an actual generic parameter of its enclosing function.
+  Concrete nominal calls such as `Channel<ConsoleMessage>.Create()` now
+  materialize their direct syntax-ISLE specialization instead of requiring a
+  nonexistent enclosing environment.
+
 - Serialize the vendored `cargo-cross` tests that temporarily set
   `CARGO_PASSTHROUGH_ARGS`, preventing parallel tests from clearing each
   other's process-global fixture before parsing it.

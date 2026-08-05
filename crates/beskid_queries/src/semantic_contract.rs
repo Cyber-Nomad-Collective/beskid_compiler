@@ -2379,6 +2379,16 @@ fn generic_call_template_tracked(
             .iter()
             .map(|argument| generic_parameter_reference_name(&argument.node).map(Arc::<str>::from))
             .collect::<Option<Vec<_>>>()?;
+        let enclosing = nearest_ancestor(index, key.node, |kind| {
+            kind == beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+        })?;
+        let enclosing = index.node_at(program, enclosing)?.of::<beskid_analysis::syntax::FunctionDefinition>()?;
+        if !parameter_arguments
+            .iter()
+            .all(|argument| enclosing.generics.iter().any(|generic| generic.node.name.as_str() == argument.as_ref()))
+        {
+            return None;
+        }
         let parameters =
             function.generics.iter().map(|generic| Arc::<str>::from(generic.node.name.as_str())).collect::<Vec<_>>();
         Some(Ok(GenericCallTemplate {
