@@ -30,6 +30,16 @@ fn linux_adapter_reserves_an_inaccessible_lower_guard_and_enforces_stack_bounds(
 extern void *beskid_rt_v5_intrinsic_guarded_stack_allocate(size_t);
 extern void beskid_rt_v5_intrinsic_guarded_stack_free(void *, size_t);
 
+// This harness links the platform adapter in isolation. Keep the trap boundary
+// present so adapter error paths remain linkable without pulling in the full
+// canonical runtime.
+_Noreturn void beskid_rt_v5_trap(uint8_t code, void *message, size_t message_len) {
+  (void)code;
+  (void)message;
+  (void)message_len;
+  _exit(101);
+}
+
 int main(void) {
   if (beskid_rt_v5_intrinsic_guarded_stack_allocate(65535) != 0) return 10;
   if (beskid_rt_v5_intrinsic_guarded_stack_allocate(8 * 1024 * 1024 + 4096) != 0) return 11;
