@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Generic specialization identity uses a full length-delimited parameter encoding, and module
   session cache keys include linkage policy as well as source item identity.
 
+- Capture Core.Args for AOT executables through generated native entry adapters:
+  Linux x64 and macOS arm64 preserve `argv`, while Windows x64 captures `wmain`
+  UTF-16 arguments and replaces malformed surrogates deterministically. The
+  adapters retain copied `BeskidStr` values for process lifetime and expose only
+  the manifest-owned `__args_count` and `__args_get` services.
+
 - Generate manifest-owned ABI-v5 bindings for the exact `Core.Args`
   `__args_count` and `__args_get` services on Linux x64, macOS arm64, and
   Windows x64. Validation now rejects missing or duplicate target bindings,

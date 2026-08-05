@@ -24,17 +24,23 @@
         {
           "target": "aarch64-apple-darwin",
           "implementation": "beskid_rt_v5_args_count",
-          "osImports": []
+          "osImports": [
+            "mmap"
+          ]
         },
         {
           "target": "x86_64-pc-windows-msvc",
           "implementation": "beskid_rt_v5_args_count",
-          "osImports": []
+          "osImports": [
+            "VirtualAlloc"
+          ]
         },
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_args_count",
-          "osImports": []
+          "osImports": [
+            "mmap"
+          ]
         }
       ]
     },
@@ -52,18 +58,65 @@
         {
           "target": "aarch64-apple-darwin",
           "implementation": "beskid_rt_v5_args_get",
-          "osImports": []
+          "osImports": [
+            "mmap"
+          ]
         },
         {
           "target": "x86_64-pc-windows-msvc",
           "implementation": "beskid_rt_v5_args_get",
-          "osImports": []
+          "osImports": [
+            "VirtualAlloc"
+          ]
         },
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_args_get",
-          "osImports": []
+          "osImports": [
+            "mmap"
+          ]
         }
+      ]
+    }
+  ],
+  "entryAdapters": [
+    {
+      "name": "Core.Args",
+      "target": "aarch64-apple-darwin",
+      "executableEntry": "main",
+      "programEntry": "beskid_program_main",
+      "capture": "utf8_argv",
+      "handoff": "beskid_rt_v5_args_handoff_utf8",
+      "ownership": "process_lifetime_copied_beskid_str_arena",
+      "entrySource": "args_entry.S",
+      "osImports": [
+        "mmap"
+      ]
+    },
+    {
+      "name": "Core.Args",
+      "target": "x86_64-pc-windows-msvc",
+      "executableEntry": "wmain",
+      "programEntry": "beskid_program_main",
+      "capture": "utf16_wargv",
+      "handoff": "beskid_rt_v5_args_handoff_utf16",
+      "ownership": "process_lifetime_copied_beskid_str_arena",
+      "entrySource": "args_entry.asm",
+      "osImports": [
+        "VirtualAlloc"
+      ]
+    },
+    {
+      "name": "Core.Args",
+      "target": "x86_64-unknown-linux-gnu",
+      "executableEntry": "main",
+      "programEntry": "beskid_program_main",
+      "capture": "utf8_argv",
+      "handoff": "beskid_rt_v5_args_handoff_utf8",
+      "ownership": "process_lifetime_copied_beskid_str_arena",
+      "entrySource": "args_entry.S",
+      "osImports": [
+        "mmap"
       ]
     }
   ]

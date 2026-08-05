@@ -101,9 +101,9 @@ corelib_service "__args_count" {
   params = []
   returns = i64
   target_bindings = [
-    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_args_count", os_imports = [] },
-    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_args_count", os_imports = [] },
-    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_args_count", os_imports = [] }
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_args_count", os_imports = [mmap] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_args_count", os_imports = [mmap] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_args_count", os_imports = [VirtualAlloc] }
   ]
 }
 corelib_service "__args_get" {
@@ -111,10 +111,43 @@ corelib_service "__args_get" {
   params = [{ name = index, type = i64 }]
   returns = string
   target_bindings = [
-    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_args_get", os_imports = [] },
-    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_args_get", os_imports = [] },
-    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_args_get", os_imports = [] }
+    { target = "x86_64-unknown-linux-gnu", implementation = "beskid_rt_v5_args_get", os_imports = [mmap] },
+    { target = "aarch64-apple-darwin", implementation = "beskid_rt_v5_args_get", os_imports = [mmap] },
+    { target = "x86_64-pc-windows-msvc", implementation = "beskid_rt_v5_args_get", os_imports = [VirtualAlloc] }
   ]
+}
+
+# The executable boundary is part of Core.Args authority. AOT selects this
+# generated record; it must not infer target entry conventions from strings.
+entry_adapter "Core.Args" {
+  target = "x86_64-unknown-linux-gnu"
+  executable_entry = main
+  program_entry = beskid_program_main
+  capture = utf8_argv
+  handoff = beskid_rt_v5_args_handoff_utf8
+  ownership = process_lifetime_copied_beskid_str_arena
+  entry_source = "args_entry.S"
+  os_imports = [mmap]
+}
+entry_adapter "Core.Args" {
+  target = "aarch64-apple-darwin"
+  executable_entry = main
+  program_entry = beskid_program_main
+  capture = utf8_argv
+  handoff = beskid_rt_v5_args_handoff_utf8
+  ownership = process_lifetime_copied_beskid_str_arena
+  entry_source = "args_entry.S"
+  os_imports = [mmap]
+}
+entry_adapter "Core.Args" {
+  target = "x86_64-pc-windows-msvc"
+  executable_entry = wmain
+  program_entry = beskid_program_main
+  capture = utf16_wargv
+  handoff = beskid_rt_v5_args_handoff_utf16
+  ownership = process_lifetime_copied_beskid_str_arena
+  entry_source = "args_entry.asm"
+  os_imports = [VirtualAlloc]
 }
 
 layout "BeskidAllocationRequest" { size = 24 alignment = 8 fields = [{ name = size, offset = 0, type = usize }, { name = alignment, offset = 8, type = usize }, { name = descriptor, offset = 16, type = pointer }] }

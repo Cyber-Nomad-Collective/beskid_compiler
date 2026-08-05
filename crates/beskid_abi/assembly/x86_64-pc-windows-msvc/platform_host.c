@@ -1,6 +1,34 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <windows.h>
+#include <string.h>
+#include "../common/args_utf16.h"
+#include "../../include/beskid_runtime_abi_v5.h"
+
+struct BeskidStr { const uint8_t *ptr; size_t len; };
+struct BeskidArgsState { int64_t count; struct BeskidStr *values; };
+static struct BeskidArgsState beskid_args;
+
+static __declspec(noreturn) void beskid_args_trap(uint8_t code, const char *message) {
+    beskid_rt_v5_trap(code, (void *)message, strlen(message));
+}
+
+void beskid_rt_v5_args_handoff_utf16(int64_t argc, const uint16_t *const *argv) {
+    if (argc < 0 || (argc != 0 && argv == NULL)) beskid_args_trap(10, "Core.Args handoff is invalid");
+    size_t headers = (size_t)argc * sizeof(struct BeskidStr), bytes = 0;
+    if (argc != 0 && headers / sizeof(struct BeskidStr) != (size_t)argc) beskid_args_trap(5, "Core.Args storage allocation failed");
+    for (int64_t i = 0; i < argc; ++i) { if (argv[i] == NULL) beskid_args_trap(10, "Core.Args handoff is invalid"); size_t len = beskid_args_utf8_length(argv[i]); if (len > SIZE_MAX - bytes) beskid_args_trap(5, "Core.Args storage allocation failed"); bytes += len; }
+    if (headers > SIZE_MAX - bytes) beskid_args_trap(5, "Core.Args storage allocation failed");
+    size_t total = headers + bytes; if (total == 0) total = 1;
+    unsigned char *storage = VirtualAlloc(NULL, total, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (storage == NULL) beskid_args_trap(5, "Core.Args storage allocation failed");
+    struct BeskidStr *values = (struct BeskidStr *)storage; unsigned char *cursor = storage + headers;
+    for (int64_t i = 0; i < argc; ++i) { unsigned char *start = cursor; cursor = beskid_args_write_utf8(cursor, argv[i]); values[i] = (struct BeskidStr){ .ptr = start, .len = (size_t)(cursor - start) }; }
+    beskid_args = (struct BeskidArgsState){ .count = argc, .values = values };
+}
+
+int64_t beskid_rt_v5_args_count(void) { return beskid_args.count; }
+struct BeskidStr *beskid_rt_v5_args_get(int64_t index) { if (index < 0 || index >= beskid_args.count) beskid_args_trap(2, "Core.Args argument index is out of range"); return &beskid_args.values[index]; }
 
 #define BESKID_GUARDED_STACK_MIN (64u * 1024u)
 #define BESKID_GUARDED_STACK_MAX (8u * 1024u * 1024u)

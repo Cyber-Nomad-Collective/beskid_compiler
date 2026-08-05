@@ -99,6 +99,21 @@ pub struct TargetAdapterBindingV5 {
     pub os_imports: Vec<String>,
 }
 
+/// Manifest-owned executable entry adapter for a Corelib service family.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntryAdapterV5 {
+    pub name: String,
+    pub target: String,
+    pub executable_entry: String,
+    pub program_entry: String,
+    pub capture: String,
+    pub handoff: String,
+    pub ownership: String,
+    pub entry_source: String,
+    pub os_imports: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AssemblyV5 {
     pub symbol: String,
@@ -137,6 +152,7 @@ pub struct RuntimeManifestV5 {
     pub layouts: Vec<LayoutV5>,
     pub platform_imports: Vec<PlatformImportV5>,
     pub corelib_services: Vec<CorelibServiceV5>,
+    pub entry_adapters: Vec<EntryAdapterV5>,
     pub assembly: Vec<AssemblyV5>,
     pub traps: Vec<TrapV5>,
     pub audit: AuditV5,
@@ -157,6 +173,7 @@ pub struct GeneratedV5Artifacts {
 struct GeneratedAuditV5<'a> {
     forbidden_symbol_families: &'a [String],
     corelib_services: &'a [CorelibServiceV5],
+    entry_adapters: &'a [EntryAdapterV5],
 }
 
 pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String> {
@@ -169,6 +186,7 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         "layout",
         "platform_import",
         "corelib_service",
+        "entry_adapter",
         "assembly",
         "trap",
         "audit",
@@ -279,6 +297,22 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let entry_adapters = blocks(&document.blocks, "entry_adapter")
+        .map(|block| {
+            ensure_fields(block, &["target", "executable_entry", "program_entry", "capture", "handoff", "ownership", "entry_source", "os_imports"])?;
+            Ok(EntryAdapterV5 {
+                name: label(block)?,
+                target: string_field(block, "target")?,
+                executable_entry: string_field(block, "executable_entry")?,
+                program_entry: string_field(block, "program_entry")?,
+                capture: string_field(block, "capture")?,
+                handoff: string_field(block, "handoff")?,
+                ownership: string_field(block, "ownership")?,
+                entry_source: string_field(block, "entry_source")?,
+                os_imports: list_field(block, "os_imports")?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let assembly = blocks(&document.blocks, "assembly")
         .map(|block| parse_assembly(block, &targets))
         .collect::<Result<Vec<_>, _>>()?;
@@ -299,6 +333,7 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         layouts,
         platform_imports,
         corelib_services,
+        entry_adapters,
         assembly,
         traps,
         audit,
@@ -334,6 +369,26 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         }
         if binding_targets != target_names {
             return Err(format!("corelib service `{}` target bindings are incomplete", service.name));
+        }
+    }
+    let expected_entry_adapters = [
+        ("x86_64-unknown-linux-gnu", "main", "utf8_argv", "beskid_rt_v5_args_handoff_utf8", "args_entry.S", "mmap"),
+        ("aarch64-apple-darwin", "main", "utf8_argv", "beskid_rt_v5_args_handoff_utf8", "args_entry.S", "mmap"),
+        ("x86_64-pc-windows-msvc", "wmain", "utf16_wargv", "beskid_rt_v5_args_handoff_utf16", "args_entry.asm", "VirtualAlloc"),
+    ];
+    if manifest.entry_adapters.len() != expected_entry_adapters.len()
+        || manifest.entry_adapters.iter().any(|adapter| adapter.name != "Core.Args")
+    {
+        return Err("Core.Args requires exactly one generated entry adapter per target".into());
+    }
+    unique(manifest.entry_adapters.iter().map(|adapter| adapter.target.as_str()), "Core.Args entry adapter target")?;
+    for (target, executable_entry, capture, handoff, entry_source, import) in expected_entry_adapters {
+        let adapter = manifest.entry_adapters.iter().find(|adapter| adapter.target == target)
+            .ok_or_else(|| format!("missing Core.Args entry adapter for `{target}`"))?;
+        if adapter.executable_entry != executable_entry || adapter.capture != capture || adapter.handoff != handoff
+            || adapter.program_entry != "beskid_program_main" || adapter.ownership != "process_lifetime_copied_beskid_str_arena"
+            || adapter.entry_source != entry_source || adapter.os_imports != [import] {
+            return Err(format!("Core.Args entry adapter for `{target}` violates generated provenance"));
         }
     }
     if manifest
@@ -445,6 +500,13 @@ fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             }
         }
     }
+    for adapter in &manifest.entry_adapters {
+        for import in &adapter.os_imports {
+            if !declared_target_imports.contains(&(adapter.target.as_str(), import.as_str())) {
+                return Err(format!("Core.Args entry adapter for `{}` names undeclared OS import `{import}`", adapter.target));
+            }
+        }
+    }
     let known_types = [
         "void", "never", "pointer", "usize", "isize", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "v128",
         "f32", "f64",
@@ -550,6 +612,7 @@ pub fn generate_v5_artifacts(manifest: &RuntimeManifestV5) -> Result<GeneratedV5
         audit_json: canonical_json(&GeneratedAuditV5 {
             forbidden_symbol_families: &manifest.audit.forbidden_symbol_families,
             corelib_services: &manifest.corelib_services,
+            entry_adapters: &manifest.entry_adapters,
         })?,
     })
 }
@@ -631,6 +694,10 @@ fn render_rust(
             })
         })
         .collect::<String>();
+    let core_args_entry_adapter_rows = manifest.entry_adapters.iter().map(|adapter| {
+        let os_imports = adapter.os_imports.iter().map(|import| format!("{import:?}")).collect::<Vec<_>>().join(", ");
+        format!("    GeneratedCoreArgsEntryAdapter {{ target: {:?}, executable_entry: {:?}, program_entry: {:?}, capture: {:?}, handoff: {:?}, ownership: {:?}, entry_source: {:?}, os_imports: &[{}] }},\n", adapter.target, adapter.executable_entry, adapter.program_entry, adapter.capture, adapter.handoff, adapter.ownership, adapter.entry_source, os_imports)
+    }).collect::<String>();
     format!(
         "// @generated from runtime_manifest.bsol; do not edit.\n\
 pub const ABI_V5_SOURCE_JSON: &str = r#\"{json}\"#;\n\
@@ -662,6 +729,18 @@ pub struct GeneratedCorelibServiceBinding {{\n\
     pub os_imports: &'static [&'static str],\n\
 }}\n\
 pub const ABI_V5_CORELIB_SERVICE_BINDINGS: &[GeneratedCorelibServiceBinding] = &[\n{corelib_service_binding_rows}];\n\
+#[derive(Debug, Clone, Copy)]\n\
+pub struct GeneratedCoreArgsEntryAdapter {{\n\
+    pub target: &'static str,\n\
+    pub executable_entry: &'static str,\n\
+    pub program_entry: &'static str,\n\
+    pub capture: &'static str,\n\
+    pub handoff: &'static str,\n\
+    pub ownership: &'static str,\n\
+    pub entry_source: &'static str,\n\
+    pub os_imports: &'static [&'static str],\n\
+}}\n\
+pub const ABI_V5_CORE_ARGS_ENTRY_ADAPTERS: &[GeneratedCoreArgsEntryAdapter] = &[\n{core_args_entry_adapter_rows}];\n\
 pub const ABI_V5_TYPES: &[(&str, crate::abi_v5::AbiType)] = &[\n\
     (\"void\", crate::abi_v5::AbiType::Void),\n\
     (\"never\", crate::abi_v5::AbiType::Void),\n\
@@ -869,6 +948,10 @@ fn canonicalized(manifest: &RuntimeManifestV5) -> RuntimeManifestV5 {
         for binding in &mut service.target_bindings {
             binding.os_imports.sort();
         }
+    }
+    value.entry_adapters.sort_by(|a, b| a.target.cmp(&b.target));
+    for adapter in &mut value.entry_adapters {
+        adapter.os_imports.sort();
     }
     value.assembly.sort_by(|a, b| a.symbol.cmp(&b.symbol));
     value.traps.sort_by_key(|trap| trap.code);

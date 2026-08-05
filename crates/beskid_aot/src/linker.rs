@@ -128,13 +128,6 @@ pub fn link(req: &LinkRequest) -> AotResult<LinkResult> {
         return archive_static(req);
     }
 
-    if req.output_kind == BuildOutputKind::Exe && req.entrypoint_symbol != "main" {
-        return Err(AotError::UnsupportedLinkerStrategy {
-            target: req.target_triple.clone().unwrap_or_else(|| std::env::consts::OS.to_owned()),
-            message: "executable output currently requires entrypoint symbol `main`".to_owned(),
-        });
-    }
-
     let compiler = detect_c_compiler();
     let target = req.target_triple.as_deref().unwrap_or(std::env::consts::OS).to_ascii_lowercase();
     if target.contains("windows") {

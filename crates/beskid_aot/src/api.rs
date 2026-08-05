@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, render_runtime_asm_include};
+use beskid_abi::generated::abi_v5_contract::{ABI_V5_CORE_ARGS_ENTRY_ADAPTERS, ABI_V5_CORELIB_SERVICE_BINDINGS, GeneratedCoreArgsEntryAdapter};
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
 use beskid_abi::runtime_source::{canonical_runtime_sources, prove_canonical_runtime_corpus};
 use beskid_codegen::CodegenArtifact;
@@ -461,6 +462,30 @@ fn compile_platform_objects(
     Ok(vec![object, tls_object, adapter_object])
 }
 
+fn compile_core_args_entry_adapter(adapter: &GeneratedCoreArgsEntryAdapter, output_dir: &std::path::Path, name: &str) -> AotResult<PathBuf> {
+    let plan = platform_object_plan(adapter.target)?;
+    let assembly_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../beskid_abi/assembly").join(adapter.target);
+    let source = assembly_root.join(adapter.entry_source);
+    let object = output_dir.join(format!("{name}.core_args_entry.{}", plan.object_extension));
+    let mut command = Command::new(plan.assembly_program);
+    command.args(&plan.assembly_args);
+    if plan.assembly_output_before_source {
+        command.arg(&object).arg(&source);
+    } else {
+        command.arg(&source).arg("-o").arg(&object);
+    }
+    let output = command.output().map_err(|_| AotError::LinkerUnavailable)?;
+    if !output.status.success() {
+        return Err(AotError::LinkFailed {
+            status: output.status.code().unwrap_or(-1),
+            command: format!("{:?}", command),
+            detail: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    Ok(object)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PlatformObjectPlan {
     assembly_source: &'static str,
@@ -565,6 +590,8 @@ mod platform_object_tests {
 struct ObjectStageResult {
     object_path: PathBuf,
     exported_symbols: Vec<String>,
+    additional_object_paths: Vec<PathBuf>,
+    executable_entry: Option<String>,
 }
 
 /// Emit a single object file; fails unless `req.output_kind` is [`BuildOutputKind::ObjectOnly`].
@@ -641,12 +668,19 @@ fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageResult> {
     let target = detect_target(req.target_triple.as_deref())?;
     let object_path = req.object_path.clone().unwrap_or_else(|| req.output_path.with_extension(target.object_ext));
 
+    let entry_adapter = core_args_entry_adapter(&req.artifact, &target.triple)?;
     let exports = req.artifact.exports.clone();
     let all_symbols = req
         .artifact
         .functions
         .iter()
-        .map(|function| beskid_codegen::lowering::expressions::export::object_link_symbol(&function.name, &exports))
+        .map(|function| {
+            if let Some(adapter) = entry_adapter.filter(|_| function.name.split('#').next().is_some_and(|name| name == "Main")) {
+                adapter.program_entry.to_owned()
+            } else {
+                beskid_codegen::lowering::expressions::export::object_link_symbol(&function.name, &exports)
+            }
+        })
         .collect::<Vec<_>>();
     let export_table = ExportTable::from_artifact(&req.artifact);
     let export_policy = export_table.resolve_export_policy(&req.export_policy);
@@ -656,15 +690,25 @@ fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageResult> {
     let mut object_module = BeskidObjectModule::new(req.target_triple.as_deref())?;
     let obs = req.pipeline.as_deref();
     observe_phase_result(obs, AOT_EMIT_OBJECT, || {
-        object_module.compile_artifact_with_exports(&req.artifact, &exported_symbol_set, obs)
+        object_module.compile_artifact_with_exports_and_entry_adapter(&req.artifact, &exported_symbol_set, entry_adapter.map(|adapter| adapter.program_entry), obs)
     })?;
 
     object_module.finalize_to_path(&object_path)?;
 
-    Ok(ObjectStageResult { object_path, exported_symbols })
+    let additional_object_paths = if let Some(adapter) = entry_adapter {
+        vec![compile_core_args_entry_adapter(adapter, object_path.parent().unwrap_or_else(|| std::path::Path::new(".")), "beskid")?]
+    } else {
+        Vec::new()
+    };
+    Ok(ObjectStageResult { object_path, exported_symbols, additional_object_paths, executable_entry: entry_adapter.map(|adapter| adapter.executable_entry.to_owned()) })
 }
 
 fn ensure_entrypoint_exported(req: &AotBuildRequest, exported_symbols: &[String]) -> AotResult<()> {
+    let target = detect_target(req.target_triple.as_deref())?;
+    if let Some(adapter) = core_args_entry_adapter(&req.artifact, &target.triple)?
+        && exported_symbols.iter().any(|symbol| symbol == adapter.program_entry) {
+        return Ok(());
+    }
     let native = native_link_entrypoint(&req.entrypoint);
     if exported_symbols.iter().any(|sym| symbol_matches_entrypoint(sym, &req.entrypoint, native)) {
         return Ok(());
@@ -698,10 +742,10 @@ fn link_stage(
             output_kind: req.output_kind,
             output_path: req.output_path.clone(),
             object_path: object_stage.object_path.clone(),
-            additional_object_paths: Vec::new(),
+            additional_object_paths: object_stage.additional_object_paths.clone(),
             runtime_staticlib: Some(runtime.staticlib_path.clone()),
             host_staticlib: None,
-            entrypoint_symbol: native_link_entrypoint(&req.entrypoint).to_owned(),
+            entrypoint_symbol: object_stage.executable_entry.clone().unwrap_or_else(|| native_link_entrypoint(&req.entrypoint).to_owned()),
             exported_symbols: object_stage.exported_symbols.clone(),
             link_mode: req.link_mode,
             verbose: req.verbose_link,
@@ -713,6 +757,9 @@ fn link_stage(
 
 fn validate_request(req: &AotBuildRequest) -> AotResult<()> {
     validate_extern_libraries(&req.artifact, &req.external_libraries)?;
+    if artifact_uses_core_args(&req.artifact) && req.output_kind != BuildOutputKind::Exe {
+        return Err(AotError::InvalidRequest { message: "Core.Args requires executable arguments".to_owned() });
+    }
 
     if req.artifact.functions.is_empty() && requires_lowered_functions(req.output_kind) {
         return Err(AotError::InvalidRequest {
@@ -728,6 +775,19 @@ fn validate_request(req: &AotBuildRequest) -> AotResult<()> {
         });
     }
     Ok(())
+}
+
+fn artifact_uses_core_args(artifact: &CodegenArtifact) -> bool {
+    artifact.extern_imports.iter().any(|import| ABI_V5_CORELIB_SERVICE_BINDINGS.iter().any(|binding| binding.service.starts_with("__args_") && binding.adapter == import.symbol))
+}
+
+fn core_args_entry_adapter<'a>(artifact: &CodegenArtifact, target: &str) -> AotResult<Option<&'a GeneratedCoreArgsEntryAdapter>> {
+    if !artifact_uses_core_args(artifact) {
+        return Ok(None);
+    }
+    ABI_V5_CORE_ARGS_ENTRY_ADAPTERS.iter().find(|adapter| adapter.target == target).map(Some).ok_or_else(|| AotError::InvalidRequest {
+        message: format!("Core.Args has no generated entry adapter for target `{target}`"),
+    })
 }
 
 fn requires_lowered_functions(output_kind: BuildOutputKind) -> bool {
@@ -837,5 +897,36 @@ mod with_defaults_tests {
 
         let error = validate_request(&req).expect_err("linked output must require a runtime kit");
         assert!(matches!(error, AotError::InvalidRequest { .. }));
+    }
+
+    #[test]
+    fn core_args_is_rejected_for_non_executable_outputs() {
+        let mut artifact = CodegenArtifact::default();
+        artifact.extern_imports.push(beskid_codegen::ExternImport {
+            symbol: "beskid_rt_v5_args_count".into(),
+            abi: Some("C".into()),
+            library: None,
+        });
+        for output_kind in [BuildOutputKind::StaticLib, BuildOutputKind::SharedLib, BuildOutputKind::ObjectOnly] {
+            let req = AotBuildRequest {
+                artifact: artifact.clone(), output_kind, output_path: PathBuf::from("/tmp/out"), object_path: None,
+                target_triple: None, profile: BuildProfile::Debug, entrypoint: "Main".into(),
+                export_policy: ExportPolicy::PublicOnly, link_mode: LinkMode::Auto, runtime: None,
+                verbose_link: false, external_libraries: Vec::new(), library_search_paths: Vec::new(), pipeline: None,
+            };
+            let error = validate_request(&req).expect_err("Core.Args must have an executable entry adapter");
+            assert!(matches!(error, AotError::InvalidRequest { message } if message == "Core.Args requires executable arguments"));
+        }
+    }
+
+    #[test]
+    fn core_args_windows_link_entry_is_owned_by_the_manifest_adapter() {
+        let mut artifact = CodegenArtifact::default();
+        artifact.extern_imports.push(beskid_codegen::ExternImport {
+            symbol: "beskid_rt_v5_args_count".into(), abi: Some("C".into()), library: None,
+        });
+        let adapter = core_args_entry_adapter(&artifact, "x86_64-pc-windows-msvc")
+            .expect("generated adapter lookup").expect("Core.Args adapter");
+        assert_eq!(adapter.executable_entry, "wmain");
     }
 }

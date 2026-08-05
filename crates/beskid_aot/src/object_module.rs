@@ -80,6 +80,17 @@ impl BeskidObjectModule {
         exported_symbols: &HashSet<String>,
         pipeline: Option<&dyn PipelineObserver>,
     ) -> AotResult<()> {
+        self.compile_artifact_with_exports_and_entry_adapter(artifact, exported_symbols, None, pipeline)
+    }
+
+    /// Compile an artifact, optionally reserving native `main` for the generated Core.Args entry adapter.
+    pub fn compile_artifact_with_exports_and_entry_adapter(
+        &mut self,
+        artifact: &CodegenArtifact,
+        exported_symbols: &HashSet<String>,
+        entry_adapter_program: Option<&str>,
+        pipeline: Option<&dyn PipelineObserver>,
+    ) -> AotResult<()> {
         let module = self
             .module
             .as_mut()
@@ -98,7 +109,13 @@ impl BeskidObjectModule {
             module,
             artifact,
             &mut self.func_ids,
-            |name| beskid_codegen::lowering::expressions::export::object_link_symbol(name, &exports),
+            |name| {
+                if let Some(program_entry) = entry_adapter_program.filter(|_| name.split('#').next().is_some_and(|logical| logical == "Main")) {
+                    program_entry.to_owned()
+                } else {
+                    beskid_codegen::lowering::expressions::export::object_link_symbol(name, &exports)
+                }
+            },
             |symbol| {
                 if exported_symbols.contains(symbol) { Linkage::Export } else { Linkage::Local }
             },
