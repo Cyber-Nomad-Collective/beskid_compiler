@@ -1969,6 +1969,102 @@ pub Core.Results.Result<i64, Core.Syscall.SyscallError> Write() {
 }
 
 #[test]
+fn generic_specialization_accepts_qualified_nominal_corelib_test_arguments() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/corelib-generic-specialization/project/src");
+    let main_path = root.join("ArgsTests.bd");
+    let args_path = root.join("Core/Args/Args.bd");
+    let args_error_path = root.join("Core/Args/ArgsError.bd");
+    let results_path = root.join("Core/Results/Results.bd");
+    let assert_path = root.join("Testing/Assert.bd");
+    let main_source = r#"
+use Core.Args;
+use Core.Results;
+use Testing.Assert;
+
+test corelib_generic_specialization {
+    Core.Results.Result<string, Core.Args.ArgsError> result = Args.Get(0);
+    Assert.True(Results.IsOk(result), "args[0] should be valid");
+    string[] all = Args.All();
+    i64 len = __array_len(all);
+    Assert.Equal(len, Args.Count(), "All() length matches Count()");
+}
+"#;
+    let sources = [
+        (main_path.clone(), main_source.to_owned()),
+        (
+            args_path.clone(),
+            "pub Core.Results.Result<string, ArgsError> Get(i64 index) { return Result::Error(ArgsError::IndexOutOfRange()); }\npub string[] All() { return __array_new(8, 0); }\npub i64 Count() { return 1_i64; }"
+                .to_owned(),
+        ),
+        (args_error_path.clone(), "pub enum ArgsError { IndexOutOfRange() }".to_owned()),
+        (
+            results_path.clone(),
+            "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }\npub bool IsOk<TValue, TError>(Result<TValue, TError> value) { return true; }"
+                .to_owned(),
+        ),
+        (
+            assert_path.clone(),
+            "pub unit Equal<T>(T actual, T expected, string because) { return; }\npub unit True(bool condition, string because) { return; }"
+                .to_owned(),
+        ),
+    ];
+    let units = sources
+        .iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            path: path.clone(),
+            source: source.clone(),
+            program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
+        })
+        .collect::<Vec<_>>();
+    let main_program = units[0].program.clone();
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(65);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+
+    let equal = main_index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit: main_unit, generation, node })
+        .find(|call| call_arguments(&db, *call).expect("call arguments").is_some_and(|arguments| arguments.len() == 3))
+        .expect("Assert.Equal call");
+    let equal_arguments = call_arguments(&db, equal).expect("Assert.Equal arguments").expect("arguments");
+    assert_eq!(
+        node_type(&db, equal_arguments[1]).expect("nested direct-call semantic type"),
+        Some(SemanticTypeId::I64)
+    );
+
+    for node in main_index.ids_of_kind(NodeKind::CallExpression) {
+        let call = AstNodeKey { unit: main_unit, generation, node };
+        if generic_call_instantiation(&db, call).expect("generic call fact").is_some() {
+            assert!(
+                generic_call_specialization(&db, call).expect("generic call specialization query").is_some(),
+                "generic call at {call:?} must have an ABI specialization"
+            );
+        }
+    }
+}
+
+#[test]
 fn canonical_core_error_qualified_write_has_a_direct_semantic_fact() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/core-error-qualified-call/project/src");

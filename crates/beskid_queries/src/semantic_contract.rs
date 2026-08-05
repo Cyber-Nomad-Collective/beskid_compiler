@@ -1536,6 +1536,18 @@ fn node_type_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> S
         {
             return Some(enum_match_result_semantic_type(db, key));
         }
+        if let Some(beskid_analysis::syntax::Expression::Call(call)) = node.of::<beskid_analysis::syntax::Expression>()
+        {
+            let call = index
+                .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(call))
+                .map(|node| AstNodeKey { node, ..key })
+                .ok_or_else(|| SemanticError::unavailable("node_type"));
+            return Some(call.and_then(|call| {
+                call_abi_signature(db, call)?
+                    .map(|signature| signature.result)
+                    .ok_or_else(|| SemanticError::unavailable("node_type"))
+            }));
+        }
         semantic_type_for_node(program, index, key.node, node)
     })?
     .transpose()
