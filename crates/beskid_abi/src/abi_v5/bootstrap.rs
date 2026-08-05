@@ -58,12 +58,25 @@ pub struct RuntimeAuditMetadata {
 impl RuntimeAuditMetadata {
     pub fn for_manifest(manifest: &AbiManifestV5, runtime_source_hash: &str) -> Result<Self, ManifestValidationError> {
         manifest.validate()?;
-        let mut allowed_imports =
-            manifest.platform_imports.iter().map(|entry| entry.symbol.clone()).collect::<Vec<_>>();
+        // Keep the allowlist in the same canonical spelling used by `normalized_symbol` below.
+        // The manifest records target-native linker spellings (`_exit` on Darwin); provenance
+        // adapters may already have removed the Mach-O prefix, so retaining that prefix here
+        // would reject a legitimate platform import.
+        let mut allowed_imports = manifest
+            .platform_imports
+            .iter()
+            .map(|entry| {
+                normalize_object_symbol(
+                    &entry.symbol,
+                    manifest.target.object_format.as_str(),
+                    &manifest.target.symbol_prefix,
+                )
+            })
+            .collect::<Vec<_>>();
         // Darwin C11 thread-local storage lowers through the platform TLV bootstrap helper.
         // Normalization strips the Mach-O leading underscore, leaving this exact spelling.
         if manifest.target.object_format.as_str() == "macho" {
-            allowed_imports.push("_tlv_bootstrap".into());
+            allowed_imports.push("tlv_bootstrap".into());
         }
         allowed_imports.sort();
         allowed_imports.dedup();
@@ -157,7 +170,17 @@ impl RuntimeAuditMetadata {
 
     fn normalized_symbol(&self, raw: &str) -> Result<String, String> {
         reject_forbidden_provenance(raw, &self.forbidden_rust_symbols)?;
-        Ok(normalize_object_symbol(raw, &self.object_format, &self.symbol_prefix))
+        let normalized = normalize_object_symbol(raw, &self.object_format, &self.symbol_prefix);
+        // Darwin's `_exit` platform import and C11 TLS `_tlv_bootstrap` helper both have a
+        // leading underscore in their native names before Mach-O decoration. A raw archive
+        // therefore reports `__exit`/`__tlv_bootstrap`, while the matrix adapter has already
+        // removed one decoration. Canonicalize only these declared Darwin imports here; generic
+        // object-symbol normalization deliberately remains one-prefix-only and fail-closed.
+        if self.object_format == "macho" && matches!(normalized.as_str(), "_exit" | "_tlv_bootstrap") {
+            Ok(normalized[1..].into())
+        } else {
+            Ok(normalized)
+        }
     }
 }
 

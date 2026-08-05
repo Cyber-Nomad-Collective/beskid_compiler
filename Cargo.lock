@@ -903,6 +903,7 @@ dependencies = [
  "beskid_runtime",
  "beskid_runtime_handlers",
  "beskid_template",
+ "beskid_tools",
  "object 0.37.3",
  "pest",
  "serde_json",

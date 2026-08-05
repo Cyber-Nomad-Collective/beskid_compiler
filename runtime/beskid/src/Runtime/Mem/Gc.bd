@@ -63,14 +63,14 @@ pub pointer GcAlloc(word size, word alignment) {
     //   offset 40: object_count (word)
     //   offset 48: phase (u8): 0=idle, 1=marking, 2=sweeping
     //   offset 56: gc_threshold (word)
-    pointer bump = NativePointer(raw_word_load(pointer_add(heap, 16)));
-    pointer limit = NativePointer(raw_word_load(pointer_add(heap, 24)));
-    word alignedBump = NativeWord(bump);
+    mut pointer bump = NativePointer(raw_word_load(pointer_add(heap, 16)));
+    mut pointer limit = NativePointer(raw_word_load(pointer_add(heap, 24)));
+    mut word alignedBump = NativeWord(bump);
     word alignMask = alignment - 1;
     if (alignedBump & alignMask) != 0 {
         alignedBump = (alignedBump + alignMask) & (0 - alignment);
     }
-    pointer nextBump = NativePointer(alignedBump + size);
+    mut pointer nextBump = NativePointer(alignedBump + size);
     if NativeWord(nextBump) < alignedBump {
         Trap(5, pointer_from_native_word(0), 0);
     }
@@ -145,7 +145,7 @@ pub unit GcRegisterRoot(pointer ptrAddr) {
     if heap == NativePointer(0) {
         return;
     }
-    word i = 0; word count = raw_word_load(pointer_add(heap, ROOT_REGISTRY_OFFSET - 8));
+    mut word i = 0; word count = raw_word_load(pointer_add(heap, ROOT_REGISTRY_OFFSET - 8));
     while i < count {
         pointer slot = pointer_add(heap, ROOT_REGISTRY_OFFSET + i * 8);
         if raw_word_load(slot) == NativeWord(ptrAddr) {
@@ -207,9 +207,11 @@ const HANDLE_COUNT_OFFSET = 636;           // HANDLE_TABLE_OFFSET - 4
 const HANDLE_NEXT_ID_OFFSET = 628;          // compacted: HANDLE_COUNT_OFFSET - 4
 const HANDLE_FREE_HEAD_OFFSET = 620;        // next free list head
 
-// Allocates a generation-tagged handle for `valuePtr` and returns the opaque u64 cookie.
+// Allocates a generation-tagged handle for `valuePtr` and returns the opaque ABI word cookie.
+// ABI-v5 supports pointer-width targets only, so the token preserves its complete
+// generation-and-slot bit pattern without requiring an unmodelled `u64` source type.
 [Export(Abi:"C", Symbol:"gc_root_handle")]
-pub u64 GcRootHandle(pointer valuePtr) {
+pub word GcRootHandle(pointer valuePtr) {
     if valuePtr == NativePointer(0) {
         return 0;
     }
@@ -218,8 +220,8 @@ pub u64 GcRootHandle(pointer valuePtr) {
         return 0;
     }
     word freeHead = raw_word_load(pointer_add(heap, HANDLE_FREE_HEAD_OFFSET));
-    word slotIndex;
-    word generation;
+    mut word slotIndex;
+    mut word generation;
     if freeHead != 0xFFFFFFFFFFFFFFFF {
         // Reuse a freed slot.
         slotIndex = freeHead;
@@ -249,7 +251,7 @@ pub u64 GcRootHandle(pointer valuePtr) {
 
 // Releases a handle. Stale/double-free handles are silently ignored.
 [Export(Abi:"C", Symbol:"gc_unroot_handle")]
-pub unit GcUnrootHandle(u64 handle) {
+pub unit GcUnrootHandle(word handle) {
     if handle == 0 {
         return;
     }
@@ -279,7 +281,7 @@ pub unit GcUnrootHandle(u64 handle) {
 }
 
 // Resolves a handle to its stored pointer value, or null for stale handles.
-pub pointer GcResolveHandle(u64 handle) {
+pub pointer GcResolveHandle(word handle) {
     if handle == 0 {
         return NativePointer(0);
     }
@@ -479,7 +481,7 @@ pub unit MarkRoots() {
     // Trace TLS root frames.
     pointer tls = CurrentThreadState();
     if tls != NativePointer(0) {
-        pointer rootFrame = NativePointer(raw_word_load(pointer_add(tls, 8)));
+        mut pointer rootFrame = NativePointer(raw_word_load(pointer_add(tls, 8)));
         while rootFrame != NativePointer(0) {
             pointer slots = NativePointer(raw_word_load(pointer_add(rootFrame, 8)));
             word slotCount = raw_word_load(pointer_add(rootFrame, 16));
@@ -498,7 +500,10 @@ pub unit MarkRoots() {
     }
     // Trace external root registry (gc_register_root slots).
     if heap != NativePointer(0) {
-        word extCount = raw_word_load(pointer_add(heap, ROOT_REGISTRY_OFFSET - 8));
+        // The external-root count occupies the manifest-fixed word immediately before the
+        // registry base (offset 128 - 8). Keep the intrinsic argument a direct literal so
+        // syntax ABI facts select its pointer-width representation.
+        word extCount = raw_word_load(pointer_add(heap, 120));
         mut word j = 0;
         while j < extCount {
             pointer slotAddr = NativePointer(raw_word_load(pointer_add(heap, ROOT_REGISTRY_OFFSET + j * 8)));
@@ -511,7 +516,7 @@ pub unit MarkRoots() {
             j = j + 1;
         }
         // Trace handle table (gc_root_handle temporary roots).
-        word handleCount = raw_word_load(pointer_add(heap, HANDLE_COUNT_OFFSET));
+        mut word handleCount = raw_word_load(pointer_add(heap, HANDLE_COUNT_OFFSET));
         if handleCount > HANDLE_TABLE_MAX {
             handleCount = HANDLE_TABLE_MAX;
         }
@@ -540,9 +545,9 @@ pub unit MarkRoots() {
 pub unit Sweep(pointer heap) {
     pointer start = NativePointer(raw_word_load(heap));
     pointer end = NativePointer(raw_word_load(pointer_add(heap, 8)) + NativeWord(start));
-    pointer bump = start;
-    word liveBytes = 0;
-    word liveCount = 0;
+    mut pointer bump = start;
+    mut word liveBytes = 0;
+    mut word liveCount = 0;
     while NativeWord(bump) < NativeWord(end) {
         pointer descriptor = NativePointer(raw_word_load(bump));
         if descriptor == NativePointer(0) {

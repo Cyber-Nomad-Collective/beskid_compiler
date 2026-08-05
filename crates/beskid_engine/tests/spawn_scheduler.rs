@@ -1,9 +1,12 @@
+mod support;
+
 use std::path::Path;
 
 use beskid_abi::runtime_kit::BuildProfile;
 use beskid_engine::services::{prepare_jit_entrypoint, run_entrypoint};
 use beskid_engine::{Engine, host_runtime_target};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
+use support::runtime_prefix::RuntimePrefixContext;
 
 #[test]
 fn jit_runs_zero_capture_lambda_spawn_under_fiber_scheduler() {
@@ -24,6 +27,10 @@ fn jit_runs_zero_capture_lambda_spawn_under_fiber_scheduler() {
 
 #[test]
 fn jit_child_value_returns_42() {
+    let prefix = tempfile::tempdir().expect("exact runtime-kit prefix");
+    build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).expect("publish exact native runtime kit");
+    let _runtime_prefix = RuntimePrefixContext::install(prefix.path());
+
     let source = "i64 child_value() { return 42; } i64 Main() { return child_value(); }";
     let output = run_entrypoint(Path::new("child_value.bd"), source, "Main").expect("main should run");
     assert_eq!(output, "42", "expected child_value return to round-trip through JIT");

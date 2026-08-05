@@ -32,6 +32,9 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
             ("beskid_library_attach_v5", &[AbiType::Pointer][..], AbiType::I32,),
             ("beskid_library_detach_v5", &[AbiType::Pointer][..], AbiType::Void,),
             ("beskid_rt_v5_abi_version", &[][..], AbiType::U32),
+            ("beskid_rt_v5_array_allocate_rooted", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::Pointer,),
+            ("beskid_rt_v5_array_construction_finish", &[AbiType::Pointer][..], AbiType::U8,),
+            ("beskid_rt_v5_array_write_barrier", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8,),
             (
                 "beskid_rt_v5_closure_capture_store",
                 &[AbiType::Pointer, AbiType::Pointer, AbiType::USize, AbiType::Pointer,][..],
@@ -125,6 +128,8 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
             names,
             vec![
                 "BeskidAllocationRequest",
+                "BeskidArrayAllocationRequest",
+                "BeskidArrayElementDescriptor",
                 "BeskidHandle",
                 "BeskidObjectHeader",
                 "BeskidRootFrame",

@@ -18,6 +18,73 @@ pub pointer ArrayNew(word elementSize, word count) {
     return buffer;
 }
 
+// Allocates one descriptor-backed array object and roots it before generated code can write
+// any element. `request` is the ABI-v5 BeskidArrayAllocationRequest layout and `rootHandleOut`
+// is a caller-owned native-word stack slot. The handle is released only by
+// ArrayConstructionFinish after every element store and pointer write barrier has completed.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_array_allocate_rooted")]
+pub pointer AllocateArrayRooted(pointer request, pointer rootHandleOut) {
+    if request == NativePointer(0) || rootHandleOut == NativePointer(0) {
+        return NativePointer(0);
+    }
+    raw_word_store(rootHandleOut, 0);
+    pointer element = NativePointer(raw_word_load(request));
+    if element == NativePointer(0) || raw_word_load(pointer_add(request, 16)) != 0 {
+        return NativePointer(0);
+    }
+    word stride = raw_word_load(element);
+    word alignment = raw_word_load(pointer_add(element, 8));
+    word length = raw_word_load(pointer_add(request, 8));
+    if stride == 0 || alignment == 0 || stride / alignment * alignment != stride {
+        return NativePointer(0);
+    }
+    word backingSize = stride * length;
+    if length != 0 && backingSize / stride != length {
+        return NativePointer(0);
+    }
+    // BeskidArray is `{ pointer data; word len; word cap; }` on every ABI-v5 target.
+    word totalSize = backingSize + 24;
+    if totalSize < backingSize {
+        return NativePointer(0);
+    }
+    pointer array = Alloc(totalSize, NativePointer(0));
+    if array == NativePointer(0) {
+        return NativePointer(0);
+    }
+    word handle = GcRootHandle(array);
+    if handle == 0 {
+        return NativePointer(0);
+    }
+    raw_word_store(array, NativeWord(pointer_add(array, 24)));
+    raw_word_store(pointer_add(array, 8), length);
+    raw_word_store(pointer_add(array, 16), length);
+    raw_word_store(rootHandleOut, handle);
+    return array;
+}
+
+// Releases the construction root established by AllocateArrayRooted. A zero token is never a
+// successful rooted allocation, so generated code fails closed if allocation did not publish one.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_array_construction_finish")]
+pub u8 ArrayConstructionFinish(pointer rootHandle) {
+    word handle = NativeWord(rootHandle);
+    if handle == 0 {
+        return 0;
+    }
+    GcUnrootHandle(handle);
+    return 1;
+}
+
+// Publishes a pointer element write to the GC's insertion barrier while the array remains under
+// its construction root. Scalar arrays do not call this entrypoint.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_array_write_barrier")]
+pub u8 ArrayWriteBarrier(pointer array, pointer value) {
+    if array == NativePointer(0) {
+        return 0;
+    }
+    GcWriteBarrier(array, value);
+    return 1;
+}
+
 // Returns the element count of a managed array.
 [Export(Abi:"C", Symbol:"array_len")]
 pub word ArrayLen(pointer array) {

@@ -41,6 +41,52 @@ fn portable_fixture_uses_each_targets_native_symbol_spelling() {
 }
 
 #[test]
+fn darwin_matrix_adapter_symbols_match_the_canonical_import_policy() {
+    let audit = RuntimeProvenanceAudit::canonical(target("aarch64-apple-darwin")).unwrap();
+    let raw_archive_symbols = SymbolList {
+        target: "aarch64-apple-darwin".into(),
+        defined: audit.allowed_exports.iter().map(|symbol| format!("_{symbol}")).collect(),
+        undefined: vec![
+            "__exit".into(),
+            "_clock_gettime".into(),
+            "_getpid".into(),
+            "_mmap".into(),
+            "_mprotect".into(),
+            "_munmap".into(),
+            // A raw Mach-O archive retains the ABI prefix plus the C helper's own underscore.
+            "__tlv_bootstrap".into(),
+            "_write".into(),
+        ],
+    };
+    audit.verify_static_archive(&raw_archive_symbols).expect("Darwin raw archive provenance must be canonicalized");
+
+    let symbols = SymbolList {
+        target: "aarch64-apple-darwin".into(),
+        // `stage-native-runtime-kit-matrix.sh` removes the first Mach-O underscore before it
+        // publishes this explicit platform-adapter input. Darwin TLS retains one underscore in
+        // `__tlv_bootstrap`, which the object-policy normalizer removes as the Mach-O prefix.
+        defined: audit.allowed_exports.clone(),
+        undefined: vec![
+            "exit".into(),
+            "clock_gettime".into(),
+            "getpid".into(),
+            "mmap".into(),
+            "mprotect".into(),
+            "munmap".into(),
+            "tlv_bootstrap".into(),
+            "write".into(),
+        ],
+    };
+
+    audit.verify(&symbols).expect("Darwin matrix provenance must accept its normalized symbol list");
+
+    let mut unexpected = symbols;
+    unexpected.undefined.push("malloc".into());
+    let error = audit.verify(&unexpected).unwrap_err();
+    assert!(error.to_string().contains("unexpected"), "unexpected allowlist error: {error}");
+}
+
+#[test]
 fn symbol_list_parser_rejects_target_mismatch() {
     let list = parse_symbol_list("target=x86_64-pc-windows-msvc\ndefined=beskid_rt_v5_abi_version\n").unwrap();
     let audit = RuntimeProvenanceAudit::canonical(target("x86_64-unknown-linux-gnu")).unwrap();

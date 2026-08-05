@@ -2,27 +2,22 @@
 
 use std::path::PathBuf;
 
+use beskid_abi::runtime_kit::BuildProfile;
 use beskid_analysis::services::{PrepareOptions, resolve_input};
 use beskid_engine::Engine;
 use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_queries::{configure_db_for_project, prepare_compilation_with_db, with_db};
+use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
 fn corelib_tests_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corelib/beskid_corelib/tests/corelib_tests")
 }
 
-// Quarantined: the multi-hour `prepare_compilation` hang this test used to cause
-// is fixed at the root (unbounded `(0..)` TypeId scans in beskid_analysis
-// `lowering_prep` are now bounded), and the false "duplicate cast intent" that
-// surfaced once prepare completed is fixed (cast-intent validation now keys on
-// source_path). A separate, *flaky* "missing expression type information during
-// codegen" regression remains: type-surface/node_types population for this
-// multi-unit console assembly is nondeterministic (HashMap iteration order), so
-// the JIT run fails intermittently. Re-enable once codegen type propagation is
-// deterministic. Tracking: https://github.com/Cyber-Nomad-Collective/beskid_compiler/issues
 #[test]
-#[ignore = "flaky: nondeterministic 'missing expression type information during codegen' in multi-unit corelib assembly; prepare hang + duplicate-cast-intent fixed, codegen ordering tracked separately"]
 fn jit_corelib_repeat_builds_string_entrypoint() {
+    let runtime_prefix = tempfile::tempdir().expect("exact runtime-kit prefix");
+    build_native_host(runtime_prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
+        .expect("publish exact native runtime kit");
     let project_root = corelib_tests_root();
     let entry = project_root.join("src/console/ControlsFrameTests.bd");
     configure_db_for_project(&project_root);
@@ -34,7 +29,9 @@ fn jit_corelib_repeat_builds_string_entrypoint() {
             .expect("prepare executable");
     let front = prepared.into_executable().expect("executable front-end");
 
-    let mut engine = Engine::new();
+    let target = beskid_engine::host_runtime_target().expect("supported native host target");
+    let mut engine = Engine::with_runtime_kit(runtime_prefix.path(), target, BuildProfile::Debug)
+        .expect("load exact native runtime kit");
     run_entrypoint_from_front_end_with_engine(
         &mut engine,
         &front,

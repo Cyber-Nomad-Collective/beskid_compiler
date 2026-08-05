@@ -27,8 +27,9 @@ use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, CastIntent, Db, ProjectSession, SourceUnitId, SyntaxGenerationId,
     aggregate_field_access, build_canonical_corelib_syscall_typed_program, build_canonical_runtime_typed_program,
     build_typed_program, build_typed_program_with_corelib_services, call_abi_signature, call_lowering, child_nodes,
-    closure_environment, enum_constructor, enum_layout, enum_match, format_ast_node_site, item_body, item_name,
-    literal_fact, mutable_local_assignment, node_kind, node_type, spawn_target, test_statement_nodes,
+    closure_environment, empty_array_literal_element_abi_type, enum_constructor, enum_layout, enum_match,
+    format_ast_node_site, item_body, item_name, literal_fact, mutable_local_assignment, node_kind, node_type,
+    spawn_target, test_statement_nodes,
 };
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::isa;
@@ -382,6 +383,34 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
         "aggregate literals must allocate through the canonical managed-object ABI: {clif}"
     );
     assert!(!clif.contains("stack_store"), "aggregate literals must not return escaped stack storage: {clif}");
+}
+
+#[test]
+fn parsed_empty_array_field_uses_declared_nominal_element_abi_without_hir() {
+    let source = "type SyntaxContributionItem {} type GeneratedSyntaxContribution { SyntaxContributionItem[] items } GeneratedSyntaxContribution Main() { return GeneratedSyntaxContribution { items: [] }; }";
+    let (input, isa, root) = item_fixture_with_root(source);
+    let array = find_node(input.database(), root, beskid_queries::IndexedNodeKind::ArrayLiteralExpression)
+        .expect("empty array literal");
+    assert_eq!(
+        empty_array_literal_element_abi_type(input.database(), array).expect("empty array field fact"),
+        Some(beskid_queries::SemanticTypeId::POINTER),
+        "the nominal aggregate field, not a default machine type, authorizes the empty array element ABI"
+    );
+    assert!(input.array_static_plan(array).is_some(), "empty array has source-authorized static metadata");
+
+    let function = find_function_definition(input.database(), root).expect("Main definition");
+    let clif = emit_isle_item(&input, isa.as_ref(), function)
+        .expect("declared empty aggregate-field array lowers through generated ISLE")
+        .display()
+        .to_string();
+    assert!(
+        clif.contains("beskid_rt_v5_array_allocate_rooted"),
+        "empty array allocation must retain its descriptor-backed construction root: {clif}"
+    );
+    assert!(
+        clif.contains("beskid_rt_v5_managed_object_allocate"),
+        "the enclosing nominal aggregate remains a managed object: {clif}"
+    );
 }
 
 #[test]

@@ -59,6 +59,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reconcile the selected Corelib syntax-to-ISLE gate with the canonical test
+  entrypoint names, so every configured probe now resolves to a maintained
+  Corelib test before exercising lowering.
+
+- Serialize the vendored `cargo-cross` tests that temporarily set
+  `CARGO_PASSTHROUGH_ARGS`, preventing parallel tests from clearing each
+  other's process-global fixture before parsing it.
+
+- Normalize Darwin native-runtime provenance imports at the ABI policy boundary.
+  The staged Mach-O adapter's canonical `exit` and `tlv_bootstrap` imports now
+  match the manifest-derived allowlist, while undeclared imports remain rejected.
+
+- Re-enable the multi-unit Corelib `Console.Controls.Frame.Repeat` JIT
+  regression after repeated prepared-syntax → CodegenInput → engine execution
+  proved the former missing-expression-type ordering failure is no longer
+  reproducible.
+
+- Replace the remaining ANSI corelib HIR link-plan probe with the canonical
+  `SyntaxProgramAssembly` → `CodegenInput` → generated-ISLE route. The ANSI
+  CSI bold-red regression now asserts the emitted ESC, CSI body, final byte,
+  and expected-message literal bytes rather than relying on a diagnostic CLIF
+  dump.
+
+- Stage one explicit native ABI-v5 kit for the `beskid_tests` executable-linking
+  helpers and pass its exact prefix to the installed-kit strategy. AOT execution
+  tests no longer attempt to treat Cargo's `target/.../deps` test executable as
+  an installed toolchain.
+
+- Give every native ABI-v5 runtime-kit build its own staging directory. Parallel
+  same-profile callers can no longer delete a peer build's static archive before
+  it is published into the exact installed prefix.
+
+- Rebind typed-array ISLE execution fixtures through concrete `JITModule`
+  function and data imports before definition. The coverage now executes array
+  indexing and indexed stores on macOS arm64 without relying on unsupported
+  raw Cranelift test-case relocations.
+
+- Serialize the ABI-v5 JIT integration tests' temporary installed-prefix
+  contexts so the CodegenInput missing-manifest route deterministically reaches
+  its intended exact-kit validation instead of racing another test's process
+  environment restoration. Scheduler JIT execution now stages the same explicit
+  native kit rather than attempting to derive a prefix from Cargo's test binary.
+
+- Declare the canonical rooted typed-array allocation, construction-root release,
+  and pointer write-barrier exports in the embedded runtime corpus so source
+  authority remains complete for the ABI-v5 construction transaction.
+
 - Contextually type unsuffixed integer literals only at explicitly typed local
   initializer and mutable-local assignment boundaries. Generated syntax ISLE
   now emits the destination's exact ABI width without an implicit numeric

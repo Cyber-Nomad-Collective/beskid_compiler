@@ -2775,6 +2775,37 @@ i32 OuterOnly() { return 2; }
 }
 
 #[test]
+fn call_lowering_resolves_a_qualified_inline_module_function() {
+    let source = r#"
+mod Frame {
+    pub i64 Repeat(i64 unit, i64 count) {
+        mut i64 acc = 0;
+        mut i64 i = 0;
+        while i < count {
+            acc = acc + unit;
+            i = i + 1;
+        }
+        return acc;
+    }
+}
+pub i64 Main() { return Frame.Repeat(1, 4); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let declaration = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let main = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+
+    assert_eq!(
+        call_lowering(&db, call).expect("inline module call lowering"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+    assert_eq!(
+        direct_callees(&db, main).expect("inline module direct callee"),
+        Some(std::sync::Arc::from([declaration]))
+    );
+}
+
+#[test]
 fn stale_generation_cannot_reuse_item_or_call_graph_facts() {
     let source = "i32 Helper() { return 1; } i32 Main() { return Helper(); }";
     let (mut db, project, unit, generation, index) = setup(source);
