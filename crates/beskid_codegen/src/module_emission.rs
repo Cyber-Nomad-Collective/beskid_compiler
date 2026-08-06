@@ -6,9 +6,9 @@ use beskid_isle::{AstNodeKey, DirectCallee, FunctionEmissionError, StringInterne
 use beskid_queries::{
     CallLowering, GenericSpecializationInstance, GenericSubstitution, ItemSignature, SemanticTypeId, SourceUnitId,
     call_lowering, child_nodes, closure_call_target, closure_environment, closure_signature,
-    extern_contract_import_for_declaration, format_ast_node_key, format_ast_node_site, generic_call_specialization, generic_call_template,
-    generic_specialization_identity, generic_specialization_instance, item_abi_signature, item_name, node_kind,
-    node_span, resolved_item, spawn_entry_validation,
+    extern_contract_import_for_declaration, format_ast_node_key, format_ast_node_site, generic_call_specialization,
+    generic_call_template, generic_specialization_identity, generic_specialization_instance, item_abi_signature,
+    item_name, node_kind, node_span, resolved_item, spawn_entry_validation,
 };
 use cranelift_codegen::ir::{AbiParam, InstBuilder};
 use cranelift_codegen::ir::{
@@ -1076,10 +1076,7 @@ fn collect_generic_call_specializations_in_environment(
     specializations: &mut HashMap<AstNodeKey, Vec<GenericSpecializationInstance>>,
 ) -> Result<(), SyntaxModuleEmissionError> {
     if let Some(declaration) = direct_generic_call_declaration(db, key).map_err(|error| {
-            emission_verification(format!(
-                "generic call analysis failed at {}: {error}",
-                format_ast_node_site(db, key)
-            ))
+        emission_verification(format!("generic call analysis failed at {}: {error}", format_ast_node_site(db, key)))
     })? {
         let specialization = if let Some(template) =
             generic_call_template(db, key).map_err(|error| emission_verification(error.to_string()))?

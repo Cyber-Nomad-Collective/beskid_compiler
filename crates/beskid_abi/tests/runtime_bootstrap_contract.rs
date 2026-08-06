@@ -176,8 +176,27 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
 #[test]
 fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
     let unix_imports = [
-        "_exit", "atan2", "ceil", "clock_gettime", "cos", "fabs", "floor", "getpid", "log", "log10", "log2",
-        "memcpy", "mmap", "mprotect", "munmap", "pow", "sin", "sqrt", "strlen", "tan", "write",
+        "_exit",
+        "atan2",
+        "ceil",
+        "clock_gettime",
+        "cos",
+        "fabs",
+        "floor",
+        "getpid",
+        "log",
+        "log10",
+        "log2",
+        "memcpy",
+        "mmap",
+        "mprotect",
+        "munmap",
+        "pow",
+        "sin",
+        "sqrt",
+        "strlen",
+        "tan",
+        "write",
     ];
     let windows_imports = [
         "ExitProcess",
@@ -203,9 +222,8 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "tan",
     ];
     let math_imports = ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
-    let windows_ucrt_imports = [
-        "atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "strlen", "tan",
-    ];
+    let windows_ucrt_imports =
+        ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "strlen", "tan"];
     for target in supported_targets() {
         let is_windows = target.triple.as_str() == "x86_64-pc-windows-msvc";
         let (expected_symbols, expected_library) = match target.triple.as_str() {
@@ -222,11 +240,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         match expected_library {
             None => assert!(manifest.platform_imports.iter().all(|entry| entry.library == "libSystem")),
             Some((platform, math)) => {
-                let adapter_imports = if is_windows {
-                    &windows_ucrt_imports[..]
-                } else {
-                    &math_imports[..]
-                };
+                let adapter_imports = if is_windows { &windows_ucrt_imports[..] } else { &math_imports[..] };
                 assert!(manifest.platform_imports.iter().all(|entry| {
                     entry.library == if adapter_imports.contains(&entry.symbol.as_str()) { math } else { platform }
                 }));
