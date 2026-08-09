@@ -113,13 +113,21 @@ pub struct RuntimeKitBuildMatrixArgs {
     #[arg(long)]
     pub release_shared_library: PathBuf,
 
-    /// Debug target symbol list emitted by the platform provenance adapter.
+    /// Debug static-archive symbol list emitted by the platform provenance adapter.
     #[arg(long)]
-    pub debug_provenance_symbol_list: PathBuf,
+    pub debug_static_provenance_symbol_list: PathBuf,
 
-    /// Release target symbol list emitted by the platform provenance adapter.
+    /// Debug shared-library symbol list emitted by the platform provenance adapter.
     #[arg(long)]
-    pub release_provenance_symbol_list: PathBuf,
+    pub debug_shared_provenance_symbol_list: PathBuf,
+
+    /// Release static-archive symbol list emitted by the platform provenance adapter.
+    #[arg(long)]
+    pub release_static_provenance_symbol_list: PathBuf,
+
+    /// Release shared-library symbol list emitted by the platform provenance adapter.
+    #[arg(long)]
+    pub release_shared_provenance_symbol_list: PathBuf,
 
     /// Debug Windows import library; required only for the Windows target.
     #[arg(long)]
@@ -157,14 +165,16 @@ pub fn execute(args: RuntimeKitArgs) -> Result<()> {
                         static_library: args.debug_static_library,
                         shared_library: args.debug_shared_library,
                         shared_import_library: args.debug_shared_import_library,
-                        provenance_symbol_list: args.debug_provenance_symbol_list,
+                        static_provenance_symbol_list: args.debug_static_provenance_symbol_list,
+                        shared_provenance_symbol_list: args.debug_shared_provenance_symbol_list,
                     },
                     RuntimeKitProfileArtifacts {
                         profile: RuntimeKitProfile::Release,
                         static_library: args.release_static_library,
                         shared_library: args.release_shared_library,
                         shared_import_library: args.release_shared_import_library,
-                        provenance_symbol_list: args.release_provenance_symbol_list,
+                        static_provenance_symbol_list: args.release_static_provenance_symbol_list,
+                        shared_provenance_symbol_list: args.release_shared_provenance_symbol_list,
                     },
                 ],
             })?;

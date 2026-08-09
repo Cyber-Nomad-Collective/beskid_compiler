@@ -39,8 +39,15 @@ fn emit_fiber_entry_trampoline(
     target_name: &str,
     target_sig: Signature,
     returns_value: bool,
+    spawn_span: SpanInfo,
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Value, CodegenError> {
+    if !target_sig.params.is_empty() {
+        return Err(CodegenError::UnsupportedNode {
+            span: spawn_span,
+            node: "spawn target function parameters",
+        });
+    }
     let trampoline_name =
         format!("__beskid_spawn_entry_{}", ctx.codegen.functions_emitted + ctx.codegen.lowered_functions.len());
 
@@ -198,7 +205,7 @@ fn lower_spawn_entry(
             return Err(CodegenError::UnsupportedNode { span: spawn_span, node: "spawn callee" });
         }
     };
-    emit_fiber_entry_trampoline(&target_name, target_sig, returns_value, ctx)
+    emit_fiber_entry_trampoline(&target_name, target_sig, returns_value, spawn_span, ctx)
 }
 
 fn lower_spawn_expression(

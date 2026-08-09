@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(
+    target_os = "macos",
+    target_arch = "aarch64"
+), ))]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
@@ -22,7 +25,8 @@ use beskid_codegen::{
     emit_isle_item_with_call_importer,
     module_emission::{SyntaxModuleItem, emit_syntax_program, lower_syntax_program},
 };
-use beskid_isle::{DirectCallee, FunctionEmitter, NodeFacts};
+use beskid_isle::callee::DirectCallee;
+use beskid_isle::{FunctionEmitter, NodeFacts};
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, CastIntent, Db, ProjectSession, SourceUnitId, SyntaxGenerationId,
     aggregate_field_access, build_canonical_corelib_syscall_typed_program, build_canonical_runtime_typed_program,
@@ -242,8 +246,8 @@ i32 Main() {
         (HOST_COMPOSITION_SOURCE, beskid_queries::IndexedNodeKind::LaunchStatement, "LaunchStatement@"),
     ] {
         assert_eq!(
-            beskid_isle::classify_syntax_node_kind(kind),
-            beskid_isle::SyntaxNodeClassification::UnsupportedTypedOperation,
+            beskid_isle::syntax_types::classify_syntax_node_kind(kind),
+            beskid_isle::syntax_types::SyntaxNodeClassification::UnsupportedTypedOperation,
             "{kind:?}"
         );
 
@@ -267,8 +271,8 @@ fn cast_facts_are_independent_of_the_shared_literal_syntax_classification() {
     let literal = find_node(input.database(), root, beskid_queries::IndexedNodeKind::Literal).expect("typed literal");
 
     assert_eq!(
-        beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::Literal),
-        beskid_isle::SyntaxNodeClassification::IsleLowered(beskid_isle::NodeKind::LiteralExpression,)
+        beskid_isle::syntax_types::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::Literal),
+        beskid_isle::syntax_types::SyntaxNodeClassification::IsleLowered(beskid_isle::NodeKind::LiteralExpression,)
     );
     assert_eq!(
         beskid_queries::cast_intents(input.database(), literal).expect("cast-intent query"),
@@ -490,6 +494,21 @@ fn parsed_generic_enum_constructor_uses_concrete_source_layout_without_hir() {
     assert!(!clif.contains("stack_store"), "{clif}");
     assert!(clif.contains("iconst.i32 0"), "{clif}");
     assert!(clif.contains("iconst.i64 7"), "{clif}");
+}
+
+#[test]
+fn unsuffixed_integer_enum_payload_uses_declared_i64_layout() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum ReadLimit { UpTo(i64 maxBytes), Default } i64 Main() { ReadLimit limit = ReadLimit::UpTo(1); return 0; }",
+    );
+    let constructor = find_node(input.database(), root, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
+        .expect("ReadLimit::UpTo constructor");
+
+    let function = emit_isle_expression(&input, isa.as_ref(), constructor, isa.pointer_type())
+        .expect("the declared enum payload width must authorize the unsuffixed integer literal");
+
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i64 1"), "{clif}");
 }
 
 #[test]
@@ -2220,8 +2239,8 @@ fn parsed_struct_literal_method_call_uses_receiver_abi_without_hir() {
     let method =
         find_node(db, root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("inline method source item");
     assert_eq!(
-        beskid_isle::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::MethodDefinition),
-        beskid_isle::SyntaxNodeClassification::IsleLowered(beskid_isle::NodeKind::MethodDefinition),
+        beskid_isle::syntax_types::classify_syntax_node_kind(beskid_queries::IndexedNodeKind::MethodDefinition),
+        beskid_isle::syntax_types::SyntaxNodeClassification::IsleLowered(beskid_isle::NodeKind::MethodDefinition),
         "MethodDefinition must be production-supported at the ISLE inventory boundary"
     );
     let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
@@ -2334,6 +2353,28 @@ fn parsed_program_emits_only_call_derived_generic_specializations_without_hir() 
         artifact.functions.iter().all(|function| !function.name.starts_with("Unused#generic_")),
         "a generic declaration without an actual direct call must not be materialized"
     );
+}
+
+#[test]
+fn parsed_program_skips_uncalled_generic_template_bodies_without_an_environment() {
+    let (input, isa, root) = item_fixture_with_root(
+        "unit Inner<T>(T value) { return; } unit Outer<T>(T value) { Inner<T>(value); return; } unit Main() { return; }",
+    );
+    let items = find_function_definitions(input.database(), root);
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: items[0], symbol: "Inner".into() },
+            SyntaxModuleItem { key: items[1], symbol: "Outer".into() },
+            SyntaxModuleItem { key: items[2], symbol: "Main".into() },
+        ],
+    )
+    .expect("uncalled generic templates are not executable roots");
+
+    assert_eq!(artifact.functions.len(), 1);
+    assert_eq!(artifact.functions[0].name, "Main");
 }
 
 #[test]

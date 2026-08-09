@@ -1,0 +1,11 @@
+pub(super) const PRIORITY_USE_MOD_SEMI_EOF: u8 = 42;
+pub(super) const PRIORITY_USE_MOD_SEMI_BEFORE_NEXT: u8 = 43;
+pub(super) const PRIORITY_CONTRACT_METHOD_SEMI: u8 = 44;
+pub(super) const PRIORITY_ITEM_BRACE_EOF: u8 = 45;
+pub(super) const PRIORITY_ITEM_BRACE_ERROR: u8 = 46;
+pub(super) const PRIORITY_FN_BODY_STUB: u8 = 48;
+pub(super) const PRIORITY_EMPTY_BODY_STUB: u8 = 49;
+pub(super) const PRI_TYPE_FIELD_TRAILING_COMMA_DELETE: u8 = 50;
+pub(super) const PRI_TYPE_FIELD_TRAILING_COMMA_FIX: u8 = 51;
+pub(super) const PRI_ENUM_VARIANT_TRAILING_COMMA_DELETE: u8 = 52;
+pub(super) const PRI_ENUM_VARIANT_TRAILING_COMMA_FIX: u8 = 53;

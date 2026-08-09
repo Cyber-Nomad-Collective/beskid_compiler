@@ -133,6 +133,11 @@ corelib_lower_test!(
 corelib_lower_test!(panel_module_imports_lowers, "console/ControlsPanelTests.bd", "panel_module_imports");
 corelib_lower_test!(system_error_writeline_smoke_lowers, "system/ErrorWriteTests.bd", "error_writeline_smoke");
 corelib_lower_test!(system_input_read_returns_result_lowers, "system/InputReadTests.bd", "input_read_returns_result");
+corelib_lower_test!(
+    system_input_read_byte_returns_result_lowers,
+    "system/InputReadTests.bd",
+    "input_read_byte_returns_result"
+);
 corelib_lower_test!(vertical_stack_render_lowers, "console/ControlsLayoutTests.bd", "vertical_stack_render_smoke");
 corelib_lower_test!(
     hub_register_returns_result_lowers,

@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use beskid_isle::callee::DirectCallee;
+use beskid_isle::syntax_types::{CallKind, LiteralKind};
 use beskid_isle::{
-    AstNodeKey, CallImportError, CallImporter, CallKind, DirectCallee, FunctionEmissionError, FunctionEmitter,
-    LiteralKind, LoweringErrorKind, NodeFacts, NodeKind,
+    AstNodeKey, CallImportError, CallImporter, FunctionEmissionError, FunctionEmitter,
+    LoweringErrorKind, NodeFacts, NodeKind,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SemanticTypeId, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{AbiParam, FuncRef, Signature, UserFuncName, types};

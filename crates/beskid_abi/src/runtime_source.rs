@@ -13,10 +13,19 @@ use crate::runtime_kit::{
 
 pub const CANONICAL_BOOTSTRAP_SOURCE_PATH: &str = "src/Runtime/Bootstrap.bd";
 pub const CANONICAL_GC_SOURCE_PATH: &str = "src/Runtime/Mem/Gc.bd";
+pub const CANONICAL_GC_STATE_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/State.bd";
+pub const CANONICAL_GC_MARKING_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Marking.bd";
+pub const CANONICAL_GC_ROOTS_HANDLES_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/RootsHandles.bd";
+pub const CANONICAL_GC_SWEEP_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Sweep.bd";
+pub const CANONICAL_GC_COLLECTION_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Collection.bd";
+pub const CANONICAL_GC_ALLOCATION_SOURCE_PATH: &str = "src/Runtime/Mem/Gc/Allocation.bd";
 pub const CANONICAL_STRINGS_SOURCE_PATH: &str = "src/Runtime/Data/Strings.bd";
 pub const CANONICAL_COLLECTIONS_SOURCE_PATH: &str = "src/Runtime/Data/Collections.bd";
 pub const CANONICAL_FIBER_SOURCE_PATH: &str = "src/Runtime/Fiber/Fiber.bd";
 pub const CANONICAL_SCHEDULER_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler.bd";
+pub const CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Context.bd";
+pub const CANONICAL_SCHEDULER_CORE_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Core.bd";
+pub const CANONICAL_SCHEDULER_EXPORTS_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Exports.bd";
 pub const CANONICAL_CHANNEL_SOURCE_PATH: &str = "src/Runtime/Sync/Channel.bd";
 pub const CANONICAL_MUTEX_SOURCE_PATH: &str = "src/Runtime/Sync/Mutex.bd";
 pub const CANONICAL_WAITGROUP_SOURCE_PATH: &str = "src/Runtime/Sync/WaitGroup.bd";
@@ -44,6 +53,24 @@ const CANONICAL_BOOTSTRAP_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Bootstrap.bd"));
 const CANONICAL_GC_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc.bd"));
+const CANONICAL_GC_STATE_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/State.bd"));
+const CANONICAL_GC_MARKING_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/Marking.bd"));
+const CANONICAL_GC_ROOTS_HANDLES_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Mem/Gc/RootsHandles.bd"
+));
+const CANONICAL_GC_SWEEP_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/Gc/Sweep.bd"));
+const CANONICAL_GC_COLLECTION_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Mem/Gc/Collection.bd"
+));
+const CANONICAL_GC_ALLOCATION_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../runtime/beskid/src/Runtime/Mem/Gc/Allocation.bd"
+));
 const CANONICAL_STRINGS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Data/Strings.bd"));
 const CANONICAL_COLLECTIONS_SOURCE: &str =
@@ -52,6 +79,12 @@ const CANONICAL_FIBER_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Fiber.bd"));
 const CANONICAL_SCHEDULER_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler.bd"));
+const CANONICAL_SCHEDULER_CONTEXT_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/Context.bd"));
+const CANONICAL_SCHEDULER_CORE_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/Core.bd"));
+const CANONICAL_SCHEDULER_EXPORTS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/Exports.bd"));
 const CANONICAL_CHANNEL_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Sync/Channel.bd"));
 const CANONICAL_MUTEX_SOURCE: &str =
@@ -91,6 +124,21 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
     vec![
         SourceUnit { logical_path: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(), source: CANONICAL_BOOTSTRAP_SOURCE.into() },
         SourceUnit { logical_path: CANONICAL_GC_SOURCE_PATH.into(), source: CANONICAL_GC_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_GC_STATE_SOURCE_PATH.into(), source: CANONICAL_GC_STATE_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_GC_MARKING_SOURCE_PATH.into(), source: CANONICAL_GC_MARKING_SOURCE.into() },
+        SourceUnit {
+            logical_path: CANONICAL_GC_ROOTS_HANDLES_SOURCE_PATH.into(),
+            source: CANONICAL_GC_ROOTS_HANDLES_SOURCE.into(),
+        },
+        SourceUnit { logical_path: CANONICAL_GC_SWEEP_SOURCE_PATH.into(), source: CANONICAL_GC_SWEEP_SOURCE.into() },
+        SourceUnit {
+            logical_path: CANONICAL_GC_COLLECTION_SOURCE_PATH.into(),
+            source: CANONICAL_GC_COLLECTION_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_GC_ALLOCATION_SOURCE_PATH.into(),
+            source: CANONICAL_GC_ALLOCATION_SOURCE.into(),
+        },
         SourceUnit { logical_path: CANONICAL_STRINGS_SOURCE_PATH.into(), source: CANONICAL_STRINGS_SOURCE.into() },
         SourceUnit {
             logical_path: CANONICAL_COLLECTIONS_SOURCE_PATH.into(),
@@ -98,6 +146,18 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
         },
         SourceUnit { logical_path: CANONICAL_FIBER_SOURCE_PATH.into(), source: CANONICAL_FIBER_SOURCE.into() },
         SourceUnit { logical_path: CANONICAL_SCHEDULER_SOURCE_PATH.into(), source: CANONICAL_SCHEDULER_SOURCE.into() },
+        SourceUnit {
+            logical_path: CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH.into(),
+            source: CANONICAL_SCHEDULER_CONTEXT_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_SCHEDULER_CORE_SOURCE_PATH.into(),
+            source: CANONICAL_SCHEDULER_CORE_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_SCHEDULER_EXPORTS_SOURCE_PATH.into(),
+            source: CANONICAL_SCHEDULER_EXPORTS_SOURCE.into(),
+        },
         SourceUnit { logical_path: CANONICAL_CHANNEL_SOURCE_PATH.into(), source: CANONICAL_CHANNEL_SOURCE.into() },
         SourceUnit { logical_path: CANONICAL_MUTEX_SOURCE_PATH.into(), source: CANONICAL_MUTEX_SOURCE.into() },
         SourceUnit { logical_path: CANONICAL_WAITGROUP_SOURCE_PATH.into(), source: CANONICAL_WAITGROUP_SOURCE.into() },
@@ -173,7 +233,7 @@ pub fn canonical_corelib_service_source_path(logical_path: &str) -> Option<std::
 fn normalize_lexically(path: &std::path::Path) -> std::path::PathBuf {
     use std::path::{Component, PathBuf};
     let mut out = PathBuf::new();
-    for component in path.components() {
+    path.components().for_each(|component| {
         match component {
             Component::ParentDir => {
                 out.pop();
@@ -181,7 +241,7 @@ fn normalize_lexically(path: &std::path::Path) -> std::path::PathBuf {
             Component::CurDir => {}
             other => out.push(other.as_os_str()),
         }
-    }
+    });
     out
 }
 

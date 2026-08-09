@@ -1,0 +1,84 @@
+// Canonical Beskid GC mark-state transitions and gray stack.
+
+// Marks a single object gray and pushes it onto the mark stack.
+pub unit GcMarkGray(pointer object) {
+    word state = raw_word_load(pointer_add(object, 8));
+    if state == GcMark::White {
+        raw_word_store(pointer_add(object, 8), GcMark::Gray);
+        // Push onto gray stack for processing.
+        PushGray(object);
+    }
+    return;
+}
+
+// Marks an object black (fully traced).
+pub unit GcMarkBlack(pointer object) {
+    raw_word_store(pointer_add(object, 8), GcMark::Black);
+    return;
+}
+
+// Processes the gray stack: for each gray object, mark its pointer fields,
+// then mark the object black.
+pub unit ProcessGrayStack() {
+    mut pointer obj = PopGray();
+    while obj != NativePointer(0) {
+        // Trace pointer fields in this object.
+        pointer descriptor = NativePointer(raw_word_load(obj));
+        if descriptor != NativePointer(0) {
+            word pointerCount = raw_word_load(pointer_add(descriptor, 24));
+            pointer pointerMap = NativePointer(raw_word_load(pointer_add(descriptor, 16)));
+            if pointerCount > 0 && pointerMap != NativePointer(0) {
+                mut word i = 0;
+                while i < pointerCount {
+                    word offset = raw_word_load(pointer_add(pointerMap, i * 8));
+                    pointer child = NativePointer(raw_word_load(pointer_add(obj, offset)));
+                    if child != NativePointer(0) {
+                        GcMarkGray(child);
+                    }
+                    i = i + 1;
+                }
+            }
+        }
+        GcMarkBlack(obj);
+        obj = PopGray();
+    }
+    return;
+}
+
+// Pushes an object pointer onto the gray stack.
+pub unit PushGray(pointer object) {
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return;
+    }
+    // Gray stack: BeskidHeap bytes 64-128 (8 slots of pointer each).
+    mut word i = 0;
+    while i < 8 {
+        pointer slot = pointer_add(heap, 64 + i * 8);
+        if raw_word_load(slot) == 0 {
+            raw_word_store(slot, NativeWord(object));
+            return;
+        }
+        i = i + 1;
+    }
+    return;
+}
+
+// Pops an object from the gray stack. Returns null when empty.
+pub pointer PopGray() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return NativePointer(0);
+    }
+    mut word i = 8;
+    while i > 0 {
+        i = i - 1;
+        pointer slot = pointer_add(heap, 64 + i * 8);
+        word value = raw_word_load(slot);
+        if value != 0 {
+            raw_word_store(slot, 0);
+            return NativePointer(value);
+        }
+    }
+    return NativePointer(0);
+}

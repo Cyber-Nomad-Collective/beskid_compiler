@@ -1,5 +1,5 @@
 use beskid_abi::runtime_source::{
-    CANONICAL_HUB_SOURCE_PATH, CANONICAL_SCHEDULER_SOURCE_PATH, canonical_runtime_sources,
+    CANONICAL_HUB_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH, canonical_runtime_sources,
 };
 
 fn canonical_source(path: &str) -> String {
@@ -12,7 +12,7 @@ fn canonical_source(path: &str) -> String {
 
 #[test]
 fn canonical_hub_storage_is_scheduler_owned_and_supports_stable_256_entry_registration() {
-    let scheduler = canonical_source(CANONICAL_SCHEDULER_SOURCE_PATH);
+    let scheduler = canonical_source(CANONICAL_SCHEDULER_CORE_SOURCE_PATH);
     let hub = canonical_source(CANONICAL_HUB_SOURCE_PATH);
 
     assert!(scheduler.contains("const SCHEDULER_HUB_STATE_OFFSET = 3488;"));

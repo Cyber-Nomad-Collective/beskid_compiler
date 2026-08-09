@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
+use beskid_isle::syntax_types::{LiteralKind, OperatorFact};
 use beskid_isle::{
-    AstNodeKey, EnumLayout, EnumVariantLayout, FieldLayout, IsleContext, LiteralKind, LoweringErrorKind, NodeFacts,
-    NodeKind, OperatorFact, lower_expression, lower_statement,
+    AstNodeKey, EnumLayout, EnumVariantLayout, FieldLayout, IsleContext, LoweringErrorKind, NodeFacts,
+    NodeKind, lower_expression, lower_statement,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{AbiParam, Function, InstBuilder, Signature, types};

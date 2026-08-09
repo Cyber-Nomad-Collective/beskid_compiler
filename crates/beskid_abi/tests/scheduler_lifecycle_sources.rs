@@ -1,5 +1,5 @@
 use beskid_abi::runtime_source::{
-    CANONICAL_FIBER_SOURCE_PATH, CANONICAL_SCHEDULER_SOURCE_PATH, canonical_runtime_sources,
+    CANONICAL_FIBER_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH, canonical_runtime_sources,
 };
 
 fn canonical_source(path: &str) -> String {
@@ -12,7 +12,7 @@ fn canonical_source(path: &str) -> String {
 
 #[test]
 fn canonical_scheduler_owns_lifecycle_statuses_and_never_fakes_a_context_switch() {
-    let scheduler = canonical_source(CANONICAL_SCHEDULER_SOURCE_PATH);
+    let scheduler = canonical_source(CANONICAL_SCHEDULER_CORE_SOURCE_PATH);
     let fiber = canonical_source(CANONICAL_FIBER_SOURCE_PATH);
 
     // The only lifecycle owner is the scheduler table.  Fiber 0 has a real

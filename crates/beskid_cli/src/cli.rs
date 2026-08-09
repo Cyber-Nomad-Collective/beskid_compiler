@@ -432,10 +432,14 @@ mod tests {
             "out/release/libbeskid_runtime.a",
             "--release-shared-library",
             "out/release/libbeskid_runtime.so",
-            "--debug-provenance-symbol-list",
-            "out/debug/runtime.symbols",
-            "--release-provenance-symbol-list",
-            "out/release/runtime.symbols",
+            "--debug-static-provenance-symbol-list",
+            "out/debug/static.symbols",
+            "--debug-shared-provenance-symbol-list",
+            "out/debug/shared.symbols",
+            "--release-static-provenance-symbol-list",
+            "out/release/static.symbols",
+            "--release-shared-provenance-symbol-list",
+            "out/release/shared.symbols",
         ])
         .expect("parse runtime-kit matrix");
         let Commands::RuntimeKit(args) = cli.command else {
@@ -447,6 +451,9 @@ mod tests {
         assert_eq!(args.target, "x86_64-unknown-linux-gnu");
         assert_eq!(args.debug_static_library, Path::new("out/debug/libbeskid_runtime.a"));
         assert_eq!(args.release_shared_library, Path::new("out/release/libbeskid_runtime.so"));
-        assert_eq!(args.debug_provenance_symbol_list, Path::new("out/debug/runtime.symbols"));
+        assert_eq!(args.debug_static_provenance_symbol_list, Path::new("out/debug/static.symbols"));
+        assert_eq!(args.debug_shared_provenance_symbol_list, Path::new("out/debug/shared.symbols"));
+        assert_eq!(args.release_static_provenance_symbol_list, Path::new("out/release/static.symbols"));
+        assert_eq!(args.release_shared_provenance_symbol_list, Path::new("out/release/shared.symbols"));
     }
 }

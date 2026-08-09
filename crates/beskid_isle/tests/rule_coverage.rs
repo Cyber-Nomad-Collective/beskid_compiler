@@ -1,10 +1,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use beskid_isle::{
-    NodeKind, SyntaxNodeClassification, UNSUPPORTED_TYPED_OPERATION_KINDS, classify_syntax_node_kind,
-    syntax_node_kind_catalogue, unsupported_typed_operation_kinds,
-};
+use beskid_isle::syntax_types::{SyntaxNodeClassification, UNSUPPORTED_TYPED_OPERATION_KINDS, classify_syntax_node_kind, syntax_node_kind_catalogue, unsupported_typed_operation_kinds};
+use beskid_isle::
+NodeKind,
+;
 use beskid_queries::IndexedNodeKind;
 
 #[test]
@@ -157,6 +157,7 @@ fn every_isle_lowered_kind_has_verified_clif_evidence() {
         (NodeKind::ForStatement, isle_tests.join("block_range_for.rs")),
         (NodeKind::SpawnExpression, codegen_tests.join("parsed_project_isle_harness.rs")),
         (NodeKind::LambdaExpression, codegen_tests.join("parsed_project_isle_harness.rs")),
+        (NodeKind::TryExpression, codegen_tests.join("isle_adapter.rs")),
         (NodeKind::ClifBlock, isle_tests.join("clif_block.rs")),
     ];
 
@@ -215,7 +216,7 @@ fn every_unsupported_kind_has_rejection_evidence_or_codex_blocker() {
 #[test]
 fn typed_operation_families_have_explicit_classifications() {
     use IndexedNodeKind as Syntax;
-    use SyntaxNodeClassification::{IsleLowered, Structural};
+    use beskid_isle::syntax_types::SyntaxNodeClassification::{IsleLowered, Structural};
 
     for (syntax, isle) in [
         // Semantic call subfamilies are covered independently in the codegen adapter tests.

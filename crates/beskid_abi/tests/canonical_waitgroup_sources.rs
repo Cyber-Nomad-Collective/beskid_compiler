@@ -1,5 +1,5 @@
 use beskid_abi::runtime_source::{
-    CANONICAL_SCHEDULER_SOURCE_PATH, CANONICAL_WAITGROUP_SOURCE_PATH, canonical_runtime_sources,
+    CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_WAITGROUP_SOURCE_PATH, canonical_runtime_sources,
 };
 
 fn canonical_source(path: &str) -> String {
@@ -12,7 +12,7 @@ fn canonical_source(path: &str) -> String {
 
 #[test]
 fn canonical_waitgroup_storage_is_scheduler_owned_and_wakes_each_registered_waiter() {
-    let scheduler = canonical_source(CANONICAL_SCHEDULER_SOURCE_PATH);
+    let scheduler = canonical_source(CANONICAL_SCHEDULER_CORE_SOURCE_PATH);
     let wait_group = canonical_source(CANONICAL_WAITGROUP_SOURCE_PATH);
 
     assert!(scheduler.contains("const FIBER_TABLE_MAX = 16;"));

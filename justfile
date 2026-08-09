@@ -22,7 +22,8 @@ corelib:
     just replace
     "$HOME/.beskid/bin/beskid" test \
         --project "{{corelib_tests_project}}" \
-        --all-targets
+        --all-targets \
+        </dev/null
 
 # Run the full compiler workspace test suite.
 compiler:

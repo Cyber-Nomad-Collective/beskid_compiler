@@ -1,0 +1,6 @@
+// Canonical scheduler C ABI leaf exports.
+
+[Export(Abi:"C", Symbol:"runtime_preempt_check")]
+pub unit RuntimePreemptCheck() {
+    return;
+}

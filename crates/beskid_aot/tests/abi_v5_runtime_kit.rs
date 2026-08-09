@@ -3,9 +3,12 @@ use std::fs;
 use beskid_abi::abi_v5::{TargetMetadata, canonical_source_hash};
 use beskid_abi::runtime_kit::{BuildProfile as KitProfile, RuntimeKitBuildRequest, build_runtime_kit};
 use beskid_abi::runtime_source::canonical_runtime_sources;
+use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source};
 use beskid_aot::api::BuildProfile;
 use beskid_aot::bundled::{installed_runtime_strategy, resolve_installed_runtime_archive};
 use beskid_aot::runtime::{RuntimeBuildRequest, prepare_runtime};
+use beskid_aot::{AotRunRequest, build_and_run, lower_prepared_syntax_entrypoint};
+use beskid_queries::compile_front_end_from_resolved_input;
 
 fn linux_target() -> TargetMetadata {
     TargetMetadata::supported()
@@ -69,6 +72,48 @@ fn staged_runtime_kit_resolves_the_canonical_static_archive() {
     let prepared = prepare_runtime(&RuntimeBuildRequest { kit: strategy })
         .expect("validate the exact staged static runtime artifact");
     assert!(prepared.staticlib_path.is_file());
+}
+
+#[test]
+#[ignore = "requires the staged native runtime-kit matrix prefix"]
+fn staged_runtime_kit_links_and_executes_with_the_canonical_static_archive() {
+    let prefix = std::env::var_os("BESKID_RUNTIME_PREFIX")
+        .map(std::path::PathBuf::from)
+        .expect("native runtime-kit evidence must set BESKID_RUNTIME_PREFIX");
+    let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
+        Ok("debug") => BuildProfile::Debug,
+        Ok("release") => BuildProfile::Release,
+        value => panic!("unsupported staged runtime profile: {value:?}"),
+    };
+    let target = beskid_abi::runtime_kit::host_runtime_target().expect("supported native host target");
+    let source = "i64 Main() { return 41 + 1; }";
+    let output = tempfile::tempdir().expect("AOT runtime-kit smoke output");
+    let source_path = output.path().join("runtime-kit-aot-smoke.bd");
+    std::fs::write(&source_path, source).expect("write AOT runtime-kit smoke source");
+    let resolved = resolved_input_from_plan(
+        source_path.clone(),
+        source.to_owned(),
+        synthetic_compile_plan_for_source(&source_path),
+        None,
+        None,
+    );
+    let front = compile_front_end_from_resolved_input(&resolved, FrontEndOptions::default(), None)
+        .expect("prepare AOT runtime-kit smoke frontend");
+    let artifact = lower_prepared_syntax_entrypoint(&front, "Main", target)
+        .expect("lower AOT runtime-kit smoke through the production path");
+    let runtime = installed_runtime_strategy(&prefix, profile, None)
+        .expect("resolve the exact staged ABI-v5 static runtime artifact");
+
+    let result = build_and_run(AotRunRequest {
+        artifact,
+        entrypoint: "Main".to_owned(),
+        output_dir: output.path().join("linked"),
+        runtime,
+    })
+    .expect("link and execute against the staged ABI-v5 static runtime artifact");
+
+    assert_eq!(result.exit_code, 42);
+    assert!(result.exe_path.is_file());
 }
 
 #[test]

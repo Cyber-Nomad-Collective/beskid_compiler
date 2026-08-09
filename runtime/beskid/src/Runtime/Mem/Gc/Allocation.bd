@@ -1,0 +1,89 @@
+// Canonical Beskid GC allocation entrypoints.
+//
+// Objects are allocated from a contiguous heap region via a bump pointer.
+
+// Allocates `size` bytes from the GC heap.
+//
+// When the bump pointer overflows its limit, a collection is triggered.
+// If collection cannot free enough space, the heap traps with out_of_memory.
+[Export(Abi:"C", Symbol:"gc_alloc")]
+pub pointer GcAlloc(word size, word alignment) {
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        Trap(5, pointer_from_native_word(0), 0);
+    }
+    // BeskidHeap layout (64 bytes):
+    //   offset  0: start (pointer)
+    //   offset  8: size (word)
+    //   offset 16: bump (pointer — current allocation cursor)
+    //   offset 24: limit (pointer — end of heap)
+    //   offset 32: live_bytes (word)
+    //   offset 40: object_count (word)
+    //   offset 48: phase (u8): 0=idle, 1=marking, 2=sweeping
+    //   offset 56: gc_threshold (word)
+    mut pointer bump = NativePointer(raw_word_load(pointer_add(heap, 16)));
+    mut pointer limit = NativePointer(raw_word_load(pointer_add(heap, 24)));
+    mut word alignedBump = NativeWord(bump);
+    word alignMask = alignment - 1;
+    if (alignedBump & alignMask) != 0 {
+        alignedBump = (alignedBump + alignMask) & (0 - alignment);
+    }
+    mut pointer nextBump = NativePointer(alignedBump + size);
+    if NativeWord(nextBump) < alignedBump {
+        Trap(5, pointer_from_native_word(0), 0);
+    }
+    if NativeWord(nextBump) > NativeWord(limit) {
+        // Trigger collection and retry.
+        GcCollect();
+        bump = NativePointer(raw_word_load(pointer_add(heap, 16)));
+        limit = NativePointer(raw_word_load(pointer_add(heap, 24)));
+        alignedBump = NativeWord(bump);
+        if (alignedBump & alignMask) != 0 {
+            alignedBump = (alignedBump + alignMask) & (0 - alignment);
+        }
+        nextBump = NativePointer(alignedBump + size);
+        if NativeWord(nextBump) < alignedBump || NativeWord(nextBump) > NativeWord(limit) {
+            Trap(5, pointer_from_native_word(0), 0);
+        }
+    }
+    raw_word_store(pointer_add(heap, 16), NativeWord(nextBump));
+    word live = raw_word_load(pointer_add(heap, 32)) + size;
+    raw_word_store(pointer_add(heap, 32), live);
+    word count = raw_word_load(pointer_add(heap, 40)) + 1;
+    raw_word_store(pointer_add(heap, 40), count);
+    return NativePointer(alignedBump);
+}
+
+
+// Canonical GC-tracked allocation entrypoint.
+//
+// `size` bytes are allocated from the GC heap and zero-filled. When `descriptorPtr`
+// is non-null, the descriptor pointer is written at offset 0 as the object header.
+[Export(Abi:"C", Symbol:"alloc")]
+pub pointer Alloc(word size, pointer descriptorPtr) {
+    if size == 0 {
+        return NativePointer(0);
+    }
+    // Use the GC heap for managed allocation; fall through to system
+    // allocation when the heap isn't initialized yet (bootstrap phase).
+    pointer heap = Heap();
+    if heap != NativePointer(0) {
+        pointer obj = GcAlloc(size, 8);
+        if obj != NativePointer(0) {
+            memory_set(obj, 0, size);
+            if descriptorPtr != NativePointer(0) {
+                raw_word_store(obj, NativeWord(descriptorPtr));
+            }
+            return obj;
+        }
+    }
+    // Fallback: direct system allocation for bootstrap/heap-init
+    pointer obj = SystemAllocate(size, 8);
+    if obj != NativePointer(0) {
+        memory_set(obj, 0, size);
+        if descriptorPtr != NativePointer(0) {
+            raw_word_store(obj, NativeWord(descriptorPtr));
+        }
+    }
+    return obj;
+}

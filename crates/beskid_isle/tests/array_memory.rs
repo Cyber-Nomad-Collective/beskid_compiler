@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
+use beskid_isle::syntax_types::LiteralKind;
 use beskid_isle::{
-    ArrayLayout, AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, LoweringErrorKind,
+    ArrayLayout, AstNodeKey, FunctionEmissionError, FunctionEmitter, LoweringErrorKind,
     ManagedArrayAllocation, NodeFacts, NodeKind,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};

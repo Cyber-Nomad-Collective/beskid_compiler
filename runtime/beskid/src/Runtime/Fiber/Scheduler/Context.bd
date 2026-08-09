@@ -1,0 +1,38 @@
+// Canonical scheduler adapters for manifest-owned context and stack boundaries.
+
+// Returns the selected target's BeskidArchContext record size. This compiler-owned
+// intrinsic is available only to the canonical runtime corpus and is materialized
+// from runtime_manifest.bsol, never from a source-level target switch.
+pub word ArchContextSize() {
+    return arch_context_size();
+}
+
+// Returns the selected target's BeskidArchContext record alignment.
+pub word ArchContextAlignment() {
+    return arch_context_alignment();
+}
+
+// Reserves a target-native guarded stack. The returned address is the first
+// writable usable byte; the inaccessible guard immediately precedes it.
+pub pointer GuardedStackAllocate(word usableSize) {
+    return guarded_stack_allocate(usableSize);
+}
+
+// Releases the original reservation without exposing its lower guard.
+pub unit GuardedStackFree(pointer usableBase, word usableSize) {
+    guarded_stack_free(usableBase, usableSize);
+    return;
+}
+
+// The sole assembly boundary for preparing a canonical fiber context. Its symbol,
+// signature, and target calling convention are all manifest-owned.
+pub unit ContextInit(pointer context, pointer stackTop, pointer entry, pointer argument, pointer returnTrampoline) {
+    context_init(context, stackTop, entry, argument, returnTrampoline);
+    return;
+}
+
+// The sole assembly boundary for saving and resuming a canonical fiber context.
+pub unit ContextSwitch(pointer from, pointer to) {
+    context_switch(from, to);
+    return;
+}

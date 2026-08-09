@@ -12,7 +12,9 @@ use beskid_analysis::projects::{
 };
 use beskid_analysis::services::parse_program_with_source_name;
 use beskid_codegen::{CodegenInput, CodegenInputError, SyntaxNodeFacts};
-use beskid_isle::{CallKind, DirectCallee, NodeFacts};
+use beskid_isle::callee::DirectCallee;
+use beskid_isle::syntax_types::CallKind;
+use beskid_isle::NodeFacts;
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, IndexedNodeKind, ProjectSession, SemanticTypeId, SourceUnitId,
     SyntaxGenerationId, TypedProgram, build_canonical_runtime_typed_program, build_typed_program,

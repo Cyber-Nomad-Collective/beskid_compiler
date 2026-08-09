@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use beskid_isle::{FunctionEmitter, LiteralKind, NodeFacts, NodeKind};
+use beskid_isle::syntax_types::LiteralKind;
+use beskid_isle::{FunctionEmitter, NodeFacts, NodeKind};
 use beskid_queries::{AstNodeId, AstNodeKey, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{UserFuncName, types};
 use cranelift_codegen::settings;

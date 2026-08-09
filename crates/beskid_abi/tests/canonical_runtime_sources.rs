@@ -1,7 +1,7 @@
 use beskid_abi::abi_v5::{AbiManifestV5, AbiType, SourceUnit, TargetMetadata};
 use beskid_abi::runtime_source::{
     CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CLOCKS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_GC_SOURCE_PATH, CANONICAL_PROCESS_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_GC_ROOTS_HANDLES_SOURCE_PATH, CANONICAL_PROCESS_SOURCE_PATH,
     RuntimeCapabilityError, canonical_corelib_service_capability, canonical_corelib_service_source_path,
     canonical_runtime_intrinsic_capability, canonical_runtime_sources, prove_canonical_runtime_corpus,
 };
@@ -198,16 +198,22 @@ fn canonical_runtime_source_owns_allocation_headers_and_lifo_root_frames() {
 #[test]
 fn canonical_gc_exports_one_registry_backed_external_root_count() {
     let sources = canonical_runtime_sources();
-    let gc =
-        &sources.iter().find(|unit| unit.logical_path == CANONICAL_GC_SOURCE_PATH).expect("canonical GC source").source;
+    let roots_handles = &sources
+        .iter()
+        .find(|unit| unit.logical_path == CANONICAL_GC_ROOTS_HANDLES_SOURCE_PATH)
+        .expect("canonical GC roots and handles source")
+        .source;
 
     assert_eq!(
-        gc.matches("[Export(Abi:\"C\", Symbol:\"gc_external_root_count\")]").count(),
+        sources
+            .iter()
+            .map(|unit| unit.source.matches("[Export(Abi:\"C\", Symbol:\"gc_external_root_count\")]").count())
+            .sum::<usize>(),
         1,
         "the canonical runtime must define one gc_external_root_count ABI export",
     );
-    assert!(gc.contains("return raw_word_load(pointer_add(heap, ROOT_REGISTRY_OFFSET - 8));"));
-    assert!(!gc.contains("count from handles table"));
+    assert!(roots_handles.contains("return raw_word_load(pointer_add(heap, ROOT_REGISTRY_OFFSET - 8));"));
+    assert!(!roots_handles.contains("count from handles table"));
 }
 
 #[test]

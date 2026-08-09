@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use beskid_isle::syntax_types::LiteralKind;
 use beskid_isle::{
-    AstNodeKey, FunctionEmissionError, FunctionEmitter, LiteralKind, LoweringErrorKind, NodeFacts, NodeKind,
+    AstNodeKey, FunctionEmissionError, FunctionEmitter, LoweringErrorKind, NodeFacts, NodeKind,
     StringInterner, StringMaterializationError,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};

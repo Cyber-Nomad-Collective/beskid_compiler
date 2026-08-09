@@ -100,6 +100,6 @@ export BESKID_RUNTIME_PREFIX="${prefix}"
 export BESKID_RUNTIME_KIT_PROFILE="${profile}"
 cargo test -p beskid_engine --test native_runtime_kit_smoke \
   staged_runtime_kit_executes_a_canonical_entrypoint -- --ignored --exact
-cargo test -p beskid_repl staged_linux_runtime_kit_evaluates_a_snippet -- --ignored --exact
+cargo test -p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --ignored --exact
 
 echo "Linux native runtime-kit provenance and staged Engine/REPL evidence passed"

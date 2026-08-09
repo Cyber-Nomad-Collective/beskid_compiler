@@ -66,9 +66,11 @@ fi
 
 write_provenance() {
   local profile="$1"
+  local linkage="$2"
+  local library="$3"
   local profile_prefix="${work}/${profile}-source"
   local profile_root="${profile_prefix}/lib/beskid-runtime/abi-5/${target}/${profile}"
-  local symbols="${work}/${profile}.symbols"
+  local symbols="${work}/${profile}-${linkage}.symbols"
   local static_library="${profile_root}/static/${static_name}"
   local shared_library="${profile_root}/shared/${shared_name}"
 
@@ -77,9 +79,9 @@ write_provenance() {
 
   {
     printf 'target=%s\n' "${target}"
-    "${symbol_tool}" --extern-only --defined-only --format=posix "${static_library}" "${shared_library}" \
+    "${symbol_tool}" --extern-only --defined-only --format=posix "${library}" \
       | awk 'NF >= 2 { print "defined=" $1 }'
-    "${symbol_tool}" --extern-only --undefined-only --format=posix "${shared_library}" \
+    "${symbol_tool}" --extern-only --undefined-only --format=posix "${library}" \
       | awk 'NF >= 2 { print "undefined=" $1 }'
   } >"${symbols}"
 
@@ -94,19 +96,23 @@ write_provenance() {
 
 stage_profile debug
 stage_profile release
-write_provenance debug
-write_provenance release
 
 debug_root="${work}/debug-source/lib/beskid-runtime/abi-5/${target}/debug"
 release_root="${work}/release-source/lib/beskid-runtime/abi-5/${target}/release"
+write_provenance debug static "${debug_root}/static/${static_name}"
+write_provenance debug shared "${debug_root}/shared/${shared_name}"
+write_provenance release static "${release_root}/static/${static_name}"
+write_provenance release shared "${release_root}/shared/${shared_name}"
 matrix_args=(
   runtime-kit build-matrix --prefix "${prefix}" --target "${target}"
   --debug-static-library "${debug_root}/static/${static_name}"
   --debug-shared-library "${debug_root}/shared/${shared_name}"
   --release-static-library "${release_root}/static/${static_name}"
   --release-shared-library "${release_root}/shared/${shared_name}"
-  --debug-provenance-symbol-list "${work}/debug.symbols"
-  --release-provenance-symbol-list "${work}/release.symbols"
+  --debug-static-provenance-symbol-list "${work}/debug-static.symbols"
+  --debug-shared-provenance-symbol-list "${work}/debug-shared.symbols"
+  --release-static-provenance-symbol-list "${work}/release-static.symbols"
+  --release-shared-provenance-symbol-list "${work}/release-shared.symbols"
 )
 
 if [[ "${target}" == "x86_64-pc-windows-msvc" ]]; then
@@ -130,7 +136,15 @@ for profile in debug release; do
   cargo test -p beskid_engine --test native_runtime_kit_smoke \
     staged_runtime_kit_executes_a_canonical_entrypoint -- --ignored --exact
   cargo test -p beskid_aot --test abi_v5_runtime_kit \
-    staged_runtime_kit_resolves_the_canonical_static_archive -- --ignored --exact
+    staged_runtime_kit_links_and_executes_with_the_canonical_static_archive -- --ignored --exact
+  cargo test -p beskid_repl eval::tests::staged_native_runtime_kit_evaluates_a_snippet -- --ignored --exact
 done
+
+# `beskid run` currently has one production profile (debug). Exercise that exact installed kit
+# through the public CLI in addition to the profile-parametric AOT integration test above.
+smoke_source="${work}/runtime-kit-cli-smoke.bd"
+printf 'unit Main() { return; }\n' >"${smoke_source}"
+export BESKID_RUNTIME_KIT_PROFILE="debug"
+"${cli[@]}" run "${smoke_source}" --plain
 
 echo "Native ABI-v5 runtime-kit matrix evidence passed for ${target} at ${prefix}"

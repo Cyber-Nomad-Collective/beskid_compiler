@@ -1,0 +1,88 @@
+use std::fmt::Write as _;
+
+use crate::model::{DispatchEntry, ManifestRoot};
+
+use super::common::write_generated_preamble;
+use super::dispatch::{DispatchCallee, host_wrapper_return_type, maybe_wrap_unsafe_body, render_dispatch_arm_body};
+
+/// Generate language handler wrappers and registration table for `beskid_runtime_handlers`.
+pub fn render_language_handler_table(manifest: &ManifestRoot) -> String {
+    let mut out = String::new();
+    write_generated_preamble(&mut out, &["clippy::too_many_lines"]);
+    let groups: [(&str, &[DispatchEntry], u32); 4] = [
+        ("usize", &manifest.dispatch.usize, 0),
+        ("ptr", &manifest.dispatch.ptr, 1),
+        ("unit", &manifest.dispatch.unit, 2),
+        ("i64", &manifest.dispatch.i64, 3),
+    ];
+    let mut language_entries = Vec::new();
+    for (group, entries, group_id) in &groups {
+        for entry in *entries {
+            if entry.is_language_handler() {
+                language_entries.push((*group, entry, *group_id));
+            }
+        }
+    }
+    writeln!(&mut out, "use beskid_abi::BeskidStr;").unwrap();
+    writeln!(&mut out, "use beskid_runtime::HandlerTableEntry;").unwrap();
+    writeln!(&mut out).unwrap();
+    for (group, entry, _) in &language_entries {
+        let wrapper = language_wrapper_fn_name(entry);
+        let return_type = host_wrapper_return_type(group);
+        let enum_param = if entry.params.is_empty() { "_enum_ptr" } else { "enum_ptr" };
+        let raw_body = render_dispatch_arm_body(entry, DispatchCallee::Language);
+        let wrapped = if entry.returns == "never" {
+            maybe_wrap_unsafe_body(&raw_body)
+        } else if raw_body.contains("enum_ptr.add") {
+            let inner = maybe_wrap_unsafe_body(&raw_body);
+            match *group {
+                "unit" => format!("{inner};"),
+                "ptr" => format!("({inner}) as *mut u8"),
+                "usize" => format!("({inner}) as usize"),
+                _ => inner,
+            }
+        } else {
+            match *group {
+                "unit" => format!("{raw_body};"),
+                "ptr" => format!("{raw_body} as *mut u8"),
+                "usize" => format!("{raw_body} as usize"),
+                _ => raw_body,
+            }
+        };
+        writeln!(
+            &mut out,
+            "/// # Safety\\n///\\n/// `enum_ptr` must reference a valid dispatch envelope for the duration of the call."
+        )
+        .unwrap();
+        writeln!(&mut out, "unsafe extern \"C\" fn {wrapper}({enum_param}: *const u8) -> {return_type} {{").unwrap();
+        writeln!(&mut out, "    {wrapped}").unwrap();
+        writeln!(&mut out, "}}").unwrap();
+        writeln!(&mut out).unwrap();
+    }
+    writeln!(&mut out, "const LANGUAGE_HANDLERS: [HandlerTableEntry; {}] = [", language_entries.len()).unwrap();
+    for (_, entry, group_id) in &language_entries {
+        let wrapper = language_wrapper_fn_name(entry);
+        writeln!(
+            &mut out,
+            "    HandlerTableEntry {{ group: {group_id}, tag: {}, fn_ptr: {wrapper} as *const u8 }},",
+            entry.tag
+        )
+        .unwrap();
+    }
+    writeln!(&mut out, "]; ").unwrap();
+    writeln!(&mut out).unwrap();
+    writeln!(&mut out, "/// Register all language-owned dispatch handlers with the runtime.").unwrap();
+    writeln!(&mut out, "#[unsafe(no_mangle)]").unwrap();
+    writeln!(&mut out, "pub extern \"C-unwind\" fn beskid_language_register_all() -> i32 {{").unwrap();
+    writeln!(&mut out, "    beskid_runtime::beskid_register_handlers(").unwrap();
+    writeln!(&mut out, "        u64::from(beskid_abi::BESKID_RUNTIME_ABI_VERSION),").unwrap();
+    writeln!(&mut out, "        LANGUAGE_HANDLERS.as_ptr(),").unwrap();
+    writeln!(&mut out, "        LANGUAGE_HANDLERS.len() as u64,").unwrap();
+    writeln!(&mut out, "    )").unwrap();
+    writeln!(&mut out, "}}").unwrap();
+    out
+}
+
+fn language_wrapper_fn_name(entry: &DispatchEntry) -> String {
+    format!("language_dispatch_{}", entry.dispatch_key)
+}

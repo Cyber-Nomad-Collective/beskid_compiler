@@ -1,0 +1,80 @@
+// Canonical Beskid GC collection orchestration, statistics, and write barrier.
+
+// Insertion write barrier: records `child` as reachable from `parent`
+// so concurrent marking preserves the invariant.
+[Export(Abi:"C", Symbol:"gc_write_barrier")]
+pub unit GcWriteBarrier(pointer parent, pointer child) {
+    if parent == NativePointer(0) || child == NativePointer(0) {
+        return;
+    }
+    pointer heap = Heap();
+    u8 phase = raw_byte_load(pointer_add(heap, 48));
+    if phase == 1 {
+        // During marking, push child onto the gray stack.
+        GcMarkGray(child);
+    }
+    return;
+}
+
+// Returns the total bytes allocated (live + dead).
+[Export(Abi:"C", Symbol:"gc_bytes_allocated")]
+pub word GcBytesAllocated() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return 0;
+    }
+    return raw_word_load(pointer_add(heap, 32));
+}
+
+// Returns the number of allocated objects.
+[Export(Abi:"C", Symbol:"gc_object_count")]
+pub word GcObjectCount() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return 0;
+    }
+    return raw_word_load(pointer_add(heap, 40));
+}
+
+// Returns the current GC phase: 0=idle, 1=marking, 2=sweeping.
+[Export(Abi:"C", Symbol:"gc_phase")]
+pub word GcPhase() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return 0;
+    }
+    return word(raw_byte_load(pointer_add(heap, 48)));
+}
+
+// Force a full mark/sweep collection.
+[Export(Abi:"C", Symbol:"gc_collect")]
+pub word GcCollect() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return 0;
+    }
+    // 1. Set phase to marking.
+    raw_byte_store(pointer_add(heap, 48), 1);
+    // 2. Mark all roots.
+    MarkRoots();
+    // 3. Sweep.
+    Sweep(heap);
+    // 4. Set phase back to idle.
+    raw_byte_store(pointer_add(heap, 48), 0);
+    return raw_word_load(pointer_add(heap, 32));
+}
+
+// Collect if the heap has exceeded the GC threshold.
+[Export(Abi:"C", Symbol:"gc_collect_if_needed")]
+pub word GcCollectIfNeeded() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) {
+        return 0;
+    }
+    word live = raw_word_load(pointer_add(heap, 32));
+    word threshold = raw_word_load(pointer_add(heap, 56));
+    if live >= threshold {
+        return GcCollect();
+    }
+    return live;
+}

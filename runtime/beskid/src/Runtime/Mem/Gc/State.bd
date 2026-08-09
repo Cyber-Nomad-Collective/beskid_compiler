@@ -1,0 +1,36 @@
+// Canonical Beskid GC mark state and runtime-state accessors.
+//
+// Header layout (BeskidObjectHeader, 16 bytes):
+//   offset 0: descriptor (pointer to BeskidTypeDescriptor)
+//   offset 8: gc_word (mark state: 0=white, 1=gray, 2=black)
+//
+// The heap state is stored in a BeskidRuntimeState at a known TLS offset,
+// installed by ThreadAttach during bootstrap.
+
+// Mark-state constants for gc_word.
+pub enum GcMark {
+    White,
+    Gray,
+    Black,
+}
+
+// Returns the active BeskidRuntimeState pointer installed by ThreadAttach.
+pub pointer RuntimeState() {
+    pointer tls = CurrentThreadState();
+    if tls == NativePointer(0) {
+        Trap(10, pointer_from_native_word(0), 0);
+    }
+    return NativePointer(raw_word_load(tls));
+}
+
+// Returns the heap pointer from the runtime state (offset 16 in BeskidRuntimeState).
+pub pointer Heap() {
+    pointer state = RuntimeState();
+    return NativePointer(raw_word_load(pointer_add(state, 16)));
+}
+
+// Returns the root-frame pointer from the runtime state (offset 40).
+pub pointer StateRootFrame() {
+    pointer state = RuntimeState();
+    return NativePointer(raw_word_load(pointer_add(state, 40)));
+}

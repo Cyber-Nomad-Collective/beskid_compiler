@@ -1,6 +1,6 @@
 //! Focused ABI facts for callable syntax constructs.
 
-use super::{ItemSignature, SemanticError, SemanticTypeId};
+use super::{ItemSignature, SemanticError, builtin_type_to_semantic};
 
 /// Translate the manifest-owned builtin index into the exact syntax ABI shape.
 /// This is semantic evidence only; code generation still requires the canonical-runtime
@@ -19,17 +19,4 @@ pub(super) fn runtime_intrinsic_signature(index: u32) -> Result<ItemSignature, S
     let result =
         builtin_type_to_semantic(spec.returns).ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
     Ok(ItemSignature { parameters: parameters.into(), result })
-}
-
-fn builtin_type_to_semantic(ty: beskid_analysis::builtins::BuiltinType) -> Option<SemanticTypeId> {
-    use beskid_analysis::builtins::BuiltinType;
-    Some(match ty {
-        BuiltinType::String => SemanticTypeId::STRING,
-        BuiltinType::Ptr => SemanticTypeId::POINTER,
-        BuiltinType::Usize => SemanticTypeId::WORD,
-        BuiltinType::U64 => SemanticTypeId::I64,
-        BuiltinType::F64 => SemanticTypeId::F64,
-        BuiltinType::Unit => SemanticTypeId::UNIT,
-        BuiltinType::Never => SemanticTypeId::NEVER,
-    })
 }

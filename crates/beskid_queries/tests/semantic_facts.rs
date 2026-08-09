@@ -2016,6 +2016,65 @@ pub Core.Results.Result<i64, Core.Syscall.SyscallError> Write() {
 }
 
 #[test]
+fn item_abi_signature_resolves_exact_assembled_qualified_nominal_without_import() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/exact-assembled-nominal/project/src");
+    let linux_path = root.join("Platform/Linux.bd");
+    let console_path = root.join("Console/Console.bd");
+    let capabilities_path = root.join("Console/Capabilities.bd");
+    let linux_source = r#"
+pub Console.ConsoleSize Winsize() {
+    return Console.ConsoleSize { columns: 80, rows: 24 };
+}
+"#;
+    let console_source = "pub type ConsoleSize { i32 columns, i32 rows }";
+    let capabilities_source = "pub type TerminalCapabilities { bool isTty }";
+    let sources = [
+        (&linux_path, linux_source),
+        (&console_path, console_source),
+        (&capabilities_path, capabilities_source),
+    ];
+    let units = sources
+        .iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            path: (*path).clone(),
+            source: (*source).to_string(),
+            program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
+        })
+        .collect::<Vec<_>>();
+    let linux_program = units[0].program.clone();
+    let assembly = Arc::new(SyntaxProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+    ));
+    let linux_unit = SourceUnitId::new(&db, linux_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        linux_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let generation = SyntaxGenerationId(66);
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let linux_index = SyntaxIndex::from_program(&linux_program, generation);
+    let winsize = key(linux_unit, generation, &linux_index, NodeKind::FunctionDefinition, 0);
+
+    assert_eq!(
+        item_abi_signature(&db, winsize).expect("Winsize item ABI"),
+        Some(ItemSignature { parameters: Arc::from([]), result: SemanticTypeId::POINTER })
+    );
+}
+
+#[test]
 fn generic_specialization_accepts_qualified_nominal_corelib_test_arguments() {
     let mut db = BeskidDatabase::default();
     let root = PathBuf::from("/tmp/corelib-generic-specialization/project/src");
