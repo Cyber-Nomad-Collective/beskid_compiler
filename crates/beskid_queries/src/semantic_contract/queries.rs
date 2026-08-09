@@ -13,7 +13,6 @@ pub(super) fn with_registered_syntax<T>(
     query(db, syntax, key)
 }
 
-
 /// Resolve a single-segment value path to an exact function declaration in lexical module scope.
 ///
 /// Local declarations shadow item names. Ambiguous, qualified, generic, and unresolved paths
@@ -21,7 +20,6 @@ pub(super) fn with_registered_syntax<T>(
 pub fn resolved_item(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ResolvedItem> {
     with_registered_syntax(db, key, resolved_item_tracked)
 }
-
 
 /// Resolve a single-segment value path to its generation-safe lexical declaration key.
 ///

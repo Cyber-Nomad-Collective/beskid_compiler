@@ -7,25 +7,20 @@ mod scanner;
 mod token_expectations;
 
 pub(crate) use boundaries::{
-    control_flow_keyword_len, is_for_clause_in_keyword, is_keyword_text, is_line_start,
-    is_recoverable_expression_statement_starter, is_recoverable_identifier_statement_starter,
-    is_recoverable_statement_start, is_recoverable_sync_keyword, is_top_level_at, recoverable_sync_boundary_start,
-    recovery_insert_position, recovery_scan_pos, recovery_source_has_fallback_control_flow_hint,
-    should_skip_sync_semicolon, top_level_statement_starts,
+    control_flow_keyword_len, is_keyword_text, recoverable_sync_boundary_start, recovery_insert_position,
+    recovery_scan_pos, recovery_source_has_fallback_control_flow_hint, top_level_statement_starts,
 };
 pub(crate) use keyword_rules::{
-    CONTROL_EXPRESSION_KEYWORDS, CONTROL_FLOW_KEYWORDS, ITEM_BODY_OPEN_KEYWORDS, ITEM_START_KEYWORDS, KEYWORDS,
-    PRIMITIVE_TYPE_KEYWORDS, RULE_FAMILY_FALLBACKS, RULE_KEYWORDS, SYNC_KEYWORDS, TERMINATOR_KEYWORDS,
-    derive_keyword_rule_token, keyword_rule_token, keyword_rule_token_or_derived, rule_family_fallback,
-    strip_keyword_suffix,
+    CONTROL_EXPRESSION_KEYWORDS, CONTROL_FLOW_KEYWORDS, ITEM_BODY_OPEN_KEYWORDS, ITEM_START_KEYWORDS,
+    PRIMITIVE_TYPE_KEYWORDS, TERMINATOR_KEYWORDS, keyword_rule_token_or_derived, rule_family_fallback,
 };
+#[cfg(test)]
+pub(crate) use keyword_rules::{KEYWORDS, keyword_rule_token};
 pub(crate) use list_separators::trailing_separator_before_list_close;
 pub(crate) use scanner::{find_unclosed_delimiter_before, matching_delimiter_close};
 pub(crate) use token_expectations::{
-    BODY_OPENING_TOKEN_CLASSES, recovery_expected_or_follow_token_has_any_class,
-    recovery_expected_or_follow_token_has_body_hint, recovery_expected_token_has_any_class,
-    recovery_expected_token_is_expected, recovery_follow_token_has_any_class, recovery_follow_token_is_expected,
-    recovery_follow_tokens, recovery_sync_keywords,
+    recovery_expected_or_follow_token_has_body_hint, recovery_expected_token_has_any_class, recovery_follow_tokens,
+    recovery_sync_keywords,
 };
 
 #[cfg(test)]

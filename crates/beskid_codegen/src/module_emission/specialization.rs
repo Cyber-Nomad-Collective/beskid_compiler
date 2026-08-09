@@ -122,12 +122,28 @@ fn collect_generic_call_specializations_in_environment(
     if environment.is_none()
         && node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?
             == Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
-        && item_abi_signature(db, key).map_err(|error| emission_verification(error.to_string()))?.is_none()
     {
-        // Program roots contain every declaration in an assembled unit. A generic declaration
-        // body is not executable until a concrete call supplies its immutable environment; that
-        // recursive path re-enters this collector with `Some(environment)` below.
-        return Ok(());
+        match item_abi_signature(db, key) {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                // Program roots contain every declaration in an assembled unit. A generic
+                // declaration body is not executable until a concrete call supplies its immutable
+                // environment; that recursive path re-enters this collector with an environment.
+                return Ok(());
+            }
+            Err(error) if error.is_unavailable() => {
+                // Root discovery is supplemental: selected executable items already fail closed
+                // in `is_concrete_executable_item`. An unrelated concrete declaration whose ABI
+                // has not been ported cannot prove a generic specialization and is skipped here.
+                return Ok(());
+            }
+            Err(error) => {
+                return Err(emission_verification(format!(
+                    "root item ABI classification failed for {}: {error}",
+                    format_declaration_for_trace(db, key),
+                )));
+            }
+        }
     }
     if let Some(declaration) = direct_generic_call_declaration(db, key).map_err(|error| {
         emission_verification(format!(
@@ -170,7 +186,13 @@ fn collect_generic_call_specializations_in_environment(
                 .ok_or_else(|| emission_verification("nested generic specialization is unavailable"))?
         } else {
             let specialization = generic_call_specialization(db, key)
-                .map_err(|error| emission_verification(error.to_string()))?
+                .map_err(|error| {
+                    emission_verification(format!(
+                        "generic specialization facts are unavailable at {} for declaration {}: {error}",
+                        beskid_queries::format_ast_node_site(db, key),
+                        format_declaration_for_trace(db, declaration),
+                    ))
+                })?
                 .ok_or_else(|| {
                     emission_verification(format!(
                         "generic direct call has no provable ABI specialization: call={} declaration={}",

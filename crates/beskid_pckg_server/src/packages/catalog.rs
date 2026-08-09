@@ -6,7 +6,7 @@ use super::mapping::{
 use super::{
     ApiErrorResponse, AppState, HeaderMap, IntoResponse, Json, NewPackage, PackageArtifactStore,
     PackageDetailsResponse, PackageSearchResponse, Path, Query, Response, State, StatusCode, StoreError,
-    authenticated_subject,
+    UpsertPackageRequest, authenticated_subject,
 };
 
 /// Legacy package index. Results are visibility-filtered before paging so a

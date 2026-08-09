@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::trusted_corelib_service_paths;
+use super::trusted_paths::trusted_corelib_service_paths;
 use crate::projects::{
     AssemblyDiscovery, AssemblyError, AssemblyOptions, CompilePlan, ResolvedDependencyProject, Target, TargetKind,
     assemble_program, assembly_options_for_plan, assembly_options_for_prepare, plan_entry_path,

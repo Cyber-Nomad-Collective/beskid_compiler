@@ -313,7 +313,11 @@ pub(super) fn callable_signature_for_path(
 }
 
 #[salsa::tracked]
-pub(super) fn spawn_target_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<SpawnTarget> {
+pub(super) fn spawn_target_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SpawnTarget> {
     with_node(db, syntax, key, |program, index, node| {
         let spawn = node.of::<beskid_analysis::syntax::SpawnExpression>()?;
         let callee = index.direct_child_id(
@@ -384,7 +388,11 @@ pub(super) fn normalized_expression_node(
 }
 
 #[salsa::tracked]
-pub(super) fn spawn_legality_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<SpawnLegality> {
+pub(super) fn spawn_legality_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SpawnLegality> {
     let target = spawn_target_tracked(db, syntax, key)?;
     let Some(target) = target else {
         return Ok(None);
@@ -545,4 +553,3 @@ pub(super) fn runtime_intrinsic_name_tracked(
     })?
     .transpose()
 }
-

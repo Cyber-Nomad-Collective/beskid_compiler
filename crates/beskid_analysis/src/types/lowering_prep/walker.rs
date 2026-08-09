@@ -15,7 +15,7 @@ use crate::types::path_value::{
     struct_fields_for_item,
 };
 use crate::types::result::{CallLoweringKind, FunctionSignature, MethodReceiverSource};
-use crate::types::{TypeId, TypeInfo};
+use crate::types::{TypeId, TypeInfo, TypeTable};
 
 use super::compatibility::{is_never, is_numeric, literal_type_id};
 use super::model::{CastIntent, LoweringPrep, LoweringPrepSurfaces};

@@ -1,10 +1,11 @@
 use std::fs;
 use std::path::PathBuf;
 
-use beskid_isle::syntax_types::{SyntaxNodeClassification, UNSUPPORTED_TYPED_OPERATION_KINDS, classify_syntax_node_kind, syntax_node_kind_catalogue, unsupported_typed_operation_kinds};
-use beskid_isle::
-NodeKind,
-;
+use beskid_isle::NodeKind;
+use beskid_isle::syntax_types::{
+    SyntaxNodeClassification, UNSUPPORTED_TYPED_OPERATION_KINDS, classify_syntax_node_kind, syntax_node_kind_catalogue,
+    unsupported_typed_operation_kinds,
+};
 use beskid_queries::IndexedNodeKind;
 
 #[test]

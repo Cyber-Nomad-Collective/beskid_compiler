@@ -8,12 +8,12 @@ use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleResult};
 
 use super::items::ResolvedSyntaxModuleItem;
 use super::trampolines::{LambdaTrampoline, SpawnTrampoline};
+use crate::CodegenInput;
 use crate::aggregate_static::{AggregateStaticPlan, emit_aggregate_static_data};
 use crate::array_static::{ArrayStaticPlan, emit_array_static_data};
 use crate::closure_static::{ClosureStaticPlan, emit_closure_static_data};
 use crate::lowering::CodegenArtifact;
 use crate::lowering::descriptor::TypeDescriptorData;
-use crate::CodegenInput;
 
 /// Cranelift [`DataId`] pair for a type: main descriptor blob and companion pointer-offset table.
 #[derive(Debug, Clone)]

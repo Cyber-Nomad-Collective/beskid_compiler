@@ -2,7 +2,6 @@
 
 use super::*;
 
-
 /// Enumerate exact syntax-backed callable completion candidates for one current generation.
 ///
 /// Generation-safe completion facts for lexical locals, types, imported members, and

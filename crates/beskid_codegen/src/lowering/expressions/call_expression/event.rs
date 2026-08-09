@@ -1,3 +1,6 @@
+use crate::lowering::cast_intent::ensure_type_compatibility_or_expected;
+use beskid_analysis::hir::HirPrimitiveType;
+
 use super::lambda::lower_function_typed_argument;
 use super::{
     AbiParam, CallConv, CodegenError, DispatchReturnGroup, DispatchRoute, HirCallExpression, HirExpressionNode,

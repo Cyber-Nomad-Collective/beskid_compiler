@@ -47,7 +47,6 @@ struct LoopTargets {
     break_block: Block,
 }
 
-
 #[allow(
     dead_code,
     unused_imports,
@@ -218,7 +217,6 @@ pub(crate) fn jump_from_current_if_unterminated(builder: &mut FunctionBuilder<'_
     builder.ins().jump(target, &[]);
     true
 }
-
 
 impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn node_kind(&mut self, key: AstNodeKey) -> Option<NodeKind> {

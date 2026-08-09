@@ -5,9 +5,11 @@ use crate::syntax::Spanned;
 
 use super::super::errors::ResolveResult;
 use super::super::ids::ItemId;
+use super::super::items::ItemInfo;
 use super::super::module_graph::ModuleGraph;
 use super::super::resolver::{self, Resolution, Resolver};
 use super::super::span_index::span_index_from_tables;
+use super::super::symbol::{SymbolId, SymbolRegistry};
 use super::super::tables::ResolutionTables;
 
 impl Resolver {
@@ -76,13 +78,7 @@ impl Resolver {
 
     pub(crate) fn into_prefetch_parts(
         self,
-    ) -> (
-        Vec<super::items::ItemInfo>,
-        ModuleGraph,
-        HashMap<ItemId, usize>,
-        super::symbol::SymbolRegistry,
-        HashMap<super::symbol::SymbolId, ItemId>,
-    ) {
+    ) -> (Vec<ItemInfo>, ModuleGraph, HashMap<ItemId, usize>, SymbolRegistry, HashMap<SymbolId, ItemId>) {
         (self.items, self.module_graph, self.builtin_items, self.symbols, self.by_symbol)
     }
 }

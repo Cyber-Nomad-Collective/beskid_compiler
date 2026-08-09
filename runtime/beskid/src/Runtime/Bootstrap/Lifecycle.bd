@@ -1,0 +1,89 @@
+// Returns the native runtime ABI implemented by this canonical source corpus.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_abi_version")]
+pub i32 AbiVersion() {
+    return 5;
+}
+
+// Activates the caller-owned runtime state for the current process.
+//
+// The caller supplies a manifest-layout `BeskidRuntimeState`. This stamps
+// `abi_version = 5` at offset 0 (and clears `flags` via the little-endian word write) and
+// returns the same handle. It does not install RuntimeState into TLS: root-frame helpers
+// require a dedicated `BeskidTlsState` installed by [`ThreadAttach`].
+[Export(Abi:"C", Symbol:"beskid_rt_v5_process_init")]
+pub pointer ProcessInit(pointer config) {
+    raw_word_store(config, 5);
+    return config;
+}
+
+// Ends the current process-thread bootstrap scope.
+//
+// If a `BeskidTlsState` token is still installed, detach it so root chaining and the
+// RuntimeState `current_thread` link cannot outlive process shutdown.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_process_shutdown")]
+pub unit ProcessShutdown(pointer runtime) {
+    pointer thread = CurrentThreadState();
+    if thread != NativePointer(0) {
+        ThreadDetach(thread);
+    }
+    return;
+}
+
+// Attaches a dynamically composed Beskid library to its caller-owned runtime state.
+//
+// Library composition shares process init (abi_version stamp) without installing TLS.
+// Callers that need root-frame chaining must still [`ThreadAttach`] the runtime.
+[Export(Abi:"C", Symbol:"beskid_library_attach_v5")]
+pub i32 LibraryAttach(pointer runtime) {
+    ProcessInit(runtime);
+    return 0;
+}
+
+// Detaches a composed library from its caller-owned runtime state.
+[Export(Abi:"C", Symbol:"beskid_library_detach_v5")]
+pub unit LibraryDetach(pointer runtime) {
+    ProcessShutdown(runtime);
+    return;
+}
+
+// Attaches the current native thread to one caller-owned runtime state.
+//
+// Allocates a zeroed `BeskidTlsState` (size 32, alignment 8), installs it as the TLS token,
+// and links `BeskidRuntimeState.current_thread` at offset 8. Root-frame helpers then read
+// `root_frame` at TLS offset 8 without colliding with RuntimeState fields.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_thread_attach")]
+pub pointer ThreadAttach(pointer runtime) {
+    pointer previous = CurrentThreadState();
+    if previous != NativePointer(0) {
+        ThreadDetach(previous);
+    }
+    pointer tlsState = SystemAllocate(32, 8);
+    if tlsState == NativePointer(0) {
+        return tlsState;
+    }
+    memory_set(tlsState, 0, 32);
+    raw_word_store(tlsState, NativeWord(runtime));
+    raw_word_store(pointer_add(tlsState, 8), 0);
+    raw_word_store(pointer_add(tlsState, 16), 0);
+    raw_word_store(pointer_add(tlsState, 24), 1);
+    raw_word_store(pointer_add(runtime, 8), NativeWord(tlsState));
+    SetCurrentThreadState(tlsState);
+    return tlsState;
+}
+
+// Detaches the current thread when its installed token matches `thread`.
+//
+// An out-of-order detach leaves another active attachment intact. A matching detach clears
+// TLS and `BeskidRuntimeState.current_thread`, then frees the 32-byte `BeskidTlsState`.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_thread_detach")]
+pub unit ThreadDetach(pointer thread) {
+    if CurrentThreadState() == thread {
+        pointer runtime = NativePointer(raw_word_load(thread));
+        SetCurrentThreadState(NativePointer(0));
+        if runtime != NativePointer(0) {
+            raw_word_store(pointer_add(runtime, 8), 0);
+        }
+        SystemFree(thread, 32);
+    }
+    return;
+}

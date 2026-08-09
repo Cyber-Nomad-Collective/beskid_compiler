@@ -12,7 +12,7 @@ use super::model::{
     AotBuildRequest, BuildOutputKind, BuildProfile, CanonicalHostEmitAuthority, ExportPolicy, LinkMode,
     NativeLibraryPair,
 };
-use super::pipeline::emit_object_stage;
+use super::object_stage::emit_object_stage;
 use super::platform_objects::{compile_context_assembly, compile_platform_objects};
 use super::validation::validate_extern_libraries;
 

@@ -7,7 +7,6 @@ const WG_TABLE_MAX = 16;
 // arbitrary queue that can contradict the scheduler's public capacity.
 const WG_WAITER_MAX = 16;
 const WG_SLOT_SIZE = 144; // counter + waiter_count + 16 waiter fiber IDs
-const WG_TABLE_SIZE = 2312; // count word + WG_TABLE_MAX slots
 
 // Returns the separately allocated WaitGroup table owned by the active scheduler.
 // WaitGroup storage must never be derived from an undeclared RuntimeState offset.

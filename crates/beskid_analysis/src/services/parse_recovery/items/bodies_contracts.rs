@@ -2,7 +2,7 @@ use crate::parser::Rule;
 
 use super::super::{
     candidate::RepairCandidate,
-    scan::{self, skip_ws, unbalanced_delimiters},
+    scan::{self, next_token_start, skip_ws, unbalanced_delimiters},
     syntax_primitives,
 };
 use super::priorities::{

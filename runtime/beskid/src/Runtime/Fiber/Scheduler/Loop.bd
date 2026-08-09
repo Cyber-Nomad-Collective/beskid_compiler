@@ -1,0 +1,73 @@
+// Canonical cooperative scheduler loop.
+
+// Drive one scheduling step. Returns true if work was done.
+pub bool SchedStep() {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return false; }
+    word fiberCount = raw_word_load(table);
+    ApplyPendingSpawns();
+    ApplyPendingCancels();
+    ApplyPendingWakes();
+
+    if RunQueueEmpty() {
+        // Check if any fibers are still alive (runnable or parked).
+        mut word i = 0; mut bool alive = false;
+        while i < fiberCount {
+            word s = FiberState(i);
+            if s == FiberState::Runnable || s == FiberState::Parked || s == FiberState::Running {
+                alive = true;
+            }
+            i = i + 1;
+        }
+        if !alive {
+            return false; // Scheduler done — all fibers finished.
+        }
+        return false; // Nothing to run but fibers exist (all parked — deadlock risk).
+    }
+
+    word next = RunQueuePop();
+    if next == 0xFFFF { return false; }
+    if FiberParked(next) { return true; } // Skip parked.
+
+    FiberSetState(next, FiberState::Running);
+
+    // This lifecycle slice deliberately does not claim a context transfer.
+    // The target-specific execution task must call ContextInit/ContextSwitch
+    // and complete the running record through FiberDone.  In particular, do
+    // not reinterpret an entry pointer as a return value or fabricate a
+    // direct-call execution path here.
+    SchedulerSetCurrentFiber(next);
+
+    return true;
+}
+
+// Run the scheduler until quiescence. Returns the main fiber's result.
+pub i64 SchedRun() {
+    SchedInit();
+    mut word steps = 0;
+    while steps < 10000 {
+        if !SchedStep() {
+            // Check all-blocked (deadlock).
+            pointer table = SchedTable();
+            word fiberCount = raw_word_load(table);
+            mut word i = 0; mut bool anyAlive = false; mut bool anyRunnable = false;
+            while i < fiberCount {
+                word s = FiberState(i);
+                if s == FiberState::Runnable { anyAlive = true; }
+                if s == FiberState::Parked { anyRunnable = true; }
+                i = i + 1;
+            }
+            if !anyRunnable {
+                break;
+            }
+            if anyAlive {
+                // All fibers parked — deadlock.
+                Trap(7, NativePointer(0), 0); // scheduler_deadlock
+            }
+            break;
+        }
+        steps = steps + 1;
+    }
+    pointer table = SchedTable();
+    return 0;
+}

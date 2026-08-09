@@ -3,7 +3,11 @@
 use super::super::*;
 
 #[salsa::tracked]
-pub(in crate::semantic_contract) fn item_signature_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<ItemSignature> {
+pub(in crate::semantic_contract) fn item_signature_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ItemSignature> {
     with_node(db, syntax, key, |_program, _index, node| item_signature_for_node(node))?.transpose()
 }
 
@@ -98,7 +102,10 @@ pub(in crate::semantic_contract) fn call_abi_signature_tracked(
     .transpose()
 }
 
-pub(in crate::semantic_contract) fn call_abi_signature_for_call(db: &dyn Db, key: AstNodeKey) -> Result<ItemSignature, SemanticError> {
+pub(in crate::semantic_contract) fn call_abi_signature_for_call(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Result<ItemSignature, SemanticError> {
     match call_lowering(db, key)? {
         Some(CallLowering::CorelibService(service)) => {
             return corelib_service_abi_signature(service)

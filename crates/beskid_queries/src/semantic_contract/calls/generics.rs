@@ -132,6 +132,32 @@ pub(in crate::semantic_contract) fn type_syntax_is_generic_parameter_reference(
     segment.node.type_args.is_empty() && segment.node.name.node.name == parameter_name
 }
 
+fn type_syntax_is_enclosing_generic_parameter_reference(
+    db: &dyn Db,
+    key: AstNodeKey,
+    syntax_type: &beskid_analysis::syntax::Type,
+) -> bool {
+    let Some(parameter_name) = generic_parameter_reference_name(syntax_type) else {
+        return false;
+    };
+    let Some(syntax) = db.syntax_unit(key.unit) else {
+        return false;
+    };
+    if !syntax.accepts_key(db, key) {
+        return false;
+    }
+    let index = syntax.syntax_index(db);
+    let Some(enclosing) =
+        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+    else {
+        return false;
+    };
+    index
+        .node_at(syntax.expanded_program(db), enclosing)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+        .is_some_and(|function| function.generics.iter().any(|generic| generic.node.name == parameter_name.as_ref()))
+}
+
 pub(in crate::semantic_contract) fn generic_call_uses_parameter_type_arguments(
     db: &dyn Db,
     key: AstNodeKey,
@@ -160,6 +186,7 @@ pub(in crate::semantic_contract) fn generic_call_uses_parameter_type_arguments(
     type_arguments.iter().zip(function.generics.iter()).all(|(argument, generic)| {
         abi_type_from_syntax(db, key, &argument.node).is_ok()
             || type_syntax_is_generic_parameter_reference(&argument.node, generic.node.name.as_str())
+            || type_syntax_is_enclosing_generic_parameter_reference(db, key, &argument.node)
     })
 }
 
@@ -196,7 +223,12 @@ pub(in crate::semantic_contract) fn imported_generic_nominal_receiver_requires_i
     exported_generic_type_named(db, *target, key.generation, receiver_name)
 }
 
-pub(in crate::semantic_contract) fn exported_generic_type_named(db: &dyn Db, unit: SourceUnitId, generation: SyntaxGenerationId, name: &str) -> bool {
+pub(in crate::semantic_contract) fn exported_generic_type_named(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    name: &str,
+) -> bool {
     let mut pending = vec![unit];
     let mut visited = std::collections::HashSet::new();
     while let Some(current) = pending.pop() {
@@ -271,7 +303,11 @@ pub(in crate::semantic_contract) fn function_declares_generics(db: &dyn Db, decl
 /// Whether a qualified call's receiver is an exact current import target.
 /// Imported type/module member calls have no direct item edge; unknown qualified calls remain
 /// unavailable instead of being guessed.
-pub(in crate::semantic_contract) fn imported_call_receiver_exists(db: &dyn Db, key: AstNodeKey, path: &beskid_analysis::syntax::Path) -> bool {
+pub(in crate::semantic_contract) fn imported_call_receiver_exists(
+    db: &dyn Db,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> bool {
     let Some((_member, receiver)) = path.segments.split_last() else {
         return false;
     };

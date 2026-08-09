@@ -70,7 +70,7 @@ pub enum CommunityVote {
 }
 
 impl CommunityVote {
-    fn value(self) -> i16 {
+    pub(super) fn value(self) -> i16 {
         match self {
             Self::Up => 1,
             Self::Down => -1,
@@ -250,4 +250,3 @@ pub trait AsyncCommunityRepository: Send + Sync {
         now_unix_seconds: i64,
     ) -> Result<CommunityNotification, CommunityStoreError>;
 }
-

@@ -1,7 +1,5 @@
 use std::collections::BTreeSet;
 
-use std::collections::BTreeSet;
-
 /// Roles emitted by the identity boundary that matter to registry operations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Role {

@@ -10,7 +10,6 @@ const HUB_TABLE_MAX = 16;
 // is deterministic and cannot be perturbed by a swap-remove.
 const HUB_ENTRY_MAX = 256;
 const HUB_SLOT_SIZE = 4112;
-const HUB_TABLE_SIZE = 65800;
 
 // Hub-specific ABI status codes (gapped; function-constant pattern from Concurrency.Status).
 pub i64 HubEmpty() { return 4; }

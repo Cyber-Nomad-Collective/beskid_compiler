@@ -11,6 +11,6 @@ mod server;
 mod workspace_review_routes;
 
 pub(crate) use self::server::{
-    AppState, PackageBackend, authenticated_subject, format_timestamp, now_unix_seconds, unauthorized_response,
+    AppState, authenticated_subject, format_timestamp, now_unix_seconds, unauthorized_response,
 };
 pub use self::server::{PckgServerConfig, ServerStartupError, router, router_from_config, serve};

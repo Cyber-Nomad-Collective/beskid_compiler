@@ -122,11 +122,7 @@ pub(super) fn corelib_service_symbols(
         .collect()
 }
 
-fn collect_corelib_service_callees(
-    db: &dyn beskid_queries::Db,
-    key: AstNodeKey,
-    callees: &mut HashSet<&'static str>,
-) {
+fn collect_corelib_service_callees(db: &dyn beskid_queries::Db, key: AstNodeKey, callees: &mut HashSet<&'static str>) {
     if let Ok(Some(CallLowering::CorelibService(service))) = call_lowering(db, key) {
         callees.insert(service.symbol);
     }

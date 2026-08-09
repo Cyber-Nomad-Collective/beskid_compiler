@@ -518,7 +518,6 @@ impl<'a> TypeChecker<'a> {
 
         Some(return_type)
     }
-
 }
 
 fn integer_literal_value(expression: &HirExpressionNode) -> Option<i64> {

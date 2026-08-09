@@ -12,4 +12,4 @@ mod resolution;
 mod tests;
 
 pub use self::model::ModuleIndex;
-pub use self::path_inference::{infer_logical_module_path, package_for_unit};
+pub use self::path_inference::infer_logical_module_path;

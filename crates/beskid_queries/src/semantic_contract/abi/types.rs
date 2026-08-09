@@ -73,21 +73,15 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
                     return (contextual_constant_integer(db, value)?.is_some()
                         || integer_literal_fits_abi(db, value, expected)?)
                     .then_some(expected)
-                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"));
+                    .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"));
                 }
 
-                if let Some(constructor) =
-                    parent_syntax.of::<beskid_analysis::syntax::EnumConstructorExpression>()
-                {
+                if let Some(constructor) = parent_syntax.of::<beskid_analysis::syntax::EnumConstructorExpression>() {
                     let [argument] = constructor.args.as_slice() else {
                         return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
                     };
                     let payload = index
-                        .direct_child_id(
-                            program,
-                            parent,
-                            beskid_analysis::syntax_query::DynNodeRef::from(argument),
-                        )
+                        .direct_child_id(program, parent, beskid_analysis::syntax_query::DynNodeRef::from(argument))
                         .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
                         .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
                     if payload != key {
@@ -199,7 +193,11 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
 }
 
 #[salsa::tracked]
-pub(in crate::semantic_contract) fn abi_type_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
+pub(in crate::semantic_contract) fn abi_type_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
         if let Some(expression) = node.of::<beskid_analysis::syntax::Expression>() {
             return Some(abi_type_for_expression(db, program, index, key, expression));

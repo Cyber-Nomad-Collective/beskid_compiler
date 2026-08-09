@@ -2029,11 +2029,8 @@ pub Console.ConsoleSize Winsize() {
 "#;
     let console_source = "pub type ConsoleSize { i32 columns, i32 rows }";
     let capabilities_source = "pub type TerminalCapabilities { bool isTty }";
-    let sources = [
-        (&linux_path, linux_source),
-        (&console_path, console_source),
-        (&capabilities_path, capabilities_source),
-    ];
+    let sources =
+        [(&linux_path, linux_source), (&console_path, console_source), (&capabilities_path, capabilities_source)];
     let units = sources
         .iter()
         .map(|(path, source)| SourceUnit {
@@ -2323,6 +2320,65 @@ Channel<ConsoleMessage> MessagesChannel() { return Create<ConsoleMessage>(); }
     assert!(
         generic_call_specialization(&db, call).expect("concrete nominal generic specialization").is_some(),
         "the concrete nominal call must be specialized directly"
+    );
+}
+
+#[test]
+fn explicit_generic_aggregate_argument_uses_the_declared_parameter_abi() {
+    let source = r#"
+type SendOk { }
+type ChannelError { }
+enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
+Result<TValue, TError> Success<TValue, TError>(TValue value) { return Result::Ok(value); }
+Result<SendOk, ChannelError> MapSendStatus() { return Success<SendOk, ChannelError>(SendOk { }); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let success = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let call = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .find(|call| {
+            matches!(call_lowering(&db, *call).ok().flatten(), Some(CallLowering::Direct(declaration)) if declaration == success)
+        })
+        .expect("Success<SendOk, ChannelError> call");
+
+    assert_eq!(
+        generic_call_specialization(&db, call).expect("explicit aggregate specialization"),
+        Some(beskid_queries::GenericCallSpecialization {
+            declaration: success,
+            signature: ItemSignature {
+                parameters: Arc::from([SemanticTypeId::POINTER]),
+                result: SemanticTypeId::POINTER,
+            },
+            substitutions: Arc::from([
+                beskid_queries::GenericSubstitution {
+                    parameter: Arc::from("TValue"),
+                    argument: SemanticTypeId::POINTER,
+                },
+                beskid_queries::GenericSubstitution {
+                    parameter: Arc::from("TError"),
+                    argument: SemanticTypeId::POINTER,
+                },
+            ]),
+        })
+    );
+}
+
+#[test]
+fn enclosing_generic_parameter_argument_keeps_an_imported_generic_call_direct() {
+    let source = r#"
+type ChannelError { }
+enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
+Result<TValue, TError> Success<TValue, TError>(TValue value) { return Result::Ok(value); }
+Result<T, ChannelError> Receive<T>(T value) { return Success<T, ChannelError>(value); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let success = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_eq!(
+        call_lowering(&db, call).expect("enclosing generic argument lowering"),
+        Some(CallLowering::Direct(success))
     );
 }
 

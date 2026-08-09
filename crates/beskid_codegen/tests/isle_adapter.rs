@@ -8,9 +8,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, canonical_corelib_service_capability,
-    canonical_corelib_service_source_path, canonical_corelib_service_sources,
+    CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH,
+    CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
+    CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
+    canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_corelib_service_sources,
     canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources,
     canonical_runtime_intrinsic_capability, canonical_runtime_sources,
 };
@@ -2830,15 +2831,27 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
         canonical_runtime_intrinsic_capability(&manifest).expect("compiler authority"),
     )
     .expect("canonical runtime syntax facts");
-    let root = AstNodeKey { unit: SourceUnitId::new(&*db, source_path), generation, node: AstNodeId(0) };
+    let native_root = AstNodeKey {
+        unit: SourceUnitId::new(&*db, directory.join(CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH)),
+        generation,
+        node: AstNodeId(0),
+    };
+    let roots_root = AstNodeKey {
+        unit: SourceUnitId::new(&*db, directory.join(CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH)),
+        generation,
+        node: AstNodeId(0),
+    };
     let leaked: &'static BeskidDatabase = Box::leak(db);
-    let input =
-        CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest).expect("canonical runtime codegen input");
+    let input = CodegenInput::new(leaked, typed, Arc::from([native_root, roots_root]), target, manifest)
+        .expect("canonical runtime codegen input");
     let isa = isa::lookup_by_name("x86_64")
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    let items = find_function_definitions(input.database(), root);
+    let items = [native_root, roots_root]
+        .into_iter()
+        .flat_map(|root| find_function_definitions(input.database(), root))
+        .collect::<Vec<_>>();
     let selected = ["NativePointer", "SystemAllocate", "RootFramePrevious", "RootFrame"];
     let module_items = selected
         .into_iter()
@@ -2923,15 +2936,32 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         canonical_runtime_intrinsic_capability(&manifest).expect("compiler authority"),
     )
     .expect("canonical runtime syntax facts");
-    let root = AstNodeKey { unit: SourceUnitId::new(&*db, source_path), generation, node: AstNodeId(0) };
+    let native_root = AstNodeKey {
+        unit: SourceUnitId::new(&*db, directory.join(CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH)),
+        generation,
+        node: AstNodeId(0),
+    };
+    let objects_root = AstNodeKey {
+        unit: SourceUnitId::new(&*db, directory.join(CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH)),
+        generation,
+        node: AstNodeId(0),
+    };
+    let roots_root = AstNodeKey {
+        unit: SourceUnitId::new(&*db, directory.join(CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH)),
+        generation,
+        node: AstNodeId(0),
+    };
     let leaked: &'static BeskidDatabase = Box::leak(db);
-    let input =
-        CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest).expect("canonical runtime codegen input");
+    let input = CodegenInput::new(leaked, typed, Arc::from([native_root, objects_root, roots_root]), target, manifest)
+        .expect("canonical runtime codegen input");
     let isa = isa::lookup_by_name(host_isa_name)
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    let items = find_function_definitions(input.database(), root);
+    let items = [native_root, objects_root, roots_root]
+        .into_iter()
+        .flat_map(|root| find_function_definitions(input.database(), root))
+        .collect::<Vec<_>>();
     let selected = [
         "NativePointer",
         "NativeWord",

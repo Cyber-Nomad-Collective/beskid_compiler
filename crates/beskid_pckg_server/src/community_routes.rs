@@ -15,6 +15,8 @@ mod posts;
 mod profiles;
 mod responses;
 mod state;
+#[cfg(test)]
+mod tests;
 mod votes;
 
 use axum::{
@@ -39,7 +41,7 @@ use self::{
 };
 
 pub use self::state::CommunityState;
-pub(crate) use self::state::{CatalogProfile, CommunityLinkPolicy, CommunityLinkPolicyFuture};
+pub(crate) use self::state::{CommunityLinkPolicy, CommunityLinkPolicyFuture};
 
 pub fn router(state: CommunityState) -> Router {
     Router::new()

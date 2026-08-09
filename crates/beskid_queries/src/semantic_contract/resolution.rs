@@ -3,7 +3,11 @@
 use super::*;
 
 #[salsa::tracked]
-pub(super) fn resolved_item_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<ResolvedItem> {
+pub(super) fn resolved_item_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ResolvedItem> {
     with_node(db, syntax, key, |program, index, node| {
         let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
         resolve_item_declaration(db, program, index, key, &path.path.node)
@@ -139,7 +143,11 @@ pub(super) fn unique_inline_module_in_scope(
 
 /// Resolve a qualified module path from an exact current import and, when required, explicit
 /// public child-module edges. Private imports remain available only inside their owner.
-pub(super) fn resolve_qualified_module_unit(db: &dyn Db, key: AstNodeKey, module_path: &[String]) -> Option<SourceUnitId> {
+pub(super) fn resolve_qualified_module_unit(
+    db: &dyn Db,
+    key: AstNodeKey,
+    module_path: &[String],
+) -> Option<SourceUnitId> {
     let initial = db
         .syntax_dependency_registry()
         .lock()
@@ -286,7 +294,11 @@ pub(super) fn nearest_reexport_route(
     None
 }
 
-pub(super) fn public_reexport_units(db: &dyn Db, unit: SourceUnitId, generation: SyntaxGenerationId) -> Vec<SourceUnitId> {
+pub(super) fn public_reexport_units(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+) -> Vec<SourceUnitId> {
     public_module_routes(db, unit, generation).into_iter().map(|(_, target)| target).fold(
         Vec::new(),
         |mut targets, target| {
@@ -436,4 +448,3 @@ pub(super) fn outer_module_scope(
 ) -> Option<beskid_analysis::syntax::AstNodeId> {
     module_scope(index, parent_node(index, scope)?)
 }
-

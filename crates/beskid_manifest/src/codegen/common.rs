@@ -70,8 +70,6 @@ pub(super) fn symbol_const_suffix(symbol: &str) -> String {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-
 pub(super) fn dispatch_tag_imports(manifest: &ManifestRoot) -> String {
     let mut tags = Vec::new();
     for group in dispatch_groups(manifest) {

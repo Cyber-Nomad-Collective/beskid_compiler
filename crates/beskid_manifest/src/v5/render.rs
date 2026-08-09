@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use super::model::{RuntimeManifestV5, TargetV5};
+use super::model::{ParameterLocationV5, RuntimeManifestV5, TargetV5};
 
 pub(super) fn render_rust(
     manifest: &RuntimeManifestV5,

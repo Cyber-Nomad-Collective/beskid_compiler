@@ -5,4 +5,7 @@
 
 pub mod Runtime.Fiber.Scheduler.Context;
 pub mod Runtime.Fiber.Scheduler.Core;
+pub mod Runtime.Fiber.Scheduler.Storage;
+pub mod Runtime.Fiber.Scheduler.Queue;
+pub mod Runtime.Fiber.Scheduler.Loop;
 pub mod Runtime.Fiber.Scheduler.Exports;

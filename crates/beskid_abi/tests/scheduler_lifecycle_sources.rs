@@ -38,7 +38,7 @@ fn canonical_scheduler_owns_lifecycle_statuses_and_never_fakes_a_context_switch(
     assert!(fiber.contains("pub bool FiberCancel(i64 fiberId)"));
     assert!(fiber.contains("PendingCancelEnqueue(index);"));
     assert!(fiber.contains("pub unit FiberDetach(i64 fiberId)"));
-    assert!(fiber.contains("pub i64 FiberCurrentId()"));
+    assert!(scheduler.contains("pub i64 FiberCurrentId()"));
     assert!(fiber.contains("pub i32 FiberJoinStatus(i64 fiberId)"));
     assert!(fiber.contains("pub i64 FiberJoinValue(i64 fiberId)"));
     assert!(fiber.contains("Trap(6, NativePointer(0), 0);"));

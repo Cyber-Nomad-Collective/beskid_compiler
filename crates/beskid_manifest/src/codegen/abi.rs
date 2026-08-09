@@ -63,6 +63,7 @@ pub fn render_abi_builtins(manifest: &ManifestRoot) -> String {
     out
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum AbiParamKind {
     Ptr,
     I64,

@@ -11,7 +11,7 @@ use serde::Deserialize;
 use super::model::AppState;
 
 #[derive(Debug, Deserialize)]
-struct AuthHubFinishQuery {
+pub(super) struct AuthHubFinishQuery {
     handoff: Option<String>,
 }
 

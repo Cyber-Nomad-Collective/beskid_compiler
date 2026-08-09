@@ -16,7 +16,5 @@ pub use self::options::{AssemblyError, UnitMaterializer, assembly_options_for_pl
 pub(crate) use self::orchestration::assemble_program;
 pub use self::orchestration::assemble_program_with_materializer;
 pub(crate) use self::scanner::{
-    import_paths_from_source_full, module_declaration_paths_from_source, module_paths_from_qualified_references,
-    parent_module_import_path,
+    import_paths_from_source_full, module_paths_from_qualified_references, parent_module_import_path,
 };
-use self::trusted_paths::trusted_corelib_service_paths;

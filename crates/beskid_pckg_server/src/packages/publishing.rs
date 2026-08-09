@@ -3,6 +3,7 @@ use super::mapping::{next_id, now, package_not_found, package_storage_failure, v
 use super::{
     ApiErrorResponse, AppState, HeaderMap, IntoResponse, Json, Path, PublishOutcome, PublishPackageVersionRequest,
     PublishVersion, Request, Response, State, StatusCode, StoreError, authenticated_subject, header, to_bytes,
+    validate_package_artifact,
 };
 
 pub async fn publish_version(

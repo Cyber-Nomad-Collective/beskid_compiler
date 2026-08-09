@@ -3,7 +3,11 @@
 use super::*;
 
 #[salsa::tracked]
-pub(super) fn node_kind_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<IndexedNodeKind> {
+pub(super) fn node_kind_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<IndexedNodeKind> {
     with_node(db, syntax, key, |_program, _index, node| Some(node.node_kind()))
 }
 
@@ -19,7 +23,11 @@ pub(super) fn child_nodes_tracked(
 }
 
 #[salsa::tracked]
-pub(super) fn literal_fact_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<LiteralFact> {
+pub(super) fn literal_fact_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<LiteralFact> {
     with_node(db, syntax, key, |_program, _index, node| {
         let literal = node.of::<beskid_analysis::syntax::Literal>()?;
         Some(match literal {
@@ -33,7 +41,11 @@ pub(super) fn literal_fact_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: As
 }
 
 #[salsa::tracked]
-pub(super) fn clif_block_body_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
+pub(super) fn clif_block_body_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<str>> {
     with_node(db, syntax, key, |_program, _index, node| {
         let clif = node.of::<beskid_analysis::syntax::ClifBlockExpression>()?;
         Some(Arc::from(clif.body.as_str()))
@@ -41,7 +53,11 @@ pub(super) fn clif_block_body_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key:
 }
 
 #[salsa::tracked]
-pub(super) fn node_span_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<SourceSpan> {
+pub(super) fn node_span_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SourceSpan> {
     with_node(db, syntax, key, |_program, _index, node| node.span())
 }
 
@@ -79,7 +95,11 @@ pub fn dispatch_builtin_symbol(db: &dyn Db, key: AstNodeKey) -> SemanticQueryRes
 }
 
 #[salsa::tracked]
-pub(super) fn operator_fact_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<OperatorFact> {
+pub(super) fn operator_fact_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<OperatorFact> {
     with_node(db, syntax, key, |program, index, node| {
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
             return operator_fact_for_binary(db, program, index, key, binary);
@@ -160,7 +180,11 @@ pub(super) fn unary_operator(operator: beskid_analysis::syntax::UnaryOp) -> Oper
 }
 
 #[salsa::tracked]
-pub(super) fn item_body_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
+pub(super) fn item_body_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<AstNodeKey> {
     with_node(db, syntax, key, |program, index, node| {
         if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
             return index
@@ -255,7 +279,11 @@ pub(super) fn block_statement_nodes_tracked(
 }
 
 #[salsa::tracked]
-pub(super) fn item_name_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
+pub(super) fn item_name_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<Arc<str>> {
     with_node(db, syntax, key, |_program, _index, node| {
         node.of::<beskid_analysis::syntax::FunctionDefinition>()
             .map(|definition| Arc::from(definition.name.node.name.as_str()))
@@ -304,7 +332,11 @@ pub(super) fn item_export_symbol_tracked(
 }
 
 #[salsa::tracked]
-pub(super) fn test_item_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<TestItem> {
+pub(super) fn test_item_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<TestItem> {
     with_node(db, syntax, key, |_program, _index, node| {
         let definition = node.of::<beskid_analysis::syntax::TestDefinition>()?;
         let mut module_path = Vec::new();
@@ -521,4 +553,3 @@ pub(super) fn with_node<T>(
     };
     Ok(query(expanded, index, node))
 }
-

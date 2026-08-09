@@ -1,9 +1,5 @@
 //! Public AST/Salsa semantic contracts used by later frontend and codegen replacement slices.
 
-use std::collections::{HashMap, HashSet};
-use std::ffi::OsString;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 pub use beskid_abi::runtime_source::CorelibService;
 use beskid_abi::{
     abi_v5::{AbiManifestV5, AbiType, TargetMetadata},
@@ -12,6 +8,10 @@ use beskid_abi::{
 };
 use beskid_analysis::projects::SyntaxProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
+use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::db::Db;
 use crate::inputs::ProjectSession;

@@ -15,14 +15,10 @@ pub enum SyntaxModuleEmissionError {
     DuplicateSymbol(String),
 }
 
-pub(super) fn emission_error(
-    input: &CodegenInput<'_>,
-    error: FunctionEmissionError,
-) -> SyntaxModuleEmissionError {
+pub(super) fn emission_error(input: &CodegenInput<'_>, error: FunctionEmissionError) -> SyntaxModuleEmissionError {
     SyntaxModuleEmissionError::Emission(error.display_with_db(input.database()))
 }
 
 pub(super) fn emission_verification(message: impl Into<String>) -> SyntaxModuleEmissionError {
     SyntaxModuleEmissionError::Emission(format!("Verification({})", message.into()))
 }
-

@@ -81,14 +81,7 @@ const FIBER_NONE = 0xFFFF;
 const FIBER_STACK_INITIAL_SIZE = 65536;
 const FIBER_STACK_MAX_SIZE = 8388608;
 const SCHEDULER_STATE_OFFSET = 32;
-// The scheduler owns pointers to optional synchronization state.  The pointed
-// objects are separately allocated so a fixed ABI-v5 runtime state never
-// becomes backing storage for synchronization tables.
-const SCHEDULER_CHANNEL_STATE_OFFSET = 3456;
-const SCHEDULER_MUTEX_STATE_OFFSET = 3464;
-const SCHEDULER_WAITGROUP_STATE_OFFSET = 3472;
 const SCHEDULER_CURRENT_FIBER_OFFSET = 3480;
-const SCHEDULER_HUB_STATE_OFFSET = 3488;
 const SCHEDULER_TABLE_SIZE = 3496;
 
 // Returns the scheduler table owned by the active ABI-v5 runtime state.
@@ -98,95 +91,6 @@ pub pointer SchedTable() {
         return NativePointer(0);
     }
     return NativePointer(raw_word_load(pointer_add(state, SCHEDULER_STATE_OFFSET)));
-}
-
-// Returns the separately allocated channel table owned by this scheduler.
-// The first caller initializes the scheduler and creates the table; later
-// callers reuse the same allocation.  Channel operations deliberately do not
-// claim parking or wake semantics here; this is storage ownership only.
-pub pointer SchedulerChannelTable() {
-    SchedInit();
-    pointer scheduler = SchedTable();
-    if scheduler == NativePointer(0) {
-        return NativePointer(0);
-    }
-    mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_CHANNEL_STATE_OFFSET)));
-    if table != NativePointer(0) {
-        return table;
-    }
-    table = SystemAllocate(CHANNEL_TABLE_SIZE, 8);
-    if table == NativePointer(0) {
-        return NativePointer(0);
-    }
-    memory_set(table, 0, CHANNEL_TABLE_SIZE);
-    raw_word_store(pointer_add(scheduler, SCHEDULER_CHANNEL_STATE_OFFSET), NativeWord(table));
-    return table;
-}
-
-// Returns the separately allocated mutex table owned by this scheduler.
-// As with channels, synchronization state is not embedded after the fixed
-// ABI-v5 runtime record; its lifetime follows the scheduler allocation.
-pub pointer SchedulerMutexTable() {
-    SchedInit();
-    pointer scheduler = SchedTable();
-    if scheduler == NativePointer(0) {
-        return NativePointer(0);
-    }
-    mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET)));
-    if table != NativePointer(0) {
-        return table;
-    }
-    table = SystemAllocate(MUTEX_TABLE_SIZE, 8);
-    if table == NativePointer(0) {
-        return NativePointer(0);
-    }
-    memory_set(table, 0, MUTEX_TABLE_SIZE);
-    raw_word_store(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET), NativeWord(table));
-    return table;
-}
-
-// Returns the separately allocated WaitGroup table owned by this scheduler.
-// The waiter registry is bounded by the scheduler's fiber-table capacity, so
-// it cannot overlap scheduler records or silently truncate registered waiters.
-pub pointer SchedulerWaitGroupTable() {
-    SchedInit();
-    pointer scheduler = SchedTable();
-    if scheduler == NativePointer(0) {
-        return NativePointer(0);
-    }
-    mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET)));
-    if table != NativePointer(0) {
-        return table;
-    }
-    table = SystemAllocate(WG_TABLE_SIZE, 8);
-    if table == NativePointer(0) {
-        return NativePointer(0);
-    }
-    memory_set(table, 0, WG_TABLE_SIZE);
-    raw_word_store(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET), NativeWord(table));
-    return table;
-}
-
-// Returns the separately allocated PubSub hub table owned by this scheduler.
-// Hub state is a runtime object with the scheduler lifetime; it must not use a
-// literal RuntimeState offset or overlap the ABI-v5 runtime-state record.
-pub pointer SchedulerHubTable() {
-    SchedInit();
-    pointer scheduler = SchedTable();
-    if scheduler == NativePointer(0) {
-        return NativePointer(0);
-    }
-    mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_HUB_STATE_OFFSET)));
-    if table != NativePointer(0) {
-        return table;
-    }
-    table = SystemAllocate(HUB_TABLE_SIZE, 8);
-    if table == NativePointer(0) {
-        return NativePointer(0);
-    }
-    memory_set(table, 0, HUB_TABLE_SIZE);
-    raw_word_store(pointer_add(scheduler, SCHEDULER_HUB_STATE_OFFSET), NativeWord(table));
-    return table;
 }
 
 // Returns a fiber record pointer by index.
@@ -301,6 +205,37 @@ pub unit SchedulerSetCurrentFiber(word index) {
     return;
 }
 
+// Yields the current fiber.
+[Export(Abi:"C", Symbol:"fiber_yield")]
+pub unit FiberYield() {
+    word index = SchedulerCurrentFiber();
+    if index == FIBER_NONE || !FiberExists(index) {
+        return;
+    }
+    pointer fib = FiberRecord(index);
+    if raw_byte_load(pointer_add(fib, 41)) != 0 {
+        raw_word_store(fib, FiberState::Cancelled);
+        raw_word_store(pointer_add(fib, 48), JoinOutcome::Cancelled);
+        raw_word_store(pointer_add(fib, 56), 0);
+    } else {
+        FiberSetState(index, FiberState::Runnable);
+        RunQueuePush(index);
+    }
+    // The real target context transfer is intentionally not emulated here.
+    SchedulerSetCurrentFiber(FIBER_NONE);
+    return;
+}
+
+// Returns the current fiber ID (0 for main).
+[Export(Abi:"C", Symbol:"fiber_current_id")]
+pub i64 FiberCurrentId() {
+    word index = SchedulerCurrentFiber();
+    if index == FIBER_NONE {
+        return -1;
+    }
+    return i64(index);
+}
+
 // ── Run Queue ──────────────────────────────────────────────────────
 
 // Push a fiber index onto the run queue.
@@ -374,114 +309,6 @@ pub unit FiberDone(word index, i64 value) {
     return;
 }
 
-// ── Pending Operations ─────────────────────────────────────────────
-
-// Enqueue a pending spawn (applied at next scheduling step).
-pub unit PendingSpawnEnqueue(word entry, word arg, word cancelSlot, word parent) {
-    pointer table = SchedTable();
-    if table == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(table, 608));
-    if count >= 8 { return; }
-    pointer slot = pointer_add(table, 288 + count * 40);
-    raw_word_store(slot, entry);
-    raw_word_store(pointer_add(slot, 8), arg);
-    raw_word_store(pointer_add(slot, 16), cancelSlot);
-    raw_word_store(pointer_add(slot, 24), parent);
-    raw_word_store(pointer_add(table, 608), count + 1);
-    return;
-}
-
-// Apply all pending spawns.
-pub unit ApplyPendingSpawns() {
-    pointer table = SchedTable();
-    if table == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(table, 608));
-    mut word i = 0;
-    while i < count {
-        pointer slot = pointer_add(table, 288 + i * 40);
-        word entry = raw_word_load(slot);
-        word arg = raw_word_load(pointer_add(slot, 8));
-        word cancelSlot = raw_word_load(pointer_add(slot, 16));
-        word parent = raw_word_load(pointer_add(slot, 24));
-        word idx = FiberAlloc(entry, arg, cancelSlot, parent);
-        if idx != 0xFFFF {
-            RunQueuePush(idx);
-        }
-        i = i + 1;
-    }
-    raw_word_store(pointer_add(table, 608), 0);
-    return;
-}
-
-// Enqueue a pending cancel.
-pub unit PendingCancelEnqueue(word fiberIndex) {
-    pointer table = SchedTable();
-    if table == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(table, 872));
-    if count >= 32 { return; }
-    raw_word_store(pointer_add(table, 616 + count * 8), fiberIndex);
-    raw_word_store(pointer_add(table, 872), count + 1);
-    return;
-}
-
-// Apply all pending cancels.
-pub unit ApplyPendingCancels() {
-    pointer table = SchedTable();
-    if table == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(table, 872));
-    mut word i = 0;
-    while i < count {
-        word idx = raw_word_load(pointer_add(table, 616 + i * 8));
-        if FiberExists(idx) {
-            pointer fib = FiberRecord(idx);
-            word state = FiberState(idx);
-            raw_byte_store(pointer_add(fib, 41), 1); // cancelled
-            // Queued and parked fibers reach a cancellation point at this
-            // scheduler step. A running fiber observes the same flag when it
-            // next yields or returns through its real target context path.
-            if state == FiberState::Runnable || state == FiberState::Parked {
-                raw_word_store(fib, FiberState::Cancelled);
-                raw_word_store(pointer_add(fib, 48), JoinOutcome::Cancelled);
-                raw_word_store(pointer_add(fib, 56), 0);
-            }
-        }
-        i = i + 1;
-    }
-    raw_word_store(pointer_add(table, 872), 0);
-    return;
-}
-
-// Enqueue a wake (fiber is ready to run again).
-pub unit WakeEnqueue(word fiberIndex) {
-    pointer table = SchedTable();
-    if table == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(table, 1400));
-    if count >= 32 { return; }
-    raw_word_store(pointer_add(table, 1144 + count * 8), fiberIndex);
-    raw_word_store(pointer_add(table, 1400), count + 1);
-    return;
-}
-
-// Apply all pending wakes.
-pub unit ApplyPendingWakes() {
-    pointer table = SchedTable();
-    if table == NativePointer(0) { return; }
-    word count = raw_word_load(pointer_add(table, 1400));
-    mut word i = 0;
-    while i < count {
-        word idx = raw_word_load(pointer_add(table, 1144 + i * 8));
-        if FiberParked(idx) {
-            FiberSetState(idx, FiberState::Runnable);
-        }
-        RunQueuePush(idx);
-        i = i + 1;
-    }
-    raw_word_store(pointer_add(table, 1400), 0);
-    return;
-}
-
-// ── Scheduler Main Loop ────────────────────────────────────────────
-
 // Initialize the scheduler for the first time.
 pub unit SchedInit() {
     mut pointer table = SchedTable();
@@ -531,76 +358,4 @@ pub i64 FiberSpawnWithCancelSlot(pointer entry, pointer environment, pointer can
         raw_word_store(cancelledSlot, 0);
     }
     return SchedulerSpawn(entry, environment, cancelledSlot);
-}
-
-// Drive one scheduling step. Returns true if work was done.
-pub bool SchedStep() {
-    pointer table = SchedTable();
-    if table == NativePointer(0) { return false; }
-    word fiberCount = raw_word_load(table);
-    ApplyPendingSpawns();
-    ApplyPendingCancels();
-    ApplyPendingWakes();
-
-    if RunQueueEmpty() {
-        // Check if any fibers are still alive (runnable or parked).
-        mut word i = 0; mut bool alive = false;
-        while i < fiberCount {
-            word s = FiberState(i);
-            if s == FiberState::Runnable || s == FiberState::Parked || s == FiberState::Running {
-                alive = true;
-            }
-            i = i + 1;
-        }
-        if !alive {
-            return false; // Scheduler done — all fibers finished.
-        }
-        return false; // Nothing to run but fibers exist (all parked — deadlock risk).
-    }
-
-    word next = RunQueuePop();
-    if next == 0xFFFF { return false; }
-    if FiberParked(next) { return true; } // Skip parked.
-
-    FiberSetState(next, FiberState::Running);
-
-    // This lifecycle slice deliberately does not claim a context transfer.
-    // The target-specific execution task must call ContextInit/ContextSwitch
-    // and complete the running record through FiberDone.  In particular, do
-    // not reinterpret an entry pointer as a return value or fabricate a
-    // direct-call execution path here.
-    SchedulerSetCurrentFiber(next);
-
-    return true;
-}
-
-// Run the scheduler until quiescence. Returns the main fiber's result.
-pub i64 SchedRun() {
-    SchedInit();
-    mut word steps = 0;
-    while steps < 10000 {
-        if !SchedStep() {
-            // Check all-blocked (deadlock).
-            pointer table = SchedTable();
-            word fiberCount = raw_word_load(table);
-            mut word i = 0; mut bool anyAlive = false; mut bool anyRunnable = false;
-            while i < fiberCount {
-                word s = FiberState(i);
-                if s == FiberState::Runnable { anyAlive = true; }
-                if s == FiberState::Parked { anyRunnable = true; }
-                i = i + 1;
-            }
-            if !anyRunnable {
-                break;
-            }
-            if anyAlive {
-                // All fibers parked — deadlock.
-                Trap(7, NativePointer(0), 0); // scheduler_deadlock
-            }
-            break;
-        }
-        steps = steps + 1;
-    }
-    pointer table = SchedTable();
-    return 0;
 }

@@ -144,5 +144,4 @@ impl<'a> TypeChecker<'a> {
             HirLiteral::Bool(_) => self.primitive_type_id(HirPrimitiveType::Bool),
         }
     }
-
 }

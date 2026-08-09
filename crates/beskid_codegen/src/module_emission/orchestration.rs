@@ -19,9 +19,7 @@ use super::trampolines::{
     emit_spawn_trampoline, expand_direct_spawn_items, resolve_lambda_trampolines, resolve_spawn_trampolines,
 };
 use crate::aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, emit_aggregate_static_data};
-use crate::array_static::{
-    ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, emit_array_static_data,
-};
+use crate::array_static::{ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, emit_array_static_data};
 use crate::closure_static::{
     ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
     emit_closure_static_data,
@@ -163,24 +161,11 @@ fn lower_resolved_syntax_program(
         let function = {
             let mut importer = ArtifactCallImporter { symbols: &symbols };
             if let Some(captures) = &trampoline.closure_captures {
-                emit_isle_closure_lambda_entry(
-                    input,
-                    isa,
-                    trampoline.lambda_body,
-                    result,
-                    captures,
-                    &mut importer,
-                )
-                .map_err(|error| emission_error(input, error))?
+                emit_isle_closure_lambda_entry(input, isa, trampoline.lambda_body, result, captures, &mut importer)
+                    .map_err(|error| emission_error(input, error))?
             } else {
-                emit_isle_expression_with_call_importer(
-                    input,
-                    isa,
-                    trampoline.lambda_body,
-                    result,
-                    &mut importer,
-                )
-                .map_err(|error| emission_error(input, error))?
+                emit_isle_expression_with_call_importer(input, isa, trampoline.lambda_body, result, &mut importer)
+                    .map_err(|error| emission_error(input, error))?
             }
         };
         functions.push(crate::LoweredFunction { name: trampoline.symbol.clone(), function });

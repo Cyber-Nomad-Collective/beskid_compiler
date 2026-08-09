@@ -3,7 +3,11 @@
 use super::super::*;
 
 #[salsa::tracked]
-pub(in crate::semantic_contract) fn enum_layout_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<EnumLayoutFact> {
+pub(in crate::semantic_contract) fn enum_layout_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<EnumLayoutFact> {
     with_node(db, syntax, key, |program, index, node| {
         if let Some(definition) = node.of::<beskid_analysis::syntax::EnumDefinition>() {
             return Some(enum_layout_from_definition(db, program, index, key, definition, None));
@@ -274,7 +278,11 @@ pub(in crate::semantic_contract) fn enum_constructor_tracked(
 }
 
 #[salsa::tracked]
-pub(in crate::semantic_contract) fn enum_match_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<EnumMatchFact> {
+pub(in crate::semantic_contract) fn enum_match_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<EnumMatchFact> {
     with_node(db, syntax, key, |program, index, node| {
         let expression = node.of::<beskid_analysis::syntax::MatchExpression>()?;
         let (declaration, layout) = match enum_match_scrutinee_layout(db, program, index, key, expression) {

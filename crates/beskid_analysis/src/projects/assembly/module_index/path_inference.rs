@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, path::Path};
 
 use super::super::{SourceUnit, roots::EffectiveCompilationRoots};
 

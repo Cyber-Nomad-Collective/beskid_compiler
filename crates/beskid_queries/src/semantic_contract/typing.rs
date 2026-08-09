@@ -3,7 +3,11 @@
 use super::*;
 
 #[salsa::tracked]
-pub(super) fn node_type_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
+pub(super) fn node_type_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
             return Some(abi_type_for_binary_expression(db, program, index, key, binary));
@@ -336,4 +340,3 @@ pub(super) fn semantic_type_for_literal(literal: &beskid_analysis::syntax::Liter
         beskid_analysis::syntax::Literal::Bool(_) => SemanticTypeId::BOOL,
     }
 }
-

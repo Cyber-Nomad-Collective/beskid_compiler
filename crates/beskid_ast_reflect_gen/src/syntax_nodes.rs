@@ -41,6 +41,3 @@ pub use self::inventory::inventory_syntax_type_names;
 pub(crate) use self::model::BANNER;
 pub use self::model::{EnumVariantMirror, FieldMirror, ParsedType, SyntaxNodesGenReport, TypeKind, VariantShape};
 pub use self::reflect::reflect_sdk_node_kind_names;
-
-use self::emit::emit_type_bd;
-use self::inventory::collect_declarations;

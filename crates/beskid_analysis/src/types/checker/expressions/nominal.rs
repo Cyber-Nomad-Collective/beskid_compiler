@@ -1,6 +1,5 @@
 use crate::hir::{
-    HirEnumConstructorExpression, HirExpressionNode, HirMemberExpression, HirPathExpression,
-    HirStructLiteralExpression,
+    HirEnumConstructorExpression, HirExpressionNode, HirMemberExpression, HirPathExpression, HirStructLiteralExpression,
 };
 use crate::resolve::ItemKind;
 use crate::syntax::Spanned;
@@ -11,7 +10,10 @@ use crate::types::{TypeId, TypeInfo};
 use super::super::TypeChecker;
 
 impl<'a> TypeChecker<'a> {
-    pub(super) fn type_struct_literal_expression(&mut self, literal: &Spanned<HirStructLiteralExpression>) -> Option<TypeId> {
+    pub(super) fn type_struct_literal_expression(
+        &mut self,
+        literal: &Spanned<HirStructLiteralExpression>,
+    ) -> Option<TypeId> {
         let mut type_id = self.type_id_for_path_with_args(&literal.node.path);
         if type_id.is_none()
             && let Some(segment) = literal.node.path.node.segments.last()

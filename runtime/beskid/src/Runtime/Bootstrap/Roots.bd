@@ -1,0 +1,115 @@
+// Reads `BeskidTlsState.root_frame` from its manifest-frozen byte offset.
+//
+// Root frame chaining is represented but not interpreted here.  In particular, this wrapper
+// does not scan slots or collect objects; that belongs to the canonical heap implementation.
+pub pointer RootFrame(pointer tlsState) {
+    return NativePointer(raw_word_load(pointer_add(tlsState, 8)));
+}
+
+// Writes `BeskidTlsState.root_frame` at its manifest-frozen byte offset.
+pub unit SetRootFrame(pointer tlsState, pointer rootFrame) {
+    raw_word_store(pointer_add(tlsState, 8), NativeWord(rootFrame));
+    return;
+}
+
+// Reads the preceding frame from a caller-owned `BeskidRootFrame` record.
+//
+// A frame is stack storage owned by generated code.  The runtime may link the frame into TLS,
+// but never allocates, frees, or moves it.
+pub pointer RootFramePrevious(pointer rootFrame) {
+    return NativePointer(raw_word_load(rootFrame));
+}
+
+// Reads the address of the first `BeskidRootSlot` from a root-frame record.
+//
+// This is a collector input, not a collector: it gives a future non-moving marker an exact
+// manifest-layout traversal boundary without making liveness decisions here.
+pub pointer RootFrameSlots(pointer rootFrame) {
+    return NativePointer(raw_word_load(pointer_add(rootFrame, 8)));
+}
+
+// Reads the number of caller-owned slots represented by a root frame.
+pub word RootFrameSlotCount(pointer rootFrame) {
+    return raw_word_load(pointer_add(rootFrame, 16));
+}
+
+// Links a caller-owned root frame as the current frame for this TLS state.
+//
+// The prior top is retained in `rootFrame.previous`, so a future collector can traverse a stable
+// LIFO chain while generated code owns the actual slot storage.
+pub unit PushRootFrame(pointer tlsState, pointer rootFrame) {
+    raw_word_store(rootFrame, NativeWord(RootFrame(tlsState)));
+    SetRootFrame(tlsState, rootFrame);
+    return;
+}
+
+// Unlinks `rootFrame` only when it remains the current top of this TLS state.
+//
+// Returning `false` for an out-of-order pop preserves the active root chain instead of silently
+// dropping a live frame.  This is ownership validation, not collection or finalization.
+pub bool PopRootFrame(pointer tlsState, pointer rootFrame) {
+    if RootFrame(tlsState) != rootFrame {
+        return false;
+    }
+    SetRootFrame(tlsState, RootFramePrevious(rootFrame));
+    raw_word_store(rootFrame, 0);
+    return true;
+}
+
+// Reads `BeskidRootSlot.value` for a caller-owned root-frame slot.
+pub pointer RootSlotValue(pointer rootFrame, word index) {
+    if rootFrame == NativePointer(0) {
+        return NativePointer(0);
+    }
+    if index >= RootFrameSlotCount(rootFrame) {
+        return NativePointer(0);
+    }
+    pointer slots = RootFrameSlots(rootFrame);
+    if slots == NativePointer(0) {
+        return NativePointer(0);
+    }
+    return NativePointer(raw_word_load(pointer_add(slots, index * 8)));
+}
+
+// Writes `BeskidRootSlot.value` for a caller-owned root-frame slot.
+pub bool SetRootSlotValue(pointer rootFrame, word index, pointer value) {
+    if rootFrame == NativePointer(0) {
+        return false;
+    }
+    if index >= RootFrameSlotCount(rootFrame) {
+        return false;
+    }
+    pointer slots = RootFrameSlots(rootFrame);
+    if slots == NativePointer(0) {
+        return false;
+    }
+    raw_word_store(pointer_add(slots, index * 8), NativeWord(value));
+    return true;
+}
+
+// Registers a closure environment in the current TLS root frame.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_closure_environment_root")]
+pub bool RootClosureEnvironment(pointer tlsState, word slotIndex, pointer environment) {
+    if tlsState == NativePointer(0) {
+        return false;
+    }
+    if environment == NativePointer(0) {
+        return false;
+    }
+    pointer rootFrame = RootFrame(tlsState);
+    if rootFrame == NativePointer(0) {
+        return false;
+    }
+    return SetRootSlotValue(rootFrame, slotIndex, environment);
+}
+
+// Roots a closure environment through the actual TLS state installed for this runtime thread.
+//
+// This is the sole generated-code entry for current root ownership. `tls_get` remains a
+// compiler-authorized canonical-runtime intrinsic: user syntax receives neither the TLS address
+// nor an alternate way to fabricate one. Missing TLS, root-frame, or environment values remain
+// fail-closed in `RootClosureEnvironment`.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_closure_environment_root_current")]
+pub bool RootClosureEnvironmentCurrent(word slotIndex, pointer environment) {
+    return RootClosureEnvironment(CurrentThreadState(), slotIndex, environment);
+}

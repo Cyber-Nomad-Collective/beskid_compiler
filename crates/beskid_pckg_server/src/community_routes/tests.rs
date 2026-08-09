@@ -1,5 +1,4 @@
-#[path = "../src/community_routes.rs"]
-mod community_routes;
+use crate::community_routes;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};

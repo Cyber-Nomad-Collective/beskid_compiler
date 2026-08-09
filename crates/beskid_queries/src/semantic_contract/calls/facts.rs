@@ -3,7 +3,11 @@
 use super::super::*;
 
 #[salsa::tracked]
-pub(in crate::semantic_contract) fn call_lowering_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<CallLowering> {
+pub(in crate::semantic_contract) fn call_lowering_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<CallLowering> {
     with_node(db, syntax, key, |program, index, node| call_lowering_for_node(db, program, index, key, node))?
         .transpose()
 }
@@ -106,7 +110,11 @@ pub(in crate::semantic_contract) fn call_arguments_tracked(
 }
 
 #[salsa::tracked]
-pub(in crate::semantic_contract) fn range_for_fact_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<RangeForFact> {
+pub(in crate::semantic_contract) fn range_for_fact_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<RangeForFact> {
     with_node(db, syntax, key, |program, index, node| {
         let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
         let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
@@ -327,7 +335,10 @@ pub(in crate::semantic_contract) fn result_type_parts(
     Some((payload, error))
 }
 
-pub(in crate::semantic_contract) fn same_type_syntax(left: &beskid_analysis::syntax::Type, right: &beskid_analysis::syntax::Type) -> bool {
+pub(in crate::semantic_contract) fn same_type_syntax(
+    left: &beskid_analysis::syntax::Type,
+    right: &beskid_analysis::syntax::Type,
+) -> bool {
     use beskid_analysis::syntax::Type;
 
     match (left, right) {
@@ -360,4 +371,3 @@ pub(in crate::semantic_contract) fn same_type_syntax(left: &beskid_analysis::syn
         _ => false,
     }
 }
-

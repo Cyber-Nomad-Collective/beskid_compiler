@@ -1,7 +1,7 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     response::{IntoResponse, Response},
 };
 use beskid_pckg_community::{BoardId, CommunityError};

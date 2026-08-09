@@ -64,6 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Split the compiler's remaining large multi-responsibility Rust modules and the
+  canonical Bootstrap, GC, and scheduler Beskid sources into explicit,
+  acyclic facade graphs while preserving their public paths and runtime corpus
+  order.
+
 - Align JIT soft-builtin registration with the ABI-v5 Core.Args contract: JIT no
   longer supplies ambient process arguments, while numeric math exports remain
   registered through the runtime builtin module. Linux x64 terminal fallback code
@@ -78,6 +83,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DocumentAnalysisSnapshot` remains CLI-doc-only (CYB-65).
 
 ### Fixed
+
+- Keep supplemental generic-specialization root discovery from rejecting an
+  unrelated concrete function whose ABI facts are unavailable; selected
+  executable items continue to fail closed in the authoritative source-item
+  pass, and specialization failures now identify the exact call site.
+
+- Restore `AbiParamKind`'s equality, hash, and copy derives after the manifest
+  codegen module split, eliminating the stranded function-level attribute and
+  preserving ABI parameter-array deduplication.
 
 - Resolve calls through capture-free lambda local bindings from their
   generation-bound lexical initializer, preserving the syntax/ISLE closure

@@ -14,11 +14,11 @@ use super::validation::{
     community_database_error, community_timestamp, validate_community_subject, validate_nonblank,
     validate_notification_scope,
 };
-use super::voting::{vote_for, VoteTarget};
+use super::voting::{VoteTarget, vote_for};
 
 // Kept as a named contract because this insert must stay aligned with the
 // independently migrated profile table. It creates no synthetic identity data.
-pub(super) const CREATE_TEST_NOTIFICATION_PROFILE_SQL: &str = "INSERT INTO pckg_community_profiles (subject,display_name,bio,social_links,is_publisher_verified,updated_at_utc) VALUES ($1,$1,'','[]'::JSONB,FALSE,$2) ON CONFLICT (subject) DO NOTHING";
+pub(crate) const CREATE_TEST_NOTIFICATION_PROFILE_SQL: &str = "INSERT INTO pckg_community_profiles (subject,display_name,bio,social_links,is_publisher_verified,updated_at_utc) VALUES ($1,$1,'','[]'::JSONB,FALSE,$2) ON CONFLICT (subject) DO NOTHING";
 
 /// PostgreSQL community repository. The mutation methods use transactions and
 /// row locks for parent ownership, self-vote and score invariants.
@@ -35,7 +35,10 @@ impl SqlxCommunityRepository {
         &self.pool
     }
     pub async fn migrate(&self) -> Result<(), CommunityStoreError> {
-        sqlx::raw_sql(crate::migrations::CREATE_COMMUNITY).execute(self.pool()).await.map_err(community_database_error)?;
+        sqlx::raw_sql(crate::migrations::CREATE_COMMUNITY)
+            .execute(self.pool())
+            .await
+            .map_err(community_database_error)?;
         sqlx::raw_sql(crate::migrations::EXTEND_COMMUNITY_NOTIFICATIONS)
             .execute(self.pool())
             .await

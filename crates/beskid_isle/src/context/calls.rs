@@ -33,7 +33,11 @@ impl IsleContext<'_, '_, '_, '_> {
     /// ABI type of its direct-call parameter.  The source grammar intentionally
     /// keeps module constants untyped; this is therefore narrowly contextual,
     /// requires compiler-minted authority, and never coerces arbitrary values.
-    pub(super) fn materialize_canonical_runtime_direct_constant(&mut self, key: AstNodeKey, expected: Type) -> Option<Value> {
+    pub(super) fn materialize_canonical_runtime_direct_constant(
+        &mut self,
+        key: AstNodeKey,
+        expected: Type,
+    ) -> Option<Value> {
         (self.facts.node_kind(key) == Some(NodeKind::PathExpression)).then_some(())?;
         let value = self.facts.canonical_runtime_constant_integer(key)?;
         if value < 0 || !expected.is_int() {
@@ -130,7 +134,12 @@ impl IsleContext<'_, '_, '_, '_> {
         Some(self.builder.ins().global_value(pointer, global))
     }
 
-    pub(super) fn import_runtime_helper(&mut self, symbol: &str, params: &[Type], result: Option<Type>) -> Option<FuncRef> {
+    pub(super) fn import_runtime_helper(
+        &mut self,
+        symbol: &str,
+        params: &[Type],
+        result: Option<Type>,
+    ) -> Option<FuncRef> {
         let mut signature = Signature::new(self.builder.func.signature.call_conv);
         signature.params.extend(params.iter().copied().map(AbiParam::new));
         if let Some(result) = result {
@@ -154,127 +163,127 @@ impl IsleContext<'_, '_, '_, '_> {
 
 macro_rules! generated_call_methods {
     () => {
-    fn emit_direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
-        self.direct_call(key)
-    }
+        fn emit_direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
+            self.direct_call(key)
+        }
 
-    fn emit_direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
-        self.direct_call_statement(key)
-    }
+        fn emit_direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
+            self.direct_call_statement(key)
+        }
 
-    fn emit_dispatch_call(&mut self, key: AstNodeKey) -> Option<Value> {
-        let symbol = self.facts.dispatch_builtin_symbol(key)?;
-        let arguments = self
-            .facts
-            .call_arguments(key)?
-            .into_iter()
-            .map(|argument| generated::constructor_lower_expression(self, argument))
-            .collect::<Option<Vec<_>>>()?;
-        // Dispatch route (interop envelope) — string operations, syscalls, etc.
-        if let Some(route) = beskid_abi::dispatch_route_for_symbol(symbol) {
-            let returns_value = !matches!(route.group, beskid_abi::DispatchReturnGroup::Unit);
-            return match dispatch::emit_dispatch_call(self.builder, route, &arguments, returns_value) {
-                Ok(Some(value)) => Some(value),
-                Ok(None) | Err(_) => None,
+        fn emit_dispatch_call(&mut self, key: AstNodeKey) -> Option<Value> {
+            let symbol = self.facts.dispatch_builtin_symbol(key)?;
+            let arguments = self
+                .facts
+                .call_arguments(key)?
+                .into_iter()
+                .map(|argument| generated::constructor_lower_expression(self, argument))
+                .collect::<Option<Vec<_>>>()?;
+            // Dispatch route (interop envelope) — string operations, syscalls, etc.
+            if let Some(route) = beskid_abi::dispatch_route_for_symbol(symbol) {
+                let returns_value = !matches!(route.group, beskid_abi::DispatchReturnGroup::Unit);
+                return match dispatch::emit_dispatch_call(self.builder, route, &arguments, returns_value) {
+                    Ok(Some(value)) => Some(value),
+                    Ok(None) | Err(_) => None,
+                };
+            }
+            // No dispatch route — treat as a direct extern call (math builtins, etc.).
+            let signature = self.facts.call_signature(key)?;
+            let mut ext_sig = cranelift_codegen::ir::Signature::new(CallConv::SystemV);
+            for arg in &signature.params {
+                ext_sig.params.push(*arg);
+            }
+            for ret in &signature.returns {
+                ext_sig.returns.push(*ret);
+            }
+            let sig_ref = self.builder.func.import_signature(ext_sig);
+            let func_ref = self.builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
+                name: ExternalName::testcase(symbol),
+                signature: sig_ref,
+                colocated: false,
+                patchable: false,
+            });
+            let call = self.builder.ins().call(func_ref, &arguments);
+            self.builder.inst_results(call).first().copied()
+        }
+
+        fn emit_spawn(&mut self, key: AstNodeKey) -> Option<Value> {
+            let entry = self.facts.spawn_entry(key)?;
+            let pointer = dispatch::pointer_type();
+            let mut signature = Signature::new(self.builder.func.signature.call_conv);
+            signature.params.push(AbiParam::new(pointer));
+            signature.returns.push(AbiParam::new(types::I64));
+            let trampoline =
+                match self.call_importer.as_deref_mut()?.import(self.builder, entry.trampoline.clone(), &signature) {
+                    Ok(function) => function,
+                    Err(CallImportError::UnknownCallee) => {
+                        self.pending_error =
+                            Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(entry.trampoline) });
+                        return None;
+                    }
+                };
+            let entry_ptr = self.builder.ins().func_addr(pointer, trampoline);
+            let environment = if let Some(closure) = &entry.closure_environment {
+                self.emit_inline_closure_environment(closure)?
+            } else {
+                self.builder.ins().iconst(pointer, 0)
             };
+            let cancel_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                pointer.bytes(),
+                pointer.bytes().ilog2() as u8,
+            ));
+            self.builder.ins().stack_store(environment, cancel_slot, 0);
+            let cancel_slot_address = self.builder.ins().stack_addr(pointer, cancel_slot, 0);
+            let mut signature = Signature::new(self.builder.func.signature.call_conv);
+            signature.params.push(AbiParam::new(pointer));
+            signature.params.push(AbiParam::new(pointer));
+            signature.params.push(AbiParam::new(pointer));
+            signature.returns.push(AbiParam::new(types::I64));
+            let signature = self.builder.func.import_signature(signature);
+            let runtime_entry = self.builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
+                name: ExternalName::testcase("beskid_rt_v5_fiber_spawn_with_cancel_slot"),
+                signature,
+                colocated: false,
+                patchable: false,
+            });
+            self.builder.ins().call(runtime_entry, &[entry_ptr, environment, cancel_slot_address]);
+            let entry_call = self.builder.ins().call(trampoline, &[environment]);
+            self.builder.inst_results(entry_call).first().copied()
         }
-        // No dispatch route — treat as a direct extern call (math builtins, etc.).
-        let signature = self.facts.call_signature(key)?;
-        let mut ext_sig = cranelift_codegen::ir::Signature::new(CallConv::SystemV);
-        for arg in &signature.params {
-            ext_sig.params.push(*arg);
-        }
-        for ret in &signature.returns {
-            ext_sig.returns.push(*ret);
-        }
-        let sig_ref = self.builder.func.import_signature(ext_sig);
-        let func_ref = self.builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase(symbol),
-            signature: sig_ref,
-            colocated: false,
-            patchable: false,
-        });
-        let call = self.builder.ins().call(func_ref, &arguments);
-        self.builder.inst_results(call).first().copied()
-    }
 
-    fn emit_spawn(&mut self, key: AstNodeKey) -> Option<Value> {
-        let entry = self.facts.spawn_entry(key)?;
-        let pointer = dispatch::pointer_type();
-        let mut signature = Signature::new(self.builder.func.signature.call_conv);
-        signature.params.push(AbiParam::new(pointer));
-        signature.returns.push(AbiParam::new(types::I64));
-        let trampoline =
-            match self.call_importer.as_deref_mut()?.import(self.builder, entry.trampoline.clone(), &signature) {
-                Ok(function) => function,
-                Err(CallImportError::UnknownCallee) => {
-                    self.pending_error =
-                        Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(entry.trampoline) });
-                    return None;
-                }
-            };
-        let entry_ptr = self.builder.ins().func_addr(pointer, trampoline);
-        let environment = if let Some(closure) = &entry.closure_environment {
-            self.emit_inline_closure_environment(closure)?
-        } else {
-            self.builder.ins().iconst(pointer, 0)
-        };
-        let cancel_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-            StackSlotKind::ExplicitSlot,
-            pointer.bytes(),
-            pointer.bytes().ilog2() as u8,
-        ));
-        self.builder.ins().stack_store(environment, cancel_slot, 0);
-        let cancel_slot_address = self.builder.ins().stack_addr(pointer, cancel_slot, 0);
-        let mut signature = Signature::new(self.builder.func.signature.call_conv);
-        signature.params.push(AbiParam::new(pointer));
-        signature.params.push(AbiParam::new(pointer));
-        signature.params.push(AbiParam::new(pointer));
-        signature.returns.push(AbiParam::new(types::I64));
-        let signature = self.builder.func.import_signature(signature);
-        let runtime_entry = self.builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
-            name: ExternalName::testcase("beskid_rt_v5_fiber_spawn_with_cancel_slot"),
-            signature,
-            colocated: false,
-            patchable: false,
-        });
-        self.builder.ins().call(runtime_entry, &[entry_ptr, environment, cancel_slot_address]);
-        let entry_call = self.builder.ins().call(trampoline, &[environment]);
-        self.builder.inst_results(entry_call).first().copied()
-    }
-
-    /// Lower a freestanding [`LambdaExpression`] to a closure value.
-    ///
-    /// Capture-free lambdas return the trampoline function pointer directly. Capturing
-    /// lambdas allocate and populate an ABI-v5 closure environment at the expression site
-    /// before returning the trampoline function pointer; the trampoline loads captures
-    /// from the environment at its first-parameter pointer.
-    fn emit_lambda(&mut self, key: AstNodeKey) -> Option<Value> {
-        let entry = self.facts.lambda_entry(key)?;
-        let pointer = dispatch::pointer_type();
-        let mut signature = Signature::new(self.builder.func.signature.call_conv);
-        // The trampoline always receives the environment pointer as its first argument.
-        signature.params.push(AbiParam::new(pointer));
-        // Return type is a pointer (the function pointer itself for the closure struct).
-        signature.returns.push(AbiParam::new(pointer));
-        let trampoline =
-            match self.call_importer.as_deref_mut()?.import(self.builder, entry.trampoline.clone(), &signature) {
-                Ok(function) => function,
-                Err(CallImportError::UnknownCallee) => {
-                    self.pending_error =
-                        Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(entry.trampoline) });
-                    return None;
-                }
-            };
-        let entry_ptr = self.builder.ins().func_addr(pointer, trampoline);
-        if let Some(closure) = &entry.closure_environment {
-            self.emit_inline_closure_environment(closure)?;
+        /// Lower a freestanding [`LambdaExpression`] to a closure value.
+        ///
+        /// Capture-free lambdas return the trampoline function pointer directly. Capturing
+        /// lambdas allocate and populate an ABI-v5 closure environment at the expression site
+        /// before returning the trampoline function pointer; the trampoline loads captures
+        /// from the environment at its first-parameter pointer.
+        fn emit_lambda(&mut self, key: AstNodeKey) -> Option<Value> {
+            let entry = self.facts.lambda_entry(key)?;
+            let pointer = dispatch::pointer_type();
+            let mut signature = Signature::new(self.builder.func.signature.call_conv);
+            // The trampoline always receives the environment pointer as its first argument.
+            signature.params.push(AbiParam::new(pointer));
+            // Return type is a pointer (the function pointer itself for the closure struct).
+            signature.returns.push(AbiParam::new(pointer));
+            let trampoline =
+                match self.call_importer.as_deref_mut()?.import(self.builder, entry.trampoline.clone(), &signature) {
+                    Ok(function) => function,
+                    Err(CallImportError::UnknownCallee) => {
+                        self.pending_error =
+                            Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(entry.trampoline) });
+                        return None;
+                    }
+                };
+            let entry_ptr = self.builder.ins().func_addr(pointer, trampoline);
+            if let Some(closure) = &entry.closure_environment {
+                self.emit_inline_closure_environment(closure)?;
+            }
+            Some(entry_ptr)
         }
-        Some(entry_ptr)
-    }
-    fn emit_inline_lambda_call(&mut self, key: AstNodeKey) -> Option<Value> {
-        self.inline_lambda_call(key)
-    }
+        fn emit_inline_lambda_call(&mut self, key: AstNodeKey) -> Option<Value> {
+            self.inline_lambda_call(key)
+        }
     };
 }
 

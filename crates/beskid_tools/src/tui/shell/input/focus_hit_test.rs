@@ -1,6 +1,7 @@
 use ratatui::layout::Position;
 
 use crate::pipeline::tui::log_tabs::LogTab;
+use crate::tui::input::InputAction;
 
 use super::super::focus::{FocusTarget, OverlayKind, PaneFocus};
 use super::super::state::ShellState;

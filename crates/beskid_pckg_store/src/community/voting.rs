@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 
 use super::model::{CommunityStoreError, CommunityVote};
-use super::validation::{community_database_error, community_timestamp};
+use super::validation::{community_database_error, community_timestamp, validate_community_subject};
 
 #[derive(Clone, Copy)]
 pub(super) enum VoteTarget {
@@ -105,4 +105,3 @@ pub(super) async fn vote_for(
     tx.commit().await.map_err(community_database_error)?;
     Ok(score)
 }
-

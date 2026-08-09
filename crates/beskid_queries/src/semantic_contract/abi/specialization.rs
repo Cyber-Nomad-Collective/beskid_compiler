@@ -36,6 +36,7 @@ pub(in crate::semantic_contract) fn generic_specialization_instance_for_call(
     }
     let generic_names = function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
     let mut substitutions = HashMap::new();
+    let mut explicit_substitutions_complete = false;
     if let Some(instantiation) = generic_call_instantiation(db, key)?
         && !instantiation.arguments.is_empty()
     {
@@ -45,15 +46,28 @@ pub(in crate::semantic_contract) fn generic_specialization_instance_for_call(
         for (generic, argument) in generic_names.iter().zip(instantiation.arguments.iter()) {
             substitutions.insert((*generic).to_owned(), *argument);
         }
+        explicit_substitutions_complete = true;
     }
     // A bare integer starts at the language default `i32`, but carries no explicit ABI suffix.
     // Keep that distinction while inferring a generic call: a later exact argument can select
     // the binding and the bare literal can inherit it if its magnitude fits.
     let mut provisional_integer_substitutions = HashSet::new();
     for (parameter, argument) in function.parameters.iter().zip(arguments.iter().copied()) {
+        let explicit_expected = explicit_substitutions_complete
+            .then(|| generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions))
+            .transpose()?;
         let actual = match abi_type(db, argument) {
-            Ok(abi) => abi.or(node_type(db, argument)?),
-            Err(error) if error.is_unavailable() => node_type(db, argument)?,
+            Ok(Some(abi)) => Some(abi),
+            Ok(None) => match node_type(db, argument) {
+                Ok(abi) => abi.or(explicit_expected),
+                Err(error) if error.is_unavailable() => explicit_expected,
+                Err(error) => return Err(error),
+            },
+            Err(error) if error.is_unavailable() => match node_type(db, argument) {
+                Ok(abi) => abi.or(explicit_expected),
+                Err(error) if error.is_unavailable() => explicit_expected,
+                Err(error) => return Err(error),
+            },
             Err(error) => return Err(error),
         }
         .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
@@ -113,13 +127,20 @@ pub(in crate::semantic_contract) fn generic_specialization_instance_for_call(
 ///
 /// This follows only singleton syntax wrappers, so compound arithmetic, casts, calls, and arrays
 /// never inherit an ABI representation from a surrounding call.
-pub(in crate::semantic_contract) fn unsuffixed_integer_literal(db: &dyn Db, key: AstNodeKey) -> Result<bool, SemanticError> {
+pub(in crate::semantic_contract) fn unsuffixed_integer_literal(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Result<bool, SemanticError> {
     Ok(integer_literal_text(db, key)?.is_some())
 }
 
 /// Prove that one bare integer literal fits the ABI representation selected elsewhere in its
 /// generic call. Explicitly suffixed literals never reach this helper.
-pub(in crate::semantic_contract) fn integer_literal_fits_abi(db: &dyn Db, key: AstNodeKey, expected: SemanticTypeId) -> Result<bool, SemanticError> {
+pub(in crate::semantic_contract) fn integer_literal_fits_abi(
+    db: &dyn Db,
+    key: AstNodeKey,
+    expected: SemanticTypeId,
+) -> Result<bool, SemanticError> {
     let Some(text) = integer_literal_text(db, key)? else {
         return Ok(false);
     };
@@ -133,7 +154,10 @@ pub(in crate::semantic_contract) fn integer_literal_fits_abi(db: &dyn Db, key: A
     })
 }
 
-pub(in crate::semantic_contract) fn integer_literal_text(db: &dyn Db, key: AstNodeKey) -> Result<Option<Arc<str>>, SemanticError> {
+pub(in crate::semantic_contract) fn integer_literal_text(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Result<Option<Arc<str>>, SemanticError> {
     let Some(literal) = literal_fact(db, key)? else {
         let Some(children) = child_nodes(db, key)? else {
             return Ok(None);
@@ -149,7 +173,10 @@ pub(in crate::semantic_contract) fn integer_literal_text(db: &dyn Db, key: AstNo
     }
 }
 
-pub(in crate::semantic_contract) fn contextual_constant_integer(db: &dyn Db, key: AstNodeKey) -> Result<Option<i64>, SemanticError> {
+pub(in crate::semantic_contract) fn contextual_constant_integer(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Result<Option<i64>, SemanticError> {
     if let Some(value) = constant_integer(db, key)? {
         return Ok(Some(value));
     }
@@ -278,7 +305,10 @@ pub(in crate::semantic_contract) fn binary_operand_abi_type_tracked(
 ///
 /// Only names with a dispatch route receive a signature; this never grants Corelib-service or
 /// canonical-runtime intrinsic authority.
-pub(in crate::semantic_contract) fn dispatch_builtin_abi_signature(db: &dyn Db, key: AstNodeKey) -> Option<ItemSignature> {
+pub(in crate::semantic_contract) fn dispatch_builtin_abi_signature(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> Option<ItemSignature> {
     let symbol = dispatch_builtin_symbol(db, key).ok().flatten()?;
     let (_, spec) = beskid_analysis::builtins::builtin_specs()
         .iter()
@@ -289,7 +319,9 @@ pub(in crate::semantic_contract) fn dispatch_builtin_abi_signature(db: &dyn Db, 
     Some(ItemSignature { parameters: parameters.into(), result })
 }
 
-pub(in crate::semantic_contract) fn builtin_type_to_semantic(ty: beskid_analysis::builtins::BuiltinType) -> Option<SemanticTypeId> {
+pub(in crate::semantic_contract) fn builtin_type_to_semantic(
+    ty: beskid_analysis::builtins::BuiltinType,
+) -> Option<SemanticTypeId> {
     use beskid_analysis::builtins::BuiltinType;
     Some(match ty {
         BuiltinType::String => SemanticTypeId::STRING,
@@ -349,7 +381,10 @@ pub(in crate::semantic_contract) fn generic_abi_type(
         .unwrap_or_else(|| abi_type_from_syntax(db, declaration, syntax_type))
 }
 
-pub(in crate::semantic_contract) fn generic_type_name<'a>(syntax_type: &'a beskid_analysis::syntax::Type, generics: &[&str]) -> Option<&'a str> {
+pub(in crate::semantic_contract) fn generic_type_name<'a>(
+    syntax_type: &'a beskid_analysis::syntax::Type,
+    generics: &[&str],
+) -> Option<&'a str> {
     let beskid_analysis::syntax::Type::Complex(path) = syntax_type else {
         return None;
     };
@@ -360,7 +395,10 @@ pub(in crate::semantic_contract) fn generic_type_name<'a>(syntax_type: &'a beski
     segment.node.type_args.is_empty().then_some(name).filter(|name| generics.contains(name))
 }
 
-pub(in crate::semantic_contract) fn type_syntax_mentions_generic_parameter(syntax_type: &beskid_analysis::syntax::Type, parameter: &str) -> bool {
+pub(in crate::semantic_contract) fn type_syntax_mentions_generic_parameter(
+    syntax_type: &beskid_analysis::syntax::Type,
+    parameter: &str,
+) -> bool {
     match syntax_type {
         beskid_analysis::syntax::Type::Primitive(_) => false,
         beskid_analysis::syntax::Type::Complex(path) => path.node.segments.iter().any(|segment| {
@@ -383,7 +421,9 @@ pub(in crate::semantic_contract) fn type_syntax_mentions_generic_parameter(synta
     }
 }
 
-pub(in crate::semantic_contract) fn generic_parameter_reference_name(syntax_type: &beskid_analysis::syntax::Type) -> Option<&str> {
+pub(in crate::semantic_contract) fn generic_parameter_reference_name(
+    syntax_type: &beskid_analysis::syntax::Type,
+) -> Option<&str> {
     let beskid_analysis::syntax::Type::Complex(path) = syntax_type else {
         return None;
     };

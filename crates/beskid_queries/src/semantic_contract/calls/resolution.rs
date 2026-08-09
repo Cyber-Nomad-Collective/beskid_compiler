@@ -288,7 +288,11 @@ pub(in crate::semantic_contract) fn nominal_member_receiver_tracked(
     .transpose()
 }
 
-pub(in crate::semantic_contract) fn unique_nominal_method_declaration(db: &dyn Db, declaration: AstNodeKey, method_name: &str) -> Option<AstNodeKey> {
+pub(in crate::semantic_contract) fn unique_nominal_method_declaration(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+    method_name: &str,
+) -> Option<AstNodeKey> {
     let declaration_syntax = db.syntax_unit(declaration.unit)?;
     let declaration_program = declaration_syntax.expanded_program(db);
     let declaration_index = declaration_syntax.syntax_index(db);
@@ -312,7 +316,11 @@ pub(in crate::semantic_contract) fn unique_nominal_method_declaration(db: &dyn D
 
 /// Resolve a legacy syscall spelling only when its current source unit was admitted by the
 /// compiler-minted Corelib service constructor. The same builtins remain dynamic everywhere else.
-pub(in crate::semantic_contract) fn corelib_service_for(db: &dyn Db, key: AstNodeKey, path: &beskid_analysis::syntax::Path) -> Option<CorelibService> {
+pub(in crate::semantic_contract) fn corelib_service_for(
+    db: &dyn Db,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<CorelibService> {
     let [segment] = path.segments.as_slice() else {
         return None;
     };

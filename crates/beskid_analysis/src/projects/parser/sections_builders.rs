@@ -11,7 +11,7 @@ use super::super::{
     },
 };
 use super::{
-    fields_errors::{reject_corelib_opt_out_keys, required_field},
+    fields_errors::{parse_at, reject_corelib_opt_out_keys, required_field},
     intermediate::{ModFieldValue, ParsedBlock, ParsedBlocks, ParsedLinkBlock, ParsedProjectBlock},
 };
 

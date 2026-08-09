@@ -34,37 +34,6 @@ pub bool FiberCancel(i64 fiberId) {
     return true;
 }
 
-// Yields the current fiber.
-[Export(Abi:"C", Symbol:"fiber_yield")]
-pub unit FiberYield() {
-    word index = SchedulerCurrentFiber();
-    if index == FIBER_NONE || !FiberExists(index) {
-        return;
-    }
-    pointer fib = FiberRecord(index);
-    if raw_byte_load(pointer_add(fib, 41)) != 0 {
-        raw_word_store(fib, FiberState::Cancelled);
-        raw_word_store(pointer_add(fib, 48), JoinOutcome::Cancelled);
-        raw_word_store(pointer_add(fib, 56), 0);
-    } else {
-        FiberSetState(index, FiberState::Runnable);
-        RunQueuePush(index);
-    }
-    // The real target context transfer is intentionally not emulated here.
-    SchedulerSetCurrentFiber(FIBER_NONE);
-    return;
-}
-
-// Returns the current fiber ID (0 for main).
-[Export(Abi:"C", Symbol:"fiber_current_id")]
-pub i64 FiberCurrentId() {
-    word index = SchedulerCurrentFiber();
-    if index == FIBER_NONE {
-        return -1;
-    }
-    return i64(index);
-}
-
 // Detaches a fiber (fire-and-forget).
 [Export(Abi:"C", Symbol:"fiber_detach")]
 pub unit FiberDetach(i64 fiberId) {

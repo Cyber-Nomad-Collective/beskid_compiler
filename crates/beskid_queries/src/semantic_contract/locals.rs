@@ -3,7 +3,11 @@
 use super::*;
 
 #[salsa::tracked]
-pub(super) fn resolved_local_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<ResolvedLocal> {
+pub(super) fn resolved_local_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ResolvedLocal> {
     with_node(db, syntax, key, |program, index, node| {
         let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
         let [segment] = path.path.node.segments.as_slice() else {
@@ -20,7 +24,11 @@ pub(super) fn resolved_local_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: 
 /// Resolve an unshadowed, same-module integer constant to its declared value.
 /// Constants have no storage slot: generated ISLE consumes this fact as an immediate.
 #[salsa::tracked]
-pub(super) fn constant_integer_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<i64> {
+pub(super) fn constant_integer_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<i64> {
     with_node(db, syntax, key, |program, index, node| {
         let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
         let [segment] = path.path.node.segments.as_slice() else {
@@ -54,7 +62,11 @@ pub(super) fn constant_integer_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key
 }
 
 #[salsa::tracked]
-pub(super) fn local_slot_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<LocalSlot> {
+pub(super) fn local_slot_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<LocalSlot> {
     with_node(db, syntax, key, |_program, index, node| {
         node.of::<beskid_analysis::syntax::Identifier>()?;
         local_slot_for_declaration(index, key)
@@ -272,4 +284,3 @@ pub(super) fn ancestor_distance(
     }
     None
 }
-

@@ -222,7 +222,11 @@ pub(in crate::semantic_contract) fn abi_local_declaration_type(
     }
 }
 
-pub(in crate::semantic_contract) fn resolve_type_declaration(db: &dyn Db, key: AstNodeKey, path: &beskid_analysis::syntax::Path) -> Option<AstNodeKey> {
+pub(in crate::semantic_contract) fn resolve_type_declaration(
+    db: &dyn Db,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<AstNodeKey> {
     let (name, module_path) = path.segments.split_last()?;
     let generic_arity = name.node.type_args.len();
     let name = name.node.name.node.name.as_str();
@@ -370,7 +374,9 @@ pub(in crate::semantic_contract) fn unique_public_type_in_unit(
     Some(AstNodeKey { unit, generation, node: *node })
 }
 
-pub(in crate::semantic_contract) fn semantic_type_from_syntax(syntax_type: &beskid_analysis::syntax::Type) -> Result<SemanticTypeId, SemanticError> {
+pub(in crate::semantic_contract) fn semantic_type_from_syntax(
+    syntax_type: &beskid_analysis::syntax::Type,
+) -> Result<SemanticTypeId, SemanticError> {
     use beskid_analysis::syntax::{PrimitiveType, Type};
 
     match syntax_type {
@@ -393,4 +399,3 @@ pub(in crate::semantic_contract) fn semantic_type_from_syntax(syntax_type: &besk
         Type::Function { .. } => Err(SemanticError::unavailable("item_signature")),
     }
 }
-

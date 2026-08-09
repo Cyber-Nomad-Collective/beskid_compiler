@@ -133,5 +133,4 @@ impl<'a> TypeChecker<'a> {
             }
         }
     }
-
 }

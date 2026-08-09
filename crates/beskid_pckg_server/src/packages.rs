@@ -34,7 +34,6 @@ pub use self::artifacts::{download_artifact, upload_artifact};
 pub use self::catalog::{
     delete_package, list_packages, list_publishers, package_detail, publisher_packages, search_packages, upsert_package,
 };
-pub(crate) use self::contracts::{CommunityReviewRequest, ListQuery, PackageVersionPath};
 pub use self::publishing::publish_version;
 pub use self::reviews::{create_community_review, list_community_reviews};
 pub use self::versions::{list_versions, unyank_version, yank_version};

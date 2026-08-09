@@ -1,0 +1,50 @@
+// Converts an opaque runtime address to its pointer-width representation.
+//
+// `native_word_from_pointer` is not a user-visible extern: codegen recognizes this direct call
+// only after the compiler has attached canonical-runtime authority to this exact source corpus.
+pub word NativeWord(pointer value) {
+    return native_word_from_pointer(value);
+}
+
+// Converts a pointer-width runtime word back to an opaque native address.
+pub pointer NativePointer(word value) {
+    return pointer_from_native_word(value);
+}
+
+// Reserves native storage through the manifest-owned platform allocator.
+//
+// This is deliberately not a managed-object allocation: object headers, descriptor validation,
+// GC accounting, and collection policy remain owned by the future heap module.  The wrapper only
+// preserves the ABI-v5 allocator boundary used by bootstrap state.
+pub pointer SystemAllocate(word size, word alignment) {
+    return system_allocate(size, alignment);
+}
+
+// Releases storage previously obtained from [`SystemAllocate`].
+//
+// The manifest owns the size-only release contract.  This wrapper must not infer ownership or
+// run destructors; managed lifetime is not part of this bootstrap corpus.
+pub unit SystemFree(pointer address, word size) {
+    system_free(address, size);
+    return;
+}
+
+// Returns the opaque state associated with the current runtime thread.
+//
+// The value is a `BeskidTlsState` address only after a caller has installed one.  Keeping it
+// opaque prevents this source-only bootstrap layer from imposing scheduler or GC-thread policy.
+pub pointer CurrentThreadState() {
+    return tls_get();
+}
+
+// Installs the opaque state for the current runtime thread.
+pub unit SetCurrentThreadState(pointer state) {
+    tls_set(state);
+    return;
+}
+
+// Terminates through the manifest-owned ABI-v5 trap entrypoint.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_trap")]
+pub never Trap(u8 code, pointer message, word messageLength) {
+    trap(code, message, messageLength);
+}

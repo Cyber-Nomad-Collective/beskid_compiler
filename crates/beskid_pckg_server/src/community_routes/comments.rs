@@ -4,7 +4,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
-use beskid_pckg_community::{CommentId, PostId};
+use beskid_pckg_community::PostId;
 use beskid_pckg_store::AsyncCommunityRepository;
 
 use super::{

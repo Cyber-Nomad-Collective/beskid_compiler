@@ -1,0 +1,104 @@
+// Canonical scheduler-owned backing storage for optional runtime subsystems.
+
+// The scheduler owns pointers to optional synchronization state. The pointed
+// objects are separately allocated so a fixed ABI-v5 runtime state never
+// becomes backing storage for synchronization tables.
+const SCHEDULER_CHANNEL_STATE_OFFSET = 3456;
+const SCHEDULER_MUTEX_STATE_OFFSET = 3464;
+const SCHEDULER_WAITGROUP_STATE_OFFSET = 3472;
+const SCHEDULER_HUB_STATE_OFFSET = 3488;
+
+// These allocation sizes are co-located with their only executable consumers.
+const CHANNEL_TABLE_SIZE = 12296; // count word + 64 fixed channel slots
+const MUTEX_TABLE_SIZE = 1288; // count word + 32 fixed mutex slots
+const WG_TABLE_SIZE = 2312; // count word + 16 fixed WaitGroup slots
+const HUB_TABLE_SIZE = 65800;
+
+// Returns the separately allocated channel table owned by this scheduler.
+// The first caller initializes the scheduler and creates the table; later
+// callers reuse the same allocation.  Channel operations deliberately do not
+// claim parking or wake semantics here; this is storage ownership only.
+pub pointer SchedulerChannelTable() {
+    SchedInit();
+    pointer scheduler = SchedTable();
+    if scheduler == NativePointer(0) {
+        return NativePointer(0);
+    }
+    mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_CHANNEL_STATE_OFFSET)));
+    if table != NativePointer(0) {
+        return table;
+    }
+    table = SystemAllocate(CHANNEL_TABLE_SIZE, 8);
+    if table == NativePointer(0) {
+        return NativePointer(0);
+    }
+    memory_set(table, 0, CHANNEL_TABLE_SIZE);
+    raw_word_store(pointer_add(scheduler, SCHEDULER_CHANNEL_STATE_OFFSET), NativeWord(table));
+    return table;
+}
+
+// Returns the separately allocated mutex table owned by this scheduler.
+// As with channels, synchronization state is not embedded after the fixed
+// ABI-v5 runtime record; its lifetime follows the scheduler allocation.
+pub pointer SchedulerMutexTable() {
+    SchedInit();
+    pointer scheduler = SchedTable();
+    if scheduler == NativePointer(0) {
+        return NativePointer(0);
+    }
+    mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET)));
+    if table != NativePointer(0) {
+        return table;
+    }
+    table = SystemAllocate(MUTEX_TABLE_SIZE, 8);
+    if table == NativePointer(0) {
+        return NativePointer(0);
+    }
+    memory_set(table, 0, MUTEX_TABLE_SIZE);
+    raw_word_store(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET), NativeWord(table));
+    return table;
+}
+
+// Returns the separately allocated WaitGroup table owned by this scheduler.
+// The waiter registry is bounded by the scheduler's fiber-table capacity, so
+// it cannot overlap scheduler records or silently truncate registered waiters.
+pub pointer SchedulerWaitGroupTable() {
+    SchedInit();
+    pointer scheduler = SchedTable();
+    if scheduler == NativePointer(0) {
+        return NativePointer(0);
+    }
+    mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET)));
+    if table != NativePointer(0) {
+        return table;
+    }
+    table = SystemAllocate(WG_TABLE_SIZE, 8);
+    if table == NativePointer(0) {
+        return NativePointer(0);
+    }
+    memory_set(table, 0, WG_TABLE_SIZE);
+    raw_word_store(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET), NativeWord(table));
+    return table;
+}
+
+// Returns the separately allocated PubSub hub table owned by this scheduler.
+// Hub state is a runtime object with the scheduler lifetime; it must not use a
+// literal RuntimeState offset or overlap the ABI-v5 runtime-state record.
+pub pointer SchedulerHubTable() {
+    SchedInit();
+    pointer scheduler = SchedTable();
+    if scheduler == NativePointer(0) {
+        return NativePointer(0);
+    }
+    mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_HUB_STATE_OFFSET)));
+    if table != NativePointer(0) {
+        return table;
+    }
+    table = SystemAllocate(HUB_TABLE_SIZE, 8);
+    if table == NativePointer(0) {
+        return NativePointer(0);
+    }
+    memory_set(table, 0, HUB_TABLE_SIZE);
+    raw_word_store(pointer_add(scheduler, SCHEDULER_HUB_STATE_OFFSET), NativeWord(table));
+    return table;
+}

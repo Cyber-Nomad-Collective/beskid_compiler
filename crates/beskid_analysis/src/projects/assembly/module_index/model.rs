@@ -13,16 +13,16 @@ use super::discovery::normalize_assembly_path;
 /// Items and module paths collected from non-entry compilation units.
 #[derive(Clone)]
 pub struct ModuleIndex {
-    items: Vec<ItemInfo>,
-    module_graph: ModuleGraph,
-    builtin_items: HashMap<ItemId, usize>,
-    symbols: SymbolRegistry,
-    by_symbol: HashMap<SymbolId, ItemId>,
-    entry_project_name: String,
-    dependency_packages: HashMap<String, String>,
-    prefetched_paths: Vec<PathBuf>,
+    pub(super) items: Vec<ItemInfo>,
+    pub(super) module_graph: ModuleGraph,
+    pub(super) builtin_items: HashMap<ItemId, usize>,
+    pub(super) symbols: SymbolRegistry,
+    pub(super) by_symbol: HashMap<SymbolId, ItemId>,
+    pub(super) entry_project_name: String,
+    pub(super) dependency_packages: HashMap<String, String>,
+    pub(super) prefetched_paths: Vec<PathBuf>,
     /// Lowered HIR for prefetch-only sources (built during index construction, not re-read from disk).
-    prefetched_hir: HashMap<PathBuf, Arc<Spanned<HirProgram>>>,
+    pub(super) prefetched_hir: HashMap<PathBuf, Arc<Spanned<HirProgram>>>,
 }
 
 impl std::fmt::Debug for ModuleIndex {

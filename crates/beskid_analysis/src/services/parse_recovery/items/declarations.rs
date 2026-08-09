@@ -45,6 +45,7 @@ pub(super) fn use_mod_semicolon_repairs(source: &str, error_pos: usize) -> Vec<R
     out
 }
 
+#[derive(Copy, Clone, Eq, PartialEq)]
 enum ModDeclKind {
     Path,
     Inline,

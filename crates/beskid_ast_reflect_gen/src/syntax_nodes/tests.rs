@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 
-use super::{
-    BTreeSet, collect_declarations, emit_type_bd, inventory_syntax_type_names, reflect_sdk_node_kind_names,
-    reflect_stub_path, syntax_helpers,
-};
+use super::emit::emit_type_bd;
+use super::inventory::collect_declarations;
+use super::{BTreeSet, inventory_syntax_type_names, reflect_sdk_node_kind_names, reflect_stub_path, syntax_helpers};
 
 fn trim_field_token(tok: &str) -> &str {
     tok.trim_end_matches([',', ')', ';'])
@@ -54,7 +53,7 @@ fn golden_syntax_nodes_inventory_matches_scan() {
     let analysis_src = manifest.join("../beskid_analysis/src");
     let names = inventory_syntax_type_names(&analysis_src).expect("inventory");
     let got = names.join("\n") + "\n";
-    let expected = include_str!("../tests/expected/syntax_nodes_inventory.txt");
+    let expected = include_str!("../../tests/expected/syntax_nodes_inventory.txt");
     assert_eq!(
         got, expected,
         "update tests/expected/syntax_nodes_inventory.txt after adding/removing syntax surface types"

@@ -29,7 +29,11 @@ impl IsleContext<'_, '_, '_, '_> {
     /// sharing its control path: the authority is restricted to an already
     /// selected runtime intrinsic, an exact canonical PathExpression, and a
     /// compiler-minted capability.
-    pub(super) fn materialize_canonical_runtime_intrinsic_constant(&mut self, key: AstNodeKey, expected: Type) -> Option<Value> {
+    pub(super) fn materialize_canonical_runtime_intrinsic_constant(
+        &mut self,
+        key: AstNodeKey,
+        expected: Type,
+    ) -> Option<Value> {
         (self.facts.node_kind(key) == Some(NodeKind::PathExpression)).then_some(())?;
         let value = self.facts.canonical_runtime_constant_integer(key)?;
         if value < 0 || !expected.is_int() {
@@ -165,63 +169,63 @@ impl IsleContext<'_, '_, '_, '_> {
 
 macro_rules! generated_intrinsic_methods {
     () => {
-    fn emit_runtime_intrinsic_statement(&mut self, key: AstNodeKey) -> Option<()> {
-        IsleContext::emit_runtime_intrinsic_statement(self, key)
-    }
-    fn emit_runtime_intrinsic(&mut self, key: AstNodeKey) -> Option<Value> {
-        let Some(kind) = self.facts.runtime_intrinsic_kind(key) else {
-            return self.direct_call(key);
-        };
-        let arguments = self.runtime_intrinsic_arguments(key)?;
-        let result = self.facts.scalar_type(key)?;
-        match kind {
-            RuntimeIntrinsicKind::NativeWordFromPointer | RuntimeIntrinsicKind::PointerFromNativeWord => {
-                let [value] = arguments.as_slice() else {
-                    return None;
-                };
-                (self.builder.func.dfg.value_type(*value) == result).then_some(*value)
-            }
-            RuntimeIntrinsicKind::PointerAdd => {
-                let [base, offset] = arguments.as_slice() else {
-                    return None;
-                };
-                (self.builder.func.dfg.value_type(*base) == result
-                    && self.builder.func.dfg.value_type(*offset) == result)
-                    .then(|| self.builder.ins().iadd(*base, *offset))
-            }
-            RuntimeIntrinsicKind::RawWordLoad => {
-                let [address] = arguments.as_slice() else {
-                    return None;
-                };
-                (self.builder.func.dfg.value_type(*address) == result)
-                    .then(|| self.builder.ins().load(result, MemFlags::new(), *address, 0))
-            }
-            RuntimeIntrinsicKind::RawByteLoad => {
-                let [address] = arguments.as_slice() else {
-                    return None;
-                };
-                let address_ty = self.builder.func.dfg.value_type(*address);
-                if !address_ty.is_int() {
-                    return None;
-                }
-                let loaded = self.builder.ins().load(types::I8, MemFlags::trusted(), *address, 0);
-                if result == types::I8 {
-                    Some(loaded)
-                } else if result.is_int() && result.bits() > 8 {
-                    Some(self.builder.ins().uextend(result, loaded))
-                } else {
-                    None
-                }
-            }
-            RuntimeIntrinsicKind::ArchContextSize(value) | RuntimeIntrinsicKind::ArchContextAlignment(value) => {
-                arguments.is_empty().then(|| self.builder.ins().iconst(result, value as i64))
-            }
-            RuntimeIntrinsicKind::MemoryCopy
-            | RuntimeIntrinsicKind::MemorySet
-            | RuntimeIntrinsicKind::RawWordStore
-            | RuntimeIntrinsicKind::RawByteStore => None,
+        fn emit_runtime_intrinsic_statement(&mut self, key: AstNodeKey) -> Option<()> {
+            IsleContext::emit_runtime_intrinsic_statement(self, key)
         }
-    }
+        fn emit_runtime_intrinsic(&mut self, key: AstNodeKey) -> Option<Value> {
+            let Some(kind) = self.facts.runtime_intrinsic_kind(key) else {
+                return self.direct_call(key);
+            };
+            let arguments = self.runtime_intrinsic_arguments(key)?;
+            let result = self.facts.scalar_type(key)?;
+            match kind {
+                RuntimeIntrinsicKind::NativeWordFromPointer | RuntimeIntrinsicKind::PointerFromNativeWord => {
+                    let [value] = arguments.as_slice() else {
+                        return None;
+                    };
+                    (self.builder.func.dfg.value_type(*value) == result).then_some(*value)
+                }
+                RuntimeIntrinsicKind::PointerAdd => {
+                    let [base, offset] = arguments.as_slice() else {
+                        return None;
+                    };
+                    (self.builder.func.dfg.value_type(*base) == result
+                        && self.builder.func.dfg.value_type(*offset) == result)
+                        .then(|| self.builder.ins().iadd(*base, *offset))
+                }
+                RuntimeIntrinsicKind::RawWordLoad => {
+                    let [address] = arguments.as_slice() else {
+                        return None;
+                    };
+                    (self.builder.func.dfg.value_type(*address) == result)
+                        .then(|| self.builder.ins().load(result, MemFlags::new(), *address, 0))
+                }
+                RuntimeIntrinsicKind::RawByteLoad => {
+                    let [address] = arguments.as_slice() else {
+                        return None;
+                    };
+                    let address_ty = self.builder.func.dfg.value_type(*address);
+                    if !address_ty.is_int() {
+                        return None;
+                    }
+                    let loaded = self.builder.ins().load(types::I8, MemFlags::trusted(), *address, 0);
+                    if result == types::I8 {
+                        Some(loaded)
+                    } else if result.is_int() && result.bits() > 8 {
+                        Some(self.builder.ins().uextend(result, loaded))
+                    } else {
+                        None
+                    }
+                }
+                RuntimeIntrinsicKind::ArchContextSize(value) | RuntimeIntrinsicKind::ArchContextAlignment(value) => {
+                    arguments.is_empty().then(|| self.builder.ins().iconst(result, value as i64))
+                }
+                RuntimeIntrinsicKind::MemoryCopy
+                | RuntimeIntrinsicKind::MemorySet
+                | RuntimeIntrinsicKind::RawWordStore
+                | RuntimeIntrinsicKind::RawByteStore => None,
+            }
+        }
     };
 }
 

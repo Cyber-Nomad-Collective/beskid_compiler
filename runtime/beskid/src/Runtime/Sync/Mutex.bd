@@ -14,7 +14,6 @@ pub enum MutexState {
 // ── Scheduler-owned mutex table ─────────────────────────────────────
 
 const MUTEX_SLOT_SIZE = 40; // u8 locked + u8 pad + word owner + 8 * word waiters
-const MUTEX_TABLE_SIZE = 1288; // count word + MUTEX_TABLE_MAX slots
 
 // Returns the separately allocated mutex table owned by the active scheduler.
 // Mutex storage must never be derived from an undeclared RuntimeState offset.

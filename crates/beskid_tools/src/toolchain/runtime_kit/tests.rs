@@ -6,6 +6,7 @@ use beskid_abi::abi_v5::TargetMetadata;
 use beskid_abi::runtime_provenance::{RuntimeProvenanceAudit, parse_symbol_list};
 use beskid_abi::runtime_source::canonical_runtime_source_hash;
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 

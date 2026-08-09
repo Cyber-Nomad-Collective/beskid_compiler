@@ -1,5 +1,6 @@
 use beskid_abi::runtime_source::{
-    CANONICAL_HUB_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH, canonical_runtime_sources,
+    CANONICAL_HUB_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH,
+    canonical_runtime_sources,
 };
 
 fn canonical_source(path: &str) -> String {
@@ -13,22 +14,21 @@ fn canonical_source(path: &str) -> String {
 #[test]
 fn canonical_hub_storage_is_scheduler_owned_and_supports_stable_256_entry_registration() {
     let scheduler = canonical_source(CANONICAL_SCHEDULER_CORE_SOURCE_PATH);
+    let storage = canonical_source(CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH);
     let hub = canonical_source(CANONICAL_HUB_SOURCE_PATH);
 
-    assert!(scheduler.contains("const SCHEDULER_HUB_STATE_OFFSET = 3488;"));
     assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3496;"));
-    assert!(scheduler.contains(
+    assert!(storage.contains("const SCHEDULER_HUB_STATE_OFFSET = 3488;"));
+    assert!(storage.contains("const HUB_TABLE_SIZE = 65800;"));
+    assert!(storage.contains(
         "mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_HUB_STATE_OFFSET)));"
     ));
-    assert!(scheduler.contains("table = SystemAllocate(HUB_TABLE_SIZE, 8);"));
-    assert!(scheduler.contains("memory_set(table, 0, HUB_TABLE_SIZE);"));
-    assert!(
-        scheduler.contains("raw_word_store(pointer_add(scheduler, SCHEDULER_HUB_STATE_OFFSET), NativeWord(table));")
-    );
+    assert!(storage.contains("table = SystemAllocate(HUB_TABLE_SIZE, 8);"));
+    assert!(storage.contains("memory_set(table, 0, HUB_TABLE_SIZE);"));
+    assert!(storage.contains("raw_word_store(pointer_add(scheduler, SCHEDULER_HUB_STATE_OFFSET), NativeWord(table));"));
 
     assert!(hub.contains("const HUB_ENTRY_MAX = 256;"));
     assert!(hub.contains("const HUB_SLOT_SIZE = 4112;"));
-    assert!(hub.contains("const HUB_TABLE_SIZE = 65800;"));
     assert!(hub.contains("return SchedulerHubTable();"));
     assert!(!hub.contains("RuntimeState()"));
     assert!(!hub.contains("pointer_add(state, 19072)"));

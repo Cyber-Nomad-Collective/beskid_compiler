@@ -155,4 +155,3 @@ pub(in crate::semantic_contract) fn array_index_element_abi_type_tracked(
     })?
     .transpose()
 }
-

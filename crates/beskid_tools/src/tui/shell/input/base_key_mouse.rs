@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Position;
 
-use crate::pipeline::tui::log_input::scroll_from_mouse;
+use crate::pipeline::tui::log_input::{LogScrollEvent, scroll_from_mouse};
 use crate::pipeline::tui::log_tabs::LogTab;
 use crate::pipeline::tui::widgets::tree_click_at;
 use crate::tui::input::{InputAction, InputEvent, InputResult};

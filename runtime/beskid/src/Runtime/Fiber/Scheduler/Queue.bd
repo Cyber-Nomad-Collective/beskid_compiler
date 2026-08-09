@@ -1,0 +1,105 @@
+// Canonical scheduler deferred-operation queues.
+
+// Enqueue a pending spawn (applied at next scheduling step).
+pub unit PendingSpawnEnqueue(word entry, word arg, word cancelSlot, word parent) {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(table, 608));
+    if count >= 8 { return; }
+    pointer slot = pointer_add(table, 288 + count * 40);
+    raw_word_store(slot, entry);
+    raw_word_store(pointer_add(slot, 8), arg);
+    raw_word_store(pointer_add(slot, 16), cancelSlot);
+    raw_word_store(pointer_add(slot, 24), parent);
+    raw_word_store(pointer_add(table, 608), count + 1);
+    return;
+}
+
+// Apply all pending spawns.
+pub unit ApplyPendingSpawns() {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(table, 608));
+    mut word i = 0;
+    while i < count {
+        pointer slot = pointer_add(table, 288 + i * 40);
+        word entry = raw_word_load(slot);
+        word arg = raw_word_load(pointer_add(slot, 8));
+        word cancelSlot = raw_word_load(pointer_add(slot, 16));
+        word parent = raw_word_load(pointer_add(slot, 24));
+        word idx = FiberAlloc(entry, arg, cancelSlot, parent);
+        if idx != 0xFFFF {
+            RunQueuePush(idx);
+        }
+        i = i + 1;
+    }
+    raw_word_store(pointer_add(table, 608), 0);
+    return;
+}
+
+// Enqueue a pending cancel.
+pub unit PendingCancelEnqueue(word fiberIndex) {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(table, 872));
+    if count >= 32 { return; }
+    raw_word_store(pointer_add(table, 616 + count * 8), fiberIndex);
+    raw_word_store(pointer_add(table, 872), count + 1);
+    return;
+}
+
+// Apply all pending cancels.
+pub unit ApplyPendingCancels() {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(table, 872));
+    mut word i = 0;
+    while i < count {
+        word idx = raw_word_load(pointer_add(table, 616 + i * 8));
+        if FiberExists(idx) {
+            pointer fib = FiberRecord(idx);
+            word state = FiberState(idx);
+            raw_byte_store(pointer_add(fib, 41), 1); // cancelled
+            // Queued and parked fibers reach a cancellation point at this
+            // scheduler step. A running fiber observes the same flag when it
+            // next yields or returns through its real target context path.
+            if state == FiberState::Runnable || state == FiberState::Parked {
+                raw_word_store(fib, FiberState::Cancelled);
+                raw_word_store(pointer_add(fib, 48), JoinOutcome::Cancelled);
+                raw_word_store(pointer_add(fib, 56), 0);
+            }
+        }
+        i = i + 1;
+    }
+    raw_word_store(pointer_add(table, 872), 0);
+    return;
+}
+
+// Enqueue a wake (fiber is ready to run again).
+pub unit WakeEnqueue(word fiberIndex) {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(table, 1400));
+    if count >= 32 { return; }
+    raw_word_store(pointer_add(table, 1144 + count * 8), fiberIndex);
+    raw_word_store(pointer_add(table, 1400), count + 1);
+    return;
+}
+
+// Apply all pending wakes.
+pub unit ApplyPendingWakes() {
+    pointer table = SchedTable();
+    if table == NativePointer(0) { return; }
+    word count = raw_word_load(pointer_add(table, 1400));
+    mut word i = 0;
+    while i < count {
+        word idx = raw_word_load(pointer_add(table, 1144 + i * 8));
+        if FiberParked(idx) {
+            FiberSetState(idx, FiberState::Runnable);
+        }
+        RunQueuePush(idx);
+        i = i + 1;
+    }
+    raw_word_store(pointer_add(table, 1400), 0);
+    return;
+}

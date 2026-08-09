@@ -3,13 +3,19 @@
 use super::super::*;
 
 #[salsa::tracked]
-pub(in crate::semantic_contract) fn control_flow_tracked(db: &dyn Db, syntax: SyntaxUnitInput, key: AstNodeKey) -> SemanticQueryResult<ControlFlow> {
+pub(in crate::semantic_contract) fn control_flow_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ControlFlow> {
     with_node(db, syntax, key, |_program, _index, node| {
         control_flow_for_node(node).map(|may_fall_through| ControlFlow { may_fall_through })
     })
 }
 
-pub(in crate::semantic_contract) fn control_flow_for_node(node: beskid_analysis::syntax_query::DynNodeRef<'_>) -> Option<bool> {
+pub(in crate::semantic_contract) fn control_flow_for_node(
+    node: beskid_analysis::syntax_query::DynNodeRef<'_>,
+) -> Option<bool> {
     if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
         return Some(block_may_fall_through(&function.body.node));
     }

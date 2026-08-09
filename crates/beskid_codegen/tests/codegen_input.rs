@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_SCHEDULER_SOURCE_PATH,
-    canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_corelib_service_sources,
-    canonical_runtime_intrinsic_capability, canonical_runtime_sources,
+    CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
+    CANONICAL_SCHEDULER_SOURCE_PATH, canonical_corelib_service_capability, canonical_corelib_service_source_path,
+    canonical_corelib_service_sources, canonical_runtime_intrinsic_capability, canonical_runtime_sources,
 };
 use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
@@ -186,12 +186,12 @@ fn canonical_runtime_source_can_import_manifest_owned_intrinsics() {
     let generation = typed.generation;
     let roots = canonical_unit_roots(&db, &typed);
     let input = CodegenInput::new(&db, typed, Arc::from(roots), target, manifest).expect("canonical codegen input");
-    let bootstrap = AstNodeKey {
-        unit: SourceUnitId::new(&db, corpus.unit_path(CANONICAL_BOOTSTRAP_SOURCE_PATH)),
+    let native = AstNodeKey {
+        unit: SourceUnitId::new(&db, corpus.unit_path(CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH)),
         generation,
         node: AstNodeId(0),
     };
-    let call = find_node_matching(&db, bootstrap, IndexedNodeKind::CallExpression, |call| {
+    let call = find_node_matching(&db, native, IndexedNodeKind::CallExpression, |call| {
         matches!(
             beskid_queries::runtime_intrinsic_name(&db, call).ok().flatten(),
             Some(name) if name.0.as_ref() == "native_word_from_pointer"
@@ -219,7 +219,7 @@ fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
     let input = CodegenInput::new(&db, typed, Arc::from(roots), target.clone(), manifest.clone())
         .expect("canonical codegen input");
     let root = AstNodeKey {
-        unit: SourceUnitId::new(&db, corpus.unit_path(CANONICAL_BOOTSTRAP_SOURCE_PATH)),
+        unit: SourceUnitId::new(&db, corpus.unit_path(CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH)),
         generation,
         node: AstNodeId(0),
     };

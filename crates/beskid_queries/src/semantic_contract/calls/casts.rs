@@ -170,7 +170,10 @@ pub(in crate::semantic_contract) fn is_transparent_binary_operand_path(
 /// ABI-v5 intrinsic signatures are target-independent.  Selecting a supported target merely
 /// accesses the generated canonical manifest; codegen still requires its non-forgeable runtime
 /// capability before it can import any of these symbols.
-pub(in crate::semantic_contract) fn canonical_intrinsic_parameter_type(name: &str, argument_index: usize) -> Option<SemanticTypeId> {
+pub(in crate::semantic_contract) fn canonical_intrinsic_parameter_type(
+    name: &str,
+    argument_index: usize,
+) -> Option<SemanticTypeId> {
     let target = TargetMetadata::supported().into_iter().next()?;
     let manifest = AbiManifestV5::canonical_runtime(target);
     let intrinsic = manifest.intrinsic_metadata(name)?;

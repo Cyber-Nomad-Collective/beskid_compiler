@@ -10,11 +10,7 @@ use crate::CodegenInput;
 
 /// Trace only facts already read by the syntax-only lowering boundary. This has no bearing on
 /// selection; it makes every unavailable fact explicit instead of making a HIR-era guess.
-pub(super) fn trace_item_facts(
-    input: &CodegenInput<'_>,
-    item: AstNodeKey,
-    symbols: &HashMap<DirectCallee, String>,
-) {
+pub(super) fn trace_item_facts(input: &CodegenInput<'_>, item: AstNodeKey, symbols: &HashMap<DirectCallee, String>) {
     if !crate::isle_trace::enabled() {
         return;
     }
@@ -88,9 +84,7 @@ fn trace_node_facts(
                 });
             }
             None => crate::isle_trace::event(|| {
-                format!(
-                    "event=call.fact key={node} lowering={lowering_name} callee=<unavailable> module_import=<none>"
-                )
+                format!("event=call.fact key={node} lowering={lowering_name} callee=<unavailable> module_import=<none>")
             }),
         }
     }

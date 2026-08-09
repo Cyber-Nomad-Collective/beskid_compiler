@@ -7,7 +7,6 @@
 const CHANNEL_TABLE_MAX = 64;
 const CHANNEL_BUFFER_SIZE = 16; // ring buffer capacity per channel
 const CHANNEL_SLOT_SIZE = 192;  // header + ring buffer + wait lists
-const CHANNEL_TABLE_SIZE = 12296; // count word + CHANNEL_TABLE_MAX slots
 
 // Returns the separately allocated channel table owned by the active scheduler.
 // Channel storage must never be derived from an undeclared RuntimeState offset.
