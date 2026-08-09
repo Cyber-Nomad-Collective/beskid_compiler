@@ -11,8 +11,7 @@ pub(crate) use generics::{
     generic_mapping_for_method_receiver, generic_mapping_from_mangled, is_self_parameter_function,
 };
 pub(crate) use mangling::{
-    linker_name_for_item_function, mangle_function_name, mangle_generic_factory_name, mangle_generic_item_function,
-    mangle_item_function, mangle_method_name, owner_stem_for_generic_factory,
+    linker_name_for_item_function, mangle_generic_item_function, mangle_item_function, mangle_method_name,
 };
 pub(crate) use method_test::{lower_method, lower_test};
 pub(crate) use return_types::item_id_for_item_span;

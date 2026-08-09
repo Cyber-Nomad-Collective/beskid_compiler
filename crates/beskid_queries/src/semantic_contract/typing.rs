@@ -230,7 +230,7 @@ pub(super) fn semantic_type_for_binary_operands(
         {
             Ok(SemanticTypeId::BOOL)
         }
-        BinaryOp::Add if left == SemanticTypeId::STRING && right == SemanticTypeId::STRING => {
+        BinaryOp::Add if left == SemanticTypeId::STRING || right == SemanticTypeId::STRING => {
             Ok(SemanticTypeId::STRING)
         }
         BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod

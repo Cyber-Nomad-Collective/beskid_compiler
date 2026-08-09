@@ -64,6 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Split the remaining oversized compiler integration-test authorities for compile planning,
+  semantic facts, CodegenInput, ISLE lowering, and ABI-v5 manifest generation into focused
+  modules with explicit shared-support seams and unchanged test inventories.
+
 - Split the compiler's remaining large multi-responsibility Rust modules and the
   canonical Bootstrap, GC, and scheduler Beskid sources into explicit,
   acyclic facade graphs while preserving their public paths and runtime corpus
@@ -83,6 +87,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DocumentAnalysisSnapshot` remains CLI-doc-only (CYB-65).
 
 ### Fixed
+
+- Attribute unsupported `if` conditions to the exact condition node by routing nested
+  condition lowering through the diagnostic-preserving ISLE expression boundary.
+
+- Retarget canonical Scheduler codegen coverage to the `Scheduler/Core.bd` owner introduced
+  by the scheduler source split, preserving the facade as routing-only authority.
 
 - Keep supplemental generic-specialization root discovery from rejecting an
   unrelated concrete function whose ABI facts are unavailable; selected

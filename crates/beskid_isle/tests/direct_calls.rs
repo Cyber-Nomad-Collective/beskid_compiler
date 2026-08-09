@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use beskid_isle::callee::DirectCallee;
 use beskid_isle::syntax_types::{CallKind, LiteralKind};
 use beskid_isle::{
-    AstNodeKey, CallImportError, CallImporter, FunctionEmissionError, FunctionEmitter,
-    LoweringErrorKind, NodeFacts, NodeKind,
+    AstNodeKey, CallImportError, CallImporter, FunctionEmissionError, FunctionEmitter, LoweringErrorKind, NodeFacts,
+    NodeKind,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SemanticTypeId, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{AbiParam, FuncRef, Signature, UserFuncName, types};
@@ -184,7 +184,10 @@ fn primitive_numeric_conversion_rejects_a_fact_whose_semantic_type_does_not_matc
         panic!("expected lowering error");
     };
     assert_eq!(error.key(), facts.call);
-    assert_eq!(error.kind(), LoweringErrorKind::MissingRuleOrFact);
+    assert_eq!(
+        error.kind(),
+        LoweringErrorKind::InvalidPrimitiveNumericConversion("semantic facts differ from conversion fact")
+    );
 }
 
 fn importer(isa: std::sync::Arc<dyn TargetIsa>, expected: DirectCallee) -> KnownCallImporter {

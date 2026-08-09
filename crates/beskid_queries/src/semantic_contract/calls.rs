@@ -15,8 +15,9 @@ pub(in crate::semantic_contract) use casts::{
 
 pub(in crate::semantic_contract) use facts::{
     call_arguments_tracked, call_lowering_tracked, canonical_result_definition_for_type, canonical_result_variant,
-    for_iterator_fact_tracked, primitive_numeric_conversion_tracked, range_for_fact_tracked, result_type_parts,
-    same_type_syntax, try_expression_fact_for_node, try_expression_fact_tracked, try_operand_parameter_declaration,
+    for_iterator_fact_tracked, primitive_numeric_conversion_target, primitive_numeric_conversion_tracked,
+    range_for_fact_tracked, result_type_parts, same_type_syntax, try_expression_fact_for_node,
+    try_expression_fact_tracked, try_operand_parameter_declaration,
 };
 
 pub(in crate::semantic_contract) use generics::{

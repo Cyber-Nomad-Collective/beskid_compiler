@@ -354,13 +354,6 @@ macro_rules! generated_operator_methods {
             };
             let value = generated::constructor_lower_expression(self, argument)?;
             let actual = self.builder.func.dfg.value_type(value);
-            let Some(source) = self.facts.scalar_type(argument) else {
-                self.pending_error = Some(LoweringError {
-                    key,
-                    kind: LoweringErrorKind::InvalidPrimitiveNumericConversion("argument scalar type is unavailable"),
-                });
-                return None;
-            };
             let Some(target) = self.facts.scalar_type(key) else {
                 self.pending_error = Some(LoweringError {
                     key,
@@ -368,15 +361,6 @@ macro_rules! generated_operator_methods {
                 });
                 return None;
             };
-            if source != actual {
-                self.pending_error = Some(LoweringError {
-                    key,
-                    kind: LoweringErrorKind::InvalidPrimitiveNumericConversion(
-                        "argument CLIF type differs from its fact",
-                    ),
-                });
-                return None;
-            }
             if self.facts.semantic_type(argument) != Some(from) || self.facts.semantic_type(key) != Some(to) {
                 self.pending_error = Some(LoweringError {
                     key,
@@ -386,7 +370,7 @@ macro_rules! generated_operator_methods {
                 });
                 return None;
             }
-            if !primitive_numeric_conversion_type_matches(source, from)
+            if !primitive_numeric_conversion_type_matches(actual, from)
                 || !primitive_numeric_conversion_type_matches(target, to)
             {
                 self.pending_error = Some(LoweringError {

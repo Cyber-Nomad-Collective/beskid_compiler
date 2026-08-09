@@ -215,6 +215,12 @@ mod tests {
     }
 
     #[test]
+    fn preserves_space_only_string_literal() {
+        let value = decode_string_literal_token("\" \"").expect("decode");
+        assert_eq!(value, " ");
+    }
+
+    #[test]
     fn decodes_string_escape_sequences() {
         let value = decode_string_literal_token("\"a\\\"b\\\\c\\${d\"").expect("decode");
         assert_eq!(value, "a\"b\\c${d");

@@ -1,14 +1,9 @@
 //! Public AST/Salsa semantic contracts used by later frontend and codegen replacement slices.
 
 pub use beskid_abi::runtime_source::CorelibService;
-use beskid_abi::{
-    abi_v5::{AbiManifestV5, AbiType, TargetMetadata},
-    dispatch_route_for_symbol,
-    runtime_source::RuntimeIntrinsicCapability,
-};
+use beskid_abi::{abi_v5::AbiType, runtime_source::RuntimeIntrinsicCapability};
 use beskid_analysis::projects::SyntaxProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
-use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

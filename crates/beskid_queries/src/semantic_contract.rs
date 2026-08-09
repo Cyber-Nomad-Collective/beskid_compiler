@@ -3,6 +3,8 @@
 //! This file is the stable public seam. Generation-bound implementations live in focused
 //! descendants and are re-exported here without changing query names or signatures.
 
+#![allow(unused_imports)] // Preserve the original crate-internal facade paths after extraction.
+
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -50,10 +52,10 @@ use calls::{
     generic_call_template_tracked, generic_call_uses_parameter_type_arguments, imported_call_receiver_exists,
     imported_generic_nominal_receiver_requires_instantiation, is_transparent_binary_operand_path,
     method_declaration_for_member_receiver, nominal_local_member_receiver, nominal_member_receiver_tracked,
-    primitive_integer, primitive_numeric, primitive_numeric_conversion_tracked, range_for_fact_tracked,
-    resolve_local_extern_contract_method, result_type_parts, same_type_syntax, try_expression_fact_for_node,
-    try_expression_fact_tracked, try_operand_parameter_declaration, type_syntax_is_generic_parameter_reference,
-    unique_nominal_method_declaration,
+    primitive_integer, primitive_numeric, primitive_numeric_conversion_target, primitive_numeric_conversion_tracked,
+    range_for_fact_tracked, resolve_local_extern_contract_method, result_type_parts, same_type_syntax,
+    try_expression_fact_for_node, try_expression_fact_tracked, try_operand_parameter_declaration,
+    type_syntax_is_generic_parameter_reference, unique_nominal_method_declaration,
 };
 use closures_spawn::{
     callable_signature_for_node, callable_signature_for_path, callable_signature_tracked, capture_storage_class,

@@ -332,7 +332,7 @@ pub(in crate::semantic_contract) fn abi_type_for_binary_expression(
     }
     use beskid_analysis::syntax::BinaryOp;
     match binary.op.node {
-        BinaryOp::Add if left_type == SemanticTypeId::STRING && right_type == SemanticTypeId::STRING => {
+        BinaryOp::Add if left_type == SemanticTypeId::STRING || right_type == SemanticTypeId::STRING => {
             Ok(SemanticTypeId::STRING)
         }
         BinaryOp::Eq | BinaryOp::NotEq

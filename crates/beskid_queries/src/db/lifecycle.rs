@@ -5,9 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::inputs::GrammarRevision;
 
-use super::{
-    BeskidDatabase, ModuleIndexCache, ProjectRegistry, SyntaxDependencyRegistry, SyntaxUnitRegistry, UnitArtifactCache,
-};
+use super::{BeskidDatabase, ModuleIndexCache, SyntaxDependencyRegistry, UnitArtifactCache};
 
 impl Default for BeskidDatabase {
     fn default() -> Self {

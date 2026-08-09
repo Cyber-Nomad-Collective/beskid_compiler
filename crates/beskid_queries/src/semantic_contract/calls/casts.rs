@@ -50,6 +50,16 @@ pub(in crate::semantic_contract) fn expected_cast_type(
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
 ) -> Option<Result<SemanticTypeId, SemanticError>> {
+    let nearest_call =
+        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::CallExpression);
+    if nearest_call
+        .and_then(|call_id| index.node_at(program, call_id))
+        .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
+        .and_then(primitive_numeric_conversion_target)
+        .is_some()
+    {
+        return None;
+    }
     if let Some(binary_id) =
         nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::BinaryExpression)
     {
@@ -111,8 +121,7 @@ pub(in crate::semantic_contract) fn expected_cast_type(
         return Some(semantic_type_from_syntax(return_type));
     }
 
-    let call_id =
-        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::CallExpression)?;
+    let call_id = nearest_call?;
     let call = index.node_at(program, call_id)?.of::<beskid_analysis::syntax::CallExpression>()?;
     let argument_index = call.args.iter().position(|argument| {
         index

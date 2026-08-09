@@ -8,7 +8,6 @@ use beskid_abi::generated::abi_v5_contract::{
 use beskid_codegen::CodegenArtifact;
 
 use crate::error::{AotError, AotResult};
-use crate::target::detect_target;
 
 use super::model::{AotBuildRequest, BuildOutputKind, ExportPolicy, ProjectTargetKind};
 #[cfg(test)]

@@ -201,7 +201,7 @@ macro_rules! generated_control_flow_methods {
             let condition_key = self.facts.child(key, 0)?;
             let then_key = self.facts.child(key, 1)?;
             let else_key = self.facts.child(key, 2);
-            let condition = generated::constructor_lower_expression(self, condition_key)?;
+            let condition = self.lower_nested_expression(condition_key)?;
             let then_block = self.builder.create_block();
             let else_block = self.builder.create_block();
             let merge_block = self.builder.create_block();

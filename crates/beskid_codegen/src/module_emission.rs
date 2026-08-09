@@ -14,4 +14,5 @@ pub use orchestration::{
     ModuleEmissionSession, emit_syntax_program, emit_syntax_program_in_session, lower_syntax_program,
 };
 
+#[allow(unused_imports)] // Keep the pre-split crate-internal facade path.
 pub(crate) use data::{descriptor_offsets_symbol_name, descriptor_symbol_name};

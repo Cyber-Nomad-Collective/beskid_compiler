@@ -2,7 +2,7 @@ use super::common::{lower_call_return, type_returns_runtime_value};
 use super::lambda::lower_function_typed_argument;
 use super::{
     AbiParam, CallConv, CodegenError, ExtFuncData, ExternalName, HirCallExpression, HirExpressionNode, InstBuilder,
-    MemFlags, MethodReceiverSource, NodeLoweringContext, ResolvedValue, Signature, Spanned, TypeInfo, Value,
+    MemFlags, MethodReceiverSource, NodeLoweringContext, ResolvedValue, Signature, Spanned, Value,
     contract_method_order, contract_signatures, ensure_type_compatibility_or_expected, lower_node, map_type_id_to_clif,
     method_name_from_path_callee, pointer_type, resolved_value_at,
 };

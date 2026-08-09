@@ -20,19 +20,7 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_tracked(
 ) -> SemanticQueryResult<PrimitiveNumericConversion> {
     with_node(db, syntax, key, |program, index, node| {
         let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
-        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
-            return None;
-        };
-        let [segment] = path.node.path.node.segments.as_slice() else {
-            return None;
-        };
-        let to = match segment.node.name.node.name.as_str() {
-            "i32" => SemanticTypeId::I32,
-            "i64" => SemanticTypeId::I64,
-            "u8" => SemanticTypeId::U8,
-            "word" => SemanticTypeId::WORD,
-            _ => return None,
-        };
+        let to = primitive_numeric_conversion_target(call)?;
         (call.args.len() == 1).then_some(())?;
         let argument = index
             .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&call.args[0]))
@@ -49,6 +37,24 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_tracked(
         )
     })?
     .transpose()
+}
+
+pub(in crate::semantic_contract) fn primitive_numeric_conversion_target(
+    call: &beskid_analysis::syntax::CallExpression,
+) -> Option<SemanticTypeId> {
+    let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
+        return None;
+    };
+    let [segment] = path.node.path.node.segments.as_slice() else {
+        return None;
+    };
+    Some(match segment.node.name.node.name.as_str() {
+        "i32" => SemanticTypeId::I32,
+        "i64" => SemanticTypeId::I64,
+        "u8" => SemanticTypeId::U8,
+        "word" => SemanticTypeId::WORD,
+        _ => return None,
+    })
 }
 
 #[salsa::tracked]

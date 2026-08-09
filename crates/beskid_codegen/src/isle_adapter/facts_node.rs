@@ -177,7 +177,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     fn semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
         // A call's result type belongs to the call node itself. In particular, a primitive
         // conversion's argument-context fact describes its input, not its result.
-        self.query(abi_type(self.db, key)).or_else(|| self.scalar_semantic_type(key))
+        self.query(abi_type(self.db, key))
+            .or_else(|| self.query(call_abi_signature(self.db, key)).map(|signature| signature.result))
+            .or_else(|| self.scalar_semantic_type(key))
     }
 
     fn try_expression_fact(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {

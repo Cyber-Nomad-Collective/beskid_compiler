@@ -11,7 +11,7 @@ use super::{
     AbiParam, BuiltinType, CallConv, CallLoweringKind, CodegenError, ExtFuncData, ExternalName, HirCallExpression,
     HirExpressionNode, HirLambdaExpression, InstBuilder, ItemKind, Lowerable, MemFlags, NodeLoweringContext,
     ResolvedValue, Signature, Spanned, TypeId, TypeInfo, Value, builtin_specs, call_kind_for_call, canonical_item_id,
-    canonicalize_call_kind, dispatch_route_for_symbol, ensure_type_compatibility_or_expected, local_id_for_span,
+    canonicalize_call_kind, dispatch_route_for_symbol, ensure_type_compatibility_or_expected,
     lower_dispatch_builtin_call, lower_function_with_name, lower_node, mangle_generic_item_function,
     mangle_item_function, mangle_method_name, map_type_id_to_clif, pointer_type, resolve_item_call_id,
     resolved_value_at, types,

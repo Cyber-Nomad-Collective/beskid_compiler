@@ -53,26 +53,41 @@ pub(in crate::semantic_contract) fn generic_specialization_instance_for_call(
     // the binding and the bare literal can inherit it if its magnitude fits.
     let mut provisional_integer_substitutions = HashSet::new();
     for (parameter, argument) in function.parameters.iter().zip(arguments.iter().copied()) {
+        let generic = generic_type_name(&parameter.node.ty.node, &generic_names);
+        let bare_integer = generic.is_some() && unsuffixed_integer_literal(db, argument)?;
+        let contextual_integer = if bare_integer {
+            match generic.and_then(|name| substitutions.get(name)).copied() {
+                Some(expected) if integer_literal_fits_abi(db, argument, expected)? => Some(expected),
+                Some(_) => None,
+                None if integer_literal_fits_abi(db, argument, SemanticTypeId::I32)? => Some(SemanticTypeId::I32),
+                None => None,
+            }
+        } else {
+            None
+        };
         let explicit_expected = explicit_substitutions_complete
             .then(|| generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions))
             .transpose()?;
-        let actual = match abi_type(db, argument) {
-            Ok(Some(abi)) => Some(abi),
-            Ok(None) => match node_type(db, argument) {
-                Ok(abi) => abi.or(explicit_expected),
-                Err(error) if error.is_unavailable() => explicit_expected,
+        let actual = if contextual_integer.is_some() {
+            contextual_integer
+        } else {
+            match abi_type(db, argument) {
+                Ok(Some(abi)) => Some(abi),
+                Ok(None) => match node_type(db, argument) {
+                    Ok(abi) => abi.or(explicit_expected),
+                    Err(error) if error.is_unavailable() => explicit_expected,
+                    Err(error) => return Err(error),
+                },
+                Err(error) if error.is_unavailable() => match node_type(db, argument) {
+                    Ok(abi) => abi.or(explicit_expected),
+                    Err(error) if error.is_unavailable() => explicit_expected,
+                    Err(error) => return Err(error),
+                },
                 Err(error) => return Err(error),
-            },
-            Err(error) if error.is_unavailable() => match node_type(db, argument) {
-                Ok(abi) => abi.or(explicit_expected),
-                Err(error) if error.is_unavailable() => explicit_expected,
-                Err(error) => return Err(error),
-            },
-            Err(error) => return Err(error),
+            }
         }
         .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
-        if let Some(generic) = generic_type_name(&parameter.node.ty.node, &generic_names) {
-            let bare_integer = unsuffixed_integer_literal(db, argument)?;
+        if let Some(generic) = generic {
             match substitutions.get(generic).copied() {
                 None => {
                     substitutions.insert(generic.to_owned(), actual);
@@ -144,6 +159,14 @@ pub(in crate::semantic_contract) fn integer_literal_fits_abi(
     let Some(text) = integer_literal_text(db, key)? else {
         return Ok(false);
     };
+    if let Some(magnitude) = text.strip_prefix('-').and_then(integer_literal_u64) {
+        return Ok(match expected {
+            SemanticTypeId::I32 => magnitude <= (i32::MAX as u64) + 1,
+            SemanticTypeId::I64 => magnitude <= (i64::MAX as u64) + 1,
+            SemanticTypeId::U8 | SemanticTypeId::WORD => false,
+            _ => false,
+        });
+    }
     let value = integer_literal_u64(&text);
     Ok(match expected {
         SemanticTypeId::I32 => value.is_some_and(|value| i32::try_from(value).is_ok()),
@@ -162,6 +185,14 @@ pub(in crate::semantic_contract) fn integer_literal_text(
         let Some(children) = child_nodes(db, key)? else {
             return Ok(None);
         };
+        if node_kind(db, key)? == Some(IndexedNodeKind::UnaryExpression)
+            && operator_fact(db, key)? == Some(OperatorFact::Neg)
+        {
+            let [_, operand] = children.as_ref() else {
+                return Ok(None);
+            };
+            return Ok(integer_literal_text(db, *operand)?.map(|text| Arc::from(format!("-{text}"))));
+        }
         let [child] = children.as_ref() else {
             return Ok(None);
         };
@@ -210,12 +241,20 @@ pub(in crate::semantic_contract) fn call_argument_abi_type_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
-    with_node(db, syntax, key, |_program, index, _node| {
+    with_node(db, syntax, key, |program, index, _node| {
         Some((|| {
             let mut current = key.node;
             while let Some(parent) = index.metadata_for(key.generation, current).and_then(|meta| meta.parent) {
                 let parent_key = AstNodeKey { node: parent, ..key };
                 if index.kind(parent) == Some(beskid_analysis::syntax_query::NodeKind::CallExpression) {
+                    if index
+                        .node_at(program, parent)
+                        .and_then(|node| node.of::<beskid_analysis::syntax::CallExpression>())
+                        .and_then(primitive_numeric_conversion_target)
+                        .is_some()
+                    {
+                        return Err(SemanticError::unavailable("call_argument_abi_type"));
+                    }
                     let arguments = call_arguments(db, parent_key)?
                         .ok_or_else(|| SemanticError::unavailable("call_argument_abi_type"))?;
                     let argument_index = arguments.iter().position(|argument| {
@@ -282,6 +321,9 @@ pub(in crate::semantic_contract) fn binary_operand_abi_type_tracked(
                     .metadata_for(key.generation, branch)
                     .and_then(|meta| meta.parent)
                     .ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))?;
+            }
+            if !is_transparent_binary_operand_path(index, branch, key.node) {
+                return Err(SemanticError::unavailable("binary_operand_abi_type"));
             }
             let children =
                 index.children(parent).ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))?;
