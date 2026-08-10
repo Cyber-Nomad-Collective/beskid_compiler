@@ -19,10 +19,26 @@ impl Drop for OtelGuard {
 }
 
 pub fn otel_enabled() -> bool {
-    !matches!(
-        std::env::var("OTEL_SDK_DISABLED").as_deref(),
-        Ok("true") | Ok("1") | Ok("TRUE")
-    ) && std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok()
+    if std::env::var("OTEL_SDK_DISABLED")
+        .ok()
+        .is_some_and(|value| matches!(value.to_lowercase().as_str(), "true" | "1" | "on"))
+    {
+        return false;
+    }
+
+    if let Some(explicit) = std::env::var("BESKID_TELEMETRY").ok().and_then(parse_bool) {
+        return explicit;
+    }
+
+    std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok()
+}
+
+fn parse_bool(value: String) -> Option<bool> {
+    match value.to_lowercase().as_str() {
+        "1" | "true" | "on" | "yes" => Some(true),
+        "0" | "false" | "off" | "no" => Some(false),
+        _ => None,
+    }
 }
 
 pub fn install_otel_guard(service_name: &str) -> Result<OtelGuard, opentelemetry_otlp::ExporterBuildError> {

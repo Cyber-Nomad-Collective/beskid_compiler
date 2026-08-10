@@ -49,6 +49,10 @@ replace:
       lsp_dest="${HOME}/.beskid/bin/beskid_lsp"
     fi
     mkdir -p "$(dirname "${cli_dest}")" "$(dirname "${lsp_dest}")"
+    BESKID_RUNTIME_PREFIX="${root}/target/native-runtime-kit" \
+      BESKID_RUNTIME_KIT_PROFILE=release \
+      BESKID_CLI_BIN="${cli_built}" \
+      bash "${root}/scripts/stage-native-runtime-kit.sh"
     install -m 0755 "${cli_built}" "${cli_dest}"
     install -m 0755 "${lsp_built}" "${lsp_dest}"
     echo "Replaced ${cli_dest}"

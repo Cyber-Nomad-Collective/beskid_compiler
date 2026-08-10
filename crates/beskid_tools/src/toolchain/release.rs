@@ -116,10 +116,10 @@ mod tests {
 
     #[test]
     fn lsp_release_download_url_uses_github_release_layout() {
-        let url = release_download_url("lsp-latest", "beskid_lsp-linux-amd64");
+        let url = release_download_url("lsp-stable", "beskid_lsp-linux-amd64");
         assert_eq!(
             url,
-            "https://github.com/Cyber-Nomad-Collective/beskid_compiler/releases/download/lsp-latest/beskid_lsp-linux-amd64"
+            "https://github.com/Cyber-Nomad-Collective/beskid_compiler/releases/download/lsp-stable/beskid_lsp-linux-amd64"
         );
     }
 

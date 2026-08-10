@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add opt-in anonymous OpenTelemetry export for Rust CLI/pckg flows:
+  - `BESKID_TELEMETRY` now controls OTEL enablement (unless `OTEL_SDK_DISABLED` is set).
+  - `beskid_cli` initializes the shared telemetry subscriber at process start.
+  - Compiler diagnostics now emit warning/error tracing events during rendering for OTEL ingestion.
+  - `beskid_pckg` command execution emits structured command/error events while preserving current CLI output.
+
 - Lower the grammar-supported postfix `Result` propagation form (`value?`)
   through generation-bound Salsa facts and generated ISLE. Only the exact
   canonical `Result<T, E> { Ok(T value), Error(E error) }` definition and an
@@ -77,6 +83,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer supplies ambient process arguments, while numeric math exports remain
   registered through the runtime builtin module. Linux x64 terminal fallback code
   is now correctly target-gated for warnings-as-errors CI builds.
+- Replace the remaining `lsp-latest` CLI install default with explicit
+  `lsp-stable`/`lsp-unstable` channel usage in compiler toolchain defaults and
+  tests so release consumers can opt into unstable builds by channel, not by
+  ambiguous `latest`.
 - Migrate AOT and parsed-project codegen tests to the production prepared-syntax
   → `CodegenInput` → ISLE boundary, removing test reliance on the retired HIR
   `lower_program` compatibility path.

@@ -36,6 +36,7 @@ use miette::Report;
 use std::env;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+use beskid_telemetry::{self, InitOptions};
 
 /// Parsed `beskid` invocation (after `@file` argv expansion).
 #[derive(Parser)]
@@ -142,7 +143,7 @@ pub fn run() -> miette::Result<()> {
     let os_args = env::args_os();
     let all_args = argfile::expand_args_from(os_args, argfile::parse_fromfile, argfile::PREFIX).unwrap();
     let cli = Cli::parse_from(all_args);
-    beskid_tools::logging::init(cli.log_cranelift);
+    beskid_telemetry::init(InitOptions::cli(cli.log_cranelift));
     if !matches!(&cli.command, Commands::RuntimeKit(_)) {
         ensure_corelib_ready().map_err(anyhow_to_miette)?;
     }

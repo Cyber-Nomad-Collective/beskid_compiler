@@ -10,6 +10,7 @@ beskid_aot = { path = "../beskid_aot" }
 beskid_abi = { path = "../beskid_abi" }
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_queries = { path = "../beskid_queries" }
+beskid_telemetry = { path = "../beskid_telemetry" }
 beskid_codegen = { path = "../beskid_codegen" }
 beskid_pipeline = { path = "../beskid_pipeline" }
 beskid_graph = { path = "../beskid_graph" }

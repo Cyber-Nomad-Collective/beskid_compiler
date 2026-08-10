@@ -5,6 +5,7 @@ use super::{
     DetailsArgs, DownloadArgs, Instant, IsTerminal, PckgArgs, PckgClient, PckgCommand, PckgError, PublishArgs,
     SearchArgs, UploadProgress, VersionActionArgs, VersionsArgs, fs, io,
 };
+use tracing::error;
 
 /// Run `args.command` on a fresh multi-thread Tokio runtime (`block_on` internally).
 pub fn execute(args: PckgArgs) -> Result<(), PckgError> {
@@ -18,13 +19,22 @@ pub fn execute(args: PckgArgs) -> Result<(), PckgError> {
 
 async fn execute_async(args: PckgArgs) -> Result<(), PckgError> {
     let args_for_client = args.clone();
+    let command = command_name(&args.command);
+    let started = Instant::now();
     if args.verbose {
         let auth =
             if args.api_key.is_some() || args.bearer_token.is_some() { "cli-args" } else { "repositories.json-or-env" };
         eprintln!("[pckg] verbose: base_url={} auth_hint={auth}", args.base_url.trim());
     }
 
-    match args.command {
+    tracing::info!(
+        target: "beskid.pckg",
+        command = command,
+        base_url = args.base_url.as_str(),
+        "pckg command started"
+    );
+
+    let result = match args.command {
         PckgCommand::Pack(pack_args) => execute_pack(pack_args),
         PckgCommand::Upload(upload_args) => {
             let client = build_client(&args_for_client)?;
@@ -63,7 +73,68 @@ async fn execute_async(args: PckgArgs) -> Result<(), PckgError> {
             let client = build_client(&args_for_client)?;
             execute_whoami(&client).await
         }
+    };
+
+    match &result {
+        Ok(()) => {
+            tracing::info!(
+                target: "beskid.pckg",
+                command = command,
+                elapsed_ms = started.elapsed().as_millis(),
+                "pckg command completed"
+            );
+        }
+        Err(error) => {
+            emit_command_error(command, error);
+        }
     }
+
+    result
+}
+
+fn command_name(command: &PckgCommand) -> &'static str {
+    match command {
+        PckgCommand::Pack(_) => "pack",
+        PckgCommand::Upload(_) => "upload",
+        PckgCommand::Configure(_) => "configure",
+        PckgCommand::List => "list",
+        PckgCommand::Search(_) => "search",
+        PckgCommand::Details(_) => "details",
+        PckgCommand::Versions(_) => "versions",
+        PckgCommand::Download(_) => "download",
+        PckgCommand::Yank(_) => "yank",
+        PckgCommand::Unyank(_) => "unyank",
+        PckgCommand::Whoami => "whoami",
+    }
+}
+
+fn emit_command_error(command: &'static str, error: &PckgError) {
+    let category = match error {
+        PckgError::MissingAuthToken => "missing_auth_token",
+        PckgError::Url(_) => "invalid_url",
+        PckgError::Transport(_) => "network_transport",
+        PckgError::Io(_) => "io_error",
+        PckgError::RuntimeInit(_) => "runtime_init",
+        PckgError::Api { .. } => "api_error",
+        PckgError::LogicalFailure { .. } => "logical_failure",
+    };
+
+    if matches!(error, PckgError::MissingAuthToken) {
+        tracing::warn!(
+            target: "beskid.pckg",
+            command = command,
+            error_category = category,
+            "pckg command failed"
+        );
+        return;
+    }
+
+    error!(
+        target: "beskid.pckg",
+        command = command,
+        error_category = category,
+        "pckg command failed"
+    );
 }
 async fn execute_publish(client: &PckgClient, args: PublishArgs, verbose: bool) -> Result<(), PckgError> {
     let artifact_name = args.artifact.file_name().and_then(|name| name.to_str()).unwrap_or("artifact.bpk").to_string();

@@ -19,8 +19,8 @@ pub enum LspCommand {
 
 #[derive(Args, Debug)]
 pub struct LspInstallArgs {
-    /// GitHub release tag (default rolling `lsp-latest`; pin with `lsp-vX.Y.Z`).
-    #[arg(long, default_value = "lsp-latest")]
+    /// GitHub release tag (default rolling `lsp-stable`; pin with `lsp-vX.Y.Z`).
+    #[arg(long, default_value = "lsp-stable")]
     pub release_tag: String,
 }
 
