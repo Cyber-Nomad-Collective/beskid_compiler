@@ -11,3 +11,4 @@ pub use model::{
     CommunityVote, NewCommunityNotification, PackageCommunityReview, PackageCommunityReviewError,
 };
 pub use persistence::SqlxCommunityRepository;
+pub(crate) use persistence::CREATE_TEST_NOTIFICATION_PROFILE_SQL;
