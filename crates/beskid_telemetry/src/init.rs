@@ -143,13 +143,13 @@ fn install_otel_with_tui(filter: EnvFilter, buffer_layer: BufferLayer, guard: &O
 fn install_for_scope(
     filter: EnvFilter,
     buffer_layer: BufferLayer,
-    include_tui_logger: bool,
+    _include_tui_logger: bool,
     otel_guard: Option<OtelGuard>,
 ) {
     match otel_guard {
         Some(guard) => {
             #[cfg(feature = "tui-logger")]
-            if include_tui_logger {
+            if _include_tui_logger {
                 install_otel_with_tui(filter, buffer_layer, &guard);
                 let _leaked = Box::leak(Box::new(guard));
                 return;
@@ -159,7 +159,7 @@ fn install_for_scope(
         }
         None => {
             #[cfg(feature = "tui-logger")]
-            if include_tui_logger {
+            if _include_tui_logger {
                 install_local_with_tui(filter, buffer_layer);
                 return;
             }
