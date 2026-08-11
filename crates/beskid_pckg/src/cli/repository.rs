@@ -1,7 +1,5 @@
-use super::{
-    BTreeMap, ConfigureArgs, Deserialize, Duration, Path, PckgArgs, PckgClient, PckgClientConfig, PckgError, Serialize,
-    Url, fs,
-};
+use super::{BTreeMap, ConfigureArgs, Duration, Path, PckgArgs, PckgClient, PckgClientConfig, PckgError, Url, fs};
+use serde::{Deserialize, Serialize};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
