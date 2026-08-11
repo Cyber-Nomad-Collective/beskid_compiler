@@ -155,7 +155,7 @@ fn type_syntax_is_enclosing_generic_parameter_reference(
     index
         .node_at(syntax.expanded_program(db), enclosing)
         .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
-        .is_some_and(|function| function.generics.iter().any(|generic| generic.node.name == parameter_name.as_ref()))
+        .is_some_and(|function| function.generics.iter().any(|generic| generic.node.name == parameter_name))
 }
 
 pub(in crate::semantic_contract) fn generic_call_uses_parameter_type_arguments(

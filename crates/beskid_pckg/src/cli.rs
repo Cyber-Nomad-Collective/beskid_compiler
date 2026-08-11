@@ -12,14 +12,10 @@ use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
 use semver::Version;
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use url::Url;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
-
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 
 use crate::models::PackageVersionSummaryResponse;
 use crate::pack::{

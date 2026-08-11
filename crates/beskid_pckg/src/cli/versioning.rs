@@ -1,4 +1,4 @@
-use super::{BTreeMap, Deserialize, PackArgs, Path, PathBuf, PckgError, Serialize, Version, fs};
+use super::{BTreeMap, PackArgs, Path, PathBuf, PckgError, Version, fs};
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct PackVersionState {
