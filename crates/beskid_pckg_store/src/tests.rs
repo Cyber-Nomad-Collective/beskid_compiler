@@ -1,8 +1,9 @@
 use super::{
     migrations, validate_cutover_request, InMemoryPackageRepository, LegacyIdentityCutoverError,
     LegacyIdentityCutoverRequest, LegacyIdentitySubjectMapping, NewPackage, PackageRepository, PublishOutcome,
-    PublishVersion, StoreError, CREATE_TEST_NOTIFICATION_PROFILE_SQL,
+    PublishVersion, StoreError,
 };
+use crate::CREATE_TEST_NOTIFICATION_PROFILE_SQL;
 
 const CHECKSUM: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 

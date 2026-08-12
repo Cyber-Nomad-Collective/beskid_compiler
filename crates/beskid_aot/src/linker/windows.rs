@@ -1,3 +1,4 @@
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -14,7 +15,81 @@ fn windows_import_library_path(shared_library: &Path) -> PathBuf {
 }
 
 pub(super) fn archive_static_windows(req: &LinkRequest) -> AotResult<LinkResult> {
-    let mut cmd = Command::new("lib");
+    let (command_line, output) = run_command_with_fallback(vec![
+        windows_lib_command(req, "lib"),
+        windows_lib_command(req, "lib.exe"),
+        windows_lib_command(req, "llvm-lib"),
+        windows_lib_command(req, "llvm-lib.exe"),
+    ])?;
+    if req.verbose {
+        eprintln!("[aot] archive command: {:?}", command_line);
+    }
+    if !output.status.success() {
+        return Err(AotError::LinkFailed {
+            status: output.status.code().unwrap_or(-1),
+            command: command_line.clone(),
+            detail: format_link_detail(&output),
+        });
+    }
+    Ok(LinkResult {
+        output_path: req.output_path.clone(),
+        command_line,
+        exported_symbols: req.exported_symbols.clone(),
+    })
+}
+
+pub(super) fn link_windows(req: &LinkRequest, target: &str) -> AotResult<LinkResult> {
+    let (command_line, output) = run_command_with_fallback(vec![
+        windows_link_command(req, target, "link")?,
+        windows_link_command(req, target, "link.exe")?,
+        windows_link_command(req, target, "lld-link")?,
+        windows_link_command(req, target, "lld-link.exe")?,
+    ])?;
+    if req.verbose {
+        eprintln!("[aot] link command: {:?}", command_line);
+    }
+    if !output.status.success() {
+        return Err(AotError::LinkFailed {
+            status: output.status.code().unwrap_or(-1),
+            command: command_line.clone(),
+            detail: format_link_detail(&output),
+        });
+    }
+    Ok(LinkResult {
+        output_path: req.output_path.clone(),
+        command_line,
+        exported_symbols: req.exported_symbols.clone(),
+    })
+}
+
+fn run_command_with_fallback(commands: Vec<Command>) -> AotResult<(String, std::process::Output)> {
+    let mut last_failure: Option<(String, std::process::Output)> = None;
+
+    for mut command in commands {
+        let command_line = format!("{:?}", command);
+        match command.output() {
+            Ok(output) if output.status.success() => return Ok((command_line, output)),
+            Ok(output) => {
+                last_failure = Some((command_line, output));
+            }
+            Err(err) if err.kind() == ErrorKind::NotFound => continue,
+            Err(_) => return Err(AotError::LinkerUnavailable),
+        }
+    }
+
+    if let Some((command_line, output)) = last_failure {
+        return Err(AotError::LinkFailed {
+            status: output.status.code().unwrap_or(-1),
+            command: command_line,
+            detail: format_link_detail(&output),
+        });
+    }
+
+    Err(AotError::LinkerUnavailable)
+}
+
+fn windows_lib_command(req: &LinkRequest, librarian: &str) -> Command {
+    let mut cmd = Command::new(librarian);
     cmd.arg("/NOLOGO");
     cmd.arg(format!("/OUT:{}", req.output_path.display()));
     cmd.arg(&req.object_path);
@@ -25,46 +100,11 @@ pub(super) fn archive_static_windows(req: &LinkRequest) -> AotResult<LinkResult>
     if let Some(host_staticlib) = &req.host_staticlib {
         cmd.arg(host_staticlib);
     }
-    if req.verbose {
-        eprintln!("[aot] archive command: {:?}", cmd);
-    }
-    let output = cmd.output().map_err(|_| AotError::LinkerUnavailable)?;
-    if !output.status.success() {
-        return Err(AotError::LinkFailed {
-            status: output.status.code().unwrap_or(-1),
-            command: format!("{:?}", cmd),
-            detail: format_link_detail(&output),
-        });
-    }
-    Ok(LinkResult {
-        output_path: req.output_path.clone(),
-        command_line: format!("{:?}", cmd),
-        exported_symbols: req.exported_symbols.clone(),
-    })
+    cmd
 }
 
-pub(super) fn link_windows(req: &LinkRequest, target: &str) -> AotResult<LinkResult> {
-    let mut cmd = windows_link_command(req, target)?;
-    if req.verbose {
-        eprintln!("[aot] link command: {:?}", cmd);
-    }
-    let output = cmd.output().map_err(|_| AotError::LinkerUnavailable)?;
-    if !output.status.success() {
-        return Err(AotError::LinkFailed {
-            status: output.status.code().unwrap_or(-1),
-            command: format!("{:?}", cmd),
-            detail: format_link_detail(&output),
-        });
-    }
-    Ok(LinkResult {
-        output_path: req.output_path.clone(),
-        command_line: format!("{:?}", cmd),
-        exported_symbols: req.exported_symbols.clone(),
-    })
-}
-
-fn windows_link_command(req: &LinkRequest, target: &str) -> AotResult<Command> {
-    let mut cmd = Command::new("link");
+fn windows_link_command(req: &LinkRequest, target: &str, linker: &str) -> AotResult<Command> {
+    let mut cmd = Command::new(linker);
     cmd.arg("/NOLOGO");
     cmd.arg(format!("/OUT:{}", req.output_path.display()));
     if req.output_kind == BuildOutputKind::SharedLib {
@@ -123,6 +163,7 @@ mod tests {
                 library_search_paths: vec![PathBuf::from("sdk/lib")],
             },
             "x86_64-pc-windows-msvc",
+            "link",
         )
         .expect("build Windows link command");
         let arguments = command.get_args().map(|argument| argument.to_string_lossy().into_owned()).collect::<Vec<_>>();

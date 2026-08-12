@@ -1,5 +1,5 @@
 mod model;
-mod persistence;
+pub(crate) mod persistence;
 mod reviews;
 mod rows;
 mod validation;
@@ -11,3 +11,5 @@ pub use model::{
     CommunityVote, NewCommunityNotification, PackageCommunityReview, PackageCommunityReviewError,
 };
 pub use persistence::SqlxCommunityRepository;
+#[cfg(test)]
+pub(crate) use persistence::CREATE_TEST_NOTIFICATION_PROFILE_SQL;

@@ -42,7 +42,7 @@ pub use package::{
 };
 
 #[cfg(test)]
-pub(crate) use community::persistence::CREATE_TEST_NOTIFICATION_PROFILE_SQL;
+pub(crate) use community::CREATE_TEST_NOTIFICATION_PROFILE_SQL;
 #[cfg(test)]
 pub(crate) use cutover::validate_cutover_request;
 #[cfg(test)]

@@ -55,12 +55,15 @@ stage_profile() {
   "${cli[@]}" runtime-kit build-native-host --prefix "${profile_prefix}" --profile "${profile}"
 }
 
-symbol_tool="${LLVM_NM:-}"
+symbol_tool="${CR_NM:-${LLVM_NM:-}}"
+if [[ -z "${symbol_tool}" ]]; then
+  symbol_tool="$(command -v cr_nm || true)"
+fi
 if [[ -z "${symbol_tool}" ]]; then
   symbol_tool="$(command -v llvm-nm || true)"
 fi
 if [[ -z "${symbol_tool}" ]]; then
-  echo "Native runtime-kit provenance requires llvm-nm; set LLVM_NM to the native tool path" >&2
+  echo "Native runtime-kit provenance requires cr_nm or llvm-nm; set CR_NM (preferred) or LLVM_NM to the native tool path" >&2
   exit 1
 fi
 
@@ -143,7 +146,7 @@ done
 # `beskid run` currently has one production profile (debug). Exercise that exact installed kit
 # through the public CLI in addition to the profile-parametric AOT integration test above.
 smoke_source="${work}/runtime-kit-cli-smoke.bd"
-printf 'unit Main() { return; }\n' >"${smoke_source}"
+printf 'pub i64 Main() { return 42; }\n' >"${smoke_source}"
 export BESKID_RUNTIME_KIT_PROFILE="debug"
 "${cli[@]}" run "${smoke_source}" --plain
 
