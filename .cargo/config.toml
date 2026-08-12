@@ -5,3 +5,9 @@
 
 [profile.dev.package."*"]
 opt-level = 1
+
+# Keep the MSVC target independent of Git for Windows' usr/bin/link.exe.
+# rust-lld is shipped with the Rust toolchain; MSVC library paths still come
+# from the Windows CI developer environment.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
