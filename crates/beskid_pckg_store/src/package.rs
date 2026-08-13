@@ -530,7 +530,6 @@ async fn find_version_in_transaction(
     .map_err(database_error)
 }
 
-
 pub(super) fn validate_package_name(name: &str) -> Result<(), StoreError> {
     (!name.trim().is_empty() && name == name.trim()).then_some(()).ok_or(StoreError::InvalidPackageName)
 }

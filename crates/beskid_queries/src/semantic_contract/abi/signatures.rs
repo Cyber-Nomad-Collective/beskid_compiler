@@ -53,7 +53,7 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<ItemSignature> {
-    with_node(db, syntax, key, |_program, _index, node| {
+    with_node(db, syntax, key, |program, index, node| {
         if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
             // Generic declarations have no single item ABI. Call sites must prove a concrete
             // specialization; otherwise module emission would register `Item` while calls import
@@ -64,6 +64,15 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
             return Some(abi_signature_from_syntax(db, key, &function.parameters, function.return_type.as_ref()));
         }
         if let Some(method) = node.of::<beskid_analysis::syntax::MethodDefinition>() {
+            let generic_owner = parent_node(index, key.node)
+                .and_then(|parent| index.node_at(program, parent))
+                .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+                .is_some_and(|definition| !definition.generics.is_empty());
+            if generic_owner {
+                // A method inherits its owning type's substitutions. It can only be emitted after
+                // a direct receiver call proves that concrete owner environment.
+                return None;
+            }
             let mut signature =
                 match abi_signature_from_syntax(db, key, &method.parameters, method.return_type.as_ref()) {
                     Ok(signature) => signature,

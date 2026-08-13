@@ -247,9 +247,9 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            let CallLowering::Direct(_) = lowering else {
+            if !matches!(lowering, CallLowering::Direct(_) | CallLowering::Runtime(_)) {
                 return Some(Err(SemanticError::unavailable("abi_type")));
-            };
+            }
             let signature = match call_abi_signature(db, key) {
                 Ok(Some(signature)) => signature,
                 Ok(None) => return None,
@@ -266,6 +266,42 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
         None
     })?
     .transpose()
+}
+
+/// One generation-bound ABI representation fact for source values and declared storage
+/// boundaries. This composes only existing syntax facts; it never reconstructs HIR types.
+#[salsa::tracked]
+pub(in crate::semantic_contract) fn value_abi_type_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<SemanticTypeId> {
+    with_node(db, syntax, key, |_program, _index, _node| {
+        Some((|| {
+            let contextual = optional_abi_fact(contextual_integer_literal_abi_type(db, key))?;
+            let call_argument = optional_abi_fact(call_argument_abi_type(db, key))?;
+            let binary_operand = optional_abi_fact(binary_operand_abi_type(db, key))?;
+            let call_result = optional_abi_fact(call_abi_signature(db, key))?.map(|signature| signature.result);
+            let abi = optional_abi_fact(abi_type(db, key))?;
+            let semantic = optional_abi_fact(node_type(db, key))?;
+            contextual
+                .or(call_argument)
+                .or(binary_operand)
+                .or(call_result)
+                .or(abi)
+                .or(semantic)
+                .ok_or_else(|| SemanticError::unavailable("value_abi_type"))
+        })())
+    })?
+    .transpose()
+}
+
+fn optional_abi_fact<T>(result: SemanticQueryResult<T>) -> Result<Option<T>, SemanticError> {
+    match result {
+        Ok(value) => Ok(value),
+        Err(error) if error.is_unavailable() => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 pub(in crate::semantic_contract) fn abi_type_for_expression(
@@ -316,18 +352,20 @@ pub(in crate::semantic_contract) fn abi_type_for_binary_expression(
         .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(binary.right.as_ref()))
         .map(|node| AstNodeKey { node, ..key })
         .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-    let left_type = abi_type(db, left)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-    let right_type = abi_type(db, right)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    let left_type = value_abi_type(db, left)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+    let right_type = value_abi_type(db, right)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
     if left_type != right_type {
         if integer_literal_text(db, left)?.is_some() && primitive_integer(right_type) {
-            return integer_literal_fits_abi(db, left, right_type)?
-                .then_some(right_type)
-                .ok_or_else(|| SemanticError::unavailable("abi_type"));
+            integer_literal_fits_abi(db, left, right_type)?
+                .then_some(())
+                .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+            return binary_result_type(binary.op.node, right_type);
         }
         if integer_literal_text(db, right)?.is_some() && primitive_integer(left_type) {
-            return integer_literal_fits_abi(db, right, left_type)?
-                .then_some(left_type)
-                .ok_or_else(|| SemanticError::unavailable("abi_type"));
+            integer_literal_fits_abi(db, right, left_type)?
+                .then_some(())
+                .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+            return binary_result_type(binary.op.node, left_type);
         }
     }
     use beskid_analysis::syntax::BinaryOp;
@@ -365,6 +403,29 @@ pub(in crate::semantic_contract) fn abi_type_for_binary_expression(
         {
             Ok(left_type)
         }
+        _ => Err(SemanticError::unavailable("abi_type")),
+    }
+}
+
+fn binary_result_type(
+    operator: beskid_analysis::syntax::BinaryOp,
+    operand: SemanticTypeId,
+) -> Result<SemanticTypeId, SemanticError> {
+    use beskid_analysis::syntax::BinaryOp;
+
+    match operator {
+        BinaryOp::IdentityEq
+        | BinaryOp::IdentityNotEq
+        | BinaryOp::Eq
+        | BinaryOp::NotEq
+        | BinaryOp::Lt
+        | BinaryOp::Lte
+        | BinaryOp::Gt
+        | BinaryOp::Gte => Ok(SemanticTypeId::BOOL),
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod if primitive_numeric(operand) => {
+            Ok(operand)
+        }
+        BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::Shl | BinaryOp::Shr if primitive_integer(operand) => Ok(operand),
         _ => Err(SemanticError::unavailable("abi_type")),
     }
 }

@@ -43,10 +43,7 @@ fn emit_fiber_entry_trampoline(
     ctx: &mut NodeLoweringContext<'_, '_>,
 ) -> Result<Value, CodegenError> {
     if !target_sig.params.is_empty() {
-        return Err(CodegenError::UnsupportedNode {
-            span: spawn_span,
-            node: "spawn target function parameters",
-        });
+        return Err(CodegenError::UnsupportedNode { span: spawn_span, node: "spawn target function parameters" });
     }
     let trampoline_name =
         format!("__beskid_spawn_entry_{}", ctx.codegen.functions_emitted + ctx.codegen.lowered_functions.len());

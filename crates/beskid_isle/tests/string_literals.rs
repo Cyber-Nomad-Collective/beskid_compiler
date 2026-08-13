@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use beskid_isle::syntax_types::LiteralKind;
 use beskid_isle::{
-    AstNodeKey, FunctionEmissionError, FunctionEmitter, LoweringErrorKind, NodeFacts, NodeKind,
-    StringInterner, StringMaterializationError,
+    AstNodeKey, FunctionEmissionError, FunctionEmitter, LoweringErrorKind, NodeFacts, NodeKind, StringInterner,
+    StringMaterializationError,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{InstBuilder, UserFuncName, Value, types};

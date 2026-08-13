@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use beskid_isle::syntax_types::{LiteralKind, OperatorFact};
 use beskid_isle::{
-    AstNodeKey, FunctionEmissionError, FunctionEmitter, LocalSlotId, LoweringErrorKind, NodeFacts,
-    NodeKind, RangeFact,
+    AstNodeKey, FunctionEmissionError, FunctionEmitter, LocalSlotId, LoweringErrorKind, NodeFacts, NodeKind, RangeFact,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{Type, UserFuncName, types};

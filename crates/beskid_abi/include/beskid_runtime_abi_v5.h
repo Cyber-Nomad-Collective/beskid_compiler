@@ -133,6 +133,7 @@ void * beskid_rt_v5_closure_environment_allocate(void * request);
 uint8_t beskid_rt_v5_closure_environment_root(void * tls_state, size_t slot_index, void * environment);
 uint8_t beskid_rt_v5_closure_environment_root_current(size_t slot_index, void * environment);
 int64_t beskid_rt_v5_fiber_spawn_with_cancel_slot(void * entry, void * environment, void * cancelled_slot);
+void beskid_rt_v5_fiber_yield(void);
 void * beskid_rt_v5_managed_object_allocate(void * request);
 void * beskid_rt_v5_process_init(void * config);
 void beskid_rt_v5_process_shutdown(void * runtime);

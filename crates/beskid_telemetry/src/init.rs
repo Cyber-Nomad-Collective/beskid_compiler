@@ -3,16 +3,15 @@
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::writer::MakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 use crate::buffer::BufferLayer;
-use crate::otel::{install_otel_guard, otel_enabled, otel_tracer, OtelGuard};
+use crate::otel::{OtelGuard, install_otel_guard, otel_enabled, otel_tracer};
 
-const CRANELIFT_QUIET: &str =
-    "cranelift_jit=warn,cranelift_codegen=warn,cranelift_frontend=warn,cranelift_module=warn,cranelift_native=warn,cranelift_object=warn";
+const CRANELIFT_QUIET: &str = "cranelift_jit=warn,cranelift_codegen=warn,cranelift_frontend=warn,cranelift_module=warn,cranelift_native=warn,cranelift_object=warn";
 
 static STDERR_GATED: AtomicBool = AtomicBool::new(false);
 
@@ -53,19 +52,11 @@ pub struct InitOptions {
 
 impl InitOptions {
     pub fn cli(log_cranelift: bool) -> Self {
-        Self {
-            log_cranelift,
-            service_name: "beskid",
-            include_tui_logger: true,
-        }
+        Self { log_cranelift, service_name: "beskid", include_tui_logger: true }
     }
 
     pub fn lsp() -> Self {
-        Self {
-            log_cranelift: false,
-            service_name: "beskid-lsp",
-            include_tui_logger: false,
-        }
+        Self { log_cranelift: false, service_name: "beskid-lsp", include_tui_logger: false }
     }
 }
 
@@ -83,11 +74,7 @@ fn default_filter(log_cranelift: bool) -> String {
         beskid_runtime=warn,\
         beskid_telemetry=info,\
         salsa=warn";
-    if log_cranelift {
-        base.to_string()
-    } else {
-        format!("{base},{CRANELIFT_QUIET}")
-    }
+    if log_cranelift { base.to_string() } else { format!("{base},{CRANELIFT_QUIET}") }
 }
 
 macro_rules! stderr_fmt_layer {
@@ -101,11 +88,7 @@ macro_rules! stderr_fmt_layer {
 }
 
 fn install_local(filter: EnvFilter, buffer_layer: BufferLayer) {
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(buffer_layer)
-        .with(stderr_fmt_layer!())
-        .init();
+    tracing_subscriber::registry().with(filter).with(buffer_layer).with(stderr_fmt_layer!()).init();
 }
 
 #[cfg(feature = "tui-logger")]
@@ -120,12 +103,7 @@ fn install_local_with_tui(filter: EnvFilter, buffer_layer: BufferLayer) {
 
 fn install_otel(filter: EnvFilter, buffer_layer: BufferLayer, guard: &OtelGuard) {
     let otel_layer = tracing_opentelemetry::layer().with_tracer(otel_tracer(guard));
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(buffer_layer)
-        .with(stderr_fmt_layer!())
-        .with(otel_layer)
-        .init();
+    tracing_subscriber::registry().with(filter).with(buffer_layer).with(stderr_fmt_layer!()).with(otel_layer).init();
 }
 
 #[cfg(feature = "tui-logger")]
@@ -170,17 +148,15 @@ fn install_for_scope(
 
 /// Install the global subscriber (once per process).
 pub fn init(options: InitOptions) {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default_filter(options.log_cranelift)));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter(options.log_cranelift)));
     let buffer_layer = BufferLayer::global();
 
     let otel_guard = if otel_enabled() {
         match install_otel_guard(options.service_name) {
             Ok(guard) => Some(guard),
             Err(err) => {
-                eprintln!(
-                    "beskid telemetry: OTLP disabled ({err}); continuing with local buffer only"
-                );
+                eprintln!("beskid telemetry: OTLP disabled ({err}); continuing with local buffer only");
                 None
             }
         }
@@ -188,12 +164,7 @@ pub fn init(options: InitOptions) {
         None
     };
 
-    install_for_scope(
-        filter,
-        buffer_layer,
-        options.include_tui_logger,
-        otel_guard,
-    );
+    install_for_scope(filter, buffer_layer, options.include_tui_logger, otel_guard);
     post_init(&options);
 }
 

@@ -85,7 +85,12 @@ fn run_build_and_execute(args: RunArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Res
     let target = beskid_aot::target::detect_target(None)?;
     let exe_path = temp_dir.join(beskid_aot::target::output_filename("beskid_run", BuildOutputKind::Exe, &target));
 
-    let runtime = default_runtime_strategy(BuildProfile::Debug, None)?;
+    let runtime_profile = if std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() == Ok("release") {
+        BuildProfile::Release
+    } else {
+        BuildProfile::Debug
+    };
+    let runtime = default_runtime_strategy(runtime_profile, None)?;
 
     let link_inputs = link_libraries_for_artifact(&artifact, resolved.compile_plan.as_ref());
     let pipeline_arc: Arc<dyn PipelineObserver> = session.pipeline_arc();
@@ -95,7 +100,7 @@ fn run_build_and_execute(args: RunArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Res
         output_path: exe_path.clone(),
         object_path: None,
         target_triple: None,
-        profile: BuildProfile::Debug,
+        profile: runtime_profile,
         entrypoint: args.entrypoint.clone(),
         export_policy: ExportPolicy::PublicOnly,
         link_mode: LinkMode::Auto,

@@ -56,7 +56,12 @@ pub(super) fn resolve_module_items(
             continue;
         }
         let kind = node_kind(db, item.key).map_err(|error| emission_verification(error.to_string()))?;
-        if kind != Some(beskid_queries::IndexedNodeKind::FunctionDefinition) {
+        if !matches!(
+            kind,
+            Some(
+                beskid_queries::IndexedNodeKind::FunctionDefinition | beskid_queries::IndexedNodeKind::MethodDefinition
+            )
+        ) {
             // Type and enum declarations carry source layout facts but have no executable
             // syntax body. They deliberately do not require a call-derived function ABI.
             continue;
@@ -91,14 +96,16 @@ fn is_concrete_executable_item(
     db: &dyn beskid_queries::Db,
     key: AstNodeKey,
 ) -> Result<bool, SyntaxModuleEmissionError> {
-    Ok(item_abi_signature(db, key)
-        .map_err(|error| {
-            emission_verification(format!(
-                "item ABI signature is unavailable for {}: {error}",
-                format_declaration_for_trace(db, key)
-            ))
-        })?
-        .is_some())
+    match item_abi_signature(db, key) {
+        Ok(Some(_)) => Ok(true),
+        // Generic functions and generic-owner methods are both intentionally ABI-less until a
+        // direct call has supplied their immutable specialization environment.
+        Ok(None) => Ok(false),
+        Err(error) => Err(emission_verification(format!(
+            "item ABI signature is unavailable for {}: {error}",
+            format_declaration_for_trace(db, key)
+        ))),
+    }
 }
 
 fn collect_generic_call_specializations(
@@ -120,8 +127,12 @@ fn collect_generic_call_specializations_in_environment(
     specializations: &mut HashMap<AstNodeKey, Vec<GenericSpecializationInstance>>,
 ) -> Result<(), SyntaxModuleEmissionError> {
     if environment.is_none()
-        && node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?
-            == Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
+        && matches!(
+            node_kind(db, key).map_err(|error| emission_verification(error.to_string()))?,
+            Some(
+                beskid_queries::IndexedNodeKind::FunctionDefinition | beskid_queries::IndexedNodeKind::MethodDefinition
+            )
+        )
     {
         match item_abi_signature(db, key) {
             Ok(Some(_)) => {}
@@ -260,16 +271,21 @@ fn direct_generic_call_declaration(
     let CallLowering::Direct(declaration) = lowering else {
         return Ok(None);
     };
-    if node_kind(db, declaration).map_err(|error| emission_verification(error.to_string()))?
-        != Some(beskid_queries::IndexedNodeKind::FunctionDefinition)
-    {
+    if !matches!(
+        node_kind(db, declaration).map_err(|error| emission_verification(error.to_string()))?,
+        Some(beskid_queries::IndexedNodeKind::FunctionDefinition | beskid_queries::IndexedNodeKind::MethodDefinition)
+    ) {
         return Ok(None);
     }
-    match item_abi_signature(db, declaration).map_err(|error| emission_verification(error.to_string()))? {
-        Some(_) => Ok(None),
+    match item_abi_signature(db, declaration) {
+        Ok(Some(_)) => Ok(None),
         // Function definitions are ABI-less only when generic. The generic call fact below
         // must now prove one exact ABI shape, otherwise the caller is rejected fail-closed.
-        None => Ok(Some(declaration)),
+        Ok(None) => Ok(Some(declaration)),
+        // An unavailable ABI on a non-generic declaration is not evidence of specialization.
+        // It must remain unavailable rather than entering this collector under a false identity.
+        Err(error) if error.is_unavailable() => Ok(None),
+        Err(error) => Err(emission_verification(error.to_string())),
     }
 }
 

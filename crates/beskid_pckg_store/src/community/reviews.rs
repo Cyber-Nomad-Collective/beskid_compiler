@@ -2,11 +2,9 @@ use async_trait::async_trait;
 use chrono::DateTime;
 use uuid::Uuid;
 
-use crate::package::{validate_subject, SqlxPackageRepository};
+use crate::package::{SqlxPackageRepository, validate_subject};
 
-use super::model::{
-    AsyncPackageCommunityReviewRepository, PackageCommunityReview, PackageCommunityReviewError,
-};
+use super::model::{AsyncPackageCommunityReviewRepository, PackageCommunityReview, PackageCommunityReviewError};
 
 #[async_trait]
 impl AsyncPackageCommunityReviewRepository for SqlxPackageRepository {

@@ -19,23 +19,53 @@ pub(in crate::semantic_contract) fn generic_specialization_instance_for_call(
         .syntax_index(db)
         .node_at(declaration_syntax.expanded_program(db), declaration.node)
         .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
-    let Some(function) = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>() else {
-        let signature =
-            item_abi_signature(db, declaration)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
-        return Ok(GenericSpecializationInstance { declaration, signature, substitutions: Arc::from([]) });
-    };
-    if function.generics.is_empty() {
+    let (parameters, return_type, generic_names, is_method, method_owner) =
+        if let Some(function) = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+            (
+                function.parameters.iter().collect::<Vec<_>>(),
+                function.return_type.as_ref(),
+                function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>(),
+                false,
+                None,
+            )
+        } else if let Some(method) = declaration_node.of::<beskid_analysis::syntax::MethodDefinition>() {
+            let owner_node = parent_node(declaration_syntax.syntax_index(db), declaration.node)
+                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            let parent = declaration_syntax
+                .syntax_index(db)
+                .node_at(declaration_syntax.expanded_program(db), owner_node)
+                .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            (
+                method.parameters.iter().collect::<Vec<_>>(),
+                method.return_type.as_ref(),
+                parent.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>(),
+                true,
+                Some(AstNodeKey { node: owner_node, ..declaration }),
+            )
+        } else {
+            let signature =
+                item_abi_signature(db, declaration)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+            return Ok(GenericSpecializationInstance { declaration, signature, substitutions: Arc::from([]) });
+        };
+    if generic_names.is_empty() {
         let signature =
             item_abi_signature(db, declaration)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
         return Ok(GenericSpecializationInstance { declaration, signature, substitutions: Arc::from([]) });
     }
 
     let arguments = call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
-    if arguments.len() != function.parameters.len() {
+    if arguments.len() != parameters.len() + usize::from(is_method) {
         return Err(SemanticError::unavailable("call_abi_signature"));
     }
-    let generic_names = function.generics.iter().map(|generic| generic.node.name.as_str()).collect::<Vec<_>>();
-    let mut substitutions = HashMap::new();
+    let mut substitutions = if let Some(owner) = method_owner {
+        let receiver = generic_nominal_method_receiver(db, key)?
+            .filter(|receiver| receiver.method == declaration && receiver.owner == owner)
+            .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+        receiver.substitutions.iter().map(|binding| (binding.parameter.to_string(), binding.argument)).collect()
+    } else {
+        HashMap::new()
+    };
     let mut explicit_substitutions_complete = false;
     if let Some(instantiation) = generic_call_instantiation(db, key)?
         && !instantiation.arguments.is_empty()
@@ -52,7 +82,7 @@ pub(in crate::semantic_contract) fn generic_specialization_instance_for_call(
     // Keep that distinction while inferring a generic call: a later exact argument can select
     // the binding and the bare literal can inherit it if its magnitude fits.
     let mut provisional_integer_substitutions = HashSet::new();
-    for (parameter, argument) in function.parameters.iter().zip(arguments.iter().copied()) {
+    for (parameter, argument) in parameters.iter().zip(arguments.iter().copied().skip(usize::from(is_method))) {
         let generic = generic_type_name(&parameter.node.ty.node, &generic_names);
         let bare_integer = generic.is_some() && unsuffixed_integer_literal(db, argument)?;
         let contextual_integer = if bare_integer {
@@ -108,24 +138,25 @@ pub(in crate::semantic_contract) fn generic_specialization_instance_for_call(
     }
     if generic_names.iter().any(|generic| {
         !substitutions.contains_key(*generic)
-            && !function
-                .parameters
+            && !parameters
                 .iter()
                 .map(|parameter| &parameter.node.ty.node)
-                .chain(function.return_type.iter().map(|return_type| &return_type.node))
+                .chain(return_type.iter().map(|return_type| &return_type.node))
                 .any(|syntax_type| type_syntax_mentions_generic_parameter(syntax_type, generic))
     }) {
         return Err(SemanticError::unavailable("call_abi_signature"));
     }
-    let parameters = function
-        .parameters
+    let mut signature_parameters = parameters
         .iter()
         .map(|parameter| generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions))
         .collect::<Result<Vec<_>, _>>()?;
-    let result = function.return_type.as_ref().map_or(Ok(SemanticTypeId::UNIT), |return_type| {
+    if is_method {
+        signature_parameters.insert(0, SemanticTypeId::POINTER);
+    }
+    let result = return_type.map_or(Ok(SemanticTypeId::UNIT), |return_type| {
         generic_abi_type(db, declaration, &return_type.node, &substitutions)
     })?;
-    let signature = ItemSignature { parameters: parameters.into(), result };
+    let signature = ItemSignature { parameters: signature_parameters.into(), result };
     let substitutions = generic_names
         .into_iter()
         .filter_map(|parameter| {
@@ -275,9 +306,6 @@ pub(in crate::semantic_contract) fn call_argument_abi_type_tracked(
                         current = parent;
                         continue;
                     };
-                    if integer_literal_text(db, arguments[argument_index])?.is_none() {
-                        return Err(SemanticError::unavailable("call_argument_abi_type"));
-                    }
                     let signature = call_abi_signature(db, parent_key)?
                         .ok_or_else(|| SemanticError::unavailable("call_argument_abi_type"))?;
                     return signature

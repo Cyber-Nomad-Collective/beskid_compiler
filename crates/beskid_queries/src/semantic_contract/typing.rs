@@ -19,7 +19,7 @@ pub(super) fn node_type_tracked(
                 Err(error) => return Some(Err(error)),
             }
             match call_lowering(db, key) {
-                Ok(Some(CallLowering::Direct(_))) => (),
+                Ok(Some(CallLowering::Direct(_) | CallLowering::Runtime(_))) => (),
                 Ok(Some(_) | None) => return Some(Err(SemanticError::unavailable("node_type"))),
                 Err(error) => return Some(Err(error)),
             };
@@ -87,6 +87,17 @@ pub(super) fn pattern_binding_semantic_type(
         return None;
     }
     let declaration = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())?;
+    pattern_binding_abi_type(db, index, key, declaration)
+}
+
+/// Derive the ABI representation of an enum-pattern binding from its already-resolved match
+/// layout. Both ordinary expression typing and generic-call specialization consume this fact.
+pub(crate) fn pattern_binding_abi_type(
+    db: &dyn Db,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    declaration: beskid_analysis::syntax::AstNodeId,
+) -> Option<Result<SemanticTypeId, SemanticError>> {
     let binding = match pattern_binding_fact(db, index, key, declaration)? {
         Ok(binding) => binding,
         Err(error) => return Some(Err(error)),

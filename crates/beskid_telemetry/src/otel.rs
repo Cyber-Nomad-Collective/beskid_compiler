@@ -3,8 +3,8 @@
 use opentelemetry::KeyValue;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_otlp::WithExportConfig;
-use opentelemetry_sdk::trace::SdkTracerProvider;
 use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::trace::SdkTracerProvider;
 
 pub struct OtelGuard {
     provider: SdkTracerProvider,
@@ -42,18 +42,12 @@ fn parse_bool(value: String) -> Option<bool> {
 }
 
 pub fn install_otel_guard(service_name: &str) -> Result<OtelGuard, opentelemetry_otlp::ExporterBuildError> {
-    let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:4318".into());
-    let exporter = opentelemetry_otlp::SpanExporter::builder()
-        .with_http()
-        .with_endpoint(endpoint)
-        .build()?;
+    let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").unwrap_or_else(|_| "http://localhost:4318".into());
+    let exporter = opentelemetry_otlp::SpanExporter::builder().with_http().with_endpoint(endpoint).build()?;
     let provider = SdkTracerProvider::builder()
         .with_batch_exporter(exporter)
         .with_resource(
-            Resource::builder()
-                .with_attributes([KeyValue::new("service.name", service_name.to_string())])
-                .build(),
+            Resource::builder().with_attributes([KeyValue::new("service.name", service_name.to_string())]).build(),
         )
         .build();
     Ok(OtelGuard { provider })

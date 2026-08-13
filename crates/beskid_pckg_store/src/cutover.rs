@@ -5,7 +5,7 @@ use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::package::{
-    as_u64, database_error, parse_identifier, timestamp, validate_subject, SqlxPackageRepository, StoreError,
+    SqlxPackageRepository, StoreError, as_u64, database_error, parse_identifier, timestamp, validate_subject,
 };
 
 /// A reviewed mapping from the old ASP.NET Identity primary key to the only
@@ -243,8 +243,9 @@ impl UnmappedLegacyIdentityRow {
     }
 }
 
-
-pub(super) fn validate_cutover_request(request: &LegacyIdentityCutoverRequest) -> Result<(), LegacyIdentityCutoverError> {
+pub(super) fn validate_cutover_request(
+    request: &LegacyIdentityCutoverRequest,
+) -> Result<(), LegacyIdentityCutoverError> {
     parse_identifier(&request.run_id)?;
     if request.requested_by.trim().is_empty() || request.requested_by != request.requested_by.trim() {
         return Err(LegacyIdentityCutoverError::InvalidRequest("requested_by must be non-empty and trimmed".into()));

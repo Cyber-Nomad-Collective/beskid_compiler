@@ -134,6 +134,19 @@ pub fn generic_call_template(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResul
     with_registered_syntax(db, key, generic_call_template_tracked)
 }
 
+/// Resolve a direct generic nominal method call's explicitly applied owner environment.
+pub fn generic_nominal_method_receiver(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<GenericNominalMethodReceiver> {
+    with_registered_syntax(db, key, generic_nominal_method_receiver_tracked)
+}
+
+/// Return the generation-safe ABI representation of a source value or declared storage boundary.
+pub fn value_abi_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTypeId> {
+    with_registered_syntax(db, key, value_abi_type_tracked)
+}
+
 /// Return numeric cast intents proven by an exact typed-let constraint.
 ///
 /// Inferred, complex, non-numeric, and other unported coercion contexts remain explicitly

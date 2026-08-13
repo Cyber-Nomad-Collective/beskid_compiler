@@ -206,7 +206,7 @@ pub unit SchedulerSetCurrentFiber(word index) {
 }
 
 // Yields the current fiber.
-[Export(Abi:"C", Symbol:"fiber_yield")]
+[Export(Abi:"C", Symbol:"beskid_rt_v5_fiber_yield")]
 pub unit FiberYield() {
     word index = SchedulerCurrentFiber();
     if index == FIBER_NONE || !FiberExists(index) {

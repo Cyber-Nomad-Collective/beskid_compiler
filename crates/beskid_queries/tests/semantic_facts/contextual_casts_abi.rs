@@ -2,6 +2,7 @@ use super::support::{assert_unavailable, key, setup};
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
     SemanticTypeId, SyntaxGenerationId, abi_type, call_argument_abi_type, cast_intents, primitive_numeric_conversion,
+    value_abi_type,
 };
 use std::sync::Arc;
 
@@ -95,4 +96,15 @@ fn binary_operand_abi_type_does_not_cross_explicit_numeric_conversion_boundary()
         primitive_numeric_conversion(&db, conversion).expect("conversion fact"),
         Some(beskid_queries::PrimitiveNumericConversion { from: SemanticTypeId::I32, to: SemanticTypeId::U8 })
     );
+}
+
+#[test]
+fn value_abi_type_preserves_a_direct_call_result_at_a_declared_storage_boundary() {
+    let source = "i64 Count() { return 1_i64; } unit Main() { i64 value = Count(); return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let local = key(unit, generation, &index, NodeKind::LetStatement, 0);
+
+    assert_eq!(value_abi_type(&db, call).expect("direct call value ABI"), Some(SemanticTypeId::I64));
+    assert_eq!(value_abi_type(&db, local).expect("declared storage ABI"), Some(SemanticTypeId::I64));
 }

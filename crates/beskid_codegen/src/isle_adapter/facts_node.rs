@@ -175,11 +175,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
-        // A call's result type belongs to the call node itself. In particular, a primitive
-        // conversion's argument-context fact describes its input, not its result.
-        self.query(abi_type(self.db, key))
-            .or_else(|| self.query(call_abi_signature(self.db, key)).map(|signature| signature.result))
-            .or_else(|| self.scalar_semantic_type(key))
+        self.specialized_direct_parameter_type(key).or_else(|| self.scalar_semantic_type(key))
     }
 
     fn try_expression_fact(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
@@ -188,10 +184,6 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn dispatch_builtin_symbol(&self, key: AstNodeKey) -> Option<&'static str> {
         self.query(dispatch_builtin_symbol(self.db, key)).map(|symbol| symbol.0)
-    }
-
-    fn expression_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
-        self.specialized_direct_parameter_type(key).or_else(|| self.scalar_semantic_type(key))
     }
 
     fn index_target_is_string(&self, key: AstNodeKey) -> bool {
@@ -396,8 +388,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         {
             return self.isa.map(|isa| isa.pointer_type());
         }
-        let semantic = self
-            .query(call_argument_abi_type(self.db, key))
+        let contextual = self.query(contextual_integer_literal_abi_type(self.db, key));
+        let semantic = contextual
+            .or_else(|| self.query(call_argument_abi_type(self.db, key)))
             .or_else(|| self.scalar_semantic_type(key))
             .or_else(|| Some(self.query(call_abi_signature(self.db, key))?.result))?;
         if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING) {

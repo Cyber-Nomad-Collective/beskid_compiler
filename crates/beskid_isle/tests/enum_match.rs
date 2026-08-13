@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use beskid_isle::syntax_types::LiteralKind;
 use beskid_isle::{
-    AstNodeKey, EnumLayout, EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter,
-    LoweringErrorKind, ManagedStructAllocation, MatchArmFact, NodeFacts, NodeKind,
+    AstNodeKey, EnumLayout, EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter, LoweringErrorKind,
+    ManagedStructAllocation, MatchArmFact, NodeFacts, NodeKind,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{Type, UserFuncName, types};

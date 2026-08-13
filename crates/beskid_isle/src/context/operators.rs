@@ -31,14 +31,11 @@ pub(super) fn primitive_numeric_conversion_type_matches(ty: Type, semantic: besk
         beskid_queries::SemanticTypeId::I32 => ty == types::I32,
         beskid_queries::SemanticTypeId::I64 => ty == types::I64,
         beskid_queries::SemanticTypeId::U8 => ty == types::I8,
-        // `word` is target-pointer-width, which is always a 32- or 64-bit integer in the
-        // supported ABI-v5 target set. The frontend adapter supplies that exact width.
         beskid_queries::SemanticTypeId::WORD => ty.is_int() && matches!(ty.bits(), 32 | 64),
         _ => false,
     }
 }
 
-/// Compare semantics the ISLE constructors dispatch through.
 pub(super) enum CompareOp {
     Eq,
     Ne,
@@ -79,7 +76,6 @@ impl CompareOp {
 }
 
 impl IsleContext<'_, '_, '_, '_> {
-    /// Single entry-point for all integer/float comparison lowerings.
     pub(super) fn lower_compare(&mut self, left: Value, right: Value, op: CompareOp) -> Value {
         if let Some((left, right)) = self.common_float_operands(left, right) {
             return self.builder.ins().fcmp(op.fcmpcc(), left, right);
@@ -89,8 +85,6 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.ins().icmp(op.intcc(ty), left, right)
     }
 
-    /// Compare two enum values by loading and comparing their discriminants.
-    /// The common enum layout is resolved via `NodeFacts::binary_enum_layout`.
     pub(super) fn lower_enum_discriminant_compare(&mut self, key: AstNodeKey, invert: bool) -> Option<Value> {
         let layout = self.facts.binary_enum_layout(key)?;
         if !layout.is_valid() {
@@ -120,11 +114,6 @@ impl IsleContext<'_, '_, '_, '_> {
         Some(self.builder.ins().icmp(cc, left_tag, right_tag))
     }
 
-    /// Bring syntax integer operands to their common CLIF width before a binary operation.
-    ///
-    /// Beskid only exposes `u8` at byte width, so byte operands are zero-extended while wider
-    /// scalar integers preserve their signed representation. This keeps source-level mixed
-    /// arithmetic such as `i64 + (u8 - 48)` out of the retired HIR coercion path.
     pub(super) fn common_integer_operands(&mut self, left: Value, right: Value) -> (Value, Value) {
         let left_type = self.builder.func.dfg.value_type(left);
         let right_type = self.builder.func.dfg.value_type(right);
@@ -141,99 +130,74 @@ impl IsleContext<'_, '_, '_, '_> {
                 builder.ins().sextend(target, value)
             }
         };
-        (widen(self.builder, left, left_type), widen(self.builder, right, right_type))
+        (widen(&mut self.builder, left, left_type), widen(&mut self.builder, right, right_type))
     }
 
     pub(super) fn common_float_operands(&mut self, left: Value, right: Value) -> Option<(Value, Value)> {
         let left_type = self.builder.func.dfg.value_type(left);
         let right_type = self.builder.func.dfg.value_type(right);
-        (left_type.is_float() && left_type == right_type).then_some((left, right))
+        if !left_type.is_float() || !right_type.is_float() {
+            return None;
+        }
+        if left_type == right_type {
+            return Some((left, right));
+        }
+        if left_type.bits() >= right_type.bits() {
+            Some((left, self.builder.ins().fpromote(left_type, right)))
+        } else {
+            Some((self.builder.ins().fpromote(right_type, left), right))
+        }
     }
 }
 
 macro_rules! generated_operator_methods {
     () => {
         fn clif_iadd(&mut self, left: Value, right: Value) -> Value {
-            if let Some((left, right)) = self.common_float_operands(left, right) {
-                return self.builder.ins().fadd(left, right);
-            }
-            let (left, right) = self.common_integer_operands(left, right);
             self.builder.ins().iadd(left, right)
         }
-
         fn clif_isub(&mut self, left: Value, right: Value) -> Value {
-            if let Some((left, right)) = self.common_float_operands(left, right) {
-                return self.builder.ins().fsub(left, right);
-            }
-            let (left, right) = self.common_integer_operands(left, right);
             self.builder.ins().isub(left, right)
         }
-
         fn clif_imul(&mut self, left: Value, right: Value) -> Value {
-            if let Some((left, right)) = self.common_float_operands(left, right) {
-                return self.builder.ins().fmul(left, right);
-            }
-            let (left, right) = self.common_integer_operands(left, right);
             self.builder.ins().imul(left, right)
         }
-
         fn clif_band(&mut self, left: Value, right: Value) -> Value {
-            let (left, right) = self.common_integer_operands(left, right);
             self.builder.ins().band(left, right)
         }
-
         fn clif_bor(&mut self, left: Value, right: Value) -> Value {
-            let (left, right) = self.common_integer_operands(left, right);
             self.builder.ins().bor(left, right)
         }
-
         fn clif_ishl(&mut self, left: Value, right: Value) -> Value {
-            let (left, right) = self.common_integer_operands(left, right);
             self.builder.ins().ishl(left, right)
         }
-
         fn clif_ushr(&mut self, left: Value, right: Value) -> Value {
-            let (left, right) = self.common_integer_operands(left, right);
             self.builder.ins().ushr(left, right)
         }
-
         fn clif_sdiv(&mut self, left: Value, right: Value) -> Value {
-            if let Some((left, right)) = self.common_float_operands(left, right) {
-                return self.builder.ins().fdiv(left, right);
-            }
-            let (left, right) = self.common_integer_operands(left, right);
-            let ty = self.builder.func.dfg.value_type(left);
-            if ty == types::I8 { self.builder.ins().udiv(left, right) } else { self.clif_div_trapz(left, right) }
-        }
-
-        fn clif_div_trapz(&mut self, left: Value, right: Value) -> Value {
-            let ty = self.builder.func.dfg.value_type(right);
-            let zero = self.builder.ins().iconst(ty, 0);
-            let is_zero = self.builder.ins().icmp(IntCC::Equal, right, zero);
-            self.builder.ins().trapnz(is_zero, TrapCode::INTEGER_DIVISION_BY_ZERO);
             self.builder.ins().sdiv(left, right)
         }
-
+        fn clif_srem(&mut self, left: Value, right: Value) -> Option<Value> {
+            let ty = self.builder.func.dfg.value_type(left);
+            if ty.is_float() {
+                return None;
+            }
+            let zero = self.builder.ins().iconst(ty, 0);
+            let is_zero = self.builder.ins().icmp(IntCC::Equal, right, zero);
+            self.builder.ins().trapz(is_zero, TrapCode::unwrap_user(3));
+            Some(self.builder.ins().sdiv(left, right))
+        }
+        fn clif_div_trapz(&mut self, value: Value, divisor: Value) -> Value {
+            let ty = self.builder.func.dfg.value_type(value);
+            let zero = self.builder.ins().iconst(ty, 0);
+            let is_zero = self.builder.ins().icmp(IntCC::Equal, divisor, zero);
+            self.builder.ins().trapz(is_zero, TrapCode::unwrap_user(3));
+            self.builder.ins().sdiv(value, divisor)
+        }
         fn clif_iadd_imm(&mut self, value: Value, imm: i64) -> Value {
             self.builder.ins().iadd_imm(value, imm)
         }
-
         fn clif_imul_imm(&mut self, value: Value, imm: i64) -> Value {
             self.builder.ins().imul_imm(value, imm)
-        }
-
-        fn clif_srem(&mut self, left: Value, right: Value) -> Option<Value> {
-            // Float remainder is intentionally unsupported (no Beskid `frem`); fail the rule.
-            if self.common_float_operands(left, right).is_some() {
-                return None;
-            }
-            let (left, right) = self.common_integer_operands(left, right);
-            let ty = self.builder.func.dfg.value_type(left);
-            if ty == types::I8 {
-                Some(self.builder.ins().urem(left, right))
-            } else {
-                Some(self.builder.ins().srem(left, right))
-            }
         }
 
         fn clif_eq(&mut self, left: Value, right: Value) -> Value {
@@ -304,8 +268,6 @@ macro_rules! generated_operator_methods {
             self.lower_compare(left, right, CompareOp::Gte)
         }
 
-        /// Compare two enum values by loading and comparing their discriminants.
-        /// The common enum layout is resolved via `NodeFacts::binary_enum_layout`.
         fn clif_enum_eq(&mut self, key: AstNodeKey) -> Option<Value> {
             self.lower_enum_discriminant_compare(key, false)
         }
@@ -327,15 +289,10 @@ macro_rules! generated_operator_methods {
             if ty.is_float() { self.builder.ins().fneg(value) } else { self.builder.ins().ineg(value) }
         }
 
-        /// Lower `!operand`.
-        ///
-        /// `!` is bool-only in Beskid (the type checker rejects every other operand type), and `bool` is
-        /// an i8 carrying 0 or 1. Flipping every bit would turn `true` (1) into 254, which is still
-        /// truthy and compares unequal to `false`, so compare against zero instead: that yields the
-        /// canonical 0/1 bool and normalizes any non-canonical operand a load may produce.
         fn clif_logical_not(&mut self, value: Value) -> Value {
             self.builder.ins().icmp_imm(IntCC::Equal, value, 0)
         }
+
         fn emit_primitive_numeric_conversion(&mut self, key: AstNodeKey) -> Option<Value> {
             let Some((from, to)) = self.facts.primitive_numeric_conversion(key) else {
                 self.pending_error = Some(LoweringError {
@@ -376,7 +333,7 @@ macro_rules! generated_operator_methods {
                 self.pending_error = Some(LoweringError {
                     key,
                     kind: LoweringErrorKind::InvalidPrimitiveNumericConversion(
-                        "CLIF widths differ from semantic facts",
+                        "CLIF types do not match conversion fact",
                     ),
                 });
                 return None;
@@ -384,15 +341,13 @@ macro_rules! generated_operator_methods {
             if actual == target {
                 Some(value)
             } else if actual.bits() < target.bits() {
-                Some(if from == beskid_queries::SemanticTypeId::U8 {
-                    self.builder.ins().uextend(target, value)
+                if from == beskid_queries::SemanticTypeId::U8 {
+                    Some(self.builder.ins().uextend(target, value))
                 } else {
-                    self.builder.ins().sextend(target, value)
-                })
-            } else if actual.bits() > target.bits() {
-                Some(self.builder.ins().ireduce(target, value))
+                    Some(self.builder.ins().sextend(target, value))
+                }
             } else {
-                None
+                Some(self.builder.ins().ireduce(target, value))
             }
         }
     };

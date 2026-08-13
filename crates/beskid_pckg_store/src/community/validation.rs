@@ -21,4 +21,3 @@ pub(super) fn community_timestamp(value: i64) -> Result<DateTime<Utc>, Community
 pub(super) fn community_database_error(error: sqlx::Error) -> CommunityStoreError {
     CommunityStoreError::Database(error.to_string())
 }
-

@@ -204,6 +204,9 @@ pub(in crate::semantic_contract) fn abi_local_declaration_type(
     key: AstNodeKey,
     declaration: beskid_analysis::syntax::AstNodeId,
 ) -> Option<Result<SemanticTypeId, SemanticError>> {
+    if let Some(binding) = crate::semantic_contract::typing::pattern_binding_abi_type(db, index, key, declaration) {
+        return Some(binding);
+    }
     let parent = parent_node(index, declaration)?;
     match index.kind(parent)? {
         beskid_analysis::syntax_query::NodeKind::Parameter => index

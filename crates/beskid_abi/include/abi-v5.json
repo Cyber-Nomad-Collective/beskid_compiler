@@ -186,6 +186,11 @@
       "result": "i64"
     },
     {
+      "symbol": "beskid_rt_v5_fiber_yield",
+      "params": [],
+      "result": "void"
+    },
+    {
       "symbol": "beskid_rt_v5_managed_object_allocate",
       "params": [
         {
@@ -361,6 +366,13 @@
         }
       ],
       "result": "i32"
+    },
+    {
+      "name": "fiber_yield",
+      "symbol": "beskid_rt_v5_fiber_yield",
+      "capability": "runtime.bootstrap.fiber_yield",
+      "params": [],
+      "result": "void"
     },
     {
       "name": "fs_delete",
@@ -725,6 +737,12 @@
         }
       ],
       "result": "string"
+    },
+    {
+      "name": "__fiber_yield",
+      "symbol": "beskid_rt_v5_fiber_yield",
+      "params": [],
+      "result": "void"
     },
     {
       "name": "__math_ceil",

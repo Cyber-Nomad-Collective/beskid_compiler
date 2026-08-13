@@ -10,6 +10,6 @@ pub use model::{
     CommunityNotification, CommunityNotificationPreference, CommunityPost, CommunityProfile, CommunityStoreError,
     CommunityVote, NewCommunityNotification, PackageCommunityReview, PackageCommunityReviewError,
 };
-pub use persistence::SqlxCommunityRepository;
 #[cfg(test)]
 pub(crate) use persistence::CREATE_TEST_NOTIFICATION_PROFILE_SQL;
+pub use persistence::SqlxCommunityRepository;

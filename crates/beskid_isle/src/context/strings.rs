@@ -5,7 +5,7 @@ impl IsleContext<'_, '_, '_, '_> {
         use beskid_queries::SemanticTypeId;
 
         let value = generated::constructor_lower_expression(self, key)?;
-        let semantic = self.facts.expression_semantic_type(key)?;
+        let semantic = self.facts.semantic_type(key)?;
         if semantic == SemanticTypeId::STRING {
             return Some(value);
         }

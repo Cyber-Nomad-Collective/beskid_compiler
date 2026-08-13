@@ -28,5 +28,5 @@ pub(in crate::semantic_contract) use specialization::{
 
 pub(in crate::semantic_contract) use types::{
     abi_type_for_binary_expression, abi_type_for_expression, abi_type_from_syntax, abi_type_tracked,
-    contextual_integer_literal_abi_type_tracked,
+    contextual_integer_literal_abi_type_tracked, value_abi_type_tracked,
 };

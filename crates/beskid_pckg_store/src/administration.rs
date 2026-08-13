@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::package::{validate_subject, SqlxPackageRepository};
+use crate::package::{SqlxPackageRepository, validate_subject};
 
 impl SqlxPackageRepository {
     /// Applies registry-owned administration tables. It deliberately creates

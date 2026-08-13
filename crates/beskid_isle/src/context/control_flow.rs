@@ -180,17 +180,20 @@ macro_rules! generated_control_flow_methods {
             if self.facts.node_kind(initializer) == Some(NodeKind::LambdaExpression)
                 && self.facts.lambda_entry(initializer)?.closure_environment.is_none()
             {
-                // A capture-free lambda bound only through its lexical declaration is consumed by
-                // `InlineLambda` at each resolved call site. Do not materialize an otherwise unused
-                // trampoline pointer here: that would make the local initializer depend on a module
-                // import even though the generation-bound closure-call fact already owns the body.
                 return Some(());
             }
             let value = generated::constructor_lower_expression(self, initializer)?;
             let value_type = self.facts.scalar_type(key)?;
-            if self.builder.func.dfg.value_type(value) != value_type {
-                return None;
-            }
+            let value = if self.builder.func.dfg.value_type(value) != value_type {
+                let actual = self.builder.func.dfg.value_type(value);
+                if actual.is_int() && value_type.is_int() && actual.bits() > value_type.bits() {
+                    self.builder.ins().ireduce(value_type, value)
+                } else {
+                    return None;
+                }
+            } else {
+                value
+            };
             let variable = self.builder.declare_var(value_type);
             self.builder.def_var(variable, value);
             self.locals.insert(slot, (variable, value_type));

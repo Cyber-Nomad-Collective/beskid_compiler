@@ -1,9 +1,7 @@
 use std::path::PathBuf;
 
 use beskid_isle::syntax_types::{CallKind, LiteralKind, RuntimeIntrinsicKind};
-use beskid_isle::{
-    AstNodeKey, FunctionEmissionError, FunctionEmitter, LoweringErrorKind, NodeFacts, NodeKind,
-};
+use beskid_isle::{AstNodeKey, FunctionEmissionError, FunctionEmitter, LoweringErrorKind, NodeFacts, NodeKind};
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{AbiParam, Signature, UserFuncName, types};
 use cranelift_codegen::isa::CallConv;

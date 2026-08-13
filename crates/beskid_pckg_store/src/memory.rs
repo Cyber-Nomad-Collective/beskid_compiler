@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::package::{
-    validate_checksum, validate_package_name, validate_subject, validate_version, NewPackage, Package,
-    PackageRepository, PackageVersion, PublishOutcome, PublishVersion, StoreError,
+    NewPackage, Package, PackageRepository, PackageVersion, PublishOutcome, PublishVersion, StoreError,
+    validate_checksum, validate_package_name, validate_subject, validate_version,
 };
 
 /// Deterministic test double. The Postgres adapter must preserve the outcomes
@@ -99,4 +99,3 @@ impl PackageRepository for InMemoryPackageRepository {
         Ok(entity.clone())
     }
 }
-

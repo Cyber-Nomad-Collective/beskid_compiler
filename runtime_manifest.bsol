@@ -57,6 +57,7 @@ export "beskid_rt_v5_trap" {
   params = [{ name = code, type = u8 }, { name = message, type = pointer }, { name = message_len, type = usize }]
   returns = never
 }
+export "beskid_rt_v5_fiber_yield" { params = [] returns = void }
 
 intrinsic "native_word_from_pointer" { symbol = "beskid_rt_v5_intrinsic_native_word_from_pointer" capability = "runtime.bootstrap.native_word_from_pointer" params = [{ name = value, type = pointer }] returns = usize }
 intrinsic "pointer_from_native_word" { symbol = "beskid_rt_v5_intrinsic_pointer_from_native_word" capability = "runtime.bootstrap.pointer_from_native_word" params = [{ name = value, type = usize }] returns = pointer }
@@ -78,6 +79,7 @@ intrinsic "guarded_stack_free" { symbol = "beskid_rt_v5_intrinsic_guarded_stack_
 intrinsic "tls_get" { symbol = "beskid_rt_v5_intrinsic_tls_get" capability = "runtime.bootstrap.tls_get" params = [] returns = pointer }
 intrinsic "tls_set" { symbol = "beskid_rt_v5_intrinsic_tls_set" capability = "runtime.bootstrap.tls_set" params = [{ name = value, type = pointer }] returns = void }
 intrinsic "trap" { symbol = "beskid_rt_v5_trap" capability = "runtime.bootstrap.trap" params = [{ name = code, type = u8 }, { name = message, type = pointer }, { name = message_len, type = usize }] returns = never }
+intrinsic "fiber_yield" { symbol = "beskid_rt_v5_fiber_yield" capability = "runtime.bootstrap.fiber_yield" params = [] returns = void }
 intrinsic "clock_monotonic_nanos" { symbol = "beskid_rt_v5_intrinsic_clock_monotonic_nanos" capability = "runtime.adapter.clock_monotonic_nanos" params = [] returns = i64 }
 intrinsic "clock_realtime_nanos" { symbol = "beskid_rt_v5_intrinsic_clock_realtime_nanos" capability = "runtime.adapter.clock_realtime_nanos" params = [] returns = i64 }
 intrinsic "process_exit" { symbol = "beskid_rt_v5_intrinsic_process_exit" capability = "runtime.adapter.process_exit" params = [{ name = code, type = i32 }] returns = never }
@@ -108,6 +110,7 @@ intrinsic "context_switch" { symbol = "beskid_arch_v5_context_switch" capability
 # allowlist, but have one manifest-owned declaration for analysis and JIT linking.
 soft_builtin "__args_count" { symbol = "args_count" params = [] returns = i64 }
 soft_builtin "__args_get" { symbol = "args_get" params = [{ name = index, type = i64 }] returns = string }
+soft_builtin "__fiber_yield" { symbol = "beskid_rt_v5_fiber_yield" params = [] returns = void }
 soft_builtin "__math_floor" { symbol = "math_floor" params = [{ name = value, type = f64 }] returns = f64 }
 soft_builtin "__math_ceil" { symbol = "math_ceil" params = [{ name = value, type = f64 }] returns = f64 }
 soft_builtin "__math_sqrt" { symbol = "math_sqrt" params = [{ name = value, type = f64 }] returns = f64 }

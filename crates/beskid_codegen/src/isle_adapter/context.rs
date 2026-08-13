@@ -74,6 +74,15 @@ impl<'db> SyntaxNodeFacts<'db> {
         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)).then_some(())?;
         let declaration = self.query(resolved_local(self.db, key))?.declaration;
         let slot = self.query(local_slot(self.db, declaration))?;
-        self.item_specializations.get(&slot.owner)?.signature.parameters.get(usize::try_from(slot.index).ok()?).copied()
+        let parameter = usize::try_from(slot.index).ok()?;
+        // Specialized method signatures carry their implicit nominal receiver first, while the
+        // source local slots begin with the first explicit parameter.
+        let parameter =
+            if self.query(node_kind(self.db, slot.owner)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition) {
+                parameter.checked_add(1)?
+            } else {
+                parameter
+            };
+        self.item_specializations.get(&slot.owner)?.signature.parameters.get(parameter).copied()
     }
 }

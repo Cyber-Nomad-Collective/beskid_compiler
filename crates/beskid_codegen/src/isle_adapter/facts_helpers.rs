@@ -149,12 +149,11 @@ impl SyntaxNodeFacts<'_> {
         }
         self.specialized_direct_parameter_type(key)
             .or_else(|| {
-                self.query(cast_intents(self.db, key))
-                    .and_then(|intents| intents.first().map(|intent| intent.to))
-                    .or_else(|| self.query(binary_operand_abi_type(self.db, key)))
-                    .or_else(|| self.query(contextual_integer_literal_abi_type(self.db, key)))
-                    .or_else(|| self.query(abi_type(self.db, key)))
-                    .or_else(|| self.query(node_type(self.db, key)))
+                self.query(beskid_queries::value_abi_type(self.db, key))
+                    .or_else(|| {
+                        self.query(cast_intents(self.db, key))
+                            .and_then(|intents| intents.first().map(|intent| intent.to))
+                    })
                     .or_else(|| {
                         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::LetStatement))
                             .then(|| {
@@ -187,10 +186,6 @@ impl SyntaxNodeFacts<'_> {
                             AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
                         })
                 })
-            })
-            .or_else(|| {
-                let (_, intrinsic) = self.runtime_intrinsic(key)?;
-                semantic_type_for_runtime_intrinsic(intrinsic)
             })
     }
 

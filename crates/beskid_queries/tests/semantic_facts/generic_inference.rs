@@ -3,6 +3,7 @@ use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
     AstNodeKey, CallLowering, ItemSignature, SemanticTypeId, abi_type, call_abi_signature, call_arguments,
     call_lowering, generic_call_instantiation, generic_call_specialization, generic_call_template,
+    generic_nominal_method_receiver,
 };
 use std::sync::Arc;
 
@@ -164,6 +165,108 @@ unit Main() { Equal(1, 1, "because"); return; }
                 parameter: Arc::from("T"),
                 argument: SemanticTypeId::I32,
             }]),
+        })
+    );
+}
+
+#[test]
+fn generic_call_specializes_an_enum_pattern_binding_by_its_payload_abi() {
+    let source = r#"
+enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }
+unit Equal<T>(T actual, T expected, string because) { return; }
+unit Main(Result<string, string> result) {
+    match result {
+        Result::Ok(text) => { Equal(text, "ok", "message"); },
+        Result::Error(_) => {},
+    };
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let equal = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_eq!(
+        generic_call_specialization(&db, call).expect("pattern-binding generic specialization"),
+        Some(beskid_queries::GenericCallSpecialization {
+            declaration: equal,
+            signature: ItemSignature {
+                parameters: Arc::from([SemanticTypeId::STRING, SemanticTypeId::STRING, SemanticTypeId::STRING]),
+                result: SemanticTypeId::UNIT,
+            },
+            substitutions: Arc::from([beskid_queries::GenericSubstitution {
+                parameter: Arc::from("T"),
+                argument: SemanticTypeId::STRING,
+            }]),
+        })
+    );
+}
+
+#[test]
+fn generic_nominal_method_specializes_from_its_explicit_receiver_application() {
+    let source = r#"
+type List<T> {
+    T value,
+    T Echo(T input) { return input; }
+}
+unit Main(List<i64> list) { list.Echo(1_i64); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_eq!(
+        call_lowering(&db, call).expect("generic nominal method lowering"),
+        Some(CallLowering::Direct(method))
+    );
+    let receiver = generic_nominal_method_receiver(&db, call)
+        .expect("generic nominal receiver")
+        .expect("explicit List<i64> receiver must prove the owner environment");
+    assert_eq!(receiver.method, method);
+    assert_eq!(receiver.owner, key(unit, generation, &index, NodeKind::TypeDefinition, 0));
+    assert_eq!(
+        receiver.substitutions,
+        Arc::from([beskid_queries::GenericSubstitution {
+            parameter: Arc::from("T"),
+            argument: SemanticTypeId::I64,
+        }])
+    );
+
+    assert_eq!(
+        generic_call_specialization(&db, call).expect("generic nominal method specialization"),
+        Some(beskid_queries::GenericCallSpecialization {
+            declaration: method,
+            signature: ItemSignature {
+                parameters: Arc::from([SemanticTypeId::POINTER, SemanticTypeId::I64]),
+                result: SemanticTypeId::I64,
+            },
+            substitutions: Arc::from([beskid_queries::GenericSubstitution {
+                parameter: Arc::from("T"),
+                argument: SemanticTypeId::I64,
+            }]),
+        })
+    );
+}
+
+#[test]
+fn generic_nominal_method_owner_binds_nested_generic_templates() {
+    let source = r#"
+T Id<T>(T value) { return value; }
+type List<T> {
+    T value,
+    T Echo(T input) { return Id<T>(input); }
+}
+unit Main(List<i64> list) { list.Echo(1_i64); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let id = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let nested = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_eq!(
+        generic_call_template(&db, nested).expect("generic method nested template"),
+        Some(beskid_queries::GenericCallTemplate {
+            declaration: id,
+            parameters: Arc::from([Arc::from("T")]),
+            parameter_arguments: Arc::from([Arc::from("T")]),
         })
     );
 }

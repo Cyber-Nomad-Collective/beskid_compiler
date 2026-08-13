@@ -40,11 +40,7 @@ pub(in crate::semantic_contract) fn generic_call_specialization_tracked(
                 return None;
             }
         };
-        let declaration_syntax = db.syntax_unit(declaration.unit)?;
-        let declaration_node =
-            declaration_syntax.syntax_index(db).node_at(declaration_syntax.expanded_program(db), declaration.node)?;
-        let function = declaration_node.of::<beskid_analysis::syntax::FunctionDefinition>()?;
-        if function.generics.is_empty() {
+        if generic_callable_parameters(db, declaration).is_none() {
             return None;
         }
         let instance = match generic_specialization_instance_for_call(db, key) {
@@ -84,12 +80,21 @@ pub(in crate::semantic_contract) fn generic_call_template_tracked(
             .map(|argument| generic_parameter_reference_name(&argument.node).map(Arc::<str>::from))
             .collect::<Option<Vec<_>>>()?;
         let enclosing = nearest_ancestor(index, key.node, |kind| {
-            kind == beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+            matches!(
+                kind,
+                beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                    | beskid_analysis::syntax_query::NodeKind::TypeDefinition
+            )
         })?;
-        let enclosing = index.node_at(program, enclosing)?.of::<beskid_analysis::syntax::FunctionDefinition>()?;
+        let enclosing = index.node_at(program, enclosing)?;
+        let enclosing_generics = if let Some(function) = enclosing.of::<beskid_analysis::syntax::FunctionDefinition>() {
+            &function.generics
+        } else {
+            &enclosing.of::<beskid_analysis::syntax::TypeDefinition>()?.generics
+        };
         if !parameter_arguments
             .iter()
-            .all(|argument| enclosing.generics.iter().any(|generic| generic.node.name.as_str() == argument.as_ref()))
+            .all(|argument| enclosing_generics.iter().any(|generic| generic.node.name.as_str() == argument.as_ref()))
         {
             return None;
         }
@@ -99,6 +104,64 @@ pub(in crate::semantic_contract) fn generic_call_template_tracked(
             declaration,
             parameters: parameters.into(),
             parameter_arguments: parameter_arguments.into(),
+        }))
+    })?
+    .transpose()
+}
+
+#[salsa::tracked]
+pub(in crate::semantic_contract) fn generic_nominal_method_receiver_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<GenericNominalMethodReceiver> {
+    with_node(db, syntax, key, |program, index, node| {
+        let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
+        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
+            return None;
+        };
+        let (method, receiver) = nominal_local_member_receiver(db, program, index, key, &path.node.path.node)?;
+        let method_syntax = db.syntax_unit(method.unit)?;
+        let owner_node = parent_node(method_syntax.syntax_index(db), method.node)?;
+        let owner = AstNodeKey { node: owner_node, ..method };
+        let owner_definition = method_syntax
+            .syntax_index(db)
+            .node_at(method_syntax.expanded_program(db), owner_node)?
+            .of::<beskid_analysis::syntax::TypeDefinition>()?;
+        (!owner_definition.generics.is_empty()).then_some(())?;
+        let receiver_parent = parent_node(index, receiver.node)?;
+        let annotation = match index.kind(receiver_parent)? {
+            beskid_analysis::syntax_query::NodeKind::Parameter => index
+                .node_at(program, receiver_parent)?
+                .of::<beskid_analysis::syntax::Parameter>()
+                .map(|parameter| &parameter.ty.node),
+            beskid_analysis::syntax_query::NodeKind::LetStatement => index
+                .node_at(program, receiver_parent)?
+                .of::<beskid_analysis::syntax::LetStatement>()
+                .and_then(|statement| statement.type_annotation.as_ref())
+                .map(|annotation| &annotation.node),
+            _ => None,
+        }?;
+        let beskid_analysis::syntax::Type::Complex(applied) = annotation else {
+            return None;
+        };
+        (resolve_type_declaration(db, key, &applied.node) == Some(owner)).then_some(())?;
+        let terminal = applied.node.segments.last()?;
+        (terminal.node.type_args.len() == owner_definition.generics.len()).then_some(())?;
+        let substitutions = owner_definition
+            .generics
+            .iter()
+            .zip(terminal.node.type_args.iter())
+            .map(|(generic, argument)| {
+                abi_type_from_syntax(db, key, &argument.node)
+                    .map(|argument| GenericSubstitution { parameter: Arc::from(generic.node.name.as_str()), argument })
+            })
+            .collect::<Result<Vec<_>, _>>();
+        Some(substitutions.map(|substitutions| GenericNominalMethodReceiver {
+            method,
+            receiver,
+            owner,
+            substitutions: substitutions.into(),
         }))
     })?
     .transpose()
@@ -287,17 +350,32 @@ pub(in crate::semantic_contract) fn generic_call_instantiation_for_node(
 }
 
 pub(in crate::semantic_contract) fn function_declares_generics(db: &dyn Db, declaration: AstNodeKey) -> bool {
+    matches!(generic_callable_parameters(db, declaration), Some((parameters, false)) if !parameters.is_empty())
+}
+
+/// Return declaration-ordered generic names and whether the callable has an implicit receiver.
+/// Generic methods inherit their parameters from exactly one owning generic type definition.
+pub(in crate::semantic_contract) fn generic_callable_parameters(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+) -> Option<(Vec<&str>, bool)> {
     let Some(syntax) = db.syntax_unit(declaration.unit) else {
-        return false;
+        return None;
     };
     if !syntax.accepts_key(db, declaration) {
-        return false;
+        return None;
     }
-    syntax
-        .syntax_index(db)
-        .node_at(syntax.expanded_program(db), declaration.node)
-        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
-        .is_some_and(|function| !function.generics.is_empty())
+    let node = syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?;
+    if let Some(function) = node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+        return (!function.generics.is_empty())
+            .then(|| (function.generics.iter().map(|generic| generic.node.name.as_str()).collect(), false));
+    }
+    node.of::<beskid_analysis::syntax::MethodDefinition>()?;
+    let owner = parent_node(syntax.syntax_index(db), declaration.node)
+        .and_then(|parent| syntax.syntax_index(db).node_at(syntax.expanded_program(db), parent))
+        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())?;
+    (!owner.generics.is_empty())
+        .then(|| (owner.generics.iter().map(|generic| generic.node.name.as_str()).collect(), true))
 }
 
 /// Whether a qualified call's receiver is an exact current import target.

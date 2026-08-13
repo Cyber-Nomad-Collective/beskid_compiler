@@ -1,6 +1,6 @@
 //! Ordered PostgreSQL migration plan for the package-registry cutover.
 
-use crate::package::{database_error, SqlxPackageRepository, StoreError};
+use crate::package::{SqlxPackageRepository, StoreError, database_error};
 
 /// Creates canonical package and immutable package-version records.
 pub const CREATE_PACKAGE_REGISTRY: &str = include_str!("../migrations/0001_create_package_registry.sql");
@@ -12,8 +12,7 @@ pub const BACKFILL_REQUIRES_SUBJECT_MAPPING: &str =
 
 /// Stores reviewed legacy-Identity-to-Auth-Hub mappings and every cutover
 /// decision. It intentionally never joins against legacy usernames/emails.
-pub const LEGACY_IDENTITY_CUTOVER_AUDIT: &str =
-    include_str!("../migrations/0003_legacy_identity_cutover_audit.sql");
+pub const LEGACY_IDENTITY_CUTOVER_AUDIT: &str = include_str!("../migrations/0003_legacy_identity_cutover_audit.sql");
 
 /// Community profiles, discussions, follows and notifications. All
 /// principals are Auth Hub GitHub subjects, never legacy Identity ids.
@@ -29,8 +28,7 @@ pub const CREATE_ADMINISTRATION: &str = include_str!("../migrations/0006_create_
 
 /// Typed community preferences plus the self-addressed system delivery
 /// check. This retains Auth Hub subjects as the only identity key.
-pub const EXTEND_COMMUNITY_NOTIFICATIONS: &str =
-    include_str!("../migrations/0007_extend_community_notifications.sql");
+pub const EXTEND_COMMUNITY_NOTIFICATIONS: &str = include_str!("../migrations/0007_extend_community_notifications.sql");
 
 /// Durable review submission queue and the current reviewer disposition.
 pub const CREATE_PACKAGE_REVIEW_QUEUE: &str = include_str!("../migrations/0008_create_package_review_queue.sql");

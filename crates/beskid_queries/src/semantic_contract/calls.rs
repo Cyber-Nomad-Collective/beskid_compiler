@@ -24,8 +24,8 @@ pub(in crate::semantic_contract) use generics::{
     explicit_generic_type_argument_syntax, exported_generic_type_named, expression_is_lambda,
     function_declares_generics, generic_call_instantiation_for_node, generic_call_instantiation_tracked,
     generic_call_specialization_tracked, generic_call_template_tracked, generic_call_uses_parameter_type_arguments,
-    imported_call_receiver_exists, imported_generic_nominal_receiver_requires_instantiation,
-    type_syntax_is_generic_parameter_reference,
+    generic_callable_parameters, generic_nominal_method_receiver_tracked, imported_call_receiver_exists,
+    imported_generic_nominal_receiver_requires_instantiation, type_syntax_is_generic_parameter_reference,
 };
 
 pub(in crate::semantic_contract) use resolution::{

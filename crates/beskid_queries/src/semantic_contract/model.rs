@@ -462,6 +462,15 @@ pub struct GenericCallSpecialization {
     pub substitutions: Arc<[GenericSubstitution]>,
 }
 
+/// Exact source-backed application of a generic nominal method receiver.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GenericNominalMethodReceiver {
+    pub method: AstNodeKey,
+    pub receiver: AstNodeKey,
+    pub owner: AstNodeKey,
+    pub substitutions: Arc<[GenericSubstitution]>,
+}
+
 /// One concrete binding in a generic specialization environment.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GenericSubstitution {

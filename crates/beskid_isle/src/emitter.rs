@@ -214,7 +214,13 @@ impl<'isa> FunctionEmitter<'isa> {
     }
 
     pub fn emit_statement_with_call_importer(
-        &self,name: UserFuncName, signature: Signature, facts: &dyn NodeFacts, body: AstNodeKey, call_importer: &mut dyn CallImporter,) -> Result<Function, FunctionEmissionError> {
+        &self,
+        name: UserFuncName,
+        signature: Signature,
+        facts: &dyn NodeFacts,
+        body: AstNodeKey,
+        call_importer: &mut dyn CallImporter,
+    ) -> Result<Function, FunctionEmissionError> {
         self.emit_statement_inner(
             StatementEmission { name, signature, facts, item: None, body },
             EmissionServices { string_interner: None, call_importer: Some(call_importer) },

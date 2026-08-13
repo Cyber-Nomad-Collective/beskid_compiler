@@ -7,9 +7,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tracing::field::{Field, Visit};
 use tracing::{Event, Id, Level, Subscriber};
+use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::registry::{LookupSpan, SpanRef};
-use tracing_subscriber::Layer;
 
 const DEFAULT_CAPACITY: usize = 4_096;
 
@@ -17,9 +17,7 @@ static GLOBAL_BUFFER: OnceLock<Arc<TelemetryBuffer>> = OnceLock::new();
 
 /// Shared handle to the process-wide telemetry ring buffer.
 pub fn telemetry_buffer() -> Arc<TelemetryBuffer> {
-    GLOBAL_BUFFER
-        .get_or_init(|| Arc::new(TelemetryBuffer::new(DEFAULT_CAPACITY)))
-        .clone()
+    GLOBAL_BUFFER.get_or_init(|| Arc::new(TelemetryBuffer::new(DEFAULT_CAPACITY))).clone()
 }
 
 /// One completed span captured for the developer trace widget.
@@ -89,46 +87,34 @@ impl FieldVisitor {
     }
 
     fn event_message(metadata_name: &str, fields: &[(String, String)]) -> String {
-        fields
-            .iter()
-            .find(|(k, _)| k == "message")
-            .map(|(_, v)| v.clone())
-            .unwrap_or_else(|| metadata_name.to_string())
+        fields.iter().find(|(k, _)| k == "message").map(|(_, v)| v.clone()).unwrap_or_else(|| metadata_name.to_string())
     }
 }
 
 impl Visit for FieldVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
-        self.fields
-            .push((field.name().to_string(), format!("{value:?}")));
+        self.fields.push((field.name().to_string(), format!("{value:?}")));
     }
 
     fn record_str(&mut self, field: &Field, value: &str) {
-        self.fields
-            .push((field.name().to_string(), value.to_string()));
+        self.fields.push((field.name().to_string(), value.to_string()));
     }
 
     fn record_i64(&mut self, field: &Field, value: i64) {
-        self.fields
-            .push((field.name().to_string(), value.to_string()));
+        self.fields.push((field.name().to_string(), value.to_string()));
     }
 
     fn record_u64(&mut self, field: &Field, value: u64) {
-        self.fields
-            .push((field.name().to_string(), value.to_string()));
+        self.fields.push((field.name().to_string(), value.to_string()));
     }
 
     fn record_bool(&mut self, field: &Field, value: bool) {
-        self.fields
-            .push((field.name().to_string(), value.to_string()));
+        self.fields.push((field.name().to_string(), value.to_string()));
     }
 }
 
 fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 /// Thread-safe ring buffer of spans and events for developer UI.
@@ -168,11 +154,7 @@ impl TelemetryBuffer {
     }
 
     fn lookup_numeric_id(state: &BufferState, span_id: &Id) -> Option<u64> {
-        state
-            .id_map
-            .iter()
-            .find(|(id, _)| id == span_id)
-            .map(|(_, n)| *n)
+        state.id_map.iter().find(|(id, _)| id == span_id).map(|(_, n)| *n)
     }
 
     fn on_new_span<S>(&self, attrs: &tracing::span::Attributes<'_>, id: &Id, ctx: &Context<'_, S>)
@@ -255,11 +237,7 @@ impl TelemetryBuffer {
     }
 }
 
-fn event_span_numeric_id<S>(
-    inner: &Mutex<BufferState>,
-    ctx: &Context<'_, S>,
-    event: &Event<'_>,
-) -> Option<u64>
+fn event_span_numeric_id<S>(inner: &Mutex<BufferState>, ctx: &Context<'_, S>, event: &Event<'_>) -> Option<u64>
 where
     S: Subscriber + for<'lookup> LookupSpan<'lookup>,
 {

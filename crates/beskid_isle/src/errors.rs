@@ -20,7 +20,6 @@ impl std::fmt::Display for StringMaterializationError {
     }
 }
 
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LoweringErrorKind {
     MissingRuleOrFact,
@@ -37,7 +36,6 @@ pub enum LoweringErrorKind {
     InvalidBlockExpression,
     InvalidRangeFor,
 }
-
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct LoweringError {
@@ -106,7 +104,6 @@ impl std::fmt::Debug for LoweringError {
         std::fmt::Display::fmt(self, f)
     }
 }
-
 
 #[derive(Debug)]
 pub enum FunctionEmissionError {

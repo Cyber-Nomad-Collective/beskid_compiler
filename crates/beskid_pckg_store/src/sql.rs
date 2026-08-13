@@ -20,4 +20,3 @@ pub(super) fn is_unique_violation(error: &sqlx::Error) -> bool {
 pub(super) fn database_message(error: sqlx::Error) -> String {
     error.to_string()
 }
-

@@ -30,13 +30,13 @@ use crate::commands::{
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use beskid_pckg::PckgArgs;
 use beskid_pckg::cli::PckgCommand;
+use beskid_telemetry::{self, InitOptions};
 use beskid_up::UpArgs;
 use clap::{ArgAction, Parser, Subcommand};
 use miette::Report;
 use std::env;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
-use beskid_telemetry::{self, InitOptions};
 
 /// Parsed `beskid` invocation (after `@file` argv expansion).
 #[derive(Parser)]

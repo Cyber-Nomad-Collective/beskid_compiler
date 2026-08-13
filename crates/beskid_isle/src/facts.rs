@@ -1,8 +1,7 @@
-use std::sync::Arc;
-use cranelift_codegen::ir::{Signature, Type};
-pub use beskid_queries::AstNodeKey;
 use crate::layout::{ArrayLayout, EnumLayout, ManagedArrayAllocation, ManagedStructAllocation, StructLayout};
-
+pub use beskid_queries::AstNodeKey;
+use cranelift_codegen::ir::{Signature, Type};
+use std::sync::Arc;
 
 macro_rules! node_kinds {
     ($($name:ident),+ $(,)?) => {
@@ -575,9 +574,6 @@ pub trait NodeFacts {
         None
     }
     fn dispatch_builtin_symbol(&self, _key: AstNodeKey) -> Option<&'static str> {
-        None
-    }
-    fn expression_semantic_type(&self, _key: AstNodeKey) -> Option<beskid_queries::SemanticTypeId> {
         None
     }
     fn index_target_is_string(&self, _key: AstNodeKey) -> bool {

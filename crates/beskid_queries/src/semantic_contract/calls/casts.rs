@@ -21,12 +21,29 @@ pub(in crate::semantic_contract) fn cast_intents_for_node(
     if !expression_fact_target(node.node_kind()) {
         return None;
     }
-    let actual = match semantic_type_for_node(program, index, key.node, node)? {
-        Ok(actual) => actual,
-        Err(_) => return Some(Err(SemanticError::unavailable("cast_intents"))),
-    };
     let expected = match expected_cast_type(db, program, index, key)? {
         Ok(expected) => expected,
+        Err(error) => return Some(Err(error)),
+    };
+    let actual = literal_fact(db, key)
+        .ok()
+        .flatten()
+        .map(|literal| match literal {
+            LiteralFact::Integer(_) => SemanticTypeId::I32,
+            LiteralFact::Float(_) => SemanticTypeId::F64,
+            LiteralFact::Bool(_) => SemanticTypeId::BOOL,
+            LiteralFact::Char(_) => SemanticTypeId::CHAR,
+            LiteralFact::String(_) => SemanticTypeId::STRING,
+        })
+        .or_else(|| {
+            abi_type(db, key)
+                .ok()
+                .flatten()
+                .or_else(|| semantic_type_for_node(program, index, key.node, node).and_then(Result::ok))
+        })
+        .ok_or_else(|| SemanticError::unavailable("cast_intents"));
+    let actual = match actual {
+        Ok(actual) => actual,
         Err(error) => return Some(Err(error)),
     };
     if actual == expected {
@@ -99,55 +116,73 @@ pub(in crate::semantic_contract) fn expected_cast_type(
         );
     }
 
-    if let Some(return_id) =
-        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::ReturnStatement)
-    {
-        let mut item_id = parent_node(index, return_id)?;
-        while !matches!(
-            index.kind(item_id)?,
-            beskid_analysis::syntax_query::NodeKind::FunctionDefinition
-                | beskid_analysis::syntax_query::NodeKind::MethodDefinition
-        ) {
-            item_id = parent_node(index, item_id)?;
-        }
-        let item = index.node_at(program, item_id)?;
-        let return_type = item
-            .of::<beskid_analysis::syntax::FunctionDefinition>()
-            .and_then(|function| function.return_type.as_ref().map(|annotation| &annotation.node))
-            .or_else(|| {
-                item.of::<beskid_analysis::syntax::MethodDefinition>()
-                    .and_then(|method| method.return_type.as_ref().map(|annotation| &annotation.node))
-            })?;
-        return Some(semantic_type_from_syntax(return_type));
+    if let Some(call_id) = nearest_call {
+        let call = index.node_at(program, call_id)?.of::<beskid_analysis::syntax::CallExpression>()?;
+        let argument_index = call.args.iter().position(|argument| {
+            index
+                .direct_child_id(program, call_id, beskid_analysis::syntax_query::DynNodeRef::from(argument))
+                .is_some_and(|argument_id| is_ancestor(index, argument_id, key.node))
+        })?;
+        let expected = match &call.callee.node {
+            beskid_analysis::syntax::Expression::Path(path) => {
+                let path = &path.node.path.node;
+                let call_key = AstNodeKey { node: call_id, ..key };
+                let builtin = beskid_analysis::builtins::builtin_for_path(
+                    &path.segments.iter().map(|segment| segment.node.name.node.name.to_string()).collect::<Vec<_>>(),
+                );
+                if resolve_item_declaration(db, program, index, key, path).is_some() || builtin.is_some() {
+                    call_abi_signature(db, call_key)
+                        .ok()
+                        .flatten()
+                        .and_then(|signature| signature.parameters.get(argument_index).copied())
+                        .or_else(|| {
+                            builtin
+                                .and_then(|(_, builtin)| builtin.params.get(argument_index).copied())
+                                .and_then(builtin_type_to_semantic)
+                        })
+                        .or_else(|| {
+                            path.segments.last().and_then(|segment| {
+                                canonical_intrinsic_parameter_type(segment.node.name.node.name.as_str(), argument_index)
+                            })
+                        })
+                } else if path.segments.len() == 1
+                    && resolve_lexical_declaration(
+                        program,
+                        index,
+                        call_id,
+                        path.segments[0].node.name.node.name.as_str(),
+                    )
+                    .is_none()
+                {
+                    canonical_intrinsic_parameter_type(path.segments[0].node.name.node.name.as_str(), argument_index)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        return Some(expected.ok_or_else(|| SemanticError::unavailable("cast_intents")));
     }
 
-    let call_id = nearest_call?;
-    let call = index.node_at(program, call_id)?.of::<beskid_analysis::syntax::CallExpression>()?;
-    let argument_index = call.args.iter().position(|argument| {
-        index
-            .direct_child_id(program, call_id, beskid_analysis::syntax_query::DynNodeRef::from(argument))
-            .is_some_and(|argument_id| is_ancestor(index, argument_id, key.node))
-    })?;
-    let expected = match &call.callee.node {
-        beskid_analysis::syntax::Expression::Path(path) => {
-            let path = &path.node.path.node;
-            if resolve_item_declaration(db, program, index, key, path).is_some() {
-                call_abi_signature(db, AstNodeKey { node: call_id, ..key })
-                    .ok()
-                    .flatten()
-                    .and_then(|signature| signature.parameters.get(argument_index).copied())
-            } else if path.segments.len() == 1
-                && resolve_lexical_declaration(program, index, call_id, path.segments[0].node.name.node.name.as_str())
-                    .is_none()
-            {
-                canonical_intrinsic_parameter_type(path.segments[0].node.name.node.name.as_str(), argument_index)
-            } else {
-                None
-            }
-        }
-        _ => None,
-    };
-    Some(expected.ok_or_else(|| SemanticError::unavailable("cast_intents")))
+    let return_id =
+        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::ReturnStatement)?;
+    let mut item_id = parent_node(index, return_id)?;
+    while !matches!(
+        index.kind(item_id)?,
+        beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+            | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+    ) {
+        item_id = parent_node(index, item_id)?;
+    }
+    let item = index.node_at(program, item_id)?;
+    let return_type = item
+        .of::<beskid_analysis::syntax::FunctionDefinition>()
+        .and_then(|function| function.return_type.as_ref().map(|annotation| &annotation.node))
+        .or_else(|| {
+            item.of::<beskid_analysis::syntax::MethodDefinition>()
+                .and_then(|method| method.return_type.as_ref().map(|annotation| &annotation.node))
+        })?;
+    Some(semantic_type_from_syntax(return_type))
 }
 
 /// A binary comparison constrains only its own operand expression, not a nested call argument.
