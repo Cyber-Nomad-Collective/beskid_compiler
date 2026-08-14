@@ -1,6 +1,110 @@
 //! Canonical semantic layout implementation.
 
+#[cfg(test)]
+mod scalar_payload_tests;
+
 use super::super::*;
+
+impl EnumLayoutFact {
+    /// Compute the sole target-specific physical authority for ABI-v5 scalar-payload enums.
+    ///
+    /// Pointer and scalar payloads use distinct union slots so the static pointer map traces every
+    /// managed payload without scanning scalar bits.
+    pub fn scalar_payload_object_layout(
+        &self,
+        pointer_width: u8,
+        header_size: u64,
+        header_alignment: u64,
+    ) -> Option<EnumScalarPayloadObjectLayout> {
+        #[derive(Clone, Copy)]
+        struct StorageClass {
+            ty: SemanticTypeId,
+            size: u64,
+            alignment: u64,
+        }
+
+        if header_size < 16 || header_alignment == 0 || !header_alignment.is_power_of_two() {
+            return None;
+        }
+        let mut scalar_storage = None::<StorageClass>;
+        let mut pointer_storage = None::<StorageClass>;
+        let payloads = self
+            .variants
+            .iter()
+            .map(|variant| match variant.fields.as_ref() {
+                [] => Some(None),
+                [(_, AggregateFieldShape::Scalar(ty))] => {
+                    let layout = ty.scalar_abi_layout(pointer_width)?;
+                    let storage = if layout.is_pointer { &mut pointer_storage } else { &mut scalar_storage };
+                    if storage.is_none_or(|current| {
+                        layout.size > current.size
+                            || (layout.size == current.size && layout.alignment > current.alignment)
+                    }) {
+                        *storage = Some(StorageClass { ty: *ty, size: layout.size, alignment: layout.alignment });
+                    }
+                    Some(Some((*ty, layout.is_pointer)))
+                }
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+
+        let tag_offset = align_to_layout(header_size, 4)?;
+        let mut end = tag_offset.checked_add(4)?;
+        let mut object_alignment = header_alignment.max(4);
+        let mut storage_fields = Vec::with_capacity(2);
+        let scalar_offset = append_storage(
+            scalar_storage.map(|storage| (storage.ty, storage.size, storage.alignment)),
+            &mut end,
+            &mut object_alignment,
+            &mut storage_fields,
+        )?;
+        let pointer_offset = append_storage(
+            pointer_storage.map(|storage| (storage.ty, storage.size, storage.alignment)),
+            &mut end,
+            &mut object_alignment,
+            &mut storage_fields,
+        )?;
+        let variants = payloads
+            .into_iter()
+            .map(|payload| {
+                let (payload_type, payload_offset) = payload
+                    .map(|(ty, is_pointer)| (Some(ty), if is_pointer { pointer_offset } else { scalar_offset }))
+                    .unwrap_or((None, None));
+                EnumScalarPayloadVariantLayout { payload_type, payload_offset }
+            })
+            .collect::<Vec<_>>();
+        Some(EnumScalarPayloadObjectLayout {
+            object_size: align_to_layout(end, object_alignment)?,
+            object_alignment,
+            tag_offset,
+            storage_fields: storage_fields.into(),
+            pointer_map_offsets: pointer_offset.into_iter().collect::<Vec<_>>().into(),
+            variants: variants.into(),
+        })
+    }
+}
+
+fn append_storage(
+    storage: Option<(SemanticTypeId, u64, u64)>,
+    end: &mut u64,
+    object_alignment: &mut u64,
+    fields: &mut Vec<(SemanticTypeId, u64)>,
+) -> Option<Option<u64>> {
+    let Some((ty, size, alignment)) = storage else {
+        return Some(None);
+    };
+    *end = align_to_layout(*end, alignment)?;
+    let offset = *end;
+    *end = end.checked_add(size)?;
+    *object_alignment = (*object_alignment).max(alignment);
+    fields.push((ty, offset));
+    Some(Some(offset))
+}
+
+fn align_to_layout(value: u64, alignment: u64) -> Option<u64> {
+    (alignment > 0 && alignment.is_power_of_two()).then_some(())?;
+    value.checked_add(alignment - 1).map(|value| value & !(alignment - 1))
+}
 
 #[salsa::tracked]
 pub(in crate::semantic_contract) fn enum_layout_tracked(
