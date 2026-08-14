@@ -36,7 +36,11 @@ impl Engine {
     pub fn try_new() -> Result<Self, JitError> {
         let prefix = runtime_prefix()?;
         let target = host_runtime_target()?;
-        let profile = if cfg!(debug_assertions) { RuntimeKitProfile::Debug } else { RuntimeKitProfile::Release };
+        let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
+            Ok("release") => RuntimeKitProfile::Release,
+            _ if !cfg!(debug_assertions) => RuntimeKitProfile::Release,
+            _ => RuntimeKitProfile::Debug,
+        };
         Self::with_runtime_kit(&prefix, target, profile)
     }
 

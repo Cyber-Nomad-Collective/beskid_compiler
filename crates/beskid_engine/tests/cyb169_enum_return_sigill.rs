@@ -36,7 +36,12 @@ impl Drop for EnvironmentVariableGuard {
 #[test]
 fn returned_enum_survives_match_across_call_boundary() {
     let prefix = tempfile::tempdir().expect("exact kit prefix");
-    build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).expect("publish exact native kit");
+    let profile = if std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() == Ok("release") {
+        RuntimeKitProfile::Release
+    } else {
+        RuntimeKitProfile::Debug
+    };
+    build_native_host(prefix.path().to_path_buf(), profile).expect("publish exact native kit");
     let _runtime_prefix = EnvironmentVariableGuard::set("BESKID_RUNTIME_PREFIX", prefix.path());
 
     let source = r#"
