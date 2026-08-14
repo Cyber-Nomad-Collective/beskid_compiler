@@ -98,6 +98,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore readable syntax trace sites as ordinary `path:line:column
+  (Construct)` locations while retaining generation-safe AST keys and exact
+  source spans.
+
 - Give the manifest-owned ABI-v5 soft builtin sole ownership of
   `__fiber_yield`, removing the retired Rust/JIT registration that caused
   duplicate-item failures throughout analysis.

@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 use beskid_isle::{AstNodeKey, DirectCallee};
 use beskid_queries::{
     CallLowering, GenericSpecializationInstance, SemanticTypeId, call_lowering, child_nodes, format_ast_node_key,
-    generic_call_specialization, generic_specialization_identity, item_name, node_kind, node_span,
+    format_ast_node_trace, generic_call_specialization, generic_specialization_identity, item_name, node_kind,
+    node_span,
 };
 
 use crate::CodegenInput;
@@ -29,6 +30,7 @@ fn trace_node_facts(
         return;
     }
     let node = trace_key(db, key);
+    let site = format_ast_node_trace(db, key, &key.unit.path(db).display().to_string());
     let kind =
         node_kind(db, key).ok().flatten().map(|kind| format!("{kind:?}")).unwrap_or_else(|| "<missing>".to_owned());
     let span = node_span(db, key)
@@ -46,7 +48,7 @@ fn trace_node_facts(
             )
         })
         .unwrap_or_else(|| "<missing>".to_owned());
-    crate::isle_trace::event(|| format!("event=ast.node key={node} kind={kind} span={span}"));
+    crate::isle_trace::event(|| format!("event=ast.node key={node} at {site} kind={kind} span={span}"));
 
     if let Ok(Some(lowering)) = call_lowering(db, key) {
         let (lowering_name, callee) = match lowering {
