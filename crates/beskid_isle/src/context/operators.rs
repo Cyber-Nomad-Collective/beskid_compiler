@@ -153,13 +153,25 @@ impl IsleContext<'_, '_, '_, '_> {
 macro_rules! generated_operator_methods {
     () => {
         fn clif_iadd(&mut self, left: Value, right: Value) -> Value {
-            self.builder.ins().iadd(left, right)
+            if self.builder.func.dfg.value_type(left).is_float() {
+                self.builder.ins().fadd(left, right)
+            } else {
+                self.builder.ins().iadd(left, right)
+            }
         }
         fn clif_isub(&mut self, left: Value, right: Value) -> Value {
-            self.builder.ins().isub(left, right)
+            if self.builder.func.dfg.value_type(left).is_float() {
+                self.builder.ins().fsub(left, right)
+            } else {
+                self.builder.ins().isub(left, right)
+            }
         }
         fn clif_imul(&mut self, left: Value, right: Value) -> Value {
-            self.builder.ins().imul(left, right)
+            if self.builder.func.dfg.value_type(left).is_float() {
+                self.builder.ins().fmul(left, right)
+            } else {
+                self.builder.ins().imul(left, right)
+            }
         }
         fn clif_band(&mut self, left: Value, right: Value) -> Value {
             self.builder.ins().band(left, right)
@@ -174,7 +186,15 @@ macro_rules! generated_operator_methods {
             self.builder.ins().ushr(left, right)
         }
         fn clif_sdiv(&mut self, left: Value, right: Value) -> Value {
-            self.builder.ins().sdiv(left, right)
+            if self.builder.func.dfg.value_type(left).is_float() {
+                self.builder.ins().fdiv(left, right)
+            } else {
+                let ty = self.builder.func.dfg.value_type(left);
+                let zero = self.builder.ins().iconst(ty, 0);
+                let is_zero = self.builder.ins().icmp(IntCC::Equal, right, zero);
+                self.builder.ins().trapnz(is_zero, TrapCode::INTEGER_DIVISION_BY_ZERO);
+                self.builder.ins().sdiv(left, right)
+            }
         }
         fn clif_srem(&mut self, left: Value, right: Value) -> Option<Value> {
             let ty = self.builder.func.dfg.value_type(left);
@@ -183,14 +203,14 @@ macro_rules! generated_operator_methods {
             }
             let zero = self.builder.ins().iconst(ty, 0);
             let is_zero = self.builder.ins().icmp(IntCC::Equal, right, zero);
-            self.builder.ins().trapnz(is_zero, TrapCode::unwrap_user(3));
+            self.builder.ins().trapnz(is_zero, TrapCode::INTEGER_DIVISION_BY_ZERO);
             Some(self.builder.ins().srem(left, right))
         }
         fn clif_div_trapz(&mut self, value: Value, divisor: Value) -> Value {
             let ty = self.builder.func.dfg.value_type(value);
             let zero = self.builder.ins().iconst(ty, 0);
             let is_zero = self.builder.ins().icmp(IntCC::Equal, divisor, zero);
-            self.builder.ins().trapnz(is_zero, TrapCode::unwrap_user(3));
+            self.builder.ins().trapnz(is_zero, TrapCode::INTEGER_DIVISION_BY_ZERO);
             self.builder.ins().sdiv(value, divisor)
         }
         fn clif_iadd_imm(&mut self, value: Value, imm: i64) -> Value {
