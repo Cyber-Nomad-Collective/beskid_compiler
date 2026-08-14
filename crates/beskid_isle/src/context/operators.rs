@@ -153,6 +153,9 @@ impl IsleContext<'_, '_, '_, '_> {
 macro_rules! generated_operator_methods {
     () => {
         fn clif_iadd(&mut self, left: Value, right: Value) -> Value {
+            if let Some((left, right)) = self.common_float_operands(left, right) {
+                return self.builder.ins().fadd(left, right);
+            }
             let (left, right) = self.common_integer_operands(left, right);
             self.builder.ins().iadd(left, right)
         }
@@ -185,14 +188,14 @@ macro_rules! generated_operator_methods {
             }
             let zero = self.builder.ins().iconst(ty, 0);
             let is_zero = self.builder.ins().icmp(IntCC::Equal, right, zero);
-            self.builder.ins().trapnz(is_zero, TrapCode::unwrap_user(3));
+            self.builder.ins().trapnz(is_zero, TrapCode::INTEGER_DIVISION_BY_ZERO);
             Some(self.builder.ins().srem(left, right))
         }
         fn clif_div_trapz(&mut self, value: Value, divisor: Value) -> Value {
             let ty = self.builder.func.dfg.value_type(value);
             let zero = self.builder.ins().iconst(ty, 0);
             let is_zero = self.builder.ins().icmp(IntCC::Equal, divisor, zero);
-            self.builder.ins().trapnz(is_zero, TrapCode::unwrap_user(3));
+            self.builder.ins().trapnz(is_zero, TrapCode::INTEGER_DIVISION_BY_ZERO);
             self.builder.ins().sdiv(value, divisor)
         }
         fn clif_iadd_imm(&mut self, value: Value, imm: i64) -> Value {

@@ -98,6 +98,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Select floating-point addition for float operands and route signed division
+  through the explicit integer-division-by-zero trap guard before emitting CLIF.
+
 - Keep exact-kit JIT rejection tests outside the canonical ABI-v5 platform
   import allowlist by using a genuinely unapproved process-symbol witness.
 

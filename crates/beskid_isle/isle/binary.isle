@@ -126,7 +126,7 @@
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Div))))
-      (clif_sdiv (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+      (clif_div_trapz (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Mod))))
