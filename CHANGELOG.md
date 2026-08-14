@@ -98,6 +98,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Give the manifest-owned ABI-v5 soft builtin sole ownership of
+  `__fiber_yield`, removing the retired Rust/JIT registration that caused
+  duplicate-item failures throughout analysis.
+
 - Keep the deny-warnings Rust gate compatible with current Clippy by using
   idiomatic `Option` propagation and direct mutable-builder reborrowing in
   generic-call queries and numeric operand lowering, and remove the obsolete

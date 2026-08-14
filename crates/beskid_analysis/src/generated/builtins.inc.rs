@@ -19,12 +19,6 @@ define_builtins! {
         returns: U64,
         injected: true,
     },
-    &["__fiber_yield"] => {
-        symbol: "fiber_yield",
-        params: [],
-        returns: Unit,
-        injected: true,
-    },
     &["__gc_register_root"] => {
         symbol: "gc_register_root",
         params: [Ptr],
