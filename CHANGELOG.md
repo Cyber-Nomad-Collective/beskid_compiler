@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Read Windows shared-runtime exports and imports from the PE tables with
+  `llvm-readobj`, while retaining `llvm-nm` provenance for static archives.
+
 - Classify MSVC string-literal COMDATs and the COFF feature marker as local
   compiler metadata during runtime provenance checks without widening ABI exports or imports.
 
