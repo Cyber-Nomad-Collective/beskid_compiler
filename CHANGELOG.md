@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Classify MSVC string-literal COMDATs and the COFF feature marker as local
+  compiler metadata during runtime provenance checks without widening ABI exports or imports.
+
 - Make the Windows ABI-v5 runtime DLL CRT-independent by using manifest-owned
   Win32 TLS APIs and literal trap lengths instead of `_tls_index` and `strlen`.
 

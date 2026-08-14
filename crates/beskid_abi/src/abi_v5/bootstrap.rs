@@ -129,8 +129,16 @@ impl RuntimeAuditMetadata {
         defined: impl IntoIterator<Item = &'a str>,
         undefined: impl IntoIterator<Item = &'a str>,
     ) -> Result<(), String> {
-        let defined = self.collapsed_symbol_set(defined)?;
+        let mut defined = self.collapsed_symbol_set(defined)?;
         let mut undefined = self.collapsed_symbol_set(undefined)?;
+        // LLVM's COFF symbol adapter reports MSVC string-literal COMDATs and the absolute
+        // feature marker as external definitions. They are implementation metadata, not PE
+        // exports. Forbidden provenance has already been checked while collapsing the set;
+        // discard only these two exact compiler-owned families before enforcing the ABI export
+        // allowlist. Undefined imports are never filtered here.
+        if self.object_format == "coff" {
+            defined.retain(|symbol| !is_coff_compiler_metadata_definition(symbol));
+        }
         // `nm -u` reports references from every member of a static archive. A reference that is
         // also defined by another member is internally resolved when the archive is linked and
         // must not be treated as an external runtime dependency.
@@ -179,6 +187,10 @@ impl RuntimeAuditMetadata {
             Ok(normalized)
         }
     }
+}
+
+fn is_coff_compiler_metadata_definition(symbol: &str) -> bool {
+    symbol.starts_with("??_C@") || symbol == "@feat.00"
 }
 
 fn exact_symbol_set(table: &str, expected: &[String], actual: &BTreeSet<String>) -> Result<(), String> {
