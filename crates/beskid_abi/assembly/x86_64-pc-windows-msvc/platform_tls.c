@@ -1,14 +1,31 @@
-// Windows TLS storage for the ABI-v5 runtime. `__declspec(thread)` gives each thread that uses
-// the runtime an independent slot; the compiler never emits unsupported CLIF TLS globals.
+#include <windows.h>
+#include "../../include/beskid_runtime_abi_v5.h"
 
-#pragma comment(lib, "kernel32.lib")
+static INIT_ONCE beskid_tls_once = INIT_ONCE_STATIC_INIT;
+static DWORD beskid_tls_index = TLS_OUT_OF_INDEXES;
+static const char beskid_tls_failure[] = "Windows TLS allocation failed";
 
-static __declspec(thread) void *beskid_runtime_current_tls;
+static BOOL CALLBACK beskid_tls_initialize(PINIT_ONCE once, PVOID parameter, PVOID *context) {
+    (void)once;
+    (void)parameter;
+    (void)context;
+    beskid_tls_index = TlsAlloc();
+    return beskid_tls_index != TLS_OUT_OF_INDEXES;
+}
+
+static DWORD beskid_tls_index_or_trap(void) {
+    if (!InitOnceExecuteOnce(&beskid_tls_once, beskid_tls_initialize, NULL, NULL)) {
+        beskid_rt_v5_trap(10, (void *)beskid_tls_failure, sizeof(beskid_tls_failure) - 1);
+    }
+    return beskid_tls_index;
+}
 
 void *beskid_rt_v5_intrinsic_tls_get(void) {
-    return beskid_runtime_current_tls;
+    return TlsGetValue(beskid_tls_index_or_trap());
 }
 
 void beskid_rt_v5_intrinsic_tls_set(void *value) {
-    beskid_runtime_current_tls = value;
+    if (!TlsSetValue(beskid_tls_index_or_trap(), value)) {
+        beskid_rt_v5_trap(10, (void *)beskid_tls_failure, sizeof(beskid_tls_failure) - 1);
+    }
 }

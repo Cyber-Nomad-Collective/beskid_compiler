@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Make the Windows ABI-v5 runtime DLL CRT-independent by using manifest-owned
+  Win32 TLS APIs and literal trap lengths instead of `_tls_index` and `strlen`.
+
 - Accept the intentional `42` exit status from the native runtime-kit CLI smoke program while continuing to reject every unexpected result.
 
 ### Added

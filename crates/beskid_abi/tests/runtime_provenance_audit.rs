@@ -32,6 +32,18 @@ fn canonical_audit_serializes_a_stable_machine_readable_contract() {
 }
 
 #[test]
+fn windows_tls_and_args_boundary_is_crt_independent() {
+    let audit = RuntimeProvenanceAudit::canonical(target("x86_64-pc-windows-msvc")).unwrap();
+
+    for symbol in ["InitOnceExecuteOnce", "TlsAlloc", "TlsGetValue", "TlsSetValue"] {
+        assert!(audit.allowed_imports.contains(&symbol.to_owned()), "missing Win32 TLS import {symbol}");
+    }
+    for symbol in ["_tls_index", "strlen"] {
+        assert!(!audit.allowed_imports.contains(&symbol.to_owned()), "unexpected CRT dependency {symbol}");
+    }
+}
+
+#[test]
 fn portable_fixture_uses_each_targets_native_symbol_spelling() {
     for metadata in TargetMetadata::supported() {
         let audit = RuntimeProvenanceAudit::canonical(metadata).unwrap();

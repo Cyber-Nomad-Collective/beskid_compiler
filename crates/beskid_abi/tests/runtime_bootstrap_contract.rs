@@ -206,6 +206,10 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "GetStdHandle",
         "GetSystemTimeAsFileTime",
         "GetTickCount64",
+        "InitOnceExecuteOnce",
+        "TlsAlloc",
+        "TlsGetValue",
+        "TlsSetValue",
         "VirtualAlloc",
         "VirtualFree",
         "WriteFile",
@@ -220,12 +224,11 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "pow",
         "sin",
         "sqrt",
-        "strlen",
         "tan",
     ];
     let math_imports = ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
     let windows_ucrt_imports =
-        ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "strlen", "tan"];
+        ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
     for target in supported_targets() {
         let is_windows = target.triple.as_str() == "x86_64-pc-windows-msvc";
         let (expected_symbols, expected_library) = match target.triple.as_str() {

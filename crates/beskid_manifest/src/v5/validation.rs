@@ -54,7 +54,7 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             "utf16_wargv",
             "beskid_rt_v5_args_handoff_utf16",
             "args_entry.asm",
-            &["VirtualAlloc", "strlen"][..],
+            &["VirtualAlloc"][..],
         ),
     ];
     if manifest.entry_adapters.len() != expected_entry_adapters.len()

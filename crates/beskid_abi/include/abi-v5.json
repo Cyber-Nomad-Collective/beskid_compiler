@@ -1699,6 +1699,65 @@
       "result": "u64"
     },
     {
+      "symbol": "InitOnceExecuteOnce",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "once",
+          "type": "pointer"
+        },
+        {
+          "name": "initializer",
+          "type": "pointer"
+        },
+        {
+          "name": "parameter",
+          "type": "pointer"
+        },
+        {
+          "name": "context",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "TlsAlloc",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [],
+      "result": "u32"
+    },
+    {
+      "symbol": "TlsGetValue",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "index",
+          "type": "u32"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "TlsSetValue",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "index",
+          "type": "u32"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "VirtualAlloc",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -1909,18 +1968,6 @@
         }
       ],
       "result": "f64"
-    },
-    {
-      "symbol": "strlen",
-      "target": "x86_64-pc-windows-msvc",
-      "library": "ucrt",
-      "params": [
-        {
-          "name": "value",
-          "type": "pointer"
-        }
-      ],
-      "result": "usize"
     },
     {
       "symbol": "tan",
@@ -2333,8 +2380,7 @@
       "ownership": "process_lifetime_copied_beskid_str_arena",
       "entrySource": "args_entry.asm",
       "osImports": [
-        "VirtualAlloc",
-        "strlen"
+        "VirtualAlloc"
       ]
     },
     {
