@@ -396,9 +396,9 @@ pub(in crate::semantic_contract) fn semantic_type_from_syntax(
             PrimitiveType::Unit => SemanticTypeId::UNIT,
             PrimitiveType::Never => SemanticTypeId::NEVER,
         }),
-        // ABI-v5 passes every nominal aggregate and array by managed reference.  This source
-        // signature fact records the representation, while layout queries retain nominal identity.
-        Type::Complex(_) | Type::Array(_) => Ok(SemanticTypeId::POINTER),
+        // SemanticTypeId cannot encode nominal identity. ABI-only callers must use
+        // `abi_type_from_syntax`, which proves the managed-reference representation separately.
+        Type::Complex(_) | Type::Array(_) => Err(SemanticError::unavailable("item_signature")),
         Type::Function { .. } => Err(SemanticError::unavailable("item_signature")),
     }
 }

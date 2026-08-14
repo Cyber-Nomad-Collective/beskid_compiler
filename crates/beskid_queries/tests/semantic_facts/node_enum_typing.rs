@@ -61,7 +61,7 @@ i32 Main() {
         Some(beskid_queries::ResolvedItem { declaration: helper })
     );
     assert_eq!(call_lowering(&db, call).expect("call lowering"), Some(beskid_queries::CallLowering::Direct(helper)));
-    assert_unavailable(cast_intents(&db, call));
+    assert_eq!(cast_intents(&db, call).expect("call cast intents"), None);
     assert_eq!(direct_callees(&db, main).expect("direct callees"), Some(Arc::from([helper])));
     assert_eq!(reachable_items(&db, program, main).expect("reachable items"), Some(Arc::from([main, helper])));
     assert_unavailable(runtime_intrinsic(&db, call));

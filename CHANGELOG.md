@@ -102,6 +102,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep nominal source signatures fail-closed when the scalar semantic type ID
+  cannot represent their qualified identity, while retaining pointer lowering
+  exclusively in ABI queries; compose enum-match arm types past inapplicable
+  contextual-integer facts.
+
 - Select floating-point addition for float operands and route signed division
   through the explicit integer-division-by-zero trap guard before emitting CLIF.
 
