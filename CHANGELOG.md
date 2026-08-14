@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Link Windows executables through their validated Beskid entry symbol and
+  console subsystem instead of implicitly requiring the CRT startup symbol.
+
 - Read Windows shared-runtime exports and imports from the PE tables with
   `llvm-readobj`, while retaining `llvm-nm` provenance for static archives.
 
