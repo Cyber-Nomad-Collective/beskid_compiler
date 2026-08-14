@@ -142,9 +142,9 @@ fn parsed_project_reaches_verified_isle_without_a_legacy_codegen_entrypoint() {
         }
     ";
     let unsupported = parse_production_units(project.path(), &[("Unsupported.bd", "Main", unsupported_source)]);
-    // `lower_nested_statement` retains the leaf statement key, so the closed failure must name the
-    // `let` that spawns the parameterized lambda rather than the enclosing function body block.
-    assert_unsupported_closed_failure(unsupported, target, isa.as_ref(), &["Unsupported.bd", "LetStatement@"]);
+    // The closed failure must name the unsupported captured binary expression rather than the
+    // enclosing function body block.
+    assert_unsupported_closed_failure(unsupported, target, isa.as_ref(), &["Unsupported.bd", "BinaryExpression@"]);
 }
 
 #[test]
@@ -221,7 +221,16 @@ fn parsed_zero_capture_lambda_spawn_emits_syntax_owned_entry_and_fiber_dispatch(
     let (target, isa) = x86_64_target_and_isa();
 
     let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
-    assert_eq!(lowered.artifact.functions.len(), 3, "Main, the syntax-owned lambda entry, and its spawn trampoline");
+    assert_eq!(
+        lowered.artifact.functions.len(),
+        4,
+        "Main, the lambda body entry, the syntax-owned spawn entry, and its trampoline: {:?}",
+        lowered.artifact.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>()
+    );
+    assert!(
+        lowered.artifact.functions.iter().any(|function| function.name.starts_with("__beskid_lambda_entry_syntax_")),
+        "lambda body entry must remain part of the reachable closure"
+    );
     let main = lowered
         .artifact
         .functions

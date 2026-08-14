@@ -130,7 +130,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 builder.ins().sextend(target, value)
             }
         };
-        (widen(&mut self.builder, left, left_type), widen(&mut self.builder, right, right_type))
+        (widen(self.builder, left, left_type), widen(self.builder, right, right_type))
     }
 
     pub(super) fn common_float_operands(&mut self, left: Value, right: Value) -> Option<(Value, Value)> {
@@ -153,9 +153,11 @@ impl IsleContext<'_, '_, '_, '_> {
 macro_rules! generated_operator_methods {
     () => {
         fn clif_iadd(&mut self, left: Value, right: Value) -> Value {
+            let (left, right) = self.common_integer_operands(left, right);
             self.builder.ins().iadd(left, right)
         }
         fn clif_isub(&mut self, left: Value, right: Value) -> Value {
+            let (left, right) = self.common_integer_operands(left, right);
             self.builder.ins().isub(left, right)
         }
         fn clif_imul(&mut self, left: Value, right: Value) -> Value {

@@ -40,9 +40,7 @@ pub(in crate::semantic_contract) fn generic_call_specialization_tracked(
                 return None;
             }
         };
-        if generic_callable_parameters(db, declaration).is_none() {
-            return None;
-        }
+        generic_callable_parameters(db, declaration)?;
         let instance = match generic_specialization_instance_for_call(db, key) {
             Ok(instance) => instance,
             Err(error) => return Some(Err(error)),
@@ -359,9 +357,7 @@ pub(in crate::semantic_contract) fn generic_callable_parameters(
     db: &dyn Db,
     declaration: AstNodeKey,
 ) -> Option<(Vec<&str>, bool)> {
-    let Some(syntax) = db.syntax_unit(declaration.unit) else {
-        return None;
-    };
+    let syntax = db.syntax_unit(declaration.unit)?;
     if !syntax.accepts_key(db, declaration) {
         return None;
     }

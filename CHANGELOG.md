@@ -98,6 +98,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep the deny-warnings Rust gate compatible with current Clippy by using
+  idiomatic `Option` propagation and direct mutable-builder reborrowing in
+  generic-call queries and numeric operand lowering, and remove the obsolete
+  runtime-intrinsic semantic-type fallback after its caller was retired.
+
+- Restore common integer-width normalization for addition and subtraction so
+  mixed `u8`/`i64` expressions emit verifier-clean CLIF.
+
+- Align syntax-only codegen gate assertions with precise captured-expression
+  diagnostics and the reachable zero-capture lambda body entry.
+
+- Include the manifest-owned fiber-yield export and intrinsic in exact ABI-v5
+  contract gate expectations.
+
+- Keep the scheduler lifecycle gate aligned with the canonical core's explicit
+  prohibition on emulating target context transfer.
+
 - Attribute unsupported `if` conditions to the exact condition node by routing nested
   condition lowering through the diagnostic-preserving ISLE expression boundary.
 
