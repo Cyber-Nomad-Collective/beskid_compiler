@@ -128,7 +128,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let global = self.builder.func.create_global_value(GlobalValueData::Symbol {
             name: ExternalName::testcase(symbol),
             offset: 0.into(),
-            colocated: true,
+            colocated: false,
             tls: false,
         });
         Some(self.builder.ins().global_value(pointer, global))

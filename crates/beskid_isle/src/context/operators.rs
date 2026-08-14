@@ -183,14 +183,14 @@ macro_rules! generated_operator_methods {
             }
             let zero = self.builder.ins().iconst(ty, 0);
             let is_zero = self.builder.ins().icmp(IntCC::Equal, right, zero);
-            self.builder.ins().trapz(is_zero, TrapCode::unwrap_user(3));
-            Some(self.builder.ins().sdiv(left, right))
+            self.builder.ins().trapnz(is_zero, TrapCode::unwrap_user(3));
+            Some(self.builder.ins().srem(left, right))
         }
         fn clif_div_trapz(&mut self, value: Value, divisor: Value) -> Value {
             let ty = self.builder.func.dfg.value_type(value);
             let zero = self.builder.ins().iconst(ty, 0);
             let is_zero = self.builder.ins().icmp(IntCC::Equal, divisor, zero);
-            self.builder.ins().trapz(is_zero, TrapCode::unwrap_user(3));
+            self.builder.ins().trapnz(is_zero, TrapCode::unwrap_user(3));
             self.builder.ins().sdiv(value, divisor)
         }
         fn clif_iadd_imm(&mut self, value: Value, imm: i64) -> Value {

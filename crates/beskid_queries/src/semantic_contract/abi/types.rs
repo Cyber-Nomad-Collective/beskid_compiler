@@ -279,13 +279,11 @@ pub(in crate::semantic_contract) fn value_abi_type_tracked(
     with_node(db, syntax, key, |_program, _index, _node| {
         Some((|| {
             let contextual = optional_abi_fact(contextual_integer_literal_abi_type(db, key))?;
-            let call_argument = optional_abi_fact(call_argument_abi_type(db, key))?;
             let binary_operand = optional_abi_fact(binary_operand_abi_type(db, key))?;
             let call_result = optional_abi_fact(call_abi_signature(db, key))?.map(|signature| signature.result);
             let abi = optional_abi_fact(abi_type(db, key))?;
             let semantic = optional_abi_fact(node_type(db, key))?;
             contextual
-                .or(call_argument)
                 .or(binary_operand)
                 .or(call_result)
                 .or(abi)
