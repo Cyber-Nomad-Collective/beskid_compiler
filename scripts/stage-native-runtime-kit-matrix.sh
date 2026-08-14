@@ -148,6 +148,13 @@ done
 smoke_source="${work}/runtime-kit-cli-smoke.bd"
 printf 'pub i64 Main() { return 42; }\n' >"${smoke_source}"
 export BESKID_RUNTIME_KIT_PROFILE="debug"
+set +e
 "${cli[@]}" run "${smoke_source}" --plain
+smoke_status=$?
+set -e
+if [[ "${smoke_status}" -ne 42 ]]; then
+  echo "Native ABI-v5 runtime-kit CLI smoke returned ${smoke_status}; expected 42" >&2
+  exit 1
+fi
 
 echo "Native ABI-v5 runtime-kit matrix evidence passed for ${target} at ${prefix}"

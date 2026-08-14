@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Accept the intentional `42` exit status from the native runtime-kit CLI smoke program while continuing to reject every unexpected result.
+
 ### Added
 
 - Add opt-in anonymous OpenTelemetry export for Rust CLI/pckg flows:

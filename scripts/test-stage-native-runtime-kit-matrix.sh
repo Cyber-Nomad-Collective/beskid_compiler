@@ -48,6 +48,8 @@ if [[ "$1" == "run" ]]; then
     cp "${debug_shared_symbols}" "${BESKID_MATRIX_CAPTURE_DIR}/debug-shared.symbols"
     cp "${release_static_symbols}" "${BESKID_MATRIX_CAPTURE_DIR}/release-static.symbols"
     cp "${release_shared_symbols}" "${BESKID_MATRIX_CAPTURE_DIR}/release-shared.symbols"
+  elif [[ "${all_args}" == *" -- run "* ]]; then
+    exit 42
   fi
 fi
 EOF
