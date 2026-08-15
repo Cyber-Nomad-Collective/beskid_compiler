@@ -8,15 +8,15 @@ use crate::commands::syntax_codegen::lower_prepared_entrypoint;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_aot::{
-    AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, build, default_runtime_strategy,
-    run_linked_executable,
+    build, default_runtime_strategy, run_linked_executable, AotBuildRequest, BuildOutputKind, BuildProfile,
+    ExportPolicy, LinkMode,
 };
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
-use beskid_tools::PipelineProgressKind;
 use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 use beskid_tools::tui::shell::runtime::RuntimeOp;
+use beskid_tools::PipelineProgressKind;
 use clap::Args;
 use std::sync::mpsc::Sender;
 
@@ -85,10 +85,13 @@ fn run_build_and_execute(args: RunArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Res
     let target = beskid_aot::target::detect_target(None)?;
     let exe_path = temp_dir.join(beskid_aot::target::output_filename("beskid_run", BuildOutputKind::Exe, &target));
 
-    let runtime_profile = if std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() == Ok("release") {
-        BuildProfile::Release
-    } else {
-        BuildProfile::Debug
+    let runtime_profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE") {
+        Ok(value) => match beskid_abi::runtime_kit::BuildProfile::parse(&value)? {
+            beskid_abi::runtime_kit::BuildProfile::Debug => BuildProfile::Debug,
+            beskid_abi::runtime_kit::BuildProfile::Release => BuildProfile::Release,
+        },
+        Err(std::env::VarError::NotPresent) => BuildProfile::Debug,
+        Err(error) => return Err(anyhow::anyhow!("invalid BESKID_RUNTIME_KIT_PROFILE: {error}")),
     };
     let runtime = default_runtime_strategy(runtime_profile, None)?;
 

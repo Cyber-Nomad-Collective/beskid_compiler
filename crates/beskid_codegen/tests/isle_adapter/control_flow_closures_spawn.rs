@@ -150,7 +150,6 @@ fn parsed_capturing_immediate_lambda_call_lowers_through_abi_v5_closure_environm
     assert!(clif.contains("beskid_rt_v5_closure_environment_allocate"), "{clif}");
     assert!(clif.contains("beskid_rt_v5_closure_environment_root_current"), "{clif}");
     assert!(clif.contains("__beskid_closure_allocation_request_"), "{clif}");
-    assert!(!clif.contains("interop_dispatch_"), "{clif}");
     assert!(clif.contains("iadd"), "{clif}");
 }
 

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SyntaxProgramAssembly,
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, ProgramAssembly,
 };
 use beskid_queries::{
     AstNodeId, AstNodeKey, BeskidDatabase, ModHostSyntaxGenerationId, ProjectSession, SourceUnitId, SyntaxGenerationId,
@@ -10,8 +10,8 @@ use beskid_queries::{
     resolved_item, resolved_local, runtime_intrinsic,
 };
 
-fn empty_assembly() -> Arc<SyntaxProgramAssembly> {
-    Arc::new(SyntaxProgramAssembly::new(
+fn empty_assembly() -> Arc<ProgramAssembly> {
+    Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: PathBuf::from("/tmp/project/src") },
             dependencies: Vec::new(),
@@ -20,7 +20,7 @@ fn empty_assembly() -> Arc<SyntaxProgramAssembly> {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ))
 }
 

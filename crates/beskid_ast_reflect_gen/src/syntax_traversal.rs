@@ -7,7 +7,7 @@ use std::path::Path;
 use syn::{Attribute, Fields, Item, Meta};
 
 use crate::syntax_helpers::SYNTAX_NODES_MODULE_PREFIX;
-use crate::syntax_nodes::{BANNER, reflect_sdk_node_kind_names};
+use crate::syntax_nodes::{reflect_sdk_node_kind_names, BANNER};
 
 /// Rust item enum in `syntax/items/node.rs` — host-only; Mod SDK uses `Node` contract + `NodeRef`.
 pub const HOST_ONLY_SDK_TYPE_NAMES: &[&str] = &["Node"];
@@ -180,7 +180,7 @@ pub fn emit_node_kind_bd(reflect_rs: &Path) -> Result<String, std::io::Error> {
     let kinds = reflect_sdk_node_kind_names(reflect_rs)?;
     let mut lines = vec![
         format!("{BANNER}"),
-        "/// Classification tokens for syntax query (mirrors `beskid_analysis::query::NodeKind`).".into(),
+        "/// Classification tokens for syntax queries (mirrors `beskid_analysis::syntax_query::NodeKind`).".into(),
         format!("pub enum NodeKind"),
         "{".into(),
     ];
@@ -293,7 +293,7 @@ pub fn emit_traversal_manifest_bd(entries: &[TraversalTypeEntry]) -> String {
 pub fn emit_descendants_contract_bd() -> String {
     format!(
         r#"{BANNER}
-/// Pre-order descendant iterator contract (lowers to `beskid_analysis::query::Descendants`).
+/// Pre-order descendant iterator contract (mirrors `beskid_analysis::syntax_query::Descendants`).
 pub contract Descendants {{
     bool MoveNext();
     {prefix}.NodeRef Current();
@@ -306,7 +306,7 @@ pub contract Descendants {{
 pub fn emit_visit_contract_bd() -> String {
     format!(
         r#"{BANNER}
-/// Depth-first visitor contract (lowers to `beskid_analysis::query::AstWalker` / `Visit`).
+/// Depth-first visitor contract (mirrors `beskid_analysis::syntax_query::Visit`).
 pub contract SyntaxVisitor {{
     void Enter({prefix}.NodeRef node);
     void Exit({prefix}.NodeRef node);

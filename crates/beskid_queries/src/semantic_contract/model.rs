@@ -2,7 +2,7 @@
 
 pub use beskid_abi::runtime_source::CorelibService;
 use beskid_abi::{abi_v5::AbiType, runtime_source::RuntimeIntrinsicCapability};
-use beskid_analysis::projects::SyntaxProgramAssembly;
+use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -75,7 +75,7 @@ pub fn format_ast_node_trace(db: &dyn Db, key: AstNodeKey, source_label: &str) -
 
 #[cfg(test)]
 mod ast_node_site_format_tests {
-    use super::{SourceSpan, format_source_span_range};
+    use super::{format_source_span_range, SourceSpan};
 
     #[test]
     fn formats_line_column_range() {
@@ -119,7 +119,7 @@ pub struct TypedProgram {
     pub project: ProjectSession,
     pub entry: SourceUnitId,
     pub generation: SyntaxGenerationId,
-    pub assembly: Arc<SyntaxProgramAssembly>,
+    pub assembly: Arc<ProgramAssembly>,
     /// Present only when this program was assembled from the compiler-embedded canonical
     /// runtime corpus. Ordinary user syntax can never manufacture this capability.
     pub runtime_intrinsic_capability: Option<Arc<RuntimeIntrinsicCapability>>,
@@ -388,6 +388,25 @@ impl SemanticTypeId {
     /// Bottom type for operations which cannot return normally.
     pub const NEVER: Self = Self(10);
 
+    /// Return this semantic scalar's target-specific ABI size, alignment, and pointer-map class.
+    pub fn scalar_abi_layout(self, pointer_width: u8) -> Option<ScalarAbiLayout> {
+        let pointer_size = match pointer_width {
+            32 => 4,
+            64 => 8,
+            _ => return None,
+        };
+        match self {
+            Self::BOOL | Self::U8 => Some(ScalarAbiLayout { size: 1, alignment: 1, is_pointer: false }),
+            Self::I32 | Self::CHAR => Some(ScalarAbiLayout { size: 4, alignment: 4, is_pointer: false }),
+            Self::I64 | Self::F64 => Some(ScalarAbiLayout { size: 8, alignment: 8, is_pointer: false }),
+            Self::WORD => Some(ScalarAbiLayout { size: pointer_size, alignment: pointer_size, is_pointer: false }),
+            Self::POINTER | Self::STRING => {
+                Some(ScalarAbiLayout { size: pointer_size, alignment: pointer_size, is_pointer: true })
+            }
+            _ => None,
+        }
+    }
+
     /// Source-facing type name used in diagnostics and compiler traces.
     ///
     /// Matches the Beskid surface spellings (`string`, `i32`, `unit`, …). Unknown identities
@@ -422,6 +441,25 @@ impl std::fmt::Display for SemanticTypeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.display_name())
     }
+}
+
+/// Mutable storage that owns a replacement produced by canonical array growth.
+///
+/// Both forms are generation-bound and name storage that codegen can update before releasing the
+/// construction root. Unsupported expressions deliberately have no owner fact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CollectionMutationOwner {
+    Local(LocalSlot),
+    AggregateField { receiver: LocalSlot, declaration: AstNodeKey, index: u32 },
+}
+
+/// Compiler-owned operation selected only from the resolved canonical Core.Collections.Array declaration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CollectionOperation {
+    Append { owner: CollectionMutationOwner },
+    Capacity,
+    Clear,
+    RemoveLast,
 }
 
 /// Backend-relevant call classification, detached from legacy HIR nodes.
@@ -609,6 +647,32 @@ pub struct AggregateFieldAccess {
     pub declaration: AstNodeKey,
     pub receiver: AstNodeKey,
     pub index: u32,
+}
+
+/// Target-specific ABI layout of one semantic scalar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ScalarAbiLayout {
+    pub size: u64,
+    pub alignment: u64,
+    pub is_pointer: bool,
+}
+
+/// Exact ABI-v5 storage selected by one source enum variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EnumScalarPayloadVariantLayout {
+    pub payload_type: Option<SemanticTypeId>,
+    pub payload_offset: Option<u64>,
+}
+
+/// Target-specific managed-object layout for an enum whose variants carry at most one scalar value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EnumScalarPayloadObjectLayout {
+    pub object_size: u64,
+    pub object_alignment: u64,
+    pub tag_offset: u64,
+    pub storage_fields: Arc<[(SemanticTypeId, u64)]>,
+    pub pointer_map_offsets: Arc<[u64]>,
+    pub variants: Arc<[EnumScalarPayloadVariantLayout]>,
 }
 
 /// Source-ordered variants and fields of one nominal `enum` definition.

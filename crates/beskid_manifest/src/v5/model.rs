@@ -47,6 +47,8 @@ pub struct IntrinsicV5 {
     pub capability: String,
     pub params: Vec<ParameterV5>,
     pub result: String,
+    pub result_status: Option<String>,
+    pub target_bindings: Vec<TargetAdapterBindingV5>,
 }
 
 /// Process-linked runtime operation outside the exact runtime-kit export surface.
@@ -73,6 +75,8 @@ pub struct LayoutV5 {
     pub size: u64,
     pub alignment: u64,
     pub fields: Vec<FieldV5>,
+    #[serde(skip_serializing)]
+    pub project_to_runtime: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -140,6 +144,19 @@ pub struct TrapV5 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StatusValueV5 {
+    pub name: String,
+    pub value: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StatusV5 {
+    pub name: String,
+    pub repr: String,
+    pub values: Vec<StatusValueV5>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuditV5 {
     pub forbidden_symbol_families: Vec<String>,
@@ -159,6 +176,7 @@ pub struct RuntimeManifestV5 {
     pub entry_adapters: Vec<EntryAdapterV5>,
     pub assembly: Vec<AssemblyV5>,
     pub traps: Vec<TrapV5>,
+    pub statuses: Vec<StatusV5>,
     pub audit: AuditV5,
 }
 

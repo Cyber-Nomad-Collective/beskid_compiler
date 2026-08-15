@@ -5,8 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::trusted_paths::trusted_corelib_service_paths;
 use crate::projects::{
-    AssemblyDiscovery, AssemblyError, AssemblyOptions, CompilePlan, ResolvedDependencyProject, Target, TargetKind,
-    assemble_program, assembly_options_for_plan, assembly_options_for_prepare, plan_entry_path,
+    assemble_program, assembly_options_for_plan, assembly_options_for_prepare, plan_entry_path, AssemblyDiscovery,
+    AssemblyError, AssemblyOptions, CompilePlan, ResolvedDependencyProject, Target, TargetKind,
 };
 use crate::projects::{MaterializedDependencyProject, PreparedProjectWorkspace, SourceUnit};
 use crate::services::parse_program_with_source_name;
@@ -207,6 +207,8 @@ fn workspace_scan_assembles_without_placeholder_entry_file() {
     let assembly = assemble_program(&plan, None, &entry_path, Some(""), &options, None)
         .expect("workspace scan should assemble units without a real entry file");
     assert!(!assembly.units.is_empty());
+    assert_eq!(assembly.units.len(), assembly.syntax_indexes.len());
+    assert!(assembly.syntax_indexes.iter().all(|index| index.generation() == assembly.generation));
     let _ = fs::remove_dir_all(&plan.project_root);
 }
 
@@ -449,6 +451,8 @@ fn import_closure_terminates_public_module_declaration_cycles() {
         assemble_program(&plan, None, &source_root.join("Entry.bd"), None, &assembly_options_for_plan(&plan), None)
             .expect("module declaration cycles should be de-duplicated");
     assert_eq!(assembly.units.len(), 3);
+    assert!(assembly.module_index.known_module_path_strings().contains("Core::A"));
+    assert!(assembly.module_index.known_module_path_strings().contains("Core::B"));
     let _ = fs::remove_dir_all(&project_root);
 }
 

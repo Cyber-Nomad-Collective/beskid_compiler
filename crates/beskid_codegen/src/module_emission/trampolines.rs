@@ -2,16 +2,18 @@ use std::collections::{HashMap, HashSet};
 
 use beskid_isle::{AstNodeKey, DirectCallee};
 use beskid_queries::{
-    ItemSignature, SemanticTypeId, child_nodes, closure_environment, closure_signature, item_abi_signature, node_kind,
-    resolved_item, spawn_entry_validation,
+    child_nodes, closure_environment, closure_signature, item_abi_signature, node_kind, resolved_item,
+    spawn_entry_validation, ItemSignature, SemanticTypeId,
 };
-use cranelift_codegen::ir::{AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, Type, types};
+use cranelift_codegen::ir::{
+    condcodes::IntCC, types, AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, Type,
+};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 
-use super::contracts::{SyntaxModuleEmissionError, emission_verification};
-use super::items::{ResolvedSyntaxModuleItem, syntax_item_symbol};
+use super::contracts::{emission_verification, SyntaxModuleEmissionError};
+use super::items::{syntax_item_symbol, ResolvedSyntaxModuleItem};
 use crate::CodegenInput;
 
 #[derive(Debug, Clone)]
@@ -88,7 +90,7 @@ pub(super) fn expand_direct_spawn_items(
     Ok(items)
 }
 
-/// Resolve source-proven zero-argument entries without ever re-entering HIR lowering.
+/// Resolve source-proven zero-argument entries from generation-safe facts.
 ///
 /// Direct items and capture-free lambdas each receive syntax-owned trampoline targets. Capturing
 /// lambdas require generation-safe allocate/store/root authority before a trampoline is emitted.
@@ -334,9 +336,181 @@ fn collect_spawn_nodes(
     }
 }
 
+pub(super) fn emit_scheduler_fiber_entry(
+    isa: &dyn TargetIsa,
+    scheduler_context_symbol: &str,
+    scheduler_set_current_symbol: &str,
+    context_switch_symbol: &str,
+) -> Result<Function, SyntaxModuleEmissionError> {
+    let pointer = isa.pointer_type();
+    let mut signature = Signature::new(isa.default_call_conv());
+    signature.params.push(AbiParam::new(pointer));
+    let mut function = Function::with_name_signature(cranelift_codegen::ir::UserFuncName::user(0, 0), signature);
+    let mut builder_context = FunctionBuilderContext::new();
+    {
+        let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+        builder.seal_block(block);
+        let fiber = builder.block_params(block)[0];
+        let entry = builder.ins().load(pointer, cranelift_codegen::ir::MemFlags::trusted(), fiber, 8);
+        let argument = builder.ins().load(pointer, cranelift_codegen::ir::MemFlags::trusted(), fiber, 16);
+        let mut body_signature = Signature::new(isa.default_call_conv());
+        body_signature.params.push(AbiParam::new(pointer));
+        body_signature.returns.push(AbiParam::new(types::I64));
+        let body_signature = builder.import_signature(body_signature);
+        let body_call = builder.ins().call_indirect(body_signature, entry, &[argument]);
+        let result = builder.inst_results(body_call)[0];
+        let state = builder.ins().load(pointer, cranelift_codegen::ir::MemFlags::trusted(), fiber, 0);
+        let done = builder.ins().iconst(pointer, 3);
+        let overflow_observed = builder.ins().icmp(IntCC::Equal, state, done);
+        let publish_normal = builder.create_block();
+        let resume_scheduler = builder.create_block();
+        builder.ins().brif(overflow_observed, resume_scheduler, &[], publish_normal, &[]);
+        builder.seal_block(publish_normal);
+        builder.seal_block(resume_scheduler);
+
+        builder.switch_to_block(publish_normal);
+        builder.ins().store(cranelift_codegen::ir::MemFlags::trusted(), result, fiber, 56);
+        let ok = builder.ins().iconst(pointer, 0);
+        builder.ins().store(cranelift_codegen::ir::MemFlags::trusted(), done, fiber, 0);
+        builder.ins().store(cranelift_codegen::ir::MemFlags::trusted(), ok, fiber, 48);
+        builder.ins().jump(resume_scheduler, &[]);
+
+        builder.switch_to_block(resume_scheduler);
+        let none = builder.ins().iconst(pointer, 0xFFFF);
+        let set_current = import_local(&mut builder, scheduler_set_current_symbol, &[pointer], None);
+        builder.ins().call(set_current, &[none]);
+        let scheduler_context = import_local(&mut builder, scheduler_context_symbol, &[], Some(pointer));
+        let scheduler_call = builder.ins().call(scheduler_context, &[]);
+        let scheduler = builder.inst_results(scheduler_call)[0];
+        let fiber_context = builder.ins().load(pointer, cranelift_codegen::ir::MemFlags::trusted(), fiber, 104);
+        let switch = import_local(&mut builder, context_switch_symbol, &[pointer, pointer], None);
+        builder.ins().call(switch, &[fiber_context, scheduler]);
+        builder.ins().return_(&[]);
+        builder.finalize();
+    }
+    verify_function(&function, isa.flags())
+        .map_err(|error| emission_verification(format!("scheduler fiber entry verification failed: {error}")))?;
+    Ok(function)
+}
+
+pub(super) fn emit_scheduler_return_trampoline(
+    isa: &dyn TargetIsa,
+    scheduler_current_symbol: &str,
+    fiber_record_symbol: &str,
+    scheduler_context_symbol: &str,
+    scheduler_set_current_symbol: &str,
+    context_switch_symbol: &str,
+) -> Result<Function, SyntaxModuleEmissionError> {
+    let pointer = isa.pointer_type();
+    let signature = Signature::new(isa.default_call_conv());
+    let mut function = Function::with_name_signature(cranelift_codegen::ir::UserFuncName::user(0, 0), signature);
+    let mut builder_context = FunctionBuilderContext::new();
+    {
+        let mut builder = FunctionBuilder::new(&mut function, &mut builder_context);
+        let block = builder.create_block();
+        builder.switch_to_block(block);
+        builder.seal_block(block);
+        let current = import_local(&mut builder, scheduler_current_symbol, &[], Some(pointer));
+        let current_call = builder.ins().call(current, &[]);
+        let index = builder.inst_results(current_call)[0];
+        let record = import_local(&mut builder, fiber_record_symbol, &[pointer], Some(pointer));
+        let record_call = builder.ins().call(record, &[index]);
+        let fiber = builder.inst_results(record_call)[0];
+        let none = builder.ins().iconst(pointer, 0xFFFF);
+        let set_current = import_local(&mut builder, scheduler_set_current_symbol, &[pointer], None);
+        builder.ins().call(set_current, &[none]);
+        let scheduler_context = import_local(&mut builder, scheduler_context_symbol, &[], Some(pointer));
+        let scheduler_call = builder.ins().call(scheduler_context, &[]);
+        let scheduler = builder.inst_results(scheduler_call)[0];
+        let fiber_context = builder.ins().load(pointer, cranelift_codegen::ir::MemFlags::trusted(), fiber, 104);
+        let switch = import_local(&mut builder, context_switch_symbol, &[pointer, pointer], None);
+        builder.ins().call(switch, &[fiber_context, scheduler]);
+        builder.ins().return_(&[]);
+        builder.finalize();
+    }
+    verify_function(&function, isa.flags())
+        .map_err(|error| emission_verification(format!("scheduler return trampoline verification failed: {error}")))?;
+    Ok(function)
+}
+
+fn import_local(
+    builder: &mut FunctionBuilder<'_>,
+    symbol: &str,
+    params: &[Type],
+    result: Option<Type>,
+) -> cranelift_codegen::ir::FuncRef {
+    let mut signature = Signature::new(builder.func.signature.call_conv);
+    signature.params.extend(params.iter().copied().map(AbiParam::new));
+    if let Some(result) = result {
+        signature.returns.push(AbiParam::new(result));
+    }
+    let signature = builder.func.import_signature(signature);
+    builder.func.import_function(ExtFuncData {
+        name: ExternalName::testcase(symbol.as_bytes()),
+        signature,
+        colocated: true,
+        patchable: false,
+    })
+}
+
+const FIBER_ABI_CALL_RESERVE: u64 = 1 << 16;
+const MAX_CRANELIFT_SPILL_BYTES_PER_VALUE: u64 = 16;
+const FIBER_STACK_MAX_SIZE: u64 = 8 << 20;
+
+/// Compute a pre-legalization upper bound for entering a generated fiber target.
+///
+/// Cranelift does not expose its final spill frame until compilation, after the point at which the
+/// guard must be emitted. Reserve one complete initial stack increment for the trampoline and ABI
+/// calls, reserve one maximum-width spill for every CLIF SSA value, then add every fixed stack slot
+/// with its declared alignment. Dynamic slots have no finite pre-emission bound and are rejected
+/// rather than relying on a guard fault.
+pub(super) fn conservative_fiber_stack_requirement(
+    target: &Function,
+    target_symbol: &str,
+) -> Result<u64, SyntaxModuleEmissionError> {
+    if !target.dynamic_stack_slots.is_empty() {
+        return Err(emission_verification(format!(
+            "fiber target `{target_symbol}` has an unbounded dynamic stack frame"
+        )));
+    }
+    let value_count = u64::try_from(target.dfg.num_values()).map_err(|_| {
+        emission_verification(format!("fiber target `{target_symbol}` value count is not representable"))
+    })?;
+    let spill_reserve = value_count
+        .checked_mul(MAX_CRANELIFT_SPILL_BYTES_PER_VALUE)
+        .ok_or_else(|| emission_verification(format!("fiber target `{target_symbol}` spill requirement overflowed")))?;
+    let mut required = FIBER_ABI_CALL_RESERVE
+        .checked_add(spill_reserve)
+        .ok_or_else(|| emission_verification(format!("fiber target `{target_symbol}` stack requirement overflowed")))?;
+    for slot in target.sized_stack_slots.values() {
+        let alignment = 1u64.checked_shl(u32::from(slot.align_shift)).ok_or_else(|| {
+            emission_verification(format!("fiber target `{target_symbol}` has invalid stack alignment"))
+        })?;
+        required = required
+            .checked_add(alignment - 1)
+            .map(|value| value & !(alignment - 1))
+            .and_then(|value| value.checked_add(u64::from(slot.size)))
+            .ok_or_else(|| {
+                emission_verification(format!("fiber target `{target_symbol}` stack requirement overflowed"))
+            })?;
+    }
+    if required > FIBER_STACK_MAX_SIZE {
+        return Err(emission_verification(format!(
+            "fiber target `{target_symbol}` requires {required} usable stack bytes, exceeding {FIBER_STACK_MAX_SIZE}"
+        )));
+    }
+    Ok(required)
+}
+
 pub(super) fn emit_spawn_trampoline(
     trampoline: &SpawnTrampoline,
     isa: &dyn TargetIsa,
+    required_usable_size: u64,
+    scheduler_stack_check_symbol: &str,
+    scheduler_stack_overflow_symbol: &str,
 ) -> Result<Function, SyntaxModuleEmissionError> {
     let pointer = isa.pointer_type();
     let mut signature = Signature::new(isa.default_call_conv());
@@ -351,6 +525,31 @@ pub(super) fn emit_spawn_trampoline(
         builder.switch_to_block(entry);
         builder.seal_block(entry);
         let environment = builder.block_params(entry)[0];
+        let stack_check = import_local(&mut builder, scheduler_stack_check_symbol, &[pointer], Some(types::I8));
+        let required = builder.ins().iconst(
+            pointer,
+            i64::try_from(required_usable_size).map_err(|_| {
+                emission_verification(format!(
+                    "fiber target `{}` stack requirement is not representable",
+                    trampoline.target_symbol
+                ))
+            })?,
+        );
+        let check_call = builder.ins().call(stack_check, &[required]);
+        let allowed = builder.inst_results(check_call)[0];
+        let body = builder.create_block();
+        let overflow = builder.create_block();
+        builder.ins().brif(allowed, body, &[], overflow, &[]);
+        builder.seal_block(body);
+        builder.seal_block(overflow);
+
+        builder.switch_to_block(overflow);
+        let observed = import_local(&mut builder, scheduler_stack_overflow_symbol, &[], None);
+        builder.ins().call(observed, &[]);
+        let overflow_result = builder.ins().iconst(types::I64, 0);
+        builder.ins().return_(&[overflow_result]);
+
+        builder.switch_to_block(body);
         let target_signature = builder.import_signature(trampoline.target_signature.clone());
         let target = builder.func.import_function(ExtFuncData {
             name: ExternalName::testcase(trampoline.target_symbol.as_bytes()),

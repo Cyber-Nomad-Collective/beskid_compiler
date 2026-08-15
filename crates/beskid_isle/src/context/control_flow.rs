@@ -26,19 +26,7 @@ macro_rules! generated_control_flow_methods {
                 if self.facts.call_kind(expression) == Some(CallKind::RuntimeIntrinsic) {
                     return self.emit_runtime_intrinsic_statement(expression);
                 }
-                if self.facts.call_kind(expression) == Some(CallKind::Dynamic) {
-                    let symbol = self.facts.dispatch_builtin_symbol(expression)?;
-                    let route = beskid_abi::dispatch_route_for_symbol(symbol)?;
-                    let arguments = self
-                        .facts
-                        .call_arguments(expression)?
-                        .into_iter()
-                        .map(|argument| generated::constructor_lower_expression(self, argument))
-                        .collect::<Option<Vec<_>>>()?;
-                    let returns_value = self.facts.scalar_type(expression).is_some();
-                    dispatch::emit_dispatch_call(self.builder, route, &arguments, returns_value).ok()?;
-                    return Some(());
-                }
+
                 if self.facts.call_kind(expression) == Some(CallKind::Direct)
                     && self.facts.call_signature(expression).is_some_and(|signature| signature.returns.is_empty())
                 {

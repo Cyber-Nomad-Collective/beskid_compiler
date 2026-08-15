@@ -57,7 +57,7 @@ fn empty_assembly(plan: &CompilePlan) -> ProgramAssembly {
             dependencies: Vec::new(),
         },
         units: std::sync::Arc::new(Vec::new()),
-        hir_units: std::sync::Arc::new(Vec::new()),
+        units: std::sync::Arc::new(Vec::new()),
         entry_index: 0,
         discovery: AssemblyDiscovery::ImportClosure,
         module_index: std::sync::Arc::new(ModuleIndex::empty()),

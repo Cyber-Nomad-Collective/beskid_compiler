@@ -15,7 +15,7 @@ pub struct ModuleInfo {
     pub scope: HashMap<String, ItemId>,
 }
 
-/// Mutable builder for module paths used while walking HIR during resolution.
+/// Mutable builder for module paths used while walking syntax during resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleGraph {
     modules: Vec<ModuleInfo>,

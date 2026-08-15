@@ -36,48 +36,43 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn enum_layout_for(&self, key: AstNodeKey) -> Option<EnumLayout> {
         let isa = self.isa?;
-        let allocation = self.input.enum_static_plan(key)?;
         let source = self
             .query(enum_layout(self.db, key))
             .or_else(|| self.query(enum_match(self.db, key)).map(|fact| fact.layout))?;
-        self.build_enum_layout(isa, allocation, source)
+        let header = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
+        let physical =
+            source.scalar_payload_object_layout(self.input.target().pointer_width, header.size, header.alignment)?;
+        self.build_enum_layout(isa, physical)
     }
 
-    /// Build an `EnumLayout` from a static plan and source layout fact.
+    /// Translate the semantic layer's authoritative physical enum records into ISLE layout facts.
     fn build_enum_layout(
         &self,
         isa: &dyn TargetIsa,
-        allocation: AggregateStaticPlan,
-        source: beskid_queries::EnumLayoutFact,
+        physical: beskid_queries::EnumScalarPayloadObjectLayout,
     ) -> Option<EnumLayout> {
-        let tag_type = types::I32;
-        let tag = FieldLayout::new(tag_type, u32::try_from(allocation.fields.first()?.field_offset).ok()?);
-        let mut alignment = u32::try_from(allocation.object_alignment).ok()?;
-        let payload_offset = allocation.fields.get(1).and_then(|field| u32::try_from(field.field_offset).ok());
-        let mut variants = Vec::with_capacity(source.variants.len());
-        let mut payloads = Vec::with_capacity(source.variants.len());
-        for variant in source.variants.iter() {
-            let payload = match variant.fields.as_ref() {
-                [] => None,
-                [(_, AggregateFieldShape::Scalar(semantic))] => Some(map_signature_type(isa, *semantic)?),
-                [(_, AggregateFieldShape::Nominal(_))] => Some(isa.pointer_type()),
-                _ => return None,
-            };
-            if let Some(payload) = payload {
-                alignment = alignment.max(payload.bytes());
-            }
-            payloads.push(payload);
-        }
-        if payloads.iter().any(Option::is_some) && payload_offset.is_none() {
-            return None;
-        }
-        for (index, payload) in payloads.into_iter().enumerate() {
-            variants.push(EnumVariantLayout::new(
-                u64::try_from(index).ok()?,
-                payload.map(|value_type| FieldLayout::new(value_type, payload_offset.expect("payload offset exists"))),
-            ));
-        }
-        Some(EnumLayout::new(u32::try_from(allocation.object_size).ok()?, alignment.ilog2() as u8, tag, variants))
+        let tag = FieldLayout::new(types::I32, u32::try_from(physical.tag_offset).ok()?);
+        let variants = physical
+            .variants
+            .iter()
+            .enumerate()
+            .map(|(index, variant)| {
+                let payload = match (variant.payload_type, variant.payload_offset) {
+                    (None, None) => None,
+                    (Some(semantic), Some(offset)) => {
+                        Some(FieldLayout::new(map_signature_type(isa, semantic)?, u32::try_from(offset).ok()?))
+                    }
+                    _ => return None,
+                };
+                Some(EnumVariantLayout::new(u64::try_from(index).ok()?, payload))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(EnumLayout::new(
+            u32::try_from(physical.object_size).ok()?,
+            physical.object_alignment.ilog2() as u8,
+            tag,
+            variants,
+        ))
     }
 
     pub(super) fn array_elements_for_literal(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
@@ -96,6 +91,11 @@ impl SyntaxNodeFacts<'_> {
     pub(super) fn runtime_intrinsic(&self, key: AstNodeKey) -> Option<(u32, &beskid_abi::abi_v5::RuntimeIntrinsic)> {
         let name = self.query(runtime_intrinsic_name(self.db, key))?;
         self.input.runtime_intrinsic_for(key, &name.0)
+    }
+
+    pub(super) fn scheduler_compiler_operation(&self, key: AstNodeKey) -> Option<crate::SchedulerCompilerOperation> {
+        let name = self.query(runtime_intrinsic_name(self.db, key))?;
+        self.input.scheduler_compiler_operation_for(key, &name.0)
     }
 
     pub(super) fn collect_function_parameters(
@@ -222,7 +222,7 @@ impl SyntaxNodeFacts<'_> {
         loop {
             let kind = self.query(node_kind(self.db, key))?;
             // ElseBranch is a structural wrapper around Block or nested If; peel it so
-            // emit_if_else can lower the concrete else arm without a HIR/Lowerable fallback.
+            // emit_if_else can lower the concrete else arm directly.
             if !matches!(
                 kind,
                 beskid_queries::IndexedNodeKind::Statement

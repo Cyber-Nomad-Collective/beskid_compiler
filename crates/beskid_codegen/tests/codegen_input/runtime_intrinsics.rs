@@ -1,11 +1,12 @@
 use super::support::{
-    AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
-    CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
-    CallKind, CodegenInput, EffectiveCompilationRoots, IndexedNodeKind, ModuleIndex, NodeFacts, PathBuf,
-    ProjectSession, RootEntry, SemanticTypeId, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxNodeFacts,
-    SyntaxProgramAssembly, TypedProgram, build_canonical_runtime_typed_program, build_typed_program, call_lowering,
-    canonical_runtime_intrinsic_capability, canonical_runtime_sources, find_node, find_node_matching, input_fixture,
-    item_name, linux_target, parse_program_with_source_name, primitive_numeric_conversion,
+    build_canonical_runtime_typed_program, build_typed_program, call_lowering, canonical_runtime_intrinsic_capability,
+    canonical_runtime_sources, find_node, find_node_matching, input_fixture, item_name, linux_target,
+    parse_program_with_source_name, primitive_numeric_conversion, AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId,
+    AstNodeKey, BeskidDatabase, CallKind, CodegenInput, EffectiveCompilationRoots, IndexedNodeKind, ModuleIndex,
+    NodeFacts, PathBuf, ProjectSession, RootEntry, SemanticTypeId, SourceUnit, SourceUnitId, SyntaxGenerationId,
+    SyntaxNodeFacts, ProgramAssembly, TypedProgram, CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
+    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
+    CANONICAL_SCHEDULER_POLL_SOURCE_PATH,
 };
 
 /// The exact compiler-embedded canonical runtime corpus, materialized on disk under its own
@@ -54,8 +55,8 @@ impl CanonicalRuntimeCorpus {
             .clone()
     }
 
-    fn assembly(&self) -> Arc<SyntaxProgramAssembly> {
-        Arc::new(SyntaxProgramAssembly::new(
+    fn assembly(&self) -> Arc<ProgramAssembly> {
+        Arc::new(ProgramAssembly::new(
             EffectiveCompilationRoots {
                 host: RootEntry { dependency_name: None, source_root: self.directory.clone() },
                 dependencies: Vec::new(),
@@ -64,7 +65,7 @@ impl CanonicalRuntimeCorpus {
             self.entry_index,
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
-            false,
+            false, generation
         ))
     }
 }
@@ -97,7 +98,7 @@ fn canonical_typed_program(
 fn canonical_unit_roots(db: &BeskidDatabase, typed: &TypedProgram) -> Vec<AstNodeKey> {
     typed
         .assembly
-        .units()
+        .units
         .iter()
         .map(|unit| AstNodeKey {
             unit: SourceUnitId::new(db, unit.path.clone()),
@@ -240,6 +241,63 @@ fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
 }
 
 #[test]
+fn scheduler_compiler_operations_require_exact_embedded_source_and_generation() {
+    let mut db = BeskidDatabase::default();
+    let corpus = CanonicalRuntimeCorpus::materialize();
+    let target = linux_target();
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let typed = canonical_typed_program(&mut db, &corpus, SyntaxGenerationId(90), &manifest);
+    let generation = typed.generation;
+    let roots = canonical_unit_roots(&db, &typed);
+    let input = CodegenInput::new(&db, typed, Arc::from(roots), target, manifest).expect("canonical Scheduler input");
+
+    for (path, name, expected) in [
+        (
+            CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH,
+            "scheduler_fiber_entry_address",
+            beskid_codegen::SchedulerCompilerOperation::FiberEntryAddress,
+        ),
+        (
+            CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH,
+            "scheduler_return_trampoline_address",
+            beskid_codegen::SchedulerCompilerOperation::ReturnTrampolineAddress,
+        ),
+        (
+            CANONICAL_SCHEDULER_POLL_SOURCE_PATH,
+            "scheduler_poll_entry_invoke",
+            beskid_codegen::SchedulerCompilerOperation::PollEntryInvoke,
+        ),
+    ] {
+        let root = AstNodeKey { unit: SourceUnitId::new(&db, corpus.unit_path(path)), generation, node: AstNodeId(0) };
+        let call = find_node_matching(&db, root, IndexedNodeKind::CallExpression, |call| {
+            matches!(
+                beskid_queries::runtime_intrinsic_name(&db, call).ok().flatten(),
+                Some(candidate) if candidate.0.as_ref() == name
+            )
+        })
+        .unwrap_or_else(|| panic!("canonical Scheduler invokes {name}"));
+        assert_eq!(input.scheduler_compiler_operation_for(call, name), Some(expected));
+        assert_eq!(SyntaxNodeFacts::new(&input).call_kind(call), Some(CallKind::RuntimeIntrinsic));
+        let stale = AstNodeKey { generation: SyntaxGenerationId(generation.0 + 1), ..call };
+        assert_eq!(input.scheduler_compiler_operation_for(stale, name), None);
+    }
+
+    let (ordinary_db, ordinary_typed, ordinary_root, ordinary_target) = input_fixture();
+    let ordinary = CodegenInput::new(
+        &ordinary_db,
+        ordinary_typed,
+        Arc::from([ordinary_root]),
+        ordinary_target.clone(),
+        AbiManifestV5::canonical_runtime(ordinary_target),
+    )
+    .expect("ordinary input");
+    for name in ["scheduler_fiber_entry_address", "scheduler_return_trampoline_address", "scheduler_poll_entry_invoke"]
+    {
+        assert_eq!(ordinary.scheduler_compiler_operation_for(ordinary_root, name), None);
+    }
+}
+
+#[test]
 fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemblies_do_not() {
     let mut db = BeskidDatabase::default();
     let corpus = CanonicalRuntimeCorpus::materialize();
@@ -315,7 +373,7 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
     let main_path = ordinary.join("Main.bd");
     let helper = "pub pointer NativePointer(word value) { return value; }";
     let main = "pointer Main() { return NativePointer(0); }";
-    let ordinary_assembly = Arc::new(SyntaxProgramAssembly::new(
+    let ordinary_assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: ordinary.clone() },
             dependencies: Vec::new(),
@@ -337,7 +395,7 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
         1,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let ordinary_generation = SyntaxGenerationId(92);
     let ordinary_project =

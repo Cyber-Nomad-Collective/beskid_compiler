@@ -14,5 +14,7 @@ mod literal_operators;
 mod memory_aggregate_arrays;
 #[path = "isle_adapter/module_emission_specialization.rs"]
 mod module_emission_specialization;
+#[path = "isle_adapter/statement_result_storage.rs"]
+mod statement_result_storage;
 #[path = "isle_adapter/support.rs"]
 mod support;

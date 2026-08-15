@@ -59,7 +59,7 @@ pub fn emit_isle_expression_with_call_importer<'db>(
 /// Emit a parsed item body through generated ISLE statement selection.
 ///
 /// Parameter materialization is derived from generation-safe local syntax facts, so this remains
-/// independent of the legacy HIR lowering context.
+/// using only generation-safe syntax and semantic facts.
 pub fn emit_isle_item<'db>(
     input: &'db CodegenInput<'db>,
     isa: &dyn TargetIsa,

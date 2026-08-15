@@ -2,16 +2,16 @@ use std::fs;
 
 use anyhow::{Context, Result};
 use beskid_analysis::doc::{
-    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION, API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem,
-    ApiDocRoot, ApiLocation, apply_signature_to_item, assign_declaring_packages, build_item_signature,
-    display_name_for_item, fill_member_ids_from_parents, link_api_doc_library_tree, qualified_names_for_items,
-    relativize_api_doc_paths, resolve_item_tiers, validate_prelude_standard_tiers,
+    apply_signature_to_item, assign_declaring_packages, build_item_signature, display_name_for_item,
+    fill_member_ids_from_parents, link_api_doc_library_tree, qualified_names_for_items, relativize_api_doc_paths,
+    resolve_item_tiers, validate_prelude_standard_tiers, ApiDocItem, ApiDocRoot, ApiLocation,
+    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION, API_JSON_SCHEMA_VERSION_BEFORE_GRAPH,
 };
 use beskid_analysis::services;
 
 use super::links::{api_doc_link_context, docs_ref_link_context};
 use super::model::{DocArgs, DocEntry};
-use super::snapshot::{build_doc_snapshot, location_for_byte_range, location_for_item, visibility_stable};
+use super::snapshot::{build_doc_snapshot, location_for_byte_range, location_for_item};
 use super::structure_tree::render_structure_tree;
 
 /// Resolve, analyze, and write API docs into `args.out`.
@@ -66,7 +66,7 @@ pub fn execute(args: DocArgs) -> Result<()> {
                 name: item.name.clone(),
                 display_name: Some(display_name),
                 kind: item.kind.as_stable_doc_kind().to_string(),
-                visibility: Some(visibility_stable(item.visibility).to_string()),
+                visibility: Some(format!("{:?}", item.visibility).to_ascii_lowercase()),
                 parent_id: item.parent_id.map(|p| p.0),
                 member_ids: Vec::new(),
                 module_path: Vec::new(),

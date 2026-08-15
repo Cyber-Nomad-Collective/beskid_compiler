@@ -115,24 +115,156 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
     unique(manifest.soft_builtins.iter().map(|entry| entry.name.as_str()), "soft builtin")?;
     unique(manifest.soft_builtins.iter().map(|entry| entry.symbol.as_str()), "soft builtin linker symbol")?;
     unique(manifest.corelib_services.iter().map(|entry| entry.name.as_str()), "corelib service")?;
-    let expected_corelib_services = ["__args_count", "__args_get"].into_iter().collect::<BTreeSet<_>>();
-    if let Some(unexpected) = manifest
-        .corelib_services
-        .iter()
-        .map(|service| service.name.as_str())
-        .find(|name| !expected_corelib_services.contains(name))
-    {
-        return Err(format!("unexpected corelib service `{unexpected}`"));
+    let expected_corelib_services = [
+        "__array_new",
+        "__array_len",
+        "__bytes_compare",
+        "__bytes_copy",
+        "__bytes_from_str",
+        "__bytes_get",
+        "__bytes_set",
+        "__str_new",
+        "__str_len",
+        "__str_eq",
+        "__str_concat",
+        "__str_from_i64",
+        "__str_slice",
+        "__str_from_bytes_utf8",
+        "__dynamic_cast_checked",
+        "__dynamic_cell_create",
+        "__dynamic_cell_wrap",
+        "__dynamic_map_aot",
+        "__dynamic_map_fallback",
+        "__dynamic_object_alloc",
+        "__fiber_spawn",
+        "__fiber_cancel",
+        "__fiber_detach",
+        "__fiber_join_status",
+        "__fiber_join_value",
+        "__fiber_now_millis",
+        "__fiber_processor_count",
+        "__fiber_current_id",
+        "__runtime_preempt_check",
+        "__beskid_register_callbacks",
+        "__beskid_register_handlers",
+        "__clock_monotonic_nanos",
+        "__clock_realtime_nanos",
+        "__composition_container_create",
+        "__composition_container_drop",
+        "__composition_slot_store",
+        "__composition_launch",
+        "__composition_scope_enter",
+        "__composition_scope_leave",
+        "__composition_scope_depth",
+        "__composition_shutdown",
+        "__process_exit",
+        "__process_getpid",
+        "__env_get",
+        "__env_set",
+        "__env_getcwd",
+        "__tty_winsize",
+        "__syscall_read",
+        "__syscall_read_bytes",
+        "__syscall_write",
+        "__syscall_write_bytes",
+        "__panic",
+        "__panic_str",
+        "__alloc",
+        "__gc_write_barrier",
+        "__gc_bytes_allocated",
+        "__gc_object_count",
+        "__gc_phase",
+        "__gc_collect",
+        "__gc_collect_if_needed",
+        "__gc_register_root",
+        "__gc_unregister_root",
+        "__gc_external_root_count",
+        "__gc_root_handle",
+        "__gc_unroot_handle",
+        "__event_get_handler",
+        "__event_len",
+        "__event_subscribe",
+        "__event_unsubscribe_first",
+        "__hub_create",
+        "__hub_register",
+        "__hub_unregister",
+        "__hub_wait_receive_status",
+        "__hub_wait_receive_value",
+        "__hub_wait_receive_index",
+        "__channel_create",
+        "__channel_send",
+        "__channel_try_send",
+        "__channel_receive_status",
+        "__channel_receive_value",
+        "__channel_try_receive",
+        "__channel_close",
+        "__channel_send_ptr",
+        "__channel_try_send_ptr",
+        "__channel_receive_ptr",
+        "__channel_try_receive_ptr",
+        "__mutex_create",
+        "__mutex_lock",
+        "__mutex_try_lock",
+        "__mutex_unlock",
+        "__wait_group_create",
+        "__wait_group_add",
+        "__wait_group_done",
+        "__wait_group_wait",
+        "__fs_read_text",
+        "__fs_write_text",
+        "__fs_exists",
+        "__fs_mkdir",
+        "__fs_delete",
+        "__args_count",
+        "__args_get",
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+    let actual_corelib_services =
+        manifest.corelib_services.iter().map(|service| service.name.as_str()).collect::<BTreeSet<_>>();
+    if actual_corelib_services != expected_corelib_services {
+        return Err("corelib services must match the canonical runtime service set".into());
+    }
+    for service in &manifest.corelib_services {
+        let expected_adapter = service
+            .name
+            .strip_prefix("__")
+            .ok_or_else(|| format!("corelib service `{}` must use a compiler-owned name", service.name))?;
+        if service.adapter != expected_adapter
+            && !matches!(
+                service.name.as_str(),
+                "__args_count"
+                    | "__args_get"
+                    | "__fs_read_text"
+                    | "__fs_write_text"
+                    | "__fs_exists"
+                    | "__fs_mkdir"
+                    | "__fs_delete"
+            )
+        {
+            return Err(format!("corelib service `{}` must use canonical adapter `{expected_adapter}`", service.name));
+        }
+        if service.target_bindings.iter().any(|binding| binding.implementation != service.adapter) {
+            return Err(format!(
+                "corelib service `{}` target binding must implement its canonical adapter",
+                service.name
+            ));
+        }
     }
     for (name, adapter, params, result) in [
         ("__args_count", "beskid_rt_v5_args_count", &[][..], "i64"),
         ("__args_get", "beskid_rt_v5_args_get", &["i64"][..], "string"),
+        ("__fs_read_text", "beskid_rt_v5_fs_read_text", &["pointer", "pointer"][..], "i32"),
+        ("__fs_write_text", "beskid_rt_v5_fs_write_text", &["pointer", "pointer"][..], "i32"),
+        ("__fs_exists", "beskid_rt_v5_fs_exists", &["pointer"][..], "i32"),
+        ("__fs_mkdir", "beskid_rt_v5_fs_mkdir", &["pointer"][..], "i32"),
+        ("__fs_delete", "beskid_rt_v5_fs_delete", &["pointer"][..], "i32"),
     ] {
         let service = manifest
             .corelib_services
             .iter()
             .find(|service| service.name == name)
-            .ok_or_else(|| format!("missing corelib service `{name}` adapter binding"))?;
+            .ok_or_else(|| format!("missing canonical corelib service `{name}` adapter binding"))?;
         let actual_params = service.params.iter().map(|param| param.ty.as_str()).collect::<Vec<_>>();
         if service.adapter != adapter || actual_params != params || service.result != result {
             let signature = if params.is_empty() { "[]".to_string() } else { format!("[{}]", params.join(", ")) };
@@ -160,7 +292,8 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             || entry.symbol.is_empty()
             || (!entry.symbol.starts_with("beskid_rt_v5_") && !assembly_symbols.contains(entry.symbol.as_str()))
             || !(entry.capability == format!("runtime.bootstrap.{}", entry.name)
-                || entry.capability == format!("runtime.adapter.{}", entry.name))
+                || entry.capability == format!("runtime.adapter.{}", entry.name)
+                || entry.capability == format!("runtime.scheduler.{}", entry.name))
         {
             return Err(format!("intrinsic {} has an invalid capability id", entry.name));
         }
@@ -248,11 +381,14 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         {
             return Err(format!("layout `{}` has invalid size/alignment", layout.name));
         }
+        let layout_sizes: std::collections::BTreeMap<&str, u64> =
+            manifest.layouts.iter().map(|entry| (entry.name.as_str(), entry.size)).collect();
         let mut ranges = Vec::new();
         for field in &layout.fields {
-            let width =
-                abi_width(&field.ty).ok_or_else(|| format!("layout `{}` has unknown field type", layout.name))?;
-            if field.offset % width.min(layout.alignment) != 0 || field.offset + width > layout.size {
+            let (element_width, count) = field_dimensions(&field.ty, &layout_sizes)
+                .ok_or_else(|| format!("layout `{}` has unknown field type", layout.name))?;
+            let width = element_width * count;
+            if field.offset % element_width.min(layout.alignment) != 0 || field.offset + width > layout.size {
                 return Err(format!("layout `{}` has an invalid field", layout.name));
             }
             ranges.push((field.offset, field.offset + width));
@@ -302,6 +438,18 @@ fn abi_width(ty: &str) -> Option<u64> {
         "v128" => 16,
         _ => return None,
     })
+}
+
+fn field_dimensions(ty: &str, layout_sizes: &std::collections::BTreeMap<&str, u64>) -> Option<(u64, u64)> {
+    if let Some(end) = ty.rfind(']') {
+        let start = ty.rfind('[')?;
+        let element = &ty[..start];
+        let count: u64 = ty[start + 1..end].parse().ok()?;
+        let element_width = abi_width(element).or_else(|| layout_sizes.get(element).copied())?;
+        return Some((element_width, count));
+    }
+    let element_width = abi_width(ty).or_else(|| layout_sizes.get(ty).copied())?;
+    Some((element_width, 1))
 }
 
 fn unique<T: Ord>(items: impl IntoIterator<Item = T>, what: &str) -> Result<(), String> {

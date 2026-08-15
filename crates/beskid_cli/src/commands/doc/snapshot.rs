@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use beskid_analysis::doc::DocRefLinkContext;
-use beskid_analysis::hir::HirVisibility;
+
 use beskid_analysis::projects::assembly::ProgramAssembly;
 use beskid_analysis::projects::assembly_options_for_prepare;
 use beskid_analysis::resolve::ItemInfo;
@@ -9,12 +9,6 @@ use beskid_analysis::syntax::SpanInfo;
 
 use super::model::LocationJson;
 
-pub(super) fn visibility_stable(vis: HirVisibility) -> &'static str {
-    match vis {
-        HirVisibility::Public => "public",
-        HirVisibility::Private => "private",
-    }
-}
 
 fn location_for_span(_source: &str, file: &str, span: &SpanInfo) -> LocationJson {
     let (sl, sc) = span.line_col_start;

@@ -61,14 +61,14 @@ mod tests {
     }
 
     /// Mirrors [`beskid_queries::entry_resolution_with_db`] resolution output: assemble entry
-    /// closure, then resolve entry HIR through the module index (no parallel single-file resolve).
+    /// closure, then resolve entry syntax through the module index (no parallel single-file resolve).
     fn snapshot_from_entry_resolution(
         assembly: &ProgramAssembly,
         fixture: &CorelibMvpFixture,
     ) -> crate::services::DocumentAnalysisSnapshot {
         let program = parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source)
             .expect("parse Main.bd");
-        let resolution = resolve_entry(assembly.entry_hir(), &assembly.module_index, Some(&fixture.main_path))
+        let resolution = resolve_entry(assembly.entry_program(), &assembly.module_index, Some(&fixture.main_path))
             .expect("entry resolution");
         let module_paths = assembly.module_index.known_module_path_strings();
         build_document_analysis_from_resolution(

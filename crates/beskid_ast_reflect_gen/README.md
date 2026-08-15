@@ -16,7 +16,7 @@ From the **compiler** workspace root (`compiler/Cargo.toml`):
 # Emit Mod SDK syntax node tree (thin Syntax.bd + Syntax/Nodes/*.bd); requires compiler workspace root
 cargo run -p beskid_ast_reflect_gen -- --workspace . --emit-syntax-sdk ./corelib/packages/compiler-sdk/src/Beskid/Compiler
 
-# Built-in allowlist (syntax `node.rs` + HIR `item.rs`) — writes to stdout
+# Built-in allowlist (syntax `node.rs`) — writes to stdout
 cargo run -p beskid_ast_reflect_gen -- --workspace .
 
 # Explicit inputs

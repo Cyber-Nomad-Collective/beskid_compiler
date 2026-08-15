@@ -6,8 +6,7 @@ use cranelift_codegen::ir::{ExtFuncData, ExternalName, FuncRef, GlobalValueData,
 use cranelift_frontend::FunctionBuilder;
 
 use super::items::ResolvedSyntaxModuleItem;
-use crate::lowering::ExternImport;
-use crate::{CodegenContext, CodegenInput};
+use crate::{CodegenContext, CodegenInput, ExternImport};
 
 /// Syntax-ISLE adapter over the existing artifact-owned literal pool.
 pub(super) struct ArtifactStringInterner<'a> {
@@ -31,11 +30,23 @@ impl StringInterner for ArtifactStringInterner<'_> {
         });
         let bytes = builder.ins().global_value(self.pointer_type, global);
         let byte_len = builder.ins().iconst(self.pointer_type, text.len() as i64);
-        let route = beskid_abi::dispatch_route_for_symbol(beskid_abi::SYM_STR_NEW)
-            .ok_or(beskid_isle::StringMaterializationError::MissingDispatchRoute(beskid_abi::SYM_STR_NEW))?;
-        beskid_isle::emit_dispatch_call(builder, route, &[bytes, byte_len], true)
-            .map_err(beskid_isle::StringMaterializationError::DispatchEmission)?
-            .ok_or(beskid_isle::StringMaterializationError::DispatchEmission("str_new dispatch returned no value"))
+        let mut signature = Signature::new(builder.func.signature.call_conv);
+        signature.params.push(cranelift_codegen::ir::AbiParam::new(self.pointer_type));
+        signature.params.push(cranelift_codegen::ir::AbiParam::new(self.pointer_type));
+        signature.returns.push(cranelift_codegen::ir::AbiParam::new(self.pointer_type));
+        let signature = builder.import_signature(signature);
+        let function = builder.func.import_function(ExtFuncData {
+            name: ExternalName::testcase("str_new"),
+            signature,
+            colocated: false,
+            patchable: false,
+        });
+        let call = builder.ins().call(function, &[bytes, byte_len]);
+        builder
+            .inst_results(call)
+            .first()
+            .copied()
+            .ok_or(beskid_isle::StringMaterializationError::Artifact("str_new returned no value"))
     }
 }
 
@@ -117,7 +128,7 @@ pub(super) fn corelib_service_symbols(
     capability
         .services()
         .iter()
-        .filter(|service| callees.contains(&service.symbol))
+        .filter(|service| callees.contains(&service.symbol) || matches!(service.symbol, "str_new" | "str_from_i64" | "str_eq" | "str_concat"))
         .map(|service| (DirectCallee::corelib_service(service.symbol), service.symbol.to_owned()))
         .collect()
 }

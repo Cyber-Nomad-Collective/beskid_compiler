@@ -60,8 +60,8 @@ pub enum SyntaxNodeClassification {
 
 /// Classify every authoritative expanded-syntax kind without a fallback arm.
 pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) -> SyntaxNodeClassification {
-    use SyntaxNodeClassification::{IsleLowered, Structural, UnsupportedTypedOperation};
     use beskid_queries::IndexedNodeKind as Syntax;
+    use SyntaxNodeClassification::{IsleLowered, Structural, UnsupportedTypedOperation};
 
     match kind {
         Syntax::Program => IsleLowered(NodeKind::Program),
@@ -160,8 +160,8 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
 }
 
 /// Deterministic catalogue in the authoritative syntax declaration order.
-pub fn syntax_node_kind_catalogue()
--> impl ExactSizeIterator<Item = (beskid_queries::IndexedNodeKind, SyntaxNodeClassification)> {
+pub fn syntax_node_kind_catalogue(
+) -> impl ExactSizeIterator<Item = (beskid_queries::IndexedNodeKind, SyntaxNodeClassification)> {
     beskid_queries::IndexedNodeKind::ALL.iter().copied().map(|kind| (kind, classify_syntax_node_kind(kind)))
 }
 
@@ -218,6 +218,9 @@ pub enum RuntimeIntrinsicKind {
     RawByteStore,
     ArchContextSize(u64),
     ArchContextAlignment(u64),
+    SchedulerFiberEntryAddress,
+    SchedulerReturnTrampolineAddress,
+    SchedulerPollEntryInvoke,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -268,6 +271,7 @@ pub enum CallKind {
     PrimitiveNumericConversion,
     InlineLambda,
     RuntimeIntrinsic,
+    CollectionOperation,
     Dynamic,
 }
 
@@ -361,7 +365,7 @@ pub struct InlineClosureEnvironment {
 /// An immediate lambda call selected from current syntax facts.
 ///
 /// Capture-free calls remain allocation-free. Capturing calls carry ABI-v5 environment authority
-/// and otherwise remain unavailable: no HIR/Lowerable or dynamic closure fallback.
+/// and otherwise remain unavailable; there is no dynamic closure fallback.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InlineLambdaCall {
     pub body: AstNodeKey,
@@ -436,6 +440,21 @@ pub type Unit = ();
 ///
 /// The frontend adapter implements this trait with generation-checked Salsa queries. It is a
 /// compile-time boundary while those queries are integrated, not a second semantic model.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CollectionMutationOwner {
+    Local(LocalSlotId),
+    AggregateField { receiver: LocalSlotId, field_index: u32 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CollectionOperation {
+    Append { owner: CollectionMutationOwner },
+    UnprovenMutationOwner,
+    Capacity,
+    Clear,
+    RemoveLast,
+}
+
 pub trait NodeFacts {
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind>;
     fn literal_kind(&self, _key: AstNodeKey) -> Option<LiteralKind> {
@@ -465,6 +484,12 @@ pub trait NodeFacts {
         None
     }
     fn runtime_intrinsic_kind(&self, _key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
+        None
+    }
+    fn collection_operation(&self, _key: AstNodeKey) -> Option<CollectionOperation> {
+        None
+    }
+    fn collection_element_type(&self, _key: AstNodeKey) -> Option<Type> {
         None
     }
     fn child(&self, _key: AstNodeKey, _index: u8) -> Option<AstNodeKey> {

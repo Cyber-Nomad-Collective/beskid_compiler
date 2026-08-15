@@ -28,7 +28,7 @@ use super::entry_session::{
 };
 use super::front_end::{FrontEndOptions, FrontEndTypedResult};
 use super::input::ResolvedInput;
-use super::lower::{DependencyTypingPolicy, LowerResolveTypeError, lower_normalize_resolve_type_spanned_with_assembly};
+use super::lower::{DependencyTypingPolicy, SemanticFactsError, resolve_and_type_program_with_assembly};
 use super::semantic::{require_no_semantic_errors, semantic_rule_diagnostics_for_program_with_pipeline};
 use super::session::{SemanticSnapshot, SessionFingerprint, session_for_assembly};
 
@@ -46,7 +46,7 @@ impl Default for PrepareOptions {
     }
 }
 
-/// Result of the unified prepare spine (typed HIR when lower succeeds).
+/// Result of the unified prepare spine (typed syntax when lower succeeds).
 pub struct PreparedCompilation {
     pub assembly: ProgramAssembly,
     pub program: Spanned<crate::syntax::Program>,
@@ -56,11 +56,11 @@ pub struct PreparedCompilation {
 }
 
 impl PreparedCompilation {
-    /// Typed HIR bundle for codegen.
+    /// Typed syntax bundle for codegen.
     pub fn into_executable(self) -> Result<FrontEndTypedResult> {
         let Some(typed) = self.typed else {
             return Err(anyhow::anyhow!(
-                "prepare_compilation did not produce typed HIR (lower failed during diagnostic collection)"
+                "prepare_compilation did not produce typed syntax (lower failed during diagnostic collection)"
             ));
         };
         Arc::try_unwrap(typed).map_err(|shared| {
@@ -73,29 +73,30 @@ impl PreparedCompilation {
 
     pub fn executable(&self) -> Result<&FrontEndTypedResult> {
         self.typed.as_ref().map(|typed| typed.as_ref()).ok_or_else(|| {
-            anyhow::anyhow!("prepare_compilation did not produce typed HIR (lower failed during diagnostic collection)")
+            anyhow::anyhow!("prepare_compilation did not produce typed syntax (lower failed during diagnostic collection)")
         })
     }
 
     /// Syntax-only project assembly for generation-safe consumers (LSP, queries, ISLE).
     ///
-    /// Prefer this over reading [`ProgramAssembly::hir_units`]. When typed HIR exists, the
+    /// Prefer this over reading [`ProgramAssembly::units`]. When typed syntax exists, the
     /// post-mod-rewrite entry program is projected; otherwise the prepare-spine rewritten
     /// `program` replaces the entry unit. Callers must not fall back to
     /// `DocumentAnalysisSnapshot` for IDE authority.
-    pub fn syntax_assembly(&self) -> crate::projects::SyntaxProgramAssembly {
+    pub fn syntax_assembly(&self) -> crate::projects::ProgramAssembly {
         if let Some(typed) = self.typed.as_ref() {
             return typed.syntax_assembly();
         }
         let mut units = self.assembly.units.as_ref().clone();
         units[self.assembly.entry_index].program = self.program.clone();
-        let mut syntax = crate::projects::SyntaxProgramAssembly::new(
+        let mut syntax = crate::projects::ProgramAssembly::new(
             self.assembly.roots.clone(),
             Arc::new(units),
             self.assembly.entry_index,
             self.assembly.discovery,
             Arc::clone(&self.assembly.module_index),
             self.assembly.has_std_dependency,
+            self.assembly.generation,
         );
         syntax.set_trusted_corelib_service_paths_for_project_assembly(Arc::clone(
             &self.assembly.trusted_corelib_service_paths,
@@ -104,7 +105,7 @@ impl PreparedCompilation {
     }
 }
 
-/// Single front-end spine: assemble → mod host → rewrite → semantic → composition → (optional) typed HIR.
+/// Single front-end spine: assemble → mod host → rewrite → semantic → composition → (optional) typed syntax.
 pub fn prepare_compilation(
     resolved: &ResolvedInput,
     options: PrepareOptions,
@@ -332,20 +333,19 @@ fn run_prepare_spine(
     observe_phase(pipeline, LOWER_READY, || {});
 
     let typed = match observe_phase_result(pipeline, LOWER, || {
-        lower_normalize_resolve_type_spanned_with_assembly(
+        resolve_and_type_program_with_assembly(
             &program,
             Some(&assembly),
             pipeline,
             options.dependency_typing,
         )
     }) {
-        Ok((hir, resolution, typed)) => {
+        Ok((program, resolution, typed)) => {
             let resolution_fingerprint = typed_fingerprint(&resolution);
             let types_fingerprint = typed_fingerprint_types(&typed);
             let typed_result = FrontEndTypedResult {
                 assembly: assembly.clone(),
-                program: program.clone(),
-                hir,
+                program,
                 resolution,
                 typed,
                 binding_plan: binding_plan.clone(),
@@ -363,7 +363,7 @@ fn run_prepare_spine(
             Some(stored)
         }
         Err(error) if collect_diagnostics => {
-            collected_diagnostics.extend(lower_errors_to_diagnostics(
+            collected_diagnostics.extend(semantic_facts_errors_to_diagnostics(
                 error,
                 entry_unit.logical_name.as_str(),
                 entry_source,
@@ -397,24 +397,24 @@ pub fn resolved_input_from_plan(
     }
 }
 
-fn lower_errors_to_diagnostics(
-    error: LowerResolveTypeError,
+fn semantic_facts_errors_to_diagnostics(
+    error: SemanticFactsError,
     source_name: &str,
     source: &str,
 ) -> Vec<SemanticDiagnostic> {
     let mut ctx = RuleContext::new(source_name, source, AnalysisOptions::default());
     match error {
-        LowerResolveTypeError::Type { errors, typed } => {
+        SemanticFactsError::Type { errors, typed } => {
             for error in errors {
                 types::emit_type_error(&mut ctx, error, Some(&typed));
             }
         }
-        LowerResolveTypeError::Resolve(errors) => {
+        SemanticFactsError::Resolve(errors) => {
             for error in errors {
                 resolve::emit_resolve_error(&mut ctx, error);
             }
         }
-        LowerResolveTypeError::Normalize(_) => {}
+
     }
     ctx.diagnostics
 }
@@ -489,7 +489,7 @@ mod tests {
             rewritten,
             "untyped prepare-spine syntax assembly must project prepare.program"
         );
-        assert!(!untyped.syntax_assembly().units().is_empty(), "syntax assembly must retain immutable source units");
+        assert!(!untyped.syntax_assembly().units.is_empty(), "syntax assembly must retain immutable source units");
 
         let _ = std::fs::remove_dir_all(root);
     }

@@ -18,6 +18,7 @@ pub mod matrix_test;
 pub mod migrate_bsol;
 pub mod new;
 pub mod parse;
+mod prepared_matrix;
 pub mod repl;
 pub mod run;
 pub mod runtime_kit;

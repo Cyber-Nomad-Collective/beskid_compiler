@@ -3,10 +3,10 @@ use beskid_analysis::services::{FrontEndOptions, ResolvedInput};
 use beskid_pipeline::PipelineObserver;
 use beskid_queries::with_db;
 
-use super::SyntaxEntrypointArtifact;
 use super::jit_preparation::lower_syntax_entrypoint_from_front_end;
-use crate::Engine;
+use super::SyntaxEntrypointArtifact;
 use crate::jit_callable::{EntryReturnKind, JitCallable};
+use crate::Engine;
 
 /// Parse, lower, JIT-compile, and run `entrypoint` (no-arg function or test); returns a string summary of the return value.
 pub fn run_entrypoint(source_path: &std::path::Path, source: &str, entrypoint: &str) -> Result<String> {
@@ -90,16 +90,6 @@ fn run_syntax_jitted_entrypoint(
     }
 
     let return_kind = EntryReturnKind::from_semantic_type(entrypoint_artifact.return_type);
-    // JIT'd entrypoints execute on this thread and may allocate through the runtime (string
-    // interpolation, gc roots, collections). AOT-linked executables install a main-thread heap
-    // and runtime root via `beskid_runtime_link_anchor`; the in-process JIT path has no linker
-    // anchor, so enable the same lazy main-thread bootstrap here. The runtime installs a default
-    // heap/root on the first `with_current_root` call instead of aborting with "no active runtime
-    // root".
-    beskid_runtime::gc::enable_aot_main_bootstrap();
-    if beskid_host::beskid_host_register_all() != 0 {
-        return Err(anyhow::anyhow!("failed to register JIT host dispatch handlers"));
-    }
     let output = JitCallable::execute_as_i64(ptr, return_kind);
     Ok(JitCallable::format_i64_result(output, return_kind))
 }

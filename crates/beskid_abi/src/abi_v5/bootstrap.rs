@@ -491,7 +491,7 @@ fn source_layout(entry: &SourceLayout) -> AbiLayout {
         fields: entry
             .fields
             .iter()
-            .map(|field| AbiFieldLayout { name: field.name.clone(), offset: field.offset, ty: source_type(&field.ty) })
+            .map(|field| AbiFieldLayout { name: field.name.clone(), offset: field.offset, ty: field.ty.clone() })
             .collect(),
     }
 }

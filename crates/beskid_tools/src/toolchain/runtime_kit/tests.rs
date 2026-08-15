@@ -1,14 +1,20 @@
 use super::{
-    RuntimeKitBuildOptions, RuntimeKitMatrixBuildOptions, RuntimeKitProfile, RuntimeKitProfileArtifacts, build,
-    build_matrix, build_native_host,
+    build, build_matrix, build_native_host, RuntimeKitBuildOptions, RuntimeKitMatrixBuildOptions, RuntimeKitProfile,
+    RuntimeKitProfileArtifacts,
 };
 use beskid_abi::abi_v5::TargetMetadata;
-use beskid_abi::runtime_provenance::{RuntimeProvenanceAudit, parse_symbol_list};
+use beskid_abi::runtime_provenance::{parse_symbol_list, RuntimeProvenanceAudit};
 use beskid_abi::runtime_source::canonical_runtime_source_hash;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+#[test]
+fn native_host_builder_maps_runtime_kit_profiles_to_aot_profiles() {
+    assert_eq!(super::native_host::aot_profile(RuntimeKitProfile::Debug), beskid_aot::BuildProfile::Debug);
+    assert_eq!(super::native_host::aot_profile(RuntimeKitProfile::Release), beskid_aot::BuildProfile::Release);
+}
 
 #[test]
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -392,13 +398,11 @@ fn failed_artifact_copy_publishes_no_profile_from_the_matrix() {
     let mut release = profile_artifacts(&inputs, RuntimeKitProfile::Release, "x86_64-unknown-linux-gnu");
     release.shared_library = inputs.0.join("missing-release.so");
 
-    assert!(
-        build_matrix(RuntimeKitMatrixBuildOptions {
-            prefix: prefix.0.clone(),
-            target: "x86_64-unknown-linux-gnu".into(),
-            profiles: vec![debug, release],
-        })
-        .is_err()
-    );
+    assert!(build_matrix(RuntimeKitMatrixBuildOptions {
+        prefix: prefix.0.clone(),
+        target: "x86_64-unknown-linux-gnu".into(),
+        profiles: vec![debug, release],
+    })
+    .is_err());
     assert!(!prefix.0.join("lib/beskid-runtime/abi-5/x86_64-unknown-linux-gnu").exists());
 }

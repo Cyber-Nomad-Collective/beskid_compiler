@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    AggregateFieldShape, AstNodeKey, SemanticTypeId, aggregate_layout, aggregate_literal_declaration, enum_layout,
-    enum_match,
+    aggregate_layout, aggregate_literal_declaration, enum_layout, enum_match, AggregateFieldShape, AstNodeKey,
+    SemanticTypeId,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -118,12 +118,12 @@ impl CodegenInput<'_> {
                 AggregateFieldShape::Scalar(semantic) => *semantic,
                 AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
             };
-            let (field_size, field_alignment, pointer) = scalar_layout(self.target().pointer_width, abi_type)?;
-            size = align_to(size, field_alignment)?;
+            let scalar = abi_type.scalar_abi_layout(self.target().pointer_width)?;
+            size = align_to(size, scalar.alignment)?;
             let field_offset = size;
-            size = size.checked_add(field_size)?;
-            alignment = alignment.max(field_alignment);
-            if pointer {
+            size = size.checked_add(scalar.size)?;
+            alignment = alignment.max(scalar.alignment);
+            if scalar.is_pointer {
                 pointer_map_offsets.push(field_offset);
             }
             fields.push(AggregateStaticField { abi_type, field_offset });
@@ -149,7 +149,7 @@ impl CodegenInput<'_> {
         let unit = self
             .typed_program()
             .assembly
-            .units()
+            .units
             .iter()
             .position(|unit| paths_match(&unit.path, literal.unit.path(self.database())))?;
         let identity = format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), literal.generation.0, literal.node.0);
@@ -173,48 +173,19 @@ impl CodegenInput<'_> {
             .flatten()
             .or_else(|| enum_match(self.database(), literal).ok().flatten().map(|fact| fact.layout))?;
         let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
-        if header.size < 16 || !valid_alignment(header.alignment) {
-            return None;
-        }
-        let mut size = header.size;
-        let mut alignment = header.alignment.max(4);
-        size = align_to(size, 4)?;
-        let tag_offset = size;
-        size = size.checked_add(4)?;
-        let mut payload_offset = size;
-        let mut payload_size = 0_u64;
-        let mut payload_alignment = 1_u64;
-        let mut payload_is_pointer = false;
-        for variant in layout.variants.iter() {
-            let shape = match variant.fields.as_ref() {
-                [] => continue,
-                [(_, shape)] => shape,
-                _ => return None,
-            };
-            let (field_size, field_alignment, pointer) = match shape {
-                AggregateFieldShape::Scalar(semantic) => scalar_layout(self.target().pointer_width, *semantic)?,
-                AggregateFieldShape::Nominal(_) => scalar_layout(self.target().pointer_width, SemanticTypeId::POINTER)?,
-            };
-            payload_size = payload_size.max(field_size);
-            payload_alignment = payload_alignment.max(field_alignment);
-            payload_is_pointer |= pointer;
-        }
-        let mut fields = vec![AggregateStaticField { abi_type: SemanticTypeId::I32, field_offset: tag_offset }];
-        if payload_size > 0 {
-            alignment = alignment.max(payload_alignment);
-            payload_offset = align_to(payload_offset, payload_alignment)?;
-            size = payload_offset.checked_add(payload_size)?;
-            fields.push(AggregateStaticField {
-                abi_type: if payload_is_pointer { SemanticTypeId::POINTER } else { SemanticTypeId::I64 },
-                field_offset: payload_offset,
-            });
-        }
-        let object_size = align_to(size, alignment)?;
-        let pointer_map_offsets = payload_is_pointer.then_some(payload_offset).into_iter().collect::<Vec<_>>();
+        let physical =
+            layout.scalar_payload_object_layout(self.target().pointer_width, header.size, header.alignment)?;
+        let fields =
+            std::iter::once(AggregateStaticField { abi_type: SemanticTypeId::I32, field_offset: physical.tag_offset })
+                .chain(physical.storage_fields.iter().map(|(abi_type, field_offset)| AggregateStaticField {
+                    abi_type: *abi_type,
+                    field_offset: *field_offset,
+                }))
+                .collect::<Vec<_>>();
         let unit = self
             .typed_program()
             .assembly
-            .units()
+            .units
             .iter()
             .position(|unit| paths_match(&unit.path, literal.unit.path(self.database())))?;
         let identity =
@@ -224,23 +195,11 @@ impl CodegenInput<'_> {
             descriptor_symbol: format!("__beskid_aggregate_descriptor_{identity}"),
             pointer_map_symbol: format!("__beskid_aggregate_pointer_map_{identity}"),
             allocation_request_symbol: format!("__beskid_aggregate_allocation_request_{identity}"),
-            object_size,
-            object_alignment: alignment,
-            pointer_map_offsets: pointer_map_offsets.into(),
+            object_size: physical.object_size,
+            object_alignment: physical.object_alignment,
+            pointer_map_offsets: physical.pointer_map_offsets,
             fields: fields.into(),
         })
-    }
-}
-
-fn scalar_layout(pointer_width: u8, ty: SemanticTypeId) -> Option<(u64, u64, bool)> {
-    let pointer = u64::from(pointer_width.checked_div(8)?);
-    match ty {
-        SemanticTypeId::BOOL | SemanticTypeId::U8 => Some((1, 1, false)),
-        SemanticTypeId::I32 | SemanticTypeId::CHAR => Some((4, 4, false)),
-        SemanticTypeId::I64 | SemanticTypeId::F64 => Some((8, 8, false)),
-        SemanticTypeId::WORD => Some((pointer, pointer, false)),
-        SemanticTypeId::POINTER | SemanticTypeId::STRING => Some((pointer, pointer, true)),
-        _ => None,
     }
 }
 

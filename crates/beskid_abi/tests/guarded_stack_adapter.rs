@@ -27,7 +27,8 @@ fn linux_adapter_reserves_an_inaccessible_lower_guard_and_enforces_stack_bounds(
 #include <sys/wait.h>
 #include <unistd.h>
 
-extern void *beskid_rt_v5_intrinsic_guarded_stack_allocate(size_t);
+extern void *beskid_rt_v5_intrinsic_guarded_stack_allocate(size_t, size_t);
+extern uint8_t beskid_rt_v5_intrinsic_guarded_stack_grow(void *, size_t, size_t, size_t);
 extern void beskid_rt_v5_intrinsic_guarded_stack_free(void *, size_t);
 
 // This harness links the platform adapter in isolation. Keep the trap boundary
@@ -41,12 +42,17 @@ _Noreturn void beskid_rt_v5_trap(uint8_t code, void *message, size_t message_len
 }
 
 int main(void) {
-  if (beskid_rt_v5_intrinsic_guarded_stack_allocate(65535) != 0) return 10;
-  if (beskid_rt_v5_intrinsic_guarded_stack_allocate(8 * 1024 * 1024 + 4096) != 0) return 11;
-  unsigned char *usable = beskid_rt_v5_intrinsic_guarded_stack_allocate(64 * 1024);
+  const size_t initial = 64 * 1024;
+  const size_t maximum = 8 * 1024 * 1024;
+  if (beskid_rt_v5_intrinsic_guarded_stack_allocate(65535, maximum) != 0) return 10;
+  if (beskid_rt_v5_intrinsic_guarded_stack_allocate(initial, maximum + 4096) != 0) return 11;
+  unsigned char *usable = beskid_rt_v5_intrinsic_guarded_stack_allocate(initial, maximum);
   if (usable == 0) return 12;
-  usable[0] = 1;
-  usable[64 * 1024 - 1] = 2;
+  usable[maximum - initial] = 1;
+  usable[maximum - 1] = 2;
+  if (!beskid_rt_v5_intrinsic_guarded_stack_grow(usable, initial, initial * 2, maximum)) return 16;
+  usable[maximum - initial * 2] = 3;
+  if (beskid_rt_v5_intrinsic_guarded_stack_grow(usable, initial * 2, maximum + initial, maximum)) return 17;
   pid_t child = fork();
   if (child < 0) return 13;
   if (child == 0) {
@@ -56,7 +62,7 @@ int main(void) {
   int status = 0;
   if (waitpid(child, &status, 0) != child) return 14;
   if (!WIFSIGNALED(status) || (WTERMSIG(status) != SIGSEGV && WTERMSIG(status) != SIGBUS)) return 15;
-  beskid_rt_v5_intrinsic_guarded_stack_free(usable, 64 * 1024);
+  beskid_rt_v5_intrinsic_guarded_stack_free(usable, maximum);
   return 0;
 }
 "#,

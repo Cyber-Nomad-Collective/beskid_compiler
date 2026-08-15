@@ -2,7 +2,7 @@ use super::lookup::find_function_definition;
 use super::prelude::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, AtomicUsize, BeskidDatabase,
     CANONICAL_BOOTSTRAP_SOURCE_PATH, CodegenInput, EffectiveCompilationRoots, ModuleIndex, Ordering, ProjectSession,
-    RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxProgramAssembly, TargetMetadata,
+    RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, ProgramAssembly, TargetMetadata,
     build_typed_program, canonical_runtime_sources, isa, parse_program_with_source_name, settings,
 };
 
@@ -43,7 +43,7 @@ pub(in super::super) fn item_fixture_with_root(
     let entry = SourceUnitId::new(&*db, source_path.clone());
     let project = ProjectSession::new(&*db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
     let generation = SyntaxGenerationId(21);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
@@ -52,7 +52,7 @@ pub(in super::super) fn item_fixture_with_root(
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
@@ -85,7 +85,7 @@ pub(in super::super) fn function_signature(
 pub(in super::super) fn canonical_runtime_test_assembly(
     _db: &mut BeskidDatabase,
     directory: &std::path::Path,
-) -> (Arc<SyntaxProgramAssembly>, std::path::PathBuf) {
+) -> (Arc<ProgramAssembly>, std::path::PathBuf) {
     let all_sources = canonical_runtime_sources();
     let mut source_units = Vec::with_capacity(all_sources.len());
     for canonical in &all_sources {
@@ -105,7 +105,7 @@ pub(in super::super) fn canonical_runtime_test_assembly(
     }
     let source_path = directory.join(CANONICAL_BOOTSTRAP_SOURCE_PATH);
     (
-        Arc::new(SyntaxProgramAssembly::new(
+        Arc::new(ProgramAssembly::new(
             EffectiveCompilationRoots {
                 host: RootEntry { dependency_name: None, source_root: directory.to_path_buf() },
                 dependencies: Vec::new(),
@@ -114,7 +114,7 @@ pub(in super::super) fn canonical_runtime_test_assembly(
             0,
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
-            false,
+            false, generation
         )),
         source_path,
     )

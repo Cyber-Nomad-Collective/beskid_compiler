@@ -10,53 +10,46 @@
 
 pub mod aggregate_static;
 pub mod array_static;
+pub mod artifact;
+mod artifact_validation;
 pub mod closure_static;
 pub mod codegen_input;
 pub mod cranelift_host;
-pub mod diagnostics;
-pub mod errors;
 pub mod isle_adapter;
 mod isle_trace;
-pub mod linking;
-pub mod lowering;
 pub mod module_emission;
 pub mod prepared_syntax;
 pub mod services;
 
 pub use aggregate_static::{
-    ABI_V5_MANAGED_OBJECT_ALLOCATE, AggregateObjectLayout, AggregateStaticField, AggregateStaticPlan,
-    emit_aggregate_static_data,
+    emit_aggregate_static_data, AggregateObjectLayout, AggregateStaticField, AggregateStaticPlan,
+    ABI_V5_MANAGED_OBJECT_ALLOCATE,
 };
 pub use array_static::{
-    ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ArrayStaticPlan, emit_array_static_data,
+    emit_array_static_data, ArrayStaticPlan, ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH,
 };
+pub use artifact::{
+    object_link_symbol, CodegenArtifact, CodegenContext, ExportEntry, ExternImport, LoweredFunction, TypeDescriptorData,
+};
+pub use artifact_validation::{referenced_extern_imports, validate_artifact, MissingSymbol};
 pub use closure_static::{
-    ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
-    ClosureCaptureStaticField, ClosureLoweringAuthority, ClosureRootAuthority, ClosureStaticDataHandles,
-    ClosureStaticPlan, RuntimeRootContext, emit_closure_static_data,
+    emit_closure_static_data, ClosureCaptureStaticField, ClosureLoweringAuthority, ClosureRootAuthority,
+    ClosureStaticDataHandles, ClosureStaticPlan, RuntimeRootContext, ABI_V5_CLOSURE_CAPTURE_STORE,
+    ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
 };
-pub use codegen_input::{CodegenInput, CodegenInputError};
-pub use diagnostics::{codegen_error_to_diagnostic, codegen_errors_to_diagnostics};
-pub use errors::{CodegenError, RETIRED_HIR_LOWERING_PATH};
+pub use codegen_input::{CodegenInput, CodegenInputError, SchedulerCompilerOperation};
 pub use isle_adapter::{
-    ItemModuleImporter, SyntaxNodeFacts, emit_isle_closure_lambda_entry, emit_isle_expression,
-    emit_isle_expression_with_call_importer, emit_isle_item, emit_isle_item_with_call_importer,
-    emit_isle_item_with_services, emit_isle_item_with_services_specialization, syntax_item_signature,
+    emit_isle_closure_lambda_entry, emit_isle_expression, emit_isle_expression_with_call_importer, emit_isle_item,
+    emit_isle_item_with_call_importer, emit_isle_item_with_services, emit_isle_item_with_services_specialization,
+    syntax_item_signature, ItemModuleImporter, SyntaxNodeFacts,
 };
-pub use linking::{
-    FunctionDefIndex, LinkPlan, LinkSymbol, MissingSymbol, referenced_extern_imports, validate_artifact,
-};
-pub use lowering::{
-    CodegenArtifact, CodegenContext, CodegenResult, DYNAMIC_TYPE_NAME, ExportEntry, ExternImport, LoweredFunction,
-    dynamic_clif_type, is_dynamic_type_id, lower_node, lower_program, map_type_id_to_clif_with_dynamic,
-    mapping_pair_eligible, object_link_symbol, pointer_type, require_mapping_eligible, shape_id_for_item,
-};
+
 pub use module_emission::{
-    DescriptorHandles, ModuleEmissionSession, SyntaxModuleItem, emit_closure_static_plans, emit_string_literals,
-    emit_syntax_program_in_session, emit_type_descriptors, lower_syntax_program,
+    emit_closure_static_plans, emit_string_literals, emit_syntax_program_in_session, emit_type_descriptors,
+    lower_syntax_program, DescriptorHandles, ModuleEmissionSession, SyntaxModuleItem,
 };
 pub use prepared_syntax::{
-    PreparedSyntaxEntrypoint, lower_canonical_runtime_prepared_syntax, lower_prepared_syntax_entrypoint,
-    lower_prepared_syntax_module, lower_syntax_assembly_entrypoint,
+    lower_canonical_runtime_prepared_syntax, lower_prepared_syntax_entrypoint, lower_prepared_syntax_module,
+    lower_syntax_assembly_entrypoint, PreparedSyntaxEntrypoint,
 };
-pub use services::{jit_symbol_for_item, materialize_source_path_for_lowering, render_clif};
+pub use services::{materialize_source_path_for_lowering, render_clif};

@@ -1,0 +1,18 @@
+use Runtime.Bootstrap.Lifecycle;
+use Runtime.Bootstrap.Native;
+use Runtime.Host.Process;
+use Runtime.Io.Syscalls;
+use Testing.Assert;
+
+test process_and_byte_io_surface_is_target_consistent {
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    Assert.True(ProcessInit(runtime) == runtime, "runtime initialized");
+    pointer thread = CurrentThreadState();
+    Assert.True(thread != NativePointer(0), "process initialization attached the mutator");
+    Assert.True(ProcessGetpid() > 0, "target process adapter returns a process id");
+    Assert.Equal(SyscallReadBytes(0, NativePointer(0), 0), 0, "zero-length read preserves signed adapter result");
+    Assert.Equal(SyscallWriteBytes(1, NativePointer(0), 0), 0, "zero-length write preserves signed adapter result");
+    ProcessShutdown(runtime);
+    SystemFree(runtime, 64);
+}

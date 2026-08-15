@@ -1,12 +1,12 @@
 use super::support::{
-    AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput, DirectCallee,
-    EffectiveCompilationRoots, HashMap, ItemModuleImporter, JITBuilder, JITModule, Linkage, Module, ModuleIndex,
-    NodeFacts, ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxModuleItem,
-    SyntaxProgramAssembly, TargetMetadata, build_typed_program, call_abi_signature, call_lowering,
-    default_libcall_names, emit_isle_expression, emit_isle_item, emit_isle_item_with_call_importer, enum_constructor,
-    enum_layout, enum_match, find_call_expression, find_function_definition, find_function_definitions, find_node,
-    find_nodes_of_kind, find_test_definition, isa, item_body, item_fixture, item_fixture_with_root, item_name,
-    lower_syntax_program, node_type, parse_program_with_source_name, settings, types,
+    build_typed_program, call_abi_signature, call_lowering, default_libcall_names, emit_isle_expression,
+    emit_isle_item, emit_isle_item_with_call_importer, enum_constructor, enum_layout, enum_match, find_call_expression,
+    find_function_definition, find_function_definitions, find_node, find_nodes_of_kind, find_test_definition, isa,
+    item_body, item_fixture, item_fixture_with_root, item_name, lower_syntax_program, node_type,
+    parse_program_with_source_name, settings, types, AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey,
+    BeskidDatabase, CodegenInput, DirectCallee, EffectiveCompilationRoots, HashMap, ItemModuleImporter, JITBuilder,
+    JITModule, Linkage, Module, ModuleIndex, NodeFacts, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
+    SyntaxGenerationId, SyntaxModuleItem, ProgramAssembly, TargetMetadata,
 };
 
 #[test]
@@ -20,7 +20,7 @@ fn parsed_enum_constructor_uses_source_layout_without_hir() {
     let entry = SourceUnitId::new(&db, source_path.clone());
     let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
     let generation = SyntaxGenerationId(1);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
@@ -29,7 +29,7 @@ fn parsed_enum_constructor_uses_source_layout_without_hir() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
@@ -73,6 +73,20 @@ fn parsed_generic_enum_constructor_uses_concrete_source_layout_without_hir() {
     assert!(!clif.contains("stack_store"), "{clif}");
     assert!(clif.contains("iconst.i32 0"), "{clif}");
     assert!(clif.contains("iconst.i64 7"), "{clif}");
+}
+
+#[test]
+fn mixed_pointer_scalar_generic_enum_uses_variant_specific_payload_slots() {
+    let (input, isa, item) = item_fixture(
+        "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<i64, SyscallError> Main(SyscallError error) { Result<i64, SyscallError> result = Result<i64, SyscallError>::Error(error); return result; }",
+    );
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("mixed pointer/scalar generic enum must lower through variant-specific physical slots");
+    let clif = function.display().to_string();
+
+    assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
+    assert!(clif.contains("store.i64"), "{clif}");
 }
 
 #[test]
@@ -443,7 +457,7 @@ fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
     let entry = SourceUnitId::new(&db, main_path.clone());
     let generation = SyntaxGenerationId(143);
     let project = ProjectSession::new(&db, root.clone(), main_path, "App".into(), "lock".into());
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root },
             dependencies: Vec::new(),
@@ -452,7 +466,7 @@ fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
@@ -491,7 +505,7 @@ fn imported_nullary_enum_constructor_lowers_from_an_ordinary_function_block() {
     let entry = SourceUnitId::new(&*db, main_path.clone());
     let generation = SyntaxGenerationId(145);
     let project = ProjectSession::new(&*db, project_root.clone(), main_path, "App".into(), "lock".into());
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: project_root },
             dependencies: Vec::new(),
@@ -500,7 +514,7 @@ fn imported_nullary_enum_constructor_lowers_from_an_ordinary_function_block() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
@@ -550,7 +564,7 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
     let entry = SourceUnitId::new(&*db, main_path.clone());
     let generation = SyntaxGenerationId(146);
     let project = ProjectSession::new(&*db, project_root.clone(), main_path, "App".into(), "lock".into());
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: project_root },
             dependencies: Vec::new(),
@@ -559,7 +573,7 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };

@@ -8,29 +8,40 @@ pub i64 FiberSpawn(pointer entry, pointer argument) {
         return -1;
     }
     raw_word_store(cancelSlot, 0);
-    return SchedulerSpawn(entry, NativePointer(0), cancelSlot);
+    return SchedulerSpawn(entry, argument, cancelSlot);
 }
 
-// Cancels a running fiber by ID.
+// Cancels a running fiber by ID. The reason is stored in the fiber record
+// and surfaced via FiberJoinStatus::Cancelled(reason, cancelerId).
 [Export(Abi:"C", Symbol:"fiber_cancel")]
-pub bool FiberCancel(i64 fiberId) {
+pub bool FiberCancel(i64 fiberId, i64 reason) {
     if fiberId < 0 {
         return false;
     }
-    word index = word(fiberId);
-    if !FiberExists(index) {
-        return false;
-    }
+    word handle = word(fiberId);
+    if !FiberHandleValid(handle) { return false; }
+    word index = FiberHandleIndex(handle);
     word state = FiberState(index);
     if state == FiberState::Done || state == FiberState::Cancelled {
         return false;
     }
     pointer fib = FiberRecord(index);
+    raw_word_store(pointer_add(fib, FIBER_OUTCOME_REASON_OFFSET), word(reason));
+    raw_word_store(pointer_add(fib, FIBER_OUTCOME_CANCELER_OFFSET), SchedulerCurrentFiber());
     pointer cancelSlot = NativePointer(raw_word_load(pointer_add(fib, 24)));
     if cancelSlot != NativePointer(0) {
         raw_word_store(cancelSlot, 1);
     }
     PendingCancelEnqueue(index);
+    return true;
+}
+
+// Resumes a parked fiber. Duplicate resumes are coalesced by the wake queue.
+pub bool FiberResume(i64 fiberId) {
+    if fiberId < 0 || !FiberHandleValid(word(fiberId)) { return false; }
+    word index = FiberHandleIndex(word(fiberId));
+    if !FiberParked(index) { return false; }
+    WakeEnqueue(index);
     return true;
 }
 
@@ -40,11 +51,12 @@ pub unit FiberDetach(i64 fiberId) {
     if fiberId < 0 {
         return;
     }
-    word index = word(fiberId);
-    if !FiberExists(index) {
-        return;
-    }
-    raw_byte_store(pointer_add(FiberRecord(index), 40), 1);
+    word handle = word(fiberId);
+    if !FiberHandleValid(handle) { return; }
+    word index = FiberHandleIndex(handle);
+    pointer fib = FiberRecord(index);
+    raw_byte_store(pointer_add(fib, 40), 1);
+    if FiberFinished(index) { FiberCleanup(index); }
     return;
 }
 
@@ -52,25 +64,29 @@ pub unit FiberDetach(i64 fiberId) {
 [Export(Abi:"C", Symbol:"fiber_join_status")]
 pub i32 FiberJoinStatus(i64 fiberId) {
     if fiberId < 0 {
-        return i32(JoinOutcome::Panicked);
+        return i32(FIBER_JOIN_PANICKED);
     }
-    return i32(FiberJoinStatusWord(word(fiberId)));
+    word handle = word(fiberId);
+    if !FiberHandleValid(handle) { return i32(FIBER_JOIN_PANICKED); }
+    return i32(FiberJoinStatusWord(FiberHandleIndex(handle)));
 }
 
 // Returns the join value of a completed fiber.
 [Export(Abi:"C", Symbol:"fiber_join_value")]
 pub i64 FiberJoinValue(i64 fiberId) {
-    if fiberId < 0 || FiberJoinStatusWord(word(fiberId)) != JoinOutcome::Ok {
+    if fiberId < 0 || !FiberHandleValid(word(fiberId)) || FiberJoinStatusWord(FiberHandleIndex(word(fiberId))) != FIBER_JOIN_OK {
         Trap(6, NativePointer(0), 0);
         return 0;
     }
-    return i64(raw_word_load(pointer_add(FiberRecord(word(fiberId)), 56)));
+    return i64(raw_word_load(pointer_add(FiberRecord(FiberHandleIndex(word(fiberId))), 56)));
 }
 
 // Monotonic time in milliseconds since an arbitrary epoch.
 [Export(Abi:"C", Symbol:"fiber_now_millis")]
 pub i64 FiberNowMillis() {
-    return 0; // Stub: clock integration TBD
+    i64 nanos = clock_monotonic_nanos();
+    if nanos < 0 { return -1; }
+    return nanos / 1000000;
 }
 
 // Number of logical processors available.

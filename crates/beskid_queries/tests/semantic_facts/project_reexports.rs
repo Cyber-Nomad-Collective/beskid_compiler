@@ -1,7 +1,7 @@
 use super::support::{assert_unavailable, key, key_at_start};
 use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
 use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
 };
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
@@ -46,7 +46,7 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
         })
         .collect::<Vec<_>>();
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
             dependencies: Vec::new(),
@@ -55,7 +55,7 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let result_unit = SourceUnitId::new(&db, result_path);

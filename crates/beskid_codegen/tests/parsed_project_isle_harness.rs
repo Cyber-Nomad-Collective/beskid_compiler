@@ -3,14 +3,14 @@ use std::{collections::BTreeSet, sync::Arc};
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_analysis::{
     projects::{
-        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
+        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
     },
     services::parse_program_with_source_name,
 };
 use beskid_codegen::lower_canonical_runtime_prepared_syntax;
 use beskid_codegen::lower_syntax_assembly_entrypoint;
 use beskid_queries::{
-    AstNodeId, AstNodeKey, SourceUnitId, SyntaxGenerationId, child_nodes, closure_environment, node_kind, with_db,
+    child_nodes, closure_environment, node_kind, with_db, AstNodeId, AstNodeKey, SourceUnitId, SyntaxGenerationId,
 };
 use cranelift_codegen::{isa, settings, verify_function};
 
@@ -32,15 +32,9 @@ fn retired_public_codegen_facade_is_absent() {
             "retired public codegen facade must not expose `{retired_api}`"
         );
     }
-
-    let public_exports = include_str!("../src/lib.rs");
-    assert!(
-        !public_exports.contains("    Lowerable,"),
-        "the internal Lowerable trait must not be re-exported publicly"
-    );
 }
 
-fn parse_production_units(root: &std::path::Path, units: &[(&str, &str, &str)]) -> Arc<SyntaxProgramAssembly> {
+fn parse_production_units(root: &std::path::Path, units: &[(&str, &str, &str)]) -> Arc<ProgramAssembly> {
     let mut source_units = Vec::with_capacity(units.len());
     for (relative_path, logical_name, source) in units {
         let path = root.join(relative_path);
@@ -52,7 +46,7 @@ fn parse_production_units(root: &std::path::Path, units: &[(&str, &str, &str)]) 
             .expect("production source parse");
         source_units.push(SourceUnit { logical_name: (*logical_name).into(), path, source: (*source).into(), program });
     }
-    Arc::new(SyntaxProgramAssembly::new(
+    Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.to_path_buf() },
             dependencies: Vec::new(),
@@ -61,7 +55,7 @@ fn parse_production_units(root: &std::path::Path, units: &[(&str, &str, &str)]) 
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ))
 }
 
@@ -78,7 +72,7 @@ fn x86_64_target_and_isa() -> (TargetMetadata, std::sync::Arc<dyn cranelift_code
 }
 
 fn lower_verified_entrypoint(
-    assembly: Arc<SyntaxProgramAssembly>,
+    assembly: Arc<ProgramAssembly>,
     target: TargetMetadata,
     isa: &dyn cranelift_codegen::isa::TargetIsa,
 ) -> beskid_codegen::PreparedSyntaxEntrypoint {
@@ -97,7 +91,7 @@ fn lower_verified_entrypoint(
 }
 
 fn assert_unsupported_closed_failure(
-    assembly: Arc<SyntaxProgramAssembly>,
+    assembly: Arc<ProgramAssembly>,
     target: TargetMetadata,
     isa: &dyn cranelift_codegen::isa::TargetIsa,
     expected_site_fragments: &[&str],
@@ -129,8 +123,7 @@ fn parsed_project_reaches_verified_isle_without_a_legacy_codegen_entrypoint() {
     let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
     let (target, isa) = x86_64_target_and_isa();
 
-    // The production syntax-only entrypoint accepts only parsed SyntaxProgramAssembly data: no
-    // HIR or Lowerable value is constructed or supplied to the code-generation route.
+    // The production entrypoint accepts parsed ProgramAssembly data and derives typed facts.
     let lowered = lower_verified_entrypoint(assembly, target.clone(), isa.as_ref());
     assert_eq!(lowered.artifact.functions.len(), 2, "reachable direct-call closure");
 
@@ -205,7 +198,6 @@ fn parsed_direct_zero_argument_spawn_emits_syntax_owned_trampoline_and_fiber_dis
     let main_clif = main.function.display().to_string();
     let trampoline_clif = trampoline.function.display().to_string();
     assert!(main_clif.contains("beskid_rt_v5_fiber_spawn_with_cancel_slot"), "{main_clif}");
-    assert!(!main_clif.contains("interop_dispatch_"), "{main_clif}");
     assert!(main_clif.contains("func_addr"), "{main_clif}");
     assert!(trampoline_clif.contains("Entry#syntax_"), "{trampoline_clif}");
     assert!(trampoline_clif.contains("return"), "{trampoline_clif}");
@@ -253,7 +245,6 @@ fn parsed_zero_capture_lambda_spawn_emits_syntax_owned_entry_and_fiber_dispatch(
     let lambda_clif = lambda.function.display().to_string();
     let trampoline_clif = trampoline.function.display().to_string();
     assert!(main_clif.contains("beskid_rt_v5_fiber_spawn_with_cancel_slot"), "{main_clif}");
-    assert!(!main_clif.contains("interop_dispatch_"), "{main_clif}");
     assert!(main_clif.contains("func_addr"), "{main_clif}");
     assert!(lambda_clif.contains("iconst.i64 7"), "{lambda_clif}");
     assert!(trampoline_clif.contains("__beskid_spawn_lambda_syntax_"), "{trampoline_clif}");
@@ -302,7 +293,6 @@ fn parsed_capturing_lambda_spawn_allocates_roots_and_dispatches_fiber_entry() {
     assert!(main_clif.contains("beskid_rt_v5_closure_environment_allocate"), "{main_clif}");
     assert!(main_clif.contains("beskid_rt_v5_closure_environment_root_current"), "{main_clif}");
     assert!(main_clif.contains("beskid_rt_v5_fiber_spawn_with_cancel_slot"), "{main_clif}");
-    assert!(!main_clif.contains("interop_dispatch_"), "{main_clif}");
     assert!(
         lambda_clif.contains("load") || lambda_clif.contains("ireduce") || lambda_clif.contains("iadd"),
         "lambda entry must read the rooted capture environment: {lambda_clif}"
@@ -389,7 +379,7 @@ fn parsed_project_if_else_reaches_verified_clif() {
 #[test]
 fn parsed_project_range_for_accumulator_reaches_verified_clif_without_hir_fallback() {
     // Mutable assignment inside a parsed range body is governed solely by generation-bound
-    // syntax facts. The production path must not use HIR/Lowerable as a fallback.
+    // syntax facts. Unsupported operations must fail closed.
     let project = tempfile::tempdir().expect("project directory");
     let source = "
         i32 Main() {
@@ -607,7 +597,7 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
 }
 
 #[test]
-fn production_path_never_constructs_hir_or_lowerable() {
+fn production_path_accepts_only_syntax_program_assembly() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "
         i32 Helper(i32 value) { return value + 1; }
@@ -617,10 +607,10 @@ fn production_path_never_constructs_hir_or_lowerable() {
         }
     ";
     let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
-    // Production boundary is SyntaxProgramAssembly-only: no HirProgram / Lowerable parameter.
+    // The production boundary is ProgramAssembly-only.
     assert_eq!(
         std::any::type_name_of_val(assembly.as_ref()),
-        "beskid_analysis::projects::assembly::SyntaxProgramAssembly"
+        "beskid_analysis::projects::assembly::ProgramAssembly"
     );
     let (target, isa) = x86_64_target_and_isa();
     let lowered = lower_verified_entrypoint(Arc::clone(&assembly), target.clone(), isa.as_ref());

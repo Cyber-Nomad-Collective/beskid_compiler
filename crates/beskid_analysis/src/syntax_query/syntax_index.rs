@@ -88,6 +88,39 @@ impl SyntaxIndex {
     pub fn metadata_for(&self, generation: SyntaxGenerationId, id: AstNodeId) -> Option<&SyntaxNodeMetadata> {
         (generation == self.generation).then(|| self.metadata.get(id.0 as usize)).flatten()
     }
+
+    /// Expanded `use` paths in deterministic syntax order.
+    pub fn import_paths(&self, program: &Spanned<Program>) -> Vec<Vec<String>> {
+        self.nodes_of_kind::<crate::syntax::UseDeclaration>(program, NodeKind::UseDeclaration)
+            .map(|declaration| path_segments(&declaration.path.node))
+            .collect()
+    }
+
+    /// Expanded out-of-line module declaration paths in deterministic syntax order.
+    pub fn module_declaration_paths(&self, program: &Spanned<Program>) -> Vec<Vec<String>> {
+        self.nodes_of_kind::<crate::syntax::ModuleDeclaration>(program, NodeKind::ModuleDeclaration)
+            .map(|declaration| path_segments(&declaration.path.node))
+            .collect()
+    }
+
+    /// Expanded inline-module names in deterministic syntax order.
+    pub fn inline_module_names(&self, program: &Spanned<Program>) -> Vec<String> {
+        self.nodes_of_kind::<crate::syntax::InlineModule>(program, NodeKind::InlineModule)
+            .map(|module| module.name.node.name.clone())
+            .collect()
+    }
+
+    fn nodes_of_kind<'a, T: crate::syntax_query::AstNode + 'static>(
+        &'a self,
+        program: &'a Spanned<Program>,
+        kind: NodeKind,
+    ) -> impl Iterator<Item = &'a T> + 'a {
+        self.ids_of_kind(kind).filter_map(|id| self.node_at(program, id)?.of::<T>())
+    }
+}
+
+fn path_segments(path: &crate::syntax::Path) -> Vec<String> {
+    path.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect()
 }
 
 fn index_node(

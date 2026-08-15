@@ -108,6 +108,72 @@ pub fn call_lowering(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CallLo
     with_registered_syntax(db, key, call_lowering_tracked)
 }
 
+/// Select a collection operation only when this call resolves to the canonical Array source unit.
+/// A user declaration with the same function name or an unresolved/stale call receives no authority.
+pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<CollectionOperation> {
+    let Some(CallLowering::Direct(declaration)) = call_lowering(db, key)? else {
+        return Ok(None);
+    };
+    let path = declaration.unit.path(db);
+    let components = path.iter().rev().take(3).map(|part| part.to_string_lossy()).collect::<Vec<_>>();
+    if components.as_slice() != ["Array.bd", "Collections", "Core"] {
+        return Ok(None);
+    }
+    let Some(syntax) = db.syntax_unit(declaration.unit) else {
+        return Ok(None);
+    };
+    if syntax.generation(db) != declaration.generation {
+        return Ok(None);
+    }
+    let Some(function) = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
+    else {
+        return Ok(None);
+    };
+    Ok(Some(match function.name.node.name.as_str() {
+        "Append" => {
+            let arguments =
+                call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+            let array = *arguments.first().ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+            let owner = if let Some(access) = aggregate_field_access(db, array)? {
+                let receiver = resolved_local(db, access.receiver)?
+                    .and_then(|resolved| local_slot(db, resolved.declaration).transpose())
+                    .transpose()?
+                    .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+                CollectionMutationOwner::AggregateField {
+                    receiver,
+                    declaration: access.declaration,
+                    index: access.index,
+                }
+            } else {
+                let resolved =
+                    resolved_local(db, array)?.ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+                let syntax = db
+                    .syntax_unit(resolved.declaration.unit)
+                    .filter(|syntax| syntax.generation(db) == resolved.declaration.generation)
+                    .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+                let mutable = with_node(db, syntax, resolved.declaration, |program, index, _| {
+                    Some(local_declaration_is_mutable(program, index, resolved.declaration.node))
+                })?
+                .unwrap_or(false);
+                if !mutable {
+                    return Err(SemanticError::unavailable("collection_operation"));
+                }
+                let slot = local_slot(db, resolved.declaration)?
+                    .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+                CollectionMutationOwner::Local(slot)
+            };
+            CollectionOperation::Append { owner }
+        }
+        "Capacity" => CollectionOperation::Capacity,
+        "Clear" => CollectionOperation::Clear,
+        "RemoveLast" => CollectionOperation::RemoveLast,
+        _ => return Ok(None),
+    }))
+}
+
 pub fn primitive_numeric_conversion(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<PrimitiveNumericConversion> {
     with_registered_syntax(db, key, primitive_numeric_conversion_tracked)
 }

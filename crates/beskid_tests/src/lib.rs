@@ -21,9 +21,6 @@ pub mod support;
 pub mod surface;
 
 #[cfg(test)]
-pub mod runtime;
-
-#[cfg(test)]
 pub mod composition;
 
 #[cfg(test)]
@@ -40,9 +37,6 @@ pub mod lsp;
 
 #[cfg(test)]
 pub mod cli;
-
-#[cfg(test)]
-pub mod interop;
 
 #[cfg(test)]
 pub mod template;

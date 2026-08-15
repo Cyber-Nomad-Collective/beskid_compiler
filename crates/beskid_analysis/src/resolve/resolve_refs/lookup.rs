@@ -1,4 +1,4 @@
-use crate::hir::{HirType, HirVisibility};
+use crate::syntax::{Type, Visibility};
 use crate::syntax::Spanned;
 
 use super::super::ids::ItemId;
@@ -93,7 +93,7 @@ impl Resolver {
         let module_path_string = module_path.join("::");
         if let Some(item) = module.scope.get(name).copied() {
             if !module_path.is_empty()
-                && self.items.get(item.0).is_some_and(|info| info.visibility == HirVisibility::Private)
+                && self.items.get(item.0).is_some_and(|info| info.visibility == Visibility::Private)
             {
                 ModulePathLookup::NotVisible { module_path: module_path_string, name: name.to_string() }
             } else {
@@ -113,7 +113,7 @@ impl Resolver {
         self.lookup_named_item_in_module(segments, &item_name)
     }
 
-    pub(super) fn receiver_item_id_for_type(&self, receiver_type: &Spanned<HirType>) -> Option<ItemId> {
+    pub(super) fn receiver_item_id_for_type(&self, receiver_type: &Spanned<Type>) -> Option<ItemId> {
         match self.tables.resolved_types.get(&receiver_type.span) {
             Some(ResolvedType::Item(item_id)) => Some(*item_id),
             _ => None,

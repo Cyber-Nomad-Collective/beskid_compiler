@@ -1,16 +1,22 @@
+use Bootstrap::Native;
 // Canonical cooperative scheduler loop.
-
 // Drive one scheduling step. Returns true if work was done.
 pub bool SchedStep() {
     pointer table = SchedTable();
     if table == NativePointer(0) { return false; }
-    word fiberCount = raw_word_load(table);
+    SchedulerPollWorkerCompletions();
     ApplyPendingSpawns();
     ApplyPendingCancels();
     ApplyPendingWakes();
 
+    // Poll exactly one queued task before selecting a fiber. The exported
+    // run-once operation remains the sole owner of poll state transitions.
+    i32 pollState = PollExecutorRunOnce();
+    bool pollWorked = pollState == 0;
+
     if RunQueueEmpty() {
         // Check if any fibers are still alive (runnable or parked).
+        word fiberCount = raw_word_load(table);
         mut word i = 0; mut bool alive = false;
         while i < fiberCount {
             word s = FiberState(i);
@@ -20,32 +26,32 @@ pub bool SchedStep() {
             i = i + 1;
         }
         if !alive {
-            return false; // Scheduler done — all fibers finished.
+            return pollWorked; // Scheduler is done only when neither executor made progress.
         }
-        return false; // Nothing to run but fibers exist (all parked — deadlock risk).
+        return pollWorked || SchedulerHasWorkerRequests(); // Native completions may wake parked fibers.
     }
 
     word next = RunQueuePop();
     if next == 0xFFFF { return false; }
-    if FiberParked(next) { return true; } // Skip parked.
+    if !FiberExists(next) || FiberParked(next) || FiberFinished(next) { return true; }
 
+    if !SchedulerAcquireMutatorToken() { return false; }
     FiberSetState(next, FiberState::Running);
-
-    // This lifecycle slice deliberately does not claim a context transfer.
-    // The target-specific execution task must call ContextInit/ContextSwitch
-    // and complete the running record through FiberDone.  In particular, do
-    // not reinterpret an entry pointer as a return value or fabricate a
-    // direct-call execution path here.
     SchedulerSetCurrentFiber(next);
-
+    RestoreFiberLocalState(next);
+    ContextSwitch(SchedulerContext(), NativePointer(raw_word_load(pointer_add(FiberRecord(next), 104))));
+    SchedulerReleaseMutatorToken();
+    SchedulerSetCurrentFiber(FIBER_NONE);
+    if FiberFinished(next) && raw_byte_load(pointer_add(FiberRecord(next), 40)) != 0 {
+        FiberCleanup(next);
+    }
     return true;
 }
 
 // Run the scheduler until quiescence. Returns the main fiber's result.
 pub i64 SchedRun() {
     SchedInit();
-    mut word steps = 0;
-    while steps < 10000 {
+    while true {
         if !SchedStep() {
             // Check all-blocked (deadlock).
             pointer table = SchedTable();
@@ -53,21 +59,25 @@ pub i64 SchedRun() {
             mut word i = 0; mut bool anyAlive = false; mut bool anyRunnable = false;
             while i < fiberCount {
                 word s = FiberState(i);
-                if s == FiberState::Runnable { anyAlive = true; }
-                if s == FiberState::Parked { anyRunnable = true; }
+                if s == FiberState::Runnable { anyRunnable = true; }
+                if s == FiberState::Parked || s == FiberState::Running { anyAlive = true; }
                 i = i + 1;
             }
-            if !anyRunnable {
-                break;
-            }
-            if anyAlive {
-                // All fibers parked — deadlock.
-                Trap(7, NativePointer(0), 0); // scheduler_deadlock
-            }
+            if anyRunnable { break; }
+            // Pending poll tasks are externally wakeable quiescence, not a
+            // fiber deadlock. Leave their state intact for run_once/wake.
+            if PollExecutorHasActiveTasks() { break; }
+            if SchedulerHasWorkerRequests() { continue; }
+            if anyAlive { Trap(7, NativePointer(0), 0); }
             break;
         }
-        steps = steps + 1;
     }
     pointer table = SchedTable();
+    word main = raw_word_load(pointer_add(table, 8));
+    if main != FIBER_NONE && FiberExists(main) {
+        word status = FiberJoinStatusWord(main);
+        if status == FIBER_JOIN_OK { return i64(raw_word_load(pointer_add(FiberRecord(main), 56))); }
+        if status != FIBER_JOIN_NOT_DONE { Trap(6, NativePointer(0), 0); }
+    }
     return 0;
 }

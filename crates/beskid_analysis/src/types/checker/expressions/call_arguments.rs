@@ -1,6 +1,6 @@
 use crate::builtins::{BuiltinType, builtin_specs};
-use crate::hir::{
-    HirCallExpression, HirExpressionNode, HirLambdaExpression, HirLiteral, HirPrimitiveType, integer_literal_magnitude,
+use crate::syntax::{
+    CallExpression, Expression, LambdaExpression, Literal, PrimitiveType, integer_literal_magnitude,
 };
 use crate::resolve::ResolvedValue;
 use crate::syntax::Spanned;
@@ -13,7 +13,7 @@ use super::super::TypeChecker;
 impl<'a> TypeChecker<'a> {
     pub(in crate::types::checker) fn type_lambda_expression_with_expected(
         &mut self,
-        lambda: &Spanned<HirLambdaExpression>,
+        lambda: &Spanned<LambdaExpression>,
         expected_function: Option<TypeId>,
     ) -> Option<TypeId> {
         let expected_signature = expected_function.and_then(|type_id| match self.type_table.get(type_id) {
@@ -73,13 +73,13 @@ impl<'a> TypeChecker<'a> {
         Some(actual)
     }
 
-    fn type_argument_with_expected(&mut self, arg: &Spanned<HirExpressionNode>, expected: TypeId) -> Option<TypeId> {
+    fn type_argument_with_expected(&mut self, arg: &Spanned<Expression>, expected: TypeId) -> Option<TypeId> {
         match &arg.node {
-            HirExpressionNode::LambdaExpression(lambda) => {
+            Expression::Lambda(lambda) => {
                 self.type_lambda_expression_with_expected(lambda, Some(expected))
             }
-            HirExpressionNode::GroupedExpression(grouped) => match &grouped.node.expr.node {
-                HirExpressionNode::LambdaExpression(lambda) => {
+            Expression::Grouped(grouped) => match &grouped.node.expr.node {
+                Expression::Lambda(lambda) => {
                     self.type_lambda_expression_with_expected(lambda, Some(expected))
                 }
                 _ => self.type_expression(arg),
@@ -90,13 +90,13 @@ impl<'a> TypeChecker<'a> {
 
     pub(in crate::types::checker) fn type_call_expression(
         &mut self,
-        call: &Spanned<HirCallExpression>,
+        call: &Spanned<CallExpression>,
     ) -> Option<TypeId> {
         if let Some((receiver_source, receiver_type, receiver_item_id, field_type)) =
             self.resolve_event_call_target(&call.node.callee)
         {
             let TypeInfo::Function { params, return_type } =
-                self.type_table.get(field_type).cloned().unwrap_or(TypeInfo::Primitive(HirPrimitiveType::Unit))
+                self.type_table.get(field_type).cloned().unwrap_or(TypeInfo::Primitive(PrimitiveType::Unit))
             else {
                 self.errors.push(TypeError::UnknownCallTarget { span: call.span });
                 return None;
@@ -125,7 +125,7 @@ impl<'a> TypeChecker<'a> {
             return Some(return_type);
         }
 
-        if let HirExpressionNode::PathExpression(path_expr) = &call.node.callee.node {
+        if let Expression::Path(path_expr) = &call.node.callee.node {
             let path: Vec<String> =
                 path_expr.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect();
             if Self::is_fiber_join_path(&path)
@@ -244,9 +244,9 @@ impl<'a> TypeChecker<'a> {
             }
         }
 
-        if let HirExpressionNode::MemberExpression(member) = &call.node.callee.node {
+        if let Expression::Member(member) = &call.node.callee.node {
             // Special-case: contract-as-namespace calls like `C.getpid()` where `C` is a contract item.
-            if let HirExpressionNode::PathExpression(path_expr) = &member.node.target.node
+            if let Expression::Path(path_expr) = &member.node.target.node
                 && let Some(ResolvedValue::Item(item_id)) = self.resolved_value_at(path_expr.node.path.span)
             {
                 let method_name = member.node.member.node.name.as_str().to_string();
@@ -344,7 +344,7 @@ impl<'a> TypeChecker<'a> {
         }
 
         let is_item_callee = match &call.node.callee.node {
-            HirExpressionNode::PathExpression(path_expr) => {
+            Expression::Path(path_expr) => {
                 matches!(self.resolved_value_at(path_expr.node.path.span), Some(ResolvedValue::Item(_)))
             }
             _ => false,
@@ -377,7 +377,7 @@ impl<'a> TypeChecker<'a> {
         let mut callee_item_id = None;
         let mut builtin_param_kinds: Option<Vec<BuiltinType>> = None;
         let signature = match &call.node.callee.node {
-            HirExpressionNode::PathExpression(path_expr) => {
+            Expression::Path(path_expr) => {
                 let span = path_expr.node.path.span;
                 let segments = &path_expr.node.path.node.segments;
                 if let Some(last_segment) = segments.last()
@@ -520,11 +520,11 @@ impl<'a> TypeChecker<'a> {
     }
 }
 
-fn integer_literal_value(expression: &HirExpressionNode) -> Option<i64> {
-    let HirExpressionNode::LiteralExpression(literal) = expression else {
+fn integer_literal_value(expression: &Expression) -> Option<i64> {
+    let Expression::Literal(literal) = expression else {
         return None;
     };
-    let HirLiteral::Integer(text) = &literal.node.literal.node else {
+    let Literal::Integer(text) = &literal.node.literal.node else {
         return None;
     };
     integer_literal_magnitude(text).parse().ok()

@@ -1,6 +1,7 @@
 use beskid_abi::runtime_source::{
-    CANONICAL_CHANNEL_SOURCE_PATH, CANONICAL_FIBER_SOURCE_PATH, CANONICAL_MUTEX_SOURCE_PATH,
-    CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH, canonical_runtime_sources,
+    canonical_runtime_sources, CANONICAL_CHANNEL_SOURCE_PATH, CANONICAL_FIBER_SOURCE_PATH, CANONICAL_MUTEX_SOURCE_PATH,
+    CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_LOOP_SOURCE_PATH, CANONICAL_SCHEDULER_POLL_SOURCE_PATH,
+    CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH,
 };
 
 fn canonical_source(path: &str) -> String {
@@ -18,7 +19,7 @@ fn canonical_scheduler_owns_native_table_through_runtime_state_scheduler_field()
 
     assert!(scheduler.contains("const SCHEDULER_STATE_OFFSET = 32;"));
     assert!(storage.contains("const SCHEDULER_CHANNEL_STATE_OFFSET = 3456;"));
-    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 3496;"));
+    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 4048;"));
     assert!(scheduler.contains("mut pointer table = SchedTable();"));
     assert!(scheduler.contains("return NativePointer(raw_word_load(pointer_add(state, SCHEDULER_STATE_OFFSET)));"));
     assert!(scheduler.contains("table = SystemAllocate(SCHEDULER_TABLE_SIZE, 8);"));
@@ -53,7 +54,7 @@ fn canonical_mutex_storage_is_scheduler_owned_and_cannot_alias_runtime_state() {
     let mutex = canonical_source(CANONICAL_MUTEX_SOURCE_PATH);
 
     assert!(storage.contains("const SCHEDULER_MUTEX_STATE_OFFSET = 3464;"));
-    assert!(storage.contains("const MUTEX_TABLE_SIZE = 1288;"));
+    assert!(storage.contains("const MUTEX_TABLE_SIZE = 4872;"));
     assert!(storage.contains(
         "mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET)));"
     ));
@@ -63,6 +64,13 @@ fn canonical_mutex_storage_is_scheduler_owned_and_cannot_alias_runtime_state() {
         storage.contains("raw_word_store(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET), NativeWord(table));")
     );
     assert!(mutex.contains("return SchedulerMutexTable();"));
+    assert!(mutex.contains("const MUTEX_SLOT_SIZE = 152;"));
+    assert!(mutex.contains("raw_word_store(pointer_add(slot, 24 + count * 8), waiterHandle);"));
+    assert!(mutex.contains("word waiterHandle = fiberIndex == FIBER_NONE ? 0 : FiberHandle(fiberIndex);"));
+    assert!(mutex.contains("if FiberHandleValid(waiterHandle)"));
+    assert!(mutex.contains("MutexWaiterRemove(slot, waiterHandle);"));
+    assert!(mutex.contains("if FiberParked(waiterIndex)"));
+    assert!(!mutex.contains("word(1) << fiberIndex"));
     assert!(!mutex.contains("RuntimeState()"));
     assert!(!mutex.contains("pointer_add(state, 1280)"));
 }
@@ -75,6 +83,40 @@ fn canonical_waitgroup_storage_reassigns_only_an_explicitly_mutable_local() {
         "mut pointer table = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET)));"
     ));
     assert!(storage.contains("table = SystemAllocate(WG_TABLE_SIZE, 8);"));
+}
+
+#[test]
+fn canonical_scheduler_requires_generation_bound_wake_registration_for_pending_tasks() {
+    let scheduler_loop = canonical_source(CANONICAL_SCHEDULER_LOOP_SOURCE_PATH);
+    let poll = canonical_source(CANONICAL_SCHEDULER_POLL_SOURCE_PATH);
+
+    assert_eq!(scheduler_loop.matches("PollExecutorRunOnce();").count(), 1);
+    assert!(scheduler_loop.contains("bool pollWorked = pollState == 0;"));
+    assert!(scheduler_loop.contains("if PollExecutorHasActiveTasks() { break; }"));
+    assert!(poll.contains("pub bool PollExecutorHasActiveTasks()"));
+    assert_eq!(poll.matches("Symbol:\"beskid_rt_v5_poll_executor_run_once\"").count(), 1);
+    assert!(poll.contains("pub i32 PollExecutorRunOnce()"));
+    assert!(poll.contains("const POLL_TASK_WAKE_GENERATION"));
+    assert!(poll.contains("const POLL_TASK_WAKE_REGISTERED"));
+    assert!(poll.contains("const POLL_TASK_WAKE_CONSUMED"));
+    assert!(poll.contains("pub word PollWakeRegister(pointer task, word index)"));
+    assert!(poll.contains("pub bool PollWakeRegistrationValid(pointer task)"));
+    assert!(poll.contains("word wakeToken = PollWakeRegister(task, index);"));
+    assert!(poll.contains("if !PollWakeRegistrationValid(task)"));
+    assert!(poll.contains("raw_byte_store(pointer_add(task, POLL_TASK_WAKE_CONSUMED), 1);"));
+    assert!(poll.contains("PollWakeRevoke(task);"));
+    assert!(poll.contains("return 3;"));
+    assert!(!poll.contains("NativePointer(PollHandle(index, raw_word_load(pointer_add(task, POLL_TASK_GENERATION))))"));
+}
+
+#[test]
+fn canonical_poll_private_state_does_not_overlap_scheduler_context_or_worker_storage() {
+    let scheduler = canonical_source(CANONICAL_SCHEDULER_CORE_SOURCE_PATH);
+    let poll = canonical_source(CANONICAL_SCHEDULER_POLL_SOURCE_PATH);
+
+    assert!(scheduler.contains("//   offset 4040: poll executor state"));
+    assert!(scheduler.contains("const SCHEDULER_TABLE_SIZE = 4048;"));
+    assert!(poll.contains("const SCHEDULER_POLL_STATE_OFFSET = 4040;"));
 }
 
 #[test]

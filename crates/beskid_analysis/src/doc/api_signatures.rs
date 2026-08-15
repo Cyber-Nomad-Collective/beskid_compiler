@@ -1,7 +1,7 @@
 //! Syntax-derived signatures and type annotations for `api.json` rows.
 
-use crate::resolve::Resolution;
 use crate::resolve::items::{ItemInfo, ItemKind};
+use crate::resolve::Resolution;
 use crate::syntax::{
     ContractMethodSignature, ContractNode, EnumDefinition, EnumVariant, Field, FunctionDefinition, MethodDefinition,
     Node, Parameter, Program, SpanInfo, Spanned, TypeDefinition,
@@ -291,10 +291,8 @@ pub fn apply_signature_to_item(item: &mut super::api_snapshot::ApiDocItem, signa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hir::{AstProgram, lower_program as lower_hir_program, normalize_program};
     use crate::resolve::Resolver;
     use crate::services::parse_program;
-    use crate::syntax::Spanned;
 
     #[test]
     fn field_type_links_nested_type() {
@@ -303,10 +301,7 @@ type Inner { i64 x, }
 type Outer { Inner inner, }
 "#;
         let program = parse_program(source).unwrap();
-        let ast: Spanned<AstProgram> = program.clone().into();
-        let mut hir = lower_hir_program(&ast);
-        normalize_program(&mut hir).unwrap();
-        let resolution = Resolver::new().resolve_program(&hir).unwrap();
+        let resolution = Resolver::new().resolve_program(&program).unwrap();
         let field = resolution
             .items
             .iter()

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::hir::{HirPath, HirType};
+use crate::syntax::{Path, Type};
 use crate::resolve::{ItemKind, ResolvedType};
 use crate::syntax::Spanned;
 use crate::types::{TypeId, TypeInfo};
@@ -8,19 +8,19 @@ use crate::types::{TypeId, TypeInfo};
 use super::TypeChecker;
 use crate::types::result::TypeError;
 
-fn type_display_name(ty: &Spanned<HirType>) -> String {
+fn type_display_name(ty: &Spanned<Type>) -> String {
     match &ty.node {
-        HirType::Primitive(primitive) => format!("{:?}", primitive.node),
-        HirType::Complex(path) => path_display_name(path),
-        HirType::Array(inner) => format!("{}[]", type_display_name(inner)),
-        HirType::Function { return_type, parameters } => {
+        Type::Primitive(primitive) => format!("{:?}", primitive.node),
+        Type::Complex(path) => path_display_name(path),
+        Type::Array(inner) => format!("{}[]", type_display_name(inner)),
+        Type::Function { return_type, parameters } => {
             let params = parameters.iter().map(type_display_name).collect::<Vec<_>>().join(", ");
             format!("{}({params})", type_display_name(return_type))
         }
     }
 }
 
-fn path_display_name(path: &Spanned<HirPath>) -> String {
+fn path_display_name(path: &Spanned<Path>) -> String {
     let segments = &path.node.segments;
     if segments.is_empty() {
         return "<unnamed>".to_string();
@@ -45,8 +45,8 @@ fn path_display_name(path: &Spanned<HirPath>) -> String {
 
 impl<'a> TypeChecker<'a> {
     /// Resolve a type AST node while generic parameters from the enclosing item are in scope.
-    pub(super) fn type_id_for_type_in_generic_scope(&mut self, ty: &Spanned<HirType>) -> Option<TypeId> {
-        if let HirType::Complex(path) = &ty.node
+    pub(super) fn type_id_for_type_in_generic_scope(&mut self, ty: &Spanned<Type>) -> Option<TypeId> {
+        if let Type::Complex(path) = &ty.node
             && path.node.segments.len() == 1
             && path.node.segments[0].node.type_args.is_empty()
             && let Some(type_id) = self.generic_params.get(&path.node.segments[0].node.name.node.name)
@@ -56,14 +56,14 @@ impl<'a> TypeChecker<'a> {
         self.type_id_for_type(ty)
     }
 
-    pub(super) fn type_id_for_type(&mut self, ty: &Spanned<HirType>) -> Option<TypeId> {
+    pub(super) fn type_id_for_type(&mut self, ty: &Spanned<Type>) -> Option<TypeId> {
         match &ty.node {
-            HirType::Primitive(primitive) => {
+            Type::Primitive(primitive) => {
                 let mapped = self.map_primitive(primitive.node);
                 self.primitive_type_id(mapped)
             }
-            HirType::Complex(path) => self.type_id_for_path_with_args(path),
-            HirType::Array(inner) => {
+            Type::Complex(path) => self.type_id_for_path_with_args(path),
+            Type::Array(inner) => {
                 let inner_id = self.type_id_for_type(inner)?;
                 if let Some(existing) = self.type_table.find_array_of(inner_id) {
                     Some(existing)
@@ -71,7 +71,7 @@ impl<'a> TypeChecker<'a> {
                     Some(self.type_table.intern(TypeInfo::Array(inner_id)))
                 }
             }
-            HirType::Function { return_type, parameters } => {
+            Type::Function { return_type, parameters } => {
                 let return_type = self.type_id_for_type(return_type)?;
                 let mut params = Vec::with_capacity(parameters.len());
                 for parameter in parameters {
@@ -97,7 +97,7 @@ impl<'a> TypeChecker<'a> {
         names.iter().zip(substitution.iter()).map(|(name, type_id)| (name.clone(), *type_id)).collect()
     }
 
-    fn item_id_for_type_path(&self, path: &Spanned<HirPath>) -> Option<crate::resolve::ItemId> {
+    fn item_id_for_type_path(&self, path: &Spanned<Path>) -> Option<crate::resolve::ItemId> {
         if let Some(ResolvedType::Item(item_id)) = self.resolved_type_at(path.span) {
             return Some(item_id);
         }
@@ -127,7 +127,7 @@ impl<'a> TypeChecker<'a> {
         None
     }
 
-    fn base_item_id_for_applied_path(&self, path: &Spanned<HirPath>) -> Option<crate::resolve::ItemId> {
+    fn base_item_id_for_applied_path(&self, path: &Spanned<Path>) -> Option<crate::resolve::ItemId> {
         self.item_id_for_type_path(path).or_else(|| {
             let last_segment = path.node.segments.last()?;
             let name = last_segment.node.name.node.name.as_str();
@@ -135,7 +135,7 @@ impl<'a> TypeChecker<'a> {
         })
     }
 
-    pub(super) fn intern_foreign_applied_type(&mut self, path: &Spanned<HirPath>) -> Option<TypeId> {
+    pub(super) fn intern_foreign_applied_type(&mut self, path: &Spanned<Path>) -> Option<TypeId> {
         let last_segment = path.node.segments.last()?;
         if last_segment.node.type_args.is_empty() {
             return None;
@@ -155,7 +155,7 @@ impl<'a> TypeChecker<'a> {
         Some(self.type_table.intern(crate::types::TypeInfo::Applied { base, args }))
     }
 
-    fn foreign_applied_base_item_id(&self, path: &Spanned<HirPath>) -> Option<crate::resolve::ItemId> {
+    fn foreign_applied_base_item_id(&self, path: &Spanned<Path>) -> Option<crate::resolve::ItemId> {
         let segments: Vec<String> =
             path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect();
         if segments.is_empty() {
@@ -173,10 +173,10 @@ impl<'a> TypeChecker<'a> {
             .map(|info| info.id)
     }
 
-    fn foreign_type_arg_id(&self, ty: &Spanned<HirType>) -> Option<TypeId> {
+    fn foreign_type_arg_id(&self, ty: &Spanned<Type>) -> Option<TypeId> {
         match &ty.node {
-            HirType::Primitive(primitive) => self.primitive_type_id(self.map_primitive(primitive.node)),
-            HirType::Complex(path) => {
+            Type::Primitive(primitive) => self.primitive_type_id(self.map_primitive(primitive.node)),
+            Type::Complex(path) => {
                 let name = path.node.segments.last()?.node.name.node.name.as_str();
                 let item_id = self.resolution.items.iter().find(|info| {
                     matches!(info.kind, ItemKind::Enum | ItemKind::Type)
@@ -188,7 +188,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    pub(super) fn type_id_for_path_with_args(&mut self, path: &Spanned<HirPath>) -> Option<TypeId> {
+    pub(super) fn type_id_for_path_with_args(&mut self, path: &Spanned<Path>) -> Option<TypeId> {
         if let Some(last_segment) = path.node.segments.last()
             && !last_segment.node.type_args.is_empty()
         {
@@ -216,7 +216,7 @@ impl<'a> TypeChecker<'a> {
         self.type_id_for_type_path(path)
     }
 
-    pub(super) fn type_id_for_type_path(&mut self, path: &Spanned<HirPath>) -> Option<TypeId> {
+    pub(super) fn type_id_for_type_path(&mut self, path: &Spanned<Path>) -> Option<TypeId> {
         match self.resolved_type_at(path.span) {
             Some(ResolvedType::Item(item)) => {
                 if let Some(expected) = self.generic_items.get(&item)

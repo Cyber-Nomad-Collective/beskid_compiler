@@ -1,37 +1,57 @@
-// Canonical Beskid GC sweep pass.
+// Canonical non-moving sweep and coalesced in-region free-list rebuild.
 
-// Sweeps the heap: resets the bump pointer and rebuilds a free list
-// from unreachable (white) objects. Live objects are reset to white.
-pub unit Sweep(pointer heap) {
-    pointer start = NativePointer(raw_word_load(heap));
-    pointer end = NativePointer(raw_word_load(pointer_add(heap, 8)) + NativeWord(start));
-    mut pointer bump = start;
+const HEAP_REGION_START = 0;
+const HEAP_BUMP = 16;
+const HEAP_LIVE_BYTES = 32;
+const HEAP_LIVE_COUNT = 40;
+
+pub bool Sweep(pointer heap) {
+    pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
+    pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
     mut word liveBytes = 0;
     mut word liveCount = 0;
-    while NativeWord(bump) < NativeWord(end) {
-        pointer descriptor = NativePointer(raw_word_load(bump));
-        if descriptor == NativePointer(0) {
-            // Free/uninitialized memory — skip.
-            bump = NativePointer(NativeWord(bump) + 8);
+    mut pointer pendingFree = NativePointer(0);
+    mut word pendingSize = 0;
+    while NativeWord(cursor) < NativeWord(bump) {
+        word descriptorWord = raw_word_load(cursor);
+        word blockSize;
+        bool live = false;
+        if descriptorWord == 0 {
+            blockSize = raw_word_load(pointer_add(cursor, 8));
         } else {
-            word state = raw_word_load(pointer_add(bump, 8));
-            word objSize = raw_word_load(descriptor);
-            if state == GcMark::Black {
-                // Object is live — reset to white for next cycle.
-                raw_word_store(pointer_add(bump, 8), GcMark::White);
-                liveBytes = liveBytes + objSize;
-                liveCount = liveCount + 1;
-            } else {
-                // Object is unreachable (white or gray) — wipe header.
-                raw_word_store(bump, 0);
-                raw_word_store(pointer_add(bump, 8), 0);
+            pointer descriptor = NativePointer(descriptorWord);
+            if ValidateTypeDescriptor(descriptor) == false {
+                return false;
             }
-            bump = NativePointer(NativeWord(bump) + objSize);
+            blockSize = ManagedObjectSize(cursor, descriptor);
+            if blockSize == 0 { return false; }
+            if raw_word_load(pointer_add(cursor, 8)) == GcMark::Black {
+                live = true;
+            }
         }
+        word next = NativeWord(cursor) + blockSize;
+        if blockSize < 16 || blockSize % 8 != 0 || next <= NativeWord(cursor) || next > NativeWord(bump) {
+            return false;
+        }
+        if live {
+            raw_word_store(pointer_add(cursor, 8), GcMark::White);
+            liveBytes = liveBytes + blockSize;
+            liveCount = liveCount + 1;
+            pendingFree = NativePointer(0);
+            pendingSize = 0;
+        } else {
+            if pendingFree == NativePointer(0) {
+                pendingFree = cursor;
+                pendingSize = blockSize;
+                raw_word_store(pendingFree, 0);
+            } else {
+                pendingSize = pendingSize + blockSize;
+            }
+            raw_word_store(pointer_add(pendingFree, 8), pendingSize);
+        }
+        cursor = NativePointer(next);
     }
-    // Reset bump pointer to compacted position.
-    raw_word_store(pointer_add(heap, 16), NativeWord(start));
-    raw_word_store(pointer_add(heap, 32), liveBytes);
-    raw_word_store(pointer_add(heap, 40), liveCount);
-    return;
+    raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), liveBytes);
+    raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), liveCount);
+    return true;
 }

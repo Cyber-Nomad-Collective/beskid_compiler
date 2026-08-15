@@ -5,7 +5,7 @@ use beskid_abi::runtime_source::{
     canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources,
 };
 use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
 };
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
@@ -51,7 +51,7 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         "beskid-corelib".into(),
         "corelib-source".into(),
     );
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
@@ -65,7 +65,7 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let target = TargetMetadata::supported()
         .into_iter()
@@ -119,7 +119,7 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         "beskid-corelib".into(),
         "forged-corelib-source".into(),
     );
-    let forged_assembly = Arc::new(SyntaxProgramAssembly::new(
+    let forged_assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: forged_directory },
             dependencies: Vec::new(),
@@ -133,7 +133,7 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     assert!(
         build_canonical_corelib_syscall_typed_program(
@@ -160,7 +160,7 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
     let application_source = "i64 Main() { return __syscall_write(1, \"application\"); }";
     let syscall_program = parse_program(&source.source).expect("parse embedded Core.Syscall");
     let application_program = parse_program(application_source).expect("parse application source");
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: application_root.clone() },
             dependencies: vec![RootEntry {
@@ -185,7 +185,7 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
         1,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let target = TargetMetadata::supported()
         .into_iter()
@@ -245,8 +245,8 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
     let mut forged_db = BeskidDatabase::default();
     let forged_source = application_source.to_owned();
     let forged_program = parse_program(&forged_source).expect("parse forged syscall source");
-    let forged_assembly = Arc::new(SyntaxProgramAssembly::new(
-        assembly.roots().clone(),
+    let forged_assembly = Arc::new(ProgramAssembly::new(
+        assembly.roots.clone(),
         Arc::new(vec![SourceUnit {
             logical_name: "Core/Syscall/Syscall.bd".into(),
             path: syscall_path.clone(),
@@ -256,7 +256,7 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let forged_project = ProjectSession::new(
         &forged_db,

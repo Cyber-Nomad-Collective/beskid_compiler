@@ -32,8 +32,8 @@ fn layout(name: &str, second_offset: u64) -> AbiLayout {
         size: 16,
         alignment: 8,
         fields: vec![
-            AbiFieldLayout { name: "pointer".into(), offset: 0, ty: AbiType::Pointer },
-            AbiFieldLayout { name: "length".into(), offset: second_offset, ty: AbiType::USize },
+            AbiFieldLayout { name: "pointer".into(), offset: 0, ty: "pointer".into() },
+            AbiFieldLayout { name: "length".into(), offset: second_offset, ty: "usize".into() },
         ],
     }
 }

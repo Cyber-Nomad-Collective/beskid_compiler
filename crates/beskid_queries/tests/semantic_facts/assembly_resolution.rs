@@ -1,7 +1,7 @@
 use super::support::{key, key_at_start};
 use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
 use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
 };
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
@@ -25,7 +25,7 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let tools_program =
         expand_program(parse_program(tools_source).expect("tools parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
             dependencies: Vec::new(),
@@ -47,7 +47,7 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let tools_unit = SourceUnitId::new(&db, tools_path);
@@ -136,7 +136,7 @@ fn qualified_import_resolution_follows_public_module_reexports() {
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
         })
         .collect::<Vec<_>>();
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
             dependencies: Vec::new(),
@@ -145,7 +145,7 @@ fn qualified_import_resolution_follows_public_module_reexports() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let result_unit = SourceUnitId::new(&db, result_path);
@@ -202,7 +202,7 @@ fn imported_assembly_module_call_resolves_through_its_use_binding() {
         expand_program(parse_program(terminal_source).expect("terminal parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let string_program =
         expand_program(parse_program(string_source).expect("string parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
             dependencies: Vec::new(),
@@ -224,7 +224,7 @@ fn imported_assembly_module_call_resolves_through_its_use_binding() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let terminal_unit = SourceUnitId::new(&db, terminal_path);
     let string_unit = SourceUnitId::new(&db, string_path);
@@ -272,7 +272,7 @@ fn hub_declaration_shadows_the_same_name_reached_through_its_public_reexport() {
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
         })
         .collect::<Vec<_>>();
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
             dependencies: Vec::new(),
@@ -281,7 +281,7 @@ fn hub_declaration_shadows_the_same_name_reached_through_its_public_reexport() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let casing_unit = SourceUnitId::new(&db, casing_path);
     let hub_unit = SourceUnitId::new(&db, hub_path);
@@ -317,7 +317,7 @@ fn imported_type_qualified_static_call_resolves_to_its_exact_syntax_item() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let progress_program =
         expand_program(parse_program(progress_source).expect("progress parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
             dependencies: Vec::new(),
@@ -339,7 +339,7 @@ fn imported_type_qualified_static_call_resolves_to_its_exact_syntax_item() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let progress_unit = SourceUnitId::new(&db, progress_path);
@@ -377,7 +377,7 @@ fn syntax_facts_resolve_core_output_writeline_without_hir() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let output_program =
         expand_program(parse_program(output_source).expect("Core.Output parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
             dependencies: Vec::new(),
@@ -399,7 +399,7 @@ fn syntax_facts_resolve_core_output_writeline_without_hir() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let output_unit = SourceUnitId::new(&db, output_path);
@@ -440,7 +440,7 @@ fn syntax_facts_resolve_core_output_writeline_via_import_alias() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let output_program =
         expand_program(parse_program(output_source).expect("Core.Output parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
             dependencies: Vec::new(),
@@ -462,7 +462,7 @@ fn syntax_facts_resolve_core_output_writeline_via_import_alias() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let output_unit = SourceUnitId::new(&db, output_path);
@@ -500,7 +500,7 @@ fn syntax_facts_do_not_resolve_core_output_writeline_through_alias() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let output_program =
         expand_program(parse_program(output_source).expect("Core.Output parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
             dependencies: Vec::new(),
@@ -522,7 +522,7 @@ fn syntax_facts_do_not_resolve_core_output_writeline_through_alias() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let project = ProjectSession::new(
@@ -561,7 +561,7 @@ fn qualified_import_alias_ambiguity_has_no_syntax_item_fact() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let tools_program =
         expand_program(parse_program(tools_source).expect("tools parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
             dependencies: Vec::new(),
@@ -589,7 +589,7 @@ fn qualified_import_alias_ambiguity_has_no_syntax_item_fact() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let project = ProjectSession::new(
@@ -627,7 +627,7 @@ fn unqualified_import_resolution_requires_one_registered_syntax_target() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let tools_program =
         expand_program(parse_program(tools_source).expect("tools parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
             dependencies: Vec::new(),
@@ -649,7 +649,7 @@ fn unqualified_import_resolution_requires_one_registered_syntax_target() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let tools_unit = SourceUnitId::new(&db, tools_path);

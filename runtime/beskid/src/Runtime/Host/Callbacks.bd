@@ -117,15 +117,45 @@ pub unit CallbackInstallEntries(pointer callbackState, pointer entries, word cou
 // Validation precedes allocation; allocation and copying complete before this
 // function returns a candidate.  The caller performs the sole publication
 // store, preserving the previous registry on every failure path.
+pub bool CallbackMergedFits(pointer previous, pointer entries, word count, word kind) {
+    word merged = 0;
+    if previous != NativePointer(0) { merged = raw_word_load(CallbackEntryCountSlot(previous, kind)); }
+    mut word sourceIndex = 0;
+    while sourceIndex < count {
+        word identity = raw_word_load(pointer_add(entries, sourceIndex * CALLBACK_REGISTRY_ENTRY_SIZE));
+        mut word found = 0;
+        mut word priorSource = 0;
+        while priorSource < sourceIndex {
+            if raw_word_load(pointer_add(entries, priorSource * CALLBACK_REGISTRY_ENTRY_SIZE)) == identity { found = 1; }
+            priorSource = priorSource + 1;
+        }
+        if found == 0 && previous != NativePointer(0) {
+            word existingCount = raw_word_load(CallbackEntryCountSlot(previous, kind));
+            pointer existing = CallbackEntries(previous, kind);
+            mut word existingIndex = 0;
+            while existingIndex < existingCount {
+                if raw_word_load(pointer_add(existing, existingIndex * CALLBACK_REGISTRY_ENTRY_SIZE)) == identity { found = 1; }
+                existingIndex = existingIndex + 1;
+            }
+        }
+        if found == 0 { merged = merged + 1; }
+        if merged > CallbackTableMax { return false; }
+        sourceIndex = sourceIndex + 1;
+    }
+    return true;
+}
+
 pub pointer CallbackRegistryReplacement(pointer entries, word count, word kind) {
     if CallbackRegistrationValid(entries, count) == 0 { return NativePointer(0); }
     pointer state = RuntimeState();
     if state == NativePointer(0) { return NativePointer(0); }
     pointer previous = CallbackRegistry();
+    if !CallbackMergedFits(previous, entries, count, kind) { return NativePointer(0); }
     pointer replacement = SystemAllocate(CALLBACK_REGISTRY_SIZE, 8);
     if replacement == NativePointer(0) { return NativePointer(0); }
     memory_set(replacement, 0, CALLBACK_REGISTRY_SIZE);
     raw_word_store(pointer_add(replacement, CALLBACK_REGISTRY_OWNER_OFFSET), NativeWord(state));
+    if previous != NativePointer(0) { raw_word_store(pointer_add(replacement, 24), raw_word_load(pointer_add(previous, 24))); }
     CallbackCopyEntries(replacement, previous, 0);
     CallbackCopyEntries(replacement, previous, 1);
     CallbackInstallEntries(replacement, entries, count, kind);
@@ -177,12 +207,13 @@ pub unit BeskidRegisterCallbacks(pointer entries, word count) {
     pointer replacement = CallbackRegistryReplacement(entries, count, 0);
     if replacement == NativePointer(0) { return; }
     pointer slot = CallbackRegistrySlot();
-    if slot == NativePointer(0) { return; }
+    if slot == NativePointer(0) { SystemFree(replacement, CALLBACK_REGISTRY_SIZE); return; }
+    pointer previous = NativePointer(raw_word_load(slot));
     raw_word_store(slot, NativeWord(replacement));
+    if previous != NativePointer(0) { memory_set(previous, 0, CALLBACK_REGISTRY_SIZE); SystemFree(previous, CALLBACK_REGISTRY_SIZE); }
     return;
 }
 
-[Export(Abi:"C", Symbol:"install_callback_trampoline")]
 pub unit InstallCallbackTrampoline(pointer target, pointer handler) {
     if target == NativePointer(0) || handler == NativePointer(0) { return; }
     pointer scopeSlot = CallbackEnterScope();
@@ -199,7 +230,9 @@ pub unit BeskidRegisterHandlers(pointer entries, word count) {
     pointer replacement = CallbackRegistryReplacement(entries, count, 1);
     if replacement == NativePointer(0) { return; }
     pointer slot = CallbackRegistrySlot();
-    if slot == NativePointer(0) { return; }
+    if slot == NativePointer(0) { SystemFree(replacement, CALLBACK_REGISTRY_SIZE); return; }
+    pointer previous = NativePointer(raw_word_load(slot));
     raw_word_store(slot, NativeWord(replacement));
+    if previous != NativePointer(0) { memory_set(previous, 0, CALLBACK_REGISTRY_SIZE); SystemFree(previous, CALLBACK_REGISTRY_SIZE); }
     return;
 }

@@ -91,7 +91,7 @@ fn unsupported_kinds_are_intentionally_release_rejected_for_0_4() {
         (Syntax::ScopeHook, "composition declaration; not an executable ISLE item"),
         (Syntax::WithStatement, "composition scope bracket waits on container facts (W5/composition)"),
         (Syntax::LaunchStatement, "composition launch bracket waits on container facts (W5/composition)"),
-        (Syntax::CodeStringLiteral, "fenced code strings unsupported in both HIR and ISLE paths"),
+        (Syntax::CodeStringLiteral, "fenced code strings are not supported by generated ISLE"),
     ];
 
     assert_eq!(
@@ -252,7 +252,7 @@ fn typed_operation_families_have_explicit_classifications() {
 
 /// The canonical corelib manifests depend on local declarations and mutable writes.
 /// Keep their source syntax on the generated ISLE route: `CodegenInput` supplies facts,
-/// and these rules select the existing constructor implementations without a HIR fallback.
+/// and these rules select the existing constructor implementations directly.
 #[test]
 fn generated_isle_routes_local_declarations_and_assignments() {
     let isle = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("isle");

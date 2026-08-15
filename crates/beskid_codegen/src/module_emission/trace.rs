@@ -10,7 +10,7 @@ use beskid_queries::{
 use crate::CodegenInput;
 
 /// Trace only facts already read by the syntax-only lowering boundary. This has no bearing on
-/// selection; it makes every unavailable fact explicit instead of making a HIR-era guess.
+/// selection; it makes every unavailable fact explicit instead of guessing.
 pub(super) fn trace_item_facts(input: &CodegenInput<'_>, item: AstNodeKey, symbols: &HashMap<DirectCallee, String>) {
     if !crate::isle_trace::enabled() {
         return;

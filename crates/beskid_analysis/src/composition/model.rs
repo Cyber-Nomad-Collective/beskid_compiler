@@ -56,9 +56,32 @@ pub struct CompositionHost {
     pub span: SpanInfo,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ServiceSlot(pub u32);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActivationPlanEntry {
+    pub registration_id: u32,
+    pub slot: ServiceSlot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluralPlan {
+    pub owner_registration_id: u32,
+    pub target_slots: Vec<ServiceSlot>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BindingPlan {
-    pub registration_order: Vec<u32>,
-    pub plural_bindings: HashMap<u32, Vec<u32>>,
+    /// Initialization-safe activation order with every registration assigned one immutable slot.
+    pub activation: Vec<ActivationPlanEntry>,
+    /// Compiler-materialized plural injection targets. Runtime lookup is never required.
+    pub plurals: Vec<PluralPlan>,
     pub scope_parents: HashMap<ScopeId, Option<ScopeId>>,
+}
+
+impl BindingPlan {
+    pub fn slot_for_registration(&self, registration_id: u32) -> Option<ServiceSlot> {
+        self.activation.iter().find(|entry| entry.registration_id == registration_id).map(|entry| entry.slot)
+    }
 }

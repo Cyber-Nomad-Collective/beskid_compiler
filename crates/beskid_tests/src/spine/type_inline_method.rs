@@ -71,29 +71,3 @@ type Bad {
     assert_eq!(type_def.node.fields.len(), 1);
     assert_eq!(type_def.node.methods.len(), 1);
 }
-
-#[test]
-fn duplicate_field_and_method_name_errors_on_resolve() {
-    use beskid_analysis::hir::{AstProgram, HirProgram, lower_program, normalize_program};
-    use beskid_analysis::resolve::{ResolveError, Resolver};
-    use beskid_analysis::syntax::Spanned;
-
-    let program = parse_program_with_source_name(
-        "test.bd",
-        r#"
-type Bad {
-    i32 value,
-
-    pub unit value() {
-        return;
-    }
-}
-"#,
-    )
-    .expect("parse");
-    let ast: Spanned<AstProgram> = program.into();
-    let mut hir: Spanned<HirProgram> = lower_program(&ast);
-    normalize_program(&mut hir).expect("normalize");
-    let errors = Resolver::new().resolve_program(&hir).expect_err("expected duplicate member error");
-    assert!(matches!(errors.first(), Some(ResolveError::DuplicateItem { .. })));
-}

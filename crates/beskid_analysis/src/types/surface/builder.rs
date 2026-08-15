@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::hir::{
-    HirContractNode, HirFieldKind, HirFunctionDefinition, HirItem, HirMethodDefinition, HirPath, HirPrimitiveType,
-    HirProgram, HirType, HirTypeDefinition,
+use crate::syntax::{
+    ContractNode, FieldKind, FunctionDefinition, Node, MethodDefinition, Path, PrimitiveType,
+    Program, Type, TypeDefinition,
 };
 use crate::paths;
 use crate::resolve::{ItemId, ItemKind, Resolution, ResolvedType};
@@ -17,7 +17,7 @@ pub(super) struct TypeSurfaceBuilder<'a> {
     resolution: &'a Resolution,
     source_path: PathBuf,
     types: TypeTable,
-    primitive_types: HashMap<HirPrimitiveType, TypeId>,
+    primitive_types: HashMap<PrimitiveType, TypeId>,
     named_types: HashMap<ItemId, TypeId>,
     generic_params: HashMap<String, TypeId>,
     surface: UnitTypeSurface,
@@ -44,20 +44,20 @@ impl<'a> TypeSurfaceBuilder<'a> {
         self.surface
     }
 
-    pub(super) fn walk_program(&mut self, program: &Spanned<HirProgram>) {
+    pub(super) fn walk_program(&mut self, program: &Spanned<Program>) {
         for item in &program.node.items {
             self.walk_item(item);
         }
         self.seed_contract_signatures(program);
         for item in &program.node.items {
             match &item.node {
-                HirItem::MethodDefinition(def) => self.seed_method_receiver(item.span, def),
-                HirItem::ExtendTypeDefinition(def) => {
+                Node::Method(def) => self.seed_method_receiver(item.span, def),
+                Node::ExtendTypeDefinition(def) => {
                     for method in &def.node.methods {
                         self.seed_method_receiver(method.span, method);
                     }
                 }
-                HirItem::TypeDefinition(def) => {
+                Node::TypeDefinition(def) => {
                     for method in &def.node.methods {
                         self.seed_method_receiver(method.span, method);
                     }
@@ -67,29 +67,29 @@ impl<'a> TypeSurfaceBuilder<'a> {
         }
     }
 
-    fn walk_item(&mut self, item: &Spanned<HirItem>) {
+    fn walk_item(&mut self, item: &Spanned<Node>) {
         match &item.node {
-            HirItem::FunctionDefinition(def) => {
+            Node::Function(def) => {
                 self.seed_generic_item(item.span, &def.node.generics);
                 self.register_foreign_function(item.span, &def.node);
             }
-            HirItem::TypeDefinition(def) => {
+            Node::TypeDefinition(def) => {
                 self.seed_generic_item(item.span, &def.node.generics);
                 self.register_struct_definition(item.span, &def.node, true);
                 for method in &def.node.methods {
                     self.register_foreign_method(method.span, method);
                 }
             }
-            HirItem::EnumDefinition(def) => {
+            Node::EnumDefinition(def) => {
                 self.seed_generic_item(item.span, &def.node.generics);
                 self.register_enum_definition(item.span, &def.node);
             }
-            HirItem::ExtendTypeDefinition(def) => {
+            Node::ExtendTypeDefinition(def) => {
                 for method in &def.node.methods {
                     self.register_foreign_method(method.span, method);
                 }
             }
-            HirItem::InlineModule(module) => {
+            Node::InlineModule(module) => {
                 for nested in &module.node.items {
                     self.walk_item(nested);
                 }
@@ -100,15 +100,15 @@ impl<'a> TypeSurfaceBuilder<'a> {
 
     fn seed_primitives(&mut self) {
         for primitive in [
-            HirPrimitiveType::Bool,
-            HirPrimitiveType::I32,
-            HirPrimitiveType::I64,
-            HirPrimitiveType::U8,
-            HirPrimitiveType::F64,
-            HirPrimitiveType::Char,
-            HirPrimitiveType::String,
-            HirPrimitiveType::Unit,
-            HirPrimitiveType::Never,
+            PrimitiveType::Bool,
+            PrimitiveType::I32,
+            PrimitiveType::I64,
+            PrimitiveType::U8,
+            PrimitiveType::F64,
+            PrimitiveType::Char,
+            PrimitiveType::String,
+            PrimitiveType::Unit,
+            PrimitiveType::Never,
         ] {
             let id = self.types.intern(TypeInfo::Primitive(primitive));
             self.primitive_types.insert(primitive, id);
@@ -128,7 +128,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         }
     }
 
-    fn seed_generic_item(&mut self, item_span: SpanInfo, generics: &[Spanned<crate::hir::HirIdentifier>]) {
+    fn seed_generic_item(&mut self, item_span: SpanInfo, generics: &[Spanned<crate::syntax::Identifier>]) {
         let Some(item_id) = self.item_id_for_span(item_span) else {
             return;
         };
@@ -138,14 +138,14 @@ impl<'a> TypeSurfaceBuilder<'a> {
         }
     }
 
-    fn register_struct_definition(&mut self, item_span: SpanInfo, def: &HirTypeDefinition, in_generic_scope: bool) {
+    fn register_struct_definition(&mut self, item_span: SpanInfo, def: &TypeDefinition, in_generic_scope: bool) {
         let mut ordered = Vec::new();
         let mut event_fields = HashMap::new();
         for field in &def.fields {
-            if field.node.kind == HirFieldKind::Injected {
+            if field.node.kind == FieldKind::Injected {
                 continue;
             }
-            if field.node.kind == HirFieldKind::Event {
+            if field.node.kind == FieldKind::Event {
                 event_fields.insert(field.node.name.node.name.clone(), field.node.event_capacity);
             }
             let type_id = if in_generic_scope {
@@ -167,7 +167,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         }
     }
 
-    fn register_enum_definition(&mut self, item_span: SpanInfo, def: &crate::hir::HirEnumDefinition) {
+    fn register_enum_definition(&mut self, item_span: SpanInfo, def: &crate::syntax::EnumDefinition) {
         let mut inserted = Vec::new();
         for generic in &def.generics {
             let name = generic.node.name.clone();
@@ -195,7 +195,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         }
     }
 
-    fn register_foreign_function(&mut self, item_span: SpanInfo, def: &HirFunctionDefinition) {
+    fn register_foreign_function(&mut self, item_span: SpanInfo, def: &FunctionDefinition) {
         let mut inserted = Vec::new();
         for generic in &def.generics {
             let name = generic.node.name.clone();
@@ -207,8 +207,8 @@ impl<'a> TypeSurfaceBuilder<'a> {
             .return_type
             .as_ref()
             .and_then(|ty| self.resolve_foreign_return_type(ty))
-            .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
-        let placeholder_param = self.primitive_type_id(HirPrimitiveType::I64);
+            .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
+        let placeholder_param = self.primitive_type_id(PrimitiveType::I64);
         let mut params = Vec::new();
         for param in &def.parameters {
             let type_id = self.type_id_for_type_in_generic_scope(&param.node.ty).or(placeholder_param);
@@ -223,14 +223,14 @@ impl<'a> TypeSurfaceBuilder<'a> {
         }
     }
 
-    fn register_foreign_method(&mut self, item_span: SpanInfo, def: &Spanned<HirMethodDefinition>) {
+    fn register_foreign_method(&mut self, item_span: SpanInfo, def: &Spanned<MethodDefinition>) {
         let return_type = def
             .node
             .return_type
             .as_ref()
             .and_then(|ty| self.type_id_for_type_in_generic_scope(ty))
-            .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
-        let placeholder_param = self.primitive_type_id(HirPrimitiveType::I64);
+            .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
+        let placeholder_param = self.primitive_type_id(PrimitiveType::I64);
         let mut params = Vec::new();
         for param in &def.node.parameters {
             let type_id = self.type_id_for_type_in_generic_scope(&param.node.ty).or(placeholder_param);
@@ -247,7 +247,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
     fn register_self_parameter_method(
         &mut self,
         item_span: SpanInfo,
-        def: &HirFunctionDefinition,
+        def: &FunctionDefinition,
         params: &[TypeId],
         return_type: Option<TypeId>,
     ) {
@@ -276,7 +276,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         );
     }
 
-    fn seed_method_receiver(&mut self, method_span: SpanInfo, def: &Spanned<HirMethodDefinition>) {
+    fn seed_method_receiver(&mut self, method_span: SpanInfo, def: &Spanned<MethodDefinition>) {
         let Some(method_item_id) = self.item_id_for_span(method_span) else {
             return;
         };
@@ -286,13 +286,13 @@ impl<'a> TypeSurfaceBuilder<'a> {
         self.surface.methods_by_receiver.insert((receiver_item_id, def.node.name.node.name.clone()), method_item_id);
     }
 
-    fn seed_contract_signatures(&mut self, program: &Spanned<HirProgram>) {
-        let definitions: HashMap<String, &Spanned<crate::hir::HirContractDefinition>> = program
+    fn seed_contract_signatures(&mut self, program: &Spanned<Program>) {
+        let definitions: HashMap<String, &Spanned<crate::syntax::ContractDefinition>> = program
             .node
             .items
             .iter()
             .filter_map(|item| match &item.node {
-                HirItem::ContractDefinition(def) => Some((def.node.name.node.name.clone(), def)),
+                Node::ContractDefinition(def) => Some((def.node.name.node.name.clone(), def)),
                 _ => None,
             })
             .collect();
@@ -321,7 +321,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
     fn collect_contract_signatures_recursive(
         &mut self,
         contract_name: &str,
-        definitions: &HashMap<String, &Spanned<crate::hir::HirContractDefinition>>,
+        definitions: &HashMap<String, &Spanned<crate::syntax::ContractDefinition>>,
         cache: &mut HashMap<String, Vec<(String, FunctionSignature)>>,
         active: &mut HashSet<String>,
     ) -> Vec<(String, FunctionSignature)> {
@@ -340,7 +340,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
 
         for node in &definition.node.items {
             match &node.node {
-                HirContractNode::MethodSignature(signature) => {
+                ContractNode::MethodSignature(signature) => {
                     if methods.iter().any(|(name, _)| name == &signature.node.name.node.name) {
                         continue;
                     }
@@ -361,13 +361,13 @@ impl<'a> TypeSurfaceBuilder<'a> {
                         .return_type
                         .as_ref()
                         .and_then(|ty| self.type_id_for_type(ty))
-                        .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
+                        .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
                     let Some(return_type) = return_type else {
                         continue;
                     };
                     methods.push((signature.node.name.node.name.clone(), FunctionSignature { params, return_type }));
                 }
-                HirContractNode::Embedding(embedding) => {
+                ContractNode::Embedding(embedding) => {
                     let embedded = self.collect_contract_signatures_recursive(
                         embedding.node.name.node.name.as_str(),
                         definitions,
@@ -399,21 +399,21 @@ impl<'a> TypeSurfaceBuilder<'a> {
         self.surface.function_signatures.insert(item_id, FunctionSignature { params, return_type });
     }
 
-    fn resolve_foreign_return_type(&mut self, ty: &Spanned<HirType>) -> Option<TypeId> {
+    fn resolve_foreign_return_type(&mut self, ty: &Spanned<Type>) -> Option<TypeId> {
         if let Some(type_id) = self.type_id_for_type_in_generic_scope(ty) {
             return Some(type_id);
         }
         if let Some(type_id) = self.type_id_for_type(ty) {
             return Some(type_id);
         }
-        let HirType::Complex(path) = &ty.node else {
+        let Type::Complex(path) = &ty.node else {
             return None;
         };
         self.type_id_for_path_with_args(path)
     }
 
-    fn type_id_for_type_in_generic_scope(&mut self, ty: &Spanned<HirType>) -> Option<TypeId> {
-        if let HirType::Complex(path) = &ty.node
+    fn type_id_for_type_in_generic_scope(&mut self, ty: &Spanned<Type>) -> Option<TypeId> {
+        if let Type::Complex(path) = &ty.node
             && path.node.segments.len() == 1
             && path.node.segments[0].node.type_args.is_empty()
             && let Some(type_id) = self.generic_params.get(&path.node.segments[0].node.name.node.name)
@@ -423,15 +423,15 @@ impl<'a> TypeSurfaceBuilder<'a> {
         self.type_id_for_type(ty)
     }
 
-    fn type_id_for_type(&mut self, ty: &Spanned<HirType>) -> Option<TypeId> {
+    fn type_id_for_type(&mut self, ty: &Spanned<Type>) -> Option<TypeId> {
         match &ty.node {
-            HirType::Primitive(primitive) => self.primitive_type_id(primitive.node),
-            HirType::Complex(path) => self.type_id_for_path_with_args(path),
-            HirType::Array(inner) => {
+            Type::Primitive(primitive) => self.primitive_type_id(primitive.node),
+            Type::Complex(path) => self.type_id_for_path_with_args(path),
+            Type::Array(inner) => {
                 let inner_id = self.type_id_for_type(inner)?;
                 Some(self.types.find_array_of(inner_id).unwrap_or_else(|| self.types.intern(TypeInfo::Array(inner_id))))
             }
-            HirType::Function { return_type, parameters } => {
+            Type::Function { return_type, parameters } => {
                 let return_type = self.type_id_for_type(return_type)?;
                 let mut params = Vec::with_capacity(parameters.len());
                 for parameter in parameters {
@@ -442,7 +442,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         }
     }
 
-    fn type_id_for_path_with_args(&mut self, path: &Spanned<HirPath>) -> Option<TypeId> {
+    fn type_id_for_path_with_args(&mut self, path: &Spanned<Path>) -> Option<TypeId> {
         let item_id = self.item_id_for_type_path(path)?;
         let base = self.named_type_id(item_id)?;
         let last = path.node.segments.last()?;
@@ -456,7 +456,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         Some(self.types.intern(TypeInfo::Applied { base: item_id, args }))
     }
 
-    fn item_id_for_type_path(&self, path: &Spanned<HirPath>) -> Option<ItemId> {
+    fn item_id_for_type_path(&self, path: &Spanned<Path>) -> Option<ItemId> {
         if let Some(ResolvedType::Item(item_id)) = self.resolved_type_at(path.span) {
             return Some(item_id);
         }
@@ -485,7 +485,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         None
     }
 
-    fn primitive_type_id(&self, primitive: HirPrimitiveType) -> Option<TypeId> {
+    fn primitive_type_id(&self, primitive: PrimitiveType) -> Option<TypeId> {
         self.primitive_types.get(&primitive).copied()
     }
 

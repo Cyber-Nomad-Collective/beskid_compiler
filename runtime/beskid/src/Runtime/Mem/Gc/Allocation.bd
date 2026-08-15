@@ -1,89 +1,134 @@
-// Canonical Beskid GC allocation entrypoints.
-//
-// Objects are allocated from a contiguous heap region via a bump pointer.
+// Canonical non-moving GC allocation and in-region free-list reuse.
 
-// Allocates `size` bytes from the GC heap.
-//
-// When the bump pointer overflows its limit, a collection is triggered.
-// If collection cannot free enough space, the heap traps with out_of_memory.
-[Export(Abi:"C", Symbol:"gc_alloc")]
-pub pointer GcAlloc(word size, word alignment) {
-    pointer heap = Heap();
-    if heap == NativePointer(0) {
-        Trap(5, pointer_from_native_word(0), 0);
+const HEAP_REGION_START = 0;
+const HEAP_BUMP = 16;
+const HEAP_LIMIT = 24;
+const HEAP_LIVE_BYTES = 32;
+const HEAP_LIVE_COUNT = 40;
+
+pub word AlignUp(word value, word alignment) {
+    word remainder = value % alignment;
+    if remainder == 0 {
+        return value;
     }
-    // BeskidHeap layout (64 bytes):
-    //   offset  0: start (pointer)
-    //   offset  8: size (word)
-    //   offset 16: bump (pointer — current allocation cursor)
-    //   offset 24: limit (pointer — end of heap)
-    //   offset 32: live_bytes (word)
-    //   offset 40: object_count (word)
-    //   offset 48: phase (u8): 0=idle, 1=marking, 2=sweeping
-    //   offset 56: gc_threshold (word)
-    mut pointer bump = NativePointer(raw_word_load(pointer_add(heap, 16)));
-    mut pointer limit = NativePointer(raw_word_load(pointer_add(heap, 24)));
-    mut word alignedBump = NativeWord(bump);
-    word alignMask = alignment - 1;
-    if (alignedBump & alignMask) != 0 {
-        alignedBump = (alignedBump + alignMask) & (0 - alignment);
+    word increase = alignment - remainder;
+    word aligned = value + increase;
+    if aligned < value {
+        return 0;
     }
-    mut pointer nextBump = NativePointer(alignedBump + size);
-    if NativeWord(nextBump) < alignedBump {
-        Trap(5, pointer_from_native_word(0), 0);
-    }
-    if NativeWord(nextBump) > NativeWord(limit) {
-        // Trigger collection and retry.
-        GcCollect();
-        bump = NativePointer(raw_word_load(pointer_add(heap, 16)));
-        limit = NativePointer(raw_word_load(pointer_add(heap, 24)));
-        alignedBump = NativeWord(bump);
-        if (alignedBump & alignMask) != 0 {
-            alignedBump = (alignedBump + alignMask) & (0 - alignment);
-        }
-        nextBump = NativePointer(alignedBump + size);
-        if NativeWord(nextBump) < alignedBump || NativeWord(nextBump) > NativeWord(limit) {
-            Trap(5, pointer_from_native_word(0), 0);
-        }
-    }
-    raw_word_store(pointer_add(heap, 16), NativeWord(nextBump));
-    word live = raw_word_load(pointer_add(heap, 32)) + size;
-    raw_word_store(pointer_add(heap, 32), live);
-    word count = raw_word_load(pointer_add(heap, 40)) + 1;
-    raw_word_store(pointer_add(heap, 40), count);
-    return NativePointer(alignedBump);
+    return aligned;
 }
 
+// Free blocks are linked implicitly by their address order. Their manifest object-header-sized
+// prefix is { descriptor = null, block_size }; sweep coalesces adjacent entries.
+pub pointer AllocateFromFreeList(pointer heap, word size, word alignment) {
+    pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
+    pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
+    while NativeWord(cursor) < NativeWord(bump) {
+        word descriptorWord = raw_word_load(cursor);
+        word blockSize;
+        if descriptorWord == 0 {
+            blockSize = raw_word_load(pointer_add(cursor, 8));
+            if blockSize < 16 || blockSize % 8 != 0 {
+                return NativePointer(0);
+            }
+            word aligned = AlignUp(NativeWord(cursor), alignment);
+            word prefix = aligned - NativeWord(cursor);
+            if prefix > 0 && prefix < 16 {
+                aligned = aligned + alignment;
+                prefix = aligned - NativeWord(cursor);
+            }
+            if aligned >= NativeWord(cursor) && prefix <= blockSize && blockSize - prefix >= size {
+                word remainder = blockSize - prefix - size;
+                if remainder == 0 || remainder >= 16 {
+                    if prefix >= 16 {
+                        raw_word_store(cursor, 0);
+                        raw_word_store(pointer_add(cursor, 8), prefix);
+                    }
+                    if remainder >= 16 {
+                        pointer rest = NativePointer(aligned + size);
+                        raw_word_store(rest, 0);
+                        raw_word_store(pointer_add(rest, 8), remainder);
+                    }
+                    return NativePointer(aligned);
+                }
+            }
+        } else {
+            pointer descriptor = NativePointer(descriptorWord);
+            if ValidateTypeDescriptor(descriptor) == false {
+                return NativePointer(0);
+            }
+            blockSize = ManagedObjectSize(cursor, descriptor);
+            if blockSize == 0 { return NativePointer(0); }
+        }
+        word next = NativeWord(cursor) + blockSize;
+        if blockSize < 16 || blockSize % 8 != 0 || next <= NativeWord(cursor) || next > NativeWord(bump) {
+            return NativePointer(0);
+        }
+        cursor = NativePointer(next);
+    }
+    return NativePointer(0);
+}
 
-// Canonical GC-tracked allocation entrypoint.
-//
-// `size` bytes are allocated from the GC heap and zero-filled. When `descriptorPtr`
-// is non-null, the descriptor pointer is written at offset 0 as the object header.
-[Export(Abi:"C", Symbol:"alloc")]
-pub pointer Alloc(word size, pointer descriptorPtr) {
-    if size == 0 {
+pub pointer GcAlloc(word size, word alignment) {
+    pointer heap = Heap();
+    if heap == NativePointer(0) || size < 16 || size % 8 != 0 || IsValidObjectAlignment(alignment) == false {
         return NativePointer(0);
     }
-    // Use the GC heap for managed allocation; fall through to system
-    // allocation when the heap isn't initialized yet (bootstrap phase).
-    pointer heap = Heap();
-    if heap != NativePointer(0) {
-        pointer obj = GcAlloc(size, 8);
-        if obj != NativePointer(0) {
-            memory_set(obj, 0, size);
-            if descriptorPtr != NativePointer(0) {
-                raw_word_store(obj, NativeWord(descriptorPtr));
-            }
-            return obj;
+    pointer reused = AllocateFromFreeList(heap, size, alignment);
+    if reused != NativePointer(0) {
+        raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) + size);
+        raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), raw_word_load(pointer_add(heap, HEAP_LIVE_COUNT)) + 1);
+        return reused;
+    }
+    word bump = raw_word_load(pointer_add(heap, HEAP_BUMP));
+    word aligned = AlignUp(bump, alignment);
+    if aligned > bump && aligned - bump < 16 { aligned = aligned + alignment; }
+    word limit = raw_word_load(pointer_add(heap, HEAP_LIMIT));
+    word next = aligned + size;
+    if aligned < bump || next < aligned || next > limit {
+        GcCollect();
+        reused = AllocateFromFreeList(heap, size, alignment);
+        if reused != NativePointer(0) {
+            raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) + size);
+            raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), raw_word_load(pointer_add(heap, HEAP_LIVE_COUNT)) + 1);
+            return reused;
+        }
+        bump = raw_word_load(pointer_add(heap, HEAP_BUMP));
+        aligned = AlignUp(bump, alignment);
+        if aligned > bump && aligned - bump < 16 { aligned = aligned + alignment; }
+        next = aligned + size;
+        if aligned < bump || next < aligned || next > limit {
+            return NativePointer(0);
         }
     }
-    // Fallback: direct system allocation for bootstrap/heap-init
-    pointer obj = SystemAllocate(size, 8);
-    if obj != NativePointer(0) {
-        memory_set(obj, 0, size);
-        if descriptorPtr != NativePointer(0) {
-            raw_word_store(obj, NativeWord(descriptorPtr));
-        }
+    // Keep every alignment prefix representable as an ordinary free-list header. When the first
+    // aligned address would leave a sub-header prefix, the next aligned address is used instead.
+    if aligned > bump {
+        word gap = aligned - bump;
+        pointer gapBlock = NativePointer(bump);
+        raw_word_store(gapBlock, 0);
+        raw_word_store(pointer_add(gapBlock, 8), gap);
     }
-    return obj;
+    raw_word_store(pointer_add(heap, HEAP_BUMP), next);
+    raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) + size);
+    raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), raw_word_load(pointer_add(heap, HEAP_LIVE_COUNT)) + 1);
+    return NativePointer(aligned);
+}
+
+[Export(Abi:"C", Symbol:"alloc")]
+pub pointer Alloc(word size, pointer descriptorPtr) {
+    if descriptorPtr == NativePointer(0) || ValidateTypeDescriptor(descriptorPtr) == false {
+        return NativePointer(0);
+    }
+    if size != TypeDescriptorSize(descriptorPtr) {
+        return NativePointer(0);
+    }
+    pointer object = GcAlloc(size, TypeDescriptorAlignment(descriptorPtr));
+    if object == NativePointer(0) {
+        return object;
+    }
+    memory_set(object, 0, size);
+    raw_word_store(object, NativeWord(descriptorPtr));
+    return object;
 }

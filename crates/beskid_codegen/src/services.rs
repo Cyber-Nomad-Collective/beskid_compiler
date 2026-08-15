@@ -24,14 +24,6 @@ pub fn materialize_source_path_for_lowering(path: &Path, source: &str) -> Result
     Ok(file)
 }
 
-/// Cranelift linker symbol for a resolved function or test item.
-pub fn jit_symbol_for_item(
-    resolution: &beskid_analysis::resolve::Resolution,
-    item_id: beskid_analysis::resolve::ItemId,
-) -> String {
-    crate::lowering::function::mangle_item_function(resolution, item_id)
-}
-
 /// Serialize every lowered function in `artifact` to textual CLIF, separated by `;; Function:` headers.
 pub fn render_clif(artifact: &CodegenArtifact) -> String {
     let mut out = String::new();

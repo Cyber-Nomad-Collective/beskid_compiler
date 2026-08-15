@@ -1,9 +1,10 @@
-use crate::abi_v5::{AbiManifestV5, canonical_runtime_package, canonical_source_hash};
+use crate::abi_v5::{canonical_runtime_package, canonical_source_hash, AbiManifestV5};
 
 use super::capabilities::RuntimeCapabilityError;
 use super::sources::{
-    CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ERROR_SOURCE_PATH, CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH, canonical_corelib_service_sources,
+    canonical_corelib_service_sources, CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_CORELIB_FS_SOURCE_PATH,
+    CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ERROR_SOURCE_PATH, CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH,
 };
 
 /// The canonical compiler-owned source file for one Foundation service unit.
@@ -19,6 +20,7 @@ pub fn canonical_corelib_service_source_path(logical_path: &str) -> Option<std::
     let relative = match logical_path {
         CANONICAL_CORELIB_SYSCALL_SOURCE_PATH => "Core/Syscall/Syscall.bd",
         CANONICAL_CORELIB_ARGS_SOURCE_PATH => "Core/Args/Args.bd",
+        CANONICAL_CORELIB_FS_SOURCE_PATH => "Core/FS/FS.bd",
         CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH => "Testing/Assert.bd",
         CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH => "Core/Output/Output.bd",
         CANONICAL_FOUNDATION_ERROR_SOURCE_PATH => "Core/Error/Error.bd",
@@ -74,6 +76,31 @@ const CORELIB_SERVICES: &[CorelibService] = &[
     },
     CorelibService { name: "__args_count", symbol: "args_count", source_path: CANONICAL_CORELIB_ARGS_SOURCE_PATH },
     CorelibService { name: "__args_get", symbol: "args_get", source_path: CANONICAL_CORELIB_ARGS_SOURCE_PATH },
+    CorelibService {
+        name: "__fs_read_text",
+        symbol: "beskid_rt_v5_fs_read_text",
+        source_path: CANONICAL_CORELIB_FS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__fs_write_text",
+        symbol: "beskid_rt_v5_fs_write_text",
+        source_path: CANONICAL_CORELIB_FS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__fs_exists",
+        symbol: "beskid_rt_v5_fs_exists",
+        source_path: CANONICAL_CORELIB_FS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__fs_mkdir",
+        symbol: "beskid_rt_v5_fs_mkdir",
+        source_path: CANONICAL_CORELIB_FS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__fs_delete",
+        symbol: "beskid_rt_v5_fs_delete",
+        source_path: CANONICAL_CORELIB_FS_SOURCE_PATH,
+    },
     CorelibService { name: "__panic_str", symbol: "panic_str", source_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH },
     CorelibService { name: "__panic_str", symbol: "panic_str", source_path: CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH },
     CorelibService { name: "__panic_str", symbol: "panic_str", source_path: CANONICAL_FOUNDATION_ERROR_SOURCE_PATH },

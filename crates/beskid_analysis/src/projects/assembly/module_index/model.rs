@@ -1,67 +1,65 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
-use crate::hir::HirProgram;
-use crate::resolve::{ItemId, ItemInfo, ModuleGraph, SymbolId, SymbolRegistry};
-use crate::syntax::Spanned;
-
-use super::discovery::normalize_assembly_path;
-
-/// Items and module paths collected from non-entry compilation units.
-#[derive(Clone)]
-pub struct ModuleIndex {
-    pub(super) items: Vec<ItemInfo>,
-    pub(super) module_graph: ModuleGraph,
-    pub(super) builtin_items: HashMap<ItemId, usize>,
-    pub(super) symbols: SymbolRegistry,
-    pub(super) by_symbol: HashMap<SymbolId, ItemId>,
-    pub(super) entry_project_name: String,
-    pub(super) dependency_packages: HashMap<String, String>,
-    pub(super) prefetched_paths: Vec<PathBuf>,
-    /// Lowered HIR for prefetch-only sources (built during index construction, not re-read from disk).
-    pub(super) prefetched_hir: HashMap<PathBuf, Arc<Spanned<HirProgram>>>,
+/// One syntax-discovered module in an assembled project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssemblyModule {
+    pub path: Vec<String>,
+    pub source_path: PathBuf,
+    pub package: String,
+    pub imports: Vec<Vec<String>>,
+    pub declarations: Vec<Vec<String>>,
 }
 
-impl std::fmt::Debug for ModuleIndex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ModuleIndex")
-            .field("items", &self.items.len())
-            .field("prefetched_paths", &self.prefetched_paths.len())
-            .field("prefetched_hir", &self.prefetched_hir.len())
-            .finish()
+/// Syntax-only module graph for project discovery and path resolution.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModuleGraph {
+    modules: Vec<AssemblyModule>,
+    by_path: HashMap<Vec<String>, usize>,
+    by_source: HashMap<PathBuf, usize>,
+}
+
+impl ModuleGraph {
+    pub(super) fn insert(&mut self, module: AssemblyModule) {
+        let index = self.modules.len();
+        self.by_source.insert(super::discovery::normalize_assembly_path(&module.source_path), index);
+        self.by_path.entry(module.path.clone()).or_insert(index);
+        self.modules.push(module);
     }
+
+    pub fn modules(&self) -> &[AssemblyModule] {
+        &self.modules
+    }
+
+    pub fn module(&self, path: &[String]) -> Option<&AssemblyModule> {
+        self.by_path.get(path).and_then(|index| self.modules.get(*index))
+    }
+
+    pub fn module_for_source(&self, path: &Path) -> Option<&AssemblyModule> {
+        let key = super::discovery::normalize_assembly_path(path);
+        self.by_source.get(&key).and_then(|index| self.modules.get(*index))
+    }
+}
+
+/// Expanded syntax declarations and imports for an assembled project generation.
+#[derive(Debug, Clone)]
+pub struct ModuleIndex {
+    pub(super) module_graph: ModuleGraph,
+    pub(super) known_paths: HashSet<Vec<String>>,
+    pub(super) prefetched_paths: Vec<PathBuf>,
 }
 
 impl ModuleIndex {
     pub fn empty() -> Self {
-        Self {
-            items: Vec::new(),
-            module_graph: ModuleGraph::new_root(),
-            builtin_items: HashMap::new(),
-            symbols: SymbolRegistry::default(),
-            by_symbol: HashMap::new(),
-            entry_project_name: String::new(),
-            dependency_packages: HashMap::new(),
-            prefetched_paths: Vec::new(),
-            prefetched_hir: HashMap::new(),
-        }
-    }
-
-    /// Source paths scanned from dependency roots but not in the import-closure assembly.
-    pub fn prefetched_paths(&self) -> &[PathBuf] {
-        &self.prefetched_paths
-    }
-
-    /// Lowered HIR for a prefetch-only path (when present).
-    pub fn prefetched_hir(&self, path: &Path) -> Option<&Spanned<HirProgram>> {
-        let key = normalize_assembly_path(path);
-        self.prefetched_hir.get(&key).or_else(|| self.prefetched_hir.get(path)).map(|hir| hir.as_ref())
+        Self { module_graph: ModuleGraph::default(), known_paths: HashSet::new(), prefetched_paths: Vec::new() }
     }
 
     pub fn module_graph(&self) -> &ModuleGraph {
         &self.module_graph
+    }
+
+    /// Source paths discovered outside the assembled unit set.
+    pub fn prefetched_paths(&self) -> &[PathBuf] {
+        &self.prefetched_paths
     }
 }

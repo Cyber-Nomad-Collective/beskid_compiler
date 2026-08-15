@@ -1,6 +1,5 @@
 use super::*;
 
-#[ignore = "HIR lower_program path incomplete after syntax-ISLE cutover; covered by syntax-ISLE / engine probes"]
 #[test]
 fn object_only_build_emits_object_file() {
     let artifact = lower_sample_artifact();

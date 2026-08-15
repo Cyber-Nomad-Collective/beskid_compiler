@@ -1,8 +1,7 @@
 use beskid_abi::abi_v5::{
-    ABI_V5, AbiManifestV5, AbiType, AssemblySymbol, CANONICAL_RUNTIME_PACKAGE_NAME,
-    CANONICAL_RUNTIME_PACKAGE_PUBLISHER, ManifestValidationError, RuntimeAuditMetadata, RuntimePackageIdentity,
-    TRAP_DIAGNOSTIC_PREFIX, TRAP_EXIT_STATUS, TargetMetadata, canonical_runtime_package, render_runtime_asm_include,
-    render_runtime_c_header,
+    canonical_runtime_package, render_runtime_asm_include, render_runtime_c_header, AbiManifestV5, AbiType,
+    AssemblySymbol, ManifestValidationError, RuntimeAuditMetadata, RuntimePackageIdentity, TargetMetadata, ABI_V5,
+    CANONICAL_RUNTIME_PACKAGE_NAME, CANONICAL_RUNTIME_PACKAGE_PUBLISHER, TRAP_DIAGNOSTIC_PREFIX, TRAP_EXIT_STATUS,
 };
 use beskid_abi::runtime_kit::{
     BuildProfile, RuntimeArtifact, RuntimeArtifacts, RuntimeKitMetadata, RuntimeKitValidationError,
@@ -33,6 +32,11 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
             ("beskid_library_detach_v5", &[AbiType::Pointer][..], AbiType::Void,),
             ("beskid_rt_v5_abi_version", &[][..], AbiType::U32),
             ("beskid_rt_v5_array_allocate_rooted", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::Pointer,),
+            (
+                "beskid_rt_v5_array_grow_rooted",
+                &[AbiType::Pointer, AbiType::USize, AbiType::Pointer][..],
+                AbiType::Pointer,
+            ),
             ("beskid_rt_v5_array_construction_finish", &[AbiType::Pointer][..], AbiType::U8,),
             ("beskid_rt_v5_array_write_barrier", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8,),
             (
@@ -80,6 +84,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
     assert!(names.contains(&"guarded_stack_allocate"));
+    assert!(names.contains(&"guarded_stack_grow"));
     assert!(names.contains(&"guarded_stack_free"));
     assert!(names.contains(&"tls_get"));
     assert!(names.contains(&"trap"));
@@ -110,6 +115,7 @@ fn runtime_provenance_allows_intrinsics_without_making_them_loader_requirements(
     assert!(audit.allowed_exports.contains(&"beskid_rt_v5_process_init".into()));
     assert!(audit.allowed_exports.contains(&"beskid_rt_v5_intrinsic_memory_compare".into()));
     assert!(audit.allowed_exports.contains(&"beskid_rt_v5_intrinsic_guarded_stack_allocate".into()));
+    assert!(audit.allowed_exports.contains(&"beskid_rt_v5_intrinsic_guarded_stack_grow".into()));
     assert!(audit.loader_required_exports.contains(&"beskid_rt_v5_process_init".into()));
     assert!(!audit.loader_required_exports.contains(&"beskid_rt_v5_intrinsic_memory_compare".into()));
 }
@@ -146,7 +152,7 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
         assert_eq!((context.size, context.alignment), (expected.1, expected.2));
         assert_eq!(context.fields.iter().find(|field| field.name == expected.3).unwrap().offset, expected.4);
         if is_windows {
-            assert_eq!(context.fields.iter().find(|field| field.name == "xmm6").unwrap().ty, AbiType::V128);
+            assert_eq!(context.fields.iter().find(|field| field.name == "xmm6").unwrap().ty, "v128");
         }
 
         let object = manifest.layouts.iter().find(|layout| layout.name == "BeskidObjectHeader").unwrap();
@@ -399,14 +405,12 @@ fn audit_metadata_rejects_unknown_duplicate_and_rust_provenance_contracts() {
     assert!(unknown.validate(&manifest).is_err());
 
     let elf_undefined = audit.allowed_imports.iter().map(|symbol| format!("{symbol}@GLIBC_2.2.5")).collect::<Vec<_>>();
-    assert!(
-        audit
-            .audit_object_symbol_tables(
-                audit.allowed_exports.iter().map(String::as_str),
-                elf_undefined.iter().map(String::as_str),
-            )
-            .is_ok()
-    );
+    assert!(audit
+        .audit_object_symbol_tables(
+            audit.allowed_exports.iter().map(String::as_str),
+            elf_undefined.iter().map(String::as_str),
+        )
+        .is_ok());
 
     let mut missing_rust_guard = audit;
     missing_rust_guard.forbidden_rust_symbols.retain(|symbol| symbol != "rust");
@@ -418,14 +422,12 @@ fn audit_metadata_rejects_unknown_duplicate_and_rust_provenance_contracts() {
             .unwrap();
     let macho_defined = macho_audit.allowed_exports.iter().map(|symbol| format!("_{symbol}")).collect::<Vec<_>>();
     let macho_undefined = macho_audit.allowed_imports.iter().map(|symbol| format!("_{symbol}")).collect::<Vec<_>>();
-    assert!(
-        macho_audit
-            .audit_object_symbol_tables(
-                macho_defined.iter().map(String::as_str),
-                macho_undefined.iter().map(String::as_str),
-            )
-            .is_ok()
-    );
+    assert!(macho_audit
+        .audit_object_symbol_tables(
+            macho_defined.iter().map(String::as_str),
+            macho_undefined.iter().map(String::as_str),
+        )
+        .is_ok());
     for forbidden in [
         "___rust_alloc",
         "_core::panicking::panic_fmt",
@@ -436,23 +438,16 @@ fn audit_metadata_rejects_unknown_duplicate_and_rust_provenance_contracts() {
     ] {
         let mut defined = macho_defined.clone();
         defined.push(forbidden.into());
-        assert!(
-            macho_audit
-                .audit_object_symbol_tables(
-                    defined.iter().map(String::as_str),
-                    macho_undefined.iter().map(String::as_str),
-                )
-                .is_err()
-        );
+        assert!(macho_audit
+            .audit_object_symbol_tables(defined.iter().map(String::as_str), macho_undefined.iter().map(String::as_str),)
+            .is_err());
     }
 
     let mut missing = macho_defined.clone();
     missing.pop();
-    assert!(
-        macho_audit
-            .audit_object_symbol_tables(missing.iter().map(String::as_str), macho_undefined.iter().map(String::as_str),)
-            .is_err()
-    );
+    assert!(macho_audit
+        .audit_object_symbol_tables(missing.iter().map(String::as_str), macho_undefined.iter().map(String::as_str),)
+        .is_err());
 
     let windows = AbiManifestV5::canonical_runtime(supported_targets()[2].clone());
     let windows_audit = RuntimeAuditMetadata::for_manifest(
@@ -462,14 +457,12 @@ fn audit_metadata_rejects_unknown_duplicate_and_rust_provenance_contracts() {
     .unwrap();
     let windows_undefined =
         windows_audit.allowed_imports.iter().map(|symbol| format!("__imp_{symbol}")).collect::<Vec<_>>();
-    assert!(
-        windows_audit
-            .audit_object_symbol_tables(
-                windows_audit.allowed_exports.iter().map(String::as_str),
-                windows_undefined.iter().map(String::as_str),
-            )
-            .is_ok()
-    );
+    assert!(windows_audit
+        .audit_object_symbol_tables(
+            windows_audit.allowed_exports.iter().map(String::as_str),
+            windows_undefined.iter().map(String::as_str),
+        )
+        .is_ok());
 }
 
 #[test]

@@ -15,6 +15,7 @@ fn core_args_adapter_bindings_generate_exact_target_facts() {
     let bindings = manifest
         .corelib_services
         .iter()
+        .filter(|service| matches!(service.name.as_str(), "__args_count" | "__args_get"))
         .flat_map(|service| {
             service.target_bindings.iter().map(move |binding| {
                 (
@@ -122,11 +123,9 @@ fn core_args_entry_adapter_rejects_missing_generated_provenance() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
     let source = source.replacen("  entry_source = \"args_entry.S\"\n", "", 1);
-    assert!(
-        load_v5_manifest_source(&source)
-            .expect_err("entry adapter source is mandatory")
-            .contains("missing `entry_source`")
-    );
+    assert!(load_v5_manifest_source(&source)
+        .expect_err("entry adapter source is mandatory")
+        .contains("missing `entry_source`"));
 }
 
 #[test]
@@ -149,8 +148,8 @@ corelib_service "__args_all" {
     );
 
     assert_eq!(
-        load_v5_manifest_source(&source).expect_err("__args_all must not become a Core.Args adapter"),
-        "unexpected corelib service `__args_all`"
+        load_v5_manifest_source(&source).expect_err("__args_all must not become a canonical runtime service"),
+        "corelib services must match the canonical runtime service set"
     );
 }
 

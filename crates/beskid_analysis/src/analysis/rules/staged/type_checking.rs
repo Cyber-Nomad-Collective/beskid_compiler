@@ -1,42 +1,42 @@
 use super::SemanticPipelineRule;
 use crate::analysis::rules::RuleContext;
-use crate::hir::{HirBlock, HirExpressionNode, HirForStatement, HirLetStatement, HirParameter, HirProgram};
+use crate::syntax::{Block, Expression, ForStatement, LetStatement, Parameter, Program};
 use crate::syntax::Spanned;
-use crate::syntax_query::{HirNodeKind, HirNodeRef, HirVisit, HirWalker};
+use crate::syntax_query::{NodeKind, NodeRef, Visit, AstWalker};
 use std::collections::HashMap;
 
 impl SemanticPipelineRule {
     /// Structural immutability checks only; full type-check runs in the lower spine.
-    pub(super) fn stage2_type_check(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {
-        self.check_immutable_assignments(ctx, hir);
+    pub(super) fn stage2_type_check(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
+        self.check_immutable_assignments(ctx, program);
     }
 
-    fn check_immutable_assignments(&self, ctx: &mut RuleContext, hir: &Spanned<HirProgram>) {
-        for item in &hir.node.items {
+    fn check_immutable_assignments(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
+        for item in &program.node.items {
             match &item.node {
-                crate::hir::HirItem::FunctionDefinition(definition) => {
+                crate::syntax::Node::Function(definition) => {
                     let mut visitor = MutabilityVisitor::new(ctx);
                     visitor.seed_parameters(&definition.node.parameters);
-                    let mut walker = HirWalker::new().with_visitor(Box::new(visitor));
-                    walker.walk(HirNodeRef::from(&definition.node.body.node));
+                    let mut walker = AstWalker::new().with_visitor(Box::new(visitor));
+                    walker.walk(NodeRef::from(&definition.node.body.node));
                 }
-                crate::hir::HirItem::MethodDefinition(definition) => {
+                crate::syntax::Node::Method(definition) => {
                     let mut visitor = MutabilityVisitor::new(ctx);
                     visitor.seed_parameters(&definition.node.parameters);
-                    let mut walker = HirWalker::new().with_visitor(Box::new(visitor));
-                    walker.walk(HirNodeRef::from(&definition.node.body.node));
+                    let mut walker = AstWalker::new().with_visitor(Box::new(visitor));
+                    walker.walk(NodeRef::from(&definition.node.body.node));
                 }
-                crate::hir::HirItem::ExtendTypeDefinition(definition) => {
+                crate::syntax::Node::ExtendTypeDefinition(definition) => {
                     for method in &definition.node.methods {
                         let mut visitor = MutabilityVisitor::new(ctx);
                         visitor.seed_parameters(&method.node.parameters);
-                        let mut walker = HirWalker::new().with_visitor(Box::new(visitor));
-                        walker.walk(HirNodeRef::from(&method.node.body.node));
+                        let mut walker = AstWalker::new().with_visitor(Box::new(visitor));
+                        walker.walk(NodeRef::from(&method.node.body.node));
                     }
                 }
-                crate::hir::HirItem::TestDefinition(definition) => {
-                    let mut walker = HirWalker::new().with_visitor(Box::new(MutabilityVisitor::new(ctx)));
-                    walker.walk(HirNodeRef::from(&definition.node.body.node));
+                crate::syntax::Node::TestDefinition(definition) => {
+                    let mut walker = AstWalker::new().with_visitor(Box::new(MutabilityVisitor::new(ctx)));
+                    walker.walk(NodeRef::from(&definition.node.body.node));
                 }
                 _ => {}
             }
@@ -47,7 +47,7 @@ impl SemanticPipelineRule {
 struct MutabilityVisitor<'a> {
     ctx: &'a mut RuleContext,
     scopes: Vec<HashMap<String, bool>>,
-    kind_stack: Vec<HirNodeKind>,
+    kind_stack: Vec<NodeKind>,
     for_iterators: Vec<String>,
     pending_parameters: Option<HashMap<String, bool>>,
 }
@@ -57,7 +57,7 @@ impl<'a> MutabilityVisitor<'a> {
         Self { ctx, scopes: Vec::new(), kind_stack: Vec::new(), for_iterators: Vec::new(), pending_parameters: None }
     }
 
-    fn seed_parameters(&mut self, parameters: &[Spanned<HirParameter>]) {
+    fn seed_parameters(&mut self, parameters: &[Spanned<Parameter>]) {
         self.pending_parameters =
             Some(parameters.iter().map(|param| (param.node.name.node.name.clone(), param.node.mutable)).collect());
     }
@@ -72,22 +72,22 @@ impl<'a> MutabilityVisitor<'a> {
     }
 }
 
-impl HirVisit for MutabilityVisitor<'_> {
-    fn enter(&mut self, node: HirNodeRef<'_>) {
+impl Visit for MutabilityVisitor<'_> {
+    fn enter(&mut self, node: NodeRef<'_>) {
         let parent = self.kind_stack.last().copied();
 
-        if let Some(for_statement) = node.of::<HirForStatement>() {
+        if let Some(for_statement) = node.of::<ForStatement>() {
             self.for_iterators.push(for_statement.iterator.node.name.clone());
         }
 
-        if node.of::<HirBlock>().is_some() {
+        if node.of::<Block>().is_some() {
             self.scopes.push(HashMap::new());
             if let Some(parameters) = self.pending_parameters.take()
                 && let Some(scope) = self.scopes.last_mut()
             {
                 scope.extend(parameters);
             }
-            if parent == Some(HirNodeKind::ForStatement)
+            if parent == Some(NodeKind::ForStatement)
                 && let Some(iterator_name) = self.for_iterators.last().cloned()
                 && let Some(scope) = self.scopes.last_mut()
             {
@@ -95,9 +95,9 @@ impl HirVisit for MutabilityVisitor<'_> {
             }
         }
 
-        if let Some(expression) = node.of::<HirExpressionNode>()
-            && let HirExpressionNode::AssignExpression(assign_expression) = expression
-            && let HirExpressionNode::PathExpression(path_expr) = &assign_expression.node.target.node
+        if let Some(expression) = node.of::<Expression>()
+            && let Expression::Assign(assign_expression) = expression
+            && let Expression::Path(path_expr) = &assign_expression.node.target.node
             && path_expr.node.path.node.segments.len() == 1
             && let Some(name) = path_expr.node.path.node.segments.first()
         {
@@ -117,18 +117,18 @@ impl HirVisit for MutabilityVisitor<'_> {
         self.kind_stack.push(node.node_kind());
     }
 
-    fn exit(&mut self, node: HirNodeRef<'_>) {
-        if let Some(let_statement) = node.of::<HirLetStatement>()
+    fn exit(&mut self, node: NodeRef<'_>) {
+        if let Some(let_statement) = node.of::<LetStatement>()
             && let Some(scope) = self.scopes.last_mut()
         {
             scope.insert(let_statement.name.node.name.clone(), let_statement.mutable);
         }
 
-        if node.of::<HirBlock>().is_some() {
+        if node.of::<Block>().is_some() {
             self.scopes.pop();
         }
 
-        if node.of::<HirForStatement>().is_some() {
+        if node.of::<ForStatement>().is_some() {
             self.for_iterators.pop();
         }
 

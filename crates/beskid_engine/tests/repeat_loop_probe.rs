@@ -34,7 +34,6 @@ impl Drop for EnvironmentVariableGuard {
 }
 
 /// Loop / mut probes for ABI-v5 JIT. Integer accumulation avoids the ABI-v4
-/// `interop_dispatch_*` / `__str_len` path removed from the exact runtime kit.
 /// The multi-unit string-loop regression lives in `corelib_repeat_jit`.
 
 #[test]

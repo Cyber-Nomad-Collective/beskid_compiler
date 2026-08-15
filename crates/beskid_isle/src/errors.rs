@@ -3,18 +3,12 @@ use crate::facts::{AstNodeKey, DirectCallee};
 /// Artifact-owned string materialization invoked only after generated ISLE selection.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StringMaterializationError {
-    MissingDispatchRoute(&'static str),
-    DispatchEmission(&'static str),
     Artifact(&'static str),
 }
 
 impl std::fmt::Display for StringMaterializationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::MissingDispatchRoute(symbol) => {
-                write!(f, "MissingDispatchRoute({symbol})")
-            }
-            Self::DispatchEmission(detail) => write!(f, "DispatchEmission({detail})"),
             Self::Artifact(detail) => write!(f, "Artifact({detail})"),
         }
     }
@@ -27,6 +21,7 @@ pub enum LoweringErrorKind {
     UnknownCallee(DirectCallee),
     InvalidPrimitiveNumericConversion(&'static str),
     InvalidArrayLayout,
+    UnprovenCollectionOwner,
     InvalidStructLayout,
     InvalidStructField(u32),
     InvalidEnumLayout,
@@ -75,6 +70,7 @@ impl LoweringError {
                 format!("InvalidPrimitiveNumericConversion({reason})")
             }
             LoweringErrorKind::InvalidArrayLayout => "InvalidArrayLayout".to_owned(),
+            LoweringErrorKind::UnprovenCollectionOwner => "UnprovenCollectionOwner".to_owned(),
             LoweringErrorKind::InvalidStructLayout => "InvalidStructLayout".to_owned(),
             LoweringErrorKind::InvalidStructField(index) => {
                 format!("InvalidStructField({index})")

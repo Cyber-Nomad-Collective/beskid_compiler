@@ -43,6 +43,13 @@ pub unit SetCurrentThreadState(pointer state) {
     return;
 }
 
+// OS workers operate exclusively on native request storage. These calls are the
+// complete Beskid/host seam; worker entrypoints never attach as mutators or call GC.
+pub i32 WorkerPoolInit(word workerCount) { return worker_pool_init(workerCount); }
+pub unit WorkerPoolShutdown() { worker_pool_shutdown(); return; }
+pub i32 WorkerSubmit(pointer request) { return worker_submit(request); }
+pub bool WorkerPoll(pointer request) { return worker_poll(request) != 0; }
+
 // Terminates through the manifest-owned ABI-v5 trap entrypoint.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_trap")]
 pub never Trap(u8 code, pointer message, word messageLength) {

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::hir::HirVisibility;
+use crate::syntax::Visibility;
 use crate::syntax::SpanInfo;
 
 use super::ids::ItemId;
@@ -57,7 +57,7 @@ pub struct ItemInfo {
     pub parent_id: Option<ItemId>,
     pub name: String,
     pub kind: ItemKind,
-    pub visibility: HirVisibility,
+    pub visibility: Visibility,
     pub span: SpanInfo,
     /// Declaring source file when known (assembly prefetch or entry unit).
     pub source_path: Option<PathBuf>,

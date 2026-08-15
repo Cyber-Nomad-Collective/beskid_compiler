@@ -1,0 +1,65 @@
+use Runtime.Bootstrap.Lifecycle;
+use Runtime.Bootstrap.Native;
+use Runtime.Host.Composition;
+use Testing.Assert;
+
+test composition_activates_scopes_and_disposes_compiler_materialized_slots {
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    Assert.True(ProcessInit(runtime) == runtime, "runtime initialized");
+    Assert.True(CurrentThreadState() != NativePointer(0), "process initialization attached the mutator");
+
+    pointer container = CompositionContainerCreate(2);
+    pointer first = SystemAllocate(8, 8);
+    pointer second = SystemAllocate(8, 8);
+    Assert.True(container != NativePointer(0), "container owns compiler-sized slot storage");
+    Assert.True(CompositionSlotStore(container, 0, first), "compiler-selected slot zero is rooted");
+    Assert.True(CompositionSlotStore(container, 1, second), "compiler-selected slot one is rooted");
+    Assert.True(CompositionLaunch(container), "fully materialized plan activates");
+
+    CompositionScopeEnter(container);
+    CompositionScopeEnter(container);
+    Assert.Equal(CompositionScopeDepth(), 2, "nested scopes are tracked by the current execution owner");
+    CompositionScopeLeave();
+    CompositionScopeLeave();
+    Assert.Equal(CompositionScopeDepth(), 0, "scope leave restores TLS ownership");
+
+    CompositionShutdown(container);
+    CompositionContainerDrop(container);
+    SystemFree(first, 8);
+    SystemFree(second, 8);
+    ProcessShutdown(runtime);
+    SystemFree(runtime, 64);
+}
+
+test composition_rejects_unmaterialized_duplicate_and_out_of_range_slots {
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    ProcessInit(runtime);
+    pointer container = CompositionContainerCreate(2);
+    pointer service = SystemAllocate(8, 8);
+
+    Assert.True(CompositionSlotStore(container, 0, service), "planned slot accepts one value");
+    Assert.True(!CompositionSlotStore(container, 0, service), "planned slot is immutable after publication");
+    Assert.True(!CompositionSlotStore(container, 2, service), "runtime rejects slots absent from compiler plan");
+    Assert.True(!CompositionLaunch(container), "an unmaterialized slot prevents activation");
+    Assert.True(CompositionSlotStore(container, 1, service), "missing planned slot can still be materialized");
+    Assert.True(CompositionLaunch(container), "complete plan launches atomically");
+    Assert.True(!CompositionSlotStore(container, 1, service), "active plan rejects mutation");
+    Assert.True(!CompositionLaunch(container), "active plan cannot launch twice");
+
+    CompositionShutdown(container);
+    CompositionContainerDrop(container);
+    SystemFree(service, 8);
+    ProcessShutdown(runtime);
+    SystemFree(runtime, 64);
+}
+
+test composition_rejects_plan_sizes_outside_the_compiler_runtime_contract {
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    Assert.True(ProcessInit(runtime) == runtime, "runtime initialized");
+    Assert.True(CompositionContainerCreate(257) == NativePointer(0), "oversized compiler plans fail closed");
+    ProcessShutdown(runtime);
+    SystemFree(runtime, 64);
+}

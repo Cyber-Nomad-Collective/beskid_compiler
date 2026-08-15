@@ -44,5 +44,8 @@ mod closures_and_spawn;
 #[path = "semantic_facts/runtime_authority.rs"]
 mod runtime_authority;
 #[rustfmt::skip]
+#[path = "semantic_facts/statement_result_storage.rs"]
+mod statement_result_storage;
+#[rustfmt::skip]
 #[path = "semantic_facts/iterators_and_operators.rs"]
 mod iterators_and_operators;

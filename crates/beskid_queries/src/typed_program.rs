@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use beskid_abi::runtime_source::{
-    CANONICAL_CORELIB_ARGS_SOURCE_PATH, CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability,
-    canonical_corelib_service_source_path, canonical_corelib_service_sources,
+    canonical_corelib_service_source_path, canonical_corelib_service_sources, CorelibService, CorelibServiceCapability,
+    RuntimeIntrinsicCapability, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
 };
-use beskid_analysis::projects::SyntaxProgramAssembly;
+use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
 
 use crate::{BeskidDatabase, Db, ProjectSession, SemanticError, SourceUnitId, TypedProgram};
@@ -19,12 +19,12 @@ const CANONICAL_RUNTIME_CORPUS_BINDING: &str = "__beskid_canonical_runtime";
 /// invariant across test discovery, REPL inspection, and code generation.
 pub fn project_session_for_syntax_assembly(
     db: &BeskidDatabase,
-    assembly: &SyntaxProgramAssembly,
+    assembly: &ProgramAssembly,
     fallback_target_name: &str,
     fallback_lockfile_digest: &str,
 ) -> Result<ProjectSession, SemanticError> {
     let mut owner = None;
-    for unit in assembly.units() {
+    for unit in assembly.units.iter() {
         let unit = SourceUnitId::new(db, unit.path.clone());
         let Some(input) = db.syntax_unit(unit) else {
             continue;
@@ -44,7 +44,7 @@ pub fn project_session_for_syntax_assembly(
     Ok(owner.unwrap_or_else(|| {
         ProjectSession::new(
             db,
-            assembly.roots().host.source_root.clone(),
+            assembly.roots.host.source_root.clone(),
             assembly.entry_unit().path.clone(),
             fallback_target_name.into(),
             fallback_lockfile_digest.into(),
@@ -57,14 +57,18 @@ pub fn build_typed_program(
     db: &mut BeskidDatabase,
     project: ProjectSession,
     generation: SyntaxGenerationId,
-    assembly: Arc<SyntaxProgramAssembly>,
+    assembly: Arc<ProgramAssembly>,
 ) -> Result<TypedProgram, SemanticError> {
+    if generation != assembly.generation {
+        return Err(SemanticError::new("typed-program generation does not match ProgramAssembly generation"));
+    }
+    let generation = assembly.generation;
     let entry_unit = assembly
-        .units()
-        .get(assembly.entry_index())
+        .units
+        .get(assembly.entry_index)
         .ok_or_else(|| SemanticError::new("syntax assembly has no valid entry unit"))?;
 
-    for unit in assembly.units() {
+    for unit in assembly.units.iter() {
         let identity = SourceUnitId::new(db, unit.path.clone());
         db.ensure_expanded_syntax_unit(
             project,
@@ -76,10 +80,10 @@ pub fn build_typed_program(
     }
 
     let module_units = assembly
-        .units()
+        .units
         .iter()
         .filter_map(|unit| {
-            beskid_analysis::projects::infer_logical_module_path(unit, assembly.roots(), assembly.has_std_dependency())
+            beskid_analysis::projects::infer_logical_module_path(unit, assembly.roots, assembly.has_std_dependency)
                 .map(|module_path| (module_path, SourceUnitId::new(db, unit.path.clone())))
         })
         .fold(std::collections::HashMap::<Vec<String>, Vec<SourceUnitId>>::new(), |mut modules, (path, unit)| {
@@ -93,7 +97,7 @@ pub fn build_typed_program(
     for (path, units) in &module_units {
         registry.modules.insert((generation, path.clone()), units.clone());
     }
-    for unit in assembly.units() {
+    for unit in assembly.units.iter() {
         let unit_id = SourceUnitId::new(db, unit.path.clone());
         let imports = unit
             .program
@@ -174,12 +178,12 @@ pub fn build_canonical_corelib_syscall_typed_program(
     db: &mut BeskidDatabase,
     project: ProjectSession,
     generation: SyntaxGenerationId,
-    assembly: Arc<SyntaxProgramAssembly>,
+    assembly: Arc<ProgramAssembly>,
     capability: CorelibServiceCapability,
 ) -> Result<TypedProgram, SemanticError> {
     let expected = beskid_abi::runtime_source::canonical_corelib_syscall_sources();
     let actual = assembly
-        .units()
+        .units
         .iter()
         .map(|unit| beskid_abi::abi_v5::SourceUnit {
             logical_path: unit.logical_name.clone(),
@@ -218,7 +222,7 @@ pub fn build_typed_program_with_corelib_services(
     db: &mut BeskidDatabase,
     project: ProjectSession,
     generation: SyntaxGenerationId,
-    assembly: Arc<SyntaxProgramAssembly>,
+    assembly: Arc<ProgramAssembly>,
     capability: CorelibServiceCapability,
 ) -> Result<TypedProgram, SemanticError> {
     let service_units = canonical_corelib_service_units(&assembly, &capability)
@@ -240,7 +244,7 @@ pub fn build_typed_program_with_corelib_syscall_services(
     db: &mut BeskidDatabase,
     project: ProjectSession,
     generation: SyntaxGenerationId,
-    assembly: Arc<SyntaxProgramAssembly>,
+    assembly: Arc<ProgramAssembly>,
     capability: CorelibServiceCapability,
 ) -> Result<TypedProgram, SemanticError> {
     build_typed_program_with_corelib_services(db, project, generation, assembly, capability)
@@ -260,7 +264,7 @@ fn attach_corelib_services(
 }
 
 fn canonical_corelib_service_units(
-    assembly: &SyntaxProgramAssembly,
+    assembly: &ProgramAssembly,
     capability: &CorelibServiceCapability,
 ) -> Vec<(std::path::PathBuf, Vec<CorelibService>)> {
     canonical_corelib_service_sources()
@@ -268,7 +272,7 @@ fn canonical_corelib_service_units(
         .filter_map(|expected| {
             let canonical_path = canonical_corelib_service_source_path(&expected.logical_path)?;
             let candidates = assembly
-                .units()
+                .units
                 .iter()
                 .filter(|unit| {
                     if unit.source != expected.source {
@@ -294,7 +298,7 @@ fn canonical_corelib_service_units(
                         // assembly loader supplies this separate, origin-checked path list
                         // only after resolving the original dependency from compiler Corelib.
                         || assembly
-                            .trusted_corelib_service_paths()
+                            .trusted_corelib_service_paths
                             .iter()
                             .any(|trusted| trusted == &unit.path)
                 })
@@ -319,12 +323,12 @@ pub fn build_canonical_runtime_typed_program(
     db: &mut BeskidDatabase,
     project: ProjectSession,
     generation: SyntaxGenerationId,
-    assembly: Arc<SyntaxProgramAssembly>,
+    assembly: Arc<ProgramAssembly>,
     capability: RuntimeIntrinsicCapability,
 ) -> Result<TypedProgram, SemanticError> {
     let expected = beskid_abi::runtime_source::canonical_runtime_sources();
     let actual = assembly
-        .units()
+        .units
         .iter()
         .map(|unit| beskid_abi::abi_v5::SourceUnit {
             logical_path: unit.logical_name.clone(),
@@ -353,7 +357,7 @@ pub fn build_canonical_runtime_typed_program(
 /// assemblies keep their explicit-import-only resolution contract, and duplicate
 /// public names remain unresolved through `unique_imported_function`.
 fn attach_canonical_runtime_cross_unit_scope(db: &BeskidDatabase, typed: &TypedProgram) {
-    let units = typed.assembly.units().iter().map(|unit| SourceUnitId::new(db, unit.path.clone())).collect::<Vec<_>>();
+    let units = typed.assembly.units.iter().map(|unit| SourceUnitId::new(db, unit.path.clone())).collect::<Vec<_>>();
     let mut registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     for owner in &units {
         let imports = registry.imports.entry((*owner, typed.generation)).or_default();

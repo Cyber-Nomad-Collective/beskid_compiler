@@ -1,17 +1,16 @@
 use super::lookup::find_function_definitions;
 use super::prelude::{
-    AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
-    CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CodegenInput,
-    EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
-    SyntaxGenerationId, SyntaxModuleItem, SyntaxProgramAssembly, TargetMetadata,
     build_canonical_corelib_syscall_typed_program, build_typed_program_with_corelib_services,
     canonical_corelib_service_capability, canonical_corelib_service_source_path,
     canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources, isa, item_name,
-    lower_syntax_program, parse_program_with_source_name, settings,
+    lower_syntax_program, parse_program_with_source_name, settings, AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId,
+    AstNodeKey, BeskidDatabase, CodegenInput, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession,
+    RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata,
+    CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
 };
 
-pub(in super::super) fn canonical_corelib_syscall_fixture()
--> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+pub(in super::super) fn canonical_corelib_syscall_fixture(
+) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("Corelib syscall project").keep();
     let source = canonical_corelib_syscall_sources().pop().expect("embedded Core.Syscall source");
@@ -28,7 +27,7 @@ pub(in super::super) fn canonical_corelib_syscall_fixture()
         "corelib-source".into(),
     );
     let generation = SyntaxGenerationId(92);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
@@ -43,6 +42,7 @@ pub(in super::super) fn canonical_corelib_syscall_fixture()
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
+        generation,
     ));
     let target = TargetMetadata::supported()
         .into_iter()
@@ -68,8 +68,8 @@ pub(in super::super) fn canonical_corelib_syscall_fixture()
     (input, isa, root)
 }
 
-pub(in super::super) fn materialized_corelib_syscall_fixture()
--> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+pub(in super::super) fn materialized_corelib_syscall_fixture(
+) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("materialized Corelib syscall project").keep();
     let source = canonical_corelib_syscall_sources().pop().expect("embedded Core.Syscall source");
@@ -100,16 +100,17 @@ pub(in super::super) fn materialized_corelib_syscall_fixture()
             logical_name: source_path.display().to_string(),
             path: source_path.clone(),
             source: source.source,
-            program,
+            program: program.clone(),
         }]),
-        hir_units: Arc::new(Vec::new()),
+        syntax_indexes: Arc::new(vec![SyntaxIndex::from_program(&program, generation)]),
+        generation,
         entry_index: 0,
         discovery: AssemblyDiscovery::ImportClosure,
         module_index: Arc::new(ModuleIndex::empty()),
         has_std_dependency: false,
         trusted_corelib_service_paths: Arc::from([source_path.clone()]),
     };
-    let syntax = Arc::new(SyntaxProgramAssembly::from(&assembly));
+    let syntax = Arc::new(assembly);
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
@@ -161,16 +162,17 @@ pub(in super::super) fn core_args_fixture(
             logical_name: CANONICAL_CORELIB_ARGS_SOURCE_PATH.into(),
             path: source_path,
             source,
-            program,
+            program: program.clone(),
         }]),
-        hir_units: Arc::new(Vec::new()),
+        syntax_indexes: Arc::new(vec![SyntaxIndex::from_program(&program, generation)]),
+        generation,
         entry_index: 0,
         discovery: AssemblyDiscovery::ImportClosure,
         module_index: Arc::new(ModuleIndex::empty()),
         has_std_dependency: false,
         trusted_corelib_service_paths,
     };
-    let syntax = Arc::new(SyntaxProgramAssembly::from(&assembly));
+    let syntax = Arc::new(assembly);
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
@@ -219,8 +221,8 @@ pub(in super::super) fn assert_args_module_cannot_emit_imports(
     );
 }
 
-pub(in super::super) fn canonical_foundation_assert_fixture()
--> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+pub(in super::super) fn canonical_foundation_assert_fixture(
+) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let mut db = Box::new(BeskidDatabase::default());
     let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
         .into_iter()
@@ -240,7 +242,7 @@ pub(in super::super) fn canonical_foundation_assert_fixture()
         "compiler-owned-foundation".into(),
     );
     let generation = SyntaxGenerationId(94);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
@@ -252,6 +254,7 @@ pub(in super::super) fn canonical_foundation_assert_fixture()
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
+        generation,
     ));
     let target = TargetMetadata::supported()
         .into_iter()
@@ -277,13 +280,13 @@ pub(in super::super) fn canonical_foundation_assert_fixture()
     (input, isa, root)
 }
 
-pub(in super::super) fn canonical_foundation_output_fixture()
--> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+pub(in super::super) fn canonical_foundation_output_fixture(
+) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     canonical_foundation_service_fixture("Core/Output/Output.bd")
 }
 
-pub(in super::super) fn canonical_foundation_error_fixture()
--> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+pub(in super::super) fn canonical_foundation_error_fixture(
+) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     canonical_foundation_service_fixture("Core/Error/Error.bd")
 }
 
@@ -308,13 +311,14 @@ pub(in super::super) fn canonical_foundation_service_fixture(
         "compiler-owned-foundation".into(),
     );
     let generation = SyntaxGenerationId(96);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
         Arc::new(vec![SourceUnit { logical_name: source_relative_path.into(), path: source_path, source, program }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
+        generation,
     ));
     let target = TargetMetadata::supported()
         .into_iter()

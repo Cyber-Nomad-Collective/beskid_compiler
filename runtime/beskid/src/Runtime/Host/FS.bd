@@ -1,0 +1,43 @@
+// Canonical filesystem service boundary. Only this compiler-owned runtime
+// module may invoke the privileged runtime.adapter.fs_* intrinsics.
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_fs_read_text")]
+pub i32 FsReadText(pointer path, pointer textOut) {
+    if textOut == NativePointer(0) {
+        return 4;
+    }
+    pointer result = SystemAllocate(16, 8);
+    if result == NativePointer(0) {
+        return 3;
+    }
+    memory_set(result, 0, 16);
+    i32 status = fs_read_text(path, result, pointer_add(result, 8));
+    if status != 0 {
+        SystemFree(result, 16);
+        return status;
+    }
+    pointer bytes = NativePointer(raw_word_load(result));
+    word length = raw_word_load(pointer_add(result, 8));
+    pointer text = StrNew(bytes, length);
+    fs_read_text_release(bytes, length);
+    SystemFree(result, 16);
+    if text == NativePointer(0) {
+        return 3;
+    }
+    raw_word_store(textOut, raw_word_load(text));
+    raw_word_store(pointer_add(textOut, 8), raw_word_load(pointer_add(text, 8)));
+    SystemFree(text, 16);
+    return 0;
+}
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_fs_write_text")]
+pub i32 FsWriteText(pointer path, pointer text) { return fs_write_text(path, text); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_fs_exists")]
+pub i32 FsExists(pointer path) { return fs_exists(path); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_fs_mkdir")]
+pub i32 FsMkdir(pointer path) { return fs_mkdir(path); }
+
+[Export(Abi:"C", Symbol:"beskid_rt_v5_fs_delete")]
+pub i32 FsDelete(pointer path) { return fs_delete(path); }

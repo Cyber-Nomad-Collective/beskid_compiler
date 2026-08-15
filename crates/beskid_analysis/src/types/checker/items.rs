@@ -1,4 +1,4 @@
-use crate::hir::{HirItem, HirPrimitiveType, HirProgram, HirType, HirTypeDefinition};
+use crate::syntax::{Node, PrimitiveType, Program, Type, TypeDefinition};
 use crate::resolve::ItemId;
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::TypeId;
@@ -7,23 +7,23 @@ use crate::types::result::{FunctionSignature, TypeError};
 use super::TypeChecker;
 
 impl<'a> TypeChecker<'a> {
-    pub fn type_callable_items(&mut self, items: &[Spanned<HirItem>]) {
+    pub fn type_callable_items(&mut self, items: &[Spanned<Node>]) {
         self.type_dependency_function_items(items);
     }
 
     /// Populate struct field layout from type items without typing bodies.
-    pub(super) fn seed_struct_definitions(&mut self, program: &Spanned<HirProgram>) {
+    pub(super) fn seed_struct_definitions(&mut self, program: &Spanned<Program>) {
         for item in &program.node.items {
             self.seed_struct_definitions_item(item);
         }
     }
 
-    fn seed_struct_definitions_item(&mut self, item: &Spanned<HirItem>) {
+    fn seed_struct_definitions_item(&mut self, item: &Spanned<Node>) {
         match &item.node {
-            HirItem::TypeDefinition(def) => {
+            Node::TypeDefinition(def) => {
                 self.register_struct_definition_fields(item.span, &def.node, false);
             }
-            HirItem::InlineModule(def) => {
+            Node::InlineModule(def) => {
                 for nested in &def.node.items {
                     self.seed_struct_definitions_item(nested);
                 }
@@ -36,17 +36,17 @@ impl<'a> TypeChecker<'a> {
     fn register_struct_definition_fields(
         &mut self,
         item_span: SpanInfo,
-        def: &HirTypeDefinition,
+        def: &TypeDefinition,
         in_generic_scope: bool,
     ) {
         let mut fields = std::collections::HashMap::new();
         let mut ordered = Vec::new();
         let mut event_fields = std::collections::HashMap::new();
         for field in &def.fields {
-            if field.node.kind == crate::hir::HirFieldKind::Injected {
+            if field.node.kind == crate::syntax::FieldKind::Injected {
                 continue;
             }
-            if field.node.kind == crate::hir::HirFieldKind::Event {
+            if field.node.kind == crate::syntax::FieldKind::Event {
                 if matches!(field.node.event_capacity, Some(0)) {
                     self.errors.push(TypeError::InvalidEventCapacity { span: field.span });
                 }
@@ -74,15 +74,15 @@ impl<'a> TypeChecker<'a> {
     }
 
     /// Populate enum variant layouts from enum items without typing bodies.
-    pub(crate) fn seed_enum_definitions(&mut self, program: &Spanned<HirProgram>) {
+    pub(crate) fn seed_enum_definitions(&mut self, program: &Spanned<Program>) {
         for item in &program.node.items {
             self.seed_enum_definitions_item(item);
         }
     }
 
-    fn seed_enum_definitions_item(&mut self, item: &Spanned<HirItem>) {
+    fn seed_enum_definitions_item(&mut self, item: &Spanned<Node>) {
         match &item.node {
-            HirItem::EnumDefinition(def) => {
+            Node::EnumDefinition(def) => {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {
                     let name = generic.node.name.clone();
@@ -114,7 +114,7 @@ impl<'a> TypeChecker<'a> {
                     self.generic_params.remove(&name);
                 }
             }
-            HirItem::InlineModule(def) => {
+            Node::InlineModule(def) => {
                 for nested in &def.node.items {
                     self.seed_enum_definitions_item(nested);
                 }
@@ -123,7 +123,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn resolve_foreign_return_type(&mut self, ty: &Spanned<HirType>) -> Option<TypeId> {
+    fn resolve_foreign_return_type(&mut self, ty: &Spanned<Type>) -> Option<TypeId> {
         let errors_before = self.errors.len();
         if let Some(type_id) = self.type_id_for_type_in_generic_scope(ty) {
             return Some(type_id);
@@ -133,7 +133,7 @@ impl<'a> TypeChecker<'a> {
             return Some(type_id);
         }
         self.errors.truncate(errors_before);
-        let HirType::Complex(path) = &ty.node else {
+        let Type::Complex(path) = &ty.node else {
             return None;
         };
         let applied = self.intern_foreign_applied_type(path).or_else(|| {
@@ -150,15 +150,15 @@ impl<'a> TypeChecker<'a> {
         applied
     }
 
-    pub(super) fn register_foreign_function_signatures(&mut self, program: &Spanned<HirProgram>) {
+    pub(super) fn register_foreign_function_signatures(&mut self, program: &Spanned<Program>) {
         for item in &program.node.items {
             self.register_foreign_function_signatures_item(item);
         }
     }
 
-    fn register_foreign_function_signatures_item(&mut self, item: &Spanned<HirItem>) {
+    fn register_foreign_function_signatures_item(&mut self, item: &Spanned<Node>) {
         match &item.node {
-            HirItem::FunctionDefinition(def) => {
+            Node::Function(def) => {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {
                     let name = generic.node.name.clone();
@@ -171,8 +171,8 @@ impl<'a> TypeChecker<'a> {
                     .return_type
                     .as_ref()
                     .and_then(|ty| self.resolve_foreign_return_type(ty))
-                    .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
-                let placeholder_param = self.primitive_type_id(HirPrimitiveType::I64);
+                    .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
+                let placeholder_param = self.primitive_type_id(PrimitiveType::I64);
                 let mut params = Vec::new();
                 for param in &def.node.parameters {
                     let type_id = self.type_id_for_type_in_generic_scope(&param.node.ty).or(placeholder_param);
@@ -186,17 +186,17 @@ impl<'a> TypeChecker<'a> {
                     self.generic_params.remove(&name);
                 }
             }
-            HirItem::ExtendTypeDefinition(def) => {
+            Node::ExtendTypeDefinition(def) => {
                 for method in &def.node.methods {
                     self.register_foreign_method_signature(method.span, method);
                 }
             }
-            HirItem::TypeDefinition(def) => {
+            Node::TypeDefinition(def) => {
                 for method in &def.node.methods {
                     self.register_foreign_method_signature(method.span, method);
                 }
             }
-            HirItem::InlineModule(def) => {
+            Node::InlineModule(def) => {
                 for nested in &def.node.items {
                     self.register_foreign_function_signatures_item(nested);
                 }
@@ -205,20 +205,20 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    pub(super) fn type_dependency_function_items(&mut self, items: &[Spanned<HirItem>]) {
+    pub(super) fn type_dependency_function_items(&mut self, items: &[Spanned<Node>]) {
         for item in items {
             match &item.node {
-                HirItem::FunctionDefinition(_)
-                | HirItem::MethodDefinition(_)
-                | HirItem::ExtendTypeDefinition(_)
-                | HirItem::TypeDefinition(_)
-                | HirItem::TestDefinition(_) => {
+                Node::Function(_)
+                | Node::Method(_)
+                | Node::ExtendTypeDefinition(_)
+                | Node::TypeDefinition(_)
+                | Node::TestDefinition(_) => {
                     let item_errors_before = self.errors.len();
                     self.type_item(item);
                     self.errors.truncate(item_errors_before);
                     self.flush_scoped_type_maps_for_current_path();
                 }
-                HirItem::InlineModule(def) => {
+                Node::InlineModule(def) => {
                     self.type_dependency_function_items(&def.node.items);
                 }
                 _ => {}
@@ -226,13 +226,13 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    pub(super) fn type_item(&mut self, item: &Spanned<HirItem>) {
+    pub(super) fn type_item(&mut self, item: &Spanned<Node>) {
         match &item.node {
-            HirItem::HostDefinition(_) => {}
+            Node::HostDefinition(_) => {}
             // Constants have an integer literal initializer and are emitted as immediate
-            // syntax facts, so they never acquire a legacy HIR item type/signature.
-            HirItem::ConstantDefinition(_) => {}
-            HirItem::FunctionDefinition(def) => {
+            // syntax facts, so they never acquire a legacy syntax item type/signature.
+            Node::ConstantDefinition(_) => {}
+            Node::Function(def) => {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {
                     let name = generic.node.name.clone();
@@ -245,7 +245,7 @@ impl<'a> TypeChecker<'a> {
                     .return_type
                     .as_ref()
                     .and_then(|ty| self.type_id_for_type(ty).or_else(|| self.resolve_foreign_return_type(ty)))
-                    .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
+                    .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
                 self.current_return_type = return_type;
                 let mut params = Vec::new();
                 for param in &def.node.parameters {
@@ -260,16 +260,16 @@ impl<'a> TypeChecker<'a> {
                     self.generic_params.remove(&name);
                 }
             }
-            HirItem::MethodDefinition(def) => {
+            Node::Method(def) => {
                 self.type_method_definition(item.span, def);
             }
-            HirItem::ExtendTypeDefinition(def) => {
+            Node::ExtendTypeDefinition(def) => {
                 self.type_id_for_type(&def.node.target_type);
                 for method in &def.node.methods {
                     self.type_method_definition(method.span, method);
                 }
             }
-            HirItem::TestDefinition(def) => {
+            Node::TestDefinition(def) => {
                 if let Some(meta) = &def.node.meta {
                     for entry in &meta.node.entries {
                         self.type_expression(&entry.node.value);
@@ -280,12 +280,12 @@ impl<'a> TypeChecker<'a> {
                         self.type_expression(&entry.node.value);
                     }
                 }
-                let return_type = self.primitive_type_id(HirPrimitiveType::Unit);
+                let return_type = self.primitive_type_id(PrimitiveType::Unit);
                 self.current_return_type = return_type;
                 self.record_signature(item.span, Vec::new(), return_type);
                 self.type_block(&def.node.body);
             }
-            HirItem::TypeDefinition(def) => {
+            Node::TypeDefinition(def) => {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {
                     let name = generic.node.name.clone();
@@ -301,7 +301,7 @@ impl<'a> TypeChecker<'a> {
                     self.generic_params.remove(&name);
                 }
             }
-            HirItem::EnumDefinition(def) => {
+            Node::EnumDefinition(def) => {
                 let mut inserted = Vec::new();
                 for generic in &def.node.generics {
                     let name = generic.node.name.clone();
@@ -333,15 +333,15 @@ impl<'a> TypeChecker<'a> {
                     self.generic_params.remove(&name);
                 }
             }
-            HirItem::ContractDefinition(_) => {}
-            HirItem::AttributeDeclaration(_) => {}
-            HirItem::InlineModule(def) => {
+            Node::ContractDefinition(_) => {}
+            Node::AttributeDeclaration(_) => {}
+            Node::InlineModule(def) => {
                 for item in &def.node.items {
                     self.type_item(item);
                 }
             }
-            HirItem::ModuleDeclaration(_) | HirItem::UseDeclaration(_) => {}
-            HirItem::MacroDefinition(_) => {}
+            Node::ModuleDeclaration(_) | Node::UseDeclaration(_) => {}
+            Node::MacroDefinition(_) => {}
         }
         self.current_return_type = None;
     }
@@ -370,7 +370,7 @@ impl<'a> TypeChecker<'a> {
     fn type_method_definition(
         &mut self,
         item_span: crate::syntax::SpanInfo,
-        def: &Spanned<crate::hir::HirMethodDefinition>,
+        def: &Spanned<crate::syntax::MethodDefinition>,
     ) {
         let receiver_type = self.type_id_for_type(&def.node.receiver_type);
         let previous_receiver = self.current_receiver_item_id;
@@ -380,7 +380,7 @@ impl<'a> TypeChecker<'a> {
             .return_type
             .as_ref()
             .and_then(|ty| self.type_id_for_type(ty))
-            .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
+            .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
         self.current_return_type = return_type;
         if let Some(receiver_type) = receiver_type {
             self.insert_local_type(def.node.receiver_type.span, receiver_type);
@@ -403,15 +403,15 @@ impl<'a> TypeChecker<'a> {
     pub(super) fn register_foreign_method_signature(
         &mut self,
         item_span: crate::syntax::SpanInfo,
-        def: &Spanned<crate::hir::HirMethodDefinition>,
+        def: &Spanned<crate::syntax::MethodDefinition>,
     ) {
         let return_type = def
             .node
             .return_type
             .as_ref()
             .and_then(|ty| self.type_id_for_type_in_generic_scope(ty))
-            .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
-        let placeholder_param = self.primitive_type_id(HirPrimitiveType::I64);
+            .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
+        let placeholder_param = self.primitive_type_id(PrimitiveType::I64);
         let mut params = Vec::new();
         for param in &def.node.parameters {
             let type_id = self.type_id_for_type_in_generic_scope(&param.node.ty).or(placeholder_param);
@@ -431,7 +431,7 @@ impl<'a> TypeChecker<'a> {
     fn register_self_parameter_method(
         &mut self,
         item_span: crate::syntax::SpanInfo,
-        def: &crate::hir::HirFunctionDefinition,
+        def: &crate::syntax::FunctionDefinition,
         params: &[TypeId],
         return_type: Option<TypeId>,
     ) {

@@ -1,5 +1,3 @@
-(decl partial emit_dispatch_call (AstNodeKey) Value)
-(extern constructor emit_dispatch_call emit_dispatch_call)
 
 (decl partial emit_string_concat (AstNodeKey) Value)
 (extern constructor emit_string_concat emit_string_concat)
@@ -16,10 +14,6 @@
 (decl index_target (IndexTarget) AstNodeKey)
 (extern extractor index_target index_target)
 
-(rule (lower_expression key @ (and
-        (node_kind (NodeKind.CallExpression))
-        (call_kind (CallKind.Dynamic))))
-      (emit_dispatch_call key))
 
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))

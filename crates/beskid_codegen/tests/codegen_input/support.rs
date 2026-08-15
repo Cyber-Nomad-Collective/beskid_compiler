@@ -8,7 +8,7 @@ pub(super) use beskid_abi::runtime_source::{
     canonical_corelib_service_sources, canonical_runtime_intrinsic_capability, canonical_runtime_sources,
 };
 pub(super) use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
 };
 pub(super) use beskid_analysis::services::parse_program_with_source_name;
 pub(super) use beskid_codegen::{CodegenInput, CodegenInputError, SyntaxNodeFacts};
@@ -32,7 +32,7 @@ pub(super) fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, Targ
     let entry = SourceUnitId::new(&db, source_path.clone());
     let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
     let generation = SyntaxGenerationId(1);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
@@ -41,7 +41,7 @@ pub(super) fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, Targ
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };

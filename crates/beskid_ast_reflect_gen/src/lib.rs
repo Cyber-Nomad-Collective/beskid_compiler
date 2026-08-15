@@ -16,13 +16,12 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use syn::{Attribute, Fields, Generics, Item, Visibility, parse_file};
+use syn::{parse_file, Attribute, Fields, Generics, Item, Visibility};
 
 use crate::emit_idents::rust_snake_to_beskid_field_camel;
 
 /// Default Rust sources under `beskid_analysis` (relative to the compiler workspace root).
-pub const DEFAULT_ANALYSIS_ALLOWLIST: &[&str] =
-    &["crates/beskid_analysis/src/syntax/items/node.rs", "crates/beskid_analysis/src/hir/item.rs"];
+pub const DEFAULT_ANALYSIS_ALLOWLIST: &[&str] = &["crates/beskid_analysis/src/syntax/items/node.rs"];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenOptions {

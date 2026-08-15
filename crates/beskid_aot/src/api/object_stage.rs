@@ -35,7 +35,7 @@ pub(super) fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageR
             {
                 adapter.program_entry.to_owned()
             } else {
-                beskid_codegen::lowering::expressions::export::object_link_symbol(&function.name, &exports)
+                beskid_codegen::object_link_symbol(&function.name, &exports)
             }
         })
         .collect::<Vec<_>>();
@@ -44,7 +44,7 @@ pub(super) fn emit_object_stage(req: &AotBuildRequest) -> AotResult<ObjectStageR
     let exported_symbols = apply_export_policy(all_symbols, &export_policy);
     let exported_symbol_set = exported_symbols.iter().cloned().collect::<HashSet<_>>();
 
-    let mut object_module = BeskidObjectModule::new(req.target_triple.as_deref())?;
+    let mut object_module = BeskidObjectModule::new(req.target_triple.as_deref(), req.profile)?;
     let obs = req.pipeline.as_deref();
     observe_phase_result(obs, AOT_EMIT_OBJECT, || {
         object_module.compile_artifact_with_exports_and_entry_adapter(

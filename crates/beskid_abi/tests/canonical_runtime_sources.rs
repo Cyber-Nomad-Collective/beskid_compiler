@@ -1,14 +1,14 @@
 use beskid_abi::abi_v5::{AbiManifestV5, AbiType, SourceUnit, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_BOOTSTRAP_LIFECYCLE_SOURCE_PATH, CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
+    canonical_corelib_service_capability, canonical_corelib_service_source_path,
+    canonical_runtime_intrinsic_capability, canonical_runtime_sources, prove_canonical_runtime_corpus,
+    RuntimeCapabilityError, CANONICAL_BOOTSTRAP_LIFECYCLE_SOURCE_PATH, CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
     CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH,
     CANONICAL_CLOCKS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
     CANONICAL_GC_ROOTS_HANDLES_SOURCE_PATH, CANONICAL_PROCESS_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH,
     CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_EXPORTS_SOURCE_PATH,
     CANONICAL_SCHEDULER_LOOP_SOURCE_PATH, CANONICAL_SCHEDULER_QUEUE_SOURCE_PATH, CANONICAL_SCHEDULER_SOURCE_PATH,
-    CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH, RuntimeCapabilityError, canonical_corelib_service_capability,
-    canonical_corelib_service_source_path, canonical_runtime_intrinsic_capability, canonical_runtime_sources,
-    prove_canonical_runtime_corpus,
+    CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH, CANONICAL_SYSCALLS_SOURCE_PATH,
 };
 
 fn canonical_source<'a>(sources: &'a [SourceUnit], logical_path: &str) -> &'a str {
@@ -208,6 +208,25 @@ fn canonical_host_sources_use_manifest_owned_clock_and_process_adapters() {
         .source;
     assert!(process.contains("process_exit(code);"));
     assert!(process.contains("return process_getpid();"));
+    assert!(process.contains("pub pointer EnvGet(pointer key) { return env_get(key); }"));
+    assert!(process.contains("pub i32 EnvSet(pointer key, pointer value) { return env_set(key, value); }"));
+    assert!(process.contains("pub pointer EnvGetcwd() { return env_getcwd(); }"));
+    assert!(process.contains("i32 status = fs_read_text(path, result, pointer_add(result, 8));"));
+    assert!(process.contains("pointer text = StrNew(bytes, length);"));
+    assert!(process.contains("fs_read_text_release(bytes, length);"));
+    assert!(process.contains("raw_word_store(textOut, raw_word_load(text));"));
+    assert!(
+        process.contains("pub i32 FsWriteText(pointer path, pointer content) { return fs_write_text(path, content); }")
+    );
+    assert!(process.contains("pub i32 FsExists(pointer path) { return fs_exists(path); }"));
+    assert!(process.contains("pub i32 FsMkdir(pointer path) { return fs_mkdir(path); }"));
+    assert!(process.contains("pub i32 FsDelete(pointer path) { return fs_delete(path); }"));
+    assert!(process.contains("pub pointer TtyWinsize() { return tty_winsize(); }"));
+
+    let syscalls = canonical_source(&sources, CANONICAL_SYSCALLS_SOURCE_PATH);
+    assert!(syscalls.contains("return i64(write(fd, buffer, len));"));
+    assert!(syscalls.contains("return i64(read(fd, buffer, len));"));
+    assert!(!syscalls.contains("return -1;"));
 }
 
 #[test]
@@ -390,9 +409,9 @@ fn exact_embedded_source_set_receives_non_serializable_intrinsic_authority() {
         );
     }
     assert!(capability.intrinsic_for_source("src/User.bd", "trap").is_none());
-    assert!(
-        capability.intrinsic_for_source(CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, "not_manifest_declared",).is_none()
-    );
+    assert!(capability
+        .intrinsic_for_source(CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, "not_manifest_declared",)
+        .is_none());
     assert_eq!(capability.source_hash(), beskid_abi::abi_v5::canonical_source_hash(&sources).unwrap());
 }
 

@@ -35,7 +35,7 @@ pub(super) fn resolve_module_items(
     }
     // Also collect specializations from entry-point roots (test files) that may
     // call generic functions defined in this module with concrete type arguments.
-    for root in input.roots() {
+    for root in input.roots {
         collect_generic_call_specializations(db, *root, &mut specializations).map_err(|error| {
             emission_verification(format!(
                 "generic specialization collection failed for root {}: {error}",
@@ -298,7 +298,7 @@ mod tests {
     use std::sync::Arc;
 
     use beskid_analysis::projects::{
-        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
+        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
     };
     use beskid_analysis::services::parse_program_with_source_name;
     use beskid_queries::{
@@ -319,7 +319,7 @@ mod tests {
         let entry = SourceUnitId::new(&db, source_path.clone());
         let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
         let generation = SyntaxGenerationId(1);
-        let assembly = Arc::new(SyntaxProgramAssembly::new(
+        let assembly = Arc::new(ProgramAssembly::new(
             EffectiveCompilationRoots {
                 host: RootEntry { dependency_name: None, source_root: directory },
                 dependencies: Vec::new(),
@@ -333,7 +333,7 @@ mod tests {
             0,
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
-            false,
+            false, generation
         ));
         build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
         let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };

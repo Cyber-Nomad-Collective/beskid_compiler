@@ -8,7 +8,7 @@ pub struct BeskidStr {
     pub len: usize,
 }
 
-/// Growable array header; element storage depends on runtime `arrays_backing` feature.
+/// Growable array header with unconditionally allocated element storage.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct BeskidArray {

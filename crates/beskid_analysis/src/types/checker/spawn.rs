@@ -1,5 +1,5 @@
 use crate::builtins::builtin_for_path;
-use crate::hir::{HirExpressionNode, HirLambdaExpression, HirSpawnExpression, HirStatementNode};
+use crate::syntax::{Expression, LambdaExpression, SpawnExpression, Statement};
 use crate::resolve::ResolvedValue;
 use crate::syntax::Spanned;
 use crate::types::{TypeId, TypeInfo};
@@ -8,17 +8,17 @@ use super::TypeChecker;
 use crate::types::result::TypeError;
 
 impl<'a> TypeChecker<'a> {
-    pub(super) fn type_spawn_expression(&mut self, spawn: &Spanned<HirSpawnExpression>) -> Option<TypeId> {
+    pub(super) fn type_spawn_expression(&mut self, spawn: &Spanned<SpawnExpression>) -> Option<TypeId> {
         let parent_scope = self.fiber_scope_stack.last().copied().unwrap_or(0);
         let child_scope = self.alloc_fiber_scope(parent_scope);
 
-        let return_type = if let HirExpressionNode::LambdaExpression(lambda) = &spawn.node.callee.node {
+        let return_type = if let Expression::Lambda(lambda) = &spawn.node.callee.node {
             self.fiber_scope_stack.push(child_scope);
             let typed = self.type_lambda_expression_with_expected(lambda, None);
             self.fiber_scope_stack.pop();
             self.check_spawn_lambda_captures(&spawn.node.callee, spawn.span);
             typed.and_then(|fn_type| self.function_return_type(fn_type))
-        } else if let HirExpressionNode::CallExpression(call) = &spawn.node.callee.node {
+        } else if let Expression::Call(call) = &spawn.node.callee.node {
             self.spawn_return_type_for_entry(&call.node.callee, spawn.span)
         } else {
             self.spawn_return_type_for_entry(&spawn.node.callee, spawn.span)
@@ -39,7 +39,7 @@ impl<'a> TypeChecker<'a> {
     pub(super) fn check_fiber_join_call(
         &mut self,
         join_span: crate::syntax::SpanInfo,
-        handle_expr: &Spanned<HirExpressionNode>,
+        handle_expr: &Spanned<Expression>,
     ) {
         let Some(handle_scope) = self.fiber_scope_for_expression(handle_expr) else {
             return;
@@ -68,12 +68,12 @@ impl<'a> TypeChecker<'a> {
         false
     }
 
-    fn fiber_scope_for_expression(&self, expression: &Spanned<HirExpressionNode>) -> Option<usize> {
+    fn fiber_scope_for_expression(&self, expression: &Spanned<Expression>) -> Option<usize> {
         if let Some(scope) = self.fiber_handle_scopes.get(&expression.id) {
             return Some(*scope);
         }
         match &expression.node {
-            HirExpressionNode::PathExpression(path) => self
+            Expression::Path(path) => self
                 .local_id_for_span(path.node.path.span)
                 .and_then(|local| self.fiber_handle_locals.get(&local).copied()),
             _ => None,
@@ -89,10 +89,10 @@ impl<'a> TypeChecker<'a> {
 
     fn spawn_return_type_for_entry(
         &mut self,
-        entry: &Spanned<HirExpressionNode>,
+        entry: &Spanned<Expression>,
         spawn_span: crate::syntax::SpanInfo,
     ) -> Option<TypeId> {
-        if let HirExpressionNode::PathExpression(path) = &entry.node
+        if let Expression::Path(path) = &entry.node
             && let Some(ResolvedValue::Item(item_id)) = self.resolved_value_at(path.node.path.span)
         {
             return self.function_signatures.get(&item_id).map(|signature| signature.return_type);
@@ -109,8 +109,8 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn check_spawn_lambda_captures(&mut self, callee: &Spanned<HirExpressionNode>, span: crate::syntax::SpanInfo) {
-        let HirExpressionNode::LambdaExpression(lambda) = &callee.node else {
+    fn check_spawn_lambda_captures(&mut self, callee: &Spanned<Expression>, span: crate::syntax::SpanInfo) {
+        let Expression::Lambda(lambda) = &callee.node else {
             return;
         };
         if self.lambda_references_outer_stack(lambda) {
@@ -118,7 +118,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn lambda_references_outer_stack(&self, lambda: &Spanned<HirLambdaExpression>) -> bool {
+    fn lambda_references_outer_stack(&self, lambda: &Spanned<LambdaExpression>) -> bool {
         let param_locals: std::collections::HashSet<_> =
             lambda.node.parameters.iter().filter_map(|p| self.local_id_for_span(p.node.name.span)).collect();
         self.expression_references_outer_local(lambda.node.body.as_ref(), &param_locals)
@@ -126,11 +126,11 @@ impl<'a> TypeChecker<'a> {
 
     fn expression_references_outer_local(
         &self,
-        expression: &Spanned<HirExpressionNode>,
+        expression: &Spanned<Expression>,
         param_locals: &std::collections::HashSet<crate::resolve::LocalId>,
     ) -> bool {
         match &expression.node {
-            HirExpressionNode::PathExpression(path) => self
+            Expression::Path(path) => self
                 .resolution
                 .tables
                 .resolved_values
@@ -140,41 +140,41 @@ impl<'a> TypeChecker<'a> {
                     _ => None,
                 })
                 .is_some(),
-            HirExpressionNode::LambdaExpression(inner) => {
+            Expression::Lambda(inner) => {
                 self.expression_references_outer_local(inner.node.body.as_ref(), param_locals)
             }
-            HirExpressionNode::UnaryExpression(unary) => {
+            Expression::Unary(unary) => {
                 self.expression_references_outer_local(unary.node.expr.as_ref(), param_locals)
             }
-            HirExpressionNode::GroupedExpression(grouped) => {
+            Expression::Grouped(grouped) => {
                 self.expression_references_outer_local(grouped.node.expr.as_ref(), param_locals)
             }
-            HirExpressionNode::CallExpression(call) => {
+            Expression::Call(call) => {
                 self.expression_references_outer_local(&call.node.callee, param_locals)
                     || call.node.args.iter().any(|arg| self.expression_references_outer_local(arg, param_locals))
             }
-            HirExpressionNode::BinaryExpression(binary) => {
+            Expression::Binary(binary) => {
                 self.expression_references_outer_local(&binary.node.left, param_locals)
                     || self.expression_references_outer_local(&binary.node.right, param_locals)
             }
-            HirExpressionNode::AssignExpression(assign) => {
+            Expression::Assign(assign) => {
                 self.expression_references_outer_local(&assign.node.target, param_locals)
                     || self.expression_references_outer_local(&assign.node.value, param_locals)
             }
-            HirExpressionNode::MemberExpression(member) => {
+            Expression::Member(member) => {
                 self.expression_references_outer_local(&member.node.target, param_locals)
             }
-            HirExpressionNode::BlockExpression(block) => {
+            Expression::Block(block) => {
                 block.node.block.node.statements.iter().any(|stmt| match &stmt.node {
-                    HirStatementNode::ExpressionStatement(expr_stmt) => {
+                    Statement::Expression(expr_stmt) => {
                         self.expression_references_outer_local(&expr_stmt.node.expression, param_locals)
                     }
-                    HirStatementNode::ReturnStatement(ret) => ret
+                    Statement::Return(ret) => ret
                         .node
                         .value
                         .as_ref()
                         .is_some_and(|value| self.expression_references_outer_local(value, param_locals)),
-                    HirStatementNode::LetStatement(let_stmt) => {
+                    Statement::Let(let_stmt) => {
                         self.expression_references_outer_local(&let_stmt.node.value, param_locals)
                     }
                     _ => false,
@@ -187,7 +187,7 @@ impl<'a> TypeChecker<'a> {
     pub(super) fn register_fiber_handle_local(
         &mut self,
         local_span: crate::syntax::SpanInfo,
-        handle_id: crate::resolve::HirNodeId,
+        handle_id: crate::syntax::AstNodeId,
     ) {
         let Some(local_id) = self.local_id_for_span(local_span) else {
             return;

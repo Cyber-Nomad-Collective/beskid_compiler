@@ -38,7 +38,7 @@ write_query() {
     cat <<'EOF'
 
 // Hand-maintained facade ------------------------------------------------------
-// Fluent query plans over syntax snapshots for the process phase (lowers to beskid_analysis::query).
+// Fluent query plans over syntax snapshots for the process phase (lowers to beskid_analysis::syntax_query).
 
 EOF
     run_gen --quiet --workspace "$COMPILER_ROOT" --emit-query-facade

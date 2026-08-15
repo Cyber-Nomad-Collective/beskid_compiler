@@ -5,8 +5,8 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::hir::{HirExpressionNode, HirProgram};
-use crate::resolve::{HirNodeId, ItemId, LocalId, Resolution};
+use crate::syntax::{Expression, Program};
+use crate::resolve::{AstNodeId, ItemId, LocalId, Resolution};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::checker::TypeChecker;
 use crate::types::lowering_prep::{CastIntent, LoweringPrep};
@@ -236,7 +236,7 @@ pub struct FunctionSignature {
 pub struct TypeResult {
     pub types: TypeTable,
     pub named_type_names: HashMap<ItemId, String>,
-    pub node_types: HashMap<HirNodeId, TypeId>,
+    pub node_types: HashMap<AstNodeId, TypeId>,
     pub local_types: HashMap<LocalId, TypeId>,
     pub unit_surfaces: HashMap<PathBuf, Arc<UnitTypeSurface>>,
     pub function_signatures: HashMap<ItemId, FunctionSignature>,
@@ -249,11 +249,11 @@ pub struct TypeResult {
 }
 
 impl TypeResult {
-    pub fn node_type(&self, id: HirNodeId) -> Option<TypeId> {
+    pub fn node_type(&self, id: AstNodeId) -> Option<TypeId> {
         self.node_types.get(&id).copied()
     }
 
-    pub fn expr_type(&self, node: &Spanned<HirExpressionNode>) -> Option<TypeId> {
+    pub fn expr_type(&self, node: &Spanned<Expression>) -> Option<TypeId> {
         self.node_type(node.id)
     }
 
@@ -261,11 +261,11 @@ impl TypeResult {
         &self.lowering.cast_intents
     }
 
-    pub fn cast_intents_for_node(&self, node_id: HirNodeId) -> impl Iterator<Item = &CastIntent> {
+    pub fn cast_intents_for_node(&self, node_id: AstNodeId) -> impl Iterator<Item = &CastIntent> {
         self.lowering.cast_intents_for_node(node_id)
     }
 
-    #[deprecated(note = "use cast_intents_for_node(HirNodeId) instead")]
+    #[deprecated(note = "use cast_intents_for_node(AstNodeId) instead")]
     pub fn cast_intent_for_span(&self, span: SpanInfo) -> Option<&CastIntent> {
         self.lowering.cast_intents.iter().find(|intent| intent.span == span)
     }
@@ -282,7 +282,7 @@ impl TypeResult {
         })
     }
 
-    pub fn call_kind_at(&self, node_id: HirNodeId, _source_path: Option<&PathBuf>) -> Option<CallLoweringKind> {
+    pub fn call_kind_at(&self, node_id: AstNodeId, _source_path: Option<&PathBuf>) -> Option<CallLoweringKind> {
         self.lowering.call_kinds.get(&node_id).copied()
     }
 
@@ -299,14 +299,14 @@ impl TypeResult {
 }
 
 /// Type-check `program`; returns `Err` when any [`TypeError`] was recorded.
-pub fn type_program(program: &mut Spanned<HirProgram>, resolution: &Resolution) -> Result<TypeResult, Vec<TypeError>> {
+pub fn type_program(program: &mut Spanned<Program>, resolution: &Resolution) -> Result<TypeResult, Vec<TypeError>> {
     let (result, errors) = type_program_with_errors(program, resolution);
     if errors.is_empty() { Ok(result) } else { Err(errors) }
 }
 
 /// Like [`type_program`] but returns partial [`TypeResult`] together with all accumulated errors.
 pub fn type_program_with_errors(
-    program: &mut Spanned<HirProgram>,
+    program: &mut Spanned<Program>,
     resolution: &Resolution,
 ) -> (TypeResult, Vec<TypeError>) {
     TypeChecker::check_entry(program, resolution, &[], None, None, true, None, None, None, None)

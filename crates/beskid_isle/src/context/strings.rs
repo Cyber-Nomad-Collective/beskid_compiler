@@ -20,7 +20,7 @@ impl IsleContext<'_, '_, '_, '_> {
         if pointer_type != types::I64 && semantic == SemanticTypeId::I64 {
             // keep i64 as-is
         }
-        dispatch::emit_str_from_i64_dispatch(self.builder, coerced).ok()
+        self.emit_corelib_service_call(key, "str_from_i64", &[coerced], &[types::I64], Some(dispatch::pointer_type()))
     }
 
     pub(super) fn emit_string_compare(&mut self, key: AstNodeKey, invert: bool) -> Option<Value> {
@@ -28,8 +28,9 @@ impl IsleContext<'_, '_, '_, '_> {
         let right_key = self.facts.child(key, 1)?;
         let left = self.coerce_expression_to_string(left_key)?;
         let right = self.coerce_expression_to_string(right_key)?;
-        let route = beskid_abi::dispatch_route_for_symbol("str_eq")?;
-        let eq_flag = dispatch::emit_dispatch_call(self.builder, route, &[left, right], true).ok()??;
+        let pointer = dispatch::pointer_type();
+        let eq_flag =
+            self.emit_corelib_service_call(key, "str_eq", &[left, right], &[pointer, pointer], Some(types::I64))?;
         let zero = self.builder.ins().iconst(types::I64, 0);
         Some(if invert {
             self.builder.ins().icmp(IntCC::Equal, eq_flag, zero)
@@ -57,8 +58,8 @@ macro_rules! generated_string_methods {
             let right_key = self.facts.child(key, 1)?;
             let left = self.coerce_expression_to_string(left_key)?;
             let right = self.coerce_expression_to_string(right_key)?;
-            let route = beskid_abi::dispatch_route_for_symbol("str_concat")?;
-            dispatch::emit_dispatch_call(self.builder, route, &[left, right], true).ok()?
+            let pointer = dispatch::pointer_type();
+            self.emit_corelib_service_call(key, "str_concat", &[left, right], &[pointer, pointer], Some(pointer))
         }
 
         fn emit_string_eq(&mut self, key: AstNodeKey) -> Option<Value> {

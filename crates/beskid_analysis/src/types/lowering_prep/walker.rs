@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::hir::{
-    HirBlock, HirCallExpression, HirElseBranch, HirExpressionNode, HirIfStatement, HirItem, HirMatchExpression,
-    HirMethodDefinition, HirPattern, HirPrimitiveType, HirProgram, HirStatementNode, HirStructLiteralExpression,
-    HirType,
+use crate::syntax::{
+    Block, CallExpression, ElseBranch, Expression, IfStatement, Node, MatchExpression,
+    MethodDefinition, Pattern, PrimitiveType, Program, Statement, StructLiteralExpression,
+    Type,
 };
 use crate::paths;
-use crate::resolve::{HirNodeId, ItemId, Resolution, ResolvedType, ResolvedValue, canonical_item_id};
+use crate::resolve::{AstNodeId, ItemId, Resolution, ResolvedType, ResolvedValue, canonical_item_id};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::path_value::{
     PathTypeEnv, field_type_on_receiver, first_field_segment_name, generic_mapping_for_type_id,
@@ -24,11 +24,11 @@ use super::substitution::{
 };
 
 impl LoweringPrep {
-    /// Walk typed HIR and populate call kinds and cast intents (no type inference).
+    /// Walk typed syntax and populate call kinds and cast intents (no type inference).
     pub fn run(
-        program: &Spanned<HirProgram>,
+        program: &Spanned<Program>,
         resolution: &Resolution,
-        node_types: &HashMap<HirNodeId, TypeId>,
+        node_types: &HashMap<AstNodeId, TypeId>,
         surfaces: &LoweringPrepSurfaces<'_>,
     ) -> Self {
         let mut walker = PrepWalker::new(resolution, node_types, surfaces);
@@ -41,7 +41,7 @@ impl LoweringPrep {
 
 struct PrepWalker<'a> {
     resolution: &'a Resolution,
-    node_types: &'a HashMap<HirNodeId, TypeId>,
+    node_types: &'a HashMap<AstNodeId, TypeId>,
     surfaces: &'a LoweringPrepSurfaces<'a>,
     prep: LoweringPrep,
     current_source_path: Option<PathBuf>,
@@ -53,7 +53,7 @@ struct PrepWalker<'a> {
 impl<'a> PrepWalker<'a> {
     fn new(
         resolution: &'a Resolution,
-        node_types: &'a HashMap<HirNodeId, TypeId>,
+        node_types: &'a HashMap<AstNodeId, TypeId>,
         surfaces: &'a LoweringPrepSurfaces<'a>,
     ) -> Self {
         Self {
@@ -89,19 +89,19 @@ impl<'a> PrepWalker<'a> {
         self.prep
     }
 
-    fn node_type(&self, id: HirNodeId) -> Option<TypeId> {
+    fn node_type(&self, id: AstNodeId) -> Option<TypeId> {
         self.node_types.get(&id).copied()
     }
 
-    fn expr_type(&self, expr: &Spanned<HirExpressionNode>) -> Option<TypeId> {
+    fn expr_type(&self, expr: &Spanned<Expression>) -> Option<TypeId> {
         self.node_type(expr.id)
     }
 
-    fn record_call_kind(&mut self, node_id: HirNodeId, kind: CallLoweringKind) {
+    fn record_call_kind(&mut self, node_id: AstNodeId, kind: CallLoweringKind) {
         self.prep.call_kinds.insert(node_id, kind);
     }
 
-    fn record_numeric_cast(&mut self, node_id: HirNodeId, span: SpanInfo, expected: TypeId, actual: TypeId) {
+    fn record_numeric_cast(&mut self, node_id: AstNodeId, span: SpanInfo, expected: TypeId, actual: TypeId) {
         if types_compatible_without_cast(self.surfaces.types, self.resolution, expected, actual) {
             return;
         }
@@ -194,10 +194,10 @@ impl<'a> PrepWalker<'a> {
         self.surfaces.named_types.get(&item_id).copied().or_else(|| find_named_type(self.surfaces.types, item_id))
     }
 
-    fn type_id_for_hir_type(&self, ty: &Spanned<HirType>) -> Option<TypeId> {
+    fn type_id_for_program_type(&self, ty: &Spanned<Type>) -> Option<TypeId> {
         match &ty.node {
-            HirType::Primitive(p) => primitive_type_id(self.surfaces.types, p.node),
-            HirType::Complex(path) => {
+            Type::Primitive(p) => primitive_type_id(self.surfaces.types, p.node),
+            Type::Complex(path) => {
                 if path.node.segments.len() == 1
                     && path.node.segments[0].node.type_args.is_empty()
                     && let Some(id) = self.generic_params.get(&path.node.segments[0].node.name.node.name)
@@ -206,19 +206,19 @@ impl<'a> PrepWalker<'a> {
                 }
                 self.type_id_for_type_path(path)
             }
-            HirType::Array(inner) => {
-                let inner_id = self.type_id_for_hir_type(inner)?;
+            Type::Array(inner) => {
+                let inner_id = self.type_id_for_program_type(inner)?;
                 self.surfaces.types.find_array_of(inner_id)
             }
-            HirType::Function { return_type, parameters } => {
-                let ret = self.type_id_for_hir_type(return_type)?;
-                let params = parameters.iter().map(|p| self.type_id_for_hir_type(p)).collect::<Option<Vec<_>>>()?;
+            Type::Function { return_type, parameters } => {
+                let ret = self.type_id_for_program_type(return_type)?;
+                let params = parameters.iter().map(|p| self.type_id_for_program_type(p)).collect::<Option<Vec<_>>>()?;
                 lookup_function_type(self.surfaces.types, &params, ret)
             }
         }
     }
 
-    fn type_id_for_type_path(&self, path: &Spanned<crate::hir::HirPath>) -> Option<TypeId> {
+    fn type_id_for_type_path(&self, path: &Spanned<crate::syntax::Path>) -> Option<TypeId> {
         let ResolvedType::Item(item_id) =
             self.resolution.tables.resolved_type_at(path.span, self.current_source_path.as_ref())?
         else {
@@ -230,13 +230,13 @@ impl<'a> PrepWalker<'a> {
         if last.node.type_args.is_empty() {
             return Some(base);
         }
-        let args = last.node.type_args.iter().map(|a| self.type_id_for_hir_type(a)).collect::<Option<Vec<_>>>()?;
+        let args = last.node.type_args.iter().map(|a| self.type_id_for_program_type(a)).collect::<Option<Vec<_>>>()?;
         find_applied_type(self.surfaces.types, item_id, &args)
     }
 
-    fn walk_item(&mut self, item: &Spanned<HirItem>) {
+    fn walk_item(&mut self, item: &Spanned<Node>) {
         match &item.node {
-            HirItem::FunctionDefinition(def) => {
+            Node::Function(def) => {
                 self.with_source_path_from_item(item.span, |w| {
                     let mut generics = Vec::new();
                     for g in &def.node.generics {
@@ -249,31 +249,31 @@ impl<'a> PrepWalker<'a> {
                         .node
                         .return_type
                         .as_ref()
-                        .and_then(|t| w.type_id_for_hir_type(t))
+                        .and_then(|t| w.type_id_for_program_type(t))
                         .or_else(|| w.return_type_for_item_span(item.span))
-                        .or_else(|| primitive_type_id(w.surfaces.types, HirPrimitiveType::Unit));
+                        .or_else(|| primitive_type_id(w.surfaces.types, PrimitiveType::Unit));
                     w.walk_block(&def.node.body);
                     for name in generics {
                         w.generic_params.remove(&name);
                     }
                 });
             }
-            HirItem::MethodDefinition(def) => self.walk_method_definition(item.span, def),
-            HirItem::ExtendTypeDefinition(def) => {
+            Node::Method(def) => self.walk_method_definition(item.span, def),
+            Node::ExtendTypeDefinition(def) => {
                 for m in &def.node.methods {
                     self.walk_method_definition(m.span, m);
                 }
             }
-            HirItem::TestDefinition(def) => self.with_source_path_from_item(item.span, |w| {
-                w.current_return_type = primitive_type_id(w.surfaces.types, HirPrimitiveType::Unit);
+            Node::TestDefinition(def) => self.with_source_path_from_item(item.span, |w| {
+                w.current_return_type = primitive_type_id(w.surfaces.types, PrimitiveType::Unit);
                 w.walk_block(&def.node.body);
             }),
-            HirItem::TypeDefinition(def) => {
+            Node::TypeDefinition(def) => {
                 for m in &def.node.methods {
                     self.walk_method_definition(m.span, m);
                 }
             }
-            HirItem::InlineModule(m) => {
+            Node::InlineModule(m) => {
                 for nested in &m.node.items {
                     self.walk_item(nested);
                 }
@@ -282,15 +282,15 @@ impl<'a> PrepWalker<'a> {
         }
     }
 
-    fn walk_method_definition(&mut self, span: SpanInfo, def: &Spanned<HirMethodDefinition>) {
+    fn walk_method_definition(&mut self, span: SpanInfo, def: &Spanned<MethodDefinition>) {
         self.with_source_path_from_item(span, |w| {
             w.current_return_type = def
                 .node
                 .return_type
                 .as_ref()
-                .and_then(|t| w.type_id_for_hir_type(t))
+                .and_then(|t| w.type_id_for_program_type(t))
                 .or_else(|| w.return_type_for_item_span(span))
-                .or_else(|| primitive_type_id(w.surfaces.types, HirPrimitiveType::Unit));
+                .or_else(|| primitive_type_id(w.surfaces.types, PrimitiveType::Unit));
             w.walk_block(&def.node.body);
         });
     }
@@ -304,17 +304,17 @@ impl<'a> PrepWalker<'a> {
         self.current_source_path = prev;
     }
 
-    fn walk_block(&mut self, block: &Spanned<HirBlock>) {
+    fn walk_block(&mut self, block: &Spanned<Block>) {
         for stmt in &block.node.statements {
             self.walk_statement(stmt);
         }
     }
 
-    fn walk_statement(&mut self, stmt: &Spanned<HirStatementNode>) {
+    fn walk_statement(&mut self, stmt: &Spanned<Statement>) {
         match &stmt.node {
-            HirStatementNode::LetStatement(let_stmt) => {
+            Statement::Let(let_stmt) => {
                 if let Some(ty) = &let_stmt.node.type_annotation {
-                    let expected = self.type_id_for_hir_type(ty);
+                    let expected = self.type_id_for_program_type(ty);
                     let prev = self.contextual_expected_type;
                     if let Some(e) = expected {
                         self.contextual_expected_type = Some(e);
@@ -328,7 +328,7 @@ impl<'a> PrepWalker<'a> {
                     self.walk_expression(&let_stmt.node.value);
                 }
             }
-            HirStatementNode::ReturnStatement(ret) => {
+            Statement::Return(ret) => {
                 let prev = self.contextual_expected_type;
                 if let Some(e) = self.current_return_type {
                     self.contextual_expected_type = Some(e);
@@ -341,48 +341,48 @@ impl<'a> PrepWalker<'a> {
                 }
                 self.contextual_expected_type = prev;
             }
-            HirStatementNode::WhileStatement(w) => {
+            Statement::While(w) => {
                 self.walk_expression(&w.node.condition);
                 self.walk_block(&w.node.body);
             }
-            HirStatementNode::ForStatement(f) => {
+            Statement::For(f) => {
                 self.walk_expression(&f.node.iterable);
                 self.walk_block(&f.node.body);
             }
-            HirStatementNode::IfStatement(i) => self.walk_if(i),
-            HirStatementNode::ExpressionStatement(e) => self.walk_expression(&e.node.expression),
+            Statement::If(i) => self.walk_if(i),
+            Statement::Expression(e) => self.walk_expression(&e.node.expression),
             _ => {}
         }
     }
 
-    fn walk_if(&mut self, if_stmt: &Spanned<HirIfStatement>) {
+    fn walk_if(&mut self, if_stmt: &Spanned<IfStatement>) {
         self.walk_expression(&if_stmt.node.condition);
         self.walk_block(&if_stmt.node.then_block);
         if let Some(e) = &if_stmt.node.else_branch {
             match &e.node {
-                HirElseBranch::Block(b) => self.walk_block(b),
-                HirElseBranch::If(n) => self.walk_if(n),
+                ElseBranch::Block(b) => self.walk_block(b),
+                ElseBranch::If(n) => self.walk_if(n),
             }
         }
     }
 
-    fn walk_expression(&mut self, expr: &Spanned<HirExpressionNode>) {
+    fn walk_expression(&mut self, expr: &Spanned<Expression>) {
         match &expr.node {
-            HirExpressionNode::CallExpression(call) => {
+            Expression::Call(call) => {
                 self.prep_call(expr.id, call);
                 self.walk_expression(&call.node.callee);
                 for a in &call.node.args {
                     self.walk_expression(a);
                 }
             }
-            HirExpressionNode::AssignExpression(a) => {
+            Expression::Assign(a) => {
                 self.walk_expression(&a.node.target);
                 self.walk_expression(&a.node.value);
                 if let (Some(t), Some(v)) = (self.expr_type(&a.node.target), self.expr_type(&a.node.value)) {
                     self.record_numeric_cast(expr.id, expr.span, t, v);
                 }
             }
-            HirExpressionNode::LambdaExpression(l) => {
+            Expression::Lambda(l) => {
                 let sig = self.contextual_expected_type.and_then(|id| match self.surfaces.types.get(id)? {
                     TypeInfo::Function { params, return_type } => Some((params.clone(), *return_type)),
                     _ => None,
@@ -392,43 +392,43 @@ impl<'a> PrepWalker<'a> {
                     self.record_numeric_cast(l.node.body.id, l.node.body.span, *er, rt);
                 }
             }
-            HirExpressionNode::StructLiteralExpression(lit) => {
+            Expression::StructLiteral(lit) => {
                 self.prep_struct_literal_casts(expr.id, lit);
                 for f in &lit.node.fields {
                     self.walk_expression(&f.node.value);
                 }
             }
-            HirExpressionNode::EnumConstructorExpression(c) => {
+            Expression::EnumConstructor(c) => {
                 self.prep_enum_ctor_casts(c);
                 for a in &c.node.args {
                     self.walk_expression(a);
                 }
             }
-            HirExpressionNode::MatchExpression(m) => self.prep_match(m),
-            HirExpressionNode::BinaryExpression(b) => {
+            Expression::Match(m) => self.prep_match(m),
+            Expression::Binary(b) => {
                 self.walk_expression(&b.node.left);
                 self.walk_expression(&b.node.right);
             }
-            HirExpressionNode::UnaryExpression(u) => self.walk_expression(&u.node.expr),
-            HirExpressionNode::GroupedExpression(g) => self.walk_expression(&g.node.expr),
-            HirExpressionNode::BlockExpression(b) => self.walk_block(&b.node.block),
-            HirExpressionNode::MemberExpression(m) => self.walk_expression(&m.node.target),
-            HirExpressionNode::IndexExpression(i) => {
+            Expression::Unary(u) => self.walk_expression(&u.node.expr),
+            Expression::Grouped(g) => self.walk_expression(&g.node.expr),
+            Expression::Block(b) => self.walk_block(&b.node.block),
+            Expression::Member(m) => self.walk_expression(&m.node.target),
+            Expression::Index(i) => {
                 self.walk_expression(&i.node.target);
                 self.walk_expression(&i.node.index);
             }
-            HirExpressionNode::ArrayLiteralExpression(a) => {
+            Expression::ArrayLiteral(a) => {
                 for e in &a.node.elements {
                     self.walk_expression(e);
                 }
             }
-            HirExpressionNode::TryExpression(t) => self.walk_expression(&t.node.body),
-            HirExpressionNode::SpawnExpression(s) => self.walk_expression(&s.node.callee),
+            Expression::Try(t) => self.walk_expression(&t.node.body),
+            Expression::Spawn(s) => self.walk_expression(&s.node.callee),
             _ => {}
         }
     }
 
-    fn prep_struct_literal_casts(&mut self, expr_id: HirNodeId, lit: &Spanned<HirStructLiteralExpression>) {
+    fn prep_struct_literal_casts(&mut self, expr_id: AstNodeId, lit: &Spanned<StructLiteralExpression>) {
         let Some(type_id) = self.node_type(expr_id).or_else(|| self.type_id_for_type_path(&lit.node.path)) else {
             return;
         };
@@ -455,7 +455,7 @@ impl<'a> PrepWalker<'a> {
         }
     }
 
-    fn prep_enum_ctor_casts(&mut self, ctor: &Spanned<crate::hir::HirEnumConstructorExpression>) {
+    fn prep_enum_ctor_casts(&mut self, ctor: &Spanned<crate::syntax::EnumConstructorExpression>) {
         let Some(type_id) =
             self.resolution.tables.resolved_type_at(ctor.node.path.span, self.current_source_path.as_ref()).and_then(
                 |r| match r {
@@ -493,7 +493,7 @@ impl<'a> PrepWalker<'a> {
         }
     }
 
-    fn prep_match(&mut self, m: &Spanned<HirMatchExpression>) {
+    fn prep_match(&mut self, m: &Spanned<MatchExpression>) {
         let scrutinee = self.expr_type(&m.node.scrutinee);
         self.walk_expression(&m.node.scrutinee);
         let mut expected = self.contextual_expected_type;
@@ -518,17 +518,17 @@ impl<'a> PrepWalker<'a> {
         }
     }
 
-    fn prep_pattern_casts(&mut self, scrutinee: Option<TypeId>, pattern: &Spanned<HirPattern>) {
+    fn prep_pattern_casts(&mut self, scrutinee: Option<TypeId>, pattern: &Spanned<Pattern>) {
         let Some(expected) = scrutinee else {
             return;
         };
         match &pattern.node {
-            HirPattern::Literal(lit) => {
+            Pattern::Literal(lit) => {
                 if let Some(actual) = literal_type_id(self.surfaces.types, &lit.node) {
                     self.record_numeric_cast(pattern.id, pattern.span, expected, actual);
                 }
             }
-            HirPattern::Enum(ep) => {
+            Pattern::Enum(ep) => {
                 if let Some(actual) = self
                     .resolution
                     .tables
@@ -553,13 +553,13 @@ impl<'a> PrepWalker<'a> {
         }
     }
 
-    fn prep_call(&mut self, call_id: HirNodeId, call: &Spanned<HirCallExpression>) {
+    fn prep_call(&mut self, call_id: AstNodeId, call: &Spanned<CallExpression>) {
         if let Some(kind) = self.event_call_kind(&call.node.callee) {
             self.record_call_kind(call_id, kind);
             return;
         }
 
-        if let HirExpressionNode::PathExpression(path) = &call.node.callee.node {
+        if let Expression::Path(path) = &call.node.callee.node {
             let segs = &path.node.path.node.segments;
             let src = self.current_source_path.as_ref();
             if segs.len() >= 2
@@ -620,8 +620,8 @@ impl<'a> PrepWalker<'a> {
             }
         }
 
-        if let HirExpressionNode::MemberExpression(mem) = &call.node.callee.node {
-            if let HirExpressionNode::PathExpression(path) = &mem.node.target.node
+        if let Expression::Member(mem) = &call.node.callee.node {
+            if let Expression::Path(path) = &mem.node.target.node
                 && let Some(ResolvedValue::Item(cid)) = self.resolved_value_at(path.node.path.span)
                 && let Some(sig) =
                     self.surfaces.contract_signatures.get(&(cid, mem.node.member.node.name.as_str().to_string()))
@@ -671,7 +671,7 @@ impl<'a> PrepWalker<'a> {
             }
         }
 
-        let item_callee = matches!(&call.node.callee.node, HirExpressionNode::PathExpression(p)
+        let item_callee = matches!(&call.node.callee.node, Expression::Path(p)
             if matches!(self.resolved_value_at(p.node.path.span), Some(ResolvedValue::Item(_))));
         if !item_callee
             && let Some(ct) = self.expr_type(&call.node.callee)
@@ -682,7 +682,7 @@ impl<'a> PrepWalker<'a> {
             return;
         }
 
-        if let HirExpressionNode::PathExpression(p) = &call.node.callee.node
+        if let Expression::Path(p) = &call.node.callee.node
             && let Some(ResolvedValue::Item(id)) = self.resolved_value_at(p.node.path.span)
         {
             self.record_call_kind(call_id, CallLoweringKind::ItemCall { item_id: id });
@@ -692,7 +692,7 @@ impl<'a> PrepWalker<'a> {
         }
     }
 
-    fn prep_arg_casts(&mut self, args: &[Spanned<HirExpressionNode>], params: &[TypeId]) {
+    fn prep_arg_casts(&mut self, args: &[Spanned<Expression>], params: &[TypeId]) {
         for (arg, expected) in args.iter().zip(params.iter()) {
             if let Some(actual) = self.expr_type(arg) {
                 self.record_numeric_cast(arg.id, arg.span, *expected, actual);
@@ -700,9 +700,9 @@ impl<'a> PrepWalker<'a> {
         }
     }
 
-    fn event_call_kind(&self, callee: &Spanned<HirExpressionNode>) -> Option<CallLoweringKind> {
+    fn event_call_kind(&self, callee: &Spanned<Expression>) -> Option<CallLoweringKind> {
         let (src, recv, item, field) = match &callee.node {
-            HirExpressionNode::MemberExpression(m) => {
+            Expression::Member(m) => {
                 let recv = self.expr_type(&m.node.target)?;
                 let item = named_item_id(&self.surfaces.path_env(), recv)?;
                 (
@@ -712,7 +712,7 @@ impl<'a> PrepWalker<'a> {
                     m.node.member.node.name.as_str().to_string(),
                 )
             }
-            HirExpressionNode::PathExpression(p) => {
+            Expression::Path(p) => {
                 let segs = &p.node.path.node.segments;
                 let field = first_field_segment_name(segs)?.to_string();
                 let first = segs.first()?.node.name.node.name.as_str();

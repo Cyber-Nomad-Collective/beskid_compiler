@@ -49,30 +49,6 @@ define_builtins! {
         returns: Unit,
         injected: true,
     },
-    &["__interop_dispatch_ptr"] => {
-        symbol: "interop_dispatch_ptr",
-        params: [Ptr],
-        returns: Ptr,
-        injected: true,
-    },
-    &["__interop_dispatch_unit"] => {
-        symbol: "interop_dispatch_unit",
-        params: [Ptr],
-        returns: Unit,
-        injected: true,
-    },
-    &["__interop_dispatch_usize"] => {
-        symbol: "interop_dispatch_usize",
-        params: [Ptr],
-        returns: U64,
-        injected: true,
-    },
-    &["__interop_dispatch_i64"] => {
-        symbol: "interop_dispatch_i64",
-        params: [Ptr],
-        returns: U64,
-        injected: true,
-    },
     &["__panic_str"] => {
         symbol: "panic_str",
         params: [String],
@@ -550,8 +526,14 @@ define_builtins! {
     },
     &["guarded_stack_allocate"] => {
         symbol: "beskid_rt_v5_intrinsic_guarded_stack_allocate",
-        params: [Usize],
+        params: [Usize, Usize],
         returns: Ptr,
+        injected: true,
+    },
+    &["guarded_stack_grow"] => {
+        symbol: "beskid_rt_v5_intrinsic_guarded_stack_grow",
+        params: [Ptr, Usize, Usize, Usize],
+        returns: U64,
         injected: true,
     },
     &["guarded_stack_free"] => {
@@ -628,8 +610,14 @@ define_builtins! {
     },
     &["fs_read_text"] => {
         symbol: "beskid_rt_v5_intrinsic_fs_read_text",
-        params: [Ptr],
-        returns: Ptr,
+        params: [Ptr, Ptr, Ptr],
+        returns: U64,
+        injected: true,
+    },
+    &["fs_read_text_release"] => {
+        symbol: "beskid_rt_v5_intrinsic_fs_read_text_release",
+        params: [Ptr, Usize],
+        returns: Unit,
         injected: true,
     },
     &["fs_write_text"] => {
@@ -684,6 +672,30 @@ define_builtins! {
         symbol: "beskid_arch_v5_context_switch",
         params: [Ptr, Ptr],
         returns: Unit,
+        injected: true,
+    },
+    &["worker_pool_init"] => {
+        symbol: "beskid_rt_v5_intrinsic_worker_pool_init",
+        params: [Usize],
+        returns: U64,
+        injected: true,
+    },
+    &["worker_pool_shutdown"] => {
+        symbol: "beskid_rt_v5_intrinsic_worker_pool_shutdown",
+        params: [],
+        returns: Unit,
+        injected: true,
+    },
+    &["worker_submit"] => {
+        symbol: "beskid_rt_v5_intrinsic_worker_submit",
+        params: [Ptr],
+        returns: U64,
+        injected: true,
+    },
+    &["worker_poll"] => {
+        symbol: "beskid_rt_v5_intrinsic_worker_poll",
+        params: [Ptr],
+        returns: U64,
         injected: true,
     },
     &["__args_count"] => {

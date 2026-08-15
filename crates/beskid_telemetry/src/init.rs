@@ -69,7 +69,6 @@ fn default_filter(log_cranelift: bool) -> String {
         beskid_queries=info,\
         beskid_tools=info,\
         beskid_lsp=info,\
-        beskid_host=info,\
         beskid_aot=info,\
         beskid_runtime=warn,\
         beskid_telemetry=info,\

@@ -12,16 +12,31 @@ pub word ArchContextAlignment() {
     return arch_context_alignment();
 }
 
-// Reserves a target-native guarded stack. The returned address is the first
-// writable usable byte; the inaccessible guard immediately precedes it.
-pub pointer GuardedStackAllocate(word usableSize) {
-    return guarded_stack_allocate(usableSize);
+// Reserves a fixed target-native guarded stack. The returned address is the
+// lowest usable address above the guard; only the high initial suffix is writable.
+pub pointer GuardedStackAllocate(word initialSize, word maximumSize) {
+    return guarded_stack_allocate(initialSize, maximumSize);
 }
 
-// Releases the original reservation without exposing its lower guard.
-pub unit GuardedStackFree(pointer usableBase, word usableSize) {
-    guarded_stack_free(usableBase, usableSize);
+// Commits the additional high suffix needed by a downward-growing stack.
+pub bool GuardedStackGrow(pointer usableBase, word committedSize, word requestedSize, word maximumSize) {
+    return guarded_stack_grow(usableBase, committedSize, requestedSize, maximumSize) != 0;
+}
+
+// Releases the exact original guard plus maximum-size reservation.
+pub unit GuardedStackFree(pointer usableBase, word maximumSize) {
+    guarded_stack_free(usableBase, maximumSize);
     return;
+}
+
+// These addresses are compiler-minted only for this exact embedded Scheduler unit.
+// They are local lowering artifacts, never ABI imports or source-defined symbols.
+pub pointer SchedulerFiberEntryAddress() {
+    return scheduler_fiber_entry_address();
+}
+
+pub pointer SchedulerReturnTrampolineAddress() {
+    return scheduler_return_trampoline_address();
 }
 
 // The sole assembly boundary for preparing a canonical fiber context. Its symbol,

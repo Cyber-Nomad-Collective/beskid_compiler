@@ -13,10 +13,8 @@ beskid_analysis = { path = "../beskid_analysis" }
 beskid_abi = { path = "../beskid_abi" }
 beskid_aot = { path = "../beskid_aot" }
 beskid_codegen = { path = "../beskid_codegen" }
-beskid_host = { path = "../beskid_host" }
 beskid_queries = { path = "../beskid_queries" }
 beskid_pipeline = { path = "../beskid_pipeline" }
-beskid_runtime = { path = "../beskid_runtime" }
 anyhow = "1"
 
 [features]
@@ -24,7 +22,6 @@ extern_dlopen = []
 
 [dev-dependencies]
 beskid_aot = { path = "../beskid_aot" }
-beskid_runtime = { path = "../beskid_runtime", features = ["metrics"] }
 beskid_tools = { path = "../beskid_tools" }
 cranelift-frontend = { workspace = true }
 tempfile = "3"

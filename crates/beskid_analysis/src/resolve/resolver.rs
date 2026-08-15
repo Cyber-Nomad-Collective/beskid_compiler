@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::hir::{HirItem, HirProgram};
+use crate::syntax::{Node, Program};
 use crate::syntax::Spanned;
 
 use super::errors::ResolveResult;
@@ -71,29 +71,29 @@ pub fn enter_resolve_span(ctx: ResolveTraceContext<'_>) -> tracing::span::Entere
 
 /// Resolve a program under a `beskid.analysis.resolve` tracing span.
 pub fn resolve_program_traced(
-    program: &Spanned<HirProgram>,
+    program: &Spanned<Program>,
     ctx: ResolveTraceContext<'_>,
 ) -> ResolveResult<Resolution> {
     let _guard = enter_resolve_span(ctx);
     Resolver::new().resolve_program(program)
 }
 
-pub(super) fn path_segments(path: &Spanned<crate::hir::HirPath>) -> Vec<String> {
+pub(super) fn path_segments(path: &Spanned<crate::syntax::Path>) -> Vec<String> {
     path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect()
 }
 
-pub(super) fn file_scoped_module_index(program: &Spanned<crate::hir::HirProgram>) -> Option<usize> {
+pub(super) fn file_scoped_module_index(program: &Spanned<crate::syntax::Program>) -> Option<usize> {
     program.node.items.iter().position(|item| match &item.node {
-        HirItem::ModuleDeclaration(def) => {
-            def.node.visibility.node == crate::hir::HirVisibility::Private && def.node.attributes.is_empty()
+        Node::ModuleDeclaration(def) => {
+            def.node.visibility.node == crate::syntax::Visibility::Private && def.node.attributes.is_empty()
         }
         _ => false,
     })
 }
 
-pub(super) fn file_scoped_module_path(program: &Spanned<crate::hir::HirProgram>) -> Option<Vec<String>> {
+pub(super) fn file_scoped_module_path(program: &Spanned<crate::syntax::Program>) -> Option<Vec<String>> {
     let index = file_scoped_module_index(program)?;
-    let HirItem::ModuleDeclaration(def) = &program.node.items.get(index)?.node else {
+    let Node::ModuleDeclaration(def) = &program.node.items.get(index)?.node else {
         return None;
     };
     Some(path_segments(&def.node.path))

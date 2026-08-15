@@ -1,4 +1,4 @@
-use crate::hir::{HirExpressionNode, HirPrimitiveType};
+use crate::syntax::{Expression, PrimitiveType};
 use crate::resolve::{ItemId, ItemKind, ResolvedType, ResolvedValue, canonical_item_id};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::path_value::PathTypeEnv;
@@ -11,15 +11,15 @@ use std::collections::HashMap;
 impl<'a> TypeChecker<'a> {
     pub(super) fn seed_types(&mut self) {
         for primitive in [
-            HirPrimitiveType::Bool,
-            HirPrimitiveType::I32,
-            HirPrimitiveType::I64,
-            HirPrimitiveType::U8,
-            HirPrimitiveType::F64,
-            HirPrimitiveType::Char,
-            HirPrimitiveType::String,
-            HirPrimitiveType::Unit,
-            HirPrimitiveType::Never,
+            PrimitiveType::Bool,
+            PrimitiveType::I32,
+            PrimitiveType::I64,
+            PrimitiveType::U8,
+            PrimitiveType::F64,
+            PrimitiveType::Char,
+            PrimitiveType::String,
+            PrimitiveType::Unit,
+            PrimitiveType::Never,
         ] {
             let id = self
                 .type_table
@@ -41,7 +41,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     pub(super) fn u8_array_type_id(&mut self) -> Option<TypeId> {
-        let u8_id = self.primitive_type_id(HirPrimitiveType::U8)?;
+        let u8_id = self.primitive_type_id(PrimitiveType::U8)?;
         Some(self.type_table.find_array_of(u8_id).unwrap_or_else(|| self.type_table.intern(TypeInfo::Array(u8_id))))
     }
 
@@ -87,7 +87,7 @@ impl<'a> TypeChecker<'a> {
     pub(super) fn infer_generic_args_from_call(
         &mut self,
         callee_item_id: Option<crate::resolve::ItemId>,
-        args: &[Spanned<crate::hir::HirExpressionNode>],
+        args: &[Spanned<crate::syntax::Expression>],
     ) -> Option<Vec<TypeId>> {
         let item_id = callee_item_id?;
         let generic_names = self.generic_items.get(&item_id)?.clone();
@@ -112,7 +112,7 @@ impl<'a> TypeChecker<'a> {
 
     pub(super) fn infer_generic_args_from_qualified_type_path(
         &mut self,
-        segments: &[Spanned<crate::hir::HirPathSegment>],
+        segments: &[Spanned<crate::syntax::PathSegment>],
     ) -> Option<Vec<TypeId>> {
         if segments.len() < 2 {
             return None;
@@ -166,14 +166,14 @@ impl<'a> TypeChecker<'a> {
 
     pub(super) fn record_call_kind(
         &mut self,
-        node_id: crate::resolve::HirNodeId,
+        node_id: crate::syntax::AstNodeId,
         kind: crate::types::result::CallLoweringKind,
     ) {
         if node_id.is_valid() {
             self.call_kinds.insert(node_id, kind);
         }
     }
-    pub(super) fn record_node_type(&mut self, node_id: crate::resolve::HirNodeId, type_id: crate::types::TypeId) {
+    pub(super) fn record_node_type(&mut self, node_id: crate::syntax::AstNodeId, type_id: crate::types::TypeId) {
         if node_id.is_valid() {
             self.node_types.insert(node_id, type_id);
         }
@@ -294,7 +294,7 @@ impl<'a> TypeChecker<'a> {
 
     /// Widen `i32` to `i64` when paired with `i64` so integer literals compare with syscall counts.
     pub(super) fn promote_binary_numeric_operands(&self, left: TypeId, right: TypeId) -> (TypeId, TypeId) {
-        let Some(i64_id) = self.primitive_type_id(HirPrimitiveType::I64) else {
+        let Some(i64_id) = self.primitive_type_id(PrimitiveType::I64) else {
             return (left, right);
         };
         let left_prim = self.type_table.get(left).and_then(|info| match info {
@@ -306,8 +306,8 @@ impl<'a> TypeChecker<'a> {
             _ => None,
         });
         match (left_prim, right_prim) {
-            (Some(HirPrimitiveType::I64), Some(HirPrimitiveType::I32)) => (left, i64_id),
-            (Some(HirPrimitiveType::I32), Some(HirPrimitiveType::I64)) => (i64_id, right),
+            (Some(PrimitiveType::I64), Some(PrimitiveType::I32)) => (left, i64_id),
+            (Some(PrimitiveType::I32), Some(PrimitiveType::I64)) => (i64_id, right),
             _ => (left, right),
         }
     }
@@ -366,7 +366,7 @@ impl<'a> TypeChecker<'a> {
 
     /// `u8[]` and `i64` Ptr handles share the same runtime representation (BYTES-001 ABI).
     fn is_byte_array_ptr_compatible(&mut self, expected: TypeId, actual: TypeId) -> bool {
-        let (Some(i64_id), Some(u8_arr)) = (self.primitive_type_id(HirPrimitiveType::I64), self.u8_array_type_id())
+        let (Some(i64_id), Some(u8_arr)) = (self.primitive_type_id(PrimitiveType::I64), self.u8_array_type_id())
         else {
             return false;
         };
@@ -393,9 +393,9 @@ impl<'a> TypeChecker<'a> {
             .is_some_and(|entries| entries.iter().any(|(contract_item, _)| *contract_item == expected_item))
     }
 
-    pub(super) fn require_bool(&mut self, span: SpanInfo, expression: &crate::syntax::Spanned<HirExpressionNode>) {
+    pub(super) fn require_bool(&mut self, span: SpanInfo, expression: &crate::syntax::Spanned<Expression>) {
         let type_id = self.type_expression(expression);
-        let bool_id = self.primitive_type_id(HirPrimitiveType::Bool);
+        let bool_id = self.primitive_type_id(PrimitiveType::Bool);
         if let (Some(type_id), Some(bool_id)) = (type_id, bool_id)
             && type_id != bool_id
         {
@@ -403,7 +403,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    pub(super) fn primitive_type_id(&self, primitive: HirPrimitiveType) -> Option<TypeId> {
+    pub(super) fn primitive_type_id(&self, primitive: PrimitiveType) -> Option<TypeId> {
         self.primitive_types.get(&primitive).copied()
     }
 
@@ -411,21 +411,21 @@ impl<'a> TypeChecker<'a> {
         matches!(
             self.type_table.get(type_id),
             Some(TypeInfo::Primitive(
-                HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8 | HirPrimitiveType::F64
+                PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U8 | PrimitiveType::F64
             ))
         )
     }
 
     pub(super) fn is_bool(&self, type_id: TypeId) -> bool {
-        matches!(self.type_table.get(type_id), Some(TypeInfo::Primitive(HirPrimitiveType::Bool)))
+        matches!(self.type_table.get(type_id), Some(TypeInfo::Primitive(PrimitiveType::Bool)))
     }
 
     pub(super) fn is_string(&self, type_id: TypeId) -> bool {
-        matches!(self.type_table.get(type_id), Some(TypeInfo::Primitive(HirPrimitiveType::String)))
+        matches!(self.type_table.get(type_id), Some(TypeInfo::Primitive(PrimitiveType::String)))
     }
 
     pub(super) fn is_never(&self, type_id: TypeId) -> bool {
-        matches!(self.type_table.get(type_id), Some(TypeInfo::Primitive(HirPrimitiveType::Never)))
+        matches!(self.type_table.get(type_id), Some(TypeInfo::Primitive(PrimitiveType::Never)))
     }
 
     pub(super) fn is_comparable(&self, type_id: TypeId) -> bool {
@@ -440,11 +440,11 @@ impl<'a> TypeChecker<'a> {
                 | Some(TypeInfo::GenericParam(_))
                 | Some(TypeInfo::Function { .. })
                 | Some(TypeInfo::Array(_))
-                | Some(TypeInfo::Primitive(HirPrimitiveType::String))
+                | Some(TypeInfo::Primitive(PrimitiveType::String))
         )
     }
 
-    pub(super) fn map_primitive(&self, primitive: HirPrimitiveType) -> HirPrimitiveType {
+    pub(super) fn map_primitive(&self, primitive: PrimitiveType) -> PrimitiveType {
         primitive
     }
 

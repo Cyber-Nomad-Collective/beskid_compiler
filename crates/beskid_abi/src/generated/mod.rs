@@ -4,6 +4,4 @@ pub mod builtins;
 pub mod abi_v5_contract {
     include!(concat!(env!("OUT_DIR"), "/abi_v5_contract.rs"));
 }
-pub mod dispatch_lookup;
-pub mod dispatch_tags;
 pub mod symbols;

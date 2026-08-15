@@ -221,7 +221,7 @@ pub fn mod_contract_entry_symbol(package_id: &str, entry_method: &str) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::{lower_normalize_resolve_type_spanned, parse_program_with_source_name};
+    use crate::services::{resolve_and_type_program, parse_program_with_source_name};
 
     #[test]
     fn extracts_sdk_contract_registrations_from_type_conformances() {
@@ -237,8 +237,8 @@ type DemoCollect : Collector {
 }
 "#;
         let program = parse_program_with_source_name("Mod.bd", source).expect("parse");
-        let (_hir, resolution, _typed) =
-            lower_normalize_resolve_type_spanned(&program).expect("lower mod registration fixture");
+        let (_program, resolution, _typed) =
+            resolve_and_type_program(&program).expect("lower mod registration fixture");
         let registrations = extract_mod_contract_registrations_with_program("DemoMod", &resolution, Some(&program));
         assert_eq!(registrations.len(), 1);
         assert_eq!(registrations[0].contract_id, "Beskid.Compiler.Collect.Collector");
@@ -281,8 +281,8 @@ type DemoCollect : Collector {
         let program = parse_program_with_source_name("Mod.bd", source).expect("parse");
         let symbols = collect_internal_symbol_entry_methods(&program).expect("scan");
         assert_eq!(symbols.get(&("DemoCollect".to_string(), "Collect".to_string())), Some(&"Collect".to_string()));
-        let (_hir, resolution, _typed) =
-            lower_normalize_resolve_type_spanned(&program).expect("lower mod registration fixture");
+        let (_program, resolution, _typed) =
+            resolve_and_type_program(&program).expect("lower mod registration fixture");
         let registrations = extract_mod_contract_registrations_with_program("DemoMod", &resolution, Some(&program));
         assert_eq!(registrations.len(), 1);
         assert_eq!(registrations[0].entry_symbol, "demomod_collect");
@@ -299,7 +299,7 @@ type DemoCollect : Collector {
 }
 "#;
         let program = parse_program_with_source_name("Mod.bd", source).expect("parse");
-        let (_hir, resolution, _typed) = lower_normalize_resolve_type_spanned(&program).expect("lower");
+        let (_program, resolution, _typed) = resolve_and_type_program(&program).expect("lower");
         let registrations = extract_mod_contract_registrations_with_program("DemoMod", &resolution, Some(&program));
         assert_eq!(registrations.len(), 1);
     }

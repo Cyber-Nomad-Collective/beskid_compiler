@@ -2,11 +2,11 @@ use std::process::Command;
 
 use beskid_abi::{
     abi_v5::{AbiManifestV5, TargetMetadata},
-    runtime_provenance::{RuntimeProvenanceAudit, parse_symbol_list},
+    runtime_provenance::{parse_symbol_list, RuntimeProvenanceAudit},
 };
 use beskid_aot::{
     emit_host_context_library_pair, emit_host_platform_library_pair, lower_canonical_runtime_prepared_syntax,
-    require_canonical_host_emit_authority,
+    require_canonical_host_emit_authority, BuildProfile,
 };
 
 #[test]
@@ -22,11 +22,16 @@ fn host_emitters_mint_authority_only_from_the_embedded_canonical_corpus() {
 fn host_context_pair_contains_the_manifest_context_exports_in_both_native_artifacts() {
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair = emit_host_context_library_pair(&authority, temp.path().join("out"), "runtime_context")
-        .expect("emit host context pair");
+    let pair =
+        emit_host_context_library_pair(&authority, temp.path().join("out"), "runtime_context", BuildProfile::Debug)
+            .expect("emit host context pair");
 
     let expected = ["beskid_arch_v5_context_init".to_owned(), "beskid_arch_v5_context_switch".to_owned()];
-    assert_eq!(pair.provenance_symbols, expected);
+    assert_eq!(pair.static_archive_inventory.defined, expected);
+    assert_eq!(pair.shared_image_inventory.defined, expected);
+    assert!(pair.canonical_object_inventory.defined.is_empty());
+    assert_eq!(pair.additional_object_inventories.len(), 1);
+    assert_eq!(pair.additional_object_inventories[0].defined, expected);
 
     for artifact in [&pair.static_library, &pair.shared_library] {
         let output = Command::new("nm").args(["-g", "--defined-only", "-j"]).arg(artifact).output().expect("run nm");
@@ -49,8 +54,9 @@ fn host_context_pair_contains_the_manifest_context_exports_in_both_native_artifa
 fn host_platform_pair_exports_canonical_runtime_and_host_platform_boundary() {
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair = emit_host_platform_library_pair(&authority, temp.path().join("out"), "runtime_platform")
-        .expect("emit host platform pair");
+    let pair =
+        emit_host_platform_library_pair(&authority, temp.path().join("out"), "runtime_platform", BuildProfile::Release)
+            .expect("emit host platform pair");
 
     let required_exports = [
         "beskid_arch_v5_context_init",
@@ -65,9 +71,11 @@ fn host_platform_pair_exports_canonical_runtime_and_host_platform_boundary() {
     ];
     for symbol in required_exports {
         assert!(
-            pair.provenance_symbols.iter().any(|entry| entry == symbol),
-            "canonical platform provenance omitted {symbol}: {:?}",
-            pair.provenance_symbols
+            pair.static_archive_inventory.defined.iter().any(|entry| entry == symbol)
+                && pair.shared_image_inventory.defined.iter().any(|entry| entry == symbol),
+            "canonical platform provenance omitted {symbol}: static={:?}, shared={:?}",
+            pair.static_archive_inventory.defined,
+            pair.shared_image_inventory.defined
         );
     }
 
@@ -97,8 +105,9 @@ fn host_platform_pair_exports_canonical_runtime_and_host_platform_boundary() {
 fn linux_host_platform_pair_exports_canonical_runtime_and_native_boundary() {
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair = emit_host_platform_library_pair(&authority, temp.path().join("out"), "runtime_platform")
-        .expect("emit Linux host platform pair");
+    let pair =
+        emit_host_platform_library_pair(&authority, temp.path().join("out"), "runtime_platform", BuildProfile::Debug)
+            .expect("emit Linux host platform pair");
 
     let required_exports = [
         "beskid_arch_v5_context_init",
@@ -113,9 +122,11 @@ fn linux_host_platform_pair_exports_canonical_runtime_and_native_boundary() {
     ];
     for symbol in required_exports {
         assert!(
-            pair.provenance_symbols.iter().any(|entry| entry == symbol),
-            "canonical platform provenance omitted {symbol}: {:?}",
-            pair.provenance_symbols
+            pair.static_archive_inventory.defined.iter().any(|entry| entry == symbol)
+                && pair.shared_image_inventory.defined.iter().any(|entry| entry == symbol),
+            "canonical platform provenance omitted {symbol}: static={:?}, shared={:?}",
+            pair.static_archive_inventory.defined,
+            pair.shared_image_inventory.defined
         );
     }
 
@@ -138,8 +149,9 @@ fn linux_host_platform_pair_exports_canonical_runtime_and_native_boundary() {
 fn windows_host_platform_pair_emits_a_coff_import_library_for_the_shared_runtime() {
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair = emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime")
-        .expect("emit Windows platform pair");
+    let pair =
+        emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime", BuildProfile::Debug)
+            .expect("emit Windows platform pair");
 
     let import_library = pair.shared_import_library.expect("Windows shared runtime must emit its COFF import library");
     assert!(import_library.is_file(), "missing import library: {}", import_library.display());
@@ -154,7 +166,11 @@ fn windows_host_platform_pair_emits_a_coff_import_library_for_the_shared_runtime
         "beskid_rt_v5_intrinsic_tls_get",
         "beskid_rt_v5_intrinsic_tls_set",
     ] {
-        assert!(pair.provenance_symbols.contains(&symbol.to_owned()), "Windows platform pair omitted {symbol}");
+        assert!(
+            pair.static_archive_inventory.defined.contains(&symbol.to_owned())
+                && pair.shared_image_inventory.defined.contains(&symbol.to_owned()),
+            "Windows platform pair omitted {symbol}"
+        );
     }
 }
 
@@ -201,10 +217,12 @@ fn canonical_bootstrap_lowers_through_the_aot_prepared_syntax_boundary() {
 fn canonical_platform_pair_links_the_native_tls_helper() {
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair = emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime")
-        .expect("link canonical platform pair");
+    let pair =
+        emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime", BuildProfile::Debug)
+            .expect("link canonical platform pair");
     for symbol in ["beskid_rt_v5_intrinsic_tls_get", "beskid_rt_v5_intrinsic_tls_set"] {
-        assert!(pair.provenance_symbols.contains(&symbol.to_owned()));
+        assert!(pair.static_archive_inventory.defined.contains(&symbol.to_owned()));
+        assert!(pair.shared_image_inventory.defined.contains(&symbol.to_owned()));
     }
     let symbols =
         Command::new("nm").args(["-u", pair.shared_library.to_str().expect("utf-8 path")]).output().expect("run nm");
@@ -257,8 +275,9 @@ fn canonical_runtime_static_archive_hides_non_abi_implementation_symbols() {
     let triple = if cfg!(target_os = "macos") { "aarch64-apple-darwin" } else { "x86_64-unknown-linux-gnu" };
     let authority = require_canonical_host_emit_authority().expect("canonical host authority");
     let temp = tempfile::tempdir().expect("tempdir");
-    let pair = emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime")
-        .expect("link canonical platform pair");
+    let pair =
+        emit_host_platform_library_pair(&authority, temp.path().join("out"), "beskid_runtime", BuildProfile::Debug)
+            .expect("link canonical platform pair");
     let output =
         Command::new("nm").args(["-g", "--defined-only", "-j"]).arg(&pair.static_library).output().expect("run nm");
     assert!(output.status.success(), "nm failed");

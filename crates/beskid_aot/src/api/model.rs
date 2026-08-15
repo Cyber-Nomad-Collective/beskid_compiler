@@ -138,6 +138,14 @@ pub struct AotBuildResult {
     pub linker_invocation: Option<String>,
 }
 
+/// Symbols extracted from one emitted native artifact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeSymbolInventory {
+    pub artifact: PathBuf,
+    pub defined: Vec<String>,
+    pub imported: Vec<String>,
+}
+
 /// Native static/shared library inputs suitable for higher-level runtime-kit publication.
 #[derive(Debug, Clone)]
 pub struct NativeLibraryPair {
@@ -145,7 +153,14 @@ pub struct NativeLibraryPair {
     pub shared_library: PathBuf,
     /// COFF import library emitted beside a Windows shared runtime DLL.
     pub shared_import_library: Option<PathBuf>,
-    pub provenance_symbols: Vec<String>,
+    /// Independent evidence captured from the canonical codegen object.
+    pub canonical_object_inventory: NativeSymbolInventory,
+    /// Independent evidence captured from every assembly/platform object.
+    pub additional_object_inventories: Vec<NativeSymbolInventory>,
+    /// Evidence captured from the completed static archive.
+    pub static_archive_inventory: NativeSymbolInventory,
+    /// Evidence captured from the completed shared image.
+    pub shared_image_inventory: NativeSymbolInventory,
 }
 
 /// Opaque authority to publish native host runtime library pairs.

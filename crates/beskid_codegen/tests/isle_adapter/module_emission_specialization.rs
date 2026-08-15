@@ -1,7 +1,7 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
     EffectiveCompilationRoots, JITBuilder, JITModule, Linkage, Module, ModuleIndex, NodeFacts, ProjectSession,
-    RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, SyntaxProgramAssembly, TargetMetadata,
+    RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, ProgramAssembly, TargetMetadata,
     build_typed_program, call_lowering, default_libcall_names, emit_syntax_program, find_call_expression,
     find_definition_of_kind, find_function_definition, find_function_definitions, find_node, find_test_definition, isa,
     item_fixture_with_root, item_name, lower_syntax_program, parse_program_with_source_name, settings,
@@ -415,7 +415,7 @@ fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
     let assert_unit = SourceUnitId::new(&*db, assert_path.clone());
     let generation = SyntaxGenerationId(22);
     let project = ProjectSession::new(&*db, directory.clone(), main_path.clone(), "App".into(), "lock".into());
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
@@ -437,7 +437,7 @@ fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_root = AstNodeKey { unit: main_unit, generation, node: AstNodeId(0) };

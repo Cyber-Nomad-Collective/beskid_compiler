@@ -33,16 +33,20 @@ impl EnumLayoutFact {
             .iter()
             .map(|variant| match variant.fields.as_ref() {
                 [] => Some(None),
-                [(_, AggregateFieldShape::Scalar(ty))] => {
+                [(_, shape)] => {
+                    let ty = match shape {
+                        AggregateFieldShape::Scalar(ty) => *ty,
+                        AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+                    };
                     let layout = ty.scalar_abi_layout(pointer_width)?;
                     let storage = if layout.is_pointer { &mut pointer_storage } else { &mut scalar_storage };
                     if storage.is_none_or(|current| {
                         layout.size > current.size
                             || (layout.size == current.size && layout.alignment > current.alignment)
                     }) {
-                        *storage = Some(StorageClass { ty: *ty, size: layout.size, alignment: layout.alignment });
+                        *storage = Some(StorageClass { ty, size: layout.size, alignment: layout.alignment });
                     }
-                    Some(Some((*ty, layout.is_pointer)))
+                    Some(Some((ty, layout.is_pointer)))
                 }
                 _ => None,
             })

@@ -6,14 +6,11 @@
 // Allocates a new `BeskidStr` wrapping the given UTF-8 byte range.
 //
 // The data is copied into a freshly allocated buffer owned by the runtime.
-// Returns a null pointer when `data` is null, `length` is zero, or the buffer
-// is not valid UTF-8.
+// Empty strings receive an addressable one-byte backing sentinel so every successful
+// canonical string is non-null. Non-empty input must provide a byte range.
 [Export(Abi:"C", Symbol:"str_new")]
 pub pointer StrNew(pointer data, word length) {
-    if data == NativePointer(0) {
-        return NativePointer(0);
-    }
-    if length == 0 {
+    if data == NativePointer(0) && length != 0 {
         return NativePointer(0);
     }
     // Allocate the BeskidStr header (16 bytes: ptr + len).
@@ -21,13 +18,21 @@ pub pointer StrNew(pointer data, word length) {
     if strObj == NativePointer(0) {
         return NativePointer(0);
     }
-    // Allocate and copy data buffer.
-    pointer buffer = SystemAllocate(length, 1);
+    // Allocate and copy the data buffer. Empty strings keep a storage-only sentinel.
+    word allocation = length;
+    if allocation == 0 {
+        allocation = 1;
+    }
+    pointer buffer = SystemAllocate(allocation, 1);
     if buffer == NativePointer(0) {
         SystemFree(strObj, 16);
         return NativePointer(0);
     }
-    memory_copy(buffer, data, length);
+    if length != 0 {
+        memory_copy(buffer, data, length);
+    } else {
+        raw_byte_store(buffer, 0);
+    }
     // Store { ptr, len } in the header.
     raw_word_store(strObj, NativeWord(buffer));
     raw_word_store(pointer_add(strObj, 8), length);
@@ -203,7 +208,7 @@ pub pointer StrSlice(pointer value, word start, word count) {
 // Converts a byte buffer to a string, validating UTF-8.
 [Export(Abi:"C", Symbol:"str_from_bytes_utf8")]
 pub pointer StrFromBytesUtf8(pointer bytes, word len) {
-    if bytes == NativePointer(0) || len == 0 {
+    if bytes == NativePointer(0) && len != 0 {
         return NativePointer(0);
     }
     return StrNew(bytes, len);

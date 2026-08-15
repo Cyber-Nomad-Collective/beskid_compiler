@@ -1,4 +1,4 @@
-//! Shared front-end spine: assembly, parse, mods, semantic gate, HIR with module index.
+//! Shared front-end spine: assembly, parse, mods, semantic gate, syntax with module index.
 
 use std::path::Path;
 
@@ -7,13 +7,12 @@ use beskid_pipeline::PipelineObserver;
 
 use crate::projects::{CompilePlan, PreparedProjectWorkspace};
 
-use super::prepare::{PrepareOptions, prepare_compilation};
+use super::prepare::{prepare_compilation, PrepareOptions};
 
-/// Result of the shared front-end through typed HIR (codegen consumes this).
+/// Result of the shared front-end through typed syntax (codegen consumes this).
 pub struct FrontEndTypedResult {
     pub assembly: crate::projects::ProgramAssembly,
     pub program: crate::syntax::Spanned<crate::syntax::Program>,
-    pub hir: crate::syntax::Spanned<crate::hir::HirProgram>,
     pub resolution: crate::resolve::Resolution,
     pub typed: crate::types::TypeResult,
     pub binding_plan: crate::composition::BindingPlan,
@@ -33,20 +32,21 @@ impl std::fmt::Debug for FrontEndTypedResult {
 impl FrontEndTypedResult {
     /// Return the syntax-only authority for the post-mod-rewrite frontend snapshot.
     ///
-    /// `ProgramAssembly` retains parsed source units for HIR compatibility, while `program`
+    /// `ProgramAssembly` retains parsed source units for syntax compatibility, while `program`
     /// is the expanded/re-written entry consumed by generation-safe semantic facts. Replacing
-    /// exactly that unit keeps syntax item keys aligned without carrying legacy HIR units.
-    pub fn syntax_assembly(&self) -> crate::projects::SyntaxProgramAssembly {
+    /// exactly that unit keeps syntax item keys aligned without carrying legacy syntax units.
+    pub fn syntax_assembly(&self) -> crate::projects::ProgramAssembly {
         let assembly = &self.assembly;
         let mut units = assembly.units.as_ref().clone();
         units[assembly.entry_index].program = self.program.clone();
-        let mut syntax = crate::projects::SyntaxProgramAssembly::new(
+        let mut syntax = crate::projects::ProgramAssembly::new(
             assembly.roots.clone(),
             std::sync::Arc::new(units),
             assembly.entry_index,
             assembly.discovery,
             std::sync::Arc::clone(&assembly.module_index),
             assembly.has_std_dependency,
+            assembly.generation,
         );
         syntax.set_trusted_corelib_service_paths_for_project_assembly(std::sync::Arc::clone(
             &assembly.trusted_corelib_service_paths,
@@ -73,7 +73,7 @@ impl Default for FrontEndOptions {
     }
 }
 
-/// Assemble, run mod host + semantic gate, and lower the entry unit with cross-module resolution.
+/// Assemble, run the mod host and semantic gate, then resolve and type the expanded entry syntax.
 pub fn compile_front_end_with_pipeline(
     entry_path: &Path,
     entry_source: &str,
@@ -103,7 +103,7 @@ pub fn compile_front_end_with_pipeline(
 mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use super::{FrontEndOptions, compile_front_end_with_pipeline};
+    use super::{compile_front_end_with_pipeline, FrontEndOptions};
     use crate::services::{parse_program_with_source_name, synthetic_compile_plan_for_source};
 
     static TEST_ID: AtomicU64 = AtomicU64::new(0);
@@ -128,11 +128,11 @@ mod tests {
         let syntax_assembly = front.syntax_assembly();
 
         assert_eq!(syntax_assembly.entry_unit().program, rewritten);
-        assert_eq!(syntax_assembly.roots(), &front.assembly.roots);
-        assert_eq!(syntax_assembly.entry_index(), front.assembly.entry_index);
-        assert_eq!(syntax_assembly.discovery(), front.assembly.discovery);
-        assert!(std::sync::Arc::ptr_eq(syntax_assembly.module_index(), &front.assembly.module_index,));
-        assert_eq!(syntax_assembly.has_std_dependency(), front.assembly.has_std_dependency,);
+        assert_eq!(syntax_assembly.roots, &front.assembly.roots);
+        assert_eq!(syntax_assembly.entry_index, front.assembly.entry_index);
+        assert_eq!(syntax_assembly.discovery, front.assembly.discovery);
+        assert!(std::sync::Arc::ptr_eq(syntax_assembly.module_index, &front.assembly.module_index,));
+        assert_eq!(syntax_assembly.has_std_dependency, front.assembly.has_std_dependency,);
         let _ = std::fs::remove_dir_all(root);
     }
 }

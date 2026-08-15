@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::hir::HirPrimitiveType;
+use crate::syntax::PrimitiveType;
 use crate::resolve::ItemId;
 use crate::types::{TypeId, TypeInfo, TypeTable};
 
@@ -29,7 +29,7 @@ pub(super) fn substitute_type_id(
     }
 }
 
-pub(super) fn primitive_type_id(types: &TypeTable, p: HirPrimitiveType) -> Option<TypeId> {
+pub(super) fn primitive_type_id(types: &TypeTable, p: PrimitiveType) -> Option<TypeId> {
     types.find_primitive(p)
 }
 

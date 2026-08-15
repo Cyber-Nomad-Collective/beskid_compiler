@@ -1,10 +1,10 @@
 use super::support::{
-    AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CastIntent, CodegenInput,
+    build_typed_program, closure_environment, emit_isle_expression, find_function_definition,
+    find_function_definitions, find_integer_literal, find_node, format_ast_node_site, isa, item_body,
+    item_fixture_with_root, lower_syntax_program, node_kind, parse_program_with_source_name, settings, spawn_target,
+    types, AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CastIntent, CodegenInput,
     EffectiveCompilationRoots, FunctionEmitter, ModuleIndex, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
-    SyntaxGenerationId, SyntaxModuleItem, SyntaxProgramAssembly, TargetMetadata, UserFuncName, build_typed_program,
-    closure_environment, emit_isle_expression, find_function_definition, find_function_definitions,
-    find_integer_literal, find_node, format_ast_node_site, isa, item_body, item_fixture_with_root,
-    lower_syntax_program, node_kind, parse_program_with_source_name, settings, spawn_target, types,
+    SyntaxGenerationId, SyntaxModuleItem, ProgramAssembly, TargetMetadata, UserFuncName,
 };
 
 #[test]
@@ -18,7 +18,7 @@ fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
     let entry = SourceUnitId::new(&db, source_path.clone());
     let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
     let generation = SyntaxGenerationId(1);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
@@ -27,7 +27,7 @@ fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
@@ -155,7 +155,7 @@ fn unsupported_code_string_reports_deterministic_span_bearing_missing_rule() {
 }
 
 /// CYB-106: every remaining UnsupportedTypedOperation host kind has a span-bearing
-/// `MissingRuleOrFact` regression (construct `@` span, no HIR fallback).
+/// `MissingRuleOrFact` regression for the construct span.
 #[test]
 fn unsupported_host_composition_reports_deterministic_span_bearing_missing_rule() {
     const HOST_COMPOSITION_SOURCE: &str = r#"

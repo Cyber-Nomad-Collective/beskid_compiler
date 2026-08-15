@@ -1,4 +1,4 @@
-use crate::abi_v5::{SourceUnit, canonical_source_hash};
+use crate::abi_v5::{canonical_source_hash, SourceUnit};
 
 pub const CANONICAL_BOOTSTRAP_SOURCE_PATH: &str = "src/Runtime/Bootstrap.bd";
 pub const CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH: &str = "src/Runtime/Bootstrap/Native.bd";
@@ -21,6 +21,7 @@ pub const CANONICAL_SCHEDULER_CORE_SOURCE_PATH: &str = "src/Runtime/Fiber/Schedu
 pub const CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Storage.bd";
 pub const CANONICAL_SCHEDULER_QUEUE_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Queue.bd";
 pub const CANONICAL_SCHEDULER_LOOP_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Loop.bd";
+pub const CANONICAL_SCHEDULER_POLL_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Poll.bd";
 pub const CANONICAL_SCHEDULER_EXPORTS_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Exports.bd";
 pub const CANONICAL_CHANNEL_SOURCE_PATH: &str = "src/Runtime/Sync/Channel.bd";
 pub const CANONICAL_MUTEX_SOURCE_PATH: &str = "src/Runtime/Sync/Mutex.bd";
@@ -30,6 +31,7 @@ pub const CANONICAL_EVENTS_SOURCE_PATH: &str = "src/Runtime/PubSub/Events.bd";
 pub const CANONICAL_DYNAMIC_SOURCE_PATH: &str = "src/Runtime/Dynamic/Dynamic.bd";
 pub const CANONICAL_CLOCKS_SOURCE_PATH: &str = "src/Runtime/Host/Clocks.bd";
 pub const CANONICAL_PROCESS_SOURCE_PATH: &str = "src/Runtime/Host/Process.bd";
+pub const CANONICAL_FS_SOURCE_PATH: &str = "src/Runtime/Host/FS.bd";
 pub const CANONICAL_COMPOSITION_SOURCE_PATH: &str = "src/Runtime/Host/Composition.bd";
 pub const CANONICAL_CALLBACKS_SOURCE_PATH: &str = "src/Runtime/Host/Callbacks.bd";
 pub const CANONICAL_SYSCALLS_SOURCE_PATH: &str = "src/Runtime/Io/Syscalls.bd";
@@ -38,6 +40,8 @@ pub const CANONICAL_SYSCALLS_SOURCE_PATH: &str = "src/Runtime/Io/Syscalls.bd";
 pub const CANONICAL_CORELIB_SYSCALL_SOURCE_PATH: &str = "Core/Syscall/Syscall.bd";
 /// Canonical Foundation process-argument facade eligible for its two private ABI-v5 services.
 pub const CANONICAL_CORELIB_ARGS_SOURCE_PATH: &str = "Core/Args/Args.bd";
+/// Canonical Foundation filesystem facade eligible for private ABI-v5 filesystem services.
+pub const CANONICAL_CORELIB_FS_SOURCE_PATH: &str = "Core/FS/FS.bd";
 /// Canonical Foundation assertion helper eligible to import the panic runtime service.
 pub const CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH: &str = "Testing/Assert.bd";
 /// Canonical Foundation output helper eligible to import the panic runtime service.
@@ -87,6 +91,8 @@ const CANONICAL_SCHEDULER_QUEUE_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/Queue.bd"));
 const CANONICAL_SCHEDULER_LOOP_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/Loop.bd"));
+const CANONICAL_SCHEDULER_POLL_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/Poll.bd"));
 const CANONICAL_SCHEDULER_EXPORTS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/Exports.bd"));
 const CANONICAL_CHANNEL_SOURCE: &str =
@@ -105,6 +111,8 @@ const CANONICAL_CLOCKS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Host/Clocks.bd"));
 const CANONICAL_PROCESS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Host/Process.bd"));
+const CANONICAL_FS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Host/FS.bd"));
 const CANONICAL_COMPOSITION_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Host/Composition.bd"));
 const CANONICAL_CALLBACKS_SOURCE: &str =
@@ -116,6 +124,8 @@ const CANONICAL_CORELIB_SYSCALL_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Syscall/Syscall.bd"));
 const CANONICAL_CORELIB_ARGS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Args/Args.bd"));
+const CANONICAL_CORELIB_FS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/FS/FS.bd"));
 const CANONICAL_FOUNDATION_ASSERT_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Testing/Assert.bd"));
 const CANONICAL_FOUNDATION_OUTPUT_SOURCE: &str =
@@ -190,6 +200,10 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
             source: CANONICAL_SCHEDULER_LOOP_SOURCE.into(),
         },
         SourceUnit {
+            logical_path: CANONICAL_SCHEDULER_POLL_SOURCE_PATH.into(),
+            source: CANONICAL_SCHEDULER_POLL_SOURCE.into(),
+        },
+        SourceUnit {
             logical_path: CANONICAL_SCHEDULER_EXPORTS_SOURCE_PATH.into(),
             source: CANONICAL_SCHEDULER_EXPORTS_SOURCE.into(),
         },
@@ -201,6 +215,7 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
         SourceUnit { logical_path: CANONICAL_DYNAMIC_SOURCE_PATH.into(), source: CANONICAL_DYNAMIC_SOURCE.into() },
         SourceUnit { logical_path: CANONICAL_CLOCKS_SOURCE_PATH.into(), source: CANONICAL_CLOCKS_SOURCE.into() },
         SourceUnit { logical_path: CANONICAL_PROCESS_SOURCE_PATH.into(), source: CANONICAL_PROCESS_SOURCE.into() },
+        SourceUnit { logical_path: CANONICAL_FS_SOURCE_PATH.into(), source: CANONICAL_FS_SOURCE.into() },
         SourceUnit {
             logical_path: CANONICAL_COMPOSITION_SOURCE_PATH.into(),
             source: CANONICAL_COMPOSITION_SOURCE.into(),
@@ -225,6 +240,10 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
     sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_ARGS_SOURCE_PATH.into(),
         source: CANONICAL_CORELIB_ARGS_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_FS_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_FS_SOURCE.into(),
     });
     sources.push(SourceUnit {
         logical_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),

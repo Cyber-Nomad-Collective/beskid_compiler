@@ -8,8 +8,7 @@ use crate::generated::symbols::{
     SYM_COMPOSITION_SCOPE_DEPTH, SYM_COMPOSITION_SCOPE_ENTER, SYM_COMPOSITION_SCOPE_LEAVE, SYM_COMPOSITION_SHUTDOWN,
     SYM_DYNAMIC_CAST_CHECKED, SYM_DYNAMIC_CELL_CREATE, SYM_DYNAMIC_CELL_WRAP, SYM_DYNAMIC_MAP_AOT,
     SYM_DYNAMIC_MAP_FALLBACK, SYM_DYNAMIC_OBJECT_ALLOC, SYM_FIBER_YIELD, SYM_GC_REGISTER_ROOT, SYM_GC_ROOT_HANDLE,
-    SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_INTEROP_DISPATCH_I64,
-    SYM_INTEROP_DISPATCH_PTR, SYM_INTEROP_DISPATCH_UNIT, SYM_INTEROP_DISPATCH_USIZE, SYM_PANIC, SYM_PANIC_STR,
+    SYM_GC_UNREGISTER_ROOT, SYM_GC_UNROOT_HANDLE, SYM_GC_WRITE_BARRIER, SYM_PANIC, SYM_PANIC_STR,
     SYM_RUNTIME_PREEMPT_CHECK,
 };
 
@@ -54,10 +53,6 @@ pub const BUILTIN_SPECS: &[BuiltinFnSpec] = &[
     BuiltinFnSpec { symbol: SYM_GC_UNREGISTER_ROOT, params: &PTR_ONLY, returns: AbiReturnKind::Void },
     BuiltinFnSpec { symbol: SYM_GC_UNROOT_HANDLE, params: &I64_ONLY, returns: AbiReturnKind::Void },
     BuiltinFnSpec { symbol: SYM_GC_WRITE_BARRIER, params: &PTR_PTR, returns: AbiReturnKind::Void },
-    BuiltinFnSpec { symbol: SYM_INTEROP_DISPATCH_PTR, params: &PTR_ONLY, returns: AbiReturnKind::Ptr },
-    BuiltinFnSpec { symbol: SYM_INTEROP_DISPATCH_UNIT, params: &PTR_ONLY, returns: AbiReturnKind::Void },
-    BuiltinFnSpec { symbol: SYM_INTEROP_DISPATCH_USIZE, params: &PTR_ONLY, returns: AbiReturnKind::I64 },
-    BuiltinFnSpec { symbol: SYM_INTEROP_DISPATCH_I64, params: &PTR_ONLY, returns: AbiReturnKind::I64 },
     BuiltinFnSpec { symbol: SYM_PANIC, params: &PTR_PTR, returns: AbiReturnKind::Never },
     BuiltinFnSpec { symbol: SYM_PANIC_STR, params: &PTR_ONLY, returns: AbiReturnKind::Never },
     BuiltinFnSpec { symbol: SYM_RUNTIME_PREEMPT_CHECK, params: &EMPTY, returns: AbiReturnKind::Void },

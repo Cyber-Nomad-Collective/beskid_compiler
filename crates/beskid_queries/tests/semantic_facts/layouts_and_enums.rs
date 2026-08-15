@@ -1,7 +1,7 @@
 use super::support::{assert_unavailable, key, key_at_start, setup};
 use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
 use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
 };
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
@@ -275,7 +275,7 @@ unit Write() {
         .collect::<Vec<_>>();
     let output_program = units[0].program.clone();
     let results_program = units[1].program.clone();
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
             dependencies: Vec::new(),
@@ -284,7 +284,7 @@ unit Write() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let output_unit = SourceUnitId::new(&db, output_path);
     let results_unit = SourceUnitId::new(&db, results_path);
@@ -350,7 +350,7 @@ unit Main() {
     let main_program = units[0].program.clone();
     let results_program = units[1].program.clone();
     let error_program = units[2].program.clone();
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
             dependencies: Vec::new(),
@@ -359,7 +359,7 @@ unit Main() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let results_unit = SourceUnitId::new(&db, results_path);

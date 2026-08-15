@@ -1,4 +1,4 @@
-use crate::hir::HirPath;
+use crate::syntax::Path;
 use crate::resolve::{ItemKind, ResolvedType, ResolvedValue};
 use crate::syntax::Spanned;
 use crate::types::TypeId;
@@ -11,7 +11,7 @@ impl<'a> TypeChecker<'a> {
     pub(in crate::types::checker) fn type_id_for_path(
         &mut self,
         span: crate::syntax::SpanInfo,
-        path: &Spanned<HirPath>,
+        path: &Spanned<Path>,
     ) -> Option<TypeId> {
         if path.node.segments.len() == 1 {
             let field_name = path.node.segments[0].node.name.node.name.as_str();
@@ -44,7 +44,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn type_struct_field_path(&mut self, span: crate::syntax::SpanInfo, path: &Spanned<HirPath>) -> Option<TypeId> {
+    fn type_struct_field_path(&mut self, span: crate::syntax::SpanInfo, path: &Spanned<Path>) -> Option<TypeId> {
         let segments = &path.node.segments;
         let source_path = self.current_source_path.as_ref();
         let first_name = segments.first()?.node.name.node.name.as_str();
@@ -88,7 +88,7 @@ impl<'a> TypeChecker<'a> {
     pub(in crate::types::checker) fn type_id_for_enum_path(
         &mut self,
         _span: crate::syntax::SpanInfo,
-        path: &Spanned<crate::hir::HirEnumPath>,
+        path: &Spanned<crate::syntax::EnumPath>,
     ) -> Option<TypeId> {
         let type_span = path.node.type_path.span;
         match self.resolved_type_at(type_span) {

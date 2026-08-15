@@ -11,13 +11,13 @@ use crate::projects::fixture_harness::{
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use beskid_analysis::projects::SyntaxProgramAssembly;
+use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    AstNodeId, AstNodeKey, IndexedNodeKind, ItemSignature, SemanticTypeId, SourceUnitId, build_typed_program,
-    child_nodes, generic_call_specialization, item_abi_signature, item_name, node_kind,
-    project_session_for_syntax_assembly, reachable_items, with_db,
+    build_typed_program, child_nodes, generic_call_specialization, item_abi_signature, item_name, node_kind,
+    project_session_for_syntax_assembly, reachable_items, with_db, AstNodeId, AstNodeKey, IndexedNodeKind,
+    ItemSignature, SemanticTypeId, SourceUnitId,
 };
 
 #[test]
@@ -27,8 +27,7 @@ fn syscall_result_predicates_have_call_derived_pointer_specializations() {
         with_project_test_env(&root, || {
             let resolved = resolve_corelib_tests_entry_with_assembly("system/SyscallWriteTests.bd");
             with_db(|db| {
-                let syntax_assembly =
-                    Arc::new(SyntaxProgramAssembly::from(resolved.assembly.as_ref().expect("corelib entry assembly")));
+                let syntax_assembly = Arc::new(resolved.assembly.as_ref().expect("corelib entry assembly").clone());
                 let project = project_session_for_syntax_assembly(
                     db,
                     &syntax_assembly,

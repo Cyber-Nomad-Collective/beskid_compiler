@@ -36,10 +36,11 @@ impl Engine {
     pub fn try_new() -> Result<Self, JitError> {
         let prefix = runtime_prefix()?;
         let target = host_runtime_target()?;
-        let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() {
-            Ok("release") => RuntimeKitProfile::Release,
-            _ if !cfg!(debug_assertions) => RuntimeKitProfile::Release,
-            _ => RuntimeKitProfile::Debug,
+        let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE") {
+            Ok(value) => RuntimeKitProfile::parse(&value).map_err(|error| JitError::RuntimeKit(error.to_string()))?,
+            Err(std::env::VarError::NotPresent) if cfg!(debug_assertions) => RuntimeKitProfile::Debug,
+            Err(std::env::VarError::NotPresent) => RuntimeKitProfile::Release,
+            Err(error) => return Err(JitError::RuntimeKit(format!("invalid BESKID_RUNTIME_KIT_PROFILE: {error}"))),
         };
         Self::with_runtime_kit(&prefix, target, profile)
     }
@@ -93,27 +94,28 @@ impl Engine {
         if requires_explicit_jit_arguments(artifact) {
             return Err(JitError::Isa("Core.Args requires explicit JIT arguments".to_owned()));
         }
-        let runtime_externs = beskid_codegen::referenced_extern_imports(artifact)
+        let user_ffi_imports = beskid_codegen::referenced_extern_imports(artifact)
             .into_iter()
             .filter(|entry| !self.jit.is_exact_runtime_symbol(&entry.symbol))
             .collect::<Vec<_>>();
+        validate_authorized_user_ffi(&user_ffi_imports)?;
 
         #[cfg(feature = "extern_dlopen")]
-        let extras =
-            resolve_extern_symbols(&runtime_externs).map_err(|e| JitError::Isa(format!("extern resolve: {}", e)))?;
+        let authorized_user_ffi =
+            resolve_extern_symbols(&user_ffi_imports).map_err(|e| JitError::Isa(format!("extern resolve: {}", e)))?;
 
         #[cfg(all(not(feature = "extern_dlopen"), unix))]
-        let extras = if runtime_externs.is_empty() {
+        let authorized_user_ffi = if user_ffi_imports.is_empty() {
             Vec::new()
         } else {
-            resolve_process_extern_symbols(&runtime_externs)
+            resolve_process_extern_symbols(&user_ffi_imports)
                 .map_err(|e| JitError::Isa(format!("extern resolve: {}", e)))?
         };
 
         #[cfg(all(not(feature = "extern_dlopen"), not(unix)))]
-        let extras: Vec<(String, *const u8)> = {
-            if !runtime_externs.is_empty() {
-                let list = runtime_externs.iter().map(|e| e.symbol.clone()).collect::<Vec<_>>().join(", ");
+        let authorized_user_ffi: Vec<(String, *const u8)> = {
+            if !user_ffi_imports.is_empty() {
+                let list = user_ffi_imports.iter().map(|e| e.symbol.clone()).collect::<Vec<_>>().join(", ");
                 return Err(JitError::Isa(format!(
                     "extern imports present but JIT extern resolution is unsupported on this host: {}",
                     list
@@ -127,7 +129,7 @@ impl Engine {
             &self.runtime_kit.prefix,
             &self.runtime_kit.target,
             self.runtime_kit.profile,
-            &extras,
+            &authorized_user_ffi,
         )?;
 
         #[cfg(debug_assertions)]
@@ -159,6 +161,30 @@ impl Engine {
     pub fn jit_module_mut(&mut self) -> &mut cranelift_jit::JITModule {
         self.jit.module()
     }
+}
+
+fn validate_authorized_user_ffi(imports: &[ExternImport]) -> Result<(), JitError> {
+    for import in imports {
+        let manifest_owned = ABI_V5_CORELIB_SERVICE_BINDINGS.iter().any(|binding| binding.adapter == import.symbol);
+        let retired_runtime_name = import.symbol.starts_with("beskid_rt_")
+
+            || import.symbol.starts_with("beskid_runtime_")
+            || import.symbol.starts_with("beskid_language_")
+            || beskid_abi::RUNTIME_EXPORT_SYMBOLS.contains(&import.symbol.as_str());
+        if manifest_owned || retired_runtime_name {
+            return Err(JitError::RuntimeKit(format!(
+                "runtime/host symbol `{}` must be supplied by the selected exact ABI-v5 runtime kit, not user FFI",
+                import.symbol
+            )));
+        }
+        if import.abi.as_deref() != Some("C") || import.library.as_deref().is_none_or(str::is_empty) {
+            return Err(JitError::Isa(format!(
+                "user FFI symbol `{}` requires an explicit C ABI and library authority",
+                import.symbol
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn requires_explicit_jit_arguments(artifact: &CodegenArtifact) -> bool {

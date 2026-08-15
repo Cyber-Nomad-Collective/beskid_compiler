@@ -2,14 +2,17 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use super::super::{SourceUnit, UnitHir};
-use crate::projects::CompilePlan;
+use super::super::SourceUnit;
 use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
+use crate::projects::CompilePlan;
+use crate::syntax::SyntaxGenerationId;
 use crate::syntax::{Program, Spanned};
+use crate::syntax_query::SyntaxIndex;
 
 /// Optional Salsa-backed unit builder (set by `beskid_queries` during assembly).
-pub type UnitMaterializer =
-    std::sync::Arc<dyn Fn(&Path, &str) -> Result<(SourceUnit, UnitHir), AssemblyError> + Send + Sync>;
+pub type UnitMaterializer = std::sync::Arc<
+    dyn Fn(&Path, &str, SyntaxGenerationId) -> Result<(SourceUnit, SyntaxIndex), AssemblyError> + Send + Sync,
+>;
 
 #[derive(Debug, Error)]
 pub enum AssemblyError {

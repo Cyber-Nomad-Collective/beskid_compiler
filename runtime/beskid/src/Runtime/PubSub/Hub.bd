@@ -11,10 +11,21 @@ const HUB_TABLE_MAX = 16;
 const HUB_ENTRY_MAX = 256;
 const HUB_SLOT_SIZE = 4112;
 
-// Hub-specific ABI status codes (gapped; function-constant pattern from Concurrency.Status).
-pub i64 HubEmpty() { return 4; }
-pub i64 HubLimit() { return 5; }
-pub i64 HubNotFound() { return 6; }
+// Hub status discriminants (ABI-stable 4-6, gapped to align with ChannelStatus 0-3).
+const HUB_STATUS_HUB_EMPTY = 4;
+const HUB_STATUS_HUB_LIMIT = 5;
+const HUB_STATUS_HUB_NOT_FOUND = 6;
+
+// Hub status — enum-with-arguments for the logical type.
+// Mirrors corelib Concurrency.Status variants.
+pub enum HubStatus {
+    Ok,
+    Closed(i64 memberIndex),
+    Cancelled(i64 reason),
+    HubEmpty,
+    HubLimit(i64 cap, i64 attemptedIndex),
+    HubNotFound(i64 index),
+}
 
 // Returns the separately allocated hub table owned by the active scheduler.
 // Hub storage must never be derived from an undeclared RuntimeState offset.
@@ -24,7 +35,7 @@ pub pointer HubTable() {
 
 pub pointer HubSlot(word index) {
     pointer table = HubTable();
-    if table == NativePointer(0) { return NativePointer(0); }
+    if table == NativePointer(0) || index >= raw_word_load(table) { return NativePointer(0); }
     return pointer_add(table, 8 + index * HUB_SLOT_SIZE);
 }
 
@@ -39,7 +50,7 @@ pub i64 HubCreate() {
     if table == NativePointer(0) { return -1; }
     word count = raw_word_load(table);
     if count >= HUB_TABLE_MAX { return -1; }
-    pointer slot = HubSlot(count);
+    pointer slot = pointer_add(table, 8 + count * HUB_SLOT_SIZE);
     memory_set(slot, 0, HUB_SLOT_SIZE);
     raw_word_store(table, count + 1);
     return i64(count);
@@ -47,9 +58,11 @@ pub i64 HubCreate() {
 
 [Export(Abi:"C", Symbol:"hub_register")]
 pub i64 HubRegister(i64 hubId, i64 index, i64 channelId) {
+    if hubId < 0 { return HUB_STATUS_HUB_NOT_FOUND; }
     word hi = word(hubId);
-    if hi >= HUB_TABLE_MAX { return HubNotFound(); }
+    if hi >= HUB_TABLE_MAX { return HUB_STATUS_HUB_NOT_FOUND; }
     pointer hub = HubSlot(hi);
+    if hub == NativePointer(0) || ChannelSlot(channelId) == NativePointer(0) { return HUB_STATUS_HUB_NOT_FOUND; }
     word entryCount = raw_word_load(hub);
     // An index identifies one registration.  Replacement is stable: it keeps
     // the existing position and therefore preserves the circular poll order.
@@ -58,23 +71,25 @@ pub i64 HubRegister(i64 hubId, i64 index, i64 channelId) {
         pointer existingEntry = pointer_add(hub, 16 + existing * 16);
         if i64(raw_word_load(existingEntry)) == index {
             raw_word_store(pointer_add(existingEntry, 8), word(channelId));
-            return ChannelStatus::Ok;
+            return CHANNEL_STATUS_OK;
         }
         existing = existing + 1;
     }
-    if entryCount >= HUB_ENTRY_MAX { return HubLimit(); }
+    if entryCount >= HUB_ENTRY_MAX { return HUB_STATUS_HUB_LIMIT; }
     pointer entry = pointer_add(hub, 16 + entryCount * 16);
     raw_word_store(entry, word(index));
     raw_word_store(pointer_add(entry, 8), word(channelId));
     raw_word_store(hub, entryCount + 1);
-    return ChannelStatus::Ok;
+    return CHANNEL_STATUS_OK;
 }
 
 [Export(Abi:"C", Symbol:"hub_unregister")]
 pub i64 HubUnregister(i64 hubId, i64 index) {
+    if hubId < 0 { return HUB_STATUS_HUB_NOT_FOUND; }
     word hi = word(hubId);
-    if hi >= HUB_TABLE_MAX { return HubNotFound(); }
+    if hi >= HUB_TABLE_MAX { return HUB_STATUS_HUB_NOT_FOUND; }
     pointer hub = HubSlot(hi);
+    if hub == NativePointer(0) { return HUB_STATUS_HUB_NOT_FOUND; }
     word entryCount = raw_word_load(hub);
     mut word i = 0;
     while i < entryCount {
@@ -107,36 +122,75 @@ pub i64 HubUnregister(i64 hubId, i64 index) {
                 }
                 raw_word_store(pointer_add(hub, 8), cursor % remaining);
             }
-            return ChannelStatus::Ok;
+            return CHANNEL_STATUS_OK;
         }
         i = i + 1;
     }
-    return HubNotFound();
+    return HUB_STATUS_HUB_NOT_FOUND;
 }
 
 // Poll all channels round-robin until one delivers, then return index and value.
 [Export(Abi:"C", Symbol:"hub_wait_receive_status")]
 pub i64 HubWaitReceiveStatus(i64 hubId) {
     word hi = word(hubId);
-    if hi >= HUB_TABLE_MAX { return HubNotFound(); }
+    if hi >= HUB_TABLE_MAX { return HUB_STATUS_HUB_NOT_FOUND; }
     pointer hub = HubSlot(hi);
     word entryCount = raw_word_load(hub);
-    if entryCount == 0 { return HubEmpty(); }
-    word cursor = raw_word_load(pointer_add(hub, 8));
-    word startPos = cursor % entryCount;
+    if entryCount == 0 { return HUB_STATUS_HUB_EMPTY; }
+    word cursorState = raw_word_load(pointer_add(hub, 8));
+    word startPos = (cursorState & 0xFF) % entryCount;
     mut word attempts = 0;
     while attempts < entryCount {
         word pos = (startPos + attempts) % entryCount;
         word entry = pointer_add(hub, 16 + pos * 16);
         i64 chId = i64(raw_word_load(pointer_add(entry, 8)));
-        i64 status = ChannelReceiveStatus(chId);
-        if status == ChannelStatus::Ok {
-            raw_word_store(pointer_add(hub, 8), (pos + 1) % entryCount);
-            return ChannelStatus::Ok;
+        i64 status = ChannelTryReceiveStatus(chId);
+        if status == CHANNEL_STATUS_OK {
+            raw_word_store(pointer_add(hub, 8), ((pos + 1) % entryCount) | (cursorState & ~word(0xFF)));
+            return CHANNEL_STATUS_OK;
         }
         attempts = attempts + 1;
     }
-    return HubEmpty();
+    word fiberIndex = SchedulerCurrentFiber();
+    if fiberIndex == FIBER_NONE || !FiberExists(fiberIndex) { return HUB_STATUS_HUB_EMPTY; }
+    pointer fiber = FiberRecord(fiberIndex);
+    if raw_byte_load(pointer_add(fiber, 41)) != 0 { return CHANNEL_STATUS_CANCELLED; }
+    raw_word_store(pointer_add(hub, 8), raw_word_load(pointer_add(hub, 8)) | ((word(1) << fiberIndex) << 8));
+    FiberSetState(fiberIndex, FiberState::Parked);
+    SaveFiberLocalState(fiberIndex);
+    SchedulerSetCurrentFiber(FIBER_NONE);
+    ContextSwitch(NativePointer(raw_word_load(pointer_add(fiber, 104))), SchedulerContext());
+    if raw_byte_load(pointer_add(fiber, 41)) != 0 { return CHANNEL_STATUS_CANCELLED; }
+    return HubWaitReceiveStatus(hubId);
+}
+
+pub unit HubWakeChannel(i64 channelId) {
+    pointer table = HubTable();
+    if table == NativePointer(0) { return; }
+    word hubCount = raw_word_load(table);
+    mut word hi = 0;
+    while hi < hubCount {
+        pointer hub = pointer_add(table, 8 + hi * HUB_SLOT_SIZE);
+        word entryCount = raw_word_load(hub);
+        mut word entryIndex = 0;
+        mut word matched = 0;
+        while entryIndex < entryCount {
+            if i64(raw_word_load(pointer_add(hub, 24 + entryIndex * 16))) == channelId { matched = 1; }
+            entryIndex = entryIndex + 1;
+        }
+        if matched != 0 {
+            word cursorState = raw_word_load(pointer_add(hub, 8));
+            word waiters = cursorState >> 8;
+            raw_word_store(pointer_add(hub, 8), cursorState & 0xFF);
+            mut word fiberIndex = 0;
+            while fiberIndex < FIBER_TABLE_MAX {
+                if (waiters & (word(1) << fiberIndex)) != 0 { WakeEnqueue(fiberIndex); }
+                fiberIndex = fiberIndex + 1;
+            }
+        }
+        hi = hi + 1;
+    }
+    return;
 }
 
 [Export(Abi:"C", Symbol:"hub_wait_receive_value")]
@@ -144,7 +198,7 @@ pub i64 HubWaitReceiveValue(i64 hubId) {
     word hi = word(hubId);
     if hi >= HUB_TABLE_MAX { return 0; }
     pointer hub = HubSlot(hi);
-    word cursor = raw_word_load(pointer_add(hub, 8));
+    word cursor = raw_word_load(pointer_add(hub, 8)) & 0xFF;
     word entryCount = raw_word_load(hub);
     if entryCount == 0 { return 0; }
     word pos = (cursor + entryCount - 1) % entryCount;
@@ -158,7 +212,7 @@ pub i64 HubWaitReceiveIndex(i64 hubId) {
     word hi = word(hubId);
     if hi >= HUB_TABLE_MAX { return -1; }
     pointer hub = HubSlot(hi);
-    word cursor = raw_word_load(pointer_add(hub, 8));
+    word cursor = raw_word_load(pointer_add(hub, 8)) & 0xFF;
     word entryCount = raw_word_load(hub);
     if entryCount == 0 { return -1; }
     word pos = (cursor + entryCount - 1) % entryCount;

@@ -1,0 +1,243 @@
+use Runtime.Bootstrap.Lifecycle;
+use Runtime.Bootstrap.Native;
+use Runtime.Fiber.Scheduler;
+use Runtime.Host.Callbacks;
+use Runtime.PubSub.Events;
+use Runtime.PubSub.Hub;
+use Runtime.Sync.Channel;
+use Runtime.Sync.Mutex;
+use Runtime.Sync.WaitGroup;
+use Runtime.Mem.Gc.Allocation;
+use Runtime.Mem.Gc.RootsHandles;
+use Testing.Assert;
+
+pub pointer InstallSchedulerRuntime() {
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+    Assert.True(ProcessInit(runtime) == runtime, "runtime initialized");
+    Assert.True(CurrentThreadState() != NativePointer(0), "process initialization attached the mutator");
+    Assert.True(SchedTable() != NativePointer(0), "scheduler initialized");
+    return runtime;
+}
+
+pub unit YieldingEntry(pointer argument) {
+    raw_word_store(argument, raw_word_load(argument) + 1);
+    FiberYield();
+    raw_word_store(argument, raw_word_load(argument) + 1);
+    FiberYield();
+    raw_word_store(argument, raw_word_load(argument) + 1);
+    return;
+}
+
+pub unit ShutdownSchedulerRuntime(pointer runtime) {
+    Assert.True(SchedShutdown(), "idle scheduler tears down all owned storage");
+    Assert.True(SchedTable() == NativePointer(0), "scheduler publication is cleared");
+    ProcessShutdown(runtime);
+    SystemFree(runtime, 64);
+    return;
+}
+
+test scheduler_executes_argument_yield_resume_and_return_trampoline {
+    pointer runtime = InstallSchedulerRuntime();
+    pointer argument = SystemAllocate(8, 8);
+    raw_word_store(argument, 0);
+    i64 handle = SchedulerSpawn(YieldingEntry, argument, NativePointer(0));
+    Assert.True(handle >= 0, "real entry receives a generation-safe handle");
+    Assert.Equal(raw_word_load(pointer_add(SchedTable(), 8)), FiberHandleIndex(word(handle)), "first spawned fiber is installed as owned main fiber");
+
+    Assert.True(SchedStep(), "entry runs to first yield");
+    Assert.Equal(raw_word_load(argument), 1, "argument register reaches entry");
+    Assert.True(SchedStep(), "entry resumes to second yield");
+    Assert.Equal(raw_word_load(argument), 2, "second resume preserves context");
+    Assert.True(SchedStep(), "entry returns through exact trampoline");
+    Assert.Equal(raw_word_load(argument), 3, "return edge executes after repeated yields");
+    Assert.Equal(FiberJoinStatusWord(FiberHandleIndex(word(handle))), 0, "return trampoline records successful completion");
+
+    SystemFree(argument, 8);
+    ShutdownSchedulerRuntime(runtime);
+}
+
+test synchronization_bounds_handles_and_teardown_are_deterministic {
+    pointer runtime = InstallSchedulerRuntime();
+
+    Assert.Equal(ChannelCreate(17, 0), -1, "channel rejects capacity beyond its physical ring");
+    i64 channel = ChannelCreate(1, 0);
+    Assert.Equal(channel, 0, "first channel has a stable table index");
+    Assert.Equal(ChannelTrySend(channel, 11), CHANNEL_STATUS_OK, "bounded channel accepts its first value");
+    Assert.Equal(ChannelTrySend(channel, 12), CHANNEL_STATUS_WOULD_BLOCK, "full channel reports pressure without overwrite");
+    Assert.Equal(ChannelReceiveValue(channel), 11, "channel retains FIFO payload");
+    Assert.Equal(ChannelTryReceiveStatus(63), CHANNEL_STATUS_CLOSED, "uncreated channel handle fails closed");
+    ChannelClose(channel);
+    Assert.Equal(ChannelTrySend(channel, 13), CHANNEL_STATUS_CLOSED, "closed channel rejects publication");
+
+    pointer mutex = MutexCreate();
+    Assert.True(mutex != NativePointer(0), "first mutex uses a non-null opaque handle");
+    Assert.Equal(MutexTryLock(mutex), 0, "created mutex locks");
+    MutexUnlock(mutex);
+    Assert.Equal(MutexTryLock(NativePointer(32)), 1, "uncreated mutex handle fails closed");
+    MutexUnlock(mutex);
+
+    pointer group = WaitGroupCreate();
+    Assert.True(group != NativePointer(0), "first wait group uses a non-null opaque handle");
+    WaitGroupDone(group);
+    Assert.Equal(WaitGroupWait(group), 0, "Done at zero does not underflow the group");
+    Assert.Equal(WaitGroupWait(NativePointer(16)), 1, "uncreated wait group handle fails closed");
+
+    i64 hub = HubCreate();
+    Assert.Equal(HubRegister(hub, 7, 63), HUB_STATUS_HUB_NOT_FOUND, "hub rejects an uncreated channel");
+    Assert.Equal(HubRegister(hub, 7, channel), CHANNEL_STATUS_OK, "hub accepts a live channel");
+    Assert.Equal(HubRegister(15, 7, channel), HUB_STATUS_HUB_NOT_FOUND, "uncreated hub handle fails closed");
+
+    pointer eventSlot = SystemAllocate(8, 8);
+    pointer firstHandler = SystemAllocate(8, 8);
+    pointer secondHandler = SystemAllocate(8, 8);
+    raw_word_store(eventSlot, 0);
+    Assert.Equal(EventSubscribe(eventSlot, firstHandler, 1), 1, "event publishes its first rooted handler");
+    Assert.Equal(EventSubscribe(eventSlot, secondHandler, 1), 1, "full event reports length without overwrite");
+    Assert.True(EventGetHandler(NativePointer(raw_word_load(eventSlot)), 0) == firstHandler, "overflow preserves subscription order");
+    EventDrop(eventSlot);
+    Assert.Equal(raw_word_load(eventSlot), 0, "event teardown clears field ownership");
+    SystemFree(secondHandler, 8);
+    SystemFree(firstHandler, 8);
+    SystemFree(eventSlot, 8);
+
+    ShutdownSchedulerRuntime(runtime);
+}
+
+test callback_registry_rejects_merged_overflow_without_publication {
+    pointer runtime = InstallSchedulerRuntime();
+    pointer first = SystemAllocate(32 * 16, 8);
+    pointer overflow = SystemAllocate(16, 8);
+    mut word index = 0;
+    while index < 32 {
+        raw_word_store(pointer_add(first, index * 16), index + 1);
+        raw_word_store(pointer_add(first, index * 16 + 8), index + 101);
+        index = index + 1;
+    }
+    BeskidRegisterCallbacks(first, 32);
+    pointer published = CallbackRegistry();
+    raw_word_store(overflow, 1000);
+    raw_word_store(pointer_add(overflow, 8), 2000);
+    BeskidRegisterCallbacks(overflow, 1);
+    Assert.True(CallbackRegistry() == published, "merged callback overflow preserves the prior snapshot");
+    SystemFree(overflow, 16);
+    SystemFree(first, 32 * 16);
+    ShutdownSchedulerRuntime(runtime);
+}
+
+test poll_slots_reuse_with_generation_and_stale_handle_denial_across_long_cycles {
+    pointer runtime = InstallSchedulerRuntime();
+    mut word staleTask = 0;
+    mut word staleMonitor = 0;
+    mut word staleLink = 0;
+    mut word cycle = 0;
+    while cycle < 256 {
+        word taskIndex = PollTaskAllocate();
+        Assert.True(taskIndex != 0xFFFF, "bounded task table remains reusable");
+        pointer task = PollTaskRecord(taskIndex);
+        raw_word_store(pointer_add(task, POLL_TASK_STATE), POLL_STATE_READY);
+        word taskHandle = PollHandle(taskIndex, raw_word_load(pointer_add(task, POLL_TASK_GENERATION)));
+        i64 monitor = PollReferenceNew(taskHandle, false);
+        i64 link = PollReferenceNew(taskHandle, true);
+        Assert.True(monitor >= 0 && link >= 0, "bounded reference tables remain reusable");
+
+        if cycle != 0 {
+            Assert.True(taskHandle != staleTask, "reused task advances generation");
+            Assert.True(!PollTaskValid(staleTask), "stale task generation fails closed");
+            Assert.True(PollReference(staleMonitor, false) == NativePointer(0), "stale monitor generation fails closed");
+            Assert.True(PollReference(staleLink, true) == NativePointer(0), "stale link generation fails closed");
+        }
+
+        Assert.True(PollTaskClaimTerminal(task), "one scheduler transition claims terminal ownership");
+        Assert.Equal(raw_word_load(pointer_add(task, POLL_TASK_STATE)), POLL_STATE_TERMINAL_CLAIMED, "claimed terminal state is not observable as published");
+        Assert.Equal(PollObservation(taskHandle, NativePointer(0)), 0, "outcome remains hidden before publication");
+        PollTaskPublishTerminal(task, 3, 0);
+        Assert.Equal(PollMonitorPoll(monitor, NativePointer(0)), 3, "published terminal outcome is observable");
+
+        staleTask = taskHandle;
+        staleMonitor = word(monitor);
+        staleLink = word(link);
+        PollMonitorDrop(monitor);
+        PollLinkDrop(link);
+        Assert.True(!PollTaskValid(taskHandle), "last dropped reference releases terminal task record");
+        Assert.True(PollReference(word(monitor), false) == NativePointer(0), "monitor drop releases its record");
+        Assert.True(PollReference(word(link), true) == NativePointer(0), "link drop releases its record");
+        cycle = cycle + 1;
+    }
+    ShutdownSchedulerRuntime(runtime);
+}
+
+test poll_terminal_transition_has_a_single_winner {
+    pointer runtime = InstallSchedulerRuntime();
+    word taskIndex = PollTaskAllocate();
+    pointer task = PollTaskRecord(taskIndex);
+    raw_word_store(pointer_add(task, POLL_TASK_STATE), POLL_STATE_PENDING);
+    Assert.True(PollTaskClaimTerminal(task), "first terminal path wins");
+    Assert.True(!PollTaskClaimTerminal(task), "split terminal path cannot claim again");
+    PollTaskPublishTerminal(task, 4, 0);
+    PollTaskPublishTerminal(task, 3, 0);
+    Assert.Equal(raw_word_load(pointer_add(task, POLL_TASK_OUTCOME)), 4, "later terminal publication cannot replace the winner");
+    Assert.True(raw_byte_load(pointer_add(task, POLL_TASK_ACTIVE)) == 0, "unreferenced terminal publication releases the task");
+    ShutdownSchedulerRuntime(runtime);
+}
+
+test channel_close_and_shutdown_drain_queued_pointer_handles {
+    pointer runtime = InstallSchedulerRuntime();
+    pointer descriptor = SystemAllocate(40, 8);
+    memory_set(descriptor, 0, 40);
+    raw_word_store(descriptor, 24);
+    raw_word_store(pointer_add(descriptor, 8), 8);
+    pointer value = Alloc(24, descriptor);
+    i64 channel = ChannelCreate(2, 0);
+    Assert.Equal(ChannelTrySendPtr(channel, value), CHANNEL_STATUS_OK, "pointer publication owns a GC handle");
+    Assert.True(!GcHandlesClear(), "queued pointer remains rooted");
+    ChannelClose(channel);
+    Assert.True(GcHandlesClear(), "close drains and releases queued pointer handles");
+    SystemFree(descriptor, 40);
+    ShutdownSchedulerRuntime(runtime);
+}
+
+test poll_task_pointer_roots_release_on_terminal_drop_and_slot_reuse {
+    pointer runtime = InstallSchedulerRuntime();
+    pointer descriptor = SystemAllocate(40, 8);
+    memory_set(descriptor, 0, 40);
+    raw_word_store(descriptor, 24);
+    raw_word_store(pointer_add(descriptor, 8), 8);
+    pointer taskState = Alloc(24, descriptor);
+    pointer resultSlot = Alloc(24, descriptor);
+    pointer cancelSlot = Alloc(24, descriptor);
+    i64 task = PollExecutorSpawn(YieldingEntry, taskState, resultSlot, cancelSlot);
+    Assert.True(task >= 0, "poll task registers managed task, result, and cancel pointers");
+    i64 monitor = PollMonitorNew(task);
+    pointer record = PollTaskRecord(PollHandleIndex(word(task)));
+    Assert.True(PollTaskClaimTerminal(record), "test claims terminal ownership");
+    PollTaskPublishTerminal(record, 3, 0);
+    PollMonitorDrop(monitor);
+    Assert.Equal(GcExternalRootCount(), 0, "terminal last-drop releases every poll pointer root");
+    word reused = PollTaskAllocate();
+    Assert.Equal(reused, PollHandleIndex(word(task)), "released poll slot is reusable without inherited roots");
+    PollTaskRelease(PollTaskRecord(reused));
+    SystemFree(descriptor, 40);
+    ShutdownSchedulerRuntime(runtime);
+}
+
+test scheduler_shutdown_cancels_active_fiber_and_invalidates_reused_handle {
+    pointer runtime = InstallSchedulerRuntime();
+    pointer argument = SystemAllocate(8, 8);
+    raw_word_store(argument, 0);
+    i64 stale = SchedulerSpawn(YieldingEntry, argument, NativePointer(0));
+    word first = FiberHandleIndex(word(stale));
+    FiberDone(first, 7);
+    raw_byte_store(pointer_add(FiberRecord(first), 40), 1);
+    word replacement = FiberAlloc(NativeWord(YieldingEntry), NativeWord(argument), 0, FIBER_NONE);
+    word current = FiberHandle(replacement);
+    FiberDone(replacement, 0);
+    Assert.Equal(replacement, first, "detached terminal slot is reused");
+    Assert.True(current != word(stale), "slot reuse advances generation");
+    Assert.True(!FiberHandleValid(word(stale)), "stale generation fails closed");
+
+    SystemFree(argument, 8);
+    Assert.True(SchedShutdown(), "shutdown joins and drains scheduler-owned children");
+    ProcessShutdown(runtime);
+    SystemFree(runtime, 64);
+}

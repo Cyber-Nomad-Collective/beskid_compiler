@@ -1,4 +1,4 @@
-use crate::hir::{HirEnumPath, HirPath, HirType};
+use crate::syntax::{EnumPath, Path, Type};
 use crate::syntax::Spanned;
 
 use super::super::errors::ResolveError;
@@ -8,10 +8,10 @@ use super::super::tables::{ResolvedType, ResolvedValue};
 use super::lookup::ModulePathLookup;
 
 impl Resolver {
-    pub(super) fn resolve_type(&mut self, ty: &Spanned<HirType>) {
+    pub(super) fn resolve_type(&mut self, ty: &Spanned<Type>) {
         match &ty.node {
-            HirType::Primitive(_) => {}
-            HirType::Complex(path) => {
+            Type::Primitive(_) => {}
+            Type::Complex(path) => {
                 for segment in &path.node.segments {
                     for type_arg in &segment.node.type_args {
                         self.resolve_type(type_arg);
@@ -19,8 +19,8 @@ impl Resolver {
                 }
                 self.resolve_type_path(path);
             }
-            HirType::Array(inner) => self.resolve_type(inner),
-            HirType::Function { return_type, parameters } => {
+            Type::Array(inner) => self.resolve_type(inner),
+            Type::Function { return_type, parameters } => {
                 self.resolve_type(return_type);
                 for parameter in parameters {
                     self.resolve_type(parameter);
@@ -29,7 +29,7 @@ impl Resolver {
         }
     }
 
-    pub(super) fn resolve_value_path(&mut self, path: &Spanned<HirPath>) {
+    pub(super) fn resolve_value_path(&mut self, path: &Spanned<Path>) {
         let segments = resolver::path_segments(path);
         if segments.is_empty() {
             self.errors.push(ResolveError::UnknownValue { name: "<unnamed>".to_string(), span: path.span });
@@ -95,7 +95,7 @@ impl Resolver {
         }
     }
 
-    pub(super) fn resolve_type_path(&mut self, path: &Spanned<HirPath>) {
+    pub(super) fn resolve_type_path(&mut self, path: &Spanned<Path>) {
         let segments = resolver::path_segments(path);
         if segments.is_empty() {
             self.errors.push(ResolveError::UnknownType { name: "<unnamed>".to_string(), span: path.span });
@@ -134,7 +134,7 @@ impl Resolver {
         }
     }
 
-    pub(super) fn resolve_enum_path(&mut self, path: &Spanned<HirEnumPath>) {
+    pub(super) fn resolve_enum_path(&mut self, path: &Spanned<EnumPath>) {
         self.resolve_type_path(&path.node.type_path);
         if let Some(resolved) = self.tables.resolved_types.get(&path.node.type_path.span).cloned() {
             self.tables.insert_type(path.span, resolved);

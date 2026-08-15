@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::hir::HirPrimitiveType;
+use crate::syntax::PrimitiveType;
 use crate::resolve::ItemId;
 
 /// Dense index into [`TypeTable::types`]; stable for the duration of one check.
@@ -12,7 +12,7 @@ pub struct TypeId(pub usize);
 /// Structural description interned into a [`TypeId`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeInfo {
-    Primitive(HirPrimitiveType),
+    Primitive(PrimitiveType),
     Named(ItemId),
     GenericParam(String),
     Applied {
@@ -34,7 +34,7 @@ pub enum TypeInfo {
 pub struct TypeTable {
     types: Vec<TypeInfo>,
     intern_map: HashMap<TypeInfo, TypeId>,
-    primitive_ids: HashMap<HirPrimitiveType, TypeId>,
+    primitive_ids: HashMap<PrimitiveType, TypeId>,
     array_ids: HashMap<TypeId, TypeId>,
 }
 
@@ -89,7 +89,7 @@ impl TypeTable {
     }
 
     /// Returns an existing primitive type id when already interned.
-    pub fn find_primitive(&self, primitive: HirPrimitiveType) -> Option<TypeId> {
+    pub fn find_primitive(&self, primitive: PrimitiveType) -> Option<TypeId> {
         self.primitive_ids.get(&primitive).copied()
     }
 

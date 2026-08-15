@@ -6,13 +6,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
-use beskid_analysis::projects::{ProgramAssembly, SyntaxProgramAssembly};
-use beskid_analysis::services::{ResolvedInput, resolve_input};
+use beskid_analysis::projects::ProgramAssembly;
+use beskid_analysis::services::{resolve_input, ResolvedInput};
 use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    AstNodeKey, SourceUnitId, build_typed_program, call_lowering, configure_db_for_project, program_assembly,
-    project_session_for_syntax_assembly, with_db,
+    build_typed_program, call_lowering, configure_db_for_project, program_assembly,
+    project_session_for_syntax_assembly, with_db, AstNodeKey, SourceUnitId,
 };
 
 use super::std_env_lock::std_dependency_env_lock;
@@ -146,12 +146,11 @@ pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
     let started = Instant::now();
     let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
     with_db(|db| {
-        let assembly = resolved.assembly.as_ref().expect("corelib entry assembly").clone();
-        let syntax_assembly = std::sync::Arc::new(SyntaxProgramAssembly::from(&assembly));
+        let syntax_assembly = std::sync::Arc::new(resolved.assembly.as_ref().expect("corelib entry assembly").clone());
         let project =
             project_session_for_syntax_assembly(db, &syntax_assembly, "corelib-syntax-gate", "prepared-corelib-entry")
                 .expect("corelib syntax project session");
-        let generation = SyntaxGenerationId(1);
+        let generation = syntax_assembly.generation;
         let typed = build_typed_program(db, project, generation, syntax_assembly).expect("corelib syntax program");
         let entry = typed.assembly.entry_unit();
         let index = SyntaxIndex::from_program(&entry.program, generation);
@@ -175,7 +174,7 @@ pub fn typecheck_corelib_tests_entry(entry_relative: &str) {
 /// Lower a single test entrypoint from a `corelib_tests` file to CLIF (same path as `beskid test`).
 pub fn lower_corelib_tests_entrypoint(entry_relative: &str, entrypoint: &str) -> beskid_codegen::CodegenArtifact {
     let resolved = resolve_corelib_tests_entry_with_assembly(entry_relative);
-    let assembly = Arc::new(SyntaxProgramAssembly::from(resolved.assembly.as_ref().expect("corelib entry assembly")));
+    let assembly = Arc::new(resolved.assembly.as_ref().expect("corelib entry assembly").clone());
     beskid_engine::services::lower_syntax_assembly_entrypoint(
         assembly,
         entrypoint,
@@ -225,24 +224,20 @@ mod tests {
 
             assert!(channel.source_path.ends_with("concurrency/ChannelApiTests.bd"));
             assert!(messages.source_path.ends_with("console/ConsoleMessageChannelTests.bd"));
-            assert!(
-                channel
-                    .assembly
-                    .as_ref()
-                    .expect("channel assembly")
-                    .entry_unit()
-                    .path
-                    .ends_with("concurrency/ChannelApiTests.bd")
-            );
-            assert!(
-                messages
-                    .assembly
-                    .as_ref()
-                    .expect("messages assembly")
-                    .entry_unit()
-                    .path
-                    .ends_with("console/ConsoleMessageChannelTests.bd")
-            );
+            assert!(channel
+                .assembly
+                .as_ref()
+                .expect("channel assembly")
+                .entry_unit()
+                .path
+                .ends_with("concurrency/ChannelApiTests.bd"));
+            assert!(messages
+                .assembly
+                .as_ref()
+                .expect("messages assembly")
+                .entry_unit()
+                .path
+                .ends_with("console/ConsoleMessageChannelTests.bd"));
         });
     }
 }

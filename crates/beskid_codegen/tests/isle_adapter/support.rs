@@ -28,7 +28,7 @@ pub(super) use prelude::{
     CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
     CastIntent, CodegenInput, DirectCallee, EffectiveCompilationRoots, FunctionEmitter, HashMap, ItemModuleImporter,
     JITBuilder, JITModule, Linkage, Module, ModuleIndex, NodeFacts, NodeKind, Ordering, ProjectSession, RootEntry,
-    SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, SyntaxProgramAssembly, TargetMetadata,
+    SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, ProgramAssembly, TargetMetadata,
     UserFuncName, aggregate_field_access, build_canonical_runtime_typed_program, build_typed_program,
     build_typed_program_with_corelib_services, call_abi_signature, call_lowering, canonical_corelib_service_capability,
     canonical_corelib_service_source_path, canonical_corelib_service_sources, canonical_runtime_intrinsic_capability,

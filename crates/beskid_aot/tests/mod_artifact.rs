@@ -2,12 +2,12 @@ use std::fs;
 
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::services::{
-    FrontEndOptions, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
+    resolved_input_from_plan, synthetic_compile_plan_for_source, FrontEndOptions, ResolvedInput,
 };
 use beskid_aot::object_module::BeskidObjectModule;
 use beskid_aot::{
-    ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, build_mod_artifact, compute_mod_artifact_key,
-    lower_prepared_syntax_entrypoint,
+    build_mod_artifact, compute_mod_artifact_key, lower_prepared_syntax_entrypoint, ContractRegistration,
+    ModArtifactBuildRequest, ModArtifactDescriptor,
 };
 use beskid_codegen::CodegenArtifact;
 use beskid_queries::compile_front_end_from_resolved_input;
@@ -126,6 +126,6 @@ i32 Main() {
     let artifact = lower_prepared_syntax_entrypoint(&front, "Main", target).expect("lower prepared syntax fixture");
     beskid_codegen::validate_artifact(&artifact).expect("validate link plan");
 
-    let mut object = BeskidObjectModule::new(None).expect("object module");
+    let mut object = BeskidObjectModule::new(None, beskid_aot::BuildProfile::Debug).expect("object module");
     object.compile_artifact(&artifact, None).expect("compile artifact");
 }

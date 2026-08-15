@@ -2,7 +2,7 @@ use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
     CodegenInput, DirectCallee, EffectiveCompilationRoots, IndexedNodeKind, ModuleIndex, NodeFacts, PathBuf,
     ProjectSession, RootEntry, SemanticTypeId, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxNodeFacts,
-    SyntaxProgramAssembly, build_typed_program_with_corelib_services, call_abi_signature, call_lowering,
+    ProgramAssembly, build_typed_program_with_corelib_services, call_abi_signature, call_lowering,
     canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_corelib_service_sources,
     find_node_matching, linux_target, node_span, parse_program_with_source_name,
 };
@@ -25,13 +25,13 @@ fn core_args_input(
         "core-args-authority".into(),
         "core-args-authority".into(),
     );
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
         Arc::new(vec![SourceUnit { logical_name: logical_name.into(), path: source_path, source, program }]),
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let target = linux_target();
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
@@ -162,7 +162,7 @@ fn call_is_named(input: &CodegenInput<'_>, call: AstNodeKey, name: &str) -> bool
     input
         .typed_program()
         .assembly
-        .units()
+        .units
         .iter()
         .find(|unit| {
             unit.path.canonicalize().unwrap_or_else(|_| unit.path.clone())

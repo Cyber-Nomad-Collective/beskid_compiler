@@ -2,7 +2,7 @@
 // Rust sources in beskid_analysis are authoritative; Syntax/Nodes uses concrete helpers (no ReflectStub).
 
 // Hand-maintained facade ------------------------------------------------------
-// Fluent query plans over syntax snapshots for the process phase (lowers to beskid_analysis::query).
+// Fluent query plans over syntax snapshots for the process phase (lowers to beskid_analysis::syntax_query).
 
 
 pub type QueryBounds {

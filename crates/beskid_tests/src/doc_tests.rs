@@ -3,10 +3,9 @@
 use beskid_analysis::doc::DocRefLinkContext;
 use beskid_analysis::doc_comment_parser::DocSyntaxParser;
 use beskid_analysis::doc_comment_parser::Rule as DocRule;
-use beskid_analysis::hir::{AstProgram, HirProgram, lower_program as lower_hir_program, normalize_program};
-use beskid_analysis::resolve::{ItemKind, Resolution, Resolver};
+
 use beskid_analysis::services::{build_document_analysis, hover_at_offset, parse_program};
-use beskid_analysis::syntax::Spanned;
+
 use beskid_analysis::{BeskidParser, Rule as MainRule};
 use pest::Parser;
 
@@ -248,42 +247,4 @@ unit Main() { return 42; }
         .join("\n");
     assert!(blob.contains("/docs/demo-pkg%401.0.0/api/"), "expected pckg docs link, got {blob:?}");
     assert!(blob.contains("](") && blob.contains("main"), "expected markdown link mentioning main, got {blob:?}");
-}
-
-fn resolve_program_for_test(src: &str) -> Resolution {
-    let program = parse_program(src).expect("parse");
-    let ast: Spanned<AstProgram> = program.clone().into();
-    let mut hir: Spanned<HirProgram> = lower_hir_program(&ast);
-    normalize_program(&mut hir).expect("normalize");
-    Resolver::new().resolve_program(&hir).expect("resolve")
-}
-
-#[test]
-fn member_rows_carry_parent_id_in_resolution() {
-    let src = r#"
-type Box {
-    i64 value,
-}
-
-enum Color {
-    Red,
-    Blue,
-}
-
-i64 Add(i64 a, i64 b) { return a + b; }
-"#;
-    let resolution = resolve_program_for_test(src);
-    let type_id = resolution
-        .items
-        .iter()
-        .find(|i| i.kind == ItemKind::Type && i.name.ends_with("Box"))
-        .map(|i| i.id)
-        .expect("type Box");
-    let field =
-        resolution.items.iter().find(|i| i.kind == ItemKind::Field && i.name.contains("value")).expect("field value");
-    assert_eq!(field.parent_id, Some(type_id));
-
-    let enum_id = resolution.items.iter().find(|i| i.kind == ItemKind::Enum).map(|i| i.id).expect("enum");
-    let variant = resolution.items.iter().find(|i| i.kind == ItemKind::EnumVariant).expect("enum variant");
-    assert_eq!(variant.parent_id, Some(enum_id));
 }

@@ -22,6 +22,8 @@ use super::scanner::{
 use super::trusted_paths::trusted_corelib_service_paths;
 use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
 use crate::projects::{CompilePlan, PreparedProjectWorkspace};
+use crate::syntax::SyntaxGenerationId;
+use crate::syntax_query::SyntaxIndex;
 
 /// Build a [`ProgramAssembly`] for `entry_path` using effective roots and discovery options.
 ///
@@ -47,6 +49,9 @@ pub fn assemble_program_with_materializer(
     materializer: Option<UnitMaterializer>,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<ProgramAssembly, AssemblyError> {
+    static NEXT_ASSEMBLY_GENERATION: AtomicU64 = AtomicU64::new(1);
+
+    let generation = SyntaxGenerationId(NEXT_ASSEMBLY_GENERATION.fetch_add(1, Ordering::Relaxed));
     let roots = effective_roots_for_plan(plan, workspace);
     let module_roots: Vec<PathBuf> = super::roots::module_roots_from_effective(&roots);
 
@@ -215,7 +220,7 @@ pub fn assemble_program_with_materializer(
     let salsa_build = materializer.as_ref().map(|build| build.as_ref() as _);
     let build_total = build_inputs.len() as u64;
     let build_done = AtomicU64::new(0);
-    let built_units: Result<Vec<(usize, bool, SourceUnit, super::UnitHir)>, AssemblyError> = pool.install(|| {
+    let built_units: Result<Vec<(usize, bool, SourceUnit, SyntaxIndex)>, AssemblyError> = pool.install(|| {
         build_inputs
             .par_iter()
             .enumerate()
@@ -235,11 +240,11 @@ pub fn assemble_program_with_materializer(
                 let builder = UnitBuilder::new(&project_root_for_pool);
                 let builder = if let Some(build) = salsa_build { builder.with_salsa_build(build) } else { builder };
                 let label = unit_progress_label(&input.path);
-                let result = match builder.build_unit(&input.path, &input.source) {
-                    Ok((unit, hir)) => {
+                let result = match builder.build_unit(&input.path, &input.source, generation) {
+                    Ok((unit, syntax_index)) => {
                         let done = build_done.fetch_add(1, Ordering::Relaxed) + 1;
                         report_progress(pipeline, PROGRAM_ASSEMBLE, done, build_total.max(1), label);
-                        Ok((discovered_index, input.is_entry, unit, hir))
+                        Ok((discovered_index, input.is_entry, unit, syntax_index))
                     }
                     Err(AssemblyError::Parse { path, message }) if options.skip_parse_errors && !input.is_entry => {
                         tracing::warn!(
@@ -268,17 +273,15 @@ pub fn assemble_program_with_materializer(
     let mut built_units = built_units?;
     built_units.sort_by_key(|(index, _, _, _)| *index);
     let mut units = Vec::with_capacity(built_units.len());
-    let mut hir_units_vec = Vec::with_capacity(built_units.len());
+    let mut syntax_indexes = Vec::with_capacity(built_units.len());
     let mut entry_index = 0usize;
-    for (_, is_entry, unit, hir) in built_units {
+    for (_, is_entry, unit, syntax_index) in built_units {
         if is_entry {
             entry_index = units.len();
         }
         units.push(unit);
-        hir_units_vec.push(hir);
+        syntax_indexes.push(syntax_index);
     }
-
-    super::reindex_hir_units_in_place(&mut hir_units_vec);
 
     if units.is_empty() {
         return Err(AssemblyError::EntryNotFound { path: entry_path.to_path_buf() });
@@ -293,17 +296,15 @@ pub fn assemble_program_with_materializer(
     );
     let _ = beskid_artifacts::ArtifactStore::new(&project_root).refresh_manifest();
 
-    let hir_units = Arc::new(hir_units_vec);
-    let prefetch_dependency_roots = options.discovery == AssemblyDiscovery::WorkspaceScan;
-    let module_index =
-        Arc::new(ModuleIndex::build(&units, hir_units.as_ref(), entry_index, &roots, plan, prefetch_dependency_roots));
+    let module_index = Arc::new(ModuleIndex::build(&units, &syntax_indexes, &roots, plan));
 
     let trusted_corelib_service_paths = trusted_corelib_service_paths(plan, workspace, &units);
 
     Ok(ProgramAssembly {
         roots,
         units: Arc::new(units),
-        hir_units,
+        syntax_indexes: Arc::new(syntax_indexes),
+        generation,
         entry_index,
         discovery: options.discovery,
         module_index,

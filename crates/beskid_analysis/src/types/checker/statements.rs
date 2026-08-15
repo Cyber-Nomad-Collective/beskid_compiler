@@ -1,19 +1,19 @@
-use crate::hir::{HirBlock, HirElseBranch, HirExpressionNode, HirIfStatement, HirPrimitiveType, HirStatementNode};
+use crate::syntax::{Block, ElseBranch, Expression, IfStatement, PrimitiveType, Statement};
 use crate::syntax::Spanned;
 
 use super::TypeChecker;
 use crate::types::result::TypeError;
 
 impl<'a> TypeChecker<'a> {
-    pub(super) fn type_block_inner(&mut self, block: &Spanned<HirBlock>) {
+    pub(super) fn type_block_inner(&mut self, block: &Spanned<Block>) {
         for statement in &block.node.statements {
             self.type_statement(statement);
         }
     }
 
-    pub(super) fn type_statement(&mut self, statement: &Spanned<HirStatementNode>) {
+    pub(super) fn type_statement(&mut self, statement: &Spanned<Statement>) {
         match &statement.node {
-            HirStatementNode::LetStatement(let_stmt) => match &let_stmt.node.type_annotation {
+            Statement::Let(let_stmt) => match &let_stmt.node.type_annotation {
                 Some(ty) => {
                     let expected = self.type_id_for_type(ty);
                     let previous_contextual = self.contextual_expected_type;
@@ -21,10 +21,10 @@ impl<'a> TypeChecker<'a> {
                         self.contextual_expected_type = Some(expected_type);
                     }
                     let actual = match (expected, &let_stmt.node.value.node) {
-                        (Some(expected), HirExpressionNode::LambdaExpression(lambda)) => {
+                        (Some(expected), Expression::Lambda(lambda)) => {
                             self.type_lambda_expression_with_expected(lambda, Some(expected))
                         }
-                        (Some(expected), HirExpressionNode::MatchExpression(match_expr)) => {
+                        (Some(expected), Expression::Match(match_expr)) => {
                             self.type_match_expression_with_expected(match_expr, Some(expected))
                         }
                         (Some(_), _) | (None, _) => {
@@ -54,7 +54,7 @@ impl<'a> TypeChecker<'a> {
                     }
                 }
             },
-            HirStatementNode::ReturnStatement(return_stmt) => {
+            Statement::Return(return_stmt) => {
                 let previous_contextual = self.contextual_expected_type;
                 if let Some(expected) = self.current_return_type {
                     self.contextual_expected_type = Some(expected);
@@ -66,7 +66,7 @@ impl<'a> TypeChecker<'a> {
                         Some(actual) => self.require_same_type(return_stmt.span, expected, actual),
                         None => {
                             if matches!(
-                                self.primitive_type_id(HirPrimitiveType::Unit),
+                                self.primitive_type_id(PrimitiveType::Unit),
                                 Some(unit_id) if expected != unit_id
                             ) {
                                 self.errors.push(TypeError::ReturnTypeMismatch {
@@ -79,34 +79,34 @@ impl<'a> TypeChecker<'a> {
                     }
                 }
             }
-            HirStatementNode::WhileStatement(while_stmt) => {
+            Statement::While(while_stmt) => {
                 self.require_bool(while_stmt.node.condition.span, &while_stmt.node.condition);
                 self.type_block(&while_stmt.node.body);
             }
-            HirStatementNode::ForStatement(for_stmt) => {
+            Statement::For(for_stmt) => {
                 if let Some(type_id) = self.resolve_iterable_item_type(&for_stmt.node.iterable) {
                     self.insert_local_type(for_stmt.node.iterator.span, type_id);
                 }
                 self.type_block(&for_stmt.node.body);
             }
-            HirStatementNode::IfStatement(if_stmt) => {
+            Statement::If(if_stmt) => {
                 self.type_if_statement(if_stmt);
             }
-            HirStatementNode::ExpressionStatement(expr_stmt) => {
+            Statement::Expression(expr_stmt) => {
                 self.type_expression(&expr_stmt.node.expression);
             }
-            HirStatementNode::BreakStatement(_) | HirStatementNode::ContinueStatement(_) => {}
-            HirStatementNode::WithStatement(_) | HirStatementNode::LaunchStatement(_) => {}
+            Statement::Break(_) | Statement::Continue(_) => {}
+            Statement::With(_) | Statement::Launch(_) => {}
         }
     }
 
-    pub(super) fn type_if_statement(&mut self, if_stmt: &Spanned<HirIfStatement>) {
+    pub(super) fn type_if_statement(&mut self, if_stmt: &Spanned<IfStatement>) {
         self.require_bool(if_stmt.node.condition.span, &if_stmt.node.condition);
         self.type_block(&if_stmt.node.then_block);
         if let Some(else_branch) = &if_stmt.node.else_branch {
             match &else_branch.node {
-                HirElseBranch::Block(block) => self.type_block(block),
-                HirElseBranch::If(nested) => self.type_if_statement(nested),
+                ElseBranch::Block(block) => self.type_block(block),
+                ElseBranch::If(nested) => self.type_if_statement(nested),
             }
         }
     }

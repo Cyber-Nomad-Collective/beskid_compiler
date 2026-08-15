@@ -4,23 +4,23 @@ use std::sync::Arc;
 use anyhow::Result;
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::services::{
-    FrontEndOptions, FrontEndTypedResult, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
+    resolved_input_from_plan, synthetic_compile_plan_for_source, FrontEndOptions, FrontEndTypedResult, ResolvedInput,
 };
 #[cfg(test)]
 use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
-use beskid_codegen::CodegenArtifact;
 #[cfg(test)]
-use beskid_codegen::module_emission::{SyntaxModuleItem, lower_syntax_program};
+use beskid_codegen::module_emission::{lower_syntax_program, SyntaxModuleItem};
+use beskid_codegen::CodegenArtifact;
 use beskid_pipeline::PipelineObserver;
 #[cfg(test)]
-use beskid_queries::{AstNodeKey, ProjectSession, build_typed_program, item_signature, reachable_items};
-use beskid_queries::{BeskidDatabase, SemanticTypeId, with_db};
+use beskid_queries::{build_typed_program, item_signature, reachable_items, AstNodeKey, ProjectSession};
+use beskid_queries::{with_db, BeskidDatabase, SemanticTypeId};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
 
-use super::SyntaxEntrypointArtifact;
 #[cfg(test)]
 use super::syntax_queries::{find_syntax_item, syntax_item_name};
+use super::SyntaxEntrypointArtifact;
 
 /// CodegenInput → ISLE artifact prepared for exact-kit JIT compilation.
 #[derive(Debug)]
@@ -31,7 +31,7 @@ pub struct PreparedJitEntrypoint {
     pub target: TargetMetadata,
 }
 
-/// Prepare a no-arg entrypoint through the sole CodegenInput → ISLE route (no HIR/`Lowerable`).
+/// Prepare a no-arg entrypoint through the sole CodegenInput → ISLE route.
 pub fn prepare_jit_entrypoint(source_path: &Path, source: &str, entrypoint: &str) -> Result<PreparedJitEntrypoint> {
     let front = prepare_syntax_front_end(source_path, source)?;
     let target =
@@ -88,13 +88,13 @@ pub(super) fn lower_syntax_entrypoint_from_front_end(
 #[cfg(test)]
 fn lower_syntax_entrypoint(
     db: &mut BeskidDatabase,
-    syntax_assembly: Arc<beskid_analysis::projects::SyntaxProgramAssembly>,
+    syntax_assembly: Arc<beskid_analysis::projects::ProgramAssembly>,
     entrypoint: &str,
     target: beskid_abi::abi_v5::TargetMetadata,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<SyntaxEntrypointArtifact> {
     let entry_path = syntax_assembly.entry_unit().path.clone();
-    let project_root = syntax_assembly.roots().host.source_root.clone();
+    let project_root = syntax_assembly.roots.host.source_root.clone();
     let project =
         ProjectSession::new(db, project_root, entry_path.clone(), "syntax-codegen".into(), "prepared-frontend".into());
     // The prepared frontend assembly is immutable for this JIT request. A fresh local
@@ -104,7 +104,7 @@ fn lower_syntax_entrypoint(
     let typed = build_typed_program(db, project, generation, Arc::clone(&syntax_assembly))
         .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = syntax_assembly
-        .units()
+        .units
         .iter()
         .map(|unit| AstNodeKey {
             unit: beskid_queries::SourceUnitId::new(db, unit.path.clone()),
@@ -168,10 +168,10 @@ pub fn lower_prepared_syntax_entrypoint(
 /// Lower a preassembled syntax entrypoint through the host ISLE boundary.
 ///
 /// Corelib migration gates use this when the generation-safe syntax registry has authority for
-/// a dependency graph that the retired HIR resolver cannot represent. No HIR frontend is
+/// a dependency graph that the retired resolver cannot represent. No legacy frontend is
 /// prepared as a fallback.
 pub fn lower_syntax_assembly_entrypoint(
-    assembly: Arc<beskid_analysis::projects::SyntaxProgramAssembly>,
+    assembly: Arc<beskid_analysis::projects::ProgramAssembly>,
     entrypoint: &str,
     target: beskid_abi::abi_v5::TargetMetadata,
 ) -> Result<beskid_codegen::CodegenArtifact> {
@@ -195,7 +195,7 @@ fn find_syntax_entrypoint(
     input: &beskid_codegen::CodegenInput<'_>,
     entrypoint: &str,
 ) -> Option<AstNodeKey> {
-    input.roots().iter().copied().find_map(|root| find_syntax_item(db, root, entrypoint))
+    input.roots.iter().copied().find_map(|root| find_syntax_item(db, root, entrypoint))
 }
 
 #[cfg(test)]
@@ -208,7 +208,7 @@ fn syntax_item_symbol(
     let unit = input
         .typed_program()
         .assembly
-        .units()
+        .units
         .iter()
         .find(|unit| beskid_queries::SourceUnitId::new(db, unit.path.clone()) == key.unit)?;
     let logical = unit
@@ -223,19 +223,19 @@ fn syntax_item_symbol(
 mod tests {
     use super::*;
     use beskid_analysis::projects::{
-        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
+        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
     };
     use beskid_analysis::services::parse_program_with_source_name;
 
     #[test]
-    fn prepared_syntax_entrypoint_emits_reachable_items_without_hir_lowering() {
+    fn prepared_syntax_entrypoint_emits_reachable_items_from_syntax_facts() {
         let mut db = BeskidDatabase::default();
         let directory = tempfile::tempdir().expect("project").keep();
         let path = directory.join("Main.bd");
         let source = "i32 Echo(i32 value) { return value; } i32 Main() { return Echo(41); }";
         std::fs::write(&path, source).expect("source");
         let program = parse_program_with_source_name(path.to_str().unwrap(), source).expect("parse");
-        let assembly = Arc::new(SyntaxProgramAssembly::new(
+        let assembly = Arc::new(ProgramAssembly::new(
             EffectiveCompilationRoots {
                 host: RootEntry { dependency_name: None, source_root: directory },
                 dependencies: Vec::new(),
@@ -244,7 +244,7 @@ mod tests {
             0,
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
-            false,
+            false, generation
         ));
         let host_triple = match (std::env::consts::ARCH, std::env::consts::OS) {
             ("x86_64", "linux") => "x86_64-unknown-linux-gnu",

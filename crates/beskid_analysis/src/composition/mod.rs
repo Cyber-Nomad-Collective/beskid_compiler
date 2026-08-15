@@ -12,9 +12,10 @@ pub mod resolve_inject;
 pub mod scope_tree;
 pub mod snapshot;
 
-pub use diagnostics::{CompositionIssue, composition_issue_code};
+pub use diagnostics::{composition_issue_code, CompositionIssue};
 pub use model::{
-    BindingPlan, CompositionHost, CompositionScope, Registration, RegistrationKey, RegistrationLifetime, ScopeId,
+    ActivationPlanEntry, BindingPlan, CompositionHost, CompositionScope, PluralPlan, Registration, RegistrationKey,
+    RegistrationLifetime, ScopeId, ServiceSlot,
 };
-pub use pass::{CompositionInput, CompositionResult, resolve_composition};
+pub use pass::{resolve_composition, CompositionInput, CompositionResult};
 pub use snapshot::CompositionSnapshot;

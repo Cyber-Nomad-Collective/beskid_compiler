@@ -8,6 +8,7 @@ default = []
 slow = []
 pckg = ["dep:beskid_pckg"]
 
+
 [dependencies]
 abfall = { path = "../abfall" }
 beskid_pckg = { path = "../beskid_pckg", optional = true }
@@ -23,8 +24,6 @@ beskid_template = { path = "../beskid_template" }
 beskid_tools = { path = "../beskid_tools" }
 tempfile = "3"
 serde_json = "1"
-beskid_runtime = { path = "../beskid_runtime", features = ["metrics", "sched"] }
-beskid_runtime_handlers = { path = "../beskid_runtime_handlers" }
 pest = { workspace = true }
 object = "0.37.3"
 tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "sync"] }

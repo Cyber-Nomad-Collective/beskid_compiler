@@ -3,19 +3,19 @@ use std::collections::{HashMap, HashSet};
 use crate::runtime_kit::JitRuntimeKit;
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
-use beskid_abi::{all_builtin_specs, is_dispatch_symbol};
 use beskid_codegen::cranelift_host::{
-    ExternDeclarationError, HostError, declare_builtin_imports, declare_user_functions,
-    declare_validated_extern_imports, remap_testcase_externals,
+    declare_user_functions, declare_validated_extern_imports, remap_testcase_externals, ExternDeclarationError,
+    HostError,
 };
-use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
+use beskid_codegen::{emit_string_literals, emit_type_descriptors, CodegenArtifact};
 use beskid_pipeline::{
-    PipelineObserver, emit_work_unit, observe_phase_result,
+    emit_work_unit, observe_phase_result,
     phases::{JIT_EMIT, JIT_FINALIZE},
+    PipelineObserver,
 };
 use cranelift_codegen::{ir::ExternalName, settings};
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{FuncId, Linkage, Module, ModuleError, default_libcall_names};
+use cranelift_module::{default_libcall_names, FuncId, Linkage, Module, ModuleError};
 use std::fmt;
 
 /// Failure to build the ISA, declare/define Cranelift module objects, or resolve a symbol name.
@@ -75,9 +75,9 @@ impl From<ExternDeclarationError> for JitError {
 pub struct BeskidJitModule {
     module: JITModule,
     func_ids: HashMap<String, FuncId>,
-    builtins_declared: bool,
     runtime_kit: JitRuntimeKit,
-    exact_symbols: HashSet<String>,
+    kit_exports: HashSet<String>,
+    authorized_user_ffi: HashSet<String>,
     import_allowlist: HashSet<String>,
 }
 
@@ -87,33 +87,28 @@ impl BeskidJitModule {
         prefix: &std::path::Path,
         target: &TargetMetadata,
         profile: RuntimeKitProfile,
-        extras: &[(String, *const u8)],
+        authorized_user_ffi: &[(String, *const u8)],
     ) -> Result<Self, JitError> {
         let runtime = JitRuntimeKit::load(prefix, target, profile).map_err(JitError::RuntimeKit)?;
-        if let Some((name, _)) = extras.iter().find(|(name, _)| runtime.metadata().export_allowlist.contains(name)) {
+        if let Some((name, _)) =
+            authorized_user_ffi.iter().find(|(name, _)| runtime.metadata().export_allowlist.contains(name))
+        {
             return Err(JitError::RuntimeKit(format!(
                 "external symbol `{name}` cannot override an ABI-v5 runtime export"
             )));
         }
+        let kit_exports: HashSet<String> = runtime.symbols().iter().map(|(name, _)| name.clone()).collect();
+        let authorized_user_ffi_names = authorized_user_ffi.iter().map(|(name, _)| name.clone()).collect();
         let mut symbols = runtime.symbols().to_vec();
-        symbols.extend_from_slice(extras);
-        // Soft builtins are process-linked (`beskid_runtime`), not ABI-v5 kit exports.
-        // Validation already allowlists them; Cranelift still needs concrete addresses.
-        let exact_symbols: HashSet<String> = symbols.iter().map(|(name, _)| name.clone()).collect();
+        symbols.extend_from_slice(authorized_user_ffi);
         let import_allowlist: HashSet<String> = runtime.metadata().import_allowlist.iter().cloned().collect();
-        for (name, addr) in process_linked_soft_builtins() {
-            if exact_symbols.contains(&name) {
-                continue;
-            }
-            symbols.push((name, addr));
-        }
         let builder = new_builder(&symbols)?;
         Ok(Self {
             module: JITModule::new(builder),
             func_ids: HashMap::new(),
-            builtins_declared: false,
             runtime_kit: runtime,
-            exact_symbols,
+            kit_exports,
+            authorized_user_ffi: authorized_user_ffi_names,
             import_allowlist,
         })
     }
@@ -134,14 +129,15 @@ impl BeskidJitModule {
         artifact: &CodegenArtifact,
         pipeline: Option<&dyn PipelineObserver>,
     ) -> Result<(), JitError> {
-        validate_exact_symbol_references(artifact, &self.exact_symbols, &self.import_allowlist)?;
-        if !self.builtins_declared {
-            declare_builtin_imports(&mut self.module, &mut self.func_ids)?;
-            self.builtins_declared = true;
-        }
+        validate_exact_symbol_references(
+            artifact,
+            &self.kit_exports,
+            &self.authorized_user_ffi,
+            &self.import_allowlist,
+        )?;
 
         declare_user_functions(&mut self.module, artifact, Linkage::Local, &mut self.func_ids)?;
-        declare_exact_runtime_imports(&mut self.module, artifact, &self.exact_symbols, &mut self.func_ids)?;
+        declare_exact_runtime_imports(&mut self.module, artifact, &self.kit_exports, &mut self.func_ids)?;
         declare_validated_extern_imports(&mut self.module, artifact, &mut self.func_ids)?;
         declare_import_allowlist_symbols(&mut self.module, artifact, &self.import_allowlist, &mut self.func_ids)?;
 
@@ -175,7 +171,7 @@ impl BeskidJitModule {
 
     /// True only for an address loaded from this exact validated runtime kit.
     pub fn is_exact_runtime_symbol(&self, symbol: &str) -> bool {
-        self.exact_symbols.contains(symbol)
+        self.kit_exports.contains(symbol)
     }
 
     /// Executable address after [`JITModule::finalize_definitions`]; undefined if not finalized.
@@ -248,7 +244,8 @@ fn declare_import_allowlist_symbols(
 
 fn validate_exact_symbol_references(
     artifact: &CodegenArtifact,
-    approved: &HashSet<String>,
+    kit_exports: &HashSet<String>,
+    authorized_user_ffi: &HashSet<String>,
     imports: &HashSet<String>,
 ) -> Result<(), JitError> {
     let defined = artifact.functions.iter().map(|function| function.name.as_str()).collect::<HashSet<_>>();
@@ -258,13 +255,10 @@ fn validate_exact_symbol_references(
                 continue;
             };
             let symbol = String::from_utf8_lossy(name.raw());
-            // Soft builtins (`interop_dispatch_*`, `panic_str`, syscalls, …) are declared via
-            // `declare_builtin_imports` from process-linked `beskid_runtime`, not the ABI-v5 kit
-            // export allowlist. Match AOT `linking::validate::is_runtime_builtin`.
             if defined.contains(symbol.as_ref())
-                || approved.contains(symbol.as_ref())
+                || kit_exports.contains(symbol.as_ref())
+                || authorized_user_ffi.contains(symbol.as_ref())
                 || imports.contains(symbol.as_ref())
-                || is_runtime_builtin(symbol.as_ref())
             {
                 continue;
             }
@@ -274,63 +268,6 @@ fn validate_exact_symbol_references(
         }
     }
     Ok(())
-}
-
-fn is_runtime_builtin(symbol: &str) -> bool {
-    all_builtin_specs().any(|spec| spec.symbol == symbol) || is_dispatch_symbol(symbol)
-}
-
-/// Addresses for soft builtins declared by [`declare_builtin_imports`].
-///
-/// Exact ABI-v5 kit dylibs export only `beskid_rt_v5_*` symbols. Soft builtins such as
-/// `interop_dispatch_*` / `panic_str` live in process-linked `beskid_runtime` and must be
-/// registered on the JIT builder or Cranelift fails with `can't resolve symbol`.
-fn process_linked_soft_builtins() -> Vec<(String, *const u8)> {
-    // Keep this process-linked compatibility list in sync with `BUILTIN_SPECS`.
-    vec![
-        ("alloc".into(), beskid_runtime::alloc as *const u8),
-        ("beskid_register_callbacks".into(), beskid_runtime::beskid_register_callbacks as *const u8),
-        ("beskid_register_handlers".into(), beskid_runtime::beskid_register_handlers as *const u8),
-        ("beskid_runtime_abi_version".into(), beskid_runtime::beskid_runtime_abi_version as *const u8),
-        ("composition_bind_plural".into(), beskid_runtime::composition_bind_plural as *const u8),
-        ("composition_container_create".into(), beskid_runtime::composition_container_create as *const u8),
-        ("composition_container_drop".into(), beskid_runtime::composition_container_drop as *const u8),
-        ("composition_launch".into(), beskid_runtime::composition_launch as *const u8),
-        ("composition_register".into(), beskid_runtime::composition_register as *const u8),
-        ("composition_resolve".into(), beskid_runtime::composition_resolve as *const u8),
-        ("composition_resolve_plural".into(), beskid_runtime::composition_resolve_plural as *const u8),
-        ("composition_scope_depth".into(), beskid_runtime::composition_scope_depth as *const u8),
-        ("composition_scope_enter".into(), beskid_runtime::composition_scope_enter as *const u8),
-        ("composition_scope_leave".into(), beskid_runtime::composition_scope_leave as *const u8),
-        ("composition_shutdown".into(), beskid_runtime::composition_shutdown as *const u8),
-        ("dynamic_cast_checked".into(), beskid_runtime::dynamic_cast_checked as *const u8),
-        ("dynamic_cell_create".into(), beskid_runtime::dynamic_cell_create as *const u8),
-        ("dynamic_cell_wrap".into(), beskid_runtime::dynamic_cell_wrap as *const u8),
-        ("dynamic_map_aot".into(), beskid_runtime::dynamic_map_aot as *const u8),
-        ("dynamic_map_fallback".into(), beskid_runtime::dynamic_map_fallback as *const u8),
-        ("dynamic_object_alloc".into(), beskid_runtime::dynamic_object_alloc as *const u8),
-        ("fiber_yield".into(), beskid_runtime::fiber_yield as *const u8),
-        ("gc_register_root".into(), beskid_runtime::gc_register_root as *const u8),
-        ("gc_root_handle".into(), beskid_runtime::gc_root_handle as *const u8),
-        ("gc_unregister_root".into(), beskid_runtime::gc_unregister_root as *const u8),
-        ("gc_unroot_handle".into(), beskid_runtime::gc_unroot_handle as *const u8),
-        ("gc_write_barrier".into(), beskid_runtime::gc_write_barrier as *const u8),
-        ("math_ceil".into(), beskid_runtime::builtins::math_ceil as *const u8),
-        ("math_floor".into(), beskid_runtime::builtins::math_floor as *const u8),
-        ("math_log".into(), beskid_runtime::builtins::math_log as *const u8),
-        ("math_sqrt".into(), beskid_runtime::builtins::math_sqrt as *const u8),
-        ("interop_dispatch_ptr".into(), beskid_runtime::interop_dispatch_ptr as *const u8),
-        ("interop_dispatch_unit".into(), beskid_runtime::interop_dispatch_unit as *const u8),
-        ("interop_dispatch_usize".into(), beskid_runtime::interop_dispatch_usize as *const u8),
-        ("interop_dispatch_i64".into(), beskid_runtime::interop_dispatch_i64 as *const u8),
-        ("panic".into(), beskid_runtime::panic as *const u8),
-        ("panic_str".into(), beskid_runtime::panic_str as *const u8),
-        ("syscall_read".into(), beskid_runtime::builtins::syscall_read as *const u8),
-        ("syscall_read_bytes".into(), beskid_runtime::builtins::syscall_read_bytes as *const u8),
-        ("syscall_write".into(), beskid_runtime::syscall_write as *const u8),
-        ("syscall_write_bytes".into(), beskid_runtime::builtins::syscall_write_bytes as *const u8),
-        ("runtime_preempt_check".into(), beskid_runtime::runtime_preempt_check as *const u8),
-    ]
 }
 
 fn new_builder(extras: &[(String, *const u8)]) -> Result<JITBuilder, JitError> {

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::hir::HirProgram;
+use crate::syntax::Program;
 use crate::syntax::Spanned;
 
 use super::super::errors::ResolveResult;
@@ -13,7 +13,7 @@ use super::super::symbol::{SymbolId, SymbolRegistry};
 use super::super::tables::ResolutionTables;
 
 impl Resolver {
-    pub fn resolve_program(&mut self, program: &Spanned<HirProgram>) -> ResolveResult<Resolution> {
+    pub fn resolve_program(&mut self, program: &Spanned<Program>) -> ResolveResult<Resolution> {
         self.tables = ResolutionTables::new();
         self.local_scopes.clear();
         self.generic_scopes.clear();
@@ -24,7 +24,7 @@ impl Resolver {
         self.resolve_collected_program(program)
     }
 
-    pub fn resolve_collected_program(&mut self, program: &Spanned<HirProgram>) -> ResolveResult<Resolution> {
+    pub fn resolve_collected_program(&mut self, program: &Spanned<Program>) -> ResolveResult<Resolution> {
         let file_scoped_module_index = resolver::file_scoped_module_index(program);
         self.current_module = resolver::file_scoped_module_path(program)
             .map(|path| self.module_graph.ensure_module_path(&path))
@@ -41,7 +41,7 @@ impl Resolver {
 
     pub fn resolve_collected_program_for_api_documentation(
         &mut self,
-        program: &Spanned<HirProgram>,
+        program: &Spanned<Program>,
         logical_module_path: Option<&[String]>,
     ) -> Resolution {
         let file_scoped_module_index = resolver::file_scoped_module_index(program);

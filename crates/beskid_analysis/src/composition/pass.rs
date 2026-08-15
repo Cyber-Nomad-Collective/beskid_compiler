@@ -7,14 +7,14 @@ use super::container::ServiceContainer;
 use super::diagnostics::CompositionIssue;
 use super::graph::{build_graph, topo_registration_order};
 use super::host_chain::{build_host_chain, merge_host_registries, resolve_host_key};
-use super::model::BindingPlan;
+use super::model::{ActivationPlanEntry, BindingPlan, PluralPlan, ServiceSlot};
 use super::resolve_inject::resolve_dependency_targets;
 use super::scope_tree::{merge_host_scopes, scope_parent_map, validate_scope_tree};
 use super::snapshot::CompositionSnapshot;
 
 #[derive(Clone)]
 pub struct CompositionInput<'a> {
-    /// Expanded syntax is the composition authority; this pass does not require HIR.
+    /// Expanded syntax is the composition authority; this pass does not require syntax.
     pub program: &'a Spanned<Program>,
     pub is_mod_project: bool,
 }
@@ -89,7 +89,7 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
         merged_registrations.iter().map(|registration| (registration.id, registration.scope_id)).collect();
 
     let mut edges = Vec::new();
-    let mut plural_bindings = HashMap::new();
+    let mut plural_registration_ids = HashMap::new();
     for request in requests {
         let request_scope = registration_scope
             .get(&request.owner_registration_id)
@@ -102,8 +102,10 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
                     edges.push((target.id, request.owner_registration_id));
                 }
                 if request.is_plural {
-                    plural_bindings
-                        .insert(request.owner_registration_id, targets.iter().map(|target| target.id).collect());
+                    plural_registration_ids.insert(
+                        request.owner_registration_id,
+                        targets.iter().map(|target| target.id).collect::<Vec<_>>(),
+                    );
                 }
             }
             Err(issue) => issues.push(issue),
@@ -123,6 +125,24 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
         .map(|host| host.name.clone())
         .unwrap_or_else(|| resolve_host_key(&collected.hosts, &launch_host).unwrap_or(launch_host));
 
+    let activation = registration_order
+        .into_iter()
+        .enumerate()
+        .map(|(slot, registration_id)| ActivationPlanEntry {
+            registration_id,
+            slot: ServiceSlot(u32::try_from(slot).expect("composition registration count exceeds u32")),
+        })
+        .collect::<Vec<_>>();
+    let slots = activation.iter().map(|entry| (entry.registration_id, entry.slot)).collect::<HashMap<_, _>>();
+    let mut plurals = plural_registration_ids
+        .into_iter()
+        .map(|(owner_registration_id, targets)| PluralPlan {
+            owner_registration_id,
+            target_slots: targets.into_iter().map(|target| slots[&target]).collect(),
+        })
+        .collect::<Vec<_>>();
+    plurals.sort_by_key(|plural| plural.owner_registration_id);
+
     let scope_names = merged_scopes.iter().map(|scope| (scope.id, scope.name.clone())).collect();
     let snapshot = CompositionSnapshot {
         version: 1,
@@ -131,14 +151,14 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
         registrations: merged_registrations.clone(),
         scope_names,
     };
-    let plan = BindingPlan { registration_order, plural_bindings, scope_parents };
+    let plan = BindingPlan { activation, plurals, scope_parents };
 
     CompositionResult { plan, snapshot, issues, dependency_edges: edges }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{CompositionInput, resolve_composition};
+    use super::{resolve_composition, CompositionInput};
     use crate::services::parse_program;
 
     #[test]
@@ -162,6 +182,10 @@ i32 Main() {
         let result = resolve_composition(CompositionInput { program: &program, is_mod_project: false });
 
         assert_eq!(result.snapshot.launched_host, "AppHost");
+        assert_eq!(result.plan.activation.len(), 1);
+        assert_eq!(result.plan.activation[0].registration_id, result.snapshot.registrations[0].id);
+        assert_eq!(result.plan.activation[0].slot.0, 0);
+        assert!(result.plan.plurals.is_empty());
         assert!(result.issues.is_empty(), "issues: {:?}", result.issues);
     }
 }

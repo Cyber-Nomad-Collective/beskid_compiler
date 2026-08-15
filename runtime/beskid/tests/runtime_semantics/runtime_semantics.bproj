@@ -1,0 +1,35 @@
+runtime_semantics_tests {
+  name = "runtime_semantics_tests"
+  version = "0.1.0"
+  root = "src"
+}
+
+dependency "beskid-runtime-native" {
+  source = "path"
+  path = "../.."
+}
+
+target "LifecycleTests" {
+  kind = Lib
+  entry = "LifecycleTests.bd"
+}
+
+target "CompositionTests" {
+  kind = Lib
+  entry = "CompositionTests.bd"
+}
+
+target "SchedulerTests" {
+  kind = Lib
+  entry = "SchedulerTests.bd"
+}
+
+target "GcTests" {
+  kind = Lib
+  entry = "GcTests.bd"
+}
+
+target "ProcessIoTests" {
+  kind = Lib
+  entry = "ProcessIoTests.bd"
+}

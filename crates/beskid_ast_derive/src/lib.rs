@@ -1,12 +1,12 @@
-//! Proc-macros for Beskid compiler internal AST/HIR query traits and phased syntax lowering.
+//! Proc-macros for Beskid compiler syntax-query traits and phased syntax lowering.
 //!
 //! - `beskid_reflect`: no-op attribute consumed by `beskid_ast_reflect_gen`.
-//! - `AstNode` / `HirNode`: derive `children` and `node_kind` for tree walk APIs in the consumer crate.
+//! - `AstNode`: derive `children` and `node_kind` for syntax tree-walk APIs in the consumer crate.
 //! - `PhaseFromAst`: derive `From<Spanned<Source>> for Spanned<Target>` for pipeline structs.
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Attribute, Data, DeriveInput, Fields, GenericArgument, LitStr, PathArguments, Type, parse_macro_input};
+use syn::{parse_macro_input, Attribute, Data, DeriveInput, Fields, GenericArgument, LitStr, PathArguments, Type};
 
 /// Marker attribute consumed by `beskid_ast_reflect_gen` when emitting Mod SDK `.bd` mirrors.
 /// Expands to its input unchanged.
@@ -23,17 +23,6 @@ pub fn derive_ast_node(input: TokenStream) -> TokenStream {
         quote! { crate::syntax_query::AstNode },
         quote! { crate::syntax_query::DynNodeRef },
         quote! { crate::syntax_query::NodeKind },
-    )
-}
-
-/// Derive `HirNode` with the same field wiring as [`derive_ast_node`].
-#[proc_macro_derive(HirNode, attributes(ast))]
-pub fn derive_hir_node(input: TokenStream) -> TokenStream {
-    derive_node_impl(
-        input,
-        quote! { crate::syntax_query::HirNode },
-        quote! { crate::syntax_query::HirNodeRef },
-        quote! { crate::syntax_query::HirNodeKind },
     )
 }
 

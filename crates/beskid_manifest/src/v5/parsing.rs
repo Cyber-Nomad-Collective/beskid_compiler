@@ -5,7 +5,7 @@ use bsol::{BsolBlock, BsolItem, BsolListItem, BsolValue, parse_bsol_document};
 use super::model::{
     AssemblyV5, AuditV5, CorelibServiceV5, EntryAdapterV5, FieldV5, FunctionV5, IntrinsicV5, LayoutV5,
     ParameterLocationV5, ParameterV5, PlatformImportV5, RuntimeManifestV5, RuntimeMetaV5, SoftBuiltinV5,
-    TargetAdapterBindingV5, TargetV5, TrapV5,
+    StatusV5, StatusValueV5, TargetAdapterBindingV5, TargetV5, TrapV5,
 };
 use super::validation::validate;
 
@@ -23,6 +23,7 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         "entry_adapter",
         "assembly",
         "trap",
+        "status",
         "audit",
     ];
     if let Some(block) = document.blocks.iter().find(|block| !allowed_blocks.contains(&block.kind.as_str())) {
@@ -38,6 +39,7 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
             "runtime_package",
             "trap_exit_status",
             "trap_diagnostic",
+            "build_profiles",
         ],
     )?;
     let meta = RuntimeMetaV5 {
@@ -48,8 +50,8 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         trap_exit_status: u32_field(manifest, "trap_exit_status")?,
         trap_diagnostic: string_field(manifest, "trap_diagnostic")?,
     };
-    if meta.abi_version != 5 || meta.schema_version != 1 {
-        return Err("runtime manifest must be ABI 5 schema 1".into());
+    if meta.abi_version != 5 || meta.schema_version != 2 {
+        return Err("runtime manifest must be ABI 5 schema 2".into());
     }
     let targets = blocks(&document.blocks, "target")
         .map(|block| {
@@ -85,13 +87,15 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         .collect::<Result<Vec<_>, _>>()?;
     let intrinsics = blocks(&document.blocks, "intrinsic")
         .map(|block| {
-            ensure_fields(block, &["symbol", "capability", "params", "returns"])?;
+            ensure_fields(block, &["symbol", "capability", "params", "returns", "result_status", "target_bindings"])?;
             Ok(IntrinsicV5 {
                 name: label(block)?,
                 symbol: string_field(block, "symbol")?,
                 capability: string_field(block, "capability")?,
                 params: parameters(block, "params")?,
                 result: string_field(block, "returns")?,
+                result_status: optional_string_field(block, "result_status")?,
+                target_bindings: target_adapter_bindings(block)?,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -108,13 +112,14 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         .collect::<Result<Vec<_>, String>>()?;
     let layouts = blocks(&document.blocks, "layout")
         .map(|block| {
-            ensure_fields(block, &["target", "size", "alignment", "fields"])?;
+            ensure_fields(block, &["target", "size", "alignment", "fields", "project_to_runtime"])?;
             Ok(LayoutV5 {
                 name: label(block)?,
                 target: optional_string_field(block, "target")?,
                 size: u64_field(block, "size")?,
                 alignment: u64_field(block, "alignment")?,
                 fields: fields(block)?,
+                project_to_runtime: optional_string_field(block, "project_to_runtime")?,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -179,6 +184,25 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
             Ok(TrapV5 { name: label(block)?, code: u32_field(block, "code")? })
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let statuses = blocks(&document.blocks, "status")
+        .map(|block| {
+            ensure_fields(block, &["repr", "values"])?;
+            let values = list_items(block, "values")?
+                .iter()
+                .map(|item| match item {
+                    BsolListItem::InlineMap(map) => {
+                        ensure_map_fields(map, &["name", "value"])?;
+                        Ok(StatusValueV5 {
+                            name: map_string(map, "name")?,
+                            value: map_string(map, "value")?.parse().map_err(|_| "status value must be integer")?,
+                        })
+                    }
+                    _ => Err("status values entries must be inline maps".into()),
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            Ok(StatusV5 { name: label(block)?, repr: string_field(block, "repr")?, values })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let audit_block = one(&document.blocks, "audit")?;
     ensure_fields(audit_block, &["forbidden_symbol_families"])?;
     let audit = AuditV5 { forbidden_symbol_families: list_field(audit_block, "forbidden_symbol_families")? };
@@ -194,6 +218,7 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         entry_adapters,
         assembly,
         traps,
+        statuses,
         audit,
     };
     validate(&result)?;
@@ -297,7 +322,10 @@ fn parameters(block: &BsolBlock, key: &str) -> Result<Vec<ParameterV5>, String> 
 }
 
 fn target_adapter_bindings(block: &BsolBlock) -> Result<Vec<TargetAdapterBindingV5>, String> {
-    list_items(block, "target_bindings")?
+    let Some(items) = optional_list_items(block, "target_bindings")? else {
+        return Ok(Vec::new());
+    };
+    items
         .iter()
         .map(|item| match item {
             BsolListItem::InlineMap(map) => {
@@ -311,6 +339,22 @@ fn target_adapter_bindings(block: &BsolBlock) -> Result<Vec<TargetAdapterBinding
             _ => Err("`target_bindings` entries must be inline maps".into()),
         })
         .collect()
+}
+
+fn optional_list_items<'a>(
+    block: &'a BsolBlock,
+    key: &str,
+) -> Result<Option<&'a [BsolListItem]>, String> {
+    let Some(BsolItem::Assignment(assignment)) = block.items.iter().find_map(|item| match item {
+        BsolItem::Assignment(entry) if entry.key == key => Some(item),
+        _ => None,
+    }) else {
+        return Ok(None);
+    };
+    let BsolValue::BracketList(list) = &assignment.value else {
+        return Err(format!("`{key}` must be a list"));
+    };
+    Ok(Some(&list.items))
 }
 fn fields(block: &BsolBlock) -> Result<Vec<FieldV5>, String> {
     list_items(block, "fields")?

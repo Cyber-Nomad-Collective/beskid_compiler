@@ -1,7 +1,7 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
     EffectiveCompilationRoots, ModuleIndex, NodeFacts, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
-    SyntaxGenerationId, SyntaxModuleItem, SyntaxProgramAssembly, TargetMetadata, build_typed_program, emit_isle_item,
+    SyntaxGenerationId, SyntaxModuleItem, ProgramAssembly, TargetMetadata, build_typed_program, emit_isle_item,
     find_function_definition, find_function_definitions, find_node, find_test_definition, isa, item_fixture,
     item_fixture_with_root, lower_syntax_program, mutable_local_assignment, named_function, node_kind,
     parse_program_with_source_name, settings, test_statement_nodes,
@@ -18,7 +18,7 @@ fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
     let entry = SourceUnitId::new(&db, source_path.clone());
     let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
     let generation = SyntaxGenerationId(1);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
@@ -27,7 +27,7 @@ fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
@@ -99,7 +99,7 @@ fn parsed_local_read_emits_verified_isle_clif_without_lowerable() {
     let entry = SourceUnitId::new(&db, source_path.clone());
     let project = ProjectSession::new(&db, directory.clone(), source_path.clone(), "App".into(), "lock".into());
     let generation = SyntaxGenerationId(1);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: directory },
             dependencies: Vec::new(),
@@ -108,7 +108,7 @@ fn parsed_local_read_emits_verified_isle_clif_without_lowerable() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
@@ -225,42 +225,6 @@ fn parsed_syntax_string_literal_materializes_runtime_string_abi() {
         .expect("syntax string literal lowers through runtime ABI materialization");
 
     let clif = artifact.functions[0].function.display().to_string();
-    let str_new =
-        beskid_abi::dispatch_route_for_symbol(beskid_abi::SYM_STR_NEW).expect("generated str_new dispatch route");
-    assert_eq!(str_new.tag, beskid_abi::TAG_STR_NEW);
-    assert!(
-        clif.contains("interop_dispatch_ptr"),
-        "syntax string literals must call TAG_STR_NEW before their pointer escapes: {clif}",
-    );
-    assert!(
-        clif.contains(&format!("iconst.i32 {}", str_new.tag)),
-        "string materialization must use TAG_STR_NEW: {clif}",
-    );
-    let byte_len = clif
-        .lines()
-        .find_map(|line| {
-            let line = line.trim();
-            line.contains(" = iconst.i64 6").then(|| line.split_once(" = ").map(|(value, _)| value))?
-        })
-        .expect("three UTF-8 e-acute scalars must materialize as six bytes");
-    assert!(
-        clif.lines().any(|line| line.trim().starts_with(&format!("store {byte_len}, ")) && line.contains("+24")),
-        "UTF-8 byte length must occupy str_new's second payload slot: {clif}",
-    );
-    let dispatch_ref = clif
-        .lines()
-        .find_map(|line| line.contains("%interop_dispatch_ptr").then(|| line.split_whitespace().next())?)
-        .expect("pointer dispatch function reference");
-    let dispatch_result = clif
-        .lines()
-        .find_map(|line| {
-            let line = line.trim();
-            line.contains(&format!(" = call {dispatch_ref}("))
-                .then(|| line.split_once(" = ").map(|(value, _)| value))?
-        })
-        .expect("str_new pointer dispatch result");
-    assert!(
-        clif.lines().any(|line| line.trim() == format!("return {dispatch_result}")),
-        "the raw literal pointer must not escape instead of the str_new result: {clif}",
-    );
+    assert!(clif.contains("str_new"), "syntax string literals must call the exact Corelib service: {clif}");
+    assert!(clif.contains("iconst.i64 6"), "three UTF-8 e-acute scalars must materialize as six bytes: {clif}");
 }

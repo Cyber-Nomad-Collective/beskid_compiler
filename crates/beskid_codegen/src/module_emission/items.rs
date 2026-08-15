@@ -3,7 +3,7 @@ use beskid_queries::{GenericSpecializationInstance, SourceUnitId, item_name};
 
 use crate::CodegenInput;
 
-/// One syntax item declared and defined through the HIR-free ISLE boundary.
+/// One syntax item declared and defined through the generated ISLE boundary.
 #[derive(Debug, Clone)]
 pub struct SyntaxModuleItem {
     pub key: AstNodeKey,
@@ -26,7 +26,7 @@ pub(super) fn syntax_item_symbol(input: &CodegenInput<'_>, key: AstNodeKey) -> O
     let unit = input
         .typed_program()
         .assembly
-        .units()
+        .units
         .iter()
         .find(|unit| SourceUnitId::new(input.database(), unit.path.clone()) == key.unit)?;
     let logical = unit

@@ -1,6 +1,4 @@
-//! Syntax and HIR tree walks: [`Query`] / [`Walker`](walker::AstWalker), [`Visit`](visit::Visit), and kind enums.
-//!
-//! The [`node_kinds!`] macro defines [`NodeKind`] and [`HirNodeKind`] for type-filtered traversal.
+//! Expanded syntax tree queries, traversal, snapshots, and generation-bound indexing.
 
 #[macro_export]
 macro_rules! node_kinds {
@@ -117,100 +115,11 @@ node_kinds!(
     MacroMetavariable,
 );
 
-node_kinds!(
-    HirNodeKind;
-    Program,
-    Module,
-    Item,
-    FunctionDefinition,
-    HostDefinition,
-    HostBodyItem,
-    RegistryBlock,
-    RegistryEntry,
-    ScopeDefinition,
-    ScopeHook,
-    MethodDefinition,
-    ExtendTypeDefinition,
-    TypeDefinition,
-    EnumDefinition,
-    EnumVariant,
-    ContractDefinition,
-    TestDefinition,
-    TestMetaSection,
-    TestMetadataEntry,
-    TestSkipSection,
-    TestSkipEntry,
-    ContractNode,
-    ContractMethodSignature,
-    ContractEmbedding,
-    Attribute,
-    AttributeDeclaration,
-    AttributeTarget,
-    AttributeParameter,
-    AttributeArgument,
-    ModuleDeclaration,
-    InlineModule,
-    UseDeclaration,
-    Block,
-    Statement,
-    LetStatement,
-    ReturnStatement,
-    BreakStatement,
-    ContinueStatement,
-    WhileStatement,
-    ForStatement,
-    IfStatement,
-    ElseBranch,
-    ExpressionStatement,
-    RangeExpression,
-    Expression,
-    AssignExpression,
-    BinaryExpression,
-    BinaryOp,
-    UnaryExpression,
-    UnaryOp,
-    CallExpression,
-    MemberExpression,
-    LiteralExpression,
-    PathExpression,
-    StructLiteralExpression,
-    IndexExpression,
-    ArrayLiteralExpression,
-    EnumConstructorExpression,
-    BlockExpression,
-    ClifBlockExpression,
-    GroupedExpression,
-    TryExpression,
-    SpawnExpression,
-    LambdaExpression,
-    LambdaParameter,
-    MatchExpression,
-    MatchArm,
-    Pattern,
-    EnumPattern,
-    Literal,
-    Identifier,
-    Type,
-    Path,
-    PathSegment,
-    EnumPath,
-    Field,
-    Parameter,
-    PrimitiveType,
-    StructLiteralField,
-    Visibility,
-);
-
 mod ancestors;
 mod ast_node;
 mod descendants;
 mod dyn_node_ref;
-mod hir_descendants;
-mod hir_node;
-mod hir_node_ref;
-mod hir_query;
-mod hir_visit;
-mod hir_walker;
+
 mod query;
 mod syntax_index;
 mod syntax_snapshot;
@@ -222,12 +131,7 @@ pub use ancestors::Ancestors;
 pub use ast_node::{AstNode, NodeRef};
 pub use descendants::Descendants;
 pub use dyn_node_ref::DynNodeRef;
-pub use hir_descendants::HirDescendants;
-pub use hir_node::HirNode;
-pub use hir_node_ref::HirNodeRef;
-pub use hir_query::HirQuery;
-pub use hir_visit::HirVisit;
-pub use hir_walker::HirWalker;
+
 pub use query::Query;
 pub use syntax_index::{SyntaxIndex, SyntaxNodeMetadata};
 pub use syntax_snapshot::{SyntaxNodeId, SyntaxSnapshot};

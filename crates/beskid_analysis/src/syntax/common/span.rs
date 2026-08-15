@@ -79,20 +79,20 @@ pub trait HasSpan {
     fn span(&self) -> &SpanInfo;
 }
 
-use crate::resolve::HirNodeId;
+use crate::syntax::AstNodeId;
 
-/// AST node bundled with its source span and stable [`HirNodeId`].
+/// Syntax node bundled with its source span and dense expanded-tree identity.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Spanned<T> {
     pub node: T,
     pub span: SpanInfo,
-    pub id: HirNodeId,
+    pub id: AstNodeId,
 }
 
 impl<T> Spanned<T> {
     /// Wraps `node` with `span` and an unset node id.
     pub fn new(node: T, span: SpanInfo) -> Self {
-        Self { node, span, id: HirNodeId::INVALID }
+        Self { node, span, id: AstNodeId::INVALID }
     }
 }
 

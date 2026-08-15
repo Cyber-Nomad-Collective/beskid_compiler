@@ -1,5 +1,5 @@
-use crate::hir::{
-    HirBinaryExpression, HirBinaryOp, HirLiteral, HirPrimitiveType, HirUnaryExpression, HirUnaryOp,
+use crate::syntax::{
+    BinaryExpression, BinaryOp, Literal, PrimitiveType, UnaryExpression, UnaryOp,
     integer_literal_primitive_type,
 };
 use crate::syntax::Spanned;
@@ -11,16 +11,16 @@ use super::super::TypeChecker;
 impl<'a> TypeChecker<'a> {
     pub(in crate::types::checker) fn type_binary_expression(
         &mut self,
-        binary: &Spanned<HirBinaryExpression>,
+        binary: &Spanned<BinaryExpression>,
     ) -> Option<TypeId> {
         let left = self.type_expression(&binary.node.left);
         let right = self.type_expression(&binary.node.right);
 
-        if matches!(binary.node.op.node, HirBinaryOp::Add) {
+        if matches!(binary.node.op.node, BinaryOp::Add) {
             let string_add = left.is_some_and(|type_id| self.is_string(type_id))
                 || right.is_some_and(|type_id| self.is_string(type_id));
             if string_add {
-                return self.primitive_type_id(HirPrimitiveType::String);
+                return self.primitive_type_id(PrimitiveType::String);
             }
         }
 
@@ -33,7 +33,7 @@ impl<'a> TypeChecker<'a> {
             return None;
         }
         match binary.node.op.node {
-            HirBinaryOp::Or | HirBinaryOp::And => {
+            BinaryOp::Or | BinaryOp::And => {
                 if self.is_bool(left) {
                     Some(left)
                 } else {
@@ -41,11 +41,11 @@ impl<'a> TypeChecker<'a> {
                     None
                 }
             }
-            HirBinaryOp::BitAnd | HirBinaryOp::BitOr | HirBinaryOp::Shl | HirBinaryOp::Shr => {
+            BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::Shl | BinaryOp::Shr => {
                 if matches!(
                     self.type_table.get(left),
                     Some(TypeInfo::Primitive(
-                        HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8 | HirPrimitiveType::Word
+                        PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U8 | PrimitiveType::Word
                     ))
                 ) {
                     Some(left)
@@ -54,23 +54,23 @@ impl<'a> TypeChecker<'a> {
                     None
                 }
             }
-            HirBinaryOp::IdentityEq | HirBinaryOp::IdentityNotEq => {
+            BinaryOp::IdentityEq | BinaryOp::IdentityNotEq => {
                 if self.is_identity_comparable(left) {
-                    self.primitive_type_id(HirPrimitiveType::Bool)
+                    self.primitive_type_id(PrimitiveType::Bool)
                 } else {
                     self.errors.push(TypeError::InvalidBinaryOp { span: binary.span });
                     None
                 }
             }
-            HirBinaryOp::Eq
-            | HirBinaryOp::NotEq
-            | HirBinaryOp::Lt
-            | HirBinaryOp::Lte
-            | HirBinaryOp::Gt
-            | HirBinaryOp::Gte => {
+            BinaryOp::Eq
+            | BinaryOp::NotEq
+            | BinaryOp::Lt
+            | BinaryOp::Lte
+            | BinaryOp::Gt
+            | BinaryOp::Gte => {
                 let ordering = matches!(
                     binary.node.op.node,
-                    HirBinaryOp::Lt | HirBinaryOp::Lte | HirBinaryOp::Gt | HirBinaryOp::Gte
+                    BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte
                 );
                 let comparable = if ordering {
                     self.is_comparable(left)
@@ -80,17 +80,17 @@ impl<'a> TypeChecker<'a> {
                     left == right && self.is_identity_comparable(left)
                 };
                 if comparable {
-                    self.primitive_type_id(HirPrimitiveType::Bool)
+                    self.primitive_type_id(PrimitiveType::Bool)
                 } else {
                     self.errors.push(TypeError::InvalidBinaryOp { span: binary.span });
                     None
                 }
             }
-            HirBinaryOp::Add => {
+            BinaryOp::Add => {
                 if self.is_numeric(left)
                     || matches!(
                         self.type_table.get(left),
-                        Some(crate::types::TypeInfo::Primitive(HirPrimitiveType::String))
+                        Some(crate::types::TypeInfo::Primitive(PrimitiveType::String))
                     )
                 {
                     Some(left)
@@ -99,7 +99,7 @@ impl<'a> TypeChecker<'a> {
                     None
                 }
             }
-            HirBinaryOp::Sub | HirBinaryOp::Mul | HirBinaryOp::Div | HirBinaryOp::Mod => {
+            BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
                 if self.is_numeric(left) {
                     Some(left)
                 } else {
@@ -112,11 +112,11 @@ impl<'a> TypeChecker<'a> {
 
     pub(in crate::types::checker) fn type_unary_expression(
         &mut self,
-        unary: &Spanned<HirUnaryExpression>,
+        unary: &Spanned<UnaryExpression>,
     ) -> Option<TypeId> {
         let expr = self.type_expression(&unary.node.expr)?;
         match unary.node.op.node {
-            HirUnaryOp::Neg => {
+            UnaryOp::Neg => {
                 if self.is_numeric(expr) {
                     Some(expr)
                 } else {
@@ -124,7 +124,7 @@ impl<'a> TypeChecker<'a> {
                     None
                 }
             }
-            HirUnaryOp::Not => {
+            UnaryOp::Not => {
                 if self.is_bool(expr) {
                     Some(expr)
                 } else {
@@ -135,13 +135,13 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    pub(in crate::types::checker) fn type_id_for_literal(&mut self, literal: &Spanned<HirLiteral>) -> Option<TypeId> {
+    pub(in crate::types::checker) fn type_id_for_literal(&mut self, literal: &Spanned<Literal>) -> Option<TypeId> {
         match &literal.node {
-            HirLiteral::Integer(text) => self.primitive_type_id(integer_literal_primitive_type(text)),
-            HirLiteral::Float(_) => self.primitive_type_id(HirPrimitiveType::F64),
-            HirLiteral::String(_) => self.primitive_type_id(HirPrimitiveType::String),
-            HirLiteral::Char(_) => self.primitive_type_id(HirPrimitiveType::Char),
-            HirLiteral::Bool(_) => self.primitive_type_id(HirPrimitiveType::Bool),
+            Literal::Integer(text) => self.primitive_type_id(integer_literal_primitive_type(text)),
+            Literal::Float(_) => self.primitive_type_id(PrimitiveType::F64),
+            Literal::String(_) => self.primitive_type_id(PrimitiveType::String),
+            Literal::Char(_) => self.primitive_type_id(PrimitiveType::Char),
+            Literal::Bool(_) => self.primitive_type_id(PrimitiveType::Bool),
         }
     }
 }

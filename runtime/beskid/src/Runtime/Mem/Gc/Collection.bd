@@ -1,79 +1,104 @@
-// Canonical Beskid GC collection orchestration, statistics, and write barrier.
+// Canonical stop-the-world mark/sweep orchestration, statistics, and barrier.
 
-// Insertion write barrier: records `child` as reachable from `parent`
-// so concurrent marking preserves the invariant.
+const HEAP_REGION_START = 0;
+const HEAP_BUMP = 16;
+const HEAP_LIVE_BYTES = 32;
+const HEAP_LIVE_COUNT = 40;
+const HEAP_COLLECTION_COUNT = 48;
+const HEAP_COLLECTION_THRESHOLD = 56;
+const HEAP_GC_PHASE = 64;
+const GC_PHASE_MARKING = 1;
+const GC_PHASE_SWEEPING = 2;
+const GC_PHASE_FAILED = 3;
+
 [Export(Abi:"C", Symbol:"gc_write_barrier")]
 pub unit GcWriteBarrier(pointer parent, pointer child) {
-    if parent == NativePointer(0) || child == NativePointer(0) {
+    pointer heap = Heap();
+    if heap == NativePointer(0) || parent == NativePointer(0) || child == NativePointer(0) {
         return;
     }
-    pointer heap = Heap();
-    u8 phase = raw_byte_load(pointer_add(heap, 48));
-    if phase == 1 {
-        // During marking, push child onto the gray stack.
+    if raw_word_load(pointer_add(heap, HEAP_GC_PHASE)) == GC_PHASE_MARKING {
         GcMarkGray(child);
     }
     return;
 }
 
-// Returns the total bytes allocated (live + dead).
 [Export(Abi:"C", Symbol:"gc_bytes_allocated")]
 pub word GcBytesAllocated() {
     pointer heap = Heap();
-    if heap == NativePointer(0) {
-        return 0;
-    }
-    return raw_word_load(pointer_add(heap, 32));
+    if heap == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
 }
 
-// Returns the number of allocated objects.
 [Export(Abi:"C", Symbol:"gc_object_count")]
 pub word GcObjectCount() {
     pointer heap = Heap();
-    if heap == NativePointer(0) {
-        return 0;
-    }
-    return raw_word_load(pointer_add(heap, 40));
+    if heap == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(heap, HEAP_LIVE_COUNT));
 }
 
-// Returns the current GC phase: 0=idle, 1=marking, 2=sweeping.
+pub word GcCollectionCount() {
+    pointer heap = Heap();
+    if heap == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(heap, HEAP_COLLECTION_COUNT));
+}
+
+// 0=idle, 1=marking, 2=sweeping, 3=failed closed.
 [Export(Abi:"C", Symbol:"gc_phase")]
 pub word GcPhase() {
     pointer heap = Heap();
-    if heap == NativePointer(0) {
-        return 0;
-    }
-    return word(raw_byte_load(pointer_add(heap, 48)));
+    if heap == NativePointer(0) { return 0; }
+    return raw_word_load(pointer_add(heap, HEAP_GC_PHASE));
 }
 
-// Force a full mark/sweep collection.
+pub unit ResetMarkedObjects(pointer heap) {
+    pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
+    pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
+    while NativeWord(cursor) < NativeWord(bump) {
+        word descriptorWord = raw_word_load(cursor);
+        word size;
+        if descriptorWord == 0 {
+            size = raw_word_load(pointer_add(cursor, 8));
+        } else {
+            pointer descriptor = NativePointer(descriptorWord);
+            if ValidateTypeDescriptor(descriptor) == false { return; }
+            size = ManagedObjectSize(cursor, descriptor);
+            if size == 0 { return; }
+            raw_word_store(pointer_add(cursor, 8), GcMark::White);
+        }
+        if size < 16 || size % 8 != 0 { return; }
+        cursor = NativePointer(NativeWord(cursor) + size);
+    }
+    return;
+}
+
 [Export(Abi:"C", Symbol:"gc_collect")]
 pub word GcCollect() {
     pointer heap = Heap();
-    if heap == NativePointer(0) {
-        return 0;
+    if heap == NativePointer(0) { return 0; }
+    raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_MARKING);
+    bool rootsOk = MarkRoots();
+    if rootsOk == false || ProcessGrayStack() == false {
+        ResetMarkedObjects(heap);
+        raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_FAILED);
+        return raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
     }
-    // 1. Set phase to marking.
-    raw_byte_store(pointer_add(heap, 48), 1);
-    // 2. Mark all roots.
-    MarkRoots();
-    // 3. Sweep.
-    Sweep(heap);
-    // 4. Set phase back to idle.
-    raw_byte_store(pointer_add(heap, 48), 0);
-    return raw_word_load(pointer_add(heap, 32));
+    raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_SWEEPING);
+    if Sweep(heap) == false {
+        raw_word_store(pointer_add(heap, HEAP_GC_PHASE), GC_PHASE_FAILED);
+        return raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
+    }
+    raw_word_store(pointer_add(heap, HEAP_COLLECTION_COUNT), raw_word_load(pointer_add(heap, HEAP_COLLECTION_COUNT)) + 1);
+    raw_word_store(pointer_add(heap, HEAP_GC_PHASE), 0);
+    return raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
 }
 
-// Collect if the heap has exceeded the GC threshold.
 [Export(Abi:"C", Symbol:"gc_collect_if_needed")]
 pub word GcCollectIfNeeded() {
     pointer heap = Heap();
-    if heap == NativePointer(0) {
-        return 0;
-    }
-    word live = raw_word_load(pointer_add(heap, 32));
-    word threshold = raw_word_load(pointer_add(heap, 56));
-    if live >= threshold {
+    if heap == NativePointer(0) { return 0; }
+    word live = raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES));
+    if live >= raw_word_load(pointer_add(heap, HEAP_COLLECTION_THRESHOLD)) {
         return GcCollect();
     }
     return live;

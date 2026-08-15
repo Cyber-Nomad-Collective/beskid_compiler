@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::hir::HirPath;
+use crate::syntax::Path;
 use crate::paths;
 use crate::resolve::{ItemId, ItemKind, LocalId, Resolution, ResolvedValue};
 use crate::syntax::{SpanInfo, Spanned};
@@ -189,7 +189,7 @@ pub fn field_type_for_value_path(
     resolution: &Resolution,
     env: &PathTypeEnv<'_>,
     path_span: SpanInfo,
-    path: &Spanned<HirPath>,
+    path: &Spanned<Path>,
     source_path: Option<&PathBuf>,
 ) -> Option<TypeId> {
     let segments = &path.node.segments;
@@ -208,13 +208,13 @@ pub fn field_type_for_value_path(
 
 /// Field segment names between the base local and a trailing method name (`a.b.method` → `["b"]`).
 pub fn field_segments_before_method(
-    segments: &[Spanned<crate::hir::HirPathSegment>],
-) -> &[Spanned<crate::hir::HirPathSegment>] {
+    segments: &[Spanned<crate::syntax::PathSegment>],
+) -> &[Spanned<crate::syntax::PathSegment>] {
     if segments.len() <= 2 { &[] } else { &segments[1..segments.len() - 1] }
 }
 
 /// Method name for a dotted path callee (`local.method` or `local.field.method`).
-pub fn method_name_from_path_callee(segments: &[Spanned<crate::hir::HirPathSegment>]) -> Option<&str> {
+pub fn method_name_from_path_callee(segments: &[Spanned<crate::syntax::PathSegment>]) -> Option<&str> {
     segments.last().map(|segment| segment.node.name.node.name.as_str())
 }
 
@@ -223,7 +223,7 @@ pub fn receiver_type_for_path_callee(
     resolution: &Resolution,
     env: &PathTypeEnv<'_>,
     path_span: SpanInfo,
-    segments: &[Spanned<crate::hir::HirPathSegment>],
+    segments: &[Spanned<crate::syntax::PathSegment>],
     source_path: Option<&PathBuf>,
 ) -> Option<(LocalId, TypeId)> {
     if segments.len() < 2 {
@@ -240,6 +240,6 @@ pub fn receiver_type_for_path_callee(
 }
 
 /// First field segment on a path rooted at a local (`local.eventField` → `"eventField"`).
-pub fn first_field_segment_name(segments: &[Spanned<crate::hir::HirPathSegment>]) -> Option<&str> {
+pub fn first_field_segment_name(segments: &[Spanned<crate::syntax::PathSegment>]) -> Option<&str> {
     segments.get(1).map(|segment| segment.node.name.node.name.as_str())
 }

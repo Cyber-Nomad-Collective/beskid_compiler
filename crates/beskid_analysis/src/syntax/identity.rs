@@ -3,8 +3,23 @@
 use std::fmt;
 
 /// Dense node identity within one expanded source-unit generation.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct AstNodeId(pub u32);
+
+impl AstNodeId {
+    pub const INVALID: Self = Self(u32::MAX);
+
+    #[must_use]
+    pub fn is_valid(self) -> bool {
+        self != Self::INVALID
+    }
+}
+
+impl Default for AstNodeId {
+    fn default() -> Self {
+        Self::INVALID
+    }
+}
 
 impl fmt::Debug for AstNodeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

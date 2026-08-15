@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::hir::{HirItem, HirType, HirUseDeclaration, HirVisibility};
+use crate::syntax::{Node, Type, UseDeclaration, Visibility};
 use crate::syntax::{self, Spanned};
 
 use super::errors::ResolveError;
@@ -12,18 +12,18 @@ use super::resolver::{self, Resolver};
 use super::symbol::{BUILTIN_PACKAGE, SymbolId, SymbolQualifier, SymbolShape, symbol_shape_for_item, symbol_to_string};
 use crate::builtins::builtin_specs;
 
-pub(super) fn type_name_for_method_receiver(receiver_type: &Spanned<HirType>) -> String {
+pub(super) fn type_name_for_method_receiver(receiver_type: &Spanned<Type>) -> String {
     match &receiver_type.node {
-        HirType::Primitive(primitive) => format!("{:?}", primitive.node),
-        HirType::Complex(path) => {
+        Type::Primitive(primitive) => format!("{:?}", primitive.node),
+        Type::Complex(path) => {
             path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>().join(".")
         }
-        HirType::Array(_) => "Array".to_string(),
-        HirType::Function { .. } => "Function".to_string(),
+        Type::Array(_) => "Array".to_string(),
+        Type::Function { .. } => "Function".to_string(),
     }
 }
 
-pub(super) fn path_tail(path: &Spanned<crate::hir::HirPath>) -> String {
+pub(super) fn path_tail(path: &Spanned<crate::syntax::Path>) -> String {
     path.node
         .segments
         .last()
@@ -35,7 +35,7 @@ pub(super) fn builtin_span() -> syntax::SpanInfo {
     syntax::SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) }
 }
 
-pub(super) fn use_imported_name(use_decl: &HirUseDeclaration) -> String {
+pub(super) fn use_imported_name(use_decl: &UseDeclaration) -> String {
     use_decl.alias.as_ref().map(|alias| alias.node.name.clone()).unwrap_or_else(|| path_tail(&use_decl.path))
 }
 
@@ -98,7 +98,7 @@ impl Resolver {
 
     pub fn collect_program_in_module(
         &mut self,
-        program: &Spanned<crate::hir::HirProgram>,
+        program: &Spanned<crate::syntax::Program>,
         module_path: &[String],
         source_path: Option<&PathBuf>,
     ) {
@@ -113,7 +113,7 @@ impl Resolver {
         }
     }
 
-    pub fn collect_program(&mut self, program: &Spanned<crate::hir::HirProgram>) {
+    pub fn collect_program(&mut self, program: &Spanned<crate::syntax::Program>) {
         self.module_imports.clear();
         let file_scoped_module_index = resolver::file_scoped_module_index(program);
         self.current_module = resolver::file_scoped_module_path(program)
@@ -159,7 +159,7 @@ impl Resolver {
                 parent_id: None,
                 name,
                 kind: ItemKind::Function,
-                visibility: HirVisibility::Public,
+                visibility: Visibility::Public,
                 span: builtin_span(),
                 source_path: self.current_source_path.clone(),
                 symbol: Some(symbol_id),
@@ -169,20 +169,20 @@ impl Resolver {
         self.declaring_package = saved_package;
     }
 
-    fn collect_item(&mut self, item: &Spanned<HirItem>) {
+    fn collect_item(&mut self, item: &Spanned<Node>) {
         let (name, kind, visibility, method_receiver) = match &item.node {
-            HirItem::HostDefinition(_) => {
+            Node::HostDefinition(_) => {
                 return;
             }
             // Module constants are resolved by generation-bound syntax facts, never as a
             // callable or allocatable legacy resolver item.
-            HirItem::ConstantDefinition(_) => {
+            Node::ConstantDefinition(_) => {
                 return;
             }
-            HirItem::FunctionDefinition(def) => {
+            Node::Function(def) => {
                 (def.node.name.node.name.clone(), ItemKind::Function, def.node.visibility.node, None)
             }
-            HirItem::MethodDefinition(def) => {
+            Node::Method(def) => {
                 let receiver = type_name_for_method_receiver(&def.node.receiver_type);
                 (
                     format!("{}::{}", receiver, def.node.name.node.name),
@@ -191,7 +191,7 @@ impl Resolver {
                     Some(receiver),
                 )
             }
-            HirItem::ExtendTypeDefinition(def) => {
+            Node::ExtendTypeDefinition(def) => {
                 for method in &def.node.methods {
                     let receiver = type_name_for_method_receiver(&method.node.receiver_type);
                     let method_name = format!("{}::{}", receiver, method.node.name.node.name);
@@ -210,39 +210,39 @@ impl Resolver {
                 }
                 return;
             }
-            HirItem::TestDefinition(def) => {
+            Node::TestDefinition(def) => {
                 (def.node.name.node.name.clone(), ItemKind::Test, def.node.visibility.node, None)
             }
-            HirItem::TypeDefinition(def) => {
+            Node::TypeDefinition(def) => {
                 (def.node.name.node.name.clone(), ItemKind::Type, def.node.visibility.node, None)
             }
-            HirItem::EnumDefinition(def) => {
+            Node::EnumDefinition(def) => {
                 (def.node.name.node.name.clone(), ItemKind::Enum, def.node.visibility.node, None)
             }
-            HirItem::ContractDefinition(def) => {
+            Node::ContractDefinition(def) => {
                 (def.node.name.node.name.clone(), ItemKind::Contract, def.node.visibility.node, None)
             }
-            HirItem::ModuleDeclaration(def) => {
+            Node::ModuleDeclaration(def) => {
                 (path_tail(&def.node.path), ItemKind::Module, def.node.visibility.node, None)
             }
-            HirItem::InlineModule(def) => {
+            Node::InlineModule(def) => {
                 (def.node.name.node.name.clone(), ItemKind::Module, def.node.visibility.node, None)
             }
-            HirItem::UseDeclaration(def) => {
+            Node::UseDeclaration(def) => {
                 self.collect_use_declaration(item, def);
                 return;
             }
-            HirItem::AttributeDeclaration(_) => {
+            Node::AttributeDeclaration(_) => {
                 return;
             }
-            HirItem::MacroDefinition(_) => {
+            Node::MacroDefinition(_) => {
                 return;
             }
         };
 
         let id = ItemId(self.items.len());
         let module_id = match &item.node {
-            HirItem::ModuleDeclaration(def) => {
+            Node::ModuleDeclaration(def) => {
                 let segments: Vec<String> =
                     def.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect();
                 let parent_path = &segments[..segments.len().saturating_sub(1)];
@@ -256,7 +256,7 @@ impl Resolver {
             return;
         }
         let push_module_path = match &item.node {
-            HirItem::ModuleDeclaration(def) => {
+            Node::ModuleDeclaration(def) => {
                 let segments: Vec<String> =
                     def.node.path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect();
                 let mut path = self.current_module_path();
@@ -269,7 +269,7 @@ impl Resolver {
 
         self.collect_member_items(item, id);
 
-        if let HirItem::TypeDefinition(def) = &item.node {
+        if let Node::TypeDefinition(def) = &item.node {
             let type_name = def.node.name.node.name.clone();
             let field_names: std::collections::HashSet<_> =
                 def.node.fields.iter().map(|field| field.node.name.node.name.as_str()).collect();
@@ -306,7 +306,7 @@ impl Resolver {
             }
         }
 
-        if let HirItem::ModuleDeclaration(def) = &item.node {
+        if let Node::ModuleDeclaration(def) = &item.node {
             let module_path = def
                 .node
                 .path
@@ -317,7 +317,7 @@ impl Resolver {
                 .collect::<Vec<_>>();
             self.module_graph.ensure_module_path(&module_path);
         }
-        if let HirItem::InlineModule(def) = &item.node {
+        if let Node::InlineModule(def) = &item.node {
             let previous_module = self.current_module;
             let mut module_path =
                 self.module_graph.module(self.current_module).map(|module| module.path.clone()).unwrap_or_default();
@@ -331,7 +331,7 @@ impl Resolver {
         }
     }
 
-    fn collect_use_declaration(&mut self, item: &Spanned<HirItem>, def: &Spanned<HirUseDeclaration>) {
+    fn collect_use_declaration(&mut self, item: &Spanned<Node>, def: &Spanned<UseDeclaration>) {
         let alias = use_imported_name(&def.node);
         let module_path = resolver::path_segments(&def.node.path);
         if self.module_imports.contains_key(&alias) {
@@ -364,7 +364,7 @@ impl Resolver {
             .iter()
             .filter_map(|(name, item_id)| {
                 let info = self.items.get(item_id.0)?;
-                if info.visibility != HirVisibility::Public {
+                if info.visibility != Visibility::Public {
                     return None;
                 }
                 match info.kind {
@@ -387,7 +387,7 @@ impl Resolver {
         &mut self,
         name: String,
         kind: ItemKind,
-        visibility: HirVisibility,
+        visibility: Visibility,
         span: syntax::SpanInfo,
         parent_id: ItemId,
     ) {
@@ -401,7 +401,7 @@ impl Resolver {
         parent_id: Option<ItemId>,
         name: String,
         kind: ItemKind,
-        visibility: HirVisibility,
+        visibility: Visibility,
         span: syntax::SpanInfo,
         method_receiver: Option<String>,
         module_path: Vec<String>,
@@ -429,7 +429,7 @@ impl Resolver {
         });
     }
 
-    fn collect_member_items(&mut self, item: &Spanned<HirItem>, parent_id: ItemId) {
+    fn collect_member_items(&mut self, item: &Spanned<Node>, parent_id: ItemId) {
         let Some(parent) = self.items.get(parent_id.0) else {
             return;
         };
@@ -442,11 +442,11 @@ impl Resolver {
 
     fn collect_member_items_for_method(
         &mut self,
-        method: &Spanned<crate::hir::HirMethodDefinition>,
+        method: &Spanned<crate::syntax::MethodDefinition>,
         parent_id: ItemId,
     ) {
         let parent_name = self.items.get(parent_id.0).map(|item| item.name.clone()).unwrap_or_default();
-        let visibility = self.items.get(parent_id.0).map(|item| item.visibility).unwrap_or(HirVisibility::Private);
+        let visibility = self.items.get(parent_id.0).map(|item| item.visibility).unwrap_or(Visibility::Private);
         for parameter in &method.node.parameters {
             self.push_member_item(
                 format!("{}::{}", parent_name, parameter.node.name.node.name),

@@ -119,7 +119,7 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
 mod tests {
     use crate::parser::{BeskidParser, Rule};
     use crate::parsing::parsable::Parsable;
-    use crate::{format::format_program, hir::lower_program, syntax::Program};
+    use crate::{format::format_program, syntax::Program};
     use pest::Parser;
 
     #[test]
@@ -132,7 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn extend_type_parses_lowers_and_formats() {
+    fn extend_type_parses_and_formats() {
         let src = r#"
             type Account { i64 balance }
             extend type Account {
@@ -148,8 +148,11 @@ mod tests {
             BeskidParser::parse(Rule::Program, src).expect("extend type should parse").next().expect("program pair");
         let program = Program::parse(pair).expect("extend type should build AST");
 
-        let hir = lower_program(&program.clone().into());
-        assert_eq!(hir.node.items.len(), 2, "lowering should preserve the extend-type block as one top-level HIR item");
+        assert_eq!(
+            program.node.items.len(),
+            2,
+            "parsing should preserve the extend-type block as one top-level syntax item"
+        );
 
         let formatted = format_program(&program).expect("extend type should format");
         assert!(formatted.contains("extend type Account"));

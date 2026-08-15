@@ -14,16 +14,28 @@ pub pointer ChannelTable() {
     return SchedulerChannelTable();
 }
 
+// Channel status discriminants (ABI-stable 0-3). Used for raw i64 returns.
+const CHANNEL_STATUS_OK = 0;
+const CHANNEL_STATUS_CLOSED = 1;
+const CHANNEL_STATUS_CANCELLED = 2;
+const CHANNEL_STATUS_WOULD_BLOCK = 3;
+
+// Channel status — enum-with-arguments for the logical type.
 pub enum ChannelStatus {
     Ok,
-    Closed,
-    Cancelled,
+    Closed(i64 endpoint),
+    Cancelled(i64 reason),
     WouldBlock,
 }
 
-// Creates a channel. Capacity 0 means unbounded.
+// Creates a channel. Capacity 0 selects the physical ring capacity; larger
+// capacities are rejected because this canonical implementation never
+// overwrites unread values or claims storage it does not own.
 [Export(Abi:"C", Symbol:"channel_create")]
 pub i64 ChannelCreate(i64 capacity, i64 flags) {
+    if capacity < 0 || capacity > CHANNEL_BUFFER_SIZE {
+        return -1;
+    }
     pointer table = ChannelTable();
     if table == NativePointer(0) {
         return -1;
@@ -37,8 +49,12 @@ pub i64 ChannelCreate(i64 capacity, i64 flags) {
     raw_word_store(slot, 0);       // head = 0
     raw_word_store(pointer_add(slot, 8), 0);   // tail = 0
     raw_word_store(pointer_add(slot, 16), 0);  // count = 0
+    if capacity == 0 { capacity = CHANNEL_BUFFER_SIZE; }
     raw_word_store(pointer_add(slot, 24), word(capacity));
     raw_byte_store(pointer_add(slot, 32), 0);  // closed = 0
+    raw_word_store(pointer_add(slot, 168), 0); // pointer payload bitset
+    raw_word_store(pointer_add(slot, 176), 0); // sending waiter bitset
+    raw_word_store(pointer_add(slot, 184), 0); // receiving waiter bitset
     // Zero the ring buffer.
     mut word i = 0;
     while i < CHANNEL_BUFFER_SIZE {
@@ -52,61 +68,87 @@ pub i64 ChannelCreate(i64 capacity, i64 flags) {
 // Reads channel header at given table index.
 pub pointer ChannelSlot(i64 id) {
     word slotIndex = word(id);
-    if slotIndex >= CHANNEL_TABLE_MAX {
+    if id < 0 || slotIndex >= CHANNEL_TABLE_MAX {
         return NativePointer(0);
     }
     pointer table = ChannelTable();
-    if table == NativePointer(0) {
+    if table == NativePointer(0) || slotIndex >= raw_word_load(table) {
         return NativePointer(0);
     }
     return pointer_add(table, 8 + slotIndex * CHANNEL_SLOT_SIZE);
 }
 
-// Sends a value to the channel, blocking if bounded and full.
-[Export(Abi:"C", Symbol:"channel_send")]
-pub i64 ChannelSend(i64 id, i64 value) {
+pub i64 ChannelTrySendValue(i64 id, i64 value) {
     pointer ch = ChannelSlot(id);
     if ch == NativePointer(0) {
-        return ChannelStatus::Closed;
+        return CHANNEL_STATUS_CLOSED;
     }
     u8 closed = raw_byte_load(pointer_add(ch, 32));
     if closed != 0 {
-        return ChannelStatus::Closed;
+        return CHANNEL_STATUS_CLOSED;
     }
     word count = raw_word_load(pointer_add(ch, 16));
     i64 cap = i64(raw_word_load(pointer_add(ch, 24)));
-    if cap > 0 && i64(count) >= cap {
-        return ChannelStatus::WouldBlock;
+    if i64(count) >= cap {
+        return CHANNEL_STATUS_WOULD_BLOCK;
     }
     word tail = raw_word_load(pointer_add(ch, 8));
     raw_word_store(pointer_add(ch, 40 + (tail % CHANNEL_BUFFER_SIZE) * 8), word(value));
     raw_word_store(pointer_add(ch, 8), (tail + 1) % CHANNEL_BUFFER_SIZE);
     raw_word_store(pointer_add(ch, 16), count + 1);
-    return ChannelStatus::Ok;
+    ChannelWakeOne(ch, 184);
+    HubWakeChannel(id);
+    return CHANNEL_STATUS_OK;
+}
+
+// Sends a value, parking the current fiber while the bounded queue is full.
+[Export(Abi:"C", Symbol:"channel_send")]
+pub i64 ChannelSend(i64 id, i64 value) {
+    mut i64 status = ChannelTrySendValue(id, value);
+    while status == CHANNEL_STATUS_WOULD_BLOCK {
+        pointer ch = ChannelSlot(id);
+        if ch == NativePointer(0) { return CHANNEL_STATUS_CLOSED; }
+        status = ChannelPark(ch, 176);
+        if status != CHANNEL_STATUS_OK { return status; }
+        status = ChannelTrySendValue(id, value);
+    }
+    return status;
 }
 
 // Tries to send without blocking.
 [Export(Abi:"C", Symbol:"channel_try_send")]
 pub i64 ChannelTrySend(i64 id, i64 value) {
-    return ChannelSend(id, value);
+    return ChannelTrySendValue(id, value);
 }
 
-// Blocks until a message is available (or channel closes), without dequeuing.
-[Export(Abi:"C", Symbol:"channel_receive_status")]
-pub i64 ChannelReceiveStatus(i64 id) {
+pub i64 ChannelTryReceiveStatus(i64 id) {
     pointer ch = ChannelSlot(id);
     if ch == NativePointer(0) {
-        return ChannelStatus::Closed;
+        return CHANNEL_STATUS_CLOSED;
     }
     u8 closed = raw_byte_load(pointer_add(ch, 32));
     word count = raw_word_load(pointer_add(ch, 16));
     if count > 0 {
-        return ChannelStatus::Ok;
+        return CHANNEL_STATUS_OK;
     }
     if closed != 0 {
-        return ChannelStatus::Closed;
+        return CHANNEL_STATUS_CLOSED;
     }
-    return ChannelStatus::WouldBlock;
+    return CHANNEL_STATUS_WOULD_BLOCK;
+}
+
+// Parks until a message is available, closure is observed, or cancellation wins.
+[Export(Abi:"C", Symbol:"channel_receive_status")]
+pub i64 ChannelReceiveStatus(i64 id) {
+    mut i64 status = ChannelTryReceiveStatus(id);
+    while status == CHANNEL_STATUS_WOULD_BLOCK {
+        pointer ch = ChannelSlot(id);
+        if ch == NativePointer(0) { return CHANNEL_STATUS_CLOSED; }
+        status = ChannelPark(ch, 184);
+        if status != CHANNEL_STATUS_OK { return status; }
+        status = ChannelTryReceiveStatus(id);
+    }
+    return status;
 }
 
 // Dequeues a value after a successful receive_status call.
@@ -125,6 +167,7 @@ pub i64 ChannelReceiveValue(i64 id) {
     raw_word_store(pointer_add(ch, 40 + (head % CHANNEL_BUFFER_SIZE) * 8), 0);
     raw_word_store(pointer_add(ch, 0), (head + 1) % CHANNEL_BUFFER_SIZE);
     raw_word_store(pointer_add(ch, 16), count - 1);
+    ChannelWakeOne(ch, 176);
     return i64(value);
 }
 
@@ -143,10 +186,30 @@ pub bool ChannelTryReceive(i64 id) {
     raw_word_store(pointer_add(ch, 40 + (head % CHANNEL_BUFFER_SIZE) * 8), 0);
     raw_word_store(pointer_add(ch, 0), (head + 1) % CHANNEL_BUFFER_SIZE);
     raw_word_store(pointer_add(ch, 16), count - 1);
+    ChannelWakeOne(ch, 176);
     return true;
 }
 
-// Closes the channel. Wakes all waiters.
+pub unit ChannelDrain(pointer ch) {
+    word pointerBits = raw_word_load(pointer_add(ch, 168));
+    mut word position = 0;
+    while position < CHANNEL_BUFFER_SIZE {
+        pointer slot = pointer_add(ch, 40 + position * 8);
+        if (pointerBits & (word(1) << position)) != 0 {
+            word handle = raw_word_load(slot);
+            if handle != 0 { GcUnrootHandle(handle); }
+        }
+        raw_word_store(slot, 0);
+        position = position + 1;
+    }
+    raw_word_store(ch, 0);
+    raw_word_store(pointer_add(ch, 8), 0);
+    raw_word_store(pointer_add(ch, 16), 0);
+    raw_word_store(pointer_add(ch, 168), 0);
+    return;
+}
+
+// Closes the channel, releases every queued pointer handle, and wakes all waiters.
 [Export(Abi:"C", Symbol:"channel_close")]
 pub unit ChannelClose(i64 id) {
     pointer ch = ChannelSlot(id);
@@ -154,35 +217,114 @@ pub unit ChannelClose(i64 id) {
         return;
     }
     raw_byte_store(pointer_add(ch, 32), 1);
+    ChannelDrain(ch);
+    ChannelWakeAll(ch, 176);
+    ChannelWakeAll(ch, 184);
     return;
+}
+
+pub unit ChannelWakeOne(pointer ch, word waiterOffset) {
+    word waiters = raw_word_load(pointer_add(ch, waiterOffset));
+    mut word index = 0;
+    while index < FIBER_TABLE_MAX {
+        word bit = word(1) << index;
+        if (waiters & bit) != 0 {
+            raw_word_store(pointer_add(ch, waiterOffset), waiters & ~bit);
+            WakeEnqueue(index);
+            return;
+        }
+        index = index + 1;
+    }
+    return;
+}
+
+pub unit ChannelWakeAll(pointer ch, word waiterOffset) {
+    word waiters = raw_word_load(pointer_add(ch, waiterOffset));
+    raw_word_store(pointer_add(ch, waiterOffset), 0);
+    mut word index = 0;
+    while index < FIBER_TABLE_MAX {
+        if (waiters & (word(1) << index)) != 0 { WakeEnqueue(index); }
+        index = index + 1;
+    }
+    return;
+}
+
+// Parks the current canonical fiber on a scheduler-index bitset. The caller
+// retries its operation after wake, so close and cancellation are revalidated.
+pub i64 ChannelPark(pointer ch, word waiterOffset) {
+    word index = SchedulerCurrentFiber();
+    if index == FIBER_NONE || !FiberExists(index) { return CHANNEL_STATUS_WOULD_BLOCK; }
+    pointer fiber = FiberRecord(index);
+    if raw_byte_load(pointer_add(fiber, 41)) != 0 { return CHANNEL_STATUS_CANCELLED; }
+    raw_word_store(pointer_add(ch, waiterOffset), raw_word_load(pointer_add(ch, waiterOffset)) | (word(1) << index));
+    FiberSetState(index, FiberState::Parked);
+    SaveFiberLocalState(index);
+    SchedulerSetCurrentFiber(FIBER_NONE);
+    ContextSwitch(NativePointer(raw_word_load(pointer_add(fiber, 104))), SchedulerContext());
+    if raw_byte_load(pointer_add(fiber, 41)) != 0 { return CHANNEL_STATUS_CANCELLED; }
+    return CHANNEL_STATUS_OK;
 }
 
 // ── Phase B pointer-payload variants ───────────────────────────────
 
+pub i64 ChannelTrySendPtrValue(i64 id, pointer valuePtr) {
+    if valuePtr == NativePointer(0) { return CHANNEL_STATUS_CANCELLED; }
+    pointer ch = ChannelSlot(id);
+    if ch == NativePointer(0) || raw_byte_load(pointer_add(ch, 32)) != 0 { return CHANNEL_STATUS_CLOSED; }
+    word count = raw_word_load(pointer_add(ch, 16));
+    word capacity = raw_word_load(pointer_add(ch, 24));
+    if count >= capacity { return CHANNEL_STATUS_WOULD_BLOCK; }
+    word handle = GcRootHandle(valuePtr);
+    if handle == 0 { return CHANNEL_STATUS_CANCELLED; }
+    word tail = raw_word_load(pointer_add(ch, 8));
+    word position = tail % CHANNEL_BUFFER_SIZE;
+    raw_word_store(pointer_add(ch, 40 + position * 8), handle);
+    raw_word_store(pointer_add(ch, 168), raw_word_load(pointer_add(ch, 168)) | (word(1) << position));
+    raw_word_store(pointer_add(ch, 8), (tail + 1) % CHANNEL_BUFFER_SIZE);
+    raw_word_store(pointer_add(ch, 16), count + 1);
+    ChannelWakeOne(ch, 184);
+    HubWakeChannel(id);
+    return CHANNEL_STATUS_OK;
+}
+
 [Export(Abi:"C", Symbol:"channel_send_ptr")]
 pub i64 ChannelSendPtr(i64 id, pointer valuePtr) {
-    if valuePtr == NativePointer(0) {
-        return ChannelStatus::Cancelled;
+    mut i64 status = ChannelTrySendPtrValue(id, valuePtr);
+    while status == CHANNEL_STATUS_WOULD_BLOCK {
+        pointer ch = ChannelSlot(id);
+        if ch == NativePointer(0) { return CHANNEL_STATUS_CLOSED; }
+        status = ChannelPark(ch, 176);
+        if status != CHANNEL_STATUS_OK { return status; }
+        status = ChannelTrySendPtrValue(id, valuePtr);
     }
-    return ChannelSend(id, i64(NativeWord(valuePtr)));
+    return status;
 }
 
 [Export(Abi:"C", Symbol:"channel_try_send_ptr")]
 pub i64 ChannelTrySendPtr(i64 id, pointer valuePtr) {
-    if valuePtr == NativePointer(0) {
-        return ChannelStatus::Cancelled;
-    }
-    return ChannelTrySend(id, i64(NativeWord(valuePtr)));
+    return ChannelTrySendPtrValue(id, valuePtr);
 }
 
 [Export(Abi:"C", Symbol:"channel_receive_ptr")]
 pub pointer ChannelReceivePtr(i64 id) {
-    i64 value = ChannelReceiveValue(id);
-    return NativePointer(word(value));
+    pointer ch = ChannelSlot(id);
+    if ch == NativePointer(0) || raw_word_load(pointer_add(ch, 16)) == 0 { return NativePointer(0); }
+    word head = raw_word_load(ch);
+    word position = head % CHANNEL_BUFFER_SIZE;
+    word pointerBits = raw_word_load(pointer_add(ch, 168));
+    if (pointerBits & (word(1) << position)) == 0 { return NativePointer(0); }
+    word handle = raw_word_load(pointer_add(ch, 40 + position * 8));
+    pointer value = GcResolveHandle(handle);
+    raw_word_store(pointer_add(ch, 40 + position * 8), 0);
+    raw_word_store(pointer_add(ch, 168), pointerBits & ~(word(1) << position));
+    raw_word_store(ch, (head + 1) % CHANNEL_BUFFER_SIZE);
+    raw_word_store(pointer_add(ch, 16), raw_word_load(pointer_add(ch, 16)) - 1);
+    GcUnrootHandle(handle);
+    ChannelWakeOne(ch, 176);
+    return value;
 }
 
 [Export(Abi:"C", Symbol:"channel_try_receive_ptr")]
 pub pointer ChannelTryReceivePtr(i64 id) {
-    i64 value = ChannelReceiveValue(id);
-    return NativePointer(word(value));
+    return ChannelReceivePtr(id);
 }

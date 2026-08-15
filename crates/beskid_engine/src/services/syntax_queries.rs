@@ -62,7 +62,7 @@ pub fn syntax_entrypoint_return_type_from_front_end(
 
 fn syntax_test_items_from_assembly(
     db: &mut BeskidDatabase,
-    assembly: Arc<beskid_analysis::projects::SyntaxProgramAssembly>,
+    assembly: Arc<beskid_analysis::projects::ProgramAssembly>,
 ) -> Result<Vec<SyntaxTestItem>> {
     let entry_path = assembly.entry_unit().path.clone();
     let project = project_session_for_syntax_assembly(db, &assembly, "syntax-tests", "prepared-frontend")
@@ -113,7 +113,7 @@ pub(super) fn syntax_item_name(db: &dyn beskid_queries::Db, key: AstNodeKey) -> 
 mod tests {
     use super::*;
     use beskid_analysis::projects::{
-        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
+        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
     };
     use beskid_analysis::services::parse_program_with_source_name;
 
@@ -128,7 +128,7 @@ mod tests {
             return;
         } }"#;
         let program = parse_program_with_source_name(path.to_str().unwrap(), source).expect("parse");
-        let assembly = Arc::new(SyntaxProgramAssembly::new(
+        let assembly = Arc::new(ProgramAssembly::new(
             EffectiveCompilationRoots {
                 host: RootEntry { dependency_name: None, source_root: directory },
                 dependencies: Vec::new(),
@@ -137,7 +137,7 @@ mod tests {
             0,
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
-            false,
+            false, generation
         ));
 
         let tests = syntax_test_items_from_assembly(&mut db, assembly).expect("syntax tests");
@@ -159,7 +159,7 @@ mod tests {
         let path = directory.join("Main.bd");
         let source = "test Smoke { return; }";
         let program = parse_program_with_source_name(path.to_str().unwrap(), source).expect("parse");
-        let assembly = Arc::new(SyntaxProgramAssembly::new(
+        let assembly = Arc::new(ProgramAssembly::new(
             EffectiveCompilationRoots {
                 host: RootEntry { dependency_name: None, source_root: directory },
                 dependencies: Vec::new(),
@@ -168,7 +168,7 @@ mod tests {
             0,
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
-            false,
+            false, generation
         ));
 
         syntax_test_items_from_assembly(&mut db, Arc::clone(&assembly)).expect("initial syntax test discovery");

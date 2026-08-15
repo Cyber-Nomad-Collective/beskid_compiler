@@ -4,6 +4,8 @@
 (extern constructor emit_primitive_numeric_conversion emit_primitive_numeric_conversion)
 (decl partial emit_inline_lambda_call (AstNodeKey) Value)
 (extern constructor emit_inline_lambda_call emit_inline_lambda_call)
+(decl partial emit_collection_operation (AstNodeKey) Value)
+(extern constructor emit_collection_operation emit_collection_operation)
 
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.CallExpression))
@@ -19,3 +21,8 @@
         (node_kind (NodeKind.CallExpression))
         (call_kind (CallKind.InlineLambda))))
       (emit_inline_lambda_call key))
+
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.CallExpression))
+        (call_kind (CallKind.CollectionOperation))))
+      (emit_collection_operation key))

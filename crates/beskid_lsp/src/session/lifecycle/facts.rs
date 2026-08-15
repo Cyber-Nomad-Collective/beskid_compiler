@@ -48,7 +48,7 @@ pub(super) fn syntax_facts_for_entry(
         return SyntaxFacts::default();
     };
     let unit = typed.entry;
-    let Some(entry) = typed.assembly.units().get(typed.assembly.entry_index()) else {
+    let Some(entry) = typed.assembly.units.get(typed.assembly.entry_index) else {
         return SyntaxFacts::default();
     };
     let index = beskid_analysis::syntax_query::SyntaxIndex::from_program(&entry.program, generation);
@@ -88,7 +88,7 @@ pub(super) fn syntax_facts_for_entry(
             declaration_start: declaration_span.start,
             declaration_end: declaration_span.end,
         });
-        let Some(target_unit) = typed.assembly.units().iter().find(|candidate| candidate.path == declaration_path)
+        let Some(target_unit) = typed.assembly.units.iter().find(|candidate| candidate.path == declaration_path)
         else {
             continue;
         };

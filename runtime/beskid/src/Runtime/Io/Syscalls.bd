@@ -1,35 +1,70 @@
-// Canonical Beskid system call and panic handlers.
-//
-// Syscalls delegate to platform I/O via the manifest-declared platform imports
-// (write, mmap, munmap, _exit, WriteFile, VirtualAlloc, VirtualFree, etc.).
+// Canonical tagged syscall-worker seam. Managed addresses never cross into the
+// worker pool: submission copies bytes/metadata to native system allocations,
+// parks the calling fiber, and copies read results only after scheduler resume.
 
-// Writes `len` bytes from `buffer` to file descriptor `fd`.
-[Export(Abi:"C", Symbol:"syscall_write")]
-pub i64 SyscallWrite(i32 fd, pointer buffer, word len) {
-    return -1;
+const SYSCALL_REQUEST_SIZE = 64;
+const SYSCALL_READ = 1;
+const SYSCALL_WRITE = 2;
+
+pub i64 SyscallSubmitAndPark(word nativeHandle, pointer managedBuffer, word len, word operation) {
+    word allocation = len;
+    if allocation == 0 { allocation = 1; }
+    pointer nativeBuffer = SystemAllocate(allocation, 8);
+    if nativeBuffer == NativePointer(0) { return -1; }
+    if operation == SYSCALL_WRITE && len != 0 { memory_copy(nativeBuffer, managedBuffer, len); }
+
+    pointer request = SystemAllocate(SYSCALL_REQUEST_SIZE, 8);
+    if request == NativePointer(0) { SystemFree(nativeBuffer, allocation); return -1; }
+    memory_set(request, 0, SYSCALL_REQUEST_SIZE);
+    raw_word_store(pointer_add(request, 16), operation);
+    raw_word_store(pointer_add(request, 24), nativeHandle);
+    raw_word_store(pointer_add(request, 32), NativeWord(nativeBuffer));
+    raw_word_store(pointer_add(request, 40), len);
+
+    word fiberIndex = SchedulerCurrentFiber();
+    if fiberIndex == FIBER_NONE || !SchedulerRegisterWorkerRequest(request, fiberIndex) {
+        SystemFree(request, SYSCALL_REQUEST_SIZE);
+        SystemFree(nativeBuffer, allocation);
+        return -1;
+    }
+    if WorkerSubmit(request) != 0 {
+        SchedulerUnregisterWorkerRequest(request);
+        SystemFree(request, SYSCALL_REQUEST_SIZE);
+        SystemFree(nativeBuffer, allocation);
+        return -1;
+    }
+
+    FiberSetState(fiberIndex, FiberState::Parked);
+    SaveFiberLocalState(fiberIndex);
+    SchedulerSetCurrentFiber(FIBER_NONE);
+    SchedulerReleaseMutatorToken();
+    ContextSwitch(NativePointer(raw_word_load(pointer_add(FiberRecord(fiberIndex), 104))), SchedulerContext());
+
+    i64 result = i64(raw_word_load(pointer_add(request, 48)));
+    if operation == SYSCALL_READ && result > 0 { memory_copy(managedBuffer, nativeBuffer, word(result)); }
+    SystemFree(request, SYSCALL_REQUEST_SIZE);
+    SystemFree(nativeBuffer, allocation);
+    return result;
 }
 
 [Export(Abi:"C", Symbol:"syscall_read")]
-pub i64 SyscallRead(i32 fd, pointer buffer, word len) {
-    return -1;
-}
-
-[Export(Abi:"C", Symbol:"syscall_write_bytes")]
-pub i64 SyscallWriteBytes(i32 fd, pointer data, word len) {
-    return SyscallWrite(fd, data, len);
+pub i64 SyscallRead(word nativeHandle, pointer buffer, word len) {
+    return SyscallSubmitAndPark(nativeHandle, buffer, len, SYSCALL_READ);
 }
 
 [Export(Abi:"C", Symbol:"syscall_read_bytes")]
-pub i64 SyscallReadBytes(i32 fd, pointer data, word len) {
-    return SyscallRead(fd, data, len);
+pub i64 SyscallReadBytes(word nativeHandle, pointer data, word len) { return SyscallRead(nativeHandle, data, len); }
+
+[Export(Abi:"C", Symbol:"syscall_write")]
+pub i64 SyscallWrite(word nativeHandle, pointer buffer, word len) {
+    return SyscallSubmitAndPark(nativeHandle, buffer, len, SYSCALL_WRITE);
 }
+
+[Export(Abi:"C", Symbol:"syscall_write_bytes")]
+pub i64 SyscallWriteBytes(word nativeHandle, pointer data, word len) { return SyscallWrite(nativeHandle, data, len); }
 
 [Export(Abi:"C", Symbol:"panic")]
-pub never Panic(i64 code) {
-    Trap(9, NativePointer(0), 0);
-}
+pub never Panic(i64 code) { Trap(9, NativePointer(0), 0); }
 
 [Export(Abi:"C", Symbol:"panic_str")]
-pub never PanicStr(pointer message, word len) {
-    Trap(9, message, len);
-}
+pub never PanicStr(pointer message, word len) { Trap(9, message, len); }

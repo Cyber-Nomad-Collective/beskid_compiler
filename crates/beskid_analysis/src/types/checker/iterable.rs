@@ -1,4 +1,4 @@
-use crate::hir::HirExpressionNode;
+use crate::syntax::Expression;
 use crate::resolve::ItemKind;
 use crate::syntax::Spanned;
 use crate::types::{TypeId, TypeInfo};
@@ -7,7 +7,7 @@ use super::TypeChecker;
 use crate::types::result::TypeError;
 
 impl<'a> TypeChecker<'a> {
-    pub(super) fn resolve_iterable_item_type(&mut self, iterable: &Spanned<HirExpressionNode>) -> Option<TypeId> {
+    pub(super) fn resolve_iterable_item_type(&mut self, iterable: &Spanned<Expression>) -> Option<TypeId> {
         let iterable_type = self.type_expression(iterable)?;
         let Some(next_method_item_id) = self.method_item_for_receiver(iterable_type, "Next") else {
             self.errors.push(TypeError::NonIterableForTarget { span: iterable.span });

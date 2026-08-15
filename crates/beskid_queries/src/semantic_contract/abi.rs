@@ -3,6 +3,7 @@
 mod control_flow;
 mod signatures;
 mod specialization;
+mod statements;
 mod types;
 
 pub use specialization::generic_specialization_instance;
@@ -25,6 +26,8 @@ pub(in crate::semantic_contract) use specialization::{
     integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text, integer_literal_u64,
     item_abi_type_from_syntax, type_syntax_mentions_generic_parameter, unsuffixed_integer_literal,
 };
+
+pub(in crate::semantic_contract) use statements::statement_abi_type_for_node;
 
 pub(in crate::semantic_contract) use types::{
     abi_type_for_binary_expression, abi_type_for_expression, abi_type_from_syntax, abi_type_tracked,

@@ -76,6 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- Purge the legacy ABI dispatch envelope, generated routes/tags/tables, Rust runtime/handler/host crates, differential package and features, and language-handler registration remnants. ISLE and codegen now import exact canonical Corelib service symbols and signatures directly through `CodegenInput` authority.
+- Cut production engine execution over to the exact ABI-v5 native runtime kit only: remove Rust host registration, GC bootstrap, process-linked builtin fallback symbols, legacy host registration generation, and the retired `rust_fallback_handlers`/`arrays_backing` features. Rust runtime and host adapters now require an explicit differential-test feature, enforced by a retirement scan.
 - Retire the HIR-based analysis and legacy Rust-codegen suites from
   `beskid_tests`; generated-syntax `CodegenInput` → ISLE regression suites are
   now the maintained codegen authority, and the HIR-free gate asserts that the
@@ -149,6 +151,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Keep the scheduler lifecycle gate aligned with the canonical core's explicit
   prohibition on emulating target context transfer.
+
+- Publish rooted array growth replacements into a generation-proven mutable local or aggregate
+  field before the owner barrier and exactly-once construction finish; canonical collection
+  adapters no longer depend on assigning an unrooted `Array.Append` return value.
+
+- Make canonical runtime arrays carry distinct array-object and element descriptors, scan their
+  variable-size pointer payloads safely, root poll-owned pointers until deterministic release,
+  drain channel handles during close/shutdown, cancel and join scheduler children at lifecycle
+  teardown, and preserve representable alignment padding without false out-of-memory results.
 
 - Attribute unsupported `if` conditions to the exact condition node by routing nested
   condition lowering through the diagnostic-preserving ISLE expression boundary.
@@ -354,10 +365,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Derive scheduler fiber-context allocation metadata and context entrypoints
   exclusively from the selected ABI-v5 target manifest, including exact
   assembly-export validation and generated ABI contract updates.
-- Add manifest-owned guarded scheduler stacks with a no-access lower guard and
-  writable usable suffix across Linux, Darwin, and Windows adapters; canonical
-  intrinsic arguments now materialize layout-constant paths at their exact ABI
-  parameter width, including nested pointer arithmetic.
+- Reserve manifest-owned scheduler stacks as fixed 8 MiB ranges with inaccessible
+  lower guards and 64 KiB initial writable suffixes across Linux, Darwin, and
+  Windows. Add bounded in-place growth, exact whole-reservation release, scheduler
+  committed/maximum accounting, and an explicit compiler stack-limit seam that
+  reports denied growth or observed overflow as join status 3.
 
 - Move canonical WaitGroup state out of undeclared `RuntimeState` offset
   arithmetic into a separately allocated scheduler-owned object. Its waiter

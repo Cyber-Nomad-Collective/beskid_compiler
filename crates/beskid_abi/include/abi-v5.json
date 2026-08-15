@@ -1,7 +1,7 @@
 {
   "meta": {
     "abiVersion": 5,
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "runtimePublisher": "beskid-lang.org",
     "runtimePackage": "beskid-runtime-native",
     "trapExitStatus": 101,
@@ -88,6 +88,24 @@
         }
       ],
       "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_array_grow_rooted",
+      "params": [
+        {
+          "name": "array",
+          "type": "pointer"
+        },
+        {
+          "name": "minimum_capacity",
+          "type": "usize"
+        },
+        {
+          "name": "root_handle_out",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
     },
     {
       "symbol": "beskid_rt_v5_array_write_barrier",
@@ -201,6 +219,121 @@
       "result": "pointer"
     },
     {
+      "symbol": "beskid_rt_v5_poll_executor_run_once",
+      "params": [],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_rt_v5_poll_executor_spawn",
+      "params": [
+        {
+          "name": "poll_entry",
+          "type": "pointer"
+        },
+        {
+          "name": "task_state",
+          "type": "pointer"
+        },
+        {
+          "name": "result_slot",
+          "type": "pointer"
+        },
+        {
+          "name": "cancel_slot",
+          "type": "pointer"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "symbol": "beskid_rt_v5_poll_executor_wake",
+      "params": [
+        {
+          "name": "task",
+          "type": "i64"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_rt_v5_poll_link_clone",
+      "params": [
+        {
+          "name": "link",
+          "type": "i64"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "symbol": "beskid_rt_v5_poll_link_drop",
+      "params": [
+        {
+          "name": "link",
+          "type": "i64"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "symbol": "beskid_rt_v5_poll_link_new",
+      "params": [
+        {
+          "name": "task",
+          "type": "i64"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "symbol": "beskid_rt_v5_poll_link_poll",
+      "params": [
+        {
+          "name": "link",
+          "type": "i64"
+        },
+        {
+          "name": "result_slot",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "beskid_rt_v5_poll_monitor_drop",
+      "params": [
+        {
+          "name": "monitor",
+          "type": "i64"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "symbol": "beskid_rt_v5_poll_monitor_new",
+      "params": [
+        {
+          "name": "task",
+          "type": "i64"
+        }
+      ],
+      "result": "i64"
+    },
+    {
+      "symbol": "beskid_rt_v5_poll_monitor_poll",
+      "params": [
+        {
+          "name": "monitor",
+          "type": "i64"
+        },
+        {
+          "name": "result_slot",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "beskid_rt_v5_process_init",
       "params": [
         {
@@ -265,28 +398,36 @@
       "symbol": "beskid_rt_v5_intrinsic_arch_context_alignment",
       "capability": "runtime.bootstrap.arch_context_alignment",
       "params": [],
-      "result": "usize"
+      "result": "usize",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "arch_context_size",
       "symbol": "beskid_rt_v5_intrinsic_arch_context_size",
       "capability": "runtime.bootstrap.arch_context_size",
       "params": [],
-      "result": "usize"
+      "result": "usize",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "clock_monotonic_nanos",
       "symbol": "beskid_rt_v5_intrinsic_clock_monotonic_nanos",
       "capability": "runtime.adapter.clock_monotonic_nanos",
       "params": [],
-      "result": "i64"
+      "result": "i64",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "clock_realtime_nanos",
       "symbol": "beskid_rt_v5_intrinsic_clock_realtime_nanos",
       "capability": "runtime.adapter.clock_realtime_nanos",
       "params": [],
-      "result": "i64"
+      "result": "i64",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "context_init",
@@ -314,7 +455,9 @@
           "type": "pointer"
         }
       ],
-      "result": "void"
+      "result": "void",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "context_switch",
@@ -330,7 +473,9 @@
           "type": "pointer"
         }
       ],
-      "result": "void"
+      "result": "void",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "env_get",
@@ -342,14 +487,18 @@
           "type": "pointer"
         }
       ],
-      "result": "pointer"
+      "result": "pointer",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "env_getcwd",
       "symbol": "beskid_rt_v5_intrinsic_env_getcwd",
       "capability": "runtime.adapter.env_getcwd",
       "params": [],
-      "result": "pointer"
+      "result": "pointer",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "env_set",
@@ -365,14 +514,18 @@
           "type": "pointer"
         }
       ],
-      "result": "i32"
+      "result": "i32",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "fiber_yield",
       "symbol": "beskid_rt_v5_fiber_yield",
       "capability": "runtime.bootstrap.fiber_yield",
       "params": [],
-      "result": "void"
+      "result": "void",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "fs_delete",
@@ -384,7 +537,39 @@
           "type": "pointer"
         }
       ],
-      "result": "i32"
+      "result": "i32",
+      "result_status": "BeskidFsStatus",
+      "target_bindings": [
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_linux_fs_delete",
+          "osImports": [
+            "unlink",
+            "mmap",
+            "munmap"
+          ]
+        },
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_darwin_fs_delete",
+          "osImports": [
+            "unlink",
+            "mmap",
+            "munmap"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_windows_fs_delete",
+          "osImports": [
+            "MultiByteToWideChar",
+            "DeleteFileW",
+            "VirtualAlloc",
+            "VirtualFree",
+            "GetLastError"
+          ]
+        }
+      ]
     },
     {
       "name": "fs_exists",
@@ -396,7 +581,39 @@
           "type": "pointer"
         }
       ],
-      "result": "i32"
+      "result": "i32",
+      "result_status": "BeskidFsStatus",
+      "target_bindings": [
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_linux_fs_exists",
+          "osImports": [
+            "stat",
+            "mmap",
+            "munmap"
+          ]
+        },
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_darwin_fs_exists",
+          "osImports": [
+            "stat",
+            "mmap",
+            "munmap"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_windows_fs_exists",
+          "osImports": [
+            "MultiByteToWideChar",
+            "GetFileAttributesW",
+            "VirtualAlloc",
+            "VirtualFree",
+            "GetLastError"
+          ]
+        }
+      ]
     },
     {
       "name": "fs_mkdir",
@@ -408,7 +625,39 @@
           "type": "pointer"
         }
       ],
-      "result": "i32"
+      "result": "i32",
+      "result_status": "BeskidFsStatus",
+      "target_bindings": [
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_linux_fs_mkdir",
+          "osImports": [
+            "mkdir",
+            "mmap",
+            "munmap"
+          ]
+        },
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_darwin_fs_mkdir",
+          "osImports": [
+            "mkdir",
+            "mmap",
+            "munmap"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_windows_fs_mkdir",
+          "osImports": [
+            "MultiByteToWideChar",
+            "CreateDirectoryW",
+            "VirtualAlloc",
+            "VirtualFree",
+            "GetLastError"
+          ]
+        }
+      ]
     },
     {
       "name": "fs_read_text",
@@ -418,9 +667,98 @@
         {
           "name": "path",
           "type": "pointer"
+        },
+        {
+          "name": "bytes_out",
+          "type": "pointer"
+        },
+        {
+          "name": "length_out",
+          "type": "pointer"
         }
       ],
-      "result": "pointer"
+      "result": "i32",
+      "result_status": "BeskidFsStatus",
+      "target_bindings": [
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_linux_fs_read_text",
+          "osImports": [
+            "open",
+            "fstat",
+            "read",
+            "close",
+            "mmap",
+            "munmap"
+          ]
+        },
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_darwin_fs_read_text",
+          "osImports": [
+            "open",
+            "fstat",
+            "read",
+            "close",
+            "mmap",
+            "munmap"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_windows_fs_read_text",
+          "osImports": [
+            "MultiByteToWideChar",
+            "CreateFileW",
+            "GetFileSizeEx",
+            "ReadFile",
+            "CloseHandle",
+            "VirtualAlloc",
+            "VirtualFree",
+            "GetLastError"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fs_read_text_release",
+      "symbol": "beskid_rt_v5_intrinsic_fs_read_text_release",
+      "capability": "runtime.adapter.fs_read_text_release",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "result_status": null,
+      "target_bindings": [
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_linux_fs_read_text_release",
+          "osImports": [
+            "munmap"
+          ]
+        },
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_darwin_fs_read_text_release",
+          "osImports": [
+            "munmap"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_windows_fs_read_text_release",
+          "osImports": [
+            "VirtualFree"
+          ]
+        }
+      ]
     },
     {
       "name": "fs_write_text",
@@ -432,11 +770,49 @@
           "type": "pointer"
         },
         {
-          "name": "content",
+          "name": "text",
           "type": "pointer"
         }
       ],
-      "result": "i32"
+      "result": "i32",
+      "result_status": "BeskidFsStatus",
+      "target_bindings": [
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_linux_fs_write_text",
+          "osImports": [
+            "open",
+            "write",
+            "close",
+            "mmap",
+            "munmap"
+          ]
+        },
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_darwin_fs_write_text",
+          "osImports": [
+            "open",
+            "write",
+            "close",
+            "mmap",
+            "munmap"
+          ]
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_windows_fs_write_text",
+          "osImports": [
+            "MultiByteToWideChar",
+            "CreateFileW",
+            "WriteFile",
+            "CloseHandle",
+            "VirtualAlloc",
+            "VirtualFree",
+            "GetLastError"
+          ]
+        }
+      ]
     },
     {
       "name": "guarded_stack_allocate",
@@ -444,11 +820,17 @@
       "capability": "runtime.bootstrap.guarded_stack_allocate",
       "params": [
         {
-          "name": "usable_size",
+          "name": "initial_size",
+          "type": "usize"
+        },
+        {
+          "name": "maximum_size",
           "type": "usize"
         }
       ],
-      "result": "pointer"
+      "result": "pointer",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "guarded_stack_free",
@@ -460,11 +842,39 @@
           "type": "pointer"
         },
         {
-          "name": "usable_size",
+          "name": "maximum_size",
           "type": "usize"
         }
       ],
-      "result": "void"
+      "result": "void",
+      "result_status": null,
+      "target_bindings": []
+    },
+    {
+      "name": "guarded_stack_grow",
+      "symbol": "beskid_rt_v5_intrinsic_guarded_stack_grow",
+      "capability": "runtime.bootstrap.guarded_stack_grow",
+      "params": [
+        {
+          "name": "usable_base",
+          "type": "pointer"
+        },
+        {
+          "name": "committed_size",
+          "type": "usize"
+        },
+        {
+          "name": "requested_size",
+          "type": "usize"
+        },
+        {
+          "name": "maximum_size",
+          "type": "usize"
+        }
+      ],
+      "result": "u8",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "memory_compare",
@@ -484,7 +894,9 @@
           "type": "usize"
         }
       ],
-      "result": "i32"
+      "result": "i32",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "memory_copy",
@@ -504,7 +916,9 @@
           "type": "usize"
         }
       ],
-      "result": "void"
+      "result": "void",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "memory_set",
@@ -524,7 +938,9 @@
           "type": "usize"
         }
       ],
-      "result": "void"
+      "result": "void",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "native_word_from_pointer",
@@ -536,7 +952,9 @@
           "type": "pointer"
         }
       ],
-      "result": "usize"
+      "result": "usize",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "pointer_add",
@@ -552,7 +970,9 @@
           "type": "usize"
         }
       ],
-      "result": "pointer"
+      "result": "pointer",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "pointer_from_native_word",
@@ -564,7 +984,9 @@
           "type": "usize"
         }
       ],
-      "result": "pointer"
+      "result": "pointer",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "process_exit",
@@ -576,14 +998,18 @@
           "type": "i32"
         }
       ],
-      "result": "never"
+      "result": "never",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "process_getpid",
       "symbol": "beskid_rt_v5_intrinsic_process_getpid",
       "capability": "runtime.adapter.process_getpid",
       "params": [],
-      "result": "i32"
+      "result": "i32",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "raw_byte_load",
@@ -595,7 +1021,9 @@
           "type": "pointer"
         }
       ],
-      "result": "u8"
+      "result": "u8",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "raw_byte_store",
@@ -611,7 +1039,9 @@
           "type": "u8"
         }
       ],
-      "result": "void"
+      "result": "void",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "raw_word_load",
@@ -623,7 +1053,9 @@
           "type": "pointer"
         }
       ],
-      "result": "usize"
+      "result": "usize",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "raw_word_store",
@@ -639,7 +1071,9 @@
           "type": "usize"
         }
       ],
-      "result": "void"
+      "result": "void",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "system_allocate",
@@ -655,7 +1089,9 @@
           "type": "usize"
         }
       ],
-      "result": "pointer"
+      "result": "pointer",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "system_free",
@@ -671,14 +1107,18 @@
           "type": "usize"
         }
       ],
-      "result": "void"
+      "result": "void",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "tls_get",
       "symbol": "beskid_rt_v5_intrinsic_tls_get",
       "capability": "runtime.bootstrap.tls_get",
       "params": [],
-      "result": "pointer"
+      "result": "pointer",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "tls_set",
@@ -690,7 +1130,9 @@
           "type": "pointer"
         }
       ],
-      "result": "void"
+      "result": "void",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "trap",
@@ -710,14 +1152,69 @@
           "type": "usize"
         }
       ],
-      "result": "never"
+      "result": "never",
+      "result_status": null,
+      "target_bindings": []
     },
     {
       "name": "tty_winsize",
       "symbol": "beskid_rt_v5_intrinsic_tty_winsize",
       "capability": "runtime.adapter.tty_winsize",
       "params": [],
-      "result": "pointer"
+      "result": "pointer",
+      "result_status": null,
+      "target_bindings": []
+    },
+    {
+      "name": "worker_poll",
+      "symbol": "beskid_rt_v5_intrinsic_worker_poll",
+      "capability": "runtime.scheduler.worker_poll",
+      "params": [
+        {
+          "name": "request",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "result_status": null,
+      "target_bindings": []
+    },
+    {
+      "name": "worker_pool_init",
+      "symbol": "beskid_rt_v5_intrinsic_worker_pool_init",
+      "capability": "runtime.scheduler.worker_pool_init",
+      "params": [
+        {
+          "name": "worker_count",
+          "type": "usize"
+        }
+      ],
+      "result": "i32",
+      "result_status": null,
+      "target_bindings": []
+    },
+    {
+      "name": "worker_pool_shutdown",
+      "symbol": "beskid_rt_v5_intrinsic_worker_pool_shutdown",
+      "capability": "runtime.scheduler.worker_pool_shutdown",
+      "params": [],
+      "result": "void",
+      "result_status": null,
+      "target_bindings": []
+    },
+    {
+      "name": "worker_submit",
+      "symbol": "beskid_rt_v5_intrinsic_worker_submit",
+      "capability": "runtime.scheduler.worker_submit",
+      "params": [
+        {
+          "name": "request",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "result_status": null,
+      "target_bindings": []
     }
   ],
   "softBuiltins": [
@@ -830,13 +1327,18 @@
           "type": "usize"
         },
         {
-          "name": "flags",
+          "name": "descriptor",
           "offset": 16,
+          "type": "pointer"
+        },
+        {
+          "name": "flags",
+          "offset": 24,
           "type": "u32"
         },
         {
           "name": "reserved",
-          "offset": 20,
+          "offset": 28,
           "type": "u32"
         }
       ]
@@ -870,6 +1372,254 @@
       ]
     },
     {
+      "name": "BeskidCallbackEntry",
+      "target": null,
+      "size": 16,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "identity",
+          "offset": 0,
+          "type": "pointer"
+        },
+        {
+          "name": "target",
+          "offset": 8,
+          "type": "pointer"
+        }
+      ]
+    },
+    {
+      "name": "BeskidCallbackRegistry",
+      "target": null,
+      "size": 1056,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "owner_runtime",
+          "offset": 0,
+          "type": "pointer"
+        },
+        {
+          "name": "callback_count",
+          "offset": 8,
+          "type": "usize"
+        },
+        {
+          "name": "handler_count",
+          "offset": 16,
+          "type": "usize"
+        },
+        {
+          "name": "composition_container",
+          "offset": 24,
+          "type": "pointer"
+        },
+        {
+          "name": "callbacks",
+          "offset": 32,
+          "type": "BeskidCallbackEntry[32]"
+        },
+        {
+          "name": "handlers",
+          "offset": 544,
+          "type": "BeskidCallbackEntry[32]"
+        }
+      ]
+    },
+    {
+      "name": "BeskidCompositionContainer",
+      "target": null,
+      "size": 64,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "owner_runtime",
+          "offset": 0,
+          "type": "pointer"
+        },
+        {
+          "name": "status",
+          "offset": 8,
+          "type": "usize"
+        },
+        {
+          "name": "registration_count",
+          "offset": 16,
+          "type": "usize"
+        },
+        {
+          "name": "registrations",
+          "offset": 24,
+          "type": "pointer"
+        },
+        {
+          "name": "plural_count",
+          "offset": 32,
+          "type": "usize"
+        },
+        {
+          "name": "plural_bindings",
+          "offset": 40,
+          "type": "pointer"
+        },
+        {
+          "name": "activated_count",
+          "offset": 48,
+          "type": "usize"
+        },
+        {
+          "name": "open_scope_count",
+          "offset": 56,
+          "type": "usize"
+        }
+      ]
+    },
+    {
+      "name": "BeskidCompositionScope",
+      "target": null,
+      "size": 32,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "owner_container",
+          "offset": 0,
+          "type": "pointer"
+        },
+        {
+          "name": "parent_scope",
+          "offset": 8,
+          "type": "pointer"
+        },
+        {
+          "name": "owned_count",
+          "offset": 16,
+          "type": "usize"
+        },
+        {
+          "name": "owned_values",
+          "offset": 24,
+          "type": "pointer"
+        }
+      ]
+    },
+    {
+      "name": "BeskidFiberRecord",
+      "target": null,
+      "size": 128,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "state",
+          "offset": 0,
+          "type": "usize"
+        },
+        {
+          "name": "entry",
+          "offset": 8,
+          "type": "pointer"
+        },
+        {
+          "name": "argument",
+          "offset": 16,
+          "type": "pointer"
+        },
+        {
+          "name": "cancel_slot",
+          "offset": 24,
+          "type": "pointer"
+        },
+        {
+          "name": "parent",
+          "offset": 32,
+          "type": "usize"
+        },
+        {
+          "name": "detached",
+          "offset": 40,
+          "type": "u8"
+        },
+        {
+          "name": "cancelled",
+          "offset": 41,
+          "type": "u8"
+        },
+        {
+          "name": "generation",
+          "offset": 44,
+          "type": "u32"
+        },
+        {
+          "name": "outcome_kind",
+          "offset": 48,
+          "type": "usize"
+        },
+        {
+          "name": "outcome_value",
+          "offset": 56,
+          "type": "i64"
+        },
+        {
+          "name": "composition_scope",
+          "offset": 64,
+          "type": "pointer"
+        },
+        {
+          "name": "composition_depth",
+          "offset": 72,
+          "type": "usize"
+        },
+        {
+          "name": "root_frame",
+          "offset": 80,
+          "type": "pointer"
+        },
+        {
+          "name": "reserved",
+          "offset": 88,
+          "type": "usize"
+        },
+        {
+          "name": "stack_base",
+          "offset": 96,
+          "type": "pointer"
+        },
+        {
+          "name": "arch_context",
+          "offset": 104,
+          "type": "pointer"
+        },
+        {
+          "name": "arch_context_size",
+          "offset": 112,
+          "type": "usize"
+        },
+        {
+          "name": "stack_usable_size",
+          "offset": 120,
+          "type": "usize"
+        }
+      ]
+    },
+    {
+      "name": "BeskidGcHandleSlot",
+      "target": null,
+      "size": 16,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "value",
+          "offset": 0,
+          "type": "pointer"
+        },
+        {
+          "name": "generation",
+          "offset": 8,
+          "type": "usize"
+        }
+      ]
+    },
+    {
       "name": "BeskidHandle",
       "target": null,
       "size": 16,
@@ -893,6 +1643,84 @@
       ]
     },
     {
+      "name": "BeskidHeapState",
+      "target": null,
+      "size": 768,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "region_start",
+          "offset": 0,
+          "type": "pointer"
+        },
+        {
+          "name": "region_size",
+          "offset": 8,
+          "type": "usize"
+        },
+        {
+          "name": "bump",
+          "offset": 16,
+          "type": "pointer"
+        },
+        {
+          "name": "limit",
+          "offset": 24,
+          "type": "pointer"
+        },
+        {
+          "name": "live_bytes",
+          "offset": 32,
+          "type": "usize"
+        },
+        {
+          "name": "live_count",
+          "offset": 40,
+          "type": "usize"
+        },
+        {
+          "name": "collection_count",
+          "offset": 48,
+          "type": "usize"
+        },
+        {
+          "name": "collection_threshold",
+          "offset": 56,
+          "type": "usize"
+        },
+        {
+          "name": "gray_count",
+          "offset": 64,
+          "type": "usize"
+        },
+        {
+          "name": "gray_entries",
+          "offset": 72,
+          "type": "pointer[6]"
+        },
+        {
+          "name": "external_root_count",
+          "offset": 120,
+          "type": "usize"
+        },
+        {
+          "name": "external_roots",
+          "offset": 128,
+          "type": "pointer[63]"
+        },
+        {
+          "name": "handle_count",
+          "offset": 632,
+          "type": "usize"
+        },
+        {
+          "name": "handles",
+          "offset": 640,
+          "type": "BeskidGcHandleSlot[8]"
+        }
+      ]
+    },
+    {
       "name": "BeskidObjectHeader",
       "target": null,
       "size": 16,
@@ -906,6 +1734,206 @@
         {
           "name": "gc_word",
           "offset": 8,
+          "type": "usize"
+        }
+      ]
+    },
+    {
+      "name": "BeskidPendingSpawn",
+      "target": null,
+      "size": 40,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "entry",
+          "offset": 0,
+          "type": "pointer"
+        },
+        {
+          "name": "argument",
+          "offset": 8,
+          "type": "pointer"
+        },
+        {
+          "name": "cancel_slot",
+          "offset": 16,
+          "type": "pointer"
+        },
+        {
+          "name": "parent",
+          "offset": 24,
+          "type": "usize"
+        },
+        {
+          "name": "reserved",
+          "offset": 32,
+          "type": "usize"
+        }
+      ]
+    },
+    {
+      "name": "BeskidPollLink",
+      "target": null,
+      "size": 32,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "generation",
+          "offset": 0,
+          "type": "usize"
+        },
+        {
+          "name": "task",
+          "offset": 8,
+          "type": "usize"
+        },
+        {
+          "name": "live",
+          "offset": 16,
+          "type": "u8"
+        },
+        {
+          "name": "reserved",
+          "offset": 24,
+          "type": "usize"
+        }
+      ]
+    },
+    {
+      "name": "BeskidPollMonitor",
+      "target": null,
+      "size": 24,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "generation",
+          "offset": 0,
+          "type": "usize"
+        },
+        {
+          "name": "task",
+          "offset": 8,
+          "type": "usize"
+        },
+        {
+          "name": "live",
+          "offset": 16,
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "BeskidPollState",
+      "target": null,
+      "size": 6144,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "tasks",
+          "offset": 0,
+          "type": "BeskidPollTask[32]"
+        },
+        {
+          "name": "monitors",
+          "offset": 2560,
+          "type": "BeskidPollMonitor[64]"
+        },
+        {
+          "name": "links",
+          "offset": 4096,
+          "type": "BeskidPollLink[40]"
+        },
+        {
+          "name": "ready_queue",
+          "offset": 5376,
+          "type": "usize[32]"
+        },
+        {
+          "name": "ready_head",
+          "offset": 5632,
+          "type": "usize"
+        },
+        {
+          "name": "ready_tail",
+          "offset": 5640,
+          "type": "usize"
+        },
+        {
+          "name": "task_count",
+          "offset": 5648,
+          "type": "usize"
+        },
+        {
+          "name": "monitor_count",
+          "offset": 5656,
+          "type": "usize"
+        },
+        {
+          "name": "link_count",
+          "offset": 5664,
+          "type": "usize"
+        }
+      ]
+    },
+    {
+      "name": "BeskidPollTask",
+      "target": null,
+      "size": 80,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "generation",
+          "offset": 0,
+          "type": "usize"
+        },
+        {
+          "name": "state",
+          "offset": 8,
+          "type": "usize"
+        },
+        {
+          "name": "queued",
+          "offset": 16,
+          "type": "u8"
+        },
+        {
+          "name": "detached",
+          "offset": 17,
+          "type": "u8"
+        },
+        {
+          "name": "poll_entry",
+          "offset": 24,
+          "type": "pointer"
+        },
+        {
+          "name": "task_state",
+          "offset": 32,
+          "type": "pointer"
+        },
+        {
+          "name": "result_slot",
+          "offset": 40,
+          "type": "pointer"
+        },
+        {
+          "name": "cancel_slot",
+          "offset": 48,
+          "type": "pointer"
+        },
+        {
+          "name": "outcome",
+          "offset": 56,
+          "type": "usize"
+        },
+        {
+          "name": "result",
+          "offset": 64,
+          "type": "pointer"
+        },
+        {
+          "name": "live_links",
+          "offset": 72,
           "type": "usize"
         }
       ]
@@ -993,16 +2021,134 @@
           "type": "usize"
         },
         {
-          "name": "corruption_cookie",
+          "name": "lifecycle_state",
           "offset": 56,
-          "type": "u64"
+          "type": "u32"
+        },
+        {
+          "name": "lifecycle_generation",
+          "offset": 60,
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "BeskidSchedulerState",
+      "target": null,
+      "size": 3512,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "fiber_count",
+          "offset": 0,
+          "type": "usize"
+        },
+        {
+          "name": "main_fiber",
+          "offset": 8,
+          "type": "usize"
+        },
+        {
+          "name": "run_queue_head",
+          "offset": 16,
+          "type": "usize"
+        },
+        {
+          "name": "run_queue_tail",
+          "offset": 24,
+          "type": "usize"
+        },
+        {
+          "name": "run_queue",
+          "offset": 32,
+          "type": "usize[32]"
+        },
+        {
+          "name": "pending_spawns",
+          "offset": 288,
+          "type": "BeskidPendingSpawn[8]"
+        },
+        {
+          "name": "pending_spawn_count",
+          "offset": 608,
+          "type": "usize"
+        },
+        {
+          "name": "pending_cancels",
+          "offset": 616,
+          "type": "usize[32]"
+        },
+        {
+          "name": "pending_cancel_count",
+          "offset": 872,
+          "type": "usize"
+        },
+        {
+          "name": "pending_detaches",
+          "offset": 880,
+          "type": "usize[32]"
+        },
+        {
+          "name": "pending_detach_count",
+          "offset": 1136,
+          "type": "usize"
+        },
+        {
+          "name": "pending_wakes",
+          "offset": 1144,
+          "type": "usize[32]"
+        },
+        {
+          "name": "pending_wake_count",
+          "offset": 1400,
+          "type": "usize"
+        },
+        {
+          "name": "fibers",
+          "offset": 1408,
+          "type": "BeskidFiberRecord[16]"
+        },
+        {
+          "name": "channel_table",
+          "offset": 3456,
+          "type": "pointer"
+        },
+        {
+          "name": "mutex_table",
+          "offset": 3464,
+          "type": "pointer"
+        },
+        {
+          "name": "waitgroup_table",
+          "offset": 3472,
+          "type": "pointer"
+        },
+        {
+          "name": "current_fiber",
+          "offset": 3480,
+          "type": "usize"
+        },
+        {
+          "name": "hub_table",
+          "offset": 3488,
+          "type": "pointer"
+        },
+        {
+          "name": "scheduler_context",
+          "offset": 3496,
+          "type": "pointer"
+        },
+        {
+          "name": "poll_state",
+          "offset": 3504,
+          "type": "pointer"
         }
       ]
     },
     {
       "name": "BeskidTlsState",
       "target": null,
-      "size": 32,
+      "size": 48,
       "alignment": 8,
       "fields": [
         {
@@ -1016,13 +2162,23 @@
           "type": "pointer"
         },
         {
-          "name": "current_fiber",
+          "name": "reserved",
           "offset": 16,
-          "type": "pointer"
+          "type": "usize"
         },
         {
           "name": "attach_depth",
           "offset": 24,
+          "type": "usize"
+        },
+        {
+          "name": "composition_scope",
+          "offset": 32,
+          "type": "pointer"
+        },
+        {
+          "name": "composition_depth",
+          "offset": 40,
           "type": "usize"
         }
       ]
@@ -1061,6 +2217,64 @@
         {
           "name": "reserved",
           "offset": 36,
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "BeskidWorkerRequest",
+      "target": null,
+      "size": 64,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "next",
+          "offset": 0,
+          "type": "pointer"
+        },
+        {
+          "name": "tag",
+          "offset": 8,
+          "type": "u64"
+        },
+        {
+          "name": "operation",
+          "offset": 16,
+          "type": "u32"
+        },
+        {
+          "name": "state",
+          "offset": 20,
+          "type": "u32"
+        },
+        {
+          "name": "native_handle",
+          "offset": 24,
+          "type": "usize"
+        },
+        {
+          "name": "buffer",
+          "offset": 32,
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "offset": 40,
+          "type": "usize"
+        },
+        {
+          "name": "result",
+          "offset": 48,
+          "type": "isize"
+        },
+        {
+          "name": "error",
+          "offset": 56,
+          "type": "i32"
+        },
+        {
+          "name": "padding",
+          "offset": 60,
           "type": "u32"
         }
       ]
@@ -1398,6 +2612,18 @@
       "result": "i32"
     },
     {
+      "symbol": "close",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "cos",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -1432,6 +2658,22 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "fstat",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "status",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "getpid",
@@ -1495,6 +2737,22 @@
         }
       ],
       "result": "pointer"
+    },
+    {
+      "symbol": "mkdir",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        },
+        {
+          "name": "mode",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "mmap",
@@ -1565,6 +2823,26 @@
       "result": "i32"
     },
     {
+      "symbol": "open",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        },
+        {
+          "name": "flags",
+          "type": "i32"
+        },
+        {
+          "name": "mode",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "pow",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -1579,6 +2857,66 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "pthread_create",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "thread",
+          "type": "pointer"
+        },
+        {
+          "name": "attributes",
+          "type": "pointer"
+        },
+        {
+          "name": "entry",
+          "type": "pointer"
+        },
+        {
+          "name": "argument",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_join",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "thread",
+          "type": "usize"
+        },
+        {
+          "name": "result",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "read",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "isize"
     },
     {
       "symbol": "sin",
@@ -1605,6 +2943,22 @@
       "result": "f64"
     },
     {
+      "symbol": "stat",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        },
+        {
+          "name": "status",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "strlen",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -1629,6 +2983,18 @@
       "result": "f64"
     },
     {
+      "symbol": "unlink",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "write",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -1649,6 +3015,114 @@
       "result": "isize"
     },
     {
+      "symbol": "CloseHandle",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "handle",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "CreateDirectoryW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        },
+        {
+          "name": "security_attributes",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "CreateFileW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        },
+        {
+          "name": "desired_access",
+          "type": "u32"
+        },
+        {
+          "name": "share_mode",
+          "type": "u32"
+        },
+        {
+          "name": "security_attributes",
+          "type": "pointer"
+        },
+        {
+          "name": "creation_disposition",
+          "type": "u32"
+        },
+        {
+          "name": "flags_and_attributes",
+          "type": "u32"
+        },
+        {
+          "name": "template_file",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "CreateThread",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "security",
+          "type": "pointer"
+        },
+        {
+          "name": "stack_size",
+          "type": "usize"
+        },
+        {
+          "name": "entry",
+          "type": "pointer"
+        },
+        {
+          "name": "argument",
+          "type": "pointer"
+        },
+        {
+          "name": "flags",
+          "type": "u32"
+        },
+        {
+          "name": "thread_id",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "DeleteFileW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "ExitProcess",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -1662,6 +3136,41 @@
     },
     {
       "symbol": "GetCurrentProcessId",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [],
+      "result": "u32"
+    },
+    {
+      "symbol": "GetFileAttributesW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        }
+      ],
+      "result": "u32"
+    },
+    {
+      "symbol": "GetFileSizeEx",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "file",
+          "type": "pointer"
+        },
+        {
+          "name": "size_out",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "GetLastError",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
       "params": [],
@@ -1699,59 +3208,60 @@
       "result": "u64"
     },
     {
-      "symbol": "InitOnceExecuteOnce",
+      "symbol": "MultiByteToWideChar",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
       "params": [
         {
-          "name": "once",
+          "name": "code_page",
+          "type": "u32"
+        },
+        {
+          "name": "flags",
+          "type": "u32"
+        },
+        {
+          "name": "input",
           "type": "pointer"
         },
         {
-          "name": "initializer",
+          "name": "input_length",
+          "type": "i32"
+        },
+        {
+          "name": "output",
           "type": "pointer"
         },
         {
-          "name": "parameter",
-          "type": "pointer"
-        },
-        {
-          "name": "context",
-          "type": "pointer"
+          "name": "output_length",
+          "type": "i32"
         }
       ],
       "result": "i32"
     },
     {
-      "symbol": "TlsAlloc",
-      "target": "x86_64-pc-windows-msvc",
-      "library": "kernel32",
-      "params": [],
-      "result": "u32"
-    },
-    {
-      "symbol": "TlsGetValue",
+      "symbol": "ReadFile",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
       "params": [
         {
-          "name": "index",
-          "type": "u32"
-        }
-      ],
-      "result": "pointer"
-    },
-    {
-      "symbol": "TlsSetValue",
-      "target": "x86_64-pc-windows-msvc",
-      "library": "kernel32",
-      "params": [
+          "name": "file",
+          "type": "pointer"
+        },
         {
-          "name": "index",
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
           "type": "u32"
         },
         {
-          "name": "value",
+          "name": "read_out",
+          "type": "pointer"
+        },
+        {
+          "name": "overlapped",
           "type": "pointer"
         }
       ],
@@ -1800,6 +3310,22 @@
         }
       ],
       "result": "i32"
+    },
+    {
+      "symbol": "WaitForSingleObject",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "handle",
+          "type": "pointer"
+        },
+        {
+          "name": "milliseconds",
+          "type": "u32"
+        }
+      ],
+      "result": "u32"
     },
     {
       "symbol": "WriteFile",
@@ -1970,6 +3496,18 @@
       "result": "f64"
     },
     {
+      "symbol": "strlen",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize"
+    },
+    {
       "symbol": "tan",
       "target": "x86_64-pc-windows-msvc",
       "library": "ucrt",
@@ -2038,6 +3576,18 @@
       "result": "i32"
     },
     {
+      "symbol": "close",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "cos",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -2072,6 +3622,22 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "fstat",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "status",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "getpid",
@@ -2135,6 +3701,22 @@
         }
       ],
       "result": "pointer"
+    },
+    {
+      "symbol": "mkdir",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        },
+        {
+          "name": "mode",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "mmap",
@@ -2205,6 +3787,26 @@
       "result": "i32"
     },
     {
+      "symbol": "open",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        },
+        {
+          "name": "flags",
+          "type": "i32"
+        },
+        {
+          "name": "mode",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "pow",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libm",
@@ -2219,6 +3821,66 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "pthread_create",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "thread",
+          "type": "pointer"
+        },
+        {
+          "name": "attributes",
+          "type": "pointer"
+        },
+        {
+          "name": "entry",
+          "type": "pointer"
+        },
+        {
+          "name": "argument",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_join",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "thread",
+          "type": "usize"
+        },
+        {
+          "name": "result",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "read",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "isize"
     },
     {
       "symbol": "sin",
@@ -2245,6 +3907,22 @@
       "result": "f64"
     },
     {
+      "symbol": "stat",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        },
+        {
+          "name": "status",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "strlen",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -2269,6 +3947,18 @@
       "result": "f64"
     },
     {
+      "symbol": "unlink",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "write",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -2290,6 +3980,38 @@
     }
   ],
   "corelibServices": [
+    {
+      "name": "__alloc",
+      "adapter": "alloc",
+      "params": [
+        {
+          "name": "size",
+          "type": "usize"
+        },
+        {
+          "name": "descriptorPtr",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "alloc",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "alloc",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "alloc",
+          "osImports": []
+        }
+      ]
+    },
     {
       "name": "__args_count",
       "adapter": "beskid_rt_v5_args_count",
@@ -2352,6 +4074,2854 @@
           ]
         }
       ]
+    },
+    {
+      "name": "__array_len",
+      "adapter": "array_len",
+      "params": [
+        {
+          "name": "array",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "array_len",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "array_len",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "array_len",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__array_new",
+      "adapter": "array_new",
+      "params": [
+        {
+          "name": "elementSize",
+          "type": "usize"
+        },
+        {
+          "name": "count",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "array_new",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "array_new",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "array_new",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__beskid_register_callbacks",
+      "adapter": "beskid_register_callbacks",
+      "params": [
+        {
+          "name": "entries",
+          "type": "pointer"
+        },
+        {
+          "name": "count",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_register_callbacks",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_register_callbacks",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_register_callbacks",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__beskid_register_handlers",
+      "adapter": "beskid_register_handlers",
+      "params": [
+        {
+          "name": "entries",
+          "type": "pointer"
+        },
+        {
+          "name": "count",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_register_handlers",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_register_handlers",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_register_handlers",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__bytes_compare",
+      "adapter": "bytes_compare",
+      "params": [
+        {
+          "name": "left",
+          "type": "pointer"
+        },
+        {
+          "name": "leftLen",
+          "type": "usize"
+        },
+        {
+          "name": "right",
+          "type": "pointer"
+        },
+        {
+          "name": "rightLen",
+          "type": "usize"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "bytes_compare",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "bytes_compare",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "bytes_compare",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__bytes_copy",
+      "adapter": "bytes_copy",
+      "params": [
+        {
+          "name": "destination",
+          "type": "pointer"
+        },
+        {
+          "name": "source",
+          "type": "pointer"
+        },
+        {
+          "name": "count",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "bytes_copy",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "bytes_copy",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "bytes_copy",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__bytes_from_str",
+      "adapter": "bytes_from_str",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "bytes_from_str",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "bytes_from_str",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "bytes_from_str",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__bytes_get",
+      "adapter": "bytes_get",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "pointer"
+        },
+        {
+          "name": "index",
+          "type": "usize"
+        }
+      ],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "bytes_get",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "bytes_get",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "bytes_get",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__bytes_set",
+      "adapter": "bytes_set",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "pointer"
+        },
+        {
+          "name": "index",
+          "type": "usize"
+        },
+        {
+          "name": "value",
+          "type": "u8"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "bytes_set",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "bytes_set",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "bytes_set",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__channel_close",
+      "adapter": "channel_close",
+      "params": [
+        {
+          "name": "id",
+          "type": "i64"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "channel_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "channel_close",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "channel_close",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__channel_create",
+      "adapter": "channel_create",
+      "params": [
+        {
+          "name": "capacity",
+          "type": "i64"
+        },
+        {
+          "name": "flags",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "channel_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "channel_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "channel_create",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__channel_receive_ptr",
+      "adapter": "channel_receive_ptr",
+      "params": [
+        {
+          "name": "id",
+          "type": "i64"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "channel_receive_ptr",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "channel_receive_ptr",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "channel_receive_ptr",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__channel_receive_status",
+      "adapter": "channel_receive_status",
+      "params": [
+        {
+          "name": "id",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "channel_receive_status",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "channel_receive_status",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "channel_receive_status",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__channel_receive_value",
+      "adapter": "channel_receive_value",
+      "params": [
+        {
+          "name": "id",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "channel_receive_value",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "channel_receive_value",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "channel_receive_value",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__channel_send",
+      "adapter": "channel_send",
+      "params": [
+        {
+          "name": "id",
+          "type": "i64"
+        },
+        {
+          "name": "value",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "channel_send",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "channel_send",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "channel_send",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__channel_send_ptr",
+      "adapter": "channel_send_ptr",
+      "params": [
+        {
+          "name": "id",
+          "type": "i64"
+        },
+        {
+          "name": "valuePtr",
+          "type": "pointer"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "channel_send_ptr",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "channel_send_ptr",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "channel_send_ptr",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__channel_try_receive",
+      "adapter": "channel_try_receive",
+      "params": [
+        {
+          "name": "id",
+          "type": "i64"
+        }
+      ],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "channel_try_receive",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "channel_try_receive",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "channel_try_receive",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__channel_try_receive_ptr",
+      "adapter": "channel_try_receive_ptr",
+      "params": [
+        {
+          "name": "id",
+          "type": "i64"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "channel_try_receive_ptr",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "channel_try_receive_ptr",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "channel_try_receive_ptr",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__channel_try_send",
+      "adapter": "channel_try_send",
+      "params": [
+        {
+          "name": "id",
+          "type": "i64"
+        },
+        {
+          "name": "value",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "channel_try_send",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "channel_try_send",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "channel_try_send",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__channel_try_send_ptr",
+      "adapter": "channel_try_send_ptr",
+      "params": [
+        {
+          "name": "id",
+          "type": "i64"
+        },
+        {
+          "name": "valuePtr",
+          "type": "pointer"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "channel_try_send_ptr",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "channel_try_send_ptr",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "channel_try_send_ptr",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__clock_monotonic_nanos",
+      "adapter": "clock_monotonic_nanos",
+      "params": [],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "clock_monotonic_nanos",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "clock_monotonic_nanos",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "clock_monotonic_nanos",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__clock_realtime_nanos",
+      "adapter": "clock_realtime_nanos",
+      "params": [],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "clock_realtime_nanos",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "clock_realtime_nanos",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "clock_realtime_nanos",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__composition_container_create",
+      "adapter": "composition_container_create",
+      "params": [
+        {
+          "name": "slot_count",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "composition_container_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "composition_container_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "composition_container_create",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__composition_container_drop",
+      "adapter": "composition_container_drop",
+      "params": [
+        {
+          "name": "container",
+          "type": "pointer"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "composition_container_drop",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "composition_container_drop",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "composition_container_drop",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__composition_launch",
+      "adapter": "composition_launch",
+      "params": [
+        {
+          "name": "container",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "composition_launch",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "composition_launch",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "composition_launch",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__composition_scope_depth",
+      "adapter": "composition_scope_depth",
+      "params": [],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "composition_scope_depth",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "composition_scope_depth",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "composition_scope_depth",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__composition_scope_enter",
+      "adapter": "composition_scope_enter",
+      "params": [
+        {
+          "name": "container",
+          "type": "pointer"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "composition_scope_enter",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "composition_scope_enter",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "composition_scope_enter",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__composition_scope_leave",
+      "adapter": "composition_scope_leave",
+      "params": [],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "composition_scope_leave",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "composition_scope_leave",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "composition_scope_leave",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__composition_shutdown",
+      "adapter": "composition_shutdown",
+      "params": [
+        {
+          "name": "container",
+          "type": "pointer"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "composition_shutdown",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "composition_shutdown",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "composition_shutdown",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__composition_slot_store",
+      "adapter": "composition_slot_store",
+      "params": [
+        {
+          "name": "container",
+          "type": "pointer"
+        },
+        {
+          "name": "slot",
+          "type": "usize"
+        },
+        {
+          "name": "service",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "composition_slot_store",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "composition_slot_store",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "composition_slot_store",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__dynamic_cast_checked",
+      "adapter": "dynamic_cast_checked",
+      "params": [
+        {
+          "name": "cell",
+          "type": "pointer"
+        },
+        {
+          "name": "expectedShapeId",
+          "type": "i32"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "dynamic_cast_checked",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "dynamic_cast_checked",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "dynamic_cast_checked",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__dynamic_cell_create",
+      "adapter": "dynamic_cell_create",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "descriptor",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "dynamic_cell_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "dynamic_cell_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "dynamic_cell_create",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__dynamic_cell_wrap",
+      "adapter": "dynamic_cell_wrap",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "descriptor",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "dynamic_cell_wrap",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "dynamic_cell_wrap",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "dynamic_cell_wrap",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__dynamic_map_aot",
+      "adapter": "dynamic_map_aot",
+      "params": [
+        {
+          "name": "cell",
+          "type": "pointer"
+        },
+        {
+          "name": "mapping",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "dynamic_map_aot",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "dynamic_map_aot",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "dynamic_map_aot",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__dynamic_map_fallback",
+      "adapter": "dynamic_map_fallback",
+      "params": [
+        {
+          "name": "cell",
+          "type": "pointer"
+        },
+        {
+          "name": "mapping",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "dynamic_map_fallback",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "dynamic_map_fallback",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "dynamic_map_fallback",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__dynamic_object_alloc",
+      "adapter": "dynamic_object_alloc",
+      "params": [
+        {
+          "name": "descriptor",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "dynamic_object_alloc",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "dynamic_object_alloc",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "dynamic_object_alloc",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__env_get",
+      "adapter": "env_get",
+      "params": [
+        {
+          "name": "key",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "env_get",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "env_get",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "env_get",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__env_getcwd",
+      "adapter": "env_getcwd",
+      "params": [],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "env_getcwd",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "env_getcwd",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "env_getcwd",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__env_set",
+      "adapter": "env_set",
+      "params": [
+        {
+          "name": "key",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "env_set",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "env_set",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "env_set",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__event_get_handler",
+      "adapter": "event_get_handler",
+      "params": [
+        {
+          "name": "event",
+          "type": "pointer"
+        },
+        {
+          "name": "index",
+          "type": "u32"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "event_get_handler",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "event_get_handler",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "event_get_handler",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__event_len",
+      "adapter": "event_len",
+      "params": [
+        {
+          "name": "event",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "event_len",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "event_len",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "event_len",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__event_subscribe",
+      "adapter": "event_subscribe",
+      "params": [
+        {
+          "name": "eventSlot",
+          "type": "pointer"
+        },
+        {
+          "name": "handler",
+          "type": "pointer"
+        },
+        {
+          "name": "capacity",
+          "type": "usize"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "event_subscribe",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "event_subscribe",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "event_subscribe",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__event_unsubscribe_first",
+      "adapter": "event_unsubscribe_first",
+      "params": [
+        {
+          "name": "eventSlot",
+          "type": "pointer"
+        },
+        {
+          "name": "handler",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "event_unsubscribe_first",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "event_unsubscribe_first",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "event_unsubscribe_first",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fiber_cancel",
+      "adapter": "fiber_cancel",
+      "params": [
+        {
+          "name": "fiberId",
+          "type": "i64"
+        }
+      ],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_cancel",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_cancel",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_cancel",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fiber_current_id",
+      "adapter": "fiber_current_id",
+      "params": [],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_current_id",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_current_id",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_current_id",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fiber_detach",
+      "adapter": "fiber_detach",
+      "params": [
+        {
+          "name": "fiberId",
+          "type": "i64"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_detach",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_detach",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_detach",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fiber_join_status",
+      "adapter": "fiber_join_status",
+      "params": [
+        {
+          "name": "fiberId",
+          "type": "i64"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_join_status",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_join_status",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_join_status",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fiber_join_value",
+      "adapter": "fiber_join_value",
+      "params": [
+        {
+          "name": "fiberId",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_join_value",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_join_value",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_join_value",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fiber_now_millis",
+      "adapter": "fiber_now_millis",
+      "params": [],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_now_millis",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_now_millis",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_now_millis",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fiber_processor_count",
+      "adapter": "fiber_processor_count",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_processor_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_processor_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_processor_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fiber_spawn",
+      "adapter": "fiber_spawn",
+      "params": [
+        {
+          "name": "entry",
+          "type": "pointer"
+        },
+        {
+          "name": "argument",
+          "type": "pointer"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_spawn",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_spawn",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_spawn",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fs_delete",
+      "adapter": "beskid_rt_v5_fs_delete",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_fs_delete",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_fs_delete",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_fs_delete",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fs_exists",
+      "adapter": "beskid_rt_v5_fs_exists",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_fs_exists",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_fs_exists",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_fs_exists",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fs_mkdir",
+      "adapter": "beskid_rt_v5_fs_mkdir",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_fs_mkdir",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_fs_mkdir",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_fs_mkdir",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fs_read_text",
+      "adapter": "beskid_rt_v5_fs_read_text",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        },
+        {
+          "name": "text_out",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_fs_read_text",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_fs_read_text",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_fs_read_text",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fs_write_text",
+      "adapter": "beskid_rt_v5_fs_write_text",
+      "params": [
+        {
+          "name": "path",
+          "type": "pointer"
+        },
+        {
+          "name": "text",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "beskid_rt_v5_fs_write_text",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "beskid_rt_v5_fs_write_text",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "beskid_rt_v5_fs_write_text",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_bytes_allocated",
+      "adapter": "gc_bytes_allocated",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_bytes_allocated",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_bytes_allocated",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_bytes_allocated",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_collect",
+      "adapter": "gc_collect",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_collect",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_collect",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_collect",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_collect_if_needed",
+      "adapter": "gc_collect_if_needed",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_collect_if_needed",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_collect_if_needed",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_collect_if_needed",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_external_root_count",
+      "adapter": "gc_external_root_count",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_external_root_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_external_root_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_external_root_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_object_count",
+      "adapter": "gc_object_count",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_object_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_object_count",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_object_count",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_phase",
+      "adapter": "gc_phase",
+      "params": [],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_phase",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_phase",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_phase",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_register_root",
+      "adapter": "gc_register_root",
+      "params": [
+        {
+          "name": "ptrAddr",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_register_root",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_register_root",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_register_root",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_root_handle",
+      "adapter": "gc_root_handle",
+      "params": [
+        {
+          "name": "valuePtr",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_root_handle",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_root_handle",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_root_handle",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_unregister_root",
+      "adapter": "gc_unregister_root",
+      "params": [
+        {
+          "name": "ptrAddr",
+          "type": "pointer"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_unregister_root",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_unregister_root",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_unregister_root",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_unroot_handle",
+      "adapter": "gc_unroot_handle",
+      "params": [
+        {
+          "name": "handle",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_unroot_handle",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_unroot_handle",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_unroot_handle",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__gc_write_barrier",
+      "adapter": "gc_write_barrier",
+      "params": [
+        {
+          "name": "parent",
+          "type": "pointer"
+        },
+        {
+          "name": "child",
+          "type": "pointer"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "gc_write_barrier",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "gc_write_barrier",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "gc_write_barrier",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__hub_create",
+      "adapter": "hub_create",
+      "params": [],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "hub_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "hub_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "hub_create",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__hub_register",
+      "adapter": "hub_register",
+      "params": [
+        {
+          "name": "hubId",
+          "type": "i64"
+        },
+        {
+          "name": "index",
+          "type": "i64"
+        },
+        {
+          "name": "channelId",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "hub_register",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "hub_register",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "hub_register",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__hub_unregister",
+      "adapter": "hub_unregister",
+      "params": [
+        {
+          "name": "hubId",
+          "type": "i64"
+        },
+        {
+          "name": "index",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "hub_unregister",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "hub_unregister",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "hub_unregister",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__hub_wait_receive_index",
+      "adapter": "hub_wait_receive_index",
+      "params": [
+        {
+          "name": "hubId",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "hub_wait_receive_index",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "hub_wait_receive_index",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "hub_wait_receive_index",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__hub_wait_receive_status",
+      "adapter": "hub_wait_receive_status",
+      "params": [
+        {
+          "name": "hubId",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "hub_wait_receive_status",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "hub_wait_receive_status",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "hub_wait_receive_status",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__hub_wait_receive_value",
+      "adapter": "hub_wait_receive_value",
+      "params": [
+        {
+          "name": "hubId",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "hub_wait_receive_value",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "hub_wait_receive_value",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "hub_wait_receive_value",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__mutex_create",
+      "adapter": "mutex_create",
+      "params": [],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "mutex_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "mutex_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "mutex_create",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__mutex_lock",
+      "adapter": "mutex_lock",
+      "params": [
+        {
+          "name": "id",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "mutex_lock",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "mutex_lock",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "mutex_lock",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__mutex_try_lock",
+      "adapter": "mutex_try_lock",
+      "params": [
+        {
+          "name": "id",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "mutex_try_lock",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "mutex_try_lock",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "mutex_try_lock",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__mutex_unlock",
+      "adapter": "mutex_unlock",
+      "params": [
+        {
+          "name": "id",
+          "type": "pointer"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "mutex_unlock",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "mutex_unlock",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "mutex_unlock",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__panic",
+      "adapter": "panic",
+      "params": [
+        {
+          "name": "code",
+          "type": "i64"
+        }
+      ],
+      "result": "never",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "panic",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "panic",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "panic",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__panic_str",
+      "adapter": "panic_str",
+      "params": [
+        {
+          "name": "message",
+          "type": "pointer"
+        },
+        {
+          "name": "len",
+          "type": "usize"
+        }
+      ],
+      "result": "never",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "panic_str",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "panic_str",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "panic_str",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__process_exit",
+      "adapter": "process_exit",
+      "params": [
+        {
+          "name": "code",
+          "type": "i32"
+        }
+      ],
+      "result": "never",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "process_exit",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "process_exit",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "process_exit",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__process_getpid",
+      "adapter": "process_getpid",
+      "params": [],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "process_getpid",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "process_getpid",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "process_getpid",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__runtime_preempt_check",
+      "adapter": "runtime_preempt_check",
+      "params": [],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "runtime_preempt_check",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "runtime_preempt_check",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "runtime_preempt_check",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__str_concat",
+      "adapter": "str_concat",
+      "params": [
+        {
+          "name": "left",
+          "type": "pointer"
+        },
+        {
+          "name": "right",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "str_concat",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "str_concat",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "str_concat",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__str_eq",
+      "adapter": "str_eq",
+      "params": [
+        {
+          "name": "left",
+          "type": "pointer"
+        },
+        {
+          "name": "right",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "str_eq",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "str_eq",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "str_eq",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__str_from_bytes_utf8",
+      "adapter": "str_from_bytes_utf8",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "pointer"
+        },
+        {
+          "name": "len",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "str_from_bytes_utf8",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "str_from_bytes_utf8",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "str_from_bytes_utf8",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__str_from_i64",
+      "adapter": "str_from_i64",
+      "params": [
+        {
+          "name": "value",
+          "type": "i64"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "str_from_i64",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "str_from_i64",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "str_from_i64",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__str_len",
+      "adapter": "str_len",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
+      "result": "usize",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "str_len",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "str_len",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "str_len",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__str_new",
+      "adapter": "str_new",
+      "params": [
+        {
+          "name": "data",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "str_new",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "str_new",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "str_new",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__str_slice",
+      "adapter": "str_slice",
+      "params": [
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "start",
+          "type": "usize"
+        },
+        {
+          "name": "count",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "str_slice",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "str_slice",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "str_slice",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__syscall_read",
+      "adapter": "syscall_read",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "len",
+          "type": "usize"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "syscall_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "syscall_read",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "syscall_read",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__syscall_read_bytes",
+      "adapter": "syscall_read_bytes",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "data",
+          "type": "pointer"
+        },
+        {
+          "name": "len",
+          "type": "usize"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "syscall_read_bytes",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "syscall_read_bytes",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "syscall_read_bytes",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__syscall_write",
+      "adapter": "syscall_write",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "len",
+          "type": "usize"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "syscall_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "syscall_write",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "syscall_write",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__syscall_write_bytes",
+      "adapter": "syscall_write_bytes",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "data",
+          "type": "pointer"
+        },
+        {
+          "name": "len",
+          "type": "usize"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "syscall_write_bytes",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "syscall_write_bytes",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "syscall_write_bytes",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__tty_winsize",
+      "adapter": "tty_winsize",
+      "params": [],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "tty_winsize",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "tty_winsize",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "tty_winsize",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__wait_group_add",
+      "adapter": "wait_group_add",
+      "params": [
+        {
+          "name": "id",
+          "type": "pointer"
+        },
+        {
+          "name": "delta",
+          "type": "i64"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "wait_group_add",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "wait_group_add",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "wait_group_add",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__wait_group_create",
+      "adapter": "wait_group_create",
+      "params": [],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "wait_group_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "wait_group_create",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "wait_group_create",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__wait_group_done",
+      "adapter": "wait_group_done",
+      "params": [
+        {
+          "name": "id",
+          "type": "pointer"
+        }
+      ],
+      "result": "void",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "wait_group_done",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "wait_group_done",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "wait_group_done",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__wait_group_wait",
+      "adapter": "wait_group_wait",
+      "params": [
+        {
+          "name": "id",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "wait_group_wait",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "wait_group_wait",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "wait_group_wait",
+          "osImports": []
+        }
+      ]
     }
   ],
   "entryAdapters": [
@@ -2380,7 +6950,8 @@
       "ownership": "process_lifetime_copied_beskid_str_arena",
       "entrySource": "args_entry.asm",
       "osImports": [
-        "VirtualAlloc"
+        "VirtualAlloc",
+        "strlen"
       ]
     },
     {
@@ -2684,6 +7255,90 @@
     {
       "name": "runtime_internal_corruption",
       "code": 10
+    }
+  ],
+  "statuses": [
+    {
+      "name": "BeskidFsStatus",
+      "repr": "i32",
+      "values": [
+        {
+          "name": "Ok",
+          "value": 0
+        },
+        {
+          "name": "NotFound",
+          "value": 1
+        },
+        {
+          "name": "PermissionDenied",
+          "value": 2
+        },
+        {
+          "name": "IOError",
+          "value": 3
+        },
+        {
+          "name": "InvalidInput",
+          "value": 4
+        },
+        {
+          "name": "AlreadyExists",
+          "value": 5
+        }
+      ]
+    },
+    {
+      "name": "BeskidRuntimeLifecycle",
+      "repr": "u32",
+      "values": [
+        {
+          "name": "Uninitialized",
+          "value": 0
+        },
+        {
+          "name": "Initializing",
+          "value": 1
+        },
+        {
+          "name": "Active",
+          "value": 2
+        },
+        {
+          "name": "ShuttingDown",
+          "value": 3
+        },
+        {
+          "name": "ShutDown",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "name": "BeskidCompositionStatus",
+      "repr": "usize",
+      "values": [
+        {
+          "name": "Configuring",
+          "value": 1
+        },
+        {
+          "name": "Activating",
+          "value": 2
+        },
+        {
+          "name": "Active",
+          "value": 3
+        },
+        {
+          "name": "ShuttingDown",
+          "value": 4
+        },
+        {
+          "name": "ShutDown",
+          "value": 5
+        }
+      ]
     }
   ],
   "audit": {

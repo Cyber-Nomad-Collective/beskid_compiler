@@ -154,8 +154,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if self.query(beskid_queries::primitive_numeric_conversion(self.db, key)).is_some() {
             return Some(CallKind::PrimitiveNumericConversion);
         }
-        if self.runtime_intrinsic(key).is_some() {
+        if self.runtime_intrinsic(key).is_some() || self.scheduler_compiler_operation(key).is_some() {
             return Some(CallKind::RuntimeIntrinsic);
+        }
+        match beskid_queries::collection_operation(self.db, key) {
+            Ok(Some(_)) | Err(_) => return Some(CallKind::CollectionOperation),
+            Ok(None) => {}
         }
         if self.query(dispatch_builtin_symbol(self.db, key)).is_some() {
             return Some(CallKind::Dynamic);
@@ -191,6 +195,15 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn runtime_intrinsic_kind(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
+        if let Some(operation) = self.scheduler_compiler_operation(key) {
+            return Some(match operation {
+                crate::SchedulerCompilerOperation::FiberEntryAddress => RuntimeIntrinsicKind::SchedulerFiberEntryAddress,
+                crate::SchedulerCompilerOperation::ReturnTrampolineAddress => {
+                    RuntimeIntrinsicKind::SchedulerReturnTrampolineAddress
+                }
+                crate::SchedulerCompilerOperation::PollEntryInvoke => RuntimeIntrinsicKind::SchedulerPollEntryInvoke,
+            });
+        }
         let (_, intrinsic) = self.runtime_intrinsic(key)?;
         match intrinsic.name.as_str() {
             "arch_context_size" => {
@@ -202,6 +215,39 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             _ => {}
         }
         runtime_intrinsic_kind_for_name(intrinsic.name.as_str())
+    }
+
+    fn collection_operation(&self, key: AstNodeKey) -> Option<CollectionOperation> {
+        let operation = match beskid_queries::collection_operation(self.db, key) {
+            Ok(Some(operation)) => operation,
+            Err(_) => return Some(CollectionOperation::UnprovenMutationOwner),
+            Ok(None) => return None,
+        };
+        Some(match operation {
+            beskid_queries::CollectionOperation::Append { owner } => {
+                let owner = match owner {
+                    beskid_queries::CollectionMutationOwner::Local(slot) => CollectionMutationOwner::Local(
+                        LocalSlotId { owner_node: slot.owner.node.0, index: slot.index },
+                    ),
+                    beskid_queries::CollectionMutationOwner::AggregateField { receiver, index, .. } => {
+                        CollectionMutationOwner::AggregateField {
+                            receiver: LocalSlotId { owner_node: receiver.owner.node.0, index: receiver.index },
+                            field_index: index,
+                        }
+                    }
+                };
+                CollectionOperation::Append { owner }
+            }
+            beskid_queries::CollectionOperation::Capacity => CollectionOperation::Capacity,
+            beskid_queries::CollectionOperation::Clear => CollectionOperation::Clear,
+            beskid_queries::CollectionOperation::RemoveLast => CollectionOperation::RemoveLast,
+        })
+    }
+
+    fn collection_element_type(&self, key: AstNodeKey) -> Option<Type> {
+        let specialization = self.query(generic_call_specialization(self.db, key))?;
+        let element = specialization.substitutions.first()?.argument;
+        map_signature_type(self.isa?, element)
     }
 
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
@@ -255,6 +301,17 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     fn call_signature(&self, key: AstNodeKey) -> Option<Signature> {
         if let Some((_, intrinsic)) = self.runtime_intrinsic(key) {
             return signature_for_runtime_intrinsic(self.isa?, intrinsic);
+        }
+        if let Some(operation) = self.scheduler_compiler_operation(key) {
+            let emitter = FunctionEmitter::new(self.isa?);
+            let pointer = self.isa?.pointer_type();
+            return Some(match operation {
+                crate::SchedulerCompilerOperation::FiberEntryAddress
+                | crate::SchedulerCompilerOperation::ReturnTrampolineAddress => emitter.signature([], [pointer]),
+                crate::SchedulerCompilerOperation::PollEntryInvoke => {
+                    emitter.signature([pointer, pointer, pointer, pointer], [types::I32])
+                }
+            });
         }
         signature_for_item(self.isa?, self.query(call_abi_signature(self.db, key))?)
     }

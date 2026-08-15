@@ -220,6 +220,47 @@ macro_rules! generated_intrinsic_methods {
                 RuntimeIntrinsicKind::ArchContextSize(value) | RuntimeIntrinsicKind::ArchContextAlignment(value) => {
                     arguments.is_empty().then(|| self.builder.ins().iconst(result, value as i64))
                 }
+                RuntimeIntrinsicKind::SchedulerFiberEntryAddress => arguments.is_empty().then(|| {
+                    let signature =
+                        let mut signature = Signature::new(self.builder.func.signature.call_conv);
+                    signature.params.push(AbiParam::new(result));
+                    let signature = self.builder.func.import_signature(signature);
+                    let function = self.builder.func.import_function(ExtFuncData {
+                        name: ExternalName::testcase("__beskid_scheduler_fiber_entry"),
+                        signature,
+                        colocated: true,
+                        patchable: false,
+                    });
+                    self.builder.ins().func_addr(result, function)
+                }),
+                RuntimeIntrinsicKind::SchedulerReturnTrampolineAddress => arguments.is_empty().then(|| {
+                    let signature =
+                        self.builder.func.import_signature(Signature::new(self.builder.func.signature.call_conv));
+                    let function = self.builder.func.import_function(ExtFuncData {
+                        name: ExternalName::testcase("__beskid_scheduler_return_trampoline"),
+                        signature,
+                        colocated: true,
+                        patchable: false,
+                    });
+                    self.builder.ins().func_addr(result, function)
+                }),
+                RuntimeIntrinsicKind::SchedulerPollEntryInvoke => {
+                    let [entry, task, context, result_slot] = arguments.as_slice() else { return None };
+                    let pointer = self.builder.func.dfg.value_type(*entry);
+                    (pointer == self.builder.func.dfg.value_type(*task)
+                        && pointer == self.builder.func.dfg.value_type(*context)
+                        && pointer == self.builder.func.dfg.value_type(*result_slot))
+                    .then_some(())?;
+                    let mut signature = Signature::new(self.builder.func.signature.call_conv);
+                    signature.params.extend(
+                        [*task, *context, *result_slot]
+                            .map(|value| AbiParam::new(self.builder.func.dfg.value_type(value))),
+                    );
+                    signature.returns.push(AbiParam::new(types::I32));
+                    let signature = self.builder.func.import_signature(signature);
+                    let call = self.builder.ins().call_indirect(signature, *entry, &[*task, *context, *result_slot]);
+                    self.builder.inst_results(call).first().copied()
+                }
                 RuntimeIntrinsicKind::MemoryCopy
                 | RuntimeIntrinsicKind::MemorySet
                 | RuntimeIntrinsicKind::RawWordStore

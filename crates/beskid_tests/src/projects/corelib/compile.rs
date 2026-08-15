@@ -1,14 +1,15 @@
 use std::fs;
 
 use crate::projects::fixture_harness::{
-    corelib_mvp_fixture, corelib_tests_project_root, resolve_corelib_tests_entry, shared_corelib_mvp_assembly,
-    with_large_test_stack, with_project_test_env,
+    corelib_mvp_fixture, corelib_tests_project_root, resolve_corelib_tests_entry, resolve_fixture_with_assembly,
+    shared_corelib_mvp_assembly, with_large_test_stack, with_project_test_env,
 };
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
-use beskid_analysis::Severity;
 use beskid_analysis::projects::build_compile_plan;
-use beskid_analysis::services::lower_normalize_resolve_type_spanned_with_assembly;
-use beskid_analysis::services::{analyze_file_in_project, analyze_source_in_project, parse_program, resolve_input};
+use beskid_analysis::services::{
+    analyze_file_in_project, analyze_source_in_project, parse_program, resolve_input, FrontEndOptions, PrepareOptions,
+};
+use beskid_analysis::Severity;
 use beskid_queries::{program_assembly, with_db};
 
 use super::{compiler_sdk_src, corelib_root, corelib_workspace_root, foundation_src, stratified_corelib_parse_samples};
@@ -92,14 +93,16 @@ fn corelib_mvp_fixture_resolves_std_modules_via_program_assembly() {
 fn corelib_mvp_fixture_lowers_via_program_assembly() {
     with_large_test_stack(|| {
         with_project_test_env(&corelib_mvp_fixture(), || {
-            let assembly = shared_corelib_mvp_assembly();
-            lower_normalize_resolve_type_spanned_with_assembly(
-                &assembly.entry_unit().program,
-                Some(&assembly),
+            let resolved = resolve_fixture_with_assembly(&corelib_mvp_fixture(), "src/Main.bd", "App");
+            beskid_queries::prepare_compilation(
+                &resolved,
+                PrepareOptions {
+                    front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+                    ..Default::default()
+                },
                 None,
-                beskid_analysis::services::DependencyTypingPolicy::FullClosure,
             )
-            .expect("corelib_mvp should resolve and type-check with use aliases");
+            .expect("corelib_mvp should resolve and type-check with semantic facts");
         });
     });
 }
@@ -125,8 +128,9 @@ i32 Main() {
     return 2;
 }
 "#;
-            let resolved = resolve_corelib_tests_entry("system/SyscallErgonomicsTests.bd");
-            let plan = resolved.compile_plan.expect("corelib tests compile plan");
+            let mut resolved = resolve_corelib_tests_entry("system/SyscallErgonomicsTests.bd");
+            resolved.source = source.into();
+            let plan = resolved.compile_plan.clone().expect("corelib tests compile plan");
             let options = beskid_analysis::projects::assembly_options_for_plan(&plan);
             let assembly = with_db(|db| {
                 program_assembly(
@@ -140,15 +144,18 @@ i32 Main() {
             })
             .expect("nested generic regression assembly");
 
-            lower_normalize_resolve_type_spanned_with_assembly(
-                &assembly.entry_unit().program,
-                Some(&assembly),
+            resolved.assembly = Some(assembly);
+            beskid_queries::prepare_compilation(
+                &resolved,
+                PrepareOptions {
+                    front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+                    ..Default::default()
+                },
                 None,
-                beskid_analysis::services::DependencyTypingPolicy::FullClosure,
             )
             .expect(
                 "assembly should typecheck Core.Results.Result<i64, Core.Syscall.SyscallError> \
-                 through Results.IsOk and Results.IsError",
+                 through Results.IsOk and Results.IsError semantic facts",
             );
         });
     });

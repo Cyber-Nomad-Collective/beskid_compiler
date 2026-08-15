@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::resolve::{HirNodeId, ItemId, LocalId};
+use crate::resolve::{AstNodeId, ItemId, LocalId};
 use crate::syntax::SpanInfo;
 use crate::types::path_value::PathTypeEnv;
 use crate::types::result::{CallLoweringKind, FunctionSignature};
 use crate::types::{TypeId, TypeTable};
 
-/// Cast intent keyed by HIR node id (span retained for diagnostics).
+/// Cast intent keyed by syntax node id (span retained for diagnostics).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CastIntent {
-    pub node_id: HirNodeId,
+    pub node_id: AstNodeId,
     pub span: SpanInfo,
     pub from: TypeId,
     pub to: TypeId,
@@ -20,7 +20,7 @@ pub struct CastIntent {
 /// Call dispatch and cast metadata for codegen lowering.
 #[derive(Debug, Default, Clone)]
 pub struct LoweringPrep {
-    pub call_kinds: HashMap<HirNodeId, CallLoweringKind>,
+    pub call_kinds: HashMap<AstNodeId, CallLoweringKind>,
     pub cast_intents: Vec<CastIntent>,
 }
 
@@ -51,11 +51,11 @@ impl<'a> LoweringPrepSurfaces<'a> {
 }
 
 impl LoweringPrep {
-    pub fn call_kind_at(&self, node_id: HirNodeId) -> Option<&CallLoweringKind> {
+    pub fn call_kind_at(&self, node_id: AstNodeId) -> Option<&CallLoweringKind> {
         self.call_kinds.get(&node_id)
     }
 
-    pub fn cast_intents_for_node(&self, node_id: HirNodeId) -> impl Iterator<Item = &CastIntent> {
+    pub fn cast_intents_for_node(&self, node_id: AstNodeId) -> impl Iterator<Item = &CastIntent> {
         self.cast_intents.iter().filter(move |intent| intent.node_id == node_id)
     }
 }

@@ -11,6 +11,48 @@ pub enum BuildProfile {
     Release,
 }
 
+impl BuildProfile {
+    /// Parse an explicit runtime-kit coordinate without selecting another profile on invalid input.
+    pub fn parse(value: &str) -> Result<Self, InvalidBuildProfile> {
+        match value {
+            "debug" => Ok(Self::Debug),
+            "release" => Ok(Self::Release),
+            _ => Err(InvalidBuildProfile { value: value.to_owned() }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidBuildProfile {
+    value: String,
+}
+
+impl std::fmt::Display for InvalidBuildProfile {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "invalid BESKID_RUNTIME_KIT_PROFILE `{}`; expected `debug` or `release`", self.value)
+    }
+}
+
+impl std::error::Error for InvalidBuildProfile {}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::BuildProfile;
+
+    #[test]
+    fn explicit_runtime_kit_profiles_parse_exactly() {
+        assert_eq!(BuildProfile::parse("debug"), Ok(BuildProfile::Debug));
+        assert_eq!(BuildProfile::parse("release"), Ok(BuildProfile::Release));
+    }
+
+    #[test]
+    fn invalid_runtime_kit_profile_is_rejected() {
+        let error = BuildProfile::parse("relase").expect_err("profile typo must fail closed");
+        assert!(error.to_string().contains("expected `debug` or `release`"));
+        assert!(BuildProfile::parse("").is_err());
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeArtifact {

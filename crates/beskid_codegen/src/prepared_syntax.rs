@@ -15,7 +15,7 @@ use beskid_abi::{
 };
 use beskid_analysis::{
     projects::{
-        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
+        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
     },
     services::{FrontEndTypedResult, parse_program_with_source_name},
 };
@@ -29,7 +29,7 @@ use cranelift_codegen::isa::TargetIsa;
 
 use crate::{CodegenArtifact, CodegenInput, ExportEntry, SyntaxModuleItem, lower_syntax_program};
 
-/// Result of lowering one prepared syntax entrypoint through the HIR-free boundary.
+/// Result of lowering one prepared syntax entrypoint through the typed-codegen boundary.
 pub struct PreparedSyntaxEntrypoint {
     pub artifact: CodegenArtifact,
     pub symbol: String,
@@ -68,7 +68,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
         .position(|unit| unit.path == bootstrap_path)
         .ok_or_else(|| anyhow::anyhow!("parsed canonical Bootstrap source is missing"))?;
     let generation = SyntaxGenerationId(1);
-    let assembly = Arc::new(SyntaxProgramAssembly::new(
+    let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root_dir },
             dependencies: Vec::new(),
@@ -77,7 +77,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
         bootstrap_index,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false,
+        false, generation
     ));
     let project = project_session_for_syntax_assembly(db, &assembly, "beskid-runtime-native", "canonical-runtime")
         .map_err(|error| anyhow::anyhow!("canonical runtime session preparation failed: {error}"))?;
@@ -91,7 +91,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
     // follow only direct calls from those entries. Lowering every function declaration would try
     // to instantiate generic helpers that have no call-derived ABI specialization.
     let roots = assembly
-        .units()
+        .units
         .iter()
         .map(|unit| AstNodeKey {
             unit: SourceUnitId::new(db, unit.path.clone()),
@@ -104,7 +104,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
     let manifest_exports =
         input.abi_manifest().exports.iter().map(|entry| entry.symbol.as_str()).collect::<HashSet<_>>();
     let mut exported_items = HashMap::new();
-    for key in input.roots().iter().copied().flat_map(|root| function_definitions(input.database(), root)) {
+    for key in input.roots.iter().copied().flat_map(|root| function_definitions(input.database(), root)) {
         let export = item_export_symbol(input.database(), key)
             .map_err(|error| anyhow::anyhow!("canonical runtime export validation failed: {error}"))?;
         if let Some(export) = export
@@ -121,7 +121,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
             anyhow::anyhow!("canonical runtime has no explicit source export for `{}`", export.symbol)
         })?;
         let program = input
-            .roots()
+            .roots
             .iter()
             .copied()
             .find(|root| root.unit == entry.unit)
@@ -171,12 +171,11 @@ pub fn lower_prepared_syntax_entrypoint(
 /// Lower one entrypoint from an assembled syntax program through ISLE.
 ///
 /// This is the executable boundary for callers which already own a
-/// [`SyntaxProgramAssembly`]. It intentionally does not accept a typed-HIR frontend or invoke
-/// the legacy prepare spine: each semantic and reachability fact is derived from the supplied
+/// [`ProgramAssembly`]. Each semantic and reachability fact is derived from the supplied
 /// generation-scoped syntax assembly.
 pub fn lower_syntax_assembly_entrypoint(
     db: &mut BeskidDatabase,
-    assembly: Arc<SyntaxProgramAssembly>,
+    assembly: Arc<ProgramAssembly>,
     entrypoint: &str,
     target: TargetMetadata,
     isa: &dyn TargetIsa,
@@ -192,7 +191,7 @@ pub fn lower_syntax_assembly_entrypoint(
         build_typed_program_with_corelib_syscall_services(db, project, generation, Arc::clone(&assembly), capability)
             .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
-        .units()
+        .units
         .iter()
         .map(|unit| AstNodeKey {
             unit: SourceUnitId::new(db, unit.path.clone()),
@@ -207,7 +206,7 @@ pub fn lower_syntax_assembly_entrypoint(
     let entry =
         find_entrypoint(db, &input, entrypoint).ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
     let entry_label = assembly
-        .units()
+        .units
         .iter()
         .find(|unit| SourceUnitId::new(db, unit.path.clone()) == entry.unit)
         .map(|unit| unit.logical_name.as_str())
@@ -260,7 +259,7 @@ pub fn lower_prepared_syntax_module(
         build_typed_program_with_corelib_syscall_services(db, project, generation, Arc::clone(&assembly), capability)
             .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = assembly
-        .units()
+        .units
         .iter()
         .map(|unit| AstNodeKey {
             unit: SourceUnitId::new(db, unit.path.clone()),
@@ -269,9 +268,11 @@ pub fn lower_prepared_syntax_module(
         })
         .collect::<Vec<_>>();
     let input = CodegenInput::new(db, typed, Arc::from(roots), target.clone(), manifest)
-        .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?;
+        .map_err(|error| anyhow::anyhow!("invalid syntax codegen input: {error}"))?
+        .with_composition_plan(generation, Arc::new(front.binding_plan.clone()))
+        .map_err(|error| anyhow::anyhow!("invalid composition codegen input: {error}"))?;
     let items = input
-        .roots()
+        .roots
         .iter()
         .copied()
         .flat_map(|root| function_definitions(input.database(), root))
@@ -293,7 +294,7 @@ pub fn lower_prepared_syntax_module(
 /// The function names in `items` are lowering-internal syntax symbols, while export metadata is
 /// keyed by the semantic item itself. Keeping this mapping at the prepared-syntax boundary lets
 /// every production syntax module artifact carry the same interop surface as canonical runtime
-/// lowering without reconstructing retired HIR state.
+/// lowering from generation-scoped semantic facts.
 fn syntax_export_entries(db: &dyn beskid_queries::Db, items: &[SyntaxModuleItem]) -> Result<Vec<ExportEntry>> {
     syntax_export_entries_matching(db, items, &HashSet::new())
 }
@@ -326,7 +327,7 @@ fn syntax_export_entries_matching(
 }
 
 fn find_entrypoint(db: &BeskidDatabase, input: &CodegenInput<'_>, entrypoint: &str) -> Option<AstNodeKey> {
-    input.roots().iter().copied().find_map(|root| find_item(db, root, entrypoint))
+    input.roots.iter().copied().find_map(|root| find_item(db, root, entrypoint))
 }
 
 fn find_item(db: &BeskidDatabase, key: AstNodeKey, entrypoint: &str) -> Option<AstNodeKey> {
@@ -341,7 +342,7 @@ fn syntax_item_symbol(db: &dyn beskid_queries::Db, input: &CodegenInput<'_>, key
     let unit = input
         .typed_program()
         .assembly
-        .units()
+        .units
         .iter()
         .find(|unit| SourceUnitId::new(db, unit.path.clone()) == key.unit)?;
     let logical = unit

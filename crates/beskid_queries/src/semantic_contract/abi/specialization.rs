@@ -415,6 +415,9 @@ pub(in crate::semantic_contract) fn corelib_service_abi_signature(service: Corel
         "__panic_str" => (vec![SemanticTypeId::STRING], SemanticTypeId::NEVER),
         "__args_count" => (vec![], SemanticTypeId::I64),
         "__args_get" => (vec![SemanticTypeId::I64], SemanticTypeId::STRING),
+        "__fs_read_text" => (vec![SemanticTypeId::STRING, SemanticTypeId::STRING], SemanticTypeId::I32),
+        "__fs_write_text" => (vec![SemanticTypeId::STRING, SemanticTypeId::STRING], SemanticTypeId::I32),
+        "__fs_exists" | "__fs_mkdir" | "__fs_delete" => (vec![SemanticTypeId::STRING], SemanticTypeId::I32),
         _ => return None,
     };
     Some(ItemSignature { parameters: parameters.into(), result })

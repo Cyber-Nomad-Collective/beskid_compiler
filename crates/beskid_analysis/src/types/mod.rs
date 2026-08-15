@@ -1,4 +1,4 @@
-//! Structural type interning ([`TypeTable`]) and HIR type checking via [`TypeChecker`] against a [`crate::resolve::Resolution`].
+//! Structural type interning ([`TypeTable`]) and syntax type checking via [`TypeChecker`] against a [`crate::resolve::Resolution`].
 
 pub mod checker;
 pub mod display;

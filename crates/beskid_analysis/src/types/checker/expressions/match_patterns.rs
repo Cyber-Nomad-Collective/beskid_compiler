@@ -1,4 +1,4 @@
-use crate::hir::{HirMatchArm, HirMatchExpression, HirPattern};
+use crate::syntax::{MatchArm, MatchExpression, Pattern};
 use crate::syntax::Spanned;
 use crate::types::TypeId;
 use crate::types::result::TypeError;
@@ -6,13 +6,13 @@ use crate::types::result::TypeError;
 use super::super::TypeChecker;
 
 impl<'a> TypeChecker<'a> {
-    pub(super) fn type_match_expression(&mut self, match_expr: &Spanned<HirMatchExpression>) -> Option<TypeId> {
+    pub(super) fn type_match_expression(&mut self, match_expr: &Spanned<MatchExpression>) -> Option<TypeId> {
         self.type_match_expression_with_expected(match_expr, self.contextual_expected_type)
     }
 
     pub(in crate::types::checker) fn type_match_expression_with_expected(
         &mut self,
-        match_expr: &Spanned<HirMatchExpression>,
+        match_expr: &Spanned<MatchExpression>,
         outer_expected: Option<TypeId>,
     ) -> Option<TypeId> {
         let scrutinee_type = self.type_expression(&match_expr.node.scrutinee);
@@ -26,7 +26,7 @@ impl<'a> TypeChecker<'a> {
     fn type_match_arm(
         &mut self,
         scrutinee_type: Option<TypeId>,
-        arm: &Spanned<HirMatchArm>,
+        arm: &Spanned<MatchArm>,
         expected: &mut Option<TypeId>,
     ) {
         if let Some(guard) = &arm.node.guard {
@@ -48,12 +48,12 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn type_pattern(&mut self, scrutinee_type: Option<TypeId>, pattern: &Spanned<HirPattern>) {
+    fn type_pattern(&mut self, scrutinee_type: Option<TypeId>, pattern: &Spanned<Pattern>) {
         let Some(scrutinee_type) = scrutinee_type else {
             return;
         };
         match &pattern.node {
-            HirPattern::Enum(enum_pattern) => {
+            Pattern::Enum(enum_pattern) => {
                 let enum_type = self.type_id_for_enum_path(enum_pattern.node.path.span, &enum_pattern.node.path);
                 if let Some(enum_type) = enum_type {
                     let compatible_enum = enum_type == scrutinee_type
@@ -100,24 +100,24 @@ impl<'a> TypeChecker<'a> {
                     }
                 }
             }
-            HirPattern::Identifier(_) | HirPattern::Wildcard | HirPattern::Literal(_) => {
+            Pattern::Identifier(_) | Pattern::Wildcard | Pattern::Literal(_) => {
                 self.type_pattern_with_expected(scrutinee_type, pattern);
             }
         }
     }
 
-    fn type_pattern_with_expected(&mut self, expected_type: TypeId, pattern: &Spanned<HirPattern>) {
+    fn type_pattern_with_expected(&mut self, expected_type: TypeId, pattern: &Spanned<Pattern>) {
         match &pattern.node {
-            HirPattern::Identifier(identifier) => {
+            Pattern::Identifier(identifier) => {
                 self.insert_local_type(identifier.span, expected_type);
             }
-            HirPattern::Literal(literal) => {
+            Pattern::Literal(literal) => {
                 if let Some(actual) = self.type_id_for_literal(literal) {
                     self.require_same_type(pattern.span, expected_type, actual);
                 }
             }
-            HirPattern::Wildcard => {}
-            HirPattern::Enum(enum_pattern) => {
+            Pattern::Wildcard => {}
+            Pattern::Enum(enum_pattern) => {
                 let enum_type = self.type_id_for_enum_path(enum_pattern.node.path.span, &enum_pattern.node.path);
                 if let Some(enum_type) = enum_type {
                     let compatible_enum = enum_type == expected_type

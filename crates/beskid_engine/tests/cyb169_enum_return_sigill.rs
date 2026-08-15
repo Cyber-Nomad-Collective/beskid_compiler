@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use beskid_engine::services::run_entrypoint;
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
+use beskid_tools::toolchain::runtime_kit::{build_native_host, RuntimeKitProfile};
 
 struct EnvironmentVariableGuard {
     key: &'static str,
@@ -36,10 +36,13 @@ impl Drop for EnvironmentVariableGuard {
 #[test]
 fn returned_enum_survives_match_across_call_boundary() {
     let prefix = tempfile::tempdir().expect("exact kit prefix");
-    let profile = if std::env::var("BESKID_RUNTIME_KIT_PROFILE").as_deref() == Ok("release") {
-        RuntimeKitProfile::Release
-    } else {
-        RuntimeKitProfile::Debug
+    let profile = match std::env::var("BESKID_RUNTIME_KIT_PROFILE") {
+        Ok(value) => match beskid_abi::runtime_kit::BuildProfile::parse(&value).expect("valid runtime-kit profile") {
+            beskid_abi::runtime_kit::BuildProfile::Debug => RuntimeKitProfile::Debug,
+            beskid_abi::runtime_kit::BuildProfile::Release => RuntimeKitProfile::Release,
+        },
+        Err(std::env::VarError::NotPresent) => RuntimeKitProfile::Debug,
+        Err(error) => panic!("invalid BESKID_RUNTIME_KIT_PROFILE: {error}"),
     };
     build_native_host(prefix.path().to_path_buf(), profile).expect("publish exact native kit");
     let _runtime_prefix = EnvironmentVariableGuard::set("BESKID_RUNTIME_PREFIX", prefix.path());

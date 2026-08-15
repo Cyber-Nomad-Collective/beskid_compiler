@@ -12,8 +12,7 @@ use crate::CodegenInput;
 use crate::aggregate_static::{AggregateStaticPlan, emit_aggregate_static_data};
 use crate::array_static::{ArrayStaticPlan, emit_array_static_data};
 use crate::closure_static::{ClosureStaticPlan, emit_closure_static_data};
-use crate::lowering::CodegenArtifact;
-use crate::lowering::descriptor::TypeDescriptorData;
+use crate::{CodegenArtifact, TypeDescriptorData};
 
 /// Cranelift [`DataId`] pair for a type: main descriptor blob and companion pointer-offset table.
 #[derive(Debug, Clone)]
@@ -49,7 +48,7 @@ pub(super) fn collect_aggregate_static_plans(
         .collect()
 }
 
-/// Collect source-proven closure static plans without ever re-entering HIR lowering.
+/// Collect source-proven closure static plans from generation-safe syntax facts.
 ///
 /// Direct items and capture-free lambdas each receive syntax-owned trampoline targets. Capturing
 /// lambdas require generation-safe allocate/store/root authority before a trampoline is emitted.

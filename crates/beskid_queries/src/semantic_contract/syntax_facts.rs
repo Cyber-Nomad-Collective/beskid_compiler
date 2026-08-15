@@ -84,7 +84,8 @@ pub(super) fn dispatch_builtin_symbol_tracked(
         }
         let name = path.node.path.node.segments[0].node.name.node.name.as_str();
         let (_, spec) = beskid_analysis::builtins::builtin_for_path(&[name.to_owned()])?;
-        dispatch_route_for_symbol(spec.runtime_symbol)?;
+        let target = TargetMetadata::supported().into_iter().next()?;
+        AbiManifestV5::canonical_runtime(target).intrinsic_metadata(spec.runtime_symbol)?;
         Some(Ok(DispatchBuiltinSymbol(spec.runtime_symbol)))
     })?
     .transpose()

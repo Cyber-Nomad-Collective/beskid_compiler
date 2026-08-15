@@ -1,89 +1,236 @@
-// Returns the native runtime ABI implemented by this canonical source corpus.
+const RUNTIME_ABI_VERSION_OFFSET = 0;
+const RUNTIME_CURRENT_THREAD_OFFSET = 8;
+const RUNTIME_HEAP_OFFSET = 16;
+const RUNTIME_CALLBACK_REGISTRY_OFFSET = 24;
+const RUNTIME_SCHEDULER_OFFSET = 32;
+const RUNTIME_ROOT_FRAME_OFFSET = 40;
+const RUNTIME_TLS_KEY_OFFSET = 48;
+const RUNTIME_LIFECYCLE_STATE_OFFSET = 56;
+const RUNTIME_LIFECYCLE_GENERATION_OFFSET = 60;
+
+const RUNTIME_UNINITIALIZED = 0;
+const RUNTIME_INITIALIZING = 1;
+const RUNTIME_ACTIVE = 2;
+const RUNTIME_SHUTTING_DOWN = 3;
+const RUNTIME_SHUT_DOWN = 4;
+
+const TLS_STATE_SIZE = 48;
+const TLS_RUNTIME_OFFSET = 0;
+const TLS_ROOT_FRAME_OFFSET = 8;
+const TLS_RESERVED_OFFSET = 16;
+const TLS_ATTACH_DEPTH_OFFSET = 24;
+const TLS_COMPOSITION_SCOPE_OFFSET = 32;
+const TLS_COMPOSITION_DEPTH_OFFSET = 40;
+const HEAP_STATE_SIZE = 720;
+const HEAP_REGION_SIZE = 1048576;
+const CALLBACK_REGISTRY_SIZE = 1056;
+const CALLBACK_COMPOSITION_OFFSET = 24;
+
 [Export(Abi:"C", Symbol:"beskid_rt_v5_abi_version")]
-pub i32 AbiVersion() {
+pub u32 AbiVersion() {
     return 5;
 }
 
-// Activates the caller-owned runtime state for the current process.
-//
-// The caller supplies a manifest-layout `BeskidRuntimeState`. This stamps
-// `abi_version = 5` at offset 0 (and clears `flags` via the little-endian word write) and
-// returns the same handle. It does not install RuntimeState into TLS: root-frame helpers
-// require a dedicated `BeskidTlsState` installed by [`ThreadAttach`].
 [Export(Abi:"C", Symbol:"beskid_rt_v5_process_init")]
 pub pointer ProcessInit(pointer config) {
-    raw_word_store(config, 5);
+    if config == NativePointer(0) { return NativePointer(0); }
+    word lifecycle = raw_word_load(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET)) & 0xFFFFFFFF;
+    if lifecycle != RUNTIME_UNINITIALIZED && lifecycle != RUNTIME_SHUT_DOWN { return NativePointer(0); }
+    if raw_word_load(pointer_add(config, RUNTIME_CURRENT_THREAD_OFFSET)) != 0 ||
+       raw_word_load(pointer_add(config, RUNTIME_HEAP_OFFSET)) != 0 ||
+       raw_word_load(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET)) != 0 ||
+       raw_word_load(pointer_add(config, RUNTIME_SCHEDULER_OFFSET)) != 0 ||
+       raw_word_load(pointer_add(config, RUNTIME_ROOT_FRAME_OFFSET)) != 0 ||
+       raw_word_load(pointer_add(config, RUNTIME_TLS_KEY_OFFSET)) != 0 {
+        return NativePointer(0);
+    }
+    word generation = raw_word_load(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET)) >> 32;
+    raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_INITIALIZING | (generation << 32));
+    pointer heap = SystemAllocate(HEAP_STATE_SIZE, 8);
+    if heap == NativePointer(0) {
+        raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (generation << 32));
+        return NativePointer(0);
+    }
+    pointer region = SystemAllocate(HEAP_REGION_SIZE, 8);
+    if region == NativePointer(0) {
+        SystemFree(heap, HEAP_STATE_SIZE);
+        raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (generation << 32));
+        return NativePointer(0);
+    }
+    pointer callbacks = SystemAllocate(CALLBACK_REGISTRY_SIZE, 8);
+    if callbacks == NativePointer(0) {
+        SystemFree(region, HEAP_REGION_SIZE);
+        SystemFree(heap, HEAP_STATE_SIZE);
+        raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (generation << 32));
+        return NativePointer(0);
+    }
+    memory_set(callbacks, 0, CALLBACK_REGISTRY_SIZE);
+    raw_word_store(callbacks, NativeWord(config));
+    HeapInit(heap, region, HEAP_REGION_SIZE);
+    raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), NativeWord(heap));
+    raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), NativeWord(callbacks));
+    raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 5);
+    word nextGeneration = (generation + 1) & 0xFFFFFFFF;
+    if nextGeneration == 0 { nextGeneration = 1; }
+    raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_ACTIVE | (nextGeneration << 32));
+    pointer thread = ThreadAttach(config);
+    if thread == NativePointer(0) {
+        raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), 0);
+        raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
+        SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
+        SystemFree(region, HEAP_REGION_SIZE);
+        SystemFree(heap, HEAP_STATE_SIZE);
+        raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 0);
+        raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (nextGeneration << 32));
+        return NativePointer(0);
+    }
+    SchedInit();
+    if SchedTable() == NativePointer(0) {
+        ThreadDetach(thread);
+        raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), 0);
+        raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
+        SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
+        SystemFree(region, HEAP_REGION_SIZE);
+        SystemFree(heap, HEAP_STATE_SIZE);
+        raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 0);
+        raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (nextGeneration << 32));
+        return NativePointer(0);
+    }
+    if WorkerPoolInit(4) != 0 {
+        SchedShutdownForced(true);
+        ThreadDetach(thread);
+        raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), 0);
+        raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
+        SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
+        SystemFree(region, HEAP_REGION_SIZE);
+        SystemFree(heap, HEAP_STATE_SIZE);
+        raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 0);
+        raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (nextGeneration << 32));
+        return NativePointer(0);
+    }
+    pointer composition = CompositionContainerCreate();
+    if composition == NativePointer(0) || CompositionLaunch(composition) == false {
+        if composition != NativePointer(0) { raw_word_store(pointer_add(composition, 8), 5); CompositionContainerDrop(composition); }
+        WorkerPoolShutdown();
+        SchedShutdownForced(true);
+        ThreadDetach(thread);
+        raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), 0);
+        raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
+        SystemFree(callbacks, CALLBACK_REGISTRY_SIZE);
+        SystemFree(region, HEAP_REGION_SIZE);
+        SystemFree(heap, HEAP_STATE_SIZE);
+        raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 0);
+        raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (nextGeneration << 32));
+        return NativePointer(0);
+    }
+    raw_word_store(pointer_add(callbacks, CALLBACK_COMPOSITION_OFFSET), NativeWord(composition));
     return config;
 }
 
-// Ends the current process-thread bootstrap scope.
-//
-// If a `BeskidTlsState` token is still installed, detach it so root chaining and the
-// RuntimeState `current_thread` link cannot outlive process shutdown.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_process_shutdown")]
 pub unit ProcessShutdown(pointer runtime) {
+    if runtime == NativePointer(0) ||
+       raw_word_load(pointer_add(runtime, RUNTIME_ABI_VERSION_OFFSET)) != 5 ||
+       (raw_word_load(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET)) & 0xFFFFFFFF) != RUNTIME_ACTIVE {
+        Trap(10, NativePointer(0), 0);
+    }
+    word generation = raw_word_load(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET)) >> 32;
+    raw_word_store(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUTTING_DOWN | (generation << 32));
+    pointer callbacks = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_CALLBACK_REGISTRY_OFFSET)));
+    pointer composition = NativePointer(raw_word_load(pointer_add(callbacks, CALLBACK_COMPOSITION_OFFSET)));
+    if composition != NativePointer(0) {
+        CompositionShutdown(composition);
+        CompositionContainerDrop(composition);
+        raw_word_store(pointer_add(callbacks, CALLBACK_COMPOSITION_OFFSET), 0);
+    }
+    if SchedShutdown() == false { WorkerPoolShutdown(); Trap(10, NativePointer(0), 0); }
+    WorkerPoolShutdown();
+    pointer heap = NativePointer(raw_word_load(pointer_add(runtime, RUNTIME_HEAP_OFFSET)));
+    if GcExternalRootCount() != 0 || GcHandlesClear() == false { Trap(10, NativePointer(0), 0); }
+    pointer region = NativePointer(raw_word_load(heap));
     pointer thread = CurrentThreadState();
     if thread != NativePointer(0) {
+        if NativePointer(raw_word_load(pointer_add(thread, TLS_RUNTIME_OFFSET))) != runtime ||
+           raw_word_load(pointer_add(thread, TLS_ROOT_FRAME_OFFSET)) != 0 ||
+           raw_word_load(pointer_add(thread, TLS_RESERVED_OFFSET)) != 0 ||
+           raw_word_load(pointer_add(thread, TLS_ATTACH_DEPTH_OFFSET)) != 1 ||
+           raw_word_load(pointer_add(thread, TLS_COMPOSITION_SCOPE_OFFSET)) != 0 ||
+           raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 {
+            Trap(10, NativePointer(0), 0);
+        }
         ThreadDetach(thread);
     }
+    raw_word_store(pointer_add(runtime, RUNTIME_CURRENT_THREAD_OFFSET), 0);
+    raw_word_store(pointer_add(runtime, RUNTIME_HEAP_OFFSET), 0);
+    raw_word_store(pointer_add(runtime, RUNTIME_CALLBACK_REGISTRY_OFFSET), 0);
+    raw_word_store(pointer_add(runtime, RUNTIME_SCHEDULER_OFFSET), 0);
+    if callbacks != NativePointer(0) { memory_set(callbacks, 0, CALLBACK_REGISTRY_SIZE); SystemFree(callbacks, CALLBACK_REGISTRY_SIZE); }
+    if region != NativePointer(0) { SystemFree(region, HEAP_REGION_SIZE); }
+    if heap != NativePointer(0) { memory_set(heap, 0, HEAP_STATE_SIZE); SystemFree(heap, HEAP_STATE_SIZE); }
+    raw_word_store(pointer_add(runtime, RUNTIME_TLS_KEY_OFFSET), 0);
+    raw_word_store(pointer_add(runtime, RUNTIME_ABI_VERSION_OFFSET), 0);
+    raw_word_store(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (generation << 32));
     return;
 }
 
-// Attaches a dynamically composed Beskid library to its caller-owned runtime state.
-//
-// Library composition shares process init (abi_version stamp) without installing TLS.
-// Callers that need root-frame chaining must still [`ThreadAttach`] the runtime.
 [Export(Abi:"C", Symbol:"beskid_library_attach_v5")]
 pub i32 LibraryAttach(pointer runtime) {
-    ProcessInit(runtime);
+    if ProcessInit(runtime) == NativePointer(0) { return -1; }
     return 0;
 }
 
-// Detaches a composed library from its caller-owned runtime state.
 [Export(Abi:"C", Symbol:"beskid_library_detach_v5")]
 pub unit LibraryDetach(pointer runtime) {
     ProcessShutdown(runtime);
     return;
 }
 
-// Attaches the current native thread to one caller-owned runtime state.
-//
-// Allocates a zeroed `BeskidTlsState` (size 32, alignment 8), installs it as the TLS token,
-// and links `BeskidRuntimeState.current_thread` at offset 8. Root-frame helpers then read
-// `root_frame` at TLS offset 8 without colliding with RuntimeState fields.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_thread_attach")]
 pub pointer ThreadAttach(pointer runtime) {
-    pointer previous = CurrentThreadState();
-    if previous != NativePointer(0) {
-        ThreadDetach(previous);
+    if runtime == NativePointer(0) || raw_word_load(pointer_add(runtime, RUNTIME_ABI_VERSION_OFFSET)) != 5 ||
+       (raw_word_load(pointer_add(runtime, RUNTIME_LIFECYCLE_STATE_OFFSET)) & 0xFFFFFFFF) != RUNTIME_ACTIVE {
+        return NativePointer(0);
     }
-    pointer tlsState = SystemAllocate(32, 8);
-    if tlsState == NativePointer(0) {
-        return tlsState;
+    if CurrentThreadState() != NativePointer(0) { return NativePointer(0); }
+    pointer tlsState = SystemAllocate(TLS_STATE_SIZE, 8);
+    if tlsState == NativePointer(0) { return NativePointer(0); }
+    memory_set(tlsState, 0, TLS_STATE_SIZE);
+    raw_word_store(pointer_add(tlsState, TLS_RUNTIME_OFFSET), NativeWord(runtime));
+    raw_word_store(pointer_add(tlsState, TLS_ATTACH_DEPTH_OFFSET), 1);
+    // `current_thread` names the primary mutator only; it is not a prohibition
+    // on scheduler-worker attachment. Phase-A mutator ownership is transferred
+    // separately by the scheduler token.
+    if raw_word_load(pointer_add(runtime, RUNTIME_CURRENT_THREAD_OFFSET)) == 0 {
+        raw_word_store(pointer_add(runtime, RUNTIME_CURRENT_THREAD_OFFSET), NativeWord(tlsState));
     }
-    memory_set(tlsState, 0, 32);
-    raw_word_store(tlsState, NativeWord(runtime));
-    raw_word_store(pointer_add(tlsState, 8), 0);
-    raw_word_store(pointer_add(tlsState, 16), 0);
-    raw_word_store(pointer_add(tlsState, 24), 1);
-    raw_word_store(pointer_add(runtime, 8), NativeWord(tlsState));
     SetCurrentThreadState(tlsState);
+    if CurrentThreadState() != tlsState {
+        if raw_word_load(pointer_add(runtime, RUNTIME_CURRENT_THREAD_OFFSET)) == NativeWord(tlsState) {
+            raw_word_store(pointer_add(runtime, RUNTIME_CURRENT_THREAD_OFFSET), 0);
+        }
+        SystemFree(tlsState, TLS_STATE_SIZE);
+        return NativePointer(0);
+    }
     return tlsState;
 }
 
-// Detaches the current thread when its installed token matches `thread`.
-//
-// An out-of-order detach leaves another active attachment intact. A matching detach clears
-// TLS and `BeskidRuntimeState.current_thread`, then frees the 32-byte `BeskidTlsState`.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_thread_detach")]
 pub unit ThreadDetach(pointer thread) {
-    if CurrentThreadState() == thread {
-        pointer runtime = NativePointer(raw_word_load(thread));
-        SetCurrentThreadState(NativePointer(0));
-        if runtime != NativePointer(0) {
-            raw_word_store(pointer_add(runtime, 8), 0);
-        }
-        SystemFree(thread, 32);
+    if thread == NativePointer(0) || CurrentThreadState() != thread { Trap(10, NativePointer(0), 0); }
+    pointer runtime = NativePointer(raw_word_load(pointer_add(thread, TLS_RUNTIME_OFFSET)));
+    if runtime == NativePointer(0) ||
+       raw_word_load(pointer_add(thread, TLS_ROOT_FRAME_OFFSET)) != 0 ||
+       raw_word_load(pointer_add(thread, TLS_RESERVED_OFFSET)) != 0 ||
+       raw_word_load(pointer_add(thread, TLS_ATTACH_DEPTH_OFFSET)) != 1 ||
+       raw_word_load(pointer_add(thread, TLS_COMPOSITION_SCOPE_OFFSET)) != 0 ||
+       raw_word_load(pointer_add(thread, TLS_COMPOSITION_DEPTH_OFFSET)) != 0 {
+        Trap(10, NativePointer(0), 0);
     }
+    SetCurrentThreadState(NativePointer(0));
+    if raw_word_load(pointer_add(runtime, RUNTIME_CURRENT_THREAD_OFFSET)) == NativeWord(thread) {
+        raw_word_store(pointer_add(runtime, RUNTIME_CURRENT_THREAD_OFFSET), 0);
+    }
+    memory_set(thread, 0, TLS_STATE_SIZE);
+    SystemFree(thread, TLS_STATE_SIZE);
     return;
 }

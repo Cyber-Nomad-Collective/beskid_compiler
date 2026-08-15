@@ -1,0 +1,211 @@
+use Runtime.Bootstrap.Lifecycle;
+use Runtime.Bootstrap.Native;
+use Runtime.Mem.Gc.Allocation;
+use Runtime.Mem.Gc.Collection;
+use Runtime.Mem.Gc.RootsHandles;
+use Runtime.Data.Collections;
+use Testing.Assert;
+
+pub pointer TestDescriptor(word size, word alignment) {
+    pointer descriptor = SystemAllocate(40, 8);
+    memory_set(descriptor, 0, 40);
+    raw_word_store(descriptor, size);
+    raw_word_store(pointer_add(descriptor, 8), alignment);
+    return descriptor;
+}
+
+pub pointer InstallTestHeap(pointer runtime, pointer heap, pointer region, word regionSize) {
+    memory_set(runtime, 0, 64);
+    Assert.True(ProcessInit(runtime) == runtime, "runtime initialized before installing heap");
+    pointer thread = CurrentThreadState();
+    Assert.True(thread != NativePointer(0), "process initialization attached the mutator and installed its heap");
+    return thread;
+}
+
+pub unit DropTestHeap(pointer runtime, pointer thread, pointer heap, pointer region, word regionSize) {
+    ProcessShutdown(runtime);
+    SystemFree(region, regionSize);
+    SystemFree(heap, 720);
+    SystemFree(runtime, 64);
+    return;
+}
+
+test gc_fails_closed_before_runtime_initialization {
+    Assert.True(Alloc(24, NativePointer(0)) == NativePointer(0), "allocation rejects a missing descriptor before initialization");
+    Assert.Equal(GcBytesAllocated(), 0, "statistics are zero before initialization");
+    Assert.Equal(GcCollect(), 0, "collection fails closed before initialization");
+}
+
+test gc_reclaims_reuses_and_invalidates_stale_handles {
+    pointer runtime = SystemAllocate(64, 8);
+    pointer heap = SystemAllocate(720, 8);
+    pointer region = SystemAllocate(128, 8);
+    pointer thread = InstallTestHeap(runtime, heap, region, 128);
+    pointer descriptor = TestDescriptor(24, 8);
+
+    pointer rooted = Alloc(24, descriptor);
+    pointer reclaimable = Alloc(24, descriptor);
+    Assert.True(rooted != NativePointer(0) && reclaimable != NativePointer(0), "valid descriptors allocate managed objects");
+    word handle = GcRootHandle(rooted);
+    Assert.True(handle != 0, "handle roots an allocated object");
+    Assert.Equal(GcBytesAllocated(), 48, "live-byte accounting includes both objects");
+    Assert.Equal(GcObjectCount(), 2, "object accounting includes both objects");
+
+    GcCollect();
+    Assert.Equal(GcCollectionCount(), 1, "successful collection increments collection count");
+    Assert.Equal(GcBytesAllocated(), 24, "collection reclaims unreachable bytes");
+    Assert.Equal(GcObjectCount(), 1, "collection retains only the rooted object");
+    Assert.Equal(GcPhase(), 0, "successful collection returns to idle");
+
+    pointer reused = Alloc(24, descriptor);
+    Assert.True(reused == reclaimable, "allocation reuses the reclaimed non-moving block");
+    GcUnrootHandle(handle);
+    Assert.True(GcResolveHandle(handle) == NativePointer(0), "released handle is stale immediately");
+    word replacement = GcRootHandle(rooted);
+    Assert.True(replacement != 0 && replacement != handle, "reused handle slot advances its generation");
+    Assert.True(GcResolveHandle(handle) == NativePointer(0), "old generation remains stale after slot reuse");
+
+    SystemFree(descriptor, 40);
+    DropTestHeap(runtime, thread, heap, region, 128);
+}
+
+test gc_array_uses_distinct_descriptors_and_traces_variable_pointer_elements {
+    pointer runtime = SystemAllocate(64, 8);
+    pointer heap = SystemAllocate(720, 8);
+    pointer region = SystemAllocate(512, 8);
+    pointer thread = InstallTestHeap(runtime, heap, region, 512);
+    pointer childDescriptor = TestDescriptor(24, 8);
+    pointer child = Alloc(24, childDescriptor);
+    pointer pointerMap = SystemAllocate(8, 8);
+    raw_word_store(pointerMap, 0);
+    pointer element = SystemAllocate(32, 8);
+    memory_set(element, 0, 32);
+    raw_word_store(element, 8);
+    raw_word_store(pointer_add(element, 8), 8);
+    raw_word_store(pointer_add(element, 16), NativeWord(pointerMap));
+    raw_word_store(pointer_add(element, 24), 1);
+    pointer arrayDescriptor = TestDescriptor(48, 8);
+    raw_word_store(pointer_add(arrayDescriptor, 32), TYPE_DESCRIPTOR_ARRAY);
+    pointer request = SystemAllocate(32, 8);
+    memory_set(request, 0, 32);
+    raw_word_store(request, NativeWord(element));
+    raw_word_store(pointer_add(request, 8), 2);
+    raw_word_store(pointer_add(request, 16), NativeWord(arrayDescriptor));
+    pointer handleOut = SystemAllocate(8, 8);
+
+    pointer array = AllocateArrayRooted(request, handleOut);
+    Assert.True(array != NativePointer(0), "array allocation accepts a valid array-aware object descriptor");
+    Assert.True(NativePointer(raw_word_load(NativePointer(NativeWord(array) - 8))) == element, "array retains its separate element descriptor");
+    raw_word_store(NativePointer(raw_word_load(array)), NativeWord(child));
+    Assert.Equal(GcCollect(), 1, "variable-size array and pointer elements scan safely");
+    Assert.True(GcBytesAllocated() >= 24, "pointer element keeps its child alive");
+    Assert.Equal(ArrayConstructionFinish(NativePointer(raw_word_load(handleOut))), 1, "construction root releases deterministically");
+
+    SystemFree(handleOut, 8);
+    SystemFree(request, 32);
+    SystemFree(arrayDescriptor, 40);
+    SystemFree(element, 32);
+    SystemFree(pointerMap, 8);
+    SystemFree(childDescriptor, 40);
+    DropTestHeap(runtime, thread, heap, region, 512);
+}
+
+test gc_heap_wide_marking_handles_broad_roots_fanout_and_cycles {
+    pointer runtime = SystemAllocate(64, 8);
+    pointer heap = SystemAllocate(720, 8);
+    pointer region = SystemAllocate(2048, 8);
+    pointer thread = InstallTestHeap(runtime, heap, region, 2048);
+
+    pointer leafDescriptor = TestDescriptor(24, 8);
+    pointer fanoutMap = SystemAllocate(64, 8);
+    mut word index = 0;
+    while index < 8 {
+        raw_word_store(pointer_add(fanoutMap, index * 8), 16 + index * 8);
+        index = index + 1;
+    }
+    pointer fanoutDescriptor = TestDescriptor(80, 8);
+    raw_word_store(pointer_add(fanoutDescriptor, 16), NativeWord(fanoutMap));
+    raw_word_store(pointer_add(fanoutDescriptor, 24), 8);
+    pointer fanout = Alloc(80, fanoutDescriptor);
+    index = 0;
+    while index < 8 {
+        pointer leaf = Alloc(24, leafDescriptor);
+        Assert.True(leaf != NativePointer(0), "broad graph leaf allocates");
+        raw_word_store(pointer_add(fanout, 16 + index * 8), NativeWord(leaf));
+        index = index + 1;
+    }
+    word fanoutHandle = GcRootHandle(fanout);
+    Assert.True(fanoutHandle != 0, "broad fanout parent is rooted");
+
+    pointer nodeMap = SystemAllocate(8, 8);
+    raw_word_store(nodeMap, 16);
+    pointer nodeDescriptor = TestDescriptor(24, 8);
+    raw_word_store(pointer_add(nodeDescriptor, 16), NativeWord(nodeMap));
+    raw_word_store(pointer_add(nodeDescriptor, 24), 1);
+    pointer firstNode = Alloc(24, nodeDescriptor);
+    pointer previousNode = firstNode;
+    index = 1;
+    while index < 10 {
+        pointer node = Alloc(24, nodeDescriptor);
+        raw_word_store(pointer_add(previousNode, 16), NativeWord(node));
+        previousNode = node;
+        index = index + 1;
+    }
+    raw_word_store(pointer_add(previousNode, 16), NativeWord(firstNode));
+    word cycleHandle = GcRootHandle(firstNode);
+    Assert.True(cycleHandle != 0, "cycle is rooted");
+
+    pointer rootSlots = SystemAllocate(96, 8);
+    index = 0;
+    while index < 12 {
+        pointer root = Alloc(24, leafDescriptor);
+        pointer slot = pointer_add(rootSlots, index * 8);
+        raw_word_store(slot, NativeWord(root));
+        Assert.True(GcRegisterRoot(slot), "root breadth beyond six registers");
+        index = index + 1;
+    }
+
+    GcCollect();
+    Assert.Equal(GcPhase(), 0, "heap-wide marking completes without breadth failure");
+    Assert.Equal(GcObjectCount(), 31, "all broad roots, fanout children, and cycle nodes survive");
+
+    index = 0;
+    while index < 12 {
+        GcUnregisterRoot(pointer_add(rootSlots, index * 8));
+        index = index + 1;
+    }
+    GcUnrootHandle(cycleHandle);
+    GcUnrootHandle(fanoutHandle);
+    SystemFree(rootSlots, 96);
+    SystemFree(nodeDescriptor, 40);
+    SystemFree(nodeMap, 8);
+    SystemFree(fanoutDescriptor, 40);
+    SystemFree(fanoutMap, 64);
+    SystemFree(leafDescriptor, 40);
+    DropTestHeap(runtime, thread, heap, region, 2048);
+}
+
+test gc_validates_descriptor_alignment_and_handle_capacity {
+    pointer runtime = SystemAllocate(64, 8);
+    pointer heap = SystemAllocate(720, 8);
+    pointer region = SystemAllocate(256, 8);
+    pointer thread = InstallTestHeap(runtime, heap, region, 256);
+    pointer invalid = TestDescriptor(24, 3);
+    pointer valid = TestDescriptor(24, 8);
+
+    Assert.True(Alloc(24, invalid) == NativePointer(0), "non-power-of-two descriptor alignment fails closed");
+    Assert.True(Alloc(16, valid) == NativePointer(0), "allocation size must match descriptor size");
+    pointer object = Alloc(24, valid);
+    Assert.True(object != NativePointer(0), "aligned descriptor allocates");
+
+    mut word index = 0;
+    while index < 8 {
+        Assert.True(GcRootHandle(object) != 0, "manifest handle slot is available");
+        index = index + 1;
+    }
+    Assert.Equal(GcRootHandle(object), 0, "ninth handle fails at manifest capacity");
+
+    SystemFree(invalid, 40);
+    SystemFree(valid, 40);
+    DropTestHeap(runtime, thread, heap, region, 256);
+}

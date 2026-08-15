@@ -1,84 +1,77 @@
-// Canonical Beskid GC mark-state transitions and gray stack.
+// Canonical heap-wide mark discovery and descriptor-driven tracing.
 
-// Marks a single object gray and pushes it onto the mark stack.
 pub unit GcMarkGray(pointer object) {
-    word state = raw_word_load(pointer_add(object, 8));
-    if state == GcMark::White {
-        raw_word_store(pointer_add(object, 8), GcMark::Gray);
-        // Push onto gray stack for processing.
-        PushGray(object);
-    }
-    return;
-}
-
-// Marks an object black (fully traced).
-pub unit GcMarkBlack(pointer object) {
-    raw_word_store(pointer_add(object, 8), GcMark::Black);
-    return;
-}
-
-// Processes the gray stack: for each gray object, mark its pointer fields,
-// then mark the object black.
-pub unit ProcessGrayStack() {
-    mut pointer obj = PopGray();
-    while obj != NativePointer(0) {
-        // Trace pointer fields in this object.
-        pointer descriptor = NativePointer(raw_word_load(obj));
-        if descriptor != NativePointer(0) {
-            word pointerCount = raw_word_load(pointer_add(descriptor, 24));
-            pointer pointerMap = NativePointer(raw_word_load(pointer_add(descriptor, 16)));
-            if pointerCount > 0 && pointerMap != NativePointer(0) {
-                mut word i = 0;
-                while i < pointerCount {
-                    word offset = raw_word_load(pointer_add(pointerMap, i * 8));
-                    pointer child = NativePointer(raw_word_load(pointer_add(obj, offset)));
-                    if child != NativePointer(0) {
-                        GcMarkGray(child);
-                    }
-                    i = i + 1;
-                }
-            }
-        }
-        GcMarkBlack(obj);
-        obj = PopGray();
-    }
-    return;
-}
-
-// Pushes an object pointer onto the gray stack.
-pub unit PushGray(pointer object) {
     pointer heap = Heap();
-    if heap == NativePointer(0) {
+    if IsAllocatedObject(heap, object) == false {
         return;
     }
-    // Gray stack: BeskidHeap bytes 64-128 (8 slots of pointer each).
-    mut word i = 0;
-    while i < 8 {
-        pointer slot = pointer_add(heap, 64 + i * 8);
-        if raw_word_load(slot) == 0 {
-            raw_word_store(slot, NativeWord(object));
-            return;
-        }
-        i = i + 1;
+    word state = raw_word_load(pointer_add(object, 8));
+    if state != GcMark::White {
+        return;
     }
+    raw_word_store(pointer_add(object, 8), GcMark::Gray);
     return;
 }
 
-// Pops an object from the gray stack. Returns null when empty.
-pub pointer PopGray() {
+
+pub bool ProcessGrayStack() {
     pointer heap = Heap();
-    if heap == NativePointer(0) {
-        return NativePointer(0);
-    }
-    mut word i = 8;
-    while i > 0 {
-        i = i - 1;
-        pointer slot = pointer_add(heap, 64 + i * 8);
-        word value = raw_word_load(slot);
-        if value != 0 {
-            raw_word_store(slot, 0);
-            return NativePointer(value);
+    pointer region = NativePointer(raw_word_load(heap));
+    pointer bump = NativePointer(raw_word_load(pointer_add(heap, 16)));
+    mut bool found = true;
+    while found {
+        found = false;
+        pointer object = region;
+        while NativeWord(object) < NativeWord(bump) {
+            word descriptorWord = raw_word_load(object);
+            word size;
+            if descriptorWord == 0 {
+                size = raw_word_load(pointer_add(object, 8));
+            } else {
+                pointer descriptor = NativePointer(descriptorWord);
+                if ValidateTypeDescriptor(descriptor) == false { return false; }
+                size = ManagedObjectSize(object, descriptor);
+                if size == 0 { return false; }
+                if raw_word_load(pointer_add(object, 8)) == GcMark::Gray {
+                    if TypeDescriptorFlags(descriptor) == TYPE_DESCRIPTOR_ARRAY {
+                        pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+                        word stride = raw_word_load(element);
+                        pointer pointerMap = NativePointer(raw_word_load(pointer_add(element, 16)));
+                        word pointerCount = raw_word_load(pointer_add(element, 24));
+                        word length = raw_word_load(pointer_add(object, 32));
+                        word capacity = raw_word_load(pointer_add(object, 40));
+                        if length > capacity { return false; }
+                        mut word elementIndex = 0;
+                        while elementIndex < length {
+                            mut word mapIndex = 0;
+                            while mapIndex < pointerCount {
+                                word offset = raw_word_load(pointer_add(pointerMap, mapIndex * 8));
+                                if offset + 8 < offset || offset + 8 > stride { return false; }
+                                pointer child = NativePointer(raw_word_load(pointer_add(object, 48 + elementIndex * stride + offset)));
+                                if child != NativePointer(0) { GcMarkGray(child); }
+                                mapIndex = mapIndex + 1;
+                            }
+                            elementIndex = elementIndex + 1;
+                        }
+                    } else {
+                        pointer pointerMap = TypeDescriptorPointerMap(descriptor);
+                        word pointerCount = TypeDescriptorPointerCount(descriptor);
+                        mut word index = 0;
+                        while index < pointerCount {
+                            word offset = raw_word_load(pointer_add(pointerMap, index * 8));
+                            pointer child = NativePointer(raw_word_load(pointer_add(object, offset)));
+                            if child != NativePointer(0) { GcMarkGray(child); }
+                            index = index + 1;
+                        }
+                    }
+                    raw_word_store(pointer_add(object, 8), GcMark::Black);
+                    found = true;
+                }
+            }
+            word next = NativeWord(object) + size;
+            if size < 16 || size % 8 != 0 || next <= NativeWord(object) || next > NativeWord(bump) { return false; }
+            object = NativePointer(next);
         }
     }
-    return NativePointer(0);
+    return true;
 }

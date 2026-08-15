@@ -10,7 +10,7 @@ const SCHEDULER_HUB_STATE_OFFSET = 3488;
 
 // These allocation sizes are co-located with their only executable consumers.
 const CHANNEL_TABLE_SIZE = 12296; // count word + 64 fixed channel slots
-const MUTEX_TABLE_SIZE = 1288; // count word + 32 fixed mutex slots
+const MUTEX_TABLE_SIZE = 4872; // count word + 32 fixed mutex slots
 const WG_TABLE_SIZE = 2312; // count word + 16 fixed WaitGroup slots
 const HUB_TABLE_SIZE = 65800;
 
@@ -101,4 +101,25 @@ pub pointer SchedulerHubTable() {
     memory_set(table, 0, HUB_TABLE_SIZE);
     raw_word_store(pointer_add(scheduler, SCHEDULER_HUB_STATE_OFFSET), NativeWord(table));
     return table;
+}
+
+pub unit SchedulerStorageShutdown(pointer scheduler) {
+    pointer channelTable = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_CHANNEL_STATE_OFFSET)));
+    pointer mutexTable = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET)));
+    pointer waitgroupTable = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET)));
+    pointer hubTable = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_HUB_STATE_OFFSET)));
+    if channelTable != NativePointer(0) {
+        word count = raw_word_load(channelTable);
+        mut word index = 0;
+        while index < count { ChannelDrain(pointer_add(channelTable, 8 + index * 192)); index = index + 1; }
+        SystemFree(channelTable, CHANNEL_TABLE_SIZE);
+    }
+    if mutexTable != NativePointer(0) { SystemFree(mutexTable, MUTEX_TABLE_SIZE); }
+    if waitgroupTable != NativePointer(0) { SystemFree(waitgroupTable, WG_TABLE_SIZE); }
+    if hubTable != NativePointer(0) { SystemFree(hubTable, HUB_TABLE_SIZE); }
+    raw_word_store(pointer_add(scheduler, SCHEDULER_CHANNEL_STATE_OFFSET), 0);
+    raw_word_store(pointer_add(scheduler, SCHEDULER_MUTEX_STATE_OFFSET), 0);
+    raw_word_store(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET), 0);
+    raw_word_store(pointer_add(scheduler, SCHEDULER_HUB_STATE_OFFSET), 0);
+    return;
 }

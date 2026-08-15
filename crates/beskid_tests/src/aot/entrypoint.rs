@@ -1,6 +1,5 @@
 use super::*;
 
-#[ignore = "HIR lower_program path incomplete after syntax-ISLE cutover; covered by syntax-ISLE / engine probes"]
 #[test]
 fn executable_build_rejects_empty_entrypoint() {
     let artifact = lower_sample_artifact();
@@ -15,7 +14,6 @@ fn executable_build_rejects_empty_entrypoint() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-#[ignore = "HIR lower_program path incomplete after syntax-ISLE cutover; covered by syntax-ISLE / engine probes"]
 #[test]
 fn object_only_build_allows_empty_entrypoint() {
     let artifact = lower_sample_artifact();

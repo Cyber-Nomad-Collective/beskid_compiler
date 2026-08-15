@@ -1,4 +1,4 @@
-use crate::hir::{HirBlock, HirContractNode, HirItem, HirStatementNode};
+use crate::syntax::{Block, ContractNode, Node, Statement};
 use crate::syntax::Spanned;
 
 use super::super::errors::ResolveError;
@@ -7,13 +7,13 @@ use super::super::resolver::Resolver;
 use super::super::tables::ResolvedType;
 
 impl Resolver {
-    pub(super) fn resolve_item(&mut self, item: &Spanned<HirItem>) {
+    pub(super) fn resolve_item(&mut self, item: &Spanned<Node>) {
         match &item.node {
-            HirItem::HostDefinition(_) => {}
-            // HIR-free constant facts are consumed before executable lowering; there are no
-            // types, locals, or references for the retired HIR resolver to traverse.
-            HirItem::ConstantDefinition(_) => {}
-            HirItem::FunctionDefinition(def) => {
+            Node::HostDefinition(_) => {}
+            // syntax-free constant facts are consumed before executable lowering; there are no
+            // types, locals, or references for the retired syntax resolver to traverse.
+            Node::ConstantDefinition(_) => {}
+            Node::Function(def) => {
                 self.push_generic_scope();
                 for generic in &def.node.generics {
                     self.insert_generic(&generic.node.name);
@@ -30,7 +30,7 @@ impl Resolver {
                 self.pop_scope();
                 self.pop_generic_scope();
             }
-            HirItem::MethodDefinition(def) => {
+            Node::Method(def) => {
                 self.push_scope();
                 self.resolve_type(&def.node.receiver_type);
                 let previous_receiver = self.current_receiver_item_id;
@@ -47,7 +47,7 @@ impl Resolver {
                 self.current_receiver_item_id = previous_receiver;
                 self.pop_scope();
             }
-            HirItem::ExtendTypeDefinition(def) => {
+            Node::ExtendTypeDefinition(def) => {
                 self.resolve_type(&def.node.target_type);
                 for method in &def.node.methods {
                     self.push_scope();
@@ -67,7 +67,7 @@ impl Resolver {
                     self.pop_scope();
                 }
             }
-            HirItem::TestDefinition(def) => {
+            Node::TestDefinition(def) => {
                 self.push_scope();
                 if let Some(meta) = &def.node.meta {
                     for entry in &meta.node.entries {
@@ -82,7 +82,7 @@ impl Resolver {
                 self.resolve_block(&def.node.body);
                 self.pop_scope();
             }
-            HirItem::InlineModule(def) => {
+            Node::InlineModule(def) => {
                 self.push_scope();
                 let previous_module = self.current_module;
                 let mut module_path =
@@ -96,7 +96,7 @@ impl Resolver {
                 self.current_module = previous_module;
                 self.pop_scope();
             }
-            HirItem::TypeDefinition(def) => {
+            Node::TypeDefinition(def) => {
                 self.push_generic_scope();
                 for generic in &def.node.generics {
                     self.insert_generic(&generic.node.name);
@@ -143,7 +143,7 @@ impl Resolver {
                 }
                 self.pop_generic_scope();
             }
-            HirItem::EnumDefinition(def) => {
+            Node::EnumDefinition(def) => {
                 self.push_generic_scope();
                 for generic in &def.node.generics {
                     self.insert_generic(&generic.node.name);
@@ -155,10 +155,10 @@ impl Resolver {
                 }
                 self.pop_generic_scope();
             }
-            HirItem::ContractDefinition(def) => {
+            Node::ContractDefinition(def) => {
                 for node in &def.node.items {
                     match &node.node {
-                        HirContractNode::MethodSignature(signature) => {
+                        ContractNode::MethodSignature(signature) => {
                             for param in &signature.node.parameters {
                                 self.resolve_type(&param.node.ty);
                             }
@@ -166,17 +166,17 @@ impl Resolver {
                                 self.resolve_type(return_type);
                             }
                         }
-                        HirContractNode::Embedding(_) => {}
+                        ContractNode::Embedding(_) => {}
                     }
                 }
             }
-            HirItem::AttributeDeclaration(_) => {}
-            HirItem::ModuleDeclaration(_) | HirItem::UseDeclaration(_) => {}
-            HirItem::MacroDefinition(_) => {}
+            Node::AttributeDeclaration(_) => {}
+            Node::ModuleDeclaration(_) | Node::UseDeclaration(_) => {}
+            Node::MacroDefinition(_) => {}
         }
     }
 
-    pub(super) fn resolve_block(&mut self, block: &Spanned<HirBlock>) {
+    pub(super) fn resolve_block(&mut self, block: &Spanned<Block>) {
         self.push_scope();
         for statement in &block.node.statements {
             self.resolve_statement(statement);
@@ -184,37 +184,37 @@ impl Resolver {
         self.pop_scope();
     }
 
-    pub(super) fn resolve_if_statement(&mut self, if_stmt: &Spanned<crate::hir::HirIfStatement>) {
+    pub(super) fn resolve_if_statement(&mut self, if_stmt: &Spanned<crate::syntax::IfStatement>) {
         self.resolve_expression(&if_stmt.node.condition);
         self.resolve_block(&if_stmt.node.then_block);
         if let Some(else_branch) = &if_stmt.node.else_branch {
             match &else_branch.node {
-                crate::hir::HirElseBranch::Block(block) => self.resolve_block(block),
-                crate::hir::HirElseBranch::If(nested) => self.resolve_if_statement(nested),
+                crate::syntax::ElseBranch::Block(block) => self.resolve_block(block),
+                crate::syntax::ElseBranch::If(nested) => self.resolve_if_statement(nested),
             }
         }
     }
 
-    pub(super) fn resolve_statement(&mut self, statement: &Spanned<HirStatementNode>) {
+    pub(super) fn resolve_statement(&mut self, statement: &Spanned<Statement>) {
         match &statement.node {
-            HirStatementNode::LetStatement(let_stmt) => {
+            Statement::Let(let_stmt) => {
                 if let Some(type_annotation) = &let_stmt.node.type_annotation {
                     self.resolve_type(type_annotation);
                 }
                 self.insert_local(&let_stmt.node.name.node.name, let_stmt.node.name.span);
                 self.resolve_expression(&let_stmt.node.value);
             }
-            HirStatementNode::ReturnStatement(return_stmt) => {
+            Statement::Return(return_stmt) => {
                 if let Some(value) = &return_stmt.node.value {
                     self.resolve_expression(value);
                 }
             }
-            HirStatementNode::BreakStatement(_) | HirStatementNode::ContinueStatement(_) => {}
-            HirStatementNode::WhileStatement(while_stmt) => {
+            Statement::Break(_) | Statement::Continue(_) => {}
+            Statement::While(while_stmt) => {
                 self.resolve_expression(&while_stmt.node.condition);
                 self.resolve_block(&while_stmt.node.body);
             }
-            HirStatementNode::ForStatement(for_stmt) => {
+            Statement::For(for_stmt) => {
                 self.resolve_expression(&for_stmt.node.iterable);
                 self.push_scope();
                 self.insert_local(&for_stmt.node.iterator.node.name, for_stmt.node.iterator.span);
@@ -223,13 +223,13 @@ impl Resolver {
                 }
                 self.pop_scope();
             }
-            HirStatementNode::IfStatement(if_stmt) => {
+            Statement::If(if_stmt) => {
                 self.resolve_if_statement(if_stmt);
             }
-            HirStatementNode::ExpressionStatement(expr_stmt) => {
+            Statement::Expression(expr_stmt) => {
                 self.resolve_expression(&expr_stmt.node.expression);
             }
-            HirStatementNode::WithStatement(_) | HirStatementNode::LaunchStatement(_) => {}
+            Statement::With(_) | Statement::Launch(_) => {}
         }
     }
 }

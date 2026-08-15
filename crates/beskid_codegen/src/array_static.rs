@@ -8,14 +8,15 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    AstNodeKey, IndexedNodeKind, SemanticTypeId, child_nodes, empty_array_literal_element_abi_type, node_kind,
-    node_type,
+    child_nodes, empty_array_literal_element_abi_type, node_kind, node_type, AstNodeKey, IndexedNodeKind,
+    SemanticTypeId,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
-use crate::{CodegenInput, aggregate_static::paths_match};
+use crate::{aggregate_static::paths_match, CodegenInput};
 
 pub const ABI_V5_ARRAY_ALLOCATE_ROOTED: &str = "beskid_rt_v5_array_allocate_rooted";
+pub const ABI_V5_ARRAY_GROW_ROOTED: &str = "beskid_rt_v5_array_grow_rooted";
 pub const ABI_V5_ARRAY_CONSTRUCTION_FINISH: &str = "beskid_rt_v5_array_construction_finish";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,15 +75,22 @@ pub fn emit_array_static_data<M: Module>(
     }
     module.define_data(element, &element_data)?;
 
-    // BeskidArrayAllocationRequest { element, length, flags=0, reserved=0 }.
-    let mut request_bytes = vec![0u8; 32];
+    // BeskidArrayAllocationRequest followed by its immutable array-object descriptor. Keeping the
+    // fixed descriptor in the same data object gives each request a valid, process-lifetime
+    // descriptor without conflating it with the separately addressable element descriptor.
+    let mut request_bytes = vec![0u8; 72];
     write_word(&mut request_bytes, 8, plan.length)?;
+    write_word(&mut request_bytes, 32, 48)?;
+    write_word(&mut request_bytes, 40, 8)?;
+    write_word(&mut request_bytes, 64, 1)?;
     let mut request_data = DataDescription::new();
     request_data.define(request_bytes.into_boxed_slice());
     // Manifest freezes BeskidArrayAllocationRequest at 8-byte alignment.
     request_data.set_align(8);
     let element_address = module.declare_data_in_data(element, &mut request_data);
     request_data.write_data_addr(0, element_address, 0);
+    let descriptor_address = module.declare_data_in_data(request, &mut request_data);
+    request_data.write_data_addr(16, descriptor_address, 32);
     module.define_data(request, &request_data)?;
     Ok((pointer_map, element, request))
 }
@@ -120,7 +128,7 @@ impl CodegenInput<'_> {
         let unit = self
             .typed_program()
             .assembly
-            .units()
+            .units
             .iter()
             .position(|unit| paths_match(&unit.path, literal.unit.path(self.database())))?;
         let namespace = self

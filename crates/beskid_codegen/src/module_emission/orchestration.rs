@@ -6,28 +6,30 @@ use beskid_isle::DirectCallee;
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_module::{FuncId, Linkage, Module, ModuleError};
 
-use super::contracts::{SyntaxModuleEmissionError, emission_error, emission_verification};
+use super::contracts::{emission_error, emission_verification, SyntaxModuleEmissionError};
 use super::data::{collect_aggregate_static_plans, collect_array_static_plans, collect_closure_static_plans};
 use super::imports::{
-    ArtifactCallImporter, ArtifactStringInterner, corelib_service_symbols, extern_contract_imports,
-    extern_contract_symbols, runtime_intrinsic_symbols,
+    corelib_service_symbols, extern_contract_imports, extern_contract_symbols, runtime_intrinsic_symbols,
+    ArtifactCallImporter, ArtifactStringInterner,
 };
 use super::items::{ResolvedSyntaxModuleItem, SyntaxModuleItem};
 use super::specialization::resolve_module_items;
 use super::trace::{trace_item_facts, trace_key};
 use super::trampolines::{
+    conservative_fiber_stack_requirement, emit_scheduler_fiber_entry, emit_scheduler_return_trampoline,
     emit_spawn_trampoline, expand_direct_spawn_items, resolve_lambda_trampolines, resolve_spawn_trampolines,
 };
-use crate::aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, emit_aggregate_static_data};
-use crate::array_static::{ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, emit_array_static_data};
-use crate::closure_static::{
-    ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
-    emit_closure_static_data,
+use crate::aggregate_static::{emit_aggregate_static_data, ABI_V5_MANAGED_OBJECT_ALLOCATE};
+use crate::array_static::{
+    emit_array_static_data, ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ABI_V5_ARRAY_GROW_ROOTED,
 };
-use crate::lowering::{CodegenArtifact, ExternImport};
+use crate::closure_static::{
+    emit_closure_static_data, ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
+    ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
+};
 use crate::{
-    CodegenContext, CodegenInput, emit_isle_closure_lambda_entry, emit_isle_expression_with_call_importer,
-    emit_isle_item_with_services, emit_isle_item_with_services_specialization,
+    emit_isle_closure_lambda_entry, emit_isle_expression_with_call_importer, emit_isle_item_with_services,
+    emit_isle_item_with_services_specialization, CodegenArtifact, CodegenContext, CodegenInput, ExternImport,
 };
 
 const ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT: &str = "beskid_rt_v5_fiber_spawn_with_cancel_slot";
@@ -55,19 +57,16 @@ impl ModuleEmissionSession {
     }
 }
 
-/// Lower syntax items into the ordinary backend artifact boundary without constructing HIR or
-/// using the legacy `Lowerable` implementation. Direct calls retain their exact syntax item
-/// identity while their emitted CLIF references the final declared symbol by name.
-///
-/// Backends may then use their existing artifact declaration/remapping path. Production JIT
-/// entrypoint lowering uses this bridge as it migrates away from HIR.
+/// Lower typed syntax items through generated ISLE into the backend artifact boundary.
+/// Direct calls retain their exact syntax item identity while emitted CLIF references the final
+/// declared symbol by name.
 pub fn lower_syntax_program(
     input: &CodegenInput<'_>,
     isa: &dyn TargetIsa,
     items: &[SyntaxModuleItem],
 ) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
     let started = Instant::now();
-    crate::isle_trace::event(|| format!("event=clif.begin items={} roots={}", items.len(), input.roots().len()));
+    crate::isle_trace::event(|| format!("event=clif.begin items={} roots={}", items.len(), input.roots.len()));
     let items = match resolve_module_items(input, items).and_then(|items| expand_direct_spawn_items(input, items)) {
         Ok(items) => items,
         Err(error) => {
@@ -122,10 +121,60 @@ fn lower_resolved_syntax_program(
             .map(|trampoline| (DirectCallee::lambda_trampoline(trampoline.lambda), trampoline.symbol.clone())),
     );
 
+    let scheduler_symbols = if input.runtime_intrinsic_capability().is_some() {
+        let symbol = |name: &str| {
+            items
+                .iter()
+                .find(|item| {
+                    beskid_queries::item_name(input.database(), item.key).ok().flatten().as_deref() == Some(name)
+                })
+                .map(|item| item.symbol.as_str())
+        };
+        Some((
+            symbol("SchedulerContext")
+                .ok_or_else(|| emission_verification("canonical SchedulerContext item unavailable"))?,
+            symbol("SchedulerSetCurrentFiber")
+                .ok_or_else(|| emission_verification("canonical SchedulerSetCurrentFiber item unavailable"))?,
+            symbol("ContextSwitch").ok_or_else(|| emission_verification("canonical ContextSwitch item unavailable"))?,
+            symbol("SchedulerCurrentFiber")
+                .ok_or_else(|| emission_verification("canonical SchedulerCurrentFiber item unavailable"))?,
+            symbol("FiberRecord").ok_or_else(|| emission_verification("canonical FiberRecord item unavailable"))?,
+            symbol("SchedulerStackCheck")
+                .ok_or_else(|| emission_verification("canonical SchedulerStackCheck item unavailable"))?,
+            symbol("SchedulerStackOverflowObserved")
+                .ok_or_else(|| emission_verification("canonical SchedulerStackOverflowObserved item unavailable"))?,
+        ))
+    } else {
+        None
+    };
+
     let mut context = CodegenContext::new_with_artifact_namespace(input.artifact_namespace().to_owned());
     let lambda_count =
         trampolines.iter().filter(|trampoline| trampoline.lambda_body.is_some()).count() + lambda_trampolines.len();
-    let mut functions = Vec::with_capacity(items.len() + trampolines.len() + lambda_count + lambda_trampolines.len());
+    let mut functions = Vec::with_capacity(
+        items.len()
+            + trampolines.len()
+            + lambda_count
+            + lambda_trampolines.len()
+            + usize::from(scheduler_symbols.is_some()) * 2,
+    );
+    if let Some((scheduler_context, set_current, context_switch, current, fiber_record, _, _)) = scheduler_symbols {
+        functions.push(crate::LoweredFunction {
+            name: "__beskid_scheduler_fiber_entry".to_owned(),
+            function: emit_scheduler_fiber_entry(isa, scheduler_context, set_current, context_switch)?,
+        });
+        functions.push(crate::LoweredFunction {
+            name: "__beskid_scheduler_return_trampoline".to_owned(),
+            function: emit_scheduler_return_trampoline(
+                isa,
+                current,
+                fiber_record,
+                scheduler_context,
+                set_current,
+                context_switch,
+            )?,
+        });
+    }
     for trampoline in &trampolines {
         if let Some(body) = trampoline.lambda_body {
             let result = trampoline
@@ -146,10 +195,6 @@ fn lower_resolved_syntax_program(
             };
             functions.push(crate::LoweredFunction { name: trampoline.target_symbol.clone(), function });
         }
-        functions.push(crate::LoweredFunction {
-            name: trampoline.symbol.clone(),
-            function: emit_spawn_trampoline(trampoline, isa)?,
-        });
     }
     for trampoline in &lambda_trampolines {
         let result = trampoline
@@ -215,6 +260,25 @@ fn lower_resolved_syntax_program(
         });
         functions.push(crate::LoweredFunction { name: item.symbol.clone(), function });
     }
+    if !trampolines.is_empty() {
+        let Some((_, _, _, _, _, stack_check, stack_overflow)) = scheduler_symbols else {
+            return Err(emission_verification("fiber stack checks require the exact canonical Scheduler corpus"));
+        };
+        for trampoline in &trampolines {
+            let target =
+                functions.iter().find(|function| function.name == trampoline.target_symbol).ok_or_else(|| {
+                    emission_verification(format!(
+                        "fiber target `{}` was not emitted before its stack bound",
+                        trampoline.target_symbol
+                    ))
+                })?;
+            let required = conservative_fiber_stack_requirement(&target.function, &trampoline.target_symbol)?;
+            functions.push(crate::LoweredFunction {
+                name: trampoline.symbol.clone(),
+                function: emit_spawn_trampoline(trampoline, isa, required, stack_check, stack_overflow)?,
+            });
+        }
+    }
     let mut extern_imports = runtime_intrinsics
         .into_values()
         .chain(corelib_services.into_values())
@@ -249,9 +313,12 @@ fn lower_resolved_syntax_program(
     }
     let array_static_plans = collect_array_static_plans(input, items);
     if !array_static_plans.is_empty() {
-        for symbol in
-            [ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, "beskid_rt_v5_array_write_barrier"]
-        {
+        for symbol in [
+            ABI_V5_ARRAY_ALLOCATE_ROOTED,
+            ABI_V5_ARRAY_GROW_ROOTED,
+            ABI_V5_ARRAY_CONSTRUCTION_FINISH,
+            "beskid_rt_v5_array_write_barrier",
+        ] {
             if !extern_imports.iter().any(|existing| existing.symbol == symbol) {
                 extern_imports.push(ExternImport { symbol: symbol.to_owned(), abi: Some("C".into()), library: None });
             }
@@ -293,8 +360,13 @@ pub fn emit_syntax_program<M: Module>(
     let mut by_callee = HashMap::with_capacity(items.len());
     let mut by_symbol = HashMap::with_capacity(artifact.functions.len());
     for lowered in &artifact.functions {
-        let item_linkage =
-            if lowered.name.starts_with("__beskid_spawn_entry_syntax_") { Linkage::Local } else { linkage };
+        let item_linkage = if lowered.name.starts_with("__beskid_spawn_entry_syntax_")
+            || lowered.name.starts_with("__beskid_scheduler_")
+        {
+            Linkage::Local
+        } else {
+            linkage
+        };
         let id = module.declare_function(&lowered.name, item_linkage, &lowered.function.signature)?;
         by_symbol.insert(lowered.name.clone(), id);
     }

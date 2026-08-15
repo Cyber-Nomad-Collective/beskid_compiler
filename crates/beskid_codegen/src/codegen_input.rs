@@ -3,7 +3,14 @@
 use std::sync::Arc;
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
-use beskid_queries::{AstNodeKey, Db, TypedProgram, node_kind};
+use beskid_queries::{node_kind, AstNodeKey, Db, TypedProgram};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SchedulerCompilerOperation {
+    FiberEntryAddress,
+    ReturnTrampolineAddress,
+    PollEntryInvoke,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CodegenInputError {
@@ -19,9 +26,11 @@ pub enum CodegenInputError {
     InvalidEntry,
     #[error("AST root is stale, foreign, or absent from the syntax assembly: {0:?}")]
     InvalidRoot(AstNodeKey),
+    #[error("composition plan belongs to a different syntax generation")]
+    StaleCompositionPlan,
 }
 
-/// Complete HIR-free input required before generated ISLE selection may begin.
+/// Complete typed input required before generated ISLE selection may begin.
 pub struct CodegenInput<'db> {
     db: &'db dyn Db,
     typed_program: TypedProgram,
@@ -29,6 +38,7 @@ pub struct CodegenInput<'db> {
     target: TargetMetadata,
     abi_manifest: AbiManifestV5,
     artifact_namespace: Arc<str>,
+    composition_plan: Option<Arc<beskid_analysis::composition::BindingPlan>>,
 }
 
 impl<'db> CodegenInput<'db> {
@@ -52,7 +62,7 @@ impl<'db> CodegenInput<'db> {
         }
 
         let entry_path = typed_program.entry.path(db);
-        let entry_matches = typed_program.assembly.units().iter().any(|unit| paths_match(&unit.path, entry_path));
+        let entry_matches = typed_program.assembly.units.iter().any(|unit| paths_match(&unit.path, entry_path));
         if !entry_matches {
             return Err(CodegenInputError::InvalidEntry);
         }
@@ -60,13 +70,21 @@ impl<'db> CodegenInput<'db> {
         for root in roots.iter().copied() {
             let unit_path = root.unit.path(db);
             let belongs_to_assembly =
-                typed_program.assembly.units().iter().any(|unit| paths_match(&unit.path, unit_path));
+                typed_program.assembly.units.iter().any(|unit| paths_match(&unit.path, unit_path));
             if !belongs_to_assembly || !matches!(node_kind(db, root), Ok(Some(_))) {
                 return Err(CodegenInputError::InvalidRoot(root));
             }
         }
 
-        Ok(Self { db, typed_program, roots, target, abi_manifest, artifact_namespace: Arc::from("module") })
+        Ok(Self {
+            db,
+            typed_program,
+            roots,
+            target,
+            abi_manifest,
+            artifact_namespace: Arc::from("module"),
+            composition_plan: None,
+        })
     }
 
     pub fn database(&self) -> &'db dyn Db {
@@ -100,11 +118,32 @@ impl<'db> CodegenInput<'db> {
             target: self.target.clone(),
             abi_manifest: self.abi_manifest.clone(),
             artifact_namespace,
+            composition_plan: self.composition_plan.clone(),
         }
     }
 
     pub fn artifact_namespace(&self) -> &str {
         &self.artifact_namespace
+    }
+
+    /// Attach compiler-resolved composition facts for this exact syntax generation.
+    ///
+    /// Ordinary dynamic lookup has no fallback: composition lowering is authorized only when
+    /// this generation-bound plan is present.
+    pub fn with_composition_plan(
+        mut self,
+        generation: beskid_queries::SyntaxGenerationId,
+        plan: Arc<beskid_analysis::composition::BindingPlan>,
+    ) -> Result<Self, CodegenInputError> {
+        if generation != self.typed_program.generation {
+            return Err(CodegenInputError::StaleCompositionPlan);
+        }
+        self.composition_plan = Some(plan);
+        Ok(self)
+    }
+
+    pub fn composition_plan(&self) -> Option<&beskid_analysis::composition::BindingPlan> {
+        self.composition_plan.as_deref()
     }
 
     /// The one context layout selected by the ABI-v5 target contract.
@@ -144,6 +183,40 @@ impl<'db> CodegenInput<'db> {
     ///
     /// A current node from a foreign unit, a stale node, a user program, and an undeclared
     /// manifest name all return `None`; callers must never substitute an extern fallback.
+    /// Resolve an operation minted by the compiler for the exact embedded Scheduler source.
+    ///
+    /// These operations are local lowering artifacts, not manifest imports. The source unit,
+    /// corpus capability, syntax generation, and operation spelling must all match exactly.
+    pub fn scheduler_compiler_operation_for(&self, key: AstNodeKey, name: &str) -> Option<SchedulerCompilerOperation> {
+        if !matches!(node_kind(self.db, key), Ok(Some(_))) || key.generation != self.typed_program.generation {
+            return None;
+        }
+        let unit_path = key.unit.path(self.db);
+        let logical_path = self
+            .typed_program
+            .assembly
+            .units
+            .iter()
+            .find(|unit| paths_match(&unit.path, unit_path))?
+            .logical_name
+            .as_str();
+        let capability = self.runtime_intrinsic_capability()?;
+        capability.authorizes_source(logical_path).then_some(())?;
+        match (logical_path, name) {
+            (beskid_abi::runtime_source::CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, "scheduler_fiber_entry_address") => {
+                Some(SchedulerCompilerOperation::FiberEntryAddress)
+            }
+            (
+                beskid_abi::runtime_source::CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH,
+                "scheduler_return_trampoline_address",
+            ) => Some(SchedulerCompilerOperation::ReturnTrampolineAddress),
+            (beskid_abi::runtime_source::CANONICAL_SCHEDULER_POLL_SOURCE_PATH, "scheduler_poll_entry_invoke") => {
+                Some(SchedulerCompilerOperation::PollEntryInvoke)
+            }
+            _ => None,
+        }
+    }
+
     pub fn runtime_intrinsic_for(
         &self,
         key: AstNodeKey,
@@ -156,7 +229,7 @@ impl<'db> CodegenInput<'db> {
         let logical_path = self
             .typed_program
             .assembly
-            .units()
+            .units
             .iter()
             .find(|unit| paths_match(&unit.path, unit_path))?
             .logical_name

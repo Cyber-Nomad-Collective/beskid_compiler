@@ -1,36 +1,97 @@
-// Canonical Beskid GC mark state and runtime-state accessors.
-//
-// Header layout (BeskidObjectHeader, 16 bytes):
-//   offset 0: descriptor (pointer to BeskidTypeDescriptor)
-//   offset 8: gc_word (mark state: 0=white, 1=gray, 2=black)
-//
-// The heap state is stored in a BeskidRuntimeState at a known TLS offset,
-// installed by ThreadAttach during bootstrap.
+// Canonical Beskid GC state and manifest-owned layout accessors.
 
-// Mark-state constants for gc_word.
 pub enum GcMark {
     White,
     Gray,
     Black,
 }
 
-// Returns the active BeskidRuntimeState pointer installed by ThreadAttach.
+const HEAP_REGION_START = 0;
+const HEAP_REGION_SIZE = 8;
+const HEAP_BUMP = 16;
+const HEAP_LIMIT = 24;
+const HEAP_LIVE_BYTES = 32;
+const HEAP_LIVE_COUNT = 40;
+const HEAP_COLLECTION_COUNT = 48;
+const HEAP_COLLECTION_THRESHOLD = 56;
+const HEAP_GC_PHASE = 64;
+const HEAP_EXTERNAL_ROOT_COUNT = 72;
+const HEAP_EXTERNAL_ROOTS = 80;
+const HEAP_HANDLE_COUNT = 584;
+const HEAP_HANDLES = 592;
+const HEAP_STATE_SIZE = 720;
+const GC_EXTERNAL_ROOT_CAPACITY = 63;
+const GC_HANDLE_CAPACITY = 8;
+const GC_HANDLE_SLOT_SIZE = 16;
+
+// Gray count uses two otherwise unreachable values while no gray entries exist.
+const GC_PHASE_SWEEPING = 0 - 1;
+const GC_PHASE_FAILED = 0 - 2;
+
 pub pointer RuntimeState() {
     pointer tls = CurrentThreadState();
     if tls == NativePointer(0) {
-        Trap(10, pointer_from_native_word(0), 0);
+        return NativePointer(0);
     }
     return NativePointer(raw_word_load(tls));
 }
 
-// Returns the heap pointer from the runtime state (offset 16 in BeskidRuntimeState).
 pub pointer Heap() {
     pointer state = RuntimeState();
+    if state == NativePointer(0) {
+        return NativePointer(0);
+    }
     return NativePointer(raw_word_load(pointer_add(state, 16)));
 }
 
-// Returns the root-frame pointer from the runtime state (offset 40).
 pub pointer StateRootFrame() {
     pointer state = RuntimeState();
+    if state == NativePointer(0) {
+        return NativePointer(0);
+    }
     return NativePointer(raw_word_load(pointer_add(state, 40)));
+}
+
+pub bool HeapContains(pointer heap, pointer object) {
+    if heap == NativePointer(0) || object == NativePointer(0) {
+        return false;
+    }
+    word address = NativeWord(object);
+    word start = raw_word_load(pointer_add(heap, HEAP_REGION_START));
+    word bump = raw_word_load(pointer_add(heap, HEAP_BUMP));
+    return address >= start && address < bump && address % 8 == 0;
+}
+
+pub bool IsAllocatedObject(pointer heap, pointer object) {
+    if HeapContains(heap, object) == false {
+        return false;
+    }
+    pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
+    pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
+    while NativeWord(cursor) < NativeWord(bump) {
+        word descriptorWord = raw_word_load(cursor);
+        word blockSize;
+        if descriptorWord == 0 {
+            blockSize = raw_word_load(pointer_add(cursor, 8));
+        } else {
+            pointer descriptor = NativePointer(descriptorWord);
+            if ValidateTypeDescriptor(descriptor) == false {
+                return false;
+            }
+            blockSize = ManagedObjectSize(cursor, descriptor);
+            if blockSize == 0 { return false; }
+        }
+        if blockSize < 16 || blockSize % 8 != 0 {
+            return false;
+        }
+        if cursor == object {
+            return descriptorWord != 0;
+        }
+        word next = NativeWord(cursor) + blockSize;
+        if next <= NativeWord(cursor) || next > NativeWord(bump) {
+            return false;
+        }
+        cursor = NativePointer(next);
+    }
+    return false;
 }

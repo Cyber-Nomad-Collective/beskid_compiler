@@ -1,0 +1,42 @@
+use Runtime.Bootstrap.Lifecycle;
+use Runtime.Bootstrap.Native;
+use Testing.Assert;
+
+test lifecycle_uses_manifest_state_generation_and_48_byte_tls {
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+
+    Assert.True(ProcessInit(runtime) == runtime, "uninitialized runtime becomes active");
+    Assert.True(raw_word_load(pointer_add(runtime, 16)) != 0, "lifecycle publishes an initialized heap");
+    Assert.True(raw_word_load(pointer_add(runtime, 24)) != 0, "lifecycle publishes callbacks and composition ownership");
+    Assert.True(raw_word_load(pointer_add(runtime, 32)) != 0, "lifecycle publishes an initialized scheduler");
+    Assert.Equal(raw_word_load(pointer_add(runtime, 56)) & 0xFFFFFFFF, 2, "lifecycle is active");
+    Assert.Equal(raw_word_load(pointer_add(runtime, 56)) >> 32, 1, "first activation advances generation");
+    Assert.True(ProcessInit(runtime) == NativePointer(0), "active runtime rejects reinitialization");
+
+    pointer thread = CurrentThreadState();
+    Assert.True(thread != NativePointer(0), "process initialization attaches the owning mutator");
+    Assert.Equal(raw_word_load(pointer_add(thread, 16)), 0, "reserved TLS field is initialized");
+    Assert.Equal(raw_word_load(pointer_add(thread, 32)), 0, "composition scope is initialized");
+    Assert.Equal(raw_word_load(pointer_add(thread, 40)), 0, "composition depth is initialized");
+
+    ProcessShutdown(runtime);
+    Assert.Equal(raw_word_load(pointer_add(runtime, 16)), 0, "shutdown clears heap publication");
+    Assert.Equal(raw_word_load(pointer_add(runtime, 24)), 0, "shutdown clears callback and composition publication");
+    Assert.Equal(raw_word_load(pointer_add(runtime, 32)), 0, "shutdown clears scheduler publication");
+    Assert.Equal(raw_word_load(pointer_add(runtime, 56)) & 0xFFFFFFFF, 4, "shutdown reaches ShutDown");
+    Assert.True(ProcessInit(runtime) == runtime, "shut down runtime can initialize again");
+    Assert.Equal(raw_word_load(pointer_add(runtime, 56)) >> 32, 2, "reinitialization advances generation");
+    ProcessShutdown(runtime);
+    SystemFree(runtime, 64);
+}
+
+test failed_thread_attach_does_not_publish_partial_state {
+    pointer runtime = SystemAllocate(64, 8);
+    memory_set(runtime, 0, 64);
+
+    Assert.True(ThreadAttach(runtime) == NativePointer(0), "uninitialized runtime rejects thread attach");
+    Assert.True(CurrentThreadState() == NativePointer(0), "failed attach leaves TLS unchanged");
+
+    SystemFree(runtime, 64);
+}

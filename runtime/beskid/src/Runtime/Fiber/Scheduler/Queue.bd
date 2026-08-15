@@ -43,6 +43,11 @@ pub unit PendingCancelEnqueue(word fiberIndex) {
     if table == NativePointer(0) { return; }
     word count = raw_word_load(pointer_add(table, 872));
     if count >= 32 { return; }
+    mut word existing = 0;
+    while existing < count {
+        if raw_word_load(pointer_add(table, 616 + existing * 8)) == fiberIndex { return; }
+        existing = existing + 1;
+    }
     raw_word_store(pointer_add(table, 616 + count * 8), fiberIndex);
     raw_word_store(pointer_add(table, 872), count + 1);
     return;
@@ -65,8 +70,9 @@ pub unit ApplyPendingCancels() {
             // next yields or returns through its real target context path.
             if state == FiberState::Runnable || state == FiberState::Parked {
                 raw_word_store(fib, FiberState::Cancelled);
-                raw_word_store(pointer_add(fib, 48), JoinOutcome::Cancelled);
+                raw_word_store(pointer_add(fib, 48), FIBER_JOIN_CANCELLED);
                 raw_word_store(pointer_add(fib, 56), 0);
+                if raw_byte_load(pointer_add(fib, 40)) != 0 { FiberCleanup(idx); }
             }
         }
         i = i + 1;
@@ -81,6 +87,11 @@ pub unit WakeEnqueue(word fiberIndex) {
     if table == NativePointer(0) { return; }
     word count = raw_word_load(pointer_add(table, 1400));
     if count >= 32 { return; }
+    mut word existing = 0;
+    while existing < count {
+        if raw_word_load(pointer_add(table, 1144 + existing * 8)) == fiberIndex { return; }
+        existing = existing + 1;
+    }
     raw_word_store(pointer_add(table, 1144 + count * 8), fiberIndex);
     raw_word_store(pointer_add(table, 1400), count + 1);
     return;
@@ -94,10 +105,10 @@ pub unit ApplyPendingWakes() {
     mut word i = 0;
     while i < count {
         word idx = raw_word_load(pointer_add(table, 1144 + i * 8));
-        if FiberParked(idx) {
+        if FiberExists(idx) && FiberParked(idx) {
             FiberSetState(idx, FiberState::Runnable);
+            RunQueuePush(idx);
         }
-        RunQueuePush(idx);
         i = i + 1;
     }
     raw_word_store(pointer_add(table, 1400), 0);

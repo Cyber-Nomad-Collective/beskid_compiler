@@ -1,6 +1,6 @@
 //! Synthetic [`MemberItemSpec`] rows for parameters, fields, and nested contract members (resolution item list).
 
-use crate::hir::{HirContractNode, HirItem};
+use crate::syntax::{ContractNode, Node};
 use crate::syntax::{SpanInfo, Spanned};
 
 use super::items::ItemKind;
@@ -13,11 +13,11 @@ pub struct MemberItemSpec {
     pub span: SpanInfo,
 }
 
-/// Walk one HIR item and append specs for visible members (used when extending [`ItemInfo`] lists).
-pub fn collect_member_items(item: &Spanned<HirItem>, parent_name: &str) -> Vec<MemberItemSpec> {
+/// Walk one syntax item and append specs for visible members (used when extending [`ItemInfo`] lists).
+pub fn collect_member_items(item: &Spanned<Node>, parent_name: &str) -> Vec<MemberItemSpec> {
     let mut out = Vec::new();
     match &item.node {
-        HirItem::FunctionDefinition(def) => {
+        Node::Function(def) => {
             for parameter in &def.node.parameters {
                 out.push(MemberItemSpec {
                     name: format!("{}::{}", parent_name, parameter.node.name.node.name),
@@ -26,7 +26,7 @@ pub fn collect_member_items(item: &Spanned<HirItem>, parent_name: &str) -> Vec<M
                 });
             }
         }
-        HirItem::MethodDefinition(def) => {
+        Node::Method(def) => {
             for parameter in &def.node.parameters {
                 out.push(MemberItemSpec {
                     name: format!("{}::{}", parent_name, parameter.node.name.node.name),
@@ -35,7 +35,7 @@ pub fn collect_member_items(item: &Spanned<HirItem>, parent_name: &str) -> Vec<M
                 });
             }
         }
-        HirItem::TypeDefinition(def) => {
+        Node::TypeDefinition(def) => {
             for field in &def.node.fields {
                 out.push(MemberItemSpec {
                     name: format!("{}::{}", parent_name, field.node.name.node.name),
@@ -61,7 +61,7 @@ pub fn collect_member_items(item: &Spanned<HirItem>, parent_name: &str) -> Vec<M
                 }
             }
         }
-        HirItem::EnumDefinition(def) => {
+        Node::EnumDefinition(def) => {
             for variant in &def.node.variants {
                 let variant_name = format!("{}::{}", parent_name, variant.node.name.node.name);
                 out.push(MemberItemSpec {
@@ -78,10 +78,10 @@ pub fn collect_member_items(item: &Spanned<HirItem>, parent_name: &str) -> Vec<M
                 }
             }
         }
-        HirItem::ContractDefinition(def) => {
+        Node::ContractDefinition(def) => {
             for node in &def.node.items {
                 match &node.node {
-                    HirContractNode::MethodSignature(signature) => {
+                    ContractNode::MethodSignature(signature) => {
                         let method_name = format!("{}::{}", parent_name, signature.node.name.node.name);
                         out.push(MemberItemSpec {
                             name: method_name.clone(),
@@ -96,7 +96,7 @@ pub fn collect_member_items(item: &Spanned<HirItem>, parent_name: &str) -> Vec<M
                             });
                         }
                     }
-                    HirContractNode::Embedding(embedding) => {
+                    ContractNode::Embedding(embedding) => {
                         out.push(MemberItemSpec {
                             name: format!("{}::{}", parent_name, embedding.node.name.node.name),
                             kind: ItemKind::ContractEmbedding,
@@ -106,7 +106,7 @@ pub fn collect_member_items(item: &Spanned<HirItem>, parent_name: &str) -> Vec<M
                 }
             }
         }
-        HirItem::TestDefinition(def) => {
+        Node::TestDefinition(def) => {
             for (index, statement) in def.node.body.node.statements.iter().enumerate() {
                 out.push(MemberItemSpec {
                     name: format!("{}::statement#{}", parent_name, index + 1),

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::hir::HirProgram;
+use crate::syntax::Program;
 use crate::resolve::Resolution;
 use crate::syntax::Spanned;
 
@@ -9,7 +9,7 @@ use super::model::UnitTypeSurface;
 
 /// Build the exported type surface for one unit without walking function bodies.
 pub fn build_unit_type_surface(
-    program: &Spanned<HirProgram>,
+    program: &Spanned<Program>,
     resolution: &Resolution,
     source_path: &Path,
 ) -> UnitTypeSurface {

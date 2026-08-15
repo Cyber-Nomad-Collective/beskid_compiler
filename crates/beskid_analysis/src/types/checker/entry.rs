@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use beskid_pipeline::report_progress;
 
-use crate::hir::{HirItem, HirProgram};
+use crate::syntax::{Node, Program};
 use crate::projects::assembly::{ModuleIndex, ProgramAssembly};
 use crate::resolve::Resolution;
 use crate::syntax::Spanned;
@@ -19,9 +19,9 @@ use super::TypeChecker;
 impl TypeChecker<'_> {
     /// Type-check entry program with optional dependency units and assemble [`TypeResult`].
     pub fn check_entry(
-        program: &mut Spanned<HirProgram>,
+        program: &mut Spanned<Program>,
         resolution: &Resolution,
-        dependency_programs: &[&Spanned<HirProgram>],
+        dependency_programs: &[&Spanned<Program>],
         dependency_source_paths: Option<&[PathBuf]>,
         entry_source_path: Option<PathBuf>,
         type_dependency_bodies: bool,
@@ -73,13 +73,13 @@ impl TypeChecker<'_> {
                 let surface = assembly
                     .and_then(|assembly| {
                         assembly
-                            .hir_units
+                            .units
                             .iter()
                             .find(|unit| crate::paths::same_file(&unit.path, path))
-                            .map(|unit| Arc::new(build_unit_type_surface(&unit.hir, resolution, path)))
+                            .map(|unit| Arc::new(build_unit_type_surface(&unit.program, resolution, path)))
                     })
                     .or_else(|| {
-                        index.prefetched_hir(path).map(|hir| Arc::new(build_unit_type_surface(hir, resolution, path)))
+                        index.prefetched_program(path).map(|program| Arc::new(build_unit_type_surface(program, resolution, path)))
                     })
                     .or_else(|| {
                         prefetched_surfaces
@@ -139,7 +139,7 @@ impl TypeChecker<'_> {
         let item_total = items.len() as u64;
         for (index, item) in items.iter().enumerate() {
             if let Some((observer, phase)) = progress {
-                let label = checker.progress_label_with_path(hir_item_progress_label(item));
+                let label = checker.progress_label_with_path(syntax_item_progress_label(item));
                 report_progress(Some(observer), phase, index as u64 + 1, item_total.max(1), label);
             }
             checker.type_item(item);
@@ -200,17 +200,17 @@ fn merge_lowering_prep(target: &mut LoweringPrep, from: LoweringPrep) {
 }
 
 impl<'a> TypeChecker<'a> {
-    pub(super) fn seed_generics_from_program(&mut self, program: &Spanned<HirProgram>) {
+    pub(super) fn seed_generics_from_program(&mut self, program: &Spanned<Program>) {
         self.seed_generics_from_items(&program.node.items);
     }
 
-    fn seed_generics_from_items(&mut self, items: &[Spanned<HirItem>]) {
+    fn seed_generics_from_items(&mut self, items: &[Spanned<Node>]) {
         for item in items {
             let (span, generics) = match &item.node {
-                HirItem::FunctionDefinition(def) => (item.span, &def.node.generics),
-                HirItem::TypeDefinition(def) => (item.span, &def.node.generics),
-                HirItem::EnumDefinition(def) => (item.span, &def.node.generics),
-                HirItem::InlineModule(m) => {
+                Node::Function(def) => (item.span, &def.node.generics),
+                Node::TypeDefinition(def) => (item.span, &def.node.generics),
+                Node::EnumDefinition(def) => (item.span, &def.node.generics),
+                Node::InlineModule(m) => {
                     self.seed_generics_from_items(&m.node.items);
                     continue;
                 }
@@ -223,23 +223,23 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    pub(super) fn seed_method_receivers_from_items(&mut self, items: &[Spanned<HirItem>]) {
+    pub(super) fn seed_method_receivers_from_items(&mut self, items: &[Spanned<Node>]) {
         for item in items {
             match &item.node {
-                HirItem::MethodDefinition(def) => {
+                Node::Method(def) => {
                     self.seed_method_receiver(item.span, def);
                 }
-                HirItem::ExtendTypeDefinition(def) => {
+                Node::ExtendTypeDefinition(def) => {
                     for method in &def.node.methods {
                         self.seed_method_receiver(method.span, method);
                     }
                 }
-                HirItem::TypeDefinition(def) => {
+                Node::TypeDefinition(def) => {
                     for method in &def.node.methods {
                         self.seed_method_receiver(method.span, method);
                     }
                 }
-                HirItem::InlineModule(m) => {
+                Node::InlineModule(m) => {
                     self.seed_method_receivers_from_items(&m.node.items);
                 }
                 _ => {}
@@ -257,15 +257,15 @@ impl<'a> TypeChecker<'a> {
     }
 }
 
-fn hir_item_progress_label(item: &Spanned<HirItem>) -> String {
+fn syntax_item_progress_label(item: &Spanned<Node>) -> String {
     match &item.node {
-        HirItem::FunctionDefinition(def) => format!("fn {}", def.node.name.node.name),
-        HirItem::TypeDefinition(def) => format!("type {}", def.node.name.node.name),
-        HirItem::EnumDefinition(def) => format!("enum {}", def.node.name.node.name),
-        HirItem::MethodDefinition(def) => format!("method {}", def.node.name.node.name),
-        HirItem::TestDefinition(def) => format!("test {}", def.node.name.node.name),
-        HirItem::ContractDefinition(def) => format!("contract {}", def.node.name.node.name),
-        HirItem::ExtendTypeDefinition(def) => {
+        Node::Function(def) => format!("fn {}", def.node.name.node.name),
+        Node::TypeDefinition(def) => format!("type {}", def.node.name.node.name),
+        Node::EnumDefinition(def) => format!("enum {}", def.node.name.node.name),
+        Node::Method(def) => format!("method {}", def.node.name.node.name),
+        Node::TestDefinition(def) => format!("test {}", def.node.name.node.name),
+        Node::ContractDefinition(def) => format!("contract {}", def.node.name.node.name),
+        Node::ExtendTypeDefinition(def) => {
             if let Some(method) = def.node.methods.first() {
                 format!("extend {}", method.node.name.node.name)
             } else {

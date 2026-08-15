@@ -15,19 +15,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 use beskid_abi::runtime_kit::BuildProfile;
-use beskid_analysis::AnalysisOptions;
 use beskid_analysis::mod_host::{
-    InvocationKind, ModHostInput, StubContractInvoker, run_analyze_rewrite_with_invoker, run_through_generate,
+    run_analyze_rewrite_with_invoker, run_through_generate, InvocationKind, ModHostInput, StubContractInvoker,
 };
 use beskid_analysis::projects::{CompilePlan, ResolvedDependencyProject, Target, TargetKind};
 use beskid_analysis::services::{parse_program_with_source_name, semantic_rule_diagnostics_for_program};
+use beskid_analysis::AnalysisOptions;
 use beskid_engine::services::prepare_jit_entrypoint;
-use beskid_engine::{Engine, host_runtime_target};
+use beskid_engine::{host_runtime_target, Engine};
 use beskid_pipeline::phases::{
     LOWER_READY, MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE,
 };
-use beskid_pipeline::{PipelineEvent, PipelineObserver, observe_phase};
-use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
+use beskid_pipeline::{observe_phase, PipelineEvent, PipelineObserver};
+use beskid_tools::toolchain::runtime_kit::{build_native_host, RuntimeKitProfile};
 
 const SAMPLE_MOD_PROJECT: &str = include_str!("../../beskid_tests/fixtures/mods/sample_mod/SampleMod.bproj");
 
@@ -123,7 +123,7 @@ fn mod_host_full_pipeline_compiles_in_engine() -> Result<()> {
 
     observe_phase(Some(pipeline.as_ref()), LOWER_READY, || {});
     // Mod-host rewrite authority stays on the analysis spine; JIT compile uses the sole
-    // CodegenInput → ISLE route against the host entry source (no HIR/`Lowerable` driver).
+    // CodegenInput → ISLE route against the host entry source with no legacy lowering driver.
     let _ = &analyze.program;
     let prepared =
         prepare_jit_entrypoint(workspace.host_dir.join("Src").join("Main.bd").as_path(), HOST_SOURCE, "Main")?;

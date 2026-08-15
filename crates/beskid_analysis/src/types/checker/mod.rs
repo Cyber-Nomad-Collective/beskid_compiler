@@ -1,4 +1,4 @@
-//! Body typing keyed by [`HirNodeId`](crate::resolve::HirNodeId).
+//! Body typing keyed by [`AstNodeId`](crate::syntax::AstNodeId).
 mod contracts;
 mod entry;
 mod expressions;
@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::builtins::{BuiltinType, builtin_specs};
-use crate::hir::{HirBlock, HirPrimitiveType, HirProgram};
-use crate::resolve::{HirNodeId, ItemId, LocalId, Resolution};
+use crate::syntax::{Block, PrimitiveType, Program};
+use crate::resolve::{AstNodeId, ItemId, LocalId, Resolution};
 use crate::syntax::Spanned;
 use crate::types::inference::{ConstraintSet, InferenceResult, TypeEnv, solve_constraints};
 use crate::types::result::{CallLoweringKind, FunctionSignature, TypeError};
@@ -27,11 +27,11 @@ use crate::types::{TypeId, TypeTable};
 pub struct TypeChecker<'a> {
     pub(super) resolution: &'a Resolution,
     pub(super) type_table: TypeTable,
-    pub node_types: HashMap<HirNodeId, TypeId>,
+    pub node_types: HashMap<AstNodeId, TypeId>,
     pub local_types: HashMap<LocalId, TypeId>,
     pub constraints: ConstraintSet,
     pub errors: Vec<TypeError>,
-    pub(super) primitive_types: HashMap<HirPrimitiveType, TypeId>,
+    pub(super) primitive_types: HashMap<PrimitiveType, TypeId>,
     pub(super) named_types: HashMap<ItemId, TypeId>,
     pub(super) struct_fields: HashMap<ItemId, HashMap<String, TypeId>>,
     pub(super) struct_fields_ordered: HashMap<ItemId, Vec<(String, TypeId)>>,
@@ -43,7 +43,7 @@ pub struct TypeChecker<'a> {
     pub(super) generic_items: HashMap<ItemId, Vec<String>>,
     pub(super) methods_by_receiver: HashMap<(ItemId, String), ItemId>,
     pub(super) contract_signatures: HashMap<(ItemId, String), FunctionSignature>,
-    pub(super) call_kinds: HashMap<HirNodeId, CallLoweringKind>,
+    pub(super) call_kinds: HashMap<AstNodeId, CallLoweringKind>,
     pub(super) contextual_expected_type: Option<TypeId>,
     pub(super) current_return_type: Option<TypeId>,
     pub(super) generic_params: HashMap<String, TypeId>,
@@ -52,14 +52,14 @@ pub struct TypeChecker<'a> {
     pub(super) fiber_scope_stack: Vec<usize>,
     pub(super) fiber_scope_parent: HashMap<usize, usize>,
     pub(super) next_fiber_scope: usize,
-    pub(super) fiber_handle_scopes: HashMap<HirNodeId, usize>,
+    pub(super) fiber_handle_scopes: HashMap<AstNodeId, usize>,
     pub(super) fiber_handle_locals: HashMap<LocalId, usize>,
 }
 
 #[derive(Debug)]
 pub struct CheckerResult {
     pub types: TypeTable,
-    pub node_types: HashMap<HirNodeId, TypeId>,
+    pub node_types: HashMap<AstNodeId, TypeId>,
     pub local_types: HashMap<LocalId, TypeId>,
     pub inference: InferenceResult,
     pub function_signatures: HashMap<ItemId, FunctionSignature>,
@@ -135,13 +135,13 @@ impl<'a> TypeChecker<'a> {
         self
     }
 
-    pub fn type_block(&mut self, block: &Spanned<HirBlock>) {
+    pub fn type_block(&mut self, block: &Spanned<Block>) {
         self.type_block_inner(block);
     }
 
     pub(crate) fn infer_expression_type(
         &mut self,
-        expression: &Spanned<crate::hir::HirExpressionNode>,
+        expression: &Spanned<crate::syntax::Expression>,
     ) -> Option<TypeId> {
         self.type_expression(expression)
     }
@@ -154,7 +154,7 @@ impl<'a> TypeChecker<'a> {
         self.ok_variant_name(enum_item_id, variant)
     }
 
-    pub(crate) fn seed_program_enums(&mut self, program: &Spanned<HirProgram>) {
+    pub(crate) fn seed_program_enums(&mut self, program: &Spanned<Program>) {
         self.seed_enum_definitions(program);
     }
 
@@ -212,7 +212,7 @@ impl<'a> TypeChecker<'a> {
     pub(super) fn infer_local_type_from_expression(
         &mut self,
         local_span: crate::syntax::SpanInfo,
-        expression: &Spanned<crate::hir::HirExpressionNode>,
+        expression: &Spanned<crate::syntax::Expression>,
     ) -> Option<TypeId> {
         let var = self.constraints.fresh_var();
         let prev = self.contextual_expected_type;
@@ -270,7 +270,7 @@ impl<'a> TypeChecker<'a> {
                 )
             {
                 return if matches!(p, &["__str_new"] | &["__str_slice"]) {
-                    self.primitive_type_id(HirPrimitiveType::String)
+                    self.primitive_type_id(PrimitiveType::String)
                 } else {
                     self.u8_array_type_id()
                 };
@@ -285,14 +285,14 @@ impl<'a> TypeChecker<'a> {
             ) {
                 return self.u8_array_type_id();
             }
-            return self.primitive_type_id(HirPrimitiveType::I64);
+            return self.primitive_type_id(PrimitiveType::I64);
         }
         match b {
-            BuiltinType::String => self.primitive_type_id(HirPrimitiveType::String),
-            BuiltinType::Unit => self.primitive_type_id(HirPrimitiveType::Unit),
-            BuiltinType::Never => self.primitive_type_id(HirPrimitiveType::Never),
-            BuiltinType::F64 => self.primitive_type_id(HirPrimitiveType::F64),
-            _ => self.primitive_type_id(HirPrimitiveType::I64),
+            BuiltinType::String => self.primitive_type_id(PrimitiveType::String),
+            BuiltinType::Unit => self.primitive_type_id(PrimitiveType::Unit),
+            BuiltinType::Never => self.primitive_type_id(PrimitiveType::Never),
+            BuiltinType::F64 => self.primitive_type_id(PrimitiveType::F64),
+            _ => self.primitive_type_id(PrimitiveType::I64),
         }
     }
 }
@@ -300,20 +300,20 @@ impl<'a> TypeChecker<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resolve::HirNodeId;
+    use crate::syntax::AstNodeId;
 
     #[test]
     fn record_node_type_skips_invalid() {
         let mut node_types = HashMap::new();
         let id = TypeId(1);
-        let record = |map: &mut HashMap<HirNodeId, TypeId>, node_id: HirNodeId, type_id: TypeId| {
+        let record = |map: &mut HashMap<AstNodeId, TypeId>, node_id: AstNodeId, type_id: TypeId| {
             if node_id.is_valid() {
                 map.insert(node_id, type_id);
             }
         };
-        record(&mut node_types, HirNodeId::INVALID, id);
+        record(&mut node_types, AstNodeId::INVALID, id);
         assert!(node_types.is_empty());
-        record(&mut node_types, HirNodeId(1), id);
-        assert_eq!(node_types.get(&HirNodeId(1)), Some(&id));
+        record(&mut node_types, AstNodeId(1), id);
+        assert_eq!(node_types.get(&AstNodeId(1)), Some(&id));
     }
 }

@@ -1,7 +1,6 @@
 use crate::analysis::rules::{Rule, RuleContext};
-use crate::hir::{AstProgram, lower_program};
 use crate::syntax::{Program, SpanInfo, Spanned};
-use beskid_pipeline::{PipelineObserver, observe_phase, observe_phase_value, phases};
+use beskid_pipeline::{observe_phase, phases, PipelineObserver};
 
 mod contracts;
 mod control_flow;
@@ -32,34 +31,32 @@ impl SemanticPipelineRule {
             line_col_start: (1, 1),
             line_col_end: (1, 1),
         });
-        let spanned_program = Spanned::new(program.clone(), span);
-        let ast: Spanned<AstProgram> = spanned_program.into();
-        let hir = observe_phase_value(pipeline, phases::SEMANTIC_AST_LOWER, || lower_program(&ast));
+        let program = Spanned::new(program.clone(), span);
 
         observe_stage(pipeline, phases::SEMANTIC_DEFINITIONS, || {
-            self.stage0_collect_definitions(ctx, &hir);
+            self.stage0_collect_definitions(ctx, &program);
         });
         observe_stage(pipeline, phases::SEMANTIC_CONTROL_FLOW, || {
-            self.stage3_control_flow_and_patterns(ctx, &hir);
+            self.stage3_control_flow_and_patterns(ctx, &program);
         });
 
         let Some(resolution) = observe_stage_optional(pipeline, phases::SEMANTIC_NAME_RESOLUTION, || {
-            self.stage1_name_resolution(ctx, &hir)
+            self.stage1_name_resolution(ctx, &program)
         }) else {
             return;
         };
 
         observe_stage(pipeline, phases::SEMANTIC_VISIBILITY, || {
-            self.stage5_modules_and_visibility(ctx, &hir);
+            self.stage5_modules_and_visibility(ctx, &program);
         });
         observe_stage(pipeline, phases::SEMANTIC_CONTRACTS, || {
-            self.stage6_contracts_and_methods(ctx, &hir, &resolution);
+            self.stage6_contracts_and_methods(ctx, &program, &resolution);
         });
         observe_stage(pipeline, phases::SEMANTIC_ERROR_HANDLING, || {
-            self.stage7_error_handling(ctx, &hir, &resolution);
+            self.stage7_error_handling(ctx, &program, &resolution);
         });
         observe_stage(pipeline, phases::SEMANTIC_TYPE_CHECK, || {
-            self.stage2_type_check(ctx, &hir);
+            self.stage2_type_check(ctx, &program);
         });
         observe_stage(pipeline, phases::SEMANTIC_NAMING_STYLE, || {
             self.stage_naming_style(ctx, program);

@@ -42,7 +42,12 @@ pub word EventSubscribe(pointer eventSlot, pointer handler, word capacity) {
     word count = raw_word_load(pointer_add(event, 8));
     word resolvedCapacity = raw_word_load(event);
     if count >= resolvedCapacity { return count; }
-    raw_word_store(pointer_add(event, 16 + count * 8), NativeWord(handler));
+    pointer handlerSlot = pointer_add(event, 16 + count * 8);
+    raw_word_store(handlerSlot, NativeWord(handler));
+    if GcRegisterRoot(handlerSlot) == false {
+        raw_word_store(handlerSlot, 0);
+        return count;
+    }
     raw_word_store(pointer_add(event, 8), count + 1);
     return count + 1;
 }
@@ -64,6 +69,7 @@ pub word EventUnsubscribeFirst(pointer eventSlot, pointer handler) {
                 raw_word_store(pointer_add(event, 16 + index * 8), next);
                 index = index + 1;
             }
+            GcUnregisterRoot(pointer_add(event, 16 + (count - 1) * 8));
             raw_word_store(pointer_add(event, 16 + (count - 1) * 8), 0);
             raw_word_store(pointer_add(event, 8), count - 1);
             return 1;
@@ -71,4 +77,25 @@ pub word EventUnsubscribeFirst(pointer eventSlot, pointer handler) {
         index = index + 1;
     }
     return 0;
+}
+
+// Releases field-owned native event state and every external GC root. The
+// owning object must invoke this before its field storage becomes unreachable.
+pub unit EventDrop(pointer eventSlot) {
+    if eventSlot == NativePointer(0) { return; }
+    pointer event = NativePointer(raw_word_load(eventSlot));
+    if event == NativePointer(0) { return; }
+    word capacity = raw_word_load(event);
+    word count = raw_word_load(pointer_add(event, 8));
+    mut word index = 0;
+    while index < count {
+        pointer handlerSlot = pointer_add(event, 16 + index * 8);
+        GcUnregisterRoot(handlerSlot);
+        raw_word_store(handlerSlot, 0);
+        index = index + 1;
+    }
+    raw_word_store(eventSlot, 0);
+    memory_set(event, 0, 16 + capacity * 8);
+    SystemFree(event, 16 + capacity * 8);
+    return;
 }

@@ -1,21 +1,21 @@
 //! Human-readable [`TypeId`] labels for diagnostics and error messages.
 
-use crate::hir::HirPrimitiveType;
+use crate::syntax::PrimitiveType;
 use crate::resolve::{ItemId, Resolution};
 use crate::types::{TypeId, TypeInfo, TypeResult};
 
-fn primitive_type_name(primitive: HirPrimitiveType) -> &'static str {
+fn primitive_type_name(primitive: PrimitiveType) -> &'static str {
     match primitive {
-        HirPrimitiveType::Bool => "bool",
-        HirPrimitiveType::I32 => "i32",
-        HirPrimitiveType::I64 => "i64",
-        HirPrimitiveType::U8 => "u8",
-        HirPrimitiveType::Word => "word",
-        HirPrimitiveType::F64 => "f64",
-        HirPrimitiveType::Char => "char",
-        HirPrimitiveType::String => "string",
-        HirPrimitiveType::Unit => "unit",
-        HirPrimitiveType::Never => "never",
+        PrimitiveType::Bool => "bool",
+        PrimitiveType::I32 => "i32",
+        PrimitiveType::I64 => "i64",
+        PrimitiveType::U8 => "u8",
+        PrimitiveType::Word => "word",
+        PrimitiveType::F64 => "f64",
+        PrimitiveType::Char => "char",
+        PrimitiveType::String => "string",
+        PrimitiveType::Unit => "unit",
+        PrimitiveType::Never => "never",
     }
 }
 
@@ -74,8 +74,8 @@ mod tests {
 
     fn type_result_with_primitives() -> (TypeResult, TypeId, TypeId) {
         let mut types = TypeTable::new();
-        let string = types.intern(TypeInfo::Primitive(HirPrimitiveType::String));
-        let i32 = types.intern(TypeInfo::Primitive(HirPrimitiveType::I32));
+        let string = types.intern(TypeInfo::Primitive(PrimitiveType::String));
+        let i32 = types.intern(TypeInfo::Primitive(PrimitiveType::I32));
         let result = TypeResult {
             types,
             named_type_names: HashMap::new(),

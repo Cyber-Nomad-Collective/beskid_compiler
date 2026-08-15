@@ -14,7 +14,7 @@ pub(in super::super) use beskid_abi::runtime_source::{
 };
 pub(in super::super) use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
-    SyntaxProgramAssembly,
+    ProgramAssembly,
 };
 pub(in super::super) use beskid_analysis::services::parse_program_with_source_name;
 pub(in super::super) use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};

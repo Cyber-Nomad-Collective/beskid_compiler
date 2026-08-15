@@ -1,6 +1,29 @@
 use super::*;
 
 impl IsleContext<'_, '_, '_, '_> {
+    pub(super) fn emit_corelib_service_call(
+        &mut self,
+        key: AstNodeKey,
+        symbol: &'static str,
+        arguments: &[Value],
+        parameter_types: &[Type],
+        return_type: Option<Type>,
+    ) -> Option<Value> {
+        let mut signature = Signature::new(self.builder.func.signature.call_conv);
+        signature.params.extend(parameter_types.iter().copied().map(AbiParam::new));
+        signature.returns.extend(return_type.map(AbiParam::new));
+        let callee = DirectCallee::corelib_service(symbol);
+        let function = match self.call_importer.as_deref_mut()?.import(self.builder, callee.clone(), &signature) {
+            Ok(function) => function,
+            Err(CallImportError::UnknownCallee) => {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(callee) });
+                return None;
+            }
+        };
+        let call = self.builder.ins().call(function, arguments);
+        return_type.and_then(|_| self.builder.inst_results(call).first().copied())
+    }
+
     pub(super) fn import_direct_call(&mut self, key: AstNodeKey) -> Option<(cranelift_codegen::ir::Inst, Signature)> {
         let callee = self.facts.direct_callee(key)?;
         let signature = self.facts.call_signature(key)?;
@@ -49,6 +72,163 @@ impl IsleContext<'_, '_, '_, '_> {
         }
         Some(self.builder.ins().iconst(expected, value))
     }
+    pub(super) fn emit_collection_operation_value(&mut self, key: AstNodeKey) -> Option<Value> {
+        let operation = self.facts.collection_operation(key)?;
+        let arguments = self.facts.call_arguments(key)?;
+        let pointer = dispatch::pointer_type();
+        let word = pointer;
+        let element_type = self.facts.collection_element_type(key)?;
+        let stride = element_type.bytes();
+        match operation {
+            CollectionOperation::UnprovenMutationOwner => {
+                self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
+                None
+            }
+            CollectionOperation::Capacity => {
+                let [array] = arguments.as_slice() else { return None };
+                let array = generated::constructor_lower_expression(self, *array)?;
+                (self.builder.func.dfg.value_type(array) == pointer).then_some(())?;
+                self.builder.ins().trapz(array, TrapCode::unwrap_user(1));
+                Some(self.builder.ins().load(word, MemFlags::new(), array, i32::try_from(pointer.bytes() * 2).ok()?))
+            }
+            CollectionOperation::Append { owner: mutation_owner } => {
+                let [array_key, value_key] = arguments.as_slice() else { return None };
+                let owner = generated::constructor_lower_expression(self, *array_key)?;
+                let value = generated::constructor_lower_expression(self, *value_key)?;
+                (self.builder.func.dfg.value_type(owner) == pointer
+                    && self.builder.func.dfg.value_type(value) == element_type)
+                    .then_some(())?;
+                self.builder.ins().trapz(owner, TrapCode::unwrap_user(1));
+                let length_offset = i32::try_from(pointer.bytes()).ok()?;
+                let length = self.builder.ins().load(word, MemFlags::new(), owner, length_offset);
+                let next_length = self.builder.ins().iadd_imm(length, 1);
+                let overflow = self.builder.ins().icmp(IntCC::UnsignedLessThanOrEqual, next_length, length);
+                self.builder.ins().trapnz(overflow, TrapCode::unwrap_user(3));
+                let root_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    pointer.bytes(),
+                    pointer.bytes().ilog2() as u8,
+                ));
+                let root_out = self.builder.ins().stack_addr(pointer, root_slot, 0);
+                let grow = self.import_runtime_helper(
+                    "beskid_rt_v5_array_grow_rooted",
+                    &[pointer, word, pointer],
+                    Some(pointer),
+                )?;
+                let grow_call = self.builder.ins().call(grow, &[owner, next_length, root_out]);
+                let array = self.builder.inst_results(grow_call).first().copied()?;
+                self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
+                let data = self.builder.ins().load(pointer, MemFlags::new(), array, 0);
+                let offset = if stride == 1 { length } else { self.builder.ins().imul_imm(length, i64::from(stride)) };
+                let address = self.builder.ins().iadd(data, offset);
+                self.builder.ins().store(MemFlags::new(), value, address, 0);
+                if element_type == pointer {
+                    let barrier = self.import_runtime_helper(
+                        "beskid_rt_v5_array_write_barrier",
+                        &[pointer, pointer],
+                        Some(types::I8),
+                    )?;
+                    let call = self.builder.ins().call(barrier, &[array, value]);
+                    let published = self.builder.inst_results(call).first().copied()?;
+                    self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
+                }
+                self.builder.ins().store(MemFlags::new(), next_length, array, length_offset);
+                let publication_owner = match mutation_owner {
+                    CollectionMutationOwner::Local(slot) => {
+                        let (variable, owner_type) = self.locals.get(&slot).copied()?;
+                        if owner_type != pointer || self.facts.local_slot(*array_key) != Some(slot) {
+                            self.pending_error =
+                                Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
+                            return None;
+                        }
+                        self.builder.def_var(variable, array);
+                        array
+                    }
+                    CollectionMutationOwner::AggregateField { receiver, field_index } => {
+                        let layout = self.facts.struct_layout(*array_key)?;
+                        let Some(field) =
+                            usize::try_from(field_index).ok().and_then(|index| layout.fields.get(index)).copied()
+                        else {
+                            self.pending_error =
+                                Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
+                            return None;
+                        };
+                        let (variable, receiver_type) = self.locals.get(&receiver).copied()?;
+                        let base = self.builder.use_var(variable);
+                        if receiver_type != pointer || field.value_type != pointer {
+                            self.pending_error =
+                                Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
+                            return None;
+                        }
+                        self.builder.ins().store(MemFlags::new(), array, base, i32::try_from(field.offset).ok()?);
+                        base
+                    }
+                };
+                let owner_barrier = self.import_runtime_helper(
+                    "beskid_rt_v5_array_write_barrier",
+                    &[pointer, pointer],
+                    Some(types::I8),
+                )?;
+                let owner_call = self.builder.ins().call(owner_barrier, &[publication_owner, array]);
+                let owner_published = self.builder.inst_results(owner_call).first().copied()?;
+                self.builder.ins().trapz(owner_published, TrapCode::unwrap_user(8));
+                let root_handle = self.builder.ins().stack_load(pointer, root_slot, 0);
+                let finish =
+                    self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
+                let finish_call = self.builder.ins().call(finish, &[root_handle]);
+                let released = self.builder.inst_results(finish_call).first().copied()?;
+                self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
+                Some(array)
+            }
+            CollectionOperation::Clear => {
+                let [array_key, index_key] = arguments.as_slice() else { return None };
+                let array = generated::constructor_lower_expression(self, *array_key)?;
+                let index = generated::constructor_lower_expression(self, *index_key)?;
+                (self.builder.func.dfg.value_type(array) == pointer
+                    && self.builder.func.dfg.value_type(index).is_int())
+                .then_some(())?;
+                self.builder.ins().trapz(array, TrapCode::unwrap_user(1));
+                let length =
+                    self.builder.ins().load(word, MemFlags::new(), array, i32::try_from(pointer.bytes()).ok()?);
+                let out_of_bounds = self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, index, length);
+                self.builder.ins().trapnz(out_of_bounds, TrapCode::HEAP_OUT_OF_BOUNDS);
+                let data = self.builder.ins().load(pointer, MemFlags::new(), array, 0);
+                let offset = if stride == 1 { index } else { self.builder.ins().imul_imm(index, i64::from(stride)) };
+                let address = self.builder.ins().iadd(data, offset);
+                let zero = if element_type == types::F64 {
+                    self.builder.ins().f64const(Ieee64::with_float(0.0))
+                } else {
+                    self.builder.ins().iconst(element_type, 0)
+                };
+                self.builder.ins().store(MemFlags::new(), zero, address, 0);
+                Some(array)
+            }
+            CollectionOperation::RemoveLast => {
+                let [array_key] = arguments.as_slice() else { return None };
+                let array = generated::constructor_lower_expression(self, *array_key)?;
+                (self.builder.func.dfg.value_type(array) == pointer).then_some(())?;
+                self.builder.ins().trapz(array, TrapCode::unwrap_user(1));
+                let length_offset = i32::try_from(pointer.bytes()).ok()?;
+                let length = self.builder.ins().load(word, MemFlags::new(), array, length_offset);
+                let empty = self.builder.ins().icmp_imm(IntCC::Equal, length, 0);
+                self.builder.ins().trapnz(empty, TrapCode::HEAP_OUT_OF_BOUNDS);
+                let next_length = self.builder.ins().iadd_imm(length, -1);
+                let data = self.builder.ins().load(pointer, MemFlags::new(), array, 0);
+                let offset =
+                    if stride == 1 { next_length } else { self.builder.ins().imul_imm(next_length, i64::from(stride)) };
+                let address = self.builder.ins().iadd(data, offset);
+                let zero = if element_type == types::F64 {
+                    self.builder.ins().f64const(Ieee64::with_float(0.0))
+                } else {
+                    self.builder.ins().iconst(element_type, 0)
+                };
+                self.builder.ins().store(MemFlags::new(), zero, address, 0);
+                self.builder.ins().store(MemFlags::new(), next_length, array, length_offset);
+                Some(array)
+            }
+        }
+    }
+
     pub(super) fn direct_call(&mut self, key: AstNodeKey) -> Option<Value> {
         let signature = self.facts.call_signature(key)?;
         let result_type = self.facts.scalar_type(key)?;
@@ -167,44 +347,12 @@ macro_rules! generated_call_methods {
             self.direct_call(key)
         }
 
-        fn emit_direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
-            self.direct_call_statement(key)
+        fn emit_collection_operation(&mut self, key: AstNodeKey) -> Option<Value> {
+            self.emit_collection_operation_value(key)
         }
 
-        fn emit_dispatch_call(&mut self, key: AstNodeKey) -> Option<Value> {
-            let symbol = self.facts.dispatch_builtin_symbol(key)?;
-            let arguments = self
-                .facts
-                .call_arguments(key)?
-                .into_iter()
-                .map(|argument| generated::constructor_lower_expression(self, argument))
-                .collect::<Option<Vec<_>>>()?;
-            // Dispatch route (interop envelope) — string operations, syscalls, etc.
-            if let Some(route) = beskid_abi::dispatch_route_for_symbol(symbol) {
-                let returns_value = !matches!(route.group, beskid_abi::DispatchReturnGroup::Unit);
-                return match dispatch::emit_dispatch_call(self.builder, route, &arguments, returns_value) {
-                    Ok(Some(value)) => Some(value),
-                    Ok(None) | Err(_) => None,
-                };
-            }
-            // No dispatch route — treat as a direct extern call (math builtins, etc.).
-            let signature = self.facts.call_signature(key)?;
-            let mut ext_sig = cranelift_codegen::ir::Signature::new(CallConv::SystemV);
-            for arg in &signature.params {
-                ext_sig.params.push(*arg);
-            }
-            for ret in &signature.returns {
-                ext_sig.returns.push(*ret);
-            }
-            let sig_ref = self.builder.func.import_signature(ext_sig);
-            let func_ref = self.builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
-                name: ExternalName::testcase(symbol),
-                signature: sig_ref,
-                colocated: false,
-                patchable: false,
-            });
-            let call = self.builder.ins().call(func_ref, &arguments);
-            self.builder.inst_results(call).first().copied()
+        fn emit_direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
+            self.direct_call_statement(key)
         }
 
         fn emit_spawn(&mut self, key: AstNodeKey) -> Option<Value> {

@@ -52,6 +52,48 @@ pub word TypeDescriptorPointerCount(pointer descriptor) {
     return raw_word_load(pointer_add(descriptor, 24));
 }
 
+pub word TypeDescriptorFlags(pointer descriptor) {
+    return raw_word_load(pointer_add(descriptor, 32)) & 0xFFFFFFFF;
+}
+
+const TYPE_DESCRIPTOR_ARRAY = 1;
+
+pub bool ValidateArrayElementDescriptor(pointer descriptor) {
+    if descriptor == NativePointer(0) { return false; }
+    word stride = raw_word_load(descriptor);
+    word alignment = raw_word_load(pointer_add(descriptor, 8));
+    word pointerCount = raw_word_load(pointer_add(descriptor, 24));
+    pointer pointerMap = NativePointer(raw_word_load(pointer_add(descriptor, 16)));
+    if stride == 0 || IsValidObjectAlignment(alignment) == false || stride % alignment != 0 { return false; }
+    if pointerCount == 0 { return true; }
+    if pointerMap == NativePointer(0) { return false; }
+    mut word index = 0;
+    while index < pointerCount {
+        word offset = raw_word_load(pointer_add(pointerMap, index * 8));
+        if offset % 8 != 0 || offset + 8 < offset || offset + 8 > stride { return false; }
+        index = index + 1;
+    }
+    return true;
+}
+
+// Array objects retain their element descriptor in a hidden word immediately after the GC
+// header. The public BeskidArray payload follows it. Their descriptor freezes only the fixed
+// prefix; the heap walk derives the checked allocation extent from capacity and element stride.
+pub word ManagedObjectSize(pointer object, pointer descriptor) {
+    word fixedSize = TypeDescriptorSize(descriptor);
+    if TypeDescriptorFlags(descriptor) != TYPE_DESCRIPTOR_ARRAY { return fixedSize; }
+    if fixedSize != 48 { return 0; }
+    pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+    if ValidateArrayElementDescriptor(element) == false { return 0; }
+    word capacity = raw_word_load(pointer_add(object, 40));
+    word stride = raw_word_load(element);
+    word backingSize = stride * capacity;
+    if capacity != 0 && backingSize / stride != capacity { return 0; }
+    word totalSize = fixedSize + backingSize;
+    if totalSize < fixedSize || totalSize % 8 != 0 { return 0; }
+    return totalSize;
+}
+
 // Returns whether one ABI allocation alignment is a power-of-two word alignment.
 //
 // The ABI's minimum object alignment is eight bytes. Division avoids adding an unimplemented
@@ -132,6 +174,9 @@ pub bool ValidateTypeDescriptor(pointer descriptor) {
             word alignment = TypeDescriptorAlignment(descriptor);
             bool alignmentOk = IsValidObjectAlignment(alignment);
             if alignmentOk {
+                if TypeDescriptorFlags(descriptor) == TYPE_DESCRIPTOR_ARRAY {
+                    return size == 48 && TypeDescriptorPointerCount(descriptor) == 0;
+                }
                 return ValidatePointerMap(
                     TypeDescriptorPointerMap(descriptor),
                     TypeDescriptorPointerCount(descriptor),

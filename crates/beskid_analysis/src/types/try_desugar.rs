@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::hir::{HirExpressionNode, HirProgram};
+use crate::syntax::{Expression, Program};
 use crate::resolve::Resolution;
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::TypeChecker;
@@ -12,23 +12,23 @@ pub use crate::types::checker::TryDesugarTarget;
 
 pub fn try_desugar_target_for_operand(
     resolution: &Resolution,
-    programs: &[&Spanned<HirProgram>],
-    operand: &Spanned<HirExpressionNode>,
+    programs: &[&Spanned<Program>],
+    operand: &Spanned<Expression>,
 ) -> Option<TryDesugarTarget> {
     let mut checker = precheck_checker(resolution, programs);
     checker.try_desugar_target_for_operand(operand)
 }
 
 /// Spans of `?` operands that are not a `Result`-shaped enum (semantic stage 7 / early IDE).
-pub fn invalid_try_expression_spans(resolution: &Resolution, entry: &Spanned<HirProgram>) -> Vec<SpanInfo> {
+pub fn invalid_try_expression_spans(resolution: &Resolution, entry: &Spanned<Program>) -> Vec<SpanInfo> {
     TypeChecker::invalid_try_expression_spans(resolution, entry)
 }
 
 /// Map try-expression span → desugar metadata (computed before in-place normalization).
 pub fn try_desugar_targets_for_program(
     resolution: &Resolution,
-    entry: &Spanned<HirProgram>,
-    dependency_programs: &[&Spanned<HirProgram>],
+    entry: &Spanned<Program>,
+    dependency_programs: &[&Spanned<Program>],
 ) -> HashMap<SpanInfo, TryDesugarTarget> {
     TypeChecker::try_desugar_targets_for_program(resolution, entry, dependency_programs)
 }
@@ -36,8 +36,8 @@ pub fn try_desugar_targets_for_program(
 /// Map for-statement span → true when the iterable type is `T[]` (computed before normalization).
 pub fn collect_array_for_spans(
     resolution: &Resolution,
-    entry: &Spanned<HirProgram>,
-    dependency_programs: &[&Spanned<HirProgram>],
+    entry: &Spanned<Program>,
+    dependency_programs: &[&Spanned<Program>],
 ) -> HashSet<SpanInfo> {
     TypeChecker::collect_array_for_spans(resolution, entry, dependency_programs)
 }

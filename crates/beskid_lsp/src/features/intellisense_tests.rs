@@ -51,7 +51,7 @@ mod tests {
 
         use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
         use beskid_analysis::projects::{
-            AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, SyntaxProgramAssembly,
+            AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
         };
         use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
         use beskid_queries::{AstNodeKey, ProjectSession, SourceUnitId, SyntaxGenerationId, build_typed_program};
@@ -69,7 +69,7 @@ mod tests {
             parse_program_with_source_name(output_path.to_str().unwrap(), output_source).expect("output parses"),
             DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
         );
-        let assembly = Arc::new(SyntaxProgramAssembly::new(
+        let assembly = Arc::new(ProgramAssembly::new(
             EffectiveCompilationRoots {
                 host: RootEntry { dependency_name: None, source_root: root.clone() },
                 dependencies: Vec::new(),
@@ -91,7 +91,7 @@ mod tests {
             0,
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
-            false,
+            false, generation
         ));
         let mut db = BeskidDatabase::default();
         let main_unit = SourceUnitId::new(&db, main_path.clone());

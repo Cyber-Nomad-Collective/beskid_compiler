@@ -1,5 +1,5 @@
-use crate::hir::{
-    HirEnumConstructorExpression, HirExpressionNode, HirMemberExpression, HirPathExpression, HirStructLiteralExpression,
+use crate::syntax::{
+    EnumConstructorExpression, Expression, MemberExpression, PathExpression, StructLiteralExpression,
 };
 use crate::resolve::ItemKind;
 use crate::syntax::Spanned;
@@ -12,7 +12,7 @@ use super::super::TypeChecker;
 impl<'a> TypeChecker<'a> {
     pub(super) fn type_struct_literal_expression(
         &mut self,
-        literal: &Spanned<HirStructLiteralExpression>,
+        literal: &Spanned<StructLiteralExpression>,
     ) -> Option<TypeId> {
         let mut type_id = self.type_id_for_path_with_args(&literal.node.path);
         if type_id.is_none()
@@ -71,7 +71,7 @@ impl<'a> TypeChecker<'a> {
 
     pub(super) fn type_enum_constructor_expression(
         &mut self,
-        constructor: &Spanned<HirEnumConstructorExpression>,
+        constructor: &Spanned<EnumConstructorExpression>,
     ) -> Option<TypeId> {
         let mut type_id = self.type_id_for_enum_path(constructor.node.path.span, &constructor.node.path);
         if type_id.is_none() {
@@ -157,7 +157,7 @@ impl<'a> TypeChecker<'a> {
         Some(applied_type_id)
     }
 
-    pub(super) fn type_member_expression(&mut self, member: &Spanned<HirMemberExpression>) -> Option<TypeId> {
+    pub(super) fn type_member_expression(&mut self, member: &Spanned<MemberExpression>) -> Option<TypeId> {
         let target_type = self.type_expression(&member.node.target)?;
 
         if self.method_item_for_receiver(target_type, member.node.member.node.name.as_str()).is_some() {
@@ -191,7 +191,7 @@ impl<'a> TypeChecker<'a> {
         Some(field_type)
     }
 
-    pub(super) fn is_event_member_expression(&self, member: &Spanned<HirMemberExpression>) -> bool {
+    pub(super) fn is_event_member_expression(&self, member: &Spanned<MemberExpression>) -> bool {
         let Some(target_type) = self.node_types.get(&member.node.target.id).copied() else {
             return false;
         };
@@ -201,7 +201,7 @@ impl<'a> TypeChecker<'a> {
         self.struct_event_fields.get(&item_id).and_then(|fields| fields.get(&member.node.member.node.name)).is_some()
     }
 
-    pub(super) fn is_event_path_expression(&self, path_expr: &Spanned<HirPathExpression>) -> bool {
+    pub(super) fn is_event_path_expression(&self, path_expr: &Spanned<PathExpression>) -> bool {
         let segments = &path_expr.node.path.node.segments;
         let Some(field_name) = first_field_segment_name(segments) else {
             return false;
@@ -228,10 +228,10 @@ impl<'a> TypeChecker<'a> {
 
     pub(super) fn resolve_event_call_target(
         &mut self,
-        callee: &Spanned<HirExpressionNode>,
+        callee: &Spanned<Expression>,
     ) -> Option<(MethodReceiverSource, TypeId, crate::resolve::ItemId, TypeId)> {
         match &callee.node {
-            HirExpressionNode::MemberExpression(member) => {
+            Expression::Member(member) => {
                 let receiver_type = self.type_expression(&member.node.target)?;
                 let receiver_item_id = self.named_item_id(receiver_type)?;
                 let field_name = member.node.member.node.name.as_str();
@@ -249,7 +249,7 @@ impl<'a> TypeChecker<'a> {
                     field_type,
                 ))
             }
-            HirExpressionNode::PathExpression(path_expr) => {
+            Expression::Path(path_expr) => {
                 let segments = &path_expr.node.path.node.segments;
                 let field_name = first_field_segment_name(segments)?;
                 let first_name = segments.first().map(|segment| segment.node.name.node.name.as_str())?;

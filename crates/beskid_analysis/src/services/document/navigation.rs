@@ -207,18 +207,18 @@ pub fn references_at_offset_workspace(
     };
     let target = reference_target(resolution, &target_resolved);
 
-    for (index, unit_hir) in assembly.hir_units.iter().enumerate() {
+    for (index, unit_program) in assembly.units.iter().enumerate() {
         if index == assembly.entry_index {
             continue;
         }
-        let Ok(unit_resolution) = assembly.module_index.resolve_unit_hir(&unit_hir.hir, &unit_hir.path) else {
+        let Ok(unit_resolution) = assembly.module_index.resolve_unit_program(&unit_program.program, &unit_program.path) else {
             continue;
         };
         for (span, resolved) in &unit_resolution.tables.resolved_values {
             if !reference_targets_match(resolution, target, &unit_resolution, resolved) {
                 continue;
             }
-            references.push(ReferenceInfo { location: symbol_location_for_span(&unit_hir.path, span.start, span.end) });
+            references.push(ReferenceInfo { location: symbol_location_for_span(&unit_program.path, span.start, span.end) });
         }
     }
 
@@ -241,7 +241,7 @@ pub fn references_at_offset_workspace(
 mod reference_target_tests {
     use std::collections::HashMap;
 
-    use crate::hir::HirVisibility;
+    use crate::syntax::Visibility;
     use crate::resolve::{
         ExportKind, ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution, ResolutionTables, ResolvedValue, SymbolId,
         SymbolQualifier, SymbolRegistry, SymbolShape,
@@ -260,7 +260,7 @@ mod reference_target_tests {
             parent_id: None,
             name: "SharedFn".into(),
             kind: ItemKind::Function,
-            visibility: HirVisibility::Public,
+            visibility: Visibility::Public,
             span: span(0, 8),
             source_path: None,
             symbol: Some(symbol),
@@ -299,7 +299,7 @@ mod reference_target_tests {
                     parent_id: None,
                     name: "Other".into(),
                     kind: ItemKind::Function,
-                    visibility: HirVisibility::Public,
+                    visibility: Visibility::Public,
                     span: span(0, 4),
                     source_path: None,
                     symbol: None,

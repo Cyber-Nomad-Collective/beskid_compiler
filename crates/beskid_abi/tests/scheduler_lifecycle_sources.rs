@@ -1,5 +1,5 @@
 use beskid_abi::runtime_source::{
-    CANONICAL_FIBER_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH, canonical_runtime_sources,
+    canonical_runtime_sources, CANONICAL_FIBER_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
 };
 
 fn canonical_source(path: &str) -> String {
@@ -8,6 +8,16 @@ fn canonical_source(path: &str) -> String {
         .find(|unit| unit.logical_path == path)
         .unwrap_or_else(|| panic!("canonical source {path}"))
         .source
+}
+
+#[test]
+fn scheduler_worker_model_has_one_mutator_token_and_natural_shutdown() {
+    let scheduler = canonical_source(CANONICAL_SCHEDULER_CORE_SOURCE_PATH);
+    assert!(scheduler.contains("const SCHEDULER_WORKER_TABLE_OFFSET = 3512;"));
+    assert!(scheduler.contains("pub unit SchedulerPollWorkerCompletions()"));
+    assert!(scheduler.contains("pub bool SchedulerAcquireMutatorToken()"));
+    assert!(scheduler.contains("pub bool SchedShutdownForced(bool forced)"));
+    assert!(scheduler.contains("if forced && FiberExists(index) && !FiberFinished(index)"));
 }
 
 #[test]

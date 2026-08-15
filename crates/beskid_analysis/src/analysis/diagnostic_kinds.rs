@@ -44,12 +44,12 @@ pub enum SemanticIssueKind {
     UseBeforeDeclaration {
         name: String,
     },
-    InvalidHirSpan {
+    InvalidSyntaxSpan {
         context: String,
     },
-    UnresolvedHirValuePath,
-    UnresolvedHirTypePath,
-    NonNormalizedHirControlFlow {
+    UnresolvedSyntaxValuePath,
+    UnresolvedSyntaxTypePath,
+    NonCanonicalSyntaxControlFlow {
         message: String,
     },
     DuplicateAttributeDeclarationTarget {

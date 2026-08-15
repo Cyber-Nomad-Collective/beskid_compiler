@@ -155,7 +155,8 @@ pub struct AbiFunction {
 pub struct AbiFieldLayout {
     pub name: String,
     pub offset: u64,
-    pub ty: AbiType,
+    #[serde(rename = "type")]
+    pub ty: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -427,7 +428,7 @@ pub fn canonical_layout_hash(layouts: &[AbiLayout]) -> String {
         for field in layout.fields {
             hash_str(&mut hasher, &field.name);
             hash_u64(&mut hasher, field.offset);
-            hash_str(&mut hasher, field.ty.canonical_name());
+            hash_str(&mut hasher, &field.ty);
         }
     }
     hex_digest(hasher.finalize())

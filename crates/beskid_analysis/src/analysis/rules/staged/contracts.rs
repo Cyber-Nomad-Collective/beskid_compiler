@@ -1,7 +1,7 @@
 use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
-use crate::hir::{HirContractNode, HirItem, HirProgram, HirType};
+use crate::syntax::{ContractNode, Node, Program, Type};
 use crate::resolve::Resolution;
 use crate::syntax::Spanned;
 use std::collections::{HashMap, HashSet};
@@ -10,10 +10,10 @@ impl SemanticPipelineRule {
     pub(super) fn stage6_contracts_and_methods(
         &self,
         ctx: &mut RuleContext,
-        hir: &Spanned<HirProgram>,
+        program: &Spanned<Program>,
         resolution: &Resolution,
     ) {
-        let contracts = self.collect_contract_signatures(hir);
+        let contracts = self.collect_contract_signatures(program);
 
         for (type_item_id, conformances) in &resolution.tables.type_conformances {
             let Some(type_name) = resolution.items.get(type_item_id.0).map(|item| item.name.clone()) else {
@@ -27,7 +27,7 @@ impl SemanticPipelineRule {
                     continue;
                 };
                 for (method_name, expected) in expected_methods {
-                    let actual = self.impl_method_signature_for_type(hir, &type_name, method_name.as_str());
+                    let actual = self.impl_method_signature_for_type(program, &type_name, method_name.as_str());
                     let Some(actual) = actual else {
                         ctx.emit_issue(
                             *conformance_span,
@@ -54,13 +54,13 @@ impl SemanticPipelineRule {
         }
     }
 
-    fn collect_contract_signatures(&self, hir: &Spanned<HirProgram>) -> HashMap<String, HashMap<String, String>> {
-        let definitions: HashMap<String, &Spanned<crate::hir::HirContractDefinition>> = hir
+    fn collect_contract_signatures(&self, program: &Spanned<Program>) -> HashMap<String, HashMap<String, String>> {
+        let definitions: HashMap<String, &Spanned<crate::syntax::ContractDefinition>> = program
             .node
             .items
             .iter()
             .filter_map(|item| match &item.node {
-                HirItem::ContractDefinition(definition) if definition.node.extern_interface.is_none() => {
+                Node::ContractDefinition(definition) if definition.node.extern_interface.is_none() => {
                     Some((definition.node.name.node.name.clone(), definition))
                 }
                 _ => None,
@@ -78,7 +78,7 @@ impl SemanticPipelineRule {
     fn collect_contract_methods_recursive(
         &self,
         contract_name: &str,
-        definitions: &HashMap<String, &Spanned<crate::hir::HirContractDefinition>>,
+        definitions: &HashMap<String, &Spanned<crate::syntax::ContractDefinition>>,
         cache: &mut HashMap<String, HashMap<String, String>>,
         active: &mut HashSet<String>,
     ) -> HashMap<String, String> {
@@ -97,7 +97,7 @@ impl SemanticPipelineRule {
 
         for node in &definition.node.items {
             match &node.node {
-                HirContractNode::MethodSignature(signature) => {
+                ContractNode::MethodSignature(signature) => {
                     methods.insert(
                         signature.node.name.node.name.clone(),
                         self.method_signature_string(
@@ -106,7 +106,7 @@ impl SemanticPipelineRule {
                         ),
                     );
                 }
-                HirContractNode::Embedding(embedding) => {
+                ContractNode::Embedding(embedding) => {
                     let embedded_name = embedding.node.name.node.name.clone();
                     let embedded =
                         self.collect_contract_methods_recursive(embedded_name.as_str(), definitions, cache, active);
@@ -124,14 +124,14 @@ impl SemanticPipelineRule {
 
     fn impl_method_signature_for_type(
         &self,
-        hir: &Spanned<HirProgram>,
+        program: &Spanned<Program>,
         type_name: &str,
         method_name: &str,
     ) -> Option<String> {
-        for item in &hir.node.items {
+        for item in &program.node.items {
             match &item.node {
-                HirItem::MethodDefinition(method) => {
-                    let HirType::Complex(receiver_path) = &method.node.receiver_type.node else {
+                Node::Method(method) => {
+                    let Type::Complex(receiver_path) = &method.node.receiver_type.node else {
                         continue;
                     };
                     let Some(receiver_name) =
@@ -148,7 +148,7 @@ impl SemanticPipelineRule {
                         );
                     }
                 }
-                HirItem::TypeDefinition(definition) if definition.node.name.node.name == type_name => {
+                Node::TypeDefinition(definition) if definition.node.name.node.name == type_name => {
                     if let Some(method) =
                         definition.node.methods.iter().find(|method| method.node.name.node.name == method_name)
                     {

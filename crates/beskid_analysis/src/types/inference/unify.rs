@@ -1,6 +1,6 @@
 //! Structural unification helpers for inference.
 
-use crate::hir::HirPrimitiveType;
+use crate::syntax::PrimitiveType;
 use crate::syntax::SpanInfo;
 use crate::types::result::TypeError;
 use crate::types::{TypeId, TypeInfo, TypeTable};
@@ -9,7 +9,7 @@ pub fn is_numeric(table: &TypeTable, type_id: TypeId) -> bool {
     matches!(
         table.get(type_id),
         Some(TypeInfo::Primitive(
-            HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8 | HirPrimitiveType::F64
+            PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U8 | PrimitiveType::F64
         ))
     )
 }
@@ -40,13 +40,13 @@ pub fn unify_numeric_types(table: &TypeTable, left: TypeId, right: TypeId) -> Op
     let left_prim = primitive_of(table, left)?;
     let right_prim = primitive_of(table, right)?;
     match (left_prim, right_prim) {
-        (HirPrimitiveType::I64, HirPrimitiveType::I32) => Some(left),
-        (HirPrimitiveType::I32, HirPrimitiveType::I64) => table.find_primitive(HirPrimitiveType::I64),
+        (PrimitiveType::I64, PrimitiveType::I32) => Some(left),
+        (PrimitiveType::I32, PrimitiveType::I64) => table.find_primitive(PrimitiveType::I64),
         _ => Some(left),
     }
 }
 
-fn primitive_of(table: &TypeTable, type_id: TypeId) -> Option<HirPrimitiveType> {
+fn primitive_of(table: &TypeTable, type_id: TypeId) -> Option<PrimitiveType> {
     match table.get(type_id)? {
         TypeInfo::Primitive(primitive) => Some(*primitive),
         _ => None,

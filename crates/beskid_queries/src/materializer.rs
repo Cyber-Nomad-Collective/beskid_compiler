@@ -3,8 +3,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use beskid_analysis::projects::assembly::{UnitMaterializer, build_hir_units};
+use beskid_analysis::projects::assembly::UnitMaterializer;
 use beskid_analysis::services::parse_program_with_source_name;
+use beskid_analysis::syntax::SyntaxGenerationId;
+use beskid_analysis::syntax_query::SyntaxIndex;
 use beskid_artifacts::content_fingerprint;
 
 use crate::db::{BeskidDatabase, Db};
@@ -13,20 +15,20 @@ use crate::inputs::ProjectSession;
 use crate::stats::{record_query_hit, record_query_miss};
 
 pub fn unit_materializer_for(db: Arc<Mutex<BeskidDatabase>>, session: ProjectSession) -> UnitMaterializer {
-    Arc::new(move |path: &Path, source: &str| {
+    Arc::new(move |path: &Path, source: &str, generation: SyntaxGenerationId| {
         let _ = session;
         let fp = content_fingerprint(source);
         if let Some(unit) = cached_unit(&db, &fp) {
             record_query_hit();
-            let hir = build_hir_units(std::slice::from_ref(&unit)).into_iter().next().expect("unit hir");
-            return Ok((unit, hir));
+            let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
+            return Ok((unit, syntax_index));
         }
 
         record_query_miss();
         let unit = parse_unit(path.to_path_buf(), source)?;
-        let hir = build_hir_units(std::slice::from_ref(&unit)).into_iter().next().expect("unit hir");
+        let syntax_index = SyntaxIndex::from_program(&unit.program, generation);
         insert_cache(&db, fp, &unit);
-        Ok((unit, hir))
+        Ok((unit, syntax_index))
     })
 }
 

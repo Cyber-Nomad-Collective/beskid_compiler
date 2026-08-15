@@ -107,7 +107,22 @@ impl Heap {
         length: usize,
         initialize: impl FnOnce(*mut u8),
     ) -> Option<(*mut u8, u64)> {
-        let data_size = descriptor.stride.checked_mul(length)?;
+        self.allocate_beskid_array_capacity_constructing(header_size, descriptor, length, length, initialize)
+    }
+
+    /// Allocate capacity for a typed array while tracing only its initialized prefix.
+    pub fn allocate_beskid_array_capacity_constructing(
+        &self,
+        header_size: usize,
+        descriptor: ArrayElementDescriptor,
+        initialized_length: usize,
+        capacity: usize,
+        initialize: impl FnOnce(*mut u8),
+    ) -> Option<(*mut u8, u64)> {
+        if initialized_length > capacity {
+            return None;
+        }
+        let data_size = descriptor.stride.checked_mul(capacity)?;
         let total_size = header_size.checked_add(data_size)?;
         if self.options.assist_work_budget > 0 {
             self.with_mutator_operation(|is_marking| {
@@ -121,7 +136,7 @@ impl Heap {
             heap: self as *const Self,
             type_desc: std::ptr::null(),
             bytes: AlignedBytes::zeroed(total_size),
-            array: Some(BeskidArrayMetadata { descriptor, length, data_offset: header_size }),
+            array: Some(BeskidArrayMetadata { descriptor, length: initialized_length, data_offset: header_size }),
         };
         let ptr = GcBox::new_with_root(obj, false);
         // SAFETY: `ptr` owns a fully initialized `GcBox<BeskidObject>`.
@@ -159,6 +174,19 @@ impl Heap {
 
     pub fn external_roots(&self) -> &ExternalRootSet {
         &self.external_roots
+    }
+
+    /// Return the immutable descriptor and initialized length of a heap-owned typed array.
+    ///
+    /// Foreign payloads and non-array allocations remain unavailable; callers must not infer
+    /// descriptor data from the ABI-visible array header.
+    pub fn beskid_array_metadata(&self, payload_ptr: *mut u8) -> Option<(ArrayElementDescriptor, usize)> {
+        let header = self.beskid_allocations.header_for(payload_ptr)?;
+        // SAFETY: the registry only stores live headers for `BeskidObject` allocations created by
+        // this heap. `GcBox` is repr(C) and its header is fixed at offset zero.
+        let object = unsafe { &(*(header.cast::<GcBox<BeskidObject>>())).data };
+        let array = object.array?;
+        Some((array.descriptor, array.length))
     }
 
     /// Whether this heap currently owns an opaque Beskid payload pointer.

@@ -9,15 +9,16 @@ use beskid_codegen::cranelift_host::{
 };
 #[cfg(debug_assertions)]
 use beskid_codegen::validate_artifact;
-use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
+use beskid_codegen::{emit_string_literals, emit_type_descriptors, CodegenArtifact};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
 use cranelift_codegen::settings::Configurable;
-use cranelift_module::{DataId, FuncId, Linkage, Module, default_libcall_names};
+use cranelift_module::{default_libcall_names, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
-use beskid_pipeline::{PipelineObserver, emit_work_unit, phases::AOT_EMIT_OBJECT};
+use beskid_pipeline::{emit_work_unit, phases::AOT_EMIT_OBJECT, PipelineObserver};
 
+use crate::api::BuildProfile;
 use crate::error::{AotError, AotResult};
 
 /// Owns a Cranelift object builder until [`Self::finalize_to_path`] consumes it.
@@ -29,11 +30,9 @@ pub struct BeskidObjectModule {
 }
 
 impl BeskidObjectModule {
-    /// Construct module for `target_triple` or the host ISA when `None` (PIC enabled).
-    pub fn new(target_triple: Option<&str>) -> AotResult<Self> {
-        let mut flag_builder = settings::builder();
-        flag_builder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
-        let flags = settings::Flags::new(flag_builder);
+    /// Construct a profiled module for `target_triple` or the host ISA when `None`.
+    pub fn new(target_triple: Option<&str>, profile: BuildProfile) -> AotResult<Self> {
+        let flags = ObjectCodegenFlags(profile)?;
 
         let isa_builder = if let Some(triple) = target_triple {
             cranelift_codegen::isa::lookup_by_name(triple)
@@ -68,7 +67,7 @@ impl BeskidObjectModule {
         let exported_symbols = artifact
             .functions
             .iter()
-            .map(|function| beskid_codegen::lowering::expressions::export::object_link_symbol(&function.name, &exports))
+            .map(|function| beskid_codegen::object_link_symbol(&function.name, &exports))
             .collect::<HashSet<_>>();
         self.compile_artifact_with_exports(artifact, &exported_symbols, pipeline)
     }
@@ -115,11 +114,15 @@ impl BeskidObjectModule {
                 {
                     program_entry.to_owned()
                 } else {
-                    beskid_codegen::lowering::expressions::export::object_link_symbol(name, &exports)
+                    beskid_codegen::object_link_symbol(name, &exports)
                 }
             },
             |symbol| {
-                if exported_symbols.contains(symbol) { Linkage::Export } else { Linkage::Local }
+                if exported_symbols.contains(symbol) {
+                    Linkage::Export
+                } else {
+                    Linkage::Local
+                }
             },
         )?;
         // Only symbols selected by the caller's export policy use Export linkage. This keeps
@@ -193,12 +196,49 @@ impl BeskidObjectModule {
     }
 }
 
+fn ObjectCodegenFlags(profile: BuildProfile) -> AotResult<settings::Flags> {
+    let mut flagBuilder = settings::builder();
+    flagBuilder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
+    flagBuilder.set("enable_verifier", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
+    let optimizationLevel = match profile {
+        BuildProfile::Debug => "none",
+        BuildProfile::Release => "speed",
+    };
+    flagBuilder.set("opt_level", optimizationLevel).map_err(|err| AotError::IsaInit { message: err.to_string() })?;
+    Ok(settings::Flags::new(flagBuilder))
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use cranelift_codegen::settings::OptLevel;
+
+    use super::{BuildProfile, ObjectCodegenFlags};
+
+    #[test]
+    fn DebugProfileUsesUnoptimizedVerifiedPicCodegen() {
+        let flags = ObjectCodegenFlags(BuildProfile::Debug).expect("debug codegen flags");
+
+        assert_eq!(flags.opt_level(), OptLevel::None);
+        assert!(flags.enable_verifier());
+        assert!(flags.is_pic());
+    }
+
+    #[test]
+    fn ReleaseProfileUsesOptimizedVerifiedPicCodegen() {
+        let flags = ObjectCodegenFlags(BuildProfile::Release).expect("release codegen flags");
+
+        assert_eq!(flags.opt_level(), OptLevel::Speed);
+        assert!(flags.enable_verifier());
+        assert!(flags.is_pic());
+    }
+}
+
 /// Construct the exact ISA used by AOT object emission for a validated ABI target.
-pub(crate) fn object_target_isa(target: &str) -> AotResult<std::sync::Arc<dyn TargetIsa>> {
-    let mut flag_builder = settings::builder();
-    flag_builder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
+pub(crate) fn ObjectTargetIsa(target: &str) -> AotResult<std::sync::Arc<dyn TargetIsa>> {
+    let mut flagBuilder = settings::builder();
+    flagBuilder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
     cranelift_codegen::isa::lookup_by_name(target)
         .map_err(|err| AotError::IsaInit { message: err.to_string() })?
-        .finish(settings::Flags::new(flag_builder))
+        .finish(settings::Flags::new(flagBuilder))
         .map_err(|err| AotError::IsaInit { message: err.to_string() })
 }

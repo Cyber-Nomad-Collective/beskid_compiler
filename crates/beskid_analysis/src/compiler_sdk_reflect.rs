@@ -1,6 +1,6 @@
 //! Curated `#[beskid_reflect]` enums for Mod SDK `.bd` generation (`beskid_ast_reflect_gen`).
 //!
-//! `ReflectSdkNodeKind` / `ReflectSdkHirNodeKind` mirror the `node_kinds!` expansions in
+//! `ReflectSdkNodeKind` mirrors the syntax `node_kinds!` expansion in
 //! `query/mod.rs` — update both together when adding node kinds.
 
 /// Syntax / AST query classification tokens (mirrors [`crate::syntax_query::NodeKind`]).
@@ -98,85 +98,6 @@ pub enum ReflectSdkNodeKind {
     LaunchStatement,
 }
 
-/// HIR query classification tokens (mirrors [`crate::syntax_query::HirNodeKind`]).
-#[beskid_ast_derive::beskid_reflect]
-pub enum ReflectSdkHirNodeKind {
-    Program,
-    Module,
-    Item,
-    FunctionDefinition,
-    MethodDefinition,
-    TypeDefinition,
-    EnumDefinition,
-    EnumVariant,
-    ContractDefinition,
-    TestDefinition,
-    TestMetaSection,
-    TestMetadataEntry,
-    TestSkipSection,
-    TestSkipEntry,
-    ContractNode,
-    ContractMethodSignature,
-    ContractEmbedding,
-    Attribute,
-    AttributeDeclaration,
-    AttributeTarget,
-    AttributeParameter,
-    AttributeArgument,
-    ModuleDeclaration,
-    InlineModule,
-    UseDeclaration,
-    Block,
-    Statement,
-    LetStatement,
-    ReturnStatement,
-    BreakStatement,
-    ContinueStatement,
-    WhileStatement,
-    ForStatement,
-    IfStatement,
-    ElseBranch,
-    ExpressionStatement,
-    ExtendTypeDefinition,
-    RangeExpression,
-    SpawnExpression,
-    Expression,
-    AssignExpression,
-    BinaryExpression,
-    BinaryOp,
-    UnaryExpression,
-    UnaryOp,
-    CallExpression,
-    MemberExpression,
-    LiteralExpression,
-    PathExpression,
-    StructLiteralExpression,
-    IndexExpression,
-    ArrayLiteralExpression,
-    CodeStringLiteral,
-    EnumConstructorExpression,
-    BlockExpression,
-    GroupedExpression,
-    TryExpression,
-    LambdaExpression,
-    LambdaParameter,
-    MatchExpression,
-    MatchArm,
-    Pattern,
-    EnumPattern,
-    Literal,
-    Identifier,
-    Type,
-    Path,
-    PathSegment,
-    EnumPath,
-    Field,
-    Parameter,
-    PrimitiveType,
-    StructLiteralField,
-    Visibility,
-}
-
 /// Emit-plane contribution categories for the Mod SDK (host-owned payloads).
 #[beskid_ast_derive::beskid_reflect]
 pub enum ReflectSdkEmitContributionKind {
@@ -203,6 +124,5 @@ pub enum ReflectSdkInternalSymbolType {
 #[beskid_ast_derive::beskid_reflect]
 pub enum ReflectSdkCompilationSnapshotPlane {
     SyntaxTree,
-    Hir,
     SemanticSnapshot,
 }

@@ -139,7 +139,7 @@ pub fn ref_path_resolves(path: &str, resolution: &Resolution) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hir::HirVisibility;
+    use crate::syntax::Visibility;
     use std::collections::HashMap;
 
     use crate::resolve::{
@@ -154,7 +154,7 @@ mod tests {
             parent_id,
             name: name.to_string(),
             kind,
-            visibility: HirVisibility::Public,
+            visibility: Visibility::Public,
             span: SpanInfo::from_byte_range_in_source("", 0, 1),
             source_path: None,
             symbol: None,
@@ -216,7 +216,7 @@ mod tests {
                 parent_id: None,
                 name: "Widget".into(),
                 kind: ItemKind::Type,
-                visibility: HirVisibility::Public,
+                visibility: Visibility::Public,
                 span: SpanInfo::from_byte_range_in_source("", 0, 1),
                 source_path: None,
                 symbol: Some(symbol),

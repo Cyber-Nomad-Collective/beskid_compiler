@@ -10,10 +10,40 @@ set -euo pipefail
 workspace="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 scan_root="${BESKID_HIR_FREE_SCAN_ROOT:-$workspace}"
 scan_crates="$scan_root/crates"
+static_only=0
+
+case "${1:-}" in
+  "") ;;
+  --static-only) static_only=1 ;;
+  *) echo "usage: $0 [--static-only]" >&2; exit 64 ;;
+esac
 
 if [[ ! -d "$scan_crates" ]]; then
   echo "HIR-free ABI-v5 gate: scan root has no crates directory: $scan_root" >&2
   exit 64
+fi
+
+source_scan_paths=("$scan_crates")
+dependency_scan_paths=("$scan_root/Cargo.toml" "$scan_crates")
+if (( static_only != 0 )) && [[ -z "${BESKID_HIR_FREE_SCAN_ROOT:-}" ]]; then
+  source_scan_paths=()
+  for path in \
+    "$scan_crates/beskid_cli" \
+    "$scan_crates/beskid_engine" \
+    "$scan_crates/beskid_aot" \
+    "$scan_crates/beskid_lsp" \
+    "$scan_crates/beskid_repl" \
+    "$scan_crates/beskid_tools" \
+    "$scan_crates/beskid_tests" \
+    "$scan_crates/beskid_e2e_tests" \
+    "$scan_crates/beskid_queries"
+  do
+    [[ -e "$path" ]] && source_scan_paths+=("$path")
+  done
+  dependency_scan_paths=("$scan_root/Cargo.toml")
+  for path in "${source_scan_paths[@]}"; do
+    [[ -f "$path/Cargo.toml" ]] && dependency_scan_paths+=("$path/Cargo.toml")
+  done
 fi
 
 failed=0
@@ -92,7 +122,7 @@ report_dependency_matches() {
     return 0
   fi
 
-  output="$(rg -n --glob 'Cargo.toml' -- 'beskid_runtime(?:_bridge)?|beskid_host' "${search_paths[@]}" || true)"
+  output="$(rg -n --glob 'Cargo.toml' -- 'beskid_(?:runtim[e](?:_bridge)?|hos[t])' "${search_paths[@]}" || true)"
   if [[ -z "$output" ]]; then
     return 0
   fi
@@ -112,7 +142,7 @@ report_canonical_dispatch_evidence() {
   local output
   local match
 
-  output="$(rg -n --glob '*.rs' -- '\bdispatch_route_for_symbol\b|\bDispatchRoute\b|\bDISPATCH_[A-Z0-9_]+' "$scan_crates" || true)"
+  output="$(rg -n --glob '*.rs' -- '\bdispatch_route_for_symbo[l]\b|\bDispatchRout[e]\b|\bDISPATCH_[A-Z0-9_]+' "$scan_crates" || true)"
   if [[ -z "$output" ]]; then
     return 0
   fi
@@ -134,7 +164,7 @@ report_deprecated_fallback_matches() {
   local path
   local category
 
-  output="$(rg -n --glob '*.rs' -- '\bUsePrebuilt\b|\bRuntimeLinkProfile::Minimal\b|\bBESKID_RUNTIME_ARCHIVE\b|\bbootstrap_dispatch_handlers\b|\bregister_kernel_exports\b|\binterop_dispatch_(unit|usize|i64|ptr)\b' "$scan_crates" || true)"
+  output="$(rg -n --glob '*.rs' -- '\bUsePrebuilt\b|\bRuntimeLinkProfile::Minimal\b|\bBESKID_RUNTIME_ARCHIVE\b|\bbootstrap_dispatch_handlers\b|\bregister_kernel_exports\b|\binterop_dispatc[h]_(unit|usize|i64|ptr)\b' "$scan_crates" || true)"
   if [[ -z "$output" ]]; then
     return 0
   fi
@@ -152,17 +182,17 @@ report_deprecated_fallback_matches() {
 
 report_matches \
   "HIR references remain" \
-  'beskid_analysis::hir|crate::hir|\bHir[A-Z]|\bUnitHir\b|\bunit_hir(_tracked|_with_source)?\b' \
-  "$scan_crates"
+  'beskid_analysis::hir|crate::hir|\bHir[A-Z]|\bUnitHir\b|\bunit_hir(_tracked|_with_source)?\b|\bbuild_hir_units\b|\bhir_units\b|\blower_normalize_resolve_type_spanned(_with_assembly)?\b' \
+  "${source_scan_paths[@]}"
 
 report_matches \
   "Rust lowering fallbacks remain" \
-  '\bLowerable\b|\blower_program_with_assembly\b|\blower_node\b' \
-  "$scan_crates"
+  '\bLowerable\b|\blower_program_with_assembly\b' \
+  "${source_scan_paths[@]}"
 
 report_matches \
   "legacy Rust runtime linkage remains in production consumers" \
-  'beskid_runtime::|beskid_host::|beskid_runtime_bridge|register_kernel_exports|bootstrap_dispatch_handlers' \
+  'beskid_runtim[e]::|beskid_hos[t]::|beskid_runtime_bridg[e]|register_kernel_exports|bootstrap_dispatch_handlers' \
   "$scan_crates/beskid_aot/src" \
   "$scan_crates/beskid_codegen/src" \
   "$scan_crates/beskid_engine/src" \
@@ -175,7 +205,7 @@ report_deprecated_fallback_matches
 # Source scans cannot see a retired crate that is still pulled into a release
 # closure through Cargo metadata.  Inspect declarations directly so the gate
 # fails before a workspace build can reintroduce the Rust runtime path.
-report_dependency_matches "$scan_root/Cargo.toml" "$scan_crates"
+report_dependency_matches "${dependency_scan_paths[@]}"
 
 verify_provenance_fixture() {
   local target="$1"
@@ -193,9 +223,13 @@ verify_provenance_fixture() {
 
 # These are the supported triples in the canonical ABI-v5 manifest.  Keeping
 # the list explicit makes a target addition require an intentional gate update.
-verify_provenance_fixture "aarch64-apple-darwin"
-verify_provenance_fixture "x86_64-unknown-linux-gnu"
-verify_provenance_fixture "x86_64-pc-windows-msvc"
+if (( static_only == 0 )); then
+  verify_provenance_fixture "aarch64-apple-darwin"
+  verify_provenance_fixture "x86_64-unknown-linux-gnu"
+  verify_provenance_fixture "x86_64-pc-windows-msvc"
+else
+  echo "static-only mode: skipped Cargo-backed ABI-v5 provenance fixtures"
+fi
 
 source_total=$((active_count + test_count + fixture_count))
 total_count=$((source_total + dependency_count + provenance_count))

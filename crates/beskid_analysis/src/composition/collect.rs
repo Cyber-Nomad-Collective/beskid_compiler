@@ -42,7 +42,7 @@ pub struct WithSite {
 
 /// Collect composition declarations directly from the expanded syntax authority.
 ///
-/// Composition only consumes declarations and statement shape, so lowering it to HIR would add
+/// Composition only consumes declarations and statement shape, so lowering it to syntax would add
 /// no semantic information and would make this diagnostic path depend on the retired pipeline.
 pub fn collect(program: &Spanned<Program>) -> CollectedComposition {
     let mut collected = CollectedComposition::default();

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::hir::HirPrimitiveType;
+use crate::syntax::PrimitiveType;
 use crate::resolve::ItemId;
 use crate::syntax::SpanInfo;
 use crate::types::inference::{
@@ -11,15 +11,15 @@ use crate::types::result::TypeError;
 use crate::types::{TypeId, TypeInfo, TypeTable};
 
 fn i64_id(table: &mut TypeTable) -> TypeId {
-    table.intern(TypeInfo::Primitive(HirPrimitiveType::I64))
+    table.intern(TypeInfo::Primitive(PrimitiveType::I64))
 }
 
 fn i32_id(table: &mut TypeTable) -> TypeId {
-    table.intern(TypeInfo::Primitive(HirPrimitiveType::I32))
+    table.intern(TypeInfo::Primitive(PrimitiveType::I32))
 }
 
 fn bool_id(table: &mut TypeTable) -> TypeId {
-    table.intern(TypeInfo::Primitive(HirPrimitiveType::Bool))
+    table.intern(TypeInfo::Primitive(PrimitiveType::Bool))
 }
 
 fn generic_param(table: &mut TypeTable, name: &str) -> TypeId {

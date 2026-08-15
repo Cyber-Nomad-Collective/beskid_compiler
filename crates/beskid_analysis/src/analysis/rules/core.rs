@@ -17,7 +17,7 @@ pub struct AnalysisOptions {
     /// Module paths (`Std::System::IO`) from program assembly; when set, `use` validation uses
     /// the merged module graph instead of file-local root heuristics.
     pub known_assembly_module_paths: Option<HashSet<String>>,
-    /// Prefetched cross-unit graph for entry resolution (analyze / IDE parity with [`ModuleIndex::resolve_entry_hir`]).
+    /// Prefetched cross-unit graph for entry resolution (analyze / IDE parity with [`ModuleIndex::resolve_entry_program`]).
     pub program_assembly_module_index: Option<ModuleIndex>,
     /// Entry `.bd` path paired with [`Self::program_assembly_module_index`].
     pub entry_source_path: Option<PathBuf>,

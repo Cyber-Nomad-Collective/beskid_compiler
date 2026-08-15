@@ -12,7 +12,7 @@ pub use host_emit::{
 };
 pub use model::{
     AotBuildRequest, AotBuildResult, BuildOutputKind, BuildProfile, CanonicalHostEmitAuthority, ExportPolicy, LinkMode,
-    NativeLibraryPair, ProjectTargetKind, RuntimeKitRequest,
+    NativeLibraryPair, NativeSymbolInventory, ProjectTargetKind, RuntimeKitRequest,
 };
 pub use pipeline::{build, emit_object_only};
-pub use validation::{DEFAULT_ENTRYPOINT, default_output_kind, native_link_entrypoint, resolve_entrypoint};
+pub use validation::{default_output_kind, native_link_entrypoint, resolve_entrypoint, DEFAULT_ENTRYPOINT};

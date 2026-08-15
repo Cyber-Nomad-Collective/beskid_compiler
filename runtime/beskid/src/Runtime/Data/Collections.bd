@@ -29,7 +29,9 @@ pub pointer AllocateArrayRooted(pointer request, pointer rootHandleOut) {
     }
     raw_word_store(rootHandleOut, 0);
     pointer element = NativePointer(raw_word_load(request));
-    if element == NativePointer(0) || raw_word_load(pointer_add(request, 16)) != 0 {
+    pointer descriptor = NativePointer(raw_word_load(pointer_add(request, 16)));
+    if ValidateArrayElementDescriptor(element) == false || ValidateTypeDescriptor(descriptor) == false ||
+       TypeDescriptorFlags(descriptor) != TYPE_DESCRIPTOR_ARRAY || raw_word_load(pointer_add(request, 24)) != 0 {
         return NativePointer(0);
     }
     word stride = raw_word_load(element);
@@ -42,28 +44,115 @@ pub pointer AllocateArrayRooted(pointer request, pointer rootHandleOut) {
     if length != 0 && backingSize / stride != length {
         return NativePointer(0);
     }
-    // BeskidArray is `{ pointer data; word len; word cap; }` on every ABI-v5 target.
-    word totalSize = backingSize + 24;
+    // Hidden element metadata follows the header; the public BeskidArray remains exactly
+    // `{ pointer data; word len; word cap; }` and starts at object + 24.
+    word totalSize = backingSize + 48;
     if totalSize < backingSize {
         return NativePointer(0);
     }
-    pointer array = Alloc(totalSize, NativePointer(0));
-    if array == NativePointer(0) {
+    pointer object = GcAlloc(totalSize, TypeDescriptorAlignment(descriptor));
+    if object == NativePointer(0) {
         return NativePointer(0);
     }
-    word handle = GcRootHandle(array);
+    memory_set(object, 0, totalSize);
+    raw_word_store(object, NativeWord(descriptor));
+    raw_word_store(pointer_add(object, 16), NativeWord(element));
+    pointer array = pointer_add(object, 24);
+    word handle = GcRootHandle(object);
     if handle == 0 {
         return NativePointer(0);
     }
-    raw_word_store(array, NativeWord(pointer_add(array, 24)));
+    raw_word_store(array, NativeWord(pointer_add(object, 48)));
     raw_word_store(pointer_add(array, 8), length);
     raw_word_store(pointer_add(array, 16), length);
     raw_word_store(rootHandleOut, handle);
     return array;
 }
 
-// Releases the construction root established by AllocateArrayRooted. A zero token is never a
-// successful rooted allocation, so generated code fails closed if allocation did not publish one.
+// Grows a descriptor-backed array into a distinct rooted object. The ABI-visible array starts
+// after the GC header and hidden element descriptor; the construction handle roots the object.
+// Failure never mutates the source array and leaves the output token at zero.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_array_grow_rooted")]
+pub pointer GrowArrayRooted(pointer array, word minimumCapacity, pointer rootHandleOut) {
+    if array == NativePointer(0) || rootHandleOut == NativePointer(0) {
+        return NativePointer(0);
+    }
+    raw_word_store(rootHandleOut, 0);
+
+    pointer object = NativePointer(NativeWord(array) - 24);
+    if NativeWord(object) >= NativeWord(array) {
+        return NativePointer(0);
+    }
+    pointer descriptor = NativePointer(raw_word_load(object));
+    if descriptor == NativePointer(0) || ValidateTypeDescriptor(descriptor) == false {
+        return NativePointer(0);
+    }
+
+    pointer sourceData = NativePointer(raw_word_load(array));
+    word length = raw_word_load(pointer_add(array, 8));
+    word capacity = raw_word_load(pointer_add(array, 16));
+    if sourceData == NativePointer(0) || length > capacity || minimumCapacity < length {
+        return NativePointer(0);
+    }
+
+    // A no-growth request still returns a rooted result and never reallocates the source.
+    if minimumCapacity <= capacity {
+        word existingHandle = GcRootHandle(object);
+        if existingHandle == 0 {
+            return NativePointer(0);
+        }
+        raw_word_store(rootHandleOut, existingHandle);
+        return array;
+    }
+
+    pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
+    if TypeDescriptorFlags(descriptor) != TYPE_DESCRIPTOR_ARRAY || ValidateArrayElementDescriptor(element) == false {
+        return NativePointer(0);
+    }
+    word stride = raw_word_load(element);
+    word alignment = raw_word_load(pointer_add(element, 8));
+    if stride == 0 || alignment == 0 || stride / alignment * alignment != stride {
+        return NativePointer(0);
+    }
+    word copyBytes = stride * length;
+    if length != 0 && copyBytes / stride != length {
+        return NativePointer(0);
+    }
+    word backingSize = stride * minimumCapacity;
+    if minimumCapacity != 0 && backingSize / stride != minimumCapacity {
+        return NativePointer(0);
+    }
+    word totalSize = backingSize + 48;
+    if totalSize < backingSize {
+        return NativePointer(0);
+    }
+
+    pointer replacementObject = GcAlloc(totalSize, alignment);
+    if replacementObject == NativePointer(0) {
+        return NativePointer(0);
+    }
+    memory_set(replacementObject, 0, totalSize);
+    raw_word_store(replacementObject, NativeWord(descriptor));
+    raw_word_store(pointer_add(replacementObject, 16), NativeWord(element));
+    pointer replacement = pointer_add(replacementObject, 24);
+    pointer replacementData = pointer_add(replacementObject, 48);
+    if copyBytes != 0 {
+        memory_copy(replacementData, sourceData, copyBytes);
+    }
+    raw_word_store(replacement, NativeWord(replacementData));
+    raw_word_store(pointer_add(replacement, 8), length);
+    raw_word_store(pointer_add(replacement, 16), minimumCapacity);
+
+    word handle = GcRootHandle(replacementObject);
+    if handle == 0 {
+        return NativePointer(0);
+    }
+    raw_word_store(rootHandleOut, handle);
+    return replacement;
+}
+
+// Releases the construction root established by AllocateArrayRooted or GrowArrayRooted. A zero
+// token is never a successful rooted result, so generated code fails closed if none was published.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_array_construction_finish")]
 pub u8 ArrayConstructionFinish(pointer rootHandle) {
     word handle = NativeWord(rootHandle);
@@ -81,7 +170,7 @@ pub u8 ArrayWriteBarrier(pointer array, pointer value) {
     if array == NativePointer(0) {
         return 0;
     }
-    GcWriteBarrier(array, value);
+    GcWriteBarrier(NativePointer(NativeWord(array) - 24), value);
     return 1;
 }
 

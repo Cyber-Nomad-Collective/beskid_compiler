@@ -8,10 +8,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use beskid_abi::{
-    abi_v5::{AbiManifestV5, AbiType, TargetMetadata},
-    dispatch_route_for_symbol,
-};
+use beskid_abi::abi_v5::{AbiManifestV5, AbiType, TargetMetadata};
 use beskid_analysis::syntax::SyntaxGenerationId;
 
 use crate::db::Db;
@@ -106,31 +103,32 @@ pub use abi::generic_specialization_instance;
 pub use calls::extern_contract_import_for_declaration;
 pub use completion::completion_candidates;
 pub use model::{
-    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, CallLowering, CaptureStorage,
-    CaptureStorageClass, CastIntent, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
-    ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
-    ClosureSignature, CompletionCandidate, CompletionContext, CompletionKind, ControlFlow, CorelibService,
-    EnumConstructorFact, EnumLayoutFact, EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumVariantLayoutFact,
-    ExportSymbol, ForIteratorFact, GenericCallInstantiation, GenericCallSpecialization, GenericCallTemplate,
-    GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
-    LiteralFact, LocalSlot, MutableLocalAssignment, OperatorFact, PrimitiveNumericConversion, RangeForFact,
-    ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName, SemanticError, SemanticQueryResult,
-    SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnostic, SpawnDiagnosticKind, SpawnEntryValidation,
-    SpawnLegality, SpawnTarget, SyntaxUnitInput, SyntaxUnitRevision, TestItem, TryExpressionFact, TypedProgram,
     format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,
-    generic_specialization_identity,
+    generic_specialization_identity, AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey,
+    CallLowering, CaptureStorage, CaptureStorageClass, CastIntent, ClosureAllocationStatus, ClosureCallTarget,
+    ClosureCapture, ClosureEnvironment, ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus,
+    ClosurePointerMapRequirement, ClosureSignature, CollectionMutationOwner, CollectionOperation, CompletionCandidate,
+    CompletionContext, CompletionKind, ControlFlow, CorelibService, EnumConstructorFact, EnumLayoutFact,
+    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumScalarPayloadObjectLayout,
+    EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, ExportSymbol, ForIteratorFact, GenericCallInstantiation,
+    GenericCallSpecialization, GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance,
+    GenericSubstitution, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, MutableLocalAssignment, OperatorFact,
+    PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
+    ScalarAbiLayout, SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnostic,
+    SpawnDiagnosticKind, SpawnEntryValidation, SpawnLegality, SpawnTarget, SyntaxUnitInput, SyntaxUnitRevision,
+    TestItem, TryExpressionFact, TypedProgram,
 };
 pub use queries::{
     abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration, array_index_element_abi_type,
     binary_operand_abi_type, block_statement_nodes, call_abi_signature, call_argument_abi_type, call_arguments,
     call_lowering, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
-    closure_call_target, closure_environment, closure_signature, constant_integer, contextual_integer_literal_abi_type,
-    control_flow, direct_callees, empty_array_literal_element_abi_type, enum_constructor, enum_layout, enum_match,
-    for_iterator_fact, generic_call_instantiation, generic_call_specialization, generic_call_template,
-    generic_nominal_method_receiver, item_abi_signature, item_body, item_export_symbol, item_name, item_signature,
-    literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver,
-    operator_fact, primitive_numeric_conversion, range_for_fact, reachable_items, resolved_item, resolved_local,
-    runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation, spawn_legality, spawn_target, test_item,
-    test_statement_nodes, try_expression_fact, value_abi_type,
+    closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
+    contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
+    enum_constructor, enum_layout, enum_match, for_iterator_fact, generic_call_instantiation,
+    generic_call_specialization, generic_call_template, generic_nominal_method_receiver, item_abi_signature, item_body,
+    item_export_symbol, item_name, item_signature, literal_fact, local_slot, mutable_local_assignment, node_kind,
+    node_span, node_type, nominal_member_receiver, operator_fact, primitive_numeric_conversion, range_for_fact,
+    reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation,
+    spawn_legality, spawn_target, test_item, test_statement_nodes, try_expression_fact, value_abi_type,
 };
-pub use syntax_facts::{DispatchBuiltinSymbol, dispatch_builtin_symbol};
+pub use syntax_facts::{dispatch_builtin_symbol, DispatchBuiltinSymbol};

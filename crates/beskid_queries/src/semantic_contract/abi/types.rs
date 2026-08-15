@@ -1,6 +1,7 @@
 //! Focused ABI semantic implementation.
 
 use super::super::*;
+use super::statement_abi_type_for_node;
 
 /// Prove an ABI representation for one unsuffixed integer literal at an exact declared boundary:
 /// an explicitly typed local, mutable-local assignment, enum-variant payload, or nominal
@@ -276,7 +277,10 @@ pub(in crate::semantic_contract) fn value_abi_type_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
-    with_node(db, syntax, key, |_program, _index, _node| {
+    with_node(db, syntax, key, |program, index, node| {
+        if let Some(statement) = statement_abi_type_for_node(db, program, index, key, node) {
+            return Some(statement);
+        }
         Some((|| {
             let contextual = optional_abi_fact(contextual_integer_literal_abi_type(db, key))?;
             let binary_operand = optional_abi_fact(binary_operand_abi_type(db, key))?;

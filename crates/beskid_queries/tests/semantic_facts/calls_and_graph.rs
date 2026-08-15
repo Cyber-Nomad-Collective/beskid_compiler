@@ -1,8 +1,8 @@
 use super::support::{assert_unavailable, key, key_at_start, setup};
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
-    SyntaxGenerationId, call_arguments, call_lowering, direct_callees, nominal_member_receiver, reachable_items,
-    resolved_item,
+    call_arguments, call_lowering, collection_operation, direct_callees, nominal_member_receiver, reachable_items,
+    resolved_item, SyntaxGenerationId,
 };
 use std::sync::Arc;
 
@@ -63,6 +63,15 @@ i64 Main() { return Helper(); }
     let helper = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
     let named_call = key(unit, generation, &index, NodeKind::CallExpression, 0);
     assert_eq!(call_lowering(&db, named_call).expect("named call"), Some(beskid_queries::CallLowering::Direct(helper)));
+}
+
+#[test]
+fn collection_operation_denies_user_append_lookalikes() {
+    let source = "i64 Append(i64 values, i64 value) { return values; } i64 Main() { return Append(1, 2); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_eq!(collection_operation(&db, call).expect("collection authority denial"), None);
 }
 
 #[test]

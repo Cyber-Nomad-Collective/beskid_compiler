@@ -25,17 +25,17 @@ impl SemanticIssueKind {
             Self::UseBeforeDeclaration { name } => {
                 format!("use of `{name}` before declaration")
             }
-            Self::InvalidHirSpan { context } => {
+            Self::InvalidSyntaxSpan { context } => {
                 format!("invalid span invariant in `{context}`")
             }
-            Self::UnresolvedHirValuePath => {
-                "unresolved value path in HIR legality validation".to_string()
+            Self::UnresolvedSyntaxValuePath => {
+                "unresolved value path in syntax legality validation".to_string()
             }
-            Self::UnresolvedHirTypePath => {
-                "unresolved type path in HIR legality validation".to_string()
+            Self::UnresolvedSyntaxTypePath => {
+                "unresolved type path in syntax legality validation".to_string()
             }
-            Self::NonNormalizedHirControlFlow { message } => {
-                format!("non-normalized control-flow in HIR: {message}")
+            Self::NonCanonicalSyntaxControlFlow { message } => {
+                format!("non-normalized control-flow in syntax: {message}")
             }
             Self::DuplicateAttributeDeclarationTarget { target, .. } => {
                 format!("duplicate target `{target}` in attribute declaration target list")

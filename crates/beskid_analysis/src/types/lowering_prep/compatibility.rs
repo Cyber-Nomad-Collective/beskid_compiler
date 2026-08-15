@@ -1,4 +1,4 @@
-use crate::hir::HirPrimitiveType;
+use crate::syntax::PrimitiveType;
 use crate::types::{TypeId, TypeInfo, TypeTable};
 
 use super::substitution::primitive_type_id;
@@ -7,22 +7,22 @@ pub(super) fn is_numeric(types: &TypeTable, id: TypeId) -> bool {
     matches!(
         types.get(id),
         Some(TypeInfo::Primitive(
-            HirPrimitiveType::I32 | HirPrimitiveType::I64 | HirPrimitiveType::U8 | HirPrimitiveType::F64
+            PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U8 | PrimitiveType::F64
         ))
     )
 }
 
 pub(super) fn is_never(types: &TypeTable, id: TypeId) -> bool {
-    matches!(types.get(id), Some(TypeInfo::Primitive(HirPrimitiveType::Never)))
+    matches!(types.get(id), Some(TypeInfo::Primitive(PrimitiveType::Never)))
 }
 
-pub(super) fn literal_type_id(types: &TypeTable, lit: &crate::hir::HirLiteral) -> Option<TypeId> {
-    use crate::hir::{HirLiteral, integer_literal_primitive_type};
+pub(super) fn literal_type_id(types: &TypeTable, lit: &crate::syntax::Literal) -> Option<TypeId> {
+    use crate::syntax::{Literal, integer_literal_primitive_type};
     match lit {
-        HirLiteral::Integer(v) => primitive_type_id(types, integer_literal_primitive_type(v)),
-        HirLiteral::Float(_) => primitive_type_id(types, HirPrimitiveType::F64),
-        HirLiteral::Bool(_) => primitive_type_id(types, HirPrimitiveType::Bool),
-        HirLiteral::Char(_) => primitive_type_id(types, HirPrimitiveType::Char),
-        HirLiteral::String(_) => primitive_type_id(types, HirPrimitiveType::String),
+        Literal::Integer(v) => primitive_type_id(types, integer_literal_primitive_type(v)),
+        Literal::Float(_) => primitive_type_id(types, PrimitiveType::F64),
+        Literal::Bool(_) => primitive_type_id(types, PrimitiveType::Bool),
+        Literal::Char(_) => primitive_type_id(types, PrimitiveType::Char),
+        Literal::String(_) => primitive_type_id(types, PrimitiveType::String),
     }
 }

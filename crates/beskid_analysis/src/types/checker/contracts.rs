@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::hir::{HirContractNode, HirItem, HirPrimitiveType, HirProgram};
+use crate::syntax::{ContractNode, Node, PrimitiveType, Program};
 use crate::resolve::{ItemKind, ResolvedType};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::result::{FunctionSignature, TypeError};
@@ -11,7 +11,7 @@ impl<'a> TypeChecker<'a> {
     pub(super) fn seed_method_receiver(
         &mut self,
         method_span: SpanInfo,
-        def: &Spanned<crate::hir::HirMethodDefinition>,
+        def: &Spanned<crate::syntax::MethodDefinition>,
     ) {
         let Some(method_item_id) = self.item_id_for_span(method_span) else {
             return;
@@ -22,13 +22,13 @@ impl<'a> TypeChecker<'a> {
         self.methods_by_receiver.insert((receiver_item_id, def.node.name.node.name.clone()), method_item_id);
     }
 
-    pub(super) fn seed_contract_signatures(&mut self, program: &Spanned<HirProgram>) {
-        let definitions: HashMap<String, &Spanned<crate::hir::HirContractDefinition>> = program
+    pub(super) fn seed_contract_signatures(&mut self, program: &Spanned<Program>) {
+        let definitions: HashMap<String, &Spanned<crate::syntax::ContractDefinition>> = program
             .node
             .items
             .iter()
             .filter_map(|item| match &item.node {
-                HirItem::ContractDefinition(def) => Some((def.node.name.node.name.clone(), def)),
+                Node::ContractDefinition(def) => Some((def.node.name.node.name.clone(), def)),
                 _ => None,
             })
             .collect();
@@ -66,7 +66,7 @@ impl<'a> TypeChecker<'a> {
 
                 // Validate method signatures declared directly in this contract
                 for node in &def.node.items {
-                    if let HirContractNode::MethodSignature(sig) = &node.node {
+                    if let ContractNode::MethodSignature(sig) = &node.node {
                         // Params
                         for param in &sig.node.parameters {
                             if !self.is_allowed_ffi_param(param) {
@@ -94,7 +94,7 @@ impl<'a> TypeChecker<'a> {
     fn collect_contract_signatures_recursive(
         &mut self,
         contract_name: &str,
-        definitions: &HashMap<String, &Spanned<crate::hir::HirContractDefinition>>,
+        definitions: &HashMap<String, &Spanned<crate::syntax::ContractDefinition>>,
         cache: &mut HashMap<String, Vec<(String, FunctionSignature)>>,
         active: &mut HashSet<String>,
     ) -> Vec<(String, FunctionSignature)> {
@@ -113,7 +113,7 @@ impl<'a> TypeChecker<'a> {
 
         for node in &definition.node.items {
             match &node.node {
-                HirContractNode::MethodSignature(signature) => {
+                ContractNode::MethodSignature(signature) => {
                     if methods.iter().any(|(name, _)| name == &signature.node.name.node.name) {
                         continue;
                     }
@@ -134,13 +134,13 @@ impl<'a> TypeChecker<'a> {
                         .return_type
                         .as_ref()
                         .and_then(|ty| self.type_id_for_type(ty))
-                        .or_else(|| self.primitive_type_id(HirPrimitiveType::Unit));
+                        .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
                     let Some(return_type) = return_type else {
                         continue;
                     };
                     methods.push((signature.node.name.node.name.clone(), FunctionSignature { params, return_type }));
                 }
-                HirContractNode::Embedding(embedding) => {
+                ContractNode::Embedding(embedding) => {
                     let embedded = self.collect_contract_signatures_recursive(
                         embedding.node.name.node.name.as_str(),
                         definitions,
@@ -162,24 +162,24 @@ impl<'a> TypeChecker<'a> {
         methods
     }
 
-    fn is_allowed_ffi_primitive(prim: crate::hir::HirPrimitiveType) -> bool {
-        use crate::hir::HirPrimitiveType::*;
+    fn is_allowed_ffi_primitive(prim: crate::syntax::PrimitiveType) -> bool {
+        use crate::syntax::PrimitiveType::*;
         matches!(prim, Bool | U8 | I32 | I64 | F64)
     }
 
-    fn is_allowed_ffi_param(&self, param: &Spanned<crate::hir::HirParameter>) -> bool {
-        use crate::hir::HirType;
+    fn is_allowed_ffi_param(&self, param: &Spanned<crate::syntax::Parameter>) -> bool {
+        use crate::syntax::Type;
         match &param.node.ty.node {
-            HirType::Primitive(p) => Self::is_allowed_ffi_primitive(p.node),
+            Type::Primitive(p) => Self::is_allowed_ffi_primitive(p.node),
             _ => false,
         }
     }
 
-    fn is_allowed_ffi_return(&self, ret: &Spanned<crate::hir::HirType>) -> bool {
+    fn is_allowed_ffi_return(&self, ret: &Spanned<crate::syntax::Type>) -> bool {
         // Allow: primitives (Bool, U8, I32, I64, F64), or Unit if unspecified upstream
-        use crate::hir::{HirPrimitiveType, HirType};
+        use crate::syntax::{PrimitiveType, Type};
         match &ret.node {
-            HirType::Primitive(p) => Self::is_allowed_ffi_primitive(p.node) || matches!(p.node, HirPrimitiveType::Unit),
+            Type::Primitive(p) => Self::is_allowed_ffi_primitive(p.node) || matches!(p.node, PrimitiveType::Unit),
             _ => false,
         }
     }
