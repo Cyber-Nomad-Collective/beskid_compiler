@@ -67,6 +67,15 @@ if [[ -z "${symbol_tool}" ]]; then
   exit 1
 fi
 
+pe_symbol_tool="${LLVM_READOBJ:-}"
+if [[ "${target}" == "x86_64-pc-windows-msvc" && -z "${pe_symbol_tool}" ]]; then
+  pe_symbol_tool="$(command -v llvm-readobj || command -v llvm-readobj.exe || true)"
+fi
+if [[ "${target}" == "x86_64-pc-windows-msvc" && -z "${pe_symbol_tool}" ]]; then
+  echo "Windows shared runtime provenance requires llvm-readobj; set LLVM_READOBJ to the native tool path" >&2
+  exit 1
+fi
+
 write_provenance() {
   local profile="$1"
   local linkage="$2"
@@ -82,10 +91,17 @@ write_provenance() {
 
   {
     printf 'target=%s\n' "${target}"
-    "${symbol_tool}" --extern-only --defined-only --format=posix "${library}" \
-      | awk 'NF >= 2 { print "defined=" $1 }'
-    "${symbol_tool}" --extern-only --undefined-only --format=posix "${library}" \
-      | awk 'NF >= 2 { print "undefined=" $1 }'
+    if [[ "${target}" == "x86_64-pc-windows-msvc" && "${linkage}" == "shared" ]]; then
+      "${pe_symbol_tool}" --coff-exports "${library}" \
+        | awk '/^[[:space:]]*Name: / { print "defined=" $2 }'
+      "${pe_symbol_tool}" --coff-imports "${library}" \
+        | awk '/^[[:space:]]*Symbol: / { print "undefined=" $2 }'
+    else
+      "${symbol_tool}" --extern-only --defined-only --format=posix "${library}" \
+        | awk 'NF >= 2 { print "defined=" $1 }'
+      "${symbol_tool}" --extern-only --undefined-only --format=posix "${library}" \
+        | awk 'NF >= 2 { print "undefined=" $1 }'
+    fi
   } >"${symbols}"
 
   # Mach-O spellings carry a leading underscore; ABI manifests do not.
@@ -148,6 +164,13 @@ done
 smoke_source="${work}/runtime-kit-cli-smoke.bd"
 printf 'pub i64 Main() { return 42; }\n' >"${smoke_source}"
 export BESKID_RUNTIME_KIT_PROFILE="debug"
+set +e
 "${cli[@]}" run "${smoke_source}" --plain
+smoke_status=$?
+set -e
+if [[ "${smoke_status}" -ne 42 ]]; then
+  echo "Native ABI-v5 runtime-kit CLI smoke returned ${smoke_status}; expected 42" >&2
+  exit 1
+fi
 
 echo "Native ABI-v5 runtime-kit matrix evidence passed for ${target} at ${prefix}"

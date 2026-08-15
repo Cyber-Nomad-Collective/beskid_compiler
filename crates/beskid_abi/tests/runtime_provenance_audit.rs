@@ -32,6 +32,36 @@ fn canonical_audit_serializes_a_stable_machine_readable_contract() {
 }
 
 #[test]
+fn windows_tls_and_args_boundary_is_crt_independent() {
+    let audit = RuntimeProvenanceAudit::canonical(target("x86_64-pc-windows-msvc")).unwrap();
+
+    for symbol in ["InitOnceExecuteOnce", "TlsAlloc", "TlsGetValue", "TlsSetValue"] {
+        assert!(audit.allowed_imports.contains(&symbol.to_owned()), "missing Win32 TLS import {symbol}");
+    }
+    for symbol in ["_tls_index", "strlen"] {
+        assert!(!audit.allowed_imports.contains(&symbol.to_owned()), "unexpected CRT dependency {symbol}");
+    }
+}
+
+#[test]
+fn windows_static_archive_ignores_only_coff_compiler_metadata_definitions() {
+    let audit = RuntimeProvenanceAudit::canonical(target("x86_64-pc-windows-msvc")).unwrap();
+    let mut symbols = audit.fixture_symbol_list().unwrap();
+    symbols.defined.extend([
+        "??_C@_0BN@DEMBGLIA@Core?4Args?5handoff?5is?5invalid?$AA@".into(),
+        "??_C@_0CE@MKNJCKMH@Core?4Args?5storage?5allocation?5fai@".into(),
+        "??_C@_0CJ@KFDPFJCM@Core?4Args?5argument?5index?5is?5out?5@".into(),
+        "@feat.00".into(),
+    ]);
+
+    audit.verify_static_archive(&symbols).expect("COFF compiler metadata is not a runtime ABI export");
+
+    symbols.defined.push("beskid_rt_v5_undeclared".into());
+    let error = audit.verify_static_archive(&symbols).unwrap_err();
+    assert!(error.to_string().contains("unexpected"), "unexpected allowlist result: {error}");
+}
+
+#[test]
 fn portable_fixture_uses_each_targets_native_symbol_spelling() {
     for metadata in TargetMetadata::supported() {
         let audit = RuntimeProvenanceAudit::canonical(metadata).unwrap();

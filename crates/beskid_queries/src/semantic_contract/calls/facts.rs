@@ -218,9 +218,9 @@ pub(in crate::semantic_contract) fn try_expression_fact_for_node(
     Ok(TryExpressionFact {
         expression: key,
         operand: AstNodeKey { node: operand, ..key },
-        payload_type: semantic_type_from_syntax(&payload.node)?,
-        error_type: semantic_type_from_syntax(&error.node)?,
-        enclosing_return: semantic_type_from_syntax(&return_type.node)?,
+        payload_type: abi_type_from_syntax(db, key, &payload.node)?,
+        error_type: abi_type_from_syntax(db, key, &error.node)?,
+        enclosing_return: abi_type_from_syntax(db, key, &return_type.node)?,
     })
 }
 

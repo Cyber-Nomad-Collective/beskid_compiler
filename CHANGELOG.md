@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Link Windows executables through their validated Beskid entry symbol and
+  console subsystem instead of implicitly requiring the CRT startup symbol.
+
+- Read Windows shared-runtime exports and imports from the PE tables with
+  `llvm-readobj`, while retaining `llvm-nm` provenance for static archives.
+
+- Classify MSVC string-literal COMDATs and the COFF feature marker as local
+  compiler metadata during runtime provenance checks without widening ABI exports or imports.
+
+- Make the Windows ABI-v5 runtime DLL CRT-independent by using manifest-owned
+  Win32 TLS APIs and literal trap lengths instead of `_tls_index` and `strlen`.
+
+- Accept the intentional `42` exit status from the native runtime-kit CLI smoke program while continuing to reject every unexpected result.
+
 ### Added
 
 - Add opt-in anonymous OpenTelemetry export for Rust CLI/pckg flows:
@@ -97,6 +113,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DocumentAnalysisSnapshot` remains CLI-doc-only (CYB-65).
 
 ### Fixed
+
+- Keep nominal source signatures fail-closed when the scalar semantic type ID
+  cannot represent their qualified identity, while retaining pointer lowering
+  exclusively in ABI queries; compose enum-match arm types past inapplicable
+  contextual-integer facts.
+
+- Select floating-point addition for float operands and route signed division
+  through the explicit integer-division-by-zero trap guard before emitting CLIF.
+
+- Keep exact-kit JIT rejection tests outside the canonical ABI-v5 platform
+  import allowlist by using a genuinely unapproved process-symbol witness.
+
+- Restore readable syntax trace sites as ordinary `path:line:column
+  (Construct)` locations while retaining generation-safe AST keys and exact
+  source spans.
+
+- Give the manifest-owned ABI-v5 soft builtin sole ownership of
+  `__fiber_yield`, removing the retired Rust/JIT registration that caused
+  duplicate-item failures throughout analysis.
+
+- Keep the deny-warnings Rust gate compatible with current Clippy by using
+  idiomatic `Option` propagation and direct mutable-builder reborrowing in
+  generic-call queries and numeric operand lowering, and remove the obsolete
+  runtime-intrinsic semantic-type fallback after its caller was retired.
+
+- Restore common integer-width normalization for addition and subtraction so
+  mixed `u8`/`i64` expressions emit verifier-clean CLIF.
+
+- Align syntax-only codegen gate assertions with precise captured-expression
+  diagnostics and the reachable zero-capture lambda body entry.
+
+- Include the manifest-owned fiber-yield export and intrinsic in exact ABI-v5
+  contract gate expectations.
+
+- Keep the scheduler lifecycle gate aligned with the canonical core's explicit
+  prohibition on emulating target context transfer.
 
 - Attribute unsupported `if` conditions to the exact condition node by routing nested
   condition lowering through the diagnostic-preserving ISLE expression boundary.

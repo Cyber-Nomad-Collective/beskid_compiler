@@ -105,8 +105,7 @@
       "ownership": "process_lifetime_copied_beskid_str_arena",
       "entrySource": "args_entry.asm",
       "osImports": [
-        "VirtualAlloc",
-        "strlen"
+        "VirtualAlloc"
       ]
     },
     {

@@ -1,23 +1,5 @@
 use super::*;
 
-pub(super) fn semantic_type_for_runtime_intrinsic(
-    intrinsic: &beskid_abi::abi_v5::RuntimeIntrinsic,
-) -> Option<SemanticTypeId> {
-    use beskid_abi::abi_v5::AbiType;
-
-    Some(match intrinsic.result {
-        AbiType::Void => return None,
-        AbiType::Pointer => SemanticTypeId::POINTER,
-        AbiType::USize => SemanticTypeId::WORD,
-        AbiType::I8 => SemanticTypeId::U8,
-        AbiType::U8 => SemanticTypeId::U8,
-        AbiType::I32 => SemanticTypeId::I32,
-        AbiType::I64 => SemanticTypeId::I64,
-        AbiType::F64 => SemanticTypeId::F64,
-        _ => return None,
-    })
-}
-
 pub(super) fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Option<beskid_isle::Signature> {
     let emitter = FunctionEmitter::new(isa);
     let parameters = item

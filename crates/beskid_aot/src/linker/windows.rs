@@ -111,6 +111,9 @@ fn windows_link_command(req: &LinkRequest, target: &str, linker: &str) -> AotRes
         cmd.arg("/DLL");
         cmd.arg("/NOENTRY");
         cmd.arg(format!("/IMPLIB:{}", windows_import_library_path(&req.output_path).display()));
+    } else if req.output_kind == BuildOutputKind::Exe {
+        cmd.arg("/SUBSYSTEM:CONSOLE");
+        cmd.arg(format!("/ENTRY:{}", req.entrypoint_symbol));
     }
     cmd.arg(&req.object_path);
     cmd.args(&req.additional_object_paths);
@@ -184,5 +187,35 @@ mod tests {
             !arguments.iter().any(|argument| argument == "-shared" || argument.starts_with("-Wl,")),
             "Windows link command leaked Unix linker flags: {arguments:?}"
         );
+    }
+
+    #[test]
+    fn windows_executable_uses_the_requested_entrypoint_without_crt_startup() {
+        let command = windows_link_command(
+            &LinkRequest {
+                target_triple: Some("x86_64-pc-windows-msvc".into()),
+                output_kind: BuildOutputKind::Exe,
+                output_path: PathBuf::from("out/beskid_run.exe"),
+                object_path: PathBuf::from("out/main.obj"),
+                additional_object_paths: Vec::new(),
+                runtime_staticlib: Some(PathBuf::from("runtime/beskid_runtime.lib")),
+                host_staticlib: None,
+                entrypoint_symbol: "main".into(),
+                exported_symbols: vec!["main".into()],
+                link_mode: LinkMode::Auto,
+                verbose: false,
+                external_libraries: vec!["kernel32".into()],
+                library_search_paths: Vec::new(),
+            },
+            "x86_64-pc-windows-msvc",
+            "lld-link",
+        )
+        .expect("build Windows executable link command");
+        let arguments = command.get_args().map(|argument| argument.to_string_lossy().into_owned()).collect::<Vec<_>>();
+
+        for required in ["/SUBSYSTEM:CONSOLE", "/ENTRY:main"] {
+            assert!(arguments.iter().any(|argument| argument == required), "missing {required}: {arguments:?}");
+        }
+        assert!(!arguments.iter().any(|argument| argument == "/ENTRY:mainCRTStartup"));
     }
 }

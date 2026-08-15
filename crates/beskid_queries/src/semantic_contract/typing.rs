@@ -62,7 +62,12 @@ pub(super) fn enum_match_result_semantic_type(db: &dyn Db, key: AstNodeKey) -> R
     let fact = enum_match(db, key)?.ok_or_else(|| SemanticError::unavailable("node_type"))?;
     let mut result = None;
     for arm in fact.arms.iter() {
-        let arm_type = contextual_integer_literal_abi_type(db, arm.body)?
+        let contextual = match contextual_integer_literal_abi_type(db, arm.body) {
+            Ok(contextual) => contextual,
+            Err(error) if error.is_unavailable() => None,
+            Err(error) => return Err(error),
+        };
+        let arm_type = contextual
             .or(node_type(db, arm.body)?)
             .ok_or_else(|| SemanticError::unavailable("node_type"))?;
         if result.replace(arm_type).is_some_and(|previous| previous != arm_type) {

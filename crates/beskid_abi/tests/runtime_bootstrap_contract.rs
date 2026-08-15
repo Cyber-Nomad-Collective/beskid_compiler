@@ -52,6 +52,7 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
                 &[AbiType::Pointer, AbiType::Pointer, AbiType::Pointer][..],
                 AbiType::I64,
             ),
+            ("beskid_rt_v5_fiber_yield", &[][..], AbiType::Void,),
             ("beskid_rt_v5_managed_object_allocate", &[AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_process_init", &[AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_process_shutdown", &[AbiType::Pointer][..], AbiType::Void,),
@@ -74,7 +75,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 34);
+    assert_eq!(names.len(), 35);
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
@@ -84,6 +85,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert!(names.contains(&"trap"));
     assert!(names.contains(&"clock_monotonic_nanos"));
     assert!(names.contains(&"process_getpid"));
+    assert!(names.contains(&"fiber_yield"));
     assert!(manifest.intrinsic_metadata("pointer_add").is_some());
 
     let mut unauthorized = manifest.clone();
@@ -204,6 +206,10 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "GetStdHandle",
         "GetSystemTimeAsFileTime",
         "GetTickCount64",
+        "InitOnceExecuteOnce",
+        "TlsAlloc",
+        "TlsGetValue",
+        "TlsSetValue",
         "VirtualAlloc",
         "VirtualFree",
         "WriteFile",
@@ -218,12 +224,11 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "pow",
         "sin",
         "sqrt",
-        "strlen",
         "tan",
     ];
     let math_imports = ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
     let windows_ucrt_imports =
-        ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "strlen", "tan"];
+        ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
     for target in supported_targets() {
         let is_windows = target.triple.as_str() == "x86_64-pc-windows-msvc";
         let (expected_symbols, expected_library) = match target.triple.as_str() {

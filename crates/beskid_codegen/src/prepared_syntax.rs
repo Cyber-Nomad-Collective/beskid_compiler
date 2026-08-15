@@ -23,7 +23,7 @@ use beskid_isle::AstNodeKey;
 use beskid_queries::{
     BeskidDatabase, SemanticTypeId, SourceUnitId, SyntaxGenerationId, build_canonical_runtime_typed_program,
     build_typed_program_with_corelib_syscall_services, child_nodes, format_ast_node_trace, item_body,
-    item_export_symbol, item_name, item_signature, node_kind, project_session_for_syntax_assembly, reachable_items,
+    item_abi_signature, item_export_symbol, item_name, node_kind, project_session_for_syntax_assembly, reachable_items,
 };
 use cranelift_codegen::isa::TargetIsa;
 
@@ -215,7 +215,7 @@ pub fn lower_syntax_assembly_entrypoint(
     crate::isle_trace::event(|| {
         format!("event=entry.selected entrypoint={entrypoint} site={}", format_ast_node_trace(db, entry, entry_label),)
     });
-    let signature = item_signature(db, entry)
+    let signature = item_abi_signature(db, entry)
         .map_err(|error| anyhow::anyhow!("entrypoint signature query failed: {error}"))?
         .ok_or_else(|| anyhow::anyhow!("Missing signature for `{entrypoint}`"))?;
     if !signature.parameters.is_empty() {

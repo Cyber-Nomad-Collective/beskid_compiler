@@ -45,7 +45,7 @@ fn canonical_scheduler_owns_lifecycle_statuses_and_never_fakes_a_context_switch(
 
     // Lifecycle bookkeeping must not impersonate execution until the target
     // context task supplies the manifest-authorized transfer.
-    assert!(scheduler.contains("does not claim a context transfer"));
+    assert!(scheduler.contains("real target context transfer is intentionally not emulated"));
     assert!(!scheduler.contains("result = i64(entry);"));
     assert!(!scheduler.contains("FiberDone(next, result);"));
 }

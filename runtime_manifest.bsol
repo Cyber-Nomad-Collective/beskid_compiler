@@ -233,7 +233,7 @@ entry_adapter "Core.Args" {
   handoff = beskid_rt_v5_args_handoff_utf16
   ownership = process_lifetime_copied_beskid_str_arena
   entry_source = "args_entry.asm"
-  os_imports = [VirtualAlloc, strlen]
+  os_imports = [VirtualAlloc]
 }
 
 layout "BeskidAllocationRequest" { size = 24 alignment = 8 fields = [{ name = size, offset = 0, type = usize }, { name = alignment, offset = 8, type = usize }, { name = descriptor, offset = 16, type = pointer }] }
@@ -331,6 +331,10 @@ platform_import "GetCurrentProcessId" { target = "x86_64-pc-windows-msvc" librar
 platform_import "GetStdHandle" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = selector, type = i32 }] returns = pointer }
 platform_import "GetSystemTimeAsFileTime" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = value, type = pointer }] returns = void }
 platform_import "GetTickCount64" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [] returns = u64 }
+platform_import "InitOnceExecuteOnce" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = once, type = pointer }, { name = initializer, type = pointer }, { name = parameter, type = pointer }, { name = context, type = pointer }] returns = i32 }
+platform_import "TlsAlloc" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [] returns = u32 }
+platform_import "TlsGetValue" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = index, type = u32 }] returns = pointer }
+platform_import "TlsSetValue" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = index, type = u32 }, { name = value, type = pointer }] returns = i32 }
 
 platform_import "floor" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = x, type = f64 }] returns = f64 }
 platform_import "ceil" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = x, type = f64 }] returns = f64 }

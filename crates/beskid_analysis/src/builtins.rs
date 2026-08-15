@@ -76,3 +76,21 @@ fn path_matches(expected: &[&str], actual: &[String]) -> bool {
     }
     expected.iter().zip(actual.iter()).all(|(left, right)| *left == right)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::builtin_specs;
+
+    #[test]
+    fn builtin_paths_are_unique_and_fiber_yield_is_manifest_owned() {
+        let mut paths = HashSet::new();
+        for spec in builtin_specs() {
+            assert!(paths.insert(spec.beskid_path), "duplicate builtin path {:?}", spec.beskid_path);
+        }
+
+        let fiber_yield = builtin_specs().iter().find(|spec| spec.beskid_path == ["__fiber_yield"]).unwrap();
+        assert_eq!(fiber_yield.runtime_symbol, "beskid_rt_v5_fiber_yield");
+    }
+}
