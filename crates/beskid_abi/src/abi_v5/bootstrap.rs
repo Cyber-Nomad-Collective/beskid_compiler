@@ -340,6 +340,8 @@ struct SourceContract {
     _meta: serde_json::Value,
     #[serde(rename = "audit")]
     _audit: serde_json::Value,
+    #[serde(default)]
+    _statuses: Vec<SourceStatus>,
 }
 
 #[derive(Deserialize)]
@@ -384,6 +386,20 @@ struct SourceIntrinsic {
     capability: String,
     params: Vec<SourceParameter>,
     result: String,
+    #[serde(default, rename = "resultStatus")]
+    _result_status: Option<String>,
+    #[serde(default, rename = "targetBindings")]
+    _target_bindings: Vec<SourceTargetBinding>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceTargetBinding {
+    #[serde(rename = "target")]
+    _target: String,
+    #[serde(rename = "implementation")]
+    _implementation: String,
+    #[serde(rename = "osImports")]
+    _os_imports: Vec<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -396,6 +412,24 @@ struct SourceSoftBuiltin {
     _params: Vec<SourceParameter>,
     #[serde(rename = "result")]
     _result: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceStatus {
+    #[serde(rename = "name")]
+    _name: String,
+    #[serde(rename = "repr")]
+    _repr: String,
+    #[serde(rename = "values")]
+    _values: Vec<SourceStatusValue>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceStatusValue {
+    #[serde(rename = "name")]
+    _name: String,
+    #[serde(rename = "value")]
+    _value: i64,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -17,8 +17,12 @@ impl SemanticPipelineRule {
         self.check_unknown_import_paths(ctx, program);
         self.check_use_before_declaration(ctx, program);
 
-        let resolution = if let Some(index) = ctx.options.program_assembly_module_index.as_ref() {
-            match index.resolve_entry_program(program, ctx.options.entry_source_path.as_deref()) {
+        let resolution = if let Some(assembly) = ctx.options.program_assembly.as_ref() {
+            match assembly.module_index.resolve_entry_program(
+                program,
+                ctx.options.entry_source_path.as_deref(),
+                assembly,
+            ) {
                 Ok(resolution) => resolution,
                 Err(errors) => {
                     for error in errors {

@@ -75,7 +75,7 @@ fn corelib_mvp_fixture_resolves_std_modules_via_program_assembly() {
         let assembly = shared_corelib_mvp_assembly();
         let resolution = assembly
             .module_index
-            .resolve_entry_program(&assembly.entry_unit().program, None)
+            .resolve_entry_program(&assembly.entry_unit().program, None, &assembly)
             .expect("cross-module resolve via ModuleIndex");
 
         assert!(

@@ -43,10 +43,13 @@ pub fn assemble_unit(source_unit: &SourceUnit) -> SourceUnit {
 /// Query: resolve entry syntax against module index.
 pub fn resolve_entry(
     entry_program: &Spanned<Program>,
-    module_index: &ModuleIndex,
+    assembly: &ProgramAssembly,
     entry_source_path: Option<&Path>,
 ) -> Result<Resolution, SemanticFactsError> {
-    module_index.resolve_entry_program(entry_program, entry_source_path).map_err(SemanticFactsError::Resolve)
+    assembly
+        .module_index
+        .resolve_entry_program(entry_program, entry_source_path, assembly)
+        .map_err(SemanticFactsError::Resolve)
 }
 
 /// Query: type entry program with full dependency bodies (executable path).

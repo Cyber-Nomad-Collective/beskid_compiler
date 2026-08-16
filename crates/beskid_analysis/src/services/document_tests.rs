@@ -68,9 +68,8 @@ mod tests {
     ) -> crate::services::DocumentAnalysisSnapshot {
         let program = parse_program_with_source_name(&fixture.main_path.to_string_lossy(), &fixture.source)
             .expect("parse Main.bd");
-        let resolution =
-            resolve_entry(&assembly.entry_unit().program, &assembly.module_index, Some(&fixture.main_path))
-                .expect("entry resolution");
+        let resolution = resolve_entry(&assembly.entry_unit().program, assembly, Some(&fixture.main_path))
+            .expect("entry resolution");
         let module_paths = assembly.module_index.known_module_path_strings();
         build_document_analysis_from_resolution(
             &program,

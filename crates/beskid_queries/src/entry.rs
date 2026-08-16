@@ -128,7 +128,7 @@ pub fn entry_resolution_with_db(
         resolved.assembly.as_ref().ok_or_else(|| anyhow::anyhow!("entry resolution requires assembled program"))?;
     let resolution = beskid_analysis::services::resolve_entry(
         &assembly.entry_unit().program,
-        &assembly.module_index,
+        assembly,
         Some(resolved.source_path.as_path()),
     )
     .map_err(|err| anyhow::anyhow!("{err}"))?;

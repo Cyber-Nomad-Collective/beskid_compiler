@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use beskid_pipeline::{PipelineObserver, observe_phase_result, phases};
 
-use crate::projects::assembly::{ModuleIndex, ProgramAssembly};
+use crate::projects::assembly::ProgramAssembly;
 use crate::resolve::{Resolution, ResolveError, Resolver};
 use crate::syntax::{Program, Spanned};
 use crate::types::{TypeChecker, TypeError, TypeResult};
@@ -25,7 +25,6 @@ impl DependencyTypingPolicy {
 /// Source used to resolve one expanded syntax program.
 pub enum ProgramResolutionSource<'a> {
     Assembly(Option<&'a ProgramAssembly>),
-    ModuleIndex { module_index: &'a ModuleIndex, entry_source_path: Option<PathBuf> },
     Existing(&'a Resolution),
 }
 
@@ -60,19 +59,13 @@ pub fn type_resolved_program(
                 if let Some(assembly) = assembly {
                     assembly
                         .module_index
-                        .resolve_entry_program(&program, entry_path.as_deref())
+                        .resolve_entry_program(&program, entry_path.as_deref(), assembly)
                         .map_err(SemanticFactsError::Resolve)
                 } else {
                     Resolver::new().resolve_program(&program).map_err(SemanticFactsError::Resolve)
                 }
             })?;
             (resolution, assembly, assembly.map(|value| value.module_index.as_ref()), entry_path)
-        }
-        ProgramResolutionSource::ModuleIndex { module_index, entry_source_path } => {
-            let resolution = module_index
-                .resolve_entry_program(&program, entry_source_path.as_deref())
-                .map_err(SemanticFactsError::Resolve)?;
-            (resolution, None, Some(module_index), entry_source_path)
         }
         ProgramResolutionSource::Existing(resolution) => (resolution.clone(), None, None, None),
     };

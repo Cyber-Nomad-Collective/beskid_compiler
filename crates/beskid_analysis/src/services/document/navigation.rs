@@ -211,7 +211,8 @@ pub fn references_at_offset_workspace(
         if index == assembly.entry_index {
             continue;
         }
-        let Ok(unit_resolution) = assembly.module_index.resolve_unit_program(&unit_program.program, &unit_program.path)
+        let Ok(unit_resolution) =
+            assembly.module_index.resolve_unit_program(&unit_program.program, &unit_program.path, assembly)
         else {
             continue;
         };
