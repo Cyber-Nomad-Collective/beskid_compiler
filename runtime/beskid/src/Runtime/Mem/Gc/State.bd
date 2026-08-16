@@ -25,8 +25,8 @@ const GC_HANDLE_CAPACITY = 8;
 const GC_HANDLE_SLOT_SIZE = 16;
 
 // Gray count uses two otherwise unreachable values while no gray entries exist.
-const GC_PHASE_SWEEPING = 0 - 1;
-const GC_PHASE_FAILED = 0 - 2;
+const GC_PHASE_SWEEPING = -1;
+const GC_PHASE_FAILED = -2;
 
 pub pointer RuntimeState() {
     pointer tls = CurrentThreadState();
