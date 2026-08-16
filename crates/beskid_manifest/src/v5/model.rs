@@ -41,6 +41,7 @@ pub struct FunctionV5 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IntrinsicV5 {
     pub name: String,
     pub symbol: String,

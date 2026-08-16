@@ -399,8 +399,8 @@
       "capability": "runtime.bootstrap.arch_context_alignment",
       "params": [],
       "result": "usize",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "arch_context_size",
@@ -408,8 +408,8 @@
       "capability": "runtime.bootstrap.arch_context_size",
       "params": [],
       "result": "usize",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "clock_monotonic_nanos",
@@ -417,8 +417,8 @@
       "capability": "runtime.adapter.clock_monotonic_nanos",
       "params": [],
       "result": "i64",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "clock_realtime_nanos",
@@ -426,8 +426,8 @@
       "capability": "runtime.adapter.clock_realtime_nanos",
       "params": [],
       "result": "i64",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "context_init",
@@ -456,8 +456,8 @@
         }
       ],
       "result": "void",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "context_switch",
@@ -474,8 +474,8 @@
         }
       ],
       "result": "void",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "env_get",
@@ -488,8 +488,8 @@
         }
       ],
       "result": "pointer",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "env_getcwd",
@@ -497,8 +497,8 @@
       "capability": "runtime.adapter.env_getcwd",
       "params": [],
       "result": "pointer",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "env_set",
@@ -515,8 +515,8 @@
         }
       ],
       "result": "i32",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "fiber_yield",
@@ -524,8 +524,8 @@
       "capability": "runtime.bootstrap.fiber_yield",
       "params": [],
       "result": "void",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "fs_delete",
@@ -538,8 +538,8 @@
         }
       ],
       "result": "i32",
-      "result_status": "BeskidFsStatus",
-      "target_bindings": [
+      "resultStatus": "BeskidFsStatus",
+      "targetBindings": [
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_linux_fs_delete",
@@ -582,8 +582,8 @@
         }
       ],
       "result": "i32",
-      "result_status": "BeskidFsStatus",
-      "target_bindings": [
+      "resultStatus": "BeskidFsStatus",
+      "targetBindings": [
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_linux_fs_exists",
@@ -626,8 +626,8 @@
         }
       ],
       "result": "i32",
-      "result_status": "BeskidFsStatus",
-      "target_bindings": [
+      "resultStatus": "BeskidFsStatus",
+      "targetBindings": [
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_linux_fs_mkdir",
@@ -678,8 +678,8 @@
         }
       ],
       "result": "i32",
-      "result_status": "BeskidFsStatus",
-      "target_bindings": [
+      "resultStatus": "BeskidFsStatus",
+      "targetBindings": [
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_linux_fs_read_text",
@@ -735,8 +735,8 @@
         }
       ],
       "result": "void",
-      "result_status": null,
-      "target_bindings": [
+      "resultStatus": null,
+      "targetBindings": [
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_linux_fs_read_text_release",
@@ -775,8 +775,8 @@
         }
       ],
       "result": "i32",
-      "result_status": "BeskidFsStatus",
-      "target_bindings": [
+      "resultStatus": "BeskidFsStatus",
+      "targetBindings": [
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "beskid_rt_v5_linux_fs_write_text",
@@ -829,8 +829,8 @@
         }
       ],
       "result": "pointer",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "guarded_stack_free",
@@ -847,8 +847,8 @@
         }
       ],
       "result": "void",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "guarded_stack_grow",
@@ -873,8 +873,8 @@
         }
       ],
       "result": "u8",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "memory_compare",
@@ -895,8 +895,8 @@
         }
       ],
       "result": "i32",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "memory_copy",
@@ -917,8 +917,8 @@
         }
       ],
       "result": "void",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "memory_set",
@@ -939,8 +939,8 @@
         }
       ],
       "result": "void",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "native_word_from_pointer",
@@ -953,8 +953,8 @@
         }
       ],
       "result": "usize",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "pointer_add",
@@ -971,8 +971,8 @@
         }
       ],
       "result": "pointer",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "pointer_from_native_word",
@@ -985,8 +985,8 @@
         }
       ],
       "result": "pointer",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "process_exit",
@@ -999,8 +999,8 @@
         }
       ],
       "result": "never",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "process_getpid",
@@ -1008,8 +1008,8 @@
       "capability": "runtime.adapter.process_getpid",
       "params": [],
       "result": "i32",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "raw_byte_load",
@@ -1022,8 +1022,8 @@
         }
       ],
       "result": "u8",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "raw_byte_store",
@@ -1040,8 +1040,8 @@
         }
       ],
       "result": "void",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "raw_word_load",
@@ -1054,8 +1054,8 @@
         }
       ],
       "result": "usize",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "raw_word_store",
@@ -1072,8 +1072,8 @@
         }
       ],
       "result": "void",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "system_allocate",
@@ -1090,8 +1090,8 @@
         }
       ],
       "result": "pointer",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "system_free",
@@ -1108,8 +1108,8 @@
         }
       ],
       "result": "void",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "tls_get",
@@ -1117,8 +1117,8 @@
       "capability": "runtime.bootstrap.tls_get",
       "params": [],
       "result": "pointer",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "tls_set",
@@ -1131,8 +1131,8 @@
         }
       ],
       "result": "void",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "trap",
@@ -1153,8 +1153,8 @@
         }
       ],
       "result": "never",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "tty_winsize",
@@ -1162,8 +1162,8 @@
       "capability": "runtime.adapter.tty_winsize",
       "params": [],
       "result": "pointer",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "worker_poll",
@@ -1176,8 +1176,8 @@
         }
       ],
       "result": "i32",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "worker_pool_init",
@@ -1190,8 +1190,8 @@
         }
       ],
       "result": "i32",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "worker_pool_shutdown",
@@ -1199,8 +1199,8 @@
       "capability": "runtime.scheduler.worker_pool_shutdown",
       "params": [],
       "result": "void",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     },
     {
       "name": "worker_submit",
@@ -1213,8 +1213,8 @@
         }
       ],
       "result": "i32",
-      "result_status": null,
-      "target_bindings": []
+      "resultStatus": null,
+      "targetBindings": []
     }
   ],
   "softBuiltins": [
@@ -3208,6 +3208,30 @@
       "result": "u64"
     },
     {
+      "symbol": "InitOnceExecuteOnce",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "once",
+          "type": "pointer"
+        },
+        {
+          "name": "initializer",
+          "type": "pointer"
+        },
+        {
+          "name": "parameter",
+          "type": "pointer"
+        },
+        {
+          "name": "context",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "MultiByteToWideChar",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -3262,6 +3286,41 @@
         },
         {
           "name": "overlapped",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "TlsAlloc",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [],
+      "result": "u32"
+    },
+    {
+      "symbol": "TlsGetValue",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "index",
+          "type": "u32"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "TlsSetValue",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "index",
+          "type": "u32"
+        },
+        {
+          "name": "value",
           "type": "pointer"
         }
       ],
@@ -6950,8 +7009,7 @@
       "ownership": "process_lifetime_copied_beskid_str_arena",
       "entrySource": "args_entry.asm",
       "osImports": [
-        "VirtualAlloc",
-        "strlen"
+        "VirtualAlloc"
       ]
     },
     {
