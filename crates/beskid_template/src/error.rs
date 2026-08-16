@@ -1,34 +1,34 @@
-//! Template engine diagnostics (**E1901–E1999**).
+//! Template engine diagnostics (**E2001–E2099**).
 
 use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TemplateError {
-    #[error("E1901: template manifest missing or invalid: {0}")]
+    #[error("E2001: template manifest missing or invalid: {0}")]
     InvalidManifest(String),
 
-    #[error("E1902: package kind is not `template`: {package_id}")]
+    #[error("E2002: package kind is not `template`: {package_id}")]
     NotTemplatePackage { package_id: String },
 
-    #[error("E1903: required symbol `{symbol_id}` not provided")]
+    #[error("E2003: required symbol `{symbol_id}` not provided")]
     RequiredSymbol { symbol_id: String },
 
-    #[error("E1904: output path conflict: {path}")]
+    #[error("E2004: output path conflict: {path}")]
     OutputConflict { path: PathBuf },
 
-    #[error("E1905: item template outside project root: {path}")]
+    #[error("E2005: item template outside project root: {path}")]
     ItemOutsideProject { path: PathBuf },
 
-    #[error("E1906: GUID replacement incomplete: {guid}")]
+    #[error("E2006: GUID replacement incomplete: {guid}")]
     GuidReplacement { guid: String },
 
-    #[error("E1907: git template source failed: {0}")]
+    #[error("E2007: git template source failed: {0}")]
     GitSource(String),
 
-    #[error("E1908: workspace template invalid: {0}")]
+    #[error("E2008: workspace template invalid: {0}")]
     WorkspaceInvalid(String),
 
-    #[error("E1999: {0}")]
+    #[error("E2099: {0}")]
     Internal(String),
 
     #[error(transparent)]

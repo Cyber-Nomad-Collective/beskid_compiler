@@ -70,13 +70,13 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<(), ProjectError>
         }
         ProjectKind::Bsol if !manifest.targets.is_empty() => {
             return Err(ProjectError::meta_contract(
-                "E1901",
+                "E1886",
                 "`Bsol` projects must not declare `target` blocks (schema packages are not compile roots)",
             ));
         }
         ProjectKind::Bsol if manifest.project.schemas_section.is_none() => {
             return Err(ProjectError::meta_contract(
-                "E1902",
+                "E1887",
                 "`type = Bsol` requires a nested `schemas { export ... }` block",
             ));
         }

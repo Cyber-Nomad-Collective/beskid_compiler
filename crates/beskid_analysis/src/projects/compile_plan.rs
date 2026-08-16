@@ -101,7 +101,7 @@ pub fn build_compile_plan_with_policy_and_graph(
         ));
     } else if manifest.project.kind == ProjectKind::Bsol {
         return Err(ProjectError::meta_contract(
-            "E1903",
+            "E1888",
             "`Bsol` projects are schema-only packages and cannot be built with `beskid build`; use `beskid validate-bsol` instead",
         ));
     } else if manifest.project.kind == ProjectKind::Mod {
