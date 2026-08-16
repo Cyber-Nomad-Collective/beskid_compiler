@@ -5,8 +5,8 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::syntax::{Expression, Program};
-use crate::resolve::{AstNodeId, ItemId, LocalId, Resolution};
+use crate::resolve::{ItemId, LocalId, Resolution};
+use crate::syntax::{AstNodeId, Expression, Program};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::checker::TypeChecker;
 use crate::types::lowering_prep::{CastIntent, LoweringPrep};

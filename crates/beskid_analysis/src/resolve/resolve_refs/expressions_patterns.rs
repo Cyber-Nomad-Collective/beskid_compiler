@@ -1,5 +1,5 @@
-use crate::syntax::{Expression, Pattern, StructLiteralField};
 use crate::syntax::Spanned;
+use crate::syntax::{Expression, Pattern, StructLiteralField};
 
 use super::super::resolver::Resolver;
 
@@ -66,7 +66,7 @@ impl Resolver {
                 self.resolve_expression(&grouped_expr.node.expr);
             }
             Expression::Try(try_expr) => {
-                self.resolve_expression(&try_expr.node.body);
+                self.resolve_expression(&try_expr.node.expr);
             }
             Expression::Spawn(spawn_expr) => {
                 self.resolve_expression(&spawn_expr.node.callee);

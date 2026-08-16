@@ -46,43 +46,42 @@ pub use composition::{
 };
 pub use diagnostics_emit::{parse_error_diagnostic, pest_error_diagnostic, project_error_diagnostic};
 pub use document::{
-    assemble_for_api_documentation, build_api_documentation_snapshot, build_document_analysis,
-    build_document_analysis_for_resolved, build_document_analysis_from_resolution,
-    build_document_analysis_with_context, collect_document_symbols, collect_test_cases, completion_candidates,
-    definition_at_offset, hover_at_offset, item_id_at_offset, references_at_offset, references_at_offset_workspace,
-    resolve_assembly_for_api_documentation, symbol_kind_name, AnalysisSymbolKind, CompletionInfo, CompletionKind,
-    DefinitionInfo, DocumentAnalysisSnapshot, DocumentSymbolInfo, HoverInfo, ReferenceInfo, SymbolLocation,
-    TestCaseInfo,
+    AnalysisSymbolKind, CompletionInfo, CompletionKind, DefinitionInfo, DocumentAnalysisSnapshot, DocumentSymbolInfo,
+    HoverInfo, ReferenceInfo, SymbolLocation, TestCaseInfo, assemble_for_api_documentation,
+    build_api_documentation_snapshot, build_document_analysis, build_document_analysis_for_resolved,
+    build_document_analysis_from_resolution, build_document_analysis_with_context, collect_document_symbols,
+    collect_test_cases, completion_candidates, definition_at_offset, hover_at_offset, item_id_at_offset,
+    references_at_offset, references_at_offset_workspace, resolve_assembly_for_api_documentation, symbol_kind_name,
 };
 pub use entry_session::{
     composition_fingerprint, current_syntax_generation_id, get_or_insert_assembly,
     invalidate_all as invalidate_entry_sessions, invalidate_project as invalidate_entry_sessions_for_project,
     next_syntax_generation_id, update_semantic_snapshot,
 };
-pub use front_end::{compile_front_end_with_pipeline, FrontEndOptions, FrontEndTypedResult};
+pub use front_end::{FrontEndOptions, FrontEndTypedResult, compile_front_end_with_pipeline};
 pub use input::{
-    resolve_input, resolve_input_with_pipeline, resolve_input_with_policy, AnalyzeInProjectOptions, ResolvedInput,
+    AnalyzeInProjectOptions, ResolvedInput, resolve_input, resolve_input_with_pipeline, resolve_input_with_policy,
 };
 pub use parse::{
-    parse_expression_source, parse_program, parse_program_with_source_name,
-    parse_program_with_source_name_and_diagnostics, ParsedProgram,
+    ParsedProgram, parse_expression_source, parse_program, parse_program_with_source_name,
+    parse_program_with_source_name_and_diagnostics,
 };
 pub use prepare::{
-    prepare_compilation, prepare_compilation_diagnostics, resolved_input_from_plan, PrepareOptions, PreparedCompilation,
+    PrepareOptions, PreparedCompilation, prepare_compilation, prepare_compilation_diagnostics, resolved_input_from_plan,
 };
-pub use project::{resolve_project, resolve_project_with_policy, ResolvedProject};
+pub use project::{ResolvedProject, resolve_project, resolve_project_with_policy};
 pub use render::render_program_tree;
 pub use semantic::{
-    require_no_semantic_errors, semantic_rule_diagnostics_for_program,
-    semantic_rule_diagnostics_for_program_with_pipeline, SemanticDiagnosticsError,
+    SemanticDiagnosticsError, require_no_semantic_errors, semantic_rule_diagnostics_for_program,
+    semantic_rule_diagnostics_for_program_with_pipeline,
 };
 pub use semantic_facts::{
-    resolve_and_type_program, resolve_and_type_program_with_assembly, type_resolved_program, DependencyTypingPolicy,
-    ProgramResolutionSource, SemanticFactsError,
+    DependencyTypingPolicy, ProgramResolutionSource, SemanticFactsError, resolve_and_type_program,
+    resolve_and_type_program_with_assembly, type_resolved_program,
 };
 pub use session::{
-    cached_compilation_session, cached_executable, cached_semantic_snapshot, session_for_assembly,
-    store_executable_on_session, CompilationSession, SemanticSnapshot, SessionFingerprint, SEMANTIC_SNAPSHOT_VERSION,
+    CompilationSession, SEMANTIC_SNAPSHOT_VERSION, SemanticSnapshot, SessionFingerprint, cached_compilation_session,
+    cached_executable, cached_semantic_snapshot, session_for_assembly, store_executable_on_session,
 };
 pub use synthetic_plan::synthetic_compile_plan_for_source;
 pub use unit_ops::{

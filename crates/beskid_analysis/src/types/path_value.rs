@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::syntax::Path;
 use crate::paths;
 use crate::resolve::{ItemId, ItemKind, LocalId, Resolution, ResolvedValue};
+use crate::syntax::Path;
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::result::TypeResult;
 use crate::types::{TypeId, TypeInfo, TypeTable};

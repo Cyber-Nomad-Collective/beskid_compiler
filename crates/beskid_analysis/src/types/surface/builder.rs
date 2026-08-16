@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use crate::syntax::{
-    ContractNode, FieldKind, FunctionDefinition, Node, MethodDefinition, Path, PrimitiveType,
-    Program, Type, TypeDefinition,
-};
 use crate::paths;
 use crate::resolve::{ItemId, ItemKind, Resolution, ResolvedType};
+use crate::syntax::{
+    ContractNode, FieldKind, FunctionDefinition, MethodDefinition, Node, Path, PrimitiveType, Program, Type,
+    TypeDefinition,
+};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::result::FunctionSignature;
 use crate::types::{TypeId, TypeInfo, TypeTable};
@@ -24,7 +24,7 @@ pub(super) struct TypeSurfaceBuilder<'a> {
 }
 
 impl<'a> TypeSurfaceBuilder<'a> {
-    pub(super) fn new(resolution: &'a Resolution, source_path: &Path) -> Self {
+    pub(super) fn new(resolution: &'a Resolution, source_path: &std::path::Path) -> Self {
         let mut builder = Self {
             resolution,
             source_path: paths::unit_path_key(source_path),

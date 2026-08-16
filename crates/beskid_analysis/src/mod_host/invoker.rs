@@ -54,26 +54,47 @@ pub struct AnalyzerOutcome {
 }
 
 /// One diagnostic emitted by an Analyzer contract.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AnalyzerDiagnostic {
     pub code: String,
     pub message: String,
     pub severity: AnalyzerSeverity,
+    /// Byte offset range in the entry source: `(start, end)`.
+    /// When `None`, the host falls back to a whole-file span so the diagnostic is
+    /// still surfaced (e.g. for analyzers that report project-wide issues).
+    pub span: Option<(usize, usize)>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AnalyzerSeverity {
     Error,
+    #[default]
     Warning,
     Note,
 }
 
-/// Outcome from `Rewriter.Rewrite` — record-only for the MVP since structural rewrite
-/// application is performed by the Rust-side typed pipeline (see `query_bridge.rs`).
+/// One text edit produced by a Rewriter contract. Edits are byte-offset ranges into
+/// the entry source; the host applies them right-to-left to preserve earlier offsets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RewriteEdit {
+    /// Insert `text` at byte `offset`.
+    Insert { offset: usize, text: String },
+    /// Replace bytes `start..end` with `text`.
+    Replace { start: usize, end: usize, text: String },
+    /// Delete bytes `start..end`.
+    Delete { start: usize, end: usize },
+}
+
+/// Outcome from `Rewriter.Rewrite` — carries the `typeId`, a count of fixes the
+/// rewriter applied internally, and the text edits it wants the host to apply to
+/// the entry source. The host applies `edits` right-to-left after all rewriters
+/// have run (see `rewrite::apply_edits`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RewriterOutcome {
     pub type_id: String,
     pub applied_fix_count: u32,
+    /// Text edits the rewriter wants applied to the source.
+    pub edits: Vec<RewriteEdit>,
 }
 
 /// Trait implemented by contract invokers. Each method is called once per scheduled
@@ -260,6 +281,7 @@ pub struct ScriptedContractInvoker {
     pub generator_typed_items: Mutex<Vec<(String, Vec<Spanned<ProgramItem>>)>>,
     pub generator_code_outputs: Mutex<Vec<(String, Vec<super::generate_output::CodeGenerateOutput>)>>,
     pub analyzer_diagnostics: Mutex<Vec<(String, Vec<AnalyzerDiagnostic>)>>,
+    pub rewriter_edits: Mutex<Vec<(String, Vec<RewriteEdit>)>>,
     pub recorded: StubContractInvoker,
 }
 
@@ -322,6 +344,15 @@ impl ScriptedContractInvoker {
 
     pub fn with_analyzer_diagnostic(self, type_id: impl Into<String>, diagnostics: Vec<AnalyzerDiagnostic>) -> Self {
         self.analyzer_diagnostics.lock().expect("scripted diagnostics").push((type_id.into(), diagnostics));
+        self
+    }
+
+    /// Script the text edits a Rewriter contract returns for `type_id`. The host
+    /// applies scripted edits after the rewriter runs, mirroring how
+    /// [`ScriptedContractInvoker::with_generator_typed_items`] overlays generator
+    /// contributions.
+    pub fn with_rewriter_edits(self, type_id: impl Into<String>, edits: Vec<RewriteEdit>) -> Self {
+        self.rewriter_edits.lock().expect("scripted rewriter edits").push((type_id.into(), edits));
         self
     }
 
@@ -389,7 +420,14 @@ impl ContractInvoker for ScriptedContractInvoker {
         registration: &ContractRegistration,
         request: &ModCollectRequest,
     ) -> Result<RewriterOutcome, ContractInvocationError> {
-        self.recorded.invoke_rewriter(registration, request)
+        let mut outcome = self.recorded.invoke_rewriter(registration, request)?;
+        let scripted = self.rewriter_edits.lock().expect("scripted rewriter edits");
+        for (type_id, edits) in scripted.iter() {
+            if registration.type_id == *type_id {
+                outcome.edits.extend(edits.iter().cloned());
+            }
+        }
+        Ok(outcome)
     }
 }
 
@@ -446,6 +484,7 @@ mod tests {
                 code: "ModA0001".into(),
                 message: "test".into(),
                 severity: AnalyzerSeverity::Warning,
+                span: Some((4, 8)),
             }],
         );
         let context = empty_collect_request();
@@ -454,5 +493,32 @@ mod tests {
             .unwrap();
         assert_eq!(outcome.diagnostics.len(), 1);
         assert_eq!(outcome.diagnostics[0].code, "ModA0001");
+        assert_eq!(outcome.diagnostics[0].span, Some((4, 8)));
+    }
+
+    #[test]
+    fn scripted_overlays_rewriter_edits() {
+        let invoker = ScriptedContractInvoker::new().with_rewriter_edits(
+            "TR",
+            vec![
+                RewriteEdit::Replace { start: 0, end: 4, text: "UNIT".into() },
+                RewriteEdit::Insert { offset: 12, text: " // touched".into() },
+            ],
+        );
+        let context = empty_collect_request();
+        let outcome = invoker
+            .invoke_rewriter(&r("Beskid.Compiler.Collect.Rewriter", "TR", "r"), &context.collect_request)
+            .unwrap();
+        assert_eq!(outcome.edits.len(), 2);
+        assert!(matches!(outcome.edits[0], RewriteEdit::Replace { .. }));
+        assert!(matches!(outcome.edits[1], RewriteEdit::Insert { .. }));
+    }
+
+    #[test]
+    fn analyzer_diagnostic_defaults_to_warning_severity_and_no_span() {
+        let diag = AnalyzerDiagnostic::default();
+        assert_eq!(diag.severity, AnalyzerSeverity::Warning);
+        assert_eq!(diag.span, None);
+        assert!(diag.code.is_empty());
     }
 }

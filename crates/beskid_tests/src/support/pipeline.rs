@@ -1,8 +1,8 @@
 //! Surface parsing helper for integration tests.
 
+use beskid_analysis::Rule;
 use beskid_analysis::parsing::parsable::Parsable;
 use beskid_analysis::syntax::{Program, Spanned};
-use beskid_analysis::Rule;
 
 use crate::surface::util::parse_pair;
 

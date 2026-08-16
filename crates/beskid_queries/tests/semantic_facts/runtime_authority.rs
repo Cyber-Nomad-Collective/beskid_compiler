@@ -5,7 +5,7 @@ use beskid_abi::runtime_source::{
     canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources,
 };
 use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
 };
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
@@ -65,7 +65,8 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let target = TargetMetadata::supported()
         .into_iter()
@@ -133,7 +134,8 @@ fn corelib_syscall_source_gets_a_distinct_service_lowering_but_app_code_cannot_f
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     assert!(
         build_canonical_corelib_syscall_typed_program(
@@ -185,7 +187,8 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
         1,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        SyntaxGenerationId(0),
     ));
     let target = TargetMetadata::supported()
         .into_iter()
@@ -256,7 +259,8 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let forged_project = ProjectSession::new(
         &forged_db,

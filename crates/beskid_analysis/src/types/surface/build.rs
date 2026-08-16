@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use crate::syntax::Program;
 use crate::resolve::Resolution;
+use crate::syntax::Program;
 use crate::syntax::Spanned;
 
 use super::builder::TypeSurfaceBuilder;

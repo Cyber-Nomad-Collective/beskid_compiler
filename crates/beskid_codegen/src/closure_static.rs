@@ -257,8 +257,7 @@ impl CodegenInput<'_> {
 
 fn closure_identity(input: &CodegenInput<'_>, lambda: AstNodeKey) -> Option<String> {
     let key_path = lambda.unit.path(input.database());
-    let unit_index =
-        input.typed_program().assembly.units.iter().position(|unit| paths_match(&unit.path, key_path))?;
+    let unit_index = input.typed_program().assembly.units.iter().position(|unit| paths_match(&unit.path, key_path))?;
     let namespace = input
         .artifact_namespace()
         .chars()

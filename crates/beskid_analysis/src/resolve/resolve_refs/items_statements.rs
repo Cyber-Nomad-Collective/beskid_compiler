@@ -1,5 +1,5 @@
-use crate::syntax::{Block, ContractNode, Node, Statement};
 use crate::syntax::Spanned;
+use crate::syntax::{Block, ContractNode, Node, Statement};
 
 use super::super::errors::ResolveError;
 use super::super::items::ItemKind;
@@ -79,7 +79,9 @@ impl Resolver {
                         self.resolve_expression(&entry.node.value);
                     }
                 }
-                self.resolve_block(&def.node.body);
+                for statement in &def.node.statements {
+                    self.resolve_statement(statement);
+                }
                 self.pop_scope();
             }
             Node::InlineModule(def) => {

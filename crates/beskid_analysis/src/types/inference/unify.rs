@@ -8,9 +8,7 @@ use crate::types::{TypeId, TypeInfo, TypeTable};
 pub fn is_numeric(table: &TypeTable, type_id: TypeId) -> bool {
     matches!(
         table.get(type_id),
-        Some(TypeInfo::Primitive(
-            PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U8 | PrimitiveType::F64
-        ))
+        Some(TypeInfo::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U8 | PrimitiveType::F64))
     )
 }
 

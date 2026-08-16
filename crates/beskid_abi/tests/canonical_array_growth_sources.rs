@@ -1,4 +1,4 @@
-use beskid_abi::runtime_source::{canonical_runtime_sources, CANONICAL_COLLECTIONS_SOURCE_PATH};
+use beskid_abi::runtime_source::{CANONICAL_COLLECTIONS_SOURCE_PATH, canonical_runtime_sources};
 
 fn canonical_collections_source() -> String {
     canonical_runtime_sources()

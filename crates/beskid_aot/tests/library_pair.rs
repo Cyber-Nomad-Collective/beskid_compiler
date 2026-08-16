@@ -2,11 +2,11 @@ use std::process::Command;
 
 use beskid_abi::{
     abi_v5::{AbiManifestV5, TargetMetadata},
-    runtime_provenance::{parse_symbol_list, RuntimeProvenanceAudit},
+    runtime_provenance::{RuntimeProvenanceAudit, parse_symbol_list},
 };
 use beskid_aot::{
-    emit_host_context_library_pair, emit_host_platform_library_pair, lower_canonical_runtime_prepared_syntax,
-    require_canonical_host_emit_authority, BuildProfile,
+    BuildProfile, emit_host_context_library_pair, emit_host_platform_library_pair,
+    lower_canonical_runtime_prepared_syntax, require_canonical_host_emit_authority,
 };
 
 #[test]

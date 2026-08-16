@@ -67,9 +67,8 @@ pub(super) fn enum_match_result_semantic_type(db: &dyn Db, key: AstNodeKey) -> R
             Err(error) if error.is_unavailable() => None,
             Err(error) => return Err(error),
         };
-        let arm_type = contextual
-            .or(node_type(db, arm.body)?)
-            .ok_or_else(|| SemanticError::unavailable("node_type"))?;
+        let arm_type =
+            contextual.or(node_type(db, arm.body)?).ok_or_else(|| SemanticError::unavailable("node_type"))?;
         if result.replace(arm_type).is_some_and(|previous| previous != arm_type) {
             return Err(SemanticError::unavailable("node_type"));
         }

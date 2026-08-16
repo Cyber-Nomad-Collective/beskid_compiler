@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use cranelift_codegen::ir::ExternalName;
 
-use beskid_abi::{all_builtin_specs, is_dispatch_symbol};
+use beskid_abi::all_builtin_specs;
 
 use crate::{CodegenArtifact, ExternImport};
 
@@ -77,14 +77,14 @@ fn collect_referenced_testcase_symbols(artifact: &CodegenArtifact) -> HashSet<St
 }
 
 fn is_runtime_builtin(symbol: &str) -> bool {
-    all_builtin_specs().any(|spec| spec.symbol == symbol) || is_dispatch_symbol(symbol)
+    all_builtin_specs().any(|spec| spec.symbol == symbol)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::LoweredFunction;
-    use cranelift_codegen::ir::{types, AbiParam, ExternalName, Function, Signature};
+    use cranelift_codegen::ir::{AbiParam, ExternalName, Function, Signature, types};
     use cranelift_codegen::isa::CallConv;
 
     #[test]

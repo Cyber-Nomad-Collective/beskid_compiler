@@ -1,5 +1,5 @@
 use super::support::{
-    input_fixture, AbiManifestV5, Arc, AstNodeKey, CodegenInput, CodegenInputError, SyntaxGenerationId, TargetMetadata,
+    AbiManifestV5, Arc, AstNodeKey, CodegenInput, CodegenInputError, SyntaxGenerationId, TargetMetadata, input_fixture,
 };
 
 #[test]
@@ -7,7 +7,7 @@ fn sole_codegen_boundary_accepts_current_syntax_roots_and_exact_abi() {
     let (db, typed, root, target) = input_fixture();
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     let input = CodegenInput::new(&db, typed, Arc::from([root]), target, manifest).expect("valid codegen input");
-    assert_eq!(input.roots, &[root]);
+    assert_eq!(input.roots(), &[root]);
 }
 
 #[test]

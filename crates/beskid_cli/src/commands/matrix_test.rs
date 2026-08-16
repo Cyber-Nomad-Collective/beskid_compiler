@@ -8,14 +8,14 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 use super::prepared_matrix::{
-    unix_ms, Cancellation, ExecutionBudgets, MatrixReport, PreparedWorkspace, RevisionSnapshot, TargetReport,
-    TargetResult,
+    Cancellation, ExecutionBudgets, MatrixReport, PreparedWorkspace, RevisionSnapshot, TargetReport, TargetResult,
+    unix_ms,
 };
-use super::test::{execute_prepared_target, TestArgs, TestSummary};
+use super::test::{TestArgs, TestSummary, execute_prepared_target};
 
 const MATRIX_WORKER_ENV: &str = "BESKID_PREPARED_MATRIX_WORKER";
 const SUPERVISOR_POLL: Duration = Duration::from_millis(10);
@@ -93,11 +93,7 @@ fn execute_worker(args: TestArgs) -> Result<()> {
         failed |= report.result != TargetResult::Passed;
         emit_event(&WorkerEvent::TargetFinished { report })?;
     }
-    if failed {
-        Err(anyhow!("one or more matrix targets failed"))
-    } else {
-        Ok(())
-    }
+    if failed { Err(anyhow!("one or more matrix targets failed")) } else { Ok(()) }
 }
 
 fn supervise_worker(args: TestArgs) -> Result<()> {
@@ -194,8 +190,9 @@ fn supervise_worker(args: TestArgs) -> Result<()> {
         thread::sleep(SUPERVISOR_POLL);
     }
 
-    let mut report = report
-        .ok_or_else(|| anyhow!(fatal.unwrap_or_else(|| "matrix worker emitted no prepared report".to_string())))?;
+    let fatal = fatal;
+    let fatal_message = fatal.as_deref().unwrap_or("matrix worker emitted no prepared report").to_owned();
+    let mut report = report.ok_or_else(|| anyhow!(fatal_message))?;
     if let Some(error) = fatal {
         append_interrupted_targets(&mut report, &selected_targets, active, TargetResult::Cancelled, &error);
         report.cancelled = true;

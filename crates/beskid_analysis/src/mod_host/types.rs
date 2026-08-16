@@ -141,6 +141,11 @@ pub struct ModHostAnalyzeResult {
     pub analyzer_outcomes: Vec<AnalyzerOutcome>,
     /// Outcomes returned by `Rewriter` invocations during `mod.rewrite`.
     pub rewriter_outcomes: Vec<RewriterOutcome>,
+    /// Entry source text after applying all rewriter edits, when any edits were
+    /// produced and the caller supplied source text via [`ModHostInput`]. `None`
+    /// when no rewriter returned edits or when the analyze/rewrite entry point had
+    /// no source text to apply them against.
+    pub edited_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -179,6 +184,10 @@ pub(crate) struct AnalyzedContracts {
 pub(crate) struct RewriteResult {
     pub(crate) program: crate::syntax::Spanned<crate::syntax::Program>,
     pub(crate) outcomes: Vec<RewriterOutcome>,
+    /// Source text after applying all rewriter edits, when any edits were produced.
+    /// `None` when no rewriter returned edits or when the host had no source text to
+    /// apply them against (e.g. `run_analyze_rewrite` without a `ModHostInput`).
+    pub(crate) edited_source: Option<String>,
 }
 
 #[cfg(test)]

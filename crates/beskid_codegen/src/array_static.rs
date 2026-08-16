@@ -8,12 +8,12 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    child_nodes, empty_array_literal_element_abi_type, node_kind, node_type, AstNodeKey, IndexedNodeKind,
-    SemanticTypeId,
+    AstNodeKey, IndexedNodeKind, SemanticTypeId, child_nodes, empty_array_literal_element_abi_type, node_kind,
+    node_type,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
-use crate::{aggregate_static::paths_match, CodegenInput};
+use crate::{CodegenInput, aggregate_static::paths_match};
 
 pub const ABI_V5_ARRAY_ALLOCATE_ROOTED: &str = "beskid_rt_v5_array_allocate_rooted";
 pub const ABI_V5_ARRAY_GROW_ROOTED: &str = "beskid_rt_v5_array_grow_rooted";

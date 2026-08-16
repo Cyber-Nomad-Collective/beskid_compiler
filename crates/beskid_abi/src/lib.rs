@@ -2,11 +2,13 @@
 
 pub mod abi_types;
 pub mod abi_v5;
-pub mod mod_contract;
 pub mod generated;
+pub mod interop;
+pub mod mod_contract;
 pub mod runtime_kit;
 pub mod runtime_provenance;
 pub mod runtime_source;
+pub mod toolchain;
 pub mod types;
 pub mod version;
 

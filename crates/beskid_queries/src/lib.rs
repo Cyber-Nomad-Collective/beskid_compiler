@@ -44,8 +44,8 @@ mod unit;
 pub use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
 pub use beskid_graph::GraphKind;
 pub use db::{
-    configure_compilation_database_for_project, replace_compilation_database, reset_compilation_database,
-    BeskidDatabase, Db, UnitArtifactCache,
+    BeskidDatabase, Db, UnitArtifactCache, configure_compilation_database_for_project, replace_compilation_database,
+    reset_compilation_database,
 };
 pub use entry::{
     cached_semantic_snapshot_for_key, entry_resolution_with_db, fingerprint_key, invalidate_entry_sessions,
@@ -54,45 +54,44 @@ pub use entry::{
 };
 pub use graph::{
     discovered_units, module_index_fingerprint, program_assembly, program_assembly_tracked, reverse_dependents,
-    syntax_program_assembly,
 };
 pub use graph_viz::{
-    get_graph_document, get_graph_document_simple, graph_fingerprint_project_deps, graph_mermaid_project_deps,
-    graph_mermaid_workspace, manifest_digest, GraphFetchRequest, GraphQueryError,
+    GraphFetchRequest, GraphQueryError, get_graph_document, get_graph_document_simple, graph_fingerprint_project_deps,
+    graph_mermaid_project_deps, graph_mermaid_workspace, manifest_digest,
 };
 pub use inputs::{FileText, GrammarRevision, ProjectSession};
 pub use modhost::{
-    bump_syntax_generation, mod_collect_target_fingerprint, mod_generate, mod_generate_fingerprint, CapabilitySetId,
-    ManifestGenerationId, ModHostSyntaxGenerationId,
+    CapabilitySetId, ManifestGenerationId, ModHostSyntaxGenerationId, bump_syntax_generation,
+    mod_collect_target_fingerprint, mod_generate, mod_generate_fingerprint,
 };
 pub use output::{SharedFrontEnd, SharedResolution, SharedTypeResult, SharedUnitResolution, SharedUnitTypeSurface};
-pub use persistence::{cache_root_for_project, ensure_salsa_dir, load_manifest, SalsaPersistenceManifest};
+pub use persistence::{SalsaPersistenceManifest, cache_root_for_project, ensure_salsa_dir, load_manifest};
 pub use semantic_contract::{
-    abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration, array_index_element_abi_type,
-    binary_operand_abi_type, block_statement_nodes, call_abi_signature, call_argument_abi_type, call_arguments,
-    call_lowering, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
-    closure_call_target, closure_environment, closure_signature, collection_operation, completion_candidates,
-    constant_integer, contextual_integer_literal_abi_type, control_flow, direct_callees, dispatch_builtin_symbol,
-    empty_array_literal_element_abi_type, enum_constructor, enum_layout, enum_match,
-    extern_contract_import_for_declaration, for_iterator_fact, format_ast_node_key, format_ast_node_site,
+    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, CallLowering, CaptureStorageClass,
+    CastIntent, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
+    ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement, CollectionMutationOwner,
+    CollectionOperation, CompletionCandidate, CompletionContext, CompletionKind, ControlFlow, CorelibService,
+    DispatchBuiltinSymbol, EnumConstructorFact, EnumLayoutFact, EnumMatchArmFact, EnumMatchFact,
+    EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, ExportSymbol,
+    ForIteratorFact, GenericCallInstantiation, GenericCallSpecialization, GenericCallTemplate,
+    GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
+    LiteralFact, LocalSlot, MutableLocalAssignment, OperatorFact, PrimitiveNumericConversion, RangeForFact,
+    ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName, ScalarAbiLayout, SemanticError,
+    SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnosticKind, SpawnEntryValidation,
+    SpawnTarget, TestItem, TryExpressionFact, TypedProgram, abi_type, aggregate_field_access, aggregate_layout,
+    aggregate_literal_declaration, array_index_element_abi_type, binary_operand_abi_type, block_statement_nodes,
+    call_abi_signature, call_argument_abi_type, call_arguments, call_lowering, callable_signature, capture_storage,
+    cast_intents, child_nodes, clif_block_body, closure_call_target, closure_environment, closure_signature,
+    collection_operation, completion_candidates, constant_integer, contextual_integer_literal_abi_type, control_flow,
+    direct_callees, dispatch_builtin_symbol, empty_array_literal_element_abi_type, enum_constructor, enum_layout,
+    enum_match, extern_contract_import_for_declaration, for_iterator_fact, format_ast_node_key, format_ast_node_site,
     format_ast_node_trace, format_source_span_range, generic_call_instantiation, generic_call_specialization,
     generic_call_template, generic_nominal_method_receiver, generic_specialization_identity,
     generic_specialization_instance, item_abi_signature, item_body, item_export_symbol, item_name, item_signature,
     literal_fact, local_slot, mutable_local_assignment, node_kind, node_span, node_type, nominal_member_receiver,
     operator_fact, primitive_numeric_conversion, range_for_fact, reachable_items, resolved_item, resolved_local,
     runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation, spawn_legality, spawn_target, test_item,
-    test_statement_nodes, try_expression_fact, value_abi_type, AggregateFieldAccess, AggregateFieldShape,
-    AggregateLayoutFact, AstNodeKey, CallLowering, CaptureStorageClass, CastIntent, ClosureAllocationStatus,
-    ClosureCallTarget, ClosureCapture, ClosureEnvironment, ClosureEnvironmentField, ClosureLoweringStatus,
-    ClosurePointerMapRequirement, CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext,
-    CompletionKind, ControlFlow, CorelibService, DispatchBuiltinSymbol, EnumConstructorFact, EnumLayoutFact,
-    EnumMatchArmFact, EnumMatchFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout,
-    EnumVariantLayoutFact, ExportSymbol, ForIteratorFact, GenericCallInstantiation, GenericCallSpecialization,
-    GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution,
-    IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, MutableLocalAssignment, OperatorFact,
-    PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
-    ScalarAbiLayout, SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnosticKind,
-    SpawnEntryValidation, SpawnTarget, TestItem, TryExpressionFact, TypedProgram,
+    test_statement_nodes, try_expression_fact, value_abi_type,
 };
 pub use session::{
     compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,
@@ -100,9 +99,9 @@ pub use session::{
 };
 pub use stats::{emit_salsa_stats, record_query_hit, record_query_miss, record_revision_bump, reset, snapshot};
 pub use typed_entry_bundle::{
-    bump_file_revision, bump_typed_prepare_revision, clear_typed_entry_cache, file_revision_for, is_typed_bundle_stale,
-    reset_typed_entry_inputs, typed_entry_bundle_tracked, typed_entry_bundle_with_db, typed_entry_state_with_db,
-    typed_prepare_revision_for, FileRevision, TypedEntryState, TypedPrepareRevision,
+    FileRevision, TypedEntryState, TypedPrepareRevision, bump_file_revision, bump_typed_prepare_revision,
+    clear_typed_entry_cache, file_revision_for, is_typed_bundle_stale, reset_typed_entry_inputs,
+    typed_entry_bundle_tracked, typed_entry_bundle_with_db, typed_entry_state_with_db, typed_prepare_revision_for,
 };
 pub use typed_program::build_canonical_corelib_syscall_typed_program;
 pub use typed_program::build_canonical_runtime_typed_program;

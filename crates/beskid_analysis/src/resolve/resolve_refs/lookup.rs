@@ -1,5 +1,5 @@
-use crate::syntax::{Type, Visibility};
 use crate::syntax::Spanned;
+use crate::syntax::{Type, Visibility};
 
 use super::super::ids::ItemId;
 use super::super::items::ItemKind;

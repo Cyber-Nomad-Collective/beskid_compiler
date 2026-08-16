@@ -1,8 +1,8 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
     CodegenInput, DirectCallee, EffectiveCompilationRoots, IndexedNodeKind, ModuleIndex, NodeFacts, PathBuf,
-    ProjectSession, RootEntry, SemanticTypeId, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxNodeFacts,
-    ProgramAssembly, build_typed_program_with_corelib_services, call_abi_signature, call_lowering,
+    ProgramAssembly, ProjectSession, RootEntry, SemanticTypeId, SourceUnit, SourceUnitId, SyntaxGenerationId,
+    SyntaxNodeFacts, build_typed_program_with_corelib_services, call_abi_signature, call_lowering,
     canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_corelib_service_sources,
     find_node_matching, linux_target, node_span, parse_program_with_source_name,
 };
@@ -31,7 +31,8 @@ fn core_args_input(
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let target = linux_target();
     let manifest = AbiManifestV5::canonical_runtime(target.clone());

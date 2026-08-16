@@ -2,6 +2,8 @@
 
 use beskid_ast_derive::AstNode;
 
+use crate::syntax::PrimitiveType;
+
 /// Literal token; numeric and text forms keep raw source text where precision matters.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Literal {
@@ -15,6 +17,30 @@ pub enum Literal {
     Char(String),
     #[ast(skip)]
     Bool(bool),
+}
+
+/// Strip the type suffix from an integer literal text (e.g. "42_i32" → "42").
+pub fn integer_literal_magnitude(text: &str) -> &str {
+    match text.find('_') {
+        Some(pos) => &text[..pos],
+        None => text,
+    }
+}
+
+/// Determine the primitive type of an integer literal from its suffix or magnitude.
+/// Literals with `_i64` suffix → I64, `_i32` suffix → I32, no suffix → I32 (default).
+pub fn integer_literal_primitive_type(text: &str) -> PrimitiveType {
+    if text.ends_with("_i64") {
+        PrimitiveType::I64
+    } else if text.ends_with("_i32") {
+        PrimitiveType::I32
+    } else {
+        let magnitude = integer_literal_magnitude(text);
+        match magnitude.parse::<i32>() {
+            Ok(_) => PrimitiveType::I32,
+            Err(_) => PrimitiveType::I64,
+        }
+    }
 }
 
 impl crate::parsing::parsable::Parsable for Literal {

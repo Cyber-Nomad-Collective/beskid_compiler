@@ -6,9 +6,7 @@ use super::substitution::primitive_type_id;
 pub(super) fn is_numeric(types: &TypeTable, id: TypeId) -> bool {
     matches!(
         types.get(id),
-        Some(TypeInfo::Primitive(
-            PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U8 | PrimitiveType::F64
-        ))
+        Some(TypeInfo::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U8 | PrimitiveType::F64))
     )
 }
 

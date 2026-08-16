@@ -20,7 +20,7 @@ mod facts;
 mod layout;
 
 pub use clif_primitives::ClifPrimitives;
-pub use context::{lower_expression, lower_statement, CallImporter, IsleContext, StringInterner};
+pub use context::{CallImporter, IsleContext, StringInterner, lower_expression, lower_statement};
 pub use dispatch::pointer_type as isle_pointer_type;
 pub use emitter::{EmissionServices, FunctionEmitter, ItemStatementEmission};
 pub use errors::{FunctionEmissionError, LoweringError, LoweringErrorKind, StringMaterializationError};
@@ -32,9 +32,9 @@ include!(concat!(env!("OUT_DIR"), "/beskid_isle_metadata.rs"));
 /// Stable syntax-facing grouping for callers that do not need the full lowering contract.
 pub mod syntax_types {
     pub use crate::{
-        classify_syntax_node_kind, syntax_node_kind_catalogue, unsupported_typed_operation_kinds, CallKind,
-        ForIterableKind, IndexTarget, LiteralKind, OperatorFact, RuntimeIntrinsicKind, SyntaxNodeClassification,
-        UNSUPPORTED_TYPED_OPERATION_KINDS,
+        CallKind, ForIterableKind, IndexTarget, LiteralKind, OperatorFact, RuntimeIntrinsicKind,
+        SyntaxNodeClassification, UNSUPPORTED_TYPED_OPERATION_KINDS, classify_syntax_node_kind,
+        syntax_node_kind_catalogue, unsupported_typed_operation_kinds,
     };
 }
 

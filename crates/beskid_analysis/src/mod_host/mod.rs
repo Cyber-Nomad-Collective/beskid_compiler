@@ -42,7 +42,7 @@ pub use generate_output::{
 };
 pub use invoker::{
     AnalyzerDiagnostic, AnalyzerOutcome, AnalyzerSeverity, CollectorOutcome, ContractInvocationError, ContractInvoker,
-    GeneratorOutcome, InvocationKind, RewriterOutcome, ScriptedContractInvoker, StubContractInvoker,
+    GeneratorOutcome, InvocationKind, RewriteEdit, RewriterOutcome, ScriptedContractInvoker, StubContractInvoker,
 };
 pub use native::NativeContractInvoker;
 pub use query_bridge::{

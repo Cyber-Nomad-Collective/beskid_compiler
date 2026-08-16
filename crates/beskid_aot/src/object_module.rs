@@ -9,14 +9,14 @@ use beskid_codegen::cranelift_host::{
 };
 #[cfg(debug_assertions)]
 use beskid_codegen::validate_artifact;
-use beskid_codegen::{emit_string_literals, emit_type_descriptors, CodegenArtifact};
+use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
 use cranelift_codegen::settings::Configurable;
-use cranelift_module::{default_libcall_names, DataId, FuncId, Linkage, Module};
+use cranelift_module::{DataId, FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
-use beskid_pipeline::{emit_work_unit, phases::AOT_EMIT_OBJECT, PipelineObserver};
+use beskid_pipeline::{PipelineObserver, emit_work_unit, phases::AOT_EMIT_OBJECT};
 
 use crate::api::BuildProfile;
 use crate::error::{AotError, AotResult};
@@ -118,11 +118,7 @@ impl BeskidObjectModule {
                 }
             },
             |symbol| {
-                if exported_symbols.contains(symbol) {
-                    Linkage::Export
-                } else {
-                    Linkage::Local
-                }
+                if exported_symbols.contains(symbol) { Linkage::Export } else { Linkage::Local }
             },
         )?;
         // Only symbols selected by the caller's export policy use Export linkage. This keeps
@@ -196,10 +192,14 @@ impl BeskidObjectModule {
     }
 }
 
+// Matches the external Cranelift settings builder convention used across the AOT pipeline.
+#[allow(non_snake_case)]
 fn ObjectCodegenFlags(profile: BuildProfile) -> AotResult<settings::Flags> {
+    #[allow(non_snake_case)]
     let mut flagBuilder = settings::builder();
     flagBuilder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
     flagBuilder.set("enable_verifier", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
+    #[allow(non_snake_case)]
     let optimizationLevel = match profile {
         BuildProfile::Debug => "none",
         BuildProfile::Release => "speed",
@@ -208,12 +208,27 @@ fn ObjectCodegenFlags(profile: BuildProfile) -> AotResult<settings::Flags> {
     Ok(settings::Flags::new(flagBuilder))
 }
 
+/// Construct the exact ISA used by AOT object emission for a validated ABI target.
+// Matches the external Cranelift settings builder convention used across the AOT pipeline.
+#[allow(non_snake_case)]
+pub(crate) fn ObjectTargetIsa(target: &str) -> AotResult<std::sync::Arc<dyn TargetIsa>> {
+    #[allow(non_snake_case)]
+    let mut flagBuilder = settings::builder();
+    flagBuilder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
+    cranelift_codegen::isa::lookup_by_name(target)
+        .map_err(|err| AotError::IsaInit { message: err.to_string() })?
+        .finish(settings::Flags::new(flagBuilder))
+        .map_err(|err| AotError::IsaInit { message: err.to_string() })
+}
+
 #[cfg(test)]
 mod profile_tests {
     use cranelift_codegen::settings::OptLevel;
 
     use super::{BuildProfile, ObjectCodegenFlags};
 
+    // Test names follow the CamelCase convention used by the AOT profile suite.
+    #[allow(non_snake_case)]
     #[test]
     fn DebugProfileUsesUnoptimizedVerifiedPicCodegen() {
         let flags = ObjectCodegenFlags(BuildProfile::Debug).expect("debug codegen flags");
@@ -223,6 +238,8 @@ mod profile_tests {
         assert!(flags.is_pic());
     }
 
+    // Test names follow the CamelCase convention used by the AOT profile suite.
+    #[allow(non_snake_case)]
     #[test]
     fn ReleaseProfileUsesOptimizedVerifiedPicCodegen() {
         let flags = ObjectCodegenFlags(BuildProfile::Release).expect("release codegen flags");
@@ -231,14 +248,4 @@ mod profile_tests {
         assert!(flags.enable_verifier());
         assert!(flags.is_pic());
     }
-}
-
-/// Construct the exact ISA used by AOT object emission for a validated ABI target.
-pub(crate) fn ObjectTargetIsa(target: &str) -> AotResult<std::sync::Arc<dyn TargetIsa>> {
-    let mut flagBuilder = settings::builder();
-    flagBuilder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
-    cranelift_codegen::isa::lookup_by_name(target)
-        .map_err(|err| AotError::IsaInit { message: err.to_string() })?
-        .finish(settings::Flags::new(flagBuilder))
-        .map_err(|err| AotError::IsaInit { message: err.to_string() })
 }

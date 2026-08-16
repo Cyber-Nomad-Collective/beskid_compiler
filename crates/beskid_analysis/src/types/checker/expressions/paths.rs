@@ -1,5 +1,5 @@
-use crate::syntax::Path;
 use crate::resolve::{ItemKind, ResolvedType, ResolvedValue};
+use crate::syntax::Path;
 use crate::syntax::Spanned;
 use crate::types::TypeId;
 use crate::types::path_value::resolve_path_base_local;

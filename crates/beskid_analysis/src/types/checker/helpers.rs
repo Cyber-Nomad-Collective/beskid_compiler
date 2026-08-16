@@ -1,5 +1,5 @@
-use crate::syntax::{Expression, PrimitiveType};
 use crate::resolve::{ItemId, ItemKind, ResolvedType, ResolvedValue, canonical_item_id};
+use crate::syntax::{Expression, PrimitiveType};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::path_value::PathTypeEnv;
 use crate::types::{TypeId, TypeInfo};
@@ -366,8 +366,7 @@ impl<'a> TypeChecker<'a> {
 
     /// `u8[]` and `i64` Ptr handles share the same runtime representation (BYTES-001 ABI).
     fn is_byte_array_ptr_compatible(&mut self, expected: TypeId, actual: TypeId) -> bool {
-        let (Some(i64_id), Some(u8_arr)) = (self.primitive_type_id(PrimitiveType::I64), self.u8_array_type_id())
-        else {
+        let (Some(i64_id), Some(u8_arr)) = (self.primitive_type_id(PrimitiveType::I64), self.u8_array_type_id()) else {
             return false;
         };
         (expected == i64_id && actual == u8_arr) || (expected == u8_arr && actual == i64_id)
@@ -410,9 +409,7 @@ impl<'a> TypeChecker<'a> {
     pub(super) fn is_numeric(&self, type_id: TypeId) -> bool {
         matches!(
             self.type_table.get(type_id),
-            Some(TypeInfo::Primitive(
-                PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U8 | PrimitiveType::F64
-            ))
+            Some(TypeInfo::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U8 | PrimitiveType::F64))
         )
     }
 

@@ -79,14 +79,8 @@ fn parsed_string_interpolation_coerces_i64_operand() {
         .expect("numeric interpolation must lower through syntax ISLE string coercion");
     let clif = artifact.functions[0].function.display().to_string();
 
-    assert!(
-        clif.contains(&format!("iconst.i32 {}", beskid_abi::TAG_STR_FROM_I64)),
-        "numeric formatting dispatch must be imported: {clif}",
-    );
-    assert!(
-        clif.contains(&format!("iconst.i32 {}", beskid_abi::TAG_STR_CONCAT)),
-        "string concatenation dispatch must be imported: {clif}",
-    );
+    assert!(clif.contains("str_from_i64"), "numeric formatting dispatch must be imported: {clif}",);
+    assert!(clif.contains("str_concat"), "string concatenation dispatch must be imported: {clif}",);
 }
 
 #[test]

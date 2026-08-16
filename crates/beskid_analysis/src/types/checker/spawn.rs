@@ -1,7 +1,7 @@
 use crate::builtins::builtin_for_path;
-use crate::syntax::{Expression, LambdaExpression, SpawnExpression, Statement};
 use crate::resolve::ResolvedValue;
 use crate::syntax::Spanned;
+use crate::syntax::{Expression, LambdaExpression, SpawnExpression, Statement};
 use crate::types::{TypeId, TypeInfo};
 
 use super::TypeChecker;
@@ -140,12 +140,8 @@ impl<'a> TypeChecker<'a> {
                     _ => None,
                 })
                 .is_some(),
-            Expression::Lambda(inner) => {
-                self.expression_references_outer_local(inner.node.body.as_ref(), param_locals)
-            }
-            Expression::Unary(unary) => {
-                self.expression_references_outer_local(unary.node.expr.as_ref(), param_locals)
-            }
+            Expression::Lambda(inner) => self.expression_references_outer_local(inner.node.body.as_ref(), param_locals),
+            Expression::Unary(unary) => self.expression_references_outer_local(unary.node.expr.as_ref(), param_locals),
             Expression::Grouped(grouped) => {
                 self.expression_references_outer_local(grouped.node.expr.as_ref(), param_locals)
             }
@@ -161,25 +157,19 @@ impl<'a> TypeChecker<'a> {
                 self.expression_references_outer_local(&assign.node.target, param_locals)
                     || self.expression_references_outer_local(&assign.node.value, param_locals)
             }
-            Expression::Member(member) => {
-                self.expression_references_outer_local(&member.node.target, param_locals)
-            }
-            Expression::Block(block) => {
-                block.node.block.node.statements.iter().any(|stmt| match &stmt.node {
-                    Statement::Expression(expr_stmt) => {
-                        self.expression_references_outer_local(&expr_stmt.node.expression, param_locals)
-                    }
-                    Statement::Return(ret) => ret
-                        .node
-                        .value
-                        .as_ref()
-                        .is_some_and(|value| self.expression_references_outer_local(value, param_locals)),
-                    Statement::Let(let_stmt) => {
-                        self.expression_references_outer_local(&let_stmt.node.value, param_locals)
-                    }
-                    _ => false,
-                })
-            }
+            Expression::Member(member) => self.expression_references_outer_local(&member.node.target, param_locals),
+            Expression::Block(block) => block.node.block.node.statements.iter().any(|stmt| match &stmt.node {
+                Statement::Expression(expr_stmt) => {
+                    self.expression_references_outer_local(&expr_stmt.node.expression, param_locals)
+                }
+                Statement::Return(ret) => ret
+                    .node
+                    .value
+                    .as_ref()
+                    .is_some_and(|value| self.expression_references_outer_local(value, param_locals)),
+                Statement::Let(let_stmt) => self.expression_references_outer_local(&let_stmt.node.value, param_locals),
+                _ => false,
+            }),
             _ => false,
         }
     }

@@ -75,7 +75,7 @@ pub fn format_ast_node_trace(db: &dyn Db, key: AstNodeKey, source_label: &str) -
 
 #[cfg(test)]
 mod ast_node_site_format_tests {
-    use super::{format_source_span_range, SourceSpan};
+    use super::{SourceSpan, format_source_span_range};
 
     #[test]
     fn formats_line_column_range() {

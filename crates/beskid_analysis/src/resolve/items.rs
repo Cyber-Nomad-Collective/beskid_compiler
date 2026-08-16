@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use crate::syntax::Visibility;
 use crate::syntax::SpanInfo;
+use crate::syntax::Visibility;
 
 use super::ids::ItemId;
 use super::symbol::SymbolId;

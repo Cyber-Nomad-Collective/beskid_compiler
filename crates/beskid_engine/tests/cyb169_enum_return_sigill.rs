@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use beskid_engine::services::run_entrypoint;
-use beskid_tools::toolchain::runtime_kit::{build_native_host, RuntimeKitProfile};
+use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
 struct EnvironmentVariableGuard {
     key: &'static str,

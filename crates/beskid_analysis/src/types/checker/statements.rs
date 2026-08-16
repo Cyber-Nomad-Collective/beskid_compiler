@@ -1,5 +1,5 @@
-use crate::syntax::{Block, ElseBranch, Expression, IfStatement, PrimitiveType, Statement};
 use crate::syntax::Spanned;
+use crate::syntax::{Block, ElseBranch, Expression, IfStatement, PrimitiveType, Statement};
 
 use super::TypeChecker;
 use crate::types::result::TypeError;

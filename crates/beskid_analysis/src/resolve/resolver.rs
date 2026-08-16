@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::syntax::{Node, Program};
 use crate::syntax::Spanned;
+use crate::syntax::{Node, Program};
 
 use super::errors::ResolveResult;
 
@@ -70,10 +70,7 @@ pub fn enter_resolve_span(ctx: ResolveTraceContext<'_>) -> tracing::span::Entere
 }
 
 /// Resolve a program under a `beskid.analysis.resolve` tracing span.
-pub fn resolve_program_traced(
-    program: &Spanned<Program>,
-    ctx: ResolveTraceContext<'_>,
-) -> ResolveResult<Resolution> {
+pub fn resolve_program_traced(program: &Spanned<Program>, ctx: ResolveTraceContext<'_>) -> ResolveResult<Resolution> {
     let _guard = enter_resolve_span(ctx);
     Resolver::new().resolve_program(program)
 }

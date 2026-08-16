@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use beskid_abi::abi_v5::TargetMetadata;
-pub(super) use beskid_abi::{SYM_ABI_VERSION};
 use beskid_analysis::services::{FrontEndOptions, resolved_input_from_plan, synthetic_compile_plan_for_source};
 pub(super) use beskid_aot::{
     AotBuildRequest, AotError, BuildOutputKind, ProjectTargetKind, build, default_output_kind, resolve_entrypoint,

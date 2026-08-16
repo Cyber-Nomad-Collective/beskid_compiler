@@ -1,16 +1,16 @@
 use super::lookup::find_function_definitions;
 use super::prelude::{
-    build_canonical_corelib_syscall_typed_program, build_typed_program_with_corelib_services,
-    canonical_corelib_service_capability, canonical_corelib_service_source_path,
-    canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources, isa, item_name,
-    lower_syntax_program, parse_program_with_source_name, settings, AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId,
-    AstNodeKey, BeskidDatabase, CodegenInput, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession,
-    RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata,
-    CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
+    AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
+    CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CodegenInput,
+    EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
+    SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata, build_canonical_corelib_syscall_typed_program,
+    build_typed_program_with_corelib_services, canonical_corelib_service_capability,
+    canonical_corelib_service_source_path, canonical_corelib_syscall_service_capability,
+    canonical_corelib_syscall_sources, isa, item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
 
-pub(in super::super) fn canonical_corelib_syscall_fixture(
-) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+pub(in super::super) fn canonical_corelib_syscall_fixture()
+-> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("Corelib syscall project").keep();
     let source = canonical_corelib_syscall_sources().pop().expect("embedded Core.Syscall source");
@@ -68,8 +68,8 @@ pub(in super::super) fn canonical_corelib_syscall_fixture(
     (input, isa, root)
 }
 
-pub(in super::super) fn materialized_corelib_syscall_fixture(
-) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+pub(in super::super) fn materialized_corelib_syscall_fixture()
+-> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("materialized Corelib syscall project").keep();
     let source = canonical_corelib_syscall_sources().pop().expect("embedded Core.Syscall source");
@@ -221,8 +221,8 @@ pub(in super::super) fn assert_args_module_cannot_emit_imports(
     );
 }
 
-pub(in super::super) fn canonical_foundation_assert_fixture(
-) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+pub(in super::super) fn canonical_foundation_assert_fixture()
+-> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     let mut db = Box::new(BeskidDatabase::default());
     let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
         .into_iter()
@@ -280,13 +280,13 @@ pub(in super::super) fn canonical_foundation_assert_fixture(
     (input, isa, root)
 }
 
-pub(in super::super) fn canonical_foundation_output_fixture(
-) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+pub(in super::super) fn canonical_foundation_output_fixture()
+-> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     canonical_foundation_service_fixture("Core/Output/Output.bd")
 }
 
-pub(in super::super) fn canonical_foundation_error_fixture(
-) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
+pub(in super::super) fn canonical_foundation_error_fixture()
+-> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
     canonical_foundation_service_fixture("Core/Error/Error.bd")
 }
 

@@ -211,14 +211,16 @@ pub fn references_at_offset_workspace(
         if index == assembly.entry_index {
             continue;
         }
-        let Ok(unit_resolution) = assembly.module_index.resolve_unit_program(&unit_program.program, &unit_program.path) else {
+        let Ok(unit_resolution) = assembly.module_index.resolve_unit_program(&unit_program.program, &unit_program.path)
+        else {
             continue;
         };
         for (span, resolved) in &unit_resolution.tables.resolved_values {
             if !reference_targets_match(resolution, target, &unit_resolution, resolved) {
                 continue;
             }
-            references.push(ReferenceInfo { location: symbol_location_for_span(&unit_program.path, span.start, span.end) });
+            references
+                .push(ReferenceInfo { location: symbol_location_for_span(&unit_program.path, span.start, span.end) });
         }
     }
 
@@ -241,12 +243,12 @@ pub fn references_at_offset_workspace(
 mod reference_target_tests {
     use std::collections::HashMap;
 
-    use crate::syntax::Visibility;
     use crate::resolve::{
         ExportKind, ItemId, ItemInfo, ItemKind, ModuleGraph, Resolution, ResolutionTables, ResolvedValue, SymbolId,
         SymbolQualifier, SymbolRegistry, SymbolShape,
     };
     use crate::syntax::SpanInfo;
+    use crate::syntax::Visibility;
 
     use super::{ReferenceTarget, reference_target, reference_targets_match};
 

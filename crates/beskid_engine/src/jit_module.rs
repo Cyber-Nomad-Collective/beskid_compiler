@@ -4,18 +4,17 @@ use crate::runtime_kit::JitRuntimeKit;
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_abi::runtime_kit::BuildProfile as RuntimeKitProfile;
 use beskid_codegen::cranelift_host::{
-    declare_user_functions, declare_validated_extern_imports, remap_testcase_externals, ExternDeclarationError,
-    HostError,
+    ExternDeclarationError, HostError, declare_user_functions, declare_validated_extern_imports,
+    remap_testcase_externals,
 };
-use beskid_codegen::{emit_string_literals, emit_type_descriptors, CodegenArtifact};
+use beskid_codegen::{CodegenArtifact, emit_string_literals, emit_type_descriptors};
 use beskid_pipeline::{
-    emit_work_unit, observe_phase_result,
+    PipelineObserver, emit_work_unit, observe_phase_result,
     phases::{JIT_EMIT, JIT_FINALIZE},
-    PipelineObserver,
 };
 use cranelift_codegen::{ir::ExternalName, settings};
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{default_libcall_names, FuncId, Linkage, Module, ModuleError};
+use cranelift_module::{FuncId, Linkage, Module, ModuleError, default_libcall_names};
 use std::fmt;
 
 /// Failure to build the ISA, declare/define Cranelift module objects, or resolve a symbol name.

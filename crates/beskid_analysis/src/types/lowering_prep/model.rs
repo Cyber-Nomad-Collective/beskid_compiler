@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::resolve::{AstNodeId, ItemId, LocalId};
+use crate::resolve::{ItemId, LocalId};
+use crate::syntax::AstNodeId;
 use crate::syntax::SpanInfo;
 use crate::types::path_value::PathTypeEnv;
 use crate::types::result::{CallLoweringKind, FunctionSignature};

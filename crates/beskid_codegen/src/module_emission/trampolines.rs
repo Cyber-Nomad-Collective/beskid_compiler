@@ -2,18 +2,18 @@ use std::collections::{HashMap, HashSet};
 
 use beskid_isle::{AstNodeKey, DirectCallee};
 use beskid_queries::{
-    child_nodes, closure_environment, closure_signature, item_abi_signature, node_kind, resolved_item,
-    spawn_entry_validation, ItemSignature, SemanticTypeId,
+    ItemSignature, SemanticTypeId, child_nodes, closure_environment, closure_signature, item_abi_signature, node_kind,
+    resolved_item, spawn_entry_validation,
 };
 use cranelift_codegen::ir::{
-    condcodes::IntCC, types, AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, Type,
+    AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, Type, condcodes::IntCC, types,
 };
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 
-use super::contracts::{emission_verification, SyntaxModuleEmissionError};
-use super::items::{syntax_item_symbol, ResolvedSyntaxModuleItem};
+use super::contracts::{SyntaxModuleEmissionError, emission_verification};
+use super::items::{ResolvedSyntaxModuleItem, syntax_item_symbol};
 use crate::CodegenInput;
 
 #[derive(Debug, Clone)]

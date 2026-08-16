@@ -1,6 +1,6 @@
 //! `beskid test` — discover `test` items, filter by tags/group, and run them through the prepared-workspace seam.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use beskid_engine::services::SyntaxTestItem;
 use clap::Args;
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ use beskid_tools::pipeline::{tui::FileLineLink, tui::TestRowState, tui::TestRunU
 use beskid_tools::tui::shell::runtime::RuntimeOp;
 
 use super::prepared_matrix::{
-    unix_ms, Cancellation, ExecutionBudgets, PhaseRecord, PreparedTarget, PreparedWorkspace, TargetReport, TargetResult,
+    Cancellation, ExecutionBudgets, PhaseRecord, PreparedTarget, PreparedWorkspace, TargetReport, TargetResult, unix_ms,
 };
 
 #[derive(Args, Debug, Clone)]
@@ -133,7 +133,7 @@ pub(crate) fn execute_prepared_target(
     let include_tags = normalized_tags(&args.include_tags);
     let exclude_tags = normalized_tags(&args.exclude_tags);
     let hi_attached = workspace.session().pipeline().is_hi_attached();
-    let mut test_ui = TestRunUi::new(args.plain, Some(workspace.session().pipeline()));
+    let mut test_ui = TestRunUi::new(args.plain, None);
     let mut planned = Vec::new();
     for (row_index, test) in tests.iter().enumerate() {
         let initial = if is_filtered_out(test, &include_tags, &exclude_tags, args.group.as_deref()) {
@@ -316,27 +316,6 @@ fn phase_record(phase: &str, started_unix_ms: u128, started: Instant, result: Ta
         ended_unix_ms: unix_ms(),
         duration_ms: started.elapsed().as_millis(),
         result,
-    }
-}
-
-fn failed_report(
-    target: String,
-    started_unix_ms: u128,
-    started: Instant,
-    phase: &str,
-    phases: Vec<PhaseRecord>,
-    error: anyhow::Error,
-) -> TargetReport {
-    TargetReport {
-        target,
-        started_unix_ms,
-        ended_unix_ms: unix_ms(),
-        duration_ms: started.elapsed().as_millis(),
-        active_phase: phase.to_string(),
-        result: TargetResult::Failed,
-        tests: TestSummary::default(),
-        phases,
-        error: Some(error.to_string()),
     }
 }
 

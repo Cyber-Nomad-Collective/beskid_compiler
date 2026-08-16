@@ -139,6 +139,12 @@ impl SemanticIssueKind {
                 format!("private item `{name}` cannot be accessed from module `{module_path}`")
             }
             Self::ResolveShadowedLocal { name, .. } => format!("shadowed local `{name}`"),
+            Self::MissingImport { name, module_path } => {
+                format!("unresolved name `{name}` — did you mean to import `{module_path}::{name}`?")
+            }
+            Self::MissingImportAmbiguous { name, candidates } => {
+                format!("unresolved name `{name}` — candidates: {}", candidates.join(", "))
+            }
             Self::TypeUnknownType { name } => format!("unknown type `{name}`"),
             Self::TypeUnknownValueType => "unknown value type".to_string(),
             Self::TypeUnknownStructType => "unknown struct type".to_string(),

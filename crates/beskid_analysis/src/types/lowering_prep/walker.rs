@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::syntax::{
-    Block, CallExpression, ElseBranch, Expression, IfStatement, Node, MatchExpression,
-    MethodDefinition, Pattern, PrimitiveType, Program, Statement, StructLiteralExpression,
-    Type,
-};
 use crate::paths;
-use crate::resolve::{AstNodeId, ItemId, Resolution, ResolvedType, ResolvedValue, canonical_item_id};
-use crate::syntax::{SpanInfo, Spanned};
+use crate::resolve::{ItemId, Resolution, ResolvedType, ResolvedValue, canonical_item_id};
+use crate::syntax::{AstNodeId, SpanInfo, Spanned};
+use crate::syntax::{
+    Block, CallExpression, ElseBranch, Expression, IfStatement, MatchExpression, MethodDefinition, Node, Pattern,
+    PrimitiveType, Program, Statement, StructLiteralExpression, Type,
+};
 use crate::types::path_value::{
     PathTypeEnv, field_type_on_receiver, first_field_segment_name, generic_mapping_for_type_id,
     method_name_from_path_callee, named_item_id, receiver_type_for_path_callee, resolve_path_base_local,
@@ -266,7 +265,9 @@ impl<'a> PrepWalker<'a> {
             }
             Node::TestDefinition(def) => self.with_source_path_from_item(item.span, |w| {
                 w.current_return_type = primitive_type_id(w.surfaces.types, PrimitiveType::Unit);
-                w.walk_block(&def.node.body);
+                for stmt in &def.node.statements {
+                    w.walk_statement(stmt);
+                }
             }),
             Node::TypeDefinition(def) => {
                 for m in &def.node.methods {
@@ -422,7 +423,7 @@ impl<'a> PrepWalker<'a> {
                     self.walk_expression(e);
                 }
             }
-            Expression::Try(t) => self.walk_expression(&t.node.body),
+            Expression::Try(t) => self.walk_expression(&t.node.expr),
             Expression::Spawn(s) => self.walk_expression(&s.node.callee),
             _ => {}
         }

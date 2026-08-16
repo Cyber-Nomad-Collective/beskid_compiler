@@ -16,9 +16,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::builtins::{BuiltinType, builtin_specs};
-use crate::syntax::{Block, PrimitiveType, Program};
-use crate::resolve::{AstNodeId, ItemId, LocalId, Resolution};
+use crate::resolve::{ItemId, LocalId, Resolution};
 use crate::syntax::Spanned;
+use crate::syntax::{AstNodeId, Block, PrimitiveType, Program};
 use crate::types::inference::{ConstraintSet, InferenceResult, TypeEnv, solve_constraints};
 use crate::types::result::{CallLoweringKind, FunctionSignature, TypeError};
 use crate::types::surface::{MergedTypeEnv, UnitTypeSurface};
@@ -139,10 +139,7 @@ impl<'a> TypeChecker<'a> {
         self.type_block_inner(block);
     }
 
-    pub(crate) fn infer_expression_type(
-        &mut self,
-        expression: &Spanned<crate::syntax::Expression>,
-    ) -> Option<TypeId> {
+    pub(crate) fn infer_expression_type(&mut self, expression: &Spanned<crate::syntax::Expression>) -> Option<TypeId> {
         self.type_expression(expression)
     }
 

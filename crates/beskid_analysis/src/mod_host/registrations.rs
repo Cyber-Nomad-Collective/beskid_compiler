@@ -25,6 +25,13 @@ const SDK_MOD_CONTRACTS: &[SdkContractSpec] = &[
     SdkContractSpec { contract_id: "Beskid.Compiler.Collect.Analyzer", entry_method: "Analyze" },
     SdkContractSpec { contract_id: "Beskid.Compiler.Collect.Rewriter", entry_method: "Rewrite" },
     SdkContractSpec { contract_id: "Beskid.Compiler.Collect.GrammarGenerator", entry_method: "Generate" },
+    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.TypeMapping", entry_method: "MapType" },
+    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.SymbolEmission", entry_method: "EmitSymbol" },
+    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.LinkArgs", entry_method: "ResolveLinkArgs" },
+    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.SignatureReader", entry_method: "ReadSignatures" },
+    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.SignatureWriter", entry_method: "WriteSignatures" },
+    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.ToolchainProbe", entry_method: "ResolveTool" },
+    SdkContractSpec { contract_id: "Beskid.Glue.Contracts.StdioBridge", entry_method: "GenerateBridge" },
 ];
 
 /// Discover mod SDK contract registrations from resolved type conformances.
@@ -221,7 +228,7 @@ pub fn mod_contract_entry_symbol(package_id: &str, entry_method: &str) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::{resolve_and_type_program, parse_program_with_source_name};
+    use crate::services::{parse_program_with_source_name, resolve_and_type_program};
 
     #[test]
     fn extracts_sdk_contract_registrations_from_type_conformances() {

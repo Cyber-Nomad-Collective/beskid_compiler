@@ -113,7 +113,7 @@ pub(super) fn syntax_item_name(db: &dyn beskid_queries::Db, key: AstNodeKey) -> 
 mod tests {
     use super::*;
     use beskid_analysis::projects::{
-        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
+        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
     };
     use beskid_analysis::services::parse_program_with_source_name;
 
@@ -137,7 +137,8 @@ mod tests {
             0,
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
-            false, generation
+            false,
+            SyntaxGenerationId(0),
         ));
 
         let tests = syntax_test_items_from_assembly(&mut db, assembly).expect("syntax tests");
@@ -168,7 +169,8 @@ mod tests {
             0,
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
-            false, generation
+            false,
+            SyntaxGenerationId(0),
         ));
 
         syntax_test_items_from_assembly(&mut db, Arc::clone(&assembly)).expect("initial syntax test discovery");

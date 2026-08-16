@@ -1,5 +1,5 @@
-use crate::syntax::Expression;
 use crate::resolve::ItemKind;
+use crate::syntax::Expression;
 use crate::syntax::Spanned;
 use crate::types::{TypeId, TypeInfo};
 

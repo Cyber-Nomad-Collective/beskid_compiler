@@ -4,23 +4,23 @@ use std::sync::Arc;
 use anyhow::Result;
 use beskid_abi::abi_v5::TargetMetadata;
 use beskid_analysis::services::{
-    resolved_input_from_plan, synthetic_compile_plan_for_source, FrontEndOptions, FrontEndTypedResult, ResolvedInput,
+    FrontEndOptions, FrontEndTypedResult, ResolvedInput, resolved_input_from_plan, synthetic_compile_plan_for_source,
 };
 #[cfg(test)]
 use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
-#[cfg(test)]
-use beskid_codegen::module_emission::{lower_syntax_program, SyntaxModuleItem};
 use beskid_codegen::CodegenArtifact;
+#[cfg(test)]
+use beskid_codegen::module_emission::{SyntaxModuleItem, lower_syntax_program};
 use beskid_pipeline::PipelineObserver;
 #[cfg(test)]
-use beskid_queries::{build_typed_program, item_signature, reachable_items, AstNodeKey, ProjectSession};
-use beskid_queries::{with_db, BeskidDatabase, SemanticTypeId};
+use beskid_queries::{AstNodeKey, ProjectSession, build_typed_program, item_signature, reachable_items};
+use beskid_queries::{BeskidDatabase, SemanticTypeId, with_db};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings;
 
+use super::SyntaxEntrypointArtifact;
 #[cfg(test)]
 use super::syntax_queries::{find_syntax_item, syntax_item_name};
-use super::SyntaxEntrypointArtifact;
 
 /// CodegenInput → ISLE artifact prepared for exact-kit JIT compilation.
 #[derive(Debug)]
@@ -195,7 +195,7 @@ fn find_syntax_entrypoint(
     input: &beskid_codegen::CodegenInput<'_>,
     entrypoint: &str,
 ) -> Option<AstNodeKey> {
-    input.roots.iter().copied().find_map(|root| find_syntax_item(db, root, entrypoint))
+    input.roots().iter().copied().find_map(|root| find_syntax_item(db, root, entrypoint))
 }
 
 #[cfg(test)]
@@ -223,7 +223,7 @@ fn syntax_item_symbol(
 mod tests {
     use super::*;
     use beskid_analysis::projects::{
-        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
+        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
     };
     use beskid_analysis::services::parse_program_with_source_name;
 
@@ -244,7 +244,8 @@ mod tests {
             0,
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
-            false, generation
+            false,
+            SyntaxGenerationId(0),
         ));
         let host_triple = match (std::env::consts::ARCH, std::env::consts::OS) {
             ("x86_64", "linux") => "x86_64-unknown-linux-gnu",

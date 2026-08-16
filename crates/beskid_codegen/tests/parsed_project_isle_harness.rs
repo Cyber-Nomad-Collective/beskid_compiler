@@ -2,15 +2,13 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_analysis::{
-    projects::{
-        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
-    },
+    projects::{AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit},
     services::parse_program_with_source_name,
 };
 use beskid_codegen::lower_canonical_runtime_prepared_syntax;
 use beskid_codegen::lower_syntax_assembly_entrypoint;
 use beskid_queries::{
-    child_nodes, closure_environment, node_kind, with_db, AstNodeId, AstNodeKey, SourceUnitId, SyntaxGenerationId,
+    AstNodeId, AstNodeKey, SourceUnitId, SyntaxGenerationId, child_nodes, closure_environment, node_kind, with_db,
 };
 use cranelift_codegen::{isa, settings, verify_function};
 
@@ -55,7 +53,8 @@ fn parse_production_units(root: &std::path::Path, units: &[(&str, &str, &str)]) 
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        SyntaxGenerationId(0),
     ))
 }
 
@@ -608,10 +607,7 @@ fn production_path_accepts_only_syntax_program_assembly() {
     ";
     let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
     // The production boundary is ProgramAssembly-only.
-    assert_eq!(
-        std::any::type_name_of_val(assembly.as_ref()),
-        "beskid_analysis::projects::assembly::ProgramAssembly"
-    );
+    assert_eq!(std::any::type_name_of_val(assembly.as_ref()), "beskid_analysis::projects::assembly::ProgramAssembly");
     let (target, isa) = x86_64_target_and_isa();
     let lowered = lower_verified_entrypoint(Arc::clone(&assembly), target.clone(), isa.as_ref());
     assert!(lowered.artifact.functions.len() >= 2, "direct-call closure through syntax ISLE");

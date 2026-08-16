@@ -107,7 +107,7 @@ pub fn nav_palette_commands(registry: &NavRegistry, pages: &PagesDoc) -> Vec<Com
         merged.register(item.clone());
     }
 
-    let mut roots: Vec<_> = merged.roots.into_iter().cloned().collect();
+    let mut roots: Vec<_> = merged.roots().into_iter().cloned().collect();
     roots.sort_by_key(|item| item.order);
 
     let mut out = Vec::new();

@@ -9,7 +9,6 @@ use beskid_analysis::syntax::SpanInfo;
 
 use super::model::LocationJson;
 
-
 fn location_for_span(_source: &str, file: &str, span: &SpanInfo) -> LocationJson {
     let (sl, sc) = span.line_col_start;
     let (el, ec) = span.line_col_end;

@@ -1,6 +1,6 @@
 use beskid_abi::runtime_source::{
-    canonical_runtime_sources, CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH,
-    CANONICAL_WAITGROUP_SOURCE_PATH,
+    CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH, CANONICAL_WAITGROUP_SOURCE_PATH,
+    canonical_runtime_sources,
 };
 
 fn canonical_source(path: &str) -> String {
@@ -23,8 +23,10 @@ fn canonical_waitgroup_storage_is_scheduler_owned_and_wakes_each_registered_wait
     assert!(storage.contains("const WG_TABLE_SIZE = 2312;"));
     assert!(storage.contains("table = SystemAllocate(WG_TABLE_SIZE, 8);"));
     assert!(storage.contains("memory_set(table, 0, WG_TABLE_SIZE);"));
-    assert!(storage
-        .contains("raw_word_store(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET), NativeWord(table));"));
+    assert!(
+        storage
+            .contains("raw_word_store(pointer_add(scheduler, SCHEDULER_WAITGROUP_STATE_OFFSET), NativeWord(table));")
+    );
 
     assert!(wait_group.contains("const WG_WAITER_MAX = 16;"));
     assert!(wait_group.contains("const WG_SLOT_SIZE = 144;"));

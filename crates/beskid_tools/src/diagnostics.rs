@@ -4,7 +4,7 @@ use anyhow::Error;
 use beskid_analysis::analysis::Severity as AnalysisSeverity;
 use beskid_analysis::parser::Rule;
 use beskid_analysis::parsing::error::ParseError;
-use beskid_analysis::services::{self, LowerResolveTypeError, SemanticDiagnosticsError};
+use beskid_analysis::services::{self, SemanticDiagnosticsError};
 use beskid_analysis::{MietteReportError, SemanticDiagnostic};
 use miette::{Diagnostic, GraphicalReportHandler, Report, Severity};
 use pest::error::Error as PestError;
@@ -113,9 +113,6 @@ pub fn report_from_anyhow(err: &Error) -> Report {
     }
     if let Some(bundle) = err.downcast_ref::<SemanticDiagnosticsError>() {
         return semantic_diagnostics_bundle_report(bundle);
-    }
-    if let Some(lower) = err.downcast_ref::<LowerResolveTypeError>() {
-        return miette::miette!("{lower}");
     }
     miette::miette!("{err:#}")
 }

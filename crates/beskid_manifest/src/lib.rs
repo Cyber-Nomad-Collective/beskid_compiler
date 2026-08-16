@@ -4,7 +4,7 @@ mod analysis_codegen;
 mod v5;
 
 pub use v5::{
-    generate_v5_artifacts, load_v5_manifest_source, write_v5_artifacts, GeneratedV5Artifacts, RuntimeManifestV5,
+    GeneratedV5Artifacts, RuntimeManifestV5, generate_v5_artifacts, load_v5_manifest_source, write_v5_artifacts,
 };
 
 use std::path::{Path, PathBuf};

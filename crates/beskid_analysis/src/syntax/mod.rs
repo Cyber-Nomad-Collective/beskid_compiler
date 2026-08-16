@@ -17,8 +17,9 @@ pub use expressions::{
     GroupedExpression, IndexExpression, LambdaExpression, LambdaParameter, Literal, LiteralExpression, MacroInvocation,
     MacroMetavariable, MatchArm, MatchExpression, MemberExpression, PathExpression, Pattern, SpawnExpression,
     StringLiteralPart, StructLiteralExpression, StructLiteralField, TryExpression, UnaryExpression, UnaryOp,
-    decode_string_literal_token, materialize_code_segments, parse_plain_code_body, split_string_literal_parts,
-    split_string_literal_token, try_decode_string_literal, try_decode_string_literal_token,
+    decode_string_literal_token, integer_literal_magnitude, integer_literal_primitive_type, materialize_code_segments,
+    parse_plain_code_body, split_string_literal_parts, split_string_literal_token, try_decode_string_literal,
+    try_decode_string_literal_token,
 };
 pub use identity::{AstNodeId, AstNodeKey, SyntaxGenerationId};
 pub use items::{

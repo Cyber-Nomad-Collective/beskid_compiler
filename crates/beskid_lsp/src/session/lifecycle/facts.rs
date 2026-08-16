@@ -88,8 +88,7 @@ pub(super) fn syntax_facts_for_entry(
             declaration_start: declaration_span.start,
             declaration_end: declaration_span.end,
         });
-        let Some(target_unit) = typed.assembly.units.iter().find(|candidate| candidate.path == declaration_path)
-        else {
+        let Some(target_unit) = typed.assembly.units.iter().find(|candidate| candidate.path == declaration_path) else {
             continue;
         };
         let target_index = beskid_analysis::syntax_query::SyntaxIndex::from_program(&target_unit.program, generation);

@@ -84,6 +84,11 @@ pub struct BuildArgs {
     /// Disable animated progress and graph output
     #[arg(long)]
     pub plain: bool,
+
+    /// Codegen backend. Defaults to `clif`. `glue-rust` and `glue-dotnet` are
+    /// declared for 0.4 and fail closed until language-specific generation lands in 0.5.
+    #[arg(long)]
+    pub backend: Option<String>,
 }
 
 /// Resolve, lower, emit CLIF, and run the AOT/link pipeline according to `args`.
@@ -97,6 +102,18 @@ pub fn execute_for_hi(msg_tx: Sender<RuntimeOp>, args: BuildArgs) -> Result<()> 
 }
 
 fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
+    if let Some(raw) = args.backend.as_deref() {
+        let kind = beskid_codegen::backend::BackendKind::parse(raw).map_err(|err| anyhow::anyhow!("{err}"))?;
+        match kind {
+            beskid_codegen::backend::BackendKind::CraneliftClif => {}
+            other => {
+                return Err(anyhow::anyhow!(
+                    "backend `{}` is declared for 0.4 but not implemented; language-specific generation lands in 0.5",
+                    other.as_str(),
+                ));
+            }
+        }
+    }
     let resolve_args = ResolveInputArgs {
         input: args.input.as_ref(),
         project: args.project.project.as_ref(),

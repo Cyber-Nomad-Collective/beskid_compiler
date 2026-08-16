@@ -1,11 +1,8 @@
 use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
-use crate::syntax::{
-    Block, Expression, Node, Path, Program, Statement, Type, UseDeclaration,
-    Visibility,
-};
 use crate::syntax::Spanned;
+use crate::syntax::{Block, Expression, Node, Path, Program, Statement, Type, UseDeclaration, Visibility};
 use crate::syntax_query::Query;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -223,9 +220,7 @@ impl SemanticPipelineRule {
         let mut items = HashMap::new();
         for item in &program.node.items {
             match &item.node {
-                Node::Function(definition)
-                    if definition.node.visibility.node == Visibility::Private =>
-                {
+                Node::Function(definition) if definition.node.visibility.node == Visibility::Private => {
                     items.insert(definition.node.name.node.name.clone(), definition.node.name.span);
                 }
                 Node::TypeDefinition(definition) if definition.node.visibility.node == Visibility::Private => {
@@ -234,9 +229,7 @@ impl SemanticPipelineRule {
                 Node::EnumDefinition(definition) if definition.node.visibility.node == Visibility::Private => {
                     items.insert(definition.node.name.node.name.clone(), definition.node.name.span);
                 }
-                Node::ContractDefinition(definition)
-                    if definition.node.visibility.node == Visibility::Private =>
-                {
+                Node::ContractDefinition(definition) if definition.node.visibility.node == Visibility::Private => {
                     items.insert(definition.node.name.node.name.clone(), definition.node.name.span);
                 }
                 Node::TestDefinition(definition) if definition.node.visibility.node == Visibility::Private => {
@@ -270,8 +263,10 @@ impl SemanticPipelineRule {
                     }
                 }
                 Node::TestDefinition(definition) => {
-                    for expression in Query::from(&definition.node.body.node).of::<Expression>() {
-                        self.collect_used_from_expression(expression, &mut used);
+                    for statement in &definition.node.statements {
+                        for expression in Query::from(&statement.node).of::<Expression>() {
+                            self.collect_used_from_expression(expression, &mut used);
+                        }
                     }
                     if let Some(meta) = &definition.node.meta {
                         for expression in Query::from(&meta.node).of::<Expression>() {

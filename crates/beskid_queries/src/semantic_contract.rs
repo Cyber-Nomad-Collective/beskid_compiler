@@ -103,20 +103,20 @@ pub use abi::generic_specialization_instance;
 pub use calls::extern_contract_import_for_declaration;
 pub use completion::completion_candidates;
 pub use model::{
-    format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,
-    generic_specialization_identity, AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey,
-    CallLowering, CaptureStorage, CaptureStorageClass, CastIntent, ClosureAllocationStatus, ClosureCallTarget,
-    ClosureCapture, ClosureEnvironment, ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus,
-    ClosurePointerMapRequirement, ClosureSignature, CollectionMutationOwner, CollectionOperation, CompletionCandidate,
-    CompletionContext, CompletionKind, ControlFlow, CorelibService, EnumConstructorFact, EnumLayoutFact,
-    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumScalarPayloadObjectLayout,
-    EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, ExportSymbol, ForIteratorFact, GenericCallInstantiation,
-    GenericCallSpecialization, GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance,
-    GenericSubstitution, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, MutableLocalAssignment, OperatorFact,
+    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, CallLowering, CaptureStorage,
+    CaptureStorageClass, CastIntent, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
+    ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
+    ClosureSignature, CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext,
+    CompletionKind, ControlFlow, CorelibService, EnumConstructorFact, EnumLayoutFact, EnumMatchArmFact,
+    EnumMatchBindingFact, EnumMatchFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout,
+    EnumVariantLayoutFact, ExportSymbol, ForIteratorFact, GenericCallInstantiation, GenericCallSpecialization,
+    GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution,
+    IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, MutableLocalAssignment, OperatorFact,
     PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
     ScalarAbiLayout, SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnostic,
     SpawnDiagnosticKind, SpawnEntryValidation, SpawnLegality, SpawnTarget, SyntaxUnitInput, SyntaxUnitRevision,
-    TestItem, TryExpressionFact, TypedProgram,
+    TestItem, TryExpressionFact, TypedProgram, format_ast_node_key, format_ast_node_site, format_ast_node_trace,
+    format_source_span_range, generic_specialization_identity,
 };
 pub use queries::{
     abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration, array_index_element_abi_type,
@@ -131,4 +131,4 @@ pub use queries::{
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation,
     spawn_legality, spawn_target, test_item, test_statement_nodes, try_expression_fact, value_abi_type,
 };
-pub use syntax_facts::{dispatch_builtin_symbol, DispatchBuiltinSymbol};
+pub use syntax_facts::{DispatchBuiltinSymbol, dispatch_builtin_symbol};

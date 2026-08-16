@@ -1,9 +1,9 @@
 use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
-use crate::syntax::{ContractNode, Node, Program, Type};
 use crate::resolve::Resolution;
 use crate::syntax::Spanned;
+use crate::syntax::{ContractNode, Node, Program, Type};
 use std::collections::{HashMap, HashSet};
 
 impl SemanticPipelineRule {
@@ -60,9 +60,7 @@ impl SemanticPipelineRule {
             .items
             .iter()
             .filter_map(|item| match &item.node {
-                Node::ContractDefinition(definition) if definition.node.extern_interface.is_none() => {
-                    Some((definition.node.name.node.name.clone(), definition))
-                }
+                Node::ContractDefinition(definition) => Some((definition.node.name.node.name.clone(), definition)),
                 _ => None,
             })
             .collect();

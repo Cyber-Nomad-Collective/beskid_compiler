@@ -130,6 +130,7 @@ fn scripted_invoker_surfaces_analyzer_diagnostics_to_outcomes() {
                 code: "SampleMod0001".to_owned(),
                 message: "synthetic analyzer diagnostic from SampleMod".to_owned(),
                 severity: AnalyzerSeverity::Warning,
+                span: None,
             }],
         )
         .with_generator_contribution(

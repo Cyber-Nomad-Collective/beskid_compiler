@@ -7,12 +7,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use beskid_analysis::projects::ProgramAssembly;
-use beskid_analysis::services::{resolve_input, ResolvedInput};
-use beskid_analysis::syntax::SyntaxGenerationId;
+use beskid_analysis::services::{ResolvedInput, resolve_input};
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    build_typed_program, call_lowering, configure_db_for_project, program_assembly,
-    project_session_for_syntax_assembly, with_db, AstNodeKey, SourceUnitId,
+    AstNodeKey, SourceUnitId, build_typed_program, call_lowering, configure_db_for_project, program_assembly,
+    project_session_for_syntax_assembly, with_db,
 };
 
 use super::std_env_lock::std_dependency_env_lock;
@@ -224,20 +223,24 @@ mod tests {
 
             assert!(channel.source_path.ends_with("concurrency/ChannelApiTests.bd"));
             assert!(messages.source_path.ends_with("console/ConsoleMessageChannelTests.bd"));
-            assert!(channel
-                .assembly
-                .as_ref()
-                .expect("channel assembly")
-                .entry_unit()
-                .path
-                .ends_with("concurrency/ChannelApiTests.bd"));
-            assert!(messages
-                .assembly
-                .as_ref()
-                .expect("messages assembly")
-                .entry_unit()
-                .path
-                .ends_with("console/ConsoleMessageChannelTests.bd"));
+            assert!(
+                channel
+                    .assembly
+                    .as_ref()
+                    .expect("channel assembly")
+                    .entry_unit()
+                    .path
+                    .ends_with("concurrency/ChannelApiTests.bd")
+            );
+            assert!(
+                messages
+                    .assembly
+                    .as_ref()
+                    .expect("messages assembly")
+                    .entry_unit()
+                    .path
+                    .ends_with("console/ConsoleMessageChannelTests.bd")
+            );
         });
     }
 }

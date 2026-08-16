@@ -6,11 +6,11 @@ use beskid_isle::DirectCallee;
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_module::{FuncId, Linkage, Module, ModuleError};
 
-use super::contracts::{emission_error, emission_verification, SyntaxModuleEmissionError};
+use super::contracts::{SyntaxModuleEmissionError, emission_error, emission_verification};
 use super::data::{collect_aggregate_static_plans, collect_array_static_plans, collect_closure_static_plans};
 use super::imports::{
-    corelib_service_symbols, extern_contract_imports, extern_contract_symbols, runtime_intrinsic_symbols,
-    ArtifactCallImporter, ArtifactStringInterner,
+    ArtifactCallImporter, ArtifactStringInterner, corelib_service_symbols, extern_contract_imports,
+    extern_contract_symbols, runtime_intrinsic_symbols,
 };
 use super::items::{ResolvedSyntaxModuleItem, SyntaxModuleItem};
 use super::specialization::resolve_module_items;
@@ -19,17 +19,17 @@ use super::trampolines::{
     conservative_fiber_stack_requirement, emit_scheduler_fiber_entry, emit_scheduler_return_trampoline,
     emit_spawn_trampoline, expand_direct_spawn_items, resolve_lambda_trampolines, resolve_spawn_trampolines,
 };
-use crate::aggregate_static::{emit_aggregate_static_data, ABI_V5_MANAGED_OBJECT_ALLOCATE};
+use crate::aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, emit_aggregate_static_data};
 use crate::array_static::{
-    emit_array_static_data, ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ABI_V5_ARRAY_GROW_ROOTED,
+    ABI_V5_ARRAY_ALLOCATE_ROOTED, ABI_V5_ARRAY_CONSTRUCTION_FINISH, ABI_V5_ARRAY_GROW_ROOTED, emit_array_static_data,
 };
 use crate::closure_static::{
-    emit_closure_static_data, ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE,
-    ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
+    ABI_V5_CLOSURE_CAPTURE_STORE, ABI_V5_CLOSURE_ENVIRONMENT_ALLOCATE, ABI_V5_CLOSURE_ENVIRONMENT_ROOT_CURRENT,
+    emit_closure_static_data,
 };
 use crate::{
-    emit_isle_closure_lambda_entry, emit_isle_expression_with_call_importer, emit_isle_item_with_services,
-    emit_isle_item_with_services_specialization, CodegenArtifact, CodegenContext, CodegenInput, ExternImport,
+    CodegenArtifact, CodegenContext, CodegenInput, ExternImport, emit_isle_closure_lambda_entry,
+    emit_isle_expression_with_call_importer, emit_isle_item_with_services, emit_isle_item_with_services_specialization,
 };
 
 const ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT: &str = "beskid_rt_v5_fiber_spawn_with_cancel_slot";
@@ -66,7 +66,7 @@ pub fn lower_syntax_program(
     items: &[SyntaxModuleItem],
 ) -> Result<CodegenArtifact, SyntaxModuleEmissionError> {
     let started = Instant::now();
-    crate::isle_trace::event(|| format!("event=clif.begin items={} roots={}", items.len(), input.roots.len()));
+    crate::isle_trace::event(|| format!("event=clif.begin items={} roots={}", items.len(), input.roots().len()));
     let items = match resolve_module_items(input, items).and_then(|items| expand_direct_spawn_items(input, items)) {
         Ok(items) => items,
         Err(error) => {

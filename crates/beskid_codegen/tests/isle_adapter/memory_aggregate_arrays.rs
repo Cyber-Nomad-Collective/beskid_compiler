@@ -1,7 +1,7 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
-    EffectiveCompilationRoots, ModuleIndex, ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId,
-    ProgramAssembly, TargetMetadata, aggregate_field_access, build_typed_program, emit_isle_expression,
+    EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
+    SyntaxGenerationId, TargetMetadata, aggregate_field_access, build_typed_program, emit_isle_expression,
     emit_isle_item, empty_array_literal_element_abi_type, find_function_definition, find_node, isa,
     item_fixture_with_root, parse_program_with_source_name, settings,
 };
@@ -26,7 +26,8 @@ fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };

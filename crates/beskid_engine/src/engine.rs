@@ -167,7 +167,6 @@ fn validate_authorized_user_ffi(imports: &[ExternImport]) -> Result<(), JitError
     for import in imports {
         let manifest_owned = ABI_V5_CORELIB_SERVICE_BINDINGS.iter().any(|binding| binding.adapter == import.symbol);
         let retired_runtime_name = import.symbol.starts_with("beskid_rt_")
-
             || import.symbol.starts_with("beskid_runtime_")
             || import.symbol.starts_with("beskid_language_")
             || beskid_abi::RUNTIME_EXPORT_SYMBOLS.contains(&import.symbol.as_str());

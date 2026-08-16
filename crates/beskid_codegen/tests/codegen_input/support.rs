@@ -4,11 +4,12 @@ pub(super) use std::sync::Arc;
 pub(super) use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 pub(super) use beskid_abi::runtime_source::{
     CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
-    CANONICAL_SCHEDULER_CORE_SOURCE_PATH, canonical_corelib_service_capability, canonical_corelib_service_source_path,
+    CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
+    CANONICAL_SCHEDULER_POLL_SOURCE_PATH, canonical_corelib_service_capability, canonical_corelib_service_source_path,
     canonical_corelib_service_sources, canonical_runtime_intrinsic_capability, canonical_runtime_sources,
 };
 pub(super) use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
 };
 pub(super) use beskid_analysis::services::parse_program_with_source_name;
 pub(super) use beskid_codegen::{CodegenInput, CodegenInputError, SyntaxNodeFacts};
@@ -41,7 +42,8 @@ pub(super) fn input_fixture() -> (BeskidDatabase, TypedProgram, AstNodeKey, Targ
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };

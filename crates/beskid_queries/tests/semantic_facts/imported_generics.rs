@@ -1,7 +1,7 @@
 use super::support::{assert_unavailable, key};
 use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
 use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
 };
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
@@ -47,7 +47,8 @@ fn generic_imported_static_call_resolves_to_its_exact_syntax_item() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        SyntaxGenerationId(0),
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let channel_unit = SourceUnitId::new(&db, channel_path);
@@ -106,7 +107,8 @@ fn imported_generic_type_annotation_resolves_without_registry_reentrance() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        SyntaxGenerationId(0),
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let project = ProjectSession::new(
@@ -158,7 +160,8 @@ fn imported_generic_nominal_calls_require_receiver_instantiation() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        SyntaxGenerationId(0),
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let hub_unit = SourceUnitId::new(&db, hub_path);
@@ -248,7 +251,8 @@ fn generic_imported_terminal_call_requires_an_exact_declared_generic_arity() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        SyntaxGenerationId(0),
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let channel_unit = SourceUnitId::new(&db, channel_path);
@@ -329,7 +333,8 @@ pub Hub<T> Create<T>() { return Hub<T> { value: 0_i64 }; }
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        SyntaxGenerationId(0),
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let hub_unit = SourceUnitId::new(&db, hub_path);
@@ -425,7 +430,8 @@ pub Core.Results.Result<i64, Core.Syscall.SyscallError> Write() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        SyntaxGenerationId(0),
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let results_unit = SourceUnitId::new(&db, results_path);
@@ -512,7 +518,8 @@ pub Console.ConsoleSize Winsize() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        SyntaxGenerationId(0),
     ));
     let linux_unit = SourceUnitId::new(&db, linux_path);
     let project = ProjectSession::new(
@@ -593,7 +600,8 @@ test corelib_generic_specialization {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        SyntaxGenerationId(0),
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let project = ProjectSession::new(
@@ -694,7 +702,8 @@ fn canonical_core_error_qualified_write_has_a_direct_semantic_fact() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        SyntaxGenerationId(0),
     ));
     let error_unit = SourceUnitId::new(&db, error_path);
     let syscall_unit = SourceUnitId::new(&db, syscall_path);

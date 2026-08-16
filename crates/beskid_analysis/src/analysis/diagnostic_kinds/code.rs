@@ -58,6 +58,8 @@ impl SemanticIssueKind {
             Self::ResolveInvalidConformanceTarget { .. } => "E1607",
             Self::ResolvePrivateItemInModule { .. } => "E1107",
             Self::ResolveShadowedLocal { .. } => "W1103",
+            Self::MissingImport { .. } => "E1109",
+            Self::MissingImportAmbiguous { .. } => "W1110",
 
             Self::TypeUnknownType { .. } => "E1201",
             Self::TypeUnknownValueType => "E1201",

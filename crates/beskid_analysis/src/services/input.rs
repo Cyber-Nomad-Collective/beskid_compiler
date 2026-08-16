@@ -13,6 +13,7 @@ use super::project::{infer_manifest_from_input, resolve_project_with_policy};
 use super::synthetic_plan::synthetic_compile_plan_for_source;
 
 /// Source path and text plus optional workspace materialization outputs from [`resolve_input`].
+#[derive(Clone)]
 pub struct ResolvedInput {
     pub source_path: PathBuf,
     pub source: String,

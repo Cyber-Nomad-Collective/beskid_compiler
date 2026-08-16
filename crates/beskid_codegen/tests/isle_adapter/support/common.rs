@@ -1,9 +1,9 @@
 use super::lookup::find_function_definition;
 use super::prelude::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, AtomicUsize, BeskidDatabase,
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, CodegenInput, EffectiveCompilationRoots, ModuleIndex, Ordering, ProjectSession,
-    RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, ProgramAssembly, TargetMetadata,
-    build_typed_program, canonical_runtime_sources, isa, parse_program_with_source_name, settings,
+    CANONICAL_BOOTSTRAP_SOURCE_PATH, CodegenInput, EffectiveCompilationRoots, ModuleIndex, Ordering, ProgramAssembly,
+    ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, TargetMetadata, build_typed_program,
+    canonical_runtime_sources, isa, parse_program_with_source_name, settings,
 };
 
 #[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
@@ -52,7 +52,8 @@ pub(in super::super) fn item_fixture_with_root(
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
@@ -114,7 +115,8 @@ pub(in super::super) fn canonical_runtime_test_assembly(
             0,
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
-            false, generation
+            false,
+            SyntaxGenerationId(0),
         )),
         source_path,
     )

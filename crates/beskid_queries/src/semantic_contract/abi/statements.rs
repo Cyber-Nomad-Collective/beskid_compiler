@@ -40,7 +40,7 @@ pub(in crate::semantic_contract) fn statement_abi_type_for_node(
 
 fn inferred_local_storage_type(
     db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    _program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
 ) -> Result<SemanticTypeId, SemanticError> {
@@ -56,9 +56,7 @@ fn inferred_local_storage_type(
         .ok_or_else(|| SemanticError::unavailable("value_abi_type"))?;
     match abi_type(db, declaration) {
         Ok(Some(storage)) => Ok(storage),
-        Ok(None) => {
-            node_type(db, declaration)?.ok_or_else(|| SemanticError::unavailable("value_abi_type"))
-        }
+        Ok(None) => node_type(db, declaration)?.ok_or_else(|| SemanticError::unavailable("value_abi_type")),
         Err(error) if error.is_unavailable() => {
             node_type(db, declaration)?.ok_or_else(|| SemanticError::unavailable("value_abi_type"))
         }

@@ -11,13 +11,12 @@ use crate::projects::fixture_harness::{
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    build_typed_program, child_nodes, generic_call_specialization, item_abi_signature, item_name, node_kind,
-    project_session_for_syntax_assembly, reachable_items, with_db, AstNodeId, AstNodeKey, IndexedNodeKind,
-    ItemSignature, SemanticTypeId, SourceUnitId,
+    AstNodeId, AstNodeKey, IndexedNodeKind, ItemSignature, SemanticTypeId, SourceUnitId, build_typed_program,
+    child_nodes, generic_call_specialization, item_abi_signature, item_name, node_kind,
+    project_session_for_syntax_assembly, reachable_items, with_db,
 };
 
 #[test]

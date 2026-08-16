@@ -133,21 +133,3 @@ features = [
     "process",
     "signal",
 ]
-
-[profile.dev]
-opt-level = 0
-lto = "off"
-debug = 0
-debug-assertions = false
-panic = "abort"
-overflow-checks = false
-strip = "symbols"
-
-[profile.release]
-opt-level = "z"
-lto = "thin"
-debug = 0
-debug-assertions = false
-panic = "abort"
-overflow-checks = false
-strip = "symbols"

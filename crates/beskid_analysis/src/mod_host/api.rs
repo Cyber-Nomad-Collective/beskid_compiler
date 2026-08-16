@@ -263,7 +263,12 @@ pub fn run_analyze_rewrite_with_invoker(
     pipeline: Option<&dyn beskid_pipeline::PipelineObserver>,
 ) -> Result<ModHostAnalyzeResult> {
     if session.is_empty() {
-        return Ok(ModHostAnalyzeResult { program, analyzer_outcomes: Vec::new(), rewriter_outcomes: Vec::new() });
+        return Ok(ModHostAnalyzeResult {
+            program,
+            analyzer_outcomes: Vec::new(),
+            rewriter_outcomes: Vec::new(),
+            edited_source: None,
+        });
     }
 
     let default_invoker = StubContractInvoker::new();
@@ -274,9 +279,19 @@ pub fn run_analyze_rewrite_with_invoker(
 
     let analyzed = super::analyze::run_analyzers(session, host_input, invoker, snapshot, pipeline)?;
     let analyzer_outcomes = analyzed.outcomes.clone();
-    let rewrite = run_rewriters(program, session, &analyzed, host_input, invoker, pipeline)?;
+    // Source text for rewriter edit application comes from the host input when
+    // available. Callers without a `ModHostInput` (e.g. the bare
+    // `run_analyze_rewrite` entry point) pass `None`, which skips edit application
+    // and preserves the previous record-only behavior.
+    let source = host_input.map(|input| input.source);
+    let rewrite = run_rewriters(program, source, session, &analyzed, host_input, invoker, pipeline)?;
 
-    Ok(ModHostAnalyzeResult { program: rewrite.program, analyzer_outcomes, rewriter_outcomes: rewrite.outcomes })
+    Ok(ModHostAnalyzeResult {
+        program: rewrite.program,
+        analyzer_outcomes,
+        rewriter_outcomes: rewrite.outcomes,
+        edited_source: rewrite.edited_source,
+    })
 }
 
 /// Surface the structured [`ModHostDiagnostics`] from a `mod_host` error. Returns

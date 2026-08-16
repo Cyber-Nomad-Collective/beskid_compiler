@@ -221,8 +221,7 @@ macro_rules! generated_intrinsic_methods {
                     arguments.is_empty().then(|| self.builder.ins().iconst(result, value as i64))
                 }
                 RuntimeIntrinsicKind::SchedulerFiberEntryAddress => arguments.is_empty().then(|| {
-                    let signature =
-                        let mut signature = Signature::new(self.builder.func.signature.call_conv);
+                    let mut signature = Signature::new(self.builder.func.signature.call_conv);
                     signature.params.push(AbiParam::new(result));
                     let signature = self.builder.func.import_signature(signature);
                     let function = self.builder.func.import_function(ExtFuncData {
@@ -234,8 +233,8 @@ macro_rules! generated_intrinsic_methods {
                     self.builder.ins().func_addr(result, function)
                 }),
                 RuntimeIntrinsicKind::SchedulerReturnTrampolineAddress => arguments.is_empty().then(|| {
-                    let signature =
-                        self.builder.func.import_signature(Signature::new(self.builder.func.signature.call_conv));
+                    let call_conv = self.builder.func.signature.call_conv;
+                    let signature = self.builder.func.import_signature(Signature::new(call_conv));
                     let function = self.builder.func.import_function(ExtFuncData {
                         name: ExternalName::testcase("__beskid_scheduler_return_trampoline"),
                         signature,

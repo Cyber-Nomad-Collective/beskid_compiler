@@ -158,7 +158,7 @@ pub fn resolve_composition(input: CompositionInput<'_>) -> CompositionResult {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_composition, CompositionInput};
+    use super::{CompositionInput, resolve_composition};
     use crate::services::parse_program;
 
     #[test]

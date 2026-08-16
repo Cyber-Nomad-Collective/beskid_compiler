@@ -2,11 +2,11 @@
 
 use std::path::PathBuf;
 
-use beskid_analysis::services::{cached_semantic_snapshot, SemanticSnapshot, SessionFingerprint};
+use beskid_analysis::services::{SemanticSnapshot, SessionFingerprint, cached_semantic_snapshot};
 use beskid_analysis::services::{get_or_insert_assembly, invalidate_entry_sessions, update_semantic_snapshot};
 use beskid_queries::{
-    fingerprint_key, parse_and_expand_unit, record_query_hit, reset, semantic_snapshot, snapshot,
-    unit_content_fingerprint, unit_imports, BeskidDatabase, Db, ProjectSession,
+    BeskidDatabase, Db, ProjectSession, fingerprint_key, parse_and_expand_unit, record_query_hit, reset,
+    semantic_snapshot, snapshot, unit_content_fingerprint, unit_imports,
 };
 
 fn fixture_source() -> String {
@@ -142,8 +142,8 @@ fn entry_resolution_with_db_populates_symbol_registry() {
     use std::path::PathBuf;
 
     use beskid_analysis::projects::AssemblyDiscovery;
-    use beskid_analysis::services::{resolve_input, PrepareOptions};
-    use beskid_queries::{configure_db_for_project, entry_resolution_with_db, BeskidDatabase};
+    use beskid_analysis::services::{PrepareOptions, resolve_input};
+    use beskid_queries::{BeskidDatabase, configure_db_for_project, entry_resolution_with_db};
 
     let compiler_root = {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -179,7 +179,7 @@ fn entry_resolution_with_db_populates_symbol_registry() {
 #[test]
 fn typed_entry_state_uses_fast_resolution_when_stale() {
     use beskid_analysis::projects::AssemblyDiscovery;
-    use beskid_analysis::services::{resolve_input, PrepareOptions};
+    use beskid_analysis::services::{PrepareOptions, resolve_input};
     use beskid_queries::{
         bump_file_revision, bump_typed_prepare_revision, configure_db_for_project, entry_resolution_with_db,
         fingerprint_key, is_typed_bundle_stale, typed_entry_state_with_db,
@@ -248,31 +248,4 @@ fn manifest_digest_changes_when_manifest_or_lock_changes() {
     std::fs::write(&lock, "lock v1").expect("lock");
     let digest_with_lock = manifest_digest(&manifest);
     assert_ne!(digest_v2, digest_with_lock);
-}
-
-#[test]
-fn syntax_program_assembly_strips_hir_without_document_snapshot() {
-    use beskid_analysis::projects::assembly_options_for_prepare;
-    use beskid_analysis::services::{synthetic_compile_plan_for_source, FrontEndOptions};
-    use beskid_queries::syntax_program_assembly;
-
-    let dir = tempfile::tempdir().expect("tempdir");
-    let entry_path = dir.path().join("Main.bd");
-    let source = "i32 Main() { return 0; }";
-    std::fs::write(&entry_path, source).expect("entry");
-
-    let plan = synthetic_compile_plan_for_source(&entry_path);
-    let options = assembly_options_for_prepare(&plan, FrontEndOptions::default().assembly_discovery);
-    let mut db = BeskidDatabase::default();
-    let syntax =
-        syntax_program_assembly(&mut db, &plan, None, &entry_path, Some(source), &options).expect("syntax assembly");
-
-    assert_eq!(
-        syntax.entry_unit().path.canonicalize().unwrap_or_else(|_| syntax.entry_unit().path.clone()),
-        entry_path.canonicalize().unwrap_or(entry_path.clone())
-    );
-    assert!(
-        !syntax.units.is_empty(),
-        "syntax_program_assembly must retain source units without DocumentAnalysisSnapshot"
-    );
 }

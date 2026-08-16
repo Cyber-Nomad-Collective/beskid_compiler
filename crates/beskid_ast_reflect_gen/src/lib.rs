@@ -16,7 +16,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use syn::{parse_file, Attribute, Fields, Generics, Item, Visibility};
+use syn::{Attribute, Fields, Generics, Item, Visibility, parse_file};
 
 use crate::emit_idents::rust_snake_to_beskid_field_camel;
 

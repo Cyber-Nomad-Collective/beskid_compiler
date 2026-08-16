@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::syntax::{Path, Type};
 use crate::resolve::{ItemKind, ResolvedType};
 use crate::syntax::Spanned;
+use crate::syntax::{Path, Type};
 use crate::types::{TypeId, TypeInfo};
 
 use super::TypeChecker;

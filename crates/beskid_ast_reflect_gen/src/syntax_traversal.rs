@@ -7,7 +7,7 @@ use std::path::Path;
 use syn::{Attribute, Fields, Item, Meta};
 
 use crate::syntax_helpers::SYNTAX_NODES_MODULE_PREFIX;
-use crate::syntax_nodes::{reflect_sdk_node_kind_names, BANNER};
+use crate::syntax_nodes::{BANNER, reflect_sdk_node_kind_names};
 
 /// Rust item enum in `syntax/items/node.rs` — host-only; Mod SDK uses `Node` contract + `NodeRef`.
 pub const HOST_ONLY_SDK_TYPE_NAMES: &[&str] = &["Node"];

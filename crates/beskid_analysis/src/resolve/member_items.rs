@@ -107,7 +107,7 @@ pub fn collect_member_items(item: &Spanned<Node>, parent_name: &str) -> Vec<Memb
             }
         }
         Node::TestDefinition(def) => {
-            for (index, statement) in def.node.body.node.statements.iter().enumerate() {
+            for (index, statement) in def.node.statements.iter().enumerate() {
                 out.push(MemberItemSpec {
                     name: format!("{}::statement#{}", parent_name, index + 1),
                     kind: ItemKind::Statement,

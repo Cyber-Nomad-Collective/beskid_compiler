@@ -24,6 +24,7 @@ beskid_artifacts = { path = "../beskid_artifacts" }
 bsol = { workspace = true }
 rayon = "1.10"
 zip = "2"
+libloading = "0.8"
 
 [build-dependencies]
 beskid_manifest = { path = "../beskid_manifest" }

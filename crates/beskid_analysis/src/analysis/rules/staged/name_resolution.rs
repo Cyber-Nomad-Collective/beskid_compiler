@@ -1,10 +1,10 @@
 use super::SemanticPipelineRule;
 use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::{RuleContext, resolve};
-use crate::syntax::{Block, Expression, ForStatement, LetStatement, Node, Path, Program, Statement, UseDeclaration};
 use crate::resolve::{Resolution, Resolver};
+use crate::syntax::{Block, Expression, ForStatement, LetStatement, Node, Path, Program, Statement, UseDeclaration};
 use crate::syntax::{SpanInfo, Spanned};
-use crate::syntax_query::{NodeKind, NodeRef, Visit, AstWalker};
+use crate::syntax_query::{AstWalker, NodeKind, NodeRef, Visit};
 use std::collections::{HashMap, HashSet};
 
 impl SemanticPipelineRule {
@@ -18,7 +18,7 @@ impl SemanticPipelineRule {
         self.check_use_before_declaration(ctx, program);
 
         let resolution = if let Some(index) = ctx.options.program_assembly_module_index.as_ref() {
-            match index.resolve_entry_program(program, ctx.options.entry_source_path.as_ref()) {
+            match index.resolve_entry_program(program, ctx.options.entry_source_path.as_deref()) {
                 Ok(resolution) => resolution,
                 Err(errors) => {
                     for error in errors {

@@ -1,7 +1,7 @@
 //! Syntax-derived signatures and type annotations for `api.json` rows.
 
-use crate::resolve::items::{ItemInfo, ItemKind};
 use crate::resolve::Resolution;
+use crate::resolve::items::{ItemInfo, ItemKind};
 use crate::syntax::{
     ContractMethodSignature, ContractNode, EnumDefinition, EnumVariant, Field, FunctionDefinition, MethodDefinition,
     Node, Parameter, Program, SpanInfo, Spanned, TypeDefinition,

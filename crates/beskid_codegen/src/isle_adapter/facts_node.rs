@@ -197,7 +197,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     fn runtime_intrinsic_kind(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
         if let Some(operation) = self.scheduler_compiler_operation(key) {
             return Some(match operation {
-                crate::SchedulerCompilerOperation::FiberEntryAddress => RuntimeIntrinsicKind::SchedulerFiberEntryAddress,
+                crate::SchedulerCompilerOperation::FiberEntryAddress => {
+                    RuntimeIntrinsicKind::SchedulerFiberEntryAddress
+                }
                 crate::SchedulerCompilerOperation::ReturnTrampolineAddress => {
                     RuntimeIntrinsicKind::SchedulerReturnTrampolineAddress
                 }
@@ -226,9 +228,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         Some(match operation {
             beskid_queries::CollectionOperation::Append { owner } => {
                 let owner = match owner {
-                    beskid_queries::CollectionMutationOwner::Local(slot) => CollectionMutationOwner::Local(
-                        LocalSlotId { owner_node: slot.owner.node.0, index: slot.index },
-                    ),
+                    beskid_queries::CollectionMutationOwner::Local(slot) => {
+                        CollectionMutationOwner::Local(LocalSlotId { owner_node: slot.owner.node.0, index: slot.index })
+                    }
                     beskid_queries::CollectionMutationOwner::AggregateField { receiver, index, .. } => {
                         CollectionMutationOwner::AggregateField {
                             receiver: LocalSlotId { owner_node: receiver.owner.node.0, index: receiver.index },

@@ -1,5 +1,5 @@
-use crate::syntax::{MatchArm, MatchExpression, Pattern};
 use crate::syntax::Spanned;
+use crate::syntax::{MatchArm, MatchExpression, Pattern};
 use crate::types::TypeId;
 use crate::types::result::TypeError;
 

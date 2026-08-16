@@ -1,4 +1,4 @@
-use beskid_abi::runtime_source::{canonical_runtime_sources, CANONICAL_COMPOSITION_SOURCE_PATH};
+use beskid_abi::runtime_source::{CANONICAL_COMPOSITION_SOURCE_PATH, canonical_runtime_sources};
 
 fn canonical_composition() -> String {
     canonical_runtime_sources()

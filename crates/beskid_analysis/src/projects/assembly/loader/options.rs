@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use super::super::SourceUnit;
-use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
 use crate::projects::CompilePlan;
+use crate::projects::model::{AssemblyDiscovery, AssemblyOptions};
 use crate::syntax::SyntaxGenerationId;
 use crate::syntax::{Program, Spanned};
 use crate::syntax_query::SyntaxIndex;

@@ -128,7 +128,10 @@ pub(super) fn corelib_service_symbols(
     capability
         .services()
         .iter()
-        .filter(|service| callees.contains(&service.symbol) || matches!(service.symbol, "str_new" | "str_from_i64" | "str_eq" | "str_concat"))
+        .filter(|service| {
+            callees.contains(&service.symbol)
+                || matches!(service.symbol, "str_new" | "str_from_i64" | "str_eq" | "str_concat")
+        })
         .map(|service| (DirectCallee::corelib_service(service.symbol), service.symbol.to_owned()))
         .collect()
 }

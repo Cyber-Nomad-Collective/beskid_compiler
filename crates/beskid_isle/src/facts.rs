@@ -60,8 +60,8 @@ pub enum SyntaxNodeClassification {
 
 /// Classify every authoritative expanded-syntax kind without a fallback arm.
 pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) -> SyntaxNodeClassification {
-    use beskid_queries::IndexedNodeKind as Syntax;
     use SyntaxNodeClassification::{IsleLowered, Structural, UnsupportedTypedOperation};
+    use beskid_queries::IndexedNodeKind as Syntax;
 
     match kind {
         Syntax::Program => IsleLowered(NodeKind::Program),
@@ -160,8 +160,8 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
 }
 
 /// Deterministic catalogue in the authoritative syntax declaration order.
-pub fn syntax_node_kind_catalogue(
-) -> impl ExactSizeIterator<Item = (beskid_queries::IndexedNodeKind, SyntaxNodeClassification)> {
+pub fn syntax_node_kind_catalogue()
+-> impl ExactSizeIterator<Item = (beskid_queries::IndexedNodeKind, SyntaxNodeClassification)> {
     beskid_queries::IndexedNodeKind::ALL.iter().copied().map(|kind| (kind, classify_syntax_node_kind(kind)))
 }
 

@@ -52,7 +52,7 @@ pub fn build_api_documentation_snapshot(
 
 /// Full-project resolution for `api.json`: prefetch symbols from every unit, resolve entry, then merge type/value tables from each unit.
 pub fn resolve_assembly_for_api_documentation(assembly: &ProgramAssembly, _entry_path: &Path) -> Option<Resolution> {
-    assembly.module_index.resolve_for_api_documentation(assembly.entry_program(), assembly)
+    assembly.module_index.resolve_for_api_documentation(&assembly.entry_unit().program, assembly)
 }
 
 fn build_document_snapshot(

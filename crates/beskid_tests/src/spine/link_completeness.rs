@@ -1,5 +1,6 @@
 //! Link-plan lowering must pass `validate_artifact` for project entrypoints.
 
+#[cfg(feature = "slow")]
 use beskid_codegen::validate_artifact;
 
 #[cfg(feature = "slow")]

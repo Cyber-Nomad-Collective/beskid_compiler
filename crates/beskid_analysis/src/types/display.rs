@@ -1,7 +1,7 @@
 //! Human-readable [`TypeId`] labels for diagnostics and error messages.
 
-use crate::syntax::PrimitiveType;
 use crate::resolve::{ItemId, Resolution};
+use crate::syntax::PrimitiveType;
 use crate::types::{TypeId, TypeInfo, TypeResult};
 
 fn primitive_type_name(primitive: PrimitiveType) -> &'static str {
@@ -10,6 +10,7 @@ fn primitive_type_name(primitive: PrimitiveType) -> &'static str {
         PrimitiveType::I32 => "i32",
         PrimitiveType::I64 => "i64",
         PrimitiveType::U8 => "u8",
+        PrimitiveType::Pointer => "pointer",
         PrimitiveType::Word => "word",
         PrimitiveType::F64 => "f64",
         PrimitiveType::Char => "char",

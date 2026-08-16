@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use beskid_pipeline::{observe_phase_result, phases, PipelineObserver};
+use beskid_pipeline::{PipelineObserver, observe_phase_result, phases};
 
 use crate::projects::assembly::{ModuleIndex, ProgramAssembly};
 use crate::resolve::{Resolution, ResolveError, Resolver};
@@ -60,7 +60,7 @@ pub fn type_resolved_program(
                 if let Some(assembly) = assembly {
                     assembly
                         .module_index
-                        .resolve_entry_program(&program, entry_path.as_ref())
+                        .resolve_entry_program(&program, entry_path.as_deref())
                         .map_err(SemanticFactsError::Resolve)
                 } else {
                     Resolver::new().resolve_program(&program).map_err(SemanticFactsError::Resolve)
@@ -70,7 +70,7 @@ pub fn type_resolved_program(
         }
         ProgramResolutionSource::ModuleIndex { module_index, entry_source_path } => {
             let resolution = module_index
-                .resolve_entry_program(&program, entry_source_path.as_ref())
+                .resolve_entry_program(&program, entry_source_path.as_deref())
                 .map_err(SemanticFactsError::Resolve)?;
             (resolution, None, Some(module_index), entry_source_path)
         }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::syntax::PrimitiveType;
 use crate::resolve::ItemId;
+use crate::syntax::PrimitiveType;
 use crate::types::{TypeId, TypeInfo, TypeTable};
 
 use super::model::LoweringPrepSurfaces;

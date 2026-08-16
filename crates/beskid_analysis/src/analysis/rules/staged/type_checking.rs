@@ -1,8 +1,8 @@
 use super::SemanticPipelineRule;
 use crate::analysis::rules::RuleContext;
-use crate::syntax::{Block, Expression, ForStatement, LetStatement, Parameter, Program};
 use crate::syntax::Spanned;
-use crate::syntax_query::{NodeKind, NodeRef, Visit, AstWalker};
+use crate::syntax::{Block, Expression, ForStatement, LetStatement, Parameter, Program};
+use crate::syntax_query::{AstWalker, NodeKind, NodeRef, Visit};
 use std::collections::HashMap;
 
 impl SemanticPipelineRule {
@@ -36,7 +36,9 @@ impl SemanticPipelineRule {
                 }
                 crate::syntax::Node::TestDefinition(definition) => {
                     let mut walker = AstWalker::new().with_visitor(Box::new(MutabilityVisitor::new(ctx)));
-                    walker.walk(NodeRef::from(&definition.node.body.node));
+                    for statement in &definition.node.statements {
+                        walker.walk(NodeRef::from(&statement.node));
+                    }
                 }
                 _ => {}
             }

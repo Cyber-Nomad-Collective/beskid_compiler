@@ -1,5 +1,5 @@
-use crate::syntax::{ArrayLiteralExpression, Expression, IndexExpression, PrimitiveType};
 use crate::syntax::Spanned;
+use crate::syntax::{ArrayLiteralExpression, Expression, IndexExpression, PrimitiveType};
 use crate::types::result::TypeError;
 use crate::types::{TypeId, TypeInfo};
 
@@ -10,13 +10,9 @@ impl<'a> TypeChecker<'a> {
         let type_id = match &expression.node {
             Expression::Lambda(lambda) => self.type_lambda_expression_with_expected(lambda, None),
             Expression::Literal(literal) => self.type_id_for_literal(&literal.node.literal),
-            Expression::Path(path_expr) => {
-                self.type_id_for_path(path_expr.node.path.span, &path_expr.node.path)
-            }
+            Expression::Path(path_expr) => self.type_id_for_path(path_expr.node.path.span, &path_expr.node.path),
             Expression::StructLiteral(literal) => self.type_struct_literal_expression(literal),
-            Expression::EnumConstructor(constructor) => {
-                self.type_enum_constructor_expression(constructor)
-            }
+            Expression::EnumConstructor(constructor) => self.type_enum_constructor_expression(constructor),
             Expression::Assign(assign) => {
                 let target = self.type_expression(&assign.node.target);
                 let value = self.type_expression(&assign.node.value);
@@ -37,10 +33,8 @@ impl<'a> TypeChecker<'a> {
                                 self.errors.push(TypeError::InvalidEventSubscriptionTarget { span: assign.span });
                                 return Some(target);
                             }
-                            let is_string = matches!(
-                                self.type_table.get(target),
-                                Some(TypeInfo::Primitive(PrimitiveType::String))
-                            );
+                            let is_string =
+                                matches!(self.type_table.get(target), Some(TypeInfo::Primitive(PrimitiveType::String)));
                             if !self.is_numeric(target) && !is_string {
                                 self.errors.push(TypeError::UnsupportedExpression { span: assign.span });
                             }
@@ -132,7 +126,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn type_try_expression(&mut self, try_expr: &Spanned<crate::syntax::TryExpression>) -> Option<TypeId> {
-        let target_type = self.type_expression(&try_expr.node.body)?;
+        let target_type = self.type_expression(&try_expr.node.expr)?;
         let Some(result_item_id) = self.named_item_id(target_type) else {
             self.errors.push(TypeError::InvalidTryTarget { span: try_expr.span });
             return None;

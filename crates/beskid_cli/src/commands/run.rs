@@ -8,15 +8,15 @@ use crate::commands::syntax_codegen::lower_prepared_entrypoint;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
 use anyhow::Result;
 use beskid_aot::{
-    build, default_runtime_strategy, run_linked_executable, AotBuildRequest, BuildOutputKind, BuildProfile,
-    ExportPolicy, LinkMode,
+    AotBuildRequest, BuildOutputKind, BuildProfile, ExportPolicy, LinkMode, build, default_runtime_strategy,
+    run_linked_executable,
 };
 use beskid_engine::link_libraries::{apply_link_libraries, link_libraries_for_artifact};
 use beskid_pipeline::PipelineObserver;
+use beskid_tools::PipelineProgressKind;
 use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 use beskid_tools::tui::shell::runtime::RuntimeOp;
-use beskid_tools::PipelineProgressKind;
 use clap::Args;
 use std::sync::mpsc::Sender;
 

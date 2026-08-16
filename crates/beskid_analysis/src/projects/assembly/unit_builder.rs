@@ -7,17 +7,19 @@ use beskid_artifacts::{ArtifactStore, content_fingerprint};
 use crate::artifacts::{source_unit_from_ast_snapshot, source_unit_snapshot};
 use crate::projects::assembly::loader::import_paths_from_source_full;
 
+use super::SourceUnit;
 use super::loader::AssemblyError;
 use super::loader::expand_syntax_for_assembly;
-use super::SourceUnit;
-use crate::syntax::{SyntaxGenerationId};
+use crate::syntax::SyntaxGenerationId;
 use crate::syntax_query::SyntaxIndex;
 
 /// Builds expanded source and generation-bound syntax-index facts with artifact persistence.
 pub struct UnitBuilder<'a> {
     _project_root: PathBuf,
     store: ArtifactStore,
-    salsa_build: Option<&'a (dyn Fn(&Path, &str, SyntaxGenerationId) -> Result<(SourceUnit, SyntaxIndex), AssemblyError> + Send + Sync)>,
+    salsa_build: Option<
+        &'a (dyn Fn(&Path, &str, SyntaxGenerationId) -> Result<(SourceUnit, SyntaxIndex), AssemblyError> + Send + Sync),
+    >,
 }
 
 impl<'a> UnitBuilder<'a> {
@@ -27,7 +29,11 @@ impl<'a> UnitBuilder<'a> {
 
     pub fn with_salsa_build(
         mut self,
-        build: &'a (dyn Fn(&Path, &str, SyntaxGenerationId) -> Result<(SourceUnit, SyntaxIndex), AssemblyError> + Send + Sync),
+        build: &'a (
+                dyn Fn(&Path, &str, SyntaxGenerationId) -> Result<(SourceUnit, SyntaxIndex), AssemblyError>
+                    + Send
+                    + Sync
+            ),
     ) -> Self {
         self.salsa_build = Some(build);
         self

@@ -42,6 +42,7 @@ pub use grouped_expression::GroupedExpression;
 pub use index_expression::IndexExpression;
 pub use lambda_expression::{LambdaExpression, LambdaParameter};
 pub use literal::Literal;
+pub use literal::{integer_literal_magnitude, integer_literal_primitive_type};
 pub use literal_expression::LiteralExpression;
 pub use macro_invocation::MacroInvocation;
 pub use macro_metavariable::MacroMetavariable;

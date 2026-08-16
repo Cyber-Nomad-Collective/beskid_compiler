@@ -1,7 +1,7 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
-    EffectiveCompilationRoots, ModuleIndex, NodeFacts, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
-    SyntaxGenerationId, SyntaxModuleItem, ProgramAssembly, TargetMetadata, build_typed_program, emit_isle_item,
+    EffectiveCompilationRoots, ModuleIndex, NodeFacts, ProgramAssembly, ProjectSession, RootEntry, SourceUnit,
+    SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_typed_program, emit_isle_item,
     find_function_definition, find_function_definitions, find_node, find_test_definition, isa, item_fixture,
     item_fixture_with_root, lower_syntax_program, mutable_local_assignment, named_function, node_kind,
     parse_program_with_source_name, settings, test_statement_nodes,
@@ -27,7 +27,8 @@ fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
@@ -108,7 +109,8 @@ fn parsed_local_read_emits_verified_isle_clif_without_lowerable() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };

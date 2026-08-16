@@ -1,12 +1,11 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
     CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CodegenInput, EffectiveCompilationRoots, ModuleIndex, NodeKind,
-    ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem,
-    ProgramAssembly, TargetMetadata, build_typed_program, build_typed_program_with_corelib_services,
-    call_lowering, canonical_corelib_service_capability, canonical_corelib_service_source_path,
-    canonical_foundation_assert_fixture, enum_layout, find_corelib_service_call, find_definition_of_kind,
-    find_function_definitions, isa, item_fixture_with_root, item_name, lower_syntax_program,
-    parse_program_with_source_name, settings,
+    ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxIndex,
+    SyntaxModuleItem, TargetMetadata, build_typed_program, build_typed_program_with_corelib_services, call_lowering,
+    canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_foundation_assert_fixture,
+    enum_layout, find_corelib_service_call, find_definition_of_kind, find_function_definitions, isa,
+    item_fixture_with_root, item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
 
 #[test]
@@ -50,7 +49,8 @@ fn user_copy_of_foundation_output_cannot_import_the_panic_service() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let target = TargetMetadata::supported()
         .into_iter()
@@ -156,7 +156,8 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let target = TargetMetadata::supported()
         .into_iter()
@@ -236,7 +237,8 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let target = TargetMetadata::supported()
         .into_iter()
@@ -292,7 +294,8 @@ fn copied_foundation_assert_source_cannot_receive_panic_authority() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let target = TargetMetadata::supported()
         .into_iter()
@@ -359,7 +362,8 @@ fn symlinked_foundation_assert_source_cannot_receive_panic_authority() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let target = TargetMetadata::supported()
         .into_iter()

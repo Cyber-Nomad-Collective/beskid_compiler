@@ -1,14 +1,14 @@
 use beskid_abi::abi_v5::{AbiManifestV5, AbiType, SourceUnit, TargetMetadata};
 use beskid_abi::runtime_source::{
-    canonical_corelib_service_capability, canonical_corelib_service_source_path,
-    canonical_runtime_intrinsic_capability, canonical_runtime_sources, prove_canonical_runtime_corpus,
-    RuntimeCapabilityError, CANONICAL_BOOTSTRAP_LIFECYCLE_SOURCE_PATH, CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
+    CANONICAL_BOOTSTRAP_LIFECYCLE_SOURCE_PATH, CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
     CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH,
     CANONICAL_CLOCKS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
     CANONICAL_GC_ROOTS_HANDLES_SOURCE_PATH, CANONICAL_PROCESS_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH,
     CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_EXPORTS_SOURCE_PATH,
     CANONICAL_SCHEDULER_LOOP_SOURCE_PATH, CANONICAL_SCHEDULER_QUEUE_SOURCE_PATH, CANONICAL_SCHEDULER_SOURCE_PATH,
-    CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH, CANONICAL_SYSCALLS_SOURCE_PATH,
+    CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH, CANONICAL_SYSCALLS_SOURCE_PATH, RuntimeCapabilityError,
+    canonical_corelib_service_capability, canonical_corelib_service_source_path,
+    canonical_runtime_intrinsic_capability, canonical_runtime_sources, prove_canonical_runtime_corpus,
 };
 
 fn canonical_source<'a>(sources: &'a [SourceUnit], logical_path: &str) -> &'a str {
@@ -409,9 +409,9 @@ fn exact_embedded_source_set_receives_non_serializable_intrinsic_authority() {
         );
     }
     assert!(capability.intrinsic_for_source("src/User.bd", "trap").is_none());
-    assert!(capability
-        .intrinsic_for_source(CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, "not_manifest_declared",)
-        .is_none());
+    assert!(
+        capability.intrinsic_for_source(CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, "not_manifest_declared",).is_none()
+    );
     assert_eq!(capability.source_hash(), beskid_abi::abi_v5::canonical_source_hash(&sources).unwrap());
 }
 

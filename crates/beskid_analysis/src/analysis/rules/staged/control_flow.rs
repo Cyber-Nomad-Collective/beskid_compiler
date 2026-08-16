@@ -3,7 +3,7 @@ use crate::analysis::diagnostic_kinds::SemanticIssueKind;
 use crate::analysis::rules::RuleContext;
 use crate::syntax::{Block, Expression, Node, Pattern, Program, Statement};
 use crate::syntax::{SpanInfo, Spanned};
-use crate::syntax_query::{NodeRef, Query, Visit, AstWalker};
+use crate::syntax_query::{AstWalker, NodeRef, Query, Visit};
 use std::collections::{HashMap, HashSet};
 
 impl SemanticPipelineRule {
@@ -147,16 +147,12 @@ impl SemanticPipelineRule {
             Expression::Literal(literal) => {
                 matches!(literal.node.literal.node, crate::syntax::Literal::Bool(_))
             }
-            Expression::Unary(unary_expression) => {
-                self.is_boolean_like_guard(&unary_expression.node.expr)
-            }
+            Expression::Unary(unary_expression) => self.is_boolean_like_guard(&unary_expression.node.expr),
             Expression::Binary(binary_expression) => {
                 self.is_boolean_like_guard(&binary_expression.node.left)
                     || self.is_boolean_like_guard(&binary_expression.node.right)
             }
-            Expression::Grouped(grouped_expression) => {
-                self.is_boolean_like_guard(&grouped_expression.node.expr)
-            }
+            Expression::Grouped(grouped_expression) => self.is_boolean_like_guard(&grouped_expression.node.expr),
             _ => true,
         }
     }
@@ -170,9 +166,7 @@ impl SemanticPipelineRule {
                 crate::syntax::Literal::Char(_) => Some("char"),
                 crate::syntax::Literal::Bool(_) => Some("bool"),
             },
-            Expression::Grouped(grouped_expression) => {
-                self.literal_kind(&grouped_expression.node.expr)
-            }
+            Expression::Grouped(grouped_expression) => self.literal_kind(&grouped_expression.node.expr),
             _ => None,
         }
     }

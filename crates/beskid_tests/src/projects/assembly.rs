@@ -94,7 +94,7 @@ fn module_index_resolve_entry_succeeds_for_corelib_mvp_main() {
         let assembly = shared_corelib_mvp_assembly();
         let resolution = assembly
             .module_index
-            .resolve_entry(&assembly.entry_unit().program)
+            .resolve_entry_program(&assembly.entry_unit().program, None)
             .expect("entry resolve with use aliases");
 
         let print_item = resolution

@@ -2,22 +2,21 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
-use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use beskid_analysis::projects::{
-    load_manifest_from_path, plan_entry_path, CompilePlan, PreparedProjectWorkspace, ProjectManifest, Target,
-    TargetKind,
+    CompilePlan, ProjectManifest, Target, TargetKind, load_manifest_from_path, plan_entry_path,
 };
 use beskid_analysis::services::ResolvedInput;
-use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
 use beskid_engine::Engine;
+use beskid_engine::services::run_entrypoint_from_front_end_with_engine;
+use beskid_tools::PipelineProgressKind;
 use beskid_tools::session::{CommandSession, ResolveInputArgs};
 use beskid_tools::tui::shell::runtime::RuntimeOp;
-use beskid_tools::PipelineProgressKind;
 use serde::{Deserialize, Serialize};
 
 use super::test::TestArgs;
@@ -314,9 +313,6 @@ impl PreparedWorkspace {
 
     pub fn target_timeout(&self) -> Duration {
         self.budgets.target
-    }
-    pub fn matrix_timeout(&self) -> Duration {
-        self.budgets.matrix
     }
     pub fn revisions(&self) -> RevisionSnapshot {
         self.revisions.clone()

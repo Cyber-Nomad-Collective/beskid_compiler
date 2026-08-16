@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
-use beskid_queries::{node_kind, AstNodeKey, Db, TypedProgram};
+use beskid_queries::{AstNodeKey, Db, TypedProgram, node_kind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulerCompilerOperation {

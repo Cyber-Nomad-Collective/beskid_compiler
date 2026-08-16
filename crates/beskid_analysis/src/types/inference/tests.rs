@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::syntax::PrimitiveType;
 use crate::resolve::ItemId;
+use crate::syntax::PrimitiveType;
 use crate::syntax::SpanInfo;
 use crate::types::inference::{
     ConstraintSet, FunctionSignature, InferenceResult, TypeEnv, TypeVar, infer_generic_args_from_call_types,

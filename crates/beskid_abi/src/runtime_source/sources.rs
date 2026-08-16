@@ -1,4 +1,4 @@
-use crate::abi_v5::{canonical_source_hash, SourceUnit};
+use crate::abi_v5::{SourceUnit, canonical_source_hash};
 
 pub const CANONICAL_BOOTSTRAP_SOURCE_PATH: &str = "src/Runtime/Bootstrap.bd";
 pub const CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH: &str = "src/Runtime/Bootstrap/Native.bd";

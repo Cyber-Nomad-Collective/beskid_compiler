@@ -118,28 +118,6 @@ pub enum AbiType {
     F64,
 }
 
-impl AbiType {
-    fn canonical_name(self) -> &'static str {
-        match self {
-            Self::Void => "void",
-            Self::Pointer => "pointer",
-            Self::USize => "usize",
-            Self::ISize => "isize",
-            Self::I8 => "i8",
-            Self::U8 => "u8",
-            Self::I16 => "i16",
-            Self::U16 => "u16",
-            Self::I32 => "i32",
-            Self::U32 => "u32",
-            Self::I64 => "i64",
-            Self::U64 => "u64",
-            Self::V128 => "v128",
-            Self::F32 => "f32",
-            Self::F64 => "f64",
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AbiFunction {
@@ -405,6 +383,12 @@ pub enum ManifestValidationError {
     InvalidPlatformImportSet { actual: Vec<PlatformImport> },
     InvalidRuntimeLayoutSet { actual: Vec<AbiLayout> },
     InvalidRuntimeAuditMetadata,
+}
+
+impl std::fmt::Display for ManifestValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

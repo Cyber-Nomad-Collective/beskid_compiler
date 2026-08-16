@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::projects::CompilePlan;
 use crate::syntax_query::SyntaxIndex;
 
-use super::super::{roots::EffectiveCompilationRoots, SourceUnit};
+use super::super::{SourceUnit, roots::EffectiveCompilationRoots};
 use super::model::{AssemblyModule, ModuleGraph, ModuleIndex};
 use super::path_inference::{infer_logical_module_path, package_for_unit};
 

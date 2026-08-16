@@ -1,7 +1,7 @@
 use super::support::{assert_unavailable, key, key_at_start, setup};
 use beskid_analysis::macros::{DEFAULT_MAX_MACRO_EXPANSION_DEPTH, expand_program};
 use beskid_analysis::projects::{
-    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
+    AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
 };
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
@@ -284,7 +284,8 @@ unit Write() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        SyntaxGenerationId(0),
     ));
     let output_unit = SourceUnitId::new(&db, output_path);
     let results_unit = SourceUnitId::new(&db, results_path);
@@ -359,7 +360,8 @@ unit Main() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        SyntaxGenerationId(0),
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let results_unit = SourceUnitId::new(&db, results_path);

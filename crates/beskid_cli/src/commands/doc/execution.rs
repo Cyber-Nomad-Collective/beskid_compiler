@@ -2,10 +2,10 @@ use std::fs;
 
 use anyhow::{Context, Result};
 use beskid_analysis::doc::{
-    apply_signature_to_item, assign_declaring_packages, build_item_signature, display_name_for_item,
-    fill_member_ids_from_parents, link_api_doc_library_tree, qualified_names_for_items, relativize_api_doc_paths,
-    resolve_item_tiers, validate_prelude_standard_tiers, ApiDocItem, ApiDocRoot, ApiLocation,
-    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION, API_JSON_SCHEMA_VERSION_BEFORE_GRAPH,
+    API_JSON_NAVIGATION_MODEL_GRAPH_V1, API_JSON_SCHEMA_VERSION, API_JSON_SCHEMA_VERSION_BEFORE_GRAPH, ApiDocItem,
+    ApiDocRoot, ApiLocation, apply_signature_to_item, assign_declaring_packages, build_item_signature,
+    display_name_for_item, fill_member_ids_from_parents, link_api_doc_library_tree, qualified_names_for_items,
+    relativize_api_doc_paths, resolve_item_tiers, validate_prelude_standard_tiers,
 };
 use beskid_analysis::services;
 

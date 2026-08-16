@@ -14,16 +14,14 @@ use beskid_abi::{
     },
 };
 use beskid_analysis::{
-    projects::{
-        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, RootEntry, SourceUnit, ProgramAssembly,
-    },
+    projects::{AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit},
     services::{FrontEndTypedResult, parse_program_with_source_name},
 };
 use beskid_isle::AstNodeKey;
 use beskid_queries::{
     BeskidDatabase, SemanticTypeId, SourceUnitId, SyntaxGenerationId, build_canonical_runtime_typed_program,
-    build_typed_program_with_corelib_syscall_services, child_nodes, format_ast_node_trace, item_body,
-    item_abi_signature, item_export_symbol, item_name, node_kind, project_session_for_syntax_assembly, reachable_items,
+    build_typed_program_with_corelib_syscall_services, child_nodes, format_ast_node_trace, item_abi_signature,
+    item_body, item_export_symbol, item_name, node_kind, project_session_for_syntax_assembly, reachable_items,
 };
 use cranelift_codegen::isa::TargetIsa;
 
@@ -77,7 +75,8 @@ pub fn lower_canonical_runtime_prepared_syntax(
         bootstrap_index,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let project = project_session_for_syntax_assembly(db, &assembly, "beskid-runtime-native", "canonical-runtime")
         .map_err(|error| anyhow::anyhow!("canonical runtime session preparation failed: {error}"))?;
@@ -104,7 +103,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
     let manifest_exports =
         input.abi_manifest().exports.iter().map(|entry| entry.symbol.as_str()).collect::<HashSet<_>>();
     let mut exported_items = HashMap::new();
-    for key in input.roots.iter().copied().flat_map(|root| function_definitions(input.database(), root)) {
+    for key in input.roots().iter().copied().flat_map(|root| function_definitions(input.database(), root)) {
         let export = item_export_symbol(input.database(), key)
             .map_err(|error| anyhow::anyhow!("canonical runtime export validation failed: {error}"))?;
         if let Some(export) = export
@@ -121,7 +120,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
             anyhow::anyhow!("canonical runtime has no explicit source export for `{}`", export.symbol)
         })?;
         let program = input
-            .roots
+            .roots()
             .iter()
             .copied()
             .find(|root| root.unit == entry.unit)
@@ -272,7 +271,7 @@ pub fn lower_prepared_syntax_module(
         .with_composition_plan(generation, Arc::new(front.binding_plan.clone()))
         .map_err(|error| anyhow::anyhow!("invalid composition codegen input: {error}"))?;
     let items = input
-        .roots
+        .roots()
         .iter()
         .copied()
         .flat_map(|root| function_definitions(input.database(), root))
@@ -327,7 +326,7 @@ fn syntax_export_entries_matching(
 }
 
 fn find_entrypoint(db: &BeskidDatabase, input: &CodegenInput<'_>, entrypoint: &str) -> Option<AstNodeKey> {
-    input.roots.iter().copied().find_map(|root| find_item(db, root, entrypoint))
+    input.roots().iter().copied().find_map(|root| find_item(db, root, entrypoint))
 }
 
 fn find_item(db: &BeskidDatabase, key: AstNodeKey, entrypoint: &str) -> Option<AstNodeKey> {

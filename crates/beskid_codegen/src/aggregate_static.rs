@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    aggregate_layout, aggregate_literal_declaration, enum_layout, enum_match, AggregateFieldShape, AstNodeKey,
-    SemanticTypeId,
+    AggregateFieldShape, AstNodeKey, SemanticTypeId, aggregate_layout, aggregate_literal_declaration, enum_layout,
+    enum_match,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 

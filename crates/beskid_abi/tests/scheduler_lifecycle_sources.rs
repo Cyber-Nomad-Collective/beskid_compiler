@@ -1,5 +1,5 @@
 use beskid_abi::runtime_source::{
-    canonical_runtime_sources, CANONICAL_FIBER_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
+    CANONICAL_FIBER_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH, canonical_runtime_sources,
 };
 
 fn canonical_source(path: &str) -> String {

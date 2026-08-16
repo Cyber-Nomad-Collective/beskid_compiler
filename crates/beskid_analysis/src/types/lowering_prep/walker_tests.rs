@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
-use crate::syntax::PrimitiveType;
-use crate::resolve::{AstNodeId, ModuleGraph, Resolution};
-use crate::syntax::SpanInfo;
+use crate::resolve::{ModuleGraph, Resolution};
+use crate::syntax::{AstNodeId, PrimitiveType, SpanInfo};
 use crate::types::{TypeInfo, TypeTable};
 
 use super::super::model::LoweringPrepSurfaces;

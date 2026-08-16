@@ -6,10 +6,10 @@ use std::sync::Arc;
 
 use beskid_pipeline::report_progress;
 
-use crate::syntax::{Node, Program};
 use crate::projects::assembly::{ModuleIndex, ProgramAssembly};
 use crate::resolve::Resolution;
 use crate::syntax::Spanned;
+use crate::syntax::{Node, Program};
 use crate::types::lowering_prep::{LoweringPrep, LoweringPrepSurfaces};
 use crate::types::result::{TypeError, TypeResult};
 use crate::types::surface::{build_unit_type_surface, merge_unit_surfaces_with_types};
@@ -77,9 +77,6 @@ impl TypeChecker<'_> {
                             .iter()
                             .find(|unit| crate::paths::same_file(&unit.path, path))
                             .map(|unit| Arc::new(build_unit_type_surface(&unit.program, resolution, path)))
-                    })
-                    .or_else(|| {
-                        index.prefetched_program(path).map(|program| Arc::new(build_unit_type_surface(program, resolution, path)))
                     })
                     .or_else(|| {
                         prefetched_surfaces

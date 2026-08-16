@@ -1,7 +1,7 @@
 use beskid_abi::{
     abi_v5::{AbiManifestV5, TargetMetadata},
     runtime_source::{
-        canonical_runtime_sources, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
+        CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH, canonical_runtime_sources,
     },
 };
 
@@ -73,7 +73,9 @@ fn canonical_scheduler_uses_manifest_guarded_stacks_with_bounded_usable_storage(
     assert!(context.source.contains("pub pointer GuardedStackAllocate(word initialSize, word maximumSize)"));
     assert!(context.source.contains("return guarded_stack_allocate(initialSize, maximumSize);"));
     assert!(context.source.contains("pub bool GuardedStackGrow("));
-    assert!(scheduler.contains("pointer stack = GuardedStackAllocate(FIBER_STACK_INITIAL_SIZE, FIBER_STACK_MAX_SIZE);"));
+    assert!(
+        scheduler.contains("pointer stack = GuardedStackAllocate(FIBER_STACK_INITIAL_SIZE, FIBER_STACK_MAX_SIZE);")
+    );
     assert!(scheduler.contains("raw_word_store(pointer_add(fib, 88), FIBER_STACK_MAX_SIZE);"));
     assert!(scheduler.contains("raw_word_store(pointer_add(fib, 120), FIBER_STACK_INITIAL_SIZE);"));
     assert!(scheduler.contains("ContextInit(context, pointer_add(stack, FIBER_STACK_MAX_SIZE)"));

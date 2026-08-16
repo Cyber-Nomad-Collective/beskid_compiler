@@ -7,7 +7,7 @@ use beskid_pipeline::PipelineObserver;
 
 use crate::projects::{CompilePlan, PreparedProjectWorkspace};
 
-use super::prepare::{prepare_compilation, PrepareOptions};
+use super::prepare::{PrepareOptions, prepare_compilation};
 
 /// Result of the shared front-end through typed syntax (codegen consumes this).
 pub struct FrontEndTypedResult {
@@ -39,7 +39,7 @@ impl FrontEndTypedResult {
         let assembly = &self.assembly;
         let mut units = assembly.units.as_ref().clone();
         units[assembly.entry_index].program = self.program.clone();
-        let mut syntax = crate::projects::ProgramAssembly::new(
+        crate::projects::ProgramAssembly::new(
             assembly.roots.clone(),
             std::sync::Arc::new(units),
             assembly.entry_index,
@@ -47,11 +47,8 @@ impl FrontEndTypedResult {
             std::sync::Arc::clone(&assembly.module_index),
             assembly.has_std_dependency,
             assembly.generation,
-        );
-        syntax.set_trusted_corelib_service_paths_for_project_assembly(std::sync::Arc::clone(
-            &assembly.trusted_corelib_service_paths,
-        ));
-        syntax
+        )
+        .with_trusted_corelib_service_paths(std::sync::Arc::clone(&assembly.trusted_corelib_service_paths))
     }
 }
 
@@ -103,7 +100,7 @@ pub fn compile_front_end_with_pipeline(
 mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use super::{compile_front_end_with_pipeline, FrontEndOptions};
+    use super::{FrontEndOptions, compile_front_end_with_pipeline};
     use crate::services::{parse_program_with_source_name, synthetic_compile_plan_for_source};
 
     static TEST_ID: AtomicU64 = AtomicU64::new(0);
@@ -128,10 +125,10 @@ mod tests {
         let syntax_assembly = front.syntax_assembly();
 
         assert_eq!(syntax_assembly.entry_unit().program, rewritten);
-        assert_eq!(syntax_assembly.roots, &front.assembly.roots);
+        assert_eq!(syntax_assembly.roots, front.assembly.roots);
         assert_eq!(syntax_assembly.entry_index, front.assembly.entry_index);
         assert_eq!(syntax_assembly.discovery, front.assembly.discovery);
-        assert!(std::sync::Arc::ptr_eq(syntax_assembly.module_index, &front.assembly.module_index,));
+        assert!(std::sync::Arc::ptr_eq(&syntax_assembly.module_index, &front.assembly.module_index,));
         assert_eq!(syntax_assembly.has_std_dependency, front.assembly.has_std_dependency,);
         let _ = std::fs::remove_dir_all(root);
     }

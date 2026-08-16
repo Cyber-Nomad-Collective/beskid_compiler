@@ -15,19 +15,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 use beskid_abi::runtime_kit::BuildProfile;
+use beskid_analysis::AnalysisOptions;
 use beskid_analysis::mod_host::{
-    run_analyze_rewrite_with_invoker, run_through_generate, InvocationKind, ModHostInput, StubContractInvoker,
+    InvocationKind, ModHostInput, StubContractInvoker, run_analyze_rewrite_with_invoker, run_through_generate,
 };
 use beskid_analysis::projects::{CompilePlan, ResolvedDependencyProject, Target, TargetKind};
 use beskid_analysis::services::{parse_program_with_source_name, semantic_rule_diagnostics_for_program};
-use beskid_analysis::AnalysisOptions;
 use beskid_engine::services::prepare_jit_entrypoint;
-use beskid_engine::{host_runtime_target, Engine};
+use beskid_engine::{Engine, host_runtime_target};
 use beskid_pipeline::phases::{
     LOWER_READY, MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE,
 };
-use beskid_pipeline::{observe_phase, PipelineEvent, PipelineObserver};
-use beskid_tools::toolchain::runtime_kit::{build_native_host, RuntimeKitProfile};
+use beskid_pipeline::{PipelineEvent, PipelineObserver, observe_phase};
+use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
 const SAMPLE_MOD_PROJECT: &str = include_str!("../../beskid_tests/fixtures/mods/sample_mod/SampleMod.bproj");
 

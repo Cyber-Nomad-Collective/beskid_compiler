@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use crate::syntax::PrimitiveType;
 use crate::resolve::ItemId;
+use crate::syntax::PrimitiveType;
 
 /// Dense index into [`TypeTable::types`]; stable for the duration of one check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

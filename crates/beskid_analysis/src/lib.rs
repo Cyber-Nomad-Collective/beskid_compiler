@@ -40,17 +40,17 @@ pub mod syntax;
 pub mod types;
 
 pub use analysis::{
-    builtin_rules, run_rules, AnalysisOptions, AnalysisResult, MietteReportError, Rule as AnalysisRule, RuleContext,
-    SemanticDiagnostic, Severity,
+    AnalysisOptions, AnalysisResult, MietteReportError, Rule as AnalysisRule, RuleContext, SemanticDiagnostic,
+    Severity, builtin_rules, run_rules,
 };
-pub use compilation_context::{module_roots_for_plan, CompilationContext, ProjectSessionHandle};
+pub use compilation_context::{CompilationContext, ProjectSessionHandle, module_roots_for_plan};
 pub use parser::{BeskidParser, Rule};
-pub use projects::{effective_roots_for_plan, AssemblyDiscovery, AssemblyOptions, ProgramAssembly};
-pub use projects::{resolve_project_manifest_for_source_path, ProjectGraphBuildOptions, WorkspaceResolutionSummary};
+pub use projects::{AssemblyDiscovery, AssemblyOptions, ProgramAssembly, effective_roots_for_plan};
+pub use projects::{ProjectGraphBuildOptions, WorkspaceResolutionSummary, resolve_project_manifest_for_source_path};
 #[allow(deprecated)]
 pub use services::{
-    analyze_program_with_options, analyze_source_with_compilation_context, compile_plan_for_input_path,
-    compile_plan_for_input_path_with_member, resolve_input_with_pipeline, AnalyzeInProjectOptions,
+    AnalyzeInProjectOptions, analyze_program_with_options, analyze_source_with_compilation_context,
+    compile_plan_for_input_path, compile_plan_for_input_path_with_member, resolve_input_with_pipeline,
 };
 pub use syntax::{AstNodeId, AstNodeKey, SyntaxGenerationId};
 pub use syntax_query::{

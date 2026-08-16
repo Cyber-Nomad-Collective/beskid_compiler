@@ -8,6 +8,7 @@ impl SemanticIssueKind {
             | Self::UnusedPrivateItem { .. }
             | Self::UnreachableCode
             | Self::ResolveShadowedLocal { .. }
+            | Self::MissingImportAmbiguous { .. }
             | Self::TypeImplicitNumericCast { .. }
             | Self::DocUnknownArgName { .. }
             | Self::DocDuplicateArgName { .. }

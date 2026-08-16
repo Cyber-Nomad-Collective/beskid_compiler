@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use beskid_abi::runtime_source::{
-    canonical_corelib_service_source_path, canonical_corelib_service_sources, CorelibService, CorelibServiceCapability,
-    RuntimeIntrinsicCapability, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
+    CANONICAL_CORELIB_ARGS_SOURCE_PATH, CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability,
+    canonical_corelib_service_source_path, canonical_corelib_service_sources,
 };
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
@@ -83,7 +83,7 @@ pub fn build_typed_program(
         .units
         .iter()
         .filter_map(|unit| {
-            beskid_analysis::projects::infer_logical_module_path(unit, assembly.roots, assembly.has_std_dependency)
+            beskid_analysis::projects::infer_logical_module_path(unit, &assembly.roots, assembly.has_std_dependency)
                 .map(|module_path| (module_path, SourceUnitId::new(db, unit.path.clone())))
         })
         .fold(std::collections::HashMap::<Vec<String>, Vec<SourceUnitId>>::new(), |mut modules, (path, unit)| {

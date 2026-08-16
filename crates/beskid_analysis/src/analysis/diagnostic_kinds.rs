@@ -183,6 +183,16 @@ pub enum SemanticIssueKind {
         name: String,
         previous: SpanInfo,
     },
+    /// A name is unresolved but exactly one known module exports it — suggest adding a `use`.
+    MissingImport {
+        name: String,
+        module_path: String,
+    },
+    /// A name is unresolved and multiple modules export it — list candidates.
+    MissingImportAmbiguous {
+        name: String,
+        candidates: Vec<String>,
+    },
 
     // ── Type-checking diagnostics ──
     TypeUnknownType {

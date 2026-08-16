@@ -28,8 +28,8 @@ use super::entry_session::{
 };
 use super::front_end::{FrontEndOptions, FrontEndTypedResult};
 use super::input::ResolvedInput;
-use super::lower::{DependencyTypingPolicy, SemanticFactsError, resolve_and_type_program_with_assembly};
 use super::semantic::{require_no_semantic_errors, semantic_rule_diagnostics_for_program_with_pipeline};
+use super::semantic_facts::{DependencyTypingPolicy, SemanticFactsError, resolve_and_type_program_with_assembly};
 use super::session::{SemanticSnapshot, SessionFingerprint, session_for_assembly};
 
 /// Options for [`prepare_compilation`].
@@ -73,7 +73,9 @@ impl PreparedCompilation {
 
     pub fn executable(&self) -> Result<&FrontEndTypedResult> {
         self.typed.as_ref().map(|typed| typed.as_ref()).ok_or_else(|| {
-            anyhow::anyhow!("prepare_compilation did not produce typed syntax (lower failed during diagnostic collection)")
+            anyhow::anyhow!(
+                "prepare_compilation did not produce typed syntax (lower failed during diagnostic collection)"
+            )
         })
     }
 
@@ -89,7 +91,7 @@ impl PreparedCompilation {
         }
         let mut units = self.assembly.units.as_ref().clone();
         units[self.assembly.entry_index].program = self.program.clone();
-        let mut syntax = crate::projects::ProgramAssembly::new(
+        crate::projects::ProgramAssembly::new(
             self.assembly.roots.clone(),
             Arc::new(units),
             self.assembly.entry_index,
@@ -97,11 +99,8 @@ impl PreparedCompilation {
             Arc::clone(&self.assembly.module_index),
             self.assembly.has_std_dependency,
             self.assembly.generation,
-        );
-        syntax.set_trusted_corelib_service_paths_for_project_assembly(Arc::clone(
-            &self.assembly.trusted_corelib_service_paths,
-        ));
-        syntax
+        )
+        .with_trusted_corelib_service_paths(Arc::clone(&self.assembly.trusted_corelib_service_paths))
     }
 }
 
@@ -333,12 +332,7 @@ fn run_prepare_spine(
     observe_phase(pipeline, LOWER_READY, || {});
 
     let typed = match observe_phase_result(pipeline, LOWER, || {
-        resolve_and_type_program_with_assembly(
-            &program,
-            Some(&assembly),
-            pipeline,
-            options.dependency_typing,
-        )
+        resolve_and_type_program_with_assembly(&program, Some(&assembly), pipeline, options.dependency_typing)
     }) {
         Ok((program, resolution, typed)) => {
             let resolution_fingerprint = typed_fingerprint(&resolution);
@@ -414,7 +408,6 @@ fn semantic_facts_errors_to_diagnostics(
                 resolve::emit_resolve_error(&mut ctx, error);
             }
         }
-
     }
     ctx.diagnostics
 }

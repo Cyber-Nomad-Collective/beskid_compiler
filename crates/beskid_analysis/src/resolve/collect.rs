@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use crate::syntax::{Node, Type, UseDeclaration, Visibility};
 use crate::syntax::{self, Spanned};
+use crate::syntax::{Node, Type, UseDeclaration, Visibility};
 
 use super::errors::ResolveError;
 use super::ids::ItemId;
@@ -42,10 +42,6 @@ pub(super) fn use_imported_name(use_decl: &UseDeclaration) -> String {
 impl Resolver {
     pub(crate) fn set_current_source_path(&mut self, source_path: Option<PathBuf>) {
         self.current_source_path = source_path.map(|path| crate::paths::unit_path_key(&path));
-    }
-
-    pub(crate) fn set_declaring_package(&mut self, package: String) {
-        self.declaring_package = package;
     }
 
     pub fn with_module_prefetch(

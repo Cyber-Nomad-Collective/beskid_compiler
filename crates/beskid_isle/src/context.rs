@@ -1,14 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
+use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
-use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::ir::{
-    AbiParam, Block, FuncRef, MemFlags, Signature, StackSlotData, StackSlotKind, TrapCode, Type, Value,
+    AbiParam, Block, ExtFuncData, FuncRef, MemFlags, Signature, StackSlotData, StackSlotKind, TrapCode, Type, Value,
 };
 use cranelift_codegen::ir::{ExternalName, GlobalValueData};
-use cranelift_codegen::isa::CallConv;
 use cranelift_frontend::{FunctionBuilder, Switch, Variable};
 
 use crate::dispatch;
@@ -28,7 +27,7 @@ mod intrinsics;
 mod operators;
 mod strings;
 
-use operators::{primitive_numeric_conversion_type_matches, CompareOp};
+use operators::{CompareOp, primitive_numeric_conversion_type_matches};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct StatementCursor {
@@ -247,11 +246,7 @@ impl generated::Context for IsleContext<'_, '_, '_, '_> {
     fn for_iterable_class(&mut self, key: AstNodeKey) -> Option<ForIterableKind> {
         let iterable = self.facts.child(key, 0)?;
         let kind = self.facts.node_kind(iterable)?;
-        if kind == NodeKind::RangeExpression {
-            Some(ForIterableKind::Range)
-        } else {
-            Some(ForIterableKind::Other)
-        }
+        if kind == NodeKind::RangeExpression { Some(ForIterableKind::Range) } else { Some(ForIterableKind::Other) }
     }
 
     fn child_at(&mut self, key: AstNodeKey, index: u8) -> Option<AstNodeKey> {

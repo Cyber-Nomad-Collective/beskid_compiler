@@ -78,7 +78,7 @@ impl StringInterner for FailingStringInterner {
         _key: AstNodeKey,
         _text: &str,
     ) -> Result<Value, StringMaterializationError> {
-        Err(StringMaterializationError::DispatchEmission("dispatch call result"))
+        Err(StringMaterializationError::Artifact("dispatch call result"))
     }
 }
 
@@ -139,6 +139,6 @@ fn string_materialization_failure_is_a_specific_lowering_error() {
     };
     assert_eq!(
         error.kind(),
-        LoweringErrorKind::StringMaterialization(StringMaterializationError::DispatchEmission("dispatch call result",)),
+        LoweringErrorKind::StringMaterialization(StringMaterializationError::Artifact("dispatch call result")),
     );
 }

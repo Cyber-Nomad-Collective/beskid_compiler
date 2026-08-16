@@ -171,3 +171,68 @@ pub struct ModGeneratedSyntaxContribution {
 /// Native callable signature: `entry_symbol(*const ModGenerationRequest) -> *const ModGeneratedSyntaxContribution`.
 pub type ModGeneratorEntryFn =
     unsafe extern "C" fn(*const ModGenerationRequest) -> *const ModGeneratedSyntaxContribution;
+
+/// Native callable: `entry_symbol(*const ModCollectRequest) -> *const ModCollectTargetSet`.
+pub type ModCollectorEntryFn = unsafe extern "C" fn(*const ModCollectRequest) -> *const ModCollectTargetSet;
+
+/// Native callable: `entry_symbol(*const ModAnalysisRequest) -> *const ModAnalysisResult`.
+pub type ModAnalyzerEntryFn = unsafe extern "C" fn(*const ModAnalysisRequest) -> *const ModAnalysisResult;
+
+/// Native callable: `entry_symbol(*const ModCollectRequest) -> *const ModRewriteResult`.
+pub type ModRewriterEntryFn = unsafe extern "C" fn(*const ModCollectRequest) -> *const ModRewriteResult;
+
+/// One diagnostic from a native analyzer.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ModDiagnostic {
+    pub code: BeskidStr,
+    pub message: BeskidStr,
+    /// 0 = Error, 1 = Warning, 2 = Note.
+    pub severity: u32,
+    /// Inclusive byte offset range in the entry source. `span_end == span_start` for
+    /// point diagnostics; both are clamped to the source length by the host.
+    pub span_start: u64,
+    pub span_end: u64,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ModDiagnosticSlice {
+    pub items: *const ModDiagnostic,
+    pub len: usize,
+}
+
+/// Result from `Analyzer.Analyze`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ModAnalysisResult {
+    pub diagnostics: ModDiagnosticSlice,
+}
+
+/// One text edit from a native rewriter.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ModEdit {
+    /// 0 = Insert, 1 = Replace, 2 = Delete.
+    pub kind: u32,
+    /// Byte offset where the edit begins. For `Insert`, equal to `end`.
+    pub start: u64,
+    /// Byte offset where the edit ends (exclusive). For `Insert`, equal to `start`.
+    pub end: u64,
+    /// Replacement / inserted text. Empty for `Delete`.
+    pub text: BeskidStr,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ModEditSlice {
+    pub items: *const ModEdit,
+    pub len: usize,
+}
+
+/// Result from `Rewriter.Rewrite`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ModRewriteResult {
+    pub edits: ModEditSlice,
+}

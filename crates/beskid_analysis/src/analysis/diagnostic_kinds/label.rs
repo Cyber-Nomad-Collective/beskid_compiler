@@ -54,6 +54,8 @@ impl SemanticIssueKind {
             Self::ResolveInvalidConformanceTarget { .. } => "invalid conformance target".to_string(),
             Self::ResolvePrivateItemInModule { .. } => "private item access".to_string(),
             Self::ResolveShadowedLocal { .. } => "shadowed local".to_string(),
+            Self::MissingImport { .. } => "missing import".to_string(),
+            Self::MissingImportAmbiguous { .. } => "ambiguous import candidate".to_string(),
             Self::TypeUnknownType { .. } => "unknown type".to_string(),
             Self::TypeUnknownValueType => "unknown value type".to_string(),
             Self::TypeUnknownStructType => "unknown struct type".to_string(),

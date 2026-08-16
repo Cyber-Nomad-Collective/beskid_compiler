@@ -1,8 +1,7 @@
-use crate::syntax::{
-    BinaryExpression, BinaryOp, Literal, PrimitiveType, UnaryExpression, UnaryOp,
-    integer_literal_primitive_type,
-};
 use crate::syntax::Spanned;
+use crate::syntax::{
+    BinaryExpression, BinaryOp, Literal, PrimitiveType, UnaryExpression, UnaryOp, integer_literal_primitive_type,
+};
 use crate::types::result::TypeError;
 use crate::types::{TypeId, TypeInfo};
 
@@ -62,16 +61,9 @@ impl<'a> TypeChecker<'a> {
                     None
                 }
             }
-            BinaryOp::Eq
-            | BinaryOp::NotEq
-            | BinaryOp::Lt
-            | BinaryOp::Lte
-            | BinaryOp::Gt
-            | BinaryOp::Gte => {
-                let ordering = matches!(
-                    binary.node.op.node,
-                    BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte
-                );
+            BinaryOp::Eq | BinaryOp::NotEq | BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte => {
+                let ordering =
+                    matches!(binary.node.op.node, BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte);
                 let comparable = if ordering {
                     self.is_comparable(left)
                 } else if self.is_comparable(left) {

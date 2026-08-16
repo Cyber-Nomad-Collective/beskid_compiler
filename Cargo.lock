@@ -468,6 +468,7 @@ dependencies = [
  "beskid_pipeline",
  "bsol",
  "daggy",
+ "libloading",
  "log",
  "miette",
  "pest",
@@ -3819,6 +3820,16 @@ name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
+
+[[package]]
+name = "libloading"
+version = "0.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
+dependencies = [
+ "cfg-if",
+ "windows-targets 0.53.5",
+]
 
 [[package]]
 name = "libm"

@@ -4,8 +4,8 @@ use bsol::{BsolBlock, BsolItem, BsolListItem, BsolValue, parse_bsol_document};
 
 use super::model::{
     AssemblyV5, AuditV5, CorelibServiceV5, EntryAdapterV5, FieldV5, FunctionV5, IntrinsicV5, LayoutV5,
-    ParameterLocationV5, ParameterV5, PlatformImportV5, RuntimeManifestV5, RuntimeMetaV5, SoftBuiltinV5,
-    StatusV5, StatusValueV5, TargetAdapterBindingV5, TargetV5, TrapV5,
+    ParameterLocationV5, ParameterV5, PlatformImportV5, RuntimeManifestV5, RuntimeMetaV5, SoftBuiltinV5, StatusV5,
+    StatusValueV5, TargetAdapterBindingV5, TargetV5, TrapV5,
 };
 use super::validation::validate;
 
@@ -341,14 +341,10 @@ fn target_adapter_bindings(block: &BsolBlock) -> Result<Vec<TargetAdapterBinding
         .collect()
 }
 
-fn optional_list_items<'a>(
-    block: &'a BsolBlock,
-    key: &str,
-) -> Result<Option<&'a [BsolListItem]>, String> {
-    let Some(BsolItem::Assignment(assignment)) = block.items.iter().find_map(|item| match item {
-        BsolItem::Assignment(entry) if entry.key == key => Some(item),
-        _ => None,
-    }) else {
+fn optional_list_items<'a>(block: &'a BsolBlock, key: &str) -> Result<Option<&'a [BsolListItem]>, String> {
+    let Some(BsolItem::Assignment(assignment)) =
+        block.items.iter().find(|item| matches!(item, BsolItem::Assignment(entry) if entry.key == key))
+    else {
         return Ok(None);
     };
     let BsolValue::BracketList(list) = &assignment.value else {

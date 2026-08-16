@@ -4,8 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::syntax::{Expression, Node, Program, Statement};
 use crate::resolve::Resolution;
+use crate::syntax::{Expression, Node, Program, Statement};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::TypeInfo;
 use crate::types::surface::{build_unit_type_surface, merge_unit_surfaces_with_types};
@@ -22,10 +22,7 @@ pub struct TryDesugarTarget {
 const PRECHECK_ROOT: &str = "__precheck";
 
 /// Build a [`TypeChecker`] seeded from merged surfaces for the given programs (last = entry).
-pub(crate) fn precheck_checker<'a>(
-    resolution: &'a Resolution,
-    programs: &[&'a Spanned<Program>],
-) -> TypeChecker<'a> {
+pub(crate) fn precheck_checker<'a>(resolution: &'a Resolution, programs: &[&'a Spanned<Program>]) -> TypeChecker<'a> {
     let Some(entry) = programs.last().copied() else {
         return TypeChecker::new(resolution, &Default::default());
     };
@@ -104,11 +101,7 @@ impl<'a> TypeChecker<'a> {
     }
 }
 
-fn collect_invalid_try_targets(
-    checker: &mut TypeChecker<'_>,
-    program: &Spanned<Program>,
-    spans: &mut Vec<SpanInfo>,
-) {
+fn collect_invalid_try_targets(checker: &mut TypeChecker<'_>, program: &Spanned<Program>, spans: &mut Vec<SpanInfo>) {
     for item in &program.node.items {
         collect_invalid_try_targets_item(checker, item, spans);
     }
@@ -155,7 +148,7 @@ fn collect_invalid_try_targets_in_expression(
     spans: &mut Vec<SpanInfo>,
 ) {
     if let Expression::Try(try_expr) = &expr.node
-        && checker.try_desugar_target_for_operand(&try_expr.node.body).is_none()
+        && checker.try_desugar_target_for_operand(&try_expr.node.expr).is_none()
     {
         spans.push(expr.span);
     }
@@ -248,7 +241,7 @@ fn collect_try_targets_in_expression(
     map: &mut HashMap<SpanInfo, TryDesugarTarget>,
 ) {
     if let Expression::Try(try_expr) = &expr.node
-        && let Some(target) = checker.try_desugar_target_for_operand(&try_expr.node.body)
+        && let Some(target) = checker.try_desugar_target_for_operand(&try_expr.node.expr)
     {
         map.insert(expr.span, target);
     }

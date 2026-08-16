@@ -3,10 +3,10 @@ use beskid_analysis::services::{FrontEndOptions, ResolvedInput};
 use beskid_pipeline::PipelineObserver;
 use beskid_queries::with_db;
 
-use super::jit_preparation::lower_syntax_entrypoint_from_front_end;
 use super::SyntaxEntrypointArtifact;
-use crate::jit_callable::{EntryReturnKind, JitCallable};
+use super::jit_preparation::lower_syntax_entrypoint_from_front_end;
 use crate::Engine;
+use crate::jit_callable::{EntryReturnKind, JitCallable};
 
 /// Parse, lower, JIT-compile, and run `entrypoint` (no-arg function or test); returns a string summary of the return value.
 pub fn run_entrypoint(source_path: &std::path::Path, source: &str, entrypoint: &str) -> Result<String> {

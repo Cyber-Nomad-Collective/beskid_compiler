@@ -1,11 +1,12 @@
 use crate::analysis::rules::{Rule, RuleContext};
 use crate::syntax::{Program, SpanInfo, Spanned};
-use beskid_pipeline::{observe_phase, phases, PipelineObserver};
+use beskid_pipeline::{PipelineObserver, observe_phase, phases};
 
 mod contracts;
 mod control_flow;
 mod definitions;
 mod error_handling;
+mod missing_imports;
 mod name_resolution;
 mod naming_style;
 mod type_checking;
@@ -46,6 +47,10 @@ impl SemanticPipelineRule {
             return;
         };
 
+        observe_stage(pipeline, "semantic.missing_imports", || {
+            self.stage_missing_imports(ctx, &program, &resolution);
+        });
+
         observe_stage(pipeline, phases::SEMANTIC_VISIBILITY, || {
             self.stage5_modules_and_visibility(ctx, &program);
         });
@@ -59,7 +64,7 @@ impl SemanticPipelineRule {
             self.stage2_type_check(ctx, &program);
         });
         observe_stage(pipeline, phases::SEMANTIC_NAMING_STYLE, || {
-            self.stage_naming_style(ctx, program);
+            self.stage_naming_style(ctx, &program.node);
         });
     }
 }

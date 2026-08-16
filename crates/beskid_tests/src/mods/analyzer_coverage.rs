@@ -39,6 +39,7 @@ fn generator_contributions_surface_in_outcomes_and_analyzer_dispatches_afterward
                 code: "COV0001".to_owned(),
                 message: "analyzer processed post-generate program".to_owned(),
                 severity: AnalyzerSeverity::Warning,
+                span: None,
             }],
         );
 
@@ -127,6 +128,7 @@ fn multiple_generators_and_analyzers_dispatch_in_order() {
                 code: "CHK001".to_owned(),
                 message: "check one".to_owned(),
                 severity: AnalyzerSeverity::Warning,
+                span: None,
             }],
         )
         .with_analyzer_diagnostic(
@@ -135,6 +137,7 @@ fn multiple_generators_and_analyzers_dispatch_in_order() {
                 code: "CHK002".to_owned(),
                 message: "check two".to_owned(),
                 severity: AnalyzerSeverity::Warning,
+                span: None,
             }],
         );
 

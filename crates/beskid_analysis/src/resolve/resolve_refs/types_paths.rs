@@ -1,5 +1,5 @@
-use crate::syntax::{EnumPath, Path, Type};
 use crate::syntax::Spanned;
+use crate::syntax::{EnumPath, Path, Type};
 
 use super::super::errors::ResolveError;
 use super::super::items::ItemKind;

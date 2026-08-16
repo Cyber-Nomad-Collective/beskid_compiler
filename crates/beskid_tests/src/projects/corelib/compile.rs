@@ -5,11 +5,11 @@ use crate::projects::fixture_harness::{
     shared_corelib_mvp_assembly, with_large_test_stack, with_project_test_env,
 };
 use crate::projects::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
+use beskid_analysis::Severity;
 use beskid_analysis::projects::build_compile_plan;
 use beskid_analysis::services::{
-    analyze_file_in_project, analyze_source_in_project, parse_program, resolve_input, FrontEndOptions, PrepareOptions,
+    FrontEndOptions, PrepareOptions, analyze_file_in_project, analyze_source_in_project, parse_program, resolve_input,
 };
-use beskid_analysis::Severity;
 use beskid_queries::{program_assembly, with_db};
 
 use super::{compiler_sdk_src, corelib_root, corelib_workspace_root, foundation_src, stratified_corelib_parse_samples};
@@ -75,7 +75,7 @@ fn corelib_mvp_fixture_resolves_std_modules_via_program_assembly() {
         let assembly = shared_corelib_mvp_assembly();
         let resolution = assembly
             .module_index
-            .resolve_entry(&assembly.entry_unit().program)
+            .resolve_entry_program(&assembly.entry_unit().program, None)
             .expect("cross-module resolve via ModuleIndex");
 
         assert!(

@@ -75,6 +75,10 @@ corelib_typecheck_test!(core_expression_body_tests_front_end_typechecks, "core/E
 corelib_typecheck_test!(core_math_tests_front_end_typechecks, "core/MathTests.bd");
 corelib_typecheck_test!(core_random_tests_front_end_typechecks, "core/RandomTests.bd");
 corelib_typecheck_test!(core_args_tests_front_end_typechecks, "core/ArgsTests.bd");
+corelib_typecheck_test!(core_error_handling_tests_front_end_typechecks, "core/ErrorHandlingTests.bd");
+corelib_typecheck_test!(core_string_tests_front_end_typechecks, "core/StringTests.bd");
+corelib_typecheck_test!(core_process_tests_front_end_typechecks, "core/ProcessTests.bd");
+corelib_typecheck_test!(core_threading_tests_front_end_typechecks, "core/ThreadingTests.bd");
 corelib_typecheck_test!(compiler_sdk_surface_tests_front_end_typechecks, "compiler-sdk/CompilerSdkSurfaceTests.bd");
 corelib_typecheck_test!(compiler_sdk_emitter_tests_front_end_typechecks, "compiler-sdk/CompilerSdkEmitterTests.bd");
 corelib_typecheck_test!(concurrency_status_abi_tests_front_end_typechecks, "concurrency/StatusAbiTests.bd");
@@ -88,6 +92,8 @@ corelib_typecheck_test!(collections_stack_tests_front_end_typechecks, "collectio
 corelib_typecheck_test!(system_fs_tests_front_end_typechecks, "system/FsTests.bd");
 corelib_typecheck_test!(system_path_tests_front_end_typechecks, "system/PathTests.bd");
 corelib_typecheck_test!(system_time_tests_front_end_typechecks, "system/TimeTests.bd");
+corelib_typecheck_test!(system_environment_tests_front_end_typechecks, "system/EnvironmentTests.bd");
+corelib_typecheck_test!(system_runtime_init_tests_front_end_typechecks, "system/RuntimeInitTests.bd");
 corelib_typecheck_test!(channel_api_tests_front_end_typechecks, "concurrency/ChannelApiTests.bd");
 corelib_typecheck_test!(mutex_try_lock_tests_front_end_typechecks, "concurrency/MutexTryLockTests.bd");
 corelib_typecheck_test!(concurrency_clock_tests_front_end_typechecks, "concurrency/ConcurrencyClockTests.bd");

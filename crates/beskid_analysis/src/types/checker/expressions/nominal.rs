@@ -1,8 +1,6 @@
-use crate::syntax::{
-    EnumConstructorExpression, Expression, MemberExpression, PathExpression, StructLiteralExpression,
-};
 use crate::resolve::ItemKind;
 use crate::syntax::Spanned;
+use crate::syntax::{EnumConstructorExpression, Expression, MemberExpression, PathExpression, StructLiteralExpression};
 use crate::types::path_value::{first_field_segment_name, resolve_path_base_local};
 use crate::types::result::{MethodReceiverSource, TypeError};
 use crate::types::{TypeId, TypeInfo};

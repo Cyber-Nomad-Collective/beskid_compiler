@@ -1,10 +1,10 @@
 use super::support::{
-    build_typed_program, closure_environment, emit_isle_expression, find_function_definition,
-    find_function_definitions, find_integer_literal, find_node, format_ast_node_site, isa, item_body,
-    item_fixture_with_root, lower_syntax_program, node_kind, parse_program_with_source_name, settings, spawn_target,
-    types, AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CastIntent, CodegenInput,
-    EffectiveCompilationRoots, FunctionEmitter, ModuleIndex, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
-    SyntaxGenerationId, SyntaxModuleItem, ProgramAssembly, TargetMetadata, UserFuncName,
+    AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CastIntent, CodegenInput,
+    EffectiveCompilationRoots, FunctionEmitter, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit,
+    SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, UserFuncName, build_typed_program,
+    closure_environment, emit_isle_expression, find_function_definition, find_function_definitions,
+    find_integer_literal, find_node, format_ast_node_site, isa, item_body, item_fixture_with_root,
+    lower_syntax_program, node_kind, parse_program_with_source_name, settings, spawn_target, types,
 };
 
 #[test]
@@ -27,7 +27,8 @@ fn parsed_syntax_root_emits_verified_isle_clif_without_hir() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };

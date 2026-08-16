@@ -6,7 +6,7 @@ use beskid_abi::runtime_source::{canonical_runtime_sources, prove_canonical_runt
 use beskid_codegen::CodegenArtifact;
 
 use crate::error::{AotError, AotResult};
-use crate::linker::{link, LinkRequest};
+use crate::linker::{LinkRequest, link};
 use crate::object_symbols::extract_symbol_inventory;
 use crate::target::detect_target;
 
@@ -115,6 +115,9 @@ pub fn emit_host_platform_library_pair(
     )
 }
 
+// 8 params: artifact + output metadata + build knobs; grouping would obscure the
+// 1:1 mapping with the AotBuildRequest fields consumed below.
+#[allow(clippy::too_many_arguments)]
 fn emit_library_pair_with_objects(
     artifact: CodegenArtifact,
     output_dir: PathBuf,
@@ -222,7 +225,9 @@ impl ProvenancePolicy {
                     return Err(AotError::ObjectModule {
                         message: format!(
                             "runtime provenance mismatch for {}: required definitions {required:?}, actual definitions {:?}, actual imports {:?}",
-                            inventory.artifact.display(), inventory.defined, inventory.imported
+                            inventory.artifact.display(),
+                            inventory.defined,
+                            inventory.imported
                         ),
                     });
                 }

@@ -5,13 +5,13 @@ use std::sync::{Arc, Mutex};
 
 use beskid_analysis::projects::assembly::ProgramAssembly;
 use beskid_analysis::projects::model::AssemblyOptions;
-use beskid_analysis::projects::{assemble_program_with_materializer, AssemblyError};
+use beskid_analysis::projects::{AssemblyError, assemble_program_with_materializer};
 use beskid_analysis::projects::{CompilePlan, PreparedProjectWorkspace};
 
 use crate::db::{BeskidDatabase, Db};
 use crate::inputs::ProjectSession;
 use crate::materializer::unit_materializer_for;
-use crate::stats::{trace_query, trace_query_with_reason, SALSA_TRACE_TARGET};
+use crate::stats::{SALSA_TRACE_TARGET, trace_query, trace_query_with_reason};
 use crate::unit::{seed_file_from_disk, unit_imports};
 
 /// Discovered unit paths for an entry (query boundary marker).

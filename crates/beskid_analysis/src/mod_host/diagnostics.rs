@@ -143,6 +143,11 @@ impl fmt::Display for ModHostDiagnostics {
 impl std::error::Error for ModHostDiagnostics {}
 
 /// Bridge mod analyzer diagnostics into the semantic diagnostic stream during prepare.
+///
+/// When the analyzer provides a byte span (`diagnostic.span`), the semantic
+/// diagnostic is anchored at that range so LSP code actions can resolve against
+/// the real source location. When the span is `None`, the host falls back to a
+/// whole-file span so the diagnostic is still surfaced.
 pub fn analyzer_diagnostic_to_semantic(
     diagnostic: &AnalyzerDiagnostic,
     type_id: &str,
@@ -154,7 +159,10 @@ pub fn analyzer_diagnostic_to_semantic(
         AnalyzerSeverity::Warning => Severity::Warning,
         AnalyzerSeverity::Note => Severity::Note,
     };
-    let span = SpanInfo::from_byte_range_in_source(source, 0, source.len().max(1));
+    let span = match diagnostic.span {
+        Some((start, end)) => SpanInfo::from_byte_range_in_source(source, start, end),
+        None => SpanInfo::from_byte_range_in_source(source, 0, source.len().max(1)),
+    };
     SemanticDiagnostic {
         src: NamedSource::new(source_name, source.to_owned()),
         span: SourceSpan::new(span.start.into(), (span.end - span.start).max(1)),
@@ -209,5 +217,35 @@ mod tests {
         ]);
         assert_eq!(diag.codes(), vec!["E1829", "E1851"]);
         assert!(!diag.is_empty());
+    }
+
+    #[test]
+    fn analyzer_diagnostic_with_span_anchors_at_range() {
+        let source = "unit Main() { return; }\n";
+        let diagnostic = AnalyzerDiagnostic {
+            code: "MOD0001".to_owned(),
+            message: "point issue".to_owned(),
+            severity: AnalyzerSeverity::Warning,
+            span: Some((5, 9)),
+        };
+        let semantic = analyzer_diagnostic_to_semantic(&diagnostic, "ModA.Check", "Main.bd", source);
+        // Span 5..9 maps to "Main" inside the source.
+        assert_eq!(semantic.span.offset(), 5);
+        assert!(!semantic.span.is_empty());
+        assert!(semantic.message.contains("ModA.Check"));
+    }
+
+    #[test]
+    fn analyzer_diagnostic_without_span_falls_back_to_whole_file() {
+        let source = "unit Main() { return; }\n";
+        let diagnostic = AnalyzerDiagnostic {
+            code: "MOD0002".to_owned(),
+            message: "project-wide issue".to_owned(),
+            severity: AnalyzerSeverity::Note,
+            span: None,
+        };
+        let semantic = analyzer_diagnostic_to_semantic(&diagnostic, "ModA.Check", "Main.bd", source);
+        // Whole-file fallback starts at offset 0.
+        assert_eq!(semantic.span.offset(), 0);
     }
 }

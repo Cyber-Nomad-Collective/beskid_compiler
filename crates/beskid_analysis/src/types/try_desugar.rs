@@ -2,8 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::syntax::{Expression, Program};
 use crate::resolve::Resolution;
+use crate::syntax::{Expression, Program};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::TypeChecker;
 use crate::types::checker::precheck::precheck_checker;

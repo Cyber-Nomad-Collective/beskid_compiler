@@ -1,12 +1,12 @@
 use super::support::{
-    build_typed_program, call_abi_signature, call_lowering, default_libcall_names, emit_isle_expression,
-    emit_isle_item, emit_isle_item_with_call_importer, enum_constructor, enum_layout, enum_match, find_call_expression,
-    find_function_definition, find_function_definitions, find_node, find_nodes_of_kind, find_test_definition, isa,
-    item_body, item_fixture, item_fixture_with_root, item_name, lower_syntax_program, node_type,
-    parse_program_with_source_name, settings, types, AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey,
-    BeskidDatabase, CodegenInput, DirectCallee, EffectiveCompilationRoots, HashMap, ItemModuleImporter, JITBuilder,
-    JITModule, Linkage, Module, ModuleIndex, NodeFacts, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
-    SyntaxGenerationId, SyntaxModuleItem, ProgramAssembly, TargetMetadata,
+    AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput, DirectCallee,
+    EffectiveCompilationRoots, HashMap, ItemModuleImporter, JITBuilder, JITModule, Linkage, Module, ModuleIndex,
+    NodeFacts, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId,
+    SyntaxModuleItem, TargetMetadata, build_typed_program, call_abi_signature, call_lowering, default_libcall_names,
+    emit_isle_expression, emit_isle_item, emit_isle_item_with_call_importer, enum_constructor, enum_layout, enum_match,
+    find_call_expression, find_function_definition, find_function_definitions, find_node, find_nodes_of_kind,
+    find_test_definition, isa, item_body, item_fixture, item_fixture_with_root, item_name, lower_syntax_program,
+    node_type, parse_program_with_source_name, settings, types,
 };
 
 #[test]
@@ -29,7 +29,8 @@ fn parsed_enum_constructor_uses_source_layout_without_hir() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
@@ -466,7 +467,8 @@ fn imported_single_payload_enum_constructor_exposes_its_layout_to_isle() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
@@ -514,7 +516,8 @@ fn imported_nullary_enum_constructor_lowers_from_an_ordinary_function_block() {
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
@@ -573,7 +576,8 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
         0,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };

@@ -2,16 +2,16 @@
 
 use std::path::Path;
 
-use crate::projects::assembly::{ModuleIndex, ProgramAssembly, SourceUnit};
 use crate::projects::CompilePlan;
+use crate::projects::assembly::{ModuleIndex, ProgramAssembly, SourceUnit};
 use crate::resolve::Resolution;
 use crate::services::semantic_facts::{
-    type_resolved_program, DependencyTypingPolicy, ProgramResolutionSource, SemanticFactsError,
+    DependencyTypingPolicy, ProgramResolutionSource, SemanticFactsError, type_resolved_program,
 };
 use crate::syntax::Program;
 use crate::syntax::Spanned;
 use crate::syntax_query::SyntaxIndex;
-use crate::types::surface::{build_unit_type_surface, UnitTypeSurface};
+use crate::types::surface::{UnitTypeSurface, build_unit_type_surface};
 use crate::types::{CheckerResult, TypeChecker, TypeResult};
 
 /// Query: exported signatures and layouts for one unit (EntryOnly surface pass).
@@ -46,9 +46,7 @@ pub fn resolve_entry(
     module_index: &ModuleIndex,
     entry_source_path: Option<&Path>,
 ) -> Result<Resolution, SemanticFactsError> {
-    module_index
-        .resolve_entry_program(entry_program, entry_source_path.map(|path| path.to_path_buf()).as_ref())
-        .map_err(SemanticFactsError::Resolve)
+    module_index.resolve_entry_program(entry_program, entry_source_path).map_err(SemanticFactsError::Resolve)
 }
 
 /// Query: type entry program with full dependency bodies (executable path).

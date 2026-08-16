@@ -5,8 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::trusted_paths::trusted_corelib_service_paths;
 use crate::projects::{
-    assemble_program, assembly_options_for_plan, assembly_options_for_prepare, plan_entry_path, AssemblyDiscovery,
-    AssemblyError, AssemblyOptions, CompilePlan, ResolvedDependencyProject, Target, TargetKind,
+    AssemblyDiscovery, AssemblyError, AssemblyOptions, CompilePlan, ResolvedDependencyProject, Target, TargetKind,
+    assemble_program, assembly_options_for_plan, assembly_options_for_prepare, plan_entry_path,
 };
 use crate::projects::{MaterializedDependencyProject, PreparedProjectWorkspace, SourceUnit};
 use crate::services::parse_program_with_source_name;
@@ -192,7 +192,7 @@ fn entry_plan_uses_import_closure_discovery() {
 #[test]
 fn qualified_reference_scan_finds_module_prefixes() {
     let source = "Core.Results.Result<i64, SyscallError> Write() { Core.Syscall.WriteWith(x); }";
-    let paths = super::module_paths_from_qualified_references(source);
+    let paths = super::scanner::module_paths_from_qualified_references(source);
     assert!(paths.contains(&"Core.Results".to_string()));
     assert!(paths.contains(&"Core".to_string()));
     assert!(paths.contains(&"Core.Syscall".to_string()));

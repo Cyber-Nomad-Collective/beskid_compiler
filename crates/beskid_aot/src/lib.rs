@@ -18,10 +18,10 @@ pub mod runtime;
 pub mod target;
 
 pub use api::{
-    build, default_output_kind, emit_host_context_library_pair, emit_host_platform_library_pair, emit_object_only,
-    require_canonical_host_emit_authority, resolve_entrypoint, AotBuildRequest, AotBuildResult, BuildOutputKind,
-    BuildProfile, CanonicalHostEmitAuthority, ExportPolicy, LinkMode, NativeLibraryPair, NativeSymbolInventory,
-    ProjectTargetKind, RuntimeKitRequest,
+    AotBuildRequest, AotBuildResult, BuildOutputKind, BuildProfile, CanonicalHostEmitAuthority, ExportPolicy, LinkMode,
+    NativeLibraryPair, NativeSymbolInventory, ProjectTargetKind, RuntimeKitRequest, build, default_output_kind,
+    emit_host_context_library_pair, emit_host_platform_library_pair, emit_object_only,
+    require_canonical_host_emit_authority, resolve_entrypoint,
 };
 pub use beskid_abi::BESKID_RUNTIME_ABI_VERSION;
 pub use beskid_pipeline::SharedPipelineObserver;
@@ -29,10 +29,10 @@ pub use bundled::{default_runtime_strategy, installed_runtime_strategy, resolve_
 pub use error::{AotError, AotResult};
 pub use export_table::{ExportTable, ExportTableEntry};
 pub use mod_artifact::{
-    build_mod_artifact, compute_mod_artifact_key, mod_artifact_dir, ContractRegistration, ModArtifactBuildRequest,
-    ModArtifactDescriptor,
+    ContractRegistration, ModArtifactBuildRequest, ModArtifactDescriptor, build_mod_artifact, compute_mod_artifact_key,
+    mod_artifact_dir,
 };
 pub use prepared_syntax::{
     lower_canonical_runtime_prepared_syntax, lower_prepared_syntax_entrypoint, lower_prepared_syntax_module,
 };
-pub use run::{build_and_run, run_linked_executable, AotRunRequest, AotRunResult};
+pub use run::{AotRunRequest, AotRunResult, build_and_run, run_linked_executable};

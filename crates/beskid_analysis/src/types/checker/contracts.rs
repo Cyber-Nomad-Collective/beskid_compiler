@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::syntax::{ContractNode, Node, PrimitiveType, Program};
 use crate::resolve::{ItemKind, ResolvedType};
+use crate::syntax::{ContractNode, Node, PrimitiveType, Program};
 use crate::syntax::{SpanInfo, Spanned};
-use crate::types::result::{FunctionSignature, TypeError};
+use crate::types::result::FunctionSignature;
 
 use super::TypeChecker;
 
@@ -47,46 +47,6 @@ impl<'a> TypeChecker<'a> {
             };
             for (method_name, signature) in signatures {
                 self.contract_signatures.insert((contract_item_id, method_name), signature);
-            }
-
-            // If this contract has an extern interface, perform static validation.
-            if let Some(def) = definitions.get(&contract_name)
-                && let Some(ext) = &def.node.extern_interface
-            {
-                // ABI must be exactly "C"
-                let abi_ok = ext.abi.as_ref().map(|s| s.eq_ignore_ascii_case("C")).unwrap_or(false);
-                if !abi_ok {
-                    self.errors.push(TypeError::ExternInvalidAbi { span: def.node.name.span, abi: ext.abi.clone() });
-                }
-                // Library must be present and non-empty
-                let lib_ok = ext.library.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false);
-                if !lib_ok {
-                    self.errors.push(TypeError::ExternMissingLibrary { span: def.node.name.span });
-                }
-
-                // Validate method signatures declared directly in this contract
-                for node in &def.node.items {
-                    if let ContractNode::MethodSignature(sig) = &node.node {
-                        // Params
-                        for param in &sig.node.parameters {
-                            if !self.is_allowed_ffi_param(param) {
-                                self.errors.push(TypeError::ExternDisallowedParamType {
-                                    span: param.span,
-                                    method: sig.node.name.node.name.clone(),
-                                });
-                            }
-                        }
-                        // Return type
-                        if let Some(ret) = &sig.node.return_type
-                            && !self.is_allowed_ffi_return(ret)
-                        {
-                            self.errors.push(TypeError::ExternDisallowedReturnType {
-                                span: ret.span,
-                                method: sig.node.name.node.name.clone(),
-                            });
-                        }
-                    }
-                }
             }
         }
     }
@@ -160,27 +120,5 @@ impl<'a> TypeChecker<'a> {
         active.remove(contract_name);
         cache.insert(contract_name.to_string(), methods.clone());
         methods
-    }
-
-    fn is_allowed_ffi_primitive(prim: crate::syntax::PrimitiveType) -> bool {
-        use crate::syntax::PrimitiveType::*;
-        matches!(prim, Bool | U8 | I32 | I64 | F64)
-    }
-
-    fn is_allowed_ffi_param(&self, param: &Spanned<crate::syntax::Parameter>) -> bool {
-        use crate::syntax::Type;
-        match &param.node.ty.node {
-            Type::Primitive(p) => Self::is_allowed_ffi_primitive(p.node),
-            _ => false,
-        }
-    }
-
-    fn is_allowed_ffi_return(&self, ret: &Spanned<crate::syntax::Type>) -> bool {
-        // Allow: primitives (Bool, U8, I32, I64, F64), or Unit if unspecified upstream
-        use crate::syntax::{PrimitiveType, Type};
-        match &ret.node {
-            Type::Primitive(p) => Self::is_allowed_ffi_primitive(p.node) || matches!(p.node, PrimitiveType::Unit),
-            _ => false,
-        }
     }
 }

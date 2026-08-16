@@ -1,12 +1,12 @@
 use super::support::{
+    AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
+    CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH,
+    CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_POLL_SOURCE_PATH, CallKind, CodegenInput,
+    EffectiveCompilationRoots, IndexedNodeKind, ModuleIndex, NodeFacts, PathBuf, ProgramAssembly, ProjectSession,
+    RootEntry, SemanticTypeId, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxNodeFacts, TypedProgram,
     build_canonical_runtime_typed_program, build_typed_program, call_lowering, canonical_runtime_intrinsic_capability,
     canonical_runtime_sources, find_node, find_node_matching, input_fixture, item_name, linux_target,
-    parse_program_with_source_name, primitive_numeric_conversion, AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId,
-    AstNodeKey, BeskidDatabase, CallKind, CodegenInput, EffectiveCompilationRoots, IndexedNodeKind, ModuleIndex,
-    NodeFacts, PathBuf, ProjectSession, RootEntry, SemanticTypeId, SourceUnit, SourceUnitId, SyntaxGenerationId,
-    SyntaxNodeFacts, ProgramAssembly, TypedProgram, CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
-    CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
-    CANONICAL_SCHEDULER_POLL_SOURCE_PATH,
+    parse_program_with_source_name, primitive_numeric_conversion,
 };
 
 /// The exact compiler-embedded canonical runtime corpus, materialized on disk under its own
@@ -65,7 +65,8 @@ impl CanonicalRuntimeCorpus {
             self.entry_index,
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
-            false, generation
+            false,
+            SyntaxGenerationId(0),
         ))
     }
 }
@@ -395,7 +396,8 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
         1,
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
-        false, generation
+        false,
+        generation,
     ));
     let ordinary_generation = SyntaxGenerationId(92);
     let ordinary_project =

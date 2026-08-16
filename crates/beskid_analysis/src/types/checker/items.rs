@@ -1,5 +1,5 @@
-use crate::syntax::{Node, PrimitiveType, Program, Type, TypeDefinition};
 use crate::resolve::ItemId;
+use crate::syntax::{Node, PrimitiveType, Program, Type, TypeDefinition};
 use crate::syntax::{SpanInfo, Spanned};
 use crate::types::TypeId;
 use crate::types::result::{FunctionSignature, TypeError};
@@ -33,12 +33,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     /// Register struct field layout for codegen (`struct_fields_ordered`).
-    fn register_struct_definition_fields(
-        &mut self,
-        item_span: SpanInfo,
-        def: &TypeDefinition,
-        in_generic_scope: bool,
-    ) {
+    fn register_struct_definition_fields(&mut self, item_span: SpanInfo, def: &TypeDefinition, in_generic_scope: bool) {
         let mut fields = std::collections::HashMap::new();
         let mut ordered = Vec::new();
         let mut event_fields = std::collections::HashMap::new();
@@ -283,7 +278,9 @@ impl<'a> TypeChecker<'a> {
                 let return_type = self.primitive_type_id(PrimitiveType::Unit);
                 self.current_return_type = return_type;
                 self.record_signature(item.span, Vec::new(), return_type);
-                self.type_block(&def.node.body);
+                for statement in &def.node.statements {
+                    self.type_statement(statement);
+                }
             }
             Node::TypeDefinition(def) => {
                 let mut inserted = Vec::new();

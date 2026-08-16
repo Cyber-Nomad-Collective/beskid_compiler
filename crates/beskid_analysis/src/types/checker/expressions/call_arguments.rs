@@ -1,9 +1,7 @@
 use crate::builtins::{BuiltinType, builtin_specs};
-use crate::syntax::{
-    CallExpression, Expression, LambdaExpression, Literal, PrimitiveType, integer_literal_magnitude,
-};
 use crate::resolve::ResolvedValue;
 use crate::syntax::Spanned;
+use crate::syntax::{CallExpression, Expression, LambdaExpression, Literal, PrimitiveType, integer_literal_magnitude};
 use crate::types::path_value::{method_name_from_path_callee, receiver_type_for_path_callee};
 use crate::types::result::{CallLoweringKind, MethodReceiverSource, TypeError};
 use crate::types::{TypeId, TypeInfo};
@@ -75,23 +73,16 @@ impl<'a> TypeChecker<'a> {
 
     fn type_argument_with_expected(&mut self, arg: &Spanned<Expression>, expected: TypeId) -> Option<TypeId> {
         match &arg.node {
-            Expression::Lambda(lambda) => {
-                self.type_lambda_expression_with_expected(lambda, Some(expected))
-            }
+            Expression::Lambda(lambda) => self.type_lambda_expression_with_expected(lambda, Some(expected)),
             Expression::Grouped(grouped) => match &grouped.node.expr.node {
-                Expression::Lambda(lambda) => {
-                    self.type_lambda_expression_with_expected(lambda, Some(expected))
-                }
+                Expression::Lambda(lambda) => self.type_lambda_expression_with_expected(lambda, Some(expected)),
                 _ => self.type_expression(arg),
             },
             _ => self.type_expression(arg),
         }
     }
 
-    pub(in crate::types::checker) fn type_call_expression(
-        &mut self,
-        call: &Spanned<CallExpression>,
-    ) -> Option<TypeId> {
+    pub(in crate::types::checker) fn type_call_expression(&mut self, call: &Spanned<CallExpression>) -> Option<TypeId> {
         if let Some((receiver_source, receiver_type, receiver_item_id, field_type)) =
             self.resolve_event_call_target(&call.node.callee)
         {

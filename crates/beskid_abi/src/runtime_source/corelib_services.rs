@@ -1,10 +1,10 @@
-use crate::abi_v5::{canonical_runtime_package, canonical_source_hash, AbiManifestV5};
+use crate::abi_v5::{AbiManifestV5, canonical_runtime_package, canonical_source_hash};
 
 use super::capabilities::RuntimeCapabilityError;
 use super::sources::{
-    canonical_corelib_service_sources, CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_CORELIB_FS_SOURCE_PATH,
-    CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ERROR_SOURCE_PATH, CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH,
+    CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_CORELIB_FS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_FOUNDATION_ERROR_SOURCE_PATH,
+    CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH, canonical_corelib_service_sources,
 };
 
 /// The canonical compiler-owned source file for one Foundation service unit.
