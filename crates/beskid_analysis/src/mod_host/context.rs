@@ -86,6 +86,7 @@ impl ContextArena {
             syntax_generation_id: 0,
             entry_source_path: self.intern(input.source_name),
             entry_source_name: self.intern(input.source_name),
+            entry_source_text: self.intern(input.source),
         }
     }
 
@@ -256,5 +257,55 @@ mod tests {
         assert_eq!(context.arena.package_rows.len(), 1);
         assert_eq!(context.collect_request.workspace.members.len, 1);
         assert_eq!(context.collect_request.mods.packages.len, 1);
+    }
+
+    /// `entry_source_text` must intern `input.source` so native `Analyzer`/`Rewriter`
+    /// contracts can read the entry source without disk I/O (design §1.3).
+    fn beskid_str_to_string(view: &BeskidStr) -> String {
+        if view.ptr.is_null() {
+            return String::new();
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(view.ptr, view.len) };
+        String::from_utf8_lossy(bytes).into_owned()
+    }
+
+    #[test]
+    fn compilation_interns_entry_source_text() {
+        let plan = CompilePlan {
+            project_root: PathBuf::from("/ws/host"),
+            manifest_path: PathBuf::from("/ws/host/Host.bproj"),
+            project_name: "Host".to_owned(),
+            source_root: PathBuf::from("/ws/host/Src"),
+            target: Target { name: "Host".to_owned(), kind: TargetKind::App, entry: Some("Main.bd".to_owned()) },
+            dependency_projects: Vec::new(),
+            unresolved_dependencies: Vec::new(),
+            has_std_dependency: false,
+        };
+        let source = "unit Main() { return; }\n";
+        let input = ModHostInput {
+            compile_plan: Some(&plan),
+            source_name: "Main.bd",
+            source,
+            pipeline: None,
+            invoker: None,
+            cached_target_fingerprint: None,
+        };
+
+        let context = ModInvocationContext::build(&input, &[]);
+        assert_eq!(
+            beskid_str_to_string(&context.collect_request.compilation.entry_source_text),
+            source,
+            "entry_source_text must intern input.source verbatim"
+        );
+    }
+
+    #[test]
+    fn empty_context_interns_empty_entry_source_text() {
+        let context = ModInvocationContext::empty();
+        assert_eq!(
+            beskid_str_to_string(&context.collect_request.compilation.entry_source_text),
+            "",
+            "empty context must intern an empty entry_source_text"
+        );
     }
 }

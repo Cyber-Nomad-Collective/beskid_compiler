@@ -128,7 +128,7 @@ pub pointer SchedTable() {
 
 // Returns a fiber record pointer by index.
 pub pointer FiberRecord(word index) {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) {
         return NativePointer(0);
     }
@@ -153,7 +153,7 @@ pub unit FiberSetGeneration(pointer fiber, word generation) {
 }
 
 pub bool FiberExists(word index) {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) { return false; }
     return index < raw_word_load(table) && FiberGeneration(FiberRecord(index)) != 0;
 }
@@ -168,7 +168,7 @@ pub word FiberHandleIndex(word handle) {
 }
 
 pub bool FiberHandleValid(word handle) {
-    word index = FiberHandleIndex(handle);
+    mut word index = FiberHandleIndex(handle);
     if !FiberExists(index) { return false; }
     return FiberGeneration(FiberRecord(index)) == (handle >> 32);
 }
@@ -190,7 +190,7 @@ pub unit FiberAllocationFailed(word index, word generation) {
 // Allocate a fiber slot. Detached terminal slots are reused with a new
 // generation; joined fibers remain stable until explicitly detached.
 pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) { return FIBER_NONE; }
     word count = raw_word_load(table);
     mut word index = count;
@@ -259,7 +259,7 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
 // unchecked access into the protected range remains an OS fault rather than a
 // recoverable scheduler event.
 pub bool SchedulerStackCheck(word requiredUsableSize) {
-    word index = SchedulerCurrentFiber();
+    mut word index = SchedulerCurrentFiber();
     if index == FIBER_NONE || !FiberExists(index) { return false; }
     pointer fib = FiberRecord(index);
     word committedSize = raw_word_load(pointer_add(fib, 120));
@@ -290,7 +290,7 @@ pub bool SchedulerStackCheck(word requiredUsableSize) {
 // Records an overflow detected by a compiler stack-limit comparison before the
 // protected range is touched. Its public join status is the ABI-stable value 3.
 pub unit SchedulerStackOverflowObserved() {
-    word index = SchedulerCurrentFiber();
+    mut word index = SchedulerCurrentFiber();
     if index == FIBER_NONE || !FiberExists(index) { return; }
     pointer fib = FiberRecord(index);
     raw_word_store(fib, FiberState::Done);
@@ -321,7 +321,7 @@ pub word FiberJoinStatusWord(word index) {
 // The current handle is scheduler-owned rather than a second TLS/global
 // scheduler.  A no-fiber sentinel is never observable through the public ABI.
 pub word SchedulerCurrentFiber() {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) {
         return FIBER_NONE;
     }
@@ -329,13 +329,13 @@ pub word SchedulerCurrentFiber() {
 }
 
 pub bool SchedulerRegisterWorkerRequest(pointer request, word fiberIndex) {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) || request == NativePointer(0) || fiberIndex == FIBER_NONE { return false; }
     mut word slot = 0;
     while slot < SCHEDULER_WORKER_SLOT_COUNT {
         pointer record = pointer_add(table, SCHEDULER_WORKER_TABLE_OFFSET + slot * SCHEDULER_WORKER_SLOT_SIZE);
         if raw_word_load(record) == 0 {
-            word tag = raw_word_load(pointer_add(table, SCHEDULER_WORKER_NEXT_TAG_OFFSET)) + 1;
+            mut word tag = raw_word_load(pointer_add(table, SCHEDULER_WORKER_NEXT_TAG_OFFSET)) + 1;
             if tag == 0 { tag = 1; }
             raw_word_store(pointer_add(table, SCHEDULER_WORKER_NEXT_TAG_OFFSET), tag);
             raw_word_store(pointer_add(request, 8), tag);
@@ -349,7 +349,7 @@ pub bool SchedulerRegisterWorkerRequest(pointer request, word fiberIndex) {
 }
 
 pub bool SchedulerUnregisterWorkerRequest(pointer request) {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) || request == NativePointer(0) { return false; }
     mut word slot = 0;
     while slot < SCHEDULER_WORKER_SLOT_COUNT {
@@ -365,7 +365,7 @@ pub bool SchedulerUnregisterWorkerRequest(pointer request) {
 }
 
 pub bool SchedulerHasWorkerRequests() {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) { return false; }
     mut word slot = 0;
     while slot < SCHEDULER_WORKER_SLOT_COUNT {
@@ -376,7 +376,7 @@ pub bool SchedulerHasWorkerRequests() {
 }
 
 pub unit SchedulerPollWorkerCompletions() {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) { return; }
     mut word slot = 0;
     while slot < SCHEDULER_WORKER_SLOT_COUNT {
@@ -394,7 +394,7 @@ pub unit SchedulerPollWorkerCompletions() {
 }
 
 pub bool SchedulerAcquireMutatorToken() {
-    pointer table = SchedTable(); pointer thread = CurrentThreadState();
+    mut pointer table = SchedTable(); pointer thread = CurrentThreadState();
     if table == NativePointer(0) || thread == NativePointer(0) { return false; }
     word owner = raw_word_load(pointer_add(table, SCHEDULER_MUTATOR_TOKEN_OFFSET));
     if owner != 0 && owner != NativeWord(thread) { return false; }
@@ -403,7 +403,7 @@ pub bool SchedulerAcquireMutatorToken() {
 }
 
 pub unit SchedulerReleaseMutatorToken() {
-    pointer table = SchedTable(); pointer thread = CurrentThreadState();
+    mut pointer table = SchedTable(); pointer thread = CurrentThreadState();
     if table != NativePointer(0) && raw_word_load(pointer_add(table, SCHEDULER_MUTATOR_TOKEN_OFFSET)) == NativeWord(thread) {
         raw_word_store(pointer_add(table, SCHEDULER_MUTATOR_TOKEN_OFFSET), 0);
     }
@@ -411,7 +411,7 @@ pub unit SchedulerReleaseMutatorToken() {
 }
 
 pub unit SchedulerSetCurrentFiber(word index) {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table != NativePointer(0) {
         raw_word_store(pointer_add(table, SCHEDULER_CURRENT_FIBER_OFFSET), index);
     }
@@ -457,7 +457,7 @@ pub bool MarkRootFrameChain(pointer frame) {
 }
 
 pub bool MarkSuspendedFiberRoots() {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) { return true; }
     word current = SchedulerCurrentFiber();
     word count = raw_word_load(table);
@@ -474,7 +474,7 @@ pub bool MarkSuspendedFiberRoots() {
 // Yields the current fiber.
 [Export(Abi:"C", Symbol:"beskid_rt_v5_fiber_yield")]
 pub unit FiberYield() {
-    word index = SchedulerCurrentFiber();
+    mut word index = SchedulerCurrentFiber();
     if index == FIBER_NONE || !FiberExists(index) {
         return;
     }
@@ -496,7 +496,7 @@ pub unit FiberYield() {
 // Returns the current fiber ID (0 for main).
 [Export(Abi:"C", Symbol:"fiber_current_id")]
 pub i64 FiberCurrentId() {
-    word index = SchedulerCurrentFiber();
+    mut word index = SchedulerCurrentFiber();
     if index == FIBER_NONE {
         return -1;
     }
@@ -508,7 +508,7 @@ pub i64 FiberCurrentId() {
 // Push a live runnable fiber exactly once. Returns false when the bounded ring
 // is full; one slot remains empty to distinguish full from empty.
 pub bool RunQueuePush(word fiberIndex) {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) || !FiberExists(fiberIndex) { return false; }
     word head = raw_word_load(pointer_add(table, 16));
     word tail = raw_word_load(pointer_add(table, 24));
@@ -526,7 +526,7 @@ pub bool RunQueuePush(word fiberIndex) {
 
 // Pop a fiber index from the run queue. Returns 0xFFFF if empty.
 pub word RunQueuePop() {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) { return 0xFFFF; }
     word head = raw_word_load(pointer_add(table, 16));
     word tail = raw_word_load(pointer_add(table, 24));
@@ -538,7 +538,7 @@ pub word RunQueuePop() {
 
 // Check if run queue is empty.
 pub bool RunQueueEmpty() {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) { return true; }
     return raw_word_load(pointer_add(table, 16)) == raw_word_load(pointer_add(table, 24));
 }
@@ -613,7 +613,7 @@ pub unit FiberDone(word index, i64 value) {
 }
 
 pub pointer SchedulerContext() {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) { return NativePointer(0); }
     return NativePointer(raw_word_load(pointer_add(table, SCHEDULER_CONTEXT_OFFSET)));
 }
@@ -646,7 +646,7 @@ pub unit SchedInit() {
 pub bool SchedShutdown() { return SchedShutdownForced(false); }
 
 pub bool SchedShutdownForced(bool forced) {
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) { return true; }
     if SchedulerCurrentFiber() != FIBER_NONE { return false; }
     word count = raw_word_load(table);
@@ -688,11 +688,11 @@ pub bool SchedShutdownForced(bool forced) {
 // public handle. Execution starts only when the scheduler switches to it.
 pub i64 SchedulerSpawn(pointer entry, pointer environment, pointer cancelledSlot) {
     SchedInit();
-    pointer table = SchedTable();
+    mut pointer table = SchedTable();
     if table == NativePointer(0) { return -1; }
-    word parent = SchedulerCurrentFiber();
+    mut word parent = SchedulerCurrentFiber();
         if parent == FIBER_NONE { parent = raw_word_load(pointer_add(table, 8)); }
-        word index = FiberAlloc(NativeWord(entry), NativeWord(environment), NativeWord(cancelledSlot), parent);
+        mut word index = FiberAlloc(NativeWord(entry), NativeWord(environment), NativeWord(cancelledSlot), parent);
     if index == FIBER_NONE { return -1; }
     if raw_word_load(pointer_add(table, 8)) == FIBER_NONE { raw_word_store(pointer_add(table, 8), index); }
     if FiberJoinStatusWord(index) != FIBER_JOIN_STACK_OVERFLOW && RunQueuePush(index) == false {

@@ -32,6 +32,7 @@ pub use api::{
     run_analyze_rewrite_after_composition, run_analyze_rewrite_with_invoker, run_through_generate,
 };
 pub use collect::{capture_target_fingerprint, targets_changed};
+pub use context::ModInvocationContext;
 pub use diagnostics::{ModHostDiagnostics, ModHostIssue, analyzer_diagnostic_to_semantic};
 pub use emit_bridge::{
     materialize_contract_definition, materialize_function_definition, materialize_program_item,

@@ -86,7 +86,7 @@ pub unit WaitGroupAdd(pointer id, i64 delta) {
     pointer table = WgTable();
     if slotIndex >= WG_TABLE_MAX || table == NativePointer(0) || slotIndex >= raw_word_load(table) { return; }
     pointer slot = pointer_add(table, 8 + slotIndex * WG_SLOT_SIZE);
-    i64 current = i64(raw_word_load(slot));
+    mut i64 current = i64(raw_word_load(slot));
     if delta < 0 && current < -delta { return; }
     raw_word_store(slot, word(current + delta));
     if current + delta == 0 { WaitGroupWakeAll(slot); }
@@ -102,7 +102,7 @@ pub unit WaitGroupDone(pointer id) {
     pointer table = WgTable();
     if slotIndex >= WG_TABLE_MAX || table == NativePointer(0) || slotIndex >= raw_word_load(table) { return; }
     pointer slot = pointer_add(table, 8 + slotIndex * WG_SLOT_SIZE);
-    i64 current = i64(raw_word_load(slot));
+    mut i64 current = i64(raw_word_load(slot));
     if current <= 0 { return; }
     current = current - 1;
     raw_word_store(slot, word(current));

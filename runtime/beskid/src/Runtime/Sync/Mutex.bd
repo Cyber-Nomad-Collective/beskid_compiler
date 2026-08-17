@@ -82,7 +82,7 @@ pub unit MutexWaiterRemove(pointer slot, word waiterHandle) {
 
 pub unit MutexWakeFirst(pointer slot) {
     while raw_word_load(pointer_add(slot, 16)) != 0 {
-        word waiterHandle = raw_word_load(pointer_add(slot, 24));
+        mut word waiterHandle = raw_word_load(pointer_add(slot, 24));
         MutexWaiterRemove(slot, waiterHandle);
         if FiberHandleValid(waiterHandle) {
             word waiterIndex = FiberHandleIndex(waiterHandle);
@@ -106,7 +106,7 @@ pub i32 MutexLock(pointer id) {
     if slotIndex >= MUTEX_TABLE_MAX || table == NativePointer(0) || slotIndex >= raw_word_load(table) { return 1; }
     pointer slot = pointer_add(table, 8 + slotIndex * MUTEX_SLOT_SIZE);
     word fiberIndex = SchedulerCurrentFiber();
-    word waiterHandle = 0;
+    mut word waiterHandle = 0;
     if fiberIndex != FIBER_NONE { waiterHandle = FiberHandle(fiberIndex); }
     while raw_byte_load(slot) == MutexState::Locked {
         if waiterHandle == 0 || !FiberHandleValid(waiterHandle) { return 1; }

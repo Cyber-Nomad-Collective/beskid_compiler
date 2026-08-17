@@ -159,7 +159,7 @@ pub unit CompositionScopeLeave() {
     pointer container = NativePointer(raw_word_load(scopePtr));
     if CompositionContainerValid(container) == 0 { Trap(10, NativePointer(0), 0); }
     pointer ownedValues = NativePointer(raw_word_load(pointer_add(scopePtr, 24)));
-    word ownedCount = raw_word_load(pointer_add(scopePtr, 16));
+    mut word ownedCount = raw_word_load(pointer_add(scopePtr, 16));
     while ownedCount > 0 {
         ownedCount = ownedCount - 1;
         GcUnregisterRoot(pointer_add(ownedValues, ownedCount * 8));
@@ -190,7 +190,7 @@ pub unit CompositionShutdown(pointer container) {
     }
     raw_word_store(pointer_add(container, COMPOSITION_STATUS_OFFSET), COMPOSITION_SHUTTING_DOWN);
     pointer slots = NativePointer(raw_word_load(pointer_add(container, COMPOSITION_SLOTS_OFFSET)));
-    word activated = raw_word_load(pointer_add(container, COMPOSITION_ACTIVATED_COUNT_OFFSET));
+    mut word activated = raw_word_load(pointer_add(container, COMPOSITION_ACTIVATED_COUNT_OFFSET));
     while activated > 0 {
         activated = activated - 1;
         GcUnregisterRoot(pointer_add(slots, activated * 8));

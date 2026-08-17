@@ -369,7 +369,6 @@ pub(super) fn emit_scheduler_fiber_entry(
         let resume_scheduler = builder.create_block();
         builder.ins().brif(overflow_observed, resume_scheduler, &[], publish_normal, &[]);
         builder.seal_block(publish_normal);
-        builder.seal_block(resume_scheduler);
 
         builder.switch_to_block(publish_normal);
         builder.ins().store(cranelift_codegen::ir::MemFlags::trusted(), result, fiber, 56);
@@ -377,6 +376,7 @@ pub(super) fn emit_scheduler_fiber_entry(
         builder.ins().store(cranelift_codegen::ir::MemFlags::trusted(), done, fiber, 0);
         builder.ins().store(cranelift_codegen::ir::MemFlags::trusted(), ok, fiber, 48);
         builder.ins().jump(resume_scheduler, &[]);
+        builder.seal_block(resume_scheduler);
 
         builder.switch_to_block(resume_scheduler);
         let none = builder.ins().iconst(pointer, 0xFFFF);

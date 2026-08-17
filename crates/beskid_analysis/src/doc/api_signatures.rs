@@ -115,7 +115,15 @@ fn find_decl_in_node<'a>(item: &'a Spanned<Node>, span: SpanInfo) -> Option<Synt
 }
 
 fn parameter_modifier(parameter: &Parameter) -> Option<String> {
-    parameter.mutable.then(|| "mut".to_string())
+    let mut modifiers = Vec::new();
+    if parameter.bulk {
+        modifiers.push("bulk");
+    }
+    if parameter.mutable {
+        modifiers.push("mut");
+    }
+    let joined = modifiers.join(" ");
+    (!joined.is_empty()).then_some(joined)
 }
 
 fn generic_parameters_from_names(names: impl Iterator<Item = String>) -> Vec<ApiGenericParameterDoc> {

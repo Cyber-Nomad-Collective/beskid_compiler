@@ -121,6 +121,11 @@ fn lower_resolved_syntax_program(
             .map(|trampoline| (DirectCallee::lambda_trampoline(trampoline.lambda), trampoline.symbol.clone())),
     );
 
+    // The scheduler entry symbols (context, set/current fiber, context switch, fiber record) are
+    // always required for the compiler-generated fiber entry and return trampolines. The stack
+    // check and overflow seam functions are only invoked by spawn trampolines, so they are
+    // resolved lazily: a canonical runtime corpus with no spawn expressions never reaches them
+    // and must not require them to be reachable from manifest exports.
     let scheduler_symbols = if input.runtime_intrinsic_capability().is_some() {
         let symbol = |name: &str| {
             items
@@ -130,7 +135,7 @@ fn lower_resolved_syntax_program(
                 })
                 .map(|item| item.symbol.as_str())
         };
-        Some((
+        let entry = (
             symbol("SchedulerContext")
                 .ok_or_else(|| emission_verification("canonical SchedulerContext item unavailable"))?,
             symbol("SchedulerSetCurrentFiber")
@@ -139,11 +144,19 @@ fn lower_resolved_syntax_program(
             symbol("SchedulerCurrentFiber")
                 .ok_or_else(|| emission_verification("canonical SchedulerCurrentFiber item unavailable"))?,
             symbol("FiberRecord").ok_or_else(|| emission_verification("canonical FiberRecord item unavailable"))?,
-            symbol("SchedulerStackCheck")
-                .ok_or_else(|| emission_verification("canonical SchedulerStackCheck item unavailable"))?,
-            symbol("SchedulerStackOverflowObserved")
-                .ok_or_else(|| emission_verification("canonical SchedulerStackOverflowObserved item unavailable"))?,
-        ))
+        );
+        let stack = if trampolines.is_empty() {
+            None
+        } else {
+            Some((
+                symbol("SchedulerStackCheck")
+                    .ok_or_else(|| emission_verification("canonical SchedulerStackCheck item unavailable"))?,
+                symbol("SchedulerStackOverflowObserved").ok_or_else(|| {
+                    emission_verification("canonical SchedulerStackOverflowObserved item unavailable")
+                })?,
+            ))
+        };
+        Some((entry, stack))
     } else {
         None
     };
@@ -158,7 +171,8 @@ fn lower_resolved_syntax_program(
             + lambda_trampolines.len()
             + usize::from(scheduler_symbols.is_some()) * 2,
     );
-    if let Some((scheduler_context, set_current, context_switch, current, fiber_record, _, _)) = scheduler_symbols {
+    if let Some((entry, _)) = scheduler_symbols {
+        let (scheduler_context, set_current, context_switch, current, fiber_record) = entry;
         functions.push(crate::LoweredFunction {
             name: "__beskid_scheduler_fiber_entry".to_owned(),
             function: emit_scheduler_fiber_entry(isa, scheduler_context, set_current, context_switch)?,
@@ -261,7 +275,7 @@ fn lower_resolved_syntax_program(
         functions.push(crate::LoweredFunction { name: item.symbol.clone(), function });
     }
     if !trampolines.is_empty() {
-        let Some((_, _, _, _, _, stack_check, stack_overflow)) = scheduler_symbols else {
+        let Some((_, Some((stack_check, stack_overflow)))) = scheduler_symbols else {
             return Err(emission_verification("fiber stack checks require the exact canonical Scheduler corpus"));
         };
         for trampoline in &trampolines {

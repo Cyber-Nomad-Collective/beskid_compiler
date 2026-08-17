@@ -25,6 +25,9 @@ pub struct ModCompilation {
     pub syntax_generation_id: u64,
     pub entry_source_path: BeskidStr,
     pub entry_source_name: BeskidStr,
+    /// Entry source text the host already holds in memory. Lets native `Analyzer` /
+    /// `Rewriter` contracts read the entry source without disk I/O.
+    pub entry_source_text: BeskidStr,
 }
 
 /// One workspace member (`Beskid.Compiler.Workspace.WorkspaceMember`).

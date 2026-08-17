@@ -3,7 +3,7 @@
 #[macro_export]
 macro_rules! node_kinds {
     ($enum_name:ident; $($name:ident),+ $(,)?) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
         pub enum $enum_name {
             $($name),+
         }

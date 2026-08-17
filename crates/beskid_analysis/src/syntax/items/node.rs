@@ -132,6 +132,57 @@ mod tests {
     }
 
     #[test]
+    fn bulk_parameter_modifier_parses_and_sets_flag() {
+        use crate::syntax::items::Node;
+
+        let src = "i64 Sum(bulk i64[] values) { return 0; }";
+        let pair =
+            BeskidParser::parse(Rule::Program, src).expect("bulk parameter should parse").next().expect("program pair");
+        let program = Program::parse(pair).expect("bulk parameter should build AST");
+        let function = match &program.node.items[0].node {
+            Node::Function(function) => function,
+            _ => panic!("expected a function item"),
+        };
+        assert_eq!(function.node.parameters.len(), 1, "bulk function has one parameter");
+        let parameter = &function.node.parameters[0].node;
+        assert!(parameter.bulk, "bulk flag must be set on a `bulk` parameter");
+        assert!(!parameter.mutable, "non-`mut` bulk parameter must not set mutable");
+        assert_eq!(parameter.name.node.name.as_str(), "values");
+
+        // `bulk` and `mut` combine in that fixed order (bulk is the outermost modifier).
+        let src = "i64 Sum(bulk mut i64[] values) { return 0; }";
+        let pair = BeskidParser::parse(Rule::Program, src)
+            .expect("bulk mut parameter should parse")
+            .next()
+            .expect("program pair");
+        let program = Program::parse(pair).expect("bulk mut parameter should build AST");
+        let function = match &program.node.items[0].node {
+            Node::Function(function) => function,
+            _ => panic!("expected a function item"),
+        };
+        let parameter = &function.node.parameters[0].node;
+        assert!(parameter.bulk, "bulk flag must be set");
+        assert!(parameter.mutable, "mut flag must be set on a `bulk mut` parameter");
+    }
+
+    #[test]
+    fn bulk_keyword_is_reserved_and_cannot_be_an_identifier() {
+        // `bulk` is listed in the `Keyword` union, so it cannot be used as a parameter name.
+        let src = "i64 F(i64 bulk) { return 0; }";
+        assert!(
+            BeskidParser::parse(Rule::Program, src).is_err(),
+            "`bulk` is a reserved keyword and must not parse as an identifier"
+        );
+
+        // A `let` binding named `bulk` is likewise rejected.
+        let src = "i64 F() { let bulk = 0; return bulk; }";
+        assert!(
+            BeskidParser::parse(Rule::Program, src).is_err(),
+            "`bulk` is a reserved keyword and must not parse as a let binding name"
+        );
+    }
+
+    #[test]
     fn extend_type_parses_and_formats() {
         let src = r#"
             type Account { i64 balance }

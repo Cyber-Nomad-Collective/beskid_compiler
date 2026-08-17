@@ -21,7 +21,7 @@ pub bool ProcessGrayStack() {
     mut bool found = true;
     while found {
         found = false;
-        pointer object = region;
+        mut pointer object = region;
         while NativeWord(object) < NativeWord(bump) {
             word descriptorWord = raw_word_load(object);
             word size;

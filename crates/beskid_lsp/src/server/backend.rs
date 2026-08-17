@@ -21,7 +21,9 @@ use crate::protocol::request::{snapshot_document, snapshot_lsp_request, snapshot
 use crate::server::init::initialize_result;
 use crate::session::db_access::with_compilation_db;
 use crate::session::lifecycle::{
-    publish_diagnostics_for_uri, remove_document, schedule_typed_prepare_rebuild, set_document,
+    apply_persistence_config, persistence_config_from_configuration, persistence_config_from_value,
+    publish_diagnostics_for_uri, remove_document, save_snapshot_now, schedule_persistence_snapshot_save,
+    schedule_typed_prepare_rebuild, set_document,
 };
 use crate::session::store::State;
 use crate::text_sync::apply_document_changes;
@@ -127,6 +129,10 @@ impl LanguageServer for Backend {
             if let Some(focused) = focused_project_from_value(&options) {
                 self.state.write().await.focused_project = Some(focused);
             }
+            if let Some(cfg) = persistence_config_from_value(&options) {
+                let mut state = self.state.write().await;
+                apply_persistence_config(&mut state, &cfg);
+            }
         }
         Ok(initialize_result())
     }
@@ -138,6 +144,11 @@ impl LanguageServer for Backend {
     }
 
     async fn shutdown(&self) -> Result<()> {
+        // Flush the Salsa DB snapshot before exiting so the session's incremental
+        // work persists for the next session. Failures are logged inside
+        // `save_snapshot_now` / `persist_session_snapshot` and never propagate —
+        // snapshot persistence is a performance optimization, not a correctness gate.
+        save_snapshot_now(&self.state).await;
         Ok(())
     }
 
@@ -146,6 +157,7 @@ impl LanguageServer for Backend {
         let _ = set_document(&self.state, doc.uri.clone(), doc.version, doc.text).await;
         self.schedule_publish_diagnostics(doc.uri.clone()).await;
         schedule_typed_prepare_rebuild(self.state.clone(), doc.uri).await;
+        schedule_persistence_snapshot_save(self.state.clone()).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -164,11 +176,15 @@ impl LanguageServer for Backend {
         if updated {
             self.schedule_publish_diagnostics(uri.clone()).await;
             schedule_typed_prepare_rebuild(self.state.clone(), uri).await;
+            schedule_persistence_snapshot_save(self.state.clone()).await;
         }
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        self.schedule_publish_diagnostics(params.text_document.uri).await;
+        self.schedule_publish_diagnostics(params.text_document.uri.clone()).await;
+        // A user-initiated disk save is a natural persistence hint — schedule the
+        // debounced DB snapshot save so the snapshot follows the file save.
+        schedule_persistence_snapshot_save(self.state.clone()).await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
@@ -340,6 +356,10 @@ impl LanguageServer for Backend {
                 crate::session::project_context::invalidate_compilation_cache(&self.state).await;
                 crate::session::lifecycle::rebuild_open_document_syntax_facts(&self.state).await;
             }
+        }
+        if let Some(cfg) = persistence_config_from_configuration(&params.settings) {
+            let mut state = self.state.write().await;
+            apply_persistence_config(&mut state, &cfg);
         }
     }
 

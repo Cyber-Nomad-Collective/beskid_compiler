@@ -35,6 +35,7 @@ ContinueKeyword = { "continue" }
 LetKeyword = { "let" }
 ConstKeyword = { "const" }
 MutKeyword = @{ "mut" ~ !(ASCII_ALPHANUMERIC | "_") }
+BulkKeyword = @{ "bulk" ~ !(ASCII_ALPHANUMERIC | "_") }
 ModKeyword = { "mod" }
 UseKeyword = { "use" }
 PubKeyword = { "pub" }
@@ -82,6 +83,7 @@ Keyword = {
       | LetKeyword
       | ConstKeyword
       | MutKeyword
+      | BulkKeyword
       | ModKeyword
       | UseKeyword
       | PubKeyword
@@ -206,7 +208,7 @@ ExpressionBody = { "=>" ~ Expression }
 ImplMethodDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ MethodBody ~ ";"? }
 ParameterList = { ParameterWithDocs ~ ("," ~ DocGap* ~ ParameterWithDocs)* }
 ParameterWithDocs = { (DocRun ~ Parameter) | Parameter }
-Parameter = { MutKeyword? ~ BeskidType ~ Identifier }
+Parameter = { BulkKeyword? ~ MutKeyword? ~ BeskidType ~ Identifier }
 
 FieldList = { FieldWithDocs ~ ("," ~ DocGap* ~ FieldWithDocs)* ~ ","? }
 FieldWithDocs = { (DocRun ~ Field) | Field }

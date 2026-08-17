@@ -6,7 +6,7 @@ const HEAP_LIVE_BYTES = 32;
 const HEAP_LIVE_COUNT = 40;
 
 pub bool Sweep(pointer heap) {
-    pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
+    mut pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
     pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
     mut word liveBytes = 0;
     mut word liveCount = 0;
@@ -15,7 +15,7 @@ pub bool Sweep(pointer heap) {
     while NativeWord(cursor) < NativeWord(bump) {
         word descriptorWord = raw_word_load(cursor);
         word blockSize;
-        bool live = false;
+        mut bool live = false;
         if descriptorWord == 0 {
             blockSize = raw_word_load(pointer_add(cursor, 8));
         } else {

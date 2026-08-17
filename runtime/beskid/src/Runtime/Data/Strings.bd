@@ -19,7 +19,7 @@ pub pointer StrNew(pointer data, word length) {
         return NativePointer(0);
     }
     // Allocate and copy the data buffer. Empty strings keep a storage-only sentinel.
-    word allocation = length;
+    mut word allocation = length;
     if allocation == 0 {
         allocation = 1;
     }
@@ -129,7 +129,7 @@ pub pointer StrFromI64(i64 value) {
         raw_word_store(pointer_add(strObj, 8), 1);
         return strObj;
     }
-    bool negative = value < 0;
+    mut bool negative = value < 0;
     mut i64 remaining = value;
     if negative {
         remaining = 0 - remaining;
@@ -182,7 +182,7 @@ pub pointer StrSlice(pointer value, word start, word count) {
     }
     word len = raw_word_load(pointer_add(value, 8));
     if start >= len || count == 0 {
-        word end = start + count;
+        mut word end = start + count;
         if end > len {
             count = len - start;
         }
@@ -190,7 +190,7 @@ pub pointer StrSlice(pointer value, word start, word count) {
     if start >= len {
         return StrNew(NativePointer(0), 0);
     }
-    word end = start + count;
+    mut word end = start + count;
     if end > len {
         end = len;
     }

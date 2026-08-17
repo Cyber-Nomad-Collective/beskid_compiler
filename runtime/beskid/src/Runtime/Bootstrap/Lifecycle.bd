@@ -70,7 +70,7 @@ pub pointer ProcessInit(pointer config) {
     raw_word_store(pointer_add(config, RUNTIME_HEAP_OFFSET), NativeWord(heap));
     raw_word_store(pointer_add(config, RUNTIME_CALLBACK_REGISTRY_OFFSET), NativeWord(callbacks));
     raw_word_store(pointer_add(config, RUNTIME_ABI_VERSION_OFFSET), 5);
-    word nextGeneration = (generation + 1) & 0xFFFFFFFF;
+    mut word nextGeneration = (generation + 1) & 0xFFFFFFFF;
     if nextGeneration == 0 { nextGeneration = 1; }
     raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_ACTIVE | (nextGeneration << 32));
     pointer thread = ThreadAttach(config);
@@ -108,7 +108,7 @@ pub pointer ProcessInit(pointer config) {
         raw_word_store(pointer_add(config, RUNTIME_LIFECYCLE_STATE_OFFSET), RUNTIME_SHUT_DOWN | (nextGeneration << 32));
         return NativePointer(0);
     }
-    pointer composition = CompositionContainerCreate();
+    pointer composition = CompositionContainerCreate(0);
     if composition == NativePointer(0) || CompositionLaunch(composition) == false {
         if composition != NativePointer(0) { raw_word_store(pointer_add(composition, 8), 5); CompositionContainerDrop(composition); }
         WorkerPoolShutdown();

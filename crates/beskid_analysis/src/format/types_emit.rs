@@ -136,6 +136,10 @@ impl Emit for Spanned<Type> {
 
 impl Emit for Parameter {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        if self.bulk {
+            cx.token(w, "bulk")?;
+            cx.space(w)?;
+        }
         if self.mutable {
             cx.token(w, "mut")?;
             cx.space(w)?;

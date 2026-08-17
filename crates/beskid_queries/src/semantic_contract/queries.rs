@@ -69,6 +69,18 @@ pub fn call_arguments(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<[
     with_registered_syntax(db, key, call_arguments_tracked)
 }
 
+/// Return the bulk calling-convention fact for one parameter node.
+///
+/// The fact exists only when the parameter carries the `bulk` modifier and its declared type is
+/// an array `T[]`. It marks which parameter is bulk, its declared element ABI type, and its
+/// position in the enclosing callable's parameter list — the authority a later bulk-call lowering
+/// slice reads to pack N scalar arguments into a fresh rooted array. The callee signature shape
+/// is unchanged (the callee still receives one array parameter). Stale, unregistered,
+/// non-parameter, non-bulk, and non-array parameters contain no fact.
+pub fn bulk_parameter(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<BulkParameterFact> {
+    with_registered_syntax(db, key, bulk_parameter_tracked)
+}
+
 /// Return exact current-generation bounds for the syntax-only `range(start, end)` loop form.
 pub fn range_for_fact(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<RangeForFact> {
     with_registered_syntax(db, key, range_for_fact_tracked)

@@ -40,7 +40,7 @@ pub i64 ChannelCreate(i64 capacity, i64 flags) {
     if table == NativePointer(0) {
         return -1;
     }
-    word count = raw_word_load(table);
+    mut word count = raw_word_load(table);
     if count >= CHANNEL_TABLE_MAX {
         return -1;
     }
@@ -83,16 +83,16 @@ pub i64 ChannelTrySendValue(i64 id, i64 value) {
     if ch == NativePointer(0) {
         return CHANNEL_STATUS_CLOSED;
     }
-    u8 closed = raw_byte_load(pointer_add(ch, 32));
+    mut u8 closed = raw_byte_load(pointer_add(ch, 32));
     if closed != 0 {
         return CHANNEL_STATUS_CLOSED;
     }
-    word count = raw_word_load(pointer_add(ch, 16));
+    mut word count = raw_word_load(pointer_add(ch, 16));
     i64 cap = i64(raw_word_load(pointer_add(ch, 24)));
     if i64(count) >= cap {
         return CHANNEL_STATUS_WOULD_BLOCK;
     }
-    word tail = raw_word_load(pointer_add(ch, 8));
+    mut word tail = raw_word_load(pointer_add(ch, 8));
     raw_word_store(pointer_add(ch, 40 + (tail % CHANNEL_BUFFER_SIZE) * 8), word(value));
     raw_word_store(pointer_add(ch, 8), (tail + 1) % CHANNEL_BUFFER_SIZE);
     raw_word_store(pointer_add(ch, 16), count + 1);
@@ -126,8 +126,8 @@ pub i64 ChannelTryReceiveStatus(i64 id) {
     if ch == NativePointer(0) {
         return CHANNEL_STATUS_CLOSED;
     }
-    u8 closed = raw_byte_load(pointer_add(ch, 32));
-    word count = raw_word_load(pointer_add(ch, 16));
+    mut u8 closed = raw_byte_load(pointer_add(ch, 32));
+    mut word count = raw_word_load(pointer_add(ch, 16));
     if count > 0 {
         return CHANNEL_STATUS_OK;
     }
@@ -158,11 +158,11 @@ pub i64 ChannelReceiveValue(i64 id) {
     if ch == NativePointer(0) {
         return 0;
     }
-    word count = raw_word_load(pointer_add(ch, 16));
+    mut word count = raw_word_load(pointer_add(ch, 16));
     if count == 0 {
         return 0;
     }
-    word head = raw_word_load(pointer_add(ch, 0));
+    mut word head = raw_word_load(pointer_add(ch, 0));
     word value = raw_word_load(pointer_add(ch, 40 + (head % CHANNEL_BUFFER_SIZE) * 8));
     raw_word_store(pointer_add(ch, 40 + (head % CHANNEL_BUFFER_SIZE) * 8), 0);
     raw_word_store(pointer_add(ch, 0), (head + 1) % CHANNEL_BUFFER_SIZE);
@@ -178,11 +178,11 @@ pub bool ChannelTryReceive(i64 id) {
     if ch == NativePointer(0) {
         return false;
     }
-    word count = raw_word_load(pointer_add(ch, 16));
+    mut word count = raw_word_load(pointer_add(ch, 16));
     if count == 0 {
         return false;
     }
-    word head = raw_word_load(pointer_add(ch, 0));
+    mut word head = raw_word_load(pointer_add(ch, 0));
     raw_word_store(pointer_add(ch, 40 + (head % CHANNEL_BUFFER_SIZE) * 8), 0);
     raw_word_store(pointer_add(ch, 0), (head + 1) % CHANNEL_BUFFER_SIZE);
     raw_word_store(pointer_add(ch, 16), count - 1);
@@ -252,7 +252,7 @@ pub unit ChannelWakeAll(pointer ch, word waiterOffset) {
 // Parks the current canonical fiber on a scheduler-index bitset. The caller
 // retries its operation after wake, so close and cancellation are revalidated.
 pub i64 ChannelPark(pointer ch, word waiterOffset) {
-    word index = SchedulerCurrentFiber();
+    mut word index = SchedulerCurrentFiber();
     if index == FIBER_NONE || !FiberExists(index) { return CHANNEL_STATUS_WOULD_BLOCK; }
     pointer fiber = FiberRecord(index);
     if raw_byte_load(pointer_add(fiber, 41)) != 0 { return CHANNEL_STATUS_CANCELLED; }
@@ -271,13 +271,13 @@ pub i64 ChannelTrySendPtrValue(i64 id, pointer valuePtr) {
     if valuePtr == NativePointer(0) { return CHANNEL_STATUS_CANCELLED; }
     pointer ch = ChannelSlot(id);
     if ch == NativePointer(0) || raw_byte_load(pointer_add(ch, 32)) != 0 { return CHANNEL_STATUS_CLOSED; }
-    word count = raw_word_load(pointer_add(ch, 16));
-    word capacity = raw_word_load(pointer_add(ch, 24));
+    mut word count = raw_word_load(pointer_add(ch, 16));
+    mut word capacity = raw_word_load(pointer_add(ch, 24));
     if count >= capacity { return CHANNEL_STATUS_WOULD_BLOCK; }
     word handle = GcRootHandle(valuePtr);
     if handle == 0 { return CHANNEL_STATUS_CANCELLED; }
-    word tail = raw_word_load(pointer_add(ch, 8));
-    word position = tail % CHANNEL_BUFFER_SIZE;
+    mut word tail = raw_word_load(pointer_add(ch, 8));
+    mut word position = tail % CHANNEL_BUFFER_SIZE;
     raw_word_store(pointer_add(ch, 40 + position * 8), handle);
     raw_word_store(pointer_add(ch, 168), raw_word_load(pointer_add(ch, 168)) | (word(1) << position));
     raw_word_store(pointer_add(ch, 8), (tail + 1) % CHANNEL_BUFFER_SIZE);
@@ -309,8 +309,8 @@ pub i64 ChannelTrySendPtr(i64 id, pointer valuePtr) {
 pub pointer ChannelReceivePtr(i64 id) {
     pointer ch = ChannelSlot(id);
     if ch == NativePointer(0) || raw_word_load(pointer_add(ch, 16)) == 0 { return NativePointer(0); }
-    word head = raw_word_load(ch);
-    word position = head % CHANNEL_BUFFER_SIZE;
+    mut word head = raw_word_load(ch);
+    mut word position = head % CHANNEL_BUFFER_SIZE;
     word pointerBits = raw_word_load(pointer_add(ch, 168));
     if (pointerBits & (word(1) << position)) == 0 { return NativePointer(0); }
     word handle = raw_word_load(pointer_add(ch, 40 + position * 8));

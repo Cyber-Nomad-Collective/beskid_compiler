@@ -4,7 +4,7 @@ use crate::syntax::{AstNodeId, Program, SpanInfo, Spanned, SyntaxGenerationId};
 use crate::syntax_query::{DynNodeRef, NodeKind};
 
 /// Stable metadata for one node in deterministic syntax pre-order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SyntaxNodeMetadata {
     pub id: AstNodeId,
     pub parent: Option<AstNodeId>,
@@ -13,7 +13,7 @@ pub struct SyntaxNodeMetadata {
 }
 
 /// Generation-bound, pointer-free index over an expanded syntax tree.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SyntaxIndex {
     generation: SyntaxGenerationId,
     metadata: Vec<SyntaxNodeMetadata>,

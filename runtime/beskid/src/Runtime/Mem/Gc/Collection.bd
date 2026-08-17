@@ -52,7 +52,7 @@ pub word GcPhase() {
 }
 
 pub unit ResetMarkedObjects(pointer heap) {
-    pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
+    mut pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
     pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
     while NativeWord(cursor) < NativeWord(bump) {
         word descriptorWord = raw_word_load(cursor);

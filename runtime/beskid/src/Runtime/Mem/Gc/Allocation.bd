@@ -12,7 +12,7 @@ pub word AlignUp(word value, word alignment) {
         return value;
     }
     word increase = alignment - remainder;
-    word aligned = value + increase;
+    mut word aligned = value + increase;
     if aligned < value {
         return 0;
     }
@@ -22,8 +22,8 @@ pub word AlignUp(word value, word alignment) {
 // Free blocks are linked implicitly by their address order. Their manifest object-header-sized
 // prefix is { descriptor = null, block_size }; sweep coalesces adjacent entries.
 pub pointer AllocateFromFreeList(pointer heap, word size, word alignment) {
-    pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
-    pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
+    mut pointer cursor = NativePointer(raw_word_load(pointer_add(heap, HEAP_REGION_START)));
+    mut pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
     while NativeWord(cursor) < NativeWord(bump) {
         word descriptorWord = raw_word_load(cursor);
         word blockSize;
@@ -32,8 +32,8 @@ pub pointer AllocateFromFreeList(pointer heap, word size, word alignment) {
             if blockSize < 16 || blockSize % 8 != 0 {
                 return NativePointer(0);
             }
-            word aligned = AlignUp(NativeWord(cursor), alignment);
-            word prefix = aligned - NativeWord(cursor);
+            mut word aligned = AlignUp(NativeWord(cursor), alignment);
+            mut word prefix = aligned - NativeWord(cursor);
             if prefix > 0 && prefix < 16 {
                 aligned = aligned + alignment;
                 prefix = aligned - NativeWord(cursor);
@@ -61,7 +61,7 @@ pub pointer AllocateFromFreeList(pointer heap, word size, word alignment) {
             blockSize = ManagedObjectSize(cursor, descriptor);
             if blockSize == 0 { return NativePointer(0); }
         }
-        word next = NativeWord(cursor) + blockSize;
+        mut word next = NativeWord(cursor) + blockSize;
         if blockSize < 16 || blockSize % 8 != 0 || next <= NativeWord(cursor) || next > NativeWord(bump) {
             return NativePointer(0);
         }
@@ -75,17 +75,17 @@ pub pointer GcAlloc(word size, word alignment) {
     if heap == NativePointer(0) || size < 16 || size % 8 != 0 || IsValidObjectAlignment(alignment) == false {
         return NativePointer(0);
     }
-    pointer reused = AllocateFromFreeList(heap, size, alignment);
+    mut pointer reused = AllocateFromFreeList(heap, size, alignment);
     if reused != NativePointer(0) {
         raw_word_store(pointer_add(heap, HEAP_LIVE_BYTES), raw_word_load(pointer_add(heap, HEAP_LIVE_BYTES)) + size);
         raw_word_store(pointer_add(heap, HEAP_LIVE_COUNT), raw_word_load(pointer_add(heap, HEAP_LIVE_COUNT)) + 1);
         return reused;
     }
-    word bump = raw_word_load(pointer_add(heap, HEAP_BUMP));
-    word aligned = AlignUp(bump, alignment);
+    mut word bump = raw_word_load(pointer_add(heap, HEAP_BUMP));
+    mut word aligned = AlignUp(bump, alignment);
     if aligned > bump && aligned - bump < 16 { aligned = aligned + alignment; }
     word limit = raw_word_load(pointer_add(heap, HEAP_LIMIT));
-    word next = aligned + size;
+    mut word next = aligned + size;
     if aligned < bump || next < aligned || next > limit {
         GcCollect();
         reused = AllocateFromFreeList(heap, size, alignment);

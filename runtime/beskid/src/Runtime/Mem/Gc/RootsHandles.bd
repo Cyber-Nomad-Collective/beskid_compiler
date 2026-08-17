@@ -66,7 +66,7 @@ pub word GcRootHandle(pointer valuePtr) {
     while index < count {
         pointer slot = pointer_add(heap, HEAP_HANDLES + index * GC_HANDLE_SLOT_SIZE);
         if raw_word_load(slot) == 0 {
-            word generation = raw_word_load(pointer_add(slot, 8));
+            mut word generation = raw_word_load(pointer_add(slot, 8));
             if generation == 0 { generation = 1; }
             raw_word_store(slot, NativeWord(valuePtr));
             raw_word_store(pointer_add(slot, 8), generation);
@@ -86,14 +86,14 @@ pub word GcRootHandle(pointer valuePtr) {
 pub unit GcUnrootHandle(word handle) {
     pointer heap = Heap();
     if heap == NativePointer(0) || handle == 0 { return; }
-    word index = handle & 0xFFFFFFFF;
-    word generation = handle >> 32;
+    mut word index = handle & 0xFFFFFFFF;
+    mut word generation = handle >> 32;
     word count = raw_word_load(pointer_add(heap, HEAP_HANDLE_COUNT));
     if index >= count { return; }
     pointer slot = pointer_add(heap, HEAP_HANDLES + index * GC_HANDLE_SLOT_SIZE);
     if raw_word_load(slot) == 0 || raw_word_load(pointer_add(slot, 8)) != generation { return; }
     raw_word_store(slot, 0);
-    word nextGeneration = generation + 1;
+    mut word nextGeneration = generation + 1;
     if nextGeneration == 0 { nextGeneration = 1; }
     raw_word_store(pointer_add(slot, 8), nextGeneration);
     return;
@@ -115,8 +115,8 @@ pub bool GcHandlesClear() {
 pub pointer GcResolveHandle(word handle) {
     pointer heap = Heap();
     if heap == NativePointer(0) || handle == 0 { return NativePointer(0); }
-    word index = handle & 0xFFFFFFFF;
-    word generation = handle >> 32;
+    mut word index = handle & 0xFFFFFFFF;
+    mut word generation = handle >> 32;
     word count = raw_word_load(pointer_add(heap, HEAP_HANDLE_COUNT));
     if index >= count { return NativePointer(0); }
     pointer slot = pointer_add(heap, HEAP_HANDLES + index * GC_HANDLE_SLOT_SIZE);
@@ -131,7 +131,7 @@ pub bool MarkRoots() {
     if heap == NativePointer(0) { return false; }
     pointer tls = CurrentThreadState();
     if tls != NativePointer(0) {
-        pointer frame = NativePointer(raw_word_load(pointer_add(tls, 8)));
+        mut pointer frame = NativePointer(raw_word_load(pointer_add(tls, 8)));
         while frame != NativePointer(0) {
             pointer slots = NativePointer(raw_word_load(pointer_add(frame, 8)));
             word count = raw_word_load(pointer_add(frame, 16));

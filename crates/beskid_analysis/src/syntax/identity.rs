@@ -34,7 +34,7 @@ impl fmt::Display for AstNodeId {
 }
 
 /// Identity of one expanded syntax generation.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct SyntaxGenerationId(pub u64);
 
 impl fmt::Debug for SyntaxGenerationId {
@@ -50,7 +50,7 @@ impl fmt::Display for SyntaxGenerationId {
 }
 
 /// Globally unambiguous key for one AST node in one source-unit generation.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct AstNodeKey<UnitId> {
     pub unit: UnitId,
     pub generation: SyntaxGenerationId,

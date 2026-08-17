@@ -250,6 +250,7 @@ fn expected_token_for_rule(rule: Rule) -> Option<(&'static str, &'static str, u8
         Rule::TestBodyItemWithDocs => Some(("return 0;", "inserted parser-expected test body item", 60)),
         Rule::InjectKeyword => Some(("inject", "inserted parser-expected inject keyword", 79)),
         Rule::MutKeyword => Some(("mut", "inserted parser-expected mut keyword", 79)),
+        Rule::BulkKeyword => Some(("bulk", "inserted parser-expected bulk keyword", 79)),
         Rule::InKeyword => Some(("in", "inserted parser-expected in keyword", 79)),
         Rule::ElseKeyword => Some(("else", "inserted parser-expected else keyword", 79)),
         Rule::WhenKeyword => Some(("when", "inserted parser-expected when keyword", 79)),

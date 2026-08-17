@@ -46,11 +46,54 @@ fn normalize_lexically(path: &std::path::Path) -> std::path::PathBuf {
 }
 
 /// One ABI-facing service used by a compiler-owned Corelib source unit.
+///
+/// `name`, `symbol`, and `source_path` are `&'static str` borrowed from the
+/// compile-time [`CORELIB_SERVICES`] table, so they cannot round-trip through
+/// `serde_json` directly. Manual [`Serialize`]/[`Deserialize`] implementations
+/// emit the three fields as owned strings and recover the canonical `&'static
+/// str` triple by matching against [`CORELIB_SERVICES`], failing closed with a
+/// serde error when no entry matches (a tampered or unknown service).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CorelibService {
     pub name: &'static str,
     pub symbol: &'static str,
     pub source_path: &'static str,
+}
+
+impl serde::Serialize for CorelibService {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("CorelibService", 3)?;
+        state.serialize_field("name", self.name)?;
+        state.serialize_field("symbol", self.symbol)?;
+        state.serialize_field("source_path", self.source_path)?;
+        state.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for CorelibService {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct Fields {
+            name: String,
+            symbol: String,
+            source_path: String,
+        }
+
+        let fields = Fields::deserialize(deserializer)?;
+        for service in CORELIB_SERVICES {
+            if service.name == fields.name
+                && service.symbol == fields.symbol
+                && service.source_path == fields.source_path
+            {
+                return Ok(*service);
+            }
+        }
+        Err(serde::de::Error::custom(format!(
+            "unknown CorelibService `{}` / `{}` / `{}`",
+            fields.name, fields.symbol, fields.source_path
+        )))
+    }
 }
 
 const CORELIB_SERVICES: &[CorelibService] = &[

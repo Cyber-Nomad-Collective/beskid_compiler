@@ -118,7 +118,7 @@ pub unit CallbackInstallEntries(pointer callbackState, pointer entries, word cou
 // function returns a candidate.  The caller performs the sole publication
 // store, preserving the previous registry on every failure path.
 pub bool CallbackMergedFits(pointer previous, pointer entries, word count, word kind) {
-    word merged = 0;
+    mut word merged = 0;
     if previous != NativePointer(0) { merged = raw_word_load(CallbackEntryCountSlot(previous, kind)); }
     mut word sourceIndex = 0;
     while sourceIndex < count {

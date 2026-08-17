@@ -170,6 +170,7 @@ pub fn analyzer_diagnostic_to_semantic(
         label: diagnostic.code.clone(),
         help: Some(format!("mod analyzer contract `{type_id}`")),
         code: Some(diagnostic.code.clone()),
+        origin: Some(format!("beskid:mod:{type_id}")),
         severity,
     }
 }
@@ -233,6 +234,7 @@ mod tests {
         assert_eq!(semantic.span.offset(), 5);
         assert!(!semantic.span.is_empty());
         assert!(semantic.message.contains("ModA.Check"));
+        assert_eq!(semantic.origin.as_deref(), Some("beskid:mod:ModA.Check"));
     }
 
     #[test]
@@ -247,5 +249,6 @@ mod tests {
         let semantic = analyzer_diagnostic_to_semantic(&diagnostic, "ModA.Check", "Main.bd", source);
         // Whole-file fallback starts at offset 0.
         assert_eq!(semantic.span.offset(), 0);
+        assert_eq!(semantic.origin.as_deref(), Some("beskid:mod:ModA.Check"));
     }
 }

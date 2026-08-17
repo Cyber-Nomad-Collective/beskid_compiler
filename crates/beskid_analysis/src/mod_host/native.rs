@@ -368,6 +368,7 @@ mod tests {
                     syntax_generation_id: 0,
                     entry_source_path: empty_str,
                     entry_source_name: empty_str,
+                    entry_source_text: empty_str,
                 },
                 workspace: ModWorkspace {
                     root_path: empty_str,

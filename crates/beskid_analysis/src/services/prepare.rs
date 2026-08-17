@@ -18,7 +18,7 @@ use crate::mod_host::{
     ModHostInput, native_invoker_for_plan, run_analyze_rewrite_after_composition, run_through_generate,
 };
 use crate::projects::{
-    CompilePlan, PreparedProjectWorkspace, ProgramAssembly, assemble_program, assembly_options_for_prepare,
+    CompilePlan, PreparedProjectWorkspace, ProgramAssembly, SourceUnit, assemble_program, assembly_options_for_prepare,
 };
 use crate::syntax::Spanned;
 
@@ -292,17 +292,16 @@ fn run_prepare_spine(
     )?;
     program = mod_rewrite.program;
 
+    // Mod analyzer diagnostics are always collected so a mod `Error`-severity
+    // diagnostic fails the typed/codegen build (mirrors `require_no_semantic_errors`
+    // at the compiler-semantic gate above). On the diagnostics path they surface to
+    // LSP; on the typed/codegen path `Warning`/`Note` are dropped, matching the
+    // existing compiler-diagnostic contract.
+    let analyzer_diagnostics = collect_analyzer_diagnostics(&mod_rewrite.analyzer_outcomes, entry_unit, entry_source);
     if collect_diagnostics {
-        for outcome in &mod_rewrite.analyzer_outcomes {
-            for diagnostic in &outcome.diagnostics {
-                collected_diagnostics.push(analyzer_diagnostic_to_semantic(
-                    diagnostic,
-                    outcome.type_id.as_str(),
-                    entry_unit.logical_name.as_str(),
-                    entry_source,
-                ));
-            }
-        }
+        collected_diagnostics.extend(analyzer_diagnostics);
+    } else {
+        require_no_semantic_errors(&analyzer_diagnostics)?;
     }
 
     if options.front_end.with_semantic_diagnostics && !collect_diagnostics {
@@ -391,6 +390,30 @@ pub fn resolved_input_from_plan(
     }
 }
 
+/// Map mod `Analyzer` outcomes into the semantic diagnostic stream.
+///
+/// Each `AnalyzerDiagnostic` is bridged via [`analyzer_diagnostic_to_semantic`], which tags
+/// the diagnostic with `origin: Some("beskid:mod:<type_id>")` so LSP can route code actions
+/// and the prepare spine can attribute build failures to mod contracts.
+fn collect_analyzer_diagnostics(
+    analyzer_outcomes: &[crate::mod_host::AnalyzerOutcome],
+    entry_unit: &SourceUnit,
+    entry_source: &str,
+) -> Vec<SemanticDiagnostic> {
+    let mut out = Vec::new();
+    for outcome in analyzer_outcomes {
+        for diagnostic in &outcome.diagnostics {
+            out.push(analyzer_diagnostic_to_semantic(
+                diagnostic,
+                outcome.type_id.as_str(),
+                entry_unit.logical_name.as_str(),
+                entry_source,
+            ));
+        }
+    }
+    out
+}
+
 fn semantic_facts_errors_to_diagnostics(
     error: SemanticFactsError,
     source_name: &str,
@@ -434,7 +457,14 @@ fn typed_fingerprint_types(typed: &crate::types::TypeResult) -> u64 {
 mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use super::{PrepareOptions, prepare_compilation, prepare_compilation_diagnostics};
+    use super::{PrepareOptions, collect_analyzer_diagnostics, prepare_compilation, prepare_compilation_diagnostics};
+    use crate::analysis::diagnostics::Severity;
+    use crate::mod_host::{
+        AnalyzerDiagnostic, AnalyzerSeverity, ContractInvoker, ContractRegistration, ModHostAnalyzeResult,
+        ModInvocationContext, ScriptedContractInvoker,
+    };
+    use crate::projects::SourceUnit;
+    use crate::services::semantic::require_no_semantic_errors;
     use crate::services::{
         FrontEndOptions, parse_program_with_source_name, resolved_input_from_plan, synthetic_compile_plan_for_source,
     };
@@ -516,5 +546,92 @@ mod tests {
         assert!(!diags.is_empty(), "prepare-spine diagnostics must surface without DocumentAnalysisSnapshot");
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// Build a `ModHostAnalyzeResult` carrying one scripted `Analyzer` outcome so the
+    /// prepare-spine mod-diagnostic gate can be exercised without a native mod artifact.
+    fn mod_rewrite_with_scripted_analyzer(
+        type_id: &str,
+        diagnostic: AnalyzerDiagnostic,
+        entry_source: &str,
+    ) -> (ModHostAnalyzeResult, SourceUnit) {
+        let invoker = ScriptedContractInvoker::new().with_analyzer_diagnostic(type_id, vec![diagnostic]);
+        let registration = ContractRegistration {
+            contract_id: "Beskid.Compiler.Collect.Analyzer".to_owned(),
+            type_id: type_id.to_owned(),
+            entry_symbol: "moda_check".to_owned(),
+        };
+        let context = ModInvocationContext::empty();
+        let outcome = invoker
+            .invoke_analyzer(&registration, &context.collect_request, None)
+            .expect("scripted analyzer invocation");
+        assert_eq!(outcome.diagnostics.len(), 1, "scripted analyzer diagnostic must overlay");
+
+        let program = parse_program_with_source_name("Main.bd", entry_source).expect("parse entry");
+        let entry_unit = SourceUnit {
+            logical_name: "Main.bd".to_owned(),
+            path: std::path::PathBuf::from("/tmp/Main.bd"),
+            source: entry_source.to_owned(),
+            program,
+        };
+        let mod_rewrite = ModHostAnalyzeResult {
+            program: entry_unit.program.clone(),
+            analyzer_outcomes: vec![outcome],
+            rewriter_outcomes: Vec::new(),
+            edited_source: None,
+        };
+        (mod_rewrite, entry_unit)
+    }
+
+    /// A mod `Error`-severity diagnostic must fail the typed/codegen build path
+    /// (`require_no_semantic_errors` is the same gate used for compiler semantic errors).
+    #[test]
+    fn mod_error_diagnostic_fails_typed_build_path() {
+        let entry_source = "unit Main() { return; }\n";
+        let diagnostic = AnalyzerDiagnostic {
+            code: "MOD0001".to_owned(),
+            message: "mod error".to_owned(),
+            severity: AnalyzerSeverity::Error,
+            span: Some((0, 4)),
+        };
+        let (mod_rewrite, entry_unit) = mod_rewrite_with_scripted_analyzer("ModA.Check", diagnostic, entry_source);
+
+        let analyzer_diagnostics =
+            collect_analyzer_diagnostics(&mod_rewrite.analyzer_outcomes, &entry_unit, entry_source);
+        assert_eq!(analyzer_diagnostics.len(), 1);
+        assert_eq!(analyzer_diagnostics[0].severity, Severity::Error);
+        assert_eq!(analyzer_diagnostics[0].origin.as_deref(), Some("beskid:mod:ModA.Check"));
+
+        // Typed/codegen path gate: mod Error fails the build.
+        assert!(
+            require_no_semantic_errors(&analyzer_diagnostics).is_err(),
+            "mod Error-severity diagnostic must fail the typed build path"
+        );
+    }
+
+    /// A mod `Warning`-severity diagnostic must NOT fail the typed/codegen build path
+    /// (Warnings/Notes are dropped on the build path, matching the compiler-diagnostic contract).
+    #[test]
+    fn mod_warning_diagnostic_does_not_fail_typed_build_path() {
+        let entry_source = "unit Main() { return; }\n";
+        let diagnostic = AnalyzerDiagnostic {
+            code: "MOD0002".to_owned(),
+            message: "mod warning".to_owned(),
+            severity: AnalyzerSeverity::Warning,
+            span: Some((0, 4)),
+        };
+        let (mod_rewrite, entry_unit) = mod_rewrite_with_scripted_analyzer("ModA.Check", diagnostic, entry_source);
+
+        let analyzer_diagnostics =
+            collect_analyzer_diagnostics(&mod_rewrite.analyzer_outcomes, &entry_unit, entry_source);
+        assert_eq!(analyzer_diagnostics.len(), 1);
+        assert_eq!(analyzer_diagnostics[0].severity, Severity::Warning);
+        assert_eq!(analyzer_diagnostics[0].origin.as_deref(), Some("beskid:mod:ModA.Check"));
+
+        // Typed/codegen path gate: mod Warning does not fail the build.
+        assert!(
+            require_no_semantic_errors(&analyzer_diagnostics).is_ok(),
+            "mod Warning-severity diagnostic must not fail the typed build path"
+        );
     }
 }

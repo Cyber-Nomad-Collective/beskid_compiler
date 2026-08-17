@@ -7,7 +7,7 @@ const SYSCALL_READ = 1;
 const SYSCALL_WRITE = 2;
 
 pub i64 SyscallSubmitAndPark(word nativeHandle, pointer managedBuffer, word len, word operation) {
-    word allocation = len;
+    mut word allocation = len;
     if allocation == 0 { allocation = 1; }
     pointer nativeBuffer = SystemAllocate(allocation, 8);
     if nativeBuffer == NativePointer(0) { return -1; }

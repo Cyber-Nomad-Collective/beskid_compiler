@@ -67,9 +67,9 @@ pub word PollHandleIndex(word handle) { return handle & 0xFFFFFFFF; }
 pub word PollHandleGeneration(word handle) { return handle >> 32; }
 
 pub bool PollTaskValid(word handle) {
-    pointer state = PollState();
+    mut pointer state = PollState();
     if state == NativePointer(0) { return false; }
-    word index = PollHandleIndex(handle);
+    mut word index = PollHandleIndex(handle);
     if index >= raw_word_load(pointer_add(state, POLL_TASK_COUNT_OFFSET)) { return false; }
     pointer task = PollTaskRecord(index);
     return raw_word_load(pointer_add(task, POLL_TASK_GENERATION)) == PollHandleGeneration(handle) && PollHandleGeneration(handle) != 0 && raw_byte_load(pointer_add(task, POLL_TASK_ACTIVE)) != 0;
@@ -103,7 +103,7 @@ pub unit PollWakeRevoke(pointer task) {
 }
 
 pub word PollTaskAllocate() {
-    pointer state = PollState();
+    mut pointer state = PollState();
     word count = raw_word_load(pointer_add(state, POLL_TASK_COUNT_OFFSET));
     mut word index = 0;
     while index < count {
@@ -168,10 +168,10 @@ pub unit PollTaskPublishTerminal(pointer task, word outcome, word result) {
 }
 
 pub bool PollQueuePush(word index) {
-    pointer state = PollState();
+    mut pointer state = PollState();
     pointer task = PollTaskRecord(index);
     if raw_byte_load(pointer_add(task, POLL_TASK_QUEUED)) != 0 { return false; }
-    word head = raw_word_load(pointer_add(state, POLL_QUEUE_HEAD_OFFSET));
+    mut word head = raw_word_load(pointer_add(state, POLL_QUEUE_HEAD_OFFSET));
     word tail = raw_word_load(pointer_add(state, POLL_QUEUE_TAIL_OFFSET));
     word next = (tail + 1) % POLL_TASK_MAX;
     if next == head { return false; }
@@ -182,7 +182,7 @@ pub bool PollQueuePush(word index) {
 }
 
 pub word PollQueuePop() {
-    pointer state = PollState();
+    mut pointer state = PollState();
     mut word head = raw_word_load(pointer_add(state, POLL_QUEUE_HEAD_OFFSET));
     word tail = raw_word_load(pointer_add(state, POLL_QUEUE_TAIL_OFFSET));
     while head != tail {
@@ -190,7 +190,7 @@ pub word PollQueuePop() {
         head = (head + 1) % POLL_TASK_MAX;
         raw_word_store(pointer_add(state, POLL_QUEUE_HEAD_OFFSET), head);
         if PollTaskValid(handle) {
-            word index = PollHandleIndex(handle);
+            mut word index = PollHandleIndex(handle);
             raw_byte_store(pointer_add(PollTaskRecord(index), POLL_TASK_QUEUED), 0);
             return index;
         }
@@ -201,9 +201,9 @@ pub word PollQueuePop() {
 [Export(Abi:"C", Symbol:"beskid_rt_v5_poll_executor_spawn")]
 pub i64 PollExecutorSpawn(pointer pollEntry, pointer taskState, pointer resultSlot, pointer cancelSlot) {
     if pollEntry == NativePointer(0) || taskState == NativePointer(0) || resultSlot == NativePointer(0) { return -1; }
-    pointer state = PollState();
+    mut pointer state = PollState();
     if state == NativePointer(0) { return -1; }
-    word index = PollTaskAllocate();
+    mut word index = PollTaskAllocate();
     if index == 0xFFFF { return -1; }
     pointer task = PollTaskRecord(index);
     raw_word_store(pointer_add(task, POLL_TASK_STATE), POLL_STATE_READY);
@@ -223,7 +223,7 @@ pub i64 PollExecutorSpawn(pointer pollEntry, pointer taskState, pointer resultSl
 }
 
 pub bool PollExecutorHasActiveTasks() {
-    pointer state = PollState();
+    mut pointer state = PollState();
     if state == NativePointer(0) { return false; }
     word count = raw_word_load(pointer_add(state, POLL_TASK_COUNT_OFFSET));
     mut word index = 0;
@@ -239,15 +239,15 @@ pub bool PollExecutorHasActiveTasks() {
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_poll_executor_run_once")]
 pub i32 PollExecutorRunOnce() {
-    pointer state = PollState();
+    mut pointer state = PollState();
     if state == NativePointer(0) { return 3; }
-    word index = PollQueuePop();
+    mut word index = PollQueuePop();
     if index == 0xFFFF {
         word count = raw_word_load(pointer_add(state, POLL_TASK_COUNT_OFFSET));
         mut word i = 0;
         mut bool active = false;
         while i < count {
-            pointer candidate = PollTaskRecord(i);
+            mut pointer candidate = PollTaskRecord(i);
             if raw_byte_load(pointer_add(candidate, POLL_TASK_ACTIVE)) != 0 && raw_word_load(pointer_add(candidate, POLL_TASK_STATE)) != POLL_STATE_TERMINAL_PUBLISHED {
                 active = true;
                 if PollWakeRegistrationValid(candidate) { return 1; }
@@ -307,9 +307,9 @@ pub i32 PollExecutorRunOnce() {
 pub i32 PollExecutorWake(i64 taskHandle) {
     if taskHandle < 0 { return 3; }
     word wakeToken = word(taskHandle);
-    pointer state = PollState();
+    mut pointer state = PollState();
     if state == NativePointer(0) { return 3; }
-    word index = PollHandleIndex(wakeToken);
+    mut word index = PollHandleIndex(wakeToken);
     if index >= raw_word_load(pointer_add(state, POLL_TASK_COUNT_OFFSET)) { return 3; }
     pointer task = PollTaskRecord(index);
     word current = raw_word_load(pointer_add(task, POLL_TASK_STATE));
@@ -339,7 +339,7 @@ pub i32 PollObservation(word taskHandle, pointer resultSlot) {
 
 pub i64 PollReferenceNew(word taskHandle, bool link) {
     if !PollTaskValid(taskHandle) { return -1; }
-    pointer state = PollState();
+    mut pointer state = PollState();
     mut word countOffset = POLL_MONITOR_COUNT_OFFSET;
     if link { countOffset = POLL_LINK_COUNT_OFFSET; }
     word count = raw_word_load(pointer_add(state, countOffset));
@@ -370,11 +370,11 @@ pub i64 PollReferenceNew(word taskHandle, bool link) {
 }
 
 pub pointer PollReference(word handle, bool link) {
-    pointer state = PollState();
+    mut pointer state = PollState();
     mut word countOffset = POLL_MONITOR_COUNT_OFFSET;
     if link { countOffset = POLL_LINK_COUNT_OFFSET; }
     word count = raw_word_load(pointer_add(state, countOffset));
-    word index = PollHandleIndex(handle);
+    mut word index = PollHandleIndex(handle);
     if index >= count { return NativePointer(0); }
     mut pointer record = PollMonitorRecord(index);
     if link { record = PollLinkRecord(index); }
@@ -389,7 +389,7 @@ pub i32 PollMonitorPoll(i64 monitor, pointer resultSlot) { if monitor < 0 { retu
 [Export(Abi:"C", Symbol:"beskid_rt_v5_poll_monitor_drop")]
 pub unit PollMonitorDrop(i64 monitor) {
     if monitor < 0 { return; }
-    pointer record = PollReference(word(monitor), false);
+    mut pointer record = PollReference(word(monitor), false);
     if record == NativePointer(0) { return; }
     raw_byte_store(pointer_add(record, 16), 0);
     word taskHandle = raw_word_load(pointer_add(record, 8));
@@ -411,7 +411,7 @@ pub i32 PollLinkPoll(i64 link, pointer resultSlot) { if link < 0 { return 5; } p
 [Export(Abi:"C", Symbol:"beskid_rt_v5_poll_link_drop")]
 pub unit PollLinkDrop(i64 link) {
     if link < 0 { return; }
-    pointer record = PollReference(word(link), true);
+    mut pointer record = PollReference(word(link), true);
     if record == NativePointer(0) { return; }
     raw_byte_store(pointer_add(record, 16), 0);
     word taskHandle = raw_word_load(pointer_add(record, 8));
@@ -419,7 +419,7 @@ pub unit PollLinkDrop(i64 link) {
     pointer task = PollTaskRecord(PollHandleIndex(taskHandle));
     word references = word(raw_byte_load(pointer_add(task, POLL_TASK_REFERENCES)));
     if references != 0 { raw_byte_store(pointer_add(task, POLL_TASK_REFERENCES), byte(references - 1)); }
-    word links = raw_word_load(pointer_add(task, POLL_TASK_LIVE_LINKS));
+    mut word links = raw_word_load(pointer_add(task, POLL_TASK_LIVE_LINKS));
     if links != 0 { links = links - 1; raw_word_store(pointer_add(task, POLL_TASK_LIVE_LINKS), links); }
     word taskState = raw_word_load(pointer_add(task, POLL_TASK_STATE));
     if links == 0 && raw_byte_load(pointer_add(task, POLL_TASK_DETACHED)) == 0 && taskState != POLL_STATE_TERMINAL_CLAIMED && taskState != POLL_STATE_TERMINAL_PUBLISHED {
@@ -432,7 +432,7 @@ pub unit PollLinkDrop(i64 link) {
 }
 
 pub unit PollStateShutdown(pointer scheduler) {
-    pointer state = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_POLL_STATE_OFFSET)));
+    mut pointer state = NativePointer(raw_word_load(pointer_add(scheduler, SCHEDULER_POLL_STATE_OFFSET)));
     if state != NativePointer(0) {
         word count = raw_word_load(pointer_add(state, POLL_TASK_COUNT_OFFSET));
         mut word index = 0;

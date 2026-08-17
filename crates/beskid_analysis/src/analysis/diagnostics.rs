@@ -29,6 +29,10 @@ pub struct SemanticDiagnostic {
     #[help]
     pub help: Option<String>,
     pub code: Option<String>,
+    /// Origin tag for routing. `None` = compiler-origin diagnostic; `Some("beskid:mod:<type_id>")`
+    /// = mod-origin diagnostic produced by a native `Analyzer` contract. LSP uses this to route
+    /// code actions and the prepare spine uses it to attribute build failures.
+    pub origin: Option<String>,
     pub severity: Severity,
 }
 
@@ -85,6 +89,7 @@ pub fn make_diagnostic(
         label: label.into(),
         help,
         code,
+        origin: None,
         severity,
     }
 }

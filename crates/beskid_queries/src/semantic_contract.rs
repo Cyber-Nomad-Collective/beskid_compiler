@@ -14,6 +14,7 @@ use beskid_analysis::syntax::SyntaxGenerationId;
 use crate::db::Db;
 
 mod abi;
+mod bulk;
 mod call_abi;
 mod calls;
 mod closures_spawn;
@@ -39,6 +40,7 @@ use abi::{
     statement_may_fall_through, statements_may_fall_through, type_syntax_mentions_generic_parameter,
     unsuffixed_integer_literal, value_abi_type_tracked,
 };
+use bulk::bulk_parameter_tracked;
 use calls::{
     abi_semantic_type, call_arguments_tracked, call_lowering_for_node, call_lowering_tracked,
     canonical_intrinsic_parameter_type, canonical_result_definition_for_type, canonical_result_variant,
@@ -103,15 +105,15 @@ pub use abi::generic_specialization_instance;
 pub use calls::extern_contract_import_for_declaration;
 pub use completion::completion_candidates;
 pub use model::{
-    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, CallLowering, CaptureStorage,
-    CaptureStorageClass, CastIntent, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
-    ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
-    ClosureSignature, CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext,
-    CompletionKind, ControlFlow, CorelibService, EnumConstructorFact, EnumLayoutFact, EnumMatchArmFact,
-    EnumMatchBindingFact, EnumMatchFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout,
-    EnumVariantLayoutFact, ExportSymbol, ForIteratorFact, GenericCallInstantiation, GenericCallSpecialization,
-    GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution,
-    IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, MutableLocalAssignment, OperatorFact,
+    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, BulkParameterFact, CallLowering,
+    CaptureStorage, CaptureStorageClass, CastIntent, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture,
+    ClosureEnvironment, ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus,
+    ClosurePointerMapRequirement, ClosureSignature, CollectionMutationOwner, CollectionOperation, CompletionCandidate,
+    CompletionContext, CompletionKind, ControlFlow, CorelibService, EnumConstructorFact, EnumLayoutFact,
+    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumScalarPayloadObjectLayout,
+    EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, ExportSymbol, ForIteratorFact, GenericCallInstantiation,
+    GenericCallSpecialization, GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance,
+    GenericSubstitution, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, MutableLocalAssignment, OperatorFact,
     PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
     ScalarAbiLayout, SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnostic,
     SpawnDiagnosticKind, SpawnEntryValidation, SpawnLegality, SpawnTarget, SyntaxUnitInput, SyntaxUnitRevision,
@@ -120,8 +122,8 @@ pub use model::{
 };
 pub use queries::{
     abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration, array_index_element_abi_type,
-    binary_operand_abi_type, block_statement_nodes, call_abi_signature, call_argument_abi_type, call_arguments,
-    call_lowering, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
+    binary_operand_abi_type, block_statement_nodes, bulk_parameter, call_abi_signature, call_argument_abi_type,
+    call_arguments, call_lowering, callable_signature, capture_storage, cast_intents, child_nodes, clif_block_body,
     closure_call_target, closure_environment, closure_signature, collection_operation, constant_integer,
     contextual_integer_literal_abi_type, control_flow, direct_callees, empty_array_literal_element_abi_type,
     enum_constructor, enum_layout, enum_match, for_iterator_fact, generic_call_instantiation,

@@ -133,6 +133,19 @@ impl IsleContext<'_, '_, '_, '_> {
         (widen(self.builder, left, left_type), widen(self.builder, right, right_type))
     }
 
+    pub(super) fn common_bitwise_operands(&mut self, left: Value, right: Value) -> (Value, Value) {
+        let left_type = self.builder.func.dfg.value_type(left);
+        let right_type = self.builder.func.dfg.value_type(right);
+        if !left_type.is_int() || !right_type.is_int() || left_type == right_type {
+            return (left, right);
+        }
+        let target = if left_type.bits() >= right_type.bits() { left_type } else { right_type };
+        let widen = |builder: &mut FunctionBuilder<'_>, value: Value, source: Type| {
+            if source == target { value } else { builder.ins().uextend(target, value) }
+        };
+        (widen(self.builder, left, left_type), widen(self.builder, right, right_type))
+    }
+
     pub(super) fn common_float_operands(&mut self, left: Value, right: Value) -> Option<(Value, Value)> {
         let left_type = self.builder.func.dfg.value_type(left);
         let right_type = self.builder.func.dfg.value_type(right);
@@ -170,25 +183,31 @@ macro_rules! generated_operator_methods {
             if self.builder.func.dfg.value_type(left).is_float() {
                 self.builder.ins().fmul(left, right)
             } else {
+                let (left, right) = self.common_integer_operands(left, right);
                 self.builder.ins().imul(left, right)
             }
         }
         fn clif_band(&mut self, left: Value, right: Value) -> Value {
+            let (left, right) = self.common_bitwise_operands(left, right);
             self.builder.ins().band(left, right)
         }
         fn clif_bor(&mut self, left: Value, right: Value) -> Value {
+            let (left, right) = self.common_bitwise_operands(left, right);
             self.builder.ins().bor(left, right)
         }
         fn clif_ishl(&mut self, left: Value, right: Value) -> Value {
+            let (left, right) = self.common_bitwise_operands(left, right);
             self.builder.ins().ishl(left, right)
         }
         fn clif_ushr(&mut self, left: Value, right: Value) -> Value {
+            let (left, right) = self.common_bitwise_operands(left, right);
             self.builder.ins().ushr(left, right)
         }
         fn clif_sdiv(&mut self, left: Value, right: Value) -> Value {
             if self.builder.func.dfg.value_type(left).is_float() {
                 self.builder.ins().fdiv(left, right)
             } else {
+                let (left, right) = self.common_integer_operands(left, right);
                 let ty = self.builder.func.dfg.value_type(left);
                 let zero = self.builder.ins().iconst(ty, 0);
                 let is_zero = self.builder.ins().icmp(IntCC::Equal, right, zero);
@@ -201,12 +220,15 @@ macro_rules! generated_operator_methods {
             if ty.is_float() {
                 return None;
             }
+            let (left, right) = self.common_integer_operands(left, right);
+            let ty = self.builder.func.dfg.value_type(left);
             let zero = self.builder.ins().iconst(ty, 0);
             let is_zero = self.builder.ins().icmp(IntCC::Equal, right, zero);
             self.builder.ins().trapnz(is_zero, TrapCode::INTEGER_DIVISION_BY_ZERO);
             Some(self.builder.ins().srem(left, right))
         }
         fn clif_div_trapz(&mut self, value: Value, divisor: Value) -> Value {
+            let (value, divisor) = self.common_integer_operands(value, divisor);
             let ty = self.builder.func.dfg.value_type(value);
             let zero = self.builder.ins().iconst(ty, 0);
             let is_zero = self.builder.ins().icmp(IntCC::Equal, divisor, zero);
@@ -347,9 +369,10 @@ macro_rules! generated_operator_methods {
                 });
                 return None;
             }
-            if !primitive_numeric_conversion_type_matches(actual, from)
-                || !primitive_numeric_conversion_type_matches(target, to)
-            {
+            if actual == target {
+                return Some(value);
+            }
+            if !actual.is_int() || !target.is_int() {
                 self.pending_error = Some(LoweringError {
                     key,
                     kind: LoweringErrorKind::InvalidPrimitiveNumericConversion(
@@ -358,9 +381,7 @@ macro_rules! generated_operator_methods {
                 });
                 return None;
             }
-            if actual == target {
-                Some(value)
-            } else if actual.bits() < target.bits() {
+            if actual.bits() < target.bits() {
                 if from == beskid_queries::SemanticTypeId::U8 {
                     Some(self.builder.ins().uextend(target, value))
                 } else {

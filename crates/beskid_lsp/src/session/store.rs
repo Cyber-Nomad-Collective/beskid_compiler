@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use beskid_analysis::CompilationContext;
 use beskid_queries::{
@@ -131,6 +132,22 @@ pub struct State {
     pub(crate) initial_scan_complete: Arc<AtomicBool>,
     /// Wakes tasks waiting on [`initial_scan_complete`].
     pub(crate) scan_barrier: Arc<Notify>,
+    /// Whether the LSP persists the Salsa DB snapshot to disk on idle/shutdown.
+    ///
+    /// Toggled via `persistenceEnabled` init option or `beskid.lsp.persistence.enabled`
+    /// workspace config. When `false`, the LSP skips snapshot saves entirely (users
+    /// who want only CLI saves). Defaults to `true`.
+    pub persistence_save_enabled: bool,
+    /// Idle debounce window before the LSP persists the Salsa DB snapshot.
+    ///
+    /// Configured via `persistenceSaveDebounceMs` init option or
+    /// `beskid.lsp.persistence.saveDebounceMs` workspace config. Defaults to 5s.
+    pub persistence_save_debounce: Duration,
+    /// Coalesced snapshot-save schedule revision (debounced persistence).
+    ///
+    /// Single global counter (the DB is shared across all URIs) — each document
+    /// change bumps it, and a spawned save only fires when it is still the latest.
+    pub(crate) persistence_save_revision: u64,
 }
 
 impl Default for State {
@@ -146,6 +163,9 @@ impl Default for State {
             typed_prepare_schedule_revision: HashMap::new(),
             initial_scan_complete: Arc::new(AtomicBool::new(false)),
             scan_barrier: Arc::new(Notify::new()),
+            persistence_save_enabled: true,
+            persistence_save_debounce: super::lifecycle::DEFAULT_PERSISTENCE_DEBOUNCE,
+            persistence_save_revision: 0,
         }
     }
 }

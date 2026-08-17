@@ -61,8 +61,32 @@ pub(super) fn node_span_tracked(
     with_node(db, syntax, key, |_program, _index, node| node.span())
 }
 
+/// One built-in dispatch symbol resolved from syntax. The wrapped `&'static str` is borrowed
+/// from the compile-time [`beskid_analysis::builtins`] table, so it cannot round-trip through
+/// `serde_json` directly. Manual [`Serialize`]/[`Deserialize`] implementations emit the symbol as
+/// an owned string and recover the canonical `&'static str` by matching against
+/// [`beskid_analysis::builtins::builtin_specs`], failing closed with a serde error when no entry
+/// matches (a tampered or unknown symbol).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DispatchBuiltinSymbol(pub &'static str);
+
+impl serde::Serialize for DispatchBuiltinSymbol {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DispatchBuiltinSymbol {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let symbol = <String as serde::Deserialize>::deserialize(deserializer)?;
+        for spec in beskid_analysis::builtins::builtin_specs() {
+            if spec.runtime_symbol == symbol {
+                return Ok(DispatchBuiltinSymbol(spec.runtime_symbol));
+            }
+        }
+        Err(serde::de::Error::custom(format!("unknown dispatch builtin symbol `{symbol}`")))
+    }
+}
 
 #[salsa::tracked]
 pub(super) fn dispatch_builtin_symbol_tracked(

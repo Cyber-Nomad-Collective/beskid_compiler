@@ -18,7 +18,7 @@ beskid_graph = { path = "../beskid_graph" }
 beskid_pipeline = { path = "../beskid_pipeline" }
 salsa = { workspace = true }
 anyhow = "1"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 log = "0.4"
 thiserror = "2.0"

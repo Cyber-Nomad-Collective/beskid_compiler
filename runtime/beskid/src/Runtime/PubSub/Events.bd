@@ -31,7 +31,7 @@ pub word EventLen(pointer event) {
 [Export(Abi:"C", Symbol:"event_subscribe")]
 pub word EventSubscribe(pointer eventSlot, pointer handler, word capacity) {
     if eventSlot == NativePointer(0) || handler == NativePointer(0) || capacity == 0 { return 0; }
-    pointer event = NativePointer(raw_word_load(eventSlot));
+    mut pointer event = NativePointer(raw_word_load(eventSlot));
     if event == NativePointer(0) {
         event = SystemAllocate(16 + capacity * 8, 8);
         if event == NativePointer(0) { return 0; }
@@ -58,7 +58,7 @@ pub word EventSubscribe(pointer eventSlot, pointer handler, word capacity) {
 [Export(Abi:"C", Symbol:"event_unsubscribe_first")]
 pub word EventUnsubscribeFirst(pointer eventSlot, pointer handler) {
     if eventSlot == NativePointer(0) || handler == NativePointer(0) { return 0; }
-    pointer event = NativePointer(raw_word_load(eventSlot));
+    mut pointer event = NativePointer(raw_word_load(eventSlot));
     if event == NativePointer(0) { return 0; }
     word count = raw_word_load(pointer_add(event, 8));
     mut word index = 0;
@@ -83,7 +83,7 @@ pub word EventUnsubscribeFirst(pointer eventSlot, pointer handler) {
 // owning object must invoke this before its field storage becomes unreachable.
 pub unit EventDrop(pointer eventSlot) {
     if eventSlot == NativePointer(0) { return; }
-    pointer event = NativePointer(raw_word_load(eventSlot));
+    mut pointer event = NativePointer(raw_word_load(eventSlot));
     if event == NativePointer(0) { return; }
     word capacity = raw_word_load(event);
     word count = raw_word_load(pointer_add(event, 8));
