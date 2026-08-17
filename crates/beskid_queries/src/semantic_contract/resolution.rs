@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn resolved_item_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

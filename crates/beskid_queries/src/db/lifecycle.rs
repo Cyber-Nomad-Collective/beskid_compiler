@@ -28,10 +28,15 @@ impl BeskidDatabase {
             syntax_parse_count: Arc::new(AtomicU64::new(0)),
             syntax_index_build_count: Arc::new(AtomicU64::new(0)),
         };
-        let _ = db.grammar_revision();
-        if let Some(root) = &db.persistence_root {
-            let _ = crate::persistence::ensure_salsa_dir(root);
+        // Load the cross-run salsa snapshot BEFORE allocating the GrammarRevision input.
+        // Salsa's deserializer asserts that persisted input entries are re-allocated in
+        // allocation order; pre-allocating GrammarRevision here would give it Id(0), so the
+        // snapshot's GrammarRevision (also Id(0)) would be re-allocated as Id(1) and panic.
+        if let Some(root) = db.persistence_root.clone() {
+            let _ = crate::persistence::ensure_salsa_dir(&root);
+            crate::persistence::load_db_snapshot(&mut db, &root);
         }
+        let _ = db.grammar_revision();
         db
     }
 
@@ -46,6 +51,13 @@ impl BeskidDatabase {
     /// Workspace grammar revision input; bumps invalidate all unit tracked queries.
     pub fn grammar_revision(&mut self) -> GrammarRevision {
         if let Some(rev) = self.grammar_revision {
+            return rev;
+        }
+        // If the snapshot loaded a GrammarRevision, reuse it instead of allocating a duplicate.
+        use salsa::plumbing::ZalsaDatabase;
+        let loaded = GrammarRevision::ingredient(self).entries(self.zalsa()).next().map(|entry| entry.as_struct());
+        if let Some(rev) = loaded {
+            self.grammar_revision = Some(rev);
             return rev;
         }
         let rev = GrammarRevision::new(self, beskid_pipeline::GRAMMAR_REVISION.to_string());

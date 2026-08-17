@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn node_type_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

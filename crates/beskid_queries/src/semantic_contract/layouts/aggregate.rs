@@ -2,7 +2,7 @@
 
 use super::super::*;
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn aggregate_layout_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -27,7 +27,7 @@ pub(in crate::semantic_contract) fn aggregate_layout_tracked(
     .transpose()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn aggregate_literal_declaration_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -43,7 +43,7 @@ pub(in crate::semantic_contract) fn aggregate_literal_declaration_tracked(
 /// context.  An empty literal carries no element expression from which to infer a representation,
 /// so standalone, local-inferred, nested, and mismatched-field uses remain unavailable.  The
 /// enclosing aggregate declaration and its exact declared `T[]` field are the sole authority.
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn empty_array_literal_element_abi_type_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -94,7 +94,7 @@ pub(in crate::semantic_contract) fn empty_array_literal_element_abi_type_tracked
 /// by a parameter or constructed by a runtime intrinsic. In that case the declaration's `T[]`
 /// syntax is the only authority for the element representation. Inferred, non-local, generic,
 /// string, and stale targets deliberately remain unavailable.
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn array_index_element_abi_type_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

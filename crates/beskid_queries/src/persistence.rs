@@ -195,6 +195,14 @@ fn rehydrate_registries(db: &mut crate::db::BeskidDatabase) {
         projects.push((key, session));
     }
 
+    let mut syntax_units: Vec<(crate::semantic_contract::SourceUnitId, crate::semantic_contract::SyntaxUnitInput)> =
+        Vec::new();
+    for entry in crate::semantic_contract::SyntaxUnitInput::ingredient(db).entries(db.zalsa()) {
+        let input = entry.as_struct();
+        let unit = input.unit(db);
+        syntax_units.push((unit, input));
+    }
+
     {
         let mut registry = db.file_registry().lock().expect("file registry");
         for (path, file) in files {
@@ -202,9 +210,17 @@ fn rehydrate_registries(db: &mut crate::db::BeskidDatabase) {
         }
     }
     let project_registry = db.project_registry();
-    let mut registry = project_registry.lock().expect("project registry");
-    for (key, session) in projects {
-        registry.entry(key).or_insert(session);
+    {
+        let mut registry = project_registry.lock().expect("project registry");
+        for (key, session) in projects {
+            registry.entry(key).or_insert(session);
+        }
+    }
+    {
+        let mut registry = db.syntax_unit_registry().lock().expect("syntax unit registry");
+        for (unit, input) in syntax_units {
+            registry.entry(unit).or_insert(input);
+        }
     }
 }
 

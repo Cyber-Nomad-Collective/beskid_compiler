@@ -2,7 +2,7 @@
 
 use super::super::*;
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn generic_call_instantiation_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -17,7 +17,7 @@ pub(in crate::semantic_contract) fn generic_call_instantiation_tracked(
     })?
     .transpose()
 }
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn generic_call_specialization_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -54,7 +54,7 @@ pub(in crate::semantic_contract) fn generic_call_specialization_tracked(
     .transpose()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn generic_call_template_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -107,7 +107,7 @@ pub(in crate::semantic_contract) fn generic_call_template_tracked(
     .transpose()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn generic_nominal_method_receiver_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

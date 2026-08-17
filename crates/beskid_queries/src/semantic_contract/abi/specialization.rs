@@ -266,7 +266,7 @@ pub(in crate::semantic_contract) fn integer_literal_u64(text: &str) -> Option<u6
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn call_argument_abi_type_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -325,7 +325,7 @@ pub(in crate::semantic_contract) fn call_argument_abi_type_tracked(
 /// Contextual ABI for an unsuffixed integer literal used directly as one operand of a
 /// homogeneous primitive-integer binary expression. This is representation selection, not
 /// widening: the sibling must already prove the exact ABI type.
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn binary_operand_abi_type_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

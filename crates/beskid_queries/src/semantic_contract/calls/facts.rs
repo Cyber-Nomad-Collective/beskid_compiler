@@ -12,7 +12,7 @@ pub(in crate::semantic_contract) fn call_lowering_tracked(
         .transpose()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn primitive_numeric_conversion_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -57,7 +57,7 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_target(
     })
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn call_arguments_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -115,7 +115,7 @@ pub(in crate::semantic_contract) fn call_arguments_tracked(
     .transpose()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn range_for_fact_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -145,7 +145,7 @@ pub(in crate::semantic_contract) fn range_for_fact_tracked(
     .transpose()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn for_iterator_fact_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -168,7 +168,7 @@ pub(in crate::semantic_contract) fn for_iterator_fact_tracked(
     .transpose()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn try_expression_fact_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

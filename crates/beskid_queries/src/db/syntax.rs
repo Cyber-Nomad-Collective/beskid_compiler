@@ -14,6 +14,12 @@ impl BeskidDatabase {
         Db::syntax_unit(self, unit)
     }
 
+    /// Borrow the plain-Rust syntax-unit registry (used by persistence rehydration).
+    #[allow(dead_code)]
+    pub(crate) fn syntax_unit_registry(&self) -> &std::sync::Mutex<super::SyntaxUnitRegistry> {
+        &self.syntax_unit_registry
+    }
+
     /// Return the registered input for `unit`, creating it when first observed.
     pub fn ensure_syntax_unit(
         &mut self,

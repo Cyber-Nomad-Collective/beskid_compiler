@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn resolved_local_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -21,9 +21,12 @@ pub(super) fn resolved_local_tracked(
     })
 }
 
-/// Resolve an unshadowed, same-module integer constant to its declared value.
+/// Resolve an unshadowed integer constant to its declared value.
 /// Constants have no storage slot: generated ISLE consumes this fact as an immediate.
-#[salsa::tracked]
+/// The current unit is searched first; when that fails, the import closure is walked so
+/// constants shared across the canonical runtime corpus (or explicitly imported units)
+/// resolve without a `pub` declaration.
+#[salsa::tracked(persist)]
 pub(super) fn constant_integer_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -34,34 +37,76 @@ pub(super) fn constant_integer_tracked(
         let [segment] = path.path.node.segments.as_slice() else {
             return None;
         };
-        if !segment.node.type_args.is_empty()
-            || resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str()).is_some()
-        {
+        let name = segment.node.name.node.name.as_str();
+        if !segment.node.type_args.is_empty() || resolve_lexical_declaration(program, index, key.node, name).is_some() {
             return None;
         }
-        if let Some(declaration) =
-            resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())
-        {
-            let parent = parent_node(index, declaration)?;
-            if index.kind(parent) != Some(beskid_analysis::syntax_query::NodeKind::ConstantDefinition) {
-                return None;
-            }
+        if let Some(value) = unit_constant_integer(program, name) {
+            return Some(value);
         }
-        program.node.items.iter().find_map(|item| {
-            let beskid_analysis::syntax::Node::ConstantDefinition(constant) = &item.node else {
-                return None;
-            };
-            (constant.node.name.node.name == segment.node.name.node.name).then(|| match &constant.node.value.node {
-                beskid_analysis::syntax::Literal::Integer(value) => {
-                    integer_literal_u64(value).and_then(|value| i64::try_from(value).ok())
-                }
-                _ => None,
-            })?
-        })
+        imported_constant_integer(db, key, name)
     })
 }
 
-#[salsa::tracked]
+/// Search one unit's top-level items for an integer constant matching `name`.
+fn unit_constant_integer(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    name: &str,
+) -> Option<i64> {
+    program.node.items.iter().find_map(|item| {
+        let beskid_analysis::syntax::Node::ConstantDefinition(constant) = &item.node else {
+            return None;
+        };
+        (constant.node.name.node.name == name).then(|| match &constant.node.value.node {
+            beskid_analysis::syntax::Literal::Integer(value) => {
+                integer_literal_u64(value).and_then(|value| i64::try_from(value).ok())
+            }
+            _ => None,
+        })?
+    })
+}
+
+/// Resolve an unqualified integer constant through the current unit's import closure.
+///
+/// Mirrors [`unique_imported_function`] for constants: collects every import target,
+/// searches each target unit's top-level items, and requires exactly one match so an
+/// ambiguous name resolves to nothing. The canonical runtime cross-unit scope installs
+/// one private import edge per corpus unit, so private constants shared across the
+/// embedded runtime corpus are visible here without a `pub` declaration.
+fn imported_constant_integer(db: &dyn Db, key: AstNodeKey, name: &str) -> Option<i64> {
+    let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+    let imports = registry.imports.get(&(key.unit, key.generation))?;
+    let targets = imports.iter().map(|import| import.target).fold(Vec::new(), |mut targets, target| {
+        if !targets.contains(&target) {
+            targets.push(target);
+        }
+        targets
+    });
+    let candidates = targets
+        .into_iter()
+        .filter_map(|target| constant_integer_in_unit(db, target, key.generation, name))
+        .collect::<Vec<_>>();
+    let [value] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*value)
+}
+
+fn constant_integer_in_unit(
+    db: &dyn Db,
+    unit: SourceUnitId,
+    generation: SyntaxGenerationId,
+    name: &str,
+) -> Option<i64> {
+    let syntax = db.syntax_unit(unit)?;
+    if syntax.generation(db) != generation {
+        return None;
+    }
+    let program = syntax.expanded_program(db);
+    unit_constant_integer(program, name)
+}
+
+#[salsa::tracked(persist)]
 pub(super) fn local_slot_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -74,7 +119,7 @@ pub(super) fn local_slot_tracked(
     .transpose()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn mutable_local_assignment_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

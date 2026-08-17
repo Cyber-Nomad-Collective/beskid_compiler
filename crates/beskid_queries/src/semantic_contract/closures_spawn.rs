@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn closure_environment_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -50,7 +50,7 @@ pub(super) fn closure_environment_for_node(
     Some(Ok(ClosureEnvironment { parameters: parameters.into(), captures }))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn closure_signature_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -109,7 +109,7 @@ pub(super) fn closure_signature_for_node(
     }))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn closure_call_target_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -205,7 +205,7 @@ pub(super) fn closure_captures(
     Ok(captures)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn capture_storage_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -252,7 +252,7 @@ pub(super) fn capture_storage_class(
     })
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn callable_signature_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -312,7 +312,7 @@ pub(super) fn callable_signature_for_path(
     item_signature_for_node(declaration)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn spawn_target_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -387,7 +387,7 @@ pub(super) fn normalized_expression_node(
     node
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn spawn_legality_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -454,7 +454,7 @@ pub(super) fn spawn_legality_tracked(
     Ok(Some(SpawnLegality { target, result: Some(signature.result), span, diagnostics }))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn spawn_entry_validation_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -502,7 +502,7 @@ pub(super) fn spawn_stack_capture(
     Ok(None)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn runtime_intrinsic_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -535,7 +535,7 @@ pub(super) fn runtime_intrinsic_tracked(
     .transpose()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn runtime_intrinsic_name_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

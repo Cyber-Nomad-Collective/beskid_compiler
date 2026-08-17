@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn node_kind_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -11,7 +11,7 @@ pub(super) fn node_kind_tracked(
     with_node(db, syntax, key, |_program, _index, node| Some(node.node_kind()))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn child_nodes_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -22,7 +22,7 @@ pub(super) fn child_nodes_tracked(
     })
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn literal_fact_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -40,7 +40,7 @@ pub(super) fn literal_fact_tracked(
     })
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn clif_block_body_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -52,7 +52,7 @@ pub(super) fn clif_block_body_tracked(
     })
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn node_span_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -119,7 +119,7 @@ pub fn dispatch_builtin_symbol(db: &dyn Db, key: AstNodeKey) -> SemanticQueryRes
     with_registered_syntax(db, key, dispatch_builtin_symbol_tracked)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn operator_fact_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -204,7 +204,7 @@ pub(super) fn unary_operator(operator: beskid_analysis::syntax::UnaryOp) -> Oper
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn item_body_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -232,7 +232,7 @@ pub(super) fn item_body_tracked(
 ///
 /// A test definition also owns visibility, name, and optional metadata children.  ISLE function
 /// emission must enumerate only its statement body, never those declaration children.
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn test_statement_nodes_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -262,7 +262,7 @@ pub(super) fn test_statement_nodes_tracked(
 }
 
 /// Return executable block statements without syntax-index wrapper nodes.
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn block_statement_nodes_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -303,7 +303,7 @@ pub(super) fn block_statement_nodes_tracked(
     .transpose()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn item_name_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -327,7 +327,7 @@ pub(super) fn item_name_tracked(
     })
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn item_export_symbol_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -356,7 +356,7 @@ pub(super) fn item_export_symbol_tracked(
     .and_then(|export| export.transpose())
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn test_item_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -447,7 +447,7 @@ pub(super) fn test_bool_literal(
     Some(*value)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn direct_callees_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -501,7 +501,7 @@ pub(super) fn direct_callees_for_item(
     Ok(callees.into())
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn reachable_items_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

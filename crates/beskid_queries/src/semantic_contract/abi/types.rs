@@ -11,7 +11,7 @@ use super::statement_abi_type_for_node;
 /// and is emitted directly at the destination's exact ABI width. Inferred declarations, explicit
 /// literal suffixes, compound expressions, immutable destinations, and non-integer destination
 /// representations fail closed rather than receiving an implicit numeric widening.
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -193,13 +193,16 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
     .transpose()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn abi_type_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
+        if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
+            return Some(abi_type_for_binary_expression(db, program, index, key, binary));
+        }
         if let Some(expression) = node.of::<beskid_analysis::syntax::Expression>() {
             return Some(abi_type_for_expression(db, program, index, key, expression));
         }
@@ -220,9 +223,6 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
         }
         if let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() {
             return Some(abi_type_for_local_path(db, program, index, key, &path.path.node));
-        }
-        if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
-            return Some(abi_type_for_binary_expression(db, program, index, key, binary));
         }
         if node.of::<beskid_analysis::syntax::AssignExpression>().is_some() {
             // An index assignment is expression-valued only after the same declared-array fact
@@ -271,7 +271,7 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
 
 /// One generation-bound ABI representation fact for source values and declared storage
 /// boundaries. This composes only existing syntax facts; it never reconstructs HIR types.
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn value_abi_type_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

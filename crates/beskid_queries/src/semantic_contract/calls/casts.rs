@@ -2,7 +2,7 @@
 
 use super::super::*;
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn cast_intents_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

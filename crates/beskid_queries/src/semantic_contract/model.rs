@@ -137,8 +137,7 @@ pub struct SyntaxUnitInput {
     pub(crate) revision: Arc<SyntaxUnitRevision>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SyntaxUnitRevision {
     pub(crate) generation: SyntaxGenerationId,
     pub(crate) expanded_program: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
@@ -176,22 +175,19 @@ impl SyntaxUnitInput {
 }
 
 /// Resolution fact for an item reference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ResolvedItem {
     pub declaration: AstNodeKey,
 }
 
 /// Resolution fact for a local reference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ResolvedLocal {
     pub declaration: AstNodeKey,
 }
 
 /// Owner-qualified backend slot for an exact local declaration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct LocalSlot {
     pub owner: AstNodeKey,
     pub index: u32,
@@ -202,8 +198,7 @@ pub struct LocalSlot {
 /// The fact exists only for a single-segment path that resolves to a mutable `let` binding or
 /// mutable function/method parameter. Immutable, non-local, compound, stale, and invalid targets
 /// remain unavailable, so ISLE cannot manufacture a write from a bare local slot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct MutableLocalAssignment {
     pub declaration: AstNodeKey,
     pub slot: LocalSlot,
@@ -213,8 +208,7 @@ pub struct MutableLocalAssignment {
 ///
 /// `class` and `span` come from the first captured use site under the lambda in syntax-index
 /// order. They preserve capture mode and source identity without reconstructing HIR snapshots.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ClosureCapture {
     pub declaration: AstNodeKey,
     pub slot: LocalSlot,
@@ -223,8 +217,7 @@ pub struct ClosureCapture {
 }
 
 /// Backend-relevant closure environment facts derived from one lambda expression.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ClosureEnvironment {
     pub parameters: Arc<[AstNodeKey]>,
     pub captures: Arc<[ClosureCapture]>,
@@ -234,8 +227,7 @@ pub struct ClosureEnvironment {
 ///
 /// Field order follows the captured declaration's stable owner/node identity and local slot,
 /// never hash-map iteration or a later codegen traversal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ClosureEnvironmentField {
     pub capture: ClosureCapture,
     pub abi_type: SemanticTypeId,
@@ -245,30 +237,26 @@ pub struct ClosureEnvironmentField {
 ///
 /// This is intentionally a requirement, not a claim that a descriptor has been emitted. The
 /// query layer has no runtime allocation or descriptor-emission authority.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ClosurePointerMapRequirement {
     RuntimeDescriptorRequired,
 }
 
 /// Deterministic target-neutral ABI shape for a lambda's capture environment.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ClosureEnvironmentAbiShape {
     pub fields: Arc<[ClosureEnvironmentField]>,
     pub pointer_map: ClosurePointerMapRequirement,
 }
 
 /// Current implementation status for consuming closure facts in generated lowering.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ClosureLoweringStatus {
     NotLowered,
 }
 
 /// Current implementation status for creating a closure environment at runtime.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ClosureAllocationStatus {
     NotAllocated,
 }
@@ -277,8 +265,7 @@ pub enum ClosureAllocationStatus {
 ///
 /// Generic/inferred callable forms remain unavailable. This fact records no generated lowering
 /// or runtime allocation; those statuses remain explicit until codegen owns them.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ClosureSignature {
     pub lambda: AstNodeKey,
     pub body: AstNodeKey,
@@ -292,8 +279,7 @@ pub struct ClosureSignature {
 ///
 /// Calls through a local closure binding remain unavailable: syntax facts do not infer an
 /// allocation, binding flow, or dynamic dispatch target.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ClosureCallTarget {
     pub call: AstNodeKey,
     pub lambda: AstNodeKey,
@@ -305,8 +291,7 @@ pub struct ClosureCallTarget {
 ///
 /// Empty-arg `spawn Entry()` sugar stores the entry path (or lambda), not the CallExpression.
 /// Non-empty `spawn Entry(args)` keeps the CallExpression so [`spawn_legality`] can reject it.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SpawnTarget {
     pub callee: AstNodeKey,
     pub captures: Arc<[ClosureCapture]>,
@@ -318,16 +303,14 @@ pub struct SpawnTarget {
 /// that are safe to transfer by value; native pointers and mutable bindings are conservatively
 /// stack references, because moving either across a fiber boundary can expose an invalid or
 /// aliased stack location.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum CaptureStorageClass {
     TransferableValue,
     StackReference,
 }
 
 /// Exact declaration, storage provenance, and source use for one captured local reference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct CaptureStorage {
     pub declaration: AstNodeKey,
     pub class: CaptureStorageClass,
@@ -335,8 +318,7 @@ pub struct CaptureStorage {
 }
 
 /// Deterministic syntax-owned legality failure for one spawn expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum SpawnDiagnosticKind {
     TargetNotCallable,
     TargetRequiresArguments,
@@ -347,8 +329,7 @@ pub enum SpawnDiagnosticKind {
 }
 
 /// One precise diagnostic selected from current syntax facts for a spawn expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SpawnDiagnostic {
     pub kind: SpawnDiagnosticKind,
     pub span: SourceSpan,
@@ -360,8 +341,7 @@ pub struct SpawnDiagnostic {
 /// A legal fact contains a zero-argument callable signature result and no diagnostics. Illegal
 /// facts retain the target and any proven result so diagnostics and lowering never need legacy
 /// HIR snapshots.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SpawnLegality {
     pub target: SpawnTarget,
     pub result: Option<SemanticTypeId>,
@@ -373,8 +353,7 @@ pub struct SpawnLegality {
 ///
 /// This mirrors current legality facts without claiming that a fiber trampoline, closure
 /// allocation, or runtime scheduling object has been generated.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SpawnEntryValidation {
     pub spawn: AstNodeKey,
     pub target: AstNodeKey,
@@ -390,8 +369,7 @@ impl SpawnLegality {
 }
 
 /// Opaque semantic type identity owned by the query layer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SemanticTypeId(pub u32);
 
 impl SemanticTypeId {
@@ -469,16 +447,14 @@ impl std::fmt::Display for SemanticTypeId {
 ///
 /// Both forms are generation-bound and name storage that codegen can update before releasing the
 /// construction root. Unsupported expressions deliberately have no owner fact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum CollectionMutationOwner {
     Local(LocalSlot),
     AggregateField { receiver: LocalSlot, declaration: AstNodeKey, index: u32 },
 }
 
 /// Compiler-owned operation selected only from the resolved canonical Core.Collections.Array declaration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum CollectionOperation {
     Append { owner: CollectionMutationOwner },
     Capacity,
@@ -487,8 +463,7 @@ pub enum CollectionOperation {
 }
 
 /// Backend-relevant call classification, detached from legacy HIR nodes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum CallLowering {
     Direct(AstNodeKey),
     Dynamic,
@@ -501,8 +476,7 @@ pub enum CallLowering {
 /// The invocation keeps its explicit source type-argument syntax. This fact proves that the
 /// current generation resolves to one declaration whose generic arity matches those arguments;
 /// it never infers a substitution or consults HIR.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct GenericCallInstantiation {
     pub declaration: AstNodeKey,
     pub argument_count: u8,
@@ -516,8 +490,7 @@ pub struct GenericCallInstantiation {
 /// The declaration remains generation-safe and the ABI signature is derived exclusively from
 /// this invocation's syntax arguments.  Consumers use both fields as the item identity, so two
 /// distinct instantiations cannot accidentally share one module declaration.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct GenericCallSpecialization {
     pub declaration: AstNodeKey,
     pub signature: ItemSignature,
@@ -528,8 +501,7 @@ pub struct GenericCallSpecialization {
 }
 
 /// Exact source-backed application of a generic nominal method receiver.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct GenericNominalMethodReceiver {
     pub method: AstNodeKey,
     pub receiver: AstNodeKey,
@@ -538,8 +510,7 @@ pub struct GenericNominalMethodReceiver {
 }
 
 /// One concrete binding in a generic specialization environment.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct GenericSubstitution {
     pub parameter: Arc<str>,
     pub argument: SemanticTypeId,
@@ -548,8 +519,7 @@ pub struct GenericSubstitution {
 /// A fully materializable generic declaration instance.  This is deliberately detached from a
 /// call node: module emission may discover the same instance from several callers but declares
 /// exactly one item for its `(declaration, substitutions)` identity.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct GenericSpecializationInstance {
     pub declaration: AstNodeKey,
     pub signature: ItemSignature,
@@ -559,8 +529,7 @@ pub struct GenericSpecializationInstance {
 /// A nested generic call whose source type arguments refer to the enclosing declaration's
 /// generic parameters.  `parameter_arguments` are resolved only while walking a concrete
 /// [`GenericSpecializationInstance`]; they are never guessed from an uninstantiated body.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct GenericCallTemplate {
     pub declaration: AstNodeKey,
     /// Declaration-ordered generic parameter names of the nested callee.
@@ -595,23 +564,20 @@ pub fn generic_specialization_identity(instance: &GenericSpecializationInstance)
 }
 
 /// One semantic cast required while lowering an AST node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct CastIntent {
     pub from: SemanticTypeId,
     pub to: SemanticTypeId,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PrimitiveNumericConversion {
     pub from: SemanticTypeId,
     pub to: SemanticTypeId,
 }
 
 /// Control-flow facts established for one AST node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ControlFlow {
     pub may_fall_through: bool,
 }
@@ -620,8 +586,7 @@ pub struct ControlFlow {
 ///
 /// This is deliberately separate from ordinary call lowering: `range` is syntax sugar for the
 /// loop emitter, not a dynamically dispatched function call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct RangeForFact {
     pub start: AstNodeKey,
     pub end: AstNodeKey,
@@ -631,8 +596,7 @@ pub struct RangeForFact {
 ///
 /// The declaration is the loop-variable identifier. Element type is proven only for the
 /// syntax-only `range(start, end)` iterable; other iterables remain unavailable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ForIteratorFact {
     pub declaration: AstNodeKey,
     pub element_type: SemanticTypeId,
@@ -646,8 +610,7 @@ pub struct ForIteratorFact {
 /// array before the direct call. The parameter index is the position of the parameter in its
 /// enclosing callable's parameter list (declaration order). Stale, unregistered, non-parameter
 /// nodes, and parameters without the `bulk` modifier contain no fact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct BulkParameterFact {
     pub parameter: AstNodeKey,
     pub parameter_index: u32,
@@ -660,8 +623,7 @@ pub struct BulkParameterFact {
 /// `Result<TPayload, TError>` syntax. The enclosing function must return `Result<_, TError>`
 /// using the same error syntax. Other propagation forms remain unavailable until they have
 /// their own syntax facts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TryExpressionFact {
     pub expression: AstNodeKey,
     pub operand: AstNodeKey,
@@ -671,24 +633,21 @@ pub struct TryExpressionFact {
 }
 
 /// Callable item signature expressed entirely in semantic type identities.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ItemSignature {
     pub parameters: Arc<[SemanticTypeId]>,
     pub result: SemanticTypeId,
 }
 
 /// Target-neutral storage shape for one source aggregate field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum AggregateFieldShape {
     Scalar(SemanticTypeId),
     Nominal(AstNodeKey),
 }
 
 /// Source-ordered, named fields of one nominal `type` definition.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct AggregateLayoutFact {
     pub fields: Arc<[(Arc<str>, AggregateFieldShape)]>,
 }
@@ -698,8 +657,7 @@ pub struct AggregateLayoutFact {
 /// The receiver must resolve through the current syntax generation to a parameter or explicitly
 /// typed local whose nominal declaration has one matching field. More dynamic member shapes
 /// intentionally remain unavailable until they have their own syntax authority.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct AggregateFieldAccess {
     pub declaration: AstNodeKey,
     pub receiver: AstNodeKey,
@@ -707,8 +665,7 @@ pub struct AggregateFieldAccess {
 }
 
 /// Target-specific ABI layout of one semantic scalar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ScalarAbiLayout {
     pub size: u64,
     pub alignment: u64,
@@ -716,16 +673,14 @@ pub struct ScalarAbiLayout {
 }
 
 /// Exact ABI-v5 storage selected by one source enum variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumScalarPayloadVariantLayout {
     pub payload_type: Option<SemanticTypeId>,
     pub payload_offset: Option<u64>,
 }
 
 /// Target-specific managed-object layout for an enum whose variants carry at most one scalar value.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumScalarPayloadObjectLayout {
     pub object_size: u64,
     pub object_alignment: u64,
@@ -736,15 +691,13 @@ pub struct EnumScalarPayloadObjectLayout {
 }
 
 /// Source-ordered variants and fields of one nominal `enum` definition.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumLayoutFact {
     pub variants: Arc<[EnumVariantLayoutFact]>,
 }
 
 /// One source enum variant with its source-ordered named fields.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumVariantLayoutFact {
     pub name: Arc<str>,
     pub fields: Arc<[(Arc<str>, AggregateFieldShape)]>,
@@ -755,8 +708,7 @@ pub struct EnumVariantLayoutFact {
 /// The current generated ISLE enum emitter represents at most one payload value per variant.
 /// Constructors with more than one source field deliberately remain unavailable instead of
 /// silently dropping data while that emitter is extended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumConstructorFact {
     pub declaration: AstNodeKey,
     pub variant_index: u32,
@@ -764,8 +716,7 @@ pub struct EnumConstructorFact {
 }
 
 /// One direct identifier payload binding consumed by the generated enum-match emitter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumMatchBindingFact {
     /// Exact identifier declaration introduced by the match pattern.
     pub declaration: AstNodeKey,
@@ -777,8 +728,7 @@ pub struct EnumMatchBindingFact {
 ///
 /// Guards and nested, literal, or multi-payload destructuring remain unavailable until the
 /// generated ISLE emitter has explicit representations for them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumMatchArmFact {
     pub variant_index: Option<u32>,
     pub body: AstNodeKey,
@@ -786,8 +736,7 @@ pub struct EnumMatchArmFact {
 }
 
 /// Exact enum declaration and source-ordered arms selected by a `match` expression.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumMatchFact {
     pub declaration: AstNodeKey,
     /// Concrete layout selected by an explicitly typed local or parameter scrutinee.
@@ -799,16 +748,14 @@ pub struct EnumMatchFact {
 }
 
 /// Exact linker symbol declared by a syntax `[Export(Symbol:"...")]` attribute.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ExportSymbol(pub Arc<str>);
 
 /// Generation-safe metadata attached to one syntax `test` item.
 ///
 /// The CLI uses this instead of inspecting the legacy assembled program, so discovery and
 /// filtering remain tied to the same expanded syntax revision that codegen executes.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TestItem {
     pub name: Arc<str>,
     pub qualified_name: Arc<str>,
@@ -820,29 +767,25 @@ pub struct TestItem {
 }
 
 /// Trusted runtime operation selected by semantic analysis.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct RuntimeIntrinsic(pub u32);
 
 /// Syntactic name of a potential ABI-v5 runtime intrinsic call.
 ///
 /// This is intentionally only a syntax fact. Codegen must pair it with the opaque canonical
 /// runtime capability before it may become an import.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct RuntimeIntrinsicName(pub Arc<str>);
 
 /// A deterministic completion replacement range in the current source unit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct CompletionContext {
     pub cursor: usize,
     pub replacement_start: usize,
     pub replacement_end: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum CompletionKind {
     Function,
     Module,
@@ -852,8 +795,7 @@ pub enum CompletionKind {
     Field,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct CompletionCandidate {
     pub label: Arc<str>,
     pub kind: CompletionKind,
@@ -865,8 +807,7 @@ pub struct CompletionCandidate {
 pub type IndexedNodeKind = beskid_analysis::syntax_query::NodeKind;
 pub type SourceSpan = beskid_analysis::syntax::SpanInfo;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LiteralFact {
     Integer(Arc<str>),
     Float(Arc<str>),
@@ -875,8 +816,7 @@ pub enum LiteralFact {
     Bool(bool),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum OperatorFact {
     Or,
     And,
@@ -904,8 +844,7 @@ pub enum OperatorFact {
     StringNotEq,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, serde::Serialize, serde::Deserialize)]
 #[error("{message}")]
 pub struct SemanticError {
     message: Arc<str>,

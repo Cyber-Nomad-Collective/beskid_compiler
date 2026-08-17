@@ -95,11 +95,9 @@ pub fn reset_compilation_database(target: &mut BeskidDatabase) {
 /// Reconfigure persistence for `project_root`, replacing storage when the root changes.
 pub fn configure_compilation_database_for_project(target: &mut BeskidDatabase, project_root: &Path) {
     replace_compilation_database(target, BeskidDatabase::with_persistence(project_root));
-    // Cross-run salsa snapshot: restore persisted inputs/tracked memos for this project.
-    // Version-gated and fail-closed inside `load_db_snapshot` (a missing or stale
-    // snapshot is a no-op, never a corrupting one).
-    let root = crate::persistence::cache_root_for_project(project_root);
-    crate::persistence::load_db_snapshot(target, &root);
+    // Cross-run salsa snapshot is now loaded inside `BeskidDatabase::new` (before
+    // GrammarRevision allocation) to avoid salsa's allocation-order assertion. See
+    // `lifecycle.rs` for the rationale.
 }
 
 #[salsa::db]

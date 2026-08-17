@@ -2,7 +2,7 @@
 
 use super::super::*;
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn item_signature_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -47,7 +47,7 @@ pub(in crate::semantic_contract) fn signature_from_syntax(
 /// Nominal source identity remains in [`item_signature`]. ABI v5 passes every declared nominal
 /// aggregate by reference, represented as one target-sized pointer; only source declaration
 /// resolution is needed to prove that representation.
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn item_abi_signature_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -98,7 +98,7 @@ pub(in crate::semantic_contract) fn item_abi_signature_tracked(
 /// Generic declaration parameters are substituted only when every use is constrained by a
 /// current argument with a generation-safe ABI type. This intentionally does not introduce
 /// general inference or monomorphization: unsupported generic shapes remain unavailable.
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn call_abi_signature_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

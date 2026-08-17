@@ -110,7 +110,7 @@ fn align_to_layout(value: u64, alignment: u64) -> Option<u64> {
     value.checked_add(alignment - 1).map(|value| value & !(alignment - 1))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn enum_layout_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -337,7 +337,7 @@ pub(in crate::semantic_contract) fn enum_field_layout(
         .unwrap_or_else(|| aggregate_field_layout(db, program, index, declaration, field))
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn enum_constructor_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -385,7 +385,7 @@ pub(in crate::semantic_contract) fn enum_constructor_tracked(
     .transpose()
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn enum_match_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

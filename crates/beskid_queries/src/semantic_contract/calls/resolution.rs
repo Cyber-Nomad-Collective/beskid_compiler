@@ -275,7 +275,7 @@ pub(in crate::semantic_contract) fn nominal_local_member_receiver(
         nominal_local_receiver_declaration(db, program, index, key, receiver.node.name.node.name.as_str())?;
     unique_nominal_method_declaration(db, declaration, &member.node.name.node.name).map(|method| (method, receiver))
 }
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn nominal_member_receiver_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
