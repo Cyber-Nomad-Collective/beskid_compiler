@@ -10,7 +10,7 @@ path = "src/main.rs"
 [dependencies]
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_graph = { path = "../beskid_graph" }
-beskid_queries = { path = "../beskid_queries" }
+beskid_queries = { path = "../beskid_queries", features = ["persistence"] }
 pest = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "io-std", "sync", "fs", "time"] }

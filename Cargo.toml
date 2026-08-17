@@ -1,6 +1,22 @@
 [workspace]
 resolver = "3"
-members = ["crates/beskid_analysis", "crates/beskid_artifacts", "crates/beskid_cli", "crates/beskid_hi", "crates/beskid_tools", "crates/beskid_template", "crates/beskid_tests", "crates/beskid_e2e_tests", "crates/beskid_ast_derive", "crates/beskid_ast_reflect_gen", "crates/beskid_codegen", "crates/beskid_abi", "crates/beskid_manifest", "crates/beskid_pipeline", "crates/beskid_engine", "crates/beskid_isle", "crates/abfall", "crates/beskid_lsp", "crates/beskid_repl", "crates/beskid_aot", "crates/beskid_pckg", "crates/beskid_pckg_artifacts", "crates/beskid_pckg_contract", "crates/beskid_pckg_auth", "crates/beskid_pckg_community", "crates/beskid_pckg_operations", "crates/beskid_pckg_server", "crates/beskid_pckg_store", "crates/beskid_queries", "crates/beskid_graph", "crates/beskid_pest_gen", "crates/beskid_up"]
+members = ["crates/beskid_analysis", "crates/beskid_artifacts", "crates/beskid_cli", "crates/beskid_hi", "crates/beskid_tools", "crates/beskid_template", "crates/beskid_e2e_tests", "crates/beskid_ast_derive", "crates/beskid_ast_reflect_gen", "crates/beskid_codegen", "crates/beskid_abi", "crates/beskid_manifest", "crates/beskid_pipeline", "crates/beskid_engine", "crates/beskid_isle", "crates/abfall", "crates/beskid_lsp", "crates/beskid_repl", "crates/beskid_aot", "crates/beskid_pckg", "crates/beskid_pckg_artifacts", "crates/beskid_pckg_contract", "crates/beskid_pckg_auth", "crates/beskid_pckg_community", "crates/beskid_pckg_operations", "crates/beskid_pckg_server", "crates/beskid_pckg_store", "crates/beskid_queries", "crates/beskid_graph", "crates/beskid_pest_gen", "crates/beskid_up", "crates/beskid_tests_surface", "crates/beskid_tests_projects", "crates/beskid_tests_mods", "crates/beskid_tests_lsp", "crates/beskid_tests_aot", "crates/beskid_tests_pckg", "crates/beskid_tests_interop", "crates/beskid_tests_cli", "crates/beskid_tests_composition", "crates/beskid_tests_abi", "crates/beskid_tests_support"]
+# Default members exclude the test sink crates (beskid_e2e_tests and the per-domain
+# beskid_tests_* suites) so bare `cargo check` / `cargo build` iterate only on compiler
+# crates. Run tests explicitly, e.g.:
+#   cargo test -p beskid_tests_projects -p beskid_tests_surface -p beskid_e2e_tests
+default-members = [
+  "crates/beskid_analysis", "crates/beskid_artifacts", "crates/beskid_cli",
+  "crates/beskid_hi", "crates/beskid_tools", "crates/beskid_template",
+  "crates/beskid_ast_derive", "crates/beskid_ast_reflect_gen", "crates/beskid_codegen",
+  "crates/beskid_abi", "crates/beskid_manifest", "crates/beskid_pipeline",
+  "crates/beskid_engine", "crates/beskid_isle", "crates/abfall",
+  "crates/beskid_lsp", "crates/beskid_repl", "crates/beskid_aot",
+  "crates/beskid_pckg", "crates/beskid_pckg_artifacts", "crates/beskid_pckg_contract",
+  "crates/beskid_pckg_auth", "crates/beskid_pckg_community", "crates/beskid_pckg_operations",
+  "crates/beskid_pckg_server", "crates/beskid_pckg_store", "crates/beskid_queries",
+  "crates/beskid_graph", "crates/beskid_pest_gen", "crates/beskid_up",
+]
 
 [workspace.lints.rust]
 unsafe_code = "allow"
@@ -10,7 +26,7 @@ unused_must_use = "warn"
 enum_glob_use = "warn"
 
 [workspace.dependencies]
-salsa = { version = "0.26", features = ["macros"] }
+salsa = { version = "0.26", features = ["macros", "persistence"] }
 allocator-api2 = { version = "0.2", default-features = false, features = ["alloc"] }
 enum-map = { version = "2.7", default-features = false }
 hashbrown = { version = "0.16", default-features = false }
@@ -33,7 +49,6 @@ synstructure = "0.13"
 tracing = { version = "0.1.37", default-features = false }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-log = "0.2"
-trybuild = "1.0"
 beskid_template = { path = "crates/beskid_template" }
 graphs-tui = "0.4.0"
 beskid_graph = { path = "crates/beskid_graph" }

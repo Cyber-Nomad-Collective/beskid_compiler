@@ -1,0 +1,13 @@
+[package]
+name = "beskid_tests_lsp"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+slow = []
+
+[dependencies]
+beskid_lsp = { path = "../beskid_lsp" }
+tower-lsp-server = "0.23.0"
+tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "sync"] }

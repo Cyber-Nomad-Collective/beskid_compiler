@@ -877,27 +877,100 @@ dependencies = [
 ]
 
 [[package]]
-name = "beskid_tests"
+name = "beskid_tests_abi"
 version = "0.1.0"
 dependencies = [
- "abfall",
+ "beskid_abi",
+]
+
+[[package]]
+name = "beskid_tests_aot"
+version = "0.1.0"
+dependencies = [
  "beskid_abi",
  "beskid_analysis",
  "beskid_aot",
  "beskid_codegen",
+ "beskid_queries",
+]
+
+[[package]]
+name = "beskid_tests_cli"
+version = "0.1.0"
+dependencies = [
+ "beskid_analysis",
+ "tempfile",
+]
+
+[[package]]
+name = "beskid_tests_composition"
+version = "0.1.0"
+dependencies = [
+ "beskid_abi",
+]
+
+[[package]]
+name = "beskid_tests_interop"
+version = "0.1.0"
+dependencies = [
+ "beskid_aot",
  "beskid_engine",
+]
+
+[[package]]
+name = "beskid_tests_lsp"
+version = "0.1.0"
+dependencies = [
  "beskid_lsp",
+ "tokio",
+ "tower-lsp-server",
+]
+
+[[package]]
+name = "beskid_tests_mods"
+version = "0.1.0"
+dependencies = [
+ "beskid_analysis",
+ "beskid_aot",
+ "beskid_engine",
+ "beskid_pipeline",
+ "beskid_tests_support",
+]
+
+[[package]]
+name = "beskid_tests_pckg"
+version = "0.1.0"
+dependencies = [
+ "beskid_pckg",
+ "tokio",
+]
+
+[[package]]
+name = "beskid_tests_projects"
+version = "0.1.0"
+dependencies = [
+ "beskid_analysis",
+ "beskid_codegen",
+ "beskid_engine",
  "beskid_pckg",
  "beskid_pipeline",
  "beskid_queries",
  "beskid_template",
- "beskid_tools",
- "object 0.37.3",
- "pest",
+ "beskid_tests_support",
  "serde_json",
  "tempfile",
- "tokio",
- "tower-lsp-server",
+]
+
+[[package]]
+name = "beskid_tests_support"
+version = "0.1.0"
+
+[[package]]
+name = "beskid_tests_surface"
+version = "0.1.0"
+dependencies = [
+ "beskid_analysis",
+ "pest",
 ]
 
 [[package]]

@@ -52,10 +52,16 @@ pub fn prepare_compilation_diagnostics(
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>)> {
-    with_db(|db| {
+    let result = with_db(|db| {
         ensure_db_for_resolved(db, resolved);
         prepare_compilation_diagnostics_with_db(db, resolved, options, pipeline)
-    })
+    });
+    // Persist the salsa snapshot after a successful CLI prepare so the next
+    // invocation skips recomputation of unchanged persisted queries.
+    if result.is_ok() {
+        with_db(crate::persistence::persist_session_snapshot);
+    }
+    result
 }
 
 /// Run executable prepare with the process-scoped database (CLI / one-shot callers).
@@ -64,10 +70,16 @@ pub fn prepare_compilation(
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<PreparedCompilation> {
-    with_db(|db| {
+    let result = with_db(|db| {
         ensure_db_for_resolved(db, resolved);
         prepare_compilation_with_db(db, resolved, options, pipeline)
-    })
+    });
+    // Persist the salsa snapshot after a successful CLI prepare so the next
+    // invocation skips recomputation of unchanged persisted queries.
+    if result.is_ok() {
+        with_db(crate::persistence::persist_session_snapshot);
+    }
+    result
 }
 
 /// Build typed HIR from a resolved input using the shared DB + entry session registry (CLI / codegen).

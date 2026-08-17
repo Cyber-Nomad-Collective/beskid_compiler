@@ -10,28 +10,28 @@ use crate::inputs::{FileText, ProjectSession};
 use crate::stats::record_query_miss;
 
 /// Spec: `syntax_generation_id` — bumped when entry file text changes.
-#[salsa::input]
+#[salsa::input(persist)]
 pub struct ModHostSyntaxGenerationId {
     pub path: String,
     pub generation: u64,
 }
 
 /// Spec: `manifest_generation_id` — hash of manifest/lockfile bytes.
-#[salsa::input]
+#[salsa::input(persist)]
 pub struct ManifestGenerationId {
     #[returns(ref)]
     pub digest: String,
 }
 
 /// Spec: `capability_set_id` — canonical mod capability grant encoding.
-#[salsa::input]
+#[salsa::input(persist)]
 pub struct CapabilitySetId {
     #[returns(ref)]
     pub digest: String,
 }
 
 /// Fingerprint of collector-observed mod targets (tracked).
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub fn mod_collect_target_fingerprint(
     db: &dyn Db,
     project: ProjectSession,
@@ -59,7 +59,7 @@ pub fn mod_collect_target_fingerprint(
 }
 
 /// Fingerprint of mod-generate inputs (tracked).
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub fn mod_generate_fingerprint(
     db: &dyn Db,
     project: ProjectSession,
@@ -82,7 +82,7 @@ pub fn mod_generate_fingerprint(
 }
 
 /// Run mod host generate phase when fingerprint changes; returns source length as cheap tracked output.
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub fn mod_generate(
     db: &dyn Db,
     project: ProjectSession,

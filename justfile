@@ -64,7 +64,19 @@ replace:
 
 # Fast type-check the default member set (excludes the test sink crates).
 check:
-    cargo check --workspace --exclude beskid_tests --exclude beskid_e2e_tests
+    cargo check --workspace \
+        --exclude beskid_e2e_tests \
+        --exclude beskid_tests_surface \
+        --exclude beskid_tests_projects \
+        --exclude beskid_tests_mods \
+        --exclude beskid_tests_lsp \
+        --exclude beskid_tests_aot \
+        --exclude beskid_tests_pckg \
+        --exclude beskid_tests_interop \
+        --exclude beskid_tests_cli \
+        --exclude beskid_tests_composition \
+        --exclude beskid_tests_abi \
+        --exclude beskid_tests_support
 
 # Type-check one crate + its direct deps only.
 check-p crate:

@@ -29,7 +29,7 @@ use beskid_pipeline::phases::{
 use beskid_pipeline::{PipelineEvent, PipelineObserver, observe_phase};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
-const SAMPLE_MOD_PROJECT: &str = include_str!("../../beskid_tests/fixtures/mods/sample_mod/SampleMod.bproj");
+const SAMPLE_MOD_PROJECT: &str = include_str!("../../beskid_tests_mods/fixtures/mods/sample_mod/SampleMod.bproj");
 
 const HOST_MANIFEST: &str = r#"
 Host {

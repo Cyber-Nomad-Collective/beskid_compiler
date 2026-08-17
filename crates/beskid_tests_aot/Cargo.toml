@@ -1,0 +1,15 @@
+[package]
+name = "beskid_tests_aot"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+slow = []
+
+[dependencies]
+beskid_abi = { path = "../beskid_abi" }
+beskid_analysis = { path = "../beskid_analysis" }
+beskid_aot = { path = "../beskid_aot" }
+beskid_codegen = { path = "../beskid_codegen" }
+beskid_queries = { path = "../beskid_queries" }

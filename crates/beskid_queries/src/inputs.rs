@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 /// Per-file source text; LSP/CLI set this on edit.
-#[salsa::input]
+#[salsa::input(persist)]
 pub struct FileText {
     pub path: PathBuf,
     #[returns(ref)]
@@ -11,7 +11,7 @@ pub struct FileText {
 }
 
 /// Project-scoped session identity (roots + lockfile + target).
-#[salsa::input]
+#[salsa::input(persist)]
 pub struct ProjectSession {
     pub project_root: PathBuf,
     pub entry_path: PathBuf,
@@ -21,7 +21,7 @@ pub struct ProjectSession {
 }
 
 /// Grammar/compiler revision baked into unit invalidation.
-#[salsa::input]
+#[salsa::input(persist)]
 pub struct GrammarRevision {
     #[returns(ref)]
     pub rev: String,

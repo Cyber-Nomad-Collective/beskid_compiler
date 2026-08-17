@@ -1,0 +1,15 @@
+[package]
+name = "beskid_tests_mods"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+slow = []
+
+[dependencies]
+beskid_analysis = { path = "../beskid_analysis" }
+beskid_aot = { path = "../beskid_aot" }
+beskid_engine = { path = "../beskid_engine" }
+beskid_pipeline = { path = "../beskid_pipeline" }
+beskid_tests_support = { path = "../beskid_tests_support" }

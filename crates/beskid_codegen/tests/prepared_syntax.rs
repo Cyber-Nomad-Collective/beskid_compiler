@@ -198,7 +198,7 @@ fn prepared_syntax_module_lowers_sample_mod_nominal_contract_methods() {
         std::env::temp_dir().join(format!("beskid_codegen_prepared_syntax_sample_mod_{}", std::process::id()));
     std::fs::create_dir_all(&directory).expect("create project");
     let path = directory.join("Mod.bd");
-    let source = include_str!("../../beskid_tests/fixtures/mods/sample_mod/Src/Mod.bd");
+    let source = include_str!("../../beskid_tests_mods/fixtures/mods/sample_mod/Src/Mod.bd");
     std::fs::write(&path, source).expect("write source");
     let plan = synthetic_compile_plan_for_source(&path);
     let resolved: ResolvedInput = resolved_input_from_plan(path, source.into(), plan, None, None);

@@ -360,7 +360,7 @@ DemoMod {
         .expect("manifest");
         fs::write(
             source_root.join("Mod.bd"),
-            include_str!("../../../beskid_tests/fixtures/mods/sample_mod/Src/Mod.bd"),
+            include_str!("../../../beskid_tests_mods/fixtures/mods/sample_mod/Src/Mod.bd"),
         )
         .expect("mod source");
 

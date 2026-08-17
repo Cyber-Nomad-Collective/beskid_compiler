@@ -83,8 +83,9 @@ mod tests {
     /// LSP handler must agree with `beskid_analysis::format::format_program` (same as CLI).
     #[test]
     fn formatting_matches_format_program_fixture_docs_and_control() {
-        const MESSY: &str = include_str!("../../../../beskid_tests/fixtures/format/docs_and_control.input.bd");
-        const CANON: &str = include_str!("../../../../beskid_tests/fixtures/format/docs_and_control.expected.bd");
+        const MESSY: &str = include_str!("../../../../beskid_tests_surface/fixtures/format/docs_and_control.input.bd");
+        const CANON: &str =
+            include_str!("../../../../beskid_tests_surface/fixtures/format/docs_and_control.expected.bd");
 
         let parsed = beskid_analysis::services::parse_program(MESSY).expect("fixture parses");
         let from_api = beskid_analysis::format::format_program(&parsed).expect("format_program");

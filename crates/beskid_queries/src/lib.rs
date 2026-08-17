@@ -65,10 +65,13 @@ pub use modhost::{
     mod_collect_target_fingerprint, mod_generate, mod_generate_fingerprint,
 };
 pub use output::{SharedFrontEnd, SharedResolution, SharedTypeResult, SharedUnitResolution, SharedUnitTypeSurface};
-pub use persistence::{SalsaPersistenceManifest, cache_root_for_project, ensure_salsa_dir, load_manifest};
+pub use persistence::{
+    SalsaPersistenceManifest, cache_root_for_project, ensure_salsa_dir, load_db_snapshot, load_manifest,
+    persist_session_snapshot, save_db_snapshot,
+};
 pub use semantic_contract::{
-    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, CallLowering, CaptureStorageClass,
-    CastIntent, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
+    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, BulkParameterFact, CallLowering,
+    CaptureStorageClass, CastIntent, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
     ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement, CollectionMutationOwner,
     CollectionOperation, CompletionCandidate, CompletionContext, CompletionKind, ControlFlow, CorelibService,
     DispatchBuiltinSymbol, EnumConstructorFact, EnumLayoutFact, EnumMatchArmFact, EnumMatchFact,
@@ -80,11 +83,12 @@ pub use semantic_contract::{
     SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnosticKind, SpawnEntryValidation,
     SpawnTarget, TestItem, TryExpressionFact, TypedProgram, abi_type, aggregate_field_access, aggregate_layout,
     aggregate_literal_declaration, array_index_element_abi_type, binary_operand_abi_type, block_statement_nodes,
-    call_abi_signature, call_argument_abi_type, call_arguments, call_lowering, callable_signature, capture_storage,
-    cast_intents, child_nodes, clif_block_body, closure_call_target, closure_environment, closure_signature,
-    collection_operation, completion_candidates, constant_integer, contextual_integer_literal_abi_type, control_flow,
-    direct_callees, dispatch_builtin_symbol, empty_array_literal_element_abi_type, enum_constructor, enum_layout,
-    enum_match, extern_contract_import_for_declaration, for_iterator_fact, format_ast_node_key, format_ast_node_site,
+    bulk_parameter, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering, callable_signature,
+    capture_storage, cast_intents, child_nodes, clif_block_body, closure_call_target, closure_environment,
+    closure_signature, collection_operation, completion_candidates, constant_integer,
+    contextual_integer_literal_abi_type, control_flow, direct_callees, dispatch_builtin_symbol,
+    empty_array_literal_element_abi_type, enum_constructor, enum_layout, enum_match,
+    extern_contract_import_for_declaration, for_iterator_fact, format_ast_node_key, format_ast_node_site,
     format_ast_node_trace, format_source_span_range, generic_call_instantiation, generic_call_specialization,
     generic_call_template, generic_nominal_method_receiver, generic_specialization_identity,
     generic_specialization_instance, item_abi_signature, item_body, item_export_symbol, item_name, item_signature,

@@ -128,8 +128,8 @@ mod tests {
 
     #[test]
     fn project_graph_renders_mermaid() {
-        let manifest =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../beskid_tests/fixtures/projects/simple_app/Project.proj");
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../beskid_tests_projects/fixtures/projects/simple_app/Project.proj");
         if !manifest.is_file() {
             return;
         }

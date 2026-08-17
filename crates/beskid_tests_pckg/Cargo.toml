@@ -1,0 +1,12 @@
+[package]
+name = "beskid_tests_pckg"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+slow = []
+
+[dependencies]
+beskid_pckg = { path = "../beskid_pckg" }
+tokio = { version = "1.48", features = ["rt-multi-thread", "macros"] }

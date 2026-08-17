@@ -133,7 +133,7 @@ unit Main() {
 
 #[test]
 fn sample_mod_method_abi_signatures_include_pointer_receiver_and_nominal_parameter() {
-    let source = include_str!("../../../beskid_tests/fixtures/mods/sample_mod/Src/Mod.bd");
+    let source = include_str!("../../../beskid_tests_mods/fixtures/mods/sample_mod/Src/Mod.bd");
     let (db, _project, unit, generation, index) = setup(source);
     let methods = index
         .ids_of_kind(NodeKind::MethodDefinition)
