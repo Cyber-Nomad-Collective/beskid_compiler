@@ -25,6 +25,7 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let tools_program =
         expand_program(parse_program(tools_source).expect("tools parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(17);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -48,7 +49,7 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let tools_unit = SourceUnitId::new(&db, tools_path);
@@ -59,7 +60,6 @@ fn qualified_import_resolution_uses_registered_dependency_syntax() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let generation = SyntaxGenerationId(17);
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
     let tools_index = SyntaxIndex::from_program(&tools_program, generation);
@@ -137,6 +137,7 @@ fn qualified_import_resolution_follows_public_module_reexports() {
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
         })
         .collect::<Vec<_>>();
+    let generation = SyntaxGenerationId(18);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -147,7 +148,7 @@ fn qualified_import_resolution_follows_public_module_reexports() {
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let result_unit = SourceUnitId::new(&db, result_path);
@@ -158,7 +159,6 @@ fn qualified_import_resolution_follows_public_module_reexports() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let generation = SyntaxGenerationId(18);
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&units[0].program, generation);
     let result_index = SyntaxIndex::from_program(&units[2].program, generation);
@@ -204,6 +204,7 @@ fn imported_assembly_module_call_resolves_through_its_use_binding() {
         expand_program(parse_program(terminal_source).expect("terminal parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let string_program =
         expand_program(parse_program(string_source).expect("string parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(25);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -227,7 +228,7 @@ fn imported_assembly_module_call_resolves_through_its_use_binding() {
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let terminal_unit = SourceUnitId::new(&db, terminal_path);
     let string_unit = SourceUnitId::new(&db, string_path);
@@ -238,7 +239,6 @@ fn imported_assembly_module_call_resolves_through_its_use_binding() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let generation = SyntaxGenerationId(25);
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let terminal_index = SyntaxIndex::from_program(&terminal_program, generation);
     let string_index = SyntaxIndex::from_program(&string_program, generation);
@@ -275,6 +275,7 @@ fn hub_declaration_shadows_the_same_name_reached_through_its_public_reexport() {
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
         })
         .collect::<Vec<_>>();
+    let generation = SyntaxGenerationId(31);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -285,7 +286,7 @@ fn hub_declaration_shadows_the_same_name_reached_through_its_public_reexport() {
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let casing_unit = SourceUnitId::new(&db, casing_path);
     let hub_unit = SourceUnitId::new(&db, hub_path);
@@ -296,7 +297,6 @@ fn hub_declaration_shadows_the_same_name_reached_through_its_public_reexport() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let generation = SyntaxGenerationId(31);
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let casing_index = SyntaxIndex::from_program(&units[0].program, generation);
     let hub_index = SyntaxIndex::from_program(&units[1].program, generation);
@@ -321,6 +321,7 @@ fn imported_type_qualified_static_call_resolves_to_its_exact_syntax_item() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let progress_program =
         expand_program(parse_program(progress_source).expect("progress parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(54);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -344,7 +345,7 @@ fn imported_type_qualified_static_call_resolves_to_its_exact_syntax_item() {
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let progress_unit = SourceUnitId::new(&db, progress_path);
@@ -355,7 +356,6 @@ fn imported_type_qualified_static_call_resolves_to_its_exact_syntax_item() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let generation = SyntaxGenerationId(54);
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
     let progress_index = SyntaxIndex::from_program(&progress_program, generation);
@@ -382,6 +382,7 @@ fn syntax_facts_resolve_core_output_writeline_without_hir() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let output_program =
         expand_program(parse_program(output_source).expect("Core.Output parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(55);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -405,7 +406,7 @@ fn syntax_facts_resolve_core_output_writeline_without_hir() {
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let output_unit = SourceUnitId::new(&db, output_path);
@@ -416,7 +417,6 @@ fn syntax_facts_resolve_core_output_writeline_without_hir() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let generation = SyntaxGenerationId(55);
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
     let output_index = SyntaxIndex::from_program(&output_program, generation);
@@ -446,6 +446,7 @@ fn syntax_facts_resolve_core_output_writeline_via_import_alias() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let output_program =
         expand_program(parse_program(output_source).expect("Core.Output parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(57);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -469,7 +470,7 @@ fn syntax_facts_resolve_core_output_writeline_via_import_alias() {
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let output_unit = SourceUnitId::new(&db, output_path);
@@ -480,7 +481,6 @@ fn syntax_facts_resolve_core_output_writeline_via_import_alias() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let generation = SyntaxGenerationId(57);
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
     let output_index = SyntaxIndex::from_program(&output_program, generation);
@@ -507,6 +507,7 @@ fn syntax_facts_do_not_resolve_core_output_writeline_through_alias() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let output_program =
         expand_program(parse_program(output_source).expect("Core.Output parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(56);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -530,7 +531,7 @@ fn syntax_facts_do_not_resolve_core_output_writeline_through_alias() {
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let project = ProjectSession::new(
@@ -540,7 +541,6 @@ fn syntax_facts_do_not_resolve_core_output_writeline_through_alias() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let generation = SyntaxGenerationId(56);
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
     let call = key(main_unit, generation, &main_index, NodeKind::CallExpression, 0);
@@ -569,6 +569,7 @@ fn qualified_import_alias_ambiguity_has_no_syntax_item_fact() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let tools_program =
         expand_program(parse_program(tools_source).expect("tools parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(38);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -598,7 +599,7 @@ fn qualified_import_alias_ambiguity_has_no_syntax_item_fact() {
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let project = ProjectSession::new(
@@ -608,7 +609,6 @@ fn qualified_import_alias_ambiguity_has_no_syntax_item_fact() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let generation = SyntaxGenerationId(38);
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
     let reference = key_at_start(
@@ -636,6 +636,7 @@ fn unqualified_import_resolution_requires_one_registered_syntax_target() {
         expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
     let tools_program =
         expand_program(parse_program(tools_source).expect("tools parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(18);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -659,7 +660,7 @@ fn unqualified_import_resolution_requires_one_registered_syntax_target() {
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let tools_unit = SourceUnitId::new(&db, tools_path);
@@ -670,7 +671,6 @@ fn unqualified_import_resolution_requires_one_registered_syntax_target() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let generation = SyntaxGenerationId(18);
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
     let tools_index = SyntaxIndex::from_program(&tools_program, generation);

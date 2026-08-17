@@ -2,7 +2,7 @@
 
 use super::super::*;
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(in crate::semantic_contract) fn call_lowering_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

@@ -53,6 +53,12 @@ fn normalize_lexically(path: &std::path::Path) -> std::path::PathBuf {
 /// emit the three fields as owned strings and recover the canonical `&'static
 /// str` triple by matching against [`CORELIB_SERVICES`], failing closed with a
 /// serde error when no entry matches (a tampered or unknown service).
+///
+/// The recovery here is a composite 3-field match — no single field uniquely
+/// identifies a service (e.g. `__panic_str` / `panic_str` appears under three
+/// distinct `source_path` values), so the single-string
+/// [`crate::serde_support::recover_static_str`] helper does not fit. The
+/// fail-closed contract is the same as the helper's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CorelibService {
     pub name: &'static str,

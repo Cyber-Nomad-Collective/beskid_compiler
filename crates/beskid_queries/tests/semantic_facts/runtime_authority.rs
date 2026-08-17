@@ -162,6 +162,7 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
     let application_source = "i64 Main() { return __syscall_write(1, \"application\"); }";
     let syscall_program = parse_program(&source.source).expect("parse embedded Core.Syscall");
     let application_program = parse_program(application_source).expect("parse application source");
+    let generation = SyntaxGenerationId(73);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: application_root.clone() },
@@ -188,14 +189,13 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
     let manifest = AbiManifestV5::canonical_runtime(target);
-    let generation = SyntaxGenerationId(73);
     let mut db = BeskidDatabase::default();
     let project = ProjectSession::new(
         &db,
@@ -260,7 +260,7 @@ fn corelib_service_authority_is_registered_for_only_the_exact_syscall_unit_in_an
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        generation,
+        SyntaxGenerationId(74),
     ));
     let forged_project = ProjectSession::new(
         &forged_db,

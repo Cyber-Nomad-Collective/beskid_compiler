@@ -8,6 +8,7 @@ pub mod mod_contract;
 pub mod runtime_kit;
 pub mod runtime_provenance;
 pub mod runtime_source;
+pub mod serde_support;
 pub mod toolchain;
 pub mod types;
 pub mod version;

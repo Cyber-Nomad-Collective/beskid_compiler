@@ -275,6 +275,7 @@ unit Write() {
         .collect::<Vec<_>>();
     let output_program = units[0].program.clone();
     let results_program = units[1].program.clone();
+    let generation = SyntaxGenerationId(98);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -285,7 +286,7 @@ unit Write() {
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let output_unit = SourceUnitId::new(&db, output_path);
     let results_unit = SourceUnitId::new(&db, results_path);
@@ -296,7 +297,6 @@ unit Write() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let generation = SyntaxGenerationId(98);
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let output_index = SyntaxIndex::from_program(&output_program, generation);
     let results_index = SyntaxIndex::from_program(&results_program, generation);
@@ -351,6 +351,7 @@ unit Main() {
     let main_program = units[0].program.clone();
     let results_program = units[1].program.clone();
     let error_program = units[2].program.clone();
+    let generation = SyntaxGenerationId(137);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -361,7 +362,7 @@ unit Main() {
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let results_unit = SourceUnitId::new(&db, results_path);
@@ -373,7 +374,6 @@ unit Main() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let generation = SyntaxGenerationId(137);
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&main_program, generation);
     let results_index = SyntaxIndex::from_program(&results_program, generation);

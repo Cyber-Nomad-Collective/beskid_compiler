@@ -78,17 +78,17 @@ impl serde::Serialize for DispatchBuiltinSymbol {
 
 impl<'de> serde::Deserialize<'de> for DispatchBuiltinSymbol {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let symbol = <String as serde::Deserialize>::deserialize(deserializer)?;
-        for spec in beskid_analysis::builtins::builtin_specs() {
-            if spec.runtime_symbol == symbol {
-                return Ok(DispatchBuiltinSymbol(spec.runtime_symbol));
-            }
-        }
-        Err(serde::de::Error::custom(format!("unknown dispatch builtin symbol `{symbol}`")))
+        let symbol = beskid_abi::serde_support::recover_static_str(deserializer, "dispatch builtin symbol", |value| {
+            beskid_analysis::builtins::builtin_specs()
+                .iter()
+                .find(|spec| spec.runtime_symbol == value)
+                .map(|spec| spec.runtime_symbol)
+        })?;
+        Ok(DispatchBuiltinSymbol(symbol))
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(persist)]
 pub(super) fn dispatch_builtin_symbol_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,

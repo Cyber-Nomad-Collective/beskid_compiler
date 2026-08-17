@@ -46,6 +46,7 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
             program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
         })
         .collect::<Vec<_>>();
+    let generation = SyntaxGenerationId(18);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -56,7 +57,7 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        SyntaxGenerationId(0),
+        generation,
     ));
     let main_unit = SourceUnitId::new(&db, main_path);
     let result_unit = SourceUnitId::new(&db, result_path);
@@ -68,7 +69,6 @@ fn qualified_import_resolution_follows_public_reexports_and_declared_modules() {
         "App".to_string(),
         "lock".to_string(),
     );
-    let generation = SyntaxGenerationId(18);
     build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
     let main_index = SyntaxIndex::from_program(&units[0].program, generation);
     let result_index = SyntaxIndex::from_program(&units[2].program, generation);
