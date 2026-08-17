@@ -27,7 +27,7 @@ const CALLBACK_REGISTRY_SIZE = 1056;
 const CALLBACK_COMPOSITION_OFFSET = 24;
 
 [Export(Abi:"C", Symbol:"beskid_rt_v5_abi_version")]
-pub u32 AbiVersion() {
+pub i32 AbiVersion() {
     return 5;
 }
 

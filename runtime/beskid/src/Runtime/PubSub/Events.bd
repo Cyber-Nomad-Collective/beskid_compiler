@@ -11,7 +11,7 @@
 //   offset 16: ordered handler pointers (word[capacity])
 
 [Export(Abi:"C", Symbol:"event_get_handler")]
-pub pointer EventGetHandler(pointer event, u32 index) {
+pub pointer EventGetHandler(pointer event, word index) {
     if event == NativePointer(0) { return NativePointer(0); }
     word count = raw_word_load(pointer_add(event, 8));
     if word(index) >= count { return NativePointer(0); }
