@@ -1,4 +1,4 @@
-use Bootstrap::Native;
+use Bootstrap.Native;
 // Canonical cooperative scheduler loop.
 // Drive one scheduling step. Returns true if work was done.
 pub bool SchedStep() {
