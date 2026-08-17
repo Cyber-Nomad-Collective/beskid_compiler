@@ -146,7 +146,7 @@ pub i64 HubWaitReceiveStatus(i64 hubId) {
         i64 chId = i64(raw_word_load(pointer_add(entry, 8)));
         i64 status = ChannelTryReceiveStatus(chId);
         if status == CHANNEL_STATUS_OK {
-            raw_word_store(pointer_add(hub, 8), ((pos + 1) % entryCount) | (cursorState & ~word(0xFF)));
+            raw_word_store(pointer_add(hub, 8), ((pos + 1) % entryCount) | (cursorState & (0xFFFFFFFFFFFFFFFF - word(0xFF))));
             return CHANNEL_STATUS_OK;
         }
         attempts = attempts + 1;

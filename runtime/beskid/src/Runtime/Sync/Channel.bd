@@ -229,7 +229,7 @@ pub unit ChannelWakeOne(pointer ch, word waiterOffset) {
     while index < FIBER_TABLE_MAX {
         word bit = word(1) << index;
         if (waiters & bit) != 0 {
-            raw_word_store(pointer_add(ch, waiterOffset), waiters & ~bit);
+            raw_word_store(pointer_add(ch, waiterOffset), waiters & (0xFFFFFFFFFFFFFFFF - bit));
             WakeEnqueue(index);
             return;
         }
@@ -316,7 +316,7 @@ pub pointer ChannelReceivePtr(i64 id) {
     word handle = raw_word_load(pointer_add(ch, 40 + position * 8));
     pointer value = GcResolveHandle(handle);
     raw_word_store(pointer_add(ch, 40 + position * 8), 0);
-    raw_word_store(pointer_add(ch, 168), pointerBits & ~(word(1) << position));
+    raw_word_store(pointer_add(ch, 168), pointerBits & (0xFFFFFFFFFFFFFFFF - (word(1) << position)));
     raw_word_store(ch, (head + 1) % CHANNEL_BUFFER_SIZE);
     raw_word_store(pointer_add(ch, 16), raw_word_load(pointer_add(ch, 16)) - 1);
     GcUnrootHandle(handle);
