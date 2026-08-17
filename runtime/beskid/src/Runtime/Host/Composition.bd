@@ -130,19 +130,19 @@ pub unit CompositionScopeEnter(pointer container) {
     if owner == NativePointer(0) { Trap(10, NativePointer(0), 0); }
     word scopeOffset = CompositionScopeOffset();
     word depthOffset = CompositionDepthOffset();
-    pointer scope = SystemAllocate(COMPOSITION_SCOPE_SIZE, 8);
-    if scope == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    pointer scopePtr = SystemAllocate(COMPOSITION_SCOPE_SIZE, 8);
+    if scopePtr == NativePointer(0) { Trap(5, NativePointer(0), 0); }
     pointer ownedValues = SystemAllocate(COMPOSITION_PLAN_ENTRY_MAX * 8, 8);
     if ownedValues == NativePointer(0) {
-        SystemFree(scope, COMPOSITION_SCOPE_SIZE);
+        SystemFree(scopePtr, COMPOSITION_SCOPE_SIZE);
         Trap(5, NativePointer(0), 0);
     }
-    memory_set(scope, 0, COMPOSITION_SCOPE_SIZE);
+    memory_set(scopePtr, 0, COMPOSITION_SCOPE_SIZE);
     memory_set(ownedValues, 0, COMPOSITION_PLAN_ENTRY_MAX * 8);
-    raw_word_store(scope, NativeWord(container));
-    raw_word_store(pointer_add(scope, 8), raw_word_load(pointer_add(owner, scopeOffset)));
-    raw_word_store(pointer_add(scope, 24), NativeWord(ownedValues));
-    raw_word_store(pointer_add(owner, scopeOffset), NativeWord(scope));
+    raw_word_store(scopePtr, NativeWord(container));
+    raw_word_store(pointer_add(scopePtr, 8), raw_word_load(pointer_add(owner, scopeOffset)));
+    raw_word_store(pointer_add(scopePtr, 24), NativeWord(ownedValues));
+    raw_word_store(pointer_add(owner, scopeOffset), NativeWord(scopePtr));
     raw_word_store(pointer_add(owner, depthOffset), raw_word_load(pointer_add(owner, depthOffset)) + 1);
     raw_word_store(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET), raw_word_load(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET)) + 1);
     return;
@@ -154,23 +154,23 @@ pub unit CompositionScopeLeave() {
     if owner == NativePointer(0) { Trap(10, NativePointer(0), 0); }
     word scopeOffset = CompositionScopeOffset();
     word depthOffset = CompositionDepthOffset();
-    pointer scope = NativePointer(raw_word_load(pointer_add(owner, scopeOffset)));
-    if scope == NativePointer(0) { Trap(10, NativePointer(0), 0); }
-    pointer container = NativePointer(raw_word_load(scope));
+    pointer scopePtr = NativePointer(raw_word_load(pointer_add(owner, scopeOffset)));
+    if scopePtr == NativePointer(0) { Trap(10, NativePointer(0), 0); }
+    pointer container = NativePointer(raw_word_load(scopePtr));
     if CompositionContainerValid(container) == 0 { Trap(10, NativePointer(0), 0); }
-    pointer ownedValues = NativePointer(raw_word_load(pointer_add(scope, 24)));
-    word ownedCount = raw_word_load(pointer_add(scope, 16));
+    pointer ownedValues = NativePointer(raw_word_load(pointer_add(scopePtr, 24)));
+    word ownedCount = raw_word_load(pointer_add(scopePtr, 16));
     while ownedCount > 0 {
         ownedCount = ownedCount - 1;
         GcUnregisterRoot(pointer_add(ownedValues, ownedCount * 8));
         raw_word_store(pointer_add(ownedValues, ownedCount * 8), 0);
     }
-    raw_word_store(pointer_add(owner, scopeOffset), raw_word_load(pointer_add(scope, 8)));
+    raw_word_store(pointer_add(owner, scopeOffset), raw_word_load(pointer_add(scopePtr, 8)));
     raw_word_store(pointer_add(owner, depthOffset), raw_word_load(pointer_add(owner, depthOffset)) - 1);
     raw_word_store(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET), raw_word_load(pointer_add(container, COMPOSITION_OPEN_SCOPE_COUNT_OFFSET)) - 1);
     SystemFree(ownedValues, COMPOSITION_PLAN_ENTRY_MAX * 8);
-    memory_set(scope, 0, COMPOSITION_SCOPE_SIZE);
-    SystemFree(scope, COMPOSITION_SCOPE_SIZE);
+    memory_set(scopePtr, 0, COMPOSITION_SCOPE_SIZE);
+    SystemFree(scopePtr, COMPOSITION_SCOPE_SIZE);
     return;
 }
 
