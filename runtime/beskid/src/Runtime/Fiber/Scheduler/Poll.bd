@@ -340,16 +340,26 @@ pub i32 PollObservation(word taskHandle, pointer resultSlot) {
 pub i64 PollReferenceNew(word taskHandle, bool link) {
     if !PollTaskValid(taskHandle) { return -1; }
     pointer state = PollState();
-    word countOffset = link ? POLL_LINK_COUNT_OFFSET : POLL_MONITOR_COUNT_OFFSET;
+    mut word countOffset = POLL_MONITOR_COUNT_OFFSET;
+    if link { countOffset = POLL_LINK_COUNT_OFFSET; }
     word count = raw_word_load(pointer_add(state, countOffset));
-    word max = link ? POLL_LINK_MAX : POLL_MONITOR_MAX;
+    mut word max = POLL_MONITOR_MAX;
+    if link { max = POLL_LINK_MAX; }
     mut word index = 0;
-    while index < count && raw_byte_load(pointer_add(link ? PollLinkRecord(index) : PollMonitorRecord(index), 16)) != 0 { index = index + 1; }
+    while index < count {
+        mut pointer candidate = PollMonitorRecord(index);
+        if link { candidate = PollLinkRecord(index); }
+        if raw_byte_load(pointer_add(candidate, 16)) == 0 { break; }
+        index = index + 1;
+    }
     if index >= max { return -1; }
     if index == count { raw_word_store(pointer_add(state, countOffset), count + 1); }
-    pointer record = link ? PollLinkRecord(index) : PollMonitorRecord(index);
+    mut pointer record = PollMonitorRecord(index);
+    if link { record = PollLinkRecord(index); }
     word generation = PollNextGeneration(raw_word_load(record));
-    memory_set(record, 0, link ? POLL_LINK_SIZE : POLL_MONITOR_SIZE);
+    mut word recordSize = POLL_MONITOR_SIZE;
+    if link { recordSize = POLL_LINK_SIZE; }
+    memory_set(record, 0, recordSize);
     raw_word_store(record, generation);
     raw_word_store(pointer_add(record, 8), taskHandle);
     raw_byte_store(pointer_add(record, 16), 1);
@@ -361,10 +371,13 @@ pub i64 PollReferenceNew(word taskHandle, bool link) {
 
 pub pointer PollReference(word handle, bool link) {
     pointer state = PollState();
-    word count = raw_word_load(pointer_add(state, link ? POLL_LINK_COUNT_OFFSET : POLL_MONITOR_COUNT_OFFSET));
+    mut word countOffset = POLL_MONITOR_COUNT_OFFSET;
+    if link { countOffset = POLL_LINK_COUNT_OFFSET; }
+    word count = raw_word_load(pointer_add(state, countOffset));
     word index = PollHandleIndex(handle);
     if index >= count { return NativePointer(0); }
-    pointer record = link ? PollLinkRecord(index) : PollMonitorRecord(index);
+    mut pointer record = PollMonitorRecord(index);
+    if link { record = PollLinkRecord(index); }
     if raw_word_load(record) != PollHandleGeneration(handle) || raw_byte_load(pointer_add(record, 16)) == 0 { return NativePointer(0); }
     return record;
 }
