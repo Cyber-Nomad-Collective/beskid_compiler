@@ -30,7 +30,10 @@ pub(super) fn collect_array_static_plans(
     for item in items {
         collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
     }
-    nodes.into_iter().filter_map(|key| input.array_static_plan(key)).collect()
+    nodes
+        .into_iter()
+        .filter_map(|key| input.array_static_plan(key).or_else(|| input.bulk_array_static_plan(key)))
+        .collect()
 }
 
 pub(super) fn collect_aggregate_static_plans(

@@ -8,8 +8,8 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    AstNodeKey, IndexedNodeKind, SemanticTypeId, child_nodes, empty_array_literal_element_abi_type, node_kind,
-    node_type,
+    AstNodeKey, CallLowering, IndexedNodeKind, SemanticTypeId, bulk_parameter, call_arguments, call_lowering,
+    child_nodes, empty_array_literal_element_abi_type, node_kind, node_type,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -96,6 +96,52 @@ pub fn emit_array_static_data<M: Module>(
 }
 
 impl CodegenInput<'_> {
+    /// Build the immutable element descriptor + allocation request symbols for one keyed array
+    /// plan. Shared by literal-keyed and bulk-call-keyed plans so the static-data emission path
+    /// (`emit_array_static_data`) and the module-data collection stay single-implementation.
+    ///
+    /// `key` is the syntax node the plan is keyed on (an `ArrayLiteralExpression` for literals, a
+    /// `CallExpression` for bulk calls); it identifies the plan's source unit and node for symbol
+    /// minting. `element_type` is the declared element ABI; `length` is the element count.
+    fn build_array_static_plan(
+        &self,
+        key: AstNodeKey,
+        element_type: SemanticTypeId,
+        length: u64,
+    ) -> Option<ArrayStaticPlan> {
+        let (stride, alignment, pointer) = scalar_layout(self.target().pointer_width, element_type)?;
+        let descriptor =
+            self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidArrayElementDescriptor")?;
+        let request =
+            self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidArrayAllocationRequest")?;
+        if descriptor.size != 32 || descriptor.alignment != 8 || request.size != 32 || request.alignment != 8 {
+            return None;
+        }
+        let unit = self
+            .typed_program()
+            .assembly
+            .units
+            .iter()
+            .position(|unit| paths_match(&unit.path, key.unit.path(self.database())))?;
+        let namespace = self
+            .artifact_namespace()
+            .chars()
+            .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
+            .collect::<String>();
+        let identity = format!("{namespace}_u{unit}_g{}_n{}", key.generation.0, key.node.0);
+        Some(ArrayStaticPlan {
+            literal: key,
+            pointer_map_symbol: format!("__beskid_array_pointer_map_{identity}"),
+            element_descriptor_symbol: format!("__beskid_array_element_descriptor_{identity}"),
+            allocation_request_symbol: format!("__beskid_array_allocation_request_{identity}"),
+            element_type,
+            stride,
+            alignment,
+            pointer_map_offsets: pointer.then_some(0_u64).into_iter().collect::<Vec<_>>().into(),
+            length,
+        })
+    }
+
     /// Create source-authorized typed-array metadata.
     ///
     /// A non-empty literal proves its element ABI from every element. An empty literal is valid
@@ -117,37 +163,39 @@ impl CodegenInput<'_> {
             }
             None => empty_array_literal_element_abi_type(self.database(), literal).ok().flatten()?,
         };
-        let (stride, alignment, pointer) = scalar_layout(self.target().pointer_width, element_type)?;
-        let descriptor =
-            self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidArrayElementDescriptor")?;
-        let request =
-            self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidArrayAllocationRequest")?;
-        if descriptor.size != 32 || descriptor.alignment != 8 || request.size != 32 || request.alignment != 8 {
+        let length = u64::try_from(elements.len()).ok()?;
+        self.build_array_static_plan(literal, element_type, length)
+    }
+
+    /// Create source-authorized typed-array metadata for one `bulk`-parameter call.
+    ///
+    /// A bulk callee declares a `bulk T[]` parameter; the call site packs N scalar arguments into
+    /// a fresh rooted array before the direct call. There is no `ArrayLiteralExpression` node to
+    /// key a plan on, so this plan is keyed on the `CallExpression` node. The element ABI comes
+    /// from the callee's declared `bulk T[]` parameter (declared type over inferred — the same
+    /// authority `array_static_plan` uses for empty literals), and the length comes from the
+    /// call's scalar argument count. Reuses `build_array_static_plan` so the static-data emission
+    /// path is shared with literal plans.
+    pub fn bulk_array_static_plan(&self, call: AstNodeKey) -> Option<ArrayStaticPlan> {
+        (node_kind(self.database(), call).ok().flatten() == Some(IndexedNodeKind::CallExpression)).then_some(())?;
+        let CallLowering::Direct(declaration) = call_lowering(self.database(), call).ok().flatten()? else {
             return None;
+        };
+        let parameters = child_nodes(self.database(), declaration).ok().flatten()?;
+        let mut element_type = None;
+        for parameter in parameters.iter().copied() {
+            if node_kind(self.database(), parameter).ok().flatten() != Some(IndexedNodeKind::Parameter) {
+                continue;
+            }
+            if let Some(fact) = bulk_parameter(self.database(), parameter).ok().flatten() {
+                element_type = Some(fact.element_abi_type);
+                break;
+            }
         }
-        let unit = self
-            .typed_program()
-            .assembly
-            .units
-            .iter()
-            .position(|unit| paths_match(&unit.path, literal.unit.path(self.database())))?;
-        let namespace = self
-            .artifact_namespace()
-            .chars()
-            .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
-            .collect::<String>();
-        let identity = format!("{namespace}_u{unit}_g{}_n{}", literal.generation.0, literal.node.0);
-        Some(ArrayStaticPlan {
-            literal,
-            pointer_map_symbol: format!("__beskid_array_pointer_map_{identity}"),
-            element_descriptor_symbol: format!("__beskid_array_element_descriptor_{identity}"),
-            allocation_request_symbol: format!("__beskid_array_allocation_request_{identity}"),
-            element_type,
-            stride,
-            alignment,
-            pointer_map_offsets: pointer.then_some(0_u64).into_iter().collect::<Vec<_>>().into(),
-            length: u64::try_from(elements.len()).ok()?,
-        })
+        let element_type = element_type?;
+        let arguments = call_arguments(self.database(), call).ok().flatten()?;
+        let length = u64::try_from(arguments.len()).ok()?;
+        self.build_array_static_plan(call, element_type, length)
     }
 }
 

@@ -34,13 +34,13 @@ use beskid_abi::{
     BeskidStr, ModAnalysisRequest, ModCollectRequest, ModCollectTargetSet, ModGenerationRequest, ModStrSlice,
     mod_contract::{
         ModAnalysisResult, ModAnalyzerEntryFn, ModCollectorEntryFn, ModDiagnostic, ModDiagnosticSlice, ModEdit,
-        ModEditSlice, ModRewriteResult, ModRewriterEntryFn,
+        ModEditSlice, ModQuickFix, ModQuickFixSlice, ModRewriteResult, ModRewriterEntryFn,
     },
 };
 
 use super::invoker::{
-    AnalyzerDiagnostic, AnalyzerOutcome, AnalyzerSeverity, CollectorOutcome, ContractInvocationError, ContractInvoker,
-    GeneratorOutcome, RewriteEdit, RewriterOutcome, StubContractInvoker,
+    AnalyzerDiagnostic, AnalyzerFix, AnalyzerOutcome, AnalyzerSeverity, CollectorOutcome, ContractInvocationError,
+    ContractInvoker, GeneratorOutcome, RewriteEdit, RewriterOutcome, StubContractInvoker,
 };
 use super::types::ContractRegistration;
 
@@ -148,7 +148,8 @@ impl ContractInvoker for NativeContractInvoker {
     ) -> Result<AnalyzerOutcome, ContractInvocationError> {
         self.ensure_loaded();
         let libraries = self.libraries();
-        let analysis_request = ModAnalysisRequest { context: *request };
+        let analysis_request =
+            ModAnalysisRequest { context: *request, semantic: beskid_abi::ModSemanticHandle::null() };
         let request_ptr = &analysis_request as *const ModAnalysisRequest;
         for library in libraries.iter() {
             let symbol = unsafe { library.get::<ModAnalyzerEntryFn>(registration.entry_symbol.as_bytes()) };
@@ -163,7 +164,8 @@ impl ContractInvoker for NativeContractInvoker {
             }
             let result: &ModAnalysisResult = unsafe { &*result_ptr };
             let diagnostics = unmarshal_diagnostics(&result.diagnostics);
-            return Ok(AnalyzerOutcome { type_id: registration.type_id.clone(), diagnostics, fix_targets: Vec::new() });
+            let fixes = unmarshal_fixes(&result.fixes, diagnostics.len());
+            return Ok(AnalyzerOutcome { type_id: registration.type_id.clone(), diagnostics, fixes });
         }
         drop(libraries);
         self.inner.invoke_analyzer(registration, request, snapshot)
@@ -285,6 +287,39 @@ fn unmarshal_diagnostics(slice: &ModDiagnosticSlice) -> Vec<AnalyzerDiagnostic> 
                     severity,
                     span,
                 }
+            })
+            .collect()
+    }
+}
+
+/// Unmarshal native analyzer quick-fixes into [`AnalyzerFix`]es.
+///
+/// `diagnostics_len` is the length of the diagnostics slice returned alongside the fixes.
+/// Fixes whose `diagnostic_index` is out of range are dropped (fail-closed: a mod that
+/// emits a bad index loses the fix, not the build). Edit unmarshaling reuses
+/// [`unmarshal_edits`] since `ModQuickFix.edits` is the same `ModEditSlice` shape.
+fn unmarshal_fixes(slice: &ModQuickFixSlice, diagnostics_len: usize) -> Vec<AnalyzerFix> {
+    if slice.items.is_null() || slice.len == 0 {
+        return Vec::new();
+    }
+    unsafe {
+        let items: &[ModQuickFix] = std::slice::from_raw_parts(slice.items, slice.len);
+        items
+            .iter()
+            .filter_map(|fix| {
+                // Bounds-check the diagnostic link; drop out-of-range fixes (fail-closed).
+                if (fix.diagnostic_index as usize) >= diagnostics_len {
+                    debug!(
+                        diagnostic_index = fix.diagnostic_index,
+                        diagnostics_len, "mod native invoker: dropping quick-fix with out-of-range diagnostic_index"
+                    );
+                    return None;
+                }
+                Some(AnalyzerFix {
+                    diagnostic_index: fix.diagnostic_index,
+                    title: beskid_str_to_string(&fix.title),
+                    edits: unmarshal_edits(&fix.edits),
+                })
             })
             .collect()
     }

@@ -125,11 +125,34 @@ pub struct ModGenerationRequest {
     pub targets: ModCollectTargetSet,
 }
 
+/// Opaque handle to a host-side semantic query surface. Phase 1 (Option C) forwards a
+/// null `ptr` with `version: 0` — mods re-derive diagnostics from source text + the
+/// syntax tree. Phase 2 (Option A) populates `ptr` with a callback vtable and bumps
+/// `version`; the struct layout is unchanged so native artifacts compiled against
+/// Phase 1 keep working (they see `version: 0` and ignore `ptr`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ModSemanticHandle {
+    /// Null in Phase 1; callback vtable pointer in Phase 2.
+    pub ptr: *const c_void,
+    /// 0 = no semantic surface; 1 = vtable v1.
+    pub version: u32,
+}
+
+impl ModSemanticHandle {
+    /// Phase 1 null handle — no semantic query surface.
+    pub const fn null() -> Self {
+        Self { ptr: std::ptr::null(), version: 0 }
+    }
+}
+
 /// Analyzer request payload (`Beskid.Compiler.Collect.AnalysisRequest`).
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct ModAnalysisRequest {
     pub context: ModCollectRequest,
+    /// Forward-compatible semantic query handle. Null in Phase 1 (Option C).
+    pub semantic: ModSemanticHandle,
 }
 
 /// Tagged union tag for [`ModSyntaxContributionItem`].
@@ -205,11 +228,35 @@ pub struct ModDiagnosticSlice {
     pub len: usize,
 }
 
+/// One quick-fix produced by a native `Analyzer`. `diagnostic_index` links the fix to an
+/// entry in the same `ModAnalysisResult.diagnostics` slice so the host can resolve the
+/// target diagnostic without string matching (codes can collide across mods).
+///
+/// Reuses [`ModEdit`] (`mod_contract.rs:213-224`) for the edit payload — its
+/// Insert/Replace/Delete shape is exactly what a quick-fix needs.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ModQuickFix {
+    /// Indexes into `ModAnalysisResult.diagnostics`.
+    pub diagnostic_index: u32,
+    pub title: BeskidStr,
+    pub edits: ModEditSlice,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ModQuickFixSlice {
+    pub items: *const ModQuickFix,
+    pub len: usize,
+}
+
 /// Result from `Analyzer.Analyze`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct ModAnalysisResult {
     pub diagnostics: ModDiagnosticSlice,
+    /// Flat list of quick-fixes; each carries a `diagnostic_index` into `diagnostics`.
+    pub fixes: ModQuickFixSlice,
 }
 
 /// One text edit from a native rewriter.

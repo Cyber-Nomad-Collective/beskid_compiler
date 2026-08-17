@@ -161,6 +161,13 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             Ok(Some(_)) | Err(_) => return Some(CallKind::CollectionOperation),
             Ok(None) => {}
         }
+        // `Of` is a constructor, not a collection operation, so it never matches above. A bulk
+        // callee declares a `bulk T[]` parameter; its call site packs N scalars into a fresh
+        // rooted array before the direct call. This must precede the `Direct` fallback, which
+        // would otherwise reject the N-scalar-vs-one-array arity mismatch.
+        if self.callee_bulk_parameter(key).is_some() {
+            return Some(CallKind::Bulk);
+        }
         if self.query(dispatch_builtin_symbol(self.db, key)).is_some() {
             return Some(CallKind::Dynamic);
         }
@@ -360,7 +367,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn array_layout(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
-        self.array_layout_for_literal(key).or_else(|| {
+        self.array_layout_for_literal(key).or_else(|| self.array_layout_for_bulk(key)).or_else(|| {
             let element_type = map_signature_type(self.isa?, self.query(array_index_element_abi_type(self.db, key))?)?;
             let stride = element_type.bytes();
             Some(beskid_isle::ArrayLayout::new(element_type, stride, 0, stride.ilog2() as u8))
@@ -368,9 +375,8 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn managed_array_allocation(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedArrayAllocation> {
-        Some(beskid_isle::ManagedArrayAllocation {
-            allocation_request_symbol: self.input.array_static_plan(key)?.allocation_request_symbol.into(),
-        })
+        let plan = self.input.array_static_plan(key).or_else(|| self.input.bulk_array_static_plan(key))?;
+        Some(beskid_isle::ManagedArrayAllocation { allocation_request_symbol: plan.allocation_request_symbol.into() })
     }
 
     fn function_parameters(&self, key: AstNodeKey) -> Option<Vec<ParameterSlot>> {

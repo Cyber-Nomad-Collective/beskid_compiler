@@ -272,6 +272,14 @@ pub enum CallKind {
     InlineLambda,
     RuntimeIntrinsic,
     CollectionOperation,
+    /// A direct call whose callee declares a `bulk` array parameter.
+    ///
+    /// The call site packs N scalar arguments into a fresh rooted array (reusing the
+    /// `emit_array_literal` allocation sequence) and direct-calls the callee with that array as
+    /// its sole argument. The callee signature still has one array parameter, so this is a
+    /// distinct lowering path from [`CallKind::Direct`], which requires argument/signature arity
+    /// to match.
+    Bulk,
     Dynamic,
 }
 

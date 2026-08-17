@@ -44,13 +44,14 @@ pub struct GeneratorOutcome {
     pub code_outputs: Vec<super::generate_output::CodeGenerateOutput>,
 }
 
-/// Outcome from `Analyzer.Analyze` — diagnostics it wants the host to emit and rewrite
-/// fixes it wants `Rewriter` to run on its behalf.
+/// Outcome from `Analyzer.Analyze` — diagnostics it wants the host to emit and quick-fixes
+/// it wants surfaced to LSP code actions. Fixes carry a `diagnostic_index` into
+/// `diagnostics` so the host can resolve the linked diagnostic without string matching.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AnalyzerOutcome {
     pub type_id: String,
     pub diagnostics: Vec<AnalyzerDiagnostic>,
-    pub fix_targets: Vec<String>,
+    pub fixes: Vec<AnalyzerFix>,
 }
 
 /// One diagnostic emitted by an Analyzer contract.
@@ -71,6 +72,16 @@ pub enum AnalyzerSeverity {
     #[default]
     Warning,
     Note,
+}
+
+/// One quick-fix produced by an Analyzer contract. `diagnostic_index` indexes into the
+/// enclosing [`AnalyzerOutcome::diagnostics`] slice. Edits reuse [`RewriteEdit`] — the
+/// host mirror of `ModEdit` — so the same apply path serves rewriters and quick-fixes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AnalyzerFix {
+    pub diagnostic_index: u32,
+    pub title: String,
+    pub edits: Vec<RewriteEdit>,
 }
 
 /// One text edit produced by a Rewriter contract. Edits are byte-offset ranges into
@@ -281,6 +292,7 @@ pub struct ScriptedContractInvoker {
     pub generator_typed_items: Mutex<Vec<(String, Vec<Spanned<ProgramItem>>)>>,
     pub generator_code_outputs: Mutex<Vec<(String, Vec<super::generate_output::CodeGenerateOutput>)>>,
     pub analyzer_diagnostics: Mutex<Vec<(String, Vec<AnalyzerDiagnostic>)>>,
+    pub analyzer_fixes: Mutex<Vec<(String, Vec<AnalyzerFix>)>>,
     pub rewriter_edits: Mutex<Vec<(String, Vec<RewriteEdit>)>>,
     pub recorded: StubContractInvoker,
 }
@@ -347,6 +359,14 @@ impl ScriptedContractInvoker {
         self
     }
 
+    /// Script the quick-fixes a `Analyzer` contract returns for `type_id`. Each fix carries
+    /// a `diagnostic_index` into the scripted diagnostics for the same `type_id`; the host
+    /// bounds-checks the index against the outcome's diagnostics length (fail-closed).
+    pub fn with_analyzer_fix(self, type_id: impl Into<String>, fixes: Vec<AnalyzerFix>) -> Self {
+        self.analyzer_fixes.lock().expect("scripted analyzer fixes").push((type_id.into(), fixes));
+        self
+    }
+
     /// Script the text edits a Rewriter contract returns for `type_id`. The host
     /// applies scripted edits after the rewriter runs, mirroring how
     /// [`ScriptedContractInvoker::with_generator_typed_items`] overlays generator
@@ -410,6 +430,13 @@ impl ContractInvoker for ScriptedContractInvoker {
         for (type_id, diagnostics) in scripted.iter() {
             if registration.type_id == *type_id {
                 outcome.diagnostics.extend(diagnostics.iter().cloned());
+            }
+        }
+        drop(scripted);
+        let scripted_fixes = self.analyzer_fixes.lock().expect("scripted analyzer fixes");
+        for (type_id, fixes) in scripted_fixes.iter() {
+            if registration.type_id == *type_id {
+                outcome.fixes.extend(fixes.iter().cloned());
             }
         }
         Ok(outcome)
