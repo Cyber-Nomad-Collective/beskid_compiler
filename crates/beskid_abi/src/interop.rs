@@ -283,4 +283,5 @@ impl std::fmt::Display for InteropSignatureError {
 impl std::error::Error for InteropSignatureError {}
 
 pub mod c_profile;
+pub mod mapping;
 pub mod rust_profile;

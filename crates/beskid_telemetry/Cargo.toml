@@ -16,4 +16,4 @@ tui-logger = { workspace = true, optional = true }
 
 [features]
 default = []
-tui-logger = ["dep:tui-logger"]
+tui = ["dep:tui-logger"]

@@ -6,5 +6,9 @@ description = "Extension widgets for beskid hi — validates the beskid_tools sh
 
 [dependencies]
 beskid_tools = { path = "../beskid_tools" }
-ratatui = { workspace = true }
-ratkit = { workspace = true, features = ["hotkey-service"] }
+ratatui = { workspace = true, optional = true }
+ratkit = { workspace = true, optional = true, features = ["hotkey-service"] }
+
+[features]
+tui = ["dep:ratatui", "dep:ratkit"]
+default = ["tui"]

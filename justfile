@@ -58,6 +58,23 @@ replace:
     echo "Replaced ${cli_dest}"
     echo "Replaced ${lsp_dest}"
 
+# Worktree tip: to share one target dir across git worktrees and avoid rebuilding per worktree,
+# run: CARGO_TARGET_DIR=$PWD/target cargo check   (or export it in your shell)
+# sccache (wired in .cargo/config.toml) covers the cache either way.
+
+# Fast type-check the default member set (excludes the test sink crates).
+check:
+    cargo check --workspace --exclude beskid_tests --exclude beskid_e2e_tests
+
+# Type-check one crate + its direct deps only.
+check-p crate:
+    cargo check -p {{crate}}
+
+# Remove build artifacts unused for 30 days (requires `cargo install cargo-sweep`).
+clean-stale:
+    @command -v cargo-sweep >/dev/null 2>&1 || { echo "Install: cargo install cargo-sweep"; exit 1; }
+    cargo sweep -t 30
+
 # Build beskid_vscode and reinstall into Cursor or VS Code (reload window after).
 vscode:
     #!/usr/bin/env bash

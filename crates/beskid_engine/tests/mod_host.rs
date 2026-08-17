@@ -24,7 +24,7 @@ use beskid_analysis::services::{parse_program_with_source_name, semantic_rule_di
 use beskid_engine::services::prepare_jit_entrypoint;
 use beskid_engine::{Engine, host_runtime_target};
 use beskid_pipeline::phases::{
-    LOWER_READY, MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE,
+    LOWER_READY, MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_GLUE, MOD_LOAD, MOD_REWRITE,
 };
 use beskid_pipeline::{PipelineEvent, PipelineObserver, observe_phase};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
@@ -155,7 +155,7 @@ fn mod_host_full_pipeline_compiles_in_engine() -> Result<()> {
     let events = pipeline.phase_starts();
     assert_subsequence(
         &events,
-        &[MACRO_EXPAND, MOD_LOAD, MOD_COLLECT, MOD_GENERATE, MACRO_EXPAND, MOD_ANALYZE, MOD_REWRITE],
+        &[MACRO_EXPAND, MOD_LOAD, MOD_COLLECT, MOD_GENERATE, MACRO_EXPAND, MOD_ANALYZE, MOD_REWRITE, MOD_GLUE],
     );
     Ok(())
 }

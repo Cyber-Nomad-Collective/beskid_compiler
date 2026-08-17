@@ -10,7 +10,7 @@ unused_must_use = "warn"
 enum_glob_use = "warn"
 
 [workspace.dependencies]
-salsa = { version = "0.26", features = ["macros", "persistence"] }
+salsa = { version = "0.26", features = ["macros"] }
 allocator-api2 = { version = "0.2", default-features = false, features = ["alloc"] }
 enum-map = { version = "2.7", default-features = false }
 hashbrown = { version = "0.16", default-features = false }
@@ -65,3 +65,20 @@ cranelift-module = "0.128.3"
 cranelift-native = "0.128.3"
 cranelift-object = "0.128.3"
 cargo-cross = { path = "vendor/cargo-cross-patched" }
+
+# --- Build profiles (consolidated here; Cargo only reliably reads [profile]
+#     from Cargo.toml, not .cargo/config.toml) ---
+
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+incremental = true
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+codegen-units = 16
+debug = "line-tables-only"
+strip = "symbols"
+panic = "abort"

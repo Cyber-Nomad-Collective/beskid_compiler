@@ -13,6 +13,8 @@
 //! discovery is exact-prefix and validation rejects any drift before link
 //! or load.
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 /// The capability tag a tool provides. A glue backend declares which
@@ -40,6 +42,15 @@ pub enum ToolCapability {
 pub struct ToolSpec {
     pub name: String,
     pub capability: ToolCapability,
+    /// Explicit path to the tool binary. When set, the probe resolves exactly
+    /// this path with no search. Mutually exclusive with `prefix`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Installed prefix of the toolchain. The probe resolves the binary at
+    /// `<prefix>/bin/<name>`, mirroring the `runtime_kit` layout. Mutually
+    /// exclusive with `path`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
     /// The minimum accepted semver version string (e.g. `"1.80.0"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub minimum_version: Option<String>,
@@ -60,9 +71,18 @@ pub struct ResolvedTool {
     pub name: String,
     pub capability: ToolCapability,
     pub path: String,
-    pub version: String,
+    /// Observed version string, when the probe captured one. The 0.4 probe
+    /// never captures a version, so this is `None` until 0.5 lands version
+    /// interrogation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
+    /// Observed target triple, when the probe captured one. The 0.4 probe
+    /// never captures a target, so this is `None` until 0.5 lands target
+    /// validation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_triple: Option<String>,
 }
 
 impl ResolvedTool {
@@ -95,6 +115,47 @@ impl ResolvedTool {
         }
         Ok(())
     }
+}
+
+/// Resolve a tool by exact-path discovery.
+///
+/// This is the 0.4 scaffold of the `Beskid.Glue.ToolchainProbe` contract: it
+/// verifies the tool exists at the expected path and is a regular file. Full
+/// version, sha256, and target-triple comparison lands in 0.5; the returned
+/// `ResolvedTool` carries `version: None`, `sha256: None`, and
+/// `target_triple: None`.
+///
+/// Discovery is fail-closed and exact-prefix, mirroring `runtime_kit`: there
+/// is no `PATH` search and no nearest-tool fallback. The probe resolves the
+/// binary from `spec.path` (an explicit binary path) or
+/// `<spec.prefix>/bin/<spec.name>` (the installed-prefix layout). If neither
+/// is supplied, the probe fails closed with `NotFound`.
+pub fn probe(spec: &ToolSpec) -> Result<ResolvedTool, ToolchainError> {
+    let path = resolve_tool_path(spec)?;
+    let metadata = std::fs::metadata(&path).map_err(|_| ToolchainError::NotFound { tool: spec.name.clone() })?;
+    if !metadata.is_file() {
+        return Err(ToolchainError::NotARegularFile { path });
+    }
+    Ok(ResolvedTool {
+        name: spec.name.clone(),
+        capability: spec.capability.clone(),
+        path,
+        version: None,
+        sha256: None,
+        target_triple: None,
+    })
+}
+
+/// Resolve the exact binary path for `spec` without any search fallback.
+fn resolve_tool_path(spec: &ToolSpec) -> Result<String, ToolchainError> {
+    if let Some(path) = &spec.path {
+        return Ok(path.clone());
+    }
+    if let Some(prefix) = &spec.prefix {
+        let binary = PathBuf::from(prefix).join("bin").join(&spec.name);
+        return Ok(binary.to_string_lossy().into_owned());
+    }
+    Err(ToolchainError::NotFound { tool: spec.name.clone() })
 }
 
 /// The atomized toolchain-probe result enum. Each variant carries the
@@ -139,3 +200,119 @@ impl std::fmt::Display for ToolchainError {
 }
 
 impl std::error::Error for ToolchainError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn spec_with_path(name: &str, path: &str) -> ToolSpec {
+        ToolSpec {
+            name: name.to_owned(),
+            capability: ToolCapability::Rustc,
+            path: Some(path.to_owned()),
+            prefix: None,
+            minimum_version: None,
+            target_triple: None,
+            expected_sha256: None,
+        }
+    }
+
+    fn spec_with_prefix(name: &str, prefix: &str) -> ToolSpec {
+        ToolSpec {
+            name: name.to_owned(),
+            capability: ToolCapability::Rustc,
+            path: None,
+            prefix: Some(prefix.to_owned()),
+            minimum_version: None,
+            target_triple: None,
+            expected_sha256: None,
+        }
+    }
+
+    fn unique_temp_dir(test_name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("beskid_abi_toolchain_probe_{test_name}_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    #[test]
+    fn probe_resolves_explicit_path_regular_file() {
+        let dir = unique_temp_dir("explicit_path");
+        let binary = dir.join("rustc");
+        std::fs::write(&binary, b"#!/bin/sh\n").expect("write binary");
+
+        let spec = spec_with_path("rustc", binary.to_str().unwrap());
+        let resolved = probe(&spec).expect("probe resolves regular file");
+        assert_eq!(resolved.name, "rustc");
+        assert_eq!(resolved.capability, ToolCapability::Rustc);
+        assert_eq!(resolved.path, binary.to_string_lossy());
+        assert_eq!(resolved.version, None);
+        assert_eq!(resolved.sha256, None);
+        assert_eq!(resolved.target_triple, None);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn probe_resolves_prefix_bin_layout() {
+        let dir = unique_temp_dir("prefix_layout");
+        let bin_dir = dir.join("bin");
+        std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+        let binary = bin_dir.join("cargo");
+        std::fs::write(&binary, b"#!/bin/sh\n").expect("write binary");
+
+        let spec = spec_with_prefix("cargo", dir.to_str().unwrap());
+        let resolved = probe(&spec).expect("probe resolves prefix/bin layout");
+        assert_eq!(resolved.name, "cargo");
+        assert_eq!(resolved.path, binary.to_string_lossy());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn probe_fails_closed_when_path_missing() {
+        let spec = spec_with_path("rustc", "/nonexistent/path/to/rustc");
+        let error = probe(&spec).expect_err("missing path must fail closed");
+        assert!(matches!(error, ToolchainError::NotFound { tool } if tool == "rustc"));
+    }
+
+    #[test]
+    fn probe_rejects_non_regular_file() {
+        let dir = unique_temp_dir("non_regular");
+        // The directory itself is not a regular file.
+        let spec = spec_with_path("rustc", dir.to_str().unwrap());
+        let error = probe(&spec).expect_err("directory must be rejected as non-regular");
+        assert!(matches!(error, ToolchainError::NotARegularFile { .. }));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn probe_fails_closed_without_path_or_prefix() {
+        let spec = ToolSpec {
+            name: "rustc".to_owned(),
+            capability: ToolCapability::Rustc,
+            path: None,
+            prefix: None,
+            minimum_version: None,
+            target_triple: None,
+            expected_sha256: None,
+        };
+        let error = probe(&spec).expect_err("no path or prefix must fail closed");
+        assert!(matches!(error, ToolchainError::NotFound { tool } if tool == "rustc"));
+    }
+
+    #[test]
+    fn probe_prefers_explicit_path_over_prefix() {
+        let dir = unique_temp_dir("path_precedence");
+        let binary = dir.join("rustc");
+        std::fs::write(&binary, b"#!/bin/sh\n").expect("write binary");
+
+        let mut spec = spec_with_path("rustc", binary.to_str().unwrap());
+        spec.prefix = Some("/nonexistent/prefix".to_owned());
+        let resolved = probe(&spec).expect("explicit path wins over prefix");
+        assert_eq!(resolved.path, binary.to_string_lossy());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

@@ -90,7 +90,7 @@ fn install_local(filter: EnvFilter, buffer_layer: BufferLayer) {
     tracing_subscriber::registry().with(filter).with(buffer_layer).with(stderr_fmt_layer!()).init();
 }
 
-#[cfg(feature = "tui-logger")]
+#[cfg(feature = "tui")]
 fn install_local_with_tui(filter: EnvFilter, buffer_layer: BufferLayer) {
     tracing_subscriber::registry()
         .with(filter)
@@ -105,7 +105,7 @@ fn install_otel(filter: EnvFilter, buffer_layer: BufferLayer, guard: &OtelGuard)
     tracing_subscriber::registry().with(filter).with(buffer_layer).with(stderr_fmt_layer!()).with(otel_layer).init();
 }
 
-#[cfg(feature = "tui-logger")]
+#[cfg(feature = "tui")]
 fn install_otel_with_tui(filter: EnvFilter, buffer_layer: BufferLayer, guard: &OtelGuard) {
     let otel_layer = tracing_opentelemetry::layer().with_tracer(otel_tracer(guard));
     tracing_subscriber::registry()
@@ -125,7 +125,7 @@ fn install_for_scope(
 ) {
     match otel_guard {
         Some(guard) => {
-            #[cfg(feature = "tui-logger")]
+            #[cfg(feature = "tui")]
             if _include_tui_logger {
                 install_otel_with_tui(filter, buffer_layer, &guard);
                 let _leaked = Box::leak(Box::new(guard));
@@ -135,7 +135,7 @@ fn install_for_scope(
             let _leaked = Box::leak(Box::new(guard));
         }
         None => {
-            #[cfg(feature = "tui-logger")]
+            #[cfg(feature = "tui")]
             if _include_tui_logger {
                 install_local_with_tui(filter, buffer_layer);
                 return;

@@ -15,6 +15,7 @@ mod discovery;
 mod emit_bridge;
 mod generate;
 mod generate_output;
+mod glue;
 pub mod invoker;
 mod load;
 mod merge;
@@ -40,6 +41,7 @@ pub use generate_output::{
     CodeGenerateOutput, GenerateOutputFile, GenerateOutputLayout, load_generate_output_layout, resolve_generated_path,
     resolve_package_root, write_code_generate_output, write_typed_generate_output,
 };
+pub use glue::{GlueAnnotation, GlueAttributeKind, collect_glue_annotations, is_glue_attribute};
 pub use invoker::{
     AnalyzerDiagnostic, AnalyzerOutcome, AnalyzerSeverity, CollectorOutcome, ContractInvocationError, ContractInvoker,
     GeneratorOutcome, InvocationKind, RewriteEdit, RewriterOutcome, ScriptedContractInvoker, StubContractInvoker,

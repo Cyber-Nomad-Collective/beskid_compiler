@@ -285,9 +285,10 @@ pub fn run_analyze_rewrite_with_invoker(
     // and preserves the previous record-only behavior.
     let source = host_input.map(|input| input.source);
     let rewrite = run_rewriters(program, source, session, &analyzed, host_input, invoker, pipeline)?;
+    let program = super::glue::run_glue(rewrite.program, session, pipeline)?;
 
     Ok(ModHostAnalyzeResult {
-        program: rewrite.program,
+        program,
         analyzer_outcomes,
         rewriter_outcomes: rewrite.outcomes,
         edited_source: rewrite.edited_source,
@@ -483,6 +484,7 @@ dependency "ModA" {
                 beskid_pipeline::phases::MACRO_EXPAND,
                 beskid_pipeline::phases::MOD_ANALYZE,
                 beskid_pipeline::phases::MOD_REWRITE,
+                beskid_pipeline::phases::MOD_GLUE,
             ]
         );
 

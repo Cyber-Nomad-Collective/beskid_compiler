@@ -4,6 +4,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
+use beskid_abi::abi_v5::AbiType;
+use beskid_abi::interop::c_profile::C_PROFILE_PERMITTED_SCALARS;
 use beskid_abi::{AbiParamKind, AbiReturnKind, all_builtin_specs};
 use cranelift_codegen::ir::{AbiParam, ExternalName, Signature, UserExternalName, types};
 use cranelift_codegen::isa::CallConv;
@@ -124,11 +126,14 @@ pub fn declare_referenced_builtin_imports<M: Module>(
     Ok(())
 }
 
-/// Ensure `sig` uses only pointer-sized integers and a small allowlist of scalar types permitted for extern FFI.
+/// Ensure `sig` uses only types permitted for extern FFI by the `Interop.Contracts` C ABI
+/// profile. The allowed scalar CLIF types are derived from
+/// [`C_PROFILE_PERMITTED_SCALARS`] (defense-in-depth: the type checker already
+/// validates extern signatures via [`beskid_abi::interop::c_profile::CAbiProfile`]).
+/// View records (`CStringView`, `CBuffer`, `CArrayView`) lower to `pointer` +
+/// `i64` pairs, both of which are in the permitted set.
 pub fn validate_ffi_signature(sig: &Signature, pointer: cranelift_codegen::ir::Type) -> Result<(), String> {
-    let check_ty = |ty: cranelift_codegen::ir::Type| -> bool {
-        ty == pointer || ty == types::I64 || ty == types::I32 || ty == types::I8 || ty == types::F64
-    };
+    let check_ty = |ty: cranelift_codegen::ir::Type| -> bool { ty == pointer || is_permited_ffi_scalar(ty) };
     for p in &sig.params {
         if !check_ty(p.value_type) {
             return Err(format!("param type {} not allowed", p.value_type));
@@ -140,6 +145,35 @@ pub fn validate_ffi_signature(sig: &Signature, pointer: cranelift_codegen::ir::T
         }
     }
     Ok(())
+}
+
+/// Map a CLIF type to its source [`AbiType`], if any.
+fn clif_type_to_abi_type(ty: cranelift_codegen::ir::Type) -> Option<AbiType> {
+    use cranelift_codegen::ir::types;
+    if ty == types::I8 {
+        Some(AbiType::I8)
+    } else if ty == types::I16 {
+        Some(AbiType::I16)
+    } else if ty == types::I32 {
+        Some(AbiType::I32)
+    } else if ty == types::I64 {
+        Some(AbiType::I64)
+    } else if ty == types::F32 {
+        Some(AbiType::F32)
+    } else if ty == types::F64 {
+        Some(AbiType::F64)
+    } else {
+        None
+    }
+}
+
+/// Returns `true` when `ty` is a CLIF scalar permitted at the FFI boundary by
+/// the C ABI profile.
+fn is_permited_ffi_scalar(ty: cranelift_codegen::ir::Type) -> bool {
+    let Some(abi_type) = clif_type_to_abi_type(ty) else {
+        return false;
+    };
+    C_PROFILE_PERMITTED_SCALARS.contains(&abi_type)
 }
 
 /// Scan lowered CLIF for [`ExternalName::TestCase`] callees that match `artifact.extern_imports`, validate FFI, and merge duplicate symbols.

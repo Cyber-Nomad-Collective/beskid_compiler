@@ -80,6 +80,7 @@ pub fn phase_label(id: &str) -> &str {
         phases::COMPOSITION_RESOLVE => "Resolve composition",
         phases::MOD_ANALYZE => "Analyze with mods",
         phases::MOD_REWRITE => "Rewrite with mods",
+        phases::MOD_GLUE => "Run glue mods",
         phases::LOWER_READY => "Prepare lowering",
         phases::LOWER => "Lower to HIR",
         phases::LOWER_AST => "Lower AST to HIR",

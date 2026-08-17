@@ -10,9 +10,13 @@ beskid_codegen = { path = "../beskid_codegen" }
 beskid_engine = { path = "../beskid_engine" }
 beskid_pipeline = { path = "../beskid_pipeline" }
 beskid_queries = { path = "../beskid_queries" }
-crossterm = { workspace = true }
-ratatui = { workspace = true }
-tui-term = { workspace = true, features = ["vt100"] }
+crossterm = { workspace = true, optional = true }
+ratatui = { workspace = true, optional = true }
+tui-term = { workspace = true, optional = true, features = ["vt100"] }
+
+[features]
+tui = ["dep:crossterm", "dep:ratatui", "dep:tui-term"]
+default = ["tui"]
 
 [dev-dependencies]
 beskid_abi = { path = "../beskid_abi" }

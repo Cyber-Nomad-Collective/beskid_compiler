@@ -115,10 +115,22 @@ pub fn type_resolved_program(
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum SemanticFactsError {
-    #[error("name resolution failed")]
     Resolve(Vec<ResolveError>),
-    #[error("type checking failed")]
     Type { errors: Vec<TypeError>, typed: Box<TypeResult> },
 }
+
+impl std::fmt::Display for SemanticFactsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Resolve(_) => write!(f, "name resolution failed"),
+            Self::Type { errors, .. } => match errors.first() {
+                Some(first) => write!(f, "{first}"),
+                None => write!(f, "type checking failed"),
+            },
+        }
+    }
+}
+
+impl std::error::Error for SemanticFactsError {}

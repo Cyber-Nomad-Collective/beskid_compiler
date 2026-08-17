@@ -132,26 +132,23 @@ pub(crate) fn emit_type_error(ctx: &mut RuleContext, error: TypeError, result: O
                 Severity::Error,
             );
         }
-        TypeError::ExternDisallowedParamType { span, method } => {
+        TypeError::ExternDisallowedParamType { span, method, detail } => {
             ctx.emit_simple(
                 span,
                 "T0903",
                 format!("extern param type not allowed in `{}`", method),
                 "parameter type",
-                Some(
-                    "Allowed: bool, u8, i32, i64, f64; for raw pointers, pass as i64 (pointer-sized) for now"
-                        .to_string(),
-                ),
+                Some(detail),
                 Severity::Error,
             );
         }
-        TypeError::ExternDisallowedReturnType { span, method } => {
+        TypeError::ExternDisallowedReturnType { span, method, detail } => {
             ctx.emit_simple(
                 span,
                 "T0904",
                 format!("extern return type not allowed in `{}`", method),
                 "return type",
-                Some("Allowed: bool, u8, i32, i64, f64, or unit (no value)".to_string()),
+                Some(detail),
                 Severity::Error,
             );
         }

@@ -52,8 +52,8 @@ pub enum TypeError {
     // Extern interface validation errors
     ExternInvalidAbi { span: SpanInfo, abi: Option<String> },
     ExternMissingLibrary { span: SpanInfo },
-    ExternDisallowedParamType { span: SpanInfo, method: String },
-    ExternDisallowedReturnType { span: SpanInfo, method: String },
+    ExternDisallowedParamType { span: SpanInfo, method: String, detail: String },
+    ExternDisallowedReturnType { span: SpanInfo, method: String, detail: String },
 }
 
 fn type_error_span_loc(span: SpanInfo) -> String {
@@ -198,11 +198,11 @@ impl fmt::Display for TypeError {
             TypeError::ExternMissingLibrary { span } => {
                 write!(f, "extern declaration missing library at {}", at(*span))
             }
-            TypeError::ExternDisallowedParamType { span, method } => {
-                write!(f, "extern method `{method}` has a disallowed parameter type at {}", at(*span))
+            TypeError::ExternDisallowedParamType { span, method, detail } => {
+                write!(f, "extern method `{method}` has a disallowed parameter type ({detail}) at {}", at(*span))
             }
-            TypeError::ExternDisallowedReturnType { span, method } => {
-                write!(f, "extern method `{method}` has a disallowed return type at {}", at(*span))
+            TypeError::ExternDisallowedReturnType { span, method, detail } => {
+                write!(f, "extern method `{method}` has a disallowed return type ({detail}) at {}", at(*span))
             }
         }
     }

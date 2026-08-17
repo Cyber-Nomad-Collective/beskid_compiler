@@ -17,7 +17,7 @@ use beskid_analysis::mod_host::{
     run_analyze_rewrite_with_invoker, run_through_generate,
 };
 use beskid_analysis::services::parse_program_with_source_name;
-use beskid_pipeline::phases::{MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_LOAD, MOD_REWRITE};
+use beskid_pipeline::phases::{MACRO_EXPAND, MOD_ANALYZE, MOD_COLLECT, MOD_GENERATE, MOD_GLUE, MOD_LOAD, MOD_REWRITE};
 use beskid_pipeline::{PipelineEvent, PipelineObserver};
 
 use super::fixture::ModFixtureWorkspace;
@@ -111,7 +111,7 @@ fn sample_mod_dispatches_all_four_contract_kinds_through_invoker() {
     let events = pipeline.phase_starts();
     assert_subsequence(
         &events,
-        &[MACRO_EXPAND, MOD_LOAD, MOD_COLLECT, MOD_GENERATE, MACRO_EXPAND, MOD_ANALYZE, MOD_REWRITE],
+        &[MACRO_EXPAND, MOD_LOAD, MOD_COLLECT, MOD_GENERATE, MACRO_EXPAND, MOD_ANALYZE, MOD_REWRITE, MOD_GLUE],
     );
 }
 

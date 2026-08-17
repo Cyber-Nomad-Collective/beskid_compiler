@@ -1,13 +1,13 @@
 [build]
-# Use sccache when RUSTC_WRAPPER is set (CI gate via setup-compiler-gate);
-# do not hard-code the wrapper so release/delivery jobs that don't install
-# sccache can still build. Local devs: `export RUSTC_WRAPPER=sccache`.
+# sccache is wired automatically. Release/delivery jobs may override by unsetting RUSTC_WRAPPER.
+rustc-wrapper = "sccache"
 
-[profile.dev.package."*"]
-opt-level = 1
+# Shared target dir across git worktrees (set per-worktree via env if you prefer isolation).
+# Uncomment to share: CARGO_TARGET_DIR is not a config key; document in justfile instead.
 
-# Keep the MSVC target independent of Git for Windows' usr/bin/link.exe.
-# rust-lld is shipped with the Rust toolchain; MSVC library paths still come
-# from the Windows CI developer environment.
+[target.aarch64-apple-darwin]
+# rust-lld ships with the toolchain and is the safe darwin linker. Use "mold" only if validated.
+linker = "rust-lld"
+
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld.exe"

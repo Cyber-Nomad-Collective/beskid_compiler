@@ -3,6 +3,13 @@ name = "beskid_queries"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# Opt-in Salsa snapshot serialization. Off by default — dev builds compile salsa
+# without the `persistence` feature to save build time. Enable on release/persistence
+# paths that need cross-run Salsa snapshot load/save.
+default = []
+persistence = ["salsa/persistence"]
+
 [dependencies]
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_abi = { path = "../beskid_abi" }

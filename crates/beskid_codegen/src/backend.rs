@@ -164,8 +164,9 @@ pub fn lower_with_backend(
 pub fn expect_clif(artifact: BackendArtifact) -> Result<CodegenArtifact, BackendError> {
     match artifact {
         BackendArtifact::Clif(artifact) => Ok(*artifact),
-        BackendArtifact::RustSource(_) | BackendArtifact::DotNetProject(_) => {
-            Err(BackendError::NotImplementedFor0_4 { kind: BackendKind::RustSource })
+        BackendArtifact::RustSource(_) => Err(BackendError::NotImplementedFor0_4 { kind: BackendKind::RustSource }),
+        BackendArtifact::DotNetProject(_) => {
+            Err(BackendError::NotImplementedFor0_4 { kind: BackendKind::DotNetProject })
         }
     }
 }
@@ -197,5 +198,15 @@ mod tests {
             BackendError::NotImplementedFor0_4 { kind: BackendKind::RustSource },
             BackendError::NotImplementedFor0_4 { .. }
         ));
+    }
+
+    #[test]
+    fn expect_clif_reports_actual_backend_kind_for_non_clif_artifacts() {
+        let rust_err = expect_clif(BackendArtifact::RustSource(String::new())).expect_err("rust source is not clif");
+        assert!(matches!(rust_err, BackendError::NotImplementedFor0_4 { kind: BackendKind::RustSource }));
+
+        let dotnet_err =
+            expect_clif(BackendArtifact::DotNetProject(String::new())).expect_err("dotnet project is not clif");
+        assert!(matches!(dotnet_err, BackendError::NotImplementedFor0_4 { kind: BackendKind::DotNetProject }));
     }
 }
