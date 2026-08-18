@@ -457,6 +457,11 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             let signature = signature_for_runtime_intrinsic(self.isa?, intrinsic)?;
             return signature.returns.first().map(|param| param.value_type);
         }
+        if self.scheduler_compiler_operation(key).is_some() {
+            return self
+                .call_signature(key)
+                .and_then(|signature| signature.returns.first().map(|param| param.value_type));
+        }
         let contextual = self.query(contextual_integer_literal_abi_type(self.db, key));
         let semantic = contextual
             .or_else(|| self.query(call_argument_abi_type(self.db, key)))
