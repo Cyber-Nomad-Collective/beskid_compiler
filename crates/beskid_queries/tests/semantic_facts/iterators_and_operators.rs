@@ -293,6 +293,35 @@ fn contextual_integer_literal_abi_type_contextualizes_only_bare_integer_literals
 }
 
 #[test]
+fn contextual_integer_literal_abi_type_return_boundary_rejects_literals_nested_in_return_calls() {
+    let direct_return = "i32 Main() { return 8; }";
+    let (db, _project, unit, generation, index) = setup(direct_return);
+    let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, literal).expect("typed direct return literal"),
+        Some(SemanticTypeId::I32)
+    );
+
+    let negated_return = "i64 Main() { return -1; }";
+    let (db, _project, unit, generation, index) = setup(negated_return);
+    let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, literal).expect("typed negated return literal"),
+        Some(SemanticTypeId::I64)
+    );
+
+    let nested_in_return_call = "i32 Main(pointer state) { return i32(pointer_add(state, 8)); }";
+    let (db, _project, unit, generation, index) = setup(nested_in_return_call);
+    let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    assert_unavailable(contextual_integer_literal_abi_type(&db, literal));
+
+    let nested_in_return_call_same_width = "pointer Main(pointer state) { return pointer_add(state, 8); }";
+    let (db, _project, unit, generation, index) = setup(nested_in_return_call_same_width);
+    let literal = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    assert_unavailable(contextual_integer_literal_abi_type(&db, literal));
+}
+
+#[test]
 fn operator_facts_cover_expression_selection() {
     let source = "bool Main() { let value = 1 + 2; return !(value == 3); }";
     let (db, _project, unit, generation, index) = setup(source);
