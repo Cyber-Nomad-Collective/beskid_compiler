@@ -100,7 +100,7 @@ fn lower_syntax_entrypoint(
     // The prepared frontend assembly is immutable for this JIT request. A fresh local
     // compilation database is used by the caller, so this generation cannot alias a prior
     // revision; all item identities below still carry it explicitly.
-    let generation = SyntaxGenerationId(1);
+    let generation = syntax_assembly.generation;
     let typed = build_typed_program(db, project, generation, Arc::clone(&syntax_assembly))
         .map_err(|error| anyhow::anyhow!("syntax program preparation failed: {error}"))?;
     let roots = syntax_assembly
