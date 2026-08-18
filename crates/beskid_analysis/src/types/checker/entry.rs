@@ -123,6 +123,13 @@ impl TypeChecker<'_> {
                     .map(|path| crate::paths::unit_path_key(path));
                 checker.type_dependency_function_items(&dependency.node.items);
             }
+            // Dependency bodies are typed only as a best-effort slice: their errors are
+            // discarded below, and the entry resolution does not carry per-dependency
+            // source-scoped value facts, so generic call constraints recorded against
+            // mis-resolved dependency callees would pollute the shared solver and
+            // short-circuit the entry's own inference. Drop them so only entry call
+            // constraints remain for `finish()`.
+            checker.constraints = Default::default();
         }
 
         checker.errors.truncate(dependency_errors_before);

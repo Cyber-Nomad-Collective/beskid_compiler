@@ -113,6 +113,9 @@ fn darwin_matrix_adapter_symbols_match_the_canonical_import_policy() {
             "_munmap".into(),
             // A raw Mach-O archive retains the ABI prefix plus the C helper's own underscore.
             "__tlv_bootstrap".into(),
+            // The libc errno accessor `__error` gains a third underscore under Mach-O decoration;
+            // the matrix adapter strips one, leaving `__error` here.
+            "___error".into(),
             "_write".into(),
         ],
     };
@@ -132,6 +135,7 @@ fn darwin_matrix_adapter_symbols_match_the_canonical_import_policy() {
             "mprotect".into(),
             "munmap".into(),
             "tlv_bootstrap".into(),
+            "error".into(),
             "write".into(),
         ],
     };

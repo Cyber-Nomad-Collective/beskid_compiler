@@ -8,17 +8,16 @@ use axum::{
 };
 use beskid_pckg_artifacts::LocalFileArtifactStore;
 use beskid_pckg_contract::{ApiErrorResponse, HealthResponse};
-use beskid_pckg_store::{SqlxCommunityRepository, SqlxPackageRepository};
+use beskid_pckg_store::SqlxPackageRepository;
 use sqlx::postgres::PgPoolOptions;
 use tower_http::services::{ServeDir, ServeFile};
 
-use super::auth::{auth_hub_finish, now_unix_seconds, read_session};
+use super::auth::read_session;
 use super::backend_memory::PackageBackend;
 use super::config::{PckgServerConfig, ServerStartupError};
 use super::model::AppState;
 use crate::{
-    admin_routes, api_key_routes, artifact_routes, community_routes, embed, operations_routes, packages,
-    workspace_review_routes,
+    admin_routes, api_key_routes, artifact_routes, embed, operations_routes, packages, workspace_review_routes,
 };
 
 /// Builds the in-memory server used by unit tests and explicitly database-free
@@ -27,23 +26,22 @@ use crate::{
 /// silently fall back to volatile data.
 pub fn router(config: PckgServerConfig) -> Router {
     assert!(config.database_url.is_none(), "PCKG_DATABASE_URL is configured; use router_from_config or serve");
-    router_with_backend(config, PackageBackend::in_memory(), None)
+    router_with_backend(config, PackageBackend::in_memory())
 }
 
-/// Connects the configured PostgreSQL repository, applies only pckg-owned
-/// idempotent migrations, then constructs the HTTP router. The legacy Identity
-/// import is deliberately not part of this boot path because it requires an
-/// audited GitHub-subject mapping.
+/// Connects the configured PostgreSQL repository, applies the pckg-owned
+/// idempotent migrations, then constructs the HTTP router. Roles are projected
+/// from Authelia groups, so no bootstrap subject is seeded by the registry.
 pub async fn router_from_config(config: PckgServerConfig) -> Result<Router, ServerStartupError> {
     let Some(database_url) = config.database_url.clone() else {
-        return Ok(router_with_backend(config, PackageBackend::in_memory(), None));
+        return Ok(router_with_backend(config, PackageBackend::in_memory()));
     };
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(&database_url)
         .await
         .map_err(|error| ServerStartupError(format!("cannot connect to PCKG_DATABASE_URL: {error}")))?;
-    let repository = SqlxPackageRepository::new(pool.clone());
+    let repository = Arc::new(SqlxPackageRepository::new(pool.clone()));
     repository
         .migrate()
         .await
@@ -56,25 +54,10 @@ pub async fn router_from_config(config: PckgServerConfig) -> Result<Router, Serv
         .migrate_administration()
         .await
         .map_err(|error| ServerStartupError(format!("pckg administration migration failed: {error:?}")))?;
-    if let Some(subject) = config.admin_bootstrap_subject.as_deref() {
-        repository
-            .bootstrap_super_admin(subject, now_unix_seconds())
-            .await
-            .map_err(|error| ServerStartupError(format!("pckg administration bootstrap failed: {error:?}")))?;
-    }
-    let community_repository = Arc::new(SqlxCommunityRepository::new(pool));
-    community_repository
-        .migrate()
-        .await
-        .map_err(|error| ServerStartupError(format!("pckg community migration failed: {error:?}")))?;
-    Ok(router_with_backend(config, PackageBackend::Sqlx(Arc::new(repository)), Some(community_repository)))
+    Ok(router_with_backend(config, PackageBackend::Sqlx(repository)))
 }
 
-fn router_with_backend(
-    config: PckgServerConfig,
-    packages: PackageBackend,
-    community_repository: Option<Arc<SqlxCommunityRepository>>,
-) -> Router {
+fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Router {
     let web_root = config.web_root.clone();
     let index = web_root.join("index.html");
     let artifacts = LocalFileArtifactStore::new(&config.artifact_root)
@@ -85,27 +68,9 @@ fn router_with_backend(
     };
     let operations = match &packages {
         PackageBackend::Sqlx(repository) => operations_routes::OperationsState::sqlx(repository.clone()),
-        PackageBackend::InMemory(_) => {
-            operations_routes::OperationsState::in_memory(config.admin_bootstrap_subject.clone())
-        }
+        PackageBackend::InMemory(_) => operations_routes::OperationsState::in_memory(),
     };
-    let community_state = config
-        .auth
-        .as_ref()
-        .map(|auth| match &community_repository {
-            Some(repository) => community_routes::CommunityState::with_sqlx_session_secret(
-                auth.session_secret.clone(),
-                repository.clone(),
-                moderation_repository.clone().expect("SQL community storage requires SQL administration storage"),
-                Arc::new(operations.clone()),
-            ),
-            None => community_routes::CommunityState::with_session_secret(auth.session_secret.clone()),
-        })
-        .unwrap_or_default();
-    let api_keys = match &packages {
-        PackageBackend::Sqlx(repository) => Some(repository.clone()),
-        PackageBackend::InMemory(_) => None,
-    };
+    let api_keys = moderation_repository.clone();
     Router::new()
         .route("/health", get(health))
         .route("/health/live", get(health))
@@ -139,25 +104,21 @@ fn router_with_backend(
         )
         .route("/api/packages/reviews", get(workspace_review_routes::list_review_queue))
         .route("/api/packages/reviews/{review_id}/actions", axum::routing::post(workspace_review_routes::review_action))
-        .route("/api/auth/hub-finish", get(auth_hub_finish))
         .route("/api/auth/session", get(read_session))
         .route("/api/api-keys", get(api_key_routes::list_api_keys).post(api_key_routes::create_api_key))
         .route("/api/api-keys/{id}", delete(api_key_routes::revoke_api_key))
         .route("/api/admin/users", get(admin_routes::list_users))
         .route("/api/admin/users/{subject}", axum::routing::patch(admin_routes::update_user))
-        .route("/api/admin/roles", get(admin_routes::list_roles))
-        .route("/api/admin/roles/{subject}", axum::routing::put(admin_routes::grant_role))
+        .route("/api/admin/permissions", get(admin_routes::list_permissions).post(admin_routes::grant_permission))
         .route(
             "/api/admin/publishers/{subject}/verification",
             axum::routing::put(admin_routes::set_publisher_verification),
         )
-        .route("/api/admin/permissions", get(admin_routes::list_permissions).post(admin_routes::grant_permission))
         .route(
             "/api/admin/packages/{name}/versions/{version}/review",
             axum::routing::post(admin_routes::review_package_version),
         )
         .merge(operations_routes::router())
-        .nest_service("/api/community", community_routes::router(community_state.clone()))
         .route("/api", any(api_not_found))
         .route("/api/{*path}", any(api_not_found))
         .with_state(AppState {
@@ -165,7 +126,6 @@ fn router_with_backend(
             packages,
             artifacts: Arc::new(artifacts),
             api_keys,
-            community: community_state,
             reviews: workspace_review_routes::ReviewQueueState::default(),
             operations,
         })

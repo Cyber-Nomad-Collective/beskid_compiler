@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- pckg Rust backend: replaced the Auth Hub handoff/JWT session model with
+  Authelia forward-auth. The server is now a resource server that trusts
+  Authelia's `Remote-User`, `Remote-Email`, `Remote-Name` and `Remote-Groups`
+  headers (`SHELL_AUTH_MODE=authelia`), with a `SHELL_AUTH_MODE=mock` dev mode
+  that mints a single configurable admin principal. Admin/moderator roles are
+  projected from Authelia groups (`pckg-admins`, `pckg-moderators`) instead of a
+  persisted role table; the `pckg_admin_roles` table and the
+  `/api/admin/roles` grant endpoints are removed. Publisher verification,
+  per-resource moderation grants and the package-review audit log remain
+  registry-owned. API-key authentication for CLI publishing is retained.
+  `/api/auth/session` now returns the Authelia-projected identity
+  (`subject`, `email`, `displayName`, `groups`).
+
+- pckg Rust backend: removed the community surface. The `beskid_pckg_community`
+  crate and the `/api/community` router (profiles, boards, posts, comments,
+  votes, follows, notifications) are deleted — NodeBB owns the forum. The
+  publisher directory now derives from package owners plus administration-store
+  verification, with no community profile dependency. Package-scoped reviews
+  (`/api/packages/{name}/community-reviews`) are retained as simple package
+  ratings, extracted from the community module into `beskid_pckg_store`'s
+  `package_reviews` module.
+
+- pckg Rust backend: relaxed subject validation to accept any non-empty
+  trimmed identifier (Authelia usernames and carried-over `github:<numeric-id>`
+  subjects), replacing the `github:[0-9]+`-only CHECK constraints and Rust
+  validators across the store migrations and repositories.
+
+- pckg Rust backend: removed the legacy ASP.NET Identity cutover. The
+  `beskid_pckg_store` cutover module, the `pckg_cutover` binary and the
+  `0002`/`0003` migration files are deleted; the .NET server is being retired
+  and no Identity data is migrated.
+
 ### Fixed
 
 - Always admit string runtime helpers (`str_new`, `str_from_i64`, `str_eq`,

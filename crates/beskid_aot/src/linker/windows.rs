@@ -149,11 +149,13 @@ mod tests {
 
     #[test]
     fn windows_shared_link_requests_the_named_coff_import_library() {
+        let temp = tempfile::tempdir().expect("temp dir for windows link command");
+        let output_path = temp.path().join("beskid_runtime.dll");
         let command = windows_link_command(
             &LinkRequest {
                 target_triple: Some("x86_64-pc-windows-msvc".into()),
                 output_kind: BuildOutputKind::SharedLib,
-                output_path: PathBuf::from("out/beskid_runtime.dll"),
+                output_path: output_path.clone(),
                 object_path: PathBuf::from("out/runtime.obj"),
                 additional_object_paths: vec![PathBuf::from("out/context.obj")],
                 runtime_staticlib: None,
@@ -172,21 +174,27 @@ mod tests {
         let arguments = command.get_args().map(|argument| argument.to_string_lossy().into_owned()).collect::<Vec<_>>();
 
         assert_eq!(command.get_program(), "link");
-        for required in [
-            "/DLL",
-            "/NOENTRY",
-            "/OUT:out/beskid_runtime.dll",
-            "/IMPLIB:out/beskid_runtime_import.lib",
-            "/EXPORT:beskid_rt_v5_abi_version",
-            "/LIBPATH:sdk/lib",
-            "kernel32.lib",
-        ] {
+        let expected_def = format!("/DEF:{}", output_path.with_extension("exports.def").display());
+        let required = [
+            "/DLL".to_owned(),
+            "/NOENTRY".to_owned(),
+            format!("/OUT:{}", output_path.display()),
+            format!("/IMPLIB:{}", windows_import_library_path(&output_path).display()),
+            expected_def,
+            "/LIBPATH:sdk/lib".to_owned(),
+            "kernel32.lib".to_owned(),
+        ];
+        for required in required.iter() {
             assert!(arguments.iter().any(|argument| argument == required), "missing {required}: {arguments:?}");
         }
         assert!(
             !arguments.iter().any(|argument| argument == "-shared" || argument.starts_with("-Wl,")),
             "Windows link command leaked Unix linker flags: {arguments:?}"
         );
+        let def_path = output_path.with_extension("exports.def");
+        let def_contents = std::fs::read_to_string(&def_path).expect("def file written");
+        assert!(def_contents.contains("EXPORTS"), "def file missing EXPORTS section: {def_contents}");
+        assert!(def_contents.contains("beskid_rt_v5_abi_version"), "def file missing export: {def_contents}");
     }
 
     #[test]

@@ -2,7 +2,6 @@ use std::io::Write;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use beskid_pckg_auth::{AuthHubIdentity, issue_pckg_session};
 use beskid_pckg_server::{PckgServerConfig, router};
 use http_body_util::BodyExt;
 use sha2::{Digest, Sha256};
@@ -10,19 +9,7 @@ use tower::ServiceExt;
 use zip::write::SimpleFileOptions;
 
 fn config(root: &std::path::Path) -> PckgServerConfig {
-    PckgServerConfig::with_auth_secrets("auth-hub-test-secret", "pckg-session-test-secret").with_artifact_root(root)
-}
-
-fn session(subject: &str) -> String {
-    issue_pckg_session(
-        &AuthHubIdentity {
-            subject: subject.to_owned(),
-            github_login: "octocat".to_owned(),
-            hub_session_id: "hub-1".to_owned(),
-        },
-        "pckg-session-test-secret",
-    )
-    .expect("test session issues")
+    PckgServerConfig::default().with_authelia_auth().with_artifact_root(root)
 }
 
 fn artifact(name: &str, version: &str) -> Vec<u8> {
@@ -90,11 +77,14 @@ async fn json(response: axum::response::Response) -> serde_json::Value {
     serde_json::from_slice(&bytes).expect("response is JSON")
 }
 
+fn authed(method: &str, uri: &str, subject: &str) -> Request<Body> {
+    Request::builder().method(method).uri(uri).header("remote-user", subject).body(Body::empty()).unwrap()
+}
+
 #[tokio::test]
 async fn owner_can_upload_and_public_can_download_a_verified_artifact() {
     let root = std::env::temp_dir().join(format!("pckg-artifact-http-{}", std::process::id()));
     let app = router(config(&root));
-    let owner = format!("pckg_session={}", session("github:1"));
     let bytes = artifact("Public.Demo", "1.0.0");
 
     let created = app
@@ -102,7 +92,7 @@ async fn owner_can_upload_and_public_can_download_a_verified_artifact() {
         .oneshot(
             Request::post("/api/packages")
                 .header("content-type", "application/json")
-                .header("cookie", &owner)
+                .header("remote-user", "owner")
                 .body(Body::from(r#"{"name":"Public.Demo","isPublic":true,"submitForReview":false}"#))
                 .unwrap(),
         )
@@ -115,7 +105,7 @@ async fn owner_can_upload_and_public_can_download_a_verified_artifact() {
         .oneshot(
             Request::post("/api/packages/Public.Demo/versions/1.0.0/artifact")
                 .header("content-type", "application/vnd.beskid.package")
-                .header("cookie", &owner)
+                .header("remote-user", "owner")
                 .body(Body::from(bytes.clone()))
                 .unwrap(),
         )
@@ -139,7 +129,7 @@ async fn owner_can_upload_and_public_can_download_a_verified_artifact() {
         .clone()
         .oneshot(
             Request::post("/api/packages/Public.Demo/versions/2.0.0/artifact")
-                .header("cookie", &owner)
+                .header("remote-user", "owner")
                 .body(Body::from(newer.clone()))
                 .unwrap(),
         )
@@ -150,7 +140,7 @@ async fn owner_can_upload_and_public_can_download_a_verified_artifact() {
         .clone()
         .oneshot(
             Request::post("/api/packages/Public.Demo/versions/2.0.0/yank")
-                .header("cookie", &owner)
+                .header("remote-user", "owner")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -171,18 +161,16 @@ async fn owner_can_upload_and_public_can_download_a_verified_artifact() {
 async fn private_and_yanked_artifacts_are_hidden_from_non_owners_and_downloads() {
     let root = std::env::temp_dir().join(format!("pckg-artifact-private-{}", std::process::id()));
     let app = router(config(&root));
-    let owner = format!("pckg_session={}", session("github:1"));
-    let other = format!("pckg_session={}", session("github:2"));
     let bytes = artifact("Private.Demo", "1.0.0");
 
     for request in [
         Request::post("/api/packages")
             .header("content-type", "application/json")
-            .header("cookie", &owner)
+            .header("remote-user", "owner")
             .body(Body::from(r#"{"name":"Private.Demo","isPublic":false,"submitForReview":false}"#))
             .unwrap(),
         Request::post("/api/packages/Private.Demo/versions/1.0.0/artifact")
-            .header("cookie", &owner)
+            .header("remote-user", "owner")
             .body(Body::from(bytes))
             .unwrap(),
     ] {
@@ -192,12 +180,7 @@ async fn private_and_yanked_artifacts_are_hidden_from_non_owners_and_downloads()
 
     let hidden = app
         .clone()
-        .oneshot(
-            Request::get("/api/packages/Private.Demo/versions/1.0.0/download")
-                .header("cookie", &other)
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(authed("GET", "/api/packages/Private.Demo/versions/1.0.0/download", "other"))
         .await
         .unwrap();
     assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
@@ -206,7 +189,7 @@ async fn private_and_yanked_artifacts_are_hidden_from_non_owners_and_downloads()
         .clone()
         .oneshot(
             Request::post("/api/packages/Private.Demo/versions/1.0.0/yank")
-                .header("cookie", &owner)
+                .header("remote-user", "owner")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -214,15 +197,8 @@ async fn private_and_yanked_artifacts_are_hidden_from_non_owners_and_downloads()
         .unwrap();
     assert_eq!(yanked.status(), StatusCode::OK);
 
-    let hidden_after_yank = app
-        .oneshot(
-            Request::get("/api/packages/Private.Demo/versions/1.0.0/download")
-                .header("cookie", &owner)
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let hidden_after_yank =
+        app.oneshot(authed("GET", "/api/packages/Private.Demo/versions/1.0.0/download", "owner")).await.unwrap();
     assert_eq!(hidden_after_yank.status(), StatusCode::NOT_FOUND);
 
     std::fs::remove_dir_all(root).expect("artifact root is removed");
@@ -232,17 +208,16 @@ async fn private_and_yanked_artifacts_are_hidden_from_non_owners_and_downloads()
 async fn public_package_artifact_browse_routes_expose_only_verified_docs_and_source() {
     let root = std::env::temp_dir().join(format!("pckg-artifact-browse-{}", std::process::id()));
     let app = router(config(&root));
-    let owner = format!("pckg_session={}", session("github:1"));
     let artifact = artifact_with_browsable_content("Public.Demo", "1.0.0");
 
     for request in [
         Request::post("/api/packages")
             .header("content-type", "application/json")
-            .header("cookie", &owner)
+            .header("remote-user", "owner")
             .body(Body::from(r#"{"name":"Public.Demo","isPublic":true,"submitForReview":false}"#))
             .unwrap(),
         Request::post("/api/packages/Public.Demo/versions/1.0.0/artifact")
-            .header("cookie", &owner)
+            .header("remote-user", "owner")
             .body(Body::from(artifact))
             .unwrap(),
     ] {

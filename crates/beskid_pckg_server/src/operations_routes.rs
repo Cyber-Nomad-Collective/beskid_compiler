@@ -1,8 +1,6 @@
-//! Registry operations retained after the GitHub-only Auth Hub cutover.
-//!
-//! The legacy email-settings and SMTP surfaces are deliberately absent. A
-//! weekly spotlight remains an auditable, in-app-only administrative run so
-//! the registry never becomes a second identity or mail authority.
+//! Registry operations: blocked-link policy, activity log and the weekly
+//! in-app spotlight. Roles are projected from Authelia groups by the HTTP
+//! adapter, so this module never reads a persisted role table.
 
 use std::sync::{Arc, Mutex};
 
@@ -13,24 +11,20 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
+use beskid_pckg_auth::{Principal, SubjectRole};
 use beskid_pckg_operations::BlockedLinkPatterns;
 use beskid_pckg_store::{
-    AsyncAdministrationRepository, AsyncRegistryOperationsRepository, BlockedLinkPolicy, NewBlockedLinkPolicy,
-    NewRegistryActivity, RegistryActivity, RegistryOperationsStoreError, SqlxPackageRepository, WeeklySpotlightRun,
+    AsyncRegistryOperationsRepository, BlockedLinkPolicy, NewBlockedLinkPolicy, NewRegistryActivity, RegistryActivity,
+    RegistryOperationsStoreError, SqlxPackageRepository, WeeklySpotlightRun,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    AppState, authenticated_subject,
-    community_routes::{CommunityLinkPolicy, CommunityLinkPolicyFuture},
-    unauthorized_response,
-};
+use crate::{AppState, authenticated_principal, unauthorized_response};
 
 #[derive(Clone)]
 pub(crate) struct OperationsState {
     backend: OperationsBackend,
-    in_memory_super_admin_subject: Option<String>,
 }
 
 #[derive(Clone)]
@@ -48,25 +42,19 @@ struct InMemoryOperations {
 }
 
 impl OperationsState {
-    pub(crate) fn in_memory(in_memory_super_admin_subject: Option<String>) -> Self {
-        Self {
-            backend: OperationsBackend::InMemory(Arc::new(Mutex::new(InMemoryOperations::default()))),
-            in_memory_super_admin_subject,
-        }
+    pub(crate) fn in_memory() -> Self {
+        Self { backend: OperationsBackend::InMemory(Arc::new(Mutex::new(InMemoryOperations::default()))) }
     }
 
     pub(crate) fn sqlx(repository: Arc<SqlxPackageRepository>) -> Self {
-        Self { backend: OperationsBackend::Sqlx(repository), in_memory_super_admin_subject: None }
+        Self { backend: OperationsBackend::Sqlx(repository) }
     }
 
-    pub(crate) async fn is_super_admin(&self, subject: &str) -> bool {
-        match &self.backend {
-            OperationsBackend::InMemory(_) => self.in_memory_super_admin_subject.as_deref() == Some(subject),
-            OperationsBackend::Sqlx(repository) => repository
-                .roles_for_subject(subject)
-                .await
-                .is_ok_and(|roles| roles.contains(&beskid_pckg_store::AdminRole::SuperAdmin)),
-        }
+    /// A principal is a super admin when Authelia projected the configured admin
+    /// group (mock mode mints the admin role directly). The registry never
+    /// consults a persisted role table.
+    pub(crate) fn is_super_admin(&self, principal: &Principal) -> bool {
+        principal.has_role(SubjectRole::SuperAdmin)
     }
 
     pub(crate) async fn append_activity(
@@ -113,8 +101,8 @@ impl OperationsState {
     }
 
     /// Reads the durable blocked-link policy through the one shared domain
-    /// matcher. Community adapters call this at their mutation boundary; they
-    /// neither cache nor reinterpret policy rows.
+    /// matcher. Package-review routes call this at their mutation boundary;
+    /// they neither cache nor reinterpret policy rows.
     pub(crate) async fn block_reason(&self, text: &str) -> Result<Option<&'static str>, RegistryOperationsStoreError> {
         let policies = self.list_blocked_links().await?;
         let patterns = BlockedLinkPatterns::from_patterns(policies.iter().map(|policy| policy.pattern.as_str()))
@@ -133,7 +121,7 @@ impl OperationsState {
                 if pattern.is_empty() || pattern.len() > 512 {
                     return Err(RegistryOperationsStoreError::InvalidBlockedLinkPattern);
                 }
-                if !is_github_subject(&policy.created_by_subject) {
+                if !is_valid_subject(&policy.created_by_subject) {
                     return Err(RegistryOperationsStoreError::InvalidAuthHubSubject);
                 }
                 let mut operations = operations.lock().expect("operations mutex is not poisoned");
@@ -195,12 +183,6 @@ impl OperationsState {
     }
 }
 
-impl CommunityLinkPolicy for OperationsState {
-    fn block_reason<'a>(&'a self, text: &'a str) -> CommunityLinkPolicyFuture<'a> {
-        Box::pin(async move { OperationsState::block_reason(self, text).await.map_err(|_| ()) })
-    }
-}
-
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
         .route("/api/admin/blocked-links", get(list_blocked_links).post(add_blocked_link))
@@ -252,10 +234,10 @@ struct ActivityResponse {
 }
 
 async fn list_blocked_links(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    let Some(actor) = authenticated_subject(&state, &headers) else {
+    let Some(principal) = authenticated_principal(&state, &headers) else {
         return unauthorized_response();
     };
-    if !state.operations.is_super_admin(&actor).await {
+    if !state.operations.is_super_admin(&principal) {
         return forbidden();
     }
     match state.operations.list_blocked_links().await {
@@ -269,10 +251,10 @@ async fn add_blocked_link(
     headers: HeaderMap,
     Json(request): Json<AddBlockedLinkRequest>,
 ) -> Response {
-    let Some(actor) = authenticated_subject(&state, &headers) else {
+    let Some(principal) = authenticated_principal(&state, &headers) else {
         return unauthorized_response();
     };
-    if !state.operations.is_super_admin(&actor).await {
+    if !state.operations.is_super_admin(&principal) {
         return forbidden();
     }
     let outcome = state
@@ -281,7 +263,7 @@ async fn add_blocked_link(
             id: Uuid::new_v4().to_string(),
             pattern: request.pattern,
             note: request.note,
-            created_by_subject: actor,
+            created_by_subject: principal.subject().to_owned(),
             created_at_unix_seconds: crate::now_unix_seconds(),
         })
         .await;
@@ -299,10 +281,10 @@ async fn add_blocked_link(
 }
 
 async fn delete_blocked_link(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>) -> Response {
-    let Some(actor) = authenticated_subject(&state, &headers) else {
+    let Some(principal) = authenticated_principal(&state, &headers) else {
         return unauthorized_response();
     };
-    if !state.operations.is_super_admin(&actor).await {
+    if !state.operations.is_super_admin(&principal) {
         return forbidden();
     }
     match state.operations.delete_blocked_link(&id).await {
@@ -318,10 +300,10 @@ async fn registry_activity(
     headers: HeaderMap,
     Query(query): Query<ActivityQuery>,
 ) -> Response {
-    let Some(actor) = authenticated_subject(&state, &headers) else {
+    let Some(principal) = authenticated_principal(&state, &headers) else {
         return unauthorized_response();
     };
-    if !state.operations.is_super_admin(&actor).await {
+    if !state.operations.is_super_admin(&principal) {
         return forbidden();
     }
     let take = query.take.filter(|take| *take > 0).unwrap_or(200).min(500);
@@ -332,10 +314,10 @@ async fn registry_activity(
 }
 
 async fn run_weekly_spotlight(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    let Some(actor) = authenticated_subject(&state, &headers) else {
+    let Some(principal) = authenticated_principal(&state, &headers) else {
         return unauthorized_response();
     };
-    if !state.operations.is_super_admin(&actor).await {
+    if !state.operations.is_super_admin(&principal) {
         return forbidden();
     }
     let now = crate::now_unix_seconds();
@@ -347,7 +329,7 @@ async fn run_weekly_spotlight(State(state): State<AppState>, headers: HeaderMap)
     };
     let run = WeeklySpotlightRun {
         id: Uuid::new_v4().to_string(),
-        ran_by_subject: actor.clone(),
+        ran_by_subject: principal.subject().to_owned(),
         ran_at_unix_seconds: now,
         activity_count,
         delivery: "in_app_only".to_owned(),
@@ -361,7 +343,7 @@ async fn run_weekly_spotlight(State(state): State<AppState>, headers: HeaderMap)
                 action: "weekly_spotlight_run".to_owned(),
                 message: "Weekly spotlight evaluated for in-app delivery; SMTP is retired.".to_owned(),
                 trace_id: None,
-                actor_subject: Some(actor),
+                actor_subject: Some(principal.subject().to_owned()),
                 package_name: None,
                 version: None,
             })
@@ -407,14 +389,18 @@ fn validate_in_memory_activity(activity: &NewRegistryActivity) -> Result<(), Reg
     if activity.severity.trim().is_empty() || activity.action.trim().is_empty() || activity.message.len() > 4000 {
         return Err(RegistryOperationsStoreError::InvalidActivity);
     }
-    if activity.actor_subject.as_deref().is_some_and(|subject| !is_github_subject(subject)) {
+    if activity.actor_subject.as_deref().is_some_and(|subject| !is_valid_subject(subject)) {
         return Err(RegistryOperationsStoreError::InvalidAuthHubSubject);
     }
     Ok(())
 }
 
-fn is_github_subject(subject: &str) -> bool {
-    subject.starts_with("github:") && subject["github:".len()..].parse::<u64>().is_ok()
+fn is_valid_subject(subject: &str) -> bool {
+    let trimmed = subject.trim();
+    !trimmed.is_empty()
+        && trimmed == subject
+        && trimmed.bytes().all(|byte| byte.is_ascii_graphic())
+        && trimmed.len() <= 255
 }
 
 fn bad_request(message: &'static str) -> Response {

@@ -4,15 +4,15 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
+use beskid_pckg_auth::{Principal, SubjectRole};
 use beskid_pckg_store::{
-    AdminRole, AsyncAdministrationRepository, AsyncPackageReviewRepository, PackageReviewQueueError,
-    PackageReviewRequest,
+    AsyncAdministrationRepository, AsyncPackageReviewRepository, PackageReviewQueueError, PackageReviewRequest,
 };
 use uuid::Uuid;
 
 use super::contracts::{MAX_REVIEW_TEXT_BYTES, ReviewAction, ReviewResponse, ReviewSubmission};
 use super::errors::{bad_request, not_found, rfc3339, unavailable};
-use crate::{AppState, authenticated_subject, now_unix_seconds};
+use crate::{AppState, authenticated_principal, now_unix_seconds};
 
 pub(crate) async fn submit_review_request(
     State(state): State<AppState>,
@@ -20,9 +20,10 @@ pub(crate) async fn submit_review_request(
     Path(name): Path<String>,
     Json(request): Json<ReviewSubmission>,
 ) -> Response {
-    let Some(subject) = authenticated_subject(&state, &headers) else {
+    let Some(principal) = authenticated_principal(&state, &headers) else {
         return crate::unauthorized_response();
     };
+    let subject = principal.subject().to_owned();
     let package = match state.packages.find_package(&name).await {
         Ok(Some(package)) => package,
         Ok(None) => return not_found(),
@@ -58,7 +59,7 @@ pub(crate) async fn submit_review_request(
 }
 
 pub(crate) async fn list_review_queue(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    let Some(subject) = authenticated_subject(&state, &headers) else {
+    let Some(principal) = authenticated_principal(&state, &headers) else {
         return crate::unauthorized_response();
     };
     let reviews = match all_reviews(&state).await {
@@ -72,7 +73,7 @@ pub(crate) async fn list_review_queue(State(state): State<AppState>, headers: He
             Ok(None) => continue,
             Err(_) => return unavailable(),
         };
-        if can_moderate(&state, &subject, &package.owner_subject, &package.id).await {
+        if can_moderate(&state, &principal, &package.owner_subject, &package.id).await {
             response.push(review_response(review, package.name));
         }
     }
@@ -85,9 +86,10 @@ pub(crate) async fn review_action(
     Path(review_id): Path<String>,
     Json(request): Json<ReviewAction>,
 ) -> Response {
-    let Some(subject) = authenticated_subject(&state, &headers) else {
+    let Some(principal) = authenticated_principal(&state, &headers) else {
         return crate::unauthorized_response();
     };
+    let subject = principal.subject().to_owned();
     let Some(existing) = find_review(&state, &review_id).await else {
         return not_found();
     };
@@ -96,7 +98,7 @@ pub(crate) async fn review_action(
         Ok(None) => return not_found(),
         Err(_) => return unavailable(),
     };
-    if !can_moderate(&state, &subject, &package.owner_subject, &package.id).await {
+    if !can_moderate(&state, &principal, &package.owner_subject, &package.id).await {
         return not_found();
     }
     let Some(status) = canonical_action(&request.action) else {
@@ -138,25 +140,20 @@ async fn find_review(state: &AppState, id: &str) -> Option<PackageReviewRequest>
     all_reviews(state).await.ok()?.into_iter().find(|review| review.id == id)
 }
 
-async fn can_moderate(state: &AppState, subject: &str, owner: &str, package_id: &str) -> bool {
-    if subject == owner {
+async fn can_moderate(state: &AppState, principal: &Principal, owner: &str, package_id: &str) -> bool {
+    if principal.subject() == owner {
+        return true;
+    }
+    if principal.has_role(SubjectRole::SuperAdmin) || principal.has_role(SubjectRole::Moderator) {
         return true;
     }
     let Some(repository) = &state.api_keys else {
         return false;
     };
-    if repository
-        .roles_for_subject(subject)
-        .await
-        .map(|roles| roles.iter().any(|role| matches!(role, AdminRole::Moderator | AdminRole::SuperAdmin)))
-        .unwrap_or(false)
-    {
-        return true;
-    }
     repository
         .list_resource_permissions("package", package_id)
         .await
-        .map(|grants| grants.iter().any(|grant| grant.subject == subject && grant.capability == "moderate"))
+        .map(|grants| grants.iter().any(|grant| grant.subject == principal.subject() && grant.capability == "moderate"))
         .unwrap_or(false)
 }
 

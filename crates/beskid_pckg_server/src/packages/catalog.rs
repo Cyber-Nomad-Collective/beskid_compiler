@@ -8,6 +8,7 @@ use super::{
     PackageDetailsResponse, PackageSearchResponse, Path, Query, Response, State, StatusCode, StoreError,
     UpsertPackageRequest, authenticated_subject,
 };
+use beskid_pckg_store::AsyncAdministrationRepository;
 
 /// Legacy package index. Results are visibility-filtered before paging so a
 /// private package never leaks through a count or a later page.
@@ -62,9 +63,12 @@ pub async fn search_packages(
     Json(results).into_response()
 }
 
-/// Public publisher directory. A publisher must have both an Auth-Hub-subject
-/// keyed community profile and at least one public package. Private packages
-/// never affect the directory or its package counts.
+/// Public publisher directory. A publisher is any subject owning at least one
+/// public package. Profile metadata (display name, bio, social links) is owned
+/// by the community surface (NodeBB) and is no longer projected by the
+/// registry; the directory returns the subject as its display name and empty
+/// profile fields. Publisher verification is read from the administration
+/// store. Private packages never affect the directory or its package counts.
 pub async fn list_publishers(State(state): State<AppState>) -> Response {
     let packages = match state.packages.list_packages(200, 0).await {
         Ok(packages) => packages,
@@ -74,35 +78,33 @@ pub async fn list_publishers(State(state): State<AppState>) -> Response {
     for package in packages.into_iter().filter(|package| package.is_public) {
         *public_counts.entry(package.owner_subject).or_default() += 1;
     }
+    let verification: std::collections::BTreeMap<String, bool> = match &state.api_keys {
+        Some(repository) => match repository.list_publisher_verifications().await {
+            Ok(verifications) => verifications.into_iter().map(|v| (v.subject, v.is_verified)).collect(),
+            Err(_) => return package_storage_failure(),
+        },
+        None => std::collections::BTreeMap::new(),
+    };
     let mut publishers = Vec::new();
     for (subject, package_count) in public_counts {
-        match state.community.profile_for_catalog(&subject).await {
-            Ok(Some(profile)) => publishers.push(PublisherResponse {
-                subject: profile.subject,
-                display_name: profile.display_name,
-                bio: profile.bio,
-                social_links: profile.social_links,
-                is_publisher_verified: profile.is_publisher_verified,
-                package_count,
-            }),
-            Ok(None) => {}
-            Err(_) => return package_storage_failure(),
-        }
+        publishers.push(PublisherResponse {
+            display_name: subject.clone(),
+            is_publisher_verified: verification.get(&subject).copied().unwrap_or(false),
+            subject,
+            bio: String::new(),
+            social_links: Vec::new(),
+            package_count,
+        });
     }
     Json(publishers).into_response()
 }
 
-/// Public packages owned by a profile-backed Auth Hub subject. A missing
-/// profile is indistinguishable from a missing publisher, avoiding leakage of
-/// package owner subjects which have not opted into the directory.
+/// Public packages owned by a subject. A subject with no public packages is
+/// indistinguishable from a missing publisher, avoiding leakage of private
+/// owner subjects.
 pub async fn publisher_packages(State(state): State<AppState>, Path(subject): Path<String>) -> Response {
-    if !is_github_subject(&subject) {
+    if !is_valid_subject(&subject) {
         return package_not_found();
-    }
-    match state.community.profile_for_catalog(&subject).await {
-        Ok(Some(_)) => {}
-        Ok(None) => return package_not_found(),
-        Err(_) => return package_storage_failure(),
     }
     let packages = match state.packages.list_packages(200, 0).await {
         Ok(packages) => packages,
@@ -118,8 +120,12 @@ pub async fn publisher_packages(State(state): State<AppState>, Path(subject): Pa
     .into_response()
 }
 
-fn is_github_subject(subject: &str) -> bool {
-    subject.strip_prefix("github:").is_some_and(|id| !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
+fn is_valid_subject(subject: &str) -> bool {
+    let trimmed = subject.trim();
+    !trimmed.is_empty()
+        && trimmed == subject
+        && trimmed.bytes().all(|byte| byte.is_ascii_graphic())
+        && trimmed.len() <= 255
 }
 
 pub async fn package_detail(

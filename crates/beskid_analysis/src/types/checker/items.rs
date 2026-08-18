@@ -244,7 +244,7 @@ impl<'a> TypeChecker<'a> {
                 self.current_return_type = return_type;
                 let mut params = Vec::new();
                 for param in &def.node.parameters {
-                    if let Some(type_id) = self.type_id_for_type(&param.node.ty) {
+                    if let Some(type_id) = self.type_id_for_type_in_generic_scope(&param.node.ty) {
                         params.push(type_id);
                         self.insert_local_type(param.node.name.span, type_id);
                     }

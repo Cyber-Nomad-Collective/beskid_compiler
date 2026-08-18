@@ -5,8 +5,10 @@ use uuid::Uuid;
 use crate::package::{SqlxPackageRepository, validate_subject};
 
 impl SqlxPackageRepository {
-    /// Applies registry-owned administration tables. It deliberately creates
-    /// no role rows, so a deployment cannot accidentally bootstrap privilege.
+    /// Applies registry-owned administration tables. Roles are projected from
+    /// Authelia groups, so no role table is created here; only publisher
+    /// verification, resource permissions and the package-review audit log
+    /// are persisted by the registry.
     pub async fn migrate_administration(&self) -> Result<(), AdministrationStoreError> {
         sqlx::raw_sql(crate::migrations::CREATE_ADMINISTRATION)
             .execute(self.pool())
@@ -14,55 +16,17 @@ impl SqlxPackageRepository {
             .map_err(administration_database_error)?;
         Ok(())
     }
-
-    /// Seeds exactly one initial SuperAdmin only when the complete role table
-    /// is empty. The caller must supply an explicit `github:<numeric-id>` from
-    /// deployment configuration; a later config change cannot elevate another
-    /// subject once any administrator has been recorded.
-    pub async fn bootstrap_super_admin(
-        &self,
-        subject: &str,
-        now_unix_seconds: i64,
-    ) -> Result<bool, AdministrationStoreError> {
-        validate_administration_subject(subject)?;
-        let timestamp = DateTime::from_timestamp(now_unix_seconds, 0).ok_or(AdministrationStoreError::InvalidRole)?;
-        let inserted = sqlx::query("INSERT INTO pckg_admin_roles (subject,role,granted_by_subject,granted_at_utc) SELECT $1,'superadmin',$1,$2 WHERE NOT EXISTS (SELECT 1 FROM pckg_admin_roles)")
-            .bind(subject).bind(timestamp).execute(self.pool()).await.map_err(administration_database_error)?;
-        Ok(inserted.rows_affected() == 1)
-    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Registry roles. In production these are projected from Authelia groups by
+/// the HTTP adapter; the registry itself never grants or persists them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AdminRole {
     User,
     Moderator,
     SuperAdmin,
 }
 
-impl AdminRole {
-    fn stored(self) -> Option<&'static str> {
-        match self {
-            Self::User => None,
-            Self::Moderator => Some("moderator"),
-            Self::SuperAdmin => Some("superadmin"),
-        }
-    }
-    fn from_stored(value: &str) -> Option<Self> {
-        match value {
-            "moderator" => Some(Self::Moderator),
-            "superadmin" => Some(Self::SuperAdmin),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AdminRoleAssignment {
-    pub subject: String,
-    pub role: AdminRole,
-    pub granted_by_subject: String,
-    pub granted_at_unix_seconds: i64,
-}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublisherVerification {
     pub subject: String,
@@ -92,7 +56,6 @@ pub struct PackageReviewDecision {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdministrationStoreError {
     InvalidAuthHubSubject,
-    InvalidRole,
     InvalidResource,
     InvalidDecision,
     InvalidPackageId,
@@ -140,18 +103,13 @@ pub trait AsyncPackageReviewRepository: Send + Sync {
     ) -> Result<PackageReviewRequest, PackageReviewQueueError>;
 }
 
+/// Administration persistence boundary. Role assignment is deliberately
+/// absent: Authelia groups are the sole authority for who is an
+/// administrator or moderator. The registry only persists publisher
+/// verification, per-resource moderation grants and the package-review
+/// audit log.
 #[async_trait]
 pub trait AsyncAdministrationRepository: Send + Sync {
-    async fn list_admin_roles(&self) -> Result<Vec<AdminRoleAssignment>, AdministrationStoreError>;
-    async fn roles_for_subject(&self, subject: &str) -> Result<Vec<AdminRole>, AdministrationStoreError>;
-    async fn grant_admin_role(&self, assignment: AdminRoleAssignment) -> Result<(), AdministrationStoreError>;
-    async fn replace_admin_roles(
-        &self,
-        subject: &str,
-        roles: Vec<AdminRole>,
-        granted_by_subject: &str,
-        now_unix_seconds: i64,
-    ) -> Result<(), AdministrationStoreError>;
     async fn set_publisher_verification(
         &self,
         verification: PublisherVerification,
@@ -173,74 +131,6 @@ pub trait AsyncAdministrationRepository: Send + Sync {
 
 #[async_trait]
 impl AsyncAdministrationRepository for SqlxPackageRepository {
-    async fn list_admin_roles(&self) -> Result<Vec<AdminRoleAssignment>, AdministrationStoreError> {
-        let rows = sqlx::query_as::<_, AdminRoleRow>(
-            "SELECT subject, role, granted_by_subject, granted_at_utc FROM pckg_admin_roles ORDER BY subject, role",
-        )
-        .fetch_all(self.pool())
-        .await
-        .map_err(administration_database_error)?;
-        rows.into_iter().map(AdminRoleRow::into_domain).collect()
-    }
-
-    async fn roles_for_subject(&self, subject: &str) -> Result<Vec<AdminRole>, AdministrationStoreError> {
-        validate_administration_subject(subject)?;
-        let roles = sqlx::query_scalar::<_, String>("SELECT role FROM pckg_admin_roles WHERE subject=$1")
-            .bind(subject)
-            .fetch_all(self.pool())
-            .await
-            .map_err(administration_database_error)?;
-        Ok(roles.into_iter().filter_map(|role| AdminRole::from_stored(&role)).collect())
-    }
-
-    async fn grant_admin_role(&self, assignment: AdminRoleAssignment) -> Result<(), AdministrationStoreError> {
-        validate_administration_subject(&assignment.subject)?;
-        validate_administration_subject(&assignment.granted_by_subject)?;
-        let Some(role) = assignment.role.stored() else {
-            return Err(AdministrationStoreError::InvalidRole);
-        };
-        let timestamp = DateTime::from_timestamp(assignment.granted_at_unix_seconds, 0)
-            .ok_or(AdministrationStoreError::InvalidRole)?;
-        sqlx::query("INSERT INTO pckg_admin_roles (subject,role,granted_by_subject,granted_at_utc) VALUES ($1,$2,$3,$4) ON CONFLICT (subject,role) DO NOTHING")
-            .bind(assignment.subject).bind(role).bind(assignment.granted_by_subject).bind(timestamp)
-            .execute(self.pool()).await.map_err(administration_database_error)?;
-        Ok(())
-    }
-    async fn replace_admin_roles(
-        &self,
-        subject: &str,
-        roles: Vec<AdminRole>,
-        granted_by_subject: &str,
-        now_unix_seconds: i64,
-    ) -> Result<(), AdministrationStoreError> {
-        validate_administration_subject(subject)?;
-        validate_administration_subject(granted_by_subject)?;
-        if roles.iter().any(|role| role.stored().is_none()) {
-            return Err(AdministrationStoreError::InvalidRole);
-        }
-        let timestamp = DateTime::from_timestamp(now_unix_seconds, 0).ok_or(AdministrationStoreError::InvalidRole)?;
-        let mut transaction = self.pool().begin().await.map_err(administration_database_error)?;
-        sqlx::query("DELETE FROM pckg_admin_roles WHERE subject=$1")
-            .bind(subject)
-            .execute(&mut *transaction)
-            .await
-            .map_err(administration_database_error)?;
-        for role in roles {
-            sqlx::query(
-                "INSERT INTO pckg_admin_roles (subject,role,granted_by_subject,granted_at_utc) VALUES ($1,$2,$3,$4)",
-            )
-            .bind(subject)
-            .bind(role.stored().expect("validated role"))
-            .bind(granted_by_subject)
-            .bind(timestamp)
-            .execute(&mut *transaction)
-            .await
-            .map_err(administration_database_error)?;
-        }
-        transaction.commit().await.map_err(administration_database_error)?;
-        Ok(())
-    }
-
     async fn set_publisher_verification(
         &self,
         verification: PublisherVerification,
@@ -459,23 +349,6 @@ fn review_queue_database_error(error: sqlx::Error) -> PackageReviewQueueError {
 }
 
 #[derive(sqlx::FromRow)]
-struct AdminRoleRow {
-    subject: String,
-    role: String,
-    granted_by_subject: String,
-    granted_at_utc: DateTime<Utc>,
-}
-impl AdminRoleRow {
-    fn into_domain(self) -> Result<AdminRoleAssignment, AdministrationStoreError> {
-        Ok(AdminRoleAssignment {
-            subject: self.subject,
-            role: AdminRole::from_stored(&self.role).ok_or(AdministrationStoreError::InvalidRole)?,
-            granted_by_subject: self.granted_by_subject,
-            granted_at_unix_seconds: self.granted_at_utc.timestamp(),
-        })
-    }
-}
-#[derive(sqlx::FromRow)]
 struct PublisherVerificationRow {
     subject: String,
     is_verified: bool,
@@ -515,12 +388,10 @@ impl ResourcePermissionRow {
     }
 }
 fn validate_administration_subject(subject: &str) -> Result<(), AdministrationStoreError> {
-    (subject.starts_with("github:") && subject["github:".len()..].parse::<u64>().is_ok())
-        .then_some(())
-        .ok_or(AdministrationStoreError::InvalidAuthHubSubject)
+    validate_subject(subject).map_err(|_| AdministrationStoreError::InvalidAuthHubSubject)
 }
 fn validate_resource(kind: &str, id: &str, capability: &str) -> Result<(), AdministrationStoreError> {
-    (matches!(kind, "package" | "board") && !id.trim().is_empty() && id.trim() == id && capability == "moderate")
+    (kind == "package" && !id.trim().is_empty() && id.trim() == id && capability == "moderate")
         .then_some(())
         .ok_or(AdministrationStoreError::InvalidResource)
 }

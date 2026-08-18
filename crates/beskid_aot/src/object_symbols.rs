@@ -54,7 +54,7 @@ fn extract_object_symbols(
     let object = object::read::File::parse(bytes).map_err(|error| AotError::ObjectModule {
         message: format!("cannot parse symbols from {}: {error}", path.display()),
     })?;
-    for symbol in object.symbols().chain(object.dynamic_symbols()) {
+    for symbol in object.symbols() {
         if !symbol.is_global() && !symbol.is_weak() {
             continue;
         }
@@ -66,6 +66,25 @@ fn extract_object_symbols(
         if symbol.is_undefined() {
             imported.insert(normalized);
         } else if symbol.section_index().is_some() || symbol.is_common() {
+            defined.insert(normalized);
+        }
+    }
+    // PE export-table symbols (reported by `dynamic_symbols`) are defined DLL exports but
+    // carry no COFF section index — they own an RVA in the export directory instead. The
+    // section-index guard above would silently drop every ABI-v5 export from a Windows DLL,
+    // so dynamic symbols only need to be undefined to classify as imports.
+    for symbol in object.dynamic_symbols() {
+        if !symbol.is_global() && !symbol.is_weak() {
+            continue;
+        }
+        let Ok(raw) = symbol.name() else { continue };
+        if raw.is_empty() {
+            continue;
+        }
+        let normalized = normalize_target_symbol(raw, symbol_prefix);
+        if symbol.is_undefined() {
+            imported.insert(normalized);
+        } else {
             defined.insert(normalized);
         }
     }

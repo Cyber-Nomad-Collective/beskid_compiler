@@ -1,0 +1,69 @@
+# Keep the pckg-api Docker build context minimal. The Dockerfile (at
+# crates/beskid_pckg_server/Dockerfile) builds a TRIMMED workspace from only
+# the six beskid_pckg_* crates + Cargo.lock, so everything else here is dead
+# weight (and target/ + the nested compiler/compiler/ checkout are huge).
+#
+# Context root = compiler/
+
+# Build artifacts and VCS.
+target/
+.git/
+.gitnexus/
+
+# Heavy / irrelevant subtrees.
+compiler/
+corelib/
+runtime/
+runtime_manifest.bsol
+rust_out/
+vendor/
+beskid_quality/
+docs/
+scripts/
+
+# Top-level files not needed by the build.
+CONTRIBUTING-extern.md
+README.md
+CHANGELOG.md
+CLAUDE.md
+AGENTS.md
+LICENSE
+justfile
+rustfmt.toml
+
+# Every non-pckg crate (the Dockerfile only COPYs the beskid_pckg_* crates).
+crates/beskid_analysis/
+crates/beskid_artifacts/
+crates/beskid_cli/
+crates/beskid_hi/
+crates/beskid_tools/
+crates/beskid_template/
+crates/beskid_e2e_tests/
+crates/beskid_ast_derive/
+crates/beskid_ast_reflect_gen/
+crates/beskid_codegen/
+crates/beskid_abi/
+crates/beskid_manifest/
+crates/beskid_pipeline/
+crates/beskid_engine/
+crates/beskid_isle/
+crates/abfall/
+crates/beskid_lsp/
+crates/beskid_repl/
+crates/beskid_aot/
+crates/beskid_pckg/
+crates/beskid_queries/
+crates/beskid_graph/
+crates/beskid_pest_gen/
+crates/beskid_up/
+crates/beskid_tests_surface/
+crates/beskid_tests_projects/
+crates/beskid_tests_mods/
+crates/beskid_tests_lsp/
+crates/beskid_tests_aot/
+crates/beskid_tests_pckg/
+crates/beskid_tests_interop/
+crates/beskid_tests_cli/
+crates/beskid_tests_composition/
+crates/beskid_tests_abi/
+crates/beskid_tests_support/

@@ -70,9 +70,19 @@ pub(super) fn append_export_policy_flags(req: &LinkRequest, target: &str, cmd: &
     }
 
     if target.contains("windows") {
+        // MSVC link.exe/lld-link accept `/EXPORT:` flags, but a module-definition (`.def`) file
+        // is the canonical, command-line-length-independent export contract for a DLL. It mirrors
+        // the Linux version-script path and reliably exports every ABI-v5 lifecycle symbol
+        // (assembly context switches + Rust `#[no_mangle]` runtime entry points) from the
+        // linked image, which per-symbol `/EXPORT:` flags fail to surface on Windows hosts.
+        let def_path = req.output_path.with_extension("exports.def");
+        let mut script = String::from("EXPORTS\n");
         for symbol in &req.exported_symbols {
-            cmd.arg(format!("/EXPORT:{symbol}"));
+            script.push_str(&format!("    {symbol}\n"));
         }
+        std::fs::write(&def_path, script)
+            .map_err(|err| AotError::Io { path: def_path.clone(), message: err.to_string() })?;
+        cmd.arg(format!("/DEF:{}", def_path.display()));
         return Ok(());
     }
 

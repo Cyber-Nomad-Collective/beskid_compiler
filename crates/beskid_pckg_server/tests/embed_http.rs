@@ -1,24 +1,11 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use beskid_pckg_auth::{AuthHubIdentity, issue_pckg_session};
 use beskid_pckg_server::{PckgServerConfig, router};
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 
 fn config() -> PckgServerConfig {
-    PckgServerConfig::with_auth_secrets("auth-hub-test-secret", "pckg-session-test-secret")
-}
-
-fn session(subject: &str) -> String {
-    issue_pckg_session(
-        &AuthHubIdentity {
-            subject: subject.to_owned(),
-            github_login: "octocat".to_owned(),
-            hub_session_id: "hub-1".to_owned(),
-        },
-        "pckg-session-test-secret",
-    )
-    .expect("test session issues")
+    PckgServerConfig::default().with_authelia_auth()
 }
 
 async fn text(response: axum::response::Response) -> String {
@@ -29,7 +16,6 @@ async fn text(response: axum::response::Response) -> String {
 #[tokio::test]
 async fn public_embed_card_and_badge_match_legacy_content_contract_without_private_leakage() {
     let app = router(config());
-    let owner_cookie = format!("pckg_session={}", session("github:1"));
 
     for (name, is_public) in [("Public.Embed", true), ("Private.Embed", false), ("@pckg/demo-lib", true)] {
         let response = app
@@ -37,14 +23,9 @@ async fn public_embed_card_and_badge_match_legacy_content_contract_without_priva
             .oneshot(
                 Request::post("/api/packages")
                     .header("content-type", "application/json")
-                    .header("cookie", &owner_cookie)
+                    .header("remote-user", "owner")
                     .body(Body::from(
-                        serde_json::json!({
-                            "name": name,
-                            "isPublic": is_public,
-                            "submitForReview": false,
-                        })
-                        .to_string(),
+                        serde_json::json!({"name": name, "isPublic": is_public, "submitForReview": false}).to_string(),
                     ))
                     .expect("request builds"),
             )
@@ -58,7 +39,7 @@ async fn public_embed_card_and_badge_match_legacy_content_contract_without_priva
         .oneshot(
             Request::post("/api/packages/Public.Embed/versions")
                 .header("content-type", "application/json")
-                .header("cookie", &owner_cookie)
+                .header("remote-user", "owner")
                 .body(Body::from(
                     r#"{"version":"1.2.3","checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
                 ))

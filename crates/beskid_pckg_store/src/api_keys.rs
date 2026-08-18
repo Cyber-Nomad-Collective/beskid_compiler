@@ -142,9 +142,15 @@ fn api_key_token_hash(raw_token: &str) -> String {
     format!("{:x}", Sha256::digest(raw_token.as_bytes()))
 }
 fn validate_api_key_subject(subject: &str) -> Result<(), ApiKeyStoreError> {
-    (subject.starts_with("github:") && subject["github:".len()..].parse::<u64>().is_ok())
-        .then_some(())
-        .ok_or(ApiKeyStoreError::InvalidAuthHubSubject)
+    is_valid_api_key_subject(subject).then_some(()).ok_or(ApiKeyStoreError::InvalidAuthHubSubject)
+}
+
+fn is_valid_api_key_subject(subject: &str) -> bool {
+    let trimmed = subject.trim();
+    !trimmed.is_empty()
+        && trimmed == subject
+        && trimmed.bytes().all(|byte| byte.is_ascii_graphic())
+        && trimmed.len() <= 255
 }
 fn validate_api_key_label(label: &str) -> Result<(), ApiKeyStoreError> {
     (!label.trim().is_empty() && label.trim() == label && label.len() <= 128)

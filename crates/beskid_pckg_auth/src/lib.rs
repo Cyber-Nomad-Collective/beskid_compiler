@@ -1,50 +1,63 @@
-//! Authentication seams for Auth Hub handoffs and pckg API keys.
+//! Authentication seams for the pckg registry.
+//!
+//! pckg is a resource server that trusts Authelia's forward-auth session.
+//! Authelia is the sole OpenID Connect provider; pckg never authenticates
+//! users itself. In production (`SHELL_AUTH_MODE=authelia`) the HTTP adapter
+//! reads the `Remote-User`, `Remote-Email`, `Remote-Name` and `Remote-Groups`
+//! headers injected by Authelia's forward-auth flow. In local development
+//! (`SHELL_AUTH_MODE=mock`) the adapter mints a single configurable dev
+//! principal so the registry can run without an Authelia instance.
+//!
+//! pckg-owned API keys remain the only credential the registry issues itself;
+//! they are used by CLI tools publishing packages and are verified through a
+//! storage-backed adapter, not by anything in this crate.
 
-use std::{
-    collections::BTreeSet,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::collections::BTreeSet;
 
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// The runtime authentication mode selected by `SHELL_AUTH_MODE`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthMode {
+    /// `SHELL_AUTH_MODE=mock`: a single configurable dev principal is trusted
+    /// for every request. Intended for local development only.
+    Mock,
+    /// `SHELL_AUTH_MODE=authelia`: the request principal is derived from the
+    /// `Remote-*` headers injected by Authelia forward-auth.
+    Authelia,
+}
+
+impl AuthMode {
+    pub fn parse(value: &str) -> Result<Self, AuthError> {
+        match value.trim() {
+            "mock" => Ok(Self::Mock),
+            "authelia" => Ok(Self::Authelia),
+            _ => Err(AuthError::MissingConfiguration),
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Mock => "mock",
+            Self::Authelia => "authelia",
+        }
+    }
+}
+
+/// The identity Authelia forward-auth projects into a trusted request. The
+/// subject is the stable Authelia username (`Remote-User`); it is the only
+/// identity key pckg persists.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HandoffRequest {
-    pub app: String,
-    pub handoff: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuthHubIdentity {
+pub struct AutheliaIdentity {
     pub subject: String,
-    pub github_login: String,
-    pub hub_session_id: String,
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+    pub groups: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AuthHubHandoffClaims {
-    pub app: String,
-    #[serde(rename = "sub")]
-    pub subject: String,
-    pub login: String,
-    pub sid: String,
-    #[serde(rename = "exp")]
-    pub expires_at: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PckgSessionClaims {
-    #[serde(rename = "sub")]
-    pub subject: String,
-    #[serde(rename = "githubLogin")]
-    pub github_login: String,
-    #[serde(rename = "hubSessionId")]
-    pub hub_session_id: String,
-    #[serde(rename = "exp")]
-    pub expires_at: u64,
-}
-
+/// pckg-owned automation key identity. The raw key is never persisted by the
+/// registry; only its SHA-256 digest is stored.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApiKeyIdentity {
     pub key_id: String,
@@ -53,14 +66,14 @@ pub struct ApiKeyIdentity {
 }
 
 impl ApiKeyIdentity {
-    /// Keeps the persisted/wire-compatible string list while giving route adapters a
-    /// typed scope check.
+    /// Keeps the persisted/wire-compatible string list while giving route
+    /// adapters a typed scope check.
     pub fn has_scope(&self, scope: ApiKeyScope) -> bool {
         self.scopes.iter().any(|candidate| candidate.eq_ignore_ascii_case(scope.as_str()))
     }
 }
 
-/// The two API-key scopes supported by the legacy registry contract.
+/// The two API-key scopes supported by the registry contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ApiKeyScope {
     Read,
@@ -76,9 +89,8 @@ impl ApiKeyScope {
     }
 }
 
-/// Registry roles assigned to an Auth Hub subject by the pckg persistence adapter.
-/// Auth Hub remains responsible for authenticating GitHub identities; pckg owns
-/// its local operational roles and therefore resolves these claims separately.
+/// Registry roles assigned to a subject. In production these are projected
+/// from Authelia groups (`Remote-Groups`); pckg never grants them itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SubjectRole {
     User,
@@ -94,20 +106,36 @@ pub struct Principal {
 }
 
 impl Principal {
-    pub fn from_auth_hub(identity: AuthHubIdentity, roles: impl IntoIterator<Item = SubjectRole>) -> Self {
-        Self::from_subject(identity.subject, roles)
+    pub fn from_subject(subject: impl Into<String>, roles: impl IntoIterator<Item = SubjectRole>) -> Self {
+        Self { subject: subject.into(), roles: roles.into_iter().collect() }
+    }
+
+    /// Builds a principal from an Authelia identity, mapping the configured
+    /// admin/moderator groups to pckg roles. Every authenticated subject is at
+    /// least a `User`; group membership only adds elevated roles.
+    pub fn from_authelia(identity: &AutheliaIdentity, admin_group: &str, moderator_group: &str) -> Self {
+        let mut roles = BTreeSet::new();
+        roles.insert(SubjectRole::User);
+        for group in &identity.groups {
+            if group == admin_group {
+                roles.insert(SubjectRole::SuperAdmin);
+            } else if group == moderator_group {
+                roles.insert(SubjectRole::Moderator);
+            }
+        }
+        Self::from_subject(identity.subject.clone(), roles)
     }
 
     pub fn from_api_key(identity: ApiKeyIdentity) -> Self {
         Self::from_subject(identity.subject, [SubjectRole::User])
     }
 
-    pub fn from_subject(subject: impl Into<String>, roles: impl IntoIterator<Item = SubjectRole>) -> Self {
-        Self { subject: subject.into(), roles: roles.into_iter().collect() }
-    }
-
     pub fn subject(&self) -> &str {
         &self.subject
+    }
+
+    pub fn roles(&self) -> &BTreeSet<SubjectRole> {
+        &self.roles
     }
 
     pub fn has_role(&self, role: SubjectRole) -> bool {
@@ -115,7 +143,7 @@ impl Principal {
     }
 }
 
-/// Resource visibility semantics deliberately preserve legacy private-resource
+/// Resource visibility semantics deliberately preserve private-resource
 /// concealment: callers without access get a typed `NotFound`, not a leak.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceVisibility {
@@ -148,8 +176,8 @@ impl PermissionGrant {
     }
 }
 
-/// Typed results for HTTP adapters. Adapters map these directly to 401, 403 and
-/// 404 without needing to interpret strings or database-specific errors.
+/// Typed results for HTTP adapters. Adapters map these directly to 401, 403
+/// and 404 without needing to interpret strings or database-specific errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum AuthorizationError {
     #[error("authentication required")]
@@ -161,7 +189,8 @@ pub enum AuthorizationError {
 }
 
 /// Decides resource access using only subject, role claims, ownership, and
-/// storage-projected grants. Database and HTTP concerns stay outside this crate.
+/// storage-projected grants. Database and HTTP concerns stay outside this
+/// crate.
 pub fn authorize_resource_access(
     principal: Option<&Principal>,
     owner_subject: &str,
@@ -201,136 +230,24 @@ pub fn authorize_resource_access(
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum AuthError {
-    #[error("Auth Hub handoff is for an unsupported app")]
-    UnsupportedApp,
-    #[error("authentication credentials were rejected")]
-    Rejected,
     #[error("authentication configuration is missing")]
     MissingConfiguration,
+    #[error("authentication credentials were rejected")]
+    Rejected,
     #[error("authentication credentials do not have the required scope")]
     InsufficientScope,
-}
-
-/// Verifies the opaque one-time handoff delivered by the central Auth Hub.
-///
-/// Implementations live at the service boundary so this compatibility core never
-/// parses or verifies provider tokens itself.
-pub trait AuthHubHandoffVerifier: Send + Sync {
-    fn verify(&self, request: HandoffRequest) -> Result<AuthHubIdentity, AuthError>;
 }
 
 /// Verifies a pckg-owned automation key. The raw key is never persisted here.
 pub trait ApiKeyVerifier: Send + Sync {
     fn verify(&self, raw_key: &str) -> Result<ApiKeyIdentity, AuthError>;
 
-    /// Verifies a raw pckg API key through the injected persistence adapter, then
-    /// enforces the operation's typed scope at the boundary.
+    /// Verifies a raw pckg API key through the injected persistence adapter,
+    /// then enforces the operation's typed scope at the boundary.
     fn verify_scoped(&self, raw_key: &str, required_scope: ApiKeyScope) -> Result<ApiKeyIdentity, AuthError> {
         let identity = self.verify(raw_key)?;
         if identity.has_scope(required_scope) { Ok(identity) } else { Err(AuthError::InsufficientScope) }
     }
-}
-
-#[derive(Debug, Default)]
-pub struct RejectingAuthHubHandoffVerifier;
-
-impl AuthHubHandoffVerifier for RejectingAuthHubHandoffVerifier {
-    fn verify(&self, request: HandoffRequest) -> Result<AuthHubIdentity, AuthError> {
-        if request.app != "pckg" {
-            return Err(AuthError::UnsupportedApp);
-        }
-        Err(AuthError::Rejected)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Hs256AuthHubHandoffVerifier {
-    service_token: String,
-}
-
-impl Hs256AuthHubHandoffVerifier {
-    pub fn new(service_token: impl Into<String>) -> Result<Self, AuthError> {
-        let service_token = service_token.into();
-        if service_token.trim().is_empty() {
-            return Err(AuthError::MissingConfiguration);
-        }
-        Ok(Self { service_token })
-    }
-}
-
-impl AuthHubHandoffVerifier for Hs256AuthHubHandoffVerifier {
-    fn verify(&self, request: HandoffRequest) -> Result<AuthHubIdentity, AuthError> {
-        if request.app != "pckg" {
-            return Err(AuthError::UnsupportedApp);
-        }
-
-        let claims = decode::<AuthHubHandoffClaims>(
-            &request.handoff,
-            &DecodingKey::from_secret(self.service_token.as_bytes()),
-            &Validation::new(Algorithm::HS256),
-        )
-        .map_err(|_| AuthError::Rejected)?
-        .claims;
-
-        if claims.app != "pckg"
-            || !is_canonical_github_subject(&claims.subject)
-            || claims.login.trim().is_empty()
-            || claims.sid.trim().is_empty()
-        {
-            return Err(AuthError::Rejected);
-        }
-
-        Ok(AuthHubIdentity { subject: claims.subject, github_login: claims.login, hub_session_id: claims.sid })
-    }
-}
-
-pub fn sign_auth_hub_handoff(claims: &AuthHubHandoffClaims, service_token: &str) -> Result<String, AuthError> {
-    encode(&Header::new(Algorithm::HS256), claims, &EncodingKey::from_secret(service_token.as_bytes()))
-        .map_err(|_| AuthError::Rejected)
-}
-
-pub fn issue_pckg_session(identity: &AuthHubIdentity, session_secret: &str) -> Result<String, AuthError> {
-    let expires_at = SystemTime::now()
-        .checked_add(Duration::from_secs(8 * 60 * 60))
-        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_secs())
-        .ok_or(AuthError::Rejected)?;
-    let claims = PckgSessionClaims {
-        subject: identity.subject.clone(),
-        github_login: identity.github_login.clone(),
-        hub_session_id: identity.hub_session_id.clone(),
-        expires_at,
-    };
-    encode(&Header::new(Algorithm::HS256), &claims, &EncodingKey::from_secret(session_secret.as_bytes()))
-        .map_err(|_| AuthError::Rejected)
-}
-
-pub fn verify_pckg_session(session_token: &str, session_secret: &str) -> Result<AuthHubIdentity, AuthError> {
-    let claims = decode::<PckgSessionClaims>(
-        session_token,
-        &DecodingKey::from_secret(session_secret.as_bytes()),
-        &Validation::new(Algorithm::HS256),
-    )
-    .map_err(|_| AuthError::Rejected)?
-    .claims;
-    if !is_canonical_github_subject(&claims.subject)
-        || claims.github_login.trim().is_empty()
-        || claims.hub_session_id.trim().is_empty()
-    {
-        return Err(AuthError::Rejected);
-    }
-    Ok(AuthHubIdentity {
-        subject: claims.subject,
-        github_login: claims.github_login,
-        hub_session_id: claims.hub_session_id,
-    })
-}
-
-/// pckg accepts only the Auth Hub's stable GitHub numeric subject.  In
-/// particular, a legacy ASP.NET Identity id, username, email, or a subject
-/// from another provider must never be turned into a pckg browser session.
-fn is_canonical_github_subject(subject: &str) -> bool {
-    subject.starts_with("github:") && subject["github:".len()..].parse::<u64>().is_ok()
 }
 
 #[derive(Debug, Default)]
@@ -340,4 +257,28 @@ impl ApiKeyVerifier for RejectingApiKeyVerifier {
     fn verify(&self, _raw_key: &str) -> Result<ApiKeyIdentity, AuthError> {
         Err(AuthError::Rejected)
     }
+}
+
+/// Wire shape for the `/api/auth/session` response. The frontend reads the
+/// Authelia-projected subject, optional contact metadata, and group
+/// membership so it can render role-gated UI without a second round-trip.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionIdentity {
+    pub subject: String,
+    pub email: Option<String>,
+    #[serde(rename = "displayName")]
+    pub display_name: Option<String>,
+    pub groups: Vec<String>,
+}
+
+/// Validates that a subject is a non-empty, trimmed identifier suitable for
+/// persistence. Authelia usernames, `github:<numeric-id>` subjects, and any
+/// comparable opaque identifier are accepted; whitespace, control
+/// characters, and empty values are rejected.
+pub fn is_valid_subject(subject: &str) -> bool {
+    let trimmed = subject.trim();
+    !trimmed.is_empty()
+        && trimmed == subject
+        && trimmed.bytes().all(|byte| byte.is_ascii_graphic())
+        && trimmed.len() <= 255
 }

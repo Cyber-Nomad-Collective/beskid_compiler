@@ -5,10 +5,6 @@ pub(super) fn parse_uuid(value: &str) -> Option<Uuid> {
     Uuid::parse_str(value).ok()
 }
 
-pub(super) fn nonnegative_u64(value: i64) -> Option<u64> {
-    u64::try_from(value).ok()
-}
-
 pub(super) fn utc_timestamp(value: i64) -> Option<DateTime<Utc>> {
     DateTime::from_timestamp(value, 0)
 }

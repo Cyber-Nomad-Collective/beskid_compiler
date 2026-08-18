@@ -535,9 +535,19 @@ pub(super) fn validate_package_name(name: &str) -> Result<(), StoreError> {
 }
 
 pub(super) fn validate_subject(subject: &str) -> Result<(), StoreError> {
-    (subject.starts_with("github:") && subject["github:".len()..].parse::<u64>().is_ok())
-        .then_some(())
-        .ok_or(StoreError::InvalidAuthHubSubject)
+    is_valid_registry_subject(subject).then_some(()).ok_or(StoreError::InvalidAuthHubSubject)
+}
+
+/// A registry subject is the stable identifier Authelia projects as
+/// `Remote-User` (or a `github:<numeric-id>` carried over from the prior Auth
+/// Hub model). It must be a non-empty, trimmed, single-line identifier so it
+/// can be used as a persistence key without normalization.
+pub(super) fn is_valid_registry_subject(subject: &str) -> bool {
+    let trimmed = subject.trim();
+    !trimmed.is_empty()
+        && trimmed == subject
+        && trimmed.bytes().all(|byte| byte.is_ascii_graphic())
+        && trimmed.len() <= 255
 }
 
 pub(super) fn validate_version(version: &str) -> Result<(), StoreError> {
@@ -552,10 +562,6 @@ pub(super) fn validate_checksum(checksum: &str) -> Result<(), StoreError> {
 
 pub(super) fn parse_identifier(value: &str) -> Result<Uuid, StoreError> {
     sql::parse_uuid(value).ok_or(StoreError::InvalidIdentifier)
-}
-
-pub(super) fn as_u64(value: i64) -> Result<u64, StoreError> {
-    sql::nonnegative_u64(value).ok_or(StoreError::InvalidIdentifier)
 }
 
 pub(super) fn timestamp(value: i64) -> Result<DateTime<Utc>, StoreError> {

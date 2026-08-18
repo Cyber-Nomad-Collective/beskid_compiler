@@ -9,7 +9,6 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 beskid_pckg_auth = { path = "../beskid_pckg_auth" }
 beskid_pckg_artifacts = { path = "../beskid_pckg_artifacts" }
 beskid_pckg_contract = { path = "../beskid_pckg_contract" }
-beskid_pckg_community = { path = "../beskid_pckg_community" }
 beskid_pckg_operations = { path = "../beskid_pckg_operations" }
 beskid_pckg_store = { path = "../beskid_pckg_store" }
 multer = "3"

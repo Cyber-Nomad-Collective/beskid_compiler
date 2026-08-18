@@ -71,8 +71,10 @@ write_provenance() {
   local raw_defined="${evidence_dir}/symbols/raw/${profile}-${linkage}-defined.txt"
   local raw_undefined="${evidence_dir}/symbols/raw/${profile}-${linkage}-undefined.txt"
   local normalized="${evidence_dir}/symbols/normalized/${profile}-${linkage}.symbols"
+  mkdir -p "${evidence_dir}/symbols/raw" "${evidence_dir}/symbols/normalized"
   [[ -f "${profile_root}/static/${static_name}" ]] || { echo "Missing native static runtime for ${profile}" >&2; exit 1; }
   [[ -f "${profile_root}/shared/${shared_name}" ]] || { echo "Missing native shared runtime for ${profile}" >&2; exit 1; }
+  mkdir -p "$(dirname "${raw_defined}")" "$(dirname "${raw_undefined}")" "$(dirname "${normalized}")"
   "${symbol_tool}" --extern-only --defined-only --format=posix "${library}" >"${raw_defined}"
   "${symbol_tool}" --extern-only --undefined-only --format=posix "${library}" >"${raw_undefined}"
   {

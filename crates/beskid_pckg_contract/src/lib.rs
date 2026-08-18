@@ -19,15 +19,6 @@ pub struct ApiErrorResponse {
     pub message: &'static str,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct SessionResponse {
-    pub subject: String,
-    #[serde(rename = "githubLogin")]
-    pub github_login: String,
-    #[serde(rename = "hubSessionId")]
-    pub hub_session_id: String,
-}
-
 impl ApiErrorResponse {
     pub const fn new(message: &'static str) -> Self {
         Self { message }

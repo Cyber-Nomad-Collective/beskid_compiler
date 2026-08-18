@@ -272,9 +272,17 @@ impl RegistryActivityRow {
 }
 
 fn validate_registry_operations_subject(subject: &str) -> Result<(), RegistryOperationsStoreError> {
-    (subject.starts_with("github:") && subject["github:".len()..].parse::<u64>().is_ok())
+    is_valid_registry_operations_subject(subject)
         .then_some(())
         .ok_or(RegistryOperationsStoreError::InvalidAuthHubSubject)
+}
+
+fn is_valid_registry_operations_subject(subject: &str) -> bool {
+    let trimmed = subject.trim();
+    !trimmed.is_empty()
+        && trimmed == subject
+        && trimmed.bytes().all(|byte| byte.is_ascii_graphic())
+        && trimmed.len() <= 255
 }
 
 fn registry_operations_timestamp(value: i64) -> Result<DateTime<Utc>, RegistryOperationsStoreError> {

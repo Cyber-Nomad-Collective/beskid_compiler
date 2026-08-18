@@ -4,7 +4,40 @@ use uuid::Uuid;
 
 use crate::package::{SqlxPackageRepository, validate_subject};
 
-use super::model::{AsyncPackageCommunityReviewRepository, PackageCommunityReview, PackageCommunityReviewError};
+/// A package-scoped review (rating + comment) authored by an authenticated
+/// subject. These are simple package ratings served from the registry; the
+/// forum-style community surface is handled by NodeBB.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageCommunityReview {
+    pub id: String,
+    pub package_id: String,
+    pub author_subject: String,
+    pub rating: i16,
+    pub comment: String,
+    pub created_at_unix_seconds: i64,
+    pub updated_at_unix_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PackageCommunityReviewError {
+    InvalidAuthHubSubject,
+    InvalidPackageId,
+    InvalidRating,
+    InvalidComment,
+    Database(String),
+}
+
+#[async_trait]
+pub trait AsyncPackageCommunityReviewRepository: Send + Sync {
+    async fn upsert_package_community_review(
+        &self,
+        review: PackageCommunityReview,
+    ) -> Result<PackageCommunityReview, PackageCommunityReviewError>;
+    async fn list_package_community_reviews(
+        &self,
+        package_id: &str,
+    ) -> Result<Vec<PackageCommunityReview>, PackageCommunityReviewError>;
+}
 
 #[async_trait]
 impl AsyncPackageCommunityReviewRepository for SqlxPackageRepository {

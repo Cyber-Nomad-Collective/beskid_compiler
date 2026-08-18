@@ -1,0 +1,6 @@
+# Project.lock v1
+root_manifest=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/app/App.bproj
+project_name=App
+dependencies:
+- name=Core;manifest=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/core/Core.bproj;project=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/core;source_root=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/core/Src;materialized_root=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/app/obj/beskid/deps/src/Core-8376cd950db97538
+- name=Util;manifest=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/util/Util.bproj;project=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/util;source_root=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/util/Src;materialized_root=/Users/mikserek/Projects/beskid/compiler/crates/beskid_e2e_tests/fixtures/deps_workspace/app/obj/beskid/deps/src/Util-78710c615c81709e
