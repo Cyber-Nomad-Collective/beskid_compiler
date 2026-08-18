@@ -1,6 +1,7 @@
 [build]
-# sccache is wired automatically. Release/delivery jobs may override by unsetting RUSTC_WRAPPER.
-rustc-wrapper = "sccache"
+# sccache is opt-in via RUSTC_WRAPPER env var (set by setup-compiler-gate action
+# which installs sccache). Hardcoding rustc-wrapper here breaks jobs that don't
+# install sccache (runtime-kit matrix on Windows/macOS).
 
 # Shared target dir across git worktrees (set per-worktree via env if you prefer isolation).
 # Uncomment to share: CARGO_TARGET_DIR is not a config key; document in justfile instead.

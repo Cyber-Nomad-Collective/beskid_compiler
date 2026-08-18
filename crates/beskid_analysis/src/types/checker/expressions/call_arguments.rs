@@ -429,7 +429,16 @@ impl<'a> TypeChecker<'a> {
                         if let Some(item_id) = callee_item_id {
                             self.record_generic_call_constraints(item_id, &arg_types, expected, call.span);
                         }
-                        if let Some(inferred) = self.infer_generic_args_from_call(callee_item_id, &call.node.args) {
+                        let inferred = callee_item_id.and_then(|item_id| {
+                            crate::types::inference::infer_generic_args_from_call_types(
+                                &self.type_table,
+                                &self.generic_items,
+                                &self.function_signatures,
+                                item_id,
+                                &arg_types,
+                            )
+                        });
+                        if let Some(inferred) = inferred {
                             generic_args = Some(inferred);
                         } else {
                             self.errors.push(TypeError::MissingTypeArguments { span: call.span });

@@ -84,32 +84,6 @@ impl<'a> TypeChecker<'a> {
         None
     }
 
-    pub(super) fn infer_generic_args_from_call(
-        &mut self,
-        callee_item_id: Option<crate::resolve::ItemId>,
-        args: &[Spanned<crate::syntax::Expression>],
-    ) -> Option<Vec<TypeId>> {
-        let item_id = callee_item_id?;
-        let generic_names = self.generic_items.get(&item_id)?.clone();
-        let expected_len = generic_names.len();
-        if expected_len == 0 {
-            return Some(Vec::new());
-        }
-
-        let mut arg_types = Vec::with_capacity(args.len());
-        for arg in args {
-            arg_types.push(self.type_expression(arg)?);
-        }
-
-        crate::types::inference::infer_generic_args_from_call_types(
-            &self.type_table,
-            &self.generic_items,
-            &self.function_signatures,
-            item_id,
-            &arg_types,
-        )
-    }
-
     pub(super) fn infer_generic_args_from_qualified_type_path(
         &mut self,
         segments: &[Spanned<crate::syntax::PathSegment>],

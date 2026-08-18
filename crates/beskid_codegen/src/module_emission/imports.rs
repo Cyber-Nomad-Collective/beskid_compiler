@@ -111,29 +111,38 @@ pub(super) fn extern_contract_imports(
     callees.into_values().collect()
 }
 
+/// String runtime helpers that ISLE lowering emits directly (string literals, coercion,
+/// comparison, concatenation). These are always required — they are not gated by the
+/// Corelib syscall capability because they are fundamental operations, not facade services.
+const ALWAYS_AVAILABLE_STRING_SERVICES: &[&str] = &["str_new", "str_from_i64", "str_eq", "str_concat"];
+
 /// ABI symbols admitted by the distinct Corelib syscall capability. Unlike runtime intrinsics,
 /// these imports can only be selected by a `CallLowering::CorelibService` syntax fact from the
 /// exact embedded facade; ordinary dynamic calls never reach this table.
+///
+/// String runtime helpers (`str_new`, `str_from_i64`, `str_eq`, `str_concat`) are always
+/// available because ISLE lowering emits them directly for string literals, coercion,
+/// comparison, and concatenation — they are not facade services requiring capability authority.
 pub(super) fn corelib_service_symbols(
     input: &CodegenInput<'_>,
     items: &[ResolvedSyntaxModuleItem],
 ) -> HashMap<DirectCallee, String> {
-    let Some(capability) = input.corelib_service_capability() else {
-        return HashMap::new();
-    };
     let mut callees = HashSet::new();
     for item in items {
         collect_corelib_service_callees(input.database(), item.key, &mut callees);
     }
-    capability
-        .services()
-        .iter()
-        .filter(|service| {
-            callees.contains(&service.symbol)
-                || matches!(service.symbol, "str_new" | "str_from_i64" | "str_eq" | "str_concat")
-        })
-        .map(|service| (DirectCallee::corelib_service(service.symbol), service.symbol.to_owned()))
-        .collect()
+    let mut symbols = HashMap::new();
+    for symbol in ALWAYS_AVAILABLE_STRING_SERVICES {
+        symbols.insert(DirectCallee::corelib_service(symbol), (*symbol).to_owned());
+    }
+    if let Some(capability) = input.corelib_service_capability() {
+        for service in capability.services() {
+            if callees.contains(&service.symbol) && !ALWAYS_AVAILABLE_STRING_SERVICES.contains(&service.symbol) {
+                symbols.insert(DirectCallee::corelib_service(service.symbol), service.symbol.to_owned());
+            }
+        }
+    }
+    symbols
 }
 
 fn collect_corelib_service_callees(db: &dyn beskid_queries::Db, key: AstNodeKey, callees: &mut HashSet<&'static str>) {

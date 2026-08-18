@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Always admit string runtime helpers (`str_new`, `str_from_i64`, `str_eq`,
+  `str_concat`) as corelib service imports during ISLE lowering, even without
+  the Corelib syscall capability. These services are emitted directly by the
+  ISLE string context (literals, coercion, comparison, concatenation) and are
+  fundamental operations, not facade services requiring capability authority.
+  Previously, `corelib_service_symbols` returned an empty map when the
+  capability was absent, causing `UnknownCallee` lowering failures for any
+  source using string interpolation or comparison outside the canonical corpus.
+
+- Eliminate double typing of call arguments in the generic inference path.
+  The type checker previously typed each argument once for
+  `record_generic_call_constraints` and again inside the
+  `infer_generic_args_from_call` wrapper. The wrapper is removed and the
+  already-computed argument types are passed directly to
+  `infer_generic_args_from_call_types`, reducing duplicate `type_expression`
+  calls and potential duplicate diagnostics.
+
 - Link Windows executables through their validated Beskid entry symbol and
   console subsystem instead of implicitly requiring the CRT startup symbol.
 

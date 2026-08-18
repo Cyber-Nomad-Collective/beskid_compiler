@@ -17,7 +17,7 @@ fn canonical_array_growth_preserves_descriptor_roots_results_and_copies_only_ini
         collections.contains("pub pointer GrowArrayRooted(pointer array, word minimumCapacity, pointer rootHandleOut)")
     );
     assert!(collections.contains("raw_word_store(rootHandleOut, 0);"));
-    assert!(collections.contains("pointer object = NativePointer(NativeWord(array) - 16);"));
+    assert!(collections.contains("pointer object = NativePointer(NativeWord(array) - 24);"));
     assert!(collections.contains("pointer descriptor = NativePointer(raw_word_load(object));"));
     assert!(collections.contains("raw_word_store(replacementObject, NativeWord(descriptor));"));
     assert!(collections.contains("if minimumCapacity <= capacity"));
