@@ -56,6 +56,7 @@ fn valid_manifest() -> AbiManifestV5 {
             params: vec![AbiType::Pointer, AbiType::Pointer],
             result: AbiType::Void,
             noreturn: false,
+            target_bindings: Vec::new(),
         }],
         platform_imports: vec![PlatformImport {
             symbol: "clock_gettime".into(),

@@ -148,6 +148,13 @@ pub struct AbiLayout {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct RuntimeTargetBinding {
+    pub target: String,
+    pub implementation: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeIntrinsic {
     pub name: String,
     pub symbol: String,
@@ -156,6 +163,8 @@ pub struct RuntimeIntrinsic {
     pub params: Vec<AbiType>,
     pub result: AbiType,
     pub noreturn: bool,
+    #[serde(default, rename = "targetBindings", skip_serializing_if = "Vec::is_empty")]
+    pub target_bindings: Vec<RuntimeTargetBinding>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     ABI_V5, AbiFieldLayout, AbiFunction, AbiLayout, AbiManifestV5, AbiType, AssemblyExport, AssemblyParameterLocation,
-    AssemblyRegister, AssemblySymbol, ManifestValidationError, PlatformImport, RuntimeIntrinsic, TargetMetadata,
-    TrapCode,
+    AssemblyRegister, AssemblySymbol, ManifestValidationError, PlatformImport, RuntimeIntrinsic, RuntimeTargetBinding,
+    TargetMetadata, TrapCode,
 };
 
 pub const CANONICAL_RUNTIME_PACKAGE_PUBLISHER: &str = crate::generated::abi_v5_contract::ABI_V5_RUNTIME_PUBLISHER;
@@ -90,6 +90,13 @@ impl RuntimeAuditMetadata {
         loader_required_exports.dedup();
         let mut allowed_exports = loader_required_exports.clone();
         allowed_exports.extend(manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.symbol.clone()));
+        allowed_exports.extend(
+            manifest
+                .trusted_runtime_intrinsics
+                .iter()
+                .flat_map(|intrinsic| intrinsic.target_bindings.iter())
+                .map(|binding| binding.implementation.clone()),
+        );
         allowed_exports.sort();
         allowed_exports.dedup();
         Ok(Self {
@@ -389,15 +396,15 @@ struct SourceIntrinsic {
     #[serde(default, rename = "resultStatus")]
     _result_status: Option<String>,
     #[serde(default, rename = "targetBindings")]
-    _target_bindings: Vec<SourceTargetBinding>,
+    target_bindings: Vec<SourceTargetBinding>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SourceTargetBinding {
     #[serde(rename = "target")]
-    _target: String,
+    target: String,
     #[serde(rename = "implementation")]
-    _implementation: String,
+    implementation: String,
     #[serde(rename = "osImports")]
     _os_imports: Vec<String>,
 }
@@ -504,6 +511,14 @@ fn source_intrinsic(entry: &SourceIntrinsic) -> RuntimeIntrinsic {
         params,
         result: source_type(&entry.result),
         noreturn: entry.result == "never",
+        target_bindings: entry
+            .target_bindings
+            .iter()
+            .map(|binding| RuntimeTargetBinding {
+                target: binding.target.clone(),
+                implementation: binding.implementation.clone(),
+            })
+            .collect(),
     }
 }
 fn source_platform_import(entry: &SourcePlatformImport) -> PlatformImport {
