@@ -318,7 +318,24 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
     match expression {
         Expression::Literal(literal) => Ok(semantic_type_for_literal(&literal.node.literal.node)),
         Expression::Path(path) => abi_type_for_local_path(db, program, index, key, &path.node.path.node),
-        Expression::Grouped(grouped) => abi_type_for_expression(db, program, index, key, &grouped.node.expr.node),
+        Expression::Grouped(grouped) => {
+            // The inner expression is a child of the `GroupedExpression` node, not of this
+            // `Expression` node. Resolve its key so variants that rely on `key` for child
+            // resolution (`Binary`, `Call`) receive the correct parent.
+            let grouped_key = index
+                .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(grouped))
+                .map(|node| AstNodeKey { node, ..key })
+                .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+            let inner = index
+                .direct_child_id(
+                    program,
+                    grouped_key.node,
+                    beskid_analysis::syntax_query::DynNodeRef::from(grouped.node.expr.as_ref()),
+                )
+                .map(|node| AstNodeKey { node, ..key })
+                .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+            abi_type(db, inner)?.ok_or_else(|| SemanticError::unavailable("abi_type"))
+        }
         Expression::Call(call) => {
             let call = index
                 .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(call))

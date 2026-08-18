@@ -15,7 +15,7 @@ use tower_lsp_server::ls_types::{
 };
 
 use crate::position::offset_range_to_lsp;
-use crate::session::store::{Document, SyntaxFix, SyntaxTextEditKind};
+use crate::session::store::{Document, SyntaxTextEdit};
 
 use super::handler::{doc_comment_quickfix, remove_lines_action, remove_range_action};
 
@@ -108,7 +108,7 @@ impl CodeActionProvider for ModQuickFixProvider {
     }
 }
 
-fn syntax_text_edit_to_lsp(text: &str, edit: &beskid_analysis::SyntaxTextEdit) -> TextEdit {
+fn syntax_text_edit_to_lsp(text: &str, edit: &SyntaxTextEdit) -> TextEdit {
     // Insert edits carry `start == end`; `offset_range_to_lsp` produces a zero-width range
     // at the insertion point. Delete/Replace carry a non-empty range.
     let range = offset_range_to_lsp(text, edit.start, edit.end);
@@ -125,7 +125,8 @@ mod tests {
     };
 
     use super::code_action_providers;
-    use crate::session::store::{Document, SyntaxFix, SyntaxTextEdit, SyntaxTextEditKind};
+    use crate::session::store::{Document, SyntaxFix, SyntaxTextEdit};
+    use beskid_analysis::SyntaxTextEditKind;
 
     fn mod_diag(source: &str, code: &str, start: Position, end: Position) -> Diagnostic {
         Diagnostic {
@@ -190,7 +191,7 @@ mod tests {
                 _ => None,
             })
             .expect("mod QUICKFIX action");
-        assert_eq!(action.kind.as_deref(), Some(CodeActionKind::QUICKFIX));
+        assert_eq!(action.kind, Some(CodeActionKind::QUICKFIX));
         let edit = action.edit.as_ref().expect("edit");
         let changes = edit.changes.as_ref().expect("changes");
         let edits = changes.get(&uri).expect("uri edits");
@@ -234,7 +235,12 @@ mod tests {
         assert!(providers.iter().any(|p| p.handles("beskid", "W1503")));
         // Mod-origin code → ModQuickFixProvider (source starts with "beskid:mod:").
         assert!(providers.iter().any(|p| p.handles("beskid:mod:ModA.Check", "MOD0001")));
-        // Compiler code is NOT handled by the mod provider.
-        assert!(!providers.iter().any(|p| p.handles("beskid:mod:ModA.Check", "W1503")));
+        // Partition is by `source`: a mod-source diagnostic is owned by the mod provider
+        // regardless of code (build fail-closes if no matching SyntaxFix). Compiler codes
+        // under a mod source are still routed to the mod provider, not the compiler ones.
+        assert!(providers.iter().any(|p| p.handles("beskid:mod:ModA.Check", "W1503")));
+        // Compiler providers never handle mod-source diagnostics (they require source == "beskid"),
+        // and the mod provider never handles compiler-source diagnostics.
+        assert!(!providers.iter().any(|p| p.handles("beskid", "MOD0001")));
     }
 }

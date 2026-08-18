@@ -14,10 +14,12 @@ use tower_lsp_server::ls_types::Uri;
 use super::db_access;
 use super::documentation_facts::SyntaxDocumentationFact;
 
-// Re-export the single host-side `SyntaxFix` implementation so LSP code can name it as
-// `crate::session::store::SyntaxFix` (DRY — no duplicate LSP-side type). Defined in
-// `beskid_analysis::mod_host::diagnostics` and returned by the prepare spine.
-pub use beskid_analysis::{SyntaxFix, SyntaxTextEdit, SyntaxTextEditKind};
+// Re-export the single host-side `SyntaxFix` / `SyntaxTextEdit` implementation so LSP
+// code can name them as `crate::session::store::SyntaxFix` / `SyntaxTextEdit` (DRY — no
+// duplicate LSP-side types). Defined in `beskid_analysis::mod_host::diagnostics` and
+// returned by the prepare spine. `SyntaxTextEditKind` is consumed only by tests, which
+// import it directly from `beskid_analysis`.
+pub use beskid_analysis::{SyntaxFix, SyntaxTextEdit};
 
 /// One editor buffer or disk snapshot with generation-bound syntax facts.
 #[derive(Debug, Clone)]
