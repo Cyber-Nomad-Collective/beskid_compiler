@@ -14,7 +14,6 @@ const RUNTIME_STATE_LAYOUT: &str = "BeskidRuntimeState";
 /// ABI-v5 embedder entrypoints that activate runtime state and attach the executing thread.
 const PROCESS_INIT_EXPORT: &str = "beskid_rt_v5_process_init";
 const PROCESS_SHUTDOWN_EXPORT: &str = "beskid_rt_v5_process_shutdown";
-const THREAD_ATTACH_EXPORT: &str = "beskid_rt_v5_thread_attach";
 
 /// Loaded shared runtime plus the exact metadata-approved JIT symbol map.
 pub struct JitRuntimeKit {
@@ -96,14 +95,12 @@ impl AttachedRuntimeState {
             .map_err(|error| format!("invalid `{RUNTIME_STATE_LAYOUT}` layout: {error}"))?;
 
         let initialize = kit.loader_required_symbol(PROCESS_INIT_EXPORT)?;
-        let attach = kit.loader_required_symbol(THREAD_ATTACH_EXPORT)?;
         let shutdown = kit.loader_required_symbol(PROCESS_SHUTDOWN_EXPORT)?;
-        // SAFETY: the three addresses come from the kit's validated loader-required exports, whose
+        // SAFETY: the two addresses come from the kit's validated loader-required exports, whose
         // ABI-v5 signatures are frozen by the manifest this kit was audited against.
-        let (initialize, attach, shutdown) = unsafe {
+        let (initialize, shutdown) = unsafe {
             (
                 std::mem::transmute::<*const u8, unsafe extern "C" fn(*mut u8) -> *mut u8>(initialize),
-                std::mem::transmute::<*const u8, unsafe extern "C" fn(*mut u8) -> *mut u8>(attach),
                 std::mem::transmute::<*const u8, unsafe extern "C" fn(*mut u8)>(shutdown),
             )
         };
@@ -114,23 +111,14 @@ impl AttachedRuntimeState {
             return Err(format!("failed to reserve a {size}-byte `{RUNTIME_STATE_LAYOUT}` record"));
         }
         // SAFETY: `state` is a zeroed, correctly aligned record of exactly the manifest size, and
-        // stays owned by this value until `Drop` runs the paired shutdown.
-        let initialized = unsafe { initialize(state) };
-        if initialized.is_null() {
+        // stays owned by this value until `Drop` runs the paired shutdown. `ProcessInit` internally
+        // calls `ThreadAttach` to attach the calling thread, so the returned pointer is the
+        // thread-local state handle — no separate attach call is needed.
+        let attached = unsafe { initialize(state) };
+        if attached.is_null() {
             // SAFETY: a failed init installed no thread state, so the reservation is unshared.
             unsafe { std::alloc::dealloc(state, layout) };
             return Err(format!("ABI-v5 runtime kit failed to initialize the `{RUNTIME_STATE_LAYOUT}` record"));
-        }
-        // SAFETY: init stamped the record it was handed, so the same reservation is still the
-        // runtime state this thread must attach to.
-        let attached = unsafe { attach(state) };
-        if attached.is_null() {
-            // SAFETY: process init succeeded on this record, so its shutdown must run before the
-            // reservation is released; the failed attach installed no thread state to detach.
-            unsafe { shutdown(state) };
-            // SAFETY: the failed attach installed no thread state, so the reservation is unshared.
-            unsafe { std::alloc::dealloc(state, layout) };
-            return Err("ABI-v5 runtime kit failed to attach the current thread".into());
         }
         Ok(Self { state, layout, shutdown })
     }

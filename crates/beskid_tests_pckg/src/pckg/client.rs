@@ -20,7 +20,7 @@ async fn publish_endpoint_without_auth_returns_missing_auth_token() {
     let config = PckgClientConfig::new("http://localhost:5195").expect("valid URL");
     let client = PckgClient::new(config).expect("client should build");
 
-    let path = PathBuf::from(std::env::temp_dir()).join(format!("beskid_pckg_test_{}.bpk", std::process::id()));
+    let path = std::env::temp_dir().join(format!("beskid_pckg_test_{}.bpk", std::process::id()));
     fs::write(&path, [1u8, 2, 3, 4]).expect("write artifact");
 
     let err = client
