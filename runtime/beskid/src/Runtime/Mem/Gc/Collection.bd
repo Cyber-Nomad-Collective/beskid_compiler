@@ -56,7 +56,7 @@ pub unit ResetMarkedObjects(pointer heap) {
     pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
     while NativeWord(cursor) < NativeWord(bump) {
         word descriptorWord = raw_word_load(cursor);
-        word size;
+        mut word size;
         if descriptorWord == 0 {
             size = raw_word_load(pointer_add(cursor, 8));
         } else {

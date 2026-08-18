@@ -70,7 +70,7 @@ pub bool IsAllocatedObject(pointer heap, pointer object) {
     pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
     while NativeWord(cursor) < NativeWord(bump) {
         word descriptorWord = raw_word_load(cursor);
-        word blockSize;
+        mut word blockSize;
         if descriptorWord == 0 {
             blockSize = raw_word_load(pointer_add(cursor, 8));
         } else {

@@ -26,7 +26,7 @@ pub pointer AllocateFromFreeList(pointer heap, word size, word alignment) {
     mut pointer bump = NativePointer(raw_word_load(pointer_add(heap, HEAP_BUMP)));
     while NativeWord(cursor) < NativeWord(bump) {
         word descriptorWord = raw_word_load(cursor);
-        word blockSize;
+        mut word blockSize;
         if descriptorWord == 0 {
             blockSize = raw_word_load(pointer_add(cursor, 8));
             if blockSize < 16 || blockSize % 8 != 0 {

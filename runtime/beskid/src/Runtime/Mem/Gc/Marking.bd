@@ -24,7 +24,7 @@ pub bool ProcessGrayStack() {
         mut pointer object = region;
         while NativeWord(object) < NativeWord(bump) {
             word descriptorWord = raw_word_load(object);
-            word size;
+            mut word size;
             if descriptorWord == 0 {
                 size = raw_word_load(pointer_add(object, 8));
             } else {

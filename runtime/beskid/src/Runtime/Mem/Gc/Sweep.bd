@@ -14,7 +14,7 @@ pub bool Sweep(pointer heap) {
     mut word pendingSize = 0;
     while NativeWord(cursor) < NativeWord(bump) {
         word descriptorWord = raw_word_load(cursor);
-        word blockSize;
+        mut word blockSize;
         mut bool live = false;
         if descriptorWord == 0 {
             blockSize = raw_word_load(pointer_add(cursor, 8));
