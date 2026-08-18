@@ -14,7 +14,44 @@ use miette::{NamedSource, SourceSpan};
 use crate::analysis::diagnostics::{SemanticDiagnostic, Severity};
 use crate::syntax::SpanInfo;
 
-use super::invoker::{AnalyzerDiagnostic, AnalyzerSeverity};
+use super::invoker::{AnalyzerDiagnostic, AnalyzerFix, AnalyzerOutcome, AnalyzerSeverity, RewriteEdit};
+
+/// Kind of a [`SyntaxTextEdit`], mirroring `ModEdit.kind` (0=Insert, 1=Replace, 2=Delete).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyntaxTextEditKind {
+    Insert,
+    Replace,
+    Delete,
+}
+
+/// One text edit in a [`SyntaxFix`]. Byte-offset ranges into the entry source; the LSP
+/// converts these to `TextEdit`s when surfacing a `QUICKFIX` code action.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxTextEdit {
+    pub kind: SyntaxTextEditKind,
+    pub start: usize,
+    pub end: usize,
+    pub text: String,
+}
+
+/// One quick-fix produced by a mod `Analyzer` contract, shaped for LSP code-action
+/// surfacing. `source` is the mod-origin tag (`"beskid:mod:<type_id>"`) and
+/// `diagnostic_code` links the fix to the [`SyntaxDiagnostic`](crate::...) it addresses.
+///
+/// Defined in `beskid_analysis` (the prepare spine returns it) and re-exported from the
+/// LSP `session::store` module so the LSP stores the same single implementation on
+/// `Document.syntax_fixes` (DRY — no duplicate LSP-side `SyntaxFix`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxFix {
+    /// Mod-origin tag, e.g. `"beskid:mod:ModA.Check"`. Matches `SyntaxDiagnostic.source`.
+    pub source: String,
+    /// Code of the diagnostic this fix addresses (links to `SyntaxDiagnostic.code`).
+    pub diagnostic_code: String,
+    /// Human-readable title shown in the LSP code-action menu.
+    pub title: String,
+    /// Edits to apply when the fix is accepted.
+    pub edits: Vec<SyntaxTextEdit>,
+}
 
 /// A single mod-host issue surfaced by registration validation or scheduling.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,6 +209,38 @@ pub fn analyzer_diagnostic_to_semantic(
         code: Some(diagnostic.code.clone()),
         origin: Some(format!("beskid:mod:{type_id}")),
         severity,
+    }
+}
+
+/// Map a mod `Analyzer` quick-fix into the LSP-facing [`SyntaxFix`] shape.
+///
+/// `source` is the mod-origin tag (`format!("beskid:mod:{}", outcome.type_id)`) the caller
+/// has already computed. The linked diagnostic is resolved via `fix.diagnostic_index`
+/// into `outcome.diagnostics`; if the index is out of range the fix is dropped
+/// (fail-closed — mirrors `unmarshal_fixes` in `native.rs`). `RewriteEdit` →
+/// [`SyntaxTextEdit`] is a direct enum mirror.
+pub fn analyzer_fix_to_syntax_fix(fix: &AnalyzerFix, outcome: &AnalyzerOutcome, source: &str) -> Option<SyntaxFix> {
+    let diagnostic = outcome.diagnostics.get(fix.diagnostic_index as usize)?;
+    let edits = fix.edits.iter().map(rewrite_edit_to_syntax_text_edit).collect();
+    Some(SyntaxFix {
+        source: source.to_owned(),
+        diagnostic_code: diagnostic.code.clone(),
+        title: fix.title.clone(),
+        edits,
+    })
+}
+
+fn rewrite_edit_to_syntax_text_edit(edit: &RewriteEdit) -> SyntaxTextEdit {
+    match edit {
+        RewriteEdit::Insert { offset, text } => {
+            SyntaxTextEdit { kind: SyntaxTextEditKind::Insert, start: *offset, end: *offset, text: text.clone() }
+        }
+        RewriteEdit::Replace { start, end, text } => {
+            SyntaxTextEdit { kind: SyntaxTextEditKind::Replace, start: *start, end: *end, text: text.clone() }
+        }
+        RewriteEdit::Delete { start, end } => {
+            SyntaxTextEdit { kind: SyntaxTextEditKind::Delete, start: *start, end: *end, text: String::new() }
+        }
     }
 }
 

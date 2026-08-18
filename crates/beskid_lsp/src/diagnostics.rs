@@ -9,7 +9,7 @@ use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::{ProjectError, parse_bsol_document, parse_manifest, parse_workspace_manifest};
 use beskid_analysis::services::{self, FrontEndOptions, PrepareOptions, resolved_input_from_plan};
 use beskid_analysis::syntax::Program;
-use beskid_analysis::{SemanticDiagnostic, Severity};
+use beskid_analysis::{SemanticDiagnostic, Severity, SyntaxFix};
 use beskid_queries::BeskidDatabase;
 use tower_lsp_server::ls_types::*;
 
@@ -18,19 +18,25 @@ use crate::manifest_uri::is_manifest_uri;
 use crate::position::offset_range_to_lsp;
 use crate::session::store::{SyntaxDiagnostic, SyntaxDiagnosticSeverity};
 
-/// Collect generation-bound diagnostic facts for a `.bd`, `.bproj`, `.bws`, or other manifest buffer.
+/// Collect generation-bound diagnostic facts and mod-origin quick-fixes for a `.bd`,
+/// `.bproj`, `.bws`, or other manifest buffer.
 ///
 /// Project-backed `.bd` buffers use the Salsa prepare spine only when the typed bundle matches
 /// the current file revision. A stale typed generation fails closed to parse/structural facts
 /// for the current buffer — never prepare-spine diagnostics keyed to a prior generation.
+///
+/// Returns `(diagnostics, fixes)` so the publish path can store both on the `Document` at the
+/// same generation (re-running the spine to collect fixes separately would double the work and
+/// risk a generation mismatch). Fixes are populated only on the prepare-spine path; the
+/// structural and manifest paths return an empty fix list.
 pub fn collect_syntax_diagnostics(
     db: Option<&mut BeskidDatabase>,
     uri: &Uri,
     source: &str,
     compilation_context: Option<&CompilationContext>,
-) -> Vec<SyntaxDiagnostic> {
+) -> (Vec<SyntaxDiagnostic>, Vec<SyntaxFix>) {
     if is_manifest_uri(uri) {
-        return analyze_project_manifest(uri, source);
+        return (analyze_project_manifest(uri, source), Vec::new());
     }
 
     if let Some(path) = uri.to_file_path()
@@ -50,9 +56,9 @@ pub fn collect_syntax_diagnostics(
             .unwrap_or_else(|| path.display().to_string());
         // Fail closed: stale typed generation must not publish prepare-spine diagnostics.
         if beskid_queries::is_typed_bundle_stale(db, &entry_key) {
-            return structural_syntax_diagnostics(&uri.to_string(), source);
+            return (structural_syntax_diagnostics(&uri.to_string(), source), Vec::new());
         }
-        if let Ok((_, diags)) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        if let Ok((_, diags, fixes)) = beskid_queries::prepare_compilation_diagnostics_with_db(
             db,
             &resolved,
             PrepareOptions {
@@ -61,11 +67,11 @@ pub fn collect_syntax_diagnostics(
             },
             None,
         ) {
-            return diags.into_iter().map(syntax_diagnostic_from_semantic).collect();
+            return (diags.into_iter().map(syntax_diagnostic_from_semantic).collect(), fixes);
         }
     }
 
-    structural_syntax_diagnostics(&uri.to_string(), source)
+    (structural_syntax_diagnostics(&uri.to_string(), source), Vec::new())
 }
 
 /// Convert generation-bound facts into LSP diagnostics for the given source text.
@@ -84,7 +90,7 @@ pub fn analyze_document(
     source: &str,
     compilation_context: Option<&CompilationContext>,
 ) -> Vec<Diagnostic> {
-    let facts = collect_syntax_diagnostics(db, uri, source, compilation_context);
+    let (facts, _fixes) = collect_syntax_diagnostics(db, uri, source, compilation_context);
     lsp_diagnostics_from_syntax(source, &facts)
 }
 
@@ -102,6 +108,7 @@ fn structural_syntax_diagnostics(source_name: &str, source: &str) -> Vec<SyntaxD
             severity: SyntaxDiagnosticSeverity::Error,
             code: Some("parse".to_string()),
             message: format!("{err:#}"),
+            source: "beskid".to_string(),
         }],
     }
 }
@@ -122,6 +129,9 @@ fn syntax_diagnostic_from_semantic(diag: SemanticDiagnostic) -> SyntaxDiagnostic
     let start = diag.span.offset();
     let len = diag.span.len();
     let end = start.saturating_add(len.max(1));
+    // Origin tag routes code actions: `None` (compiler) → "beskid";
+    // `Some("beskid:mod:<type_id>")` (mod) → that tag.
+    let source = diag.origin.unwrap_or_else(|| "beskid".to_string());
     SyntaxDiagnostic {
         start,
         end,
@@ -132,6 +142,7 @@ fn syntax_diagnostic_from_semantic(diag: SemanticDiagnostic) -> SyntaxDiagnostic
         },
         code: diag.code,
         message: diag.message,
+        source,
     }
 }
 
@@ -144,7 +155,7 @@ fn syntax_to_lsp_diagnostic(source: &str, fact: &SyntaxDiagnostic) -> Diagnostic
             SyntaxDiagnosticSeverity::Note => DiagnosticSeverity::INFORMATION,
         }),
         code: fact.code.clone().map(NumberOrString::String),
-        source: Some("beskid".to_string()),
+        source: Some(fact.source.clone()),
         message: fact.message.clone(),
         ..Diagnostic::default()
     }
@@ -194,7 +205,8 @@ mod tests {
     fn diagnostics_facts_work_without_legacy_analysis_snapshot() {
         let uri = Uri::from_str("file:///no_analysis.bd").expect("uri");
         let source = "i32 Main() { return 0; }";
-        let facts = collect_syntax_diagnostics(None, &uri, source, None);
+        let (facts, fixes) = collect_syntax_diagnostics(None, &uri, source, None);
+        assert!(fixes.is_empty(), "structural path must not produce quick-fixes");
         let doc = Document {
             version: 1,
             text: source.to_string(),
@@ -205,6 +217,7 @@ mod tests {
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: facts,
+            syntax_fixes: Vec::new(),
         };
 
         let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
@@ -263,7 +276,7 @@ mod tests {
         assert!(is_typed_bundle_stale(&db, &entry_key), "test requires a stale typed bundle after file revision bump");
 
         let expected = structural_syntax_diagnostics(uri.as_str(), &source);
-        let collected = collect_syntax_diagnostics(Some(&mut db), &uri, &source, Some(&ctx));
+        let (collected, _fixes) = collect_syntax_diagnostics(Some(&mut db), &uri, &source, Some(&ctx));
         std::env::set_current_dir(previous).expect("restore cwd");
 
         assert_eq!(
@@ -285,10 +298,12 @@ mod tests {
             severity: SyntaxDiagnosticSeverity::Error,
             code: Some("E9999".to_string()),
             message: "probe".to_string(),
+            source: "beskid".to_string(),
         }];
         let diagnostics = lsp_diagnostics_from_syntax(source, &facts);
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code.as_ref(), Some(&NumberOrString::String("E9999".to_string())));
         assert_eq!(diagnostics[0].message, "probe");
+        assert_eq!(diagnostics[0].source.as_deref(), Some("beskid"));
     }
 }

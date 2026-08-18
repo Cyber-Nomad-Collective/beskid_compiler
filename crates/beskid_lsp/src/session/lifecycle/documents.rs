@@ -26,16 +26,16 @@ pub(super) async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &
     let documentation =
         if is_manifest_uri(uri) { Vec::new() } else { syntax_documentation_facts_for_source(uri.as_str(), text) };
     if is_manifest_uri(uri) {
-        let diagnostics = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
-        return SyntaxFacts { documentation, diagnostics, ..SyntaxFacts::default() };
+        let (diagnostics, fixes) = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        return SyntaxFacts { documentation, diagnostics, fixes, ..SyntaxFacts::default() };
     }
     let Some(path) = uri_to_path(uri) else {
-        let diagnostics = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
-        return SyntaxFacts { documentation, diagnostics, ..SyntaxFacts::default() };
+        let (diagnostics, fixes) = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        return SyntaxFacts { documentation, diagnostics, fixes, ..SyntaxFacts::default() };
     };
     let Some((resolved, session)) = resolved_input_for_path(state, &path, text).await else {
-        let diagnostics = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
-        return SyntaxFacts { documentation, diagnostics, ..SyntaxFacts::default() };
+        let (diagnostics, fixes) = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        return SyntaxFacts { documentation, diagnostics, fixes, ..SyntaxFacts::default() };
     };
     let mut facts = with_compilation_db_mut_state(state, |db, write| {
         if let Some(plan) = session.compile_plan.as_ref() {
@@ -49,7 +49,9 @@ pub(super) async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &
         }
     })
     .await;
-    facts.diagnostics = collect_syntax_diagnostics_for_state(state, uri, text, Some(&session)).await;
+    let (diagnostics, fixes) = collect_syntax_diagnostics_for_state(state, uri, text, Some(&session)).await;
+    facts.diagnostics = diagnostics;
+    facts.fixes = fixes;
     facts.documentation = documentation;
     facts
 }
@@ -65,6 +67,7 @@ fn document_from_syntax_facts(version: i32, text: String, syntax_facts: SyntaxFa
         syntax_inlay_hints: syntax_facts.inlay_hints,
         syntax_documentation: syntax_facts.documentation,
         syntax_diagnostics: syntax_facts.diagnostics,
+        syntax_fixes: syntax_facts.fixes,
     }
 }
 
@@ -76,6 +79,7 @@ pub(super) fn apply_syntax_facts(doc: &mut Document, syntax_facts: SyntaxFacts) 
     doc.syntax_inlay_hints = syntax_facts.inlay_hints;
     doc.syntax_documentation = syntax_facts.documentation;
     doc.syntax_diagnostics = syntax_facts.diagnostics;
+    doc.syntax_fixes = syntax_facts.fixes;
 }
 
 /// Build a [`Document`] for `uri` with generation-bound syntax facts for the buffer text.

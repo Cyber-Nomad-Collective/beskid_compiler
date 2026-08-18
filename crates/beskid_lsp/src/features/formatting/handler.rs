@@ -42,7 +42,7 @@ mod tests {
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-        }
+            syntax_fixes: Vec::new(),        }
     }
 
     #[test]

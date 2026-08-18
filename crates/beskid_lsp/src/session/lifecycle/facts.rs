@@ -8,7 +8,9 @@ use beskid_queries::{
 
 use crate::session::{
     documentation_facts::SyntaxDocumentationFact,
-    store::{SyntaxCompletion, SyntaxDefinition, SyntaxDiagnostic, SyntaxHover, SyntaxInlayHint, SyntaxSymbol},
+    store::{
+        SyntaxCompletion, SyntaxDefinition, SyntaxDiagnostic, SyntaxFix, SyntaxHover, SyntaxInlayHint, SyntaxSymbol,
+    },
 };
 
 use super::revisions_resolution::lockfile_digest_for_plan;
@@ -26,6 +28,8 @@ pub(super) struct SyntaxFacts {
     pub(super) inlay_hints: Vec<SyntaxInlayHint>,
     pub(super) documentation: Vec<SyntaxDocumentationFact>,
     pub(super) diagnostics: Vec<SyntaxDiagnostic>,
+    /// Mod-origin quick-fixes collected from the prepare spine (empty on structural/manifest paths).
+    pub(super) fixes: Vec<SyntaxFix>,
 }
 
 pub(super) fn syntax_facts_for_entry(
@@ -134,6 +138,7 @@ pub(super) fn syntax_facts_for_entry(
         inlay_hints,
         documentation: Vec::new(),
         diagnostics: Vec::new(),
+        fixes: Vec::new(),
     }
 }
 

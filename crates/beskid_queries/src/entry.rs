@@ -89,7 +89,7 @@ pub fn prepare_compilation_diagnostics_with_db(
     resolved: &ResolvedInput,
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
-) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>)> {
+) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<beskid_analysis::SyntaxFix>)> {
     trace_query("prepare_compilation_diagnostics_with_db", false);
     let resolved = enrich_resolved_with_assembly(db, resolved, &options)?;
     db.ensure_file_text(resolved.source_path.clone(), resolved.source.clone());

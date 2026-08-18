@@ -51,7 +51,7 @@ pub fn prepare_compilation_diagnostics(
     resolved: &ResolvedInput,
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
-) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>)> {
+) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<beskid_analysis::SyntaxFix>)> {
     let result = with_db(|db| {
         ensure_db_for_resolved(db, resolved);
         prepare_compilation_diagnostics_with_db(db, resolved, options, pipeline)

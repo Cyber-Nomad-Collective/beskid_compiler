@@ -36,7 +36,7 @@ mod tests {
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-        };
+            syntax_fixes: Vec::new(),        };
 
         let tokens = match handle_semantic_tokens(&doc) {
             tower_lsp_server::ls_types::SemanticTokensResult::Tokens(tokens) => tokens,

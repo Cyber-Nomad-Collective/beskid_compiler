@@ -109,7 +109,7 @@ impl CommandSession {
         resolved: &ResolvedInput,
         options: SemanticGateOptions,
     ) -> Result<PreparedCompilation> {
-        let (prepared, gate_diagnostics) = beskid_queries::prepare_compilation_diagnostics(
+        let (prepared, gate_diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics(
             resolved,
             services::PrepareOptions {
                 front_end: services::FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },

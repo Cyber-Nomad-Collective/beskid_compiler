@@ -26,16 +26,6 @@ impl IsleContext<'_, '_, '_, '_> {
     }
 }
 
-pub(super) fn primitive_numeric_conversion_type_matches(ty: Type, semantic: beskid_queries::SemanticTypeId) -> bool {
-    match semantic {
-        beskid_queries::SemanticTypeId::I32 => ty == types::I32,
-        beskid_queries::SemanticTypeId::I64 => ty == types::I64,
-        beskid_queries::SemanticTypeId::U8 => ty == types::I8,
-        beskid_queries::SemanticTypeId::WORD => ty.is_int() && matches!(ty.bits(), 32 | 64),
-        _ => false,
-    }
-}
-
 pub(super) enum CompareOp {
     Eq,
     Ne,

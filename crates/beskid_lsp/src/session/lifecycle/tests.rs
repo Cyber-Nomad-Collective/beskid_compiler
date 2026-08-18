@@ -124,7 +124,7 @@ async fn set_document_rebuilds_same_text_after_cleared_facts() {
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-        },
+            syntax_fixes: Vec::new(),        },
     );
     state.mark_initial_scan_complete();
     let state = tokio::sync::RwLock::new(state);

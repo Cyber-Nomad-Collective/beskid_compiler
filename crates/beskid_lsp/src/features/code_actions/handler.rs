@@ -43,7 +43,62 @@ fn doc_comment_code_action(
     })
 }
 
+pub(super) fn remove_lines_action(uri: &Uri, doc: &Document, diag: &Diagnostic) -> Option<CodeAction> {
+    let start = position_to_offset(&doc.text, diag.range.start);
+    let end = position_to_offset(&doc.text, diag.range.end);
+    let (line_start, line_end) = line_span(&doc.text, start, end);
+    let range = offset_range_to_lsp(&doc.text, line_start, line_end);
+    let mut changes = HashMap::new();
+    changes.insert(uri.clone(), vec![TextEdit { range, new_text: String::new() }]);
+    Some(CodeAction {
+        title: "Remove unused import".to_string(),
+        kind: Some(CodeActionKind::QUICKFIX),
+        diagnostics: Some(vec![diag.clone()]),
+        edit: Some(WorkspaceEdit { changes: Some(changes), ..WorkspaceEdit::default() }),
+        ..CodeAction::default()
+    })
+}
+
+pub(super) fn remove_range_action(uri: &Uri, diag: &Diagnostic, title: &'static str) -> Option<CodeAction> {
+    if diag.range.start == diag.range.end {
+        return None;
+    }
+
+    let mut changes = HashMap::new();
+    changes.insert(uri.clone(), vec![TextEdit { range: diag.range, new_text: String::new() }]);
+    Some(CodeAction {
+        title: title.to_string(),
+        kind: Some(CodeActionKind::QUICKFIX),
+        diagnostics: Some(vec![diag.clone()]),
+        edit: Some(WorkspaceEdit { changes: Some(changes), ..WorkspaceEdit::default() }),
+        ..CodeAction::default()
+    })
+}
+
+pub(super) fn line_span(source: &str, start_off: usize, end_off: usize) -> (usize, usize) {
+    let start_off = start_off.min(source.len());
+    let end_off = end_off.min(source.len()).max(start_off);
+    let line_start = source[..start_off].rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let line_end = if let Some(rel) = source[end_off..].find('\n') { end_off + rel + 1 } else { source.len() };
+    (line_start, line_end)
+}
+
+pub(super) fn doc_comment_quickfix(
+    uri: &Uri,
+    doc: &Document,
+    diag: &Diagnostic,
+    title: &'static str,
+) -> Option<CodeAction> {
+    doc_comment_code_action(uri, doc, position_to_offset(&doc.text, diag.range.start), title, Some(vec![diag.clone()]))
+}
+
 /// Quick fixes (e.g. doc comments), manifest assists, and source actions such as format-document.
+///
+/// Diagnostic-driven quick-fixes are routed through the [`CodeActionProvider`] registry
+/// (see `registry.rs`). Each provider owns a class of diagnostics keyed by `(source, code)`:
+/// compiler-origin fixes (`source == "beskid"`) are handled by the `Compiler*Provider`s;
+/// mod-origin fixes (`source.starts_with("beskid:mod:")`) are handled by
+/// `ModQuickFixProvider`, which reads generation-bound `Document.syntax_fixes`.
 pub fn handle_code_actions(uri: &Uri, doc: &Document, params: &CodeActionParams) -> CodeActionResponse {
     let mut actions: Vec<CodeActionOrCommand> = Vec::new();
 
@@ -59,39 +114,14 @@ pub fn handle_code_actions(uri: &Uri, doc: &Document, params: &CodeActionParams)
             }));
         }
 
+        let providers = super::registry::code_action_providers();
         for diag in &params.context.diagnostics {
-            if let Some(NumberOrString::String(code)) = &diag.code {
-                if code == "W1503"
-                    && let Some(action) = remove_lines_action(uri, doc, diag)
+            let source = diag.source.as_deref().unwrap_or("beskid");
+            let Some(NumberOrString::String(code)) = &diag.code else { continue };
+            for provider in &providers {
+                if provider.handles(source, code)
+                    && let Some(action) = provider.build(uri, doc, diag)
                 {
-                    actions.push(CodeActionOrCommand::CodeAction(action));
-                }
-                if code == "W1639"
-                    && let Some(action) = remove_range_action(uri, diag, "Remove empty enum constructor parens")
-                {
-                    actions.push(CodeActionOrCommand::CodeAction(action));
-                }
-                if matches!(
-                    code.as_str(),
-                    "W1610"
-                        | "W1611"
-                        | "W1612"
-                        | "W1613"
-                        | "W1614"
-                        | "W1615"
-                        | "W1620"
-                        | "W1621"
-                        | "W1622"
-                        | "W1623"
-                        | "W1624"
-                        | "W1625"
-                ) && let Some(action) = doc_comment_code_action(
-                    uri,
-                    doc,
-                    position_to_offset(&doc.text, diag.range.start),
-                    "Update documentation comment",
-                    Some(vec![diag.clone()]),
-                ) {
                     actions.push(CodeActionOrCommand::CodeAction(action));
                 }
             }
@@ -110,46 +140,6 @@ pub fn handle_code_actions(uri: &Uri, doc: &Document, params: &CodeActionParams)
     }
 
     CodeActionResponse::from(actions)
-}
-
-fn remove_lines_action(uri: &Uri, doc: &Document, diag: &Diagnostic) -> Option<CodeAction> {
-    let start = position_to_offset(&doc.text, diag.range.start);
-    let end = position_to_offset(&doc.text, diag.range.end);
-    let (line_start, line_end) = line_span(&doc.text, start, end);
-    let range = offset_range_to_lsp(&doc.text, line_start, line_end);
-    let mut changes = HashMap::new();
-    changes.insert(uri.clone(), vec![TextEdit { range, new_text: String::new() }]);
-    Some(CodeAction {
-        title: "Remove unused import".to_string(),
-        kind: Some(CodeActionKind::QUICKFIX),
-        diagnostics: Some(vec![diag.clone()]),
-        edit: Some(WorkspaceEdit { changes: Some(changes), ..WorkspaceEdit::default() }),
-        ..CodeAction::default()
-    })
-}
-
-fn remove_range_action(uri: &Uri, diag: &Diagnostic, title: &'static str) -> Option<CodeAction> {
-    if diag.range.start == diag.range.end {
-        return None;
-    }
-
-    let mut changes = HashMap::new();
-    changes.insert(uri.clone(), vec![TextEdit { range: diag.range, new_text: String::new() }]);
-    Some(CodeAction {
-        title: title.to_string(),
-        kind: Some(CodeActionKind::QUICKFIX),
-        diagnostics: Some(vec![diag.clone()]),
-        edit: Some(WorkspaceEdit { changes: Some(changes), ..WorkspaceEdit::default() }),
-        ..CodeAction::default()
-    })
-}
-
-fn line_span(source: &str, start_off: usize, end_off: usize) -> (usize, usize) {
-    let start_off = start_off.min(source.len());
-    let end_off = end_off.min(source.len()).max(start_off);
-    let line_start = source[..start_off].rfind('\n').map(|i| i + 1).unwrap_or(0);
-    let line_end = if let Some(rel) = source[end_off..].find('\n') { end_off + rel + 1 } else { source.len() };
-    (line_start, line_end)
 }
 
 #[cfg(test)]
@@ -185,6 +175,7 @@ mod tests {
             // a rebuild from `doc.text`, proving no HIR snapshot path remains.
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
+            syntax_fixes: Vec::new(),
         };
         let _ = stale_facts;
         let params = CodeActionParams {
@@ -219,6 +210,7 @@ mod tests {
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: facts,
             syntax_diagnostics: Vec::new(),
+            syntax_fixes: Vec::new(),
         };
         let params = CodeActionParams {
             text_document: TextDocumentIdentifier { uri: uri.clone() },

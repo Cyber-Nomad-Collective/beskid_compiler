@@ -49,10 +49,12 @@ pub use generated::symbols::{
     SYM_WAIT_GROUP_DONE, SYM_WAIT_GROUP_WAIT,
 };
 pub use mod_contract::{
-    ModAnalysisRequest, ModCatalog, ModCollectRequest, ModCollectTargetSet, ModCompilation, ModContractRegistration,
-    ModContractRegistrationSlice, ModGeneratedSyntaxContribution, ModGenerationRequest, ModGeneratorEntryFn,
-    ModPackage, ModPackageSlice, ModStrSlice, ModSyntaxContributionItem, ModSyntaxContributionSlice,
-    ModSyntaxContributionTag, ModSyntaxNodeHandle, ModWorkspace, ModWorkspaceMember, ModWorkspaceMemberSlice,
+    ModAnalysisRequest, ModAnalysisResult, ModCatalog, ModCollectRequest, ModCollectTargetSet, ModCompilation,
+    ModContractRegistration, ModContractRegistrationSlice, ModDiagnostic, ModDiagnosticSlice, ModEdit, ModEditSlice,
+    ModGeneratedSyntaxContribution, ModGenerationRequest, ModGeneratorEntryFn, ModPackage, ModPackageSlice,
+    ModQuickFix, ModQuickFixSlice, ModSemanticHandle, ModStrSlice, ModSyntaxContributionItem,
+    ModSyntaxContributionSlice, ModSyntaxContributionTag, ModSyntaxNodeHandle, ModWorkspace, ModWorkspaceMember,
+    ModWorkspaceMemberSlice,
 };
 pub use types::{BeskidArray, BeskidStr};
 pub use version::BESKID_RUNTIME_ABI_VERSION;

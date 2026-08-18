@@ -53,13 +53,13 @@ fn run_analyze(args: AnalyzeArgs) -> Result<()> {
         ..Default::default()
     };
     let diagnostics = if resolved.compile_plan.is_some() {
-        let (_, diagnostics) =
+        let (_, diagnostics, _fixes) =
             beskid_queries::prepare_compilation_diagnostics(&resolved, prepare_options, Some(pipeline_ui.as_ref()))?;
         diagnostics
     } else if let Some(plan) = services::compile_plan_for_input_path(&resolved.source_path) {
         let project_resolved =
             services::resolved_input_from_plan(resolved.source_path.clone(), resolved.source.clone(), plan, None, None);
-        let (_, diagnostics) = beskid_queries::prepare_compilation_diagnostics(
+        let (_, diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics(
             &project_resolved,
             prepare_options,
             Some(pipeline_ui.as_ref()),

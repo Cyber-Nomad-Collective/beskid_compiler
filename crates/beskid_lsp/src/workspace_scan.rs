@@ -130,7 +130,7 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path,
         let Ok(text) = tokio::fs::read_to_string(&path).await else {
             continue;
         };
-        let facts = collect_syntax_diagnostics(None, &uri, &text, None);
+        let (facts, fixes) = collect_syntax_diagnostics(None, &uri, &text, None);
         let diagnostics = lsp_diagnostics_from_syntax(&text, &facts);
         let doc = Document {
             version: 0,
@@ -142,6 +142,7 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: facts,
+            syntax_fixes: fixes,
         };
         set_disk_snapshot(state, uri.clone(), doc).await;
         client.publish_diagnostics(uri, diagnostics, Some(0)).await;

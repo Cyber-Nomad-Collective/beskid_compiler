@@ -83,7 +83,7 @@ fn analyze_program_with_options_and_plan(
         ..Default::default()
     };
 
-    let (_prepared, diagnostics) = prepare_compilation_diagnostics(&resolved, prepare_options, None)?;
+    let (_prepared, diagnostics, _fixes) = prepare_compilation_diagnostics(&resolved, prepare_options, None)?;
 
     Ok(diagnostics)
 }
@@ -125,7 +125,7 @@ pub fn analyze_source_with_compilation_context(
         ..Default::default()
     };
 
-    let (_prepared, mut diagnostics) = prepare_compilation_diagnostics(&resolved, prepare_options, None)?;
+    let (_prepared, mut diagnostics, _fixes) = prepare_compilation_diagnostics(&resolved, prepare_options, None)?;
 
     if is_non_entry_project_file(path, Some(&plan)) {
         diagnostics.retain(|diagnostic| diagnostic.code.as_deref() == Some("parse"));

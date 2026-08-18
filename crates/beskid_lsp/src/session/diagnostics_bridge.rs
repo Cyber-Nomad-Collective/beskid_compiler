@@ -10,15 +10,17 @@ use crate::diagnostics::{collect_syntax_diagnostics, lsp_diagnostics_from_syntax
 use crate::session::db_access::with_compilation_db_mut_state;
 use crate::session::startup::wait_for_initial_scan;
 use crate::session::store::{State, SyntaxDiagnostic};
-use beskid_analysis::CompilationContext;
+use beskid_analysis::{CompilationContext, SyntaxFix};
 
-/// Collect generation-bound diagnostic facts using the shared Salsa database.
+/// Collect generation-bound diagnostic facts and mod-origin quick-fixes using the shared
+/// Salsa database. Returns `(diagnostics, fixes)` so the lifecycle can store both on the
+/// `Document` at the same generation.
 pub async fn collect_syntax_diagnostics_for_state(
     state: &RwLock<State>,
     uri: &Uri,
     source: &str,
     compilation_context: Option<&CompilationContext>,
-) -> Vec<SyntaxDiagnostic> {
+) -> (Vec<SyntaxDiagnostic>, Vec<SyntaxFix>) {
     wait_for_initial_scan(state).await;
 
     with_compilation_db_mut_state(state, |db, write| {
@@ -40,6 +42,6 @@ pub async fn analyze_document_for_state(
     source: &str,
     compilation_context: Option<&CompilationContext>,
 ) -> Vec<tower_lsp_server::ls_types::Diagnostic> {
-    let facts = collect_syntax_diagnostics_for_state(state, uri, source, compilation_context).await;
+    let (facts, _fixes) = collect_syntax_diagnostics_for_state(state, uri, source, compilation_context).await;
     lsp_diagnostics_from_syntax(source, &facts)
 }

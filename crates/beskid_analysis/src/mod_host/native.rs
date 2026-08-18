@@ -388,6 +388,27 @@ mod tests {
         assert!(unmarshal_edits(&ModEditSlice { items: std::ptr::null(), len: 0 }).is_empty());
     }
 
+    #[test]
+    fn unmarshal_fixes_drops_out_of_range_diagnostic_index() {
+        // One fix linking to diagnostic 0 (in range) and one linking to diagnostic 5 (out of range).
+        let empty_str = BeskidStr { ptr: c"".as_ptr() as *const u8, len: 0 };
+        let edits = ModEditSlice { items: std::ptr::null(), len: 0 };
+        let fixes = [
+            ModQuickFix { diagnostic_index: 0, title: empty_str, edits },
+            ModQuickFix { diagnostic_index: 5, title: empty_str, edits },
+        ];
+        let slice = ModQuickFixSlice { items: fixes.as_ptr(), len: fixes.len() };
+        // diagnostics_len = 1 → only the first fix (index 0) survives.
+        let out = unmarshal_fixes(&slice, 1);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].diagnostic_index, 0);
+    }
+
+    #[test]
+    fn unmarshal_fixes_handles_null_and_empty() {
+        assert!(unmarshal_fixes(&ModQuickFixSlice { items: std::ptr::null(), len: 0 }, 0).is_empty());
+    }
+
     /// Minimal helper to build an empty `ModCollectRequest` for native invoker tests
     /// without depending on `ModInvocationContext::build` (which needs a `ModHostInput`).
     struct ModInvocationContext;

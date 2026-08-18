@@ -27,7 +27,7 @@ mod intrinsics;
 mod operators;
 mod strings;
 
-use operators::{CompareOp, primitive_numeric_conversion_type_matches};
+use operators::CompareOp;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct StatementCursor {

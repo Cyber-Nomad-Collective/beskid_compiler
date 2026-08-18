@@ -272,7 +272,7 @@ target "app" {
     let resolved = services::resolve_input(Some(&entry), Some(&manifest_path), None, None, false, false)
         .expect("resolve instantiated project");
 
-    let (_, diagnostics) = beskid_queries::prepare_compilation_diagnostics(
+    let (_, diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics(
         &resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },

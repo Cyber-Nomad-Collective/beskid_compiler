@@ -34,6 +34,11 @@ pub mod paths;
 pub mod projects;
 pub mod syntax_query;
 
+/// Mod-origin quick-fix shapes returned by the prepare spine and consumed by LSP
+/// code actions. Re-exported here so `beskid_lsp` can name them as
+/// `beskid_analysis::SyntaxFix` (single implementation — no LSP-side duplicate).
+pub use mod_host::{SyntaxFix, SyntaxTextEdit, SyntaxTextEditKind};
+
 pub mod resolve;
 pub mod services;
 pub mod syntax;

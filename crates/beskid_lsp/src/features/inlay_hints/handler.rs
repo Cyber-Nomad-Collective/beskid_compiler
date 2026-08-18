@@ -50,7 +50,7 @@ mod tests {
             syntax_inlay_hints: vec![SyntaxInlayHint { start: 25, end: 30, type_label: "i32".to_string() }],
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-        };
+            syntax_fixes: Vec::new(),        };
         let uri = Uri::from_str("file:///tmp/inlay.bd").expect("URI");
         let params: InlayHintParams = serde_json::from_value(serde_json::json!({
             "textDocument": { "uri": uri },

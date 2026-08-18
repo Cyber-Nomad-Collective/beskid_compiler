@@ -13,9 +13,9 @@ use tracing::Span;
 use crate::AnalysisOptions;
 use crate::analysis::SemanticDiagnostic;
 use crate::analysis::rules::{RuleContext, resolve, types};
-use crate::mod_host::diagnostics::analyzer_diagnostic_to_semantic;
+use crate::mod_host::diagnostics::{analyzer_diagnostic_to_semantic, analyzer_fix_to_syntax_fix};
 use crate::mod_host::{
-    ModHostInput, native_invoker_for_plan, run_analyze_rewrite_after_composition, run_through_generate,
+    ModHostInput, SyntaxFix, native_invoker_for_plan, run_analyze_rewrite_after_composition, run_through_generate,
 };
 use crate::projects::{
     CompilePlan, PreparedProjectWorkspace, ProgramAssembly, SourceUnit, assemble_program, assembly_options_for_prepare,
@@ -130,18 +130,21 @@ pub fn prepare_compilation(
 }
 
 /// Like [`prepare_compilation`], collecting diagnostics from semantic, composition, and lower
-/// instead of failing on errors.
+/// instead of failing on errors. Also collects mod-origin quick-fixes from `Analyzer`
+/// outcomes so LSP code actions can surface `QUICKFIX` actions keyed by
+/// `(source = "beskid:mod:<type_id>", code)`.
 pub fn prepare_compilation_diagnostics(
     resolved: &ResolvedInput,
     options: PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
-) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>)> {
+) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<SyntaxFix>)> {
     let plan = resolved
         .compile_plan
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)"))?;
 
     let mut diagnostics = Vec::new();
+    let mut fixes = Vec::new();
     let spine = run_prepare_spine(
         &resolved.source_path,
         &resolved.source,
@@ -153,12 +156,14 @@ pub fn prepare_compilation_diagnostics(
         true,
     )?;
     diagnostics.extend(spine.collected_diagnostics);
-    Ok((spine.prepared, diagnostics))
+    fixes.extend(spine.collected_fixes);
+    Ok((spine.prepared, diagnostics, fixes))
 }
 
 struct PrepareSpineOutput {
     prepared: PreparedCompilation,
     collected_diagnostics: Vec<SemanticDiagnostic>,
+    collected_fixes: Vec<SyntaxFix>,
 }
 
 fn session_fingerprint_field(fingerprint: &SessionFingerprint) -> String {
@@ -200,6 +205,7 @@ fn run_prepare_spine(
                 typed: Some(cached),
             },
             collected_diagnostics: Vec::new(),
+            collected_fixes: Vec::new(),
         });
     }
 
@@ -298,6 +304,10 @@ fn run_prepare_spine(
     // LSP; on the typed/codegen path `Warning`/`Note` are dropped, matching the
     // existing compiler-diagnostic contract.
     let analyzer_diagnostics = collect_analyzer_diagnostics(&mod_rewrite.analyzer_outcomes, entry_unit, entry_source);
+    // Mod quick-fixes are an IDE concern — collect them only on the diagnostics path
+    // (the typed/codegen build path does not need fixes).
+    let analyzer_fixes =
+        if collect_diagnostics { collect_analyzer_fixes(&mod_rewrite.analyzer_outcomes) } else { Vec::new() };
     if collect_diagnostics {
         collected_diagnostics.extend(analyzer_diagnostics);
     } else {
@@ -369,6 +379,7 @@ fn run_prepare_spine(
     Ok(PrepareSpineOutput {
         prepared: PreparedCompilation { assembly, program, binding_plan, composition_snapshot, typed },
         collected_diagnostics,
+        collected_fixes: analyzer_fixes,
     })
 }
 
@@ -409,6 +420,24 @@ fn collect_analyzer_diagnostics(
                 entry_unit.logical_name.as_str(),
                 entry_source,
             ));
+        }
+    }
+    out
+}
+
+/// Map mod `Analyzer` quick-fixes into the LSP-facing [`SyntaxFix`] stream.
+///
+/// Each `AnalyzerFix` is bridged via [`analyzer_fix_to_syntax_fix`], which resolves the
+/// linked diagnostic via `diagnostic_index` and tags the fix with
+/// `source = "beskid:mod:<type_id>"`. Out-of-range fixes are dropped (fail-closed).
+fn collect_analyzer_fixes(analyzer_outcomes: &[crate::mod_host::AnalyzerOutcome]) -> Vec<SyntaxFix> {
+    let mut out = Vec::new();
+    for outcome in analyzer_outcomes {
+        let source = format!("beskid:mod:{}", outcome.type_id);
+        for fix in &outcome.fixes {
+            if let Some(syntax_fix) = analyzer_fix_to_syntax_fix(fix, outcome, &source) {
+                out.push(syntax_fix);
+            }
         }
     }
     out
@@ -529,7 +558,7 @@ mod tests {
 
         let plan = synthetic_compile_plan_for_source(&entry_path);
         let resolved = resolved_input_from_plan(entry_path.clone(), source.to_string(), plan, None, None);
-        let (prepared, diags) = prepare_compilation_diagnostics(
+        let (prepared, diags, _fixes) = prepare_compilation_diagnostics(
             &resolved,
             PrepareOptions {
                 front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },

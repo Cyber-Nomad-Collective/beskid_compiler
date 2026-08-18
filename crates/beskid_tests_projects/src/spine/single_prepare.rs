@@ -84,7 +84,7 @@ i32 Main() {
 
 /// Mirrors Wave 1 `beskid run`: one executable prepare, then syntax lowering from cached front-end.
 fn run_single_prepare_path(resolved: &ResolvedInput, observer: &PhaseStartRecorder) {
-    let (prepared, _gate_diagnostics) = prepare_compilation_diagnostics(
+    let (prepared, _gate_diagnostics, _fixes) = prepare_compilation_diagnostics(
         resolved,
         PrepareOptions {
             front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },

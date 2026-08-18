@@ -14,6 +14,11 @@ use tower_lsp_server::ls_types::Uri;
 use super::db_access;
 use super::documentation_facts::SyntaxDocumentationFact;
 
+// Re-export the single host-side `SyntaxFix` implementation so LSP code can name it as
+// `crate::session::store::SyntaxFix` (DRY — no duplicate LSP-side type). Defined in
+// `beskid_analysis::mod_host::diagnostics` and returned by the prepare spine.
+pub use beskid_analysis::{SyntaxFix, SyntaxTextEdit, SyntaxTextEditKind};
+
 /// One editor buffer or disk snapshot with generation-bound syntax facts.
 #[derive(Debug, Clone)]
 pub struct Document {
@@ -35,6 +40,10 @@ pub struct Document {
     pub syntax_documentation: Vec<SyntaxDocumentationFact>,
     /// Generation-bound diagnostics for this exact buffer revision (publish/refresh authority).
     pub syntax_diagnostics: Vec<SyntaxDiagnostic>,
+    /// Generation-bound mod-origin quick-fixes for this exact buffer revision. Each fix
+    /// links to a `syntax_diagnostics` entry via `(source, code)` and is surfaced by the
+    /// `ModQuickFixProvider` code-action registry.
+    pub syntax_fixes: Vec<SyntaxFix>,
 }
 
 impl Document {
@@ -47,6 +56,7 @@ impl Document {
         self.syntax_inlay_hints.clear();
         self.syntax_documentation.clear();
         self.syntax_diagnostics.clear();
+        self.syntax_fixes.clear();
     }
 }
 
@@ -58,6 +68,10 @@ pub struct SyntaxDiagnostic {
     pub severity: SyntaxDiagnosticSeverity,
     pub code: Option<String>,
     pub message: String,
+    /// Origin tag for code-action routing. `"beskid"` for compiler diagnostics;
+    /// `"beskid:mod:<type_id>"` for mod-origin diagnostics produced by a native
+    /// `Analyzer` contract. Mirrors `SemanticDiagnostic.origin`.
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

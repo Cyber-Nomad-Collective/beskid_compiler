@@ -33,7 +33,10 @@ pub use api::{
 };
 pub use collect::{capture_target_fingerprint, targets_changed};
 pub use context::ModInvocationContext;
-pub use diagnostics::{ModHostDiagnostics, ModHostIssue, analyzer_diagnostic_to_semantic};
+pub use diagnostics::{
+    ModHostDiagnostics, ModHostIssue, SyntaxFix, SyntaxTextEdit, SyntaxTextEditKind, analyzer_diagnostic_to_semantic,
+    analyzer_fix_to_syntax_fix,
+};
 pub use emit_bridge::{
     materialize_contract_definition, materialize_function_definition, materialize_program_item,
     materialize_program_items, materialize_type_definition,
@@ -44,8 +47,9 @@ pub use generate_output::{
 };
 pub use glue::{GlueAnnotation, GlueAttributeKind, collect_glue_annotations, is_glue_attribute};
 pub use invoker::{
-    AnalyzerDiagnostic, AnalyzerOutcome, AnalyzerSeverity, CollectorOutcome, ContractInvocationError, ContractInvoker,
-    GeneratorOutcome, InvocationKind, RewriteEdit, RewriterOutcome, ScriptedContractInvoker, StubContractInvoker,
+    AnalyzerDiagnostic, AnalyzerFix, AnalyzerOutcome, AnalyzerSeverity, CollectorOutcome, ContractInvocationError,
+    ContractInvoker, GeneratorOutcome, InvocationKind, RewriteEdit, RewriterOutcome, ScriptedContractInvoker,
+    StubContractInvoker,
 };
 pub use native::NativeContractInvoker;
 pub use query_bridge::{

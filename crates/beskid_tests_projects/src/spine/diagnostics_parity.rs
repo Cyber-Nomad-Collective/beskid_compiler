@@ -49,7 +49,7 @@ i32 Main() {
         let resolved = resolved_input_from_plan(entry.clone(), source.to_string(), plan, None, None);
 
         let gate = analyze_source_in_project(&entry, source).expect("analyze");
-        let (_, prepare) = prepare_compilation_diagnostics(
+        let (_, prepare, _fixes) = prepare_compilation_diagnostics(
             &resolved,
             PrepareOptions {
                 front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },

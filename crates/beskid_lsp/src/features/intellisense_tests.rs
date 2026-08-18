@@ -123,7 +123,7 @@ mod tests {
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-        };
+            syntax_fixes: Vec::new(),        };
         let offset = main_source.find("Output.Write").expect("member prefix") + "Output.Write".len();
         let response = completion::handler::handle_completion(
             &db,
@@ -184,7 +184,7 @@ mod tests {
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-        };
+            syntax_fixes: Vec::new(),        };
         let response = definition::handler::handle_definition(&uri, &doc, 22).expect("syntax fact definition");
         let GotoDefinitionResponse::Scalar(location) = response else {
             panic!("expected scalar definition");
@@ -212,7 +212,7 @@ mod tests {
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-        };
+            syntax_fixes: Vec::new(),        };
 
         let response = definition::handler::handle_definition(&uri, &doc, 6).expect("syntax symbol definition");
         let GotoDefinitionResponse::Scalar(location) = response else {
@@ -244,7 +244,7 @@ mod tests {
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-        };
+            syntax_fixes: Vec::new(),        };
         let locations = references::handler::handle_references(&uri, &doc, 24, true, None);
         assert_eq!(locations.len(), 2);
     }
@@ -270,7 +270,7 @@ mod tests {
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-        };
+            syntax_fixes: Vec::new(),        };
         let documentation = crate::commands::symbol_documentation::documentation_uri_for_document(&doc, 22)
             .expect("syntax documentation URL");
         assert!(documentation.contains("helper"));

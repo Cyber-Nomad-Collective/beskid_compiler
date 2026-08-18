@@ -76,7 +76,7 @@ pub fn run_semantic_analysis_gate(
     observe_phase_result(pipeline, SEMANTIC, || {
         let diagnostics = if let Some(plan) = services::compile_plan_for_input_path(path) {
             let resolved = services::resolved_input_from_plan(path.to_path_buf(), source.to_string(), plan, None, None);
-            let (_, diagnostics) = beskid_queries::prepare_compilation_diagnostics(
+            let (_, diagnostics, _fixes) = beskid_queries::prepare_compilation_diagnostics(
                 &resolved,
                 services::PrepareOptions {
                     front_end: services::FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },

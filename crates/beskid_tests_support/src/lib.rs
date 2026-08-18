@@ -4,3 +4,5 @@
 //! dependencies (std only) so it adds nothing to the dep graph of its consumers.
 
 pub mod test_harness;
+
+pub use test_harness::*;

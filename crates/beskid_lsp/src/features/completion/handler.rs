@@ -152,7 +152,7 @@ mod tests {
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-        };
+            syntax_fixes: Vec::new(),        };
         let offset = source.find("Zeb;").expect("completion prefix") + 3;
         let response =
             handle_completion(&db, &Uri::from_str("file:///tmp/completion/Main.bd").expect("uri"), &doc, offset);
@@ -226,7 +226,7 @@ mod tests {
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-        };
+            syntax_fixes: Vec::new(),        };
         let offset = main_source.find("Hel;").expect("completion prefix") + 3;
         let response = handle_completion(
             &db,
