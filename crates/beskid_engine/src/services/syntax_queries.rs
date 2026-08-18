@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use beskid_analysis::syntax::{AstNodeId, SyntaxGenerationId};
+use beskid_analysis::syntax::AstNodeId;
+#[cfg(test)]
+use beskid_analysis::syntax::SyntaxGenerationId;
 use beskid_queries::{
     AstNodeKey, BeskidDatabase, SemanticTypeId, build_typed_program, child_nodes, item_name, item_signature,
-    project_session_for_syntax_assembly, test_item, with_db,
+    project_session_for_syntax_assembly, test_item,
 };
 
 /// Syntax-backed test metadata consumed by `beskid test`.
@@ -27,7 +29,8 @@ pub fn syntax_test_items_from_front_end(
     front: &beskid_analysis::services::FrontEndTypedResult,
 ) -> Result<Vec<SyntaxTestItem>> {
     let assembly = Arc::new(front.syntax_assembly());
-    with_db(|db| syntax_test_items_from_assembly(db, assembly))
+    let mut db = BeskidDatabase::default();
+    syntax_test_items_from_assembly(&mut db, assembly)
 }
 
 /// Return the syntax-derived result type of one prepared no-argument entrypoint.
@@ -39,25 +42,23 @@ pub fn syntax_entrypoint_return_type_from_front_end(
     entrypoint: &str,
 ) -> Result<SemanticTypeId> {
     let assembly = Arc::new(front.syntax_assembly());
-    with_db(|db| {
-        let entry_path = assembly.entry_unit().path.clone();
-        let project = project_session_for_syntax_assembly(db, &assembly, "syntax-repl", "prepared-frontend")
-            .map_err(|error| anyhow::anyhow!("syntax REPL session preparation failed: {error}"))?;
-        let generation = SyntaxGenerationId(1);
-        build_typed_program(db, project, generation, Arc::clone(&assembly))
-            .map_err(|error| anyhow::anyhow!("syntax REPL preparation failed: {error}"))?;
-        let root =
-            AstNodeKey { unit: beskid_queries::SourceUnitId::new(db, entry_path), generation, node: AstNodeId(0) };
-        let entry = find_syntax_item(db, root, entrypoint)
-            .ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
-        let signature = item_signature(db, entry)
-            .map_err(|error| anyhow::anyhow!("entrypoint signature query failed: {error}"))?
-            .ok_or_else(|| anyhow::anyhow!("Missing signature for `{entrypoint}`"))?;
-        if !signature.parameters.is_empty() {
-            anyhow::bail!("Entrypoint `{entrypoint}` must take no parameters");
-        }
-        Ok(signature.result)
-    })
+    let mut db = BeskidDatabase::default();
+    let entry_path = assembly.entry_unit().path.clone();
+    let project = project_session_for_syntax_assembly(&db, &assembly, "syntax-repl", "prepared-frontend")
+        .map_err(|error| anyhow::anyhow!("syntax REPL session preparation failed: {error}"))?;
+    let generation = assembly.generation;
+    build_typed_program(&mut db, project, generation, Arc::clone(&assembly))
+        .map_err(|error| anyhow::anyhow!("syntax REPL preparation failed: {error}"))?;
+    let root = AstNodeKey { unit: beskid_queries::SourceUnitId::new(&db, entry_path), generation, node: AstNodeId(0) };
+    let entry =
+        find_syntax_item(&db, root, entrypoint).ok_or_else(|| anyhow::anyhow!("Missing entrypoint `{entrypoint}`"))?;
+    let signature = item_signature(&db, entry)
+        .map_err(|error| anyhow::anyhow!("entrypoint signature query failed: {error}"))?
+        .ok_or_else(|| anyhow::anyhow!("Missing signature for `{entrypoint}`"))?;
+    if !signature.parameters.is_empty() {
+        anyhow::bail!("Entrypoint `{entrypoint}` must take no parameters");
+    }
+    Ok(signature.result)
 }
 
 fn syntax_test_items_from_assembly(
@@ -67,7 +68,7 @@ fn syntax_test_items_from_assembly(
     let entry_path = assembly.entry_unit().path.clone();
     let project = project_session_for_syntax_assembly(db, &assembly, "syntax-tests", "prepared-frontend")
         .map_err(|error| anyhow::anyhow!("syntax test session preparation failed: {error}"))?;
-    let generation = SyntaxGenerationId(1);
+    let generation = assembly.generation;
     build_typed_program(db, project, generation, assembly)
         .map_err(|error| anyhow::anyhow!("syntax test preparation failed: {error}"))?;
     let root = AstNodeKey { unit: beskid_queries::SourceUnitId::new(db, entry_path), generation, node: AstNodeId(0) };
