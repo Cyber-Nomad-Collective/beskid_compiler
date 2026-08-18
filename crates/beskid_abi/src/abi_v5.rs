@@ -151,6 +151,8 @@ pub struct AbiLayout {
 pub struct RuntimeTargetBinding {
     pub target: String,
     pub implementation: String,
+    #[serde(default, rename = "osImports", skip_serializing_if = "Vec::is_empty")]
+    pub os_imports: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

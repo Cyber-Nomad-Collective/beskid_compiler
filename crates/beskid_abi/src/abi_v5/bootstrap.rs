@@ -78,6 +78,24 @@ impl RuntimeAuditMetadata {
         if manifest.target.object_format.as_str() == "macho" {
             allowed_imports.push("tlv_bootstrap".into());
         }
+        // Per-target OS imports declared by runtime intrinsic bindings (e.g. `unlink`, `mmap`,
+        // `open`) are linked into the runtime object but are not platform imports of the manifest.
+        // Only the bindings for the current target apply; a Linux runtime must not be allowed to
+        // import Windows or Darwin OS symbols.
+        let target_triple = manifest.target.triple.as_str();
+        allowed_imports.extend(
+            manifest
+                .trusted_runtime_intrinsics
+                .iter()
+                .flat_map(|intrinsic| intrinsic.target_bindings.iter())
+                .filter(|binding| binding.target == target_triple)
+                .flat_map(|binding| binding.os_imports.iter().cloned()),
+        );
+        // Linux libc transitive dependency: `__errno_location` is linked implicitly by the C
+        // compiler when calling syscall wrappers that set errno (`unlink`, `open`, `stat`, ...).
+        if manifest.target.object_format.as_str() == "elf" {
+            allowed_imports.push("__errno_location".into());
+        }
         allowed_imports.sort();
         allowed_imports.dedup();
         let mut loader_required_exports = manifest
@@ -406,7 +424,7 @@ struct SourceTargetBinding {
     #[serde(rename = "implementation")]
     implementation: String,
     #[serde(rename = "osImports")]
-    _os_imports: Vec<String>,
+    os_imports: Vec<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -517,6 +535,7 @@ fn source_intrinsic(entry: &SourceIntrinsic) -> RuntimeIntrinsic {
             .map(|binding| RuntimeTargetBinding {
                 target: binding.target.clone(),
                 implementation: binding.implementation.clone(),
+                os_imports: binding.os_imports.clone(),
             })
             .collect(),
     }
