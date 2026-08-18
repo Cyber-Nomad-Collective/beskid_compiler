@@ -1,5 +1,4 @@
 use std::fs;
-use std::path::PathBuf;
 
 use beskid_pckg::PckgClient;
 use beskid_pckg::config::PckgClientConfig;
