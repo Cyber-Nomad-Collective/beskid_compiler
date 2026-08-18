@@ -4,8 +4,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BPROJ="${ROOT}/corelib/beskid_corelib/tests/corelib_tests/corelib_tests.bproj"
-CATALOG="${ROOT}/crates/beskid_tests/src/spine/corelib_spine_catalog.rs"
-TYPECHECK="${ROOT}/crates/beskid_tests/src/spine/corelib_tests_typecheck.rs"
+CATALOG="${ROOT}/crates/beskid_tests_projects/src/spine/corelib_spine_catalog.rs"
+TYPECHECK="${ROOT}/crates/beskid_tests_projects/src/spine/corelib_tests_typecheck.rs"
 
 if [[ ! -f "${BPROJ}" ]]; then
   echo "missing ${BPROJ}" >&2
