@@ -180,7 +180,7 @@ pub fn lower_syntax_assembly_entrypoint(
     isa: &dyn TargetIsa,
 ) -> Result<PreparedSyntaxEntrypoint> {
     let entry_path = assembly.entry_unit().path.clone();
-    let generation = SyntaxGenerationId(1);
+    let generation = assembly.generation;
     let project = project_session_for_syntax_assembly(db, &assembly, "syntax-codegen", "prepared-frontend")
         .map_err(|error| anyhow::anyhow!("syntax program session preparation failed: {error}"))?;
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
@@ -248,7 +248,7 @@ pub fn lower_prepared_syntax_module(
     isa: &dyn TargetIsa,
 ) -> Result<CodegenArtifact> {
     let assembly = Arc::new(front.syntax_assembly());
-    let generation = SyntaxGenerationId(1);
+    let generation = assembly.generation;
     let project = project_session_for_syntax_assembly(db, &assembly, "syntax-codegen", "prepared-frontend")
         .map_err(|error| anyhow::anyhow!("syntax program session preparation failed: {error}"))?;
     let manifest = AbiManifestV5::canonical_runtime(target.clone());

@@ -43,8 +43,8 @@ pub fn syntax_entrypoint_return_type_from_front_end(
         let entry_path = assembly.entry_unit().path.clone();
         let project = project_session_for_syntax_assembly(db, &assembly, "syntax-repl", "prepared-frontend")
             .map_err(|error| anyhow::anyhow!("syntax REPL session preparation failed: {error}"))?;
-        let generation = SyntaxGenerationId(1);
-        build_typed_program(db, project, generation, assembly)
+        let generation = assembly.generation;
+        build_typed_program(db, project, generation, Arc::clone(&assembly))
             .map_err(|error| anyhow::anyhow!("syntax REPL preparation failed: {error}"))?;
         let root =
             AstNodeKey { unit: beskid_queries::SourceUnitId::new(db, entry_path), generation, node: AstNodeId(0) };
@@ -67,7 +67,7 @@ fn syntax_test_items_from_assembly(
     let entry_path = assembly.entry_unit().path.clone();
     let project = project_session_for_syntax_assembly(db, &assembly, "syntax-tests", "prepared-frontend")
         .map_err(|error| anyhow::anyhow!("syntax test session preparation failed: {error}"))?;
-    let generation = SyntaxGenerationId(1);
+    let generation = assembly.generation;
     build_typed_program(db, project, generation, assembly)
         .map_err(|error| anyhow::anyhow!("syntax test preparation failed: {error}"))?;
     let root = AstNodeKey { unit: beskid_queries::SourceUnitId::new(db, entry_path), generation, node: AstNodeId(0) };
