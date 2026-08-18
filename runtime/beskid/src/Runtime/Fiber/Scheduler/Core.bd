@@ -441,7 +441,7 @@ pub unit RestoreFiberLocalState(word index) {
     return;
 }
 
-pub bool MarkRootFrameChain(pointer frame) {
+pub bool MarkRootFrameChain(mut pointer frame) {
     while frame != NativePointer(0) {
         pointer slots = NativePointer(raw_word_load(pointer_add(frame, 8)));
         word count = raw_word_load(pointer_add(frame, 16));

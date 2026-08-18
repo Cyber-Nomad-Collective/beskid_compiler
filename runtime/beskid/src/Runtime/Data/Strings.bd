@@ -176,7 +176,7 @@ pub pointer StrFromI64(i64 value) {
 
 // Extracts a substring by byte range.
 [Export(Abi:"C", Symbol:"str_slice")]
-pub pointer StrSlice(pointer value, word start, word count) {
+pub pointer StrSlice(pointer value, word start, mut word count) {
     if value == NativePointer(0) {
         return NativePointer(0);
     }
