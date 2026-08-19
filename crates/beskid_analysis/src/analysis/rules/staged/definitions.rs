@@ -188,7 +188,7 @@ impl SemanticPipelineRule {
     }
 
     fn check_unknown_types_in_definitions(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
-        let known_types = self.collect_known_type_names(program);
+        let known_types = self.collect_known_type_names(ctx, program);
 
         for definition in Query::from(&program.node).of::<crate::syntax::TypeDefinition>() {
             let generic_names = self.collect_generic_names(&definition.generics);
@@ -363,7 +363,7 @@ impl SemanticPipelineRule {
         }
     }
 
-    fn collect_known_type_names(&self, program: &Spanned<Program>) -> HashSet<String> {
+    fn collect_known_type_names(&self, ctx: &RuleContext, program: &Spanned<Program>) -> HashSet<String> {
         let mut known = HashSet::new();
 
         for primitive in ["bool", "i32", "i64", "u8", "f64", "char", "string", "unit"] {
@@ -379,6 +379,18 @@ impl SemanticPipelineRule {
         self.extend_known_type_names::<crate::syntax::ContractDefinition>(program, &mut known, |definition| {
             definition.name.node.name.clone()
         });
+
+        for unit_program in self.assembly_programs_excluding_entry(ctx) {
+            self.extend_known_type_names::<crate::syntax::TypeDefinition>(unit_program, &mut known, |definition| {
+                definition.name.node.name.clone()
+            });
+            self.extend_known_type_names::<crate::syntax::EnumDefinition>(unit_program, &mut known, |definition| {
+                definition.name.node.name.clone()
+            });
+            self.extend_known_type_names::<crate::syntax::ContractDefinition>(unit_program, &mut known, |definition| {
+                definition.name.node.name.clone()
+            });
+        }
 
         known
     }

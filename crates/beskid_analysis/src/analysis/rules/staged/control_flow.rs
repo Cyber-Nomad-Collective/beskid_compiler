@@ -8,8 +8,8 @@ use std::collections::{HashMap, HashSet};
 
 impl SemanticPipelineRule {
     pub(super) fn stage3_control_flow_and_patterns(&self, ctx: &mut RuleContext, program: &Spanned<Program>) {
-        let enum_variants = self.collect_enum_variants(program);
-        let variant_to_enum = self.collect_variant_to_enum(program);
+        let enum_variants = self.collect_enum_variants(ctx, program);
+        let variant_to_enum = self.collect_variant_to_enum(ctx, program);
 
         let mut walker = AstWalker::new().with_visitor(Box::new(ControlFlowVisitor::new(
             self,
@@ -31,7 +31,7 @@ impl SemanticPipelineRule {
         }
     }
 
-    fn collect_variant_to_enum(&self, program: &Spanned<Program>) -> HashMap<String, String> {
+    fn collect_variant_to_enum(&self, ctx: &RuleContext, program: &Spanned<Program>) -> HashMap<String, String> {
         let mut result = HashMap::new();
         for item in &program.node.items {
             let Node::EnumDefinition(definition) = &item.node else {
@@ -42,10 +42,25 @@ impl SemanticPipelineRule {
                 result.insert(variant.name.node.name.clone(), enum_name.clone());
             }
         }
+        for unit_program in self.assembly_programs_excluding_entry(ctx) {
+            for item in &unit_program.node.items {
+                let Node::EnumDefinition(definition) = &item.node else {
+                    continue;
+                };
+                let enum_name = definition.node.name.node.name.clone();
+                for variant in Query::from(&definition.node).of::<crate::syntax::EnumVariant>() {
+                    result.entry(variant.name.node.name.clone()).or_insert(enum_name.clone());
+                }
+            }
+        }
         result
     }
 
-    fn collect_enum_variants(&self, program: &Spanned<Program>) -> HashMap<String, HashMap<String, usize>> {
+    fn collect_enum_variants(
+        &self,
+        ctx: &RuleContext,
+        program: &Spanned<Program>,
+    ) -> HashMap<String, HashMap<String, usize>> {
         let mut result = HashMap::new();
 
         for item in &program.node.items {
@@ -60,7 +75,39 @@ impl SemanticPipelineRule {
             result.insert(definition.node.name.node.name.clone(), variants);
         }
 
+        for unit_program in self.assembly_programs_excluding_entry(ctx) {
+            for item in &unit_program.node.items {
+                let Node::EnumDefinition(definition) = &item.node else {
+                    continue;
+                };
+                let enum_name = definition.node.name.node.name.clone();
+                if result.contains_key(&enum_name) {
+                    continue;
+                }
+                let mut variants = HashMap::new();
+                for variant in Query::from(&definition.node).of::<crate::syntax::EnumVariant>() {
+                    variants.insert(variant.name.node.name.clone(), variant.fields.len());
+                }
+                result.insert(enum_name, variants);
+            }
+        }
+
         result
+    }
+
+    /// Programs from the assembled dependency closure, excluding the entry unit (which is
+    /// processed separately so local definitions take precedence over imported ones).
+    pub(super) fn assembly_programs_excluding_entry<'a>(&self, ctx: &'a RuleContext) -> Vec<&'a Spanned<Program>> {
+        let Some(assembly) = ctx.options.program_assembly.as_ref() else {
+            return Vec::new();
+        };
+        assembly
+            .units
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != assembly.entry_index)
+            .map(|(_, unit)| &unit.program)
+            .collect()
     }
 
     fn check_match_semantics(
