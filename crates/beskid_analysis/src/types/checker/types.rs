@@ -45,14 +45,12 @@ fn path_display_name(path: &Spanned<Path>) -> String {
 
 impl<'a> TypeChecker<'a> {
     /// Resolve a type AST node while generic parameters from the enclosing item are in scope.
+    ///
+    /// Generic-parameter shadowing of same-named types is now handled centrally in
+    /// [`Self::type_id_for_type_path`], so this is a direct delegate. The wrapper remains
+    /// as the explicit call-site marker for "generic scope is active" at foreign-signature
+    /// and body-typing entry points.
     pub(super) fn type_id_for_type_in_generic_scope(&mut self, ty: &Spanned<Type>) -> Option<TypeId> {
-        if let Type::Complex(path) = &ty.node
-            && path.node.segments.len() == 1
-            && path.node.segments[0].node.type_args.is_empty()
-            && let Some(type_id) = self.generic_params.get(&path.node.segments[0].node.name.node.name)
-        {
-            return Some(*type_id);
-        }
         self.type_id_for_type(ty)
     }
 
@@ -217,6 +215,17 @@ impl<'a> TypeChecker<'a> {
     }
 
     pub(super) fn type_id_for_type_path(&mut self, path: &Spanned<Path>) -> Option<TypeId> {
+        // A generic parameter in the enclosing item's scope shadows any same-named type at
+        // every resolution site, including type-argument positions of applied types. The
+        // merged span index is source-less, so for dependency units a same-offset type fact
+        // from another unit can preempt the generic parameter via `resolved_type_at`. Check
+        // the in-scope generic parameters first so the shadow is authoritative.
+        if path.node.segments.len() == 1
+            && path.node.segments[0].node.type_args.is_empty()
+            && let Some(type_id) = self.generic_params.get(&path.node.segments[0].node.name.node.name)
+        {
+            return Some(*type_id);
+        }
         match self.resolved_type_at(path.span) {
             Some(ResolvedType::Item(item)) => {
                 if let Some(expected) = self.generic_items.get(&item)
@@ -229,12 +238,6 @@ impl<'a> TypeChecker<'a> {
             }
             Some(ResolvedType::Generic(name)) => self.generic_params.get(&name).copied(),
             None => {
-                if path.node.segments.len() == 1
-                    && path.node.segments[0].node.type_args.is_empty()
-                    && let Some(type_id) = self.generic_params.get(&path.node.segments[0].node.name.node.name)
-                {
-                    return Some(*type_id);
-                }
                 if let Some(item_id) = self.item_id_for_type_path(path) {
                     if let Some(expected) = self.generic_items.get(&item_id)
                         && !expected.is_empty()

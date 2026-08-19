@@ -27,7 +27,15 @@ impl<'a> TypeChecker<'a> {
                         (Some(expected), Expression::Match(match_expr)) => {
                             self.type_match_expression_with_expected(match_expr, Some(expected))
                         }
-                        (Some(_), _) | (None, _) => {
+                        (Some(_), _) => {
+                            // `contextual_expected_type` was set above to the annotation's type.
+                            // Type the expression directly so expected-type-sensitive forms
+                            // (enum constructors of generic enums, struct literals, ...) receive
+                            // the annotation's type arguments. `infer_local_type_from_expression`
+                            // clears the contextual type and would lose the substitution.
+                            self.type_expression(&let_stmt.node.value)
+                        }
+                        (None, _) => {
                             self.infer_local_type_from_expression(let_stmt.node.name.span, &let_stmt.node.value)
                         }
                     };

@@ -72,14 +72,23 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn type_argument_with_expected(&mut self, arg: &Spanned<Expression>, expected: TypeId) -> Option<TypeId> {
-        match &arg.node {
+        // Propagate the parameter's expected type into `contextual_expected_type` so that
+        // expected-type-sensitive forms nested in call arguments (enum constructors of
+        // generic enums, struct literals, ...) receive the substituted type arguments.
+        // Lambdas are dispatched to the dedicated expected-signature path; the contextual
+        // type is harmless for them since they consume the explicit parameter instead.
+        let previous = self.contextual_expected_type;
+        self.contextual_expected_type = Some(expected);
+        let result = match &arg.node {
             Expression::Lambda(lambda) => self.type_lambda_expression_with_expected(lambda, Some(expected)),
             Expression::Grouped(grouped) => match &grouped.node.expr.node {
                 Expression::Lambda(lambda) => self.type_lambda_expression_with_expected(lambda, Some(expected)),
                 _ => self.type_expression(arg),
             },
             _ => self.type_expression(arg),
-        }
+        };
+        self.contextual_expected_type = previous;
+        result
     }
 
     pub(in crate::types::checker) fn type_call_expression(&mut self, call: &Spanned<CallExpression>) -> Option<TypeId> {
