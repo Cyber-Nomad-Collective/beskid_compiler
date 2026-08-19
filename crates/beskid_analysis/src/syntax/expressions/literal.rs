@@ -17,6 +17,8 @@ pub enum Literal {
     Char(String),
     #[ast(skip)]
     Bool(bool),
+    #[ast(skip)]
+    Unit,
 }
 
 /// Strip the type suffix from an integer literal text (e.g. "42_i32" → "42").
@@ -65,6 +67,7 @@ impl crate::parsing::parsable::Parsable for Literal {
                 match text {
                     "true" => Self::Bool(true),
                     "false" => Self::Bool(false),
+                    "()" => Self::Unit,
                     _ => {
                         return Err(crate::parsing::error::ParseError::unexpected_rule(
                             pair,

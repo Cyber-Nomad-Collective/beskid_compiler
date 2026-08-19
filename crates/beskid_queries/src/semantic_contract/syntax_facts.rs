@@ -30,13 +30,14 @@ pub(super) fn literal_fact_tracked(
 ) -> SemanticQueryResult<LiteralFact> {
     with_node(db, syntax, key, |_program, _index, node| {
         let literal = node.of::<beskid_analysis::syntax::Literal>()?;
-        Some(match literal {
-            beskid_analysis::syntax::Literal::Integer(value) => LiteralFact::Integer(Arc::from(value.as_str())),
-            beskid_analysis::syntax::Literal::Float(value) => LiteralFact::Float(Arc::from(value.as_str())),
-            beskid_analysis::syntax::Literal::String(value) => LiteralFact::String(Arc::from(value.as_str())),
-            beskid_analysis::syntax::Literal::Char(value) => LiteralFact::Char(Arc::from(value.as_str())),
-            beskid_analysis::syntax::Literal::Bool(value) => LiteralFact::Bool(*value),
-        })
+        match literal {
+            beskid_analysis::syntax::Literal::Integer(value) => Some(LiteralFact::Integer(Arc::from(value.as_str()))),
+            beskid_analysis::syntax::Literal::Float(value) => Some(LiteralFact::Float(Arc::from(value.as_str()))),
+            beskid_analysis::syntax::Literal::String(value) => Some(LiteralFact::String(Arc::from(value.as_str()))),
+            beskid_analysis::syntax::Literal::Char(value) => Some(LiteralFact::Char(Arc::from(value.as_str()))),
+            beskid_analysis::syntax::Literal::Bool(value) => Some(LiteralFact::Bool(*value)),
+            beskid_analysis::syntax::Literal::Unit => None,
+        }
     })
 }
 

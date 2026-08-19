@@ -137,7 +137,7 @@ CodePlainText = { (!("@") ~ ANY)+ | ("@" ~ !("{") ~ ANY)+ }
 CodePlainBodyContents = ${ (CodeHole | CodePlainText)* }
 CodePlainBody = { SOI ~ CodePlainBodyContents ~ EOI }
 
-Literal = { FloatLiteral | IntegerLiteral | StringLiteral | CharLiteral | "true" | "false" }
+Literal = { FloatLiteral | IntegerLiteral | StringLiteral | CharLiteral | "true" | "false" | "()" }
 
 ////////////////////////////////////////////////////////////
 // 2) PROGRAM

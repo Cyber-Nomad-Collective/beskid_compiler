@@ -353,5 +353,6 @@ pub(super) fn semantic_type_for_literal(literal: &beskid_analysis::syntax::Liter
         beskid_analysis::syntax::Literal::String(_) => SemanticTypeId::STRING,
         beskid_analysis::syntax::Literal::Char(_) => SemanticTypeId::CHAR,
         beskid_analysis::syntax::Literal::Bool(_) => SemanticTypeId::BOOL,
+        beskid_analysis::syntax::Literal::Unit => SemanticTypeId::UNIT,
     }
 }

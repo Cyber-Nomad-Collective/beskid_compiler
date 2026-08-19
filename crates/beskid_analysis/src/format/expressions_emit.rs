@@ -16,6 +16,7 @@ impl Emit for Literal {
             }
             Literal::Bool(true) => w.write_str("true")?,
             Literal::Bool(false) => w.write_str("false")?,
+            Literal::Unit => w.write_str("()")?,
         }
         Ok(())
     }

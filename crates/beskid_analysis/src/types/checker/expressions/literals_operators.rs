@@ -134,6 +134,7 @@ impl<'a> TypeChecker<'a> {
             Literal::String(_) => self.primitive_type_id(PrimitiveType::String),
             Literal::Char(_) => self.primitive_type_id(PrimitiveType::Char),
             Literal::Bool(_) => self.primitive_type_id(PrimitiveType::Bool),
+            Literal::Unit => self.primitive_type_id(PrimitiveType::Unit),
         }
     }
 }

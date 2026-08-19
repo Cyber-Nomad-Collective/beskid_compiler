@@ -165,6 +165,7 @@ impl SemanticPipelineRule {
                 crate::syntax::Literal::String(_) => Some("string"),
                 crate::syntax::Literal::Char(_) => Some("char"),
                 crate::syntax::Literal::Bool(_) => Some("bool"),
+                crate::syntax::Literal::Unit => Some("unit"),
             },
             Expression::Grouped(grouped_expression) => self.literal_kind(&grouped_expression.node.expr),
             _ => None,

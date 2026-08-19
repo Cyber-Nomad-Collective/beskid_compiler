@@ -22,5 +22,6 @@ pub(super) fn literal_type_id(types: &TypeTable, lit: &crate::syntax::Literal) -
         Literal::Bool(_) => primitive_type_id(types, PrimitiveType::Bool),
         Literal::Char(_) => primitive_type_id(types, PrimitiveType::Char),
         Literal::String(_) => primitive_type_id(types, PrimitiveType::String),
+        Literal::Unit => primitive_type_id(types, PrimitiveType::Unit),
     }
 }
