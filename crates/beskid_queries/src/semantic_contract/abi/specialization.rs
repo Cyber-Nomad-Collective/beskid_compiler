@@ -482,6 +482,14 @@ pub(in crate::semantic_contract) fn type_syntax_mentions_generic_parameter(
                     .iter()
                     .any(|argument| type_syntax_mentions_generic_parameter(&argument.node, parameter))
         }),
+        beskid_analysis::syntax::Type::Associated { contract, .. } => contract.node.segments.iter().any(|segment| {
+            segment.node.name.node.name == parameter
+                || segment
+                    .node
+                    .type_args
+                    .iter()
+                    .any(|argument| type_syntax_mentions_generic_parameter(&argument.node, parameter))
+        }),
         beskid_analysis::syntax::Type::Array(element) => {
             type_syntax_mentions_generic_parameter(&element.node, parameter)
         }

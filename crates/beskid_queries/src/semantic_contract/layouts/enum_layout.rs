@@ -271,6 +271,7 @@ pub(in crate::semantic_contract) fn aggregate_shape_from_applied_type(
         beskid_analysis::syntax::Type::Complex(path) => resolve_type_declaration(db, use_key, &path.node)
             .map(AggregateFieldShape::Nominal)
             .ok_or_else(|| SemanticError::unavailable("enum_layout")),
+        beskid_analysis::syntax::Type::Associated { .. } => Err(SemanticError::unavailable("enum_layout")),
         beskid_analysis::syntax::Type::Array(_) => Ok(AggregateFieldShape::Scalar(SemanticTypeId::POINTER)),
         beskid_analysis::syntax::Type::Function { .. } => Err(SemanticError::unavailable("enum_layout")),
     }

@@ -468,6 +468,7 @@ pub(in crate::semantic_contract) fn abi_type_from_syntax(
     match syntax_type {
         Type::Primitive(_) => semantic_type_from_syntax(syntax_type),
         Type::Complex(path) => nominal_aggregate_abi_type(db, key, &path.node),
+        Type::Associated { .. } => Err(SemanticError::unavailable("abi_type")),
         Type::Array(_) => Ok(SemanticTypeId::POINTER),
         Type::Function { .. } => Err(SemanticError::unavailable("abi_type")),
     }

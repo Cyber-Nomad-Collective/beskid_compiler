@@ -354,6 +354,7 @@ impl SemanticPipelineRule {
                 .map(|segment| segment.node.name.node.name.clone())
                 .collect::<Vec<_>>()
                 .join("."),
+            Type::Associated { contract, name } => format!("{}::{}", self.path_to_string(contract), name.node.name),
             Type::Array(inner) => format!("{}[]", self.type_to_string(inner)),
             Type::Function { return_type, parameters } => {
                 let params =
@@ -421,6 +422,10 @@ impl SemanticPipelineRule {
                 }
 
                 ctx.emit_issue(path.span, SemanticIssueKind::UnknownTypeInDefinition { type_name: type_name.clone() });
+            }
+            Type::Associated { contract, .. } => {
+                let contract_type = Spanned::new(Type::Complex(contract.clone()), contract.span);
+                self.validate_type_reference(ctx, &contract_type, known_types, generic_names);
             }
             Type::Array(inner) => {
                 self.validate_type_reference(ctx, inner, known_types, generic_names);

@@ -242,6 +242,10 @@ fn remap_type_spans(ty: &mut Spanned<crate::syntax::Type>, offset: usize, source
     ty.span = remap_span(ty.span, offset, source);
     match &mut ty.node {
         crate::syntax::Type::Complex(path) => remap_path_spans(path, offset, source),
+        crate::syntax::Type::Associated { contract, name } => {
+            remap_path_spans(contract, offset, source);
+            name.span = remap_span(name.span, offset, source);
+        }
         crate::syntax::Type::Array(inner) => {
             remap_type_spans(inner, offset, source);
         }

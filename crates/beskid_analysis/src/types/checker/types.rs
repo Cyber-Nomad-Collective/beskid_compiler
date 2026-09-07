@@ -12,6 +12,7 @@ fn type_display_name(ty: &Spanned<Type>) -> String {
     match &ty.node {
         Type::Primitive(primitive) => format!("{:?}", primitive.node),
         Type::Complex(path) => path_display_name(path),
+        Type::Associated { contract, name } => format!("{}::{}", path_display_name(contract), name.node.name),
         Type::Array(inner) => format!("{}[]", type_display_name(inner)),
         Type::Function { return_type, parameters } => {
             let params = parameters.iter().map(type_display_name).collect::<Vec<_>>().join(", ");
@@ -61,6 +62,8 @@ impl<'a> TypeChecker<'a> {
                 self.primitive_type_id(mapped)
             }
             Type::Complex(path) => self.type_id_for_path_with_args(path),
+            // Binding lookup belongs to the associated-type conformance pass.
+            Type::Associated { .. } => None,
             Type::Array(inner) => {
                 let inner_id = self.type_id_for_type(inner)?;
                 if let Some(existing) = self.type_table.find_array_of(inner_id) {

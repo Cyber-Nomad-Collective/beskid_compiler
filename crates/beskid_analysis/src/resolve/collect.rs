@@ -18,6 +18,17 @@ pub(super) fn type_name_for_method_receiver(receiver_type: &Spanned<Type>) -> St
         Type::Complex(path) => {
             path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>().join(".")
         }
+        Type::Associated { contract, name } => format!(
+            "{}::{}",
+            contract
+                .node
+                .segments
+                .iter()
+                .map(|segment| segment.node.name.node.name.as_str())
+                .collect::<Vec<_>>()
+                .join("."),
+            name.node.name
+        ),
         Type::Array(_) => "Array".to_string(),
         Type::Function { .. } => "Function".to_string(),
     }

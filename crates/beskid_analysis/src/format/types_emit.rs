@@ -107,6 +107,11 @@ impl Emit for Type {
         match self {
             Type::Primitive(p) => p.emit(w, cx),
             Type::Complex(p) => p.emit(w, cx),
+            Type::Associated { contract, name } => {
+                contract.emit(w, cx)?;
+                w.write_str("::")?;
+                name.emit(w, cx)
+            }
             Type::Array(inner) => {
                 inner.emit(w, cx)?;
                 w.write_str("[]")?;
