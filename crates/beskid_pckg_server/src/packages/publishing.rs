@@ -2,8 +2,8 @@ use super::artifacts::{persist_uploaded_artifact, record_publish_activity};
 use super::mapping::{next_id, now, package_not_found, package_storage_failure, version_summary};
 use super::{
     ApiErrorResponse, AppState, HeaderMap, IntoResponse, Json, Path, PublishOutcome, PublishPackageVersionRequest,
-    PublishVersion, Request, Response, State, StatusCode, StoreError, authenticated_subject, header, to_bytes,
-    validate_package_artifact,
+    PublishVersion, Request, Response, State, StatusCode, StoreError, authenticated_publisher_subject, header,
+    to_bytes, validate_package_artifact,
 };
 
 pub async fn publish_version(
@@ -40,7 +40,7 @@ async fn publish_version_metadata(
     name: String,
     request: PublishPackageVersionRequest,
 ) -> axum::response::Response {
-    let Some(subject) = authenticated_subject(&state, &headers) else {
+    let Some(subject) = authenticated_publisher_subject(&state, &headers).await else {
         return crate::unauthorized_response();
     };
     let package = match state.packages.find_package(&name).await {
@@ -87,7 +87,7 @@ async fn publish_version_metadata(
 }
 
 async fn publish_multipart_version(state: AppState, headers: HeaderMap, name: String, request: Request) -> Response {
-    let Some(subject) = authenticated_subject(&state, &headers) else {
+    let Some(subject) = authenticated_publisher_subject(&state, &headers).await else {
         return crate::unauthorized_response();
     };
     let content_type = match request.headers().get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok()) {

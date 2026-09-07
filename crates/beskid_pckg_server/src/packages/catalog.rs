@@ -6,7 +6,7 @@ use super::mapping::{
 use super::{
     ApiErrorResponse, AppState, HeaderMap, IntoResponse, Json, NewPackage, PackageArtifactStore,
     PackageDetailsResponse, PackageSearchResponse, Path, Query, Response, State, StatusCode, StoreError,
-    UpsertPackageRequest, authenticated_subject,
+    UpsertPackageRequest, authenticated_publisher_subject, authenticated_subject,
 };
 use beskid_pckg_store::AsyncAdministrationRepository;
 
@@ -199,7 +199,7 @@ pub async fn upsert_package(
     headers: axum::http::HeaderMap,
     Json(request): Json<UpsertPackageRequest>,
 ) -> impl IntoResponse {
-    let Some(subject) = authenticated_subject(&state, &headers) else {
+    let Some(subject) = authenticated_publisher_subject(&state, &headers).await else {
         return crate::unauthorized_response();
     };
     match state

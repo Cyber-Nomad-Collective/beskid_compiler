@@ -20,7 +20,7 @@ use beskid_pckg_store::{
     StoreError,
 };
 
-use crate::{AppState, authenticated_subject};
+use crate::{AppState, authenticated_publisher_subject, authenticated_subject};
 
 mod artifacts;
 mod catalog;

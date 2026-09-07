@@ -2,7 +2,7 @@ use super::contracts::PackageVersionPath;
 use super::mapping::{now, package_not_found, package_storage_failure, version_summary};
 use super::{
     ApiErrorResponse, AppState, HeaderMap, IntoResponse, Json, PackageVersionLifecycleResponse, Path, Response, State,
-    StatusCode, StoreError, authenticated_subject,
+    StatusCode, StoreError, authenticated_publisher_subject, authenticated_subject,
 };
 
 /// Lists version summaries without forcing clients to download the full package
@@ -49,7 +49,7 @@ async fn set_yanked(
     version: String,
     yanked: bool,
 ) -> axum::response::Response {
-    let Some(subject) = authenticated_subject(&state, &headers) else {
+    let Some(subject) = authenticated_publisher_subject(&state, &headers).await else {
         return crate::unauthorized_response();
     };
     let package = match state.packages.find_package(&name).await {
