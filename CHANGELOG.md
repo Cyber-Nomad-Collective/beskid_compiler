@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Route generated spawn and lambda trampoline signatures and closure-capture types through the
   ISLE adapter's canonical semantic-to-CLIF mapping, removing duplicate local conversion rules.
 
+- Route statement and expression parse-recovery insertion positioning through the
+  shared syntax-boundary primitive, removing duplicate local helpers without
+  changing repair policy.
+
 - pckg Rust backend: replaced the Auth Hub handoff/JWT session model with
   Authelia forward-auth. The server is now a resource server that trusts
   Authelia's `Remote-User`, `Remote-Email`, `Remote-Name` and `Remote-Groups`

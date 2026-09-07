@@ -18,7 +18,6 @@ use literals_lists::{
     struct_field_separator_repairs, struct_literal_repairs,
 };
 use match_lambda::{lambda_repairs, match_repairs};
-use scanner_context::recovery_insert_pos;
 
 /// Generate expression- and pattern-oriented repairs near the Pest error locus.
 pub fn repairs(source: &str, error_pos: usize, parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
@@ -31,7 +30,7 @@ pub fn repairs(source: &str, error_pos: usize, parse_error: &pest::error::Error<
     {
         tail_pos
     } else {
-        recovery_insert_pos(source, error_pos)
+        syntax_primitives::recovery_next_token_insert_position(source, error_pos)
     };
 
     match_repairs(source, error_pos, insert_at, &mut candidates);
@@ -49,4 +48,26 @@ pub fn repairs(source: &str, error_pos: usize, parse_error: &pest::error::Error<
     angle_list_separator_repairs(source, error_pos, insert_at, &mut candidates);
 
     candidates
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::parser::{BeskidParser, Rule};
+    use pest::Parser;
+
+    use super::repairs;
+
+    #[test]
+    fn keeps_member_access_insertion_at_the_next_token_after_whitespace() {
+        let source = "value.   next";
+        let error_pos = "value.".len();
+        let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("test source must be malformed");
+
+        let candidate = repairs(source, error_pos, &parse_error)
+            .into_iter()
+            .find(|candidate| candidate.reason == "inserted placeholder member access field")
+            .expect("member-access recovery candidate");
+
+        assert_eq!(candidate.position, source.find("next").expect("test source includes next token"));
+    }
 }

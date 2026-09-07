@@ -12,7 +12,7 @@ const PRI_PROGRAM_ROOT_TERMINATOR: u8 = 76;
 /// Generate statement-oriented repairs for incomplete control flow and terminated statements.
 pub fn repairs(source: &str, error_pos: usize, parse_error: &pest::error::Error<Rule>) -> Vec<RepairCandidate> {
     let error_pos = syntax_primitives::recovery_scan_pos(source, error_pos);
-    let insert_at = recovery_insert_pos(source, error_pos);
+    let insert_at = syntax_primitives::recovery_next_token_insert_position(source, error_pos);
     let statement_keywords = statement_recovery_keywords(parse_error);
     let statement_starts = syntax_primitives::top_level_statement_starts(source, 0, &statement_keywords);
     let mut candidates = Vec::new();
@@ -323,6 +323,24 @@ fn find_recent_keyword_before(source: &str, through: usize, keyword: &str) -> Op
     scan::find_keyword_backward(source, through, keyword)
 }
 
-fn recovery_insert_pos(source: &str, error_pos: usize) -> usize {
-    next_token_start(source, error_pos).unwrap_or_else(|| source.trim_end().len())
+#[cfg(test)]
+mod tests {
+    use crate::parser::{BeskidParser, Rule};
+    use pest::Parser;
+
+    use super::repairs;
+
+    #[test]
+    fn keeps_control_flow_insertion_at_the_next_token_after_whitespace() {
+        let source = "if true   next";
+        let error_pos = "if true".len();
+        let parse_error = BeskidParser::parse(Rule::Program, source).expect_err("test source must be malformed");
+
+        let candidate = repairs(source, error_pos, &parse_error)
+            .into_iter()
+            .find(|candidate| candidate.reason == "inserted control-flow body placeholder")
+            .expect("control-flow recovery candidate");
+
+        assert_eq!(candidate.position, source.find("next").expect("test source includes next token"));
+    }
 }

@@ -1,9 +1,5 @@
-use super::super::scan::{next_token_start, skip_ws};
+use super::super::scan::skip_ws;
 use super::super::{scan, syntax_primitives};
-
-pub(super) fn recovery_insert_pos(source: &str, error_pos: usize) -> usize {
-    next_token_start(source, error_pos).unwrap_or_else(|| source.trim_end().len())
-}
 
 pub(super) fn find_match_block_brace(source: &str, through: usize) -> Option<usize> {
     let match_kw = scan::find_keyword_backward(source, through, "match")?;

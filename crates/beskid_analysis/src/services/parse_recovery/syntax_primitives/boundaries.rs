@@ -84,6 +84,10 @@ pub(crate) fn recovery_insert_position(source: &str, boundary_pos: usize) -> usi
     pos
 }
 
+pub(crate) fn recovery_next_token_insert_position(source: &str, error_pos: usize) -> usize {
+    scan::next_token_start(source, error_pos).unwrap_or_else(|| source.trim_end().len())
+}
+
 pub(crate) fn is_recoverable_identifier_statement_starter(source: &str, pos: usize) -> bool {
     if pos >= source.len() {
         return false;
