@@ -79,9 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Keep artifact-owned JIT code and static type descriptors alive for the lifetime
-  of the engine's persistent managed heap, so later test artifacts and final
-  collection cannot dereference retired descriptor storage.
+- Retire each artifact's managed heap before unloading its JIT code and static
+  type descriptors, then attach a fresh runtime state for the replacement
+  artifact so later tests cannot dereference retired descriptor storage.
 - Separate the source-owned `beskid_rt_v5_trap` export from its terminal
   platform intrinsic, preventing recursive trap dispatch, and preserve the
   full generation word when creating the first GC root handle so construction

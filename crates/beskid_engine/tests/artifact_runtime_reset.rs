@@ -9,7 +9,7 @@ use beskid_engine::{Engine, host_runtime_target};
 use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host};
 
 #[test]
-fn replacing_artifacts_retains_descriptor_storage_owned_by_the_persistent_runtime() {
+fn replacing_artifacts_restarts_runtime_before_descriptor_storage_is_retired() {
     let prefix = tempfile::tempdir().expect("fresh runtime-kit prefix");
     build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
         .expect("publish canonical native runtime kit");

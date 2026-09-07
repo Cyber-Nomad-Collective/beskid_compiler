@@ -18,13 +18,11 @@ struct RuntimeKitSelection {
 
 /// Owns an exact ABI-v5 runtime-kit selection and a [`BeskidJitModule`].
 ///
-/// Field order is load-bearing: `_runtime_state` detaches the calling thread before the current or
-/// retired JIT modules release the loaded runtime kit and descriptor storage that the heap can
-/// still reference.
+/// Field order is load-bearing: `runtime_state` detaches the calling thread and retires the heap
+/// before `jit` releases the loaded runtime kit and artifact-owned descriptor storage.
 pub struct Engine {
     runtime_kit: RuntimeKitSelection,
-    _runtime_state: AttachedRuntimeState,
-    retired_jits: Vec<BeskidJitModule>,
+    runtime_state: Option<AttachedRuntimeState>,
     jit: BeskidJitModule,
 }
 
@@ -61,8 +59,7 @@ impl Engine {
         let runtime_state = AttachedRuntimeState::attach(jit.runtime_kit()).map_err(JitError::RuntimeKit)?;
         Ok(Self {
             runtime_kit: RuntimeKitSelection { prefix: prefix.to_path_buf(), target, profile },
-            _runtime_state: runtime_state,
-            retired_jits: Vec::new(),
+            runtime_state: Some(runtime_state),
             jit,
         })
     }
@@ -80,8 +77,7 @@ impl Engine {
             self.runtime_kit.profile,
             &[],
         )?;
-        self.replace_jit(jit);
-        Ok(())
+        self.replace_jit_and_runtime(jit)
     }
 
     /// Load `artifact` into a fresh or reused JIT module, declare builtins/externs, define functions, finalize.
@@ -135,7 +131,7 @@ impl Engine {
             self.runtime_kit.profile,
             &authorized_user_ffi,
         )?;
-        self.replace_jit(jit);
+        self.replace_jit_and_runtime(jit)?;
 
         #[cfg(debug_assertions)]
         {
@@ -151,11 +147,13 @@ impl Engine {
         self.jit.compile_with_pipeline(artifact, pipeline)
     }
 
-    /// Replace the active artifact while retaining the old module's static descriptors for as long
-    /// as the persistent runtime heap can retain objects that point at them.
-    fn replace_jit(&mut self, jit: BeskidJitModule) {
-        let retired = std::mem::replace(&mut self.jit, jit);
-        self.retired_jits.push(retired);
+    /// Replace one artifact-owned JIT only after retiring the heap that can reference its static
+    /// descriptors, then attach a fresh runtime state to the replacement module's exact kit.
+    fn replace_jit_and_runtime(&mut self, jit: BeskidJitModule) -> Result<(), JitError> {
+        drop(self.runtime_state.take());
+        self.jit = jit;
+        self.runtime_state = Some(AttachedRuntimeState::attach(self.jit.runtime_kit()).map_err(JitError::RuntimeKit)?);
+        Ok(())
     }
 
     /// Resolved machine code for `name` after successful compile; caller must match the real signature.
