@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use beskid_isle::{AstNodeKey, DirectCallee};
 use beskid_queries::{
-    ItemSignature, SemanticTypeId, child_nodes, closure_environment, closure_signature, item_abi_signature, node_kind,
-    resolved_item, spawn_entry_validation,
+    child_nodes, closure_environment, closure_signature, item_abi_signature, node_kind, resolved_item,
+    spawn_entry_validation,
 };
 use cranelift_codegen::ir::{
     AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, Type, condcodes::IntCC, types,
@@ -14,7 +14,10 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 
 use super::contracts::{SyntaxModuleEmissionError, emission_verification};
 use super::items::{ResolvedSyntaxModuleItem, syntax_item_symbol};
-use crate::CodegenInput;
+use crate::{
+    CodegenInput,
+    isle_adapter::mappings::{map_signature_type, signature_for_item},
+};
 
 #[derive(Debug, Clone)]
 pub(super) struct SpawnTrampoline {
@@ -125,7 +128,7 @@ pub(super) fn resolve_spawn_trampolines(
                 };
                 let Some(signature) = item_abi_signature(db, target.declaration)
                     .map_err(|error| emission_verification(error.to_string()))?
-                    .and_then(|signature| spawn_target_signature(isa, signature))
+                    .and_then(|signature| signature_for_item(isa, signature))
                 else {
                     continue;
                 };
@@ -170,7 +173,7 @@ pub(super) fn resolve_spawn_trampolines(
                                 },
                                 field_offset: u32::try_from(field.field_offset).ok()?,
                                 pointer_map_index: field.pointer_map_index,
-                                value_type: map_spawn_capture_type(isa, field.abi_type)?,
+                                value_type: map_signature_type(isa, field.abi_type)?,
                             })
                         })
                         .collect::<Option<Vec<_>>>()
@@ -184,7 +187,7 @@ pub(super) fn resolve_spawn_trampolines(
                 else {
                     continue;
                 };
-                let Some(mut signature) = spawn_target_signature(isa, lambda.callable) else {
+                let Some(mut signature) = signature_for_item(isa, lambda.callable) else {
                     continue;
                 };
                 if !signature.params.is_empty() {
@@ -245,7 +248,7 @@ pub(super) fn resolve_lambda_trampolines(
         else {
             continue;
         };
-        let Some(mut signature) = spawn_target_signature(isa, lambda_sig.callable) else {
+        let Some(mut signature) = signature_for_item(isa, lambda_sig.callable) else {
             continue;
         };
         // Collect closure captures if present.
@@ -273,7 +276,7 @@ pub(super) fn resolve_lambda_trampolines(
                             },
                             field_offset: u32::try_from(field.field_offset).ok()?,
                             pointer_map_index: field.pointer_map_index,
-                            value_type: map_spawn_capture_type(isa, field.abi_type)?,
+                            value_type: map_signature_type(isa, field.abi_type)?,
                         })
                     })
                     .collect::<Option<Vec<_>>>()
@@ -581,43 +584,4 @@ pub(super) fn emit_spawn_trampoline(
         emission_verification(format!("spawn trampoline `{}` verification failed: {error}", trampoline.symbol))
     })?;
     Ok(function)
-}
-
-fn map_spawn_capture_type(isa: &dyn TargetIsa, semantic: SemanticTypeId) -> Option<Type> {
-    match semantic {
-        SemanticTypeId::BOOL | SemanticTypeId::U8 => Some(types::I8),
-        SemanticTypeId::I32 | SemanticTypeId::CHAR => Some(types::I32),
-        SemanticTypeId::I64 => Some(types::I64),
-        SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING => Some(isa.pointer_type()),
-        SemanticTypeId::F64 => Some(types::F64),
-        _ => None,
-    }
-}
-
-fn spawn_target_signature(isa: &dyn TargetIsa, item: ItemSignature) -> Option<Signature> {
-    fn map(isa: &dyn TargetIsa, semantic: SemanticTypeId) -> Option<Type> {
-        Some(match semantic {
-            SemanticTypeId::BOOL | SemanticTypeId::U8 => types::I8,
-            SemanticTypeId::I32 => types::I32,
-            SemanticTypeId::I64 => types::I64,
-            SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING => isa.pointer_type(),
-            SemanticTypeId::F64 => types::F64,
-            SemanticTypeId::CHAR => types::I32,
-            SemanticTypeId::UNIT | SemanticTypeId::NEVER => return None,
-            _ => return None,
-        })
-    }
-
-    let mut signature = Signature::new(isa.default_call_conv());
-    signature.params.extend(
-        item.parameters
-            .iter()
-            .copied()
-            .map(|semantic| map(isa, semantic).map(AbiParam::new))
-            .collect::<Option<Vec<_>>>()?,
-    );
-    if !matches!(item.result, SemanticTypeId::UNIT | SemanticTypeId::NEVER) {
-        signature.returns.push(AbiParam::new(map(isa, item.result)?));
-    }
-    Some(signature)
 }

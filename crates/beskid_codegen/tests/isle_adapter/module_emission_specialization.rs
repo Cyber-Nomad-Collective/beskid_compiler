@@ -6,6 +6,7 @@ use super::support::{
     find_definition_of_kind, find_function_definition, find_function_definitions, find_node, find_test_definition, isa,
     item_fixture_with_root, item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
+use cranelift_codegen::ir::types;
 
 #[test]
 fn ordinary_syscall_spelling_cannot_request_a_corelib_service_import() {
@@ -64,6 +65,26 @@ fn parsed_program_lowers_to_backend_artifact_without_hir() {
     beskid_codegen::validate_artifact(&artifact).expect("direct syntax calls resolve against artifact definitions");
     let main = artifact.functions.iter().find(|function| function.name == "Main").expect("Main artifact function");
     assert!(main.function.display().to_string().contains("call"));
+}
+
+#[test]
+fn captured_char_lambda_uses_i32_in_its_environment_and_target_signature() {
+    let (input, isa, root) = item_fixture_with_root("i32 Main(char outer) { return (() => outer)(); }");
+    let main = find_function_definition(input.database(), root).expect("application Main");
+
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &[SyntaxModuleItem { key: main, symbol: "Main".into() }])
+        .expect("captured char lambda lowers through the canonical ABI mapping");
+
+    let lambda = artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("__beskid_lambda_entry_syntax"))
+        .expect("lambda trampoline target");
+    assert_eq!(lambda.function.signature.params[0].value_type, types::I64, "closure environment is a pointer");
+    assert!(
+        lambda.function.display().to_string().contains("load.i32"),
+        "a captured char must retain the canonical i32 ABI representation"
+    );
 }
 
 #[test]

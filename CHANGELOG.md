@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TargetMetadata::for_triple`, preserving existing CLI, AOT runtime-kit, and
   runtime tooling diagnostics at their boundaries.
 
+- Route generated spawn and lambda trampoline signatures and closure-capture types through the
+  ISLE adapter's canonical semantic-to-CLIF mapping, removing duplicate local conversion rules.
+
 - pckg Rust backend: replaced the Auth Hub handoff/JWT session model with
   Authelia forward-auth. The server is now a resource server that trusts
   Authelia's `Remote-User`, `Remote-Email`, `Remote-Name` and `Remote-Groups`

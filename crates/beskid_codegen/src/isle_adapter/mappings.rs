@@ -1,6 +1,10 @@
 use super::*;
 
-pub(super) fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Option<beskid_isle::Signature> {
+/// Convert a source ABI signature through the one codegen-owned semantic-to-CLIF mapping.
+///
+/// Module emission uses this same path for generated trampoline targets, so signature rules
+/// cannot drift between generated ISLE items and scheduler entries.
+pub(crate) fn signature_for_item(isa: &dyn TargetIsa, item: ItemSignature) -> Option<beskid_isle::Signature> {
     let emitter = FunctionEmitter::new(isa);
     let parameters = item
         .parameters
@@ -102,7 +106,8 @@ pub(super) fn map_scalar_type(semantic: SemanticTypeId) -> Option<Type> {
     })
 }
 
-pub(super) fn map_signature_type(isa: &dyn TargetIsa, semantic: SemanticTypeId) -> Option<Type> {
+/// Convert a source ABI type through the one codegen-owned semantic-to-CLIF mapping.
+pub(crate) fn map_signature_type(isa: &dyn TargetIsa, semantic: SemanticTypeId) -> Option<Type> {
     if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING) {
         Some(isa.pointer_type())
     } else {

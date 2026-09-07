@@ -33,7 +33,7 @@ mod emit;
 mod facts_helpers;
 mod facts_node;
 mod importer;
-mod mappings;
+pub(crate) mod mappings;
 
 pub use context::SyntaxNodeFacts;
 pub use emit::{
