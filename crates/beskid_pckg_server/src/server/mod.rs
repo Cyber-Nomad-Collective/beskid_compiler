@@ -7,7 +7,8 @@ mod router;
 mod serve;
 
 pub(crate) use self::auth::{
-    authenticated_principal, authenticated_subject, format_timestamp, now_unix_seconds, unauthorized_response,
+    authenticated_principal, authenticated_publisher_subject, authenticated_subject, format_timestamp,
+    now_unix_seconds, unauthorized_response,
 };
 pub use self::config::{PckgServerConfig, ServerStartupError};
 pub(crate) use self::model::AppState;

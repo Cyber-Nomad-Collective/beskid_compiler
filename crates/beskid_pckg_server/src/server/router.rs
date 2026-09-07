@@ -8,7 +8,7 @@ use axum::{
 };
 use beskid_pckg_artifacts::LocalFileArtifactStore;
 use beskid_pckg_contract::{ApiErrorResponse, HealthResponse};
-use beskid_pckg_store::SqlxPackageRepository;
+use beskid_pckg_store::{AsyncApiKeyRepository, SqlxPackageRepository};
 use sqlx::postgres::PgPoolOptions;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -71,6 +71,9 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
         PackageBackend::InMemory(_) => operations_routes::OperationsState::in_memory(),
     };
     let api_keys = moderation_repository.clone();
+    let api_key_auth = config.api_key_repository.clone().or_else(|| {
+        moderation_repository.as_ref().map(|repository| Arc::clone(repository) as Arc<dyn AsyncApiKeyRepository>)
+    });
     Router::new()
         .route("/health", get(health))
         .route("/health/live", get(health))
@@ -126,6 +129,7 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
             packages,
             artifacts: Arc::new(artifacts),
             api_keys,
+            api_key_auth,
             reviews: workspace_review_routes::ReviewQueueState::default(),
             operations,
         })

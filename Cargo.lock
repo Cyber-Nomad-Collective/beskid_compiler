@@ -738,7 +738,9 @@ version = "0.1.0"
 name = "beskid_pckg_server"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
+ "beskid_pckg",
  "beskid_pckg_artifacts",
  "beskid_pckg_auth",
  "beskid_pckg_contract",

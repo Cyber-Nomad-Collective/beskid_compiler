@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- pckg Rust backend: publication routes now authenticate an active,
+  `publish`-scoped `Authorization: Bearer bpk_*` key through the registry
+  store. The shipped publisher client uses that same standard bearer transport
+  rather than a configurable custom key header. A bearer key never combines
+  with `Remote-*` headers; invalid, revoked, or inactive keys are rejected
+  without falling back to a forwarded or mock identity. Valid publisher keys
+  work when browser-session authentication is intentionally unset.
+
 - Centralize exact ABI-v5 target-triple resolution in
   `TargetMetadata::for_triple`, preserving existing CLI, AOT runtime-kit, and
   runtime tooling diagnostics at their boundaries.
