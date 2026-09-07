@@ -123,12 +123,12 @@ impl SemanticPipelineRule {
 
         for arm in &match_expression.node.arms {
             if let Some(guard) = &arm.node.guard
-                && !self.is_boolean_like_guard(guard)
+                && !Self::is_boolean_like_guard(guard)
             {
                 ctx.emit_issue(guard.span, SemanticIssueKind::MatchGuardMustBeBoolean);
             }
 
-            if let Some(kind) = self.literal_kind(&arm.node.value) {
+            if let Some(kind) = Self::literal_kind(&arm.node.value) {
                 if let Some(previous_kind) = arm_kind {
                     if previous_kind != kind {
                         ctx.emit_issue(
@@ -189,22 +189,22 @@ impl SemanticPipelineRule {
         ctx.emit_issue(match_expression.span, SemanticIssueKind::MatchNonExhaustive { enum_name });
     }
 
-    fn is_boolean_like_guard(&self, expression: &Spanned<Expression>) -> bool {
+    fn is_boolean_like_guard(expression: &Spanned<Expression>) -> bool {
         match &expression.node {
             Expression::Literal(literal) => {
                 matches!(literal.node.literal.node, crate::syntax::Literal::Bool(_))
             }
-            Expression::Unary(unary_expression) => self.is_boolean_like_guard(&unary_expression.node.expr),
+            Expression::Unary(unary_expression) => Self::is_boolean_like_guard(&unary_expression.node.expr),
             Expression::Binary(binary_expression) => {
-                self.is_boolean_like_guard(&binary_expression.node.left)
-                    || self.is_boolean_like_guard(&binary_expression.node.right)
+                Self::is_boolean_like_guard(&binary_expression.node.left)
+                    || Self::is_boolean_like_guard(&binary_expression.node.right)
             }
-            Expression::Grouped(grouped_expression) => self.is_boolean_like_guard(&grouped_expression.node.expr),
+            Expression::Grouped(grouped_expression) => Self::is_boolean_like_guard(&grouped_expression.node.expr),
             _ => true,
         }
     }
 
-    fn literal_kind(&self, expression: &Spanned<Expression>) -> Option<&'static str> {
+    fn literal_kind(expression: &Spanned<Expression>) -> Option<&'static str> {
         match &expression.node {
             Expression::Literal(literal) => match &literal.node.literal.node {
                 crate::syntax::Literal::Integer(_) => Some("int"),
@@ -214,13 +214,12 @@ impl SemanticPipelineRule {
                 crate::syntax::Literal::Bool(_) => Some("bool"),
                 crate::syntax::Literal::Unit => Some("unit"),
             },
-            Expression::Grouped(grouped_expression) => self.literal_kind(&grouped_expression.node.expr),
+            Expression::Grouped(grouped_expression) => Self::literal_kind(&grouped_expression.node.expr),
             _ => None,
         }
     }
 
     fn collect_pattern_bindings(
-        &self,
         ctx: &mut RuleContext,
         pattern: &Spanned<Pattern>,
         names: &mut HashSet<String>,
@@ -274,7 +273,7 @@ impl SemanticPipelineRule {
                 }
 
                 for item in &enum_pattern.node.items {
-                    self.collect_pattern_bindings(ctx, item, names, enum_variants);
+                    Self::collect_pattern_bindings(ctx, item, names, enum_variants);
                 }
             }
             Pattern::Wildcard | Pattern::Literal(_) => {}
@@ -434,7 +433,7 @@ impl<'a> ControlFlowVisitor<'a> {
     fn check_match_expression(&mut self, match_expression: &Spanned<crate::syntax::MatchExpression>) {
         for arm in &match_expression.node.arms {
             let mut names = HashSet::new();
-            self.rule.collect_pattern_bindings(self.ctx, &arm.node.pattern, &mut names, self.enum_variants);
+            SemanticPipelineRule::collect_pattern_bindings(self.ctx, &arm.node.pattern, &mut names, self.enum_variants);
         }
         self.rule.check_match_semantics(self.ctx, match_expression, self.enum_variants);
     }

@@ -481,7 +481,7 @@ dependency "corelib_foundation" {
         assert!(packed_project.contains("source = registry"));
         assert!(packed_project.contains("version = \"0.4.2\""));
         assert!(!packed_project.contains("path ="));
-        assert_eq!(fs::read_to_string(dir.join("package.json")).unwrap().contains("0.4.2"), true);
+        assert!(fs::read_to_string(dir.join("package.json")).unwrap().contains("0.4.2"));
         let _ = fs::remove_dir_all(&dir);
     }
 

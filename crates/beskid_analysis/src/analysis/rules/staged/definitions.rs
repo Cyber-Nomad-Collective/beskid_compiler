@@ -103,7 +103,7 @@ impl SemanticPipelineRule {
                         inline_module.node.name.span,
                         SemanticIssueKind::ModuleDeclarationForbiddenInFileScopedModule,
                     );
-                    self.emit_nested_module_errors(ctx, inline_module);
+                    Self::emit_nested_module_errors(ctx, inline_module);
                 }
                 _ => {}
             }
@@ -166,7 +166,7 @@ impl SemanticPipelineRule {
         }
     }
 
-    fn emit_nested_module_errors(&self, ctx: &mut RuleContext, inline_module: &Spanned<InlineModule>) {
+    fn emit_nested_module_errors(ctx: &mut RuleContext, inline_module: &Spanned<InlineModule>) {
         for nested in &inline_module.node.items {
             match &nested.node {
                 Node::ModuleDeclaration(module_decl) => {
@@ -180,7 +180,7 @@ impl SemanticPipelineRule {
                         nested_inline.node.name.span,
                         SemanticIssueKind::ModuleDeclarationForbiddenInFileScopedModule,
                     );
-                    self.emit_nested_module_errors(ctx, nested_inline);
+                    Self::emit_nested_module_errors(ctx, nested_inline);
                 }
                 _ => {}
             }
@@ -193,7 +193,7 @@ impl SemanticPipelineRule {
         for definition in Query::from(&program.node).of::<crate::syntax::TypeDefinition>() {
             let generic_names = self.collect_generic_names(&definition.generics);
             for field in &definition.fields {
-                self.validate_type_reference(ctx, &field.node.ty, &known_types, &generic_names);
+                Self::validate_type_reference(ctx, &field.node.ty, &known_types, &generic_names);
             }
         }
 
@@ -201,7 +201,7 @@ impl SemanticPipelineRule {
             let generic_names = self.collect_generic_names(&definition.generics);
             for variant in &definition.variants {
                 for field in &variant.node.fields {
-                    self.validate_type_reference(ctx, &field.node.ty, &known_types, &generic_names);
+                    Self::validate_type_reference(ctx, &field.node.ty, &known_types, &generic_names);
                 }
             }
         }
@@ -209,21 +209,21 @@ impl SemanticPipelineRule {
         for definition in Query::from(&program.node).of::<crate::syntax::FunctionDefinition>() {
             let generic_names = self.collect_generic_names(&definition.generics);
             for parameter in &definition.parameters {
-                self.validate_type_reference(ctx, &parameter.node.ty, &known_types, &generic_names);
+                Self::validate_type_reference(ctx, &parameter.node.ty, &known_types, &generic_names);
             }
             if let Some(return_type) = &definition.return_type {
-                self.validate_type_reference(ctx, return_type, &known_types, &generic_names);
+                Self::validate_type_reference(ctx, return_type, &known_types, &generic_names);
             }
         }
 
         for definition in Query::from(&program.node).of::<crate::syntax::MethodDefinition>() {
             let generic_names = HashSet::new();
-            self.validate_type_reference(ctx, &definition.receiver_type, &known_types, &generic_names);
+            Self::validate_type_reference(ctx, &definition.receiver_type, &known_types, &generic_names);
             for parameter in &definition.parameters {
-                self.validate_type_reference(ctx, &parameter.node.ty, &known_types, &generic_names);
+                Self::validate_type_reference(ctx, &parameter.node.ty, &known_types, &generic_names);
             }
             if let Some(return_type) = &definition.return_type {
-                self.validate_type_reference(ctx, return_type, &known_types, &generic_names);
+                Self::validate_type_reference(ctx, return_type, &known_types, &generic_names);
             }
         }
 
@@ -231,10 +231,10 @@ impl SemanticPipelineRule {
             let generic_names = HashSet::new();
             for signature in Query::from(definition).of::<crate::syntax::ContractMethodSignature>() {
                 for parameter in &signature.parameters {
-                    self.validate_type_reference(ctx, &parameter.node.ty, &known_types, &generic_names);
+                    Self::validate_type_reference(ctx, &parameter.node.ty, &known_types, &generic_names);
                 }
                 if let Some(return_type) = &signature.return_type {
-                    self.validate_type_reference(ctx, return_type, &known_types, &generic_names);
+                    Self::validate_type_reference(ctx, return_type, &known_types, &generic_names);
                 }
             }
         }
@@ -401,7 +401,6 @@ impl SemanticPipelineRule {
     }
 
     fn validate_type_reference(
-        &self,
         ctx: &mut RuleContext,
         ty: &Spanned<Type>,
         known_types: &HashSet<String>,
@@ -425,15 +424,15 @@ impl SemanticPipelineRule {
             }
             Type::Associated { contract, .. } => {
                 let contract_type = Spanned::new(Type::Complex(contract.clone()), contract.span);
-                self.validate_type_reference(ctx, &contract_type, known_types, generic_names);
+                Self::validate_type_reference(ctx, &contract_type, known_types, generic_names);
             }
             Type::Array(inner) => {
-                self.validate_type_reference(ctx, inner, known_types, generic_names);
+                Self::validate_type_reference(ctx, inner, known_types, generic_names);
             }
             Type::Function { return_type, parameters } => {
-                self.validate_type_reference(ctx, return_type, known_types, generic_names);
+                Self::validate_type_reference(ctx, return_type, known_types, generic_names);
                 for parameter in parameters {
-                    self.validate_type_reference(ctx, parameter, known_types, generic_names);
+                    Self::validate_type_reference(ctx, parameter, known_types, generic_names);
                 }
             }
         }

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Make recursive staged-analysis helpers stateless associated functions,
+  removing unused rule receivers and keeping the workspace lint gate clean.
 - pckg package summaries now derive required `packageKind`, nullable template
   metadata, and canonical dependencies from the immutable validated artifact
   manifest. Published manifests are persisted with each version and parsed by
@@ -89,6 +91,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Use the idiomatic boolean assertion in the pckg dependency-rewrite test so
+  the release compiler gate passes with warnings denied.
 - Return the validator's deterministic publication error so package-kind
   conflicts identify the conflicting archive file instead of being hidden by
   a generic invalid-artifact message.
