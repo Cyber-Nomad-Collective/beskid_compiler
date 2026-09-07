@@ -427,6 +427,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         match &ty.node {
             Type::Primitive(primitive) => self.primitive_type_id(primitive.node),
             Type::Complex(path) => self.type_id_for_path_with_args(path),
+            Type::Associated { .. } => None,
             Type::Array(inner) => {
                 let inner_id = self.type_id_for_type(inner)?;
                 Some(self.types.find_array_of(inner_id).unwrap_or_else(|| self.types.intern(TypeInfo::Array(inner_id))))

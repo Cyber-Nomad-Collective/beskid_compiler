@@ -19,6 +19,14 @@ impl Resolver {
                 }
                 self.resolve_type_path(path);
             }
+            Type::Associated { contract, .. } => {
+                for segment in &contract.node.segments {
+                    for type_arg in &segment.node.type_args {
+                        self.resolve_type(type_arg);
+                    }
+                }
+                self.resolve_type_path(contract);
+            }
             Type::Array(inner) => self.resolve_type(inner),
             Type::Function { return_type, parameters } => {
                 self.resolve_type(return_type);

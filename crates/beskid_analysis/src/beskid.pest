@@ -183,11 +183,13 @@ GenericParameters = { "<" ~ Identifier ~ ("," ~ Identifier)* ~ ">" }
 GenericArguments = { "<" ~ BeskidType ~ ("," ~ BeskidType)* ~ ">" }
 
 TypeName = { PrimitiveType | Path }
-ArrayType = { TypeName ~ "[" ~ "]" }
-FunctionType = { TypeName ~ "(" ~ BeskidTypeList? ~ ")" }
+AssociatedTypeRef = { Path ~ "::" ~ Identifier }
+TypeAtom = { AssociatedTypeRef | TypeName }
+ArrayType = { TypeAtom ~ "[" ~ "]" }
+FunctionType = { TypeAtom ~ "(" ~ BeskidTypeList? ~ ")" }
 ArrowFunctionType = { "(" ~ BeskidTypeList? ~ ")" ~ "=>" ~ BeskidType }
 BeskidTypeList = { BeskidType ~ ("," ~ BeskidType)* }
-BeskidType = { ArrowFunctionType | FunctionType | ArrayType | TypeName }
+BeskidType = { ArrowFunctionType | FunctionType | ArrayType | TypeAtom }
 
 ////////////////////////////////////////////////////////////
 // 4) DEFINITIONS

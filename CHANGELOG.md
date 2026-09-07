@@ -54,6 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve grammar-supported associated type references such as `T::Item` as a
+  distinct compiler syntax node instead of rejecting them during AST parsing or
+  conflating them with dotted nominal paths. Unresolved associated bindings
+  remain unavailable to ABI and layout lowering until the conformance pass
+  supplies a binding.
+
 - Always admit string runtime helpers (`str_new`, `str_from_i64`, `str_eq`,
   `str_concat`) as corelib service imports during ISLE lowering, even without
   the Corelib syscall capability. These services are emitted directly by the

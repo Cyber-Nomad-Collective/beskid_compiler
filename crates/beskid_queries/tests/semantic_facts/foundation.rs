@@ -62,6 +62,15 @@ fn try_expression_fact_rejects_differing_result_payload_instantiation() {
 }
 
 #[test]
+fn try_expression_fact_fails_closed_for_associated_result_payloads() {
+    let source = "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<Iterator::Item, Error> Main(Result<Iterator::Item, Error> value) { return value?; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::TryExpression, 0);
+
+    assert_unavailable(try_expression_fact(&db, expression));
+}
+
+#[test]
 fn try_expression_fact_rejects_result_lookalike_without_the_canonical_error_variant() {
     let source = "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Err(TError error) } Result<i32, Error> Main(Result<i32, Error> value) { return value?; }";
     let (db, _project, unit, generation, index) = setup(source);

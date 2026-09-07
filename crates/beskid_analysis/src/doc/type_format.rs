@@ -26,6 +26,17 @@ pub fn format_type(ty: &Spanned<Type>) -> String {
         Type::Complex(path) => {
             path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>().join(".")
         }
+        Type::Associated { contract, name } => format!(
+            "{}::{}",
+            contract
+                .node
+                .segments
+                .iter()
+                .map(|segment| segment.node.name.node.name.as_str())
+                .collect::<Vec<_>>()
+                .join("."),
+            name.node.name
+        ),
         Type::Array(inner) => format!("{}[]", format_type(inner)),
         Type::Function { return_type, parameters } => {
             let params = parameters.iter().map(format_type).collect::<Vec<_>>().join(", ");

@@ -344,6 +344,7 @@ fn extern_disallowed_detail(ty: &Spanned<Type>, is_return: bool) -> String {
         },
         Type::Array(_) => "array types must use CBuffer or CArrayView at the FFI boundary".to_string(),
         Type::Complex(_) => "only primitive types are permitted at the FFI boundary".to_string(),
+        Type::Associated { .. } => "associated types are not permitted at the FFI boundary".to_string(),
         Type::Function { .. } => "function types are not permitted at the FFI boundary".to_string(),
     }
 }
