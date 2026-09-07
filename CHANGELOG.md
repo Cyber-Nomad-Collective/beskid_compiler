@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Centralize exact ABI-v5 target-triple resolution in
+  `TargetMetadata::for_triple`, preserving existing CLI, AOT runtime-kit, and
+  runtime tooling diagnostics at their boundaries.
+
 - pckg Rust backend: replaced the Auth Hub handoff/JWT session model with
   Authelia forward-auth. The server is now a resource server that trusts
   Authelia's `Remote-User`, `Remote-Email`, `Remote-Name` and `Remote-Groups`

@@ -2,7 +2,7 @@ use beskid_abi::BESKID_RUNTIME_ABI_VERSION;
 use beskid_abi::abi_v5::{
     ABI_V5, AbiFieldLayout, AbiFunction, AbiLayout, AbiManifestV5, AbiType, AssemblyExport, CallingConvention,
     Endianness, ManifestValidationError, PlatformImport, RuntimeAuditMetadata, RuntimeIntrinsic, SourceUnit,
-    TargetMetadata, TargetTriple, TrapCode, canonical_source_hash,
+    TargetMetadata, TargetTriple, TargetValidationError, TrapCode, canonical_source_hash,
 };
 use beskid_abi::runtime_kit::{
     BuildProfile, RuntimeArtifact, RuntimeArtifacts, RuntimeKitMetadata, RuntimeKitValidationError,
@@ -103,6 +103,21 @@ fn supported_targets_are_little_endian_64_bit_with_target_owned_calling_conventi
     let mut wrong_convention = linux_target();
     wrong_convention.calling_convention = CallingConvention::new("windows_x64");
     assert!(wrong_convention.validate().is_err());
+}
+
+#[test]
+fn target_lookup_round_trips_each_supported_triple() {
+    for target in TargetMetadata::supported() {
+        assert_eq!(TargetMetadata::for_triple(target.triple.as_str()), Ok(target));
+    }
+}
+
+#[test]
+fn target_lookup_rejects_unknown_triples() {
+    assert_eq!(
+        TargetMetadata::for_triple("x86_64-unknown-freebsd"),
+        Err(TargetValidationError::UnsupportedTriple("x86_64-unknown-freebsd".into())),
+    );
 }
 
 #[test]

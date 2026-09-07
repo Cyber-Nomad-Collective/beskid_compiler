@@ -17,10 +17,8 @@ pub(super) fn verify_provenance_symbol_list(
         .map_err(|error| anyhow!("read ABI-v5 runtime provenance symbol list `{}`: {error}", path.display()))?;
     let symbols = parse_symbol_list(&source)
         .map_err(|error| anyhow!("parse ABI-v5 runtime provenance symbol list `{}`: {error}", path.display()))?;
-    let target_metadata = TargetMetadata::supported()
-        .into_iter()
-        .find(|candidate| candidate.triple.as_str() == target)
-        .ok_or_else(|| anyhow!("unsupported ABI-v5 runtime target `{target}`"))?;
+    let target_metadata =
+        TargetMetadata::for_triple(target).map_err(|_| anyhow!("unsupported ABI-v5 runtime target `{target}`"))?;
     let audit = RuntimeProvenanceAudit::canonical(target_metadata)
         .map_err(|error| anyhow!("derive ABI-v5 provenance audit for `{target}`: {error:?}"))?;
     let verification = match artifact_kind {

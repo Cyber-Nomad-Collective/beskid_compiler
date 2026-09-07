@@ -156,10 +156,7 @@ fn target_symbol_prefix(target: &str) -> Result<String, SymbolListError> {
 }
 
 fn supported_target(target: &str) -> Result<TargetMetadata, SymbolListError> {
-    TargetMetadata::supported()
-        .into_iter()
-        .find(|candidate| candidate.triple.as_str() == target)
-        .ok_or_else(|| SymbolListError::UnsupportedTarget(target.into()))
+    TargetMetadata::for_triple(target).map_err(|_| SymbolListError::UnsupportedTarget(target.into()))
 }
 
 /// A host-independent representation of defined and undefined object symbols.
