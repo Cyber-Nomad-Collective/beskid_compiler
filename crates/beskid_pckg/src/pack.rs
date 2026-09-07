@@ -8,6 +8,7 @@ use beskid_analysis::projects::{
     PACKAGE_README_ARTIFACT_NAME, ProjectKind, discover_project_manifest_in_dir, discover_readme_for_package_root,
     is_package_root_readme_entry, parse_manifest, resolve_readme_file_path,
 };
+use beskid_pckg_artifacts::{ArtifactDependency, canonicalize_project_dependencies};
 use serde_json::{Value, json};
 use walkdir::WalkDir;
 use zip::result::ZipError;
@@ -57,7 +58,7 @@ impl PackProfile {
 ///
 /// `Auto` reproduces the manifest-driven detection used before the `tool` packageKind landed
 /// (D-TOOL-PCKG-0004). `Tool` forces the tool profile even when the source tree omits
-/// `Project.proj`, which keeps `beskid pckg pack --package-kind tool` usable for CLI-only
+/// a `.bproj`, which keeps `beskid pckg pack --package-kind tool` usable for CLI-only
 /// tool packages that ship without a normative project manifest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PackProfileOverride {
@@ -66,14 +67,14 @@ pub enum PackProfileOverride {
     Tool,
 }
 
-/// Resolve pack profile from `Project.proj` when present; otherwise library.
+/// Resolve pack profile from the canonical `.bproj` manifest when present; otherwise library.
 pub fn detect_pack_profile(source_root: &Path) -> Result<PackProfile, PckgError> {
     detect_pack_profile_with_override(source_root, PackProfileOverride::Auto)
 }
 
 /// Resolve pack profile honoring an explicit CLI override.
 ///
-/// * `Auto` matches [`detect_pack_profile`] — `Project.proj` selects template vs library, with
+/// * `Auto` matches [`detect_pack_profile`] — a `.bproj` selects template vs library, with
 ///   no manifest defaulting to library.
 /// * `Tool` selects [`PackProfile::Tool`] unconditionally, but still rejects template projects
 ///   so we never silently drop a `.beskid/template.json` payload at pack time.
@@ -182,11 +183,27 @@ pub fn template_summary_json(summary: &TemplatePackageSummary) -> Value {
     Value::Object(obj)
 }
 
-pub fn build_package_json(package_id: &str, version: &str, profile: &PackProfile) -> Result<String, PckgError> {
+pub fn build_package_json(
+    package_id: &str,
+    version: &str,
+    profile: &PackProfile,
+    has_api_docs: bool,
+    dependencies: &[ArtifactDependency],
+) -> Result<String, PckgError> {
     use crate::api_doc::API_JSON_SCHEMA_VERSION;
 
-    let value = match profile {
-        PackProfile::Library => json!({
+    let dependency_json = dependencies
+        .iter()
+        .map(|dependency| {
+            json!({
+                "name": dependency.name,
+                "version": dependency.version,
+                "source": dependency.source,
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut value = match profile {
+        PackProfile::Library if has_api_docs => json!({
             "schema": "beskid.package.v1",
             "id": package_id,
             "version": version,
@@ -194,6 +211,11 @@ pub fn build_package_json(package_id: &str, version: &str, profile: &PackProfile
                 "apiJson": ".beskid/docs/api.json",
                 "schemaVersion": API_JSON_SCHEMA_VERSION,
             },
+        }),
+        PackProfile::Library => json!({
+            "schema": "beskid.package.v1",
+            "id": package_id,
+            "version": version,
         }),
         PackProfile::Template(summary) => json!({
             "schema": "beskid.package.v1",
@@ -209,6 +231,12 @@ pub fn build_package_json(package_id: &str, version: &str, profile: &PackProfile
             "packageKind": PACKAGE_KIND_TOOL,
         }),
     };
+    if !dependency_json.is_empty() {
+        value
+            .as_object_mut()
+            .expect("package manifest is always an object")
+            .insert("dependencies".into(), Value::Array(dependency_json));
+    }
 
     serde_json::to_string_pretty(&value).map_err(|source| PckgError::Api {
         status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
@@ -217,11 +245,79 @@ pub fn build_package_json(package_id: &str, version: &str, profile: &PackProfile
     })
 }
 
-/// Remove generated API docs from template artifacts (template profile skips doc generation).
-pub fn strip_template_pack_excludes(entries: &mut Vec<(String, Vec<u8>)>) {
+/// Apply the optional staged `package.json` dependency plan to the artifact's
+/// root project manifest. This mutates only collected artifact bytes.
+pub fn prepare_artifact_dependencies(
+    source_root: &Path,
+    entries: &mut [(String, Vec<u8>)],
+) -> Result<Vec<ArtifactDependency>, PckgError> {
+    let planned = load_staged_dependency_plan(source_root)?;
+    let manifests =
+        entries.iter_mut().filter(|(name, _)| !name.contains('/') && name.ends_with(".bproj")).collect::<Vec<_>>();
+    if manifests.is_empty() {
+        if planned.is_empty() {
+            return Ok(Vec::new());
+        }
+        return Err(pack_request_error("dependency plan requires a root .bproj manifest"));
+    }
+    if manifests.len() != 1 {
+        return Err(pack_request_error("package must contain exactly one root .bproj manifest"));
+    }
+    let (_, bytes) = manifests.into_iter().next().expect("one manifest");
+    let project = std::str::from_utf8(bytes).map_err(|_| pack_request_error("root .bproj manifest is not UTF-8"))?;
+    let (rewritten, dependencies) =
+        canonicalize_project_dependencies(project, &planned).map_err(|error| pack_request_error(error.to_string()))?;
+    *bytes = rewritten.into_bytes();
+    Ok(dependencies)
+}
+
+fn load_staged_dependency_plan(source_root: &Path) -> Result<Vec<ArtifactDependency>, PckgError> {
+    let path = source_root.join("package.json");
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let value: Value = serde_json::from_slice(&fs::read(&path)?)
+        .map_err(|error| pack_request_error(format!("invalid staged {}: {error}", path.display())))?;
+    let Some(raw_dependencies) = value.get("dependencies") else {
+        return Ok(Vec::new());
+    };
+    let dependencies = raw_dependencies
+        .as_array()
+        .ok_or_else(|| pack_request_error("staged package.json dependencies must be an array"))?;
+    dependencies
+        .iter()
+        .map(|dependency| {
+            let name = dependency.get("name").and_then(Value::as_str).unwrap_or_default();
+            let version = dependency.get("version").and_then(Value::as_str).unwrap_or_default();
+            let source = dependency.get("source").and_then(Value::as_str).unwrap_or_default();
+            Ok(ArtifactDependency { name: name.into(), version: version.into(), source: source.into() })
+        })
+        .collect()
+}
+
+fn pack_request_error(message: impl Into<String>) -> PckgError {
+    PckgError::Api { status: reqwest::StatusCode::BAD_REQUEST, message: message.into(), body: None }
+}
+
+/// Move the authoring manifest to the registry artifact root and remove generated API docs.
+pub fn prepare_template_pack_entries(entries: &mut Vec<(String, Vec<u8>)>) -> Result<(), PckgError> {
+    if entries.iter().any(|(name, _)| name == "template.json") {
+        return Err(PckgError::Api {
+            status: reqwest::StatusCode::BAD_REQUEST,
+            message: "template source must not contain both `template.json` and `.beskid/template.json`".to_string(),
+            body: None,
+        });
+    }
+    let manifest = entries.iter_mut().find(|(name, _)| name == TEMPLATE_JSON_REL).ok_or_else(|| PckgError::Api {
+        status: reqwest::StatusCode::BAD_REQUEST,
+        message: format!("template project requires `{TEMPLATE_JSON_REL}`"),
+        body: None,
+    })?;
+    manifest.0 = "template.json".to_string();
     entries.retain(|(name, _)| {
         !name.starts_with(".beskid/docs/") && name != ".beskid/docs/api.json" && name != ".beskid/docs/index.md"
     });
+    Ok(())
 }
 
 /// Remove generated API docs from tool artifacts (tool profile does not require api.json).
@@ -333,8 +429,8 @@ mod tests {
             identity: Some("beskid.templates.lib".into()),
             tags: None,
         };
-        let json =
-            build_package_json("beskid.templates.lib", "1.0.0", &PackProfile::Template(summary)).expect("serialize");
+        let json = build_package_json("beskid.templates.lib", "1.0.0", &PackProfile::Template(summary), false, &[])
+            .expect("serialize");
         let root: Value = serde_json::from_str(&json).expect("parse");
         assert_eq!(root["packageKind"], PACKAGE_KIND_TEMPLATE);
         assert_eq!(root["template"]["shortName"], "lib");
@@ -342,15 +438,64 @@ mod tests {
     }
 
     #[test]
-    fn strip_template_pack_excludes_removes_beskid_docs_tree() {
+    fn build_package_json_library_omits_dangling_api_doc_pointer() {
+        let json =
+            build_package_json("corelib_compiler_sdk", "0.1.1", &PackProfile::Library, false, &[]).expect("serialize");
+        let root: Value = serde_json::from_str(&json).expect("parse");
+        assert!(root.get("documentation").is_none());
+    }
+
+    #[test]
+    fn build_package_json_library_advertises_present_api_docs() {
+        let json =
+            build_package_json("corelib_foundation", "0.1.1", &PackProfile::Library, true, &[]).expect("serialize");
+        let root: Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(root["documentation"]["apiJson"], ".beskid/docs/api.json");
+    }
+
+    #[test]
+    fn prepares_path_independent_dependencies_from_staged_package_plan() {
+        let dir = std::env::temp_dir().join(format!("beskid_pckg_dependency_plan_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("mkdir");
+        fs::write(
+            dir.join("package.json"),
+            r#"{"version":"0.4.1","dependencies":[{"name":"corelib_foundation","version":"0.4.2","source":"registry"}]}"#,
+        )
+        .expect("write plan");
+        let project = r#"corelib_runtime {
+  name = "corelib_runtime"
+}
+dependency "corelib_foundation" {
+  source = path
+  path = "../foundation"
+}
+"#;
+        let mut entries = vec![("corelib_runtime.bproj".into(), project.as_bytes().to_vec())];
+
+        let dependencies = prepare_artifact_dependencies(&dir, &mut entries).expect("prepare dependencies");
+
+        assert_eq!(dependencies.len(), 1);
+        assert_eq!(dependencies[0].name, "corelib_foundation");
+        let packed_project = String::from_utf8(entries[0].1.clone()).unwrap();
+        assert!(packed_project.contains("source = registry"));
+        assert!(packed_project.contains("version = \"0.4.2\""));
+        assert!(!packed_project.contains("path ="));
+        assert_eq!(fs::read_to_string(dir.join("package.json")).unwrap().contains("0.4.2"), true);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn prepare_template_pack_entries_moves_manifest_to_artifact_root() {
         let mut entries = vec![
-            (".beskid/template.json".into(), vec![]),
+            (".beskid/template.json".into(), br#"{"schema":"beskid.template.v1"}"#.to_vec()),
             (".beskid/docs/api.json".into(), vec![1]),
             ("src/Main.bd".into(), vec![]),
         ];
-        strip_template_pack_excludes(&mut entries);
+        prepare_template_pack_entries(&mut entries).expect("prepare template entries");
         assert_eq!(entries.len(), 2);
-        assert!(entries.iter().any(|(n, _)| n == ".beskid/template.json"));
+        assert!(entries.iter().any(|(n, _)| n == "template.json"));
+        assert!(!entries.iter().any(|(n, _)| n == ".beskid/template.json"));
         assert!(entries.iter().any(|(n, _)| n == "src/Main.bd"));
     }
 
@@ -382,7 +527,8 @@ mod tests {
 
     #[test]
     fn build_package_json_tool_profile_omits_api_doc_pointer() {
-        let json = build_package_json("beskid.cli.fmt-extra", "0.1.0", &PackProfile::Tool).expect("serialize");
+        let json =
+            build_package_json("beskid.cli.fmt-extra", "0.1.0", &PackProfile::Tool, false, &[]).expect("serialize");
         let root: Value = serde_json::from_str(&json).expect("parse");
         assert_eq!(root["schema"], "beskid.package.v1");
         assert_eq!(root["packageKind"], PACKAGE_KIND_TOOL);

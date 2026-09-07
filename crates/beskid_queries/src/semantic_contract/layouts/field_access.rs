@@ -10,19 +10,31 @@ pub(in crate::semantic_contract) fn aggregate_field_access_tracked(
 ) -> SemanticQueryResult<AggregateFieldAccess> {
     with_node(db, syntax, key, |program, index, node| {
         let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
-        let [receiver, field] = path.path.node.segments.as_slice() else {
-            return None;
+        let (declaration, receiver, field_name) = match path.path.node.segments.as_slice() {
+            [receiver, field] if receiver.node.type_args.is_empty() && field.node.type_args.is_empty() => {
+                let (declaration, receiver) =
+                    nominal_local_receiver_declaration(db, program, index, key, receiver.node.name.node.name.as_str())?;
+                (declaration, receiver, field.node.name.node.name.as_str())
+            }
+            [field] if field.node.type_args.is_empty() => {
+                let method = nearest_ancestor(index, key.node, |kind| {
+                    kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition
+                })?;
+                let declaration = parent_node(index, method)?;
+                index.node_at(program, declaration)?.of::<beskid_analysis::syntax::TypeDefinition>()?;
+                (
+                    AstNodeKey { node: declaration, ..key },
+                    AstNodeKey { node: method, ..key },
+                    field.node.name.node.name.as_str(),
+                )
+            }
+            _ => return None,
         };
-        if !receiver.node.type_args.is_empty() || !field.node.type_args.is_empty() {
-            return None;
-        }
-        let (declaration, receiver) =
-            nominal_local_receiver_declaration(db, program, index, key, receiver.node.name.node.name.as_str())?;
         let layout = aggregate_layout(db, declaration).ok().flatten()?;
         let index = layout
             .fields
             .iter()
-            .position(|(name, _)| name.as_ref() == field.node.name.node.name)
+            .position(|(name, _)| name.as_ref() == field_name)
             .and_then(|index| u32::try_from(index).ok())?;
         Some(Ok(AggregateFieldAccess { declaration, receiver, index }))
     })?

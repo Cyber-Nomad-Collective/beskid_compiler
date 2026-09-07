@@ -3,7 +3,7 @@ use super::mapping::{latest_non_yanked, next_id, now, package_not_found, package
 use super::{
     ApiErrorResponse, AppState, Body, Bytes, HeaderMap, IntoResponse, Json, NewRegistryActivity, PackageArtifactStore,
     Path, PublishOutcome, PublishRequest, PublishVersion, Response, State, StatusCode, StoreError,
-    authenticated_publisher_subject, authenticated_subject, header, validate_package_artifact,
+    authenticated_subject, header,
 };
 
 pub(super) async fn persist_uploaded_artifact(
@@ -97,30 +97,6 @@ pub(super) async fn record_publish_activity(
         .await
         .map(|_| ())
         .map_err(|_| ())
-}
-
-/// Publishes a validated `.bpk` artifact as a raw request body.
-///
-/// The legacy form endpoint carried metadata and artifact bytes together. This
-/// route makes the immutable version segment explicit so the server can
-/// validate the archive before writing it and use the computed checksum as the
-/// one source of truth.
-pub async fn upload_artifact(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(PackageVersionPath { name, version }): Path<PackageVersionPath>,
-    bytes: Bytes,
-) -> Response {
-    let Some(subject) = authenticated_publisher_subject(&state, &headers).await else {
-        return crate::unauthorized_response();
-    };
-    let validated = match validate_package_artifact(&bytes, &name, &version) {
-        Ok(validated) => validated,
-        Err(_) => {
-            return (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid package artifact"))).into_response();
-        }
-    };
-    persist_uploaded_artifact(state, subject, name, version, bytes, validated).await
 }
 
 /// Serves a verified package artifact. Private packages retain the registry's

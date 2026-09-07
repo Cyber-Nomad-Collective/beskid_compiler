@@ -200,6 +200,9 @@ fn maybe_generate_docs_for_pack(args: &PckgArgs) -> anyhow::Result<()> {
     let PckgCommand::Pack(pack_args) = &args.command else {
         return Ok(());
     };
+    if pack_args.skip_docs {
+        return Ok(());
+    }
 
     let source_root = absolutize_source_root(&pack_args.source)?;
     if matches!(beskid_pckg::detect_pack_profile(&source_root)?, beskid_pckg::PackProfile::Template(_)) {

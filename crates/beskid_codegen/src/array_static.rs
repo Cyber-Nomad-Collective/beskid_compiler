@@ -8,8 +8,9 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    AstNodeKey, CallLowering, IndexedNodeKind, SemanticTypeId, bulk_parameter, call_arguments, call_lowering,
-    child_nodes, empty_array_literal_element_abi_type, node_kind, node_type,
+    AstNodeKey, CallLowering, GenericSpecializationInstance, IndexedNodeKind, SemanticTypeId, bulk_parameter,
+    call_arguments, call_lowering, child_nodes, empty_array_literal_element_abi_type, generic_specialization_identity,
+    node_kind, node_type, typed_array_allocation,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -108,6 +109,7 @@ impl CodegenInput<'_> {
         key: AstNodeKey,
         element_type: SemanticTypeId,
         length: u64,
+        specialization_identity: Option<&[u32]>,
     ) -> Option<ArrayStaticPlan> {
         let (stride, alignment, pointer) = scalar_layout(self.target().pointer_width, element_type)?;
         let descriptor =
@@ -128,7 +130,13 @@ impl CodegenInput<'_> {
             .chars()
             .map(|character| if character.is_ascii_alphanumeric() { character } else { '_' })
             .collect::<String>();
-        let identity = format!("{namespace}_u{unit}_g{}_n{}", key.generation.0, key.node.0);
+        let mut identity = format!("{namespace}_u{unit}_g{}_n{}", key.generation.0, key.node.0);
+        if let Some(specialization_identity) = specialization_identity {
+            for component in specialization_identity {
+                identity.push('_');
+                identity.push_str(&component.to_string());
+            }
+        }
         Some(ArrayStaticPlan {
             literal: key,
             pointer_map_symbol: format!("__beskid_array_pointer_map_{identity}"),
@@ -164,7 +172,7 @@ impl CodegenInput<'_> {
             None => empty_array_literal_element_abi_type(self.database(), literal).ok().flatten()?,
         };
         let length = u64::try_from(elements.len()).ok()?;
-        self.build_array_static_plan(literal, element_type, length)
+        self.build_array_static_plan(literal, element_type, length, None)
     }
 
     /// Create source-authorized typed-array metadata for one `bulk`-parameter call.
@@ -195,7 +203,29 @@ impl CodegenInput<'_> {
         let element_type = element_type?;
         let arguments = call_arguments(self.database(), call).ok().flatten()?;
         let length = u64::try_from(arguments.len()).ok()?;
-        self.build_array_static_plan(call, element_type, length)
+        self.build_array_static_plan(call, element_type, length, None)
+    }
+
+    /// Create descriptor-backed allocation metadata for canonical `Array.Empty<T>`.
+    ///
+    /// The semantic fact proves the exact compiler-owned source call while the enclosing
+    /// call-derived specialization proves `T`'s concrete ABI. The specialization identity is
+    /// included in every static symbol, preventing `Empty<i64>` and `Empty<string>` from sharing
+    /// incompatible pointer maps.
+    pub fn typed_array_static_plan(
+        &self,
+        call: AstNodeKey,
+        specialization: Option<&GenericSpecializationInstance>,
+    ) -> Option<ArrayStaticPlan> {
+        let allocation = typed_array_allocation(self.database(), call).ok().flatten()?;
+        let specialization = specialization?;
+        let element_type = specialization
+            .substitutions
+            .iter()
+            .find(|binding| binding.parameter == allocation.element_parameter)?
+            .argument;
+        let identity = generic_specialization_identity(specialization);
+        self.build_array_static_plan(call, element_type, allocation.length, Some(identity.as_ref()))
     }
 }
 

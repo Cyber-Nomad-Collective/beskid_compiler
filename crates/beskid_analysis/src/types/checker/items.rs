@@ -145,61 +145,6 @@ impl<'a> TypeChecker<'a> {
         applied
     }
 
-    pub(super) fn register_foreign_function_signatures(&mut self, program: &Spanned<Program>) {
-        for item in &program.node.items {
-            self.register_foreign_function_signatures_item(item);
-        }
-    }
-
-    fn register_foreign_function_signatures_item(&mut self, item: &Spanned<Node>) {
-        match &item.node {
-            Node::Function(def) => {
-                let mut inserted = Vec::new();
-                for generic in &def.node.generics {
-                    let name = generic.node.name.clone();
-                    let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
-                    self.generic_params.insert(name.clone(), type_id);
-                    inserted.push(name);
-                }
-                let return_type = def
-                    .node
-                    .return_type
-                    .as_ref()
-                    .and_then(|ty| self.resolve_foreign_return_type(ty))
-                    .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
-                let placeholder_param = self.primitive_type_id(PrimitiveType::I64);
-                let mut params = Vec::new();
-                for param in &def.node.parameters {
-                    let type_id = self.type_id_for_type_in_generic_scope(&param.node.ty).or(placeholder_param);
-                    if let Some(type_id) = type_id {
-                        params.push(type_id);
-                    }
-                }
-                self.record_signature(item.span, params.clone(), return_type);
-                self.register_self_parameter_method(item.span, &def.node, &params, return_type);
-                for name in inserted {
-                    self.generic_params.remove(&name);
-                }
-            }
-            Node::ExtendTypeDefinition(def) => {
-                for method in &def.node.methods {
-                    self.register_foreign_method_signature(method.span, method);
-                }
-            }
-            Node::TypeDefinition(def) => {
-                for method in &def.node.methods {
-                    self.register_foreign_method_signature(method.span, method);
-                }
-            }
-            Node::InlineModule(def) => {
-                for nested in &def.node.items {
-                    self.register_foreign_function_signatures_item(nested);
-                }
-            }
-            _ => {}
-        }
-    }
-
     pub(super) fn type_dependency_function_items(&mut self, items: &[Spanned<Node>]) {
         for item in items {
             match &item.node {
@@ -395,65 +340,5 @@ impl<'a> TypeChecker<'a> {
         }
         self.type_block(&def.node.body);
         self.current_receiver_item_id = previous_receiver;
-    }
-
-    pub(super) fn register_foreign_method_signature(
-        &mut self,
-        item_span: crate::syntax::SpanInfo,
-        def: &Spanned<crate::syntax::MethodDefinition>,
-    ) {
-        let return_type = def
-            .node
-            .return_type
-            .as_ref()
-            .and_then(|ty| self.type_id_for_type_in_generic_scope(ty))
-            .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
-        let placeholder_param = self.primitive_type_id(PrimitiveType::I64);
-        let mut params = Vec::new();
-        for param in &def.node.parameters {
-            let type_id = self.type_id_for_type_in_generic_scope(&param.node.ty).or(placeholder_param);
-            if let Some(type_id) = type_id {
-                params.push(type_id);
-            }
-        }
-        self.record_signature(item_span, params.clone(), return_type);
-        if let Some(method_item_id) = self.canonical_item_id_for_span(item_span) {
-            self.method_function_signatures.insert(
-                method_item_id,
-                FunctionSignature { params: params.clone(), return_type: return_type.expect("method return type") },
-            );
-        }
-    }
-
-    fn register_self_parameter_method(
-        &mut self,
-        item_span: crate::syntax::SpanInfo,
-        def: &crate::syntax::FunctionDefinition,
-        params: &[TypeId],
-        return_type: Option<TypeId>,
-    ) {
-        let Some(first) = def.parameters.first() else {
-            return;
-        };
-        if first.node.name.node.name != "self" {
-            return;
-        }
-        let Some(return_type) = return_type else {
-            return;
-        };
-        let Some(method_item_id) = self.canonical_item_id_for_span(item_span) else {
-            return;
-        };
-        let Some(receiver_type_id) = self.type_id_for_type_in_generic_scope(&first.node.ty) else {
-            return;
-        };
-        let Some(receiver_item) = self.named_item_id(receiver_type_id) else {
-            return;
-        };
-        self.methods_by_receiver.insert((receiver_item, def.name.node.name.clone()), method_item_id);
-        self.method_function_signatures.insert(
-            method_item_id,
-            FunctionSignature { params: params.iter().skip(1).copied().collect(), return_type },
-        );
     }
 }

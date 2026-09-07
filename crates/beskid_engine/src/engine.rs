@@ -18,11 +18,13 @@ struct RuntimeKitSelection {
 
 /// Owns an exact ABI-v5 runtime-kit selection and a [`BeskidJitModule`].
 ///
-/// Field order is load-bearing: `runtime_state` detaches the calling thread before `jit` releases
-/// the loaded runtime kit that owns those exports.
+/// Field order is load-bearing: `_runtime_state` detaches the calling thread before the current or
+/// retired JIT modules release the loaded runtime kit and descriptor storage that the heap can
+/// still reference.
 pub struct Engine {
     runtime_kit: RuntimeKitSelection,
     _runtime_state: AttachedRuntimeState,
+    retired_jits: Vec<BeskidJitModule>,
     jit: BeskidJitModule,
 }
 
@@ -60,6 +62,7 @@ impl Engine {
         Ok(Self {
             runtime_kit: RuntimeKitSelection { prefix: prefix.to_path_buf(), target, profile },
             _runtime_state: runtime_state,
+            retired_jits: Vec::new(),
             jit,
         })
     }
@@ -71,12 +74,13 @@ impl Engine {
 
     /// Drop the current JIT module and reload the same validated exact runtime kit.
     pub fn reload_runtime_kit(&mut self) -> Result<(), JitError> {
-        self.jit = BeskidJitModule::new_with_runtime_kit(
+        let jit = BeskidJitModule::new_with_runtime_kit(
             &self.runtime_kit.prefix,
             &self.runtime_kit.target,
             self.runtime_kit.profile,
             &[],
         )?;
+        self.replace_jit(jit);
         Ok(())
     }
 
@@ -125,12 +129,13 @@ impl Engine {
         };
 
         // Recreate the module per artifact while preserving the exact runtime-kit authority.
-        self.jit = BeskidJitModule::new_with_runtime_kit(
+        let jit = BeskidJitModule::new_with_runtime_kit(
             &self.runtime_kit.prefix,
             &self.runtime_kit.target,
             self.runtime_kit.profile,
             &authorized_user_ffi,
         )?;
+        self.replace_jit(jit);
 
         #[cfg(debug_assertions)]
         {
@@ -144,6 +149,13 @@ impl Engine {
         }
 
         self.jit.compile_with_pipeline(artifact, pipeline)
+    }
+
+    /// Replace the active artifact while retaining the old module's static descriptors for as long
+    /// as the persistent runtime heap can retain objects that point at them.
+    fn replace_jit(&mut self, jit: BeskidJitModule) {
+        let retired = std::mem::replace(&mut self.jit, jit);
+        self.retired_jits.push(retired);
     }
 
     /// Resolved machine code for `name` after successful compile; caller must match the real signature.

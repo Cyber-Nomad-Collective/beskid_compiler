@@ -27,7 +27,7 @@ pub use operations::{
 };
 pub use package::{
     AsyncPackageRepository, NewPackage, Package, PackageRepository, PackageVersion, PublishOutcome, PublishVersion,
-    SqlxPackageRepository, StoreError, WorkspacePublishOutcome, WorkspacePublishReservation,
+    SqlxPackageRepository, StoreError,
 };
 pub use package_reviews::{AsyncPackageCommunityReviewRepository, PackageCommunityReview, PackageCommunityReviewError};
 

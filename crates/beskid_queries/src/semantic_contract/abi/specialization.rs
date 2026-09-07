@@ -92,6 +92,9 @@ pub(in crate::semantic_contract) fn generic_specialization_instance_for_call(
                 None if integer_literal_fits_abi(db, argument, SemanticTypeId::I32)? => Some(SemanticTypeId::I32),
                 None => None,
             }
+        } else if unsuffixed_integer_literal(db, argument)? {
+            let expected = generic_abi_type(db, declaration, &parameter.node.ty.node, &substitutions)?;
+            integer_literal_fits_abi(db, argument, expected)?.then_some(expected)
         } else {
             None
         };
@@ -413,6 +416,7 @@ pub(in crate::semantic_contract) fn corelib_service_abi_signature(service: Corel
         "__syscall_write_bytes" => (vec![SemanticTypeId::I64, SemanticTypeId::POINTER], SemanticTypeId::I64),
         "__syscall_read_bytes" => (vec![SemanticTypeId::I64, SemanticTypeId::I64], SemanticTypeId::POINTER),
         "__panic_str" => (vec![SemanticTypeId::STRING], SemanticTypeId::NEVER),
+        "__gc_collect" => (vec![], SemanticTypeId::WORD),
         "__args_count" => (vec![], SemanticTypeId::I64),
         "__args_get" => (vec![SemanticTypeId::I64], SemanticTypeId::STRING),
         "__fs_read_text" => (vec![SemanticTypeId::STRING, SemanticTypeId::STRING], SemanticTypeId::I32),

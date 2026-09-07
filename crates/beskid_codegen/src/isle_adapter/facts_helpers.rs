@@ -1,6 +1,58 @@
 use super::*;
 
 impl SyntaxNodeFacts<'_> {
+    pub(super) fn array_index_element_type_in_context(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        if let Some(element) = self.query(array_index_element_abi_type(self.db, key)) {
+            return Some(element);
+        }
+        let enclosing = self.item_specializations.values().next()?;
+        self.query(array_index_element_specialization(self.db, key, enclosing.substitutions.clone()))
+    }
+
+    pub(super) fn specialized_enum_constructor(
+        &self,
+        key: AstNodeKey,
+    ) -> Option<beskid_queries::EnumConstructorSpecialization> {
+        let enclosing = self.item_specializations.values().next()?;
+        self.query(enum_constructor_specialization(self.db, key, enclosing.substitutions.clone()))
+    }
+
+    pub(super) fn generic_call_specialization_in_context(
+        &self,
+        key: AstNodeKey,
+    ) -> Option<beskid_queries::GenericSpecializationInstance> {
+        if let Some(template) = self.query(generic_call_template(self.db, key)) {
+            let enclosing = self.item_specializations.values().next()?;
+            let substitutions = template
+                .parameters
+                .iter()
+                .zip(template.parameter_arguments.iter())
+                .map(|(target, argument)| {
+                    enclosing
+                        .substitutions
+                        .iter()
+                        .find(|binding| binding.parameter.as_ref() == argument.as_ref())
+                        .map(|binding| beskid_queries::GenericSubstitution {
+                            parameter: target.clone(),
+                            argument: binding.argument,
+                        })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            return self.query(generic_specialization_instance(
+                self.db,
+                template.declaration,
+                substitutions.into(),
+            ));
+        }
+        self.query(generic_call_specialization(self.db, key)).map(|specialization| {
+            beskid_queries::GenericSpecializationInstance {
+                declaration: specialization.declaration,
+                signature: specialization.signature,
+                substitutions: specialization.substitutions,
+            }
+        })
+    }
+
     pub(super) fn struct_layout_for_literal(&self, key: AstNodeKey) -> Option<StructLayout> {
         let plan = self.input.aggregate_static_plan(key)?;
         self.struct_layout_from_object(plan.object_size, plan.object_alignment, &plan.fields)
@@ -38,6 +90,7 @@ impl SyntaxNodeFacts<'_> {
         let isa = self.isa?;
         let source = self
             .query(enum_layout(self.db, key))
+            .or_else(|| self.specialized_enum_constructor(key).map(|fact| fact.layout))
             .or_else(|| self.query(enum_match(self.db, key)).map(|fact| fact.layout))?;
         let header = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
         let physical =
@@ -96,6 +149,18 @@ impl SyntaxNodeFacts<'_> {
     /// length comes from the call's scalar argument count.
     pub(super) fn array_layout_for_bulk(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
         let plan = self.input.bulk_array_static_plan(key)?;
+        let element = map_signature_type(self.isa?, plan.element_type)?;
+        let stride = u32::try_from(plan.stride).ok()?;
+        let length = u32::try_from(plan.length).ok()?;
+        Some(beskid_isle::ArrayLayout::new(element, stride, length, plan.alignment.ilog2() as u8))
+    }
+
+    pub(super) fn typed_array_plan(&self, key: AstNodeKey) -> Option<crate::ArrayStaticPlan> {
+        self.input.typed_array_static_plan(key, self.item_specializations.values().next())
+    }
+
+    pub(super) fn array_layout_for_typed_allocation(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
+        let plan = self.typed_array_plan(key)?;
         let element = map_signature_type(self.isa?, plan.element_type)?;
         let stride = u32::try_from(plan.stride).ok()?;
         let length = u32::try_from(plan.length).ok()?;
@@ -180,6 +245,15 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn scalar_semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        if self.query(implicit_method_receiver(self.db, key)).is_some() {
+            return Some(SemanticTypeId::POINTER);
+        }
+        if self.query(generic_call_template(self.db, key)).is_some() {
+            return Some(self.generic_call_specialization_in_context(key)?.signature.result);
+        }
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::IndexExpression) {
+            return self.array_index_element_type_in_context(key);
+        }
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::ForStatement) {
             return self.query(for_iterator_fact(self.db, key)).map(|fact| fact.element_type);
         }

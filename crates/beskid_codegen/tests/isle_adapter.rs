@@ -12,6 +12,8 @@ mod enum_match_result;
 mod literal_operators;
 #[path = "isle_adapter/memory_aggregate_arrays.rs"]
 mod memory_aggregate_arrays;
+#[path = "isle_adapter/method_owned_fields.rs"]
+mod method_owned_fields;
 #[path = "isle_adapter/module_emission_specialization.rs"]
 mod module_emission_specialization;
 #[path = "isle_adapter/statement_result_storage.rs"]

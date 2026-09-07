@@ -555,7 +555,7 @@ define_builtins! {
         injected: true,
     },
     &["trap"] => {
-        symbol: "beskid_rt_v5_trap",
+        symbol: "beskid_rt_v5_intrinsic_trap",
         params: [U64, Ptr, Usize],
         returns: Never,
         injected: true,
@@ -646,8 +646,8 @@ define_builtins! {
     },
     &["tty_winsize"] => {
         symbol: "beskid_rt_v5_intrinsic_tty_winsize",
-        params: [],
-        returns: Ptr,
+        params: [U64],
+        returns: U64,
         injected: true,
     },
     &["arch_context_size"] => {

@@ -8,5 +8,12 @@ default = []
 slow = []
 
 [dependencies]
+async-trait = "0.1"
+axum = "0.8"
 beskid_pckg = { path = "../beskid_pckg" }
+beskid_pckg_server = { path = "../beskid_pckg_server" }
+beskid_pckg_store = { path = "../beskid_pckg_store" }
+sha2 = "0.10"
 tokio = { version = "1.48", features = ["rt-multi-thread", "macros"] }
+tower = { version = "0.5", features = ["util"] }
+zip = "2"

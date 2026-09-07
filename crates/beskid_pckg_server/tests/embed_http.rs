@@ -1,11 +1,14 @@
+mod support;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use beskid_pckg_server::{PckgServerConfig, router};
 use http_body_util::BodyExt;
+use support::{artifact, isolated_artifact_root, multipart_publish_request};
 use tower::ServiceExt;
 
 fn config() -> PckgServerConfig {
-    PckgServerConfig::default().with_authelia_auth()
+    PckgServerConfig::default().with_authelia_auth().with_artifact_root(isolated_artifact_root("embed-http"))
 }
 
 async fn text(response: axum::response::Response) -> String {
@@ -36,15 +39,7 @@ async fn public_embed_card_and_badge_match_legacy_content_contract_without_priva
 
     let published = app
         .clone()
-        .oneshot(
-            Request::post("/api/packages/Public.Embed/versions")
-                .header("content-type", "application/json")
-                .header("remote-user", "owner")
-                .body(Body::from(
-                    r#"{"version":"1.2.3","checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
-                ))
-                .expect("request builds"),
-        )
+        .oneshot(multipart_publish_request("Public.Embed", "1.2.3", "owner", artifact("Public.Embed", "1.2.3")))
         .await
         .expect("route responds");
     assert_eq!(published.status(), StatusCode::CREATED);

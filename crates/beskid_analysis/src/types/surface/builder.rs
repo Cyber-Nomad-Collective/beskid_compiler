@@ -58,8 +58,11 @@ impl<'a> TypeSurfaceBuilder<'a> {
                     }
                 }
                 Node::TypeDefinition(def) => {
+                    let Some(receiver_item_id) = self.canonical_item_id_for_span(item.span) else {
+                        continue;
+                    };
                     for method in &def.node.methods {
-                        self.seed_method_receiver(method.span, method);
+                        self.seed_owned_method_receiver(receiver_item_id, method.span, method);
                     }
                 }
                 _ => {}
@@ -75,9 +78,19 @@ impl<'a> TypeSurfaceBuilder<'a> {
             }
             Node::TypeDefinition(def) => {
                 self.seed_generic_item(item.span, &def.node.generics);
+                let mut inserted = Vec::new();
+                for generic in &def.node.generics {
+                    let name = generic.node.name.clone();
+                    let type_id = self.types.intern(TypeInfo::GenericParam(name.clone()));
+                    self.generic_params.insert(name.clone(), type_id);
+                    inserted.push(name);
+                }
                 self.register_struct_definition(item.span, &def.node, true);
                 for method in &def.node.methods {
                     self.register_foreign_method(method.span, method);
+                }
+                for name in inserted {
+                    self.generic_params.remove(&name);
                 }
             }
             Node::EnumDefinition(def) => {
@@ -277,10 +290,22 @@ impl<'a> TypeSurfaceBuilder<'a> {
     }
 
     fn seed_method_receiver(&mut self, method_span: SpanInfo, def: &Spanned<MethodDefinition>) {
-        let Some(method_item_id) = self.item_id_for_span(method_span) else {
+        let Some(method_item_id) = self.canonical_item_id_for_span(method_span) else {
             return;
         };
         let Some(ResolvedType::Item(receiver_item_id)) = self.resolved_type_at(def.node.receiver_type.span) else {
+            return;
+        };
+        self.surface.methods_by_receiver.insert((receiver_item_id, def.node.name.node.name.clone()), method_item_id);
+    }
+
+    fn seed_owned_method_receiver(
+        &mut self,
+        receiver_item_id: ItemId,
+        method_span: SpanInfo,
+        def: &Spanned<MethodDefinition>,
+    ) {
+        let Some(method_item_id) = self.canonical_item_id_for_span(method_span) else {
             return;
         };
         self.surface.methods_by_receiver.insert((receiver_item_id, def.node.name.node.name.clone()), method_item_id);
@@ -452,7 +477,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         }
         let mut args = Vec::with_capacity(last.node.type_args.len());
         for arg in &last.node.type_args {
-            args.push(self.type_id_for_type(arg)?);
+            args.push(self.type_id_for_type_in_generic_scope(arg)?);
         }
         Some(self.types.intern(TypeInfo::Applied { base: item_id, args }))
     }
@@ -503,7 +528,25 @@ impl<'a> TypeSurfaceBuilder<'a> {
     }
 
     fn resolved_type_at(&self, span: SpanInfo) -> Option<ResolvedType> {
-        self.resolution.tables.resolved_type_at(span, Some(&self.source_path))
+        // A unit surface must never consume the entry unit's unscoped span table. Different
+        // source files reuse byte offsets, so an exact offset collision can otherwise turn a
+        // dependency declaration such as `Stack<T>` into an unrelated entry type. Only an
+        // explicitly source-scoped fact belongs to this surface; declaration-path lookup below
+        // remains the authority when dependency bodies were not resolved.
+        let mut resolved = None;
+        for (source, types) in &self.resolution.tables.scoped_resolved_types {
+            if !paths::same_file(source, &self.source_path) {
+                continue;
+            }
+            let Some(candidate) = types.get(&span).cloned() else {
+                continue;
+            };
+            if resolved.as_ref().is_some_and(|existing| existing != &candidate) {
+                return None;
+            }
+            resolved = Some(candidate);
+        }
+        resolved
     }
 
     fn item_id_for_span(&self, span: SpanInfo) -> Option<ItemId> {
@@ -539,7 +582,24 @@ impl<'a> TypeSurfaceBuilder<'a> {
     }
 
     fn canonical_item_id_for_span(&self, span: SpanInfo) -> Option<ItemId> {
-        let item_id = self.item_id_for_span(span)?;
+        let item_id = self
+            .resolution
+            .items
+            .iter()
+            .find(|info| {
+                info.span == span
+                    && info.symbol.is_some()
+                    && info.source_path.as_ref().is_some_and(|source| paths::same_file(source, &self.source_path))
+            })
+            .map(|info| info.id)
+            .or_else(|| {
+                let matches: Vec<_> =
+                    self.resolution.items.iter().filter(|info| info.span == span && info.symbol.is_some()).collect();
+                match matches.as_slice() {
+                    [single] => Some(single.id),
+                    _ => None,
+                }
+            })?;
         let symbol = self.resolution.items.get(item_id.0).and_then(|info| info.symbol)?;
         self.resolution.by_symbol.get(&symbol).copied().or(Some(item_id))
     }

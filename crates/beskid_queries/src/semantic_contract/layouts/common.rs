@@ -97,11 +97,24 @@ pub(in crate::semantic_contract) fn abi_type_for_local_path(
 ) -> Result<SemanticTypeId, SemanticError> {
     match path.segments.as_slice() {
         [segment] if segment.node.type_args.is_empty() => {
-            let declaration =
+            if let Some(declaration) =
                 resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())
-                    .ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-            abi_local_declaration_type(db, program, index, key, declaration)
-                .unwrap_or_else(|| Err(SemanticError::unavailable("abi_type")))
+                && let Some(local_type) = abi_local_declaration_type(db, program, index, key, declaration)
+            {
+                return local_type;
+            }
+            if constant_integer(db, key)?.is_some() {
+                return Ok(SemanticTypeId::WORD);
+            }
+            let access = aggregate_field_access(db, key)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+            let layout =
+                aggregate_layout(db, access.declaration)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
+            match layout.fields.get(usize::try_from(access.index).map_err(|_| SemanticError::unavailable("abi_type"))?)
+            {
+                Some((_, AggregateFieldShape::Scalar(semantic))) => Ok(*semantic),
+                Some((_, AggregateFieldShape::Nominal(_))) => Ok(SemanticTypeId::POINTER),
+                None => Err(SemanticError::unavailable("abi_type")),
+            }
         }
         [receiver, field] if receiver.node.type_args.is_empty() && field.node.type_args.is_empty() => {
             abi_type_for_direct_aggregate_field_projection(

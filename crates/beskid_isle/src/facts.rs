@@ -280,6 +280,10 @@ pub enum CallKind {
     /// distinct lowering path from [`CallKind::Direct`], which requires argument/signature arity
     /// to match.
     Bulk,
+    /// Canonical Foundation `Array.Empty<T>` resolved with its enclosing concrete generic
+    /// specialization. This reuses the descriptor-backed array-literal allocation sequence and
+    /// never imports the legacy element-size `array_new` ABI.
+    TypedArrayAllocation,
     Dynamic,
 }
 

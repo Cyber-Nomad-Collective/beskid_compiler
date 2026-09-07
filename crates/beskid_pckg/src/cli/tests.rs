@@ -21,6 +21,13 @@ fn pack_args_default_package_kind_is_auto() {
     let args = parse(&["test-cli", "pack", "--package", "demo", "--output", "/tmp/demo.bpk"]);
     assert!(matches!(args.package_kind, PackArgsPackageKind::Auto));
     assert!(matches!(args.package_kind_override(), PackProfileOverride::Auto));
+    assert!(!args.skip_docs);
+}
+
+#[test]
+fn pack_args_skip_docs_flag_parses() {
+    let args = parse(&["test-cli", "pack", "--package", "demo", "--output", "/tmp/demo.bpk", "--skip-docs"]);
+    assert!(args.skip_docs);
 }
 
 #[test]

@@ -1,10 +1,12 @@
 use std::io::Write;
 
+mod support;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use beskid_pckg_server::{PckgServerConfig, router};
 use http_body_util::BodyExt;
-use sha2::{Digest, Sha256};
+use support::{artifact, hex_sha256, multipart_publish_request};
 use tower::ServiceExt;
 use zip::write::SimpleFileOptions;
 
@@ -12,46 +14,18 @@ fn config(root: &std::path::Path) -> PckgServerConfig {
     PckgServerConfig::default().with_authelia_auth().with_artifact_root(root)
 }
 
-fn artifact(name: &str, version: &str) -> Vec<u8> {
-    let manifest = format!(r#"{{"schema":"beskid.package.v1","id":"{name}","version":"{version}"}}"#);
-    let project = format!("name = \"{name}\"\n");
-    let source = "module Main\n";
-    let checksums = [
-        ("package.json", manifest.as_bytes()),
-        ("Project.proj", project.as_bytes()),
-        ("src/main.bsk", source.as_bytes()),
-    ]
-    .into_iter()
-    .map(|(path, bytes)| format!("{}  {path}", hex_sha256(bytes)))
-    .collect::<Vec<_>>()
-    .join("\n");
-
-    let mut output = std::io::Cursor::new(Vec::new());
-    let mut zip = zip::ZipWriter::new(&mut output);
-    let options = SimpleFileOptions::default();
-    for (path, contents) in [
-        ("package.json", manifest.as_bytes()),
-        ("Project.proj", project.as_bytes()),
-        ("src/main.bsk", source.as_bytes()),
-        ("checksums.sha256", checksums.as_bytes()),
-    ] {
-        zip.start_file(path, options).expect("entry starts");
-        zip.write_all(contents).expect("entry writes");
-    }
-    zip.finish().expect("zip finishes");
-    output.into_inner()
-}
-
 fn artifact_with_browsable_content(name: &str, version: &str) -> Vec<u8> {
     let manifest = format!(r#"{{"schema":"beskid.package.v1","id":"{name}","version":"{version}"}}"#);
-    let project = format!("name = \"{name}\"\n");
+    let project_name = name.replace('.', "_").to_ascii_lowercase();
+    let project_manifest = format!("{project_name}.bproj");
+    let project = format!("{project_name} {{\n  name = \"{project_name}\"\n}}\n");
     let entries = vec![
         ("package.json", manifest.into_bytes()),
-        ("Project.proj", project.into_bytes()),
+        (project_manifest.as_str(), project.into_bytes()),
         ("README.md", b"# Public Demo\n".to_vec()),
         ("docs/guide.md", b"Use `public.demo`.\n".to_vec()),
         (".beskid/docs/metadata.json", br#"{"title":"Public Demo"}"#.to_vec()),
-        ("src/main.bsk", b"module Main\n".to_vec()),
+        ("src/main.bd", b"module Main\n".to_vec()),
     ];
     let checksums =
         entries.iter().map(|(path, bytes)| format!("{}  {path}", hex_sha256(bytes))).collect::<Vec<_>>().join("\n");
@@ -66,10 +40,6 @@ fn artifact_with_browsable_content(name: &str, version: &str) -> Vec<u8> {
     zip.write_all(checksums.as_bytes()).expect("checksums entry writes");
     zip.finish().expect("zip finishes");
     output.into_inner()
-}
-
-fn hex_sha256(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
 }
 
 async fn json(response: axum::response::Response) -> serde_json::Value {
@@ -100,17 +70,8 @@ async fn owner_can_upload_and_public_can_download_a_verified_artifact() {
         .unwrap();
     assert_eq!(created.status(), StatusCode::CREATED);
 
-    let uploaded = app
-        .clone()
-        .oneshot(
-            Request::post("/api/packages/Public.Demo/versions/1.0.0/artifact")
-                .header("content-type", "application/vnd.beskid.package")
-                .header("remote-user", "owner")
-                .body(Body::from(bytes.clone()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let uploaded =
+        app.clone().oneshot(multipart_publish_request("Public.Demo", "1.0.0", "owner", bytes.clone())).await.unwrap();
     let uploaded_status = uploaded.status();
     assert_eq!(uploaded_status, StatusCode::CREATED, "{:?}", json(uploaded).await);
     assert_eq!(json(uploaded).await["checksumSha256"], hex_sha256(&bytes));
@@ -125,16 +86,8 @@ async fn owner_can_upload_and_public_can_download_a_verified_artifact() {
     assert_eq!(downloaded.into_body().collect().await.unwrap().to_bytes(), bytes);
 
     let newer = artifact("Public.Demo", "2.0.0");
-    let upload_newer = app
-        .clone()
-        .oneshot(
-            Request::post("/api/packages/Public.Demo/versions/2.0.0/artifact")
-                .header("remote-user", "owner")
-                .body(Body::from(newer.clone()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let upload_newer =
+        app.clone().oneshot(multipart_publish_request("Public.Demo", "2.0.0", "owner", newer.clone())).await.unwrap();
     assert_eq!(upload_newer.status(), StatusCode::CREATED);
     let yank_newer = app
         .clone()
@@ -158,6 +111,38 @@ async fn owner_can_upload_and_public_can_download_a_verified_artifact() {
 }
 
 #[tokio::test]
+async fn raw_version_artifact_publication_is_not_a_registry_route() {
+    let root = std::env::temp_dir().join(format!("pckg-obsolete-artifact-route-{}", std::process::id()));
+    let app = router(config(&root));
+    let created = app
+        .clone()
+        .oneshot(
+            Request::post("/api/packages")
+                .header("content-type", "application/json")
+                .header("remote-user", "owner")
+                .body(Body::from(r#"{"name":"Obsolete.Route","isPublic":true,"submitForReview":false}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+
+    let response = app
+        .oneshot(
+            Request::post("/api/packages/Obsolete.Route/versions/1.0.0/artifact")
+                .header("content-type", "application/vnd.beskid.package")
+                .header("remote-user", "owner")
+                .body(Body::from(artifact("Obsolete.Route", "1.0.0")))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    std::fs::remove_dir_all(root).expect("artifact root is removed");
+}
+
+#[tokio::test]
 async fn private_and_yanked_artifacts_are_hidden_from_non_owners_and_downloads() {
     let root = std::env::temp_dir().join(format!("pckg-artifact-private-{}", std::process::id()));
     let app = router(config(&root));
@@ -169,10 +154,7 @@ async fn private_and_yanked_artifacts_are_hidden_from_non_owners_and_downloads()
             .header("remote-user", "owner")
             .body(Body::from(r#"{"name":"Private.Demo","isPublic":false,"submitForReview":false}"#))
             .unwrap(),
-        Request::post("/api/packages/Private.Demo/versions/1.0.0/artifact")
-            .header("remote-user", "owner")
-            .body(Body::from(bytes))
-            .unwrap(),
+        multipart_publish_request("Private.Demo", "1.0.0", "owner", bytes),
     ] {
         let response = app.clone().oneshot(request).await.unwrap();
         assert!(response.status().is_success());
@@ -216,10 +198,7 @@ async fn public_package_artifact_browse_routes_expose_only_verified_docs_and_sou
             .header("remote-user", "owner")
             .body(Body::from(r#"{"name":"Public.Demo","isPublic":true,"submitForReview":false}"#))
             .unwrap(),
-        Request::post("/api/packages/Public.Demo/versions/1.0.0/artifact")
-            .header("remote-user", "owner")
-            .body(Body::from(artifact))
-            .unwrap(),
+        multipart_publish_request("Public.Demo", "1.0.0", "owner", artifact),
     ] {
         assert!(app.clone().oneshot(request).await.unwrap().status().is_success());
     }
@@ -255,7 +234,7 @@ async fn public_package_artifact_browse_routes_expose_only_verified_docs_and_sou
     let source = app
         .clone()
         .oneshot(
-            Request::get("/api/packages/Public.Demo/versions/1.0.0/source/file?path=src%2Fmain.bsk")
+            Request::get("/api/packages/Public.Demo/versions/1.0.0/source/file?path=src%2Fmain.bd")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -270,7 +249,7 @@ async fn public_package_artifact_browse_routes_expose_only_verified_docs_and_sou
         .await
         .unwrap();
     assert_eq!(tree.status(), StatusCode::OK);
-    assert_eq!(json(tree).await[0]["path"], "src/main.bsk");
+    assert_eq!(json(tree).await[0]["path"], "src/main.bd");
 
     let metadata = app
         .clone()

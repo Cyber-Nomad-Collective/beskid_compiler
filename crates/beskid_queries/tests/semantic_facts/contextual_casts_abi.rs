@@ -1,10 +1,29 @@
-use super::support::{assert_unavailable, key, setup};
+use super::support::{assert_unavailable, key, key_at_start, setup};
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
-    SemanticTypeId, SyntaxGenerationId, abi_type, call_argument_abi_type, cast_intents, primitive_numeric_conversion,
-    value_abi_type,
+    SemanticTypeId, SyntaxGenerationId, abi_type, call_argument_abi_type, cast_intents,
+    contextual_integer_literal_abi_type, primitive_numeric_conversion, value_abi_type,
 };
 use std::sync::Arc;
+
+#[test]
+fn declared_integer_constant_uses_mutable_assignment_storage_abi() {
+    let source = "const DEFAULT_CAPACITY = 16; i64 Main(mut i64 capacity) { capacity = DEFAULT_CAPACITY; return capacity; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let constant = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.rfind("DEFAULT_CAPACITY").expect("constant use"),
+    );
+
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, constant).expect("contextual constant ABI"),
+        Some(SemanticTypeId::I64)
+    );
+    assert_eq!(value_abi_type(&db, constant).expect("constant value ABI"), Some(SemanticTypeId::I64));
+}
 
 #[test]
 fn cast_intents_use_exact_typed_let_constraints_and_local_types() {

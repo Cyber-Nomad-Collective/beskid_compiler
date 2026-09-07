@@ -92,7 +92,6 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
         .route("/api/packages/{name}/versions", get(packages::list_versions).post(packages::publish_version))
         .route("/api/packages/{name}/versions/{version}/yank", axum::routing::post(packages::yank_version))
         .route("/api/packages/{name}/versions/{version}/unyank", axum::routing::post(packages::unyank_version))
-        .route("/api/packages/{name}/versions/{version}/artifact", axum::routing::post(packages::upload_artifact))
         .route("/api/packages/{name}/versions/{version}/download", get(packages::download_artifact))
         .route("/api/packages/{name}/versions/{version}/readme", get(artifact_routes::readme))
         .route("/api/packages/{name}/versions/{version}/docs", get(artifact_routes::list_docs))
@@ -100,7 +99,6 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
         .route("/api/packages/{name}/versions/{version}/docs/structured", get(artifact_routes::structured_docs))
         .route("/api/packages/{name}/versions/{version}/source/tree", get(artifact_routes::source_tree))
         .route("/api/packages/{name}/versions/{version}/source/file", get(artifact_routes::read_source))
-        .route("/api/workspaces/publish", axum::routing::post(workspace_review_routes::publish_workspace))
         .route(
             "/api/packages/{name}/review-requests",
             axum::routing::post(workspace_review_routes::submit_review_request),

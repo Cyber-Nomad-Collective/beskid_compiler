@@ -165,21 +165,6 @@ pub struct PackageVersionLifecycleResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PublishPackageVersionRequest {
-    pub version: Option<String>,
-    #[serde(rename = "versionBump")]
-    pub version_bump: Option<String>,
-    #[serde(rename = "checksumSha256")]
-    pub checksum_sha256: Option<String>,
-}
-
-impl PublishPackageVersionRequest {
-    pub fn is_idempotent_against(&self, existing: &PackageVersionSummaryResponse) -> bool {
-        self.checksum_sha256.as_deref() == Some(existing.checksum_sha256.as_str())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpsertPackageRequest {
     pub name: String,
     pub description: Option<String>,

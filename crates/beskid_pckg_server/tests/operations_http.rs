@@ -1,11 +1,14 @@
+mod support;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use beskid_pckg_server::{PckgServerConfig, router};
 use http_body_util::BodyExt;
+use support::{artifact, isolated_artifact_root, multipart_publish_request};
 use tower::ServiceExt;
 
 fn admin_config() -> PckgServerConfig {
-    PckgServerConfig::default().with_authelia_auth()
+    PckgServerConfig::default().with_authelia_auth().with_artifact_root(isolated_artifact_root("operations-http"))
 }
 
 fn admin_request(method: &str, uri: &str) -> Request<Body> {
@@ -61,18 +64,10 @@ async fn super_admin_can_manage_blocked_links_and_read_publish_activity() {
         .unwrap();
     assert_eq!(created.status(), StatusCode::CREATED);
 
-    let published = app
-        .clone()
-        .oneshot(
-            Request::post("/api/packages/Audit.Demo/versions")
-                .header("content-type", "application/json")
-                .header("remote-user", "admin")
-                .header("remote-groups", "pckg-admins")
-                .body(Body::from(serde_json::json!({"version":"1.0.0", "checksumSha256":"a".repeat(64)}).to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let mut publish_request =
+        multipart_publish_request("Audit.Demo", "1.0.0", "admin", artifact("Audit.Demo", "1.0.0"));
+    publish_request.headers_mut().insert("remote-groups", "pckg-admins".parse().unwrap());
+    let published = app.clone().oneshot(publish_request).await.unwrap();
     assert_eq!(published.status(), StatusCode::CREATED);
 
     let activity = app.clone().oneshot(admin_request("GET", "/api/admin/registry-activity?take=50")).await.unwrap();

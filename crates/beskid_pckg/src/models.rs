@@ -138,13 +138,6 @@ pub struct PackageVersionSummaryResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PublishPackageVersionResponse {
-    pub success: bool,
-    pub message: String,
-    pub version: Option<PackageVersionSummaryResponse>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpsertPackageRequest {
     pub name: String,
     pub description: Option<String>,

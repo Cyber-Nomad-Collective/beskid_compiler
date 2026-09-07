@@ -8,8 +8,9 @@ use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
     AggregateFieldShape, AstNodeKey, BeskidDatabase, EnumLayoutFact, EnumMatchArmFact, EnumMatchFact,
     EnumVariantLayoutFact, ItemSignature, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId, abi_type,
-    aggregate_field_access, aggregate_layout, build_typed_program, call_arguments, enum_constructor, enum_layout,
-    enum_match, generic_call_specialization, item_abi_signature,
+    aggregate_field_access, aggregate_layout, array_index_element_specialization, build_typed_program,
+    call_arguments, enum_constructor, enum_layout, enum_match, generic_call_specialization,
+    implicit_method_receiver, item_abi_signature,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -100,6 +101,7 @@ unit Main() {
     bar.percent;
     return;
 }
+
 "#;
     let (db, _project, unit, generation, index) = setup(inferred);
     let projection = key_at_start(
@@ -129,6 +131,73 @@ unit Main() {
         chained.find("outer.bar.percent").expect("chained projection"),
     );
     assert_unavailable(abi_type(&db, projection));
+}
+
+#[test]
+fn method_owned_fields_resolve_through_the_implicit_receiver() {
+    let source = r#"
+type List<T> {
+    T[] storage,
+    i64 count,
+
+    unit Probe(i64 index) {
+        mut T[] nextStorage = storage;
+        if index < 0 || index >= count {
+            return;
+        }
+        return;
+    }
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let declaration = key(unit, generation, &index, NodeKind::TypeDefinition, 0);
+    let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    let storage =
+        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("storage;").expect("storage use"));
+    let count =
+        key_at_start(unit, generation, &index, NodeKind::PathExpression, source.rfind("count").expect("count use"));
+
+    for (field, expected_index, expected_abi) in
+        [(storage, 0, SemanticTypeId::POINTER), (count, 1, SemanticTypeId::I64)]
+    {
+        let access = aggregate_field_access(&db, field)
+            .expect("implicit field access query")
+            .expect("method-owned field access");
+        assert_eq!(access.declaration, declaration);
+        assert_eq!(access.receiver, method, "the MethodDefinition owns the implicit receiver");
+        assert_eq!(access.index, expected_index);
+        assert_eq!(abi_type(&db, field), Ok(Some(expected_abi)));
+    }
+}
+
+#[test]
+fn self_path_resolves_to_its_implicit_method_receiver() {
+    let source = "type List<T> { List<T> Identity() { return self; } }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    let receiver = key(unit, generation, &index, NodeKind::PathExpression, 0);
+
+    assert_eq!(implicit_method_receiver(&db, receiver), Ok(Some(method)));
+}
+
+#[test]
+fn generic_array_index_element_resolves_through_the_enclosing_specialization() {
+    let source = "T Get<T>(T[] values, i64 index) { return values[index]; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let indexed = key(unit, generation, &index, NodeKind::IndexExpression, 0);
+
+    assert_eq!(
+        array_index_element_specialization(
+            &db,
+            indexed,
+            Arc::from([beskid_queries::GenericSubstitution {
+                parameter: Arc::from("T"),
+                argument: SemanticTypeId::I64,
+            }]),
+        )
+        .expect("contextual array-index element query"),
+        Some(SemanticTypeId::I64),
+    );
 }
 
 #[test]
