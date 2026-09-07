@@ -1,4 +1,4 @@
-use beskid_abi::abi_v5::{AbiManifestV5, AbiType, SourceUnit, TargetMetadata};
+use beskid_abi::abi_v5::{AbiManifestV5, SourceUnit, TargetMetadata};
 use beskid_abi::runtime_source::{
     CANONICAL_BOOTSTRAP_LIFECYCLE_SOURCE_PATH, CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
     CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH,

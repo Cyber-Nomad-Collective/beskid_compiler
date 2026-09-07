@@ -179,9 +179,9 @@ fn type_name_for_manifest(ty: &syn::Type) -> String {
 pub fn emit_node_kind_bd(reflect_rs: &Path) -> Result<String, std::io::Error> {
     let kinds = reflect_sdk_node_kind_names(reflect_rs)?;
     let mut lines = vec![
-        format!("{BANNER}"),
+        BANNER.to_string(),
         "/// Classification tokens for syntax queries (mirrors `beskid_analysis::syntax_query::NodeKind`).".into(),
-        format!("pub enum NodeKind"),
+        "pub enum NodeKind".to_string(),
         "{".into(),
     ];
     for k in &kinds {
