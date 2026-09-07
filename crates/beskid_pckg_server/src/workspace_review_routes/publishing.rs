@@ -14,14 +14,14 @@ use super::errors::workspace_failure;
 use super::multipart::multipart_artifact;
 use super::versions::next_version;
 use super::workspace_parse::parse_workspace;
-use crate::{AppState, authenticated_subject, now_unix_seconds};
+use crate::{AppState, authenticated_publisher_subject, now_unix_seconds};
 
 pub(crate) async fn publish_workspace(
     State(state): State<AppState>,
     headers: HeaderMap,
     request: axum::extract::Request,
 ) -> Response {
-    let Some(subject) = authenticated_subject(&state, &headers) else {
+    let Some(subject) = authenticated_publisher_subject(&state, &headers).await else {
         return crate::unauthorized_response();
     };
     let (bytes, version_bump) = match multipart_artifact(request).await {

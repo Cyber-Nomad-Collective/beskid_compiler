@@ -2,9 +2,11 @@ use std::{
     env, fmt,
     net::SocketAddr,
     path::{Path as FilePath, PathBuf},
+    sync::Arc,
 };
 
 use beskid_pckg_auth::AuthMode;
+use beskid_pckg_store::AsyncApiKeyRepository;
 
 #[derive(Clone)]
 pub struct PckgServerConfig {
@@ -13,6 +15,7 @@ pub struct PckgServerConfig {
     pub(crate) artifact_root: PathBuf,
     pub(crate) database_url: Option<String>,
     pub(crate) auth: Option<AuthConfig>,
+    pub(crate) api_key_repository: Option<Arc<dyn AsyncApiKeyRepository>>,
 }
 
 /// Authentication configuration. pckg is a resource server that trusts
@@ -49,6 +52,7 @@ impl Default for PckgServerConfig {
             artifact_root: env::temp_dir().join("beskid-pckg-artifacts"),
             database_url: None,
             auth: None,
+            api_key_repository: None,
         }
     }
 }
@@ -113,6 +117,14 @@ impl PckgServerConfig {
     /// [`router_from_config`] / [`serve`], never by individual requests.
     pub fn with_database_url(mut self, database_url: Option<String>) -> Self {
         self.database_url = database_url.filter(|value| !value.trim().is_empty());
+        self
+    }
+
+    /// Supplies the pckg-owned key verifier used by CLI publication routes.
+    /// Production receives this from the configured PostgreSQL repository;
+    /// this injection seam is for explicit embedded/test deployments.
+    pub fn with_api_key_repository(mut self, repository: Arc<dyn AsyncApiKeyRepository>) -> Self {
+        self.api_key_repository = Some(repository);
         self
     }
 

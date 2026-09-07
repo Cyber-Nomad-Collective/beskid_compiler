@@ -3,7 +3,7 @@ use super::mapping::{latest_non_yanked, next_id, now, package_not_found, package
 use super::{
     ApiErrorResponse, AppState, Body, Bytes, HeaderMap, IntoResponse, Json, NewRegistryActivity, PackageArtifactStore,
     Path, PublishOutcome, PublishRequest, PublishVersion, Response, State, StatusCode, StoreError,
-    authenticated_subject, header, validate_package_artifact,
+    authenticated_publisher_subject, authenticated_subject, header, validate_package_artifact,
 };
 
 pub(super) async fn persist_uploaded_artifact(
@@ -111,7 +111,7 @@ pub async fn upload_artifact(
     Path(PackageVersionPath { name, version }): Path<PackageVersionPath>,
     bytes: Bytes,
 ) -> Response {
-    let Some(subject) = authenticated_subject(&state, &headers) else {
+    let Some(subject) = authenticated_publisher_subject(&state, &headers).await else {
         return crate::unauthorized_response();
     };
     let validated = match validate_package_artifact(&bytes, &name, &version) {
