@@ -63,6 +63,7 @@ pub struct ValidatedArtifact {
     pub checksum_sha256: String,
     pub size_bytes: u64,
     pub manifest_json: String,
+    pub metadata: PackageManifestMetadata,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +79,40 @@ pub struct ArtifactDependency {
     pub name: String,
     pub version: String,
     pub source: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackageKind {
+    Library,
+    Template,
+    Tool,
+}
+
+impl PackageKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Library => "library",
+            Self::Template => "template",
+            Self::Tool => "tool",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, ArtifactError> {
+        match value {
+            "library" => Ok(Self::Library),
+            "template" => Ok(Self::Template),
+            "tool" => Ok(Self::Tool),
+            _ => Err(ArtifactError::InvalidManifest("packageKind is unsupported".into())),
+        }
+    }
+}
+
+/// Canonical metadata parsed from artifact-root `package.json`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageManifestMetadata {
+    pub package_kind: PackageKind,
+    pub template: Option<Value>,
+    pub dependencies: Vec<ArtifactDependency>,
 }
 
 impl ArtifactDependency {
@@ -468,7 +503,7 @@ pub fn validate_package_artifact(
     }
     if package_kind == "template" {
         let template_json = read_entry(&mut zip, entries["template.json"])?;
-        validate_template_contract(&template_json, expected_package_name, manifest.template_summary.as_ref())?;
+        validate_template_contract(&template_json, expected_package_name, manifest.template.as_ref())?;
     }
     let checksums = parse_checksums(&read_entry(&mut zip, entries["checksums.sha256"])?)?;
     if checksums.contains_key("checksums.sha256") {
@@ -497,6 +532,7 @@ pub fn validate_package_artifact(
         checksum_sha256: sha256_hex(bytes),
         size_bytes: bytes.len() as u64,
         manifest_json,
+        metadata: manifest,
     })
 }
 
@@ -525,18 +561,29 @@ pub fn select_download<'a>(records: &'a [ArtifactRecord], requested: &str) -> Op
     }
 }
 
-struct ValidatedPackageManifest {
-    package_kind: String,
-    dependencies: Vec<ArtifactDependency>,
-    template_summary: Option<Value>,
-}
-
 fn validate_manifest(
     manifest: &str,
     package: &str,
     version: &str,
     entries: &BTreeMap<String, usize>,
-) -> Result<ValidatedPackageManifest, ArtifactError> {
+) -> Result<PackageManifestMetadata, ArtifactError> {
+    let metadata = parse_package_manifest_metadata(manifest, package, version)?;
+    if metadata.package_kind == PackageKind::Template && !entries.contains_key("template.json") {
+        return Err(ArtifactError::InvalidManifest("template package requires template.json".into()));
+    }
+    if metadata.package_kind != PackageKind::Template && entries.contains_key("template.json") {
+        return Err(ArtifactError::InvalidManifest("only templates may include template.json".into()));
+    }
+    Ok(metadata)
+}
+
+/// Parses the immutable manifest metadata persisted beside a package version.
+/// Artifact validation and catalog projection share this one interpretation.
+pub fn parse_package_manifest_metadata(
+    manifest: &str,
+    package: &str,
+    version: &str,
+) -> Result<PackageManifestMetadata, ArtifactError> {
     let value: Value = serde_json::from_str(manifest)
         .map_err(|_| ArtifactError::InvalidManifest("package.json is not valid JSON".into()))?;
     let object = value
@@ -552,16 +599,9 @@ fn validate_manifest(
     if field("version") != Some(version) {
         return Err(ArtifactError::InvalidManifest("version does not match requested version".into()));
     }
-    let kind = field("packageKind").unwrap_or("library");
-    if !matches!(kind, "library" | "template" | "tool") {
-        return Err(ArtifactError::InvalidManifest("packageKind is unsupported".into()));
-    }
-    if kind == "template" && !entries.contains_key("template.json") {
-        return Err(ArtifactError::InvalidManifest("template package requires template.json".into()));
-    }
-    if kind != "template" && entries.contains_key("template.json") {
-        return Err(ArtifactError::InvalidManifest("only templates may include template.json".into()));
-    }
+    let kind = PackageKind::parse(
+        field("packageKind").ok_or_else(|| ArtifactError::InvalidManifest("packageKind is required".into()))?,
+    )?;
     let dependencies = match object.get("dependencies") {
         None => Vec::new(),
         Some(Value::Array(values)) => values
@@ -587,11 +627,11 @@ fn validate_manifest(
         }
     };
     dependency_map(&dependencies, "package.json dependencies")?;
-    let template_summary = object.get("template").cloned();
-    if kind == "template" && !template_summary.as_ref().is_some_and(Value::is_object) {
+    let template = object.get("template").cloned();
+    if kind == PackageKind::Template && !template.as_ref().is_some_and(Value::is_object) {
         return Err(ArtifactError::InvalidManifest("template package requires a template summary object".into()));
     }
-    Ok(ValidatedPackageManifest { package_kind: kind.to_owned(), dependencies, template_summary })
+    Ok(PackageManifestMetadata { package_kind: kind, dependencies, template })
 }
 
 fn dependency_map(

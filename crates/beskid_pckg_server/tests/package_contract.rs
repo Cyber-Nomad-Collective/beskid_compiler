@@ -1,6 +1,6 @@
 use beskid_pckg_contract::{
-    PackageContractFixture, PackageHealthSnapshotResponse, PackageSearchResponse, PackageSummaryResponse,
-    PackageVersionLifecycleResponse, PackageVersionSummaryResponse, UpsertPackageRequest,
+    PackageContractFixture, PackageHealthSnapshotResponse, PackageKindResponse, PackageSearchResponse,
+    PackageSummaryResponse, PackageVersionLifecycleResponse, PackageVersionSummaryResponse, UpsertPackageRequest,
 };
 
 fn health() -> PackageHealthSnapshotResponse {
@@ -29,6 +29,8 @@ fn package(name: &str, is_public: bool) -> PackageSummaryResponse {
         name: name.to_owned(),
         description: "A package contract fixture.".to_owned(),
         category: "General".to_owned(),
+        package_kind: PackageKindResponse::Library,
+        template: None,
         repository_url: Some("https://example.test/repository".to_owned()),
         website_url: Some("https://example.test".to_owned()),
         tags: vec!["fixtures".to_owned()],
@@ -70,7 +72,8 @@ fn list_and_search_contracts_preserve_the_full_summary_wire_shape() {
         serde_json::to_value(vec![summary]).unwrap(),
         serde_json::json!([{
             "id": "Public.Demo-id", "name": "Public.Demo", "description": "A package contract fixture.",
-            "category": "General", "repositoryUrl": "https://example.test/repository",
+            "category": "General", "packageKind": "library", "template": null,
+            "repositoryUrl": "https://example.test/repository",
             "websiteUrl": "https://example.test", "tags": ["fixtures"], "isPublic": true,
             "totalDownloads": 42, "updatedAtUtc": "2026-07-13T12:00:00Z",
             "pendingReviewsCount": 0, "averageRating": 4.5, "iconUrl": "https://example.test/icon.svg",

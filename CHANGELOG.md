@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- pckg package summaries now derive required `packageKind`, nullable template
+  metadata, and canonical dependencies from the immutable validated artifact
+  manifest. Published manifests are persisted with each version and parsed by
+  the artifact crate's single metadata abstraction; incomplete legacy rows and
+  unpublished records are not projected as invented package kinds.
+- pckg production startup now requires
+  `PCKG_RELEASE_PUBLISHER_KEY_SHA256` and atomically reconciles it into one
+  deterministic `release:github-actions` automation principal with read and
+  publish scopes. Only the lowercase SHA-256 digest enters server
+  configuration; malformed, missing, or colliding credentials fail startup.
 - pckg packaging now uses one path-independent artifact dependency contract:
   exact registry dependencies are read from the staged `package.json` release
   plan, source-only `.bproj` path declarations are rewritten in collected
@@ -79,6 +89,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Return the validator's deterministic publication error so package-kind
+  conflicts identify the conflicting archive file instead of being hidden by
+  a generic invalid-artifact message.
 - Retire each artifact's managed heap before unloading its JIT code and static
   type descriptors, then attach a fresh runtime state for the replacement
   artifact so later tests cannot dereference retired descriptor storage.

@@ -2,7 +2,7 @@ use std::io::{Cursor, Write};
 
 use beskid_pckg_artifacts::{
     ArtifactBrowser, ArtifactDependency, ArtifactError, ArtifactRecord, LocalFileArtifactStore, PackageArtifactStore,
-    PublishRequest, canonicalize_project_dependencies, select_download, validate_package_artifact,
+    PackageKind, PublishRequest, canonicalize_project_dependencies, select_download, validate_package_artifact,
 };
 use sha2::{Digest, Sha256};
 use zip::write::SimpleFileOptions;
@@ -24,7 +24,8 @@ fn archive_from_files(files: Vec<(&str, String)>) -> Vec<u8> {
 }
 
 fn valid_archive(package: &str, version: &str) -> Vec<u8> {
-    let manifest = format!(r#"{{"schema":"beskid.package.v1","id":"{package}","version":"{version}"}}"#);
+    let manifest =
+        format!(r#"{{"schema":"beskid.package.v1","id":"{package}","version":"{version}","packageKind":"library"}}"#,);
     let project = "acme_math {\n  name = \"acme_math\"\n}\n".to_string();
     archive_from_files(vec![
         ("package.json", manifest),
@@ -34,7 +35,8 @@ fn valid_archive(package: &str, version: &str) -> Vec<u8> {
 }
 
 fn archive_with_files(package: &str, version: &str, extra: &[(&str, &str)]) -> Vec<u8> {
-    let manifest = format!(r#"{{"schema":"beskid.package.v1","id":"{package}","version":"{version}"}}"#);
+    let manifest =
+        format!(r#"{{"schema":"beskid.package.v1","id":"{package}","version":"{version}","packageKind":"library"}}"#,);
     let project = "acme_math {\n  name = \"acme_math\"\n}\n".to_string();
     let mut files =
         vec![("package.json", manifest), ("acme_math.bproj", project), ("src/main.bd", "fn main() {}".into())];
@@ -44,7 +46,10 @@ fn archive_with_files(package: &str, version: &str, extra: &[(&str, &str)]) -> V
 
 fn archive_with_zip_slip() -> Vec<u8> {
     let files = [
-        ("package.json", r#"{"schema":"beskid.package.v1","id":"acme.math","version":"1.2.3"}"#),
+        (
+            "package.json",
+            r#"{"schema":"beskid.package.v1","id":"acme.math","version":"1.2.3","packageKind":"library"}"#,
+        ),
         ("acme_math.bproj", "acme_math {\n  name = \"acme_math\"\n}\n"),
         ("src/main.bd", "fn main() {}"),
         ("../escape.bd", "bad"),
@@ -62,6 +67,20 @@ fn validates_zip_manifest_and_embedded_checksums() {
     assert_eq!(validated.version, "1.2.3");
     assert_eq!(validated.size_bytes, artifact.len() as u64);
     assert_eq!(validated.checksum_sha256.len(), 64);
+}
+
+#[test]
+fn rejects_manifest_without_required_package_kind() {
+    let artifact = archive_from_files(vec![
+        ("package.json", r#"{"schema":"beskid.package.v1","id":"acme.math","version":"1.2.3"}"#.into()),
+        ("acme_math.bproj", "acme_math {\n  name = \"acme_math\"\n}\n".into()),
+        ("src/main.bd", "fn main() {}".into()),
+    ]);
+
+    assert!(matches!(
+        validate_package_artifact(&artifact, "acme.math", "1.2.3"),
+        Err(ArtifactError::InvalidManifest(message)) if message.contains("packageKind is required")
+    ));
 }
 
 #[test]
@@ -83,7 +102,11 @@ fn validates_canonical_template_artifact_without_legacy_project_or_src_paths() {
         ),
         ("content/Main.bd", "pub i32 Main() { return 0; }".into()),
     ];
-    validate_package_artifact(&archive_from_files(files.into()), package, version).unwrap();
+    let validated = validate_package_artifact(&archive_from_files(files.into()), package, version).unwrap();
+
+    assert_eq!(validated.metadata.package_kind, PackageKind::Template);
+    assert_eq!(validated.metadata.template.as_ref().unwrap()["shortName"], "console");
+    assert!(validated.metadata.dependencies.is_empty());
 }
 
 #[test]
@@ -149,7 +172,7 @@ dependency "corelib_foundation" {
     let registry_project =
         path_project.replace("source = path\n  path = \"../foundation\"", "source = registry\n  version = \"0.4.2\"");
     let package_manifest = format!(
-        r#"{{"schema":"beskid.package.v1","id":"{package}","version":"{version}","dependencies":[{{"name":"corelib_foundation","version":"0.4.2","source":"registry"}}]}}"#,
+        r#"{{"schema":"beskid.package.v1","id":"{package}","version":"{version}","packageKind":"library","dependencies":[{{"name":"corelib_foundation","version":"0.4.2","source":"registry"}}]}}"#,
     );
     let path_artifact = archive_from_files(vec![
         ("package.json", package_manifest.clone()),
@@ -178,7 +201,12 @@ fn validates_canonical_aggregate_without_sources() {
     let package = "corelib";
     let version = "0.1.1";
     let artifact = archive_from_files(vec![
-        ("package.json", format!(r#"{{"schema":"beskid.package.v1","id":"{package}","version":"{version}"}}"#)),
+        (
+            "package.json",
+            format!(
+                r#"{{"schema":"beskid.package.v1","id":"{package}","version":"{version}","packageKind":"library"}}"#,
+            ),
+        ),
         ("corelib.bproj", "corelib {\n  name = \"corelib\"\n  type = Aggregate\n}\n".into()),
     ]);
 
@@ -190,7 +218,12 @@ fn rejects_legacy_project_manifest() {
     let package = "acme.math";
     let version = "1.2.3";
     let artifact = archive_from_files(vec![
-        ("package.json", format!(r#"{{"schema":"beskid.package.v1","id":"{package}","version":"{version}"}}"#)),
+        (
+            "package.json",
+            format!(
+                r#"{{"schema":"beskid.package.v1","id":"{package}","version":"{version}","packageKind":"library"}}"#,
+            ),
+        ),
         ("Project.proj", "project { name = \"acme_math\" }\n".into()),
         ("src/main.bd", "fn main() {}".into()),
     ]);

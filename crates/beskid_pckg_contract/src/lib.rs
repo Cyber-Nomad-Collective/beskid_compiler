@@ -16,13 +16,21 @@ impl HealthResponse {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ApiErrorResponse {
-    pub message: &'static str,
+    pub message: String,
 }
 
 impl ApiErrorResponse {
-    pub const fn new(message: &'static str) -> Self {
-        Self { message }
+    pub fn new(message: impl Into<String>) -> Self {
+        Self { message: message.into() }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PackageKindResponse {
+    Library,
+    Template,
+    Tool,
 }
 
 /// Legacy package-list payload retained while the registry API moves to Rust.
@@ -32,6 +40,9 @@ pub struct PackageSummaryResponse {
     pub name: String,
     pub description: String,
     pub category: String,
+    #[serde(rename = "packageKind")]
+    pub package_kind: PackageKindResponse,
+    pub template: Option<Value>,
     #[serde(rename = "repositoryUrl")]
     pub repository_url: Option<String>,
     #[serde(rename = "websiteUrl")]

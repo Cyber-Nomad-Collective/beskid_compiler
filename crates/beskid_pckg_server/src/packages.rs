@@ -8,11 +8,13 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use beskid_pckg_artifacts::{
-    ArtifactRecord, PackageArtifactStore, PublishRequest, select_download, validate_package_artifact,
+    ArtifactRecord, PackageArtifactStore, PackageKind, PackageManifestMetadata, PublishRequest,
+    parse_package_manifest_metadata, select_download, validate_package_artifact,
 };
 use beskid_pckg_contract::{
-    ApiErrorResponse, PackageDetailsResponse, PackageHealthSnapshotResponse, PackageSearchResponse,
-    PackageSummaryResponse, PackageVersionLifecycleResponse, PackageVersionSummaryResponse, UpsertPackageRequest,
+    ApiErrorResponse, PackageDependencyResponse, PackageDetailsResponse, PackageHealthSnapshotResponse,
+    PackageKindResponse, PackageSearchResponse, PackageSummaryResponse, PackageVersionLifecycleResponse,
+    PackageVersionSummaryResponse, UpsertPackageRequest,
 };
 use beskid_pckg_store::{
     NewPackage, NewRegistryActivity, Package, PackageCommunityReview, PackageVersion, PublishOutcome, PublishVersion,

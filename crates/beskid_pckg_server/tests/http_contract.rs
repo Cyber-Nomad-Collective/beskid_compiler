@@ -173,6 +173,14 @@ async fn publisher_directory_lists_public_package_owners_and_hides_private_packa
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::CREATED);
+        if is_public {
+            let published = app
+                .clone()
+                .oneshot(multipart_publish_request(name, "1.0.0", subject, artifact(name, "1.0.0")))
+                .await
+                .unwrap();
+            assert_eq!(published.status(), StatusCode::CREATED);
+        }
     }
 
     let directory = app.clone().oneshot(Request::get("/api/publishers").body(Body::empty()).unwrap()).await.unwrap();

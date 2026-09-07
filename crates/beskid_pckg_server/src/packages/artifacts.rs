@@ -39,6 +39,7 @@ pub(super) async fn persist_uploaded_artifact(
         }
         return (StatusCode::OK, Json(version_summary(&package, &existing))).into_response();
     }
+    let manifest_json = validated.manifest_json.clone();
     let stored = match state.artifacts.save(PublishRequest { validated, bytes: &bytes }) {
         Ok(stored) => stored,
         Err(_) => return artifact_storage_failure(),
@@ -52,6 +53,7 @@ pub(super) async fn persist_uploaded_artifact(
             checksum_sha256: stored.checksum_sha256,
             storage_key: stored.storage_key,
             size_bytes: stored.size_bytes,
+            manifest_json,
             now_unix_seconds: now(),
         })
         .await

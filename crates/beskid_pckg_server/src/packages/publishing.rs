@@ -79,8 +79,12 @@ async fn publish_multipart_version(state: AppState, headers: HeaderMap, name: St
             )
                 .into_response();
         }
-        Err(_) => {
-            return (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid package artifact"))).into_response();
+        Err(error) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ApiErrorResponse::new(format!("invalid package artifact: {error}"))),
+            )
+                .into_response();
         }
     };
     persist_uploaded_artifact(state, subject, name, version, artifact, validated).await

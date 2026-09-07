@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::package::{
     NewPackage, Package, PackageRepository, PackageVersion, PublishOutcome, PublishVersion, StoreError,
-    validate_checksum, validate_package_name, validate_subject, validate_version,
+    validate_checksum, validate_manifest_metadata, validate_package_name, validate_subject, validate_version,
 };
 
 /// Deterministic test double. The Postgres adapter must preserve the outcomes
@@ -50,6 +50,7 @@ impl PackageRepository for InMemoryPackageRepository {
     fn publish_version(&mut self, request: PublishVersion) -> Result<PublishOutcome, StoreError> {
         validate_version(&request.version)?;
         validate_checksum(&request.checksum_sha256)?;
+        validate_manifest_metadata(&request.manifest_json)?;
         if !self.packages_by_name.values().any(|package| package.id == request.package_id) {
             return Err(StoreError::PackageNotFound);
         }
@@ -68,6 +69,7 @@ impl PackageRepository for InMemoryPackageRepository {
             checksum_sha256: request.checksum_sha256.to_ascii_lowercase(),
             storage_key: request.storage_key,
             size_bytes: request.size_bytes,
+            manifest_json: request.manifest_json,
             is_yanked: false,
             published_at_unix_seconds: request.now_unix_seconds,
             yanked_at_unix_seconds: None,

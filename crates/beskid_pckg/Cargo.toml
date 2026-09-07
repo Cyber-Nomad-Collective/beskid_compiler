@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 beskid_analysis = { path = "../beskid_analysis" }
 beskid_pckg_artifacts = { path = "../beskid_pckg_artifacts" }
+beskid_pckg_contract = { path = "../beskid_pckg_contract" }
 clap = { version = "4.4", features = ["derive", "env"] }
 comfy-table = "7"
 tracing = { workspace = true }

@@ -687,6 +687,7 @@ version = "0.1.0"
 dependencies = [
  "beskid_analysis",
  "beskid_pckg_artifacts",
+ "beskid_pckg_contract",
  "clap",
  "comfy-table",
  "reqwest 0.12.28",

@@ -64,3 +64,11 @@ pub(super) struct DeletePackageResponse {
     pub(super) success: bool,
     pub(super) message: String,
 }
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct CreatedPackageResponse {
+    pub(super) id: String,
+    pub(super) name: String,
+    pub(super) owner_user_id: String,
+}

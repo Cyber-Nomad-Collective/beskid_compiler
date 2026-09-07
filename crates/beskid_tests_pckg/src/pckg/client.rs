@@ -43,7 +43,8 @@ impl AsyncApiKeyRepository for ActiveKeyRepository {
 }
 
 fn package_artifact(name: &str, version: &str) -> Vec<u8> {
-    let manifest = format!(r#"{{"schema":"beskid.package.v1","id":"{name}","version":"{version}"}}"#);
+    let manifest =
+        format!(r#"{{"schema":"beskid.package.v1","id":"{name}","version":"{version}","packageKind":"library"}}"#,);
     let project_name = name.replace('.', "_").to_ascii_lowercase();
     let project_manifest = format!("{project_name}.bproj");
     let project = format!("{project_name} {{\n  name = \"{project_name}\"\n}}\n");

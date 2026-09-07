@@ -5,12 +5,48 @@ use uuid::Uuid;
 
 use crate::package::SqlxPackageRepository;
 
+pub const RELEASE_PUBLISHER_KEY_ID: &str = "79587ce7-3937-4e21-8f74-e6d19d056fb2";
+pub const RELEASE_PUBLISHER_SUBJECT: &str = "release:github-actions";
+pub const RELEASE_PUBLISHER_LABEL: &str = "GitHub Actions Release";
+pub(crate) const RECONCILE_RELEASE_PUBLISHER_KEY_SQL: &str = "INSERT INTO pckg_api_keys (id,subject,label,token_sha256,scopes,created_at_utc,revoked_at_utc) \
+     VALUES ($1,$2,$3,$4,$5,$6,NULL) \
+     ON CONFLICT (id) DO UPDATE SET label=EXCLUDED.label,token_sha256=EXCLUDED.token_sha256,\
+     scopes=EXCLUDED.scopes,revoked_at_utc=NULL \
+     WHERE pckg_api_keys.subject=EXCLUDED.subject \
+     RETURNING id,subject,label,scopes,created_at_utc,revoked_at_utc";
+
 impl SqlxPackageRepository {
     /// Creates the API-key table after the package registry migration. Kept
     /// explicit so test fixtures can opt into only the surface they exercise.
     pub async fn migrate_api_keys(&self) -> Result<(), ApiKeyStoreError> {
         sqlx::raw_sql(crate::migrations::CREATE_API_KEYS).execute(self.pool()).await.map_err(api_key_database_error)?;
         Ok(())
+    }
+
+    /// Reconciles the one release-automation principal from a pre-hashed
+    /// credential. The raw publisher token never enters server configuration
+    /// or this persistence boundary.
+    pub async fn reconcile_release_publisher_key(
+        &self,
+        token_sha256: &str,
+        now_unix_seconds: i64,
+    ) -> Result<ApiKey, ApiKeyStoreError> {
+        validate_release_publisher_key_sha256(token_sha256)?;
+        let id = Uuid::parse_str(RELEASE_PUBLISHER_KEY_ID).expect("release publisher key UUID is valid");
+        let created_at =
+            DateTime::from_timestamp(now_unix_seconds, 0).ok_or(ApiKeyStoreError::InvalidReleaseTokenHash)?;
+        let scopes = vec!["read".to_owned(), "publish".to_owned()];
+        let row = sqlx::query_as::<_, ApiKeyRow>(RECONCILE_RELEASE_PUBLISHER_KEY_SQL)
+            .bind(id)
+            .bind(RELEASE_PUBLISHER_SUBJECT)
+            .bind(RELEASE_PUBLISHER_LABEL)
+            .bind(token_sha256)
+            .bind(&scopes)
+            .bind(created_at)
+            .fetch_optional(self.pool())
+            .await
+            .map_err(release_key_database_error)?;
+        row.map(ApiKeyRow::into_domain).ok_or(ApiKeyStoreError::ReleaseKeyCollision)
     }
 }
 
@@ -44,6 +80,8 @@ pub enum ApiKeyStoreError {
     InvalidLabel,
     InvalidScope,
     InvalidToken,
+    InvalidReleaseTokenHash,
+    ReleaseKeyCollision,
     Database(String),
 }
 
@@ -141,6 +179,13 @@ impl ApiKeyRow {
 fn api_key_token_hash(raw_token: &str) -> String {
     format!("{:x}", Sha256::digest(raw_token.as_bytes()))
 }
+
+pub fn validate_release_publisher_key_sha256(token_sha256: &str) -> Result<(), ApiKeyStoreError> {
+    (token_sha256.len() == 64
+        && token_sha256.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
+    .then_some(())
+    .ok_or(ApiKeyStoreError::InvalidReleaseTokenHash)
+}
 fn validate_api_key_subject(subject: &str) -> Result<(), ApiKeyStoreError> {
     is_valid_api_key_subject(subject).then_some(()).ok_or(ApiKeyStoreError::InvalidAuthHubSubject)
 }
@@ -164,4 +209,13 @@ fn validate_api_key_scopes(scopes: &[String]) -> Result<(), ApiKeyStoreError> {
 }
 fn api_key_database_error(error: sqlx::Error) -> ApiKeyStoreError {
     ApiKeyStoreError::Database(error.to_string())
+}
+
+fn release_key_database_error(error: sqlx::Error) -> ApiKeyStoreError {
+    match &error {
+        sqlx::Error::Database(database) if database.code().as_deref() == Some("23505") => {
+            ApiKeyStoreError::ReleaseKeyCollision
+        }
+        _ => api_key_database_error(error),
+    }
 }

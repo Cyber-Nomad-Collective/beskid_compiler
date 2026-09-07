@@ -11,32 +11,78 @@ pub fn isolated_artifact_root(suite: &str) -> std::path::PathBuf {
 }
 
 pub fn artifact(name: &str, version: &str) -> Vec<u8> {
-    let manifest = format!(r#"{{"schema":"beskid.package.v1","id":"{name}","version":"{version}"}}"#);
+    let manifest =
+        format!(r#"{{"schema":"beskid.package.v1","id":"{name}","version":"{version}","packageKind":"library"}}"#,);
     let project_name = name.replace('.', "_").to_ascii_lowercase();
     let project_manifest = format!("{project_name}.bproj");
     let project = format!("{project_name} {{\n  name = \"{project_name}\"\n}}\n");
     let source = "module Main\n";
-    let checksums = [
-        ("package.json", manifest.as_bytes()),
-        (project_manifest.as_str(), project.as_bytes()),
-        ("src/main.bd", source.as_bytes()),
-    ]
-    .into_iter()
-    .map(|(path, bytes)| format!("{}  {path}", hex_sha256(bytes)))
-    .collect::<Vec<_>>()
-    .join("\n");
+    archive(vec![
+        ("package.json".into(), manifest.into_bytes()),
+        (project_manifest, project.into_bytes()),
+        ("src/main.bd".into(), source.as_bytes().to_vec()),
+    ])
+}
 
+#[allow(dead_code)]
+pub fn template_artifact(name: &str, version: &str) -> Vec<u8> {
+    let project_name = name.replace('.', "_").to_ascii_lowercase();
+    let manifest = serde_json::json!({
+        "schema": "beskid.package.v1",
+        "id": name,
+        "version": version,
+        "packageKind": "template",
+        "template": {
+            "identity": format!("{name}::1.0.0"),
+            "shortName": "demo",
+            "tags": {"type": "project", "classifications": ["starter"]}
+        },
+        "dependencies": [{"name": "corelib_foundation", "version": "0.4.0", "source": "registry"}]
+    })
+    .to_string();
+    let project = format!(
+        "{project_name} {{\n  name = \"{project_name}\"\n  type = Template\n  identity = \"{name}\"\n}}\n\ndependency \"corelib_foundation\" {{\n  source = registry\n  version = \"0.4.0\"\n}}\n",
+    );
+    let template = serde_json::json!({
+        "schema": "beskid.template.v1",
+        "identity": format!("{name}::1.0.0"),
+        "shortName": "demo",
+        "tags": {"type": "project", "classifications": ["starter"]}
+    })
+    .to_string();
+    archive(vec![
+        ("package.json".into(), manifest.into_bytes()),
+        (format!("{project_name}.bproj"), project.into_bytes()),
+        ("template.json".into(), template.into_bytes()),
+        ("content/Main.bd".into(), b"fn Main() {}".to_vec()),
+    ])
+}
+
+#[allow(dead_code)]
+pub fn tool_artifact_with_conflicting_template(name: &str, version: &str) -> Vec<u8> {
+    let manifest = serde_json::json!({
+        "schema": "beskid.package.v1",
+        "id": name,
+        "version": version,
+        "packageKind": "tool",
+        "dependencies": []
+    })
+    .to_string();
+    archive(vec![
+        ("package.json".into(), manifest.into_bytes()),
+        ("template.json".into(), br#"{"schema":"beskid.template.v1"}"#.to_vec()),
+    ])
+}
+
+fn archive(entries: Vec<(String, Vec<u8>)>) -> Vec<u8> {
+    let checksums =
+        entries.iter().map(|(path, bytes)| format!("{}  {path}", hex_sha256(bytes))).collect::<Vec<_>>().join("\n");
     let mut output = std::io::Cursor::new(Vec::new());
     let mut zip = zip::ZipWriter::new(&mut output);
     let options = SimpleFileOptions::default();
-    for (path, contents) in [
-        ("package.json", manifest.as_bytes()),
-        (project_manifest.as_str(), project.as_bytes()),
-        ("src/main.bd", source.as_bytes()),
-        ("checksums.sha256", checksums.as_bytes()),
-    ] {
+    for (path, contents) in entries.into_iter().chain([("checksums.sha256".into(), checksums.into_bytes())]) {
         zip.start_file(path, options).expect("entry starts");
-        zip.write_all(contents).expect("entry writes");
+        zip.write_all(&contents).expect("entry writes");
     }
     zip.finish().expect("zip finishes");
     output.into_inner()

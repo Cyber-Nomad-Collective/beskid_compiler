@@ -6,7 +6,9 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use beskid_pckg_server::{PckgServerConfig, router};
 use http_body_util::BodyExt;
-use support::{artifact, hex_sha256, multipart_publish_request};
+use support::{
+    artifact, hex_sha256, multipart_publish_request, template_artifact, tool_artifact_with_conflicting_template,
+};
 use tower::ServiceExt;
 use zip::write::SimpleFileOptions;
 
@@ -15,7 +17,8 @@ fn config(root: &std::path::Path) -> PckgServerConfig {
 }
 
 fn artifact_with_browsable_content(name: &str, version: &str) -> Vec<u8> {
-    let manifest = format!(r#"{{"schema":"beskid.package.v1","id":"{name}","version":"{version}"}}"#);
+    let manifest =
+        format!(r#"{{"schema":"beskid.package.v1","id":"{name}","version":"{version}","packageKind":"library"}}"#,);
     let project_name = name.replace('.', "_").to_ascii_lowercase();
     let project_manifest = format!("{project_name}.bproj");
     let project = format!("{project_name} {{\n  name = \"{project_name}\"\n}}\n");
@@ -107,6 +110,88 @@ async fn owner_can_upload_and_public_can_download_a_verified_artifact() {
     assert_eq!(latest.status(), StatusCode::OK);
     assert_eq!(latest.into_body().collect().await.unwrap().to_bytes(), bytes);
 
+    std::fs::remove_dir_all(root).expect("artifact root is removed");
+}
+
+#[tokio::test]
+async fn published_manifest_metadata_drives_catalog_kind_template_and_dependencies() {
+    let root = std::env::temp_dir().join(format!("pckg-artifact-metadata-{}", std::process::id()));
+    let app = router(config(&root));
+    let name = "beskid.templates.demo";
+    let version = "0.4.0";
+    let created = app
+        .clone()
+        .oneshot(
+            Request::post("/api/packages")
+                .header("content-type", "application/json")
+                .header("remote-user", "owner")
+                .body(Body::from(format!(r#"{{"name":"{name}","isPublic":true,"submitForReview":false}}"#,)))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let published = app
+        .clone()
+        .oneshot(multipart_publish_request(name, version, "owner", template_artifact(name, version)))
+        .await
+        .unwrap();
+    assert_eq!(published.status(), StatusCode::CREATED, "{:?}", json(published).await);
+
+    let list = app.clone().oneshot(Request::get("/api/packages").body(Body::empty()).unwrap()).await.unwrap();
+    let list = json(list).await;
+    assert_eq!(list[0]["packageKind"], "template");
+    assert_eq!(list[0]["template"]["shortName"], "demo");
+
+    let detail = app.oneshot(Request::get(format!("/api/packages/{name}")).body(Body::empty()).unwrap()).await.unwrap();
+    let detail = json(detail).await;
+    assert_eq!(detail["package"]["packageKind"], "template");
+    assert_eq!(detail["package"]["template"]["tags"]["classifications"][0], "starter");
+    assert_eq!(
+        detail["dependencies"],
+        serde_json::json!([{
+            "name": "corelib_foundation",
+            "version": "0.4.0",
+            "source": "registry",
+            "registry": null
+        }])
+    );
+    std::fs::remove_dir_all(root).expect("artifact root is removed");
+}
+
+#[tokio::test]
+async fn package_kind_conflict_diagnostic_names_the_conflicting_file() {
+    let root = std::env::temp_dir().join(format!("pckg-artifact-kind-conflict-{}", std::process::id()));
+    let app = router(config(&root));
+    let name = "beskid.tools.demo";
+    let version = "0.4.0";
+    let created = app
+        .clone()
+        .oneshot(
+            Request::post("/api/packages")
+                .header("content-type", "application/json")
+                .header("remote-user", "owner")
+                .body(Body::from(format!(r#"{{"name":"{name}","isPublic":true,"submitForReview":false}}"#,)))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+
+    let rejected = app
+        .oneshot(multipart_publish_request(
+            name,
+            version,
+            "owner",
+            tool_artifact_with_conflicting_template(name, version),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        json(rejected).await["message"].as_str().unwrap().contains("template.json"),
+        "diagnostic must name the conflicting archive file",
+    );
     std::fs::remove_dir_all(root).expect("artifact root is removed");
 }
 
