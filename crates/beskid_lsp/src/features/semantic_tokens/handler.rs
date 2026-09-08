@@ -1,15 +1,20 @@
-use tower_lsp_server::ls_types::{SemanticTokens, SemanticTokensResult};
+use tower_lsp_server::ls_types::{SemanticTokens, SemanticTokensResult, Uri};
 
-use crate::features::semantic_tokens::encoder::build_semantic_tokens;
 use crate::position::offset_to_position;
 use crate::session::store::Document;
+use crate::{
+    features::semantic_tokens::encoder::{build_bsol_semantic_tokens, build_semantic_tokens},
+    manifest_uri::{is_manifest_uri, is_standalone_bsol_uri},
+};
 
 /// Encoded declaration token stream from the document's current syntax generation.
-pub fn handle_semantic_tokens(doc: &Document) -> SemanticTokensResult {
-    SemanticTokensResult::Tokens(SemanticTokens {
-        result_id: None,
-        data: build_semantic_tokens(&doc.text, &doc.syntax_symbols, offset_to_position),
-    })
+pub fn handle_semantic_tokens(uri: &Uri, doc: &Document) -> SemanticTokensResult {
+    let data = if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
+        build_bsol_semantic_tokens(&doc.text, offset_to_position)
+    } else {
+        build_semantic_tokens(&doc.text, &doc.syntax_symbols, offset_to_position)
+    };
+    SemanticTokensResult::Tokens(SemanticTokens { result_id: None, data })
 }
 
 #[cfg(test)]
@@ -36,9 +41,11 @@ mod tests {
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-            syntax_fixes: Vec::new(),        };
+            syntax_fixes: Vec::new(),
+        };
 
-        let tokens = match handle_semantic_tokens(&doc) {
+        let uri = "file:///main.bd".parse().expect("valid URI");
+        let tokens = match handle_semantic_tokens(&uri, &doc) {
             tower_lsp_server::ls_types::SemanticTokensResult::Tokens(tokens) => tokens,
             tower_lsp_server::ls_types::SemanticTokensResult::Partial(_) => {
                 panic!("full token handler cannot return a partial response")
