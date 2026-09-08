@@ -115,9 +115,7 @@ impl Resolver {
             return;
         }
         self.current_module = self.module_graph.ensure_module_path(module_path);
-        for item in &program.node.items {
-            self.collect_item(item);
-        }
+        self.collect_items(&program.node.items, None);
     }
 
     pub fn collect_program(&mut self, program: &Spanned<crate::syntax::Program>) {
@@ -126,13 +124,24 @@ impl Resolver {
         self.current_module = resolver::file_scoped_module_path(program)
             .map(|path| self.module_graph.ensure_module_path(&path))
             .unwrap_or(self.module_graph.root());
-        for (index, item) in program.node.items.iter().enumerate() {
-            if Some(index) == file_scoped_module_index {
-                continue;
-            }
-            self.collect_item(item);
-        }
+        self.collect_items(&program.node.items, file_scoped_module_index);
         self.add_implicit_core_import();
+    }
+
+    /// Collect local declarations before applying imports so declaration identity is independent
+    /// of source ordering. Imports intentionally skip occupied names; therefore a local function
+    /// such as `Query.ArrayIterator.Current` deterministically shadows an imported `Current`.
+    fn collect_items(&mut self, items: &[Spanned<Node>], skip_index: Option<usize>) {
+        for (index, item) in items.iter().enumerate() {
+            if Some(index) != skip_index && !matches!(&item.node, Node::UseDeclaration(_)) {
+                self.collect_item(item);
+            }
+        }
+        for (index, item) in items.iter().enumerate() {
+            if Some(index) != skip_index && matches!(&item.node, Node::UseDeclaration(_)) {
+                self.collect_item(item);
+            }
+        }
     }
 
     fn add_implicit_core_import(&mut self) {
@@ -343,9 +352,7 @@ impl Resolver {
             module_path.push(def.node.name.node.name.clone());
             let child_module = self.module_graph.ensure_module_path(&module_path);
             self.current_module = child_module;
-            for nested in &def.node.items {
-                self.collect_item(nested);
-            }
+            self.collect_items(&def.node.items, None);
             self.current_module = previous_module;
         }
     }
