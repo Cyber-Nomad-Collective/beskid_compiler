@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve the runtime-kit staging script from Just's compiler workspace path during
+  `just replace`, avoiding an unbound shell variable after a successful release build.
 - Preserve resolved integer constants as binary type authorities over unsuffixed literals, using
   normalized sibling keys so compound `word` expressions retain their representation when passed
   through exact call boundaries.
