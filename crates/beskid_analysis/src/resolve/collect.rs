@@ -128,6 +128,31 @@ impl Resolver {
         self.add_implicit_core_import();
     }
 
+    /// Restore one already-collected unit's module and import scope before resolving its refs.
+    pub(super) fn prepare_collected_program(
+        &mut self,
+        program: &Spanned<crate::syntax::Program>,
+        logical_module_path: Option<&[String]>,
+    ) {
+        self.module_imports.clear();
+        let file_scoped_module_index = resolver::file_scoped_module_index(program);
+        self.current_module = logical_module_path
+            .map(|path| self.module_graph.ensure_module_path(path))
+            .or_else(|| {
+                resolver::file_scoped_module_path(program).map(|path| self.module_graph.ensure_module_path(&path))
+            })
+            .unwrap_or(self.module_graph.root());
+        for (index, item) in program.node.items.iter().enumerate() {
+            if Some(index) == file_scoped_module_index {
+                continue;
+            }
+            if let Node::UseDeclaration(def) = &item.node {
+                self.collect_use_declaration(item, def);
+            }
+        }
+        self.add_implicit_core_import();
+    }
+
     /// Collect local declarations before applying imports so declaration identity is independent
     /// of source ordering. Imports intentionally skip occupied names; therefore a local function
     /// such as `Query.ArrayIterator.Current` deterministically shadows an imported `Current`.

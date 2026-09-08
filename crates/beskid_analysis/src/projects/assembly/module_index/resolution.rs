@@ -43,7 +43,9 @@ impl ModuleIndex {
 
         self.seed_resolver_from_assembly(&mut resolver, assembly);
 
-        resolver.resolve_program(program)
+        let mut resolution = resolver.resolve_program(program)?;
+        self.merge_dependency_resolution_tables(&mut resolution, assembly);
+        Ok(resolution)
     }
 
     /// Resolve a non-entry unit program against the assembled module graph.
@@ -100,6 +102,17 @@ impl ModuleIndex {
         let mut resolution =
             resolver.resolve_collected_program_for_api_documentation(entry_program, entry_module_path.as_deref());
 
+        self.merge_dependency_resolution_tables(&mut resolution, assembly);
+        Some(resolution)
+    }
+
+    /// Merge source-scoped reference facts for every dependency unit into an entry resolution.
+    ///
+    /// Dependency declarations are collected while seeding the entry resolver, but their type
+    /// annotations can depend on imports declared by the dependency itself. Resolving each
+    /// collected unit under its own logical module and import scope preserves those annotations
+    /// for declaration surfaces without duplicating import expansion in the type checker.
+    fn merge_dependency_resolution_tables(&self, resolution: &mut Resolution, assembly: &ProgramAssembly) {
         for (index, unit) in assembly.units.iter().enumerate() {
             if index == assembly.entry_index {
                 continue;
@@ -109,11 +122,10 @@ impl ModuleIndex {
             unit_resolver.set_current_source_path(Some(unit.path.clone()));
             self.seed_resolver_from_assembly(&mut unit_resolver, assembly);
             let unit_resolution =
-                unit_resolver.resolve_collected_program_for_api_documentation(&unit.program, module_path.as_deref());
+                unit_resolver.resolve_collected_program_tolerating_errors(&unit.program, module_path.as_deref());
             resolution.tables.merge_from(&unit_resolution.tables, unit.path.clone());
         }
         resolution.rebuild_span_index();
-        Some(resolution)
     }
 
     fn resolve_longest_module_prefix(&self, path: &[String]) -> Option<&Path> {
