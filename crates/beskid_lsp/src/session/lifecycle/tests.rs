@@ -14,6 +14,10 @@ fn uri() -> Uri {
     Uri::from_str("file:///cache_test.bd").expect("valid uri")
 }
 
+fn standalone_bsol_uri() -> Uri {
+    Uri::from_str("file:///cache_test.bsol").expect("valid uri")
+}
+
 #[tokio::test]
 async fn set_document_ignores_stale_versions() {
     let state = tokio::sync::RwLock::new(State::default());
@@ -105,6 +109,22 @@ async fn set_document_binds_syntax_diagnostics_without_analysis_snapshot() {
         doc.syntax_diagnostics.iter().all(|diag| diag.code.as_deref() != Some("E1709")),
         "refresh must not attach orphaned composition diagnostics"
     );
+}
+
+#[tokio::test]
+async fn set_document_keeps_standalone_bsol_on_the_generic_bsol_path() {
+    let state = tokio::sync::RwLock::new(State::default());
+    state.read().await.mark_initial_scan_complete();
+    let text = "schema \"config\" {\n  enabled = true\n}\n".to_string();
+    let file_uri = standalone_bsol_uri();
+
+    set_document(&state, file_uri.clone(), 1, text).await;
+
+    let read = state.read().await;
+    let doc = read.docs.get(&file_uri).expect("standalone BSOL document exists");
+    assert!(doc.syntax_diagnostics.is_empty(), "valid generic BSOL must not receive Beskid-source diagnostics");
+    assert!(doc.syntax_documentation.is_empty(), "standalone BSOL must not receive Beskid-source documentation facts");
+    assert!(doc.syntax_completion.is_none(), "standalone BSOL exposes only generic completion affordances");
 }
 
 #[tokio::test]

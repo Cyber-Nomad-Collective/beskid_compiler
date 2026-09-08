@@ -14,12 +14,12 @@ use beskid_queries::BeskidDatabase;
 use tower_lsp_server::ls_types::*;
 
 use crate::features::project_manifest::api as project_manifest;
-use crate::manifest_uri::is_manifest_uri;
+use crate::manifest_uri::{is_manifest_uri, is_standalone_bsol_uri};
 use crate::position::offset_range_to_lsp;
 use crate::session::store::{SyntaxDiagnostic, SyntaxDiagnosticSeverity};
 
 /// Collect generation-bound diagnostic facts and mod-origin quick-fixes for a `.bd`,
-/// `.bproj`, `.bws`, or other manifest buffer.
+/// `.bproj`, `.bws`, `.bsol`, or other manifest buffer.
 ///
 /// Project-backed `.bd` buffers use the Salsa prepare spine only when the typed bundle matches
 /// the current file revision. A stale typed generation fails closed to parse/structural facts
@@ -37,6 +37,9 @@ pub fn collect_syntax_diagnostics(
 ) -> (Vec<SyntaxDiagnostic>, Vec<SyntaxFix>) {
     if is_manifest_uri(uri) {
         return (analyze_project_manifest(uri, source), Vec::new());
+    }
+    if is_standalone_bsol_uri(uri) {
+        return (analyze_standalone_bsol(source), Vec::new());
     }
 
     if let Some(path) = uri.to_file_path()
@@ -183,6 +186,16 @@ fn analyze_project_manifest(uri: &Uri, source: &str) -> Vec<SyntaxDiagnostic> {
     }
 }
 
+fn analyze_standalone_bsol(source: &str) -> Vec<SyntaxDiagnostic> {
+    match parse_bsol_document(source) {
+        Ok(_) => Vec::new(),
+        Err(err) => {
+            let error = ProjectError::from_bsol(err.into());
+            vec![syntax_diagnostic_from_semantic(services::project_error_diagnostic("BSOL document", source, &error))]
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -242,6 +255,20 @@ mod tests {
                 .all(|diagnostic| { diagnostic.code.as_ref() != Some(&NumberOrString::String("E1709".to_string())) }),
             "diagnostics must describe the current buffer rather than a stale analysis snapshot: {diagnostics:#?}",
         );
+    }
+
+    #[test]
+    fn standalone_bsol_document_uses_the_bsol_parser_for_diagnostics() {
+        let uri = Uri::from_str("file:///standalone/schema.bsol").expect("uri");
+        let source = "schema \"config\" {\n  enabled = true\n}\n";
+
+        let (diagnostics, fixes) = collect_syntax_diagnostics(None, &uri, source, None);
+
+        assert!(
+            diagnostics.is_empty(),
+            "valid standalone BSOL must not use Beskid source diagnostics: {diagnostics:#?}"
+        );
+        assert!(fixes.is_empty(), "standalone BSOL does not synthesize Beskid source fixes");
     }
 
     #[test]

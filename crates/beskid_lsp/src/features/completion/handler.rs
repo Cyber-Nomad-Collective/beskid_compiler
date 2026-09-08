@@ -2,11 +2,15 @@ use beskid_queries::{BeskidDatabase, CompletionContext, completion_candidates};
 use tower_lsp_server::ls_types::{CompletionItem, CompletionResponse, CompletionTextEdit, TextEdit, Uri};
 
 use crate::features::project_manifest::api as project_manifest;
+use crate::manifest_uri::is_standalone_bsol_uri;
 use crate::position::offset_range_to_lsp;
 use crate::session::store::Document;
 
 /// Completion items at `offset`, including manifest-aware suggestions for `.bproj`/`.bws` buffers.
 pub fn handle_completion(db: &BeskidDatabase, uri: &Uri, doc: &Document, offset: usize) -> CompletionResponse {
+    if is_standalone_bsol_uri(uri) {
+        return CompletionResponse::Array(crate::standalone_bsol::completion_items(&doc.text, offset));
+    }
     let prefix = project_manifest::completion_prefix_at_offset(&doc.text, offset).to_lowercase();
 
     if project_manifest::is_manifest_uri(uri) {
@@ -164,6 +168,35 @@ mod tests {
     }
 
     #[test]
+    fn standalone_bsol_completion_offers_the_schemaless_escape_hatch() {
+        let source = "payload @";
+        let doc = Document {
+            version: 1,
+            text: source.to_string(),
+            syntax_definitions: Vec::new(),
+            syntax_hovers: Vec::new(),
+            syntax_symbols: Vec::new(),
+            syntax_completion: None,
+            syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
+            syntax_diagnostics: Vec::new(),
+            syntax_fixes: Vec::new(),
+        };
+        let db = BeskidDatabase::default();
+
+        let response =
+            handle_completion(&db, &Uri::from_str("file:///standalone/schema.bsol").expect("uri"), &doc, source.len());
+
+        let tower_lsp_server::ls_types::CompletionResponse::Array(items) = response else {
+            panic!("expected completion array");
+        };
+        assert!(
+            items.iter().any(|item| item.label == "@schemaless"),
+            "standalone BSOL must offer its generic schemaless escape hatch: {items:#?}"
+        );
+    }
+
+    #[test]
     fn syntax_completion_lists_imported_members_without_legacy_analysis() {
         let root = PathBuf::from("/tmp/completion-import/src");
         let main_path = root.join("Main.bd");
@@ -174,6 +207,7 @@ mod tests {
             expand_program(parse_program(main_source).expect("main parses"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
         let tools_program =
             expand_program(parse_program(tools_source).expect("tools parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+        let generation = SyntaxGenerationId(2);
         let assembly = Arc::new(ProgramAssembly::new(
             EffectiveCompilationRoots {
                 host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -197,7 +231,7 @@ mod tests {
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
             false,
-            SyntaxGenerationId(0),
+            generation,
         ));
         let mut db = BeskidDatabase::default();
         let main_unit = SourceUnitId::new(&db, main_path.clone());
@@ -208,7 +242,6 @@ mod tests {
             "App".to_string(),
             "lock".to_string(),
         );
-        let generation = SyntaxGenerationId(2);
         db.ensure_file_text(main_unit.path(&db).clone(), main_source.to_string());
         build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
         let index = SyntaxIndex::from_program(&main_program, generation);
