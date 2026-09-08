@@ -85,7 +85,9 @@ fn copy_corelib_workspace_for_embed(src_workspace: &Path, dst: &Path) -> std::io
     if let Ok(entries) = std::fs::read_dir(src_workspace) {
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
-            if path.is_file() && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bws")) {
+            let is_workspace_manifest = path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bws"));
+            let is_legal_file = matches!(entry.file_name().to_str(), Some("LICENSE" | "NOTICE" | "LICENSING.md"));
+            if path.is_file() && (is_workspace_manifest || is_legal_file) {
                 std::fs::copy(&path, dst.join(entry.file_name()))?;
             }
         }
