@@ -215,6 +215,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn fs_tests_nested_enum_pattern_bindings_pass_the_production_semantic_gate() {
+        let root = corelib_tests_project_root();
+        with_project_test_env(&root, || {
+            let resolved = resolve_corelib_tests_entry_with_assembly("system/FsTests.bd");
+            let assembly = resolved.assembly.as_ref().expect("FS assembly");
+            beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
+                .expect("nested enum payload bindings should retain their declared type");
+        });
+    }
+
+    #[test]
     fn query_tests_pass_the_production_semantic_gate() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {

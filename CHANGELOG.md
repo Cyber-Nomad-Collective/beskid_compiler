@@ -106,6 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve substituted enum payload types while recursively checking nested match
+  patterns so bindings such as `Result::Error(FsError::NotFound(path))` are typed.
 - Collect module-local declarations before imported public members so local APIs
   deterministically shadow same-named imports, and recognize `_u8` integer suffixes
   during semantic type checking.

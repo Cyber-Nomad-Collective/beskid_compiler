@@ -117,20 +117,7 @@ impl<'a> TypeChecker<'a> {
                 }
             }
             Pattern::Wildcard => {}
-            Pattern::Enum(enum_pattern) => {
-                let enum_type = self.type_id_for_enum_path(enum_pattern.node.path.span, &enum_pattern.node.path);
-                if let Some(enum_type) = enum_type {
-                    let compatible_enum = enum_type == expected_type
-                        || (self.named_item_id(enum_type).is_some()
-                            && self.named_item_id(enum_type) == self.named_item_id(expected_type));
-                    if !compatible_enum {
-                        self.require_same_type(pattern.span, expected_type, enum_type);
-                    }
-                }
-                for item in &enum_pattern.node.items {
-                    self.type_pattern(None, item);
-                }
-            }
+            Pattern::Enum(_) => self.type_pattern(Some(expected_type), pattern),
         }
     }
 }
