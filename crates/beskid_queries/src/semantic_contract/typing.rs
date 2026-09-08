@@ -405,6 +405,9 @@ pub(super) fn semantic_type_for_node(
             &binary.right.node,
         ));
     }
+    if let Some(unary) = node.of::<beskid_analysis::syntax::UnaryExpression>() {
+        return Some(semantic_type_for_unary_operand(program, index, reference, unary));
+    }
     if let Some(match_expression) = node.of::<beskid_analysis::syntax::MatchExpression>() {
         let mut result = None;
         for arm in &match_expression.arms {
@@ -454,6 +457,23 @@ pub(super) fn semantic_type_for_expression(
             binary.node.op.node,
             &binary.node.right.node,
         ),
+        beskid_analysis::syntax::Expression::Unary(unary) => {
+            semantic_type_for_unary_operand(program, index, reference, &unary.node)
+        }
+        _ => Err(SemanticError::unavailable("node_type")),
+    }
+}
+
+fn semantic_type_for_unary_operand(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    reference: beskid_analysis::syntax::AstNodeId,
+    unary: &beskid_analysis::syntax::UnaryExpression,
+) -> Result<SemanticTypeId, SemanticError> {
+    let operand = semantic_type_for_expression(program, index, reference, &unary.expr.node)?;
+    match unary.op.node {
+        beskid_analysis::syntax::UnaryOp::Neg if primitive_numeric(operand) => Ok(operand),
+        beskid_analysis::syntax::UnaryOp::Not if operand == SemanticTypeId::BOOL => Ok(operand),
         _ => Err(SemanticError::unavailable("node_type")),
     }
 }

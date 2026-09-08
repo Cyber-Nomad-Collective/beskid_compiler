@@ -24,3 +24,5 @@ mod module_emission_specialization;
 mod statement_result_storage;
 #[path = "isle_adapter/support.rs"]
 mod support;
+#[path = "isle_adapter/waitgroup_conditions.rs"]
+mod waitgroup_conditions;
