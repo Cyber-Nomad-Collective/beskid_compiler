@@ -58,7 +58,7 @@ replace:
     BESKID_RUNTIME_PREFIX="${install_prefix}" \
       BESKID_RUNTIME_KIT_PROFILE=release \
       BESKID_CLI_BIN="${cli_built}" \
-      bash "${root}/scripts/stage-native-runtime-kit.sh"
+      bash "{{root}}/scripts/stage-native-runtime-kit.sh"
     BESKID_CORELIB_ROOT="${install_prefix}/beskid_corelib" \
       "${cli_built}" corelib --output "${install_prefix}/beskid_corelib"
     install -m 0755 "${cli_built}" "${cli_dest}"
