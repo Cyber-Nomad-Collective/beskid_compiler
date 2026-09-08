@@ -1,5 +1,6 @@
 //! Focused ABI semantic implementation.
 
+use super::super::layouts::unique_assembled_type_in_module;
 use super::super::*;
 
 /// Materialize a call-owned specialization with its deterministic emitted declaration identity.
@@ -941,8 +942,8 @@ pub(in crate::semantic_contract) fn abi_signature_from_syntax(
 /// declaration (`Console.ConsoleSize` or
 /// `Core.Results.Result<i64, Core.Syscall.SyscallError>`). Its outer declaration is nevertheless
 /// exact assembly authority, and ABI v5 passes every nominal aggregate by pointer regardless of
-/// its payload arguments. Keep this fallback item-local: general type resolution, completion,
-/// enum facts, and ABI-varying bare generics remain closed.
+/// its payload arguments. Exact declaration lookup is shared with qualified enum facts, while this
+/// pointer-ABI fallback stays item-local; completion and ABI-varying bare generics remain closed.
 pub(in crate::semantic_contract) fn item_abi_type_from_syntax(
     db: &dyn Db,
     key: AstNodeKey,
@@ -965,20 +966,7 @@ pub(in crate::semantic_contract) fn exact_assembled_nominal_envelope(
         return None;
     }
     let module_path = module_path.iter().map(|segment| segment.node.name.node.name.clone()).collect::<Vec<_>>();
-    let target = {
-        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
-        let [target] = registry.modules.get(&(key.generation, module_path))?.as_slice() else {
-            return None;
-        };
-        *target
-    };
-    unique_exported_type_in_unit(
-        db,
-        target,
-        key.generation,
-        &nominal.node.name.node.name,
-        nominal.node.type_args.len(),
-    )?;
+    unique_assembled_type_in_module(db, key, &module_path, &nominal.node.name.node.name, nominal.node.type_args.len())?;
     Some(SemanticTypeId::POINTER)
 }
 

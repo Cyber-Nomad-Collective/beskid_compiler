@@ -281,6 +281,9 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
     {
         return Some(declaration);
     }
+    if let Some(declaration) = unique_assembled_type_in_module(db, key, &module_path, name, generic_arity) {
+        return Some(declaration);
+    }
     // One-type-per-file modules export `Core.Syscall.SyscallError` as both the module path and
     // the type name. Ordinary lookup looks for `SyscallError` inside `Core.Syscall` and misses;
     // retry against the assembly module registry with the terminal segment appended so applied
@@ -290,6 +293,28 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
     let target = {
         let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
         let [target] = registry.modules.get(&(key.generation, type_module))?.as_slice() else {
+            return None;
+        };
+        *target
+    };
+    unique_exported_type_in_unit(db, target, key.generation, name, generic_arity)
+}
+
+/// Resolve one public type from an exact absolute module path in the current assembly.
+///
+/// This is the common authority for fully qualified public signatures such as
+/// `Core.Results.Result<TValue, TError>` that deliberately do not require a local `use` binding.
+/// Ambiguous module paths remain unavailable.
+pub(in crate::semantic_contract) fn unique_assembled_type_in_module(
+    db: &dyn Db,
+    key: AstNodeKey,
+    module_path: &[String],
+    name: &str,
+    generic_arity: usize,
+) -> Option<AstNodeKey> {
+    let target = {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let [target] = registry.modules.get(&(key.generation, module_path.to_vec()))?.as_slice() else {
             return None;
         };
         *target

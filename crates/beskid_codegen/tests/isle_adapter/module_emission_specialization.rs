@@ -134,6 +134,97 @@ fn nested_module_static_call_results_are_valid_comparison_operands() {
 }
 
 #[test]
+fn nested_direct_call_adapts_scalars_at_the_exact_inner_parameter_boundary() {
+    let mut db = Box::new(BeskidDatabase::default());
+    let project_root = tempfile::tempdir().expect("project").keep();
+    let root = project_root.join("src");
+    let main_path = root.join("Controls/RenderContext.bd");
+    let cursor_path = root.join("Ansi/Cursor.bd");
+    let sources = [
+        (
+            &main_path,
+            "use Ansi.Cursor;\npub string MoveTo(i32 row, i32 col) { return Ansi.Cursor.IntoSequence(Ansi.Cursor.Position(Ansi.Cursor.Start(), row, col)); }",
+        ),
+        (
+            &cursor_path,
+            "pub type CursorBuilder { string parts } pub CursorBuilder Start() { return CursorBuilder { parts: \"\" }; } pub CursorBuilder Position(CursorBuilder self, i64 row, i64 col) { return CursorBuilder { parts: self.parts }; } pub string IntoSequence(CursorBuilder self) { return self.parts; }",
+        ),
+    ];
+    for (path, source) in &sources {
+        std::fs::create_dir_all(path.parent().expect("source parent")).expect("create source parent");
+        std::fs::write(path, source).expect("write source");
+    }
+    let units = sources
+        .iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            path: (*path).clone(),
+            source: (*source).to_string(),
+            program: parse_program_with_source_name(path.to_str().expect("UTF-8 path"), source).expect("parse"),
+        })
+        .collect::<Vec<_>>();
+    let generation = SyntaxGenerationId(141);
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(units.clone()),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let main_unit = SourceUnitId::new(&*db, main_path.clone());
+    let cursor_unit = SourceUnitId::new(&*db, cursor_path);
+    let project = ProjectSession::new(&*db, project_root, main_path, "nested-direct".into(), "nested-direct".into());
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&units[0].program, generation);
+    let cursor_index = SyntaxIndex::from_program(&units[1].program, generation);
+    let main = AstNodeKey {
+        unit: main_unit,
+        generation,
+        node: main_index.ids_of_kind(beskid_queries::IndexedNodeKind::FunctionDefinition).next().expect("MoveTo"),
+    };
+    let cursor_functions = cursor_index
+        .ids_of_kind(beskid_queries::IndexedNodeKind::FunctionDefinition)
+        .map(|node| AstNodeKey { unit: cursor_unit, generation, node })
+        .collect::<Vec<_>>();
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let leaked: &'static BeskidDatabase = Box::leak(db);
+    let program = AstNodeKey { unit: main_unit, generation, node: AstNodeId(0) };
+    let input = CodegenInput::new(leaked, typed, Arc::from([program]), target, manifest).expect("codegen input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: cursor_functions[0], symbol: "Start".into() },
+            SyntaxModuleItem { key: cursor_functions[1], symbol: "Position".into() },
+            SyntaxModuleItem { key: cursor_functions[2], symbol: "IntoSequence".into() },
+            SyntaxModuleItem { key: main, symbol: "MoveTo".into() },
+        ],
+    )
+    .expect("the inner direct call must adapt its scalar arguments before its result reaches the enclosing call");
+    let move_to = artifact.functions.iter().find(|function| function.name == "MoveTo").expect("MoveTo artifact");
+    let clif = move_to.function.display().to_string();
+    assert_eq!(
+        clif.matches("sextend.i64").count(),
+        2,
+        "both i32 coordinates must widen at the i64 call boundary:\n{clif}"
+    );
+}
+
+#[test]
 fn ordinary_syscall_spelling_cannot_request_a_corelib_service_import() {
     let (input, _isa, root) = item_fixture_with_root("i64 Main() { return __syscall_write(1, \"application\"); }");
     let main = find_function_definition(input.database(), root).expect("application Main");
@@ -301,6 +392,56 @@ fn generic_aggregate_literal_keeps_declared_scalar_field_widths() {
 
     lower_syntax_program(&input, isa.as_ref(), &items)
         .expect("generic aggregate specialization retains i64 fields beside pointer-shaped storage");
+}
+
+#[test]
+fn generic_nominal_method_aggregate_literal_specializes_a_zero_argument_array_factory() {
+    let (input, isa, root) = item_fixture_with_root(
+        "type Queue<T> { T[] storage, i64 head, i64 count, Queue<T> Reset() { return Queue<T> { storage: Empty<T>(), head: 0, count: 0 }; } } T[] Empty<T>() { return []; } i64 Main(Queue<string> queue) { Queue<string> reset = queue.Reset(); return reset.count; }",
+    );
+    let db = input.database();
+    let reset = find_node(db, root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("Queue.Reset method");
+    let functions = find_function_definitions(db, root);
+    let empty = functions
+        .iter()
+        .copied()
+        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Empty"))
+        .expect("Empty factory");
+    let main = functions
+        .iter()
+        .copied()
+        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main function");
+    let reset_call = find_call_expression(db, main).expect("queue.Reset call");
+    let reset_specialization = beskid_queries::generic_call_specialization(db, reset_call)
+        .expect("Reset specialization query")
+        .expect("Queue<string>.Reset specialization");
+    let reset_instance = beskid_queries::generic_call_specialization_instance(db, reset_specialization)
+        .expect("Reset instance query")
+        .expect("Queue<string>.Reset instance");
+    let empty_call = find_call_expression(db, reset).expect("nested Empty<T> call");
+    let empty_specialization =
+        beskid_queries::generic_call_specialization_in_environment(db, empty_call, &reset_instance)
+            .expect("nested Empty specialization query")
+            .expect("nested Empty<string> specialization");
+    assert_eq!(empty_specialization.declaration, empty, "the nested call must target the concrete Empty factory");
+    assert!(empty_specialization.signature.parameters.is_empty());
+    assert_eq!(empty_specialization.signature.result, beskid_queries::SemanticTypeId::POINTER);
+    assert_eq!(empty_specialization.substitutions.len(), 1);
+    assert_eq!(empty_specialization.substitutions[0].argument, beskid_queries::SemanticTypeId::STRING);
+
+    let mut keys = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition);
+    keys.extend(functions);
+    let items = keys
+        .into_iter()
+        .map(|key| SyntaxModuleItem {
+            key,
+            symbol: item_name(input.database(), key).expect("item name query").expect("item name").to_string(),
+        })
+        .collect::<Vec<_>>();
+
+    lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("a generic nominal method must apply its receiver environment to a zero-argument array factory");
 }
 
 #[test]

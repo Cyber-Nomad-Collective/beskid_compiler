@@ -54,6 +54,15 @@ Each push also creates an immutable `cli-v*` / `lsp-v*` release for pinning. Ins
 
 The **core library sources** are pinned as a Git submodule at `corelib/` (repository: [beskid_standard](https://github.com/Cyber-Nomad-Collective/beskid_standard)), under `corelib/beskid_corelib/` (or `compiler/corelib/beskid_corelib/` from the aggregate superrepo root). The CLI embeds that tree at build time (`crates/beskid_tools/build.rs`).
 
+From an aggregate `beskid` checkout, `just replace` builds the exact shared editor release version and
+installs its CLI, LSP, updater, ABI-v5 runtime kit, corelib, and bundled packages under `~/.beskid`.
+The complete bundle is validated in a same-filesystem staging directory before the existing prefix is
+replaced, so files removed by a release do not survive and a failed publication restores the prior
+installation. Non-toolchain entries such as `~/.beskid/data` and `~/.beskid/config` are carried into
+the staged prefix unchanged. This recipe intentionally requires the superrepo's `scripts`, `beskid_distrib`,
+`beskid_vscode`, and initialized submodules; a standalone compiler checkout exits with the missing
+prerequisite paths instead of starting a partial build.
+
 ## Licensing
 
 The compiler, CLI, LSP, reusable libraries, canonical runtime, and core library

@@ -149,12 +149,25 @@ fn canonical_args_source_exposes_exactly_count_and_get_services() {
 }
 
 #[test]
-fn canonical_console_linux_facade_alone_owns_terminal_size_service() {
-    let source = canonical_corelib_service_sources()
-        .into_iter()
-        .find(|source| source.logical_path == CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH)
-        .expect("compiler embeds canonical Console Linux facade");
-    assert!(source.source.contains("__tty_winsize(fd)"));
+fn canonical_console_platform_facades_each_own_terminal_size_service() {
+    let sources = canonical_corelib_service_sources();
+    let platform_paths = [
+        CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH,
+        CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE_PATH,
+        CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE_PATH,
+    ];
+    for logical_path in platform_paths {
+        let source = sources
+            .iter()
+            .find(|source| source.logical_path == logical_path)
+            .unwrap_or_else(|| panic!("compiler embeds canonical Console platform facade {logical_path}"));
+        assert!(source.source.contains("__tty_winsize(fd)"));
+    }
+    let terminal = sources
+        .iter()
+        .find(|source| source.logical_path == CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH)
+        .expect("compiler embeds canonical Console terminal facade");
+    assert!(terminal.source.contains("__env_get(name)"));
 
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -162,11 +175,44 @@ fn canonical_console_linux_facade_alone_owns_terminal_size_service() {
         .expect("linux target");
     let manifest = AbiManifestV5::canonical_runtime(target);
     let capability = canonical_corelib_service_capability(&manifest).expect("Corelib service capability");
-    let service = capability
-        .service_for_source(CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH, "__tty_winsize")
-        .expect("Linux facade owns terminal-size service");
-    assert_eq!(service.symbol, "tty_winsize");
-    assert!(capability.service_for_source("Platform/Windows.bd", "__tty_winsize").is_none());
+    for logical_path in platform_paths {
+        let service = capability
+            .service_for_source(logical_path, "__tty_winsize")
+            .unwrap_or_else(|| panic!("{logical_path} owns terminal-size service"));
+        assert_eq!(service.symbol, "tty_winsize");
+    }
+    let env_get = capability
+        .service_for_source(CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH, "__env_get")
+        .expect("Terminal facade owns environment lookup service");
+    assert_eq!(env_get.symbol, "env_get");
+    assert!(capability.service_for_source("Copied/Platform/Terminal.bd", "__env_get").is_none());
+    assert!(capability.service_for_source("Copied/Platform/MacOS.bd", "__tty_winsize").is_none());
+
+    let canonical_hash = crate::abi_v5::canonical_source_hash(&sources).expect("canonical Corelib source hash");
+    let mut altered = sources.clone();
+    altered
+        .iter_mut()
+        .find(|source| source.logical_path == CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE_PATH)
+        .expect("embedded macOS facade")
+        .source
+        .push_str("\n// altered\n");
+    assert_ne!(
+        crate::abi_v5::canonical_source_hash(&altered).expect("altered Corelib source hash"),
+        canonical_hash,
+        "altered facade bytes must not match the compiler-owned source identity"
+    );
+
+    let mut copied = sources;
+    copied
+        .iter_mut()
+        .find(|source| source.logical_path == CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE_PATH)
+        .expect("embedded Windows facade")
+        .logical_path = "Copied/Platform/Windows.bd".into();
+    assert_ne!(
+        crate::abi_v5::canonical_source_hash(&copied).expect("copied Corelib source hash"),
+        canonical_hash,
+        "copied facade paths must not match the compiler-owned source identity"
+    );
 }
 
 #[test]

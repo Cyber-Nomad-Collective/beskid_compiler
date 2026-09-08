@@ -599,6 +599,114 @@ fn enum_match_nested_nominal_enum_pattern_recurses_in_source_order() {
 }
 
 #[test]
+fn cross_unit_generic_receiver_match_preserves_a_concrete_nominal_error() {
+    let mut db = Box::new(BeskidDatabase::default());
+    let project_root = tempfile::tempdir().expect("project").keep();
+    let source_root = project_root.join("src");
+    let main_path = source_root.join("Main.bd");
+    let fiber_path = source_root.join("Concurrency/Fiber.bd");
+    let fiber_error_path = source_root.join("Concurrency/FiberError.bd");
+    let fiber_status_path = source_root.join("Concurrency/FiberJoinStatus.bd");
+    let results_path = source_root.join("Core/Results.bd");
+    let main_source = "use Concurrency.Fiber; unit Main() { Fiber<i64> fiber = Fiber<i64> { value: 7_i64, handle: -1_i64 }; Fiber<i64>.Join(fiber); return; }";
+    let fiber_source = "use Concurrency.FiberError; use Concurrency.FiberJoinStatus; use Core.Results; pub type Fiber<T> { T value, i64 handle } pub Core.Results.Result<T, FiberError> Join<T>(Fiber<T> self) { FiberJoinStatus status = FiberJoinStatus::Panicked(self.handle, \"panic\"); return match status { FiberJoinStatus::Ok(_) => Result::Ok(self.value), FiberJoinStatus::Cancelled(reason, cancelerId) => Result::Error(FiberError::Cancelled(reason, cancelerId)), FiberJoinStatus::StackOverflow(limitBytes, requestedBytes) => Result::Error(FiberError::StackOverflow(limitBytes, requestedBytes)), FiberJoinStatus::Panicked(code, message) => Result::Error(FiberError::Panicked(code, message)), FiberJoinStatus::NotDone => Result::Error(FiberError::Panicked(-1_i64, \"not done\")), }; }";
+    let fiber_error_source = "pub enum FiberError { Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message) }";
+    let fiber_status_source = "pub enum FiberJoinStatus { Ok(i64 value), Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message), NotDone }";
+    let results_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
+    std::fs::create_dir_all(fiber_path.parent().expect("fiber parent")).expect("create source tree");
+    std::fs::create_dir_all(results_path.parent().expect("results parent")).expect("create Core source tree");
+    std::fs::write(&main_path, main_source).expect("write Main source");
+    std::fs::write(&fiber_path, fiber_source).expect("write Fiber source");
+    std::fs::write(&fiber_error_path, fiber_error_source).expect("write FiberError source");
+    std::fs::write(&fiber_status_path, fiber_status_source).expect("write FiberJoinStatus source");
+    std::fs::write(&results_path, results_source).expect("write Results source");
+    let units = [
+        (main_path.clone(), main_source),
+        (fiber_path.clone(), fiber_source),
+        (fiber_error_path, fiber_error_source),
+        (fiber_status_path, fiber_status_source),
+        (results_path, results_source),
+    ]
+    .into_iter()
+    .map(|(path, source)| SourceUnit {
+        logical_name: path.display().to_string(),
+        program: parse_program_with_source_name(path.to_str().expect("UTF-8 source path"), source)
+            .expect("parse source"),
+        path,
+        source: source.into(),
+    })
+    .collect::<Vec<_>>();
+    let generation = SyntaxGenerationId(149);
+    let entry = SourceUnitId::new(&*db, main_path.clone());
+    let fiber_unit = SourceUnitId::new(&*db, fiber_path);
+    let project = ProjectSession::new(&*db, project_root, main_path, "App".into(), "lock".into());
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
+        Arc::from(units.clone()),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed cross-unit program");
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
+    let main = find_function_definition(&*db, root).expect("Main definition");
+    let fiber_index = beskid_analysis::syntax_query::SyntaxIndex::from_program(&units[1].program, generation);
+    let join = AstNodeKey {
+        unit: fiber_unit,
+        generation,
+        node: fiber_index
+            .ids_of_kind(beskid_queries::IndexedNodeKind::FunctionDefinition)
+            .next()
+            .expect("Join definition"),
+    };
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let leaked: &'static BeskidDatabase = Box::leak(db);
+    let input =
+        CodegenInput::new(leaked, typed, Arc::from([root]), target.clone(), AbiManifestV5::canonical_runtime(target))
+            .expect("cross-unit codegen input");
+    let isa = isa::lookup_by_name("x86_64")
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let call = find_call_expression(input.database(), main).expect("Fiber<i64>.Join call");
+    let specialization = beskid_queries::generic_call_specialization(input.database(), call)
+        .expect("Join specialization query")
+        .expect("the applied Fiber receiver must specialize Join<T>");
+    let matched =
+        find_node(input.database(), join, beskid_queries::IndexedNodeKind::MatchExpression).expect("Join status match");
+    assert!(
+        beskid_queries::enum_match_specialization(input.database(), matched, specialization.substitutions.clone(),)
+            .expect("specialized Join match query")
+            .is_some(),
+        "the imported concrete FiberError must survive beside the owner-propagated T"
+    );
+    for constructor in
+        find_nodes_of_kind(input.database(), join, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
+    {
+        let ordinary = enum_constructor(input.database(), constructor).ok().flatten();
+        let specialized = beskid_queries::enum_constructor_specialization(
+            input.database(),
+            constructor,
+            specialization.substitutions.clone(),
+        )
+        .expect("specialized Join constructor query");
+        assert!(ordinary.is_some() || specialized.is_some(), "every Join enum constructor must retain a layout");
+    }
+
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[SyntaxModuleItem { key: join, symbol: "Join".into() }, SyntaxModuleItem { key: main, symbol: "Main".into() }],
+    )
+    .expect("generic Result constructor arms must retain their concrete nominal error payload");
+}
+
+#[test]
 fn enum_match_accepts_collectively_exhaustive_nested_nominal_variants() {
     let (input, isa, item) = item_fixture(
         "enum Inner { Value(i64 value), Other() } enum Result { Ok(Inner value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(Inner::Value(_)) => 1_i64, Result::Ok(Inner::Other()) => 2_i64, Result::Error(_) => 0_i64, }; }",

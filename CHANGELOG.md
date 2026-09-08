@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Cover the `pckg pack --skip-docs` contract end to end, requiring prepared library API docs to
+  remain byte-identical in the artifact and its manifest documentation pointer.
+- Reuse the shared scalar-boundary adapter for direct-call parameters so semantically authorized
+  integer width changes also lower inside nested calls instead of failing at the enclosing call.
+- Replace the local `~/.beskid` toolchain from one validated, exact-version bundle using a
+  same-filesystem staged swap with rollback, removing stale runtime, corelib, and package files while
+  preserving non-toolchain user data and the prior installation when publication fails. `just
+  replace` now reports missing aggregate-superrepo prerequisites before starting a build.
+- Resolve fully qualified public enum types through their exact assembled module so dependency
+  functions can lower contextual generic constructors without a redundant local import.
+- Contextualize unsuffixed integer literals from their exact field position in multi-payload enum
+  constructors, preserving the declared ABI width without implicit numeric conversion.
+- Authorize environment lookup only from the exact compiler-embedded Console terminal
+  facade, completing fail-closed lowering for terminal-dependent console modules.
+- Preserve a generic nominal type's parameter environment inside its methods so aggregate literals
+  and zero-argument generic factories lower concrete scalar field widths consistently.
+- Authorize terminal-size lowering from the exact compiler-embedded Linux, macOS, and Windows
+  console platform facades while copied paths and altered source bytes remain fail-closed.
+- Build local VS Code packages with the shared exact editor version, verify the bundled language
+  server reports that version, and reinstall the resulting VSIX into every available supported editor.
 - Materialize artifact string addresses with non-colocated relocations so the arm64 JIT does not
   require literal data to remain within 2 GiB of code.
 - Resolve a one-segment type imported from its homonymous module to the public type declaration,

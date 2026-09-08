@@ -2,7 +2,7 @@ use super::*;
 use crate::context::generated::Context as _;
 
 impl IsleContext<'_, '_, '_, '_> {
-    /// Adapt one already-lowered scalar to a declared storage or return boundary.
+    /// Adapt one already-lowered scalar to a declared storage, parameter, or return boundary.
     ///
     /// Source typing has already authorized the assignment. This seam only reconciles the
     /// physical integer widths used by CLIF; pointer/float/vector mismatches remain unavailable.

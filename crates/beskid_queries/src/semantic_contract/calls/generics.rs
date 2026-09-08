@@ -627,15 +627,29 @@ pub(in crate::semantic_contract) fn type_syntax_is_enclosing_generic_parameter_r
         return false;
     }
     let index = syntax.syntax_index(db);
-    let Some(enclosing) =
-        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::FunctionDefinition)
+    let Some(enclosing) = nearest_ancestor(index, key.node, |kind| {
+        matches!(
+            kind,
+            beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+        )
+    }) else {
+        return false;
+    };
+    let program = syntax.expanded_program(db);
+    let Some(enclosing_node) = index.node_at(program, enclosing) else {
+        return false;
+    };
+    if let Some(function) = enclosing_node.of::<beskid_analysis::syntax::FunctionDefinition>() {
+        return function.generics.iter().any(|generic| generic.node.name == parameter_name);
+    }
+    let Some(owner) = parent_node(index, enclosing)
+        .and_then(|owner| index.node_at(program, owner))
+        .and_then(|owner| owner.of::<beskid_analysis::syntax::TypeDefinition>())
     else {
         return false;
     };
-    index
-        .node_at(syntax.expanded_program(db), enclosing)
-        .and_then(|node| node.of::<beskid_analysis::syntax::FunctionDefinition>())
-        .is_some_and(|function| function.generics.iter().any(|generic| generic.node.name == parameter_name))
+    owner.generics.iter().any(|generic| generic.node.name == parameter_name)
 }
 
 pub(in crate::semantic_contract) fn generic_call_uses_parameter_type_arguments(

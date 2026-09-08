@@ -84,3 +84,55 @@ fn sha256_hex(bytes: &[u8]) -> String {
     let hash = hasher.finalize();
     format!("{hash:x}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::PackArgsPackageKind;
+    use std::io::Read;
+
+    #[test]
+    fn skip_docs_packs_prepared_library_api_docs() {
+        let source = std::env::temp_dir().join(format!("beskid_skip_docs_pack_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&source);
+        let docs = source.join(".beskid/docs");
+        fs::create_dir_all(&docs).expect("docs directory");
+        fs::write(
+            source.join("demo.bproj"),
+            "demo { name = \"demo\" version = \"0.4.0\" root = \"src\" readme = \"README.md\" }\n\ntarget \"DemoLib\" { kind = Lib }\n",
+        )
+        .expect("project manifest");
+        fs::write(source.join("README.md"), "# Demo\n").expect("readme");
+        fs::create_dir_all(source.join("src")).expect("source directory");
+        fs::write(source.join("src/Demo.bd"), "pub i32 Value() { return 1; }\n").expect("source");
+        let prepared_api = br#"{"schemaVersion":2,"generator":"beskid test","source":"src/Demo.bd","items":[]}"#;
+        fs::write(docs.join("api.json"), prepared_api).expect("prepared api.json");
+        fs::write(docs.join("index.md"), "# API\n").expect("prepared index");
+        let output = source.join("demo.bpk");
+
+        execute_pack(PackArgs {
+            package: "demo".into(),
+            version: None,
+            source: source.clone(),
+            output: output.clone(),
+            version_state_file: source.join("pack-version-state.json"),
+            package_kind: PackArgsPackageKind::Auto,
+            skip_docs: true,
+        })
+        .expect("pack prepared docs without regenerating them");
+
+        let mut archive = zip::ZipArchive::new(fs::File::open(output).expect("artifact")).expect("zip artifact");
+        let mut packed_api = Vec::new();
+        archive
+            .by_name(".beskid/docs/api.json")
+            .expect("prepared api.json remains in artifact")
+            .read_to_end(&mut packed_api)
+            .expect("read packed api.json");
+        assert_eq!(packed_api, prepared_api);
+        let package_json: serde_json::Value =
+            serde_json::from_reader(archive.by_name("package.json").expect("package manifest"))
+                .expect("parse package manifest");
+        assert_eq!(package_json["documentation"]["apiJson"], ".beskid/docs/api.json");
+        let _ = fs::remove_dir_all(source);
+    }
+}

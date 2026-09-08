@@ -87,16 +87,20 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
                 }
 
                 if let Some(constructor) = parent_syntax.of::<beskid_analysis::syntax::EnumConstructorExpression>() {
-                    let [argument] = constructor.args.as_slice() else {
-                        return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
-                    };
-                    let payload = index
-                        .direct_child_id(program, parent, beskid_analysis::syntax_query::DynNodeRef::from(argument))
-                        .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
-                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
-                    if payload != key {
-                        return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
+                    let mut payload_position = None;
+                    for (position, argument) in constructor.args.iter().enumerate() {
+                        let argument_node = index
+                            .direct_child_id(program, parent, beskid_analysis::syntax_query::DynNodeRef::from(argument))
+                            .map(|node| normalized_expression_node(index, node))
+                            .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
+                        if argument_node == key.node {
+                            if payload_position.replace(position).is_some() {
+                                return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
+                            }
+                        }
                     }
+                    let payload_position = payload_position
+                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
                     let layout = enum_layout(db, parent_key)?
                         .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
                     let variant_name = constructor.path.node.variant.node.name.as_str();
@@ -105,9 +109,10 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
                         .iter()
                         .find(|variant| variant.name.as_ref() == variant_name)
                         .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
-                    let [(_, AggregateFieldShape::Scalar(expected))] = variant.fields.as_ref() else {
+                    let Some((_, AggregateFieldShape::Scalar(expected))) = variant.fields.get(payload_position) else {
                         return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
                     };
+                    let payload = key;
                     return (primitive_integer(*expected)
                         && (contextual_constant_integer(db, payload)?.is_some()
                             || integer_literal_fits_abi(db, payload, *expected)?))

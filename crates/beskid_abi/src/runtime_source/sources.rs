@@ -46,6 +46,12 @@ pub const CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH: &str = "Concurrency.bd";
 pub const CANONICAL_CORELIB_FIBER_SOURCE_PATH: &str = "Concurrency/Fiber.bd";
 /// Canonical Console Linux platform facade eligible for terminal service authority.
 pub const CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH: &str = "Platform/Linux.bd";
+/// Canonical Console macOS platform facade eligible for terminal service authority.
+pub const CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE_PATH: &str = "Platform/MacOS.bd";
+/// Canonical Console Windows platform facade eligible for terminal service authority.
+pub const CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE_PATH: &str = "Platform/Windows.bd";
+/// Canonical Console terminal facade eligible for environment lookup authority.
+pub const CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH: &str = "Platform/Terminal.bd";
 /// Canonical Foundation filesystem facade eligible for private ABI-v5 filesystem services.
 pub const CANONICAL_CORELIB_FS_SOURCE_PATH: &str = "Core/FS/FS.bd";
 /// Canonical concurrency channel facade eligible for its private ABI-v5 services.
@@ -162,6 +168,12 @@ const CANONICAL_CORELIB_FIBER_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/concurrency/src/Concurrency/Fiber.bd"));
 const CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Platform/Linux.bd"));
+const CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Platform/MacOS.bd"));
+const CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Platform/Windows.bd"));
+const CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Platform/Terminal.bd"));
 const CANONICAL_CORELIB_FS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/FS/FS.bd"));
 const CANONICAL_CORELIB_CHANNEL_SOURCE: &str =
@@ -322,6 +334,18 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
     sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH.into(),
         source: CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE.into(),
     });
     sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_FS_SOURCE_PATH.into(),

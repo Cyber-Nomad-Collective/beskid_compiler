@@ -128,7 +128,6 @@ unit Main() {
     bar.percent;
     return;
 }
-
 "#;
     let (db, _project, unit, generation, index) = setup(inferred);
     let projection = key_at_start(
@@ -432,6 +431,7 @@ unit Main() {
     };
     return;
 }
+
 "#;
     let results_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
     let error_source = "pub enum SyscallError { InvalidFd(i64 fd) }";
@@ -498,6 +498,67 @@ unit Main() {
 }
 
 #[test]
+fn fully_qualified_enum_resolution_rejects_an_ambiguous_assembled_module_path() {
+    let mut db = BeskidDatabase::default();
+    let fixture = PathBuf::from("/tmp/ambiguous-qualified-enum-resolution");
+    let host_root = fixture.join("host/src");
+    let first_dependency_root = fixture.join("dependency-a/src");
+    let second_dependency_root = fixture.join("dependency-b/src");
+    let main_path = host_root.join("Main.bd");
+    let first_results_path = first_dependency_root.join("Core/Results/Results.bd");
+    let second_results_path = second_dependency_root.join("Core/Results/Results.bd");
+    let main_source = r#"
+unit Main() {
+    Core.Results.Result<i64, string> result = Core.Results.Result<i64, string>::Ok(1_i64);
+    return;
+}
+"#;
+    let results_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
+    let sources =
+        [(&main_path, main_source), (&first_results_path, results_source), (&second_results_path, results_source)];
+    let units = sources
+        .iter()
+        .map(|(path, source)| SourceUnit {
+            logical_name: path.display().to_string(),
+            path: (*path).clone(),
+            source: (*source).to_string(),
+            program: expand_program(parse_program(source).expect("parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH),
+        })
+        .collect::<Vec<_>>();
+    let main_program = units[0].program.clone();
+    let generation = SyntaxGenerationId(138);
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: host_root.clone() },
+            dependencies: vec![
+                RootEntry { dependency_name: Some("results-a".into()), source_root: first_dependency_root },
+                RootEntry { dependency_name: Some("results-b".into()), source_root: second_dependency_root },
+            ],
+        },
+        Arc::new(units),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let project = ProjectSession::new(
+        &db,
+        fixture.join("host"),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let constructor = key(main_unit, generation, &main_index, NodeKind::EnumConstructorExpression, 0);
+
+    assert_unavailable(enum_layout(&db, constructor));
+    assert_unavailable(enum_constructor(&db, constructor));
+}
+
+#[test]
 fn enum_constructor_selects_the_source_variant_and_single_payload() {
     let source = "enum Choice { None(), Some(i32 value) } i32 Main() { Choice choice = Choice::Some(7); return 0; }";
     let (db, _project, unit, generation, index) = setup(source);
@@ -532,6 +593,48 @@ fn enum_constructor_preserves_multiple_payloads_in_source_order() {
             variant_index: 0,
             payloads: Arc::from([first, second]),
         })
+    );
+}
+
+#[test]
+fn enum_constructor_contextualizes_an_unsuffixed_integer_at_its_exact_payload_position() {
+    let source = "enum EnvironmentError { UnsupportedMutation(string name, i64 hostReason) } unit Main(string name) { EnvironmentError error = EnvironmentError::UnsupportedMutation(name, 0); return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let reason = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, reason).expect("second enum payload context"),
+        Some(SemanticTypeId::I64),
+    );
+}
+
+#[test]
+fn enum_constructor_contextualizes_grouped_and_nested_integer_payloads_at_their_own_boundaries() {
+    let source = r#"
+enum Inner { Code(i32 code) }
+enum Outer { Pair(i64 wide, i32 narrow), Wrap(Inner inner) }
+unit Main() {
+    Outer pair = Outer::Pair((1), (2));
+    Outer wrapped = Outer::Wrap(Inner::Code((3)));
+    return;
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let wide = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    let narrow = key(unit, generation, &index, NodeKind::LiteralExpression, 1);
+    let nested = key(unit, generation, &index, NodeKind::LiteralExpression, 2);
+
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, wide).expect("grouped first payload"),
+        Some(SemanticTypeId::I64)
+    );
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, narrow).expect("grouped second payload"),
+        Some(SemanticTypeId::I32),
+    );
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, nested).expect("nested enum payload"),
+        Some(SemanticTypeId::I32),
     );
 }
 

@@ -37,7 +37,8 @@ impl IsleContext<'_, '_, '_, '_> {
             let value = if self.builder.func.dfg.value_type(value) == parameter.value_type {
                 value
             } else {
-                self.materialize_canonical_runtime_direct_constant(argument, parameter.value_type)?
+                self.adapt_scalar_boundary(argument, value, parameter.value_type)
+                    .or_else(|| self.materialize_canonical_runtime_direct_constant(argument, parameter.value_type))?
             };
             arguments.push(value);
         }

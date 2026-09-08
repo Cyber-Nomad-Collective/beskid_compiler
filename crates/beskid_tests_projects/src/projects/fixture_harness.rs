@@ -341,6 +341,21 @@ mod tests {
     }
 
     #[test]
+    fn system_environment_error_constructors_lower_from_their_dependency_unit() {
+        let root = corelib_tests_project_root();
+        with_project_test_env(&root, || {
+            lower_corelib_tests_entrypoint(
+                "system/EnvironmentTests.bd",
+                "env_get_empty_name_returns_invalid_name_error",
+            );
+            lower_corelib_tests_entrypoint(
+                "system/EnvironmentTests.bd",
+                "env_set_empty_name_returns_invalid_name_error",
+            );
+        });
+    }
+
+    #[test]
     fn query_tests_pass_the_production_semantic_gate() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
