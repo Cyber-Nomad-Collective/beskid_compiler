@@ -494,6 +494,27 @@ pub(in crate::semantic_contract) fn integer_literal_fits_abi(
     })
 }
 
+fn contextual_integer_operand_fits_abi(
+    db: &dyn Db,
+    key: AstNodeKey,
+    expected: SemanticTypeId,
+) -> Result<bool, SemanticError> {
+    if integer_literal_text(db, key)?.is_some() {
+        return integer_literal_fits_abi(db, key, expected);
+    }
+    let Some(value) = contextual_constant_integer(db, key)? else {
+        return Ok(false);
+    };
+    Ok(match expected {
+        SemanticTypeId::I32 => i32::try_from(value).is_ok(),
+        SemanticTypeId::I64 => true,
+        SemanticTypeId::U32 => u32::try_from(value).is_ok(),
+        SemanticTypeId::U8 => u8::try_from(value).is_ok(),
+        SemanticTypeId::WORD => u64::try_from(value).is_ok(),
+        _ => false,
+    })
+}
+
 pub(in crate::semantic_contract) fn integer_literal_text(
     db: &dyn Db,
     key: AstNodeKey,
@@ -648,7 +669,7 @@ pub(in crate::semantic_contract) fn binary_operand_abi_type_tracked(
 ) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |_program, index, _node| {
         Some((|| {
-            if integer_literal_text(db, key)?.is_none() {
+            if integer_literal_text(db, key)?.is_none() && contextual_constant_integer(db, key)?.is_none() {
                 return Err(SemanticError::unavailable("binary_operand_abi_type"));
             }
             let mut parent = index.metadata_for(key.generation, key.node).and_then(|meta| meta.parent);
@@ -678,7 +699,7 @@ pub(in crate::semantic_contract) fn binary_operand_abi_type_tracked(
                 .ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))?;
             let expected = abi_type(db, AstNodeKey { node: sibling, ..key })?
                 .ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))?;
-            (primitive_integer(expected) && integer_literal_fits_abi(db, key, expected)?)
+            (primitive_integer(expected) && contextual_integer_operand_fits_abi(db, key, expected)?)
                 .then_some(expected)
                 .ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))
         })())

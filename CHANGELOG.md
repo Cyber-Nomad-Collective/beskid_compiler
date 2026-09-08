@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Contextualize resolved integer constants through the same range-checked binary-operand seam as
+  unsuffixed literals, so signed comparisons retain their declared sibling type instead of
+  inheriting the constant's standalone `word` representation.
 - Preserve and validate unary operand semantic types through both concrete syntax nodes and
   expression wrappers, so signed negation inside nested comparisons lowers without weakening
   fail-closed operator checks.
