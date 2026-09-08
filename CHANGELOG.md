@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Forward scalar ABI authority through grouped expressions so nested arithmetic such as
+  `(tail + 1) % 32` retains `word` unsigned lowering instead of failing closed at the wrapper.
 - Isolate the Linux guarded-stack behavior harness at function-section granularity, so it links
   the production stack adapter without requiring unrelated Corelib string services from the
   monolithic platform-host object.

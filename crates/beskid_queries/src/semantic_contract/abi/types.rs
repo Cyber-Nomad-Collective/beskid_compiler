@@ -215,6 +215,19 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
         if let Some(expression) = node.of::<beskid_analysis::syntax::Expression>() {
             return Some(abi_type_for_expression(db, program, index, key, expression));
         }
+        if let Some(grouped) = node.of::<beskid_analysis::syntax::GroupedExpression>() {
+            return Some(
+                index
+                    .direct_child_id(
+                        program,
+                        key.node,
+                        beskid_analysis::syntax_query::DynNodeRef::from(grouped.expr.as_ref()),
+                    )
+                    .map(|node| AstNodeKey { node, ..key })
+                    .ok_or_else(|| SemanticError::unavailable("abi_type"))
+                    .and_then(|inner| abi_type(db, inner)?.ok_or_else(|| SemanticError::unavailable("abi_type"))),
+            );
+        }
         if let Some(literal) = node.of::<beskid_analysis::syntax::Literal>() {
             return Some(Ok(semantic_type_for_literal(literal)));
         }

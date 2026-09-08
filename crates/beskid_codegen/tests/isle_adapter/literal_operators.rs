@@ -2,8 +2,8 @@ use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
     EffectiveCompilationRoots, ModuleIndex, NodeFacts, ProgramAssembly, ProjectSession, RootEntry, SourceUnit,
     SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_typed_program, emit_isle_item,
-    find_function_definition, find_function_definitions, find_node, find_test_definition, isa, item_fixture,
-    item_fixture_with_root, lower_syntax_program, mutable_local_assignment, named_function, node_kind,
+    find_function_definition, find_function_definitions, find_node, find_nodes_of_kind, find_test_definition, isa,
+    item_fixture, item_fixture_with_root, lower_syntax_program, mutable_local_assignment, named_function, node_kind,
     parse_program_with_source_name, settings, test_statement_nodes,
 };
 
@@ -235,6 +235,24 @@ fn u32_division_and_remainder_use_unsigned_clif_operations() {
     assert!(clif.contains("urem"), "u32 remainder must be unsigned:\n{clif}");
     assert!(!clif.contains("sdiv"), "u32 division must not alias i32:\n{clif}");
     assert!(!clif.contains("srem"), "u32 remainder must not alias i32:\n{clif}");
+}
+
+#[test]
+fn grouped_nested_word_modulo_retains_unsigned_operand_authority() {
+    let (input, isa, item) = item_fixture("word Main(word tail) { word nextTail = (tail + 1) % 32; return nextTail; }");
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+    let outer = find_nodes_of_kind(input.database(), item, beskid_queries::IndexedNodeKind::BinaryExpression)
+        .into_iter()
+        .next()
+        .expect("outer modulo expression");
+    let grouped = facts.child(outer, 0).expect("grouped left operand");
+    assert_eq!(facts.semantic_type(grouped), Some(beskid_queries::SemanticTypeId::WORD));
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("a grouped nested word addition retains word authority for modulo lowering");
+    let clif = function.display().to_string();
+    assert!(clif.contains("urem"), "word modulo must use unsigned remainder:\n{clif}");
+    assert!(!clif.contains("srem"), "word modulo must not use signed remainder:\n{clif}");
 }
 
 #[test]
