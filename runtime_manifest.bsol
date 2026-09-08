@@ -747,7 +747,7 @@ corelib_service "__syscall_read_bytes" {
 
 corelib_service "__syscall_write" {
   adapter = "syscall_write"
-  params = [{ name = fd, type = i32 }, { name = buffer, type = pointer }, { name = len, type = usize }]
+  params = [{ name = fd, type = i64 }, { name = value, type = pointer }]
   returns = i64
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "syscall_write", os_imports = [] },
@@ -780,7 +780,7 @@ corelib_service "__panic" {
 
 corelib_service "__panic_str" {
   adapter = "beskid_trap_message"
-  params = [{ name = message, type = pointer }, { name = len, type = usize }]
+  params = [{ name = message, type = pointer }]
   returns = never
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "beskid_trap_message", os_imports = [] },

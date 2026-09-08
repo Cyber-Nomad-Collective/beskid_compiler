@@ -3,7 +3,7 @@ use std::sync::Mutex;
 
 use beskid_queries::{
     BeskidDatabase, bump_file_revision, configure_compilation_database_for_project, configure_db_for_project,
-    file_revision_for, reset_compilation_database, reset_typed_entry_inputs,
+    file_revision_for, reset_compilation_database, reset_process_compilation_database, reset_typed_entry_inputs,
 };
 
 static REGISTRY_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -40,6 +40,23 @@ fn configure_db_for_project_thread_local_is_safe() {
     let second = tempfile::tempdir().expect("tempdir");
     configure_db_for_project(first.path());
     configure_db_for_project(second.path());
+    beskid_queries::with_db(|db| {
+        bump_file_revision(db, "test-entry-key");
+        assert_eq!(file_revision_for(db, "test-entry-key"), 1);
+    });
+}
+
+#[test]
+fn process_reset_clears_thread_local_inputs_and_project_configuration() {
+    let _guard = REGISTRY_TEST_LOCK.lock().expect("registry test lock");
+    reset_typed_entry_inputs();
+    let root = tempfile::tempdir().expect("tempdir");
+    configure_db_for_project(root.path());
+    beskid_queries::with_db(|db| bump_file_revision(db, "test-entry-key"));
+
+    reset_process_compilation_database();
+    configure_db_for_project(root.path());
+
     beskid_queries::with_db(|db| {
         bump_file_revision(db, "test-entry-key");
         assert_eq!(file_revision_for(db, "test-entry-key"), 1);

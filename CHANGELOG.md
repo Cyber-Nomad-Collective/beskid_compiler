@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Advertise `@` as an LSP completion trigger so standalone BSOL editors show
+  the existing `@schemaless` suggestion as the annotation is typed.
+- Frame prepared-matrix worker events separately from Beskid program stdout,
+  use JSON-portable 64-bit timing fields, and reset generation-bound compilation
+  state between independent targets, so stdout-writing and sequential Corelib
+  tests cannot corrupt or collide with later supervisor work.
+- Align the managed-string Corelib write and panic service signatures with
+  their runtime adapters, extracting UTF-8 data and length before syscall or
+  trap handoff instead of forwarding object headers as raw bytes, and service
+  writes synchronously when a JIT host is not executing inside a fiber.
 - Cover the `pckg pack --skip-docs` contract end to end, requiring prepared library API docs to
   remain byte-identical in the artifact and its manifest documentation pointer.
 - Reuse the shared scalar-boundary adapter for direct-call parameters so semantically authorized
@@ -131,7 +141,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restore compiler and BSOL authoring manifests and lockfiles after release artifact
   builds succeed or fail, so local release staging has the same rollback guarantee
   as package publication.
-
 ### Changed
 
 - Bind BSOL semantic-token candidates to each LSP document generation so

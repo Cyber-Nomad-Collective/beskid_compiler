@@ -6570,10 +6570,6 @@
         {
           "name": "message",
           "type": "pointer"
-        },
-        {
-          "name": "len",
-          "type": "usize"
         }
       ],
       "result": "never",
@@ -6967,15 +6963,11 @@
       "params": [
         {
           "name": "fd",
-          "type": "i32"
+          "type": "i64"
         },
         {
-          "name": "buffer",
+          "name": "value",
           "type": "pointer"
-        },
-        {
-          "name": "len",
-          "type": "usize"
         }
       ],
       "result": "i64",

@@ -22,4 +22,13 @@ mod tests {
         assert_eq!(folders.supported, Some(true));
         assert!(matches!(folders.change_notifications, Some(OneOf::Left(true))));
     }
+
+    #[test]
+    fn initialize_triggers_bsol_annotation_completion() {
+        let init = initialize_result();
+        let provider = init.capabilities.completion_provider.expect("completion provider");
+        let triggers = provider.trigger_characters.expect("completion trigger characters");
+
+        assert!(triggers.iter().any(|trigger| trigger == "@"));
+    }
 }

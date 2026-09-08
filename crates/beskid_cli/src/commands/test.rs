@@ -128,6 +128,7 @@ pub(crate) fn execute_prepared_target(
     let target_started = Instant::now();
     let started_unix_ms = unix_ms();
     workspace.reject_mutation("execute_target")?;
+    workspace.begin_target_execution();
     let mut phases = Vec::new();
     let tests = target.tests;
     let front = target.front;

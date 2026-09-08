@@ -105,7 +105,7 @@ pub use semantic_contract::{
 };
 pub use session::{
     compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,
-    prepare_compilation_diagnostics, with_db,
+    prepare_compilation_diagnostics, reset_process_compilation_database, with_db,
 };
 pub use stats::{emit_salsa_stats, record_query_hit, record_query_miss, record_revision_bump, reset, snapshot};
 pub use typed_entry_bundle::{

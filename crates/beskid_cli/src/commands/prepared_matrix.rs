@@ -322,6 +322,10 @@ impl PreparedWorkspace {
         )
     }
 
+    pub fn begin_target_execution(&mut self) {
+        beskid_queries::reset_process_compilation_database();
+    }
+
     pub fn target_timeout(&self) -> Duration {
         self.budgets.target
     }

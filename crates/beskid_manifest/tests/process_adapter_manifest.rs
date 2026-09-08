@@ -41,6 +41,26 @@ fn process_adapter_intrinsics_have_the_canonical_abi_v5_contract() {
 }
 
 #[test]
+fn corelib_string_services_accept_managed_string_views() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).expect("runtime manifest");
+    let manifest = load_v5_manifest_source(&source).expect("valid runtime manifest");
+
+    for (name, parameters) in [("__syscall_write", &["i64", "pointer"][..]), ("__panic_str", &["pointer"][..])] {
+        let service = manifest
+            .corelib_services
+            .iter()
+            .find(|service| service.name == name)
+            .unwrap_or_else(|| panic!("manifest must declare {name}"));
+        assert_eq!(
+            service.params.iter().map(|parameter| parameter.ty.as_str()).collect::<Vec<_>>(),
+            parameters,
+            "the service adapter must receive the same managed-string ABI used by Corelib"
+        );
+    }
+}
+
+#[test]
 fn console_terminal_detection_uses_the_canonical_runtime_adapter() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     for platform in ["Linux", "MacOS", "Windows"] {
