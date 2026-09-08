@@ -117,7 +117,7 @@ impl SyntaxNodeFacts<'_> {
     ) -> Option<beskid_queries::AggregateFieldAccess> {
         self.query(aggregate_field_access(self.db, key)).or_else(|| {
             let enclosing = self.current_item_specialization()?;
-            self.query(aggregate_field_access_specialization(self.db, key, enclosing.substitutions.clone()))
+            self.query(aggregate_field_access_specialization(self.db, key, enclosing))
         })
     }
 

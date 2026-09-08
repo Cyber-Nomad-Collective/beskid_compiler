@@ -8,6 +8,10 @@ use super::support::{
     find_function_definitions, find_node, find_nodes_of_kind, isa, item_fixture, item_fixture_with_root, item_name,
     lower_syntax_program, settings, test_system_allocate, test_tls_get,
 };
+use beskid_abi::runtime_source::{CANONICAL_GC_ALLOCATION_SOURCE_PATH, canonical_runtime_sources};
+
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
+unsafe extern "C" fn test_context_switch(_from: *mut u8, _to: *mut u8) {}
 
 #[test]
 fn parsed_zero_capture_immediate_lambda_call_lowers_without_a_runtime_closure() {
@@ -334,7 +338,17 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    let items = [native_root, objects_root, roots_root]
+    let runtime_roots = canonical_runtime_sources()
+        .iter()
+        .map(|source| AstNodeKey {
+            unit: SourceUnitId::new(input.database(), directory.join(&source.logical_path)),
+            generation,
+            node: AstNodeId(0),
+        })
+        .collect::<Vec<_>>();
+    let items = runtime_roots
+        .iter()
+        .copied()
         .into_iter()
         .flat_map(|root| find_function_definitions(input.database(), root))
         .collect::<Vec<_>>();
@@ -365,18 +379,85 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         "RootClosureEnvironment",
         "RootClosureEnvironmentCurrent",
     ];
-    let module_items = selected
+    let mut selected_keys = selected
         .into_iter()
         .map(|name| {
+            items
+                .iter()
+                .copied()
+                .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some(name))
+                .unwrap_or_else(|| panic!("canonical helper {name}"))
+        })
+        .collect::<Vec<_>>();
+    let allocate_object_key = selected_keys
+        .iter()
+        .copied()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("AllocateObject"))
+        .expect("canonical AllocateObject helper");
+    let allocation_closure = beskid_queries::reachable_items(input.database(), objects_root, allocate_object_key)
+        .expect("canonical allocation dependency query")
+        .expect("canonical allocation dependency graph is complete");
+    assert!(
+        allocation_closure.iter().copied().any(|key| {
+            key.unit.path(input.database()).ends_with(CANONICAL_GC_ALLOCATION_SOURCE_PATH)
+                && item_name(input.database(), key).ok().flatten().as_deref() == Some("GcAlloc")
+        }),
+        "AllocateObject dependency closure must include canonical GcAlloc"
+    );
+    for key in allocation_closure.iter().copied() {
+        if !selected_keys.contains(&key) {
+            selected_keys.push(key);
+        }
+    }
+    let scheduler_entry_names =
+        ["SchedulerContext", "SchedulerSetCurrentFiber", "ContextSwitch", "SchedulerCurrentFiber", "FiberRecord"];
+    if selected_keys.iter().copied().any(|key| {
+        item_name(input.database(), key)
+            .ok()
+            .flatten()
+            .is_some_and(|name| scheduler_entry_names.contains(&name.as_ref()))
+    }) {
+        for name in scheduler_entry_names {
             let key = items
                 .iter()
                 .copied()
                 .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some(name))
-                .unwrap_or_else(|| panic!("canonical helper {name}"));
-            SyntaxModuleItem { key, symbol: name.into() }
+                .unwrap_or_else(|| panic!("canonical scheduler dependency {name}"));
+            if !selected_keys.contains(&key) {
+                selected_keys.push(key);
+            }
+        }
+    }
+    let mut dependency_index = 0;
+    while dependency_index < selected_keys.len() {
+        let entry = selected_keys[dependency_index];
+        let program = AstNodeKey { node: AstNodeId(0), ..entry };
+        let closure = beskid_queries::reachable_items(input.database(), program, entry)
+            .expect("canonical runtime dependency query")
+            .expect("canonical runtime dependency graph is complete");
+        for key in closure.iter().copied() {
+            if !selected_keys.contains(&key) {
+                selected_keys.push(key);
+            }
+        }
+        dependency_index += 1;
+    }
+    let module_items = selected_keys
+        .into_iter()
+        .map(|key| {
+            let name = item_name(input.database(), key)
+                .expect("canonical allocation dependency name query")
+                .expect("canonical allocation dependency has a name")
+                .to_string();
+            let symbol = beskid_queries::item_export_symbol(input.database(), key)
+                .expect("canonical allocation dependency export query")
+                .map(|export| export.0.to_string())
+                .unwrap_or(name);
+            SyntaxModuleItem { key, symbol }
         })
         .collect::<Vec<_>>();
     let mut builder = JITBuilder::with_isa(isa.clone(), default_libcall_names());
+    builder.symbol("beskid_arch_v5_context_switch", test_context_switch as *const u8);
     builder.symbol("beskid_rt_v5_intrinsic_system_allocate", test_system_allocate as *const u8);
     builder.symbol("beskid_rt_v5_intrinsic_tls_get", test_tls_get as *const u8);
     let mut module = JITModule::new(builder);
@@ -453,6 +534,19 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         unsafe { std::mem::transmute(allocate_environment) };
     let allocate_object: extern "C" fn(*const usize) -> *mut u8 = unsafe { std::mem::transmute(allocate_object) };
 
+    let mut heap_region = [0usize; 128];
+    let region_start = heap_region.as_mut_ptr() as usize;
+    let region_limit = region_start + std::mem::size_of_val(&heap_region);
+    let mut heap = [0usize; 90];
+    heap[0] = region_start;
+    heap[1] = std::mem::size_of_val(&heap_region);
+    heap[2] = region_start;
+    heap[3] = region_limit;
+    let mut runtime_state = [0usize; 8];
+    runtime_state[2] = heap.as_mut_ptr() as usize;
+    let mut tls = [runtime_state.as_mut_ptr() as usize, 0, 0, 1];
+    TEST_CURRENT_TLS.store(tls.as_mut_ptr() as usize, Ordering::SeqCst);
+
     let mut pointer_map = [16usize];
     let mut descriptor = [32usize, 8, pointer_map.as_mut_ptr() as usize, 1, 0];
     assert_eq!(validate(descriptor.as_ptr()), 1, "valid descriptor is accepted");
@@ -501,7 +595,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
 
     let mut slots = [0usize];
     let mut frame = [0usize, slots.as_mut_ptr() as usize, 1];
-    let mut tls = [0usize, frame.as_mut_ptr() as usize, 0, 1];
+    tls[1] = frame.as_mut_ptr() as usize;
     assert_eq!(root_environment(tls.as_mut_ptr(), 0, environment), 1);
     assert_eq!(slots[0], environment as usize, "valid environment is rooted in its slot");
     slots[0] = 0;

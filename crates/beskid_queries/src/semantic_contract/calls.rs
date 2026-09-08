@@ -27,7 +27,7 @@ pub(in crate::semantic_contract) use generics::{
     generic_call_uses_parameter_type_arguments, generic_callable_parameters, generic_nominal_method_receiver_tracked,
     generic_source_expression_identity, generic_source_type_identity, generic_source_type_identity_with_substitutions,
     imported_call_receiver_exists, imported_generic_nominal_receiver_requires_instantiation,
-    stable_declaration_identity, type_syntax_is_enclosing_generic_parameter_reference,
+    stable_declaration_identity, substitute_explicit_type, type_syntax_is_enclosing_generic_parameter_reference,
     type_syntax_is_generic_parameter_reference,
 };
 

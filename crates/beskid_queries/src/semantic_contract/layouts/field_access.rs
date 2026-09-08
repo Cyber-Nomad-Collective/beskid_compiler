@@ -9,25 +9,27 @@ pub(in crate::semantic_contract) fn aggregate_field_access_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<AggregateFieldAccess> {
     with_node(db, syntax, key, |program, index, node| {
-        aggregate_field_access_for_environment(db, program, index, key, node, None)
+        aggregate_field_access_for_environment(db, program, index, key, node, None, None)
     })?
     .transpose()
 }
 
+/// Resolve a field access while preserving the complete enclosing specialization.
 pub fn aggregate_field_access_specialization(
     db: &dyn Db,
     key: AstNodeKey,
-    enclosing: Arc<[GenericSubstitution]>,
+    enclosing: &GenericSpecializationInstance,
 ) -> SemanticQueryResult<AggregateFieldAccess> {
     let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else {
         return Ok(None);
     };
     let ambient = enclosing
+        .substitutions
         .iter()
         .map(|binding| (binding.parameter.to_string(), AggregateFieldShape::Scalar(binding.argument)))
         .collect::<HashMap<_, _>>();
     with_node(db, syntax, key, |program, index, node| {
-        aggregate_field_access_for_environment(db, program, index, key, node, Some(&ambient))
+        aggregate_field_access_for_environment(db, program, index, key, node, Some(&ambient), Some(enclosing))
     })?
     .transpose()
 }
@@ -39,7 +41,27 @@ fn aggregate_field_access_for_environment(
     key: AstNodeKey,
     node: beskid_analysis::syntax_query::DynNodeRef<'_>,
     ambient: Option<&HashMap<String, AggregateFieldShape>>,
+    enclosing: Option<&GenericSpecializationInstance>,
 ) -> Option<Result<AggregateFieldAccess, SemanticError>> {
+    if let Some(member) = node.of::<beskid_analysis::syntax::MemberExpression>() {
+        let receiver = index.direct_child_id(
+            program,
+            key.node,
+            beskid_analysis::syntax_query::DynNodeRef::from(member.target.as_ref()),
+        )?;
+        let receiver = AstNodeKey { node: normalized_expression_node(index, receiver), ..key };
+        let resolved = applied_call_result_layout(db, receiver, &member.target.node, ambient, enclosing);
+        return Some(resolved.and_then(|(declaration, layout)| {
+            let field_name = member.member.node.name.as_str();
+            let index = layout
+                .fields
+                .iter()
+                .position(|(name, _)| name.as_ref() == field_name)
+                .and_then(|index| u32::try_from(index).ok())
+                .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
+            Ok(AggregateFieldAccess { declaration, receiver, index, layout })
+        }));
+    }
     let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
     let resolved = match path.path.node.segments.as_slice() {
         [receiver, field] if receiver.node.type_args.is_empty() && field.node.type_args.is_empty() => {
@@ -60,6 +82,57 @@ fn aggregate_field_access_for_environment(
             .ok_or_else(|| SemanticError::unavailable("aggregate_field_access"))?;
         Ok(AggregateFieldAccess { declaration, receiver, index, layout })
     }))
+}
+
+fn applied_call_result_layout(
+    db: &dyn Db,
+    receiver: AstNodeKey,
+    expression: &beskid_analysis::syntax::Expression,
+    ambient: Option<&HashMap<String, AggregateFieldShape>>,
+    enclosing: Option<&GenericSpecializationInstance>,
+) -> Result<(AstNodeKey, AggregateLayoutFact), SemanticError> {
+    let beskid_analysis::syntax::Expression::Call(call) = expression else {
+        return Err(SemanticError::unavailable("aggregate_field_access"));
+    };
+    let specialization = if let Some(enclosing) = enclosing {
+        generic_call_specialization_in_environment(db, receiver, enclosing)?
+    } else {
+        Some(generic_specialization_instance_for_call(db, receiver)?)
+    }
+    .ok_or_else(|| SemanticError::unavailable("aggregate_field_access.call_specialization"))?;
+    let declaration_syntax = db
+        .syntax_unit(specialization.declaration.unit)
+        .filter(|syntax| syntax.accepts_key(db, specialization.declaration))
+        .ok_or_else(|| SemanticError::unavailable("aggregate_field_access.declaration_syntax"))?;
+    let declaration_node = declaration_syntax
+        .syntax_index(db)
+        .node_at(declaration_syntax.expanded_program(db), specialization.declaration.node)
+        .ok_or_else(|| SemanticError::unavailable("aggregate_field_access.declaration_node"))?;
+    let function = declaration_node
+        .of::<beskid_analysis::syntax::FunctionDefinition>()
+        .ok_or_else(|| SemanticError::unavailable("aggregate_field_access.function"))?;
+    let result =
+        function.return_type.as_ref().ok_or_else(|| SemanticError::unavailable("aggregate_field_access.result"))?;
+    let beskid_analysis::syntax::Expression::Path(callee) = &call.node.callee.node else {
+        return Err(SemanticError::unavailable("aggregate_field_access.callee_path"));
+    };
+    let arguments = explicit_generic_type_argument_syntax(&callee.node.path.node)
+        .ok_or_else(|| SemanticError::unavailable("aggregate_field_access.type_arguments"))?;
+    if function.generics.len() != arguments.len() {
+        return Err(SemanticError::unavailable("aggregate_field_access.type_argument_arity"));
+    }
+    let substitutions = function
+        .generics
+        .iter()
+        .zip(arguments)
+        .map(|(parameter, argument)| (parameter.node.name.as_str(), argument))
+        .collect::<HashMap<_, _>>();
+    let result = substitute_explicit_type(&result.node, &substitutions)
+        .ok_or_else(|| SemanticError::unavailable("aggregate_field_access.substituted_result"))?;
+    let beskid_analysis::syntax::Type::Complex(path) = &result else {
+        return Err(SemanticError::unavailable("aggregate_field_access.nominal_result"));
+    };
+    instantiated_aggregate_layout_for_path(db, receiver, &path.node, ambient)
 }
 
 fn applied_local_receiver_layout(

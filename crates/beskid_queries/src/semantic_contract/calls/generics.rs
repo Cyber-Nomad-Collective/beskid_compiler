@@ -553,7 +553,7 @@ pub(in crate::semantic_contract) fn expected_explicit_call_argument_type(
     substitute_explicit_type(&function.parameters.get(argument_index)?.node.ty.node, &substitutions)
 }
 
-fn substitute_explicit_type(
+pub(in crate::semantic_contract) fn substitute_explicit_type(
     ty: &beskid_analysis::syntax::Type,
     substitutions: &HashMap<&str, &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Type>>,
 ) -> Option<beskid_analysis::syntax::Type> {

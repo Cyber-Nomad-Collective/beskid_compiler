@@ -56,8 +56,8 @@ use calls::{
     is_transparent_binary_operand_path, method_declaration_for_member_receiver, nominal_local_member_receiver,
     nominal_member_receiver_tracked, primitive_integer, primitive_numeric, primitive_numeric_conversion_target,
     primitive_numeric_conversion_tracked, range_for_fact_tracked, resolve_local_extern_contract_method,
-    result_type_parts, same_type_syntax, stable_declaration_identity, try_expression_fact_for_node,
-    try_expression_fact_tracked, try_operand_parameter_declaration,
+    result_type_parts, same_type_syntax, stable_declaration_identity, substitute_explicit_type,
+    try_expression_fact_for_node, try_expression_fact_tracked, try_operand_parameter_declaration,
     type_syntax_is_enclosing_generic_parameter_reference, type_syntax_is_generic_parameter_reference,
     unique_nominal_method_declaration, unqualified_enclosing_method_call,
 };

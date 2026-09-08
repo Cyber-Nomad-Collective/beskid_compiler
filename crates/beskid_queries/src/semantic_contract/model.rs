@@ -777,9 +777,9 @@ pub type AggregateLiteralFieldValues = Arc<[(Arc<str>, AstNodeKey)]>;
 /// Exact nominal field selected by a direct local or implicit method receiver field path.
 ///
 /// The receiver must resolve through the current syntax generation to a parameter, an explicitly
-/// typed local, or the enclosing nominal method whose owning type has one matching field. More
-/// dynamic member shapes intentionally remain unavailable until they have their own syntax
-/// authority.
+/// typed local, the enclosing nominal method, or a generic call result whose complete
+/// specialization proves one nominal return layout. More dynamic member shapes intentionally
+/// remain unavailable until they have their own syntax authority.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct AggregateFieldAccess {
     pub declaration: AstNodeKey,

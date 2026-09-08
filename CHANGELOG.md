@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Allocate managed aggregates and closure environments inside the descriptor-traced GC heap, and
-  align the host runtime's type-descriptor decoder with the canonical ABI-v5 field layout.
+  align the host runtime's type-descriptor decoder with the canonical ABI-v5 field layout; retain
+  concrete string equality and call-result field layouts through nested generic specialization.
 - Derive inferred-let ownership from the initializer when the physical value width aliases a
   native pointer, and make storage/match CLIF tests select their intended caller and assert
   structural control flow instead of obsolete optimized instruction shapes.

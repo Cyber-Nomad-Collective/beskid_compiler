@@ -37,9 +37,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         let operator = self.query(operator_fact(self.db, key))?;
         let specialized_string_operands =
             matches!(operator, beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq)
-                && self.child(key, 0).and_then(|operand| self.specialized_direct_parameter_type(operand))
+                && self.child(key, 0).and_then(|operand| self.scalar_semantic_type(operand))
                     == Some(SemanticTypeId::STRING)
-                && self.child(key, 1).and_then(|operand| self.specialized_direct_parameter_type(operand))
+                && self.child(key, 1).and_then(|operand| self.scalar_semantic_type(operand))
                     == Some(SemanticTypeId::STRING);
         let specialized_enum_operands =
             matches!(operator, beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq)
