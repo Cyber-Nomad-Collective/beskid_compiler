@@ -697,8 +697,12 @@ pub(in crate::semantic_contract) fn binary_operand_abi_type_tracked(
                 .filter(|child| *child != branch)
                 .find(|child| index.kind(*child) != Some(beskid_analysis::syntax_query::NodeKind::BinaryOp))
                 .ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))?;
-            let expected = abi_type(db, AstNodeKey { node: sibling, ..key })?
-                .ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))?;
+            let sibling = AstNodeKey { node: normalized_expression_node(index, sibling), ..key };
+            if contextual_constant_integer(db, key)?.is_some() && integer_literal_text(db, sibling)?.is_some() {
+                return Err(SemanticError::unavailable("binary_operand_abi_type"));
+            }
+            let expected =
+                abi_type(db, sibling)?.ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))?;
             (primitive_integer(expected) && contextual_integer_operand_fits_abi(db, key, expected)?)
                 .then_some(expected)
                 .ok_or_else(|| SemanticError::unavailable("binary_operand_abi_type"))

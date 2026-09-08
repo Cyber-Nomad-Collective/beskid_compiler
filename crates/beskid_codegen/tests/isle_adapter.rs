@@ -2,6 +2,8 @@
 mod calls_conversions;
 #[path = "isle_adapter/channel_conditions.rs"]
 mod channel_conditions;
+#[path = "isle_adapter/composition_conditions.rs"]
+mod composition_conditions;
 #[path = "isle_adapter/control_flow_closures_spawn.rs"]
 mod control_flow_closures_spawn;
 #[path = "isle_adapter/corelib_services.rs"]

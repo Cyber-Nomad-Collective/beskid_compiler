@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve resolved integer constants as binary type authorities over unsuffixed literals, using
+  normalized sibling keys so compound `word` expressions retain their representation when passed
+  through exact call boundaries.
 - Contextualize resolved integer constants through the same range-checked binary-operand seam as
   unsuffixed literals, so signed comparisons retain their declared sibling type instead of
   inheriting the constant's standalone `word` representation.
