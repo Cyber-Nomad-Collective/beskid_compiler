@@ -202,6 +202,42 @@ fn parsed_parameter_read_materializes_the_generation_safe_local_slot() {
 }
 
 #[test]
+fn u32_boundary_zero_extends_and_relational_comparison_is_unsigned() {
+    let (input, isa, item) = item_fixture("bool Main(u8 value) { u32 wide = value; return wide < 4294967295_u32; }");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("u32 storage boundary and comparison lower with unsigned semantics");
+    let clif = function.display().to_string();
+    assert!(clif.contains("uextend.i32"), "u8-to-u32 storage must zero extend:\n{clif}");
+    assert!(clif.contains("icmp ult"), "u32 relational comparison must be unsigned:\n{clif}");
+    assert!(!clif.contains("icmp slt"), "u32 must not alias signed i32 comparison semantics:\n{clif}");
+}
+
+#[test]
+fn u32_signedness_is_symmetric_for_a_contextual_left_literal() {
+    let (input, isa, item) = item_fixture("bool Main(u32 value) { return 1 < value; }");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("a left contextual literal inherits the right u32 operand semantics");
+    let clif = function.display().to_string();
+    assert!(clif.contains("icmp ult"), "the right u32 operand must select unsigned comparison:\n{clif}");
+    assert!(!clif.contains("icmp slt"), "operand order must not select signed comparison:\n{clif}");
+}
+
+#[test]
+fn u32_division_and_remainder_use_unsigned_clif_operations() {
+    let (input, isa, item) =
+        item_fixture("u32 Main(u32 value) { u32 quotient = value / 2_u32; return quotient % 3_u32; }");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item).expect("u32 division and remainder lower");
+    let clif = function.display().to_string();
+    assert!(clif.contains("udiv"), "u32 division must be unsigned:\n{clif}");
+    assert!(clif.contains("urem"), "u32 remainder must be unsigned:\n{clif}");
+    assert!(!clif.contains("sdiv"), "u32 division must not alias i32:\n{clif}");
+    assert!(!clif.contains("srem"), "u32 remainder must not alias i32:\n{clif}");
+}
+
+#[test]
 fn parsed_mutable_range_accumulator_exposes_local_write_syntax_facts() {
     let (input, _isa, root) =
         item_fixture_with_root("i32 Main() { mut i32 sum = 0; for i in range(0, 4) { sum = sum + i; } return sum; }");

@@ -397,6 +397,8 @@ impl SemanticTypeId {
     pub const POINTER: Self = Self(9);
     /// Bottom type for operations which cannot return normally.
     pub const NEVER: Self = Self(10);
+    /// Fixed-width unsigned 32-bit integer. Its CLIF storage is `i32`, but its semantics are unsigned.
+    pub const U32: Self = Self(11);
 
     /// Return this semantic scalar's target-specific ABI size, alignment, and pointer-map class.
     pub fn scalar_abi_layout(self, pointer_width: u8) -> Option<ScalarAbiLayout> {
@@ -407,7 +409,7 @@ impl SemanticTypeId {
         };
         match self {
             Self::BOOL | Self::U8 => Some(ScalarAbiLayout { size: 1, alignment: 1, is_pointer: false }),
-            Self::I32 | Self::CHAR => Some(ScalarAbiLayout { size: 4, alignment: 4, is_pointer: false }),
+            Self::I32 | Self::U32 | Self::CHAR => Some(ScalarAbiLayout { size: 4, alignment: 4, is_pointer: false }),
             Self::I64 | Self::F64 => Some(ScalarAbiLayout { size: 8, alignment: 8, is_pointer: false }),
             Self::WORD => Some(ScalarAbiLayout { size: pointer_size, alignment: pointer_size, is_pointer: false }),
             Self::POINTER | Self::STRING => {
@@ -427,6 +429,7 @@ impl SemanticTypeId {
             Self::BOOL => "bool",
             Self::I32 => "i32",
             Self::I64 => "i64",
+            Self::U32 => "u32",
             Self::U8 => "u8",
             Self::F64 => "f64",
             Self::CHAR => "char",

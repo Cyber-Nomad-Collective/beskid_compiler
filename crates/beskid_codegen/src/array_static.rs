@@ -233,7 +233,7 @@ fn scalar_layout(pointer_width: u8, ty: SemanticTypeId) -> Option<(u64, u64, boo
     let pointer = u64::from(pointer_width.checked_div(8)?);
     match ty {
         SemanticTypeId::BOOL | SemanticTypeId::U8 => Some((1, 1, false)),
-        SemanticTypeId::I32 | SemanticTypeId::CHAR => Some((4, 4, false)),
+        SemanticTypeId::I32 | SemanticTypeId::U32 | SemanticTypeId::CHAR => Some((4, 4, false)),
         SemanticTypeId::I64 | SemanticTypeId::F64 => Some((8, 8, false)),
         SemanticTypeId::WORD => Some((pointer, pointer, false)),
         SemanticTypeId::POINTER | SemanticTypeId::STRING => Some((pointer, pointer, true)),

@@ -68,9 +68,8 @@ fn canonical_fiber_facade_exposes_one_exact_join_and_cancel_contract() {
             ("__panic_str", "beskid_trap_message"),
         ]
     );
-    let cancel = capability
-        .service_for_source(FIBER_FACADE, "__fiber_cancel")
-        .expect("Fiber facade owns cancel authority");
+    let cancel =
+        capability.service_for_source(FIBER_FACADE, "__fiber_cancel").expect("Fiber facade owns cancel authority");
     assert_eq!(
         canonical_corelib_service_abi(cancel),
         Some(CorelibServiceAbi {
@@ -100,9 +99,9 @@ fn canonical_channel_facade_uses_one_atomic_try_receive_claim_before_value_selec
         .service_for_source(CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, "__channel_try_receive")
         .expect("Channel facade owns exact atomic try-receive authority");
     assert_eq!(claim.symbol, "channel_try_receive");
-    assert!(capability
-        .service_for_source(CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, "__channel_try_receive_status")
-        .is_none());
+    assert!(
+        capability.service_for_source(CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, "__channel_try_receive_status").is_none()
+    );
 
     let value = capability
         .service_for_source(CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, "__channel_receive_value")

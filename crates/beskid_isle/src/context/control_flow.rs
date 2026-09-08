@@ -17,9 +17,9 @@ impl IsleContext<'_, '_, '_, '_> {
             Some(value)
         } else if actual.is_int() && expected.is_int() && actual.bits() < expected.bits() {
             match self.facts.semantic_type(semantic_source)? {
-                beskid_queries::SemanticTypeId::U8 | beskid_queries::SemanticTypeId::BOOL => {
-                    Some(self.builder.ins().uextend(expected, value))
-                }
+                beskid_queries::SemanticTypeId::U32
+                | beskid_queries::SemanticTypeId::U8
+                | beskid_queries::SemanticTypeId::BOOL => Some(self.builder.ins().uextend(expected, value)),
                 beskid_queries::SemanticTypeId::I32 | beskid_queries::SemanticTypeId::I64 => {
                     Some(self.builder.ins().sextend(expected, value))
                 }
@@ -29,6 +29,7 @@ impl IsleContext<'_, '_, '_, '_> {
             matches!(
                 self.facts.semantic_type(semantic_source)?,
                 beskid_queries::SemanticTypeId::U8
+                    | beskid_queries::SemanticTypeId::U32
                     | beskid_queries::SemanticTypeId::BOOL
                     | beskid_queries::SemanticTypeId::I32
                     | beskid_queries::SemanticTypeId::I64

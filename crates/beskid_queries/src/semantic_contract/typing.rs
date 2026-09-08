@@ -582,6 +582,7 @@ pub(super) fn semantic_type_for_literal(literal: &beskid_analysis::syntax::Liter
     match literal {
         beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i32") => SemanticTypeId::I32,
         beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_i64") => SemanticTypeId::I64,
+        beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_u32") => SemanticTypeId::U32,
         beskid_analysis::syntax::Literal::Integer(value) if value.ends_with("_u8") => SemanticTypeId::U8,
         beskid_analysis::syntax::Literal::Integer(value)
             if value.starts_with("0x") && integer_literal_u64(value).is_some_and(|number| number > i64::MAX as u64) =>

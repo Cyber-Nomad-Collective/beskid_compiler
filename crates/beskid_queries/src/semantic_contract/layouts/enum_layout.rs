@@ -707,7 +707,10 @@ fn materialize_match_pattern(
             let literal_key = AstNodeKey { node: literal_node, ..key };
             match &literal.node {
                 beskid_analysis::syntax::Literal::Unit
-                    if matches!(expected, MatchPatternExpectation::Scalar { semantic_type: SemanticTypeId::UNIT, .. }) =>
+                    if matches!(
+                        expected,
+                        MatchPatternExpectation::Scalar { semantic_type: SemanticTypeId::UNIT, .. }
+                    ) =>
                 {
                     Ok(EnumMatchPatternFact::UnitLiteral { literal: literal_key })
                 }
@@ -752,7 +755,8 @@ fn materialize_scalar_literal(
     semantic_type: SemanticTypeId,
     value: LiteralFact,
 ) -> Result<EnumMatchPatternFact, SemanticError> {
-    if !matches!(expected, MatchPatternExpectation::Scalar { semantic_type: expected, .. } if *expected == semantic_type) {
+    if !matches!(expected, MatchPatternExpectation::Scalar { semantic_type: expected, .. } if *expected == semantic_type)
+    {
         return Err(SemanticError::unavailable("enum_match"));
     }
     Ok(EnumMatchPatternFact::ScalarLiteral(EnumMatchScalarLiteralFact { literal, semantic_type, value }))
@@ -845,9 +849,7 @@ fn enum_variant_field_managed_reference(
             AggregateFieldShape::Nominal(_) | AggregateFieldShape::Scalar(SemanticTypeId::STRING) => {
                 Ok(ManagedReferenceKind::GcManaged)
             }
-            AggregateFieldShape::Scalar(SemanticTypeId::POINTER) => {
-                Err(SemanticError::unavailable("enum_match"))
-            }
+            AggregateFieldShape::Scalar(SemanticTypeId::POINTER) => Err(SemanticError::unavailable("enum_match")),
             AggregateFieldShape::Scalar(_) => Ok(ManagedReferenceKind::NativeOrScalar),
         };
     }

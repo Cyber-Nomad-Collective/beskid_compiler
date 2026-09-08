@@ -42,6 +42,26 @@ contract Converter { string Format(char value); }
 }
 
 #[test]
+fn item_signature_preserves_unsigned_u32_identity() {
+    let source = "u32 AbiVersion() { return 5_u32; } pointer EventGetHandler(pointer event, u32 index) { return event; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let abi_version = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let event_get_handler = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+
+    assert_eq!(
+        item_signature(&db, abi_version).expect("AbiVersion signature"),
+        Some(ItemSignature { parameters: Arc::from([]), result: SemanticTypeId::U32 })
+    );
+    assert_eq!(
+        item_signature(&db, event_get_handler).expect("EventGetHandler signature"),
+        Some(ItemSignature {
+            parameters: Arc::from([SemanticTypeId::POINTER, SemanticTypeId::U32]),
+            result: SemanticTypeId::POINTER,
+        })
+    );
+}
+
+#[test]
 fn test_items_have_a_unit_signature_and_own_generation_safe_body_cursor() {
     let source = "test Smoke { return; }";
     let (db, _project, unit, generation, index) = setup(source);

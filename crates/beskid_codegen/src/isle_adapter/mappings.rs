@@ -96,7 +96,7 @@ pub(super) fn map_operator_fact(operator: beskid_queries::OperatorFact) -> Opera
 pub(super) fn map_scalar_type(semantic: SemanticTypeId) -> Option<Type> {
     Some(match semantic {
         SemanticTypeId::BOOL | SemanticTypeId::U8 => types::I8,
-        SemanticTypeId::I32 => types::I32,
+        SemanticTypeId::I32 | SemanticTypeId::U32 => types::I32,
         SemanticTypeId::I64 => types::I64,
         SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::NEVER => return None,
         SemanticTypeId::F64 => types::F64,

@@ -160,10 +160,8 @@ const CANONICAL_CORELIB_CONCURRENCY_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/concurrency/src/Concurrency.bd"));
 const CANONICAL_CORELIB_FIBER_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/concurrency/src/Concurrency/Fiber.bd"));
-const CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../corelib/packages/console/src/Platform/Linux.bd"
-));
+const CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Platform/Linux.bd"));
 const CANONICAL_CORELIB_FS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/FS/FS.bd"));
 const CANONICAL_CORELIB_CHANNEL_SOURCE: &str =

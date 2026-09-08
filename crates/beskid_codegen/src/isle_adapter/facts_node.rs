@@ -579,6 +579,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                 left_type,
                 SemanticTypeId::I32
                     | SemanticTypeId::I64
+                    | SemanticTypeId::U32
                     | SemanticTypeId::U8
                     | SemanticTypeId::F64
                     | SemanticTypeId::BOOL

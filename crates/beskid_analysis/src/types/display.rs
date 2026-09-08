@@ -9,6 +9,7 @@ fn primitive_type_name(primitive: PrimitiveType) -> &'static str {
         PrimitiveType::Bool => "bool",
         PrimitiveType::I32 => "i32",
         PrimitiveType::I64 => "i64",
+        PrimitiveType::U32 => "u32",
         PrimitiveType::U8 => "u8",
         PrimitiveType::Pointer => "pointer",
         PrimitiveType::Word => "word",

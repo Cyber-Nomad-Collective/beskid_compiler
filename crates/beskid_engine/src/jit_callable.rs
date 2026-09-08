@@ -7,6 +7,7 @@ pub(crate) enum EntryReturnKind {
     PointerLike,
     I64,
     I32,
+    U32,
     U8,
     Bool,
     F64,
@@ -21,6 +22,7 @@ impl EntryReturnKind {
             SemanticTypeId::NEVER => Self::Never,
             SemanticTypeId::I64 => Self::I64,
             SemanticTypeId::I32 => Self::I32,
+            SemanticTypeId::U32 => Self::U32,
             SemanticTypeId::U8 => Self::U8,
             SemanticTypeId::BOOL => Self::Bool,
             SemanticTypeId::F64 => Self::F64,
@@ -60,6 +62,10 @@ impl JitCallable {
                 // SAFETY: Signature is selected from typed return info.
                 unsafe { invoke0::<i32>(ptr) as i64 }
             }
+            EntryReturnKind::U32 => {
+                // SAFETY: Signature is selected from typed return info.
+                unsafe { invoke0::<u32>(ptr) as i64 }
+            }
             EntryReturnKind::U8 => {
                 // SAFETY: Signature is selected from typed return info.
                 unsafe { invoke0::<u8>(ptr) as i64 }
@@ -87,11 +93,23 @@ impl JitCallable {
             EntryReturnKind::PointerLike => format!("0x{value:016x}"),
             EntryReturnKind::I64 => value.to_string(),
             EntryReturnKind::I32 => (value as i32).to_string(),
+            EntryReturnKind::U32 => (value as u32).to_string(),
             EntryReturnKind::U8 => (value as u8).to_string(),
             EntryReturnKind::Bool => ((value as u8) != 0).to_string(),
             EntryReturnKind::F64 => f64::from_bits(value as u64).to_string(),
             EntryReturnKind::Char => std::char::from_u32(value as u32).unwrap_or('\u{FFFD}').to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn u32_result_formats_without_signed_i32_aliasing() {
+        assert!(matches!(EntryReturnKind::from_semantic_type(SemanticTypeId::U32), EntryReturnKind::U32));
+        assert_eq!(JitCallable::format_i64_result(u32::MAX as i64, EntryReturnKind::U32), "4294967295");
     }
 }
 

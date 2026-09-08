@@ -317,6 +317,7 @@ fn primitive_to_surface(primitive: PrimitiveType) -> SurfacePrimitive {
         PrimitiveType::Bool => SurfacePrimitive::Bool,
         PrimitiveType::I32 => SurfacePrimitive::I32,
         PrimitiveType::I64 => SurfacePrimitive::I64,
+        PrimitiveType::U32 => SurfacePrimitive::U32,
         PrimitiveType::U8 => SurfacePrimitive::U8,
         PrimitiveType::Pointer => SurfacePrimitive::Pointer,
         PrimitiveType::Word => SurfacePrimitive::Word,

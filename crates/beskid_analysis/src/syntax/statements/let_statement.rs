@@ -97,6 +97,7 @@ fn default_initializer(
         PrimitiveType::Bool => Literal::Bool(false),
         PrimitiveType::I32 => Literal::Integer("0_i32".into()),
         PrimitiveType::I64 | PrimitiveType::Pointer | PrimitiveType::Word => Literal::Integer("0_i64".into()),
+        PrimitiveType::U32 => Literal::Integer("0_u32".into()),
         PrimitiveType::U8 => Literal::Integer("0_u8".into()),
         PrimitiveType::F64 => Literal::Float("0.0".into()),
         PrimitiveType::Char => Literal::Char("'\\0'".into()),

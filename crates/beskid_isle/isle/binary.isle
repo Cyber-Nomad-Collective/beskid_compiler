@@ -12,7 +12,7 @@
 (extern constructor clif_ishl clif_ishl)
 (decl clif_ushr (Value Value) Value)
 (extern constructor clif_ushr clif_ushr)
-(decl partial clif_srem (Value Value) Value)
+(decl partial clif_srem (AstNodeKey Value Value) Value)
 (decl clif_eq_discriminant (Value Value AstNodeKey AstNodeKey) Value)
 (decl clif_ne_discriminant (Value Value AstNodeKey AstNodeKey) Value)
 (extern constructor clif_srem clif_srem)
@@ -22,13 +22,13 @@
 (extern constructor clif_eq clif_eq)
 (decl clif_ne (Value Value) Value)
 (extern constructor clif_ne clif_ne)
-(decl clif_slt (Value Value) Value)
+(decl partial clif_slt (AstNodeKey Value Value) Value)
 (extern constructor clif_slt clif_slt)
-(decl clif_sle (Value Value) Value)
+(decl partial clif_sle (AstNodeKey Value Value) Value)
 (extern constructor clif_sle clif_sle)
-(decl clif_sgt (Value Value) Value)
+(decl partial clif_sgt (AstNodeKey Value Value) Value)
 (extern constructor clif_sgt clif_sgt)
-(decl clif_sge (Value Value) Value)
+(decl partial clif_sge (AstNodeKey Value Value) Value)
 (extern constructor clif_sge clif_sge)
 (decl partial clif_short_circuit_or (AstNodeKey) Value)
 (extern constructor clif_short_circuit_or clif_short_circuit_or)
@@ -77,19 +77,19 @@
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Lt))))
-      (clif_slt (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+      (clif_slt key (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Lte))))
-      (clif_sle (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+      (clif_sle key (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Gt))))
-      (clif_sgt (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+      (clif_sgt key (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Gte))))
-      (clif_sge (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+      (clif_sge key (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
 
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
@@ -124,14 +124,14 @@
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Div))))
-      (clif_div_trapz (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+      (clif_div_trapz key (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.BinaryExpression))
         (operator_fact (OperatorFact.Mod))))
-      (clif_srem (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
+      (clif_srem key (lower_expression (child_at key 0)) (lower_expression (child_at key 1))))
 
 ;; Zero-division trap guards: trap when the divisor is zero.
-(decl clif_div_trapz (Value Value) Value)
+(decl partial clif_div_trapz (AstNodeKey Value Value) Value)
 (extern constructor clif_div_trapz clif_div_trapz)
 
 ;; Literal-folding shortcuts for constant operands.

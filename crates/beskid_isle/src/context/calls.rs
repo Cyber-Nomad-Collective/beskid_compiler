@@ -483,13 +483,15 @@ fn corelib_service_native_signature(call_conv: CallConv, symbol: &str) -> Option
     let abi_type = |ty| match ty {
         CorelibServiceAbiType::Pointer | CorelibServiceAbiType::String | CorelibServiceAbiType::Usize => Some(pointer),
         CorelibServiceAbiType::I64 => Some(types::I64),
-        CorelibServiceAbiType::I32 => Some(types::I32),
+        CorelibServiceAbiType::I32 | CorelibServiceAbiType::U32 => Some(types::I32),
         CorelibServiceAbiType::U8 => Some(types::I8),
         CorelibServiceAbiType::F64 => Some(types::F64),
         CorelibServiceAbiType::Void | CorelibServiceAbiType::Never => None,
     };
     let mut signature = Signature::new(call_conv);
-    signature.params.extend(abi.parameters.into_iter().map(|ty| abi_type(ty).map(AbiParam::new)).collect::<Option<Vec<_>>>()?);
+    signature
+        .params
+        .extend(abi.parameters.into_iter().map(|ty| abi_type(ty).map(AbiParam::new)).collect::<Option<Vec<_>>>()?);
     if !matches!(abi.result, CorelibServiceAbiType::Void | CorelibServiceAbiType::Never) {
         signature.returns.push(AbiParam::new(abi_type(abi.result)?));
     }

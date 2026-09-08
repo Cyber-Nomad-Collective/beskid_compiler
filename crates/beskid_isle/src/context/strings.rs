@@ -13,6 +13,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let coerced = match semantic {
             SemanticTypeId::I64 => value,
             SemanticTypeId::I32 => self.builder.ins().sextend(types::I64, value),
+            SemanticTypeId::U32 => self.builder.ins().uextend(types::I64, value),
             SemanticTypeId::U8 => self.builder.ins().uextend(types::I64, value),
             SemanticTypeId::BOOL => self.builder.ins().uextend(types::I64, value),
             _ => return None,

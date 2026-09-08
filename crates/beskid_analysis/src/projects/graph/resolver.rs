@@ -364,10 +364,7 @@ fn is_corelib_workspace_member_manifest(manifest_path: &Path) -> bool {
     normalized_manifest.ancestors().any(|ancestor| {
         ancestor.file_name().and_then(std::ffi::OsStr::to_str) == Some("packages")
             && ancestor.parent().is_some_and(|workspace| {
-                discover_project_manifest_in_dir(&workspace.join("beskid_corelib"))
-                    .ok()
-                    .flatten()
-                    .is_some()
+                discover_project_manifest_in_dir(&workspace.join("beskid_corelib")).ok().flatten().is_some()
             })
     })
 }

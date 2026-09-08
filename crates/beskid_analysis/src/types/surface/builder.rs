@@ -164,6 +164,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
             PrimitiveType::Bool,
             PrimitiveType::I32,
             PrimitiveType::I64,
+            PrimitiveType::U32,
             PrimitiveType::U8,
             PrimitiveType::F64,
             PrimitiveType::Char,

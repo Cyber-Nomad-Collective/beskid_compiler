@@ -29,7 +29,9 @@ pub(in crate::semantic_contract) fn cast_intents_for_node(
         .ok()
         .flatten()
         .map(|literal| match literal {
-            LiteralFact::Integer(_) => SemanticTypeId::I32,
+            LiteralFact::Integer(ref value) => {
+                semantic_type_for_literal(&beskid_analysis::syntax::Literal::Integer(value.to_string()))
+            }
             LiteralFact::Float(_) => SemanticTypeId::F64,
             LiteralFact::Bool(_) => SemanticTypeId::BOOL,
             LiteralFact::Char(_) => SemanticTypeId::CHAR,
@@ -231,6 +233,7 @@ pub(in crate::semantic_contract) fn abi_semantic_type(ty: AbiType) -> Option<Sem
         AbiType::USize => SemanticTypeId::WORD,
         AbiType::I8 | AbiType::U8 => SemanticTypeId::U8,
         AbiType::I32 => SemanticTypeId::I32,
+        AbiType::U32 => SemanticTypeId::U32,
         AbiType::I64 => SemanticTypeId::I64,
         AbiType::F64 => SemanticTypeId::F64,
         _ => return None,
@@ -240,12 +243,20 @@ pub(in crate::semantic_contract) fn abi_semantic_type(ty: AbiType) -> Option<Sem
 pub(in crate::semantic_contract) fn primitive_numeric(semantic_type: SemanticTypeId) -> bool {
     matches!(
         semantic_type,
-        SemanticTypeId::I32 | SemanticTypeId::I64 | SemanticTypeId::U8 | SemanticTypeId::WORD | SemanticTypeId::F64
+        SemanticTypeId::I32
+            | SemanticTypeId::I64
+            | SemanticTypeId::U32
+            | SemanticTypeId::U8
+            | SemanticTypeId::WORD
+            | SemanticTypeId::F64
     )
 }
 
 pub(in crate::semantic_contract) fn primitive_integer(semantic_type: SemanticTypeId) -> bool {
-    matches!(semantic_type, SemanticTypeId::I32 | SemanticTypeId::I64 | SemanticTypeId::U8 | SemanticTypeId::WORD)
+    matches!(
+        semantic_type,
+        SemanticTypeId::I32 | SemanticTypeId::I64 | SemanticTypeId::U32 | SemanticTypeId::U8 | SemanticTypeId::WORD
+    )
 }
 
 pub(in crate::semantic_contract) fn expression_fact_target(kind: beskid_analysis::syntax_query::NodeKind) -> bool {

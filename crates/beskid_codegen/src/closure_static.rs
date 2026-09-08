@@ -292,7 +292,7 @@ fn scalar_layout(pointer_width: u8, ty: SemanticTypeId) -> Option<(u64, u64, boo
     match ty {
         SemanticTypeId::UNIT | SemanticTypeId::NEVER => Some((0, 1, false)),
         SemanticTypeId::BOOL | SemanticTypeId::U8 => Some((1, 1, false)),
-        SemanticTypeId::I32 | SemanticTypeId::CHAR => Some((4, 4, false)),
+        SemanticTypeId::I32 | SemanticTypeId::U32 | SemanticTypeId::CHAR => Some((4, 4, false)),
         SemanticTypeId::I64 | SemanticTypeId::F64 => Some((8, 8, false)),
         SemanticTypeId::WORD => Some((pointer_bytes, pointer_bytes, false)),
         SemanticTypeId::POINTER | SemanticTypeId::STRING => Some((pointer_bytes, pointer_bytes, true)),

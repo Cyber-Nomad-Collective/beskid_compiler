@@ -479,7 +479,7 @@ pub(in crate::semantic_contract) fn integer_literal_fits_abi(
         return Ok(match expected {
             SemanticTypeId::I32 => magnitude <= (i32::MAX as u64) + 1,
             SemanticTypeId::I64 => magnitude <= (i64::MAX as u64) + 1,
-            SemanticTypeId::U8 | SemanticTypeId::WORD => false,
+            SemanticTypeId::U32 | SemanticTypeId::U8 | SemanticTypeId::WORD => false,
             _ => false,
         });
     }
@@ -487,6 +487,7 @@ pub(in crate::semantic_contract) fn integer_literal_fits_abi(
     Ok(match expected {
         SemanticTypeId::I32 => value.is_some_and(|value| i32::try_from(value).is_ok()),
         SemanticTypeId::I64 => value.is_some_and(|value| i64::try_from(value).is_ok()),
+        SemanticTypeId::U32 => value.is_some_and(|value| u32::try_from(value).is_ok()),
         SemanticTypeId::U8 => value.is_some_and(|value| u8::try_from(value).is_ok()),
         SemanticTypeId::WORD => value.is_some(),
         _ => false,
@@ -537,7 +538,7 @@ pub(in crate::semantic_contract) fn contextual_constant_integer(
 }
 
 pub(in crate::semantic_contract) fn integer_has_explicit_abi_suffix(text: &str) -> bool {
-    matches!(text.rsplit_once('_').map(|(_, suffix)| suffix), Some("i32" | "i64" | "u8"))
+    matches!(text.rsplit_once('_').map(|(_, suffix)| suffix), Some("i32" | "i64" | "u32" | "u8"))
 }
 
 /// Parse a source integer's magnitude while preserving a hexadecimal word-sized bit pattern.
@@ -712,6 +713,7 @@ pub(in crate::semantic_contract) fn builtin_type_to_semantic(
         BuiltinType::Ptr => SemanticTypeId::POINTER,
         BuiltinType::Usize => SemanticTypeId::WORD,
         BuiltinType::U64 => SemanticTypeId::I64,
+        BuiltinType::U32 => SemanticTypeId::U32,
         BuiltinType::I32 => SemanticTypeId::I32,
         BuiltinType::F64 => SemanticTypeId::F64,
         BuiltinType::Unit => SemanticTypeId::UNIT,
@@ -746,6 +748,7 @@ fn corelib_service_abi_type(ty: beskid_abi::runtime_source::CorelibServiceAbiTyp
         CorelibServiceAbiType::Usize => SemanticTypeId::WORD,
         CorelibServiceAbiType::I64 => SemanticTypeId::I64,
         CorelibServiceAbiType::I32 => SemanticTypeId::I32,
+        CorelibServiceAbiType::U32 => SemanticTypeId::U32,
         CorelibServiceAbiType::U8 => SemanticTypeId::U8,
         CorelibServiceAbiType::F64 => SemanticTypeId::F64,
         CorelibServiceAbiType::Void => SemanticTypeId::UNIT,

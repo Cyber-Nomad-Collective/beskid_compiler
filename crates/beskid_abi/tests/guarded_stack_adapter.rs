@@ -69,7 +69,7 @@ int main(void) {
     )
     .expect("write guarded-stack harness");
     let output = Command::new("clang")
-        .args(["-target", "x86_64-unknown-linux-gnu", "-std=c11"])
+        .args(["-target", "x86_64-unknown-linux-gnu", "-std=c11", "-ffunction-sections", "-Wl,--gc-sections"])
         .arg(adapter)
         .arg(&harness)
         .arg("-o")

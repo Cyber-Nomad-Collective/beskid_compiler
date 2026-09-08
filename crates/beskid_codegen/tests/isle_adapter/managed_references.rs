@@ -128,9 +128,8 @@ fn conditional_branch_roots_end_in_the_branch_without_polluting_an_alternate_ret
     let (input, isa, item) = item_fixture(
         "unit Main(bool condition, string value) { if condition { string branch = value; } else { return; } return; }",
     );
-    let function = emit_isle_item(&input, isa.as_ref(), item).unwrap_or_else(|error| {
-        panic!("branch-local root lowering: {}", error.display_with_db(input.database()))
-    });
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .unwrap_or_else(|error| panic!("branch-local root lowering: {}", error.display_with_db(input.database())));
     let clif = function.display().to_string();
 
     assert_eq!(clif.matches("gc_register_root").count(), 2, "parameter plus branch local:\n{clif}");
@@ -143,12 +142,10 @@ fn conditional_branch_roots_end_in_the_branch_without_polluting_an_alternate_ret
 
 #[test]
 fn nested_block_root_ends_before_following_statements() {
-    let (input, isa, item) = item_fixture(
-        "unit Main(string value) { { string scoped = value; } i64 marker = 1_i64; marker; return; }",
-    );
-    let function = emit_isle_item(&input, isa.as_ref(), item).unwrap_or_else(|error| {
-        panic!("nested-block root lowering: {}", error.display_with_db(input.database()))
-    });
+    let (input, isa, item) =
+        item_fixture("unit Main(string value) { { string scoped = value; } i64 marker = 1_i64; marker; return; }");
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .unwrap_or_else(|error| panic!("nested-block root lowering: {}", error.display_with_db(input.database())));
     let clif = function.display().to_string();
 
     let scoped_cleanup = clif.find("gc_unregister_root").expect("nested block cleanup");
@@ -158,9 +155,8 @@ fn nested_block_root_ends_before_following_statements() {
 
 #[test]
 fn effect_position_block_root_ends_before_following_statements() {
-    let (input, isa, item) = item_fixture(
-        "unit Main(string value) { { string scoped = value; }; i64 marker = 1_i64; marker; return; }",
-    );
+    let (input, isa, item) =
+        item_fixture("unit Main(string value) { { string scoped = value; }; i64 marker = 1_i64; marker; return; }");
     let function = emit_isle_item(&input, isa.as_ref(), item).unwrap_or_else(|error| {
         panic!("effect-position block root lowering: {}", error.display_with_db(input.database()))
     });
@@ -176,9 +172,8 @@ fn managed_match_binding_does_not_pollute_an_alternate_return() {
     let (input, isa, item) = item_fixture(
         "enum Choice { Text(string text), Empty } unit Main(Choice choice) { match choice { Choice::Text(text) => { text; }, Choice::Empty => { return; }, }; return; }",
     );
-    let function = emit_isle_item(&input, isa.as_ref(), item).unwrap_or_else(|error| {
-        panic!("match-binding root lowering: {}", error.display_with_db(input.database()))
-    });
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .unwrap_or_else(|error| panic!("match-binding root lowering: {}", error.display_with_db(input.database())));
     let clif = function.display().to_string();
 
     assert_eq!(clif.matches("gc_register_root").count(), 2, "parameter plus Text binding:\n{clif}");

@@ -1,12 +1,13 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
-    CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH,
-    CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_POLL_SOURCE_PATH, CallKind, CodegenInput,
-    EffectiveCompilationRoots, IndexedNodeKind, ModuleIndex, NodeFacts, PathBuf, ProgramAssembly, ProjectSession,
-    RootEntry, SemanticTypeId, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxNodeFacts, TypedProgram,
-    build_canonical_runtime_typed_program, build_typed_program, call_lowering, canonical_runtime_intrinsic_capability,
-    canonical_runtime_sources, find_node, find_node_matching, input_fixture, item_name, linux_target,
-    parse_program_with_source_name, primitive_numeric_conversion,
+    CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_EVENTS_SOURCE_PATH,
+    CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
+    CANONICAL_SCHEDULER_POLL_SOURCE_PATH, CallKind, CodegenInput, EffectiveCompilationRoots, IndexedNodeKind,
+    ModuleIndex, NodeFacts, PathBuf, ProgramAssembly, ProjectSession, RootEntry, SemanticTypeId, SourceUnit,
+    SourceUnitId, SyntaxGenerationId, SyntaxNodeFacts, TypedProgram, build_canonical_runtime_typed_program,
+    build_typed_program, call_lowering, canonical_runtime_intrinsic_capability, canonical_runtime_sources, find_node,
+    find_node_matching, input_fixture, item_name, linux_target, parse_program_with_source_name,
+    primitive_numeric_conversion,
 };
 
 /// The exact compiler-embedded canonical runtime corpus, materialized on disk under its own
@@ -55,7 +56,7 @@ impl CanonicalRuntimeCorpus {
             .clone()
     }
 
-    fn assembly(&self) -> Arc<ProgramAssembly> {
+    fn assembly(&self, generation: SyntaxGenerationId) -> Arc<ProgramAssembly> {
         Arc::new(ProgramAssembly::new(
             EffectiveCompilationRoots {
                 host: RootEntry { dependency_name: None, source_root: self.directory.clone() },
@@ -66,7 +67,7 @@ impl CanonicalRuntimeCorpus {
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
             false,
-            SyntaxGenerationId(0),
+            generation,
         ))
     }
 }
@@ -89,7 +90,7 @@ fn canonical_typed_program(
         db,
         project,
         generation,
-        corpus.assembly(),
+        corpus.assembly(generation),
         canonical_runtime_intrinsic_capability(manifest).expect("compiler authority"),
     )
     .expect("exact canonical assembly")
@@ -132,6 +133,34 @@ fn exact_canonical_assembly_carries_intrinsic_authority_to_codegen() {
     let input = CodegenInput::new(&db, typed, Arc::from(roots), target, manifest).expect("canonical codegen input");
 
     assert!(input.runtime_intrinsic_capability().is_some());
+}
+
+#[test]
+fn canonical_events_runtime_item_retains_u32_index_abi() {
+    use beskid_queries::item_signature;
+
+    let mut db = BeskidDatabase::default();
+    let corpus = CanonicalRuntimeCorpus::materialize();
+    let target = linux_target();
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let typed = canonical_typed_program(&mut db, &corpus, SyntaxGenerationId(31), &manifest);
+    let events_root = AstNodeKey {
+        unit: SourceUnitId::new(&db, corpus.unit_path(CANONICAL_EVENTS_SOURCE_PATH)),
+        generation: typed.generation,
+        node: AstNodeId(0),
+    };
+    let handler = find_node_matching(&db, events_root, IndexedNodeKind::FunctionDefinition, |item| {
+        matches!(item_name(&db, item).ok().flatten().as_deref(), Some("EventGetHandler"))
+    })
+    .expect("canonical EventGetHandler item");
+
+    assert_eq!(
+        item_signature(&db, handler).expect("EventGetHandler signature"),
+        Some(beskid_queries::ItemSignature {
+            parameters: Arc::from([SemanticTypeId::POINTER, SemanticTypeId::U32]),
+            result: SemanticTypeId::POINTER,
+        })
+    );
 }
 
 #[test]

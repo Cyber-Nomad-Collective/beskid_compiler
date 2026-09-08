@@ -1,11 +1,7 @@
 use super::*;
 
 impl IsleContext<'_, '_, '_, '_> {
-    pub(super) fn local_managed_reference(
-        &self,
-        key: AstNodeKey,
-        value_type: Type,
-    ) -> Option<ManagedReferenceFact> {
+    pub(super) fn local_managed_reference(&self, key: AstNodeKey, value_type: Type) -> Option<ManagedReferenceFact> {
         if value_type == dispatch::pointer_type() {
             self.facts.managed_reference(key)
         } else {

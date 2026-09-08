@@ -403,6 +403,7 @@ pub(in crate::semantic_contract) fn semantic_type_from_syntax(
             PrimitiveType::Bool => SemanticTypeId::BOOL,
             PrimitiveType::I32 => SemanticTypeId::I32,
             PrimitiveType::I64 => SemanticTypeId::I64,
+            PrimitiveType::U32 => SemanticTypeId::U32,
             PrimitiveType::U8 => SemanticTypeId::U8,
             PrimitiveType::Pointer => SemanticTypeId::POINTER,
             PrimitiveType::Word => SemanticTypeId::WORD,

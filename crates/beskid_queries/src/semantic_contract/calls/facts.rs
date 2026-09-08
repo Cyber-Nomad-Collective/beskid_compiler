@@ -55,6 +55,7 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_target(
     Some(match segment.node.name.node.name.as_str() {
         "i32" => SemanticTypeId::I32,
         "i64" => SemanticTypeId::I64,
+        "u32" => SemanticTypeId::U32,
         "u8" | "byte" => SemanticTypeId::U8,
         "word" => SemanticTypeId::WORD,
         "f64" => SemanticTypeId::F64,

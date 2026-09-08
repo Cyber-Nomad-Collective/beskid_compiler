@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Isolate the Linux guarded-stack behavior harness at function-section granularity, so it links
+  the production stack adapter without requiring unrelated Corelib string services from the
+  monolithic platform-host object.
 - Enforce exact equality between parsed Beskid runtime exports and ABI-v5 manifest signatures,
   including mutable and single-line declarations, and remove stale `array_len` authority from
   Base64 and Hex sources that no longer call the service.
@@ -59,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Carry fixed-width unsigned `u32` as a first-class primitive through parsing,
+  semantic facts, ABI services, layouts, casts, CLIF lowering, and JIT display;
+  unsigned comparison, division, remainder, and extension no longer alias
+  signed `i32` behavior.
 - Stamp the complete local Cargo dependency closure and reachable first-party
   BSOL workspace shipped by CLI, LSP, and updater, plus bundled corelib,
   first-party template packages and identities, and first-party package

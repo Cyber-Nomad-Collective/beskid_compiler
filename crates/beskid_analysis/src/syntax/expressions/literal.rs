@@ -36,6 +36,10 @@ pub fn integer_literal_primitive_type(text: &str) -> PrimitiveType {
         PrimitiveType::I64
     } else if text.ends_with("_i32") {
         PrimitiveType::I32
+    } else if text.ends_with("_u32") {
+        PrimitiveType::U32
+    } else if text.ends_with("_u8") {
+        PrimitiveType::U8
     } else {
         let magnitude = integer_literal_magnitude(text);
         match magnitude.parse::<i32>() {
