@@ -41,6 +41,13 @@ impl<'db> SyntaxNodeFacts<'db> {
         result.ok().flatten()
     }
 
+    /// Return the sole immutable specialization carried by this per-item fact view.
+    pub(super) fn current_item_specialization(&self) -> Option<&beskid_queries::GenericSpecializationInstance> {
+        let mut specializations = self.item_specializations.values();
+        let specialization = specializations.next()?;
+        specializations.next().is_none().then_some(specialization)
+    }
+
     /// Exact compiler-selected slot for an injection target. Absence denies composition lowering;
     /// ISLE must not synthesize a runtime name/key lookup.
     pub fn composition_service_slot(&self, registration_id: u32) -> Option<u32> {

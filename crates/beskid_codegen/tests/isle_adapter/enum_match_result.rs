@@ -241,6 +241,34 @@ fn parsed_generic_enum_match_uses_explicit_scrutinee_layout_without_hir() {
 }
 
 #[test]
+fn generic_result_predicate_match_uses_each_call_specialization_for_its_scrutinee() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } bool IsOk<TValue, TError>(Result<TValue, TError> value) { return match value { Result::Ok(_) => true, Result::Error(_) => false, }; } bool Main(Result<i64, string> left, Result<string, i64> right) { return IsOk<i64, string>(left) && IsOk<string, i64>(right); }",
+    );
+    let items = find_function_definitions(input.database(), root);
+    let is_ok = items
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("IsOk"))
+        .expect("IsOk definition");
+    let main = items
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main definition");
+
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: is_ok, symbol: "IsOk".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
+    )
+    .expect("a generic predicate match must consume the same call specialization as its parameter local");
+}
+
+#[test]
 fn parsed_generic_unit_payload_pattern_lowers_without_fabricating_storage() {
     let (input, isa, item) = item_fixture(
         "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } bool Main() { Result<unit, string> value = Result<unit, string>::Ok(()); return match value { Result::Ok(()) => true, Result::Error(_) => false, }; }",
@@ -340,13 +368,22 @@ fn generic_enum_constructor_uses_its_explicit_generic_call_parameter_context() {
         .expect("Map definition");
     let match_expression = find_node(input.database(), map, beskid_queries::IndexedNodeKind::MatchExpression)
         .expect("Map match expression");
-    assert!(
-        enum_match(input.database(), match_expression).expect("generic Map match semantic fact").is_some(),
-        "generic match structure must remain target-neutral before specialization"
-    );
+    let unspecialized = enum_match(input.database(), match_expression)
+        .expect_err("generic match ownership must remain unavailable before specialization");
+    assert!(unspecialized.is_unavailable(), "{unspecialized:?}");
     let specialization = beskid_queries::generic_call_specialization(input.database(), call)
         .expect("Map specialization query")
         .expect("explicit Map specialization");
+    assert!(
+        beskid_queries::enum_match_specialization(
+            input.database(),
+            match_expression,
+            specialization.substitutions.clone(),
+        )
+        .expect("generic Map match specialization")
+        .is_some(),
+        "the call-derived environment must materialize exact match layout and ownership facts"
+    );
     for body_constructor in
         find_nodes_of_kind(input.database(), map, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
     {

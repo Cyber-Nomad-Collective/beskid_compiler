@@ -528,10 +528,8 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         Some(ManagedStructAllocation {
             allocation_request_symbol: self
                 .input
-                .aggregate_static_plan_for_specialization(key, self.item_specializations.values().next())
-                .or_else(|| {
-                    self.input.enum_static_plan_for_specialization(key, self.item_specializations.values().next())
-                })?
+                .aggregate_static_plan_for_specialization(key, self.current_item_specialization())
+                .or_else(|| self.input.enum_static_plan_for_specialization(key, self.current_item_specialization()))?
                 .allocation_request_symbol
                 .into(),
         })
@@ -609,7 +607,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
-        let fact = self.query(enum_match(self.db, key))?;
+        let fact = self.enum_match_in_context(key)?;
         fact.arms
             .iter()
             .map(|arm| match &arm.pattern {

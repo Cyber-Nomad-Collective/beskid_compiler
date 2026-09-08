@@ -25,9 +25,7 @@ impl SyntaxNodeFacts<'_> {
             return None;
         }
         let binding = self
-            .item_specializations
-            .values()
-            .next()?
+            .current_item_specialization()?
             .substitutions
             .iter()
             .find(|binding| binding.parameter.as_ref() == parameter.node.name.node.name.as_str())?;
@@ -79,9 +77,7 @@ impl SyntaxNodeFacts<'_> {
     /// This is the common authority for matching named literal values to physical layout slots;
     /// generic item substitutions are applied before the unspecialized literal fact is considered.
     fn aggregate_literal_layout_in_context(&self, key: AstNodeKey) -> Option<AggregateLayoutFact> {
-        self.item_specializations
-            .values()
-            .next()
+        self.current_item_specialization()
             .and_then(|enclosing| {
                 self.query(aggregate_literal_specialization(self.db, key, enclosing.substitutions.clone()))
             })
@@ -110,7 +106,7 @@ impl SyntaxNodeFacts<'_> {
         key: AstNodeKey,
     ) -> Option<beskid_queries::AggregateFieldAccess> {
         self.query(aggregate_field_access(self.db, key)).or_else(|| {
-            let enclosing = self.item_specializations.values().next()?;
+            let enclosing = self.current_item_specialization()?;
             self.query(aggregate_field_access_specialization(self.db, key, enclosing.substitutions.clone()))
         })
     }
@@ -119,7 +115,7 @@ impl SyntaxNodeFacts<'_> {
         if let Some(element) = self.query(array_index_element_abi_type(self.db, key)) {
             return Some(element);
         }
-        let enclosing = self.item_specializations.values().next()?;
+        let enclosing = self.current_item_specialization()?;
         self.query(array_index_element_specialization(self.db, key, enclosing.substitutions.clone()))
     }
 
@@ -127,7 +123,7 @@ impl SyntaxNodeFacts<'_> {
         &self,
         key: AstNodeKey,
     ) -> Option<beskid_queries::EnumConstructorSpecialization> {
-        let enclosing = self.item_specializations.values().next()?;
+        let enclosing = self.current_item_specialization()?;
         self.query(enum_constructor_specialization(self.db, key, enclosing.substitutions.clone()))
     }
 
@@ -135,7 +131,7 @@ impl SyntaxNodeFacts<'_> {
         &self,
         key: AstNodeKey,
     ) -> Option<beskid_queries::GenericSpecializationInstance> {
-        if let Some(enclosing) = self.item_specializations.values().next()
+        if let Some(enclosing) = self.current_item_specialization()
             && let Some(specialization) =
                 self.query(generic_call_specialization_in_environment(self.db, key, enclosing))
         {
@@ -146,8 +142,7 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn struct_layout_for_literal(&self, key: AstNodeKey) -> Option<StructLayout> {
-        let plan =
-            self.input.aggregate_static_plan_for_specialization(key, self.item_specializations.values().next())?;
+        let plan = self.input.aggregate_static_plan_for_specialization(key, self.current_item_specialization())?;
         self.struct_layout_from_object(plan.object_size, plan.object_alignment, &plan.fields)
     }
 
@@ -186,8 +181,14 @@ impl SyntaxNodeFacts<'_> {
         let source = self
             .query(enum_layout(self.db, key))
             .or_else(|| self.specialized_enum_constructor(key).map(|fact| fact.layout))
-            .or_else(|| self.query(enum_match(self.db, key)).map(|fact| fact.layout))?;
+            .or_else(|| self.enum_match_in_context(key).map(|fact| fact.layout))?;
         self.enum_layout_from_fact(&source)
+    }
+
+    pub(super) fn enum_match_in_context(&self, key: AstNodeKey) -> Option<beskid_queries::EnumMatchFact> {
+        self.current_item_specialization()
+            .and_then(|enclosing| self.query(enum_match_specialization(self.db, key, enclosing.substitutions.clone())))
+            .or_else(|| self.query(enum_match(self.db, key)))
     }
 
     pub(super) fn enum_layout_from_fact(&self, source: &beskid_queries::EnumLayoutFact) -> Option<EnumLayout> {
@@ -303,7 +304,7 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn typed_array_plan(&self, key: AstNodeKey) -> Option<crate::ArrayStaticPlan> {
-        self.input.typed_array_static_plan(key, self.item_specializations.values().next())
+        self.input.typed_array_static_plan(key, self.current_item_specialization())
     }
 
     pub(super) fn array_layout_for_typed_allocation(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {

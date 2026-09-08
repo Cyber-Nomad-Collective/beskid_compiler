@@ -19,13 +19,13 @@ pub(in crate::semantic_contract) use common::{
     semantic_type_from_syntax, unique_exported_type_in_unit, unique_public_type_in_unit, unique_type_in_unit,
 };
 
-pub use enum_layout::enum_constructor_specialization;
 pub(in crate::semantic_contract) use enum_layout::{
     aggregate_shape_from_applied_type, contextual_enum_constructor_type_path, enum_constructor_template_tracked,
     enum_constructor_tracked, enum_field_layout, enum_layout_from_definition, enum_layout_substitutions,
     enum_layout_tracked, enum_match_scrutinee_layout, enum_match_tracked, enum_pattern_targets_declaration,
     instantiated_enum_layout_for_path,
 };
+pub use enum_layout::{enum_constructor_specialization, enum_match_specialization};
 
 pub use field_access::aggregate_field_access_specialization;
 pub(in crate::semantic_contract) use field_access::{

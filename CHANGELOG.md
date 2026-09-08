@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Materialize generic enum-match layouts, payload ownership, and bindings from each exact
+  call-derived item specialization, so shared `Result<TValue, TError>` predicates and transforms
+  lower without guessing pointer-shaped generic identities or leaking substitutions between
+  multiple instantiations of the same declaration.
 - Resolve the runtime-kit staging script from Just's compiler workspace path during
   `just replace`, avoiding an unbound shell variable after a successful release build.
 - Preserve resolved integer constants as binary type authorities over unsuffixed literals, using

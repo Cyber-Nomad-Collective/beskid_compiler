@@ -118,7 +118,7 @@ pub use calls::extern_contract_import_for_declaration;
 pub use completion::completion_candidates;
 pub use layouts::{
     aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_specialization,
-    enum_constructor_specialization,
+    enum_constructor_specialization, enum_match_specialization,
 };
 pub use model::{
     AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AggregateLiteralFieldValues,
