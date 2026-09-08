@@ -15,7 +15,8 @@ use beskid_tools::pipeline::{tui::FileLineLink, tui::TestRowState, tui::TestRunU
 use beskid_tools::tui::shell::runtime::RuntimeOp;
 
 use super::prepared_matrix::{
-    Cancellation, ExecutionBudgets, PhaseRecord, PreparedTarget, PreparedWorkspace, TargetReport, TargetResult, unix_ms,
+    Cancellation, ExecutionBudgets, PhaseRecord, PreparedTarget, PreparedWorkspace, TargetReport, TargetResult,
+    duration_ms, unix_ms,
 };
 
 #[derive(Args, Debug, Clone)]
@@ -126,6 +127,7 @@ pub(crate) fn execute_prepared_target(
     let target_started = Instant::now();
     let started_unix_ms = unix_ms();
     workspace.reject_mutation("execute_target")?;
+    workspace.begin_target_execution();
     let mut phases = Vec::new();
     let tests = target.tests;
     let front = target.front;
@@ -300,7 +302,7 @@ pub(crate) fn execute_prepared_target(
         target: target.name,
         started_unix_ms,
         ended_unix_ms: unix_ms(),
-        duration_ms: target_started.elapsed().as_millis(),
+        duration_ms: duration_ms(target_started.elapsed()),
         active_phase: "complete".to_string(),
         result,
         tests: summary,
@@ -309,12 +311,12 @@ pub(crate) fn execute_prepared_target(
     })
 }
 
-fn phase_record(phase: &str, started_unix_ms: u128, started: Instant, result: TargetResult) -> PhaseRecord {
+fn phase_record(phase: &str, started_unix_ms: u64, started: Instant, result: TargetResult) -> PhaseRecord {
     PhaseRecord {
         phase: phase.to_string(),
         started_unix_ms,
         ended_unix_ms: unix_ms(),
-        duration_ms: started.elapsed().as_millis(),
+        duration_ms: duration_ms(started.elapsed()),
         result,
     }
 }
