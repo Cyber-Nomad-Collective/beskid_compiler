@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::package::{
     NewPackage, Package, PackageRepository, PackageVersion, PublishOutcome, PublishVersion, StoreError,
-    validate_checksum, validate_manifest_metadata, validate_package_name, validate_subject, validate_version,
+    validate_checksum, validate_manifest_metadata, validate_package_metadata, validate_package_name, validate_subject,
+    validate_version,
 };
 
 /// Deterministic test double. The Postgres adapter must preserve the outcomes
@@ -17,6 +18,7 @@ impl PackageRepository for InMemoryPackageRepository {
     fn create_package(&mut self, request: NewPackage) -> Result<Package, StoreError> {
         validate_package_name(&request.name)?;
         validate_subject(&request.owner_subject)?;
+        validate_package_metadata(&request.metadata)?;
         if self.packages_by_name.contains_key(&request.name) {
             return Err(StoreError::PackageAlreadyExists);
         }
@@ -25,6 +27,7 @@ impl PackageRepository for InMemoryPackageRepository {
             name: request.name,
             owner_subject: request.owner_subject,
             is_public: request.is_public,
+            metadata: request.metadata,
             created_at_unix_seconds: request.now_unix_seconds,
             updated_at_unix_seconds: request.now_unix_seconds,
         };

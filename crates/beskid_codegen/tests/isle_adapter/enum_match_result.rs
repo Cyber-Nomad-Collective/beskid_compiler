@@ -77,9 +77,33 @@ fn parsed_generic_enum_constructor_uses_concrete_source_layout_without_hir() {
 }
 
 #[test]
+fn contextual_generic_result_constructor_accepts_a_nested_nominal_error() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum EnvironmentError { InvalidName(string name), NotFound(string name) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<string, EnvironmentError> Main(string name) { return Result::Error(EnvironmentError::InvalidName(name)); }",
+    );
+    let main = find_function_definition(input.database(), root).expect("Main definition");
+
+    emit_isle_item(&input, isa.as_ref(), main)
+        .expect("the return type supplies the generic Result layout for its nested nominal error constructor");
+}
+
+#[test]
 fn mixed_pointer_scalar_generic_enum_uses_variant_specific_payload_slots() {
     let (input, isa, item) = item_fixture(
         "enum SyscallError { InvalidFd(i64 fd) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<i64, SyscallError> Main(SyscallError error) { Result<i64, SyscallError> result = Result<i64, SyscallError>::Error(error); return result; }",
+    );
+    let constructor = find_node(input.database(), item, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
+        .expect("Result::Error constructor");
+    let plan = input.enum_static_plan(constructor).expect("mixed enum static plan");
+    let pointer_slot = plan
+        .fields
+        .iter()
+        .find(|field| field.abi_type == beskid_queries::SemanticTypeId::POINTER)
+        .expect("dedicated pointer payload slot");
+    assert_eq!(
+        plan.pointer_map_offsets.as_ref(),
+        &[pointer_slot.field_offset],
+        "the applied nominal payload must be the enum's sole traced slot"
     );
 
     let function = emit_isle_item(&input, isa.as_ref(), item)
@@ -87,7 +111,33 @@ fn mixed_pointer_scalar_generic_enum_uses_variant_specific_payload_slots() {
     let clif = function.display().to_string();
 
     assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
-    assert!(clif.contains("store.i64"), "{clif}");
+    let error_parameter = function
+        .layout
+        .entry_block()
+        .and_then(|block| function.dfg.block_params(block).first().copied())
+        .expect("Main error parameter");
+    assert_eq!(function.dfg.value_type(error_parameter), isa.pointer_type());
+
+    let pointer_offset = i64::try_from(pointer_slot.field_offset).expect("pointer payload offset fits CLIF");
+    let pointer_store = function
+        .layout
+        .blocks()
+        .flat_map(|block| function.layout.block_insts(block))
+        .find(|instruction| {
+            matches!(
+                &function.dfg.insts[*instruction],
+                cranelift_codegen::ir::InstructionData::Store { offset, .. }
+                    if i64::from(*offset) == pointer_offset
+            )
+        })
+        .expect("Result::Error payload store at the traced pointer slot");
+    let [stored_value, _object] = function.dfg.inst_args(pointer_store) else {
+        panic!("pointer payload store must have value and object operands: {clif}");
+    };
+    assert_eq!(
+        *stored_value, error_parameter,
+        "the nominal error parameter must be stored in the traced pointer slot: {clif}"
+    );
 }
 
 #[test]
@@ -167,7 +217,7 @@ fn parsed_enum_match_uses_source_arms_without_hir() {
 
     let clif = function.display().to_string();
     assert!(clif.contains("load.i32"));
-    assert!(clif.contains("br_table"));
+    assert_eq!(clif.matches("brif").count(), 2, "each source arm must retain its ordered tag test: {clif}");
 }
 
 #[test]
@@ -188,6 +238,26 @@ fn parsed_generic_enum_match_uses_explicit_scrutinee_layout_without_hir() {
     let clif = function.display().to_string();
     assert!(clif.contains("load.i32"), "{clif}");
     assert!(clif.contains("iconst.i64 1"), "{clif}");
+}
+
+#[test]
+fn parsed_generic_unit_payload_pattern_lowers_without_fabricating_storage() {
+    let (input, isa, item) = item_fixture(
+        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } bool Main() { Result<unit, string> value = Result<unit, string>::Ok(()); return match value { Result::Ok(()) => true, Result::Error(_) => false, }; }",
+    );
+    let expression = find_node(input.database(), item, beskid_queries::IndexedNodeKind::MatchExpression)
+        .expect("generic unit-payload enum match");
+    assert!(
+        enum_match(input.database(), expression).expect("generic unit-payload match query").is_some(),
+        "the canonical unit pattern must be represented as a payload-free variant test"
+    );
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("a unit payload pattern lowers through the variant tag without a payload load");
+
+    let clif = function.display().to_string();
+    assert!(clif.contains("load.i32"), "the match must load the variant tag: {clif}");
+    assert!(!clif.contains("load.i8"), "the zero-sized unit payload must not be loaded: {clif}");
 }
 
 #[test]
@@ -237,6 +307,121 @@ fn generic_enum_constructor_uses_its_declared_return_context() {
     );
 }
 
+#[test]
+fn generic_enum_constructor_uses_its_explicit_generic_call_parameter_context() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<TNext, TError> Map<TValue, TNext, TError>(Result<TValue, TError> value, TNext mapped) { return match value { Result::Ok(_) => Result::Ok(mapped), Result::Error(error) => Result::Error(error), }; } unit Main() { Result<i64, string> mapped = Map<unit, i64, string>(Result::Ok(()), 7_i64); return; }",
+    );
+    let constructor =
+        find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
+            .into_iter()
+            .find(|constructor| enum_constructor(input.database(), *constructor).is_ok_and(|fact| fact.is_some()))
+            .expect("Result::Ok constructor nested in the explicit generic call argument");
+
+    assert!(
+        enum_constructor(input.database(), constructor)
+            .expect("generic call parameter context supplies the applied Result type")
+            .is_some(),
+        "the explicit Map<unit, i64, string> instantiation must contextualize Result::Ok(()) as Result<unit, string>"
+    );
+
+    let main = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main definition");
+    let call = find_call_expression(input.database(), main).expect("Map call");
+    assert!(
+        call_abi_signature(input.database(), call).expect("explicit generic call signature query").is_some(),
+        "the same source substitution must supply the call ABI view"
+    );
+    let map = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Map"))
+        .expect("Map definition");
+    let match_expression = find_node(input.database(), map, beskid_queries::IndexedNodeKind::MatchExpression)
+        .expect("Map match expression");
+    assert!(
+        enum_match(input.database(), match_expression).expect("generic Map match semantic fact").is_some(),
+        "generic match structure must remain target-neutral before specialization"
+    );
+    let specialization = beskid_queries::generic_call_specialization(input.database(), call)
+        .expect("Map specialization query")
+        .expect("explicit Map specialization");
+    for body_constructor in
+        find_nodes_of_kind(input.database(), map, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
+    {
+        assert!(
+            beskid_queries::enum_constructor_specialization(
+                input.database(),
+                body_constructor,
+                specialization.substitutions.clone(),
+            )
+            .expect("Map body constructor specialization query")
+            .is_some(),
+            "each Map body constructor must consume the same generic environment"
+        );
+    }
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[SyntaxModuleItem { key: map, symbol: "Map".into() }, SyntaxModuleItem { key: main, symbol: "Main".into() }],
+    )
+    .expect("an enum constructor contextualized by an explicit generic call parameter lowers without HIR");
+}
+
+#[test]
+fn explicit_generic_enum_with_unit_and_nominal_payloads_lowers_from_a_return() {
+    let (input, isa, item) = item_fixture(
+        "enum FsError { NotFound(string path) } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<unit, FsError> Main(string path) { return Result<unit, FsError>::Error(FsError::NotFound(path)); }",
+    );
+
+    emit_isle_item(&input, isa.as_ref(), item)
+        .expect("a unit payload is zero-sized while the nominal error payload remains a managed pointer");
+}
+
+#[test]
+fn zero_sized_unit_enum_payload_still_evaluates_its_direct_call() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } unit Touch() { return; } Result<unit, string> Main() { return Result<unit, string>::Ok(Touch()); }",
+    );
+    let db = input.database();
+    let items = find_function_definitions(db, root);
+    let touch = items
+        .iter()
+        .copied()
+        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Touch"))
+        .expect("Touch definition");
+    let main = items
+        .iter()
+        .copied()
+        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main definition");
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: touch, symbol: "Touch".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
+    )
+    .expect("a zero-sized unit payload must preserve evaluation of its source expression");
+
+    let main = artifact.functions.iter().find(|function| function.name == "Main").expect("Main function");
+    let clif = main.function.display().to_string();
+    let touch = clif
+        .lines()
+        .find_map(|line| {
+            let (function_ref, declaration) = line.trim().split_once(" = ")?;
+            declaration.contains("%Touch").then_some(function_ref)
+        })
+        .expect("Main must import the exact Touch callee");
+    assert!(
+        clif.lines().any(|line| line.trim_start().starts_with("call ") && line.contains(touch)),
+        "the unit payload must call the exact Touch function even though no payload bytes are stored: {clif}"
+    );
+}
+
 fn assert_enum_match_shape_remains_unavailable(source: &str) {
     let (input, _isa, root) = item_fixture_with_root(source);
     let expression =
@@ -266,8 +451,32 @@ fn nested_nominal_enum_payload_binding_lowers_without_hir() {
         "enum StandardStream { Stdin, Stdout, Stderr } enum Descriptor { Standard(StandardStream stream), Raw(i64 fd) } i64 Main(Descriptor descriptor) { return match descriptor { Descriptor::Standard(stream) => match stream { StandardStream::Stdin => 0_i64, StandardStream::Stdout => 1_i64, StandardStream::Stderr => 2_i64, }, Descriptor::Raw(fd) => fd, }; }",
     );
 
+    if let Err(error) = emit_isle_item(&input, isa.as_ref(), item) {
+        panic!(
+            "nested nominal enum payload bindings must lower through syntax facts: {}",
+            error.display_with_db(input.database())
+        );
+    }
+}
+
+#[test]
+fn nominal_match_payload_field_projection_lowers_from_authoritative_binding_layout() {
+    let (input, isa, item) = item_fixture(
+        "type ParseSuccess<T> { T value, i64 rest } enum TextParseResult<T> { Ok(ParseSuccess<T> success), Err(i64 error) } i64 Main(TextParseResult<string> result) { return match result { TextParseResult::Ok(success) => success.rest, TextParseResult::Err(_) => -1_i64, }; }",
+    );
+
     emit_isle_item(&input, isa.as_ref(), item)
-        .expect("nested nominal enum payload bindings must lower through syntax facts");
+        .expect("a pointer-applied nominal match payload must retain its aggregate layout for field projection");
+}
+
+#[test]
+fn scalar_applied_nominal_match_payload_projects_the_specialized_value_layout() {
+    let (input, isa, item) = item_fixture(
+        "type ParseSuccess<T> { T value, i64 rest } enum TextParseResult<T> { Ok(ParseSuccess<T> success), Err(i64 error) } i32 Main(TextParseResult<i32> result) { return match result { TextParseResult::Ok(success) => success.value, TextParseResult::Err(_) => -1, }; }",
+    );
+
+    emit_isle_item(&input, isa.as_ref(), item)
+        .expect("a scalar-applied nominal match payload must project the concrete scalar field layout");
 }
 
 #[test]
@@ -283,17 +492,140 @@ fn unspecialized_generic_parameter_remains_unavailable_for_local_materialization
 }
 
 #[test]
-fn enum_match_literal_payload_pattern_remains_unavailable() {
-    assert_enum_match_shape_remains_unavailable(
-        "enum Result { Ok(i64 value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(7_i64) => 1_i64, Result::Error(_) => 0_i64, }; }",
+fn enum_match_scalar_literal_payload_emits_an_explicit_comparison() {
+    let (input, isa, item) = item_fixture(
+        "enum Result { Ok(i64 value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(7_i64) => 1_i64, Result::Ok(_) => 2_i64, Result::Error(_) => 0_i64, }; }",
     );
+    let expression = find_node(input.database(), item, beskid_queries::IndexedNodeKind::MatchExpression)
+        .expect("literal-payload enum match");
+    assert!(
+        enum_match(input.database(), expression).expect("literal-payload enum match query").is_some(),
+        "a supported scalar literal must become an explicit arm predicate"
+    );
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("a scalar literal payload lowers as a tag dispatch followed by equality comparison");
+    let clif = function.display().to_string();
+    assert!(clif.contains("icmp eq"), "the literal arm must compare the loaded payload: {clif}");
+    assert!(clif.contains("iconst.i64 7"), "the literal comparison must retain the source value: {clif}");
 }
 
 #[test]
-fn enum_match_nested_payload_pattern_remains_unavailable() {
-    assert_enum_match_shape_remains_unavailable(
-        "enum Inner { Value(i64 value) } enum Result { Ok(Inner value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(Inner::Value(_)) => 1_i64, Result::Error(_) => 0_i64, }; }",
+fn enum_match_nested_nominal_enum_pattern_recurses_in_source_order() {
+    let (input, isa, item) = item_fixture(
+        "enum Inner { Value(i64 value), Other() } enum Result { Ok(Inner value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(Inner::Value(7_i64)) => 1_i64, Result::Ok(_) => 2_i64, Result::Error(_) => 0_i64, }; }",
     );
+    let expression = find_node(input.database(), item, beskid_queries::IndexedNodeKind::MatchExpression)
+        .expect("nested nominal enum match");
+    assert!(
+        enum_match(input.database(), expression).expect("nested nominal enum match query").is_some(),
+        "nested enum constructors must remain explicit in the recursive semantic pattern"
+    );
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("nested nominal enum patterns lower through ordered tag and payload tests");
+    let clif = function.display().to_string();
+    assert!(
+        clif.matches("icmp eq").count() >= 3,
+        "outer tag, nested tag, and scalar leaf must each be compared explicitly: {clif}"
+    );
+    assert!(clif.contains("iconst.i64 7"), "the nested literal must retain its source value: {clif}");
+}
+
+#[test]
+fn enum_match_accepts_collectively_exhaustive_nested_nominal_variants() {
+    let (input, isa, item) = item_fixture(
+        "enum Inner { Value(i64 value), Other() } enum Result { Ok(Inner value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(Inner::Value(_)) => 1_i64, Result::Ok(Inner::Other()) => 2_i64, Result::Error(_) => 0_i64, }; }",
+    );
+
+    emit_isle_item(&input, isa.as_ref(), item)
+        .expect("all nested nominal variants collectively make their outer variant exhaustive");
+}
+
+#[test]
+fn enum_match_lowers_multi_field_payload_patterns_in_source_order() {
+    let (input, isa, item) = item_fixture(
+        "enum Pair { Both(i64 number, i64 marker), Empty } i64 Main(Pair pair) { return match pair { Pair::Both(_, 7_i64) => 1_i64, Pair::Both(number, _) => number, Pair::Empty => 0_i64, }; }",
+    );
+    let expression = find_node(input.database(), item, beskid_queries::IndexedNodeKind::MatchExpression)
+        .expect("multi-field enum match");
+    let fact = enum_match(input.database(), expression)
+        .expect("multi-field enum match query")
+        .expect("multi-field enum match fact");
+    let beskid_queries::EnumMatchPatternFact::Enum(first) = &fact.arms[0].pattern else {
+        panic!("Both arm must remain nominal");
+    };
+    assert_eq!(first.items.len(), 2, "both source payload fields must reach lowering");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("multi-field enum payload patterns lower as ordered field predicates");
+    let clif = function.display().to_string();
+    assert!(clif.matches("load.i64").count() >= 2, "both integer payload fields must be loaded: {clif}");
+}
+
+#[test]
+fn regex_span_list_match_lowers_two_nominal_payload_fields() {
+    let (input, isa, item) = item_fixture(
+        "type MatchSpan { i64 start, i64 end } enum MatchSpanList { Nil, Cons(MatchSpan head, MatchSpanList tail) } bool Main(MatchSpanList list) { return match list { MatchSpanList::Nil => true, MatchSpanList::Cons(_, _) => false, }; }",
+    );
+
+    emit_isle_item(&input, isa.as_ref(), item)
+        .expect("the Regex MatchSpanList::Cons(_, _) pattern lowers with both nominal payload fields");
+}
+
+#[test]
+fn regex_span_list_constructor_stores_two_nominal_payload_fields_in_source_order() {
+    let (input, isa, item) = item_fixture(
+        "type MatchSpan { i64 start, i64 end } enum MatchSpanList { Nil, Cons(MatchSpan head, MatchSpanList tail) } MatchSpanList Main(MatchSpan head, MatchSpanList tail) { return MatchSpanList::Cons(head, tail); }",
+    );
+    let constructor = find_node(input.database(), item, beskid_queries::IndexedNodeKind::EnumConstructorExpression)
+        .expect("Regex MatchSpanList::Cons constructor");
+    let fact = enum_constructor(input.database(), constructor)
+        .expect("multi-field enum constructor query")
+        .expect("multi-field enum constructor fact");
+    assert_eq!(fact.payloads.len(), 2, "both Regex payload expressions must remain source ordered");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("the Regex MatchSpanList::Cons(head, tail) constructor lowers both nominal payload fields");
+    let clif = function.display().to_string();
+    assert!(clif.matches("store ").count() >= 3, "the tag and both nominal payload fields must be stored: {clif}");
+    let facts = beskid_codegen::SyntaxNodeFacts::new_with_isa(&input, isa.as_ref());
+    let layout = NodeFacts::enum_layout(&facts, constructor).expect("physical MatchSpanList layout");
+    let fields = &layout.variants[1].payload_fields;
+    let parameters =
+        function.layout.entry_block().map(|block| function.dfg.block_params(block)).expect("Main entry block");
+    assert_eq!(fields.len(), parameters.len(), "each constructor parameter must retain one payload slot");
+    for (field, parameter) in fields.iter().zip(parameters) {
+        let field = field.as_ref().expect("both Regex payloads are managed references");
+        let offset = i64::try_from(field.offset).expect("payload offset fits CLIF");
+        let store = function
+            .layout
+            .blocks()
+            .flat_map(|block| function.layout.block_insts(block))
+            .find(|instruction| {
+                matches!(
+                    &function.dfg.insts[*instruction],
+                    cranelift_codegen::ir::InstructionData::Store { offset: instruction_offset, .. }
+                        if i64::from(*instruction_offset) == offset
+                )
+            })
+            .expect("source-ordered payload store");
+        assert_eq!(
+            function.dfg.inst_args(store).first(),
+            Some(parameter),
+            "payload store order must match source order"
+        );
+    }
+}
+
+#[test]
+fn enum_match_recursively_covers_a_nested_field_in_a_multi_field_payload() {
+    let (input, isa, item) = item_fixture(
+        "enum Bit { Zero, One } enum Pair { Both(Bit left, Bit right), Empty } i64 Main(Pair pair) { return match pair { Pair::Both(Bit::Zero, _) => 0_i64, Pair::Both(Bit::One, _) => 1_i64, Pair::Empty => 2_i64, }; }",
+    );
+
+    emit_isle_item(&input, isa.as_ref(), item)
+        .expect("collective nested coverage remains exhaustive inside a multi-field payload");
 }
 
 #[test]
@@ -386,6 +718,24 @@ fn parsed_generic_enum_match_statement_lowers_empty_unit_blocks_without_hir() {
     let clif = function.display().to_string();
     assert!(clif.contains("load.i32"), "{clif}");
     assert!(clif.contains("return"), "{clif}");
+}
+
+#[test]
+fn parsed_statement_match_lowers_empty_blocks_and_the_final_effect_in_unit_blocks() {
+    let (input, isa, item) = item_fixture(
+        "enum Result { Ok, Error } unit Main() { mut i64 observed = 0_i64; Result result = Result::Ok; match result { Result::Ok => { observed = 1_i64; }, Result::Error => {}, }; return; }",
+    );
+
+    let function = match emit_isle_item(&input, isa.as_ref(), item) {
+        Ok(function) => function,
+        Err(error) => panic!(
+            "statement-position match blocks must lower all effects and accept an empty arm: {}",
+            error.display_with_db(input.database())
+        ),
+    };
+    let clif = function.display().to_string();
+
+    assert!(clif.contains("iconst.i64 1"), "the final arm effect must not be withheld as a value: {clif}");
 }
 
 #[test]
@@ -613,7 +963,7 @@ fn imported_result_write_with_lowers_through_an_ordinary_function_block_match() 
         artifact.functions.iter().find(|function| function.name == "Main").expect("Main function in artifact");
     let clif = main_function.function.display().to_string();
     assert!(clif.contains("call"), "{clif}");
-    assert!(clif.contains("br_table"), "{clif}");
+    assert_eq!(clif.matches("brif").count(), 2, "Result arms must lower as ordered tag tests: {clif}");
 }
 
 #[test]

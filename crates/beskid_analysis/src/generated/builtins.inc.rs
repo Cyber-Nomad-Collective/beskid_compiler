@@ -141,14 +141,14 @@ define_builtins! {
     },
     &["__syscall_read"] => {
         symbol: "syscall_read",
-        params: [U64, U64],
-        returns: String,
+        params: [U64, Ptr, Usize],
+        returns: U64,
         injected: true,
     },
     &["__syscall_read_bytes"] => {
         symbol: "syscall_read_bytes",
-        params: [U64, U64],
-        returns: Ptr,
+        params: [U64, Ptr, Usize],
+        returns: U64,
         injected: true,
     },
     &["__bytes_copy"] => {
@@ -165,8 +165,8 @@ define_builtins! {
     },
     &["__fiber_cancel"] => {
         symbol: "fiber_cancel",
-        params: [U64],
-        returns: Unit,
+        params: [U64, U64],
+        returns: U64,
         injected: true,
     },
     &["__fiber_detach"] => {
@@ -243,7 +243,7 @@ define_builtins! {
     },
     &["__channel_try_receive"] => {
         symbol: "channel_try_receive",
-        params: [U64, Ptr],
+        params: [U64],
         returns: U64,
         injected: true,
     },
@@ -268,7 +268,7 @@ define_builtins! {
     &["__env_set"] => {
         symbol: "env_set",
         params: [String, String],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["__fiber_current_id"] => {
@@ -277,10 +277,10 @@ define_builtins! {
         returns: U64,
         injected: true,
     },
-    &["__fiber_join"] => {
+    &["__fiber_join_status"] => {
         symbol: "fiber_join_status",
         params: [U64],
-        returns: U64,
+        returns: I32,
         injected: true,
     },
     &["__fiber_join_value"] => {

@@ -1,11 +1,12 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
-    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CodegenInput, EffectiveCompilationRoots, ModuleIndex, NodeKind,
-    ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxIndex,
-    SyntaxModuleItem, TargetMetadata, build_typed_program, build_typed_program_with_corelib_services, call_lowering,
-    canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_foundation_assert_fixture,
-    enum_layout, find_call_expression, find_corelib_service_call, find_definition_of_kind, find_function_definitions,
-    isa, item_fixture_with_root, item_name, lower_syntax_program, parse_program_with_source_name, settings,
+    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH, CodegenInput,
+    EffectiveCompilationRoots, ModuleIndex, NodeKind, ProgramAssembly, ProjectSession, RootEntry, SourceUnit,
+    SourceUnitId, SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata,
+    build_typed_program_with_corelib_services, call_abi_signature, call_lowering, canonical_corelib_service_capability,
+    canonical_corelib_service_source_path, canonical_foundation_assert_fixture, enum_layout, find_call_expression,
+    find_corelib_service_call, find_definition_of_kind, find_function_definitions, isa, item_fixture_with_root,
+    item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
 
 #[test]
@@ -235,18 +236,10 @@ fn canonical_foundation_assert_equal_specialization_lowers_through_syntax_isle()
 #[test]
 fn canonical_foundation_string_len_lowers_through_syntax_isle() {
     let mut db = Box::new(BeskidDatabase::default());
-    let foundation_src = canonical_corelib_service_source_path(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
-        .expect("compiler-owned Assert path")
-        .parent()
-        .expect("Testing/")
-        .parent()
-        .expect("foundation src")
-        .to_path_buf();
-    // `Core/String/String.bd` is a hub that re-exports `Core.String.Core`, so its bodies are
-    // cross-unit delegations. The leaf helpers this test lowers live in the `Core` submodule.
-    let source_path = foundation_src.join("Core/String/Core.bd");
+    let source_path = canonical_corelib_service_source_path(CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH)
+        .expect("compiler-owned Core.String.Core path");
     let source = std::fs::read_to_string(&source_path).expect("read Core.String.Core");
-    let source_root = foundation_src;
+    let source_root = source_path.ancestors().nth(3).expect("foundation src").to_path_buf();
     let program =
         parse_program_with_source_name(source_path.to_str().unwrap(), &source).expect("parse Core.String.Core");
     let entry = SourceUnitId::new(&*db, source_path.clone());
@@ -272,7 +265,14 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("linux target");
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
-    let typed = build_typed_program(&mut db, project, generation, assembly).expect("typed Core.String.Core program");
+    let typed = build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
+    )
+    .expect("typed Core.String.Core program");
     let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([root]), target, manifest)
@@ -289,8 +289,80 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
         .into_iter()
         .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("Len"))
         .expect("Core.String Len");
+    let call = find_corelib_service_call(input.database(), key, "__str_len").expect("authorized __str_len call");
+    assert!(matches!(
+        call_lowering(input.database(), call).expect("string service lowering"),
+        Some(beskid_queries::CallLowering::CorelibService(service))
+            if service.name == "__str_len" && service.symbol == "str_len"
+    ));
+    let signature = call_abi_signature(input.database(), call)
+        .expect("string service ABI query")
+        .expect("string service ABI signature");
+    assert_eq!(signature.parameters.as_ref(), [beskid_queries::SemanticTypeId::POINTER]);
+    assert_eq!(signature.result, beskid_queries::SemanticTypeId::WORD);
     let module_items = vec![SyntaxModuleItem { key, symbol: "Len".into() }];
     lower_syntax_program(&input, isa.as_ref(), &module_items).expect("Core.String Len lowers through syntax ISLE");
+}
+
+#[test]
+fn copied_foundation_string_source_cannot_receive_string_service_authority() {
+    let mut db = BeskidDatabase::default();
+    let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH)
+        .expect("embedded Core.String.Core source")
+        .source;
+    let directory = tempfile::tempdir().expect("copied Foundation project").keep();
+    let source_path = directory.join(CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH);
+    std::fs::create_dir_all(source_path.parent().expect("String source parent"))
+        .expect("create copied String source parent");
+    std::fs::write(&source_path, &source).expect("write copied String source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source)
+        .expect("parse copied Core.String.Core source");
+    let entry = SourceUnitId::new(&db, source_path.clone());
+    let generation = SyntaxGenerationId(98);
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: directory.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![SourceUnit {
+            logical_name: CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH.into(),
+            path: source_path.clone(),
+            source,
+            program,
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let project = ProjectSession::new(&db, directory, source_path, "copied-foundation".into(), "copied-string".into());
+    let typed = build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
+    )
+    .expect("copied String source remains an ordinary syntax program");
+    assert!(typed.corelib_service_capability.is_none());
+
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
+    let len = find_function_definitions(&db, root)
+        .into_iter()
+        .find(|key| item_name(&db, *key).ok().flatten().as_deref() == Some("Len"))
+        .expect("copied Core.String Len");
+    assert!(
+        find_corelib_service_call(&db, len, "__str_len").is_none(),
+        "identical String source at an untrusted physical path must not acquire service authority"
+    );
 }
 
 #[test]

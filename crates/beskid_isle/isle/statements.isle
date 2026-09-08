@@ -14,7 +14,7 @@
 (extern constructor cursor_head cursor_head)
 (decl cursor_tail (StatementCursor) StatementCursor)
 (extern constructor cursor_tail cursor_tail)
-(decl finish_statements () Unit)
+(decl partial finish_statements () Unit)
 (extern constructor finish_statements finish_statements)
 (decl sequence_statements (Unit Unit) Unit)
 (extern constructor sequence_statements sequence_statements)

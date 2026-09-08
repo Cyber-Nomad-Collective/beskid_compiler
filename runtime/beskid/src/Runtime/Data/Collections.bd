@@ -50,11 +50,15 @@ pub pointer AllocateArrayRooted(pointer request, pointer rootHandleOut) {
     if totalSize < backingSize {
         return NativePointer(0);
     }
-    pointer object = GcAlloc(totalSize, TypeDescriptorAlignment(descriptor));
+    word allocationSize = AlignUp(totalSize, TypeDescriptorAlignment(descriptor));
+    if allocationSize < totalSize {
+        return NativePointer(0);
+    }
+    pointer object = GcAlloc(allocationSize, TypeDescriptorAlignment(descriptor));
     if object == NativePointer(0) {
         return NativePointer(0);
     }
-    memory_set(object, 0, totalSize);
+    memory_set(object, 0, allocationSize);
     raw_word_store(object, NativeWord(descriptor));
     raw_word_store(pointer_add(object, 16), NativeWord(element));
     pointer array = pointer_add(object, 24);
@@ -91,7 +95,7 @@ pub pointer GrowArrayRooted(pointer array, word minimumCapacity, pointer rootHan
     pointer sourceData = NativePointer(raw_word_load(array));
     word length = raw_word_load(pointer_add(array, 8));
     word capacity = raw_word_load(pointer_add(array, 16));
-    if sourceData == NativePointer(0) || length > capacity || minimumCapacity < length {
+    if sourceData != pointer_add(object, 48) || length > capacity || minimumCapacity < length {
         return NativePointer(0);
     }
 
@@ -126,12 +130,23 @@ pub pointer GrowArrayRooted(pointer array, word minimumCapacity, pointer rootHan
     if totalSize < backingSize {
         return NativePointer(0);
     }
-
-    pointer replacementObject = GcAlloc(totalSize, alignment);
-    if replacementObject == NativePointer(0) {
+    word allocationSize = AlignUp(totalSize, TypeDescriptorAlignment(descriptor));
+    if allocationSize < totalSize {
         return NativePointer(0);
     }
-    memory_set(replacementObject, 0, totalSize);
+
+    // The replacement allocation may collect. Root the source object before entering GcAlloc so
+    // its header, element descriptor, and live backing bytes remain valid through the copy.
+    word sourceHandle = GcRootHandle(object);
+    if sourceHandle == 0 {
+        return NativePointer(0);
+    }
+    pointer replacementObject = GcAlloc(allocationSize, TypeDescriptorAlignment(descriptor));
+    if replacementObject == NativePointer(0) {
+        GcUnrootHandle(sourceHandle);
+        return NativePointer(0);
+    }
+    memory_set(replacementObject, 0, allocationSize);
     raw_word_store(replacementObject, NativeWord(descriptor));
     raw_word_store(pointer_add(replacementObject, 16), NativeWord(element));
     pointer replacement = pointer_add(replacementObject, 24);
@@ -145,8 +160,10 @@ pub pointer GrowArrayRooted(pointer array, word minimumCapacity, pointer rootHan
 
     word handle = GcRootHandle(replacementObject);
     if handle == 0 {
+        GcUnrootHandle(sourceHandle);
         return NativePointer(0);
     }
+    GcUnrootHandle(sourceHandle);
     raw_word_store(rootHandleOut, handle);
     return replacement;
 }
@@ -180,10 +197,8 @@ pub word ArrayLen(pointer array) {
     if array == NativePointer(0) {
         return 0;
     }
-    // Array length is stored at offset -8 from the buffer start
-    // (managed by the allocating codegen, not stored here).
-    // For now, return 0 — the Rust runtime handles this via its own header.
-    return 0;
+    // The public BeskidArray header is `{ pointer data; word len; word cap; }`.
+    return raw_word_load(pointer_add(array, 8));
 }
 
 // Byte-wise comparison of two buffers. Returns 0 when equal.

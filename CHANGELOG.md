@@ -7,8 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Enforce exact equality between parsed Beskid runtime exports and ABI-v5 manifest signatures,
+  including mutable and single-line declarations, and remove stale `array_len` authority from
+  Base64 and Hex sources that no longer call the service.
+- Balance GC-managed local roots through explicit lexical and control-flow scopes, preserve
+  source-managed identity for array-valued enum bindings, and close effect-position block scopes
+  at their lexical boundary so branch-only and match-bound roots cannot contaminate alternate
+  returns, loop transfers, or following statements.
+- Resolve source-authorized Corelib services through one fail-closed ABI-v5 binding seam, including
+  materialized process arguments, scheduler clock/yield calls, Linux terminal sizing, and canonical
+  Fiber join/cancel signatures. Channel try-receive now claims and removes exactly one FIFO value in
+  the status observation, retains managed payloads in a rooted receipt until typed consumption, and
+  prevents competing receivers from observing the same message.
+- Keep Corelib aggregate and shard manifests bound to their containing workspace, preventing an
+  installed implicit `Std` from introducing a second divergent declaration set into checkout builds.
+- Report and evaluate filtered prepared-matrix runs against their selected target count while
+  retaining the complete manifest inventory as the release-eligibility denominator.
+- Close the isolated prepared-matrix worker's standard input so input tests observe deterministic
+  end-of-file instead of inheriting an open terminal or pipe and blocking indefinitely.
+- Compute match exhaustiveness recursively across repeated nominal enum patterns, so complete sets
+  of nested variants cover their enclosing payload while missing nested variants still fail closed.
+- Preserve every enum payload field in source order through physical layout and recursive match
+  lowering, including multi-field nominal patterns such as `MatchSpanList::Cons(_, _)`.
+- Grant ABI-v5 service authority to the exact compiler-embedded concurrency facades, so Channel,
+  Mutex, Hub, and WaitGroup handle creation and operations lower as canonical native calls while
+  identical builtin spellings in application source continue to fail closed as dynamic calls.
+- Reuse one integer boundary adapter for returns and explicit local storage, allowing proven
+  narrower call results such as Console Style's `i32` sizes to initialize `i64` locals.
+- Partition value block expressions into executable prefix statements and one final value while
+  lowering statement-position blocks as complete effect sequences, including empty match arms.
+- Preserve recursive source-type identity when specializing inferred and nested generic calls,
+  including aggregate fields, direct-call results, enum pattern bindings, and applied enclosing
+  parameters such as `MapEntry<TKey, TValue>`, without exposing source identity in serialized facts.
+- Treat an existing local binding as the authority for temporary-root decisions, so specialized
+  nested nominal values pass through `Array.Append` without redundant path reclassification.
+- Materialize generic aggregate layouts from only their layout-relevant type parameters, allowing
+  phantom applications such as `ArrayIter<T>` to retain concrete record fields without weakening
+  source-level specialization identity or accepting unresolved storage shapes.
+- Keep GC-managed compiler locals and append payloads rooted across collecting calls, publish grown arrays through owner-correct barriers, release local roots on every function exit, normalize public array references at the GC marking boundary, and store collector mark states as raw words rather than managed enum objects.
+- Derive enum-match binding lifetimes from their authoritative payload shapes and apply enclosing
+  generic source substitutions when deciding whether call operands need temporary GC roots, so
+  returned nested matches and specialized collection mutations lower without syntax heuristics.
+- Resolve proven extern-contract calls from their declared ABI signatures without requiring a
+  synthetic generic specialization identity, including imported results used by comparisons.
+- Materialize scheduler function and string-literal addresses with range-independent JIT relocations so macOS ARM64 allocations cannot overflow Cranelift's `ADRP` window.
+- Restore compiler and BSOL authoring manifests and lockfiles after release artifact
+  builds succeed or fail, so local release staging has the same rollback guarantee
+  as package publication.
+
 ### Changed
 
+- Stamp the complete local Cargo dependency closure and reachable first-party
+  BSOL workspace shipped by CLI, LSP, and updater, plus bundled corelib,
+  first-party template packages and identities, and first-party package
+  dependency constraints from one exact release version. All three shipped
+  executables expose that identity through `--version`; release staging fails
+  closed when its dependency graph or any inventoried surface drifts. The bundled
+  pest generator schema is stamped with the bundle version while remaining
+  outside the registry publication set.
+- Discover runtime kits and bundled corelib workspaces from the canonical
+  `<prefix>/bin`, `<prefix>/lib`, and `<prefix>/beskid_corelib` installation
+  layout, while retaining `BESKID_RUNTIME_PREFIX` and `BESKID_CORELIB_ROOT` as
+  optional overrides. Local replacement installs now stage the native runtime
+  kit and bundled corelib into the same prefix as the CLI.
+- Persist registry-owned package descriptions, categories, repository and
+  website links, tags, and icons in both memory and PostgreSQL backends, and
+  project that canonical metadata through public package summaries and detail
+  responses instead of synthesizing placeholders.
+- Preserve parser-generator signatures against the reusable
+  `TextParseResult<string>` surface while representing each success as one
+  nominal product payload.
 - Make recursive staged-analysis helpers stateless associated functions,
   removing unused rule receivers and keeping the workspace lint gate clean.
 - pckg package summaries now derive required `packageKind`, nullable template
@@ -91,6 +161,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Let canonical runtime syscalls complete through the worker pool when invoked
+  from an attached host thread outside a scheduler fiber, while retaining the
+  single copied-buffer worker implementation used by parked fibers.
+- Frame prepared-matrix worker events independently from tested program stdout,
+  so successful console and syscall tests cannot corrupt the supervisor stream.
+- Serialize prepared-matrix timestamps and durations as bounded 64-bit
+  milliseconds, matching JSON's supported integer wire representation.
+- Preserve the first per-test diagnostic in matrix target reports instead of
+  collapsing every failure to a count without actionable evidence.
+- Lower each prepared executable in an isolated generation-bound query database,
+  preventing shared dependency sources in adjacent matrix targets from being
+  relabeled across independent frontend generations.
+- Match named aggregate literal values to their canonical declaration-layout
+  slots before lowering, including reordered fields, and contextualize
+  unsuffixed integer fields from the exact applied generic layout.
+- Preserve zero-sized unit enum payload effects through the same canonical
+  statement/expression lowering path used by discarded expressions, and retain
+  source-keyed failures for unsupported effectful unit shapes.
+- Derive assignment storage ABI from one canonical local, aggregate-field, or
+  indexed-array query path, so typed field writes lower without HIR recovery.
+- Limit call-argument contextual ABI facts to fitting unsuffixed integer
+  literals, preserving nested floating-point operands' declared types.
+- Lower explicit signed and unsigned integer-to-`f64` calls through the
+  canonical primitive numeric conversion fact, and route `f64` division
+  through the shared division emitter without integer-only trap instructions.
+- Preserve the exact nominal aggregate declaration carried by an enum-pattern
+  binding, allowing syntax-only lowering to project fields from product
+  payloads without reconstructing HIR types.
+- Materialize applied generic aggregate layouts from source type arguments and
+  enclosing item specializations, keeping scalar and pointer field shapes
+  authoritative through literals, enum-pattern bindings, projections, and
+  managed-object allocation.
+- Project generic enum constructors through the explicit type annotation of a
+  proven mutable-local assignment target, preserving enclosing substitutions
+  for `Option::Some(value)` while inferred, immutable, qualified, and nonlocal
+  assignment targets remain unavailable.
+- Collect module-local declarations before imports and isolate each source's
+  import aliases during assembly seeding, so a leading import cannot replace a
+  same-named local function such as `Query.ArrayIterator.Current` with a
+  homonymous dependency helper. Assembly seeding now also restores the caller's
+  source identity after temporarily collecting dependency units.
+- Resolve explicit call-site type arguments in their import scope, preserve
+  recursively nested generic parameters in dependency type surfaces, and count
+  type annotations, generic arguments, and aggregate constructors as import
+  uses. Imported SDK records now retain nominal identity through generic array
+  helpers instead of degrading foreign `T[]` signatures to unit/i64 fallbacks.
+  Dependency surfaces also reconstruct module aliases with lexical inline-module
+  scoping and reject ambiguous same-scope aliases, preserving exact facade
+  parameter and return identities when dependency bodies are not resolved.
+- Authorize canonical `Core.Collections.Array.Len` to import the ABI-v5
+  `array_len(pointer) -> usize` service, so its compiler-owned body lowers
+  through the declared runtime boundary instead of remaining a dynamic call,
+  and make that runtime service read the logical length from the public array
+  header rather than returning its placeholder zero.
+- Preserve the enclosing generic specialization when lowering indexed array
+  assignments, allowing canonical `Array.Set<T>` bodies to emit their checked
+  typed store instead of losing the assignment result ABI fact.
+- Keep a nested call expression's specialized result ABI authoritative over an
+  enclosing call argument context, so comparisons such as
+  `Array.Capacity<T>(values) >= Array.Len<T>(values)` lower as word values when
+  passed to a boolean assertion.
+- Deduplicate identical nominal declarations reached through both a direct
+  import and a module re-export while retaining ambiguity for distinct types,
+  allowing imported generic records such as `ArrayIter<T>` in typed locals.
+- Track import use within each item's generic scope, so a same-named generic
+  parameter no longer hides an otherwise-unused imported type from `W1503`.
 - Use the idiomatic boolean assertion in the pckg dependency-rewrite test so
   the release compiler gate passes with warnings denied.
 - Return the validator's deterministic publication error so package-kind

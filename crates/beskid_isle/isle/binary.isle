@@ -12,8 +12,6 @@
 (extern constructor clif_ishl clif_ishl)
 (decl clif_ushr (Value Value) Value)
 (extern constructor clif_ushr clif_ushr)
-(decl clif_sdiv (Value Value) Value)
-(extern constructor clif_sdiv clif_sdiv)
 (decl partial clif_srem (Value Value) Value)
 (decl clif_eq_discriminant (Value Value AstNodeKey AstNodeKey) Value)
 (decl clif_ne_discriminant (Value Value AstNodeKey AstNodeKey) Value)

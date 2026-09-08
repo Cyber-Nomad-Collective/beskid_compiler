@@ -1,6 +1,44 @@
 use super::*;
+use crate::context::generated::Context as _;
 
 impl IsleContext<'_, '_, '_, '_> {
+    /// Adapt one already-lowered scalar to a declared storage or return boundary.
+    ///
+    /// Source typing has already authorized the assignment. This seam only reconciles the
+    /// physical integer widths used by CLIF; pointer/float/vector mismatches remain unavailable.
+    pub(super) fn adapt_scalar_boundary(&mut self, source: AstNodeKey, value: Value, expected: Type) -> Option<Value> {
+        let actual = self.builder.func.dfg.value_type(value);
+        let semantic_source = if self.facts.node_kind(source) == Some(NodeKind::BlockExpression) {
+            self.facts.block_result(source)?
+        } else {
+            source
+        };
+        if actual == expected {
+            Some(value)
+        } else if actual.is_int() && expected.is_int() && actual.bits() < expected.bits() {
+            match self.facts.semantic_type(semantic_source)? {
+                beskid_queries::SemanticTypeId::U8 | beskid_queries::SemanticTypeId::BOOL => {
+                    Some(self.builder.ins().uextend(expected, value))
+                }
+                beskid_queries::SemanticTypeId::I32 | beskid_queries::SemanticTypeId::I64 => {
+                    Some(self.builder.ins().sextend(expected, value))
+                }
+                _ => None,
+            }
+        } else if actual.is_int() && expected.is_int() && actual.bits() > expected.bits() {
+            matches!(
+                self.facts.semantic_type(semantic_source)?,
+                beskid_queries::SemanticTypeId::U8
+                    | beskid_queries::SemanticTypeId::BOOL
+                    | beskid_queries::SemanticTypeId::I32
+                    | beskid_queries::SemanticTypeId::I64
+            )
+            .then(|| self.builder.ins().ireduce(expected, value))
+        } else {
+            None
+        }
+    }
+
     /// Lower one expression reached from an enclosing statement while retaining
     /// its key when generated ISLE has neither a matching rule nor all required
     /// facts.  This is diagnostic-only: success and existing semantic errors are
@@ -13,29 +51,66 @@ impl IsleContext<'_, '_, '_, '_> {
             None
         })
     }
+
+    /// Lower an expression whose value is intentionally discarded while preserving its effects.
+    ///
+    /// This is the single effect-only expression path used by both ordinary expression statements
+    /// and zero-sized enum payloads. Statement-capable expressions go through generated statement
+    /// lowering first; value-producing expressions go through generated expression lowering and
+    /// are discarded. ABI-v5 unit literals and unit paths have no physical value to materialize,
+    /// while unsupported effectful unit shapes fail at their exact source key.
+    pub(super) fn lower_expression_for_effect(&mut self, key: AstNodeKey) -> Option<()> {
+        let kind = self.facts.node_kind(key)?;
+        if kind == NodeKind::BlockExpression {
+            self.begin_local_root_scope();
+            let lowered = (|| {
+                let prefix_count = self.facts.statement_count(key)?;
+                let statement_count = prefix_count.checked_add(u8::from(self.facts.block_result(key).is_some()))?;
+                for index in 0..statement_count {
+                    let current = self.builder.current_block()?;
+                    if block_is_terminated(self.builder, current) {
+                        break;
+                    }
+                    let statement = self.facts.child(key, index)?;
+                    self.lower_nested_statement(statement)?;
+                }
+                Some(())
+            })();
+            let scope_end = self.end_local_root_scope_for_current_block();
+            lowered?;
+            scope_end?;
+            return Some(());
+        }
+
+        if generated::constructor_lower_statement(self, key).is_some() {
+            return Some(());
+        }
+        if self.pending_error.is_some() {
+            return None;
+        }
+
+        if self.facts.semantic_type(key) == Some(beskid_queries::SemanticTypeId::UNIT) {
+            match kind {
+                NodeKind::LiteralExpression | NodeKind::PathExpression => return Some(()),
+                NodeKind::GroupedExpression => {
+                    let expression = self.facts.child(key, 0)?;
+                    return self.lower_expression_for_effect(expression);
+                }
+                _ => {}
+            }
+        }
+
+        let value = self.lower_nested_expression(key)?;
+        self.discard_value(value);
+        Some(())
+    }
 }
 
 macro_rules! generated_control_flow_methods {
     () => {
         fn emit_expression_statement(&mut self, key: AstNodeKey) -> Option<()> {
             let expression = self.facts.child(key, 0)?;
-            if self.facts.node_kind(expression) == Some(NodeKind::MatchExpression) {
-                return generated::constructor_lower_statement(self, expression);
-            }
-            if self.facts.node_kind(expression) == Some(NodeKind::CallExpression) {
-                if self.facts.call_kind(expression) == Some(CallKind::RuntimeIntrinsic) {
-                    return self.emit_runtime_intrinsic_statement(expression);
-                }
-
-                if self.facts.call_kind(expression) == Some(CallKind::Direct)
-                    && self.facts.call_signature(expression).is_some_and(|signature| signature.returns.is_empty())
-                {
-                    return self.direct_call_statement(expression);
-                }
-            }
-            let value = self.lower_nested_expression(expression)?;
-            self.discard_value(value);
-            Some(())
+            self.lower_expression_for_effect(expression)
         }
         fn discard_value(&mut self, _value: Value) {}
 
@@ -62,11 +137,12 @@ macro_rules! generated_control_flow_methods {
                     }
                 }
                 let result_key = self.facts.block_result(key)?;
-                let value = generated::constructor_lower_expression(self, result_key)?;
-                if self.builder.func.dfg.value_type(value) != self.facts.scalar_type(key)? {
+                let value = self.lower_nested_expression(result_key)?;
+                let expected = self.facts.scalar_type(key).or_else(|| self.facts.scalar_type(result_key))?;
+                let Some(value) = self.adapt_scalar_boundary(result_key, value, expected) else {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidBlockExpression });
                     return None;
-                }
+                };
                 Some(value)
             })();
             self.locals = saved_locals;
@@ -140,20 +216,13 @@ macro_rules! generated_control_flow_methods {
 
         fn emit_return(&mut self, key: AstNodeKey) -> Option<()> {
             if let Some(value_key) = self.facts.child(key, 0) {
-                let value = generated::constructor_lower_expression(self, value_key)?;
+                let value = self.lower_nested_expression(value_key)?;
                 let expected = self.builder.func.signature.returns.first()?.value_type;
-                let actual = self.builder.func.dfg.value_type(value);
-                let value = if actual == expected {
-                    value
-                } else if actual.is_int() && expected.is_int() && actual.bits() < expected.bits() {
-                    self.builder.ins().sextend(expected, value)
-                } else if actual.is_int() && expected.is_int() && actual.bits() > expected.bits() {
-                    self.builder.ins().ireduce(expected, value)
-                } else {
-                    return None;
-                };
+                let value = self.adapt_scalar_boundary(value_key, value, expected)?;
+                self.release_managed_local_roots()?;
                 self.builder.ins().return_(&[value]);
             } else {
+                self.release_managed_local_roots()?;
                 self.builder.ins().return_(&[]);
             }
             Some(())
@@ -170,22 +239,10 @@ macro_rules! generated_control_flow_methods {
             {
                 return Some(());
             }
-            let value = generated::constructor_lower_expression(self, initializer)?;
+            let value = self.lower_nested_expression(initializer)?;
             let value_type = self.facts.scalar_type(key)?;
-            let value = if self.builder.func.dfg.value_type(value) != value_type {
-                let actual = self.builder.func.dfg.value_type(value);
-                if actual.is_int() && value_type.is_int() && actual.bits() > value_type.bits() {
-                    self.builder.ins().ireduce(value_type, value)
-                } else {
-                    return None;
-                }
-            } else {
-                value
-            };
-            let variable = self.builder.declare_var(value_type);
-            self.builder.def_var(variable, value);
-            self.locals.insert(slot, (variable, value_type));
-            Some(())
+            let value = self.adapt_scalar_boundary(initializer, value, value_type)?;
+            self.bind_local(slot, value, value_type, self.local_managed_reference(key, value_type)?)
         }
 
         fn emit_if_else(&mut self, key: AstNodeKey) -> Option<()> {
@@ -211,16 +268,20 @@ macro_rules! generated_control_flow_methods {
 
             self.builder.switch_to_block(then_block);
             self.builder.seal_block(then_block);
+            self.begin_local_root_scope();
             generated::constructor_lower_statement(self, then_key)?;
+            self.end_local_root_scope_for_current_block()?;
             if jump_from_current_if_unterminated(self.builder, merge_block) {
                 merge_reachable = true;
             }
 
             self.builder.switch_to_block(else_block);
             self.builder.seal_block(else_block);
+            self.begin_local_root_scope();
             if let Some(else_key) = else_key {
                 generated::constructor_lower_statement(self, else_key)?;
             }
+            self.end_local_root_scope_for_current_block()?;
             if jump_from_current_if_unterminated(self.builder, merge_block) {
                 merge_reachable = true;
             }
@@ -246,10 +307,13 @@ macro_rules! generated_control_flow_methods {
 
             self.builder.switch_to_block(body);
             self.builder.seal_block(body);
-            self.loop_stack.push(LoopTargets { continue_block: header, break_block: exit });
+            let root_scope_depth = self.local_root_scope_depth();
+            self.begin_local_root_scope();
+            self.loop_stack.push(LoopTargets { continue_block: header, break_block: exit, root_scope_depth });
             let lowered = generated::constructor_lower_statement(self, body_key);
             self.loop_stack.pop();
             lowered?;
+            self.end_local_root_scope_for_current_block()?;
             // Body may nest `if`/`for` and leave the builder on a descendant block.
             let _ = jump_from_current_if_unterminated(self.builder, header);
 
@@ -277,9 +341,8 @@ macro_rules! generated_control_flow_methods {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidRangeFor });
                 return None;
             }
-            let iterator = self.builder.declare_var(iterator_type);
-            self.builder.def_var(iterator, start);
-            self.locals.insert(slot, (iterator, iterator_type));
+            self.bind_local(slot, start, iterator_type, ManagedReferenceFact::NativeOrScalar)?;
+            let iterator = self.locals.get(&slot)?.variable;
 
             let header = self.builder.create_block();
             let body = self.builder.create_block();
@@ -299,13 +362,17 @@ macro_rules! generated_control_flow_methods {
 
             self.builder.switch_to_block(body);
             self.builder.seal_block(body);
-            self.loop_stack.push(LoopTargets { continue_block: latch, break_block: exit });
+            let root_scope_depth = self.local_root_scope_depth();
+            self.begin_local_root_scope();
+            self.loop_stack.push(LoopTargets { continue_block: latch, break_block: exit, root_scope_depth });
             let lowered = generated::constructor_lower_statement(self, body_key);
             self.loop_stack.pop();
             if lowered.is_none() {
+                let _ = self.end_local_root_scope_for_current_block();
                 self.locals.remove(&slot);
                 return None;
             }
+            self.end_local_root_scope_for_current_block()?;
             // Body may nest control flow and leave the builder on a descendant block.
             let _ = jump_from_current_if_unterminated(self.builder, latch);
 
@@ -329,19 +396,24 @@ macro_rules! generated_control_flow_methods {
         }
 
         fn emit_break(&mut self, _key: AstNodeKey) -> Option<()> {
-            let target = self.loop_stack.last()?.break_block;
+            let targets = *self.loop_stack.last()?;
+            self.release_local_roots_from(targets.root_scope_depth)?;
+            let target = targets.break_block;
             self.builder.ins().jump(target, &[]);
             Some(())
         }
 
         fn emit_continue(&mut self, _key: AstNodeKey) -> Option<()> {
-            let target = self.loop_stack.last()?.continue_block;
+            let targets = *self.loop_stack.last()?;
+            self.release_local_roots_from(targets.root_scope_depth)?;
+            let target = targets.continue_block;
             self.builder.ins().jump(target, &[]);
             Some(())
         }
 
         fn statement_cursor(&mut self, key: AstNodeKey) -> Option<StatementCursor> {
             self.facts.statement_count(key)?;
+            self.begin_local_root_scope();
             Some(StatementCursor { block: key, index: 0 })
         }
 
@@ -375,7 +447,9 @@ macro_rules! generated_control_flow_methods {
             StatementCursor { block: cursor.block, index: cursor.index.saturating_add(1) }
         }
 
-        fn finish_statements(&mut self) {}
+        fn finish_statements(&mut self) -> Option<()> {
+            self.end_local_root_scope_for_current_block()
+        }
 
         fn sequence_statements(&mut self, _head: (), _tail: ()) {}
 
@@ -385,8 +459,8 @@ macro_rules! generated_control_flow_methods {
                 return Some(self.builder.ins().iconst(value_type, value));
             }
             let slot = self.facts.local_slot(key)?;
-            let (variable, _) = self.locals.get(&slot).copied()?;
-            Some(self.builder.use_var(variable))
+            let binding = self.locals.get(&slot).copied()?;
+            Some(self.builder.use_var(binding.variable))
         }
 
         fn emit_local_assign(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -396,13 +470,13 @@ macro_rules! generated_control_flow_methods {
             if self.facts.local_slot(target)? != slot {
                 return None;
             }
-            let (variable, expected_type) = self.locals.get(&slot).copied()?;
+            let binding = self.locals.get(&slot).copied()?;
             let value = self.lower_nested_expression(value_key)?;
             let actual_type = self.builder.func.dfg.value_type(value);
-            if actual_type != expected_type {
+            if actual_type != binding.value_type {
                 return None;
             }
-            self.builder.def_var(variable, value);
+            self.assign_local(slot, value)?;
             Some(value)
         }
     };

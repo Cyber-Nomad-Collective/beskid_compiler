@@ -6,6 +6,14 @@ const SYSCALL_REQUEST_SIZE = 64;
 const SYSCALL_READ = 1;
 const SYSCALL_WRITE = 2;
 
+pub i64 SyscallFinish(pointer request, pointer nativeBuffer, word allocation, pointer managedBuffer, word operation) {
+    i64 result = i64(raw_word_load(pointer_add(request, 48)));
+    if operation == SYSCALL_READ && result > 0 { memory_copy(managedBuffer, nativeBuffer, word(result)); }
+    SystemFree(request, SYSCALL_REQUEST_SIZE);
+    SystemFree(nativeBuffer, allocation);
+    return result;
+}
+
 pub i64 SyscallSubmitAndPark(word nativeHandle, pointer managedBuffer, word len, word operation) {
     mut word allocation = len;
     if allocation == 0 { allocation = 1; }
@@ -22,7 +30,16 @@ pub i64 SyscallSubmitAndPark(word nativeHandle, pointer managedBuffer, word len,
     raw_word_store(pointer_add(request, 40), len);
 
     word fiberIndex = SchedulerCurrentFiber();
-    if fiberIndex == FIBER_NONE || !SchedulerRegisterWorkerRequest(request, fiberIndex) {
+    if fiberIndex == FIBER_NONE {
+        if WorkerSubmit(request) != 0 {
+            SystemFree(request, SYSCALL_REQUEST_SIZE);
+            SystemFree(nativeBuffer, allocation);
+            return -1;
+        }
+        while !WorkerPoll(request) {}
+        return SyscallFinish(request, nativeBuffer, allocation, managedBuffer, operation);
+    }
+    if !SchedulerRegisterWorkerRequest(request, fiberIndex) {
         SystemFree(request, SYSCALL_REQUEST_SIZE);
         SystemFree(nativeBuffer, allocation);
         return -1;
@@ -40,28 +57,24 @@ pub i64 SyscallSubmitAndPark(word nativeHandle, pointer managedBuffer, word len,
     SchedulerReleaseMutatorToken();
     ContextSwitch(NativePointer(raw_word_load(pointer_add(FiberRecord(fiberIndex), 104))), SchedulerContext());
 
-    i64 result = i64(raw_word_load(pointer_add(request, 48)));
-    if operation == SYSCALL_READ && result > 0 { memory_copy(managedBuffer, nativeBuffer, word(result)); }
-    SystemFree(request, SYSCALL_REQUEST_SIZE);
-    SystemFree(nativeBuffer, allocation);
-    return result;
+    return SyscallFinish(request, nativeBuffer, allocation, managedBuffer, operation);
 }
 
 [Export(Abi:"C", Symbol:"syscall_read")]
-pub i64 SyscallRead(word nativeHandle, pointer buffer, word len) {
-    return SyscallSubmitAndPark(nativeHandle, buffer, len, SYSCALL_READ);
+pub i64 SyscallRead(i32 nativeHandle, pointer buffer, word len) {
+    return SyscallSubmitAndPark(word(nativeHandle), buffer, len, SYSCALL_READ);
 }
 
 [Export(Abi:"C", Symbol:"syscall_read_bytes")]
-pub i64 SyscallReadBytes(word nativeHandle, pointer data, word len) { return SyscallRead(nativeHandle, data, len); }
+pub i64 SyscallReadBytes(i32 nativeHandle, pointer data, word len) { return SyscallRead(nativeHandle, data, len); }
 
 [Export(Abi:"C", Symbol:"syscall_write")]
-pub i64 SyscallWrite(word nativeHandle, pointer buffer, word len) {
-    return SyscallSubmitAndPark(nativeHandle, buffer, len, SYSCALL_WRITE);
+pub i64 SyscallWrite(i32 nativeHandle, pointer buffer, word len) {
+    return SyscallSubmitAndPark(word(nativeHandle), buffer, len, SYSCALL_WRITE);
 }
 
 [Export(Abi:"C", Symbol:"syscall_write_bytes")]
-pub i64 SyscallWriteBytes(word nativeHandle, pointer data, word len) { return SyscallWrite(nativeHandle, data, len); }
+pub i64 SyscallWriteBytes(i32 nativeHandle, pointer data, word len) { return SyscallWrite(nativeHandle, data, len); }
 
 [Export(Abi:"C", Symbol:"beskid_trap_code")]
 pub never Panic(i64 code) { Trap(9, NativePointer(0), 0); }

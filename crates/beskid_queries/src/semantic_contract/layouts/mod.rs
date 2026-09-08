@@ -6,10 +6,12 @@ mod enum_layout;
 mod field_access;
 
 pub(in crate::semantic_contract) use aggregate::{
-    aggregate_layout_tracked, aggregate_literal_declaration_tracked, array_index_element_abi_type_tracked,
+    aggregate_layout_from_definition, aggregate_layout_tracked, aggregate_literal_declaration_tracked,
+    aggregate_literal_layout_tracked, applied_aggregate_shape, array_index_element_abi_type_tracked,
     array_index_element_template_tracked, empty_array_literal_element_abi_type_tracked,
+    instantiated_aggregate_layout_for_path,
 };
-pub use aggregate::array_index_element_specialization;
+pub use aggregate::{aggregate_literal_specialization, array_index_element_specialization};
 
 pub(in crate::semantic_contract) use common::{
     abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection, abi_type_for_local_path,
@@ -25,6 +27,7 @@ pub(in crate::semantic_contract) use enum_layout::{
     instantiated_enum_layout_for_path,
 };
 
+pub use field_access::aggregate_field_access_specialization;
 pub(in crate::semantic_contract) use field_access::{
     aggregate_field_access_tracked, nominal_local_receiver_declaration,
 };

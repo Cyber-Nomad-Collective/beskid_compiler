@@ -278,6 +278,9 @@ impl<'a> TypeChecker<'a> {
                     | &["__bytes_get"]
                     | &["__bytes_set"]
                     | &["__bytes_compare"]
+                    | &["__str_from_bytes_utf8"]
+                    | &["__syscall_read"]
+                    | &["__syscall_read_bytes"]
                     | &["__syscall_write_bytes"]
             ) {
                 return self.u8_array_type_id();
@@ -289,6 +292,7 @@ impl<'a> TypeChecker<'a> {
             BuiltinType::Unit => self.primitive_type_id(PrimitiveType::Unit),
             BuiltinType::Never => self.primitive_type_id(PrimitiveType::Never),
             BuiltinType::F64 => self.primitive_type_id(PrimitiveType::F64),
+            BuiltinType::I32 => self.primitive_type_id(PrimitiveType::I32),
             _ => self.primitive_type_id(PrimitiveType::I64),
         }
     }

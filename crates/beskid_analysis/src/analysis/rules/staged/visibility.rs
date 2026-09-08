@@ -243,68 +243,87 @@ impl SemanticPipelineRule {
 
     fn collect_used_value_names(&self, program: &Spanned<Program>) -> HashSet<String> {
         let mut used = HashSet::new();
-        for item in &program.node.items {
-            match &item.node {
-                Node::Function(definition) => {
-                    for expression in Query::from(&definition.node.body.node).of::<Expression>() {
-                        self.collect_used_from_expression(expression, &mut used);
-                    }
-                }
-                Node::Method(definition) => {
-                    for expression in Query::from(&definition.node.body.node).of::<Expression>() {
-                        self.collect_used_from_expression(expression, &mut used);
-                    }
-                }
-                Node::ExtendTypeDefinition(definition) => {
-                    for method in &definition.node.methods {
-                        for expression in Query::from(&method.node.body.node).of::<Expression>() {
-                            self.collect_used_from_expression(expression, &mut used);
-                        }
-                    }
-                }
-                Node::TestDefinition(definition) => {
-                    for statement in &definition.node.statements {
-                        for expression in Query::from(&statement.node).of::<Expression>() {
-                            self.collect_used_from_expression(expression, &mut used);
-                        }
-                    }
-                    if let Some(meta) = &definition.node.meta {
-                        for expression in Query::from(&meta.node).of::<Expression>() {
-                            self.collect_used_from_expression(expression, &mut used);
-                        }
-                    }
-                    if let Some(skip) = &definition.node.skip {
-                        for expression in Query::from(&skip.node).of::<Expression>() {
-                            self.collect_used_from_expression(expression, &mut used);
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
+        self.collect_used_from_items(&program.node.items, &mut used);
         used
     }
 
-    fn collect_used_from_expression(&self, expression: &Expression, used: &mut HashSet<String>) {
+    fn collect_used_from_items(&self, items: &[Spanned<Node>], used: &mut HashSet<String>) {
+        for item in items {
+            if let Node::InlineModule(module) = &item.node {
+                self.collect_used_from_items(&module.node.items, used);
+                continue;
+            }
+            let generic_parameters: &[_] = match &item.node {
+                Node::Function(definition) => &definition.node.generics,
+                Node::TypeDefinition(definition) => &definition.node.generics,
+                Node::EnumDefinition(definition) => &definition.node.generics,
+                _ => &[],
+            };
+            let shadowed =
+                generic_parameters.iter().map(|parameter| parameter.node.name.clone()).collect::<HashSet<_>>();
+            for expression in Query::from(&item.node).of::<Expression>() {
+                self.collect_used_from_expression(expression, &shadowed, used);
+            }
+            for ty in Query::from(&item.node).of::<Type>() {
+                self.collect_used_from_type(ty, &shadowed, used);
+            }
+        }
+    }
+
+    fn collect_used_from_expression(
+        &self,
+        expression: &Expression,
+        shadowed: &HashSet<String>,
+        used: &mut HashSet<String>,
+    ) {
         match expression {
             Expression::Path(path_expression) => {
-                for segment in &path_expression.node.path.node.segments {
-                    let name = segment.node.name.node.name.clone();
-                    if !name.is_empty() {
-                        used.insert(name);
-                    }
-                }
+                self.collect_used_from_path(&path_expression.node.path, shadowed, used);
             }
             Expression::Member(member_expression) => {
                 used.insert(member_expression.node.member.node.name.clone());
             }
+            Expression::StructLiteral(literal) => {
+                self.collect_used_from_path(&literal.node.path, shadowed, used);
+            }
             Expression::EnumConstructor(constructor_expression) => {
-                for segment in &constructor_expression.node.path.node.type_path.node.segments {
-                    used.insert(segment.node.name.node.name.clone());
-                }
+                self.collect_used_from_path(&constructor_expression.node.path.node.type_path, shadowed, used);
                 used.insert(constructor_expression.node.path.node.variant.node.name.clone());
             }
             _ => {}
+        }
+    }
+
+    fn collect_used_from_type(&self, ty: &Type, shadowed: &HashSet<String>, used: &mut HashSet<String>) {
+        match ty {
+            Type::Complex(path) => self.collect_used_from_path(path, shadowed, used),
+            Type::Associated { contract, .. } => self.collect_used_from_path(contract, shadowed, used),
+            Type::Array(inner) => self.collect_used_from_type(&inner.node, shadowed, used),
+            Type::Function { return_type, parameters } => {
+                self.collect_used_from_type(&return_type.node, shadowed, used);
+                for parameter in parameters {
+                    self.collect_used_from_type(&parameter.node, shadowed, used);
+                }
+            }
+            Type::Primitive(_) => {}
+        }
+    }
+
+    fn collect_used_from_path(&self, path: &Spanned<Path>, shadowed: &HashSet<String>, used: &mut HashSet<String>) {
+        if let [segment] = path.node.segments.as_slice()
+            && segment.node.type_args.is_empty()
+            && shadowed.contains(&segment.node.name.node.name)
+        {
+            return;
+        }
+        for segment in &path.node.segments {
+            let name = segment.node.name.node.name.clone();
+            if !name.is_empty() {
+                used.insert(name);
+            }
+            for type_arg in &segment.node.type_args {
+                self.collect_used_from_type(&type_arg.node, shadowed, used);
+            }
         }
     }
 
@@ -407,7 +426,8 @@ impl SemanticPipelineRule {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::{AnalysisOptions, Severity, builtin_rules, run_rules};
+    use super::SemanticPipelineRule;
+    use crate::analysis::{AnalysisOptions, RuleContext, Severity, builtin_rules, run_rules};
     use crate::parser::{BeskidParser, Rule};
     use crate::parsing::parsable::Parsable;
     use crate::syntax::Program;
@@ -459,6 +479,79 @@ mod tests {
             result.diagnostics.iter().all(|diag| diag.severity != Severity::Error),
             "expected public member access to pass, got: {:?}",
             result.diagnostics
+        );
+    }
+
+    #[test]
+    fn imported_types_used_in_annotations_constructors_and_generic_arguments_are_not_unused() {
+        let source = r#"
+            use Sdk.Payload;
+            use Sdk.Constructor;
+            use Collections.Array;
+
+            test imported_types_are_used {
+                Payload[] values = Array.Empty<Payload>();
+                Constructor item = Constructor { value: 0 };
+            }
+        "#;
+        let pair =
+            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
+        let program = Program::parse(pair).expect("source should build AST");
+
+        let used = SemanticPipelineRule.collect_used_value_names(&program);
+
+        for expected in ["Payload", "Constructor", "Array"] {
+            assert!(used.contains(expected), "{expected} must count as used, got: {used:?}");
+        }
+    }
+
+    #[test]
+    fn generic_parameter_shadow_does_not_count_as_an_import_use() {
+        let source = r#"
+            use Sdk.Payload;
+
+            unit Consume<Payload>(Payload value) {
+                return;
+            }
+        "#;
+
+        let pair =
+            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
+        let program = Program::parse(pair).expect("source should build AST");
+        let mut context = RuleContext::new("test.bd", source, AnalysisOptions::default());
+
+        SemanticPipelineRule.check_unused_imports(&mut context, &program);
+
+        assert!(
+            context.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("W1503")),
+            "the generic parameter owns `Payload`; the shadowed import must remain unused: {:?}",
+            context.diagnostics
+        );
+    }
+
+    #[test]
+    fn generic_parameter_shadow_inside_inline_module_does_not_count_as_an_import_use() {
+        let source = r#"
+            use Sdk.Payload;
+
+            module Nested {
+                unit Consume<Payload>(Payload value) {
+                    return;
+                }
+            }
+        "#;
+
+        let pair =
+            BeskidParser::parse(Rule::Program, source).expect("source should parse").next().expect("program pair");
+        let program = Program::parse(pair).expect("source should build AST");
+        let mut context = RuleContext::new("test.bd", source, AnalysisOptions::default());
+
+        SemanticPipelineRule.check_unused_imports(&mut context, &program);
+
+        assert!(
+            context.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("W1503")),
+            "the nested generic parameter owns `Payload`; the shadowed import must remain unused: {:?}",
+            context.diagnostics
         );
     }
 }

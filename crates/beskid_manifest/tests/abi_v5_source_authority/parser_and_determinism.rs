@@ -38,12 +38,12 @@ fn parser_rejects_unknown_duplicate_and_invalid_contract_fields() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
     assert!(
-        load_v5_manifest_source(&source.replacen("schema_version = 1", "schema_version = 1\n  surprise = true", 1))
+        load_v5_manifest_source(&source.replacen("schema_version = 2", "schema_version = 2\n  surprise = true", 1))
             .unwrap_err()
             .contains("unknown field")
     );
     assert!(
-        load_v5_manifest_source(&source.replacen("schema_version = 1", "schema_version = 1\n  schema_version = 1", 1))
+        load_v5_manifest_source(&source.replacen("schema_version = 2", "schema_version = 2\n  schema_version = 2", 1))
             .unwrap_err()
             .contains("duplicate field")
     );

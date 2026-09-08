@@ -1,4 +1,8 @@
-use super::support::{emit_isle_item, find_function_definition, item_fixture, item_fixture_with_root};
+use super::support::{
+    DirectCallee, HashMap, ItemModuleImporter, JITBuilder, JITModule, Linkage, Module, default_libcall_names,
+    emit_isle_item, emit_isle_item_with_call_importer, find_function_definition, find_function_definitions,
+    function_signature, item_fixture, item_fixture_with_root, item_name, types,
+};
 
 #[test]
 fn nested_direct_call_results_lower_through_exact_statement_facts() {
@@ -24,6 +28,132 @@ fn inferred_let_results_lower_through_canonical_storage_facts() {
     let clif = function.display().to_string();
 
     assert!(clif.contains("call"), "{clif}");
+    assert!(clif.contains("return"), "{clif}");
+}
+
+#[test]
+fn narrower_call_results_widen_at_the_declared_local_storage_boundary() {
+    let (input, isa, root) =
+        item_fixture_with_root("i32 Count() { return 1; } i64 Main() { i64 value = Count(); return value; }");
+    let functions = find_function_definitions(input.database(), root);
+    let callee = functions
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Count"))
+        .expect("Count definition");
+    let caller = functions
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main definition");
+
+    let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let signature = function_signature(isa.as_ref(), types::I32, []);
+    let imported = module.declare_function("Count", Linkage::Import, &signature).expect("declare Count import");
+    let mut importer = ItemModuleImporter::new(&mut module, HashMap::from([(DirectCallee::item(callee), imported)]));
+
+    let function = emit_isle_item_with_call_importer(&input, isa.as_ref(), caller, &mut importer)
+        .expect("an authorized narrower integer result must widen at explicit local storage");
+    let clif = function.display().to_string();
+
+    assert!(clif.contains("sextend.i64"), "{clif}");
+}
+
+#[test]
+fn unsigned_byte_call_results_zero_extend_at_the_declared_local_storage_boundary() {
+    let (input, isa, root) =
+        item_fixture_with_root("u8 Byte() { return 255_u8; } i64 Main() { i64 value = Byte(); return value; }");
+    let functions = find_function_definitions(input.database(), root);
+    let callee = functions
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Byte"))
+        .expect("Byte definition");
+    let caller = functions
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main definition");
+
+    let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let signature = function_signature(isa.as_ref(), types::I8, []);
+    let imported = module.declare_function("Byte", Linkage::Import, &signature).expect("declare Byte import");
+    let mut importer = ItemModuleImporter::new(&mut module, HashMap::from([(DirectCallee::item(callee), imported)]));
+
+    let function = emit_isle_item_with_call_importer(&input, isa.as_ref(), caller, &mut importer)
+        .expect("an unsigned byte result must widen at explicit local storage");
+    let clif = function.display().to_string();
+
+    assert!(clif.contains("uextend.i64"), "{clif}");
+    assert!(!clif.contains("sextend.i64"), "{clif}");
+}
+
+#[test]
+fn unsigned_byte_call_results_zero_extend_at_the_return_boundary() {
+    let (input, isa, root) = item_fixture_with_root("u8 Byte() { return 255_u8; } i64 Main() { return Byte(); }");
+    let functions = find_function_definitions(input.database(), root);
+    let callee = functions
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Byte"))
+        .expect("Byte definition");
+    let caller = functions
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main definition");
+
+    let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let signature = function_signature(isa.as_ref(), types::I8, []);
+    let imported = module.declare_function("Byte", Linkage::Import, &signature).expect("declare Byte import");
+    let mut importer = ItemModuleImporter::new(&mut module, HashMap::from([(DirectCallee::item(callee), imported)]));
+
+    let function = emit_isle_item_with_call_importer(&input, isa.as_ref(), caller, &mut importer)
+        .expect("an unsigned byte result must widen at the function return boundary");
+    let clif = function.display().to_string();
+
+    assert!(clif.contains("uextend.i64"), "{clif}");
+    assert!(!clif.contains("sextend.i64"), "{clif}");
+}
+
+#[test]
+fn unsigned_byte_block_results_zero_extend_at_the_contextual_block_boundary() {
+    let (input, isa, root) =
+        item_fixture_with_root("u8 Byte() { return 255_u8; } i64 Main() { i64 value = { Byte(); }; return value; }");
+    let functions = find_function_definitions(input.database(), root);
+    let callee = functions
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Byte"))
+        .expect("Byte definition");
+    let caller = functions
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main definition");
+
+    let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let signature = function_signature(isa.as_ref(), types::I8, []);
+    let imported = module.declare_function("Byte", Linkage::Import, &signature).expect("declare Byte import");
+    let mut importer = ItemModuleImporter::new(&mut module, HashMap::from([(DirectCallee::item(callee), imported)]));
+
+    let function = emit_isle_item_with_call_importer(&input, isa.as_ref(), caller, &mut importer)
+        .expect("an unsigned byte block tail must widen to its contextual block type");
+    let clif = function.display().to_string();
+
+    assert!(clif.contains("uextend.i64"), "{clif}");
+    assert!(!clif.contains("sextend.i64"), "{clif}");
+}
+
+#[test]
+fn block_expression_partitions_prefix_statements_from_its_final_value() {
+    let (input, isa, item) = item_fixture("i64 Main() { i64 value = { i64 nested = 1_i64; nested; }; return value; }");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("a block-valued local must lower its prefix statements and final expression exactly once");
+    let clif = function.display().to_string();
+
+    assert!(clif.contains("iconst.i64 1"), "{clif}");
     assert!(clif.contains("return"), "{clif}");
 }
 

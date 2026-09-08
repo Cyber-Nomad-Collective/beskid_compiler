@@ -1,10 +1,21 @@
 use crate::abi_v5::{AbiManifestV5, canonical_runtime_package, canonical_source_hash};
+use crate::{AbiParamKind, AbiReturnKind};
 
 use super::capabilities::RuntimeCapabilityError;
 use super::sources::{
-    CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_CORELIB_FS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ERROR_SOURCE_PATH, CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH, canonical_corelib_service_sources,
+    CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_CORELIB_CHANNEL_SOURCE_PATH,
+    CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH,
+    CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH, CANONICAL_CORELIB_FIBER_SOURCE_PATH, CANONICAL_CORELIB_FS_SOURCE_PATH,
+    CANONICAL_CORELIB_HUB_SOURCE_PATH,
+    CANONICAL_CORELIB_MUTEX_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
+    CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH, CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH, CANONICAL_FOUNDATION_ERROR_SOURCE_PATH,
+    CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH,
+    CANONICAL_FOUNDATION_PATH_SOURCE_PATH, CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH,
+    CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH, CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH,
+    CANONICAL_FOUNDATION_TIME_SOURCE_PATH, canonical_corelib_service_sources,
 };
 
 /// The canonical compiler-owned source file for one Foundation service unit.
@@ -17,18 +28,37 @@ use super::sources::{
 /// `CARGO_MANIFEST_DIR` intact made materialized Corelib deps drop panic/syscall provenance
 /// and fall through to Dynamic `__panic_str` (Corelib gate).
 pub fn canonical_corelib_service_source_path(logical_path: &str) -> Option<std::path::PathBuf> {
-    let relative = match logical_path {
-        CANONICAL_CORELIB_SYSCALL_SOURCE_PATH => "Core/Syscall/Syscall.bd",
-        CANONICAL_CORELIB_ARGS_SOURCE_PATH => "Core/Args/Args.bd",
-        CANONICAL_CORELIB_FS_SOURCE_PATH => "Core/FS/FS.bd",
-        CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH => "Core/Collections/Array.bd",
-        CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH => "Testing/Assert.bd",
-        CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH => "Core/Output/Output.bd",
-        CANONICAL_FOUNDATION_ERROR_SOURCE_PATH => "Core/Error/Error.bd",
+    let (package, relative) = match logical_path {
+        CANONICAL_CORELIB_SYSCALL_SOURCE_PATH => ("foundation", "Core/Syscall/Syscall.bd"),
+        CANONICAL_CORELIB_ARGS_SOURCE_PATH => ("foundation", "Core/Args/Args.bd"),
+        CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH => ("concurrency", "Concurrency.bd"),
+        CANONICAL_CORELIB_FIBER_SOURCE_PATH => ("concurrency", "Concurrency/Fiber.bd"),
+        CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH => ("console", "Platform/Linux.bd"),
+        CANONICAL_CORELIB_FS_SOURCE_PATH => ("foundation", "Core/FS/FS.bd"),
+        CANONICAL_CORELIB_CHANNEL_SOURCE_PATH => ("concurrency", "Concurrency/Channel.bd"),
+        CANONICAL_CORELIB_MUTEX_SOURCE_PATH => ("concurrency", "Concurrency/Mutex.bd"),
+        CANONICAL_CORELIB_HUB_SOURCE_PATH => ("concurrency", "Concurrency/Hub.bd"),
+        CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH => ("concurrency", "Concurrency/WaitGroup.bd"),
+        CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH => ("foundation", "Core/Collections/Array.bd"),
+        CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH => ("foundation", "Core/Environment/Environment.bd"),
+        CANONICAL_FOUNDATION_PATH_SOURCE_PATH => ("foundation", "Core/Path/Path.bd"),
+        CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH => ("foundation", "Core/Process/Process.bd"),
+        CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH => ("foundation", "Core/Random/Random.bd"),
+        CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH => ("foundation", "Core/String/Core.bd"),
+        CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH => ("foundation", "Core/String/Utf8.bd"),
+        CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH => ("foundation", "Core/Text/Cursor.bd"),
+        CANONICAL_FOUNDATION_TIME_SOURCE_PATH => ("foundation", "Core/Time/Time.bd"),
+        CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH => ("foundation", "Testing/Assert.bd"),
+        CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH => ("foundation", "Core/Output/Output.bd"),
+        CANONICAL_FOUNDATION_ERROR_SOURCE_PATH => ("foundation", "Core/Error/Error.bd"),
         _ => return None,
     };
     Some(normalize_lexically(
-        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corelib/packages/foundation/src").join(relative),
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corelib/packages")
+            .join(package)
+            .join("src")
+            .join(relative),
     ))
 }
 
@@ -44,6 +74,113 @@ fn normalize_lexically(path: &std::path::Path) -> std::path::PathBuf {
         other => out.push(other.as_os_str()),
     });
     out
+}
+
+/// One source-independent ABI slot selected for a source-authorized Corelib service.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CorelibServiceAbiType {
+    Pointer,
+    String,
+    Usize,
+    I64,
+    I32,
+    U8,
+    F64,
+    Void,
+    Never,
+}
+
+/// The unique native ABI shape behind a source-authorized Corelib service.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorelibServiceAbi {
+    pub parameters: Vec<CorelibServiceAbiType>,
+    pub result: CorelibServiceAbiType,
+}
+
+/// Type-directed native value adapters owned by one exact source service.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CorelibServiceValueDispatch {
+    pub scalar_symbol: &'static str,
+    pub managed_symbol: &'static str,
+}
+
+/// Return the type-directed value adapters for a canonical source-authorized service.
+pub fn canonical_corelib_service_value_dispatch(service: CorelibService) -> Option<CorelibServiceValueDispatch> {
+    (service.name == "__channel_receive_value"
+        && service.symbol == "channel_receive_value"
+        && service.source_path == CANONICAL_CORELIB_CHANNEL_SOURCE_PATH)
+        .then_some(CorelibServiceValueDispatch {
+            scalar_symbol: "channel_receive_value",
+            managed_symbol: "channel_receive_ptr",
+        })
+}
+
+/// Resolve a service adapter against the canonical ABI-v5 bindings.
+///
+/// Generated Corelib-service bindings and soft builtins intentionally share this one lookup.
+/// Conflicting target shapes or duplicate soft-builtin declarations fail closed.
+pub fn canonical_corelib_service_abi(service: CorelibService) -> Option<CorelibServiceAbi> {
+    canonical_corelib_service_abi_for_adapter(service.symbol)
+}
+
+/// Resolve the unique canonical ABI-v5 shape for an already source-authorized adapter symbol.
+pub fn canonical_corelib_service_abi_for_adapter(symbol: &str) -> Option<CorelibServiceAbi> {
+    let mut bindings = crate::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
+        .iter()
+        .filter(|binding| binding.adapter == symbol);
+    if let Some(binding) = bindings.next() {
+        if bindings.any(|candidate| candidate.params != binding.params || candidate.result != binding.result) {
+            return None;
+        }
+        return Some(CorelibServiceAbi {
+            parameters: binding.params.iter().copied().map(corelib_service_abi_type).collect::<Option<Vec<_>>>()?,
+            result: corelib_service_abi_type(binding.result)?,
+        });
+    }
+
+    let mut builtins = crate::all_builtin_specs().filter(|binding| binding.symbol == symbol);
+    let binding = builtins.next()?;
+    if builtins.any(|candidate| candidate.params != binding.params || candidate.returns != binding.returns) {
+        return None;
+    }
+    Some(CorelibServiceAbi {
+        parameters: binding.params.iter().copied().map(corelib_soft_builtin_parameter_type).collect(),
+        result: corelib_soft_builtin_return_type(binding.returns),
+    })
+}
+
+fn corelib_service_abi_type(ty: &str) -> Option<CorelibServiceAbiType> {
+    Some(match ty {
+        "pointer" => CorelibServiceAbiType::Pointer,
+        "string" => CorelibServiceAbiType::String,
+        "usize" | "isize" => CorelibServiceAbiType::Usize,
+        "i64" => CorelibServiceAbiType::I64,
+        "i32" | "u32" => CorelibServiceAbiType::I32,
+        "u8" => CorelibServiceAbiType::U8,
+        "f64" => CorelibServiceAbiType::F64,
+        "void" => CorelibServiceAbiType::Void,
+        "never" => CorelibServiceAbiType::Never,
+        _ => return None,
+    })
+}
+
+fn corelib_soft_builtin_parameter_type(ty: AbiParamKind) -> CorelibServiceAbiType {
+    match ty {
+        AbiParamKind::Ptr => CorelibServiceAbiType::Pointer,
+        AbiParamKind::I64 => CorelibServiceAbiType::I64,
+        AbiParamKind::F64 => CorelibServiceAbiType::F64,
+    }
+}
+
+fn corelib_soft_builtin_return_type(ty: AbiReturnKind) -> CorelibServiceAbiType {
+    match ty {
+        AbiReturnKind::Void => CorelibServiceAbiType::Void,
+        AbiReturnKind::Never => CorelibServiceAbiType::Never,
+        AbiReturnKind::Ptr => CorelibServiceAbiType::Pointer,
+        AbiReturnKind::I64 => CorelibServiceAbiType::I64,
+        AbiReturnKind::I32 => CorelibServiceAbiType::I32,
+        AbiReturnKind::F64 => CorelibServiceAbiType::F64,
+    }
 }
 
 /// One ABI-facing service used by a compiler-owned Corelib source unit.
@@ -124,8 +261,61 @@ const CORELIB_SERVICES: &[CorelibService] = &[
         symbol: "syscall_read_bytes",
         source_path: CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
     },
-    CorelibService { name: "__args_count", symbol: "args_count", source_path: CANONICAL_CORELIB_ARGS_SOURCE_PATH },
-    CorelibService { name: "__args_get", symbol: "args_get", source_path: CANONICAL_CORELIB_ARGS_SOURCE_PATH },
+    CorelibService {
+        name: "__args_count",
+        symbol: "beskid_rt_v5_args_count",
+        source_path: CANONICAL_CORELIB_ARGS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__args_get",
+        symbol: "beskid_rt_v5_args_get",
+        source_path: CANONICAL_CORELIB_ARGS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__fiber_yield",
+        symbol: "beskid_rt_v5_fiber_yield",
+        source_path: CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__fiber_now_millis",
+        symbol: "fiber_now_millis",
+        source_path: CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__fiber_processor_count",
+        symbol: "fiber_processor_count",
+        source_path: CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__fiber_cancel",
+        symbol: "fiber_cancel",
+        source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__fiber_detach",
+        symbol: "fiber_detach",
+        source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__fiber_join_status",
+        symbol: "fiber_join_status",
+        source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__fiber_join_value",
+        symbol: "fiber_join_value",
+        source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__panic_str",
+        symbol: "beskid_trap_message",
+        source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__tty_winsize",
+        symbol: "tty_winsize",
+        source_path: CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH,
+    },
     CorelibService {
         name: "__fs_read_text",
         symbol: "beskid_rt_v5_fs_read_text",
@@ -150,6 +340,146 @@ const CORELIB_SERVICES: &[CorelibService] = &[
         name: "__fs_delete",
         symbol: "beskid_rt_v5_fs_delete",
         source_path: CANONICAL_CORELIB_FS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__channel_close",
+        symbol: "channel_close",
+        source_path: CANONICAL_CORELIB_CHANNEL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__channel_create",
+        symbol: "channel_create",
+        source_path: CANONICAL_CORELIB_CHANNEL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__channel_receive",
+        symbol: "channel_receive_status",
+        source_path: CANONICAL_CORELIB_CHANNEL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__channel_receive_value",
+        symbol: "channel_receive_value",
+        source_path: CANONICAL_CORELIB_CHANNEL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__channel_send",
+        symbol: "channel_send",
+        source_path: CANONICAL_CORELIB_CHANNEL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__channel_try_receive",
+        symbol: "channel_try_receive",
+        source_path: CANONICAL_CORELIB_CHANNEL_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__channel_try_send",
+        symbol: "channel_try_send",
+        source_path: CANONICAL_CORELIB_CHANNEL_SOURCE_PATH,
+    },
+    CorelibService { name: "__mutex_create", symbol: "mutex_create", source_path: CANONICAL_CORELIB_MUTEX_SOURCE_PATH },
+    CorelibService { name: "__mutex_lock", symbol: "mutex_lock", source_path: CANONICAL_CORELIB_MUTEX_SOURCE_PATH },
+    CorelibService {
+        name: "__mutex_try_lock",
+        symbol: "mutex_try_lock",
+        source_path: CANONICAL_CORELIB_MUTEX_SOURCE_PATH,
+    },
+    CorelibService { name: "__mutex_unlock", symbol: "mutex_unlock", source_path: CANONICAL_CORELIB_MUTEX_SOURCE_PATH },
+    CorelibService { name: "__hub_create", symbol: "hub_create", source_path: CANONICAL_CORELIB_HUB_SOURCE_PATH },
+    CorelibService { name: "__hub_register", symbol: "hub_register", source_path: CANONICAL_CORELIB_HUB_SOURCE_PATH },
+    CorelibService {
+        name: "__hub_unregister",
+        symbol: "hub_unregister",
+        source_path: CANONICAL_CORELIB_HUB_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__hub_wait_receive",
+        symbol: "hub_wait_receive_status",
+        source_path: CANONICAL_CORELIB_HUB_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__hub_wait_receive_index",
+        symbol: "hub_wait_receive_index",
+        source_path: CANONICAL_CORELIB_HUB_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__hub_wait_receive_value",
+        symbol: "hub_wait_receive_value",
+        source_path: CANONICAL_CORELIB_HUB_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__wait_group_add",
+        symbol: "wait_group_add",
+        source_path: CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__wait_group_create",
+        symbol: "wait_group_create",
+        source_path: CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__wait_group_done",
+        symbol: "wait_group_done",
+        source_path: CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__wait_group_wait",
+        symbol: "wait_group_wait",
+        source_path: CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH,
+    },
+    CorelibService { name: "__array_len", symbol: "array_len", source_path: CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH },
+    CorelibService { name: "__env_get", symbol: "env_get", source_path: CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH },
+    CorelibService { name: "__env_set", symbol: "env_set", source_path: CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH },
+    CorelibService {
+        name: "__env_getcwd",
+        symbol: "env_getcwd",
+        source_path: CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH,
+    },
+    CorelibService { name: "__str_slice", symbol: "str_slice", source_path: CANONICAL_FOUNDATION_PATH_SOURCE_PATH },
+    CorelibService {
+        name: "__process_exit",
+        symbol: "process_exit",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__process_getpid",
+        symbol: "process_getpid",
+        source_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__clock_monotonic_nanos",
+        symbol: "clock_monotonic_nanos",
+        source_path: CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH,
+    },
+    CorelibService { name: "__str_len", symbol: "str_len", source_path: CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH },
+    CorelibService {
+        name: "__str_slice",
+        symbol: "str_slice",
+        source_path: CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__str_slice",
+        symbol: "str_slice",
+        source_path: CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__str_from_bytes_utf8",
+        symbol: "str_from_bytes_utf8",
+        source_path: CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__str_slice",
+        symbol: "str_slice",
+        source_path: CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__clock_realtime_nanos",
+        symbol: "clock_realtime_nanos",
+        source_path: CANONICAL_FOUNDATION_TIME_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__clock_monotonic_nanos",
+        symbol: "clock_monotonic_nanos",
+        source_path: CANONICAL_FOUNDATION_TIME_SOURCE_PATH,
     },
     CorelibService {
         name: "__panic_str",

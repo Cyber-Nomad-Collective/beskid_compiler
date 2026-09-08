@@ -7,13 +7,21 @@ use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
     AggregateFieldShape, AstNodeKey, BeskidDatabase, EnumLayoutFact, EnumMatchArmFact, EnumMatchFact,
-    EnumVariantLayoutFact, ItemSignature, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId, abi_type,
-    aggregate_field_access, aggregate_layout, array_index_element_specialization, build_typed_program,
-    call_arguments, enum_constructor, enum_layout, enum_match, generic_call_specialization,
-    implicit_method_receiver, item_abi_signature,
+    EnumMatchPatternFact, EnumMatchVariantPatternFact, EnumVariantLayoutFact, ItemSignature, LiteralFact,
+    ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId, abi_type, aggregate_field_access,
+    aggregate_layout, aggregate_literal_layout, array_index_element_specialization, build_typed_program,
+    call_arguments, contextual_integer_literal_abi_type, enum_constructor, enum_layout, enum_match,
+    generic_call_specialization, implicit_method_receiver, item_abi_signature,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
+
+fn enum_pattern_variant_index(arm: &EnumMatchArmFact) -> u32 {
+    let EnumMatchPatternFact::Enum(pattern) = &arm.pattern else {
+        panic!("expected enum arm pattern");
+    };
+    pattern.variant_index
+}
 
 #[test]
 fn aggregate_layout_keeps_channel_options_nominal_capacity() {
@@ -26,6 +34,28 @@ fn aggregate_layout_keeps_channel_options_nominal_capacity() {
     assert_eq!(layout.fields[0].0.as_ref(), "capacity");
     assert_eq!(layout.fields[0].1, AggregateFieldShape::Nominal(capacity));
     assert_eq!(layout.fields[1].1, AggregateFieldShape::Scalar(SemanticTypeId::BOOL));
+}
+
+#[test]
+fn phantom_generic_aggregate_literal_materializes_its_source_independent_layout() {
+    let source = "type ArrayIter<T> { i64 index, i64 length } ArrayIter<T> Make<T>() { return ArrayIter<T> { index: 0, length: 1 }; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let literal = key(unit, generation, &index, NodeKind::StructLiteralExpression, 0);
+    let zero = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+
+    assert_eq!(
+        aggregate_literal_layout(&db, literal).expect("phantom generic literal layout query"),
+        Some(beskid_queries::AggregateLayoutFact {
+            fields: Arc::from([
+                (Arc::from("index"), AggregateFieldShape::Scalar(SemanticTypeId::I64)),
+                (Arc::from("length"), AggregateFieldShape::Scalar(SemanticTypeId::I64)),
+            ]),
+        }),
+    );
+    assert_eq!(
+        contextual_integer_literal_abi_type(&db, zero).expect("phantom generic field context"),
+        Some(SemanticTypeId::I64),
+    );
 }
 
 #[test]
@@ -84,10 +114,7 @@ unit Main() {
                 parameters: Arc::from([SemanticTypeId::I64, SemanticTypeId::I64]),
                 result: SemanticTypeId::UNIT,
             },
-            substitutions: Arc::from([beskid_queries::GenericSubstitution {
-                parameter: Arc::from("T"),
-                argument: SemanticTypeId::I64,
-            }]),
+            substitutions: Arc::from([beskid_queries::GenericSubstitution::inferred("T", SemanticTypeId::I64,)]),
         })
     );
 }
@@ -190,10 +217,7 @@ fn generic_array_index_element_resolves_through_the_enclosing_specialization() {
         array_index_element_specialization(
             &db,
             indexed,
-            Arc::from([beskid_queries::GenericSubstitution {
-                parameter: Arc::from("T"),
-                argument: SemanticTypeId::I64,
-            }]),
+            Arc::from([beskid_queries::GenericSubstitution::inferred("T", SemanticTypeId::I64)]),
         )
         .expect("contextual array-index element query"),
         Some(SemanticTypeId::I64),
@@ -268,7 +292,11 @@ fn enum_layout_instantiates_concrete_generic_result_payloads() {
     );
     assert_eq!(
         enum_constructor(&db, constructor).expect("concrete generic constructor query"),
-        Some(beskid_queries::EnumConstructorFact { declaration: result, variant_index: 0, payload: Some(payload) }),
+        Some(beskid_queries::EnumConstructorFact {
+            declaration: result,
+            variant_index: 0,
+            payloads: Arc::from([payload]),
+        }),
     );
 }
 
@@ -298,8 +326,8 @@ fn generic_enum_match_uses_the_explicit_scrutinee_application_for_cyb_137() {
         enum_match(&db, expression).expect("generic enum match query").expect("explicit generic enum scrutinee match");
     assert_eq!(fact.declaration, key(unit, generation, &index, NodeKind::EnumDefinition, 0));
     assert_eq!(fact.arms.len(), 2);
-    assert_eq!(fact.arms[0].variant_index, Some(0));
-    assert_eq!(fact.arms[1].variant_index, Some(1));
+    assert_eq!(enum_pattern_variant_index(&fact.arms[0]), 0);
+    assert_eq!(enum_pattern_variant_index(&fact.arms[1]), 1);
     assert_eq!(fact.layout.variants.len(), 2);
     assert_eq!(
         fact.layout.variants[0].fields.as_ref(),
@@ -382,8 +410,8 @@ unit Write() {
         .expect("qualified imported Result match fact");
     assert_eq!(fact.declaration, key(results_unit, generation, &results_index, NodeKind::EnumDefinition, 0,));
     assert_eq!(fact.arms.len(), 2);
-    assert_eq!(fact.arms[0].variant_index, Some(0));
-    assert_eq!(fact.arms[1].variant_index, Some(1));
+    assert_eq!(enum_pattern_variant_index(&fact.arms[0]), 0);
+    assert_eq!(enum_pattern_variant_index(&fact.arms[1]), 1);
 }
 
 #[test]
@@ -484,17 +512,27 @@ fn enum_constructor_selects_the_source_variant_and_single_payload() {
 
     assert_eq!(
         enum_constructor(&db, constructor).expect("enum constructor query"),
-        Some(beskid_queries::EnumConstructorFact { declaration, variant_index: 1, payload: Some(payload) })
+        Some(beskid_queries::EnumConstructorFact { declaration, variant_index: 1, payloads: Arc::from([payload]) })
     );
 }
 
 #[test]
-fn enum_constructor_rejects_multiple_payloads_until_isle_has_a_multi_field_shape() {
+fn enum_constructor_preserves_multiple_payloads_in_source_order() {
     let source = "enum Pair { Value(i32 left, i32 right) } i32 Main() { Pair pair = Pair::Value(1, 2); return 0; }";
     let (db, _project, unit, generation, index) = setup(source);
     let constructor = key(unit, generation, &index, NodeKind::EnumConstructorExpression, 0);
+    let declaration = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
+    let first = key(unit, generation, &index, NodeKind::LiteralExpression, 0);
+    let second = key(unit, generation, &index, NodeKind::LiteralExpression, 1);
 
-    assert_unavailable(enum_constructor(&db, constructor));
+    assert_eq!(
+        enum_constructor(&db, constructor).expect("multi-field enum constructor query"),
+        Some(beskid_queries::EnumConstructorFact {
+            declaration,
+            variant_index: 0,
+            payloads: Arc::from([first, second]),
+        })
+    );
 }
 
 #[test]
@@ -517,9 +555,106 @@ fn enum_match_keeps_source_ordered_nullary_variant_arms() {
                 ]),
             },
             arms: Arc::from([
-                EnumMatchArmFact { variant_index: Some(0), body: first_body, binding: None },
-                EnumMatchArmFact { variant_index: Some(1), body: second_body, binding: None },
+                EnumMatchArmFact {
+                    pattern: EnumMatchPatternFact::Enum(EnumMatchVariantPatternFact {
+                        declaration,
+                        layout: EnumLayoutFact {
+                            variants: Arc::from([
+                                EnumVariantLayoutFact { name: Arc::from("None"), fields: Arc::from([]) },
+                                EnumVariantLayoutFact { name: Arc::from("Some"), fields: Arc::from([]) },
+                            ]),
+                        },
+                        variant_index: 0,
+                        items: Arc::from([]),
+                    }),
+                    body: first_body,
+                },
+                EnumMatchArmFact {
+                    pattern: EnumMatchPatternFact::Enum(EnumMatchVariantPatternFact {
+                        declaration,
+                        layout: EnumLayoutFact {
+                            variants: Arc::from([
+                                EnumVariantLayoutFact { name: Arc::from("None"), fields: Arc::from([]) },
+                                EnumVariantLayoutFact { name: Arc::from("Some"), fields: Arc::from([]) },
+                            ]),
+                        },
+                        variant_index: 1,
+                        items: Arc::from([]),
+                    }),
+                    body: second_body,
+                },
             ]),
         })
     );
+}
+
+#[test]
+fn enum_match_materializes_unit_and_typed_scalar_literal_patterns() {
+    let source = "enum Result { Ok(unit value), Error(i64 error) } bool Main(Result result) { return match result { Result::Ok(()) => true, Result::Error(7_i64) => false, _ => false, }; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::MatchExpression, 0);
+    let fact = enum_match(&db, expression).expect("enum match query").expect("recursive literal patterns");
+
+    let EnumMatchPatternFact::Enum(ok) = &fact.arms[0].pattern else {
+        panic!("Ok arm must be an enum pattern");
+    };
+    assert!(matches!(ok.items.as_ref(), [EnumMatchPatternFact::UnitLiteral { .. }]));
+
+    let EnumMatchPatternFact::Enum(error) = &fact.arms[1].pattern else {
+        panic!("Error arm must be an enum pattern");
+    };
+    let [EnumMatchPatternFact::ScalarLiteral(literal)] = error.items.as_ref() else {
+        panic!("Error payload must retain its scalar literal");
+    };
+    assert_eq!(literal.semantic_type, SemanticTypeId::I64);
+    assert_eq!(literal.value, LiteralFact::Integer(Arc::from("7_i64")));
+    assert_eq!(fact.arms[2].pattern, EnumMatchPatternFact::Wildcard);
+}
+
+#[test]
+fn enum_match_materializes_nested_nominal_enum_patterns_with_exact_layouts() {
+    let source = "enum Inner { Value(i64 value), Empty } enum Outer { Wrap(Inner inner), None } bool Main(Outer outer) { return match outer { Outer::Wrap(Inner::Value(7_i64)) => true, Outer::Wrap(Inner::Empty) => false, Outer::None => false, }; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::MatchExpression, 0);
+    let inner_declaration = key(unit, generation, &index, NodeKind::EnumDefinition, 0);
+    let inner_layout = enum_layout(&db, inner_declaration).expect("inner layout query").expect("inner layout");
+    let fact = enum_match(&db, expression).expect("enum match query").expect("nested enum patterns");
+
+    let EnumMatchPatternFact::Enum(outer) = &fact.arms[0].pattern else {
+        panic!("outer pattern must be nominal");
+    };
+    let [EnumMatchPatternFact::Enum(inner)] = outer.items.as_ref() else {
+        panic!("outer payload must retain the nested enum pattern");
+    };
+    assert_eq!(inner.declaration, inner_declaration);
+    assert_eq!(inner.layout, inner_layout);
+    assert_eq!(inner.variant_index, 0);
+    assert!(matches!(inner.items.as_ref(), [EnumMatchPatternFact::ScalarLiteral(_)]));
+}
+
+#[test]
+fn enum_match_preserves_multi_field_payload_patterns_in_source_order() {
+    let source = "enum Pair { Both(i64 number, i64 marker), Empty } i64 Main(Pair pair) { return match pair { Pair::Both(number, 7_i64) => number, Pair::Both(_, _) => 0_i64, Pair::Empty => -1_i64, }; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::MatchExpression, 0);
+    let fact = enum_match(&db, expression).expect("enum match query").expect("multi-field enum match");
+
+    let EnumMatchPatternFact::Enum(both) = &fact.arms[0].pattern else {
+        panic!("Both arm must be an enum pattern");
+    };
+    let [EnumMatchPatternFact::Binding(number), EnumMatchPatternFact::ScalarLiteral(flag)] = both.items.as_ref() else {
+        panic!("multi-field payload patterns must retain source order: {:?}", both.items);
+    };
+    assert_eq!(number.payload, AggregateFieldShape::Scalar(SemanticTypeId::I64));
+    assert_eq!(flag.semantic_type, SemanticTypeId::I64);
+    assert_eq!(flag.value, LiteralFact::Integer(Arc::from("7_i64")));
+}
+
+#[test]
+fn enum_match_rejects_identifier_bindings_for_zero_sized_unit_payloads() {
+    let source = "enum Result { Ok(unit value), Error(i64 error) } bool Main(Result result) { return match result { Result::Ok(value) => true, Result::Error(_) => false, }; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let expression = key(unit, generation, &index, NodeKind::MatchExpression, 0);
+
+    assert_unavailable(enum_match(&db, expression));
 }

@@ -65,8 +65,11 @@ test synchronization_bounds_handles_and_teardown_are_deterministic {
     Assert.Equal(channel, 0, "first channel has a stable table index");
     Assert.Equal(ChannelTrySend(channel, 11), CHANNEL_STATUS_OK, "bounded channel accepts its first value");
     Assert.Equal(ChannelTrySend(channel, 12), CHANNEL_STATUS_WOULD_BLOCK, "full channel reports pressure without overwrite");
-    Assert.Equal(ChannelReceiveValue(channel), 11, "channel retains FIFO payload");
-    Assert.Equal(ChannelTryReceiveStatus(63), CHANNEL_STATUS_CLOSED, "uncreated channel handle fails closed");
+    Assert.Equal(ChannelTryReceive(channel), CHANNEL_STATUS_OK, "try receive atomically claims the first FIFO payload");
+    Assert.Equal(ChannelTryReceive(channel), CHANNEL_STATUS_WOULD_BLOCK, "a competing receive cannot claim the same payload");
+    Assert.Equal(ChannelReceiveValue(channel), 11, "the winning receive owns the claimed FIFO payload");
+    Assert.Equal(ChannelTryReceive(channel), CHANNEL_STATUS_WOULD_BLOCK, "empty channel reports WouldBlock");
+    Assert.Equal(ChannelTryReceive(63), CHANNEL_STATUS_CLOSED, "uncreated channel handle fails closed");
     ChannelClose(channel);
     Assert.Equal(ChannelTrySend(channel, 13), CHANNEL_STATUS_CLOSED, "closed channel rejects publication");
 
@@ -193,6 +196,23 @@ test channel_close_and_shutdown_drain_queued_pointer_handles {
     Assert.True(!GcHandlesClear(), "queued pointer remains rooted");
     ChannelClose(channel);
     Assert.True(GcHandlesClear(), "close drains and releases queued pointer handles");
+    SystemFree(descriptor, 40);
+    ShutdownSchedulerRuntime(runtime);
+}
+
+test channel_close_releases_an_unconsumed_pointer_receipt {
+    pointer runtime = InstallSchedulerRuntime();
+    pointer descriptor = SystemAllocate(40, 8);
+    memory_set(descriptor, 0, 40);
+    raw_word_store(descriptor, 24);
+    raw_word_store(pointer_add(descriptor, 8), 8);
+    pointer value = Alloc(24, descriptor);
+    i64 channel = ChannelCreate(2, 0);
+    Assert.Equal(ChannelTrySendPtr(channel, value), CHANNEL_STATUS_OK, "pointer publication owns a GC handle");
+    Assert.Equal(ChannelTryReceive(channel), CHANNEL_STATUS_OK, "atomic receive retains the pointer receipt");
+    Assert.True(!GcHandlesClear(), "unconsumed pointer receipt remains rooted");
+    ChannelClose(channel);
+    Assert.True(GcHandlesClear(), "close releases the unconsumed pointer receipt");
     SystemFree(descriptor, 40);
     ShutdownSchedulerRuntime(runtime);
 }

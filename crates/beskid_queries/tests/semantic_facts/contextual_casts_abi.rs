@@ -8,7 +8,8 @@ use std::sync::Arc;
 
 #[test]
 fn declared_integer_constant_uses_mutable_assignment_storage_abi() {
-    let source = "const DEFAULT_CAPACITY = 16; i64 Main(mut i64 capacity) { capacity = DEFAULT_CAPACITY; return capacity; }";
+    let source =
+        "const DEFAULT_CAPACITY = 16; i64 Main(mut i64 capacity) { capacity = DEFAULT_CAPACITY; return capacity; }";
     let (db, _project, unit, generation, index) = setup(source);
     let constant = key_at_start(
         unit,
@@ -115,6 +116,24 @@ fn binary_operand_abi_type_does_not_cross_explicit_numeric_conversion_boundary()
         primitive_numeric_conversion(&db, conversion).expect("conversion fact"),
         Some(beskid_queries::PrimitiveNumericConversion { from: SemanticTypeId::I32, to: SemanticTypeId::U8 })
     );
+}
+
+#[test]
+fn call_argument_abi_type_does_not_claim_literals_inside_compound_arguments() {
+    let source = "unit Accept(i64 value) { return; } unit Main() { Accept(1 + 2); return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let literal = key(unit, generation, &index, NodeKind::Literal, 0);
+
+    assert_unavailable(call_argument_abi_type(&db, literal));
+}
+
+#[test]
+fn call_argument_abi_type_accepts_a_bare_negative_integer_argument() {
+    let source = "unit Accept(i64 value) { return; } unit Main() { Accept(-1); return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let unary = key(unit, generation, &index, NodeKind::UnaryExpression, 0);
+
+    assert_eq!(call_argument_abi_type(&db, unary).expect("negative argument ABI"), Some(SemanticTypeId::I64));
 }
 
 #[test]

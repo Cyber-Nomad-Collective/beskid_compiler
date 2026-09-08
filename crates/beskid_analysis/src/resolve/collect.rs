@@ -46,7 +46,7 @@ pub(super) fn builtin_span() -> syntax::SpanInfo {
     syntax::SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) }
 }
 
-pub(super) fn use_imported_name(use_decl: &UseDeclaration) -> String {
+pub(crate) fn use_imported_name(use_decl: &UseDeclaration) -> String {
     use_decl.alias.as_ref().map(|alias| alias.node.name.clone()).unwrap_or_else(|| path_tail(&use_decl.path))
 }
 
@@ -109,15 +109,14 @@ impl Resolver {
         module_path: &[String],
         source_path: Option<&PathBuf>,
     ) {
+        self.module_imports.clear();
         self.current_source_path = source_path.map(|path| crate::paths::unit_path_key(path));
         if resolver::file_scoped_module_index(program).is_some() {
             self.collect_program(program);
             return;
         }
         self.current_module = self.module_graph.ensure_module_path(module_path);
-        for item in &program.node.items {
-            self.collect_item(item);
-        }
+        self.collect_items(&program.node.items, None);
     }
 
     pub fn collect_program(&mut self, program: &Spanned<crate::syntax::Program>) {
@@ -126,11 +125,21 @@ impl Resolver {
         self.current_module = resolver::file_scoped_module_path(program)
             .map(|path| self.module_graph.ensure_module_path(&path))
             .unwrap_or(self.module_graph.root());
-        for (index, item) in program.node.items.iter().enumerate() {
-            if Some(index) == file_scoped_module_index {
-                continue;
+        self.collect_items(&program.node.items, file_scoped_module_index);
+    }
+
+    /// Collect declarations before imports so a module-local declaration remains authoritative
+    /// regardless of whether its `use` declarations appear first in source order.
+    fn collect_items(&mut self, items: &[Spanned<Node>], excluded_index: Option<usize>) {
+        for (index, item) in items.iter().enumerate() {
+            if Some(index) != excluded_index && !matches!(item.node, Node::UseDeclaration(_)) {
+                self.collect_item(item);
             }
-            self.collect_item(item);
+        }
+        for (index, item) in items.iter().enumerate() {
+            if Some(index) != excluded_index && matches!(item.node, Node::UseDeclaration(_)) {
+                self.collect_item(item);
+            }
         }
     }
 
@@ -331,9 +340,7 @@ impl Resolver {
             module_path.push(def.node.name.node.name.clone());
             let child_module = self.module_graph.ensure_module_path(&module_path);
             self.current_module = child_module;
-            for nested in &def.node.items {
-                self.collect_item(nested);
-            }
+            self.collect_items(&def.node.items, None);
             self.current_module = previous_module;
         }
     }

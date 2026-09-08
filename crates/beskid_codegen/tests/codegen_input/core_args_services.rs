@@ -81,8 +81,8 @@ fn canonical_core_args_services_reach_codegen_input_with_exact_signatures() {
     assert!(input.corelib_service_capability().is_some());
     let facts = SyntaxNodeFacts::new(&input);
     for (name, symbol, parameters, result) in [
-        ("__args_count", "args_count", Vec::new(), SemanticTypeId::I64),
-        ("__args_get", "args_get", vec![SemanticTypeId::I64], SemanticTypeId::STRING),
+        ("__args_count", "beskid_rt_v5_args_count", Vec::new(), SemanticTypeId::I64),
+        ("__args_get", "beskid_rt_v5_args_get", vec![SemanticTypeId::I64], SemanticTypeId::STRING),
     ] {
         let call = find_node_matching(input.database(), root, IndexedNodeKind::CallExpression, |call| {
             call_is_named(&input, call, name)

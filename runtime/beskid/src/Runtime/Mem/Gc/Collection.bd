@@ -64,7 +64,7 @@ pub unit ResetMarkedObjects(pointer heap) {
             if ValidateTypeDescriptor(descriptor) == false { return; }
             size = ManagedObjectSize(cursor, descriptor);
             if size == 0 { return; }
-            raw_word_store(pointer_add(cursor, 8), GcMark::White);
+            raw_word_store(pointer_add(cursor, 8), GcMarkWhite());
         }
         if size < 16 || size % 8 != 0 { return; }
         cursor = NativePointer(NativeWord(cursor) + size);

@@ -3,8 +3,9 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    AggregateFieldShape, AstNodeKey, GenericSpecializationInstance, SemanticTypeId, aggregate_layout,
-    aggregate_literal_declaration, enum_constructor_specialization, enum_layout, enum_match,
+    AggregateFieldAccess, AggregateFieldShape, AggregateLayoutFact, AstNodeKey, GenericSpecializationInstance,
+    SemanticTypeId, aggregate_layout, aggregate_literal_declaration, aggregate_literal_layout,
+    aggregate_literal_specialization, enum_constructor_specialization, enum_layout, enum_match,
     generic_specialization_identity,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
@@ -108,6 +109,18 @@ impl CodegenInput<'_> {
     /// the allocation plan reserved.
     pub fn aggregate_object_layout(&self, declaration: AstNodeKey) -> Option<AggregateObjectLayout> {
         let aggregate = aggregate_layout(self.database(), declaration).ok().flatten()?;
+        self.aggregate_object_layout_from_fact(declaration, &aggregate)
+    }
+
+    pub fn aggregate_object_layout_for_access(&self, access: &AggregateFieldAccess) -> Option<AggregateObjectLayout> {
+        self.aggregate_object_layout_from_fact(access.declaration, &access.layout)
+    }
+
+    fn aggregate_object_layout_from_fact(
+        &self,
+        declaration: AstNodeKey,
+        aggregate: &AggregateLayoutFact,
+    ) -> Option<AggregateObjectLayout> {
         let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
         if header.size < 16 || !valid_alignment(header.alignment) {
             return None;
@@ -142,20 +155,45 @@ impl CodegenInput<'_> {
     }
 
     pub fn aggregate_static_plan(&self, literal: AstNodeKey) -> Option<AggregateStaticPlan> {
+        self.aggregate_static_plan_for_specialization(literal, None)
+    }
+
+    pub fn aggregate_static_plan_for_specialization(
+        &self,
+        literal: AstNodeKey,
+        specialization: Option<&GenericSpecializationInstance>,
+    ) -> Option<AggregateStaticPlan> {
         let declaration = aggregate_literal_declaration(self.database(), literal).ok().flatten()?;
         let descriptor = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidTypeDescriptor")?;
         let request = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAllocationRequest")?;
         if descriptor.size != 40 || descriptor.alignment != 8 || request.size != 24 || request.alignment != 8 {
             return None;
         }
-        let layout = self.aggregate_object_layout(declaration)?;
+        let specialized = specialization.and_then(|specialization| {
+            aggregate_literal_specialization(self.database(), literal, specialization.substitutions.clone())
+                .ok()
+                .flatten()
+        });
+        let aggregate =
+            specialized.clone().or_else(|| aggregate_literal_layout(self.database(), literal).ok().flatten())?;
+        let layout = self.aggregate_object_layout_from_fact(declaration, &aggregate)?;
         let unit = self
             .typed_program()
             .assembly
             .units
             .iter()
             .position(|unit| paths_match(&unit.path, literal.unit.path(self.database())))?;
-        let identity = format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), literal.generation.0, literal.node.0);
+        let specialization_identity = specialization
+            .filter(|_| specialized.is_some())
+            .map(generic_specialization_identity)
+            .map(|identity| identity.iter().map(u32::to_string).collect::<Vec<_>>().join("_"));
+        let identity = format!(
+            "{}_u{unit}_g{}_n{}{}",
+            artifact_namespace(self),
+            literal.generation.0,
+            literal.node.0,
+            specialization_identity.as_deref().map(|identity| format!("_s{identity}")).unwrap_or_default()
+        );
         Some(AggregateStaticPlan {
             literal,
             descriptor_symbol: format!("__beskid_aggregate_descriptor_{identity}"),

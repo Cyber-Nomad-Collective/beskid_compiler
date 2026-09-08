@@ -25,7 +25,9 @@ impl StringInterner for ArtifactStringInterner<'_> {
         let global = builder.func.create_global_value(GlobalValueData::Symbol {
             name: ExternalName::testcase(symbol),
             offset: 0.into(),
-            colocated: true,
+            // JIT code and readonly data use independent allocation arenas. Keep the literal
+            // address range-independent instead of promising an AArch64 ADRP-reachable target.
+            colocated: false,
             tls: false,
         });
         let bytes = builder.ins().global_value(self.pointer_type, global);
@@ -69,9 +71,7 @@ pub(super) fn runtime_intrinsic_symbols(input: &CodegenInput<'_>) -> HashMap<Dir
                         .find(|binding| binding.target == input.target().triple.as_str())
                         .map(|binding| binding.implementation.clone())
                         .unwrap_or_else(|| intrinsic.symbol.clone());
-                    u32::try_from(index)
-                        .ok()
-                        .map(|index| (DirectCallee::runtime_intrinsic(index), symbol))
+                    u32::try_from(index).ok().map(|index| (DirectCallee::runtime_intrinsic(index), symbol))
                 })
                 .collect()
         })
@@ -145,6 +145,13 @@ pub(super) fn corelib_service_symbols(
         for service in capability.services() {
             if callees.contains(&service.symbol) && !ALWAYS_AVAILABLE_STRING_SERVICES.contains(&service.symbol) {
                 symbols.insert(DirectCallee::corelib_service(service.symbol), service.symbol.to_owned());
+                if let Some(dispatch) = beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(*service)
+                {
+                    symbols.insert(
+                        DirectCallee::corelib_service(dispatch.managed_symbol),
+                        dispatch.managed_symbol.to_owned(),
+                    );
+                }
             }
         }
     }

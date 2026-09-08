@@ -5,9 +5,9 @@ impl IsleContext<'_, '_, '_, '_> {
     /// lowering the expression child so temporary struct literals still work.
     pub(super) fn field_base_pointer(&mut self, field_key: AstNodeKey) -> Option<Value> {
         let base = if let Some(receiver_slot) = self.facts.field_receiver_slot(field_key) {
-            let (receiver, receiver_type) = self.locals.get(&receiver_slot).copied()?;
-            let base = self.builder.use_var(receiver);
-            if self.builder.func.dfg.value_type(base) != receiver_type {
+            let receiver = self.locals.get(&receiver_slot).copied()?;
+            let base = self.builder.use_var(receiver.variable);
+            if self.builder.func.dfg.value_type(base) != receiver.value_type {
                 return None;
             }
             base

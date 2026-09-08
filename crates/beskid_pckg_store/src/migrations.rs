@@ -30,6 +30,10 @@ pub const CREATE_REGISTRY_OPERATIONS: &str = include_str!("../migrations/0009_cr
 pub const CREATE_PACKAGE_COMMUNITY_REVIEWS: &str =
     include_str!("../migrations/0010_create_package_community_reviews.sql");
 
+/// Adds registry-owned package metadata while deterministically projecting
+/// pre-migration rows as an empty description, General category and no tags.
+pub const ADD_PACKAGE_METADATA: &str = include_str!("../migrations/0011_add_package_metadata.sql");
+
 pub const ALL: &[(&str, &str)] = &[
     ("0001_create_package_registry", CREATE_PACKAGE_REGISTRY),
     ("0005_create_api_keys", CREATE_API_KEYS),
@@ -37,6 +41,7 @@ pub const ALL: &[(&str, &str)] = &[
     ("0008_create_package_review_queue", CREATE_PACKAGE_REVIEW_QUEUE),
     ("0009_create_registry_operations", CREATE_REGISTRY_OPERATIONS),
     ("0010_create_package_community_reviews", CREATE_PACKAGE_COMMUNITY_REVIEWS),
+    ("0011_add_package_metadata", ADD_PACKAGE_METADATA),
 ];
 
 impl SqlxPackageRepository {

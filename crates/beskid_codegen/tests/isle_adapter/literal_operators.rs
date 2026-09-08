@@ -61,6 +61,42 @@ fn parsed_u8_comparison_coerces_integer_literals_without_hir() {
 }
 
 #[test]
+fn parsed_f64_comparison_lowers_when_nested_in_a_boolean_call_argument() {
+    let (input, isa, root) = item_fixture_with_root(
+        "unit Accept(bool value) { return; } unit Main() { f64 value = 0.5; Accept(value >= 0.0); return; }",
+    );
+    let functions = find_function_definitions(input.database(), root);
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: functions[0], symbol: "Accept".into() },
+            SyntaxModuleItem { key: functions[1], symbol: "Main".into() },
+        ],
+    )
+    .expect("an f64 comparison used as a bool argument lowers through syntax facts");
+
+    let main =
+        artifact.functions.iter().find(|function| function.name.starts_with("Main")).expect("lowered Main function");
+    assert!(main.function.display().to_string().contains("fcmp"));
+}
+
+#[test]
+fn explicit_i64_to_f64_conversion_lowers_through_the_numeric_conversion_construct() {
+    let (input, isa, item) = item_fixture(
+        "f64 Main(mut i64 raw) { if raw < 0 { raw = -raw; } f64 result = f64(raw); return result / 9223372036854775808.0; }",
+    );
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("an explicit signed-integer to f64 conversion lowers through syntax facts");
+    let clif = function.display().to_string();
+    assert!(clif.contains("fcvt_from_sint.f64"), "{clif}");
+    assert!(clif.contains("fdiv"), "{clif}");
+    assert!(!clif.contains("sdiv"), "floating-point division must not use the integer path: {clif}");
+}
+
+#[test]
 fn parsed_short_circuit_comparison_materializes_a_declared_integer_constant() {
     let (input, isa, item) = item_fixture(
         "const CAPACITY = 64; bool Main(word slot, word count) { return slot >= count || slot >= CAPACITY; }",

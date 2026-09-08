@@ -193,18 +193,6 @@ macro_rules! generated_operator_methods {
             let (left, right) = self.common_bitwise_operands(left, right);
             self.builder.ins().ushr(left, right)
         }
-        fn clif_sdiv(&mut self, left: Value, right: Value) -> Value {
-            if self.builder.func.dfg.value_type(left).is_float() {
-                self.builder.ins().fdiv(left, right)
-            } else {
-                let (left, right) = self.common_integer_operands(left, right);
-                let ty = self.builder.func.dfg.value_type(left);
-                let zero = self.builder.ins().iconst(ty, 0);
-                let is_zero = self.builder.ins().icmp(IntCC::Equal, right, zero);
-                self.builder.ins().trapnz(is_zero, TrapCode::INTEGER_DIVISION_BY_ZERO);
-                self.builder.ins().sdiv(left, right)
-            }
-        }
         fn clif_srem(&mut self, left: Value, right: Value) -> Option<Value> {
             let ty = self.builder.func.dfg.value_type(left);
             if ty.is_float() {
@@ -218,6 +206,9 @@ macro_rules! generated_operator_methods {
             Some(self.builder.ins().srem(left, right))
         }
         fn clif_div_trapz(&mut self, value: Value, divisor: Value) -> Value {
+            if let Some((value, divisor)) = self.common_float_operands(value, divisor) {
+                return self.builder.ins().fdiv(value, divisor);
+            }
             let (value, divisor) = self.common_integer_operands(value, divisor);
             let ty = self.builder.func.dfg.value_type(value);
             let zero = self.builder.ins().iconst(ty, 0);
@@ -361,6 +352,13 @@ macro_rules! generated_operator_methods {
             }
             if actual == target {
                 return Some(value);
+            }
+            if actual.is_int() && target == cranelift_codegen::ir::types::F64 {
+                return Some(if from == beskid_queries::SemanticTypeId::U8 {
+                    self.builder.ins().fcvt_from_uint(target, value)
+                } else {
+                    self.builder.ins().fcvt_from_sint(target, value)
+                });
             }
             if !actual.is_int() || !target.is_int() {
                 self.pending_error = Some(LoweringError {

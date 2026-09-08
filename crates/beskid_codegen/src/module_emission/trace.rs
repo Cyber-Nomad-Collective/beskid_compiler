@@ -2,9 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use beskid_isle::{AstNodeKey, DirectCallee};
 use beskid_queries::{
-    CallLowering, GenericSpecializationInstance, SemanticTypeId, call_lowering, child_nodes, format_ast_node_key,
-    format_ast_node_trace, generic_call_specialization, generic_specialization_identity, item_name, node_kind,
-    node_span,
+    CallLowering, SemanticTypeId, call_lowering, child_nodes, format_ast_node_key, format_ast_node_trace,
+    generic_call_specialization, generic_call_specialization_instance, generic_specialization_identity, item_name,
+    node_kind, node_span,
 };
 
 use crate::CodegenInput;
@@ -56,14 +56,11 @@ fn trace_node_facts(
                 let callee = generic_call_specialization(db, key)
                     .ok()
                     .flatten()
+                    .and_then(|specialization| generic_call_specialization_instance(db, specialization).ok().flatten())
                     .map(|specialization| {
                         DirectCallee::specialized_item(
                             specialization.declaration,
-                            generic_specialization_identity(&GenericSpecializationInstance {
-                                declaration: specialization.declaration,
-                                signature: specialization.signature.clone(),
-                                substitutions: specialization.substitutions.clone(),
-                            }),
+                            generic_specialization_identity(&specialization),
                         )
                     })
                     .unwrap_or_else(|| DirectCallee::item(declaration));

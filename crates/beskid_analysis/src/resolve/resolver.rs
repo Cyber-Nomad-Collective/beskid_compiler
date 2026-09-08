@@ -75,7 +75,7 @@ pub fn resolve_program_traced(program: &Spanned<Program>, ctx: ResolveTraceConte
     Resolver::new().resolve_program(program)
 }
 
-pub(super) fn path_segments(path: &Spanned<crate::syntax::Path>) -> Vec<String> {
+pub(crate) fn path_segments(path: &Spanned<crate::syntax::Path>) -> Vec<String> {
     path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect()
 }
 

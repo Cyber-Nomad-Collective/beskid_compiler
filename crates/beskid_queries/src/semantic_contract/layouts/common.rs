@@ -107,9 +107,10 @@ pub(in crate::semantic_contract) fn abi_type_for_local_path(
                 return Ok(SemanticTypeId::WORD);
             }
             let access = aggregate_field_access(db, key)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-            let layout =
-                aggregate_layout(db, access.declaration)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-            match layout.fields.get(usize::try_from(access.index).map_err(|_| SemanticError::unavailable("abi_type"))?)
+            match access
+                .layout
+                .fields
+                .get(usize::try_from(access.index).map_err(|_| SemanticError::unavailable("abi_type"))?)
             {
                 Some((_, AggregateFieldShape::Scalar(semantic))) => Ok(*semantic),
                 Some((_, AggregateFieldShape::Nominal(_))) => Ok(SemanticTypeId::POINTER),
@@ -266,6 +267,8 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
                 .into_iter()
                 .filter_map(|target| unique_exported_type_in_unit(db, target, key.generation, name, generic_arity)),
         );
+        let mut seen = HashSet::new();
+        candidates.retain(|candidate| seen.insert(*candidate));
         let [declaration] = candidates.as_slice() else {
             return None;
         };

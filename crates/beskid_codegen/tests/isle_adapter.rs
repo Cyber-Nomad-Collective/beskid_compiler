@@ -8,8 +8,12 @@ mod corelib_services;
 mod diagnostics_fail_closed;
 #[path = "isle_adapter/enum_match_result.rs"]
 mod enum_match_result;
+#[path = "isle_adapter/importer_relocations.rs"]
+mod importer_relocations;
 #[path = "isle_adapter/literal_operators.rs"]
 mod literal_operators;
+#[path = "isle_adapter/managed_references.rs"]
+mod managed_references;
 #[path = "isle_adapter/memory_aggregate_arrays.rs"]
 mod memory_aggregate_arrays;
 #[path = "isle_adapter/method_owned_fields.rs"]

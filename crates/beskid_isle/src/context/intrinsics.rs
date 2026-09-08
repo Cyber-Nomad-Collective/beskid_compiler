@@ -227,7 +227,9 @@ macro_rules! generated_intrinsic_methods {
                     let function = self.builder.func.import_function(ExtFuncData {
                         name: ExternalName::testcase("__beskid_scheduler_fiber_entry"),
                         signature,
-                        colocated: true,
+                        // JIT function allocations are not guaranteed to remain within the
+                        // AArch64 ADRP range, even when both functions belong to one module.
+                        colocated: false,
                         patchable: false,
                     });
                     self.builder.ins().func_addr(result, function)
@@ -238,7 +240,9 @@ macro_rules! generated_intrinsic_methods {
                     let function = self.builder.func.import_function(ExtFuncData {
                         name: ExternalName::testcase("__beskid_scheduler_return_trampoline"),
                         signature,
-                        colocated: true,
+                        // Materialize this address with a range-independent relocation for the
+                        // same reason as the fiber-entry address above.
+                        colocated: false,
                         patchable: false,
                     });
                     self.builder.ins().func_addr(result, function)

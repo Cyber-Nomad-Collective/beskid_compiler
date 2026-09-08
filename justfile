@@ -49,14 +49,24 @@ replace:
       lsp_dest="${HOME}/.beskid/bin/beskid_lsp"
     fi
     mkdir -p "$(dirname "${cli_dest}")" "$(dirname "${lsp_dest}")"
-    BESKID_RUNTIME_PREFIX="${root}/target/native-runtime-kit" \
+    cli_bin_dir="$(cd "$(dirname "${cli_dest}")" && pwd)"
+    if [[ "$(basename "${cli_bin_dir}")" != "bin" ]]; then
+      echo "Cannot install runtime kit: CLI destination must use <prefix>/bin, got ${cli_dest}" >&2
+      exit 1
+    fi
+    install_prefix="$(dirname "${cli_bin_dir}")"
+    BESKID_RUNTIME_PREFIX="${install_prefix}" \
       BESKID_RUNTIME_KIT_PROFILE=release \
       BESKID_CLI_BIN="${cli_built}" \
       bash "${root}/scripts/stage-native-runtime-kit.sh"
+    BESKID_CORELIB_ROOT="${install_prefix}/beskid_corelib" \
+      "${cli_built}" corelib --output "${install_prefix}/beskid_corelib"
     install -m 0755 "${cli_built}" "${cli_dest}"
     install -m 0755 "${lsp_built}" "${lsp_dest}"
     echo "Replaced ${cli_dest}"
     echo "Replaced ${lsp_dest}"
+    echo "Installed runtime kit under ${install_prefix}"
+    echo "Installed corelib under ${install_prefix}/beskid_corelib"
 
 # Worktree tip: to share one target dir across git worktrees and avoid rebuilding per worktree,
 # run: CARGO_TARGET_DIR=$PWD/target cargo check   (or export it in your shell)

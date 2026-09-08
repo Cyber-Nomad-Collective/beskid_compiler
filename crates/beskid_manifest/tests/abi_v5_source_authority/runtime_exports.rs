@@ -49,13 +49,17 @@ fn source_exports(root: &Path) -> BTreeMap<String, (Vec<String>, String)> {
             let declaration = declaration.strip_prefix("pub ").expect("Export must own a public function");
             let (result, remainder) = declaration.split_once(' ').expect("Export result type");
             let params_start = remainder.find('(').expect("Export parameter list") + 1;
-            let params_end = remainder.rfind(')').expect("Export parameter list end");
+            let params_end = remainder[params_start..].find(')').expect("Export parameter list end") + params_start;
             let params = remainder[params_start..params_end]
                 .split(',')
                 .filter_map(|parameter| {
                     let parameter = parameter.trim();
-                    (!parameter.is_empty())
-                        .then(|| source_type(parameter.split_whitespace().next().unwrap()).to_owned())
+                    (!parameter.is_empty()).then(|| {
+                        let mut tokens = parameter.split_whitespace();
+                        let first = tokens.next().expect("Export parameter type");
+                        let ty = if first == "mut" { tokens.next().expect("mutable Export parameter type") } else { first };
+                        source_type(ty).to_owned()
+                    })
                 })
                 .collect::<Vec<_>>();
             assert!(

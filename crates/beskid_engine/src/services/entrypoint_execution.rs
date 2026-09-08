@@ -1,7 +1,7 @@
 use anyhow::Result;
 use beskid_analysis::services::{FrontEndOptions, ResolvedInput};
 use beskid_pipeline::PipelineObserver;
-use beskid_queries::with_db;
+use beskid_queries::BeskidDatabase;
 
 use super::SyntaxEntrypointArtifact;
 use super::jit_preparation::lower_syntax_entrypoint_from_front_end;
@@ -62,9 +62,12 @@ pub fn run_entrypoint_from_front_end_with_engine(
     entrypoint: &str,
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<String> {
-    let syntax_entrypoint = with_db(|db| {
-        lower_syntax_entrypoint_from_front_end(db, front, entrypoint, engine.target_metadata().clone(), pipeline)
-    })?;
+    // Prepared front ends carry immutable generation-bound syntax assemblies. Lower each one in
+    // an isolated query database so two matrix targets that share unchanged dependency sources
+    // cannot relabel those sources with each other's generation.
+    let mut db = BeskidDatabase::default();
+    let syntax_entrypoint =
+        lower_syntax_entrypoint_from_front_end(&mut db, front, entrypoint, engine.target_metadata().clone(), pipeline)?;
 
     // `source_name` and `source` remain part of the public API for compatibility with callers
     // that share this service with diagnostic paths. The production handoff below exclusively

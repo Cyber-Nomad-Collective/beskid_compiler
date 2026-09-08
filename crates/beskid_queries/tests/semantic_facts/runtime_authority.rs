@@ -1,7 +1,8 @@
 use super::support::{key, setup};
 use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 use beskid_abi::runtime_source::{
-    CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, canonical_corelib_service_source_path,
+    CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, canonical_corelib_service_capability,
+    canonical_corelib_service_source_path, canonical_corelib_service_sources,
     canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources,
 };
 use beskid_analysis::projects::{
@@ -11,8 +12,8 @@ use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
     AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    build_canonical_corelib_syscall_typed_program, build_typed_program_with_corelib_syscall_services, call_lowering,
-    runtime_intrinsic,
+    build_canonical_corelib_syscall_typed_program, build_typed_program_with_corelib_services,
+    build_typed_program_with_corelib_syscall_services, call_lowering, runtime_intrinsic,
 };
 use std::sync::Arc;
 
@@ -31,6 +32,81 @@ fn runtime_intrinsic_uses_the_manifest_owned_builtin_index() {
     assert_eq!(
         call_lowering(&db, call).expect("manifest builtin call lowering"),
         Some(beskid_queries::CallLowering::Dynamic)
+    );
+}
+
+#[test]
+fn canonical_concurrency_facade_gets_service_authority_but_copied_source_does_not() {
+    let source = canonical_corelib_service_sources()
+        .into_iter()
+        .find(|source| source.logical_path == CANONICAL_CORELIB_CHANNEL_SOURCE_PATH)
+        .expect("embedded concurrency Channel source");
+    let canonical_path = canonical_corelib_service_source_path(CANONICAL_CORELIB_CHANNEL_SOURCE_PATH)
+        .expect("canonical concurrency Channel path");
+    let program = parse_program(&source.source).expect("parse concurrency Channel source");
+    let generation = SyntaxGenerationId(75);
+    let index = SyntaxIndex::from_program(&program, generation);
+    let target = TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+
+    let mut db = BeskidDatabase::default();
+    let source_root = canonical_path.ancestors().nth(2).expect("concurrency source root").to_path_buf();
+    let project = ProjectSession::new(
+        &db,
+        source_root.clone(),
+        canonical_path.clone(),
+        "beskid-concurrency".into(),
+        "canonical-concurrency-source".into(),
+    );
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots { host: RootEntry { dependency_name: None, source_root }, dependencies: Vec::new() },
+        Arc::new(vec![SourceUnit {
+            logical_name: CANONICAL_CORELIB_CHANNEL_SOURCE_PATH.into(),
+            path: canonical_path.clone(),
+            source: source.source.clone(),
+            program: program.clone(),
+        }]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    build_typed_program_with_corelib_services(
+        &mut db,
+        project,
+        generation,
+        assembly,
+        canonical_corelib_service_capability(&manifest).expect("Corelib service authority"),
+    )
+    .expect("canonical concurrency facade obtains service authority");
+    let unit = SourceUnitId::new(&db, canonical_path);
+    let create = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .find(|key| {
+            matches!(
+                call_lowering(&db, *key),
+                Ok(Some(beskid_queries::CallLowering::CorelibService(service)))
+                    if service.name == "__channel_create"
+            )
+        })
+        .expect("authorized Channel create call");
+    assert!(matches!(
+        call_lowering(&db, create).expect("Channel service lowering"),
+        Some(beskid_queries::CallLowering::CorelibService(_))
+    ));
+
+    let (ordinary_db, _project, ordinary_unit, ordinary_generation, ordinary_index) =
+        setup("i64 Main() { return __channel_create(0, 0); }");
+    let ordinary_call = key(ordinary_unit, ordinary_generation, &ordinary_index, NodeKind::CallExpression, 0);
+    assert_eq!(
+        call_lowering(&ordinary_db, ordinary_call).expect("ordinary Channel spelling"),
+        Some(beskid_queries::CallLowering::Dynamic),
+        "application source must not acquire concurrency service authority"
     );
 }
 

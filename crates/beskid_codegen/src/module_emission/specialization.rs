@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use beskid_isle::{AstNodeKey, DirectCallee};
 use beskid_queries::{
-    CallLowering, GenericSpecializationInstance, GenericSubstitution, call_lowering, child_nodes,
-    generic_call_specialization, generic_call_template, generic_specialization_identity,
-    generic_specialization_instance, item_abi_signature, node_kind,
+    CallLowering, GenericSpecializationInstance, call_lowering, child_nodes, generic_call_specialization,
+    generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_identity,
+    item_abi_signature, node_kind,
 };
 
 use super::contracts::{SyntaxModuleEmissionError, emission_verification};
@@ -162,39 +162,13 @@ fn collect_generic_call_specializations_in_environment(
             beskid_queries::format_ast_node_site(db, key)
         ))
     })? {
-        let specialization = if let Some(template) =
-            generic_call_template(db, key).map_err(|error| emission_verification(error.to_string()))?
-        {
-            let enclosing = environment.ok_or_else(|| {
-                emission_verification(format!(
-                    "generic call template has no enclosing specialization: call={} declaration={}",
-                    trace_key(db, key),
-                    format_declaration_for_trace(db, declaration)
-                ))
-            })?;
-            let bindings = template
-                .parameters
-                .iter()
-                .zip(template.parameter_arguments.iter())
-                .map(|(target, argument)| {
-                    enclosing
-                        .substitutions
-                        .iter()
-                        .find(|binding| binding.parameter.as_ref() == argument.as_ref())
-                        .cloned()
-                        .map(|binding| GenericSubstitution { parameter: target.clone(), argument: binding.argument })
-                })
-                .collect::<Option<Vec<_>>>()
-                .ok_or_else(|| {
-                    emission_verification(format!(
-                        "nested generic call references an unbound parameter: call={} declaration={}",
-                        trace_key(db, key),
-                        format_declaration_for_trace(db, declaration)
-                    ))
-                })?;
-            generic_specialization_instance(db, template.declaration, bindings.into())
-                .map_err(|error| emission_verification(error.to_string()))?
-                .ok_or_else(|| emission_verification("nested generic specialization is unavailable"))?
+        let environment_specialization = environment
+            .map(|enclosing| generic_call_specialization_in_environment(db, key, enclosing))
+            .transpose()
+            .map_err(|error| emission_verification(error.to_string()))?
+            .flatten();
+        let specialization = if let Some(specialization) = environment_specialization {
+            specialization
         } else {
             let specialization = generic_call_specialization(db, key)
                 .map_err(|error| {
@@ -211,11 +185,9 @@ fn collect_generic_call_specializations_in_environment(
                         format_declaration_for_trace(db, declaration)
                     ))
                 })?;
-            GenericSpecializationInstance {
-                declaration: specialization.declaration,
-                signature: specialization.signature,
-                substitutions: specialization.substitutions,
-            }
+            generic_call_specialization_instance(db, specialization)
+                .map_err(|error| emission_verification(error.to_string()))?
+                .ok_or_else(|| emission_verification("generic call specialization identity is unavailable"))?
         };
         if specialization.declaration != declaration {
             return Err(emission_verification(format!(

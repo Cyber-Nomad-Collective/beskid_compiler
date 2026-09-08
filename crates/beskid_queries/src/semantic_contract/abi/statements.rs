@@ -90,12 +90,36 @@ fn assignment_abi_type(
     if !matches!(assignment.op.node, beskid_analysis::syntax::AssignOp::Assign) {
         return Err(SemanticError::unavailable("value_abi_type"));
     }
-    let storage = match mutable_local_assignment(db, key)? {
-        Some(write) => abi_type(db, write.declaration)?.ok_or_else(|| SemanticError::unavailable("value_abi_type"))?,
-        None => array_index_element_abi_type(db, key)?.ok_or_else(|| SemanticError::unavailable("value_abi_type"))?,
-    };
+    let storage = assignment_storage_abi_type(db, program, index, key, assignment)?;
     let value = direct_expression_key(program, index, key, assignment.value.as_ref())?;
     require_exact_value_type(db, value, storage)
+}
+
+pub(super) fn assignment_storage_abi_type(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    assignment: &beskid_analysis::syntax::AssignExpression,
+) -> Result<SemanticTypeId, SemanticError> {
+    if let Some(write) = mutable_local_assignment(db, key)? {
+        return abi_type(db, write.declaration)?.ok_or_else(|| SemanticError::unavailable("value_abi_type"));
+    }
+
+    let target = direct_expression_key(program, index, key, assignment.target.as_ref())?;
+    if let Some(access) = aggregate_field_access(db, target)? {
+        return access
+            .layout
+            .fields
+            .get(usize::try_from(access.index).map_err(|_| SemanticError::unavailable("value_abi_type"))?)
+            .map(|(_, shape)| match shape {
+                AggregateFieldShape::Scalar(semantic) => *semantic,
+                AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+            })
+            .ok_or_else(|| SemanticError::unavailable("value_abi_type"));
+    }
+
+    array_index_element_abi_type(db, key)?.ok_or_else(|| SemanticError::unavailable("value_abi_type"))
 }
 
 fn direct_expression_key(

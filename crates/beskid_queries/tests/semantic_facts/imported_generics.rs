@@ -916,7 +916,7 @@ pub type List<T> {
     let specialized = enum_constructor_specialization(
         &db,
         constructor,
-        Arc::from([GenericSubstitution { parameter: Arc::from("T"), argument: SemanticTypeId::I64 }]),
+        Arc::from([GenericSubstitution::inferred("T", SemanticTypeId::I64)]),
     )
     .expect("generic Result constructor specialization query")
     .expect("generic Result constructor specialization");

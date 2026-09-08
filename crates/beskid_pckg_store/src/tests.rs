@@ -3,7 +3,8 @@ use super::api_keys::{
     validate_release_publisher_key_sha256,
 };
 use super::{
-    InMemoryPackageRepository, NewPackage, PackageRepository, PublishOutcome, PublishVersion, StoreError, migrations,
+    InMemoryPackageRepository, NewPackage, PackageMetadata, PackageRepository, PublishOutcome, PublishVersion,
+    StoreError, migrations,
 };
 
 const CHECKSUM: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -14,6 +15,14 @@ fn package_request() -> NewPackage {
         name: "beskid.demo".into(),
         owner_subject: "octocat".into(),
         is_public: true,
+        metadata: PackageMetadata {
+            description: "A package used by registry tests.".into(),
+            category: "Library".into(),
+            repository_url: Some("https://example.test/beskid.demo".into()),
+            website_url: Some("https://example.test".into()),
+            tags: vec!["beskid".into(), "demo".into()],
+            icon_url: Some("https://example.test/icon.svg".into()),
+        },
         now_unix_seconds: 100,
     }
 }
@@ -50,6 +59,31 @@ fn package_names_are_unique() {
 }
 
 #[test]
+fn package_metadata_is_persisted_by_the_repository_contract() {
+    let mut repository = InMemoryPackageRepository::default();
+    let package = repository.create_package(package_request()).unwrap();
+
+    assert_eq!(package.metadata, package_request().metadata);
+    assert_eq!(repository.find_package("beskid.demo").unwrap().metadata, package_request().metadata);
+}
+
+#[test]
+fn package_metadata_rejects_unsafe_urls_and_ambiguous_tags() {
+    let mut repository = InMemoryPackageRepository::default();
+    let mut unsafe_url = package_request();
+    unsafe_url.metadata.website_url = Some("javascript:alert(1)".into());
+    assert_eq!(repository.create_package(unsafe_url), Err(StoreError::InvalidPackageMetadata));
+
+    let mut missing_host = package_request();
+    missing_host.metadata.repository_url = Some("https://?missing-host".into());
+    assert_eq!(repository.create_package(missing_host), Err(StoreError::InvalidPackageMetadata));
+
+    let mut duplicate_tags = package_request();
+    duplicate_tags.metadata.tags = vec!["compiler".into(), "compiler".into()];
+    assert_eq!(repository.create_package(duplicate_tags), Err(StoreError::InvalidPackageMetadata));
+}
+
+#[test]
 fn publish_is_idempotent_only_for_matching_checksum() {
     let mut repository = InMemoryPackageRepository::default();
     repository.create_package(package_request()).unwrap();
@@ -80,6 +114,14 @@ fn migration_has_database_enforced_immutability_keys() {
     assert!(migrations::CREATE_PACKAGE_REGISTRY.contains("UNIQUE (name)"));
     assert!(migrations::CREATE_PACKAGE_REGISTRY.contains("UNIQUE (package_id, version)"));
     assert!(migrations::CREATE_PACKAGE_REGISTRY.contains("manifest_json"));
+}
+
+#[test]
+fn package_metadata_migration_preserves_existing_rows_with_deterministic_defaults() {
+    assert!(migrations::ADD_PACKAGE_METADATA.contains("description TEXT NOT NULL DEFAULT ''"));
+    assert!(migrations::ADD_PACKAGE_METADATA.contains("category TEXT NOT NULL DEFAULT 'General'"));
+    assert!(migrations::ADD_PACKAGE_METADATA.contains("tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]"));
+    assert!(migrations::ALL.iter().any(|(name, _)| *name == "0011_add_package_metadata"));
 }
 
 #[test]

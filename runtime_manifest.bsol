@@ -439,7 +439,7 @@ corelib_service "__fiber_spawn" {
 
 corelib_service "__fiber_cancel" {
   adapter = "fiber_cancel"
-  params = [{ name = fiberId, type = i64 }]
+  params = [{ name = fiberId, type = i64 }, { name = reason, type = i64 }]
   returns = u8
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "fiber_cancel", os_imports = [] },
@@ -1089,7 +1089,7 @@ corelib_service "__channel_receive_value" {
 corelib_service "__channel_try_receive" {
   adapter = "channel_try_receive"
   params = [{ name = id, type = i64 }]
-  returns = u8
+  returns = i64
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "channel_try_receive", os_imports = [] },
     { target = "aarch64-apple-darwin", implementation = "channel_try_receive", os_imports = [] },
@@ -1138,17 +1138,6 @@ corelib_service "__channel_receive_ptr" {
     { target = "x86_64-unknown-linux-gnu", implementation = "channel_receive_ptr", os_imports = [] },
     { target = "aarch64-apple-darwin", implementation = "channel_receive_ptr", os_imports = [] },
     { target = "x86_64-pc-windows-msvc", implementation = "channel_receive_ptr", os_imports = [] }
-  ]
-}
-
-corelib_service "__channel_try_receive_ptr" {
-  adapter = "channel_try_receive_ptr"
-  params = [{ name = id, type = i64 }]
-  returns = pointer
-  target_bindings = [
-    { target = "x86_64-unknown-linux-gnu", implementation = "channel_try_receive_ptr", os_imports = [] },
-    { target = "aarch64-apple-darwin", implementation = "channel_try_receive_ptr", os_imports = [] },
-    { target = "x86_64-pc-windows-msvc", implementation = "channel_try_receive_ptr", os_imports = [] }
   ]
 }
 

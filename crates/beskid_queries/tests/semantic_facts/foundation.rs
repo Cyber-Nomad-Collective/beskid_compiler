@@ -42,10 +42,7 @@ fn primitive_numeric_conversion_uses_the_declared_integer_constant_value_type() 
 
     assert_eq!(
         primitive_numeric_conversion(&db, conversion).expect("constant conversion fact"),
-        Some(beskid_queries::PrimitiveNumericConversion {
-            from: SemanticTypeId::WORD,
-            to: SemanticTypeId::I32,
-        })
+        Some(beskid_queries::PrimitiveNumericConversion { from: SemanticTypeId::WORD, to: SemanticTypeId::I32 })
     );
 }
 
@@ -113,7 +110,7 @@ fn try_expression_fact_rejects_result_with_swapped_payload_and_error_representat
 }
 
 #[test]
-fn generic_specialization_identity_distinguishes_high_generation_bits() {
+fn generic_specialization_identity_is_reproducible_across_syntax_generations() {
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Generic.bd"));
     let instance = |generation| GenericSpecializationInstance {
@@ -122,6 +119,7 @@ fn generic_specialization_identity_distinguishes_high_generation_bits() {
             generation: SyntaxGenerationId(generation),
             node: beskid_analysis::syntax::AstNodeId(7),
         },
+        declaration_identity: Arc::from("Core::Identity"),
         signature: ItemSignature { parameters: Arc::from([SemanticTypeId::I64]), result: SemanticTypeId::I64 },
         substitutions: Arc::from([]),
     };
@@ -129,5 +127,9 @@ fn generic_specialization_identity_distinguishes_high_generation_bits() {
     let low = generic_specialization_identity(&instance(1));
     let high = generic_specialization_identity(&instance((1_u64 << 32) | 1));
 
-    assert_ne!(low, high, "distinct syntax generations must not share a specialized module identity");
+    assert_eq!(low, high, "process-local syntax generations must not leak into emitted module identity");
+
+    let mut distinct = instance(1);
+    distinct.declaration_identity = Arc::from("Core::DistinctIdentity");
+    assert_ne!(low, generic_specialization_identity(&distinct), "distinct declarations must not alias");
 }

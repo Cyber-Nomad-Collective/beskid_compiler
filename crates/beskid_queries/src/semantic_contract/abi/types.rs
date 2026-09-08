@@ -2,6 +2,7 @@
 
 use super::super::*;
 use super::statement_abi_type_for_node;
+use super::statements::assignment_storage_abi_type;
 
 /// Prove an ABI representation for one unsuffixed integer literal at an exact declared boundary:
 /// an explicitly typed local, mutable-local assignment, enum-variant payload, or nominal
@@ -77,10 +78,8 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
                     if integer_literal_text(db, value)?.is_none() && contextual_constant_integer(db, value)?.is_none() {
                         return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
                     }
-                    let write = mutable_local_assignment(db, parent_key)?
-                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
-                    let expected = abi_type(db, write.declaration)?
-                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
+                    let expected = assignment_storage_abi_type(db, program, index, parent_key, assignment)
+                        .map_err(|_| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
                     return (contextual_constant_integer(db, value)?.is_some()
                         || integer_literal_fits_abi(db, value, expected)?)
                     .then_some(expected)
@@ -177,26 +176,17 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
                         return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
                     }
                     let literal_key = AstNodeKey { node: literal_node, ..key };
-                    let declaration = aggregate_literal_declaration(db, literal_key)?
+                    let layout = aggregate_literal_layout(db, literal_key)?
                         .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
-                    let declaration_syntax = db
-                        .syntax_unit(declaration.unit)
-                        .filter(|unit| unit.generation(db) == declaration.generation)
-                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
-                    let definition = declaration_syntax
-                        .syntax_index(db)
-                        .node_at(declaration_syntax.expanded_program(db), declaration.node)
-                        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
-                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
-                    let declared = definition
+                    let expected = layout
                         .fields
                         .iter()
-                        .find(|candidate| {
-                            candidate.node.kind == beskid_analysis::syntax::FieldKind::Value
-                                && candidate.node.name.node.name == field.name.node.name
+                        .find(|(name, _)| name.as_ref() == field.name.node.name)
+                        .and_then(|(_, shape)| match shape {
+                            AggregateFieldShape::Scalar(semantic) => Some(*semantic),
+                            AggregateFieldShape::Nominal(_) => None,
                         })
                         .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
-                    let expected = abi_type_from_syntax(db, declaration, &declared.node.ty.node)?;
                     return (primitive_integer(expected)
                         && (contextual_constant_integer(db, value)?.is_some()
                             || integer_literal_fits_abi(db, value, expected)?))
@@ -267,7 +257,8 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            if !matches!(lowering, CallLowering::Direct(_) | CallLowering::Runtime(_)) {
+            if !matches!(lowering, CallLowering::Direct(_) | CallLowering::Runtime(_) | CallLowering::CorelibService(_))
+            {
                 return Some(Err(SemanticError::unavailable("abi_type")));
             }
             let signature = match call_abi_signature(db, key) {
@@ -304,11 +295,13 @@ pub(in crate::semantic_contract) fn value_abi_type_tracked(
             let contextual = optional_abi_fact(contextual_integer_literal_abi_type(db, key))?;
             let binary_operand = optional_abi_fact(binary_operand_abi_type(db, key))?;
             let call_result = optional_abi_fact(call_abi_signature(db, key))?.map(|signature| signature.result);
+            let enum_value = optional_abi_fact(enum_constructor(db, key))?.map(|_| SemanticTypeId::POINTER);
             let abi = optional_abi_fact(abi_type(db, key))?;
             let semantic = optional_abi_fact(node_type(db, key))?;
             contextual
                 .or(binary_operand)
                 .or(call_result)
+                .or(enum_value)
                 .or(abi)
                 .or(semantic)
                 .ok_or_else(|| SemanticError::unavailable("value_abi_type"))

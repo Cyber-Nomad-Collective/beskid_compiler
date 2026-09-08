@@ -45,6 +45,7 @@ impl Resolver {
             }
             Expression::Literal(_) => {}
             Expression::Path(path_expr) => {
+                self.resolve_path_type_arguments(&path_expr.node.path);
                 self.resolve_value_path(&path_expr.node.path);
             }
             Expression::StructLiteral(literal) => {

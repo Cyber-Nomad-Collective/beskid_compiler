@@ -104,15 +104,16 @@ impl StructLayout {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EnumVariantLayout {
     pub discriminant: u64,
-    pub payload: Option<FieldLayout>,
+    /// Physical payload fields in source order. Unit fields occupy a `None` position.
+    pub payload_fields: Vec<Option<FieldLayout>>,
 }
 
 impl EnumVariantLayout {
-    pub const fn new(discriminant: u64, payload: Option<FieldLayout>) -> Self {
-        Self { discriminant, payload }
+    pub fn new(discriminant: u64, payload_fields: Vec<Option<FieldLayout>>) -> Self {
+        Self { discriminant, payload_fields }
     }
 }
 
@@ -149,8 +150,15 @@ impl EnumLayout {
         let mut discriminants = HashSet::with_capacity(self.variants.len());
         self.variants.iter().all(|variant| {
             let discriminant_fits = tag_bits == 64 || variant.discriminant < (1_u64 << tag_bits);
-            let payload_is_valid = variant.payload.is_none_or(|payload| {
-                aggregate_field_is_valid(self.size, alignment, payload) && !aggregate_fields_overlap(self.tag, payload)
+            let payload_is_valid = variant.payload_fields.iter().enumerate().all(|(index, payload)| {
+                payload.is_none_or(|payload| {
+                    aggregate_field_is_valid(self.size, alignment, payload)
+                        && !aggregate_fields_overlap(self.tag, payload)
+                        && variant.payload_fields[..index]
+                            .iter()
+                            .flatten()
+                            .all(|other| !aggregate_fields_overlap(*other, payload))
+                })
             });
             discriminant_fits && payload_is_valid && discriminants.insert(variant.discriminant)
         })

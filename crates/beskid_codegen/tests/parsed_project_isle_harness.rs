@@ -10,7 +10,7 @@ use beskid_codegen::lower_syntax_assembly_entrypoint;
 use beskid_queries::{
     AstNodeId, AstNodeKey, SourceUnitId, SyntaxGenerationId, child_nodes, closure_environment, node_kind, with_db,
 };
-use cranelift_codegen::{isa, settings, verify_function};
+use cranelift_codegen::{ir::ExternalName, isa, settings, verify_function};
 
 #[test]
 fn retired_public_codegen_facade_is_absent() {
@@ -318,6 +318,32 @@ fn multi_unit_parsed_project_lowers_through_codegen_input_isle_only() {
 }
 
 #[test]
+fn parsed_extern_contract_call_comparison_lowers_as_an_if_condition() {
+    let project = tempfile::tempdir().expect("project directory");
+    let source = r#"
+        [Extern(Abi:"C", Library:"libc.so.6")]
+        pub contract LinuxPthread { i32 sched_yield(); }
+        unit Main() {
+            if LinuxPthread.sched_yield() != 0 { return; }
+            return;
+        }
+    "#;
+    let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", source)]);
+    let (target, isa) = x86_64_target_and_isa();
+
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    let main = lowered
+        .artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Main#syntax_"))
+        .expect("Main artifact");
+    let clif = main.function.display().to_string();
+    assert!(clif.contains("sched_yield"), "the extern contract symbol must remain explicit: {clif}");
+    assert!(clif.contains("icmp"), "the imported result must feed the comparison: {clif}");
+}
+
+#[test]
 fn parsed_project_control_flow_while_break_continue_reaches_verified_clif() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "
@@ -604,12 +630,52 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
         verify_function(&function.function, isa.flags())
             .unwrap_or_else(|error| panic!("stock CLIF verifier rejected {}: {error}", function.name));
     }
+    for scheduler_entry in ["__beskid_scheduler_fiber_entry", "__beskid_scheduler_return_trampoline"] {
+        let imports = artifact.functions.iter().flat_map(|function| function.function.dfg.ext_funcs.values());
+        let imports = imports
+            .filter(|external| {
+                matches!(&external.name, ExternalName::TestCase(name) if name.raw() == scheduler_entry.as_bytes())
+            })
+            .collect::<Vec<_>>();
+        assert!(!imports.is_empty(), "canonical Scheduler must materialize `{scheduler_entry}` as a function address");
+        assert!(
+            imports.iter().all(|import| !import.colocated),
+            "scheduler function addresses must use far relocations because JIT allocations are not range-constrained"
+        );
+    }
     assert!(
         artifact.functions.iter().any(|function| {
             let clif = function.function.display().to_string();
             clif.contains("iconst") || clif.contains("load") || clif.contains("store")
         }),
         "canonical runtime helpers must emit real CLIF bodies"
+    );
+}
+
+#[test]
+fn parsed_string_literals_do_not_assume_jit_code_and_data_are_colocated() {
+    let project = tempfile::tempdir().expect("project directory");
+    let assembly = parse_production_units(
+        project.path(),
+        &[("Main.bd", "Main", "string Main() { return \"range independent\"; }")],
+    );
+    let (target, isa) = x86_64_target_and_isa();
+    let lowered = lower_verified_entrypoint(assembly, target, isa.as_ref());
+    let literal_symbols =
+        lowered.artifact.string_literals.keys().map(|symbol| symbol.as_bytes().to_vec()).collect::<BTreeSet<_>>();
+    let literal_references = lowered.artifact.functions.iter().flat_map(|function| {
+        function.function.global_values.values().filter_map(|global| match global {
+            cranelift_codegen::ir::GlobalValueData::Symbol {
+                name: ExternalName::TestCase(name), colocated, ..
+            } if literal_symbols.contains(name.raw()) => Some(*colocated),
+            _ => None,
+        })
+    });
+    let literal_references = literal_references.collect::<Vec<_>>();
+    assert!(!literal_references.is_empty(), "string lowering must retain literal data references");
+    assert!(
+        literal_references.iter().all(|colocated| !colocated),
+        "JIT code and literal data allocations must not assume an AArch64 ADRP-range placement"
     );
 }
 

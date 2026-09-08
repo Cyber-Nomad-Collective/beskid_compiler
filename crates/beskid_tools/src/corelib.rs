@@ -1,4 +1,4 @@
-//! Install or refresh the bundled Beskid corelib snapshot (user cache or `BESKID_CORELIB_ROOT`).
+//! Install or refresh the bundled Beskid corelib snapshot in the resolved toolchain setup.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,6 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use beskid_abi::runtime_kit::installed_corelib_root;
 use include_dir::{Dir, include_dir};
 use semver::Version;
 
@@ -65,19 +66,7 @@ fn remove_dir_all_retry(path: &Path) -> Result<()> {
 }
 
 fn corelib_install_root() -> Result<PathBuf> {
-    if let Ok(explicit) = std::env::var("BESKID_CORELIB_ROOT") {
-        let trimmed = explicit.trim();
-        if !trimmed.is_empty() {
-            return Ok(PathBuf::from(trimmed));
-        }
-    }
-
-    if let Ok(home) = std::env::var("HOME") {
-        return Ok(PathBuf::from(home).join(".beskid").join("beskid_corelib"));
-    }
-
-    let cwd = std::env::current_dir().context("resolve current working directory")?;
-    Ok(cwd.join(".beskid").join("beskid_corelib"))
+    installed_corelib_root().context("resolve installed Beskid corelib root")
 }
 
 fn embedded_version() -> Result<Version> {

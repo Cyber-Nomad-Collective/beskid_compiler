@@ -77,23 +77,32 @@ pub enum TargetResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhaseRecord {
     pub phase: String,
-    pub started_unix_ms: u128,
-    pub ended_unix_ms: u128,
-    pub duration_ms: u128,
+    pub started_unix_ms: u64,
+    pub ended_unix_ms: u64,
+    pub duration_ms: u64,
     pub result: TargetResult,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TargetReport {
     pub target: String,
-    pub started_unix_ms: u128,
-    pub ended_unix_ms: u128,
-    pub duration_ms: u128,
+    pub started_unix_ms: u64,
+    pub ended_unix_ms: u64,
+    pub duration_ms: u64,
     pub active_phase: String,
+    pub last_started_test: Option<String>,
     pub result: TargetResult,
     pub tests: super::test::TestSummary,
     pub phases: Vec<PhaseRecord>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkerExitCause {
+    Exited { code: i32 },
+    Signaled { signal: i32 },
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -109,6 +118,7 @@ pub struct MatrixReport {
     pub skipped: usize,
     pub timed_out: bool,
     pub cancelled: bool,
+    pub worker_exit_cause: Option<WorkerExitCause>,
     pub release_eligible: bool,
     pub targets: Vec<TargetReport>,
 }
@@ -131,6 +141,7 @@ impl MatrixReport {
             && self.skipped == 0
             && !self.timed_out
             && !self.cancelled
+            && self.worker_exit_cause == Some(WorkerExitCause::Exited { code: 0 })
             && revisions_fresh
             && self.targets.len() == self.denominator
             && all_passed;
@@ -344,8 +355,12 @@ fn plan_for_target(base: &CompilePlan, target: Target) -> CompilePlan {
     CompilePlan { target, ..base.clone() }
 }
 
-pub fn unix_ms() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()
+pub fn unix_ms() -> u64 {
+    duration_ms(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default())
+}
+
+pub fn duration_ms(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 pub fn revision_snapshot(manifest_path: &Path) -> RevisionSnapshot {

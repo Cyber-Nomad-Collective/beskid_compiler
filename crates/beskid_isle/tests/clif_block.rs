@@ -25,6 +25,7 @@ impl NodeFacts for ClifBlockFacts {
         Some(vec![beskid_isle::ParameterSlot {
             slot: beskid_isle::LocalSlotId { owner_node: 0, index: 0 },
             value_type: types::F64,
+            managed_reference: beskid_isle::ManagedReferenceFact::NativeOrScalar,
         }])
     }
     fn integer_literal(&self, _: AstNodeKey) -> Option<i64> {

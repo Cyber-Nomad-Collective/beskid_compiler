@@ -71,7 +71,7 @@ fn enum_equality_compares_discriminant_tags_primary() {
         8,
         3,
         FieldLayout::new(types::I32, 0),
-        vec![EnumVariantLayout::new(0, None), EnumVariantLayout::new(1, Some(FieldLayout::new(types::I32, 4)))],
+        vec![EnumVariantLayout::new(0, vec![]), EnumVariantLayout::new(1, vec![Some(FieldLayout::new(types::I32, 4))])],
     );
     let facts = EnumEqFacts { root: node(1), left: node(2), right: node(3), layout };
 
@@ -156,7 +156,7 @@ fn enum_not_equality_compares_discriminant_tags_negated_primary() {
         8,
         3,
         FieldLayout::new(types::I32, 0),
-        vec![EnumVariantLayout::new(0, None), EnumVariantLayout::new(1, Some(FieldLayout::new(types::I32, 4)))],
+        vec![EnumVariantLayout::new(0, vec![]), EnumVariantLayout::new(1, vec![Some(FieldLayout::new(types::I32, 4))])],
     );
     let facts = EnumNeFacts { root: node(1), left: node(2), right: node(3), layout };
 
@@ -245,7 +245,7 @@ fn enum_equality_compares_discriminant_tags() {
         8,
         3,
         FieldLayout::new(types::I32, 0),
-        vec![EnumVariantLayout::new(0, None), EnumVariantLayout::new(1, Some(FieldLayout::new(types::I32, 4)))],
+        vec![EnumVariantLayout::new(0, vec![]), EnumVariantLayout::new(1, vec![Some(FieldLayout::new(types::I32, 4))])],
     );
     let facts = EnumEqFacts { root: node(1), left: node(2), right: node(3), layout };
 
@@ -330,7 +330,7 @@ fn enum_not_equality_compares_discriminant_tags_negated() {
         8,
         3,
         FieldLayout::new(types::I32, 0),
-        vec![EnumVariantLayout::new(0, None), EnumVariantLayout::new(1, Some(FieldLayout::new(types::I32, 4)))],
+        vec![EnumVariantLayout::new(0, vec![]), EnumVariantLayout::new(1, vec![Some(FieldLayout::new(types::I32, 4))])],
     );
     let facts = EnumNeFacts { root: node(1), left: node(2), right: node(3), layout };
 

@@ -10,18 +10,149 @@ pub(in crate::semantic_contract) fn aggregate_layout_tracked(
 ) -> SemanticQueryResult<AggregateLayoutFact> {
     with_node(db, syntax, key, |program, index, node| {
         let definition = node.of::<beskid_analysis::syntax::TypeDefinition>()?;
+        Some(aggregate_layout_from_definition(db, program, index, key, definition, None))
+    })?
+    .transpose()
+}
+
+pub(in crate::semantic_contract) fn aggregate_layout_from_definition(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    declaration: AstNodeKey,
+    definition: &beskid_analysis::syntax::TypeDefinition,
+    substitutions: Option<&HashMap<String, AggregateFieldShape>>,
+) -> Result<AggregateLayoutFact, SemanticError> {
+    if definition.generics.is_empty() && substitutions.is_some() {
+        return Err(SemanticError::unavailable("aggregate_layout"));
+    }
+    definition
+        .fields
+        .iter()
+        // Events are dispatch metadata, not ABI-v5 aggregate storage. Keeping them
+        // out of this value-field layout preserves the exact physical indices used by
+        // struct literals and direct value projections; a projection of an event itself
+        // still has no aggregate-field fact and therefore fails closed.
+        .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
+        .map(|field| {
+            let substituted = substitutions.and_then(|substitutions| {
+                generic_parameter_reference_name(&field.node.ty.node)
+                    .and_then(|parameter| substitutions.get(parameter))
+                    .copied()
+            });
+            substituted
+                .map(|shape| (Arc::from(field.node.name.node.name.as_str()), shape))
+                .map(Ok)
+                .unwrap_or_else(|| aggregate_field_layout(db, program, index, declaration, field))
+        })
+        .collect::<Result<Vec<_>, SemanticError>>()
+        .map(|fields| AggregateLayoutFact { fields: fields.into() })
+}
+
+pub(in crate::semantic_contract) fn instantiated_aggregate_layout_for_path(
+    db: &dyn Db,
+    use_key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+    ambient: Option<&HashMap<String, AggregateFieldShape>>,
+) -> Result<(AstNodeKey, AggregateLayoutFact), SemanticError> {
+    let declaration =
+        resolve_type_declaration(db, use_key, path).ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?;
+    let syntax = db
+        .syntax_unit(declaration.unit)
+        .filter(|syntax| syntax.accepts_key(db, declaration))
+        .ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let definition = index
+        .node_at(program, declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::TypeDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?;
+    if definition.generics.is_empty() {
+        return aggregate_layout_from_definition(db, program, index, declaration, definition, None)
+            .map(|layout| (declaration, layout));
+    }
+    let terminal = path.segments.last().ok_or_else(|| SemanticError::unavailable("aggregate_layout"))?;
+    if path.segments[..path.segments.len() - 1].iter().any(|segment| !segment.node.type_args.is_empty())
+        || terminal.node.type_args.len() != definition.generics.len()
+    {
+        return Err(SemanticError::unavailable("aggregate_layout"));
+    }
+    // Materialize only substitutions that can change this declaration's physical field layout.
+    // A source-proven enclosing generic remains part of the nominal application identity even
+    // when the declaration is phantom over it, but it must not make an otherwise concrete layout
+    // unavailable. Generic parameters used directly as fields still require an exact shape.
+    let layout_parameters = definition
+        .fields
+        .iter()
+        .filter_map(|field| generic_parameter_reference_name(&field.node.ty.node))
+        .collect::<HashSet<_>>();
+    let substitutions = definition
+        .generics
+        .iter()
+        .zip(terminal.node.type_args.iter())
+        .filter_map(|(generic, argument)| {
+            let parameter = generic.node.name.as_str();
+            match applied_aggregate_shape(db, use_key, &argument.node, ambient) {
+                Ok(shape) => Some(Ok((generic.node.name.clone(), shape))),
+                Err(_)
+                    if !layout_parameters.contains(parameter)
+                        && type_syntax_is_enclosing_generic_parameter_reference(db, use_key, &argument.node) =>
+                {
+                    None
+                }
+                Err(error) => Some(Err(error)),
+            }
+        })
+        .collect::<Result<HashMap<_, _>, SemanticError>>()?;
+    aggregate_layout_from_definition(db, program, index, declaration, definition, Some(&substitutions))
+        .map(|layout| (declaration, layout))
+}
+
+pub(in crate::semantic_contract) fn applied_aggregate_shape(
+    db: &dyn Db,
+    use_key: AstNodeKey,
+    syntax_type: &beskid_analysis::syntax::Type,
+    ambient: Option<&HashMap<String, AggregateFieldShape>>,
+) -> Result<AggregateFieldShape, SemanticError> {
+    if let Some(parameter) = generic_parameter_reference_name(syntax_type)
+        && let Some(shape) = ambient.and_then(|substitutions| substitutions.get(parameter))
+    {
+        return Ok(*shape);
+    }
+    aggregate_shape_from_applied_type(db, use_key, syntax_type)
+        .map_err(|_| SemanticError::unavailable("aggregate_layout"))
+}
+
+#[salsa::tracked(persist)]
+pub(in crate::semantic_contract) fn aggregate_literal_layout_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<AggregateLayoutFact> {
+    with_node(db, syntax, key, |_, _, node| {
+        let literal = node.of::<beskid_analysis::syntax::StructLiteralExpression>()?;
+        Some(instantiated_aggregate_layout_for_path(db, key, &literal.path.node, None).map(|(_, layout)| layout))
+    })?
+    .transpose()
+}
+
+pub fn aggregate_literal_specialization(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Arc<[GenericSubstitution]>,
+) -> SemanticQueryResult<AggregateLayoutFact> {
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else {
+        return Ok(None);
+    };
+    with_node(db, syntax, key, |_, _, node| {
+        let literal = node.of::<beskid_analysis::syntax::StructLiteralExpression>()?;
+        let ambient = enclosing
+            .iter()
+            .map(|binding| (binding.parameter.to_string(), AggregateFieldShape::Scalar(binding.argument)))
+            .collect::<HashMap<_, _>>();
         Some(
-            definition
-                .fields
-                .iter()
-                // Events are dispatch metadata, not ABI-v5 aggregate storage. Keeping them
-                // out of this value-field layout preserves the exact physical indices used by
-                // struct literals and direct value projections; a projection of an event itself
-                // still has no aggregate-field fact and therefore fails closed.
-                .filter(|field| field.node.kind == beskid_analysis::syntax::FieldKind::Value)
-                .map(|field| aggregate_field_layout(db, program, index, key, field))
-                .collect::<Result<Vec<_>, SemanticError>>()
-                .map(|fields| AggregateLayoutFact { fields: fields.into() }),
+            instantiated_aggregate_layout_for_path(db, key, &literal.path.node, Some(&ambient))
+                .map(|(_, layout)| layout),
         )
     })?
     .transpose()

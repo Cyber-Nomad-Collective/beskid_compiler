@@ -68,6 +68,7 @@ impl ModuleIndex {
     /// unit's items so the entry program's `use` declarations and references
     /// resolve against the full assembled closure.
     fn seed_resolver_from_assembly(&self, resolver: &mut Resolver, assembly: &ProgramAssembly) {
+        let source_path = resolver.current_source_path.clone();
         for path in &self.known_paths {
             resolver.module_graph.ensure_module_path(path);
         }
@@ -82,6 +83,7 @@ impl ModuleIndex {
         }
         resolver.errors.clear();
         resolver.module_imports.clear();
+        resolver.current_source_path = source_path;
     }
 
     /// Full-project resolution for `api.json`: resolve entry plus every assembled unit, merging tables.

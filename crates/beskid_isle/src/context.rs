@@ -5,19 +5,21 @@ use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::types;
 use cranelift_codegen::ir::{
-    AbiParam, Block, ExtFuncData, FuncRef, MemFlags, Signature, StackSlotData, StackSlotKind, TrapCode, Type, Value,
+    AbiParam, Block, ExtFuncData, FuncRef, MemFlags, Signature, StackSlot, StackSlotData, StackSlotKind, TrapCode,
+    Type, Value,
 };
 use cranelift_codegen::ir::{ExternalName, GlobalValueData};
-use cranelift_frontend::{FunctionBuilder, Switch, Variable};
+use cranelift_codegen::isa::CallConv;
+use cranelift_frontend::{FunctionBuilder, Variable};
 
 use crate::dispatch;
 use crate::errors::{FunctionEmissionError, LoweringError, LoweringErrorKind, StringMaterializationError};
 use crate::facts::{
     AstNodeKey, CallImportError, CallKind, CollectionMutationOwner, CollectionOperation, DirectCallee, ForIterableKind,
-    IndexTarget, InlineClosureEnvironment, LiteralKind, LocalSlotId, MatchArmFact, NodeFacts, NodeKind, OperatorFact,
-    RuntimeIntrinsicKind, Unit,
+    IndexTarget, InlineClosureEnvironment, LiteralKind, LocalSlotId, ManagedReferenceFact, MatchArmBindingFact,
+    MatchPayloadPatternFact, NodeFacts, NodeKind, OperatorFact, RuntimeIntrinsicKind, Unit,
 };
-use crate::layout::EnumLayout;
+use crate::layout::{EnumLayout, FieldLayout};
 
 mod aggregate;
 mod calls;
@@ -25,6 +27,7 @@ mod control_flow;
 mod enums;
 mod intrinsics;
 mod operators;
+mod roots;
 mod strings;
 
 use operators::CompareOp;
@@ -45,6 +48,20 @@ enum CursorKind {
 struct LoopTargets {
     continue_block: Block,
     break_block: Block,
+    root_scope_depth: usize,
+}
+
+#[derive(Default)]
+struct LocalRootScope {
+    bindings: Vec<(LocalSlotId, Option<StackSlot>)>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ManagedLocalBinding {
+    pub(crate) variable: Variable,
+    pub(crate) value_type: Type,
+    pub(crate) managed_reference: ManagedReferenceFact,
+    pub(crate) root_slot: Option<StackSlot>,
 }
 
 #[allow(
@@ -89,7 +106,8 @@ pub struct IsleContext<'builder, 'function, 'facts, 'interner> {
     string_interner: Option<&'interner mut dyn StringInterner>,
     call_importer: Option<&'interner mut dyn CallImporter>,
     loop_stack: Vec<LoopTargets>,
-    pub(crate) locals: HashMap<LocalSlotId, (Variable, Type)>,
+    pub(crate) locals: HashMap<LocalSlotId, ManagedLocalBinding>,
+    local_root_scopes: Vec<LocalRootScope>,
     pub function_param_values: Vec<Value>,
     pending_error: Option<LoweringError>,
 }
@@ -103,6 +121,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             call_importer: None,
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
             pending_error: None,
         }
@@ -120,6 +139,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             call_importer: None,
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
             pending_error: None,
         }
@@ -137,6 +157,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             call_importer: Some(call_importer),
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
             pending_error: None,
         }
@@ -155,6 +176,7 @@ impl<'builder, 'function, 'facts, 'interner> IsleContext<'builder, 'function, 'f
             call_importer,
             loop_stack: Vec::new(),
             locals: HashMap::new(),
+            local_root_scopes: vec![LocalRootScope::default()],
             function_param_values: Vec::new(),
             pending_error: None,
         }
@@ -190,9 +212,9 @@ pub(crate) fn materialize_parameters(
         {
             return Err(FunctionEmissionError::verification(item, "item parameter slot or type is invalid".to_owned()));
         }
-        let variable = context.builder.declare_var(parameter.value_type);
-        context.builder.def_var(variable, value);
-        context.locals.insert(parameter.slot, (variable, parameter.value_type));
+        context.bind_local(parameter.slot, value, parameter.value_type, parameter.managed_reference).ok_or_else(
+            || FunctionEmissionError::verification(item, "item parameter root binding is invalid".to_owned()),
+        )?;
         context.function_param_values.push(value);
     }
     Ok(())

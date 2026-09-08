@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
+use url::Url;
 use uuid::Uuid;
 
 use crate::sql;
@@ -11,8 +12,32 @@ pub struct Package {
     pub name: String,
     pub owner_subject: String,
     pub is_public: bool,
+    pub metadata: PackageMetadata,
     pub created_at_unix_seconds: i64,
     pub updated_at_unix_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageMetadata {
+    pub description: String,
+    pub category: String,
+    pub repository_url: Option<String>,
+    pub website_url: Option<String>,
+    pub tags: Vec<String>,
+    pub icon_url: Option<String>,
+}
+
+impl Default for PackageMetadata {
+    fn default() -> Self {
+        Self {
+            description: String::new(),
+            category: "General".to_owned(),
+            repository_url: None,
+            website_url: None,
+            tags: Vec::new(),
+            icon_url: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +60,7 @@ pub struct NewPackage {
     pub name: String,
     pub owner_subject: String,
     pub is_public: bool,
+    pub metadata: PackageMetadata,
     pub now_unix_seconds: i64,
 }
 
@@ -59,6 +85,7 @@ pub enum PublishOutcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreError {
     InvalidPackageName,
+    InvalidPackageMetadata,
     InvalidAuthHubSubject,
     InvalidVersion,
     InvalidChecksum,
@@ -139,16 +166,24 @@ impl AsyncPackageRepository for SqlxPackageRepository {
     async fn create_package(&self, request: NewPackage) -> Result<Package, StoreError> {
         validate_package_name(&request.name)?;
         validate_subject(&request.owner_subject)?;
+        validate_package_metadata(&request.metadata)?;
         let id = parse_identifier(&request.id)?;
         let timestamp = timestamp(request.now_unix_seconds)?;
         let result = sqlx::query(
-            "INSERT INTO pckg_packages (id, name, owner_subject, is_public, created_at_utc, updated_at_utc) \
-             VALUES ($1, $2, $3, $4, $5, $5)",
+            "INSERT INTO pckg_packages \
+             (id, name, owner_subject, is_public, description, category, repository_url, website_url, tags, icon_url, created_at_utc, updated_at_utc) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)",
         )
         .bind(id)
         .bind(&request.name)
         .bind(&request.owner_subject)
         .bind(request.is_public)
+        .bind(&request.metadata.description)
+        .bind(&request.metadata.category)
+        .bind(&request.metadata.repository_url)
+        .bind(&request.metadata.website_url)
+        .bind(&request.metadata.tags)
+        .bind(&request.metadata.icon_url)
         .bind(timestamp)
         .execute(&self.pool)
         .await;
@@ -158,6 +193,7 @@ impl AsyncPackageRepository for SqlxPackageRepository {
                 name: request.name,
                 owner_subject: request.owner_subject,
                 is_public: request.is_public,
+                metadata: request.metadata,
                 created_at_unix_seconds: request.now_unix_seconds,
                 updated_at_unix_seconds: request.now_unix_seconds,
             }),
@@ -168,7 +204,7 @@ impl AsyncPackageRepository for SqlxPackageRepository {
 
     async fn find_package(&self, name: &str) -> Result<Option<Package>, StoreError> {
         let row = sqlx::query_as::<_, PackageRow>(
-            "SELECT id, name, owner_subject, is_public, created_at_utc, updated_at_utc \
+            "SELECT id, name, owner_subject, is_public, description, category, repository_url, website_url, tags, icon_url, created_at_utc, updated_at_utc \
              FROM pckg_packages WHERE name = $1",
         )
         .bind(name)
@@ -345,6 +381,12 @@ struct PackageRow {
     name: String,
     owner_subject: String,
     is_public: bool,
+    description: String,
+    category: String,
+    repository_url: Option<String>,
+    website_url: Option<String>,
+    tags: Vec<String>,
+    icon_url: Option<String>,
     created_at_utc: DateTime<Utc>,
     updated_at_utc: DateTime<Utc>,
 }
@@ -356,6 +398,14 @@ impl PackageRow {
             name: self.name,
             owner_subject: self.owner_subject,
             is_public: self.is_public,
+            metadata: PackageMetadata {
+                description: self.description,
+                category: self.category,
+                repository_url: self.repository_url,
+                website_url: self.website_url,
+                tags: self.tags,
+                icon_url: self.icon_url,
+            },
             created_at_unix_seconds: self.created_at_utc.timestamp(),
             updated_at_unix_seconds: self.updated_at_utc.timestamp(),
         }
@@ -412,6 +462,36 @@ async fn find_version_in_transaction(
 
 pub(super) fn validate_package_name(name: &str) -> Result<(), StoreError> {
     (!name.trim().is_empty() && name == name.trim()).then_some(()).ok_or(StoreError::InvalidPackageName)
+}
+
+pub(super) fn validate_package_metadata(metadata: &PackageMetadata) -> Result<(), StoreError> {
+    let valid_text = |value: &str, max_len: usize, allow_empty: bool| {
+        (allow_empty || !value.is_empty())
+            && value == value.trim()
+            && value.len() <= max_len
+            && !value.chars().any(char::is_control)
+    };
+    let valid_url = |value: &str| {
+        if value.len() > 2_048 || value != value.trim() || value.chars().any(char::is_whitespace) {
+            return false;
+        }
+        Url::parse(value).is_ok_and(|url| {
+            matches!(url.scheme(), "http" | "https")
+                && url.host_str().is_some()
+                && url.username().is_empty()
+                && url.password().is_none()
+        })
+    };
+    let valid_tags = metadata.tags.len() <= 32
+        && metadata.tags.iter().all(|tag| valid_text(tag, 64, false))
+        && metadata.tags.iter().collect::<std::collections::BTreeSet<_>>().len() == metadata.tags.len();
+    let valid = valid_text(&metadata.description, 4_000, true)
+        && valid_text(&metadata.category, 128, false)
+        && metadata.repository_url.as_deref().is_none_or(&valid_url)
+        && metadata.website_url.as_deref().is_none_or(&valid_url)
+        && metadata.icon_url.as_deref().is_none_or(&valid_url)
+        && valid_tags;
+    valid.then_some(()).ok_or(StoreError::InvalidPackageMetadata)
 }
 
 pub(super) fn validate_subject(subject: &str) -> Result<(), StoreError> {

@@ -6,7 +6,9 @@ mod specialization;
 mod statements;
 mod types;
 
-pub use specialization::generic_specialization_instance;
+pub use specialization::{
+    generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
+};
 
 pub(in crate::semantic_contract) use control_flow::{
     block_may_fall_through, control_flow_for_node, control_flow_tracked, if_may_fall_through,

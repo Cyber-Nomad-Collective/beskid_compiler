@@ -19,7 +19,7 @@ impl<'db> SyntaxNodeFacts<'db> {
         Self { db: input.database(), input, isa: None, item_specializations: HashMap::new() }
     }
 
-    pub(super) fn new_with_isa(input: &'db CodegenInput<'db>, isa: &'db dyn TargetIsa) -> Self {
+    pub fn new_with_isa(input: &'db CodegenInput<'db>, isa: &'db dyn TargetIsa) -> Self {
         Self { db: input.database(), input, isa: Some(isa), item_specializations: HashMap::new() }
     }
 

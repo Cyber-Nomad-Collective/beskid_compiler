@@ -65,6 +65,41 @@ pub fn node_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SemanticTy
     with_registered_syntax(db, key, node_type_tracked)
 }
 
+/// Classify whether the exact source value is traced by the Beskid garbage collector.
+/// Pointer ABI is never used as proof; unsupported or ambiguous source shapes fail closed.
+pub fn managed_reference_kind(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<ManagedReferenceKind> {
+    with_registered_syntax(db, key, managed_reference_kind_tracked)
+}
+
+/// Return the enclosing declaration's generic name when `key` is a parameter whose entire
+/// declared type is that generic. Composite uses such as `T[]` deliberately return no fact.
+pub fn parameter_generic_reference(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Arc<str>> {
+    let Some(syntax) = db.syntax_unit(key.unit) else { return Ok(None) };
+    if !syntax.accepts_key(db, key) {
+        return Ok(None);
+    }
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let Some(parameter) =
+        index.node_at(program, key.node).and_then(|node| node.of::<beskid_analysis::syntax::Parameter>())
+    else {
+        return Ok(None);
+    };
+    let Some(name) = generic_parameter_reference_name(&parameter.ty.node) else { return Ok(None) };
+    let Some(owner_node) = nearest_ancestor(index, key.node, |kind| {
+        matches!(
+            kind,
+            beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+        )
+    }) else {
+        return Ok(None);
+    };
+    let owner = AstNodeKey { node: owner_node, ..key };
+    let Some((generics, _)) = generic_callable_parameters(db, owner) else { return Ok(None) };
+    Ok(generics.iter().any(|generic| *generic == name).then(|| Arc::<str>::from(name)))
+}
+
 /// Return the exact root expression keys of positional call arguments in source order.
 ///
 /// Empty calls contain an empty fact. Stale, unregistered, and non-call nodes contain no fact.
@@ -160,19 +195,7 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
                 .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
             let array =
                 AstNodeKey { node: normalized_expression_node(call_syntax.syntax_index(db), array.node), ..array };
-            let owner = if let Some(access) = aggregate_field_access(db, array)? {
-                let receiver = resolved_local(db, access.receiver)?
-                    .and_then(|resolved| local_slot(db, resolved.declaration).transpose())
-                    .transpose()?
-                    .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
-                CollectionMutationOwner::AggregateField {
-                    receiver,
-                    declaration: access.declaration,
-                    index: access.index,
-                }
-            } else {
-                let resolved =
-                    resolved_local(db, array)?.ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+            let owner = if let Some(resolved) = resolved_local(db, array)? {
                 let syntax = db
                     .syntax_unit(resolved.declaration.unit)
                     .filter(|syntax| syntax.generation(db) == resolved.declaration.generation)
@@ -187,6 +210,18 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
                 let slot = local_slot(db, resolved.declaration)?
                     .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
                 CollectionMutationOwner::Local(slot)
+            } else {
+                let access = aggregate_field_access(db, array)?
+                    .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+                let receiver = resolved_local(db, access.receiver)?
+                    .and_then(|resolved| local_slot(db, resolved.declaration).transpose())
+                    .transpose()?
+                    .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+                CollectionMutationOwner::AggregateField {
+                    receiver,
+                    declaration: access.declaration,
+                    index: access.index,
+                }
             };
             CollectionOperation::Append { owner }
         }
@@ -285,6 +320,43 @@ pub fn call_abi_signature(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<I
 /// Return target-neutral source field shapes for a nominal `type` definition.
 pub fn aggregate_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AggregateLayoutFact> {
     with_registered_syntax(db, key, aggregate_layout_tracked)
+}
+
+/// Return the exact applied aggregate layout constructed by a struct literal.
+pub fn aggregate_literal_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AggregateLayoutFact> {
+    with_registered_syntax(db, key, aggregate_literal_layout_tracked)
+}
+
+/// Return source field names paired with their current-generation value expressions.
+///
+/// Consumers combine this syntax identity with [`aggregate_literal_layout`] (or its specialized
+/// counterpart) to place named values in canonical declaration-layout order without rebuilding
+/// aggregate structure from HIR.
+pub fn aggregate_literal_field_values(
+    db: &dyn Db,
+    key: AstNodeKey,
+) -> SemanticQueryResult<AggregateLiteralFieldValues> {
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else {
+        return Ok(None);
+    };
+    with_node(db, syntax, key, |program, index, node| {
+        let literal = node.of::<beskid_analysis::syntax::StructLiteralExpression>()?;
+        literal
+            .fields
+            .iter()
+            .map(|field| {
+                let field_node =
+                    index.direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(field))?;
+                let value_node = index.direct_child_id(
+                    program,
+                    field_node,
+                    beskid_analysis::syntax_query::DynNodeRef::from(&field.node.value),
+                )?;
+                Some((Arc::from(field.node.name.node.name.as_str()), AstNodeKey { node: value_node, ..key }))
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(Arc::from)
+    })
 }
 
 /// Return the current nominal `type` declaration constructed by a struct literal.
