@@ -102,6 +102,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep the isolated Linux guarded-stack adapter harness linkable after the
+  platform adapter gained environment intrinsics backed by the canonical
+  `str_new` corelib service.
+
 - Make the JSON-RPC IntelliSense integration test wait for the completed
   workspace scan and versioned open-document diagnostics, avoiding stale
   disk-scan notifications before completion and hover assertions.
