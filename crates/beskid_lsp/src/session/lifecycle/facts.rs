@@ -5,11 +5,13 @@ use beskid_queries::{
     AstNodeKey, SemanticTypeId, SyntaxGenerationId, build_typed_program, node_span, node_type, resolved_item,
     resolved_local,
 };
+use pest::Parser;
 
 use crate::session::{
     documentation_facts::SyntaxDocumentationFact,
     store::{
-        SyntaxCompletion, SyntaxDefinition, SyntaxDiagnostic, SyntaxFix, SyntaxHover, SyntaxInlayHint, SyntaxSymbol,
+        BsolSemanticTokenCandidate, BsolSemanticTokenKind, SyntaxCompletion, SyntaxDefinition, SyntaxDiagnostic,
+        SyntaxFix, SyntaxHover, SyntaxInlayHint, SyntaxSymbol,
     },
 };
 
@@ -24,6 +26,7 @@ pub(super) struct SyntaxFacts {
     pub(super) definitions: Vec<SyntaxDefinition>,
     pub(super) hovers: Vec<SyntaxHover>,
     pub(super) symbols: Vec<SyntaxSymbol>,
+    pub(super) bsol_semantic_token_candidates: Vec<BsolSemanticTokenCandidate>,
     pub(super) completion: Option<SyntaxCompletion>,
     pub(super) inlay_hints: Vec<SyntaxInlayHint>,
     pub(super) documentation: Vec<SyntaxDocumentationFact>,
@@ -134,11 +137,63 @@ pub(super) fn syntax_facts_for_entry(
         definitions,
         hovers,
         symbols: syntax_symbols_for_program(&entry.program),
+        bsol_semantic_token_candidates: Vec::new(),
         completion,
         inlay_hints,
         documentation: Vec::new(),
         diagnostics: Vec::new(),
         fixes: Vec::new(),
+    }
+}
+
+pub(crate) fn bsol_semantic_token_candidates(text: &str) -> Vec<BsolSemanticTokenCandidate> {
+    if bsol::parse_bsol_document(text).is_err() {
+        return Vec::new();
+    }
+    let Ok(pairs) = bsol::BsolParser::parse(bsol::Rule::document, text) else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    for pair in pairs {
+        collect_bsol_semantic_token_candidates(pair, &mut candidates);
+    }
+    candidates
+}
+
+fn collect_bsol_semantic_token_candidates(
+    pair: pest::iterators::Pair<'_, bsol::Rule>,
+    out: &mut Vec<BsolSemanticTokenCandidate>,
+) {
+    match pair.as_rule() {
+        bsol::Rule::block_kind => {
+            let span = pair.as_span();
+            out.push(BsolSemanticTokenCandidate {
+                start: span.start(),
+                end: span.end(),
+                kind: BsolSemanticTokenKind::Namespace,
+            });
+        }
+        bsol::Rule::assignment | bsol::Rule::map_entry => {
+            let mut is_key = true;
+            for child in pair.into_inner() {
+                if is_key && child.as_rule() == bsol::Rule::ident {
+                    let span = child.as_span();
+                    out.push(BsolSemanticTokenCandidate {
+                        start: span.start(),
+                        end: span.end(),
+                        kind: BsolSemanticTokenKind::Variable,
+                    });
+                    is_key = false;
+                    continue;
+                }
+                collect_bsol_semantic_token_candidates(child, out);
+            }
+        }
+        _ => {
+            for child in pair.into_inner() {
+                collect_bsol_semantic_token_candidates(child, out);
+            }
+        }
     }
 }
 

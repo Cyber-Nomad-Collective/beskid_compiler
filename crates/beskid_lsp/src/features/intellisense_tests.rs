@@ -119,11 +119,13 @@ mod tests {
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: Vec::new(),
             syntax_completion: Some(SyntaxCompletion { anchor }),
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-            syntax_fixes: Vec::new(),        };
+            syntax_fixes: Vec::new(),
+        };
         let offset = main_source.find("Output.Write").expect("member prefix") + "Output.Write".len();
         let response = completion::handler::handle_completion(
             &db,
@@ -180,11 +182,13 @@ mod tests {
             }],
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-            syntax_fixes: Vec::new(),        };
+            syntax_fixes: Vec::new(),
+        };
         let response = definition::handler::handle_definition(&uri, &doc, 22).expect("syntax fact definition");
         let GotoDefinitionResponse::Scalar(location) = response else {
             panic!("expected scalar definition");
@@ -208,11 +212,13 @@ mod tests {
                 start: 4,
                 end: 10,
             }],
+            bsol_semantic_token_candidates: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-            syntax_fixes: Vec::new(),        };
+            syntax_fixes: Vec::new(),
+        };
 
         let response = definition::handler::handle_definition(&uri, &doc, 6).expect("syntax symbol definition");
         let GotoDefinitionResponse::Scalar(location) = response else {
@@ -240,11 +246,13 @@ mod tests {
             }],
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-            syntax_fixes: Vec::new(),        };
+            syntax_fixes: Vec::new(),
+        };
         let locations = references::handler::handle_references(&uri, &doc, 24, true, None);
         assert_eq!(locations.len(), 2);
     }
@@ -266,11 +274,13 @@ mod tests {
                 location_end: 26,
             }],
             syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
-            syntax_fixes: Vec::new(),        };
+            syntax_fixes: Vec::new(),
+        };
         let documentation = crate::commands::symbol_documentation::documentation_uri_for_document(&doc, 22)
             .expect("syntax documentation URL");
         assert!(documentation.contains("helper"));

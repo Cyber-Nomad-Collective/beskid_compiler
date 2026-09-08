@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Bind BSOL semantic-token candidates to each LSP document generation so
+  `.bproj`, `.bws`, and standalone `.bsol` requests encode stored syntax facts
+  without reparsing the buffer.
+
 - License the compiler, tooling, reusable crates, and embedded runtime under
   Apache-2.0 while scoping AGPL-3.0-only to the runnable pckg server package;
   preserve vendored dependency licenses and declare Cargo SPDX metadata.

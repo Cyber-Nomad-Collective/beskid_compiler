@@ -17,7 +17,7 @@ use crate::{
 };
 
 use super::{
-    facts::{SyntaxFacts, syntax_facts_for_entry},
+    facts::{SyntaxFacts, bsol_semantic_token_candidates, syntax_facts_for_entry},
     revisions_resolution::{resolved_input_for_path, touch_entry_file_revision_for_uri},
 };
 
@@ -30,7 +30,13 @@ pub(super) async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &
     };
     if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
         let (diagnostics, fixes) = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
-        return SyntaxFacts { documentation, diagnostics, fixes, ..SyntaxFacts::default() };
+        return SyntaxFacts {
+            documentation,
+            diagnostics,
+            fixes,
+            bsol_semantic_token_candidates: bsol_semantic_token_candidates(text),
+            ..SyntaxFacts::default()
+        };
     }
     let Some(path) = uri_to_path(uri) else {
         let (diagnostics, fixes) = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
@@ -66,6 +72,7 @@ fn document_from_syntax_facts(version: i32, text: String, syntax_facts: SyntaxFa
         syntax_definitions: syntax_facts.definitions,
         syntax_hovers: syntax_facts.hovers,
         syntax_symbols: syntax_facts.symbols,
+        bsol_semantic_token_candidates: syntax_facts.bsol_semantic_token_candidates,
         syntax_completion: syntax_facts.completion,
         syntax_inlay_hints: syntax_facts.inlay_hints,
         syntax_documentation: syntax_facts.documentation,
@@ -78,6 +85,7 @@ pub(super) fn apply_syntax_facts(doc: &mut Document, syntax_facts: SyntaxFacts) 
     doc.syntax_definitions = syntax_facts.definitions;
     doc.syntax_hovers = syntax_facts.hovers;
     doc.syntax_symbols = syntax_facts.symbols;
+    doc.bsol_semantic_token_candidates = syntax_facts.bsol_semantic_token_candidates;
     doc.syntax_completion = syntax_facts.completion;
     doc.syntax_inlay_hints = syntax_facts.inlay_hints;
     doc.syntax_documentation = syntax_facts.documentation;
