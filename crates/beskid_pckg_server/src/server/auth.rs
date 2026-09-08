@@ -14,7 +14,7 @@ use axum::{
     response::IntoResponse,
 };
 use beskid_pckg_auth::{
-    ApiKeyIdentity, ApiKeyScope, AuthMode, AutheliaIdentity, Principal, SessionIdentity, SubjectRole,
+    ApiKeyIdentity, ApiKeyScope, AuthMode, AuthentikIdentity, AutheliaIdentity, Principal, SessionIdentity, SubjectRole,
 };
 use beskid_pckg_contract::ApiErrorResponse;
 
@@ -28,6 +28,10 @@ const HEADER_REMOTE_USER: &str = "remote-user";
 const HEADER_REMOTE_EMAIL: &str = "remote-email";
 const HEADER_REMOTE_NAME: &str = "remote-name";
 const HEADER_REMOTE_GROUPS: &str = "remote-groups";
+const HEADER_AUTHENTIK_USERNAME: &str = "x-authentik-username";
+const HEADER_AUTHENTIK_EMAIL: &str = "x-authentik-email";
+const HEADER_AUTHENTIK_NAME: &str = "x-authentik-name";
+const HEADER_AUTHENTIK_GROUPS: &str = "x-authentik-groups";
 const HEADER_AUTHORIZATION: &str = "authorization";
 const API_KEY_LENGTH: usize = 68;
 
@@ -44,6 +48,8 @@ pub(crate) fn authenticated_principal(state: &AppState, headers: &HeaderMap) -> 
         )),
         AuthMode::Authelia => authelia_identity(headers)
             .map(|identity| Principal::from_authelia(&identity, &auth.admin_group, &auth.moderator_group)),
+        AuthMode::Authentik => authentik_identity(headers)
+            .map(|identity| Principal::from_authentik(&identity, &auth.admin_group, &auth.moderator_group)),
     }
 }
 
@@ -90,6 +96,10 @@ pub(crate) async fn read_session(State(state): State<AppState>, headers: HeaderM
             Some(identity) => identity,
             None => return unauthorized_response(),
         },
+        AuthMode::Authentik => match authentik_identity(&headers) {
+            Some(identity) => identity,
+            None => return unauthorized_response(),
+        },
     };
     Json(SessionIdentity {
         subject: identity.subject,
@@ -98,6 +108,21 @@ pub(crate) async fn read_session(State(state): State<AppState>, headers: HeaderM
         groups: identity.groups,
     })
     .into_response()
+}
+
+fn authentik_identity(headers: &HeaderMap) -> Option<AuthentikIdentity> {
+    let subject = header_str(headers, HEADER_AUTHENTIK_USERNAME)?.trim().to_owned();
+    if subject.is_empty() {
+        return None;
+    }
+    Some(AuthentikIdentity {
+        subject,
+        email: header_str(headers, HEADER_AUTHENTIK_EMAIL).map(str::to_owned),
+        display_name: header_str(headers, HEADER_AUTHENTIK_NAME).map(str::to_owned),
+        groups: header_str(headers, HEADER_AUTHENTIK_GROUPS)
+            .map(|value| value.split(',').map(str::trim).filter(|group| !group.is_empty()).map(str::to_owned).collect())
+            .unwrap_or_default(),
+    })
 }
 
 fn authelia_identity(headers: &HeaderMap) -> Option<AutheliaIdentity> {

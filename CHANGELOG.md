@@ -81,6 +81,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nominal product payload.
 - Make recursive staged-analysis helpers stateless associated functions,
   removing unused rule receivers and keeping the workspace lint gate clean.
+
+- pckg now accepts the trusted identity headers forwarded by the Authentik
+  proxy outpost when `SHELL_AUTH_MODE=authentik`, including the configured
+  administrator and moderator group rules.
 - pckg package summaries now derive required `packageKind`, nullable template
   metadata, and canonical dependencies from the immutable validated artifact
   manifest. Published manifests are persisted with each version and parsed by

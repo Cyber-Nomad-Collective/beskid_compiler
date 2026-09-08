@@ -166,6 +166,17 @@ impl PckgServerConfig {
         })
     }
 
+    /// Configures Authentik proxy-outpost mode with the default role groups.
+    pub fn with_authentik_auth(self) -> Self {
+        self.with_auth(AuthConfig {
+            mode: AuthMode::Authentik,
+            admin_group: "pckg-admins".to_owned(),
+            moderator_group: "pckg-moderators".to_owned(),
+            mock_subject: "local-admin".to_owned(),
+            mock_groups: vec!["pckg-admins".to_owned()],
+        })
+    }
+
     /// Configures mock mode with a single dev admin subject. Intended for
     /// tests and local development without an Authelia instance.
     pub fn with_mock_auth(self) -> Self {

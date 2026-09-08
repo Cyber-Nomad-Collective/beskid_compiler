@@ -572,6 +572,33 @@ async fn session_endpoint_projects_the_authelia_identity() {
 }
 
 #[tokio::test]
+async fn session_endpoint_projects_the_authentik_identity() {
+    let app = router(PckgServerConfig::default().with_authentik_auth());
+    let session = app
+        .oneshot(
+            Request::get("/api/auth/session")
+                .header("x-authentik-username", "pmikstacki")
+                .header("x-authentik-email", "pmikstacki@example.test")
+                .header("x-authentik-name", "Piotr Mikstacki")
+                .header("x-authentik-groups", "pckg-admins,pckg-moderators")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(session.status(), StatusCode::OK);
+    assert_eq!(
+        response_body(session).await,
+        serde_json::json!({
+            "subject": "pmikstacki",
+            "email": "pmikstacki@example.test",
+            "displayName": "Piotr Mikstacki",
+            "groups": ["pckg-admins", "pckg-moderators"]
+        })
+    );
+}
+
+#[tokio::test]
 async fn session_endpoint_rejects_anonymous_requests() {
     let app = router(authenticated_config());
     let session = app.oneshot(Request::get("/api/auth/session").body(Body::empty()).unwrap()).await.unwrap();
