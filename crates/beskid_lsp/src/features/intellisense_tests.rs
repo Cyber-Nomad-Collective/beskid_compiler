@@ -69,6 +69,7 @@ mod tests {
             parse_program_with_source_name(output_path.to_str().unwrap(), output_source).expect("output parses"),
             DEFAULT_MAX_MACRO_EXPANSION_DEPTH,
         );
+        let generation = SyntaxGenerationId(2);
         let assembly = Arc::new(ProgramAssembly::new(
             EffectiveCompilationRoots {
                 host: RootEntry { dependency_name: None, source_root: root.clone() },
@@ -92,7 +93,7 @@ mod tests {
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
             false,
-            SyntaxGenerationId(0),
+            generation,
         ));
         let mut db = BeskidDatabase::default();
         let main_unit = SourceUnitId::new(&db, main_path.clone());
@@ -103,7 +104,6 @@ mod tests {
             "App".to_string(),
             "lock".to_string(),
         );
-        let generation = SyntaxGenerationId(2);
         db.ensure_file_text(main_unit.path(&db).clone(), main_source.to_string());
         build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
         let index = SyntaxIndex::from_program(&main_program, generation);

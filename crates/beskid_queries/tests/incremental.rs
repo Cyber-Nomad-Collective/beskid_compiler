@@ -214,6 +214,11 @@ fn typed_entry_state_uses_fast_resolution_when_stale() {
 
         let state = typed_entry_state_with_db(&mut db, &resolved, &options, None).expect("typed entry state");
         assert!(state.typed.is_some(), "stale typed bundle should run EntryOnly gate prepare");
+        assert_eq!(
+            state.generation,
+            state.typed.as_ref().expect("typed bundle").assembly.generation.0,
+            "typed entry state must expose the prepared syntax generation, not its cache revision"
+        );
         assert!(!state.resolution.by_symbol().is_empty(), "fast resolution path should still populate registry");
 
         bump_typed_prepare_revision(&mut db, &entry_key);

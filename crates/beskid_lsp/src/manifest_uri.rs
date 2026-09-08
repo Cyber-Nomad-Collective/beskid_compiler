@@ -19,6 +19,14 @@ pub fn is_manifest_uri(uri: &Uri) -> bool {
     is_project_manifest_uri(uri) || is_workspace_manifest_uri(uri)
 }
 
+/// Whether `uri` is a standalone generic BSOL document rather than a project manifest.
+///
+/// Keep this distinct from [`is_manifest_uri`]: `.bsol` has no project/workspace schema and
+/// therefore must not participate in compilation-plan discovery or manifest feature routing.
+pub fn is_standalone_bsol_uri(uri: &Uri) -> bool {
+    uri_to_path(uri).is_some_and(|path| path.extension().and_then(|extension| extension.to_str()) == Some("bsol"))
+}
+
 pub fn manifest_path_from_uri_str(uri: &str) -> Option<PathBuf> {
     path_from_uri_string(uri)
 }

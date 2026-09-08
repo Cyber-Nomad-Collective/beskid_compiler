@@ -35,6 +35,7 @@ pub struct TypedPrepareRevision {
 pub struct TypedEntryState {
     pub resolution: SharedResolution,
     pub typed: Option<SharedFrontEnd>,
+    /// Syntax generation owned by the prepared program assembly.
     pub generation: u64,
 }
 
@@ -291,11 +292,12 @@ pub fn typed_entry_state_with_db(
 
     let resolution = entry_resolution_with_db(db, resolved, options)?;
     let typed = if stale {
-        Some(run_tracked_entry_gate_prepare(db, resolved, &entry_key, pipeline)?)
+        run_tracked_entry_gate_prepare(db, resolved, &entry_key, pipeline)?
     } else {
-        Some(run_tracked_typed_prepare(db, resolved, &entry_key, options, pipeline)?)
+        run_tracked_typed_prepare(db, resolved, &entry_key, options, pipeline)?
     };
-    Ok(TypedEntryState { resolution, typed, generation: if stale { file_revision } else { typed_prepare_revision } })
+    let generation = typed.assembly.generation.0;
+    Ok(TypedEntryState { resolution, typed: Some(typed), generation })
 }
 
 /// Executable typed bundle when prepare revision caught up; otherwise runs full prepare.
