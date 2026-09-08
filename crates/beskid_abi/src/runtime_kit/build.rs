@@ -13,6 +13,9 @@ use super::paths::{INSTALLED_RUNTIME_ROOT, RUNTIME_KIT_SCHEMA_VERSION, artifact_
 use super::resolution::resolve_installed_runtime_kit;
 use super::validation::validate_sha256;
 
+const RUNTIME_LICENSE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../LICENSE"));
+const RUNTIME_NOTICE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../NOTICE"));
+
 pub fn build_runtime_kit(request: &RuntimeKitBuildRequest) -> Result<ResolvedRuntimeKit, RuntimeKitBuildError> {
     request.target.validate().map_err(RuntimeKitBuildError::InvalidTarget)?;
     validate_sha256("runtime_source_hash", &request.runtime_source_hash)
@@ -75,6 +78,10 @@ pub fn build_runtime_kit(request: &RuntimeKitBuildRequest) -> Result<ResolvedRun
             let expected =
                 &metadata.artifacts.shared_import_library.as_ref().expect("validated import artifact").sha256;
             copy_artifact(source, &staging.join(relative), expected)?;
+        }
+        for (name, contents) in [("LICENSE", RUNTIME_LICENSE), ("NOTICE", RUNTIME_NOTICE)] {
+            let path = staging.join(name);
+            fs::write(&path, contents).map_err(|source| RuntimeKitBuildError::DestinationWrite { path, source })?;
         }
         let metadata_path = staging.join("abi.json");
         fs::write(&metadata_path, abi_json)
