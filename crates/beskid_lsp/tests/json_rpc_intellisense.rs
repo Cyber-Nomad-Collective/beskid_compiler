@@ -21,10 +21,25 @@ fn response_with_id(messages: &Receiver<Value>, id: i64) -> Value {
     }
 }
 
-fn wait_for_notification(messages: &Receiver<Value>, method: &str) {
+fn wait_for_idle_status(messages: &Receiver<Value>) {
     loop {
         let message = messages.recv_timeout(Duration::from_secs(30)).expect("LSP notification before timeout");
-        if message.get("method").and_then(Value::as_str) == Some(method) {
+        if message.get("method").and_then(Value::as_str) == Some("beskid/status")
+            && message["params"]["phase"].as_str() == Some("idle")
+            && message["params"]["active"].as_bool() == Some(false)
+        {
+            return;
+        }
+    }
+}
+
+fn wait_for_document_diagnostics(messages: &Receiver<Value>, uri: &str, version: i64) {
+    loop {
+        let message = messages.recv_timeout(Duration::from_secs(30)).expect("LSP diagnostics before timeout");
+        if message.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics")
+            && message["params"]["uri"].as_str() == Some(uri)
+            && message["params"]["version"].as_i64() == Some(version)
+        {
             return;
         }
     }
@@ -97,7 +112,7 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
     );
     assert!(response_with_id(&messages, 1).get("error").is_none());
     send_message(&mut stdin, json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}));
-    wait_for_notification(&messages, "beskid/status");
+    wait_for_idle_status(&messages);
     send_message(
         &mut stdin,
         json!({
@@ -106,7 +121,7 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
             "params": {"textDocument": {"uri": source_uri, "languageId": "beskid", "version": 1, "text": source}}
         }),
     );
-    wait_for_notification(&messages, "textDocument/publishDiagnostics");
+    wait_for_document_diagnostics(&messages, &source_uri, 1);
 
     send_message(
         &mut stdin,

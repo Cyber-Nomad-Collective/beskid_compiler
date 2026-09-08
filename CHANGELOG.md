@@ -62,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Make the JSON-RPC IntelliSense integration test wait for the completed
+  workspace scan and versioned open-document diagnostics, avoiding stale
+  disk-scan notifications before completion and hover assertions.
+
 - Preserve the prepared program assembly's syntax generation in incremental LSP state so
   dependency-backed completion, definition, hover, and references no longer fail closed with
   empty facts after confusing cache revisions with syntax generations.
