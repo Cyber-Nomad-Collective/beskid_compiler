@@ -62,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve the prepared program assembly's syntax generation in incremental LSP state so
+  dependency-backed completion, definition, hover, and references no longer fail closed with
+  empty facts after confusing cache revisions with syntax generations.
+
 - Always admit string runtime helpers (`str_new`, `str_from_i64`, `str_eq`,
   `str_concat`) as corelib service imports during ISLE lowering, even without
   the Corelib syscall capability. These services are emitted directly by the
