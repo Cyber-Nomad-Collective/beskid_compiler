@@ -1,11 +1,16 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
-    EffectiveCompilationRoots, ModuleIndex, NodeFacts, ProgramAssembly, ProjectSession, RootEntry, SourceUnit,
-    SourceUnitId, SyntaxGenerationId, SyntaxModuleItem, TargetMetadata, build_typed_program, emit_isle_item,
-    find_function_definition, find_function_definitions, find_node, find_test_definition, isa, item_fixture,
-    item_fixture_with_root, lower_syntax_program, mutable_local_assignment, named_function, node_kind,
-    parse_program_with_source_name, settings, test_statement_nodes,
+    EffectiveCompilationRoots, HashMap, JITBuilder, JITModule, Linkage, Module, ModuleIndex, NodeFacts,
+    ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxModuleItem,
+    TargetMetadata, build_typed_program, default_libcall_names, emit_isle_item, find_function_definition,
+    find_function_definitions, find_node, find_test_definition, isa, item_fixture, item_fixture_with_root,
+    lower_syntax_program, mutable_local_assignment, named_function, node_kind, parse_program_with_source_name,
+    settings, test_statement_nodes,
 };
+
+extern "C" fn test_str_new(bytes: *const u8, _byte_len: usize) -> *const u8 {
+    bytes
+}
 
 #[test]
 fn parsed_function_body_emits_verified_isle_clif_without_lowerable() {
@@ -253,4 +258,35 @@ fn parsed_syntax_string_literal_materializes_runtime_string_abi() {
     let clif = artifact.functions[0].function.display().to_string();
     assert!(clif.contains("str_new"), "syntax string literals must call the exact Corelib service: {clif}");
     assert!(clif.contains("iconst.i64 6"), "three UTF-8 e-acute scalars must materialize as six bytes: {clif}");
+    let literal_globals = artifact.functions[0]
+        .function
+        .global_values
+        .values()
+        .filter_map(|global| match global {
+            cranelift_codegen::ir::GlobalValueData::Symbol { colocated, .. } => Some(*colocated),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(literal_globals, vec![false], "JIT literal data may be more than 2 GiB from generated code");
+
+    let mut builder = JITBuilder::with_isa(isa.clone(), default_libcall_names());
+    builder.symbol("str_new", test_str_new as *const u8);
+    let mut module = JITModule::new(builder);
+    let mut function_ids = HashMap::new();
+    beskid_codegen::cranelift_host::declare_user_functions(&mut module, &artifact, Linkage::Local, &mut function_ids)
+        .expect("declare literal-producing function");
+    let mut signature = module.make_signature();
+    signature.params.push(cranelift_codegen::ir::AbiParam::new(isa.pointer_type()));
+    signature.params.push(cranelift_codegen::ir::AbiParam::new(isa.pointer_type()));
+    signature.returns.push(cranelift_codegen::ir::AbiParam::new(isa.pointer_type()));
+    let str_new = module.declare_function("str_new", Linkage::Import, &signature).expect("declare str_new");
+    function_ids.insert("str_new".into(), str_new);
+    beskid_codegen::emit_string_literals(&mut module, &artifact).expect("emit literal data");
+
+    let mut context = module.make_context();
+    context.func = artifact.functions[0].function.clone();
+    beskid_codegen::cranelift_host::remap_testcase_externals(&module, &mut context, &function_ids)
+        .expect("remap literal data and str_new references");
+    module.define_function(function_ids["Main"], &mut context).expect("define literal-producing function");
+    module.finalize_definitions().expect("finalize literal-producing function and its data relocation");
 }
