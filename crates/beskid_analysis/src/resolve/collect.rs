@@ -141,6 +141,18 @@ impl Resolver {
                 self.collect_item(item);
             }
         }
+        self.add_implicit_core_import();
+    }
+
+    fn add_implicit_core_import(&mut self) {
+        if self.current_module_path().first().is_some_and(|segment| segment == "Core") {
+            return;
+        }
+
+        let core = vec!["Core".to_owned()];
+        if self.module_graph.module_id(&core).is_some() {
+            self.module_imports.entry("Core".to_owned()).or_insert(core);
+        }
     }
 
     pub(crate) fn collect_builtins(&mut self) {
@@ -470,5 +482,30 @@ impl Resolver {
                 parent_id,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use crate::services::parse_program;
+
+    use super::super::resolver::Resolver;
+
+    #[test]
+    fn resolves_the_core_namespace_without_an_explicit_use_declaration() {
+        let core_output = parse_program("pub unit WriteLine(string text) {};").expect("parse Core.Output");
+        let entry = parse_program("unit Main() { Core.Output.WriteLine(\"hello\"); }").expect("parse entry");
+
+        let mut resolver = Resolver::new();
+        resolver.collect_program_in_module(
+            &core_output,
+            &["Core".to_owned(), "Output".to_owned()],
+            Some(&PathBuf::from("/toolchain/corelib/Core/Output.bd")),
+        );
+
+        let resolution = resolver.resolve_program(&entry).expect("resolve entry with implicit Core namespace");
+        assert_eq!(resolution.module_imports.get("Core"), Some(&vec!["Core".to_owned()]));
     }
 }
