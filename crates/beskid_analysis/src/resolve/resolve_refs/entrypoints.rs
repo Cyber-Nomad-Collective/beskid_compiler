@@ -58,6 +58,31 @@ impl Resolver {
         self.resolve_collected_program_tolerating_errors(program, logical_module_path)
     }
 
+    /// Resolve only declaration annotations for one pre-collected unit.
+    pub(crate) fn resolve_collected_program_declarations(
+        &mut self,
+        program: &Spanned<Program>,
+        logical_module_path: Option<&[String]>,
+    ) -> ResolutionTables {
+        self.tables = ResolutionTables::new();
+        self.local_scopes.clear();
+        self.generic_scopes.clear();
+        self.errors.clear();
+        self.warnings.clear();
+        self.current_receiver_item_id = None;
+        self.prepare_collected_program(program, logical_module_path);
+
+        let file_scoped_module_index = resolver::file_scoped_module_index(program);
+        for (index, item) in program.node.items.iter().enumerate() {
+            if Some(index) == file_scoped_module_index {
+                continue;
+            }
+            self.resolve_item_declaration(item);
+        }
+        self.errors.clear();
+        std::mem::take(&mut self.tables)
+    }
+
     fn take_resolution(&mut self) -> Resolution {
         let tables = std::mem::take(&mut self.tables);
         let span_index = span_index_from_tables(&tables);

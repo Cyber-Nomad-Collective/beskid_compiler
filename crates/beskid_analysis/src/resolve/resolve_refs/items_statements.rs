@@ -8,6 +8,14 @@ use super::super::tables::ResolvedType;
 
 impl Resolver {
     pub(super) fn resolve_item(&mut self, item: &Spanned<Node>) {
+        self.resolve_item_with_bodies(item, true);
+    }
+
+    pub(super) fn resolve_item_declaration(&mut self, item: &Spanned<Node>) {
+        self.resolve_item_with_bodies(item, false);
+    }
+
+    fn resolve_item_with_bodies(&mut self, item: &Spanned<Node>, include_bodies: bool) {
         match &item.node {
             Node::HostDefinition(_) => {}
             // syntax-free constant facts are consumed before executable lowering; there are no
@@ -18,56 +26,77 @@ impl Resolver {
                 for generic in &def.node.generics {
                     self.insert_generic(&generic.node.name);
                 }
-                self.push_scope();
+                if include_bodies {
+                    self.push_scope();
+                }
                 for param in &def.node.parameters {
                     self.resolve_type(&param.node.ty);
-                    self.insert_local(&param.node.name.node.name, param.node.name.span);
+                    if include_bodies {
+                        self.insert_local(&param.node.name.node.name, param.node.name.span);
+                    }
                 }
                 if let Some(return_type) = &def.node.return_type {
                     self.resolve_type(return_type);
                 }
-                self.resolve_block(&def.node.body);
-                self.pop_scope();
+                if include_bodies {
+                    self.resolve_block(&def.node.body);
+                    self.pop_scope();
+                }
                 self.pop_generic_scope();
             }
             Node::Method(def) => {
-                self.push_scope();
                 self.resolve_type(&def.node.receiver_type);
                 let previous_receiver = self.current_receiver_item_id;
-                self.current_receiver_item_id = self.receiver_item_id_for_type(&def.node.receiver_type);
-                self.insert_local("this", def.node.receiver_type.span);
+                if include_bodies {
+                    self.push_scope();
+                    self.current_receiver_item_id = self.receiver_item_id_for_type(&def.node.receiver_type);
+                    self.insert_local("this", def.node.receiver_type.span);
+                }
                 for param in &def.node.parameters {
                     self.resolve_type(&param.node.ty);
-                    self.insert_local(&param.node.name.node.name, param.node.name.span);
+                    if include_bodies {
+                        self.insert_local(&param.node.name.node.name, param.node.name.span);
+                    }
                 }
                 if let Some(return_type) = &def.node.return_type {
                     self.resolve_type(return_type);
                 }
-                self.resolve_block(&def.node.body);
-                self.current_receiver_item_id = previous_receiver;
-                self.pop_scope();
-            }
-            Node::ExtendTypeDefinition(def) => {
-                self.resolve_type(&def.node.target_type);
-                for method in &def.node.methods {
-                    self.push_scope();
-                    self.resolve_type(&method.node.receiver_type);
-                    let previous_receiver = self.current_receiver_item_id;
-                    self.current_receiver_item_id = self.receiver_item_id_for_type(&method.node.receiver_type);
-                    self.insert_local("this", method.node.receiver_type.span);
-                    for param in &method.node.parameters {
-                        self.resolve_type(&param.node.ty);
-                        self.insert_local(&param.node.name.node.name, param.node.name.span);
-                    }
-                    if let Some(return_type) = &method.node.return_type {
-                        self.resolve_type(return_type);
-                    }
-                    self.resolve_block(&method.node.body);
+                if include_bodies {
+                    self.resolve_block(&def.node.body);
                     self.current_receiver_item_id = previous_receiver;
                     self.pop_scope();
                 }
             }
+            Node::ExtendTypeDefinition(def) => {
+                self.resolve_type(&def.node.target_type);
+                for method in &def.node.methods {
+                    self.resolve_type(&method.node.receiver_type);
+                    let previous_receiver = self.current_receiver_item_id;
+                    if include_bodies {
+                        self.push_scope();
+                        self.current_receiver_item_id = self.receiver_item_id_for_type(&method.node.receiver_type);
+                        self.insert_local("this", method.node.receiver_type.span);
+                    }
+                    for param in &method.node.parameters {
+                        self.resolve_type(&param.node.ty);
+                        if include_bodies {
+                            self.insert_local(&param.node.name.node.name, param.node.name.span);
+                        }
+                    }
+                    if let Some(return_type) = &method.node.return_type {
+                        self.resolve_type(return_type);
+                    }
+                    if include_bodies {
+                        self.resolve_block(&method.node.body);
+                        self.current_receiver_item_id = previous_receiver;
+                        self.pop_scope();
+                    }
+                }
+            }
             Node::TestDefinition(def) => {
+                if !include_bodies {
+                    return;
+                }
                 self.push_scope();
                 if let Some(meta) = &def.node.meta {
                     for entry in &meta.node.entries {
@@ -93,7 +122,7 @@ impl Resolver {
                 let child_id = self.module_graph.ensure_module_path(&module_path);
                 self.current_module = child_id;
                 for item in &def.node.items {
-                    self.resolve_item(item);
+                    self.resolve_item_with_bodies(item, include_bodies);
                 }
                 self.current_module = previous_module;
                 self.pop_scope();
@@ -127,21 +156,27 @@ impl Resolver {
                     self.resolve_type(&field.node.ty);
                 }
                 for method in &def.node.methods {
-                    self.push_scope();
                     self.resolve_type(&method.node.receiver_type);
                     let previous_receiver = self.current_receiver_item_id;
-                    self.current_receiver_item_id = self.receiver_item_id_for_type(&method.node.receiver_type);
-                    self.insert_local("this", method.node.receiver_type.span);
+                    if include_bodies {
+                        self.push_scope();
+                        self.current_receiver_item_id = self.receiver_item_id_for_type(&method.node.receiver_type);
+                        self.insert_local("this", method.node.receiver_type.span);
+                    }
                     for param in &method.node.parameters {
                         self.resolve_type(&param.node.ty);
-                        self.insert_local(&param.node.name.node.name, param.node.name.span);
+                        if include_bodies {
+                            self.insert_local(&param.node.name.node.name, param.node.name.span);
+                        }
                     }
                     if let Some(return_type) = &method.node.return_type {
                         self.resolve_type(return_type);
                     }
-                    self.resolve_block(&method.node.body);
-                    self.current_receiver_item_id = previous_receiver;
-                    self.pop_scope();
+                    if include_bodies {
+                        self.resolve_block(&method.node.body);
+                        self.current_receiver_item_id = previous_receiver;
+                        self.pop_scope();
+                    }
                 }
                 self.pop_generic_scope();
             }
