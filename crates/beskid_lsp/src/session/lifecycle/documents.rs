@@ -5,7 +5,7 @@ use beskid_analysis::services::PrepareOptions;
 use beskid_queries::typed_entry_state_with_db;
 
 use crate::{
-    manifest_uri::is_manifest_uri,
+    manifest_uri::{is_manifest_uri, is_standalone_bsol_uri},
     session::{
         db_access::with_compilation_db_mut_state,
         diagnostics_bridge::collect_syntax_diagnostics_for_state,
@@ -23,9 +23,12 @@ use super::{
 
 pub(super) async fn build_syntax_facts(state: &RwLock<State>, uri: &Uri, text: &str) -> SyntaxFacts {
     wait_for_initial_scan(state).await;
-    let documentation =
-        if is_manifest_uri(uri) { Vec::new() } else { syntax_documentation_facts_for_source(uri.as_str(), text) };
-    if is_manifest_uri(uri) {
+    let documentation = if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
+        Vec::new()
+    } else {
+        syntax_documentation_facts_for_source(uri.as_str(), text)
+    };
+    if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
         let (diagnostics, fixes) = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
         return SyntaxFacts { documentation, diagnostics, fixes, ..SyntaxFacts::default() };
     }
@@ -141,7 +144,7 @@ pub async fn rebuild_open_document_syntax_facts(state: &RwLock<State>) {
         let read = state.read().await;
         read.docs
             .iter()
-            .filter(|(uri, _)| !is_manifest_uri(uri))
+            .filter(|(uri, _)| !is_manifest_uri(uri) && !is_standalone_bsol_uri(uri))
             .map(|(uri, doc)| (uri.clone(), doc.text.clone()))
             .collect()
     };

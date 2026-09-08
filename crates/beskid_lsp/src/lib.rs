@@ -10,6 +10,7 @@ pub(crate) mod position;
 pub(crate) mod protocol;
 pub mod server;
 pub(crate) mod session;
+pub(crate) mod standalone_bsol;
 pub(crate) mod text_sync;
 pub(crate) mod workspace_scan;
 

@@ -1,4 +1,4 @@
-//! Walk workspace roots to index `.bd` / `.bproj` / `.bws` files and publish disk-backed diagnostics.
+//! Walk workspace roots to index `.bd` / `.bproj` / `.bws` / `.bsol` files and publish disk-backed diagnostics.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -33,7 +33,7 @@ pub(crate) fn should_skip_dir_for_scan(name: &str) -> bool {
 }
 
 fn is_scannable_extension(ext: &str) -> bool {
-    matches!(ext, "bd" | "bproj" | "bws")
+    matches!(ext, "bd" | "bproj" | "bws" | "bsol")
 }
 
 fn is_manifest_extension(ext: &str) -> bool {
@@ -299,4 +299,17 @@ pub async fn hydrate_disk_after_close(client: &Client, state: &RwLock<State>, ur
     let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
     set_disk_snapshot(state, uri.clone(), doc).await;
     client.publish_diagnostics(uri.clone(), diagnostics, Some(0)).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_scannable_extension;
+
+    #[test]
+    fn workspace_scan_includes_generic_bsol_without_regressing_existing_extensions() {
+        for extension in ["bd", "bproj", "bws", "bsol"] {
+            assert!(is_scannable_extension(extension), "{extension} must be scanned");
+        }
+        assert!(!is_scannable_extension("toml"));
+    }
 }
