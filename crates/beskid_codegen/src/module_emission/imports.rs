@@ -25,7 +25,7 @@ impl StringInterner for ArtifactStringInterner<'_> {
         let global = builder.func.create_global_value(GlobalValueData::Symbol {
             name: ExternalName::testcase(symbol),
             offset: 0.into(),
-            colocated: true,
+            colocated: false,
             tls: false,
         });
         let bytes = builder.ins().global_value(self.pointer_type, global);

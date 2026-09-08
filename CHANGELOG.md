@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Materialize artifact string addresses with non-colocated relocations so the
+  arm64 JIT does not require literal data to remain within 2 GiB of code.
 - Resolve a one-segment type imported from its homonymous module to the public
   type declaration rather than the module item, preserving generic iterator
   signatures in Corelib array facades without loading dependency bodies.
