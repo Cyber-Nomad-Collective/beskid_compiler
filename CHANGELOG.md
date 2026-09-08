@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Advertise `@` as an LSP completion trigger so standalone BSOL editors show
+  the existing `@schemaless` suggestion as the annotation is typed.
 - Frame prepared-matrix worker events separately from Beskid program stdout,
   use JSON-portable 64-bit timing fields, and reset generation-bound compilation
   state between independent targets, so stdout-writing and sequential Corelib

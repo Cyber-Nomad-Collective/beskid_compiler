@@ -11,7 +11,7 @@ pub fn initialize_result() -> InitializeResult {
             declaration_provider: Some(DeclarationCapability::Simple(true)),
             references_provider: Some(OneOf::Left(true)),
             completion_provider: Some(CompletionOptions {
-                trigger_characters: Some(vec![".".to_string(), ":".to_string(), "_".to_string()]),
+                trigger_characters: Some(vec![".".to_string(), ":".to_string(), "_".to_string(), "@".to_string()]),
                 ..CompletionOptions::default()
             }),
             semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
