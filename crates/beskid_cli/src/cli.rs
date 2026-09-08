@@ -32,6 +32,8 @@ use beskid_pckg::PckgArgs;
 use beskid_pckg::cli::PckgCommand;
 use beskid_telemetry::{self, InitOptions};
 use beskid_up::UpArgs;
+#[cfg(test)]
+use clap::CommandFactory;
 use clap::{ArgAction, Parser, Subcommand};
 use miette::Report;
 use std::env;
@@ -59,6 +61,9 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Developer-oriented command groups; concise root commands remain available as shortcuts
+    Dev(DevArgs),
+
     /// Parse a Beskid file and output the AST representation
     Parse(ParseArgs),
 
@@ -138,6 +143,93 @@ pub enum Commands {
     MigrateBsol(MigrateBsolArgs),
 }
 
+/// Developer command groups used by the documentation and automation examples.
+#[derive(clap::Args, Debug)]
+pub struct DevArgs {
+    #[command(subcommand)]
+    command: DevCommand,
+}
+
+#[derive(Subcommand, Debug)]
+enum DevCommand {
+    /// Syntax and semantic analysis tools
+    Syntax(DevSyntaxArgs),
+    /// Compile, test, and core library tools
+    Build(DevBuildArgs),
+    /// Dependency resolution and project graph tools
+    Project(DevProjectArgs),
+    /// Package registry tools
+    Package(DevPackageArgs),
+}
+
+#[derive(clap::Args, Debug)]
+struct DevSyntaxArgs {
+    #[command(subcommand)]
+    command: DevSyntaxCommand,
+}
+
+#[derive(Subcommand, Debug)]
+enum DevSyntaxCommand {
+    /// Parse a Beskid file and output the AST representation
+    Parse(ParseArgs),
+    /// Generate an AST visualization tree from a Beskid file
+    Tree(TreeArgs),
+    /// Run semantic analysis and print diagnostics
+    Analyze(AnalyzeArgs),
+    /// Emit API documentation for a resolved source file
+    Doc(DocArgs),
+    /// Pretty-print Beskid sources using the canonical formatter
+    Format(FormatArgs),
+    /// Lower a Beskid file into CLIF and print the resulting IR
+    Clif(ClifArgs),
+}
+
+#[derive(clap::Args, Debug)]
+struct DevBuildArgs {
+    #[command(subcommand)]
+    command: DevBuildCommand,
+}
+
+#[derive(Subcommand, Debug)]
+enum DevBuildCommand {
+    /// AOT-compile and link a Beskid file into output artifacts
+    Compile(BuildArgs),
+    /// Discover and run Beskid `test` items
+    Test(TestArgs),
+    /// Materialize the checked-in Beskid corelib project template
+    Corelib(CorelibArgs),
+}
+
+#[derive(clap::Args, Debug)]
+struct DevProjectArgs {
+    #[command(subcommand)]
+    command: DevProjectCommand,
+}
+
+#[derive(Subcommand, Debug)]
+enum DevProjectCommand {
+    /// Resolve and materialize project dependencies
+    Fetch(FetchArgs),
+    /// Synchronize Project.lock for a project
+    Lock(LockArgs),
+    /// Update dependency resolution and materialized workspace
+    Update(UpdateArgs),
+    /// Visualize project/workspace graphs
+    Graph(GraphArgs),
+}
+
+#[derive(clap::Args, Debug)]
+struct DevPackageArgs {
+    #[command(subcommand)]
+    command: DevPackageCommand,
+}
+
+#[derive(Subcommand, Debug)]
+enum DevPackageCommand {
+    /// Package-manager operations backed by the pckg registry service
+    Registry(PckgArgs),
+}
+
 /// Parses argv, provisions bundled corelib when needed, and runs the selected subcommand.
 pub fn run() -> miette::Result<()> {
     let os_args = env::args_os();
@@ -149,6 +241,7 @@ pub fn run() -> miette::Result<()> {
     }
 
     let result = match cli.command {
+        Commands::Dev(args) => execute_dev(args),
         Commands::Parse(args) => parse::execute(args),
         Commands::Tree(args) => tree::execute(args),
         Commands::Analyze(args) => analyze::execute(args),
@@ -167,9 +260,7 @@ pub fn run() -> miette::Result<()> {
         Commands::Corelib(args) => corelib::execute(args),
         Commands::RuntimeKit(args) => runtime_kit::execute(args),
         Commands::New(args) => new::execute(*args),
-        Commands::Pckg(args) => {
-            maybe_generate_docs_for_pack(&args).and_then(|_| beskid_pckg::cli::execute(args).map_err(Into::into))
-        }
+        Commands::Pckg(args) => execute_pckg(args),
         Commands::Lsp(args) => lsp::execute(args),
         Commands::Up(args) => beskid_up::execute(args).map_err(anyhow::Error::from),
         Commands::ValidateBsol(args) => validate_bsol::execute(args),
@@ -179,6 +270,37 @@ pub fn run() -> miette::Result<()> {
     };
 
     result.map_err(anyhow_to_miette)
+}
+
+fn execute_dev(args: DevArgs) -> anyhow::Result<()> {
+    match args.command {
+        DevCommand::Syntax(args) => match args.command {
+            DevSyntaxCommand::Parse(args) => parse::execute(args),
+            DevSyntaxCommand::Tree(args) => tree::execute(args),
+            DevSyntaxCommand::Analyze(args) => analyze::execute(args),
+            DevSyntaxCommand::Doc(args) => doc::execute(args),
+            DevSyntaxCommand::Format(args) => format::execute(args),
+            DevSyntaxCommand::Clif(args) => clif::execute(args),
+        },
+        DevCommand::Build(args) => match args.command {
+            DevBuildCommand::Compile(args) => build::execute(args),
+            DevBuildCommand::Test(args) => test::execute(args),
+            DevBuildCommand::Corelib(args) => corelib::execute(args),
+        },
+        DevCommand::Project(args) => match args.command {
+            DevProjectCommand::Fetch(args) => fetch::execute(args),
+            DevProjectCommand::Lock(args) => lock::execute(args),
+            DevProjectCommand::Update(args) => update::execute(args),
+            DevProjectCommand::Graph(args) => graph::execute(args),
+        },
+        DevCommand::Package(args) => match args.command {
+            DevPackageCommand::Registry(args) => execute_pckg(args),
+        },
+    }
+}
+
+fn execute_pckg(args: PckgArgs) -> anyhow::Result<()> {
+    maybe_generate_docs_for_pack(&args).and_then(|_| beskid_pckg::cli::execute(args).map_err(Into::into))
 }
 
 fn ensure_corelib_ready() -> anyhow::Result<()> {
@@ -262,6 +384,61 @@ fn resolve_doc_entrypoint(source_root: &Path) -> anyhow::Result<(Option<PathBuf>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_developer_syntax_analyze() {
+        let cli =
+            Cli::try_parse_from(["beskid", "dev", "syntax", "analyze", "Main.bd"]).expect("parse developer syntax");
+        assert!(matches!(
+            cli.command,
+            Commands::Dev(DevArgs {
+                command: DevCommand::Syntax(DevSyntaxArgs { command: DevSyntaxCommand::Analyze(_) })
+            })
+        ));
+    }
+
+    #[test]
+    fn parses_developer_build_compile() {
+        let cli = Cli::try_parse_from(["beskid", "dev", "build", "compile", "Main.bd"]).expect("parse developer build");
+        assert!(matches!(
+            cli.command,
+            Commands::Dev(DevArgs {
+                command: DevCommand::Build(DevBuildArgs { command: DevBuildCommand::Compile(_) })
+            })
+        ));
+    }
+
+    #[test]
+    fn parses_developer_project_fetch() {
+        let cli = Cli::try_parse_from(["beskid", "dev", "project", "fetch", "--project", "Project.proj"])
+            .expect("parse developer project");
+        assert!(matches!(
+            cli.command,
+            Commands::Dev(DevArgs {
+                command: DevCommand::Project(DevProjectArgs { command: DevProjectCommand::Fetch(_) })
+            })
+        ));
+    }
+
+    #[test]
+    fn parses_developer_package_registry() {
+        let cli = Cli::try_parse_from(["beskid", "dev", "package", "registry", "search", "beskid"])
+            .expect("parse developer package registry");
+        assert!(matches!(cli.command, Commands::Dev(DevArgs { command: DevCommand::Package(_) })));
+    }
+
+    #[test]
+    fn developer_help_lists_documented_groups() {
+        let mut root = Cli::command();
+        let root_help = root.render_long_help().to_string();
+        assert!(root_help.contains("dev"), "root help must list the developer command");
+
+        let mut dev = Cli::command().find_subcommand_mut("dev").expect("developer command must exist").clone();
+        let dev_help = dev.render_long_help().to_string();
+        for group in ["syntax", "build", "project", "package"] {
+            assert!(dev_help.contains(group), "developer help must list the {group} group");
+        }
+    }
 
     #[test]
     fn parses_up_list() {
