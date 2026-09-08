@@ -137,15 +137,24 @@ done
 
 smoke_source="${work}/runtime-kit-cli-smoke.bd"
 cat >"${smoke_source}" <<'EOF'
-use Testing.Assert;
-
 pub i64 Main() {
-  i64 semanticValue = 42;
-  Assert.Equal(semanticValue, 42, "native runtime-kit CLI semantic value mismatch");
-  return 0;
+  i64 semanticValue = 6 * 7;
+  return semanticValue;
 }
 EOF
 export BESKID_RUNTIME_KIT_PROFILE=debug
-run_smoke debug cli shared "${cli[@]}" run "${smoke_source}" --plain
+smoke_output="${evidence_dir}/smokes/debug-cli.log"
+mkdir -p "$(dirname "${smoke_output}")"
+printf -v smoke_command '%q ' "${cli[@]}" run "${smoke_source}" --plain
+set +e
+"${cli[@]}" run "${smoke_source}" --plain > >(tee "${smoke_output}") 2>&1
+smoke_status=$?
+set -e
+if [[ "${smoke_status}" -ne 42 ]]; then
+  "${evidence_helper}" smoke "${target}" debug cli shared failed "${smoke_status}" "smokes/debug-cli.log" "${smoke_command% }"
+  echo "Native ABI-v5 runtime-kit CLI smoke returned ${smoke_status}; expected 42" >&2
+  exit 1
+fi
+"${evidence_helper}" smoke "${target}" debug cli shared passed "${smoke_status}" "smokes/debug-cli.log" "${smoke_command% }"
 
 echo "Native ABI-v5 runtime-kit matrix evidence passed for ${target} at ${prefix}"

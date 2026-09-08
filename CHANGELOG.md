@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Make the native runtime-kit CLI smoke independent of test-only Corelib
+  packages while still requiring its computed process result to be exactly 42,
+  and retain that semantic result in runtime-kit evidence on every platform.
+- Refresh the ABI-v5 bootstrap contract expectations from the checked-in
+  canonical manifest after the intended poll runtime, composition, callback,
+  filesystem, environment, worker, and scheduler contracts were added.
+
 ### Changed
 
 - Bind BSOL semantic-token candidates to each LSP document generation so
