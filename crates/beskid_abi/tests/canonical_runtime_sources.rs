@@ -34,6 +34,29 @@ fn canonical_bootstrap_sources_exist() {
 }
 
 #[test]
+fn managed_aggregate_allocator_uses_the_canonical_gc_heap() {
+    let objects = canonical_runtime_sources()
+        .into_iter()
+        .find(|unit| unit.logical_path == CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH)
+        .expect("canonical objects source");
+    let allocator = objects
+        .source
+        .split("pub pointer AllocateObject(pointer request)")
+        .nth(1)
+        .and_then(|tail| tail.split("// Allocates a closure capture environment").next())
+        .expect("managed object allocator body");
+
+    assert!(
+        allocator.contains("pointer object = GcAlloc(size, alignment);"),
+        "managed aggregates must enter the traced heap"
+    );
+    assert!(
+        !allocator.contains("SystemAllocate(size, alignment)"),
+        "raw system allocation bypasses root and descriptor tracing"
+    );
+}
+
+#[test]
 fn canonical_scheduler_sources_exist() {
     let sources = canonical_runtime_sources();
     for path in [

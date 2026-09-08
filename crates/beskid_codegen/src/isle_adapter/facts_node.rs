@@ -185,6 +185,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if self.typed_array_plan(key).is_some() {
             return Some(CallKind::TypedArrayAllocation);
         }
+        // An exact generation-bound closure target outranks domain-specific call probes. Stored
+        // lambdas use a local path as their callee; asking collection dispatch about that path can
+        // fail unavailable even though the closure call is fully proven.
+        if self.inline_lambda_call(key).is_some() {
+            return Some(CallKind::InlineLambda);
+        }
         match beskid_queries::collection_operation(self.db, key) {
             Ok(Some(_)) | Err(_) => return Some(CallKind::CollectionOperation),
             Ok(None) => {}
@@ -198,9 +204,6 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         }
         if self.query(dispatch_builtin_symbol(self.db, key)).is_some() {
             return Some(CallKind::Dynamic);
-        }
-        if self.inline_lambda_call(key).is_some() {
-            return Some(CallKind::InlineLambda);
         }
         matches!(
             self.query(call_lowering(self.db, key)),

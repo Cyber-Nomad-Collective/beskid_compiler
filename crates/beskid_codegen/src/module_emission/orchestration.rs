@@ -122,11 +122,22 @@ fn lower_resolved_syntax_program(
     );
 
     // The scheduler entry symbols (context, set/current fiber, context switch, fiber record) are
-    // always required for the compiler-generated fiber entry and return trampolines. The stack
+    // required only when this emission slice includes scheduler implementation items. Canonical
+    // runtime helper slices still carry intrinsic authority, but do not define or use the
+    // compiler-generated fiber entry and return trampolines. Once any scheduler entry item is
+    // selected, require the complete set and fail closed on a partial scheduler corpus. The stack
     // check and overflow seam functions are only invoked by spawn trampolines, so they are
-    // resolved lazily: a canonical runtime corpus with no spawn expressions never reaches them
-    // and must not require them to be reachable from manifest exports.
-    let scheduler_symbols = if input.runtime_intrinsic_capability().is_some() {
+    // resolved lazily as well.
+    let scheduler_entry_names =
+        ["SchedulerContext", "SchedulerSetCurrentFiber", "ContextSwitch", "SchedulerCurrentFiber", "FiberRecord"];
+    let includes_scheduler_entry = input.runtime_intrinsic_capability().is_some()
+        && items.iter().any(|item| {
+            beskid_queries::item_name(input.database(), item.key)
+                .ok()
+                .flatten()
+                .is_some_and(|name| scheduler_entry_names.contains(&name.as_ref()))
+        });
+    let scheduler_symbols = if includes_scheduler_entry {
         let symbol = |name: &str| {
             items
                 .iter()

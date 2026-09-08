@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Allocate managed aggregates and closure environments inside the descriptor-traced GC heap, and
+  align the host runtime's type-descriptor decoder with the canonical ABI-v5 field layout.
+- Derive inferred-let ownership from the initializer when the physical value width aliases a
+  native pointer, and make storage/match CLIF tests select their intended caller and assert
+  structural control flow instead of obsolete optimized instruction shapes.
+- Prioritize generation-bound stored-lambda call facts over broader collection-operation probes,
+  preventing local zero-capture callables from being misclassified during ISLE lowering.
+- Preserve syntax-generation identity in canonical-runtime test assemblies, emit scheduler
+  trampolines only for complete selected scheduler slices, and keep descriptor-validation
+  fixtures synchronized with their `TypeDescriptorFlags` dependency.
+- Let non-local paths fall through the optional generic-local managedness probe, preserving
+  scalar authority for resolved integer constants; align Core.Args import tests with exact ABI-v5
+  symbols and the always-admitted string baseline.
+- Preserve source-level ownership for concrete generic enum match payloads, so array and nominal
+  bindings lower as managed references without treating every pointer-shaped ABI value as managed.
+- Assert generic string equality and inequality against the manifest-authorized `str_eq` call and
+  its zero-result predicate, removing stale numeric dispatch-tag assumptions from ABI-v5 tests.
 - Materialize generic enum-match layouts, payload ownership, and bindings from each exact
   call-derived item specialization, so shared `Result<TValue, TError>` predicates and transforms
   lower without guessing pointer-shaped generic identities or leaking substitutions between

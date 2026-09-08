@@ -36,23 +36,33 @@ impl SyntaxNodeFacts<'_> {
     /// lowered. Generic parameter paths must use their concrete source substitution: their
     /// pointer-shaped ABI alone cannot distinguish a managed nominal/string from a native pointer.
     pub(super) fn managed_reference_in_context(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
-        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression) {
-            let declaration = self.query(resolved_local(self.db, key))?.declaration;
-            let slot = self.query(local_slot(self.db, declaration))?;
-            if let Some(parameter_name) = self.generic_parameter_name_for_declaration(slot.owner, declaration) {
-                let binding = self
-                    .item_specializations
-                    .get(&slot.owner)?
-                    .substitutions
-                    .iter()
-                    .find(|binding| binding.parameter.as_ref() == parameter_name.as_ref())?;
-                return Some(match binding.managed_reference_kind() {
-                    ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
-                    ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
-                });
-            }
+        if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)
+            && let Some(managed) = self.specialized_local_managed_reference(key)
+        {
+            return Some(managed);
         }
-        self.query(managed_reference_kind(self.db, key)).map(|kind| match kind {
+        if let Some(kind) = self.query(managed_reference_kind(self.db, key)) {
+            return Some(match kind {
+                ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
+        (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::LetStatement))
+            .then(|| self.let_initializer(key))?
+            .and_then(|initializer| self.managed_reference_in_context(initializer))
+    }
+
+    fn specialized_local_managed_reference(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
+        let declaration = self.query(resolved_local(self.db, key))?.declaration;
+        let slot = self.query(local_slot(self.db, declaration))?;
+        let parameter_name = self.generic_parameter_name_for_declaration(slot.owner, declaration)?;
+        let binding = self
+            .item_specializations
+            .get(&slot.owner)?
+            .substitutions
+            .iter()
+            .find(|binding| binding.parameter.as_ref() == parameter_name.as_ref())?;
+        Some(match binding.managed_reference_kind() {
             ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
             ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
         })

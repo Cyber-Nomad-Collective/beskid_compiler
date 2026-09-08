@@ -183,7 +183,7 @@ fn parsed_result_try_rejects_noncanonical_result_definition_before_clif() {
     let rendered = error.display_with_db(input.database());
 
     assert!(rendered.contains("MissingRuleOrFact"), "{rendered}");
-    assert!(rendered.contains("LetStatement@"), "{rendered}");
+    assert!(rendered.contains("TryExpression@"), "{rendered}");
 }
 
 #[test]
@@ -266,6 +266,35 @@ fn generic_result_predicate_match_uses_each_call_specialization_for_its_scrutine
         ],
     )
     .expect("a generic predicate match must consume the same call specialization as its parameter local");
+}
+
+#[test]
+fn concrete_array_result_match_survives_a_sibling_generic_result_specialization() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum EncodingError { Invalid() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } bool IsOk<TValue, TError>(Result<TValue, TError> value) { return match value { Result::Ok(_) => true, Result::Error(_) => false, }; } u8[] StringToBytes(Result<u8[], EncodingError> encoded, u8[] empty) { return match encoded { Result::Ok(bytes) => bytes, Result::Error(_) => empty, }; } unit Main(Result<u8[], EncodingError> encoded, u8[] empty) { IsOk<u8[], EncodingError>(encoded); u8[] bytes = StringToBytes(encoded, empty); return; }",
+    );
+    let definitions = find_function_definitions(input.database(), root);
+    let string_to_bytes = definitions
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("StringToBytes"))
+        .expect("StringToBytes definition");
+    let expression = find_node(input.database(), string_to_bytes, beskid_queries::IndexedNodeKind::MatchExpression)
+        .expect("StringToBytes match");
+    assert!(
+        enum_match(input.database(), expression).expect("concrete Result match query").is_some(),
+        "the concrete applied Result type must retain its array payload ownership"
+    );
+    let items = definitions
+        .into_iter()
+        .map(|item| SyntaxModuleItem {
+            symbol: item_name(input.database(), item).expect("item name query").expect("named function").to_string(),
+            key: item,
+        })
+        .collect::<Vec<_>>();
+
+    lower_syntax_program(&input, isa.as_ref(), &items)
+        .expect("a generic sibling specialization must not shadow a concrete array Result match");
 }
 
 #[test]

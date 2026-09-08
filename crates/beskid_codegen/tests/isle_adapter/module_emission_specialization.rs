@@ -12,6 +12,39 @@ use super::support::{
 };
 use cranelift_codegen::ir::types;
 
+#[derive(Clone, Copy)]
+enum StringComparison {
+    Equal,
+    NotEqual,
+}
+
+fn assert_string_content_comparison(clif: &str, comparison: StringComparison, scenario: &str) {
+    let service_import = clif
+        .lines()
+        .find(|line| line.contains(" = %str_eq "))
+        .unwrap_or_else(|| panic!("{scenario} must import the manifest-authorized str_eq service:\n{clif}"));
+    let service_ref =
+        service_import.split_whitespace().next().expect("str_eq import has a Cranelift function reference");
+    let service_call = clif
+        .lines()
+        .find(|line| line.contains(&format!("= call {service_ref}(")))
+        .unwrap_or_else(|| panic!("{scenario} must call its str_eq import:\n{clif}"));
+    let service_result = service_call.split_whitespace().next().expect("str_eq call has a Cranelift result value");
+    let zero = clif
+        .lines()
+        .find(|line| line.contains(" = iconst.i64 0"))
+        .unwrap_or_else(|| panic!("{scenario} must compare the str_eq result with zero:\n{clif}"))
+        .split_whitespace()
+        .next()
+        .expect("zero constant has a Cranelift value");
+    let predicate = match comparison {
+        StringComparison::Equal => "ne",
+        StringComparison::NotEqual => "eq",
+    };
+    let expected = format!("icmp {predicate} {service_result}, {zero}");
+    assert!(clif.contains(&expected), "{scenario} must derive its result from str_eq via `{expected}`:\n{clif}");
+}
+
 #[test]
 fn nested_module_static_call_results_are_valid_comparison_operands() {
     let mut db = Box::new(BeskidDatabase::default());
@@ -502,11 +535,7 @@ fn parsed_program_specializes_generic_string_not_equal_as_content_comparison() {
         .find(|function| function.name.starts_with("NotEqual#generic_"))
         .expect("specialized NotEqual<string> function");
     let clif = not_equal.function.display().to_string();
-    assert!(clif.contains("iconst.i32 42"), "NotEqual<string> must dispatch through str_eq tag 42: {clif}");
-    assert!(
-        !clif.contains("icmp eq v0, v1") && !clif.contains("icmp ne v0, v1"),
-        "NotEqual<string> must not compare raw string pointers: {clif}"
-    );
+    assert_string_content_comparison(&clif, StringComparison::NotEqual, "NotEqual<string>");
 }
 
 #[test]
@@ -542,7 +571,7 @@ fn parsed_program_keeps_generic_nominal_pointer_equal_as_identity_comparison() {
         .find(|function| function.name.starts_with("Equal#generic_"))
         .expect("specialized Equal<Box<i64>> function");
     let clif = equal.function.display().to_string();
-    assert!(!clif.contains("iconst.i32 42"), "nominal POINTER specialization must not dispatch through str_eq: {clif}");
+    assert!(!clif.contains("%str_eq"), "nominal POINTER specialization must not call str_eq: {clif}");
     assert!(clif.contains("icmp eq v0, v1"), "nominal POINTER specialization must retain identity equality: {clif}");
 }
 
@@ -948,8 +977,7 @@ fn parsed_program_specializes_a_qualified_imported_generic_call_without_hir() {
         .find(|function| function.name.starts_with("Equal#generic_"))
         .expect("specialized imported Assert.Equal function");
     let clif = equal.function.display().to_string();
-    assert!(clif.contains("iconst.i32 42"), "Assert.Equal<string> must dispatch through str_eq tag 42: {clif}");
-    assert!(!clif.contains("icmp eq"), "Assert.Equal<string> must not compare raw string pointers: {clif}");
+    assert_string_content_comparison(&clif, StringComparison::Equal, "Assert.Equal<string>");
 }
 
 #[test]

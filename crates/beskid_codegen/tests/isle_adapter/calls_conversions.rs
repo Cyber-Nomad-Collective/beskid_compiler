@@ -280,8 +280,8 @@ fn canonical_foundation_args_module_emits_only_the_authorized_args_imports() {
     imports.sort_unstable();
     assert_eq!(
         imports,
-        vec!["args_count", "args_get"],
-        "the canonical Core.Args module is the sole source authorized to import both ABI services"
+        vec!["beskid_rt_v5_args_count", "beskid_rt_v5_args_get", "str_concat", "str_eq", "str_from_i64", "str_new"],
+        "canonical Core.Args receives its exact ABI-v5 services plus the always-available string baseline"
     );
 }
 

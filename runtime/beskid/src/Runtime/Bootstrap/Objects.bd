@@ -221,7 +221,7 @@ pub pointer AllocateObject(pointer request) {
                 if alignment != TypeDescriptorAlignment(descriptor) {
                     return NativePointer(0);
                 } else {
-                    pointer object = SystemAllocate(size, alignment);
+                    pointer object = GcAlloc(size, alignment);
                     if object == NativePointer(0) {
                           return object;
                     } else {

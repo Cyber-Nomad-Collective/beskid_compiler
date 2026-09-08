@@ -1,12 +1,12 @@
 use super::support::{
     AbiManifestV5, Arc, AstNodeId, AstNodeKey, BeskidDatabase, CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
     CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CodegenInput, DirectCallee,
-    JITBuilder, JITModule, Linkage, Ordering, ProjectSession, SourceUnitId, SyntaxGenerationId, SyntaxModuleItem,
-    TEST_CURRENT_TLS, TargetMetadata, build_canonical_runtime_typed_program, canonical_runtime_intrinsic_capability,
-    canonical_runtime_test_assembly, default_libcall_names, emit_closure_static_data, emit_isle_item,
-    emit_syntax_program, find_definition_of_kind, find_function_definition, find_function_definitions, find_node,
-    find_nodes_of_kind, isa, item_fixture, item_fixture_with_root, item_name, lower_syntax_program, settings,
-    test_system_allocate, test_tls_get,
+    JITBuilder, JITModule, Linkage, NodeFacts, Ordering, ProjectSession, SourceUnitId, SyntaxGenerationId,
+    SyntaxModuleItem, TEST_CURRENT_TLS, TargetMetadata, build_canonical_runtime_typed_program,
+    canonical_runtime_intrinsic_capability, canonical_runtime_test_assembly, default_libcall_names,
+    emit_closure_static_data, emit_isle_item, emit_syntax_program, find_definition_of_kind, find_function_definition,
+    find_function_definitions, find_node, find_nodes_of_kind, isa, item_fixture, item_fixture_with_root, item_name,
+    lower_syntax_program, settings, test_system_allocate, test_tls_get,
 };
 
 #[test]
@@ -49,6 +49,20 @@ fn parsed_zero_capture_stored_lambda_call_lowers_through_generation_bound_local_
         .expect("lambda environment");
     assert!(environment.captures.is_empty());
     assert_eq!(environment.parameters.len(), 1);
+    assert!(
+        beskid_queries::local_slot(db, environment.parameters[0]).expect("lambda parameter slot query").is_some(),
+        "stored lambda parameter must have a generation-safe local slot"
+    );
+    assert!(
+        beskid_queries::managed_reference_kind(db, environment.parameters[0])
+            .expect("lambda parameter ownership query")
+            .is_some(),
+        "stored lambda parameter must have source ownership"
+    );
+    let facts = beskid_codegen::SyntaxNodeFacts::new_with_isa(&input, isa.as_ref());
+    assert_eq!(facts.call_kind(call), Some(beskid_isle::CallKind::InlineLambda));
+    assert!(facts.inline_lambda_call(call).is_some(), "stored lambda call must expose its inline lowering fact");
+    assert_eq!(facts.call_arguments(call).map(|arguments| arguments.len()), Some(1));
 
     let function = emit_isle_item(&input, isa.as_ref(), item)
         .expect("stored zero-capture lambda call lowers through syntax facts");
@@ -171,7 +185,8 @@ fn closure_lowering_authority_reserves_root_slot_without_tls_pointer() {
 fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_manifest_imports() {
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("runtime project").keep();
-    let (assembly, source_path) = canonical_runtime_test_assembly(&mut db, directory.as_ref());
+    let generation = SyntaxGenerationId(31);
+    let (assembly, source_path) = canonical_runtime_test_assembly(&mut db, directory.as_ref(), generation);
     let project = ProjectSession::new(
         &*db,
         directory.clone(),
@@ -179,7 +194,6 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
         "beskid-runtime-native".into(),
         "lock".into(),
     );
-    let generation = SyntaxGenerationId(31);
     let target = TargetMetadata::supported()
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
@@ -274,7 +288,8 @@ fn canonical_runtime_allocation_and_root_frame_helpers_emit_verified_clif_with_m
 fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_closed() {
     let mut db = Box::new(BeskidDatabase::default());
     let directory = tempfile::tempdir().expect("runtime project").keep();
-    let (assembly, source_path) = canonical_runtime_test_assembly(&mut db, directory.as_ref());
+    let generation = SyntaxGenerationId(32);
+    let (assembly, source_path) = canonical_runtime_test_assembly(&mut db, directory.as_ref(), generation);
     let project = ProjectSession::new(
         &*db,
         directory.clone(),
@@ -282,7 +297,6 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         "beskid-runtime-native".into(),
         "lock".into(),
     );
-    let generation = SyntaxGenerationId(32);
     let host_triple = if cfg!(target_os = "macos") { "aarch64-apple-darwin" } else { "x86_64-unknown-linux-gnu" };
     let host_isa_name = if cfg!(target_os = "macos") { "aarch64" } else { "x86_64" };
     let target = TargetMetadata::supported()
@@ -335,6 +349,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
         "InitializeObjectHeader",
         "TypeDescriptorSize",
         "TypeDescriptorAlignment",
+        "TypeDescriptorFlags",
         "TypeDescriptorPointerMap",
         "TypeDescriptorPointerCount",
         "IsValidObjectAlignment",

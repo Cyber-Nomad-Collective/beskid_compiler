@@ -4,31 +4,59 @@ use super::support::{
     function_signature, item_fixture, item_fixture_with_root, item_name, types,
 };
 
+fn emit_main_with_imported_i64_callee(source: &str, callee_name: &str) -> String {
+    let (input, isa, root) = item_fixture_with_root(source);
+    let functions = find_function_definitions(input.database(), root);
+    let callee = functions
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some(callee_name))
+        .unwrap_or_else(|| panic!("{callee_name} definition"));
+    let main = functions
+        .iter()
+        .copied()
+        .find(|item| item_name(input.database(), *item).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main definition");
+
+    let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let signature = function_signature(isa.as_ref(), types::I64, []);
+    let imported = module
+        .declare_function(callee_name, Linkage::Import, &signature)
+        .unwrap_or_else(|error| panic!("declare {callee_name} import: {error}"));
+    let mut importer = ItemModuleImporter::new(&mut module, HashMap::from([(DirectCallee::item(callee), imported)]));
+
+    match emit_isle_item_with_call_importer(&input, isa.as_ref(), main, &mut importer) {
+        Ok(function) => function.display().to_string(),
+        Err(error) => {
+            panic!("Main must lower with its {callee_name} import: {}", error.display_with_db(input.database()))
+        }
+    }
+}
+
+fn assert_direct_call_result_returns(clif: &str) {
+    assert!(clif.lines().any(|line| line.contains(" = call ")), "{clif}");
+    assert!(!clif.contains("call_indirect"), "{clif}");
+    assert!(clif.lines().any(|line| line.trim_start().starts_with("return ")), "{clif}");
+}
+
 #[test]
 fn nested_direct_call_results_lower_through_exact_statement_facts() {
-    let (input, isa, item) = item_fixture(
+    let clif = emit_main_with_imported_i64_callee(
         "i64 Count() { return 1_i64; } i64 Forward() { return Count(); } i64 Main() { i64 value = Forward(); return value; }",
+        "Forward",
     );
 
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .expect("nested direct-call result must lower through generation-bound statement facts");
-    let clif = function.display().to_string();
-
-    assert!(clif.contains("call"), "{clif}");
-    assert!(!clif.contains("call_indirect"), "{clif}");
+    assert_direct_call_result_returns(&clif);
 }
 
 #[test]
 fn inferred_let_results_lower_through_canonical_storage_facts() {
-    let (input, isa, item) =
-        item_fixture("i64 Count() { return 1_i64; } i64 Main() { let value = Count(); return value; }");
+    let clif = emit_main_with_imported_i64_callee(
+        "i64 Count() { return 1_i64; } i64 Main() { let value = Count(); return value; }",
+        "Count",
+    );
 
-    let function = emit_isle_item(&input, isa.as_ref(), item)
-        .expect("inferred let storage must lower through its canonical declaration fact");
-    let clif = function.display().to_string();
-
-    assert!(clif.contains("call"), "{clif}");
-    assert!(clif.contains("return"), "{clif}");
+    assert_direct_call_result_returns(&clif);
 }
 
 #[test]
@@ -167,8 +195,12 @@ fn scalar_match_results_lower_at_return_and_typed_storage_boundaries() {
         .expect("match results must lower through exact return and storage facts");
     let clif = function.display().to_string();
 
-    assert!(clif.contains("br_table"), "{clif}");
-    assert!(clif.contains("iconst.i64"), "{clif}");
+    assert_eq!(clif.matches("brif").count(), 4, "two ordered two-arm matches must retain four tag tests:\n{clif}");
+    assert_eq!(clif.matches("load.i32").count(), 4, "each ordered tag test must load the enum tag:\n{clif}");
+    for value in ["iconst.i64 0", "iconst.i64 1", "iconst.i64 2"] {
+        assert!(clif.contains(value), "match scalar result `{value}` missing:\n{clif}");
+    }
+    assert!(clif.lines().any(|line| line.trim_start().starts_with("return ")), "{clif}");
 }
 
 #[test]
