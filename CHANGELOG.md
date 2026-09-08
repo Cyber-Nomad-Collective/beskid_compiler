@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve dependency declaration annotations through one seeded, source-scoped
+  resolver without retaining dependency body facts, restoring fast entry
+  type-checks and keeping entry locals attributed to the entry source.
 - Preserve each dependency unit's import scope in entry-resolution type facts so
   qualified Corelib facades retain their declared parameter and return types.
 - Make the native runtime-kit CLI smoke independent of test-only Corelib

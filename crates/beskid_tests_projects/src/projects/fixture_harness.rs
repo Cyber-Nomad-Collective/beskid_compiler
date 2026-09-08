@@ -213,6 +213,7 @@ fn with_project_test_env_return<T>(project_root: &Path, f: impl FnOnce(&Path) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn text_parser_tests_keep_parser_function_identity_and_signature_types() {
@@ -220,12 +221,31 @@ mod tests {
         with_project_test_env(&root, || {
             let resolved = resolve_corelib_tests_entry_with_assembly("text/TextParserTests.bd");
             let assembly = resolved.assembly.as_ref().expect("TextParser assembly");
-            let resolution = beskid_analysis::services::resolve_entry(
-                &assembly.entry_unit().program,
-                assembly,
-                Some(&assembly.entry_unit().path),
-            )
-            .expect("resolve TextParserTests entry");
+            let started = Instant::now();
+            let (_, resolution, _) =
+                beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
+                    .expect("Parser facade signatures should retain TextCursor and TextParseResult types");
+            let elapsed = started.elapsed();
+            assert!(elapsed < Duration::from_secs(5), "TextParser declaration-only semantic gate took {elapsed:?}");
+            assert!(
+                resolution.tables.scoped_resolved_values.is_empty(),
+                "dependency declaration resolution must not retain body value facts"
+            );
+            let dependency_locals = resolution
+                .tables
+                .locals
+                .iter()
+                .filter(|local| {
+                    local
+                        .source_path
+                        .as_ref()
+                        .is_some_and(|path| !beskid_analysis::paths::same_file(path, &assembly.entry_unit().path))
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                dependency_locals.is_empty(),
+                "dependency declaration resolution must not retain body locals: {dependency_locals:?}"
+            );
             let parser_targets = resolution
                 .tables
                 .resolved_values
@@ -250,8 +270,6 @@ mod tests {
                 parser_targets.iter().all(|(name, target)| target.ends_with(&format!("::Core::Text::Parser::{name}"))),
                 "Parser calls resolved to {parser_targets:?}"
             );
-            beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
-                .expect("Parser facade signatures should retain TextCursor and TextParseResult types");
         });
     }
 
