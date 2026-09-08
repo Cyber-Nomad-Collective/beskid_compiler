@@ -257,7 +257,7 @@ impl LanguageServer for Backend {
         let Some(document) = snapshot_document(&self.state, &uri).await else {
             return Ok(None);
         };
-        Ok(Some(semantic_tokens::handler::handle_semantic_tokens(&document)))
+        Ok(Some(semantic_tokens::handler::handle_semantic_tokens(&uri, &document)))
     }
 
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {

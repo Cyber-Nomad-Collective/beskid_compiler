@@ -350,6 +350,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Provide parser-backed semantic tokens for `.bproj`, `.bws`, and standalone
+  `.bsol` documents. BSOL block kinds use the existing `namespace` declaration
+  token and assignment/map keys use the existing `variable` declaration token;
+  invalid BSOL fails closed without partial semantic facts.
+
 - Add opt-in anonymous OpenTelemetry export for Rust CLI/pckg flows:
   - `BESKID_TELEMETRY` now controls OTEL enablement (unless `OTEL_SDK_DISABLED` is set).
   - `beskid_cli` initializes the shared telemetry subscriber at process start.
