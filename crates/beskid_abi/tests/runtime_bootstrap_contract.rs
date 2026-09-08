@@ -33,12 +33,12 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
             ("beskid_library_detach_v5", &[AbiType::Pointer][..], AbiType::Void,),
             ("beskid_rt_v5_abi_version", &[][..], AbiType::U32),
             ("beskid_rt_v5_array_allocate_rooted", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::Pointer,),
+            ("beskid_rt_v5_array_construction_finish", &[AbiType::Pointer][..], AbiType::U8,),
             (
                 "beskid_rt_v5_array_grow_rooted",
                 &[AbiType::Pointer, AbiType::USize, AbiType::Pointer][..],
                 AbiType::Pointer,
             ),
-            ("beskid_rt_v5_array_construction_finish", &[AbiType::Pointer][..], AbiType::U8,),
             ("beskid_rt_v5_array_write_barrier", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8,),
             (
                 "beskid_rt_v5_closure_capture_store",
@@ -59,6 +59,20 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
             ),
             ("beskid_rt_v5_fiber_yield", &[][..], AbiType::Void,),
             ("beskid_rt_v5_managed_object_allocate", &[AbiType::Pointer][..], AbiType::Pointer,),
+            ("beskid_rt_v5_poll_executor_run_once", &[][..], AbiType::I32,),
+            (
+                "beskid_rt_v5_poll_executor_spawn",
+                &[AbiType::Pointer, AbiType::Pointer, AbiType::Pointer, AbiType::Pointer][..],
+                AbiType::I64,
+            ),
+            ("beskid_rt_v5_poll_executor_wake", &[AbiType::I64][..], AbiType::I32,),
+            ("beskid_rt_v5_poll_link_clone", &[AbiType::I64][..], AbiType::I64,),
+            ("beskid_rt_v5_poll_link_drop", &[AbiType::I64][..], AbiType::Void,),
+            ("beskid_rt_v5_poll_link_new", &[AbiType::I64][..], AbiType::I64,),
+            ("beskid_rt_v5_poll_link_poll", &[AbiType::I64, AbiType::Pointer][..], AbiType::I32,),
+            ("beskid_rt_v5_poll_monitor_drop", &[AbiType::I64][..], AbiType::Void,),
+            ("beskid_rt_v5_poll_monitor_new", &[AbiType::I64][..], AbiType::I64,),
+            ("beskid_rt_v5_poll_monitor_poll", &[AbiType::I64, AbiType::Pointer][..], AbiType::I32,),
             ("beskid_rt_v5_process_init", &[AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_process_shutdown", &[AbiType::Pointer][..], AbiType::Void,),
             ("beskid_rt_v5_thread_attach", &[AbiType::Pointer][..], AbiType::Pointer,),
@@ -80,7 +94,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 35);
+    assert_eq!(names.len(), 41);
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
@@ -92,6 +106,10 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert!(names.contains(&"clock_monotonic_nanos"));
     assert!(names.contains(&"process_getpid"));
     assert!(names.contains(&"fiber_yield"));
+    assert!(names.contains(&"env_get"));
+    assert!(names.contains(&"fs_read_text"));
+    assert!(names.contains(&"tty_winsize"));
+    assert!(names.contains(&"worker_submit"));
     assert!(manifest.intrinsic_metadata("pointer_add").is_some());
 
     let mut unauthorized = manifest.clone();
@@ -139,13 +157,27 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
                 "BeskidAllocationRequest",
                 "BeskidArrayAllocationRequest",
                 "BeskidArrayElementDescriptor",
+                "BeskidCallbackEntry",
+                "BeskidCallbackRegistry",
+                "BeskidCompositionContainer",
+                "BeskidCompositionScope",
+                "BeskidFiberRecord",
+                "BeskidGcHandleSlot",
                 "BeskidHandle",
+                "BeskidHeapState",
                 "BeskidObjectHeader",
+                "BeskidPendingSpawn",
+                "BeskidPollLink",
+                "BeskidPollMonitor",
+                "BeskidPollState",
+                "BeskidPollTask",
                 "BeskidRootFrame",
                 "BeskidRootSlot",
                 "BeskidRuntimeState",
+                "BeskidSchedulerState",
                 "BeskidTlsState",
                 "BeskidTypeDescriptor",
+                "BeskidWorkerRequest",
                 expected.0,
             ]
         );
@@ -164,10 +196,17 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
         assert_eq!(object.fields[1].offset, 8);
 
         let tls = manifest.layouts.iter().find(|layout| layout.name == "BeskidTlsState").unwrap();
-        assert_eq!((tls.size, tls.alignment), (32, 8));
+        assert_eq!((tls.size, tls.alignment), (48, 8));
         assert_eq!(
             tls.fields.iter().map(|field| (field.name.as_str(), field.offset)).collect::<Vec<_>>(),
-            vec![("runtime", 0), ("root_frame", 8), ("current_fiber", 16), ("attach_depth", 24),]
+            vec![
+                ("runtime", 0),
+                ("root_frame", 8),
+                ("reserved", 16),
+                ("attach_depth", 24),
+                ("composition_scope", 32),
+                ("composition_depth", 40),
+            ]
         );
 
         let runtime = manifest.layouts.iter().find(|layout| layout.name == "BeskidRuntimeState").unwrap();
@@ -189,36 +228,64 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "atan2",
         "ceil",
         "clock_gettime",
+        "close",
         "cos",
         "fabs",
         "floor",
+        "fstat",
+        "getcwd",
+        "getenv",
         "getpid",
+        "ioctl",
         "log",
         "log10",
         "log2",
         "memcpy",
+        "mkdir",
         "mmap",
         "mprotect",
         "munmap",
+        "open",
         "pow",
+        "pthread_create",
+        "pthread_join",
+        "read",
+        "setenv",
         "sin",
         "sqrt",
+        "stat",
         "strlen",
         "tan",
+        "unlink",
         "write",
     ];
     let windows_imports = [
+        "CloseHandle",
+        "CreateDirectoryW",
+        "CreateFileW",
+        "CreateThread",
+        "DeleteFileW",
         "ExitProcess",
+        "GetConsoleScreenBufferInfo",
+        "GetCurrentDirectoryW",
         "GetCurrentProcessId",
+        "GetEnvironmentVariableW",
+        "GetFileAttributesW",
+        "GetFileSizeEx",
+        "GetLastError",
         "GetStdHandle",
         "GetSystemTimeAsFileTime",
         "GetTickCount64",
         "InitOnceExecuteOnce",
+        "MultiByteToWideChar",
+        "ReadFile",
+        "SetEnvironmentVariableW",
         "TlsAlloc",
         "TlsGetValue",
         "TlsSetValue",
         "VirtualAlloc",
         "VirtualFree",
+        "WaitForSingleObject",
         "WriteFile",
         "atan2",
         "ceil",
@@ -231,11 +298,12 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "pow",
         "sin",
         "sqrt",
+        "strlen",
         "tan",
     ];
     let math_imports = ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
     let windows_ucrt_imports =
-        ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
+        ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "strlen", "tan"];
     for target in supported_targets() {
         let is_windows = target.triple.as_str() == "x86_64-pc-windows-msvc";
         let (expected_symbols, expected_library) = match target.triple.as_str() {
