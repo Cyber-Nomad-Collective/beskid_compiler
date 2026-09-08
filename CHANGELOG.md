@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Frame prepared-matrix worker events separately from Beskid program stdout,
+  use JSON-portable 64-bit timing fields, and reset generation-bound compilation
+  state between independent targets, so stdout-writing and sequential Corelib
+  tests cannot corrupt or collide with later supervisor work.
 - Align the managed-string Corelib write and panic service signatures with
   their runtime adapters, extracting UTF-8 data and length before syscall or
   trap handoff instead of forwarding object headers as raw bytes, and service

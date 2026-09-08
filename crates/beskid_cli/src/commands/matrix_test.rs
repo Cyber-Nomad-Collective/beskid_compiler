@@ -13,11 +13,12 @@ use serde::{Deserialize, Serialize};
 
 use super::prepared_matrix::{
     Cancellation, ExecutionBudgets, MatrixReport, PreparedWorkspace, RevisionSnapshot, TargetReport, TargetResult,
-    unix_ms,
+    duration_ms, unix_ms,
 };
 use super::test::{TestArgs, TestSummary, execute_prepared_target};
 
 const MATRIX_WORKER_ENV: &str = "BESKID_PREPARED_MATRIX_WORKER";
+const WORKER_EVENT_PREFIX: &str = "\u{1e}";
 const SUPERVISOR_POLL: Duration = Duration::from_millis(10);
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -103,12 +104,21 @@ fn supervise_worker(args: TestArgs) -> Result<()> {
     let stdout = child.stdout.take().ok_or_else(|| anyhow!("matrix worker stdout was not piped"))?;
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
+        let mut program_stdout = std::io::stdout().lock();
         for line in BufReader::new(stdout).lines() {
-            let event = line
-                .map_err(anyhow::Error::from)
-                .and_then(|line| serde_json::from_str::<WorkerEvent>(&line).map_err(anyhow::Error::from));
-            if tx.send(event).is_err() {
-                break;
+            let event =
+                line.map_err(anyhow::Error::from).and_then(|line| decode_worker_line(&line, &mut program_stdout));
+            match event {
+                Ok(Some(event)) => {
+                    if tx.send(Ok(event)).is_err() {
+                        break;
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    let _ = tx.send(Err(error));
+                    break;
+                }
             }
         }
     });
@@ -151,7 +161,7 @@ fn supervise_worker(args: TestArgs) -> Result<()> {
                 }
                 WorkerEvent::TargetFinished { report: target_report } => {
                     if target_report.result == TargetResult::Passed {
-                        eprintln!("PASS ({:.1?})", Duration::from_millis(target_report.duration_ms as u64));
+                        eprintln!("PASS ({:.1?})", Duration::from_millis(target_report.duration_ms));
                     } else {
                         eprintln!("FAIL: {}", target_report.error.as_deref().unwrap_or("target failed"));
                     }
@@ -255,9 +265,19 @@ fn spawn_worker(args: &TestArgs) -> Result<Child> {
 }
 
 fn emit_event(event: &WorkerEvent) -> Result<()> {
-    println!("{}", serde_json::to_string(event)?);
+    println!("{WORKER_EVENT_PREFIX}{}", serde_json::to_string(event)?);
     std::io::stdout().flush()?;
     Ok(())
+}
+
+fn decode_worker_line<W: Write>(line: &str, program_stdout: &mut W) -> Result<Option<WorkerEvent>> {
+    let Some((output, event)) = line.split_once(WORKER_EVENT_PREFIX) else {
+        writeln!(program_stdout, "{line}")?;
+        return Ok(None);
+    };
+    program_stdout.write_all(output.as_bytes())?;
+    program_stdout.flush()?;
+    serde_json::from_str(event).map(Some).map_err(anyhow::Error::from)
 }
 
 fn emit_fatal(phase: &str, error: anyhow::Error) -> Result<()> {
@@ -290,7 +310,7 @@ fn append_interrupted_targets(
             started_unix_ms: unix_ms(),
             ended_unix_ms: unix_ms(),
             duration_ms: if is_active {
-                active.as_ref().map(|(_, _, started)| started.elapsed().as_millis()).unwrap_or(0)
+                active.as_ref().map(|(_, _, started)| duration_ms(started.elapsed())).unwrap_or(0)
             } else {
                 0
             },
@@ -399,7 +419,7 @@ fn filter_targets_by_env(targets: Vec<String>) -> Result<(Vec<String>, bool)> {
 
 #[cfg(test)]
 mod tests {
-    use super::filter_targets_by_env;
+    use super::{WORKER_EVENT_PREFIX, WorkerEvent, decode_worker_line, filter_targets_by_env};
 
     #[test]
     fn empty_filter_preserves_manifest_denominator() {
@@ -408,5 +428,34 @@ mod tests {
         let (selected, filtered) = filter_targets_by_env(targets.clone()).expect("filter");
         assert_eq!(selected, targets);
         assert!(!filtered);
+    }
+
+    #[test]
+    fn worker_protocol_preserves_program_stdout_before_framed_event() {
+        let line = format!(
+            "corelib{WORKER_EVENT_PREFIX}{{\"event\":\"target_started\",\"target\":\"SystemSyscallWriteTests\",\"phase\":\"execute_tests\"}}"
+        );
+        let mut output = Vec::new();
+
+        let event = decode_worker_line(&line, &mut output).expect("decode worker line").expect("framed event");
+
+        assert_eq!(output, b"corelib");
+        assert!(matches!(
+            event,
+            WorkerEvent::TargetStarted { target, phase }
+                if target == "SystemSyscallWriteTests" && phase == "execute_tests"
+        ));
+    }
+
+    #[test]
+    fn worker_protocol_decodes_target_timing_fields() {
+        let line = format!(
+            "{WORKER_EVENT_PREFIX}{{\"event\":\"target_finished\",\"report\":{{\"target\":\"One\",\"started_unix_ms\":1,\"ended_unix_ms\":3,\"duration_ms\":2,\"active_phase\":\"complete\",\"result\":\"passed\",\"tests\":{{\"passed\":1,\"failed\":0,\"skipped\":0,\"filtered_out\":0}},\"phases\":[],\"error\":null}}}}"
+        );
+        let mut output = Vec::new();
+
+        let event = decode_worker_line(&line, &mut output).expect("decode target event").expect("framed event");
+
+        assert!(matches!(event, WorkerEvent::TargetFinished { report } if report.duration_ms == 2));
     }
 }

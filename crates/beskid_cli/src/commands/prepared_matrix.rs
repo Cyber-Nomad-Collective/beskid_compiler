@@ -77,18 +77,18 @@ pub enum TargetResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhaseRecord {
     pub phase: String,
-    pub started_unix_ms: u128,
-    pub ended_unix_ms: u128,
-    pub duration_ms: u128,
+    pub started_unix_ms: u64,
+    pub ended_unix_ms: u64,
+    pub duration_ms: u64,
     pub result: TargetResult,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TargetReport {
     pub target: String,
-    pub started_unix_ms: u128,
-    pub ended_unix_ms: u128,
-    pub duration_ms: u128,
+    pub started_unix_ms: u64,
+    pub ended_unix_ms: u64,
+    pub duration_ms: u64,
     pub active_phase: String,
     pub result: TargetResult,
     pub tests: super::test::TestSummary,
@@ -311,6 +311,10 @@ impl PreparedWorkspace {
         )
     }
 
+    pub fn begin_target_execution(&mut self) {
+        beskid_queries::reset_process_compilation_database();
+    }
+
     pub fn target_timeout(&self) -> Duration {
         self.budgets.target
     }
@@ -344,8 +348,12 @@ fn plan_for_target(base: &CompilePlan, target: Target) -> CompilePlan {
     CompilePlan { target, ..base.clone() }
 }
 
-pub fn unix_ms() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()
+pub fn unix_ms() -> u64 {
+    duration_ms(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default())
+}
+
+pub fn duration_ms(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 pub fn revision_snapshot(manifest_path: &Path) -> RevisionSnapshot {

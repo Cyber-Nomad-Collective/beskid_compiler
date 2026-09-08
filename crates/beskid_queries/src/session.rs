@@ -10,7 +10,7 @@ use beskid_analysis::services::{
 };
 use beskid_pipeline::PipelineObserver;
 
-use crate::db::{BeskidDatabase, configure_compilation_database_for_project};
+use crate::db::{BeskidDatabase, configure_compilation_database_for_project, reset_compilation_database};
 use crate::entry::{prepare_compilation_diagnostics_with_db, prepare_compilation_with_db};
 
 thread_local! {
@@ -21,6 +21,17 @@ thread_local! {
 /// Access the shared compilation database for this thread.
 pub fn with_db<T>(f: impl FnOnce(&mut BeskidDatabase) -> T) -> T {
     COMPILATION_DB.with(|db| f(&mut db.borrow_mut()))
+}
+
+/// Reset all process-scoped compilation state for the current thread.
+///
+/// Long-lived callers must use this between independent syntax assemblies so
+/// source-unit registrations from one generation cannot leak into the next.
+pub fn reset_process_compilation_database() {
+    with_db(reset_compilation_database);
+    CONFIGURED_ROOT.with(|configured| {
+        *configured.borrow_mut() = None;
+    });
 }
 
 fn configure_db_in_place(db: &mut BeskidDatabase, project_root: &Path) {
