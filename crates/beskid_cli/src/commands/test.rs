@@ -1,4 +1,4 @@
-//! `beskid test` — discover `test` items, filter by tags/group, and run them through the prepared-workspace seam.
+//! `beskid dev build test` — discover `test` items, filter by tags/group, and run them through the prepared-workspace seam.
 
 use anyhow::{Result, anyhow};
 use beskid_engine::services::SyntaxTestItem;
@@ -90,10 +90,10 @@ pub fn execute(args: TestArgs) -> Result<()> {
     execute_single_target(args, None)
 }
 
-/// Same as [`execute`] but forwards pipeline progress into a running `beskid hi` shell.
+/// Same as [`execute`] but forwards pipeline progress to an attached terminal sink.
 pub fn execute_for_hi(msg_tx: Sender<RuntimeOp>, args: TestArgs) -> Result<()> {
     if args.all_targets {
-        anyhow::bail!("`test --all-targets` is not supported from beskid hi yet");
+        anyhow::bail!("`test --all-targets` is not supported from embedded progress sink yet");
     }
     execute_single_target(args, Some(msg_tx))
 }
@@ -109,7 +109,7 @@ fn execute_single_target(args: TestArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Re
         .prepare_targets(std::slice::from_ref(&target_name), |_| Ok(()))?
         .pop()
         .ok_or_else(|| anyhow!("prepared target inventory was empty"))?;
-    let report = execute_prepared_target(&mut workspace, target, &args, true)?;
+    let report = execute_prepared_target(&mut workspace, target, &args, true, |_| Ok(()))?;
     if report.result == TargetResult::Passed {
         Ok(())
     } else {
@@ -122,6 +122,7 @@ pub(crate) fn execute_prepared_target(
     target: PreparedTarget,
     args: &TestArgs,
     emit: bool,
+    mut test_started: impl FnMut(&str) -> Result<()>,
 ) -> Result<TargetReport> {
     let target_started = Instant::now();
     let started_unix_ms = unix_ms();
@@ -205,6 +206,7 @@ pub(crate) fn execute_prepared_target(
                 workspace.session().pipeline().reset_after_test()?;
             }
         }
+        test_started(&test.qualified_name)?;
         let started = Instant::now();
         match workspace.run_entrypoint(&front, &source_name, &target.resolved.source, &test.qualified_name) {
             Ok(output) => {
@@ -305,6 +307,7 @@ pub(crate) fn execute_prepared_target(
         result,
         tests: summary,
         phases,
+        last_started_test: None,
         error,
     })
 }

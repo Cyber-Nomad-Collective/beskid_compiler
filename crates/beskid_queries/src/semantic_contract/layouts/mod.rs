@@ -17,10 +17,12 @@ pub(in crate::semantic_contract) use common::{
 };
 
 pub(in crate::semantic_contract) use enum_layout::{
-    aggregate_shape_from_applied_type, contextual_enum_constructor_type_path, enum_constructor_tracked,
-    enum_field_layout, enum_layout_from_definition, enum_layout_substitutions, enum_layout_tracked,
-    enum_match_scrutinee_layout, enum_match_tracked, enum_pattern_targets_declaration,
-    instantiated_enum_layout_for_path,
+    aggregate_shape_from_applied_type, contextual_enum_constructor_type_path,
+    enum_constructor_for_specialized_body_tracked, enum_constructor_tracked, enum_field_layout,
+    enum_layout_for_call_argument_constructor, enum_layout_for_specialized_constructor_tracked,
+    enum_layout_from_definition, enum_layout_substitutions, enum_layout_tracked,
+    enum_match_for_specialized_body_tracked, enum_match_scrutinee_layout, enum_match_tracked,
+    enum_pattern_targets_declaration, instantiated_enum_layout_for_path, resolve_call_argument_enum_context,
 };
 
 pub(in crate::semantic_contract) use field_access::{

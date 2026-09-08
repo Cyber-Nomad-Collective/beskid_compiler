@@ -77,8 +77,11 @@ macro_rules! generated_enum_methods {
                         i32::try_from(payload_layout.offset).ok()?,
                     );
                 }
-                (None, None) => {}
-                _ => {
+                // No payload slot: either the variant carries no payload, or its payload is
+                // zero-sized (`unit`) and the layout reserves no storage for it. Both cases store
+                // nothing. A payload expression may still be present for `unit` constructors.
+                (None, None) | (None, Some(_)) => {}
+                (Some(_), None) => {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
                     return None;
                 }

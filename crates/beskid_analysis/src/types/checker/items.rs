@@ -264,6 +264,12 @@ impl<'a> TypeChecker<'a> {
                     self.type_method_definition(method.span, method);
                 }
             }
+            Node::ImplBlock(def) => {
+                self.type_id_for_type(&def.node.receiver_type);
+                for method in &def.node.methods {
+                    self.type_method_definition(method.span, method);
+                }
+            }
             Node::TestDefinition(def) => {
                 if let Some(meta) = &def.node.meta {
                     for entry in &meta.node.entries {
@@ -330,7 +336,18 @@ impl<'a> TypeChecker<'a> {
                     self.generic_params.remove(&name);
                 }
             }
-            Node::ContractDefinition(_) => {}
+            Node::ContractDefinition(def) => {
+                let mut inserted = Vec::new();
+                for generic in &def.node.generics {
+                    let name = generic.node.name.clone();
+                    let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
+                    self.generic_params.insert(name.clone(), type_id);
+                    inserted.push(name);
+                }
+                for name in inserted {
+                    self.generic_params.remove(&name);
+                }
+            }
             Node::AttributeDeclaration(_) => {}
             Node::InlineModule(def) => {
                 for item in &def.node.items {

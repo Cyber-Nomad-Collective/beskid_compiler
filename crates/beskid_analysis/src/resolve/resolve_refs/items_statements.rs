@@ -67,6 +67,46 @@ impl Resolver {
                     self.pop_scope();
                 }
             }
+            Node::ImplBlock(def) => {
+                self.resolve_type(&def.node.receiver_type);
+                let type_item_id = self.receiver_item_id_for_type(&def.node.receiver_type);
+                for conformance in &def.node.conformances {
+                    self.resolve_type_path(conformance);
+                    let Some(type_item_id) = type_item_id else {
+                        continue;
+                    };
+                    let Some(ResolvedType::Item(conformance_item_id)) =
+                        self.tables.resolved_types.get(&conformance.span)
+                    else {
+                        continue;
+                    };
+                    if self.items.get(conformance_item_id.0).is_some_and(|info| info.kind == ItemKind::Contract) {
+                        self.tables.insert_type_conformance(type_item_id, *conformance_item_id, conformance.span);
+                    } else if let Some(item) = self.items.get(conformance_item_id.0) {
+                        self.errors.push(ResolveError::InvalidConformanceTarget {
+                            name: item.name.clone(),
+                            span: conformance.span,
+                        });
+                    }
+                }
+                for method in &def.node.methods {
+                    self.push_scope();
+                    self.resolve_type(&method.node.receiver_type);
+                    let previous_receiver = self.current_receiver_item_id;
+                    self.current_receiver_item_id = self.receiver_item_id_for_type(&method.node.receiver_type);
+                    self.insert_local("this", method.node.receiver_type.span);
+                    for param in &method.node.parameters {
+                        self.resolve_type(&param.node.ty);
+                        self.insert_local(&param.node.name.node.name, param.node.name.span);
+                    }
+                    if let Some(return_type) = &method.node.return_type {
+                        self.resolve_type(return_type);
+                    }
+                    self.resolve_block(&method.node.body);
+                    self.current_receiver_item_id = previous_receiver;
+                    self.pop_scope();
+                }
+            }
             Node::TestDefinition(def) => {
                 self.push_scope();
                 if let Some(meta) = &def.node.meta {
@@ -169,6 +209,11 @@ impl Resolver {
                             }
                         }
                         ContractNode::Embedding(_) => {}
+                        ContractNode::AssociatedType(assoc) => {
+                            if let Some(default) = &assoc.node.default_type {
+                                self.resolve_type(default);
+                            }
+                        }
                     }
                 }
             }

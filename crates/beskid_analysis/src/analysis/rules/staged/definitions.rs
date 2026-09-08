@@ -360,6 +360,7 @@ impl SemanticPipelineRule {
                     parameters.iter().map(|parameter| self.type_to_string(parameter)).collect::<Vec<_>>().join(", ");
                 format!("{}({})", self.type_to_string(return_type), params)
             }
+            Type::This_ => "This".to_string(),
         }
     }
 
@@ -431,6 +432,7 @@ impl SemanticPipelineRule {
                     self.validate_type_reference(ctx, parameter, known_types, generic_names);
                 }
             }
+            Type::This_ => {}
         }
     }
 

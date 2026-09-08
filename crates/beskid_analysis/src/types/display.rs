@@ -63,6 +63,7 @@ pub fn format_type_id(result: &TypeResult, resolution: Option<&Resolution>, type
             let inner = format_type_id(result, resolution, *payload);
             format!("Fiber<{inner}>")
         }
+        TypeInfo::This_ => "This".to_string(),
     }
 }
 

@@ -81,6 +81,14 @@ impl<'a> TypeChecker<'a> {
             return methods;
         };
 
+        let mut inserted = Vec::new();
+        for generic in &definition.node.generics {
+            let name = generic.node.name.clone();
+            let type_id = self.type_table.intern(crate::types::TypeInfo::GenericParam(name.clone()));
+            self.generic_params.insert(name.clone(), type_id);
+            inserted.push(name);
+        }
+
         for node in &definition.node.items {
             match &node.node {
                 ContractNode::MethodSignature(signature) => {
@@ -124,7 +132,12 @@ impl<'a> TypeChecker<'a> {
                         methods.push((method_name, signature));
                     }
                 }
+                ContractNode::AssociatedType(_) => {}
             }
+        }
+
+        for name in inserted {
+            self.generic_params.remove(&name);
         }
 
         active.remove(contract_name);
@@ -345,5 +358,6 @@ fn extern_disallowed_detail(ty: &Spanned<Type>, is_return: bool) -> String {
         Type::Array(_) => "array types must use CBuffer or CArrayView at the FFI boundary".to_string(),
         Type::Complex(_) => "only primitive types are permitted at the FFI boundary".to_string(),
         Type::Function { .. } => "function types are not permitted at the FFI boundary".to_string(),
+        Type::This_ => "This is not permitted at the FFI boundary".to_string(),
     }
 }

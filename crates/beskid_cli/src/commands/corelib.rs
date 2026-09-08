@@ -1,4 +1,4 @@
-//! `beskid corelib` — materialize the bundled Beskid standard library workspace template.
+//! `beskid dev build corelib` — materialize the bundled Beskid standard library workspace template.
 
 use anyhow::{Context, Result};
 use clap::Args;

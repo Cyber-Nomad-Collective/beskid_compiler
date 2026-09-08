@@ -15,6 +15,9 @@ pub enum TypeInfo {
     Primitive(PrimitiveType),
     Named(ItemId),
     GenericParam(String),
+    /// `This` marker recorded in contract signatures; substituted with the receiver type
+    /// at impl sites and with the concrete bound generic at monomorphized bound sites.
+    This_,
     Applied {
         base: ItemId,
         args: Vec<TypeId>,
@@ -123,7 +126,7 @@ impl TypeTable {
         remap: &mut HashMap<TypeId, TypeId>,
     ) -> TypeInfo {
         match info {
-            TypeInfo::Primitive(_) | TypeInfo::Named(_) | TypeInfo::GenericParam(_) => info.clone(),
+            TypeInfo::Primitive(_) | TypeInfo::Named(_) | TypeInfo::GenericParam(_) | TypeInfo::This_ => info.clone(),
             TypeInfo::Applied { base, args } => TypeInfo::Applied {
                 base: *base,
                 args: args.iter().map(|arg| self.import_type_id(*arg, other, remap)).collect(),

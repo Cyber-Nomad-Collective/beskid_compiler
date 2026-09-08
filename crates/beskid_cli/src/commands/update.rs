@@ -1,4 +1,4 @@
-//! `beskid update` — refresh dependency resolution and the materialized workspace tree.
+//! `beskid dev project update` — refresh dependency resolution and the materialized workspace tree.
 
 use crate::project_args::{PlainProgressArgs, ProjectResolveArgs};
 use anyhow::Result;

@@ -20,6 +20,7 @@ pub(super) fn type_name_for_method_receiver(receiver_type: &Spanned<Type>) -> St
         }
         Type::Array(_) => "Array".to_string(),
         Type::Function { .. } => "Function".to_string(),
+        Type::This_ => "This".to_string(),
     }
 }
 
@@ -188,6 +189,25 @@ impl Resolver {
                 )
             }
             Node::ExtendTypeDefinition(def) => {
+                for method in &def.node.methods {
+                    let receiver = type_name_for_method_receiver(&method.node.receiver_type);
+                    let method_name = format!("{}::{}", receiver, method.node.name.node.name);
+                    self.push_item(
+                        ItemId(self.items.len()),
+                        None,
+                        method_name,
+                        ItemKind::Method,
+                        method.node.visibility.node,
+                        method.span,
+                        Some(receiver),
+                        self.current_module_path(),
+                    );
+                    let method_id = ItemId(self.items.len() - 1);
+                    self.collect_member_items_for_method(method, method_id);
+                }
+                return;
+            }
+            Node::ImplBlock(def) => {
                 for method in &def.node.methods {
                     let receiver = type_name_for_method_receiver(&method.node.receiver_type);
                     let method_name = format!("{}::{}", receiver, method.node.name.node.name);

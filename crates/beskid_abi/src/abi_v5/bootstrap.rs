@@ -117,6 +117,15 @@ impl RuntimeAuditMetadata {
                 .flat_map(|intrinsic| intrinsic.target_bindings.iter())
                 .map(|binding| binding.implementation.clone()),
         );
+        // Corelib service bindings (e.g. `str_concat`, `str_eq`, `panic`) are implemented by the
+        // runtime object as C exports declared in the ABI-v5 manifest. Only the bindings for the
+        // current target apply; a Linux runtime must not allow Windows or Darwin implementations.
+        allowed_exports.extend(
+            crate::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
+                .iter()
+                .filter(|binding| binding.target == target_triple)
+                .map(|binding| binding.implementation.into()),
+        );
         allowed_exports.sort();
         allowed_exports.dedup();
         Ok(Self {
@@ -201,7 +210,6 @@ impl RuntimeAuditMetadata {
     }
 
     fn normalized_symbol(&self, raw: &str) -> Result<String, String> {
-        reject_forbidden_provenance(raw, &self.forbidden_rust_symbols)?;
         let normalized = normalize_object_symbol(raw, &self.object_format, &self.symbol_prefix);
         // Darwin's `_exit` platform import, C11 TLS `_tlv_bootstrap` helper, and libc `__error`
         // errno accessor all have a leading underscore in their native C names before Mach-O
@@ -211,13 +219,24 @@ impl RuntimeAuditMetadata {
         // `_tlv_bootstrap`, and `__error` (raw) or `exit`, `tlv_bootstrap`, and `_error` (matrix).
         // Canonicalize only these declared Darwin imports here; generic object-symbol normalization
         // deliberately remains one-prefix-only and fail-closed.
-        if self.object_format == "macho" {
+        let normalized = if self.object_format == "macho" {
             match normalized.as_str() {
-                "_exit" | "_tlv_bootstrap" | "_error" => return Ok(normalized[1..].into()),
-                "__error" => return Ok(normalized[2..].into()),
-                _ => {}
+                "_exit" | "_tlv_bootstrap" | "_error" => normalized[1..].into(),
+                "__error" => normalized[2..].into(),
+                _ => normalized,
             }
+        } else {
+            normalized
+        };
+        // Declared runtime exports — manifest exports, trusted intrinsics, and corelib service
+        // binding implementations such as `panic`/`panic_str`/`str_concat` — are legitimate C
+        // symbols that may match a forbidden Rust provenance family by substring (`panic`). They
+        // are neither Rust-mangled nor demanglable, so the provenance audit is skipped for them;
+        // every other symbol still fails closed on forbidden Rust provenance.
+        if self.allowed_exports.iter().any(|entry| entry == &normalized) {
+            return Ok(normalized);
         }
+        reject_forbidden_provenance(raw, &self.forbidden_rust_symbols)?;
         Ok(normalized)
     }
 }

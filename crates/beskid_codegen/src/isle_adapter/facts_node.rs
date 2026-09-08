@@ -8,7 +8,8 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if self.query(range_for_fact(self.db, key)).is_some() {
             return Some(NodeKind::RangeExpression);
         }
-        self.query(node_kind(self.db, key)).and_then(map_node_kind)
+        let kind = self.query(node_kind(self.db, key)).and_then(map_node_kind);
+        kind
     }
 
     fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
@@ -174,11 +175,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if self.inline_lambda_call(key).is_some() {
             return Some(CallKind::InlineLambda);
         }
-        matches!(
+        let kind = matches!(
             self.query(call_lowering(self.db, key)),
             Some(CallLowering::Direct(_) | CallLowering::CorelibService(_))
         )
-        .then_some(CallKind::Direct)
+        .then_some(CallKind::Direct);
+        kind
     }
 
     fn primitive_numeric_conversion(&self, key: AstNodeKey) -> Option<(SemanticTypeId, SemanticTypeId)> {
@@ -322,7 +324,8 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                 }
             });
         }
-        signature_for_item(self.isa?, self.query(call_abi_signature(self.db, key))?)
+        let item = self.query(call_abi_signature(self.db, key))?;
+        signature_for_item(self.isa?, item)
     }
 
     fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
@@ -448,9 +451,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if self.node_kind(key) == Some(NodeKind::ArrayLiteralExpression) {
             return self.isa.map(|isa| isa.pointer_type());
         }
-        if self.node_kind(key) == Some(NodeKind::EnumLiteralExpression)
-            && self.query(enum_constructor(self.db, key)).is_some()
-        {
+        if self.node_kind(key) == Some(NodeKind::EnumLiteralExpression) && self.enum_constructor_fact(key).is_some() {
             return self.isa.map(|isa| isa.pointer_type());
         }
         if let Some((_, intrinsic)) = self.runtime_intrinsic(key) {
@@ -494,14 +495,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn managed_struct_allocation(&self, key: AstNodeKey) -> Option<ManagedStructAllocation> {
-        Some(ManagedStructAllocation {
-            allocation_request_symbol: self
-                .input
-                .aggregate_static_plan(key)
-                .or_else(|| self.input.enum_static_plan(key))?
-                .allocation_request_symbol
-                .into(),
-        })
+        let plan =
+            self.input.aggregate_static_plan(key).or_else(|| self.input.enum_static_plan(key)).or_else(|| {
+                let specialization = self.item_specializations.values().next()?;
+                self.input.enum_static_plan_for_specialization(key, &specialization.substitutions)
+            })?;
+        Some(ManagedStructAllocation { allocation_request_symbol: plan.allocation_request_symbol.into() })
     }
 
     fn field_index(&self, key: AstNodeKey) -> Option<u32> {
@@ -557,15 +556,19 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn enum_variant_index(&self, key: AstNodeKey) -> Option<u32> {
-        self.query(enum_constructor(self.db, key)).map(|constructor| constructor.variant_index)
+        self.enum_constructor_fact(key).map(|constructor| constructor.variant_index)
     }
 
     fn enum_payload(&self, key: AstNodeKey) -> Option<AstNodeKey> {
-        self.query(enum_constructor(self.db, key))?.payload
+        self.enum_constructor_fact(key)?.payload
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
-        let fact = self.query(enum_match(self.db, key))?;
+        let fact = self.query(enum_match(self.db, key)).or_else(|| {
+            let specialization = self.item_specializations.values().next()?;
+            let r = self.query(enum_match_for_specialized_body(self.db, key, specialization.substitutions.clone()));
+            r
+        })?;
         fact.arms
             .iter()
             .map(|arm| {

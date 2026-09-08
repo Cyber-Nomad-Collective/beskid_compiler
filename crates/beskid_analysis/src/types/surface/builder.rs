@@ -57,7 +57,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
                         self.seed_method_receiver(method.span, method);
                     }
                 }
-                Node::TypeDefinition(def) => {
+                Node::ImplBlock(def) => {
                     for method in &def.node.methods {
                         self.seed_method_receiver(method.span, method);
                     }
@@ -84,7 +84,15 @@ impl<'a> TypeSurfaceBuilder<'a> {
                 self.seed_generic_item(item.span, &def.node.generics);
                 self.register_enum_definition(item.span, &def.node);
             }
+            Node::ContractDefinition(def) => {
+                self.seed_generic_item(item.span, &def.node.generics);
+            }
             Node::ExtendTypeDefinition(def) => {
+                for method in &def.node.methods {
+                    self.register_foreign_method(method.span, method);
+                }
+            }
+            Node::ImplBlock(def) => {
                 for method in &def.node.methods {
                     self.register_foreign_method(method.span, method);
                 }
@@ -338,6 +346,14 @@ impl<'a> TypeSurfaceBuilder<'a> {
             return methods;
         };
 
+        let mut inserted = Vec::new();
+        for generic in &definition.node.generics {
+            let name = generic.node.name.clone();
+            let type_id = self.types.intern(TypeInfo::GenericParam(name.clone()));
+            self.generic_params.insert(name.clone(), type_id);
+            inserted.push(name);
+        }
+
         for node in &definition.node.items {
             match &node.node {
                 ContractNode::MethodSignature(signature) => {
@@ -347,7 +363,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
                     let mut params = Vec::new();
                     let mut valid = true;
                     for param in &signature.node.parameters {
-                        let Some(type_id) = self.type_id_for_type(&param.node.ty) else {
+                        let Some(type_id) = self.type_id_for_type_in_generic_scope(&param.node.ty) else {
                             valid = false;
                             break;
                         };
@@ -360,7 +376,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
                         .node
                         .return_type
                         .as_ref()
-                        .and_then(|ty| self.type_id_for_type(ty))
+                        .and_then(|ty| self.type_id_for_type_in_generic_scope(ty))
                         .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
                     let Some(return_type) = return_type else {
                         continue;
@@ -381,7 +397,12 @@ impl<'a> TypeSurfaceBuilder<'a> {
                         methods.push((method_name, signature));
                     }
                 }
+                ContractNode::AssociatedType(_) => {}
             }
+        }
+
+        for name in inserted {
+            self.generic_params.remove(&name);
         }
 
         active.remove(contract_name);
@@ -439,6 +460,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
                 }
                 Some(self.types.intern(TypeInfo::Function { params, return_type }))
             }
+            Type::This_ => None,
         }
     }
 
@@ -451,7 +473,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         }
         let mut args = Vec::with_capacity(last.node.type_args.len());
         for arg in &last.node.type_args {
-            args.push(self.type_id_for_type(arg)?);
+            args.push(self.type_id_for_type_in_generic_scope(arg)?);
         }
         Some(self.types.intern(TypeInfo::Applied { base: item_id, args }))
     }

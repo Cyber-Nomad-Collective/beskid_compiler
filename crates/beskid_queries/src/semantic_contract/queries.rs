@@ -294,6 +294,42 @@ pub fn enum_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumLayo
     with_registered_syntax(db, key, enum_layout_tracked)
 }
 
+/// Enum layout for a constructor inside a specialized generic function body, resolved through
+/// the enclosing function's specialization substitutions.
+pub fn enum_layout_for_specialized_constructor(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing_substitutions: std::sync::Arc<[GenericSubstitution]>,
+) -> SemanticQueryResult<EnumLayoutFact> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        enum_layout_for_specialized_constructor_tracked(db, syntax, key, enclosing_substitutions)
+    })
+}
+
+/// Enum match fact for a match expression inside a specialized generic function body, resolved
+/// through the enclosing function's specialization substitutions.
+pub fn enum_match_for_specialized_body(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing_substitutions: std::sync::Arc<[GenericSubstitution]>,
+) -> SemanticQueryResult<EnumMatchFact> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        enum_match_for_specialized_body_tracked(db, syntax, key, enclosing_substitutions)
+    })
+}
+
+/// Enum constructor fact for a constructor inside a specialized generic function body, resolved
+/// through the enclosing function's specialization substitutions.
+pub fn enum_constructor_for_specialized_body(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing_substitutions: std::sync::Arc<[GenericSubstitution]>,
+) -> SemanticQueryResult<EnumConstructorFact> {
+    with_registered_syntax(db, key, |db, syntax, key| {
+        enum_constructor_for_specialized_body_tracked(db, syntax, key, enclosing_substitutions)
+    })
+}
+
 /// Return the exact source enum constructor selection for the current syntax generation.
 ///
 /// Constructors with multiple payload fields remain unavailable until the generated ISLE enum

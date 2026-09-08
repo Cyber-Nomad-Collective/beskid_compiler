@@ -400,5 +400,6 @@ pub(in crate::semantic_contract) fn semantic_type_from_syntax(
         // `abi_type_from_syntax`, which proves the managed-reference representation separately.
         Type::Complex(_) | Type::Array(_) => Err(SemanticError::unavailable("item_signature")),
         Type::Function { .. } => Err(SemanticError::unavailable("item_signature")),
+        Type::This_ => Err(SemanticError::unavailable("item_signature")),
     }
 }

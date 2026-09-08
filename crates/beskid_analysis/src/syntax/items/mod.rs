@@ -2,6 +2,7 @@
 
 pub mod attribute;
 pub mod constant_definition;
+pub mod contract_associated_type;
 pub mod contract_definition;
 pub mod contract_embedding;
 pub mod contract_method_signature;
@@ -26,6 +27,7 @@ pub mod use_declaration;
 
 pub use attribute::{Attribute, AttributeArgument, AttributeDeclaration, AttributeParameter, AttributeTarget};
 pub use constant_definition::ConstantDefinition;
+pub use contract_associated_type::ContractAssociatedType;
 pub use contract_definition::ContractDefinition;
 pub use contract_embedding::ContractEmbedding;
 pub use contract_method_signature::ContractMethodSignature;
@@ -38,6 +40,7 @@ pub use host_definition::{
     HostBodyItem, HostDefinition, InjectQualifier, LaunchStatement, RegistrationLifetime, RegistryBlock, RegistryEntry,
     ScopeDefinition, ScopeHook, ScopeHookKind, WithStatement,
 };
+pub use impl_block::ImplBlock;
 pub use inline_module::InlineModule;
 pub use macro_definition::{MacroDefinition, MacroFragmentKind, MacroParameter};
 pub use method_definition::MethodDefinition;

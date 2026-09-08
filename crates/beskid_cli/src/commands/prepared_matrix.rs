@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::process::ExitStatus;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
@@ -74,6 +75,40 @@ pub enum TargetResult {
     Cancelled,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkerExitCause {
+    Exited { code: i32 },
+    Signaled { signal: i32 },
+    Unknown,
+}
+
+impl WorkerExitCause {
+    pub fn from_status(status: ExitStatus) -> Self {
+        if let Some(code) = status.code() {
+            return Self::Exited { code };
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            if let Some(signal) = status.signal() {
+                return Self::Signaled { signal };
+            }
+        }
+        Self::Unknown
+    }
+}
+
+impl std::fmt::Display for WorkerExitCause {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Exited { code } => write!(formatter, "matrix worker exited with code {code}"),
+            Self::Signaled { signal } => write!(formatter, "matrix worker terminated by signal {signal}"),
+            Self::Unknown => formatter.write_str("matrix worker exited for an unknown reason"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhaseRecord {
     pub phase: String,
@@ -93,6 +128,8 @@ pub struct TargetReport {
     pub result: TargetResult,
     pub tests: super::test::TestSummary,
     pub phases: Vec<PhaseRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_started_test: Option<String>,
     pub error: Option<String>,
 }
 
@@ -110,6 +147,8 @@ pub struct MatrixReport {
     pub timed_out: bool,
     pub cancelled: bool,
     pub release_eligible: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worker_exit_cause: Option<WorkerExitCause>,
     pub targets: Vec<TargetReport>,
 }
 
@@ -120,6 +159,7 @@ impl MatrixReport {
             .all(|snapshot| snapshot.as_ref().is_some_and(|snapshot| snapshot.clean));
         let revisions_fresh = revisions_complete && self.revisions == *current;
         let all_passed = self.targets.iter().all(|target| target.result == TargetResult::Passed);
+        let worker_succeeded = self.worker_exit_cause == Some(WorkerExitCause::Exited { code: 0 });
         let actual_targets = self.targets.iter().map(|target| target.target.as_str()).collect::<Vec<_>>();
         let expected_targets = self.expected_targets.iter().map(String::as_str).collect::<Vec<_>>();
         self.release_eligible = self.denominator == self.expected_targets.len()
@@ -133,7 +173,8 @@ impl MatrixReport {
             && !self.cancelled
             && revisions_fresh
             && self.targets.len() == self.denominator
-            && all_passed;
+            && all_passed
+            && worker_succeeded;
     }
 }
 

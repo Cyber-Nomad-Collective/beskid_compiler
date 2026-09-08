@@ -1,13 +1,14 @@
 //! Host-neutral prepared-syntax entrypoint lowering.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 
 use anyhow::Result;
 use beskid_abi::{
     abi_v5::{AbiManifestV5, TargetMetadata},
+    generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS,
     runtime_source::{
         CANONICAL_BOOTSTRAP_SOURCE_PATH, canonical_corelib_syscall_service_capability,
         canonical_runtime_intrinsic_capability, canonical_runtime_sources,
@@ -26,6 +27,17 @@ use beskid_queries::{
 use cranelift_codegen::isa::TargetIsa;
 
 use crate::{CodegenArtifact, CodegenInput, ExportEntry, SyntaxModuleItem, lower_syntax_program};
+
+/// Corelib service implementations the canonical runtime currently lowers from embedded source.
+///
+/// The string helpers (`str_new`, `str_from_i64`, `str_eq`, `str_concat`) are emitted
+/// unconditionally by ISLE lowering, so the runtime kit must publish them. `panic` and `panic_str`
+/// are fundamental services used by Corelib assertions. Other corelib service implementations
+/// (channels, fibers, composition, ...) are not yet lowerable through the AOT ISLE path and remain
+/// pending ISLE lowering support; they are compiled separately as platform objects or added here
+/// as their lowering becomes supported.
+const CANONICAL_RUNTIME_LOWERED_CORELIB_SERVICES: &[&str] =
+    &["str_new", "str_from_i64", "str_eq", "str_concat", "panic", "panic_str"];
 
 /// Result of lowering one prepared syntax entrypoint through the typed-codegen boundary.
 pub struct PreparedSyntaxEntrypoint {
@@ -102,12 +114,34 @@ pub fn lower_canonical_runtime_prepared_syntax(
         .map_err(|error| anyhow::anyhow!("canonical runtime CodegenInput failed: {error}"))?;
     let manifest_exports =
         input.abi_manifest().exports.iter().map(|entry| entry.symbol.as_str()).collect::<HashSet<_>>();
+    // Corelib service implementations (e.g. `str_concat`, `panic_str`) are not manifest exports
+    // but the runtime kit must publish them so the JIT can resolve them as manifest-owned symbols
+    // rather than user FFI. The ISLE AOT path cannot yet lower every corelib service (channels,
+    // fibers, composition, ... use constructs such as parameter assignment that remain pending
+    // ISLE lowering support), so this is the curated set of services the canonical runtime
+    // currently lowers from source: the string helpers the ISLE lowering emits unconditionally
+    // plus the fundamental panic services used by Corelib assertions. Platform-object
+    // implementations (e.g. `beskid_rt_v5_args_count`) are compiled separately. As ISLE lowering
+    // grows, this set grows toward the full `ABI_V5_CORELIB_SERVICE_BINDINGS` roster.
+    let corelib_service_implementations = ABI_V5_CORELIB_SERVICE_BINDINGS
+        .iter()
+        .filter(|binding| {
+            binding.target == input.target().triple.as_str()
+                && CANONICAL_RUNTIME_LOWERED_CORELIB_SERVICES.contains(&binding.implementation)
+        })
+        .map(|binding| binding.implementation.to_string())
+        .collect::<BTreeSet<_>>();
+    let allowed_source_exports = manifest_exports
+        .iter()
+        .copied()
+        .chain(corelib_service_implementations.iter().map(String::as_str))
+        .collect::<HashSet<_>>();
     let mut exported_items = HashMap::new();
     for key in input.roots().iter().copied().flat_map(|root| function_definitions(input.database(), root)) {
         let export = item_export_symbol(input.database(), key)
             .map_err(|error| anyhow::anyhow!("canonical runtime export validation failed: {error}"))?;
         if let Some(export) = export
-            && manifest_exports.contains(&*export.0)
+            && allowed_source_exports.contains(&*export.0)
             && exported_items.insert(export.0.to_string(), key).is_some()
         {
             anyhow::bail!("canonical runtime declares duplicate ABI export `{}`", export.0);
@@ -136,7 +170,37 @@ pub fn lower_canonical_runtime_prepared_syntax(
             }
             let symbol = item_export_symbol(input.database(), key)
                 .map_err(|error| anyhow::anyhow!("canonical runtime export validation failed: {error}"))?
-                .filter(|symbol| manifest_exports.contains(&*symbol.0))
+                .filter(|symbol| allowed_source_exports.contains(&*symbol.0))
+                .map(|symbol| symbol.0.to_string())
+                .or_else(|| syntax_item_symbol(input.database(), &input, key))
+                .ok_or_else(|| anyhow::anyhow!("canonical runtime reachable item has no syntax symbol"))?;
+            items.push(SyntaxModuleItem { key, symbol });
+        }
+    }
+    for implementation in &corelib_service_implementations {
+        let Some(entry) = exported_items.get(implementation).copied() else {
+            continue;
+        };
+        let program = input
+            .roots()
+            .iter()
+            .copied()
+            .find(|root| root.unit == entry.unit)
+            .ok_or_else(|| anyhow::anyhow!("canonical runtime export `{}` has no source root", implementation))?;
+        let reachable = reachable_items(input.database(), program, entry)
+            .map_err(|error| {
+                anyhow::anyhow!("canonical runtime reachability failed for `{}`: {error}", implementation)
+            })?
+            .ok_or_else(|| {
+                anyhow::anyhow!("incomplete direct-call facts for canonical runtime export `{}`", implementation)
+            })?;
+        for key in reachable.iter().copied() {
+            if !selected.insert(key) {
+                continue;
+            }
+            let symbol = item_export_symbol(input.database(), key)
+                .map_err(|error| anyhow::anyhow!("canonical runtime export validation failed: {error}"))?
+                .filter(|symbol| allowed_source_exports.contains(&*symbol.0))
                 .map(|symbol| symbol.0.to_string())
                 .or_else(|| syntax_item_symbol(input.database(), &input, key))
                 .ok_or_else(|| anyhow::anyhow!("canonical runtime reachable item has no syntax symbol"))?;
@@ -148,7 +212,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
     }
     let mut artifact = lower_syntax_program(&input, isa, &items)
         .map_err(|error| anyhow::anyhow!("canonical runtime ISLE lowering failed: {error}"))?;
-    artifact.exports = syntax_export_entries_matching(input.database(), &items, &manifest_exports)?;
+    artifact.exports = syntax_export_entries_matching(input.database(), &items, &allowed_source_exports)?;
     Ok(artifact)
 }
 

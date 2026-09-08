@@ -214,6 +214,7 @@ impl<'a> TypeChecker<'a> {
                 Node::Function(def) => (item.span, &def.node.generics),
                 Node::TypeDefinition(def) => (item.span, &def.node.generics),
                 Node::EnumDefinition(def) => (item.span, &def.node.generics),
+                Node::ContractDefinition(def) => (item.span, &def.node.generics),
                 Node::InlineModule(m) => {
                     self.seed_generics_from_items(&m.node.items);
                     continue;
@@ -234,6 +235,11 @@ impl<'a> TypeChecker<'a> {
                     self.seed_method_receiver(item.span, def);
                 }
                 Node::ExtendTypeDefinition(def) => {
+                    for method in &def.node.methods {
+                        self.seed_method_receiver(method.span, method);
+                    }
+                }
+                Node::ImplBlock(def) => {
                     for method in &def.node.methods {
                         self.seed_method_receiver(method.span, method);
                     }

@@ -17,6 +17,7 @@ fn type_display_name(ty: &Spanned<Type>) -> String {
             let params = parameters.iter().map(type_display_name).collect::<Vec<_>>().join(", ");
             format!("{}({params})", type_display_name(return_type))
         }
+        Type::This_ => "This".to_string(),
     }
 }
 
@@ -77,6 +78,7 @@ impl<'a> TypeChecker<'a> {
                 }
                 Some(self.type_table.intern(TypeInfo::Function { params, return_type }))
             }
+            Type::This_ => None,
         }
     }
 

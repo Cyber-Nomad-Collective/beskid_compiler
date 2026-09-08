@@ -1,11 +1,13 @@
-//! `beskid build` — AOT compile and link Beskid projects to objects, libraries, or executables.
+//! `beskid dev build compile` — AOT compile and link Beskid projects to objects, libraries, or executables.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
+use std::time::Instant;
 
 use crate::commands::syntax_codegen::lower_prepared_entrypoint;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
+use crate::commands::step_progress::log_step_with_duration;
 use anyhow::Result;
 use beskid_analysis::projects::TargetKind;
 use beskid_aot::{
@@ -29,7 +31,7 @@ pub enum BuildKind {
     Object,
 }
 
-/// Full set of flags for `beskid build` (output kind, profile, linker, progress).
+/// Full set of flags for `beskid dev build compile` (output kind, profile, linker, progress).
 #[derive(Args, Debug)]
 pub struct BuildArgs {
     /// The input Beskid file to compile
@@ -96,12 +98,15 @@ pub fn execute(args: BuildArgs) -> Result<()> {
     run_build(args, None)
 }
 
-/// Same as [`execute`] but forwards pipeline progress into a running `beskid hi` shell.
+/// Same as [`execute`] but forwards pipeline progress to an attached terminal sink.
 pub fn execute_for_hi(msg_tx: Sender<RuntimeOp>, args: BuildArgs) -> Result<()> {
     run_build(args, Some(msg_tx))
 }
 
 fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
+    let total_steps = 4usize;
+    let total_start = Instant::now();
+
     if let Some(raw) = args.backend.as_deref() {
         let kind = beskid_codegen::backend::BackendKind::parse(raw).map_err(|err| anyhow::anyhow!("{err}"))?;
         match kind {
@@ -122,6 +127,7 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
         frozen: args.lockfile.frozen,
         locked: args.lockfile.locked,
     };
+    let resolve_started = Instant::now();
     let (session, resolved) = match hi_tx {
         None => CommandSession::open_and_resolve(args.plain, PipelineProgressKind::FullBuild, &resolve_args)?,
         Some(tx) => {
@@ -130,13 +136,21 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
             (session, resolved)
         }
     };
+    if args.plain {
+        log_step_with_duration(1, total_steps, "resolve", resolve_started.elapsed());
+    }
     let hi_attached = session.pipeline().is_hi_attached();
+    let prepare_started = Instant::now();
     let prepared = session.executable_gate_prepared(
         &resolved,
         SemanticGateOptions { finish_prepare_ui: false, prepare_message: "Analysis complete" },
     )?;
+    if args.plain {
+        log_step_with_duration(2, total_steps, "prepare", prepare_started.elapsed());
+    }
     let front = prepared.into_executable()?;
 
+    let lower_started = Instant::now();
     let input_path = resolved.source_path.clone();
     let project_target_kind = resolved.compile_plan.as_ref().map(|plan| plan.target.kind);
     let default_output_stem = resolved.compile_plan.as_ref().map(|plan| plan.target.name.clone());
@@ -144,6 +158,9 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
     let entrypoint = resolve_entrypoint(args.entrypoint.clone())?;
     let artifact =
         lower_prepared_entrypoint(&front, &entrypoint, args.target_triple.as_deref(), Some(session.observer()))?;
+    if args.plain {
+        log_step_with_duration(3, total_steps, "lower", lower_started.elapsed());
+    }
 
     let output_kind = resolve_output_kind(args.kind, project_target_kind);
 
@@ -201,10 +218,16 @@ fn run_build(args: BuildArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
     };
     apply_link_libraries(&mut build_request, link_inputs);
     let result = build(build_request)?;
-    session.pipeline().finish_build_with_summary(
-        "Build complete",
-        CommandSummary::plain("Build", "Build complete").with_stat("output", output.display().to_string()),
-    );
+    if args.plain {
+        let link_started = Instant::now();
+        log_step_with_duration(4, total_steps, "link", link_started.elapsed());
+        println!("build complete in {}", crate::commands::step_progress::format_duration(total_start.elapsed()));
+    } else {
+        session.pipeline().finish_build_with_summary(
+            "Build complete",
+            CommandSummary::plain("Build", "Build complete").with_stat("output", output.display().to_string()),
+        );
+    }
 
     if args.plain
         && !hi_attached

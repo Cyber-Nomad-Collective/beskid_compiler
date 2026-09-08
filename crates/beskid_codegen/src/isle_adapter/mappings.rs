@@ -47,6 +47,7 @@ pub(super) fn runtime_intrinsic_kind_for_name(name: &str) -> Option<RuntimeIntri
     Some(match name {
         "memory_copy" => RuntimeIntrinsicKind::MemoryCopy,
         "memory_set" => RuntimeIntrinsicKind::MemorySet,
+        "memory_compare" => RuntimeIntrinsicKind::MemoryCompare,
         "native_word_from_pointer" => RuntimeIntrinsicKind::NativeWordFromPointer,
         "pointer_from_native_word" => RuntimeIntrinsicKind::PointerFromNativeWord,
         "pointer_add" => RuntimeIntrinsicKind::PointerAdd,
@@ -134,6 +135,7 @@ mod tests {
         for (name, expected) in [
             ("memory_copy", RuntimeIntrinsicKind::MemoryCopy),
             ("memory_set", RuntimeIntrinsicKind::MemorySet),
+            ("memory_compare", RuntimeIntrinsicKind::MemoryCompare),
             ("native_word_from_pointer", RuntimeIntrinsicKind::NativeWordFromPointer),
             ("pointer_from_native_word", RuntimeIntrinsicKind::PointerFromNativeWord),
             ("pointer_add", RuntimeIntrinsicKind::PointerAdd),

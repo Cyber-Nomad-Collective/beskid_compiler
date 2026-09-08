@@ -73,3 +73,25 @@ fn scalar_payload_layout_separates_mixed_pointer_and_scalar_slots() {
     assert_eq!(physical.variants[1].payload_offset, Some(24));
     assert_eq!(physical.object_size, 40);
 }
+
+#[test]
+fn scalar_payload_layout_treats_unit_payload_as_no_storage() {
+    let source = layout(&[Some(SemanticTypeId::UNIT), Some(SemanticTypeId::STRING)]);
+    let physical = source.scalar_payload_object_layout(64, 16, 8).expect("unit payload layout");
+
+    assert_eq!(physical.variants[0].payload_type, None);
+    assert_eq!(physical.variants[0].payload_offset, None);
+    assert_eq!(physical.variants[1].payload_type, Some(SemanticTypeId::STRING));
+    assert_eq!(physical.variants[1].payload_offset, Some(24));
+    assert_eq!(physical.storage_fields.as_ref(), &[(SemanticTypeId::STRING, 24)]);
+}
+
+#[test]
+fn scalar_payload_layout_unit_only_enum_has_no_payload_slot() {
+    let source = layout(&[Some(SemanticTypeId::UNIT), Some(SemanticTypeId::UNIT)]);
+    let physical = source.scalar_payload_object_layout(64, 16, 8).expect("unit-only layout");
+
+    assert!(physical.storage_fields.is_empty());
+    assert_eq!(physical.variants[0].payload_type, None);
+    assert_eq!(physical.variants[1].payload_type, None);
+}

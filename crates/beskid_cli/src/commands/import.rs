@@ -1,4 +1,4 @@
-//! `beskid import` — Foreign library import CLI (v0.3).
+//! `beskid dev project import` — Foreign library import CLI (v0.3).
 //!
 //! Implements the `import lib` subcommand defined by the platform-spec
 //! Foreign library import feature at
@@ -18,7 +18,7 @@ use beskid_analysis::projects::{
 };
 use clap::{Args, Subcommand};
 
-/// `beskid import` umbrella command.
+/// `beskid dev project import` umbrella command.
 #[derive(Args, Debug)]
 pub struct ImportArgs {
     #[command(subcommand)]
@@ -49,7 +49,7 @@ pub struct LibArgs {
     pub project: Option<PathBuf>,
 }
 
-/// Dispatch the chosen `beskid import` subcommand.
+/// Dispatch the chosen `beskid dev project import` subcommand.
 pub fn execute(args: ImportArgs) -> Result<()> {
     match args.command {
         ImportCommand::Lib(lib_args) => execute_lib(lib_args),
@@ -122,7 +122,7 @@ fn library_resolve_error_to_anyhow(err: LibraryResolveError) -> anyhow::Error {
     anyhow!("{err}")
 }
 
-/// Resolve the project manifest path the same way `beskid lock` / `beskid fetch` do.
+/// Resolve the project manifest path the same way `beskid dev project lock` / `beskid dev project fetch` do.
 fn resolve_manifest_path(explicit: Option<&Path>) -> Result<PathBuf> {
     if let Some(path) = explicit {
         let candidate = expand_to_project_manifest(path)?;
@@ -165,17 +165,16 @@ mod tests {
 
     #[test]
     fn parses_import_lib_invocation() {
-        let cli = TestCli::try_parse_from(["beskid", "import", "lib", "libc"]).expect("parse");
+        let cli = TestCli::try_parse_from(["beskid", "dev", "project", "import", "lib", "libc"]).expect("parse");
         match cli.cmd {
-            crate::cli::Commands::Import(args) => match args.command {
-                ImportCommand::Lib(lib_args) => {
-                    assert_eq!(lib_args.logical, "libc");
-                    assert_eq!(lib_args.provider, "c-posix");
-                    assert!(!lib_args.dry_run);
-                    assert!(lib_args.project.is_none());
-                }
-            },
-            _ => panic!("expected Import command"),
+            crate::cli::Commands::Dev(crate::cli::DevCommand::Project(project_args)) => {
+                let crate::commands::import::ImportCommand::Lib(lib_args) = project_args.command;
+                assert_eq!(lib_args.logical, "libc");
+                assert_eq!(lib_args.provider, "c-posix");
+                assert!(!lib_args.dry_run);
+                assert!(lib_args.project.is_none());
+            }
+            _ => panic!("expected Import command under dev project"),
         }
     }
 
@@ -183,6 +182,8 @@ mod tests {
     fn parses_import_lib_with_options() {
         let cli = TestCli::try_parse_from([
             "beskid",
+            "dev",
+            "project",
             "import",
             "lib",
             "libc",
@@ -193,10 +194,10 @@ mod tests {
             "/tmp/example",
         ])
         .expect("parse");
-        let crate::cli::Commands::Import(args) = cli.cmd else {
-            panic!("expected Import command");
+        let crate::cli::Commands::Dev(crate::cli::DevCommand::Project(project_args)) = cli.cmd else {
+            panic!("expected dev project import command");
         };
-        let ImportCommand::Lib(lib_args) = args.command;
+        let ImportCommand::Lib(lib_args) = project_args.command;
         assert_eq!(lib_args.logical, "libc");
         assert_eq!(lib_args.provider, "posix");
         assert!(lib_args.dry_run);

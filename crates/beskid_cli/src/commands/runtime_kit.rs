@@ -1,4 +1,4 @@
-//! `beskid runtime-kit build` — publish one exact ABI-v5 target/profile kit.
+//! `beskid dev runtime-kit build` — publish one exact ABI-v5 target/profile kit.
 
 use std::path::PathBuf;
 

@@ -214,6 +214,7 @@ impl<'a> PrepWalker<'a> {
                 let params = parameters.iter().map(|p| self.type_id_for_program_type(p)).collect::<Option<Vec<_>>>()?;
                 lookup_function_type(self.surfaces.types, &params, ret)
             }
+            Type::This_ => None,
         }
     }
 

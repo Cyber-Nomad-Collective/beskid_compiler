@@ -1,4 +1,4 @@
-//! `beskid analyze` — run builtin semantic rules and print diagnostics.
+//! `beskid dev syntax analyze` — run builtin semantic rules and print diagnostics.
 
 use anyhow::Result;
 use beskid_analysis::services::{self, FrontEndOptions, PrepareOptions};
@@ -33,7 +33,7 @@ pub fn execute(args: AnalyzeArgs) -> Result<()> {
     run_analyze(args)
 }
 
-/// Same as [`execute`] but forwards pipeline progress into a running `beskid hi` shell.
+/// Same as [`execute`] but forwards pipeline progress to an attached terminal sink.
 pub fn execute_for_hi(_msg_tx: Sender<RuntimeOp>, args: AnalyzeArgs) -> Result<()> {
     run_analyze(args)
 }

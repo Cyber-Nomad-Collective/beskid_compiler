@@ -26,6 +26,7 @@ impl Resolver {
                     self.resolve_type(parameter);
                 }
             }
+            Type::This_ => {}
         }
     }
 

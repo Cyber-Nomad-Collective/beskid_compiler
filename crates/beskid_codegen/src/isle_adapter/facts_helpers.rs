@@ -38,11 +38,24 @@ impl SyntaxNodeFacts<'_> {
         let isa = self.isa?;
         let source = self
             .query(enum_layout(self.db, key))
-            .or_else(|| self.query(enum_match(self.db, key)).map(|fact| fact.layout))?;
+            .or_else(|| self.query(enum_match(self.db, key)).map(|fact| fact.layout))
+            .or_else(|| {
+                let specialization = self.item_specializations.values().next()?;
+                self.query(enum_layout_for_specialized_constructor(self.db, key, specialization.substitutions.clone()))
+            })?;
         let header = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
         let physical =
             source.scalar_payload_object_layout(self.input.target().pointer_width, header.size, header.alignment)?;
         self.build_enum_layout(isa, physical)
+    }
+
+    /// Enum constructor fact with a fallback for constructors inside a specialized generic
+    /// function body, resolved through the enclosing function's specialization substitutions.
+    pub(super) fn enum_constructor_fact(&self, key: AstNodeKey) -> Option<beskid_queries::EnumConstructorFact> {
+        self.query(enum_constructor(self.db, key)).or_else(|| {
+            let specialization = self.item_specializations.values().next()?;
+            self.query(enum_constructor_for_specialized_body(self.db, key, specialization.substitutions.clone()))
+        })
     }
 
     /// Translate the semantic layer's authoritative physical enum records into ISLE layout facts.

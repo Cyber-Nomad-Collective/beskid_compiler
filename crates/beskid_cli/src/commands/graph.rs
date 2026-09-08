@@ -1,7 +1,7 @@
-//! `beskid graph` — render workspace/project graphs as Mermaid (TUI or raw).
+//! `beskid dev project graph` — render workspace/project graphs as Mermaid (TUI on demand).
 
 use std::fs;
-use std::io::{self, IsTerminal, Write, stdout};
+use std::io::{self, Write};
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -51,7 +51,7 @@ pub fn execute(args: GraphArgs) -> Result<()> {
     run_graph(args)
 }
 
-/// Same as [`execute`] but forwards pipeline progress into a running `beskid hi` shell.
+/// Same as [`execute`] but forwards pipeline progress to an attached terminal sink.
 pub fn execute_for_hi(_msg_tx: Sender<RuntimeOp>, args: GraphArgs) -> Result<()> {
     run_graph(args)
 }
@@ -98,7 +98,7 @@ fn run_graph(args: GraphArgs) -> Result<()> {
         eprintln!("warning [{}]: {}", warning_code(warning.code), warning.message);
     }
 
-    let use_tui = (args.tui || stdout().is_terminal()) && !args.mermaid && args.out.is_none();
+    let use_tui = args.tui && !args.mermaid && args.out.is_none();
 
     if let Some(out_path) = &args.out {
         fs::write(out_path, &doc.mermaid)?;

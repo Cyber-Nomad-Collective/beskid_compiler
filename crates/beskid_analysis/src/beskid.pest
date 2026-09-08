@@ -61,6 +61,7 @@ GlobalKeyword = { "global" }
 ParentKeyword = { "parent" }
 TryKeyword = { "try" }
 CatchKeyword = { "catch" }
+ThisKeyword = { "This" }
 
 Keyword = {
     (
@@ -107,6 +108,7 @@ Keyword = {
       | GlobalKeyword
       | TryKeyword
       | CatchKeyword
+      | ThisKeyword
     ) ~ !ASCII_ALPHANUMERIC
 }
 
@@ -179,15 +181,18 @@ EnumPath = { Path ~ "::" ~ Identifier }
 ////////////////////////////////////////////////////////////
 PrimitiveType = { "bool" | "i32" | "i64" | "u8" | "pointer" | "word" | "f64" | "char" | "string" | "unit" | "never" }
 
+ThisType = { ThisKeyword }
+
 GenericParameters = { "<" ~ Identifier ~ ("," ~ Identifier)* ~ ">" }
 GenericArguments = { "<" ~ BeskidType ~ ("," ~ BeskidType)* ~ ">" }
 
 TypeName = { PrimitiveType | Path }
+AssociatedTypeRef = { Path ~ "::" ~ Identifier }
 ArrayType = { TypeName ~ "[" ~ "]" }
 FunctionType = { TypeName ~ "(" ~ BeskidTypeList? ~ ")" }
 ArrowFunctionType = { "(" ~ BeskidTypeList? ~ ")" ~ "=>" ~ BeskidType }
 BeskidTypeList = { BeskidType ~ ("," ~ BeskidType)* }
-BeskidType = { ArrowFunctionType | FunctionType | ArrayType | TypeName }
+BeskidType = { ArrowFunctionType | FunctionType | ArrayType | ThisType | AssociatedTypeRef | TypeName }
 
 ////////////////////////////////////////////////////////////
 // 4) DEFINITIONS
@@ -195,7 +200,8 @@ BeskidType = { ArrowFunctionType | FunctionType | ArrayType | TypeName }
 FunctionDefinition = { AttributeList? ~ Visibility? ~ BeskidType ~ Identifier ~ GenericParameters? ~ "(" ~ ParameterList? ~ ")" ~ Block }
 ConstantDefinition = { "const" ~ Identifier ~ "=" ~ IntegerLiteral ~ ";" }
 ReceiverType = { PrimitiveType | Path }
-ImplBlock = { "impl" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
+ImplConformanceList = { ":" ~ PathList }
+ImplBlock = { "impl" ~ ReceiverType ~ ImplConformanceList? ~ "{" ~ ImplMethodWithDocs* ~ "}" }
 ExtendTypeDefinition = { "extend" ~ "type" ~ ReceiverType ~ "{" ~ ImplMethodWithDocs* ~ "}" }
 
 MacroFragmentKind = { "block" | "expression" | "statement" | "type" | "identifier" | "literal" | "pattern" | "path" | "item" | "node" }
@@ -230,11 +236,12 @@ EnumVariantList = { EnumVariantWithDocs ~ ("," ~ DocGap* ~ EnumVariantWithDocs)*
 EnumVariantWithDocs = { (DocRun ~ EnumVariant) | EnumVariant }
 EnumVariant = { Identifier ~ ("(" ~ FieldList? ~ ")")? }
 
-ContractDefinition = { AttributeList? ~ Visibility? ~ "contract" ~ Identifier ~ "{" ~ ContractItemWithDocs* ~ "}" }
+ContractDefinition = { AttributeList? ~ Visibility? ~ "contract" ~ Identifier ~ GenericParameters? ~ "{" ~ ContractItemWithDocs* ~ "}" }
 ContractItemWithDocs = { ((DocRun ~ ContractItem) | ContractItem) ~ DocGap* }
-ContractItem = _{ ContractMethodSignature | ContractEmbedding }
+ContractItem = _{ ContractMethodSignature | ContractEmbedding | ContractAssociatedType }
 ContractMethodSignature = { AttributeList? ~ BeskidType ~ Identifier ~ "(" ~ ParameterList? ~ ")" ~ ";" }
-ContractEmbedding = { Identifier ~ ";"? }
+ContractEmbedding = { Identifier ~ GenericArguments? ~ ";"? }
+ContractAssociatedType = { "type" ~ Identifier ~ ("=" ~ BeskidType)? ~ ";" }
 
 RegistrationLifetime = { "single" | "transient" }
 RegistrationTarget = { "for" ~ Path }

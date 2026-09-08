@@ -316,6 +316,7 @@ fn type_name(ty: &Spanned<Type>) -> String {
         }
         Type::Array(inner) => type_name(inner),
         Type::Function { .. } => "Function".to_string(),
+        Type::This_ => "This".to_string(),
     }
 }
 

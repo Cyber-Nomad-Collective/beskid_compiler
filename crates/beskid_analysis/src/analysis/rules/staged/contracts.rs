@@ -6,6 +6,13 @@ use crate::syntax::Spanned;
 use crate::syntax::{ContractNode, Node, Program, Type};
 use std::collections::{HashMap, HashSet};
 
+fn type_name_matches_receiver(receiver_type: &Spanned<Type>, type_name: &str) -> bool {
+    let Type::Complex(receiver_path) = &receiver_type.node else {
+        return false;
+    };
+    receiver_path.node.segments.last().is_some_and(|segment| segment.node.name.node.name == type_name)
+}
+
 impl SemanticPipelineRule {
     pub(super) fn stage6_contracts_and_methods(
         &self,
@@ -112,6 +119,7 @@ impl SemanticPipelineRule {
                         methods.entry(method_name).or_insert(signature);
                     }
                 }
+                ContractNode::AssociatedType(_) => {}
             }
         }
 
@@ -129,21 +137,27 @@ impl SemanticPipelineRule {
         for item in &program.node.items {
             match &item.node {
                 Node::Method(method) => {
-                    let Type::Complex(receiver_path) = &method.node.receiver_type.node else {
-                        continue;
-                    };
-                    let Some(receiver_name) =
-                        receiver_path.node.segments.last().map(|segment| segment.node.name.node.name.as_str())
-                    else {
-                        continue;
-                    };
-                    if receiver_name == type_name && method.node.name.node.name == method_name {
+                    if type_name_matches_receiver(&method.node.receiver_type, type_name)
+                        && method.node.name.node.name == method_name
+                    {
                         return Some(
                             self.method_signature_string(
                                 method.node.parameters.len(),
                                 method.node.return_type.is_some(),
                             ),
                         );
+                    }
+                }
+                Node::ImplBlock(def) => {
+                    if type_name_matches_receiver(&def.node.receiver_type, type_name) {
+                        if let Some(method) =
+                            def.node.methods.iter().find(|method| method.node.name.node.name == method_name)
+                        {
+                            return Some(self.method_signature_string(
+                                method.node.parameters.len(),
+                                method.node.return_type.is_some(),
+                            ));
+                        }
                     }
                 }
                 Node::TypeDefinition(definition) if definition.node.name.node.name == type_name => {
@@ -207,6 +221,103 @@ mod tests {
         assert!(
             !result.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1601")),
             "nested type method must satisfy Analyzer.Analyze; got: {:?}",
+            result.diagnostics
+        );
+    }
+
+    #[test]
+    fn impl_block_conformance_links_type_to_contract() {
+        let source = r#"
+            type Request {}
+            type Response {}
+
+            contract Analyzer {
+                Response Analyze(Request request);
+            }
+
+            type ConcreteAnalyzer {}
+
+            impl ConcreteAnalyzer : Analyzer {
+                Response Analyze(Request request) {
+                    return Response {};
+                }
+            }
+        "#;
+
+        let result = analyze(source);
+
+        assert!(
+            !result.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1601")),
+            "impl-block method must satisfy Analyzer.Analyze; got: {:?}",
+            result.diagnostics
+        );
+    }
+
+    #[test]
+    fn impl_block_conformance_reports_missing_method() {
+        let source = r#"
+            type Request {}
+            type Response {}
+
+            contract Analyzer {
+                Response Analyze(Request request);
+            }
+
+            type ConcreteAnalyzer {}
+
+            impl ConcreteAnalyzer : Analyzer { }
+        "#;
+
+        let result = analyze(source);
+
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1601")),
+            "impl-block with no methods must flag ContractMethodMissingImplementation (E1601); got: {:?}",
+            result.diagnostics
+        );
+    }
+
+    #[test]
+    fn impl_block_conformance_rejects_non_contract_target() {
+        let source = r#"
+            type Request {}
+            type NotAContract {}
+
+            type ConcreteAnalyzer {}
+
+            impl ConcreteAnalyzer : NotAContract { }
+        "#;
+
+        let result = analyze(source);
+
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1607")),
+            "impl-block conformance to a non-contract type must flag ResolveInvalidConformanceTarget (E1607); got: {:?}",
+            result.diagnostics
+        );
+    }
+
+    #[test]
+    fn generic_contract_method_signature_resolves_type_param() {
+        let source = r#"
+            type Item {}
+
+            contract Iterator<T> {
+                T Current();
+            }
+
+            type IntIterator : Iterator<Item> {
+                Item Current() {
+                    return Item {};
+                }
+            }
+        "#;
+
+        let result = analyze(source);
+
+        assert!(
+            !result.diagnostics.iter().any(|diagnostic| diagnostic.code.as_deref() == Some("E1601")),
+            "conforming type must satisfy Iterator<T>.Current; the contract's generic param T must resolve in the method signature; got: {:?}",
             result.diagnostics
         );
     }

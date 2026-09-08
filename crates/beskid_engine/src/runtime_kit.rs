@@ -28,9 +28,22 @@ impl JitRuntimeKit {
         let kit = resolve_canonical_runtime_kit(prefix, target, profile)
             .map_err(|error| format!("ABI-v5 runtime kit validation failed: {error:?}"))?;
         let library = DynamicLibrary::open(&kit.shared_library)?;
-        let mut symbols = Vec::with_capacity(kit.metadata.loader_required_exports.len());
+        // Loader-required exports must be present; the runtime cannot attach without them.
+        let mut symbols = Vec::with_capacity(kit.metadata.export_allowlist.len());
         for name in &kit.metadata.loader_required_exports {
             symbols.push((name.clone(), library.symbol(name)?));
+        }
+        // The remaining export allowlist — corelib service binding implementations such as
+        // `str_concat`, `str_eq`, `panic` — are legitimate runtime exports the JIT must resolve
+        // as kit-owned symbols rather than user FFI. They are optional at the object level: a
+        // native linker may dead-strip an unused binding, so a missing address is skipped.
+        for name in &kit.metadata.export_allowlist {
+            if symbols.iter().any(|(loaded, _)| loaded == name) {
+                continue;
+            }
+            if let Ok(address) = library.symbol(name) {
+                symbols.push((name.clone(), address));
+            }
         }
         Ok(Self { _library: library, metadata: kit.metadata, shared_library: kit.shared_library, symbols })
     }

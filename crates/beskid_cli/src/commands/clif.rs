@@ -1,4 +1,4 @@
-//! `beskid clif` — lower resolved Beskid source to CLIF and print the IR.
+//! `beskid dev syntax clif` — lower resolved Beskid source to CLIF and print the IR.
 
 use crate::commands::syntax_codegen::lower_prepared_entrypoint;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};

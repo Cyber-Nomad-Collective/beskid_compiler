@@ -491,6 +491,7 @@ pub(in crate::semantic_contract) fn type_syntax_mentions_generic_parameter(
                     .iter()
                     .any(|parameter_type| type_syntax_mentions_generic_parameter(&parameter_type.node, parameter))
         }
+        beskid_analysis::syntax::Type::This_ => false,
     }
 }
 

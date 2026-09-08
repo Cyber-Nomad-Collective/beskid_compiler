@@ -110,6 +110,7 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         Syntax::Node
         | Syntax::ConstantDefinition
         | Syntax::HostBodyItem
+        | Syntax::ImplBlock
         | Syntax::ExtendTypeDefinition
         | Syntax::TypeDefinition
         | Syntax::EnumDefinition
@@ -209,6 +210,7 @@ pub enum LiteralKind {
 pub enum RuntimeIntrinsicKind {
     MemoryCopy,
     MemorySet,
+    MemoryCompare,
     NativeWordFromPointer,
     PointerFromNativeWord,
     PointerAdd,

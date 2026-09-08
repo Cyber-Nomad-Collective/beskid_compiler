@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve structured worker exit codes/signals and the last started test in
+  corelib matrix reports. A trapped worker now fails the active target while
+  only unstarted downstream targets are classified as cancelled.
+
 - Always admit string runtime helpers (`str_new`, `str_from_i64`, `str_eq`,
   `str_concat`) as corelib service imports during ISLE lowering, even without
   the Corelib syscall capability. These services are emitted directly by the

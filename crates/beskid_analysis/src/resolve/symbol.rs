@@ -51,6 +51,7 @@ pub enum MemberKind {
     ContractNode,
     ContractMethodSignature,
     ContractEmbedding,
+    ContractAssociatedType,
     Statement,
 }
 
@@ -78,6 +79,7 @@ impl MemberKind {
             ItemKind::ContractNode => Some(Self::ContractNode),
             ItemKind::ContractMethodSignature => Some(Self::ContractMethodSignature),
             ItemKind::ContractEmbedding => Some(Self::ContractEmbedding),
+            ItemKind::ContractAssociatedType => Some(Self::ContractAssociatedType),
             ItemKind::Statement => Some(Self::Statement),
             _ => None,
         }

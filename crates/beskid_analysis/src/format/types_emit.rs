@@ -107,6 +107,10 @@ impl Emit for Type {
         match self {
             Type::Primitive(p) => p.emit(w, cx),
             Type::Complex(p) => p.emit(w, cx),
+            Type::This_ => {
+                w.write_str("This")?;
+                Ok(())
+            }
             Type::Array(inner) => {
                 inner.emit(w, cx)?;
                 w.write_str("[]")?;

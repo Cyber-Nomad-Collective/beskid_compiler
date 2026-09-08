@@ -1,4 +1,4 @@
-//! `beskid fetch` — resolve the project graph and materialize dependencies on disk.
+//! `beskid dev project fetch` — resolve the project graph and materialize dependencies on disk.
 
 use crate::project_args::{LockfilePolicyArgs, PlainProgressArgs, ProjectResolveArgs};
 use anyhow::Result;

@@ -2,7 +2,7 @@ use crate::syntax::{Path, PrimitiveType, Spanned};
 
 use beskid_ast_derive::AstNode;
 
-/// Beskid type expression: primitives, paths, arrays, and function types.
+/// Beskid type expression: primitives, paths, arrays, function types, and `This`.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Type {
     #[ast(child)]
@@ -13,6 +13,11 @@ pub enum Type {
     Array(Box<Spanned<Type>>),
     #[ast(children)]
     Function { return_type: Box<Spanned<Type>>, parameters: Vec<Spanned<Type>> },
+    /// `This` placeholder: substituted with the receiver type at impl sites and with the
+    /// concrete bound generic at monomorphized bound sites (Gap 3). Inside a contract
+    /// signature it is recorded as a `TypeInfo::This_` marker; outside a receiver context
+    /// it is an error.
+    This_,
 }
 
 impl crate::parsing::parsable::Parsable for Type {
@@ -98,6 +103,7 @@ impl crate::parsing::parsable::Parsable for Type {
                 let primitive = crate::syntax::PrimitiveType::parse(pair)?;
                 Self::Primitive(primitive)
             }
+            crate::parser::Rule::ThisType => Self::This_,
             crate::parser::Rule::Path => {
                 let path = crate::syntax::Path::parse(pair)?;
                 Self::Complex(path)

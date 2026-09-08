@@ -17,6 +17,7 @@ pub(super) fn analysis_symbol_kind_from_item_kind(kind: ItemKind) -> Option<Anal
         | ItemKind::ContractNode
         | ItemKind::ContractMethodSignature
         | ItemKind::ContractEmbedding
+        | ItemKind::ContractAssociatedType
         | ItemKind::Parameter
         | ItemKind::Statement => None,
     }
@@ -33,6 +34,7 @@ pub(super) fn completion_kind_from_item_kind(kind: ItemKind) -> CompletionKind {
         ItemKind::ContractNode => CompletionKind::Method,
         ItemKind::ContractMethodSignature => CompletionKind::Method,
         ItemKind::ContractEmbedding => CompletionKind::Module,
+        ItemKind::ContractAssociatedType => CompletionKind::Struct,
         ItemKind::Parameter => CompletionKind::Variable,
         ItemKind::Statement => CompletionKind::Text,
         ItemKind::Function
@@ -71,6 +73,7 @@ pub(super) fn item_kind_name(kind: ItemKind) -> &'static str {
         ItemKind::ContractNode => "contract node",
         ItemKind::ContractMethodSignature => "contract method",
         ItemKind::ContractEmbedding => "contract embedding",
+        ItemKind::ContractAssociatedType => "contract associated type",
         ItemKind::Parameter => "parameter",
         ItemKind::Statement => "statement",
         ItemKind::Function

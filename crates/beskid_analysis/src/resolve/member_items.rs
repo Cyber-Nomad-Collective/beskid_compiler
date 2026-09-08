@@ -103,6 +103,13 @@ pub fn collect_member_items(item: &Spanned<Node>, parent_name: &str) -> Vec<Memb
                             span: embedding.span,
                         });
                     }
+                    ContractNode::AssociatedType(assoc) => {
+                        out.push(MemberItemSpec {
+                            name: format!("{}::{}", parent_name, assoc.node.name.node.name),
+                            kind: ItemKind::ContractAssociatedType,
+                            span: assoc.span,
+                        });
+                    }
                 }
             }
         }

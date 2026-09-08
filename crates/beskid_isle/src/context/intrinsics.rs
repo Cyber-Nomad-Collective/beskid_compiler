@@ -165,6 +165,68 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.seal_block(exit);
         Some(())
     }
+
+    /// Lower `memory_compare(left, right, length) -> i32` to a byte-wise CLIF loop matching the
+    /// C `memcmp` contract: returns zero for equal ranges and a negative/positive `i32` when the
+    /// first differing byte is less/greater. Like [`emit_memory_copy`] this is a compiler intrinsic
+    /// available only to canonical runtime syntax, never a user-FFI call.
+    pub(super) fn emit_memory_compare(&mut self, left: Value, right: Value, length: Value) -> Option<Value> {
+        let pointer = self.builder.func.dfg.value_type(left);
+        if !pointer.is_int()
+            || self.builder.func.dfg.value_type(right) != pointer
+            || self.builder.func.dfg.value_type(length) != pointer
+        {
+            return None;
+        }
+        let left_var = self.builder.declare_var(pointer);
+        let right_var = self.builder.declare_var(pointer);
+        let remaining = self.builder.declare_var(pointer);
+        let result = self.builder.declare_var(types::I32);
+        self.builder.def_var(left_var, left);
+        self.builder.def_var(right_var, right);
+        self.builder.def_var(remaining, length);
+        let zero = self.builder.ins().iconst(types::I32, 0);
+        self.builder.def_var(result, zero);
+        let header = self.builder.create_block();
+        let body = self.builder.create_block();
+        let exit = self.builder.create_block();
+        self.builder.ins().jump(header, &[]);
+        self.builder.switch_to_block(header);
+        let count = self.builder.use_var(remaining);
+        let done = self.builder.ins().icmp_imm(IntCC::Equal, count, 0);
+        self.builder.ins().brif(done, exit, &[], body, &[]);
+        self.builder.switch_to_block(body);
+        let left_address = self.builder.use_var(left_var);
+        let right_address = self.builder.use_var(right_var);
+        let left_byte = self.builder.ins().load(types::I8, MemFlags::new(), left_address, 0);
+        let right_byte = self.builder.ins().load(types::I8, MemFlags::new(), right_address, 0);
+        let left_word = self.builder.ins().uextend(types::I32, left_byte);
+        let right_word = self.builder.ins().uextend(types::I32, right_byte);
+        let diff = self.builder.ins().isub(left_word, right_word);
+        let is_equal = self.builder.ins().icmp_imm(IntCC::Equal, diff, 0);
+        let next_left = self.builder.ins().iadd_imm(left_address, 1);
+        self.builder.def_var(left_var, next_left);
+        let next_right = self.builder.ins().iadd_imm(right_address, 1);
+        self.builder.def_var(right_var, next_right);
+        let count = self.builder.use_var(remaining);
+        let next_count = self.builder.ins().iadd_imm(count, -1);
+        self.builder.def_var(remaining, next_count);
+        let keep_looping = self.builder.create_block();
+        let store_result = self.builder.create_block();
+        self.builder.ins().brif(is_equal, keep_looping, &[], store_result, &[]);
+        self.builder.switch_to_block(store_result);
+        self.builder.def_var(result, diff);
+        self.builder.ins().jump(exit, &[]);
+        self.builder.seal_block(store_result);
+        self.builder.switch_to_block(keep_looping);
+        self.builder.seal_block(keep_looping);
+        self.builder.ins().jump(header, &[]);
+        self.builder.seal_block(header);
+        self.builder.seal_block(body);
+        self.builder.switch_to_block(exit);
+        self.builder.seal_block(exit);
+        Some(self.builder.use_var(result))
+    }
 }
 
 macro_rules! generated_intrinsic_methods {
@@ -264,6 +326,12 @@ macro_rules! generated_intrinsic_methods {
                 | RuntimeIntrinsicKind::MemorySet
                 | RuntimeIntrinsicKind::RawWordStore
                 | RuntimeIntrinsicKind::RawByteStore => None,
+                RuntimeIntrinsicKind::MemoryCompare => {
+                    let [left, right, length] = arguments.as_slice() else {
+                        return None;
+                    };
+                    (result == types::I32).then(|| self.emit_memory_compare(*left, *right, *length))?
+                }
             }
         }
     };

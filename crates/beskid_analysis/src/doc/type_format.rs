@@ -31,6 +31,7 @@ pub fn format_type(ty: &Spanned<Type>) -> String {
             let params = parameters.iter().map(format_type).collect::<Vec<_>>().join(", ");
             format!("{}({})", format_type(return_type), params)
         }
+        Type::This_ => "This".to_string(),
     }
 }
 

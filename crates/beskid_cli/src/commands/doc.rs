@@ -1,4 +1,4 @@
-//! `beskid doc` — emit `api.json` and `index.md` API documentation for resolved sources.
+//! `beskid dev syntax doc` — emit `api.json` and `index.md` API documentation for resolved sources.
 
 mod execution;
 mod links;

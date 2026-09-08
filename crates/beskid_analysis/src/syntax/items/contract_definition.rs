@@ -4,7 +4,9 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::items::parse_helpers::{parse_attributes, parse_doc_attached_with, parse_visibility_or_default};
+use crate::syntax::items::parse_helpers::{
+    parse_attributes, parse_doc_attached_with, parse_identifier_list, parse_visibility_or_default,
+};
 use crate::syntax::{Attribute, ContractNode, Identifier, SpanInfo, Spanned, Visibility};
 
 use beskid_ast_derive::AstNode;
@@ -19,6 +21,8 @@ pub struct ContractDefinition {
     #[ast(child)]
     pub name: Spanned<Identifier>,
     #[ast(children)]
+    pub generics: Vec<Spanned<Identifier>>,
+    #[ast(children)]
     pub items: Vec<Spanned<ContractNode>>,
     #[ast(skip)]
     pub item_docs: Vec<Option<LeadingDocComment>>,
@@ -31,17 +35,25 @@ impl Parsable for ContractDefinition {
         let attributes = parse_attributes(&mut inner)?;
         let visibility = parse_visibility_or_default(&pair, &mut inner)?;
         let name = Identifier::parse(inner.next().ok_or(ParseError::missing(Rule::Identifier))?)?;
+
+        let mut generics = Vec::new();
         let mut items = Vec::new();
         let mut item_docs = Vec::new();
         for pair in inner {
-            let (doc, item) = parse_doc_attached_with(pair, Rule::ContractItemWithDocs, |inner_pair| {
-                ContractNode::parse(inner_pair)
-            })?;
-            items.push(item);
-            item_docs.push(doc);
+            match pair.as_rule() {
+                Rule::GenericParameters => generics = parse_identifier_list(pair)?,
+                Rule::ContractItemWithDocs => {
+                    let (doc, item) = parse_doc_attached_with(pair, Rule::ContractItemWithDocs, |inner_pair| {
+                        ContractNode::parse(inner_pair)
+                    })?;
+                    items.push(item);
+                    item_docs.push(doc);
+                }
+                _ => return Err(ParseError::unexpected_rule(pair, None)),
+            }
         }
         debug_assert_eq!(items.len(), item_docs.len());
 
-        Ok(Spanned::new(Self { attributes, visibility, name, items, item_docs }, span))
+        Ok(Spanned::new(Self { attributes, visibility, name, generics, items, item_docs }, span))
     }
 }

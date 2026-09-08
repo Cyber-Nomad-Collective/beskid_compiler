@@ -3,17 +3,19 @@ use pest::iterators::Pair;
 use crate::parser::Rule;
 use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
-use crate::syntax::{ContractEmbedding, ContractMethodSignature, SpanInfo, Spanned};
+use crate::syntax::{ContractAssociatedType, ContractEmbedding, ContractMethodSignature, SpanInfo, Spanned};
 
 use beskid_ast_derive::AstNode;
 
-/// Member of a contract: method signature or embedding.
+/// Member of a contract: method signature, embedding, or associated-type declaration.
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ContractNode {
     #[ast(child)]
     MethodSignature(Spanned<ContractMethodSignature>),
     #[ast(child)]
     Embedding(Spanned<ContractEmbedding>),
+    #[ast(child)]
+    AssociatedType(Spanned<ContractAssociatedType>),
 }
 
 impl Parsable for ContractNode {
@@ -37,6 +39,10 @@ fn parse_contract_node(pair: Pair<Rule>) -> Result<Spanned<ContractNode>, ParseE
         Rule::ContractEmbedding => {
             let node = ContractEmbedding::parse(pair)?;
             Ok(Spanned::new(ContractNode::Embedding(node), span))
+        }
+        Rule::ContractAssociatedType => {
+            let node = ContractAssociatedType::parse(pair)?;
+            Ok(Spanned::new(ContractNode::AssociatedType(node), span))
         }
         _ => Err(ParseError::unexpected_rule(pair, Some(Rule::ContractItem))),
     }

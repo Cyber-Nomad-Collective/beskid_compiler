@@ -6,8 +6,8 @@ use crate::parsing::parsable::Parsable;
 use crate::syntax::items::InlineModule;
 use crate::syntax::{
     AttributeDeclaration, ConstantDefinition, ContractDefinition, EnumDefinition, ExtendTypeDefinition,
-    FunctionDefinition, HostDefinition, MacroDefinition, MethodDefinition, ModuleDeclaration, SpanInfo, Spanned,
-    TestDefinition, TypeDefinition, UseDeclaration,
+    FunctionDefinition, HostDefinition, ImplBlock, MacroDefinition, MethodDefinition, ModuleDeclaration, SpanInfo,
+    Spanned, TestDefinition, TypeDefinition, UseDeclaration,
 };
 
 use beskid_ast_derive::AstNode;
@@ -23,6 +23,8 @@ pub enum Node {
     ConstantDefinition(Spanned<ConstantDefinition>),
     #[ast(child)]
     Method(Spanned<MethodDefinition>),
+    #[ast(child)]
+    ImplBlock(Spanned<ImplBlock>),
     #[ast(child)]
     ExtendTypeDefinition(Spanned<ExtendTypeDefinition>),
     #[ast(child)]
@@ -78,6 +80,10 @@ fn parse_node(pair: Pair<Rule>) -> Result<Spanned<Node>, ParseError> {
         Rule::ExtendTypeDefinition => {
             let node = ExtendTypeDefinition::parse(pair)?;
             Ok(Spanned::new(Node::ExtendTypeDefinition(node), span))
+        }
+        Rule::ImplBlock => {
+            let node = ImplBlock::parse(pair)?;
+            Ok(Spanned::new(Node::ImplBlock(node), span))
         }
         Rule::MacroDefinition => {
             let node = MacroDefinition::parse(pair)?;
@@ -238,5 +244,45 @@ mod tests {
         let formatted = format_program(&program).expect("host should format");
         assert!(formatted.contains("host AppHost(string[] args) : ConsoleHost"));
         assert!(!formatted.contains("with"));
+    }
+
+    #[test]
+    fn generic_contract_parses_and_formats() {
+        let src = r#"
+            contract Iterator<T> {
+                T Current();
+                bool MoveNext();
+            }
+
+            contract Iterable<T> {
+                Iterator<T>;
+            }
+        "#;
+        let pair = BeskidParser::parse(Rule::Program, src)
+            .expect("generic contract should parse")
+            .next()
+            .expect("program pair");
+        let program = Program::parse(pair).expect("generic contract should build AST");
+
+        use crate::syntax::items::Node;
+        let contract = match &program.node.items[0].node {
+            Node::ContractDefinition(def) => def,
+            _ => panic!("expected a contract definition"),
+        };
+        assert_eq!(contract.node.generics.len(), 1, "contract must have one generic parameter");
+        assert_eq!(contract.node.generics[0].node.name.as_str(), "T");
+
+        let embedding = match &program.node.items[1].node {
+            Node::ContractDefinition(def) => match &def.node.items[0].node {
+                crate::syntax::ContractNode::Embedding(e) => e,
+                _ => panic!("expected an embedding"),
+            },
+            _ => panic!("expected a contract definition"),
+        };
+        assert_eq!(embedding.node.type_args.len(), 1, "embedding must carry one type argument");
+
+        let formatted = format_program(&program).expect("generic contract should format");
+        assert!(formatted.contains("contract Iterator<T>"));
+        assert!(formatted.contains("Iterator<T>;"));
     }
 }

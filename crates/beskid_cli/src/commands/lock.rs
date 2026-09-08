@@ -1,4 +1,4 @@
-//! `beskid lock` — synchronize `Project.lock` for the selected project/workspace.
+//! `beskid dev project lock` — synchronize `Project.lock` for the selected project/workspace.
 
 use crate::project_args::{PlainProgressArgs, ProjectResolveArgs};
 use anyhow::Result;

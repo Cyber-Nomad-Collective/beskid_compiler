@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    AggregateFieldShape, AstNodeKey, SemanticTypeId, aggregate_layout, aggregate_literal_declaration, enum_layout,
-    enum_match,
+    AggregateFieldShape, AstNodeKey, EnumLayoutFact, GenericSubstitution, SemanticTypeId, aggregate_layout,
+    aggregate_literal_declaration, enum_layout, enum_layout_for_specialized_constructor, enum_match,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -73,7 +73,11 @@ pub fn emit_aggregate_static_data<M: Module>(
         u64::try_from(plan.pointer_map_offsets.len())
             .map_err(|_| ModuleError::Backend(anyhow::anyhow!("aggregate pointer-map length exceeds ABI word")))?,
     )?;
-    write_word(&mut descriptor_bytes, 32, 1)?; // flags bit 0 = IS_AGGREGATE
+    // The descriptor flags word is zero for plain aggregates: the runtime's only defined flag is
+    // `TYPE_DESCRIPTOR_ARRAY` (value 1), which selects the array-specific validation and tracing
+    // path (size == 48, element-descriptor-backed). A non-array aggregate must take the generic
+    // pointer-map path, so it must not set the array bit.
+    write_word(&mut descriptor_bytes, 32, 0)?;
     let mut descriptor_data = DataDescription::new();
     descriptor_data.define(descriptor_bytes.into_boxed_slice());
     let pointer_map_address = module.declare_data_in_data(pointer_map, &mut descriptor_data);
@@ -172,6 +176,29 @@ impl CodegenInput<'_> {
             .ok()
             .flatten()
             .or_else(|| enum_match(self.database(), literal).ok().flatten().map(|fact| fact.layout))?;
+        self.enum_static_plan_from_layout(literal, &layout)
+    }
+
+    /// Specialized-body counterpart of [`enum_static_plan`]: resolves the enum layout through the
+    /// enclosing function's generic substitutions. Required when the constructor sits inside a
+    /// specialized generic body whose applied type arguments name the function's own generic
+    /// parameters rather than the enum's (e.g. `Result<TNext, TError>` inside `Map<TValue, TNext, TError>`),
+    /// so the unspecialized [`enum_layout`] query cannot instantiate the layout.
+    pub fn enum_static_plan_for_specialization(
+        &self,
+        literal: AstNodeKey,
+        substitutions: &Arc<[GenericSubstitution]>,
+    ) -> Option<AggregateStaticPlan> {
+        let layout =
+            enum_layout_for_specialized_constructor(self.database(), literal, substitutions.clone()).ok().flatten()?;
+        self.enum_static_plan_from_layout(literal, &layout)
+    }
+
+    fn enum_static_plan_from_layout(
+        &self,
+        literal: AstNodeKey,
+        layout: &EnumLayoutFact,
+    ) -> Option<AggregateStaticPlan> {
         let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
         let physical =
             layout.scalar_payload_object_layout(self.target().pointer_width, header.size, header.alignment)?;

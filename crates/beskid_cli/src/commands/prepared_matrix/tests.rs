@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::{MatrixReport, RepositorySnapshot, RevisionSnapshot, TargetReport, TargetResult};
+use super::{MatrixReport, RepositorySnapshot, RevisionSnapshot, TargetReport, TargetResult, WorkerExitCause};
 use crate::commands::test::TestSummary;
 
 fn repository(name: &str, clean: bool) -> RepositorySnapshot {
@@ -25,6 +25,7 @@ fn passing_target(name: &str) -> TargetReport {
         result: TargetResult::Passed,
         tests: TestSummary { passed: 1, ..TestSummary::default() },
         phases: Vec::new(),
+        last_started_test: None,
         error: None,
     }
 }
@@ -44,6 +45,7 @@ fn complete_report(revisions: RevisionSnapshot) -> MatrixReport {
         timed_out: false,
         cancelled: false,
         release_eligible: false,
+        worker_exit_cause: Some(WorkerExitCause::Exited { code: 0 }),
         targets: expected_targets.iter().map(|name| passing_target(name)).collect(),
     }
 }
@@ -85,6 +87,17 @@ fn timeout_filter_and_skip_cannot_be_masked_by_passing_targets() {
     report.filtered = true;
     report.skipped = 1;
     report.finish_eligibility(&revisions);
+    assert!(!report.release_eligible);
+}
+
+#[test]
+fn abnormal_worker_exit_cannot_be_masked_by_passing_targets() {
+    let revisions = revisions();
+    let mut report = complete_report(revisions.clone());
+    report.worker_exit_cause = Some(WorkerExitCause::Signaled { signal: 4 });
+
+    report.finish_eligibility(&revisions);
+
     assert!(!report.release_eligible);
 }
 

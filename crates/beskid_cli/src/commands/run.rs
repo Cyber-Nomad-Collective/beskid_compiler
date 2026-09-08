@@ -3,6 +3,7 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::commands::syntax_codegen::lower_prepared_entrypoint;
 use crate::project_args::{LockfilePolicyArgs, ProjectResolveArgs};
@@ -17,6 +18,7 @@ use beskid_tools::PipelineProgressKind;
 use beskid_tools::pipeline::tui::CommandSummary;
 use beskid_tools::session::{CommandSession, ResolveInputArgs, SemanticGateOptions};
 use beskid_tools::tui::shell::runtime::RuntimeOp;
+use crate::commands::step_progress::{log_step, log_step_with_duration};
 use clap::Args;
 use std::sync::mpsc::Sender;
 
@@ -40,17 +42,21 @@ pub struct RunArgs {
     pub plain: bool,
 }
 
-/// Resolve, AOT-link, and run `args.entrypoint` in a subprocess with pipeline progress on stderr when enabled.
+/// Resolve, AOT-link, and run `args.entrypoint` in a subprocess.
 pub fn execute(args: RunArgs) -> Result<()> {
     run_build_and_execute(args, None)
 }
 
-/// Same as [`execute`] but forwards pipeline progress into a running `beskid hi` shell.
+/// Same as [`execute`] but forwards pipeline progress into an attached shell sink.
 pub fn execute_for_hi(msg_tx: Sender<RuntimeOp>, args: RunArgs) -> Result<()> {
     run_build_and_execute(args, Some(msg_tx))
 }
 
 fn run_build_and_execute(args: RunArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Result<()> {
+    let total_steps = 4usize;
+
+    log_step(1, total_steps, "resolve", "loading project inputs");
+    let resolve_started = Instant::now();
     let resolve_args = ResolveInputArgs {
         input: args.input.as_ref(),
         project: args.project.project.as_ref(),
@@ -67,8 +73,16 @@ fn run_build_and_execute(args: RunArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Res
             (session, resolved)
         }
     };
+    log_step_with_duration(1, total_steps, "resolve", resolve_started.elapsed());
+
+    let prepare_started = Instant::now();
+    log_step(2, total_steps, "prepare", "semantic checks and pipeline readiness");
     let prepared = session.executable_gate_prepared(&resolved, SemanticGateOptions::default())?;
     let front = prepared.into_executable()?;
+    log_step_with_duration(2, total_steps, "prepare", prepare_started.elapsed());
+
+    log_step(3, total_steps, "lower", "compiling and linking");
+    let lower_started = Instant::now();
     let artifact = lower_prepared_entrypoint(&front, &args.entrypoint, None, Some(session.observer()))?;
 
     let temp_dir = std::env::temp_dir().join(format!(
@@ -117,7 +131,11 @@ fn run_build_and_execute(args: RunArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Res
 
     let build_result = build(build_request)?;
     let exe_path = build_result.final_path.unwrap_or(exe_path);
+    let compile_duration = lower_started.elapsed();
+    log_step_with_duration(3, total_steps, "lower", compile_duration);
 
+    log_step(4, total_steps, "run", "executing compiled artifact");
+    let run_started = Instant::now();
     let run_result = run_linked_executable(&exe_path)?;
     session.pipeline().finish_session_with_summary(
         "Run complete",
@@ -136,6 +154,8 @@ fn run_build_and_execute(args: RunArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Res
     if run_result.exit_code != 0 {
         std::process::exit(run_result.exit_code);
     }
+
+    log_step_with_duration(4, total_steps, "run", run_started.elapsed());
 
     Ok(())
 }
