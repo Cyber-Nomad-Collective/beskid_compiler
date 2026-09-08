@@ -1,6 +1,7 @@
 use beskid_analysis::services::AnalysisSymbolKind;
-use pest::Parser;
 use tower_lsp_server::ls_types::{SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend};
+
+use crate::session::store::{BsolSemanticTokenCandidate, BsolSemanticTokenKind};
 
 const TOKEN_TYPE_FUNCTION: u32 = 0;
 const TOKEN_TYPE_METHOD: u32 = 1;
@@ -56,58 +57,6 @@ fn push_semantic_symbol_tokens(symbols: &[crate::session::store::SyntaxSymbol], 
             token_modifiers_bitset: TOKEN_MODIFIER_DECLARATION,
             priority: 10,
         });
-    }
-}
-
-fn push_bsol_structural_tokens(text: &str, out: &mut Vec<SemanticTokenCandidate>) {
-    // Validate through the canonical BSOL AST first. The parser pairs below retain the
-    // grammar-owned byte spans that the public AST deliberately abstracts away.
-    if bsol::parse_bsol_document(text).is_err() {
-        return;
-    }
-    let Ok(pairs) = bsol::BsolParser::parse(bsol::Rule::document, text) else {
-        return;
-    };
-    for pair in pairs {
-        collect_bsol_structural_tokens(pair, out);
-    }
-}
-
-fn collect_bsol_structural_tokens(pair: pest::iterators::Pair<'_, bsol::Rule>, out: &mut Vec<SemanticTokenCandidate>) {
-    match pair.as_rule() {
-        bsol::Rule::block_kind => {
-            let span = pair.as_span();
-            out.push(SemanticTokenCandidate {
-                start: span.start(),
-                end: span.end(),
-                token_type: TOKEN_TYPE_NAMESPACE,
-                token_modifiers_bitset: TOKEN_MODIFIER_DECLARATION,
-                priority: 20,
-            });
-        }
-        bsol::Rule::assignment | bsol::Rule::map_entry => {
-            let mut is_key = true;
-            for child in pair.into_inner() {
-                if is_key && child.as_rule() == bsol::Rule::ident {
-                    let span = child.as_span();
-                    out.push(SemanticTokenCandidate {
-                        start: span.start(),
-                        end: span.end(),
-                        token_type: TOKEN_TYPE_VARIABLE,
-                        token_modifiers_bitset: TOKEN_MODIFIER_DECLARATION,
-                        priority: 20,
-                    });
-                    is_key = false;
-                    continue;
-                }
-                collect_bsol_structural_tokens(child, out);
-            }
-        }
-        _ => {
-            for child in pair.into_inner() {
-                collect_bsol_structural_tokens(child, out);
-            }
-        }
     }
 }
 
@@ -179,16 +128,28 @@ pub fn build_semantic_tokens(
     encode_semantic_tokens(text, candidates, offset_to_position)
 }
 
-/// Build structural declaration tokens from the canonical BSOL parser/AST.
+/// Encode structural declaration tokens from the document generation's BSOL facts.
 ///
-/// Invalid BSOL deliberately produces no semantic tokens: syntax highlighting remains the
-/// Tree-sitter layer's responsibility, while the LSP never publishes partial semantic facts.
+/// Invalid BSOL has an empty candidate snapshot: syntax highlighting remains the Tree-sitter
+/// layer's responsibility, while the LSP never publishes partial semantic facts.
 pub fn build_bsol_semantic_tokens(
     text: &str,
+    bsol_candidates: &[BsolSemanticTokenCandidate],
     offset_to_position: impl Fn(&str, usize) -> tower_lsp_server::ls_types::Position,
 ) -> Vec<SemanticToken> {
-    let mut candidates = Vec::new();
-    push_bsol_structural_tokens(text, &mut candidates);
+    let candidates = bsol_candidates
+        .iter()
+        .map(|candidate| SemanticTokenCandidate {
+            start: candidate.start,
+            end: candidate.end,
+            token_type: match candidate.kind {
+                BsolSemanticTokenKind::Namespace => TOKEN_TYPE_NAMESPACE,
+                BsolSemanticTokenKind::Variable => TOKEN_TYPE_VARIABLE,
+            },
+            token_modifiers_bitset: TOKEN_MODIFIER_DECLARATION,
+            priority: 20,
+        })
+        .collect();
     encode_semantic_tokens(text, candidates, offset_to_position)
 }
 

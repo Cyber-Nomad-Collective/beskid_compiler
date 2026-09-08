@@ -132,12 +132,19 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path,
         };
         let (facts, fixes) = collect_syntax_diagnostics(None, &uri, &text, None);
         let diagnostics = lsp_diagnostics_from_syntax(&text, &facts);
+        let bsol_semantic_token_candidates = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .filter(|extension| matches!(*extension, "bproj" | "bws" | "bsol"))
+            .map(|_| crate::session::lifecycle::bsol_semantic_token_candidates(&text))
+            .unwrap_or_default();
         let doc = Document {
             version: 0,
             text: text.clone(),
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates,
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),

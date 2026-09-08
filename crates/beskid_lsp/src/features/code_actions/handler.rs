@@ -169,6 +169,7 @@ mod tests {
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             // Stale facts must not be consulted once the buffer text advanced; empty forces
@@ -206,6 +207,7 @@ mod tests {
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: facts,

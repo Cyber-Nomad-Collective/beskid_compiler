@@ -34,6 +34,8 @@ pub struct Document {
     /// Generation-safe syntax/Salsa hover facts for this exact buffer revision.
     pub syntax_hovers: Vec<SyntaxHover>,
     pub syntax_symbols: Vec<SyntaxSymbol>,
+    /// Structural BSOL token candidates parsed once for this exact buffer revision.
+    pub bsol_semantic_token_candidates: Vec<BsolSemanticTokenCandidate>,
     /// Generation-bound root key used by syntax-only completion queries.
     pub syntax_completion: Option<SyntaxCompletion>,
     /// Generation-safe type facts for source nodes in this exact buffer revision.
@@ -54,12 +56,27 @@ impl Document {
         self.syntax_definitions.clear();
         self.syntax_hovers.clear();
         self.syntax_symbols.clear();
+        // BSOL candidates depend only on this document's immutable text generation,
+        // not on the invalidated Beskid compilation context.
         self.syntax_completion = None;
         self.syntax_inlay_hints.clear();
         self.syntax_documentation.clear();
         self.syntax_diagnostics.clear();
         self.syntax_fixes.clear();
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BsolSemanticTokenCandidate {
+    pub start: usize,
+    pub end: usize,
+    pub kind: BsolSemanticTokenKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BsolSemanticTokenKind {
+    Namespace,
+    Variable,
 }
 
 /// One diagnostic proven for the current buffer revision (never an analysis/HIR snapshot).

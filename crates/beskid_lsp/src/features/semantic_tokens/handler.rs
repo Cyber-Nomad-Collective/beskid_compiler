@@ -10,7 +10,7 @@ use crate::{
 /// Encoded declaration token stream from the document's current syntax generation.
 pub fn handle_semantic_tokens(uri: &Uri, doc: &Document) -> SemanticTokensResult {
     let data = if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
-        build_bsol_semantic_tokens(&doc.text, offset_to_position)
+        build_bsol_semantic_tokens(&doc.text, &doc.bsol_semantic_token_candidates, offset_to_position)
     } else {
         build_semantic_tokens(&doc.text, &doc.syntax_symbols, offset_to_position)
     };
@@ -22,7 +22,7 @@ mod tests {
     use beskid_analysis::services::AnalysisSymbolKind;
 
     use super::handle_semantic_tokens;
-    use crate::session::store::{Document, SyntaxSymbol};
+    use crate::session::store::{BsolSemanticTokenCandidate, BsolSemanticTokenKind, Document, SyntaxSymbol};
 
     #[test]
     fn syntax_tokens_work_without_legacy_analysis() {
@@ -37,6 +37,7 @@ mod tests {
                 start: 3,
                 end: 7,
             }],
+            bsol_semantic_token_candidates: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
@@ -56,5 +57,35 @@ mod tests {
         assert_eq!(tokens.data[0].length, 4);
         assert_eq!(tokens.data[0].token_type, 0);
         assert_eq!(tokens.data[0].token_modifiers_bitset, 1);
+    }
+
+    #[test]
+    fn bsol_tokens_use_only_the_stored_generation_snapshot() {
+        let doc = Document {
+            version: 1,
+            text: "schema { enabled = true }".into(),
+            syntax_definitions: Vec::new(),
+            syntax_hovers: Vec::new(),
+            syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: vec![BsolSemanticTokenCandidate {
+                start: 0,
+                end: 6,
+                kind: BsolSemanticTokenKind::Namespace,
+            }],
+            syntax_completion: None,
+            syntax_inlay_hints: Vec::new(),
+            syntax_documentation: Vec::new(),
+            syntax_diagnostics: Vec::new(),
+            syntax_fixes: Vec::new(),
+        };
+
+        let uri = "file:///config.bsol".parse().expect("valid URI");
+        let tokens = match handle_semantic_tokens(&uri, &doc) {
+            tower_lsp_server::ls_types::SemanticTokensResult::Tokens(tokens) => tokens,
+            tower_lsp_server::ls_types::SemanticTokensResult::Partial(_) => panic!("expected full token response"),
+        };
+        assert_eq!(tokens.data.len(), 1, "the handler must not reparse and add the assignment key");
+        assert_eq!(tokens.data[0].length, 6);
+        assert_eq!(tokens.data[0].token_type, 5);
     }
 }

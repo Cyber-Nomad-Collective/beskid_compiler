@@ -125,6 +125,33 @@ async fn set_document_keeps_standalone_bsol_on_the_generic_bsol_path() {
     assert!(doc.syntax_diagnostics.is_empty(), "valid generic BSOL must not receive Beskid-source diagnostics");
     assert!(doc.syntax_documentation.is_empty(), "standalone BSOL must not receive Beskid-source documentation facts");
     assert!(doc.syntax_completion.is_none(), "standalone BSOL exposes only generic completion affordances");
+    assert_eq!(
+        doc.bsol_semantic_token_candidates.len(),
+        2,
+        "the document generation must retain the block-kind and assignment-key token candidates"
+    );
+    drop(read);
+
+    let updated = "schema \"config\" {\n  retries = 3\n}\n".to_string();
+    set_document(&state, file_uri.clone(), 2, updated.clone()).await;
+    set_document(&state, file_uri.clone(), 1, "schema { stale = true }".into()).await;
+
+    let read = state.read().await;
+    let doc = read.docs.get(&file_uri).expect("updated standalone BSOL document exists");
+    assert_eq!(doc.version, 2);
+    assert_eq!(doc.text, updated);
+    assert_eq!(doc.bsol_semantic_token_candidates.len(), 2);
+    let key = &doc.bsol_semantic_token_candidates[1];
+    assert_eq!(&doc.text[key.start..key.end], "retries");
+    drop(read);
+
+    state.write().await.configured_project_root = Some(std::path::PathBuf::from("/tmp/bsol-generation"));
+    invalidate_compilation_cache(&state).await;
+    let read = state.read().await;
+    let doc = read.docs.get(&file_uri).expect("BSOL document survives compiler-cache invalidation");
+    assert_eq!(doc.bsol_semantic_token_candidates.len(), 2);
+    let key = &doc.bsol_semantic_token_candidates[1];
+    assert_eq!(&doc.text[key.start..key.end], "retries");
 }
 
 #[tokio::test]
@@ -140,6 +167,7 @@ async fn set_document_rebuilds_same_text_after_cleared_facts() {
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
