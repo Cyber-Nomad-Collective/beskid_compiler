@@ -91,6 +91,70 @@ unit Main() {
 }
 
 #[test]
+fn generic_array_function_surface_preserves_element_parameter() {
+    let dependency_path = PathBuf::from("/tmp/surface-generic-array/Core/Collections/Array.bd");
+    let entry_path = PathBuf::from("/tmp/surface-generic-array/Main.bd");
+    let dependency = parse_program(
+        r#"
+pub T[] Empty<T>() {
+    return __array_new<T>(0);
+}
+
+pub i64 Len<T>(T[] values) {
+    return __array_len(values);
+}
+"#,
+    )
+    .expect("parse generic array dependency");
+    let entry = parse_program(
+        r#"
+use Core.Collections.Array;
+
+unit Main() {
+    i64[] values = Array.Empty<i64>();
+    Array.Len<i64>(values);
+}
+"#,
+    )
+    .expect("parse importing entry");
+
+    let mut resolver = Resolver::new();
+    resolver.collect_program_in_module(
+        &dependency,
+        &["Core".to_owned(), "Collections".to_owned(), "Array".to_owned()],
+        Some(&dependency_path),
+    );
+    resolver.set_current_source_path(Some(entry_path));
+    let resolution = resolver.resolve_program(&entry).expect("resolve importing entry");
+    let surface = build_unit_type_surface(&dependency, &resolution, &dependency_path);
+
+    let signature = |name: &str| {
+        let item = resolution
+            .items
+            .iter()
+            .find(|item| item.kind == ItemKind::Function && item.name == name)
+            .map(|item| item.id)
+            .unwrap_or_else(|| panic!("{name} item"));
+        surface.function_signatures.get(&item).unwrap_or_else(|| panic!("{name} signature"))
+    };
+    let generic_array = |type_id| {
+        let Some(TypeInfo::Array(element)) = surface.types.get(type_id) else {
+            panic!("generic array function must retain an array type, got {:?}", surface.types.get(type_id));
+        };
+        assert!(matches!(surface.types.get(*element), Some(TypeInfo::GenericParam(name)) if name == "T"));
+    };
+
+    let empty = signature("Empty");
+    assert!(empty.params.is_empty());
+    generic_array(empty.return_type);
+
+    let len = signature("Len");
+    let [values] = len.params.as_slice() else { panic!("Len must retain its array parameter") };
+    generic_array(*values);
+    assert!(matches!(surface.types.get(len.return_type), Some(TypeInfo::Primitive(crate::syntax::PrimitiveType::I64))));
+}
+
+#[test]
 fn entry_only_cross_unit_typecheck_resolves_imported_generic_owned_receiver_methods() {
     let dependency_path = PathBuf::from("/tmp/entry-only-receiver/Collections/Bucket.bd");
     let entry_path = PathBuf::from("/tmp/entry-only-receiver/Main.bd");

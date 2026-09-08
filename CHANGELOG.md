@@ -105,6 +105,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep the isolated Linux guarded-stack adapter harness linkable after the
   platform adapter gained environment intrinsics backed by the canonical
   `str_new` corelib service.
+- Preserve generic parameters nested inside array types when exporting
+  dependency type surfaces, so imported `T[]` function parameters and return
+  types do not degrade to the unit and integer fallback ABI shapes.
 
 - Make the JSON-RPC IntelliSense integration test wait for the completed
   workspace scan and versioned open-document diagnostics, avoiding stale
