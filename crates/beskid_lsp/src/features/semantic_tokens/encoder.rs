@@ -1,4 +1,5 @@
 use beskid_analysis::services::AnalysisSymbolKind;
+use pest::Parser;
 use tower_lsp_server::ls_types::{SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend};
 
 const TOKEN_TYPE_FUNCTION: u32 = 0;
@@ -58,18 +59,63 @@ fn push_semantic_symbol_tokens(symbols: &[crate::session::store::SyntaxSymbol], 
     }
 }
 
-/// Build the declaration-only token stream from the document's current syntax generation.
-///
-/// `SyntaxSymbol` is constructed from the exact `SyntaxIndex` snapshot held by the session;
-/// semantic tokens must not reach into the optional legacy HIR analysis snapshot.
-pub fn build_semantic_tokens(
+fn push_bsol_structural_tokens(text: &str, out: &mut Vec<SemanticTokenCandidate>) {
+    // Validate through the canonical BSOL AST first. The parser pairs below retain the
+    // grammar-owned byte spans that the public AST deliberately abstracts away.
+    if bsol::parse_bsol_document(text).is_err() {
+        return;
+    }
+    let Ok(pairs) = bsol::BsolParser::parse(bsol::Rule::document, text) else {
+        return;
+    };
+    for pair in pairs {
+        collect_bsol_structural_tokens(pair, out);
+    }
+}
+
+fn collect_bsol_structural_tokens(pair: pest::iterators::Pair<'_, bsol::Rule>, out: &mut Vec<SemanticTokenCandidate>) {
+    match pair.as_rule() {
+        bsol::Rule::block_kind => {
+            let span = pair.as_span();
+            out.push(SemanticTokenCandidate {
+                start: span.start(),
+                end: span.end(),
+                token_type: TOKEN_TYPE_NAMESPACE,
+                token_modifiers_bitset: TOKEN_MODIFIER_DECLARATION,
+                priority: 20,
+            });
+        }
+        bsol::Rule::assignment | bsol::Rule::map_entry => {
+            let mut is_key = true;
+            for child in pair.into_inner() {
+                if is_key && child.as_rule() == bsol::Rule::ident {
+                    let span = child.as_span();
+                    out.push(SemanticTokenCandidate {
+                        start: span.start(),
+                        end: span.end(),
+                        token_type: TOKEN_TYPE_VARIABLE,
+                        token_modifiers_bitset: TOKEN_MODIFIER_DECLARATION,
+                        priority: 20,
+                    });
+                    is_key = false;
+                    continue;
+                }
+                collect_bsol_structural_tokens(child, out);
+            }
+        }
+        _ => {
+            for child in pair.into_inner() {
+                collect_bsol_structural_tokens(child, out);
+            }
+        }
+    }
+}
+
+fn encode_semantic_tokens(
     text: &str,
-    symbols: &[crate::session::store::SyntaxSymbol],
+    mut candidates: Vec<SemanticTokenCandidate>,
     offset_to_position: impl Fn(&str, usize) -> tower_lsp_server::ls_types::Position,
 ) -> Vec<SemanticToken> {
-    let mut candidates = Vec::new();
-    push_semantic_symbol_tokens(symbols, &mut candidates);
-
     candidates.sort_by_key(|candidate| (candidate.start, candidate.end, candidate.priority));
 
     let mut merged: Vec<SemanticTokenCandidate> = Vec::with_capacity(candidates.len());
@@ -117,6 +163,33 @@ pub fn build_semantic_tokens(
     }
 
     tokens
+}
+
+/// Build the declaration-only token stream from the document's current syntax generation.
+///
+/// `SyntaxSymbol` is constructed from the exact `SyntaxIndex` snapshot held by the session;
+/// semantic tokens must not reach into the optional legacy HIR analysis snapshot.
+pub fn build_semantic_tokens(
+    text: &str,
+    symbols: &[crate::session::store::SyntaxSymbol],
+    offset_to_position: impl Fn(&str, usize) -> tower_lsp_server::ls_types::Position,
+) -> Vec<SemanticToken> {
+    let mut candidates = Vec::new();
+    push_semantic_symbol_tokens(symbols, &mut candidates);
+    encode_semantic_tokens(text, candidates, offset_to_position)
+}
+
+/// Build structural declaration tokens from the canonical BSOL parser/AST.
+///
+/// Invalid BSOL deliberately produces no semantic tokens: syntax highlighting remains the
+/// Tree-sitter layer's responsibility, while the LSP never publishes partial semantic facts.
+pub fn build_bsol_semantic_tokens(
+    text: &str,
+    offset_to_position: impl Fn(&str, usize) -> tower_lsp_server::ls_types::Position,
+) -> Vec<SemanticToken> {
+    let mut candidates = Vec::new();
+    push_bsol_structural_tokens(text, &mut candidates);
+    encode_semantic_tokens(text, candidates, offset_to_position)
 }
 
 #[cfg(test)]
