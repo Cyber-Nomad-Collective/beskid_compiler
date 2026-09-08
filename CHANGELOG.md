@@ -86,6 +86,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve parser-generator signatures against the reusable
   `TextParseResult<string>` surface while representing each success as one
   nominal product payload.
+- License the compiler, tooling, reusable crates, and embedded runtime under
+  Apache-2.0 while scoping AGPL-3.0-only to the runnable pckg server package;
+  preserve vendored dependency licenses and declare Cargo SPDX metadata.
+- Carry Apache license and notice files in native runtime kits and the
+  compiler-embedded corelib snapshot so redistributed artifacts retain their
+  applicable legal terms.
+
 - Make recursive staged-analysis helpers stateless associated functions,
   removing unused rule receivers and keeping the workspace lint gate clean.
 
