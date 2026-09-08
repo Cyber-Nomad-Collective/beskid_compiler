@@ -11,6 +11,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use bsol::{BsolBlock, BsolItem, BsolValue, parse_bsol_document};
 use semver::Version;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -23,7 +24,7 @@ const MAX_UNCOMPRESSED_BYTES: u64 = 256 * 1024 * 1024;
 /// Consumers render individual files, they never need a whole source tree in
 /// one response.
 pub const MAX_BROWSE_READ_BYTES: u64 = 1024 * 1024;
-const REQUIRED_ENTRIES: [&str; 3] = ["package.json", "Project.proj", "checksums.sha256"];
+const REQUIRED_ENTRIES: [&str; 2] = ["package.json", "checksums.sha256"];
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ArtifactError {
@@ -62,6 +63,7 @@ pub struct ValidatedArtifact {
     pub checksum_sha256: String,
     pub size_bytes: u64,
     pub manifest_json: String,
+    pub metadata: PackageManifestMetadata,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,6 +71,113 @@ pub struct StoredArtifact {
     pub storage_key: String,
     pub checksum_sha256: String,
     pub size_bytes: u64,
+}
+
+/// The only dependency shape permitted in a published package artifact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtifactDependency {
+    pub name: String,
+    pub version: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackageKind {
+    Library,
+    Template,
+    Tool,
+}
+
+impl PackageKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Library => "library",
+            Self::Template => "template",
+            Self::Tool => "tool",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, ArtifactError> {
+        match value {
+            "library" => Ok(Self::Library),
+            "template" => Ok(Self::Template),
+            "tool" => Ok(Self::Tool),
+            _ => Err(ArtifactError::InvalidManifest("packageKind is unsupported".into())),
+        }
+    }
+}
+
+/// Canonical metadata parsed from artifact-root `package.json`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageManifestMetadata {
+    pub package_kind: PackageKind,
+    pub template: Option<Value>,
+    pub dependencies: Vec<ArtifactDependency>,
+}
+
+impl ArtifactDependency {
+    pub fn registry(name: impl Into<String>, version: impl Into<String>) -> Self {
+        Self { name: name.into(), version: version.into(), source: "registry".into() }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ProjectDependencyBlock {
+    dependency: ArtifactDependency,
+    span_start: usize,
+    span_end: usize,
+}
+
+/// Rewrites source-only dependency declarations into path-independent registry
+/// declarations for the artifact. The source manifest passed by the caller is
+/// never changed on disk.
+pub fn canonicalize_project_dependencies(
+    project: &str,
+    planned: &[ArtifactDependency],
+) -> Result<(String, Vec<ArtifactDependency>), ArtifactError> {
+    let planned = dependency_map(planned, "dependency plan")?;
+    let blocks = parse_project_dependencies(project)?;
+    let mut resolved = Vec::with_capacity(blocks.len());
+    for block in &blocks {
+        let declared = &block.dependency;
+        let dependency = if declared.source == "registry" {
+            validate_exact_version(&declared.version, &declared.name)?;
+            if let Some(planned) = planned.get(&declared.name)
+                && planned.version != declared.version
+            {
+                return Err(ArtifactError::InvalidManifest(format!(
+                    "dependency plan version for '{}' disagrees with the project manifest",
+                    declared.name
+                )));
+            }
+            ArtifactDependency::registry(&declared.name, &declared.version)
+        } else {
+            planned.get(&declared.name).cloned().ok_or_else(|| {
+                ArtifactError::InvalidManifest(format!(
+                    "dependency '{}' uses source '{}' but has no exact registry version in package.json",
+                    declared.name, declared.source
+                ))
+            })?
+        };
+        resolved.push(dependency);
+    }
+    let resolved_map = dependency_map(&resolved, "project dependencies")?;
+    if planned.keys().any(|name| !resolved_map.contains_key(name)) {
+        return Err(ArtifactError::InvalidManifest(
+            "dependency plan contains a package not declared by the project manifest".into(),
+        ));
+    }
+
+    let mut rewritten = project.to_owned();
+    for (block, dependency) in blocks.iter().zip(&resolved).rev() {
+        let replacement = format!(
+            "dependency \"{}\" {{\n  source = registry\n  version = \"{}\"\n}}",
+            dependency.name, dependency.version
+        );
+        rewritten.replace_range(block.span_start..block.span_end, &replacement);
+    }
+    resolved.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok((rewritten, resolved))
 }
 
 /// A source or documentation entry that is safe to expose in a package UI.
@@ -342,17 +451,59 @@ pub fn validate_package_artifact(
             return Err(ArtifactError::InvalidZip(format!("missing required entry '{required}'")));
         }
     }
-    if !entries.keys().any(|path| path.starts_with("src/")) {
-        return Err(ArtifactError::InvalidZip("missing source file under src/".into()));
-    }
     if entries.keys().any(|path| forbidden_path(path)) {
         return Err(ArtifactError::InvalidZip("contains forbidden .beskid entry".into()));
     }
     let manifest_json = read_entry(&mut zip, entries["package.json"])?;
-    validate_manifest(&manifest_json, expected_package_name, expected_version, &entries)?;
-    let project = read_entry(&mut zip, entries["Project.proj"])?;
-    if !project.replace('\r', "").contains(&format!("name = \"{expected_package_name}\"")) {
-        return Err(ArtifactError::InvalidManifest("Project.proj package name does not match".into()));
+    let manifest = validate_manifest(&manifest_json, expected_package_name, expected_version, &entries)?;
+    let package_kind = manifest.package_kind.as_str();
+    let project_manifests =
+        entries.keys().filter(|path| !path.contains('/') && path.ends_with(".bproj")).cloned().collect::<Vec<_>>();
+    if package_kind != "tool" && project_manifests.len() != 1 {
+        return Err(ArtifactError::InvalidZip(format!(
+            "package must contain exactly one root .bproj manifest, found {}",
+            project_manifests.len()
+        )));
+    }
+    if let Some(project_manifest) = project_manifests.first() {
+        let project = read_entry(&mut zip, entries[project_manifest])?;
+        let project_name = project_field(&project, "name")
+            .ok_or_else(|| ArtifactError::InvalidManifest(format!("{project_manifest} is missing project name")))?;
+        let root_block = project_root_block_identifier(&project).ok_or_else(|| {
+            ArtifactError::InvalidManifest(format!("{project_manifest} is missing a canonical project root block"))
+        })?;
+        if root_block != project_name {
+            return Err(ArtifactError::InvalidManifest(format!(
+                "{project_manifest} project root block does not match project name"
+            )));
+        }
+        if project_manifest.strip_suffix(".bproj") != Some(project_name) {
+            return Err(ArtifactError::InvalidManifest(format!(
+                "{project_manifest} file name does not match project name"
+            )));
+        }
+        if package_kind == "template" && project_field(&project, "identity") != Some(expected_package_name) {
+            return Err(ArtifactError::InvalidManifest(format!(
+                "{project_manifest} template identity does not match package identity"
+            )));
+        }
+        validate_published_project_dependencies(&project, &manifest.dependencies)?;
+        let has_sources = entries.keys().any(|path| path.starts_with("src/"));
+        let is_aggregate = project_field(&project, "type") == Some("Aggregate");
+        if package_kind == "library" && !has_sources && !is_aggregate {
+            return Err(ArtifactError::InvalidZip("library package is missing source under src/".into()));
+        }
+    }
+    if package_kind == "template"
+        && !entries
+            .keys()
+            .any(|path| path.starts_with("content/") || path.starts_with("workspace/") || path.starts_with("item/"))
+    {
+        return Err(ArtifactError::InvalidZip("template package is missing scaffold payload".into()));
+    }
+    if package_kind == "template" {
+        let template_json = read_entry(&mut zip, entries["template.json"])?;
+        validate_template_contract(&template_json, expected_package_name, manifest.template.as_ref())?;
     }
     let checksums = parse_checksums(&read_entry(&mut zip, entries["checksums.sha256"])?)?;
     if checksums.contains_key("checksums.sha256") {
@@ -381,6 +532,7 @@ pub fn validate_package_artifact(
         checksum_sha256: sha256_hex(bytes),
         size_bytes: bytes.len() as u64,
         manifest_json,
+        metadata: manifest,
     })
 }
 
@@ -414,7 +566,24 @@ fn validate_manifest(
     package: &str,
     version: &str,
     entries: &BTreeMap<String, usize>,
-) -> Result<(), ArtifactError> {
+) -> Result<PackageManifestMetadata, ArtifactError> {
+    let metadata = parse_package_manifest_metadata(manifest, package, version)?;
+    if metadata.package_kind == PackageKind::Template && !entries.contains_key("template.json") {
+        return Err(ArtifactError::InvalidManifest("template package requires template.json".into()));
+    }
+    if metadata.package_kind != PackageKind::Template && entries.contains_key("template.json") {
+        return Err(ArtifactError::InvalidManifest("only templates may include template.json".into()));
+    }
+    Ok(metadata)
+}
+
+/// Parses the immutable manifest metadata persisted beside a package version.
+/// Artifact validation and catalog projection share this one interpretation.
+pub fn parse_package_manifest_metadata(
+    manifest: &str,
+    package: &str,
+    version: &str,
+) -> Result<PackageManifestMetadata, ArtifactError> {
     let value: Value = serde_json::from_str(manifest)
         .map_err(|_| ArtifactError::InvalidManifest("package.json is not valid JSON".into()))?;
     let object = value
@@ -430,28 +599,181 @@ fn validate_manifest(
     if field("version") != Some(version) {
         return Err(ArtifactError::InvalidManifest("version does not match requested version".into()));
     }
-    let kind = field("packageKind").unwrap_or("library");
-    if !matches!(kind, "library" | "template" | "tool") {
-        return Err(ArtifactError::InvalidManifest("packageKind is unsupported".into()));
+    let kind = PackageKind::parse(
+        field("packageKind").ok_or_else(|| ArtifactError::InvalidManifest("packageKind is required".into()))?,
+    )?;
+    let dependencies = match object.get("dependencies") {
+        None => Vec::new(),
+        Some(Value::Array(values)) => values
+            .iter()
+            .map(|dependency| {
+                let name = dependency.get("name").and_then(Value::as_str).unwrap_or_default();
+                let version = dependency.get("version").and_then(Value::as_str).unwrap_or_default();
+                let source = dependency.get("source").and_then(Value::as_str).unwrap_or_default();
+                if name.is_empty() {
+                    return Err(ArtifactError::InvalidManifest("published dependency must have a name".into()));
+                }
+                if source != "registry" {
+                    return Err(ArtifactError::InvalidManifest(
+                        "published dependency must use canonical registry source".into(),
+                    ));
+                }
+                validate_exact_version(version, name)?;
+                Ok(ArtifactDependency::registry(name, version))
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        Some(_) => {
+            return Err(ArtifactError::InvalidManifest("dependencies must be an array".into()));
+        }
+    };
+    dependency_map(&dependencies, "package.json dependencies")?;
+    let template = object.get("template").cloned();
+    if kind == PackageKind::Template && !template.as_ref().is_some_and(Value::is_object) {
+        return Err(ArtifactError::InvalidManifest("template package requires a template summary object".into()));
     }
-    if kind == "template" && !entries.contains_key("template.json") {
-        return Err(ArtifactError::InvalidManifest("template package requires template.json".into()));
-    }
-    if kind != "template" && entries.contains_key("template.json") {
-        return Err(ArtifactError::InvalidManifest("only templates may include template.json".into()));
-    }
-    if let Some(dependencies) = object.get("dependencies").and_then(Value::as_array) {
-        for dependency in dependencies {
-            let source = dependency.get("source").and_then(Value::as_str).unwrap_or("registry");
-            if !matches!(source, "registry" | "pckg") {
-                return Err(ArtifactError::InvalidManifest("published dependency must use registry source".into()));
-            }
-            if dependency.get("version").and_then(Value::as_str).is_none_or(str::is_empty) {
-                return Err(ArtifactError::InvalidManifest("published dependency must have a version".into()));
-            }
+    Ok(PackageManifestMetadata { package_kind: kind, dependencies, template })
+}
+
+fn dependency_map(
+    dependencies: &[ArtifactDependency],
+    context: &str,
+) -> Result<BTreeMap<String, ArtifactDependency>, ArtifactError> {
+    let mut map = BTreeMap::new();
+    for dependency in dependencies {
+        if dependency.name.is_empty() || dependency.source != "registry" {
+            return Err(ArtifactError::InvalidManifest(format!("{context} must contain named registry dependencies")));
+        }
+        validate_exact_version(&dependency.version, &dependency.name)?;
+        if map.insert(dependency.name.clone(), dependency.clone()).is_some() {
+            return Err(ArtifactError::InvalidManifest(format!(
+                "{context} contains duplicate dependency '{}'",
+                dependency.name
+            )));
         }
     }
+    Ok(map)
+}
+
+fn validate_exact_version(version: &str, dependency: &str) -> Result<(), ArtifactError> {
+    Version::parse(version).map_err(|_| {
+        ArtifactError::InvalidManifest(format!(
+            "published dependency '{dependency}' must have an exact semantic version"
+        ))
+    })?;
     Ok(())
+}
+
+fn parse_project_dependencies(project: &str) -> Result<Vec<ProjectDependencyBlock>, ArtifactError> {
+    let document = parse_bsol_document(project)
+        .map_err(|error| ArtifactError::InvalidManifest(format!("project manifest is invalid: {error}")))?;
+    document
+        .blocks
+        .iter()
+        .filter(|block| block.kind == "dependency")
+        .map(|block| {
+            let name =
+                block.label.as_ref().map(|label| label.value.clone()).filter(|name| !name.is_empty()).ok_or_else(
+                    || ArtifactError::InvalidManifest("dependency block must have a package name".into()),
+                )?;
+            let source = block_string_field(block, "source").unwrap_or_default();
+            let version = block_string_field(block, "version").unwrap_or_default();
+            Ok(ProjectDependencyBlock {
+                dependency: ArtifactDependency { name, version, source },
+                span_start: block.span.start,
+                span_end: block.span.end,
+            })
+        })
+        .collect()
+}
+
+fn block_string_field(block: &BsolBlock, field: &str) -> Option<String> {
+    block.items.iter().find_map(|item| match item {
+        BsolItem::Assignment(assignment) if assignment.key == field => match &assignment.value {
+            BsolValue::QuotedString(value) => Some(value.value.clone()),
+            BsolValue::Ident(value) => Some(value.clone()),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
+fn validate_published_project_dependencies(
+    project: &str,
+    manifest_dependencies: &[ArtifactDependency],
+) -> Result<(), ArtifactError> {
+    let blocks = parse_project_dependencies(project)?;
+    let declared = blocks.into_iter().map(|block| block.dependency).collect::<Vec<_>>();
+    for dependency in &declared {
+        if dependency.source != "registry" {
+            return Err(ArtifactError::InvalidManifest(format!(
+                "published project dependency '{}' must use registry source",
+                dependency.name
+            )));
+        }
+        validate_exact_version(&dependency.version, &dependency.name)?;
+    }
+    if dependency_map(&declared, "project dependencies")?
+        != dependency_map(manifest_dependencies, "package.json dependencies")?
+    {
+        return Err(ArtifactError::InvalidManifest(
+            "project dependencies disagree with package.json dependencies".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_template_contract(
+    template_json: &str,
+    package: &str,
+    package_summary: Option<&Value>,
+) -> Result<(), ArtifactError> {
+    let template: Value = serde_json::from_str(template_json)
+        .map_err(|_| ArtifactError::InvalidManifest("template.json is not valid JSON".into()))?;
+    let object = template
+        .as_object()
+        .ok_or_else(|| ArtifactError::InvalidManifest("template.json root must be an object".into()))?;
+    if object.get("schema").and_then(Value::as_str) != Some("beskid.template.v1") {
+        return Err(ArtifactError::InvalidManifest("template.json schema must be beskid.template.v1".into()));
+    }
+    let identity = object.get("identity").and_then(Value::as_str).unwrap_or_default();
+    if identity.split_once("::").map_or(identity, |(name, _)| name) != package {
+        return Err(ArtifactError::InvalidManifest("template.json identity does not match package identity".into()));
+    }
+    let mut expected_summary = serde_json::Map::new();
+    for key in ["shortName", "identity", "tags"] {
+        if let Some(value) = object.get(key) {
+            expected_summary.insert(key.into(), value.clone());
+        }
+    }
+    if package_summary != Some(&Value::Object(expected_summary)) {
+        return Err(ArtifactError::InvalidManifest(
+            "package.json template summary disagrees with template.json".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn project_field<'a>(content: &'a str, key: &str) -> Option<&'a str> {
+    content.lines().map(str::trim).filter(|line| !line.starts_with('#')).find_map(|line| {
+        let (current, value) = line.split_once('=')?;
+        if current.trim() != key {
+            return None;
+        }
+        Some(value.trim().trim_matches('"'))
+    })
+}
+
+fn project_root_block_identifier(content: &str) -> Option<&str> {
+    let line = content.lines().map(str::trim).find(|line| !line.is_empty() && !line.starts_with('#'))?;
+    let identifier = line.strip_suffix('{')?.trim();
+    let mut characters = identifier.chars();
+    let first = characters.next()?;
+    if !(first.is_ascii_alphabetic() || first == '_')
+        || !characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+    {
+        return None;
+    }
+    Some(identifier)
 }
 
 fn parse_checksums(contents: &str) -> Result<BTreeMap<String, String>, ArtifactError> {
@@ -508,9 +830,14 @@ fn is_documentation_path(path: &str) -> bool {
 }
 fn is_source_path(path: &str) -> bool {
     path.starts_with("src/")
+        || path.starts_with("content/")
+        || path.starts_with("workspace/")
+        || path.starts_with("item/")
 }
 fn is_browseable_archive_entry(path: &str) -> bool {
-    if matches!(path, "package.json" | "Project.proj" | "checksums.sha256") {
+    if matches!(path, "package.json" | "template.json" | "checksums.sha256")
+        || (!path.contains('/') && path.ends_with(".bproj"))
+    {
         return true;
     }
     if is_documentation_path(path) || is_source_path(path) {

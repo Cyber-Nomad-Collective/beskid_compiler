@@ -1,3 +1,7 @@
+use super::api_keys::{
+    RECONCILE_RELEASE_PUBLISHER_KEY_SQL, RELEASE_PUBLISHER_KEY_ID, RELEASE_PUBLISHER_SUBJECT,
+    validate_release_publisher_key_sha256,
+};
 use super::{
     InMemoryPackageRepository, NewPackage, PackageRepository, PublishOutcome, PublishVersion, StoreError, migrations,
 };
@@ -21,6 +25,8 @@ fn publish_request() -> PublishVersion {
         checksum_sha256: CHECKSUM.into(),
         storage_key: "beskid.demo/1.0.0.bpk".into(),
         size_bytes: 12,
+        manifest_json: r#"{"schema":"beskid.package.v1","id":"beskid.demo","version":"1.0.0","packageKind":"library"}"#
+            .into(),
         now_unix_seconds: 200,
     }
 }
@@ -47,7 +53,9 @@ fn package_names_are_unique() {
 fn publish_is_idempotent_only_for_matching_checksum() {
     let mut repository = InMemoryPackageRepository::default();
     repository.create_package(package_request()).unwrap();
-    assert!(matches!(repository.publish_version(publish_request()), Ok(PublishOutcome::Created(_))));
+    let created = repository.publish_version(publish_request()).expect("version is published");
+    let PublishOutcome::Created(created) = created else { panic!("first publication creates the version") };
+    assert!(created.manifest_json.contains(r#""packageKind":"library""#));
     assert!(matches!(repository.publish_version(publish_request()), Ok(PublishOutcome::AlreadyExists(_))));
     assert_eq!(
         repository.publish_version(PublishVersion { checksum_sha256: "f".repeat(64), ..publish_request() }),
@@ -71,6 +79,7 @@ fn yanking_is_reversible_but_state_transitions_are_not_idempotent() {
 fn migration_has_database_enforced_immutability_keys() {
     assert!(migrations::CREATE_PACKAGE_REGISTRY.contains("UNIQUE (name)"));
     assert!(migrations::CREATE_PACKAGE_REGISTRY.contains("UNIQUE (package_id, version)"));
+    assert!(migrations::CREATE_PACKAGE_REGISTRY.contains("manifest_json"));
 }
 
 #[test]
@@ -100,4 +109,22 @@ fn subject_check_constraints_accept_authelia_and_github_subjects() {
         assert!(migration.contains("^[A-Za-z0-9._:@/-]+$"), "migration must accept Authelia subjects");
         assert!(!migration.contains("'^github:[0-9]+$'"), "migration must not require github-only subjects");
     }
+}
+
+#[test]
+fn release_publisher_key_accepts_only_a_lowercase_sha256_digest() {
+    assert!(validate_release_publisher_key_sha256(&"a".repeat(64)).is_ok());
+    assert!(validate_release_publisher_key_sha256(&"A".repeat(64)).is_err());
+    assert!(validate_release_publisher_key_sha256(&format!("bpk_{}", "a".repeat(64))).is_err());
+    assert!(validate_release_publisher_key_sha256(&"a".repeat(63)).is_err());
+}
+
+#[test]
+fn release_publisher_reconciliation_has_one_stable_idempotent_rotation_path() {
+    assert_eq!(RELEASE_PUBLISHER_KEY_ID, "79587ce7-3937-4e21-8f74-e6d19d056fb2");
+    assert_eq!(RELEASE_PUBLISHER_SUBJECT, "release:github-actions");
+    assert!(RECONCILE_RELEASE_PUBLISHER_KEY_SQL.contains("ON CONFLICT (id) DO UPDATE"));
+    assert!(RECONCILE_RELEASE_PUBLISHER_KEY_SQL.contains("token_sha256=EXCLUDED.token_sha256"));
+    assert!(RECONCILE_RELEASE_PUBLISHER_KEY_SQL.contains("revoked_at_utc=NULL"));
+    assert!(RECONCILE_RELEASE_PUBLISHER_KEY_SQL.contains("pckg_api_keys.subject=EXCLUDED.subject"));
 }

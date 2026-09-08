@@ -314,7 +314,7 @@ fn user_args_named_module_cannot_emit_args_imports() {
 }
 
 #[test]
-fn canonical_foundation_assert_trigger_failure_lowers_only_the_panic_service() {
+fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and_panic() {
     let (input, isa, root) = canonical_foundation_assert_fixture();
     let trigger_failure = find_function_definitions(input.database(), root)
         .into_iter()
@@ -325,7 +325,7 @@ fn canonical_foundation_assert_trigger_failure_lowers_only_the_panic_service() {
     assert!(matches!(
         call_lowering(input.database(), call).expect("panic lowering"),
         Some(beskid_queries::CallLowering::CorelibService(service))
-            if service.name == "__panic_str" && service.symbol == "panic_str"
+            if service.name == "__panic_str" && service.symbol == "beskid_trap_message"
     ));
 
     let artifact = lower_syntax_program(
@@ -334,11 +334,12 @@ fn canonical_foundation_assert_trigger_failure_lowers_only_the_panic_service() {
         &[SyntaxModuleItem { key: trigger_failure, symbol: "trigger_failure".into() }],
     )
     .expect("canonical Assert lowers through syntax ISLE");
-    let imports = &artifact.extern_imports;
+    let mut imports = artifact.extern_imports.iter().map(|import| import.symbol.as_str()).collect::<Vec<_>>();
+    imports.sort_unstable();
     assert_eq!(
-        imports.iter().map(|import| import.symbol.as_str()).collect::<Vec<_>>(),
-        vec!["panic_str"],
-        "only the reachable authorized panic service may be emitted"
+        imports,
+        vec!["beskid_trap_message", "str_concat", "str_eq", "str_from_i64", "str_new"],
+        "canonical Assert may emit the always-admitted string baseline and its reachable panic service, but no other facade service"
     );
 }
 
@@ -355,11 +356,11 @@ fn canonical_foundation_output_panic_call_has_the_authorized_direct_never_abi() 
     assert!(matches!(
         call_lowering(input.database(), call).expect("Core.Output panic lowering"),
         Some(beskid_queries::CallLowering::CorelibService(service))
-            if service.name == "__panic_str" && service.symbol == "panic_str"
+            if service.name == "__panic_str" && service.symbol == "beskid_trap_message"
     ));
     assert_eq!(
         beskid_codegen::SyntaxNodeFacts::new(&input).direct_callee(call),
-        Some(DirectCallee::corelib_service("panic_str")),
+        Some(DirectCallee::corelib_service("beskid_trap_message")),
         "the embedded Core.Output call must lower through the exact panic import"
     );
     assert_eq!(
@@ -384,11 +385,11 @@ fn canonical_foundation_error_panic_call_has_the_authorized_direct_never_abi() {
     assert!(matches!(
         call_lowering(input.database(), call).expect("Core.Error panic lowering"),
         Some(beskid_queries::CallLowering::CorelibService(service))
-            if service.name == "__panic_str" && service.symbol == "panic_str"
+            if service.name == "__panic_str" && service.symbol == "beskid_trap_message"
     ));
     assert_eq!(
         beskid_codegen::SyntaxNodeFacts::new(&input).direct_callee(call),
-        Some(DirectCallee::corelib_service("panic_str")),
+        Some(DirectCallee::corelib_service("beskid_trap_message")),
         "the embedded Core.Error call must lower through the exact panic import"
     );
     assert_eq!(

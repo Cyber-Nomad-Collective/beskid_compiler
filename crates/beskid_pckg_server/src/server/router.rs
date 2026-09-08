@@ -36,6 +36,9 @@ pub async fn router_from_config(config: PckgServerConfig) -> Result<Router, Serv
     let Some(database_url) = config.database_url.clone() else {
         return Ok(router_with_backend(config, PackageBackend::in_memory()));
     };
+    let release_publisher_key_sha256 = config.release_publisher_key_sha256.clone().ok_or_else(|| {
+        ServerStartupError("PCKG_RELEASE_PUBLISHER_KEY_SHA256 is required with PCKG_DATABASE_URL".to_owned())
+    })?;
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(&database_url)
@@ -50,6 +53,10 @@ pub async fn router_from_config(config: PckgServerConfig) -> Result<Router, Serv
         .migrate_api_keys()
         .await
         .map_err(|error| ServerStartupError(format!("pckg API-key migration failed: {error:?}")))?;
+    repository
+        .reconcile_release_publisher_key(&release_publisher_key_sha256, chrono::Utc::now().timestamp())
+        .await
+        .map_err(|error| ServerStartupError(format!("release publisher API-key reconciliation failed: {error:?}")))?;
     repository
         .migrate_administration()
         .await
@@ -92,7 +99,6 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
         .route("/api/packages/{name}/versions", get(packages::list_versions).post(packages::publish_version))
         .route("/api/packages/{name}/versions/{version}/yank", axum::routing::post(packages::yank_version))
         .route("/api/packages/{name}/versions/{version}/unyank", axum::routing::post(packages::unyank_version))
-        .route("/api/packages/{name}/versions/{version}/artifact", axum::routing::post(packages::upload_artifact))
         .route("/api/packages/{name}/versions/{version}/download", get(packages::download_artifact))
         .route("/api/packages/{name}/versions/{version}/readme", get(artifact_routes::readme))
         .route("/api/packages/{name}/versions/{version}/docs", get(artifact_routes::list_docs))
@@ -100,7 +106,6 @@ fn router_with_backend(config: PckgServerConfig, packages: PackageBackend) -> Ro
         .route("/api/packages/{name}/versions/{version}/docs/structured", get(artifact_routes::structured_docs))
         .route("/api/packages/{name}/versions/{version}/source/tree", get(artifact_routes::source_tree))
         .route("/api/packages/{name}/versions/{version}/source/file", get(artifact_routes::read_source))
-        .route("/api/workspaces/publish", axum::routing::post(workspace_review_routes::publish_workspace))
         .route(
             "/api/packages/{name}/review-requests",
             axum::routing::post(workspace_review_routes::submit_review_request),
@@ -142,4 +147,17 @@ async fn health() -> Json<HealthResponse> {
 
 async fn api_not_found() -> impl IntoResponse {
     (StatusCode::NOT_FOUND, Json(ApiErrorResponse::new("API endpoint not found")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PckgServerConfig, router_from_config};
+
+    #[tokio::test]
+    async fn database_runtime_requires_release_publisher_key_digest_before_connecting() {
+        let config = PckgServerConfig::default().with_database_url(Some("postgres://unreachable.invalid/pckg".into()));
+        let error = router_from_config(config).await.expect_err("production key digest is required");
+
+        assert!(error.to_string().contains("PCKG_RELEASE_PUBLISHER_KEY_SHA256 is required"));
+    }
 }

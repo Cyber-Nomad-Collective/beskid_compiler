@@ -27,6 +27,41 @@ fn canonical_args_source_exposes_exactly_count_and_get_services() {
     assert!(capability.service_for_source(CANONICAL_CORELIB_ARGS_SOURCE_PATH, "__args_all").is_none());
 }
 
+#[test]
+fn canonical_array_source_is_authorized_without_reopening_legacy_array_service_imports() {
+    let target = crate::abi_v5::TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let capability = canonical_corelib_service_capability(&manifest).expect("Corelib source capability");
+
+    assert!(capability.authorizes_source(CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH));
+    assert!(
+        capability.service_for_source(CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH, "__array_new").is_none(),
+        "typed allocation is compiler lowering, never a legacy size-only service import"
+    );
+}
+
+#[test]
+fn canonical_assert_source_can_force_collection_without_granting_other_units_gc_authority() {
+    let target = crate::abi_v5::TargetMetadata::supported()
+        .into_iter()
+        .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
+        .expect("linux target");
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let capability = canonical_corelib_service_capability(&manifest).expect("Corelib service capability");
+
+    let service = capability
+        .service_for_source(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, "__gc_collect")
+        .expect("Testing.Assert owns the forced-collection service");
+    assert_eq!(service.symbol, "gc_collect");
+    assert!(
+        capability.service_for_source(CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, "__gc_collect").is_none(),
+        "unrelated Corelib units must not inherit forced-collection authority"
+    );
+}
+
 /// A canonical `CorelibService` round-trips through serde and recovers the same `&'static str`
 /// triple from the compile-time table, while an unknown triple fails closed.
 #[test]

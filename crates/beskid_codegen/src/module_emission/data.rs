@@ -25,30 +25,49 @@ pub(super) fn collect_array_static_plans(
     input: &CodegenInput<'_>,
     items: &[ResolvedSyntaxModuleItem],
 ) -> Vec<ArrayStaticPlan> {
-    let mut visited = HashSet::new();
-    let mut nodes = Vec::new();
+    let mut symbols = HashSet::new();
+    let mut plans = Vec::new();
     for item in items {
+        let mut visited = HashSet::new();
+        let mut nodes = Vec::new();
         collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
+        for key in nodes {
+            let plan = input
+                .array_static_plan(key)
+                .or_else(|| input.bulk_array_static_plan(key))
+                .or_else(|| input.typed_array_static_plan(key, item.specialization.as_ref()));
+            if let Some(plan) = plan
+                && symbols.insert(plan.allocation_request_symbol.clone())
+            {
+                plans.push(plan);
+            }
+        }
     }
-    nodes
-        .into_iter()
-        .filter_map(|key| input.array_static_plan(key).or_else(|| input.bulk_array_static_plan(key)))
-        .collect()
+    plans
 }
 
 pub(super) fn collect_aggregate_static_plans(
     input: &CodegenInput<'_>,
     items: &[ResolvedSyntaxModuleItem],
 ) -> Vec<AggregateStaticPlan> {
-    let mut visited = HashSet::new();
-    let mut nodes = Vec::new();
+    let mut symbols = HashSet::new();
+    let mut plans = Vec::new();
     for item in items {
+        let mut visited = HashSet::new();
+        let mut nodes = Vec::new();
         collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
+        for key in nodes {
+            let plan = input
+                .aggregate_static_plan(key)
+                .or_else(|| input.enum_static_plan_for_specialization(key, item.specialization.as_ref()));
+            if let Some(plan) = plan
+                && symbols.insert(plan.allocation_request_symbol.clone())
+            {
+                plans.push(plan);
+            }
+        }
     }
-    nodes
-        .into_iter()
-        .filter_map(|key| input.aggregate_static_plan(key).or_else(|| input.enum_static_plan(key)))
-        .collect()
+    plans
 }
 
 /// Collect source-proven closure static plans from generation-safe syntax facts.

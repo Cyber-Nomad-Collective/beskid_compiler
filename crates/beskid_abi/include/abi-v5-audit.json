@@ -2328,7 +2328,7 @@
     },
     {
       "name": "__panic",
-      "adapter": "panic",
+      "adapter": "beskid_trap_code",
       "params": [
         {
           "name": "code",
@@ -2339,24 +2339,24 @@
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",
-          "implementation": "panic",
+          "implementation": "beskid_trap_code",
           "osImports": []
         },
         {
           "target": "x86_64-pc-windows-msvc",
-          "implementation": "panic",
+          "implementation": "beskid_trap_code",
           "osImports": []
         },
         {
           "target": "x86_64-unknown-linux-gnu",
-          "implementation": "panic",
+          "implementation": "beskid_trap_code",
           "osImports": []
         }
       ]
     },
     {
       "name": "__panic_str",
-      "adapter": "panic_str",
+      "adapter": "beskid_trap_message",
       "params": [
         {
           "name": "message",
@@ -2371,17 +2371,17 @@
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",
-          "implementation": "panic_str",
+          "implementation": "beskid_trap_message",
           "osImports": []
         },
         {
           "target": "x86_64-pc-windows-msvc",
-          "implementation": "panic_str",
+          "implementation": "beskid_trap_message",
           "osImports": []
         },
         {
           "target": "x86_64-unknown-linux-gnu",
-          "implementation": "panic_str",
+          "implementation": "beskid_trap_message",
           "osImports": []
         }
       ]
@@ -2827,8 +2827,13 @@
     {
       "name": "__tty_winsize",
       "adapter": "tty_winsize",
-      "params": [],
-      "result": "pointer",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",

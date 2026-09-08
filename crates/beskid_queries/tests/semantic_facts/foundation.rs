@@ -35,6 +35,30 @@ fn primitive_numeric_conversion_call_has_a_typed_result_without_dynamic_dispatch
 }
 
 #[test]
+fn primitive_numeric_conversion_uses_the_declared_integer_constant_value_type() {
+    let source = "const STATUS = 2; i32 Main() { return i32(STATUS); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let conversion = key(unit, generation, &index, NodeKind::CallExpression, 0);
+
+    assert_eq!(
+        primitive_numeric_conversion(&db, conversion).expect("constant conversion fact"),
+        Some(beskid_queries::PrimitiveNumericConversion {
+            from: SemanticTypeId::WORD,
+            to: SemanticTypeId::I32,
+        })
+    );
+}
+
+#[test]
+fn declared_integer_constant_has_word_abi_type() {
+    let source = "const STATUS = 2; word Main() { return STATUS; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let constant = key(unit, generation, &index, NodeKind::PathExpression, 0);
+
+    assert_eq!(abi_type(&db, constant).expect("constant ABI type"), Some(SemanticTypeId::WORD));
+}
+
+#[test]
 fn try_expression_fact_resolves_result_payload_and_enclosing_error_return() {
     let source = "enum Error { Failed() } enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } Result<i32, Error> Main(Result<i32, Error> value) { return value?; }";
     let (db, _project, unit, generation, index) = setup(source);

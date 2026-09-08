@@ -152,36 +152,30 @@ async fn execute_publish(client: &PckgClient, args: PublishArgs, verbose: bool) 
     let response = client
         .publish_package_version(
             &args.package,
-            None,
             artifact_path,
             &artifact_name,
-            args.manifest_json.as_deref(),
             args.checksum_sha256.as_deref(),
             upload_progress.as_ref(),
         )
         .await;
 
     match response {
-        Ok(response) => {
+        Ok(version) => {
             if verbose {
                 eprintln!("[pckg] verbose: upload elapsed {:?}", started.elapsed());
             }
             let base = client.config().base_url.as_str().trim_end_matches('/');
-            println!("{}", response.message);
+            println!("Published {}@{}.", args.package, version.version);
             println!("--- publish summary ---");
             println!("registry: {base}");
-            println!("request:  POST /api/packages/{}/publish", args.package.trim());
+            println!("request:  POST /api/packages/{}/versions", args.package.trim());
             println!("package:  {}", args.package);
-            if let Some(version) = &response.version {
-                println!("PCKG_PUBLISHED_VERSION={}", version.version);
-                println!("version:  {} (registry-assigned)", version.version);
-                println!("checksum: {}", version.checksum_sha256);
-                println!("size:     {} bytes", version.size_bytes);
-                println!("published_at_utc: {}", version.published_at_utc);
-                print_package_versions_table(std::slice::from_ref(version));
-            } else {
-                println!("version:  (not returned by registry — check `beskid pckg versions {}`)", args.package.trim());
-            }
+            println!("PCKG_PUBLISHED_VERSION={}", version.version);
+            println!("version:  {} (artifact manifest)", version.version);
+            println!("checksum: {}", version.checksum_sha256);
+            println!("size:     {} bytes", version.size_bytes);
+            println!("published_at_utc: {}", version.published_at_utc);
+            print_package_versions_table(std::slice::from_ref(&version));
             println!("------------------------");
             Ok(())
         }

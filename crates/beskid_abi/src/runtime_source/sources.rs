@@ -42,6 +42,8 @@ pub const CANONICAL_CORELIB_SYSCALL_SOURCE_PATH: &str = "Core/Syscall/Syscall.bd
 pub const CANONICAL_CORELIB_ARGS_SOURCE_PATH: &str = "Core/Args/Args.bd";
 /// Canonical Foundation filesystem facade eligible for private ABI-v5 filesystem services.
 pub const CANONICAL_CORELIB_FS_SOURCE_PATH: &str = "Core/FS/FS.bd";
+/// Canonical Foundation array facade eligible for compiler-owned typed allocation lowering.
+pub const CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH: &str = "Core/Collections/Array.bd";
 /// Canonical Foundation assertion helper eligible to import the panic runtime service.
 pub const CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH: &str = "Testing/Assert.bd";
 /// Canonical Foundation output helper eligible to import the panic runtime service.
@@ -126,6 +128,10 @@ const CANONICAL_CORELIB_ARGS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Args/Args.bd"));
 const CANONICAL_CORELIB_FS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/FS/FS.bd"));
+const CANONICAL_FOUNDATION_ARRAY_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/foundation/src/Core/Collections/Array.bd"
+));
 const CANONICAL_FOUNDATION_ASSERT_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Testing/Assert.bd"));
 const CANONICAL_FOUNDATION_OUTPUT_SOURCE: &str =
@@ -244,6 +250,10 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
     sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_FS_SOURCE_PATH.into(),
         source: CANONICAL_CORELIB_FS_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_ARRAY_SOURCE.into(),
     });
     sources.push(SourceUnit {
         logical_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),

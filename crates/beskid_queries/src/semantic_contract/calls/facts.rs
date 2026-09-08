@@ -24,9 +24,15 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_tracked(
         (call.args.len() == 1).then_some(())?;
         let argument = index
             .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&call.args[0]))
-            .map(|node| AstNodeKey { node, ..key })?;
+            .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })?;
         let from = match abi_type(db, argument) {
             Ok(Some(from)) => from,
+            Ok(None) if constant_integer(db, argument).ok().flatten().is_some() => SemanticTypeId::WORD,
+            Err(error)
+                if error.is_unavailable() && constant_integer(db, argument).ok().flatten().is_some() =>
+            {
+                SemanticTypeId::WORD
+            }
             Ok(None) => return Some(Err(SemanticError::unavailable("primitive_numeric_conversion"))),
             Err(error) => return Some(Err(error)),
         };

@@ -39,8 +39,18 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
                         )
                         .map(|node| AstNodeKey { node, ..key })
                         .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
-                    if integer_literal_text(db, initializer)?.is_none()
-                        && contextual_constant_integer(db, initializer)?.is_none()
+                    let normalized_initializer =
+                        AstNodeKey { node: normalized_expression_node(index, initializer.node), ..initializer };
+                    let candidate = if index.kind(normalized_initializer.node)
+                        == Some(beskid_analysis::syntax_query::NodeKind::MatchExpression)
+                        && is_ancestor(index, normalized_initializer.node, key.node)
+                    {
+                        key
+                    } else {
+                        initializer
+                    };
+                    if integer_literal_text(db, candidate)?.is_none()
+                        && contextual_constant_integer(db, candidate)?.is_none()
                     {
                         return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
                     }
@@ -49,8 +59,8 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
                         .as_ref()
                         .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
                     let expected = abi_type_from_syntax(db, parent_key, &annotation.node)?;
-                    return (contextual_constant_integer(db, initializer)?.is_some()
-                        || integer_literal_fits_abi(db, initializer, expected)?)
+                    return (contextual_constant_integer(db, candidate)?.is_some()
+                        || integer_literal_fits_abi(db, candidate, expected)?)
                     .then_some(expected)
                     .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"));
                 }

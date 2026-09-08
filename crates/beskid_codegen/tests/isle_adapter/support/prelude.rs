@@ -7,8 +7,9 @@ pub(in super::super) use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 pub(in super::super) use beskid_abi::runtime_source::{
     CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH,
     CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
-    CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
-    canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_corelib_service_sources,
+    CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, canonical_corelib_service_capability,
+    canonical_corelib_service_source_path, canonical_corelib_service_sources,
     canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources,
     canonical_runtime_intrinsic_capability, canonical_runtime_sources,
 };
@@ -30,7 +31,7 @@ pub(in super::super) use beskid_queries::{
     build_typed_program, build_typed_program_with_corelib_services, call_abi_signature, call_lowering, child_nodes,
     closure_environment, empty_array_literal_element_abi_type, enum_constructor, enum_layout, enum_match,
     format_ast_node_site, item_body, item_name, literal_fact, mutable_local_assignment, node_kind, node_type,
-    spawn_target, test_statement_nodes,
+    spawn_target, test_statement_nodes, typed_array_allocation,
 };
 pub(in super::super) use cranelift_codegen::ir::{UserFuncName, types};
 pub(in super::super) use cranelift_codegen::isa;

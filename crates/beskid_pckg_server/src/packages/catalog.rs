@@ -1,12 +1,13 @@
-use super::contracts::{DeletePackageResponse, ListQuery, PublisherResponse};
+use super::contracts::{CreatedPackageResponse, DeletePackageResponse, ListQuery, PublisherResponse};
 use super::mapping::{
-    health, latest_non_yanked, next_id, now, package_not_found, package_storage_failure, package_summary,
-    version_summary,
+    dependencies, health, latest_non_yanked, next_id, now, package_manifest_metadata, package_not_found,
+    package_storage_failure, package_summary, version_summary,
 };
 use super::{
     ApiErrorResponse, AppState, HeaderMap, IntoResponse, Json, NewPackage, PackageArtifactStore,
-    PackageDetailsResponse, PackageSearchResponse, Path, Query, Response, State, StatusCode, StoreError,
-    UpsertPackageRequest, authenticated_publisher_subject, authenticated_subject,
+    PackageDetailsResponse, PackageManifestMetadata, PackageSearchResponse, PackageSummaryResponse, Path, Query,
+    Response, State, StatusCode, StoreError, UpsertPackageRequest, authenticated_publisher_subject,
+    authenticated_subject,
 };
 use beskid_pckg_store::AsyncAdministrationRepository;
 
@@ -26,7 +27,7 @@ pub async fn list_packages(
         Err(_) => return package_storage_failure(),
     };
     let needle = query.query();
-    let summaries = packages
+    let packages = packages
         .into_iter()
         .filter(|package| {
             if query.requests_current_owner() {
@@ -35,9 +36,15 @@ pub async fn list_packages(
                 package.is_public || subject.as_deref() == Some(&package.owner_subject)
             }
         })
-        .filter(|package| needle.as_ref().is_none_or(|needle| package.name.to_ascii_lowercase().contains(needle)))
-        .map(|package| package_summary(&package))
-        .collect::<Vec<_>>();
+        .filter(|package| needle.as_ref().is_none_or(|needle| package.name.to_ascii_lowercase().contains(needle)));
+    let mut summaries = Vec::new();
+    for package in packages {
+        match published_summary(&state, &package).await {
+            Ok(Some(summary)) => summaries.push(summary),
+            Ok(None) => {}
+            Err(()) => return package_storage_failure(),
+        }
+    }
     Json(summaries).into_response()
 }
 
@@ -54,12 +61,18 @@ pub async fn search_packages(
         Err(_) => return package_storage_failure(),
     };
     let needle = query.query();
-    let results = packages
+    let packages = packages
         .into_iter()
         .filter(|package| package.is_public || subject.as_deref() == Some(&package.owner_subject))
-        .filter(|package| needle.as_ref().is_none_or(|needle| package.name.to_ascii_lowercase().contains(needle)))
-        .map(|package| PackageSearchResponse { package: package_summary(&package), review_count: 0, health: health() })
-        .collect::<Vec<_>>();
+        .filter(|package| needle.as_ref().is_none_or(|needle| package.name.to_ascii_lowercase().contains(needle)));
+    let mut results = Vec::new();
+    for package in packages {
+        match published_summary(&state, &package).await {
+            Ok(Some(package)) => results.push(PackageSearchResponse { package, review_count: 0, health: health() }),
+            Ok(None) => {}
+            Err(()) => return package_storage_failure(),
+        }
+    }
     Json(results).into_response()
 }
 
@@ -110,14 +123,16 @@ pub async fn publisher_packages(State(state): State<AppState>, Path(subject): Pa
         Ok(packages) => packages,
         Err(_) => return package_storage_failure(),
     };
-    Json(
-        packages
-            .into_iter()
-            .filter(|package| package.is_public && package.owner_subject == subject)
-            .map(|package| package_summary(&package))
-            .collect::<Vec<_>>(),
-    )
-    .into_response()
+    let packages = packages.into_iter().filter(|package| package.is_public && package.owner_subject == subject);
+    let mut summaries = Vec::new();
+    for package in packages {
+        match published_summary(&state, &package).await {
+            Ok(Some(summary)) => summaries.push(summary),
+            Ok(None) => {}
+            Err(()) => return package_storage_failure(),
+        }
+    }
+    Json(summaries).into_response()
 }
 
 fn is_valid_subject(subject: &str) -> bool {
@@ -155,11 +170,19 @@ pub async fn package_detail(
         Ok(versions) => versions,
         Err(_) => return package_storage_failure(),
     };
+    let metadata_version = latest_non_yanked(&versions).or_else(|| versions.first());
+    let Some(metadata_version) = metadata_version else {
+        return package_not_found();
+    };
+    let metadata = match package_manifest_metadata(&package, metadata_version) {
+        Ok(metadata) => metadata,
+        Err(_) => return package_storage_failure(),
+    };
     let latest_version = latest_non_yanked(&versions).map(|version| version.version.clone());
     Json(PackageDetailsResponse {
-        package: package_summary(&package),
+        package: package_summary(&package, &metadata),
         versions: versions.iter().map(|version| version_summary(&package, version)).collect(),
-        dependencies: Vec::new(),
+        dependencies: dependencies(&metadata),
         dependents_count: 0,
         readme: None,
         health: health(),
@@ -213,10 +236,23 @@ pub async fn upsert_package(
         })
         .await
     {
-        Ok(package) => (StatusCode::CREATED, Json(package_summary(&package))).into_response(),
+        Ok(package) => (
+            StatusCode::CREATED,
+            Json(CreatedPackageResponse { id: package.id, name: package.name, owner_user_id: package.owner_subject }),
+        )
+            .into_response(),
         Err(StoreError::PackageAlreadyExists) => {
             (StatusCode::CONFLICT, Json(ApiErrorResponse::new("package already exists"))).into_response()
         }
         Err(_) => (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid package request"))).into_response(),
     }
+}
+
+async fn published_summary(state: &AppState, package: &super::Package) -> Result<Option<PackageSummaryResponse>, ()> {
+    let versions = state.packages.list_versions(&package.id).await.map_err(|_| ())?;
+    let Some(version) = latest_non_yanked(&versions).or_else(|| versions.first()) else {
+        return Ok(None);
+    };
+    let metadata: PackageManifestMetadata = package_manifest_metadata(package, version).map_err(|_| ())?;
+    Ok(Some(package_summary(package, &metadata)))
 }

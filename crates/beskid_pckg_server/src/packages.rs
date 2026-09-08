@@ -2,18 +2,19 @@
 
 use axum::{
     Json,
-    body::{Body, Bytes, to_bytes},
+    body::{Body, Bytes},
     extract::{Path, Query, Request, State},
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use beskid_pckg_artifacts::{
-    ArtifactRecord, PackageArtifactStore, PublishRequest, select_download, validate_package_artifact,
+    ArtifactRecord, PackageArtifactStore, PackageKind, PackageManifestMetadata, PublishRequest,
+    parse_package_manifest_metadata, select_download, validate_package_artifact,
 };
 use beskid_pckg_contract::{
-    ApiErrorResponse, PackageDetailsResponse, PackageHealthSnapshotResponse, PackageSearchResponse,
-    PackageSummaryResponse, PackageVersionLifecycleResponse, PackageVersionSummaryResponse,
-    PublishPackageVersionRequest, UpsertPackageRequest,
+    ApiErrorResponse, PackageDependencyResponse, PackageDetailsResponse, PackageHealthSnapshotResponse,
+    PackageKindResponse, PackageSearchResponse, PackageSummaryResponse, PackageVersionLifecycleResponse,
+    PackageVersionSummaryResponse, UpsertPackageRequest,
 };
 use beskid_pckg_store::{
     NewPackage, NewRegistryActivity, Package, PackageCommunityReview, PackageVersion, PublishOutcome, PublishVersion,
@@ -30,7 +31,7 @@ mod publishing;
 mod reviews;
 mod versions;
 
-pub use self::artifacts::{download_artifact, upload_artifact};
+pub use self::artifacts::download_artifact;
 pub use self::catalog::{
     delete_package, list_packages, list_publishers, package_detail, publisher_packages, search_packages, upsert_package,
 };

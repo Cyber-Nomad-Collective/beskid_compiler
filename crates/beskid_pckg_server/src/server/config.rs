@@ -6,7 +6,7 @@ use std::{
 };
 
 use beskid_pckg_auth::AuthMode;
-use beskid_pckg_store::AsyncApiKeyRepository;
+use beskid_pckg_store::{AsyncApiKeyRepository, validate_release_publisher_key_sha256};
 
 #[derive(Clone)]
 pub struct PckgServerConfig {
@@ -16,6 +16,7 @@ pub struct PckgServerConfig {
     pub(crate) database_url: Option<String>,
     pub(crate) auth: Option<AuthConfig>,
     pub(crate) api_key_repository: Option<Arc<dyn AsyncApiKeyRepository>>,
+    pub(crate) release_publisher_key_sha256: Option<String>,
 }
 
 /// Authentication configuration. pckg is a resource server that trusts
@@ -53,6 +54,7 @@ impl Default for PckgServerConfig {
             database_url: None,
             auth: None,
             api_key_repository: None,
+            release_publisher_key_sha256: None,
         }
     }
 }
@@ -70,7 +72,8 @@ impl PckgServerConfig {
                 env::var_os("PCKG_ARTIFACT_ROOT").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/app/artifacts")),
             )
             .with_database_url(env::var("PCKG_DATABASE_URL").ok())
-            .with_bind_address(env::var("PCKG_BIND_ADDRESS").ok());
+            .with_bind_address(env::var("PCKG_BIND_ADDRESS").ok())
+            .with_release_publisher_key_sha256(env::var("PCKG_RELEASE_PUBLISHER_KEY_SHA256").ok())?;
         if let Ok(mode) = env::var("SHELL_AUTH_MODE") {
             let mode = AuthMode::parse(&mode)
                 .map_err(|error| ServerStartupError(format!("invalid SHELL_AUTH_MODE: {error}")))?;
@@ -128,6 +131,23 @@ impl PckgServerConfig {
         self
     }
 
+    /// Supplies the SHA-256 digest for the deterministic release automation
+    /// key. Production must never pass the raw `bpk_...` token to the server.
+    pub fn with_release_publisher_key_sha256(
+        mut self,
+        token_sha256: Option<String>,
+    ) -> Result<Self, ServerStartupError> {
+        if let Some(token_sha256) = token_sha256 {
+            validate_release_publisher_key_sha256(&token_sha256).map_err(|_| {
+                ServerStartupError(
+                    "PCKG_RELEASE_PUBLISHER_KEY_SHA256 must be exactly 64 lowercase hexadecimal characters".to_owned(),
+                )
+            })?;
+            self.release_publisher_key_sha256 = Some(token_sha256);
+        }
+        Ok(self)
+    }
+
     pub(crate) fn with_auth(mut self, auth: AuthConfig) -> Self {
         self.auth = Some(auth);
         self
@@ -146,6 +166,17 @@ impl PckgServerConfig {
         })
     }
 
+    /// Configures Authentik proxy-outpost mode with the default role groups.
+    pub fn with_authentik_auth(self) -> Self {
+        self.with_auth(AuthConfig {
+            mode: AuthMode::Authentik,
+            admin_group: "pckg-admins".to_owned(),
+            moderator_group: "pckg-moderators".to_owned(),
+            mock_subject: "local-admin".to_owned(),
+            mock_groups: vec!["pckg-admins".to_owned()],
+        })
+    }
+
     /// Configures mock mode with a single dev admin subject. Intended for
     /// tests and local development without an Authelia instance.
     pub fn with_mock_auth(self) -> Self {
@@ -156,5 +187,21 @@ impl PckgServerConfig {
             mock_subject: "local-admin".to_owned(),
             mock_groups: vec!["pckg-admins".to_owned()],
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PckgServerConfig;
+
+    #[test]
+    fn release_publisher_key_configuration_rejects_raw_or_malformed_credentials() {
+        assert!(PckgServerConfig::default().with_release_publisher_key_sha256(Some("a".repeat(64))).is_ok());
+        assert!(
+            PckgServerConfig::default()
+                .with_release_publisher_key_sha256(Some(format!("bpk_{}", "a".repeat(64))))
+                .is_err()
+        );
+        assert!(PckgServerConfig::default().with_release_publisher_key_sha256(Some("A".repeat(64))).is_err());
     }
 }

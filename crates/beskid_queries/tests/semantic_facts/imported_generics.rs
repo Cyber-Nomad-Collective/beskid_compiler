@@ -6,9 +6,10 @@ use beskid_analysis::projects::{
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, ItemSignature, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
-    abi_type, build_typed_program, call_abi_signature, call_arguments, call_lowering, generic_call_instantiation,
-    generic_call_specialization, item_abi_signature, node_type,
+    AggregateFieldShape, AstNodeKey, BeskidDatabase, EnumLayoutTemplateArgument, GenericSubstitution, ItemSignature,
+    ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId, abi_type, build_typed_program,
+    call_abi_signature, call_arguments, call_lowering, enum_constructor_specialization, enum_constructor_template,
+    enum_match, generic_call_instantiation, generic_call_specialization, item_abi_signature, node_type, value_abi_type,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -725,4 +726,201 @@ fn canonical_core_error_qualified_write_has_a_direct_semantic_fact() {
         call_lowering(&db, call).expect("Core.Error WriteWith call lowering"),
         Some(beskid_queries::CallLowering::Direct(declaration))
     );
+}
+
+#[test]
+fn imported_generic_owned_method_call_has_concrete_receiver_specialized_abi() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/imported-generic-owned-method/project/src");
+    let main_path = root.join("Main.bd");
+    let list_path = root.join("Core/Collections/List.bd");
+    let main_source = r#"
+use Core.Collections.List;
+unit Main() {
+    List<i64> values = List<i64> { marker: 0_i64 };
+    values.Get(0);
+}
+"#;
+    let list_source = r#"
+pub type List<T> {
+    i64 marker,
+
+    pub T Get(i64 index) {
+        return 0_i64;
+    }
+}
+"#;
+    let main_program =
+        expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let list_program =
+        expand_program(parse_program(list_source).expect("list parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(29);
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: list_path.display().to_string(),
+                path: list_path.clone(),
+                source: list_source.to_string(),
+                program: list_program.clone(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let list_unit = SourceUnitId::new(&db, list_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let list_index = SyntaxIndex::from_program(&list_program, generation);
+    let call = key(main_unit, generation, &main_index, NodeKind::CallExpression, 0);
+    let declaration = key(list_unit, generation, &list_index, NodeKind::MethodDefinition, 0);
+
+    assert_eq!(
+        call_lowering(&db, call).expect("imported generic method lowering"),
+        Some(beskid_queries::CallLowering::Direct(declaration))
+    );
+    assert_eq!(
+        call_abi_signature(&db, call).expect("imported generic method call ABI"),
+        Some(ItemSignature {
+            parameters: Arc::from([SemanticTypeId::POINTER, SemanticTypeId::I64]),
+            result: SemanticTypeId::I64,
+        })
+    );
+}
+
+#[test]
+fn imported_generic_owned_method_result_match_has_concrete_storage_abi() {
+    let mut db = BeskidDatabase::default();
+    let root = PathBuf::from("/tmp/imported-generic-owned-method-result/project/src");
+    let main_path = root.join("Main.bd");
+    let list_path = root.join("Core/Collections/List.bd");
+    let result_path = root.join("Core/Results/Results.bd");
+    let main_source = r#"
+use Core.Collections.List;
+unit Main() {
+    List<i64> values = List<i64> { marker: 0_i64 };
+    i64 first = match values.Get(0) {
+        Core.Results.Result::Ok(value) => value,
+        Core.Results.Result::Error(_) => -1,
+    };
+}
+"#;
+    let list_source = r#"
+use Core.Results;
+pub type List<T> {
+    i64 marker,
+
+    pub Result<T, string> Get(i64 index) {
+        return Result::Error("missing");
+    }
+}
+"#;
+    let result_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
+    let main_program =
+        expand_program(parse_program(main_source).expect("main parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let list_program =
+        expand_program(parse_program(list_source).expect("list parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let result_program =
+        expand_program(parse_program(result_source).expect("result parse"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
+    let generation = SyntaxGenerationId(30);
+    let list_unit = SourceUnitId::new(&db, list_path.clone());
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                logical_name: main_path.display().to_string(),
+                path: main_path.clone(),
+                source: main_source.to_string(),
+                program: main_program.clone(),
+            },
+            SourceUnit {
+                logical_name: list_path.display().to_string(),
+                path: list_path,
+                source: list_source.to_string(),
+                program: list_program.clone(),
+            },
+            SourceUnit {
+                logical_name: result_path.display().to_string(),
+                path: result_path,
+                source: result_source.to_string(),
+                program: result_program,
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let main_unit = SourceUnitId::new(&db, main_path);
+    let project = ProjectSession::new(
+        &db,
+        root.parent().expect("project root").to_path_buf(),
+        main_unit.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    build_typed_program(&mut db, project, generation, assembly).expect("typed syntax program");
+    let main_index = SyntaxIndex::from_program(&main_program, generation);
+    let call = key(main_unit, generation, &main_index, NodeKind::CallExpression, 0);
+    let matched = key(main_unit, generation, &main_index, NodeKind::MatchExpression, 0);
+    let negative_arm = key(main_unit, generation, &main_index, NodeKind::UnaryExpression, 0);
+    let stored = key(main_unit, generation, &main_index, NodeKind::LetStatement, 1);
+    let list_index = SyntaxIndex::from_program(&list_program, generation);
+    let constructor = key(list_unit, generation, &list_index, NodeKind::EnumConstructorExpression, 0);
+
+    assert_eq!(
+        call_abi_signature(&db, call).expect("imported generic method call ABI"),
+        Some(ItemSignature {
+            parameters: Arc::from([SemanticTypeId::POINTER, SemanticTypeId::I64]),
+            result: SemanticTypeId::POINTER,
+        })
+    );
+    assert!(enum_match(&db, matched).expect("imported Result match").is_some());
+    assert_eq!(node_type(&db, matched).expect("imported Result match type"), Some(SemanticTypeId::I64));
+    assert_eq!(value_abi_type(&db, negative_arm).expect("contextual match arm ABI"), Some(SemanticTypeId::I64));
+    let template = enum_constructor_template(&db, constructor)
+        .expect("generic Result constructor template query")
+        .expect("generic Result constructor template");
+    assert_eq!(template.parameters.as_ref(), [Arc::<str>::from("TValue"), Arc::<str>::from("TError")]);
+    assert_eq!(
+        template.arguments.as_ref(),
+        [
+            EnumLayoutTemplateArgument::EnclosingParameter(Arc::from("T")),
+            EnumLayoutTemplateArgument::Concrete(AggregateFieldShape::Scalar(SemanticTypeId::STRING)),
+        ]
+    );
+    let specialized = enum_constructor_specialization(
+        &db,
+        constructor,
+        Arc::from([GenericSubstitution { parameter: Arc::from("T"), argument: SemanticTypeId::I64 }]),
+    )
+    .expect("generic Result constructor specialization query")
+    .expect("generic Result constructor specialization");
+    assert_eq!(specialized.layout.variants[0].fields[0].1, AggregateFieldShape::Scalar(SemanticTypeId::I64));
+    assert_eq!(specialized.layout.variants[1].fields[0].1, AggregateFieldShape::Scalar(SemanticTypeId::STRING));
+    assert_eq!(value_abi_type(&db, stored).expect("match storage ABI"), Some(SemanticTypeId::I64));
 }

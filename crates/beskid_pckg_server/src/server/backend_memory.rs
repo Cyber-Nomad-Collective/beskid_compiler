@@ -6,7 +6,7 @@ use std::{
 use beskid_pckg_store::{
     AsyncPackageCommunityReviewRepository, AsyncPackageRepository, InMemoryPackageRepository, NewPackage, Package,
     PackageCommunityReview, PackageCommunityReviewError, PackageRepository, PackageVersion, PublishOutcome,
-    PublishVersion, SqlxPackageRepository, StoreError, WorkspacePublishOutcome, WorkspacePublishReservation,
+    PublishVersion, SqlxPackageRepository, StoreError,
 };
 
 use super::backend_sql::{sqlx_find_package_by_id, sqlx_list_packages, sqlx_list_versions};
@@ -170,65 +170,6 @@ impl PackageBackend {
                 Ok(outcome)
             }
             Self::Sqlx(repository) => repository.publish_version(request).await,
-        }
-    }
-
-    /// Atomically reserves all metadata for a workspace. The in-memory
-    /// implementation holds one repository lock and restores its snapshot on
-    /// any error; PostgreSQL delegates to its explicit batch transaction.
-    pub(crate) async fn publish_workspace_batch(
-        &self,
-        reservations: Vec<WorkspacePublishReservation>,
-    ) -> Result<Vec<WorkspacePublishOutcome>, StoreError> {
-        match self {
-            Self::InMemory(repository) => {
-                let mut package_repository =
-                    repository.repository.lock().expect("package repository mutex is not poisoned");
-                let before = package_repository.clone();
-                let result = (|| {
-                    let mut outcomes = Vec::with_capacity(reservations.len());
-                    for reservation in &reservations {
-                        let package = match package_repository.find_package(&reservation.package.name).cloned() {
-                            Some(package) => {
-                                if package.owner_subject != reservation.package.owner_subject {
-                                    return Err(StoreError::PackageOwnershipConflict);
-                                }
-                                package
-                            }
-                            None => package_repository.create_package(reservation.package.clone())?,
-                        };
-                        let version = package_repository.publish_version(PublishVersion {
-                            id: reservation.version_id.clone(),
-                            package_id: package.id.clone(),
-                            version: reservation.version.clone(),
-                            checksum_sha256: reservation.checksum_sha256.clone(),
-                            storage_key: reservation.storage_key.clone(),
-                            size_bytes: reservation.size_bytes,
-                            now_unix_seconds: reservation.package.now_unix_seconds,
-                        })?;
-                        outcomes.push(WorkspacePublishOutcome { package, version });
-                    }
-                    Ok(outcomes)
-                })();
-                if result.is_err() {
-                    *package_repository = before;
-                    return result;
-                }
-                let outcomes = result.expect("checked above");
-                drop(package_repository);
-                let mut names = repository.package_names.lock().expect("package catalog mutex is not poisoned");
-                let mut versions =
-                    repository.versions_by_package.lock().expect("version catalog mutex is not poisoned");
-                for outcome in &outcomes {
-                    names.insert(outcome.package.name.clone());
-                    let version = match &outcome.version {
-                        PublishOutcome::Created(version) | PublishOutcome::AlreadyExists(version) => version,
-                    };
-                    versions.entry(version.package_id.clone()).or_default().insert(version.version.clone());
-                }
-                Ok(outcomes)
-            }
-            Self::Sqlx(repository) => repository.publish_workspace_batch(&reservations).await,
         }
     }
 

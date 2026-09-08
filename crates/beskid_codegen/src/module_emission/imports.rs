@@ -63,9 +63,15 @@ pub(super) fn runtime_intrinsic_symbols(input: &CodegenInput<'_>) -> HashMap<Dir
                 .iter()
                 .enumerate()
                 .filter_map(|(index, intrinsic)| {
+                    let symbol = intrinsic
+                        .target_bindings
+                        .iter()
+                        .find(|binding| binding.target == input.target().triple.as_str())
+                        .map(|binding| binding.implementation.clone())
+                        .unwrap_or_else(|| intrinsic.symbol.clone());
                     u32::try_from(index)
                         .ok()
-                        .map(|index| (DirectCallee::runtime_intrinsic(index), intrinsic.symbol.clone()))
+                        .map(|index| (DirectCallee::runtime_intrinsic(index), symbol))
                 })
                 .collect()
         })

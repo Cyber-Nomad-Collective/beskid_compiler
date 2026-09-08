@@ -122,6 +122,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     fn local_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         match self.query(node_kind(self.db, key))? {
             beskid_queries::IndexedNodeKind::PathExpression => {
+                if self.query(implicit_method_receiver(self.db, key)).is_some() {
+                    return Some(super::context::IMPLICIT_METHOD_RECEIVER_SLOT);
+                }
                 let declaration = self
                     .query(resolved_local(self.db, key))
                     .map(|resolved| resolved.declaration)
@@ -156,6 +159,13 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         }
         if self.runtime_intrinsic(key).is_some() || self.scheduler_compiler_operation(key).is_some() {
             return Some(CallKind::RuntimeIntrinsic);
+        }
+        // Canonical `Array.Empty<T>` is a compiler-owned typed allocation form. Recognize its
+        // source- and specialization-backed descriptor plan before asking collection dispatch:
+        // the legacy `__array_new(size, length)` signature intentionally rejects this one-argument
+        // form, and that diagnostic must not misclassify the authorized typed constructor.
+        if self.typed_array_plan(key).is_some() {
+            return Some(CallKind::TypedArrayAllocation);
         }
         match beskid_queries::collection_operation(self.db, key) {
             Ok(Some(_)) | Err(_) => return Some(CallKind::CollectionOperation),
@@ -254,8 +264,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn collection_element_type(&self, key: AstNodeKey) -> Option<Type> {
-        let specialization = self.query(generic_call_specialization(self.db, key))?;
-        let element = specialization.substitutions.first()?.argument;
+        let element = self.generic_call_specialization_in_context(key)?.substitutions.first()?.argument;
         map_signature_type(self.isa?, element)
     }
 
@@ -271,23 +280,8 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         let CallLowering::Direct(declaration) = lowering else {
             return None;
         };
-        if let Some(template) = self.query(generic_call_template(self.db, key)) {
-            let enclosing = self.item_specializations.values().next()?;
-            let substitutions = template
-                .parameters
-                .iter()
-                .zip(template.parameter_arguments.iter())
-                .map(|(target, argument)| {
-                    enclosing.substitutions.iter().find(|binding| binding.parameter.as_ref() == argument.as_ref()).map(
-                        |binding| beskid_queries::GenericSubstitution {
-                            parameter: target.clone(),
-                            argument: binding.argument,
-                        },
-                    )
-                })
-                .collect::<Option<Vec<_>>>()?;
-            let specialization =
-                self.query(generic_specialization_instance(self.db, template.declaration, substitutions.into()))?;
+        if self.query(generic_call_template(self.db, key)).is_some() {
+            let specialization = self.generic_call_specialization_in_context(key)?;
             return Some(DirectCallee::specialized_item(
                 specialization.declaration,
                 specialization_identity(&specialization),
@@ -321,6 +315,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                     emitter.signature([pointer, pointer, pointer, pointer], [types::I32])
                 }
             });
+        }
+        if self.query(generic_call_template(self.db, key)).is_some() {
+            return signature_for_item(self.isa?, self.generic_call_specialization_in_context(key)?.signature);
         }
         signature_for_item(self.isa?, self.query(call_abi_signature(self.db, key))?)
     }
@@ -363,19 +360,26 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn array_elements(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
-        self.array_elements_for_literal(key)
+        self.array_elements_for_literal(key).or_else(|| self.typed_array_plan(key).map(|_| Vec::new()))
     }
 
     fn array_layout(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
-        self.array_layout_for_literal(key).or_else(|| self.array_layout_for_bulk(key)).or_else(|| {
-            let element_type = map_signature_type(self.isa?, self.query(array_index_element_abi_type(self.db, key))?)?;
-            let stride = element_type.bytes();
-            Some(beskid_isle::ArrayLayout::new(element_type, stride, 0, stride.ilog2() as u8))
-        })
+        self.array_layout_for_literal(key)
+            .or_else(|| self.array_layout_for_bulk(key))
+            .or_else(|| self.array_layout_for_typed_allocation(key))
+            .or_else(|| {
+                let element_type = map_signature_type(self.isa?, self.array_index_element_type_in_context(key)?)?;
+                let stride = element_type.bytes();
+                Some(beskid_isle::ArrayLayout::new(element_type, stride, 0, stride.ilog2() as u8))
+            })
     }
 
     fn managed_array_allocation(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedArrayAllocation> {
-        let plan = self.input.array_static_plan(key).or_else(|| self.input.bulk_array_static_plan(key))?;
+        let plan = self
+            .input
+            .array_static_plan(key)
+            .or_else(|| self.input.bulk_array_static_plan(key))
+            .or_else(|| self.typed_array_plan(key))?;
         Some(beskid_isle::ManagedArrayAllocation { allocation_request_symbol: plan.allocation_request_symbol.into() })
     }
 
@@ -385,7 +389,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             parameters.push(ParameterSlot {
                 // Methods cannot spell `self` in Beskid source. The ABI receiver still needs a
                 // materialized local so its declared pointer position is consumed by ISLE.
-                slot: LocalSlotId { owner_node: u32::MAX, index: u32::MAX },
+                slot: super::context::IMPLICIT_METHOD_RECEIVER_SLOT,
                 value_type: self.isa?.pointer_type(),
             });
         }
@@ -449,7 +453,8 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             return self.isa.map(|isa| isa.pointer_type());
         }
         if self.node_kind(key) == Some(NodeKind::EnumLiteralExpression)
-            && self.query(enum_constructor(self.db, key)).is_some()
+            && (self.query(enum_constructor(self.db, key)).is_some()
+                || self.specialized_enum_constructor(key).is_some())
         {
             return self.isa.map(|isa| isa.pointer_type());
         }
@@ -498,7 +503,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             allocation_request_symbol: self
                 .input
                 .aggregate_static_plan(key)
-                .or_else(|| self.input.enum_static_plan(key))?
+                .or_else(|| {
+                    self.input.enum_static_plan_for_specialization(key, self.item_specializations.values().next())
+                })?
                 .allocation_request_symbol
                 .into(),
         })
@@ -510,6 +517,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn field_receiver_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
         let access = self.query(aggregate_field_access(self.db, key))?;
+        if self.query(node_kind(self.db, access.receiver)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition) {
+            return Some(super::context::IMPLICIT_METHOD_RECEIVER_SLOT);
+        }
         self.query(local_slot(self.db, access.receiver))
             .map(|slot| LocalSlotId { owner_node: slot.owner.node.0, index: slot.index })
     }
@@ -557,11 +567,15 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn enum_variant_index(&self, key: AstNodeKey) -> Option<u32> {
-        self.query(enum_constructor(self.db, key)).map(|constructor| constructor.variant_index)
+        self.query(enum_constructor(self.db, key))
+            .or_else(|| self.specialized_enum_constructor(key).map(|fact| fact.constructor))
+            .map(|constructor| constructor.variant_index)
     }
 
     fn enum_payload(&self, key: AstNodeKey) -> Option<AstNodeKey> {
-        self.query(enum_constructor(self.db, key))?.payload
+        self.query(enum_constructor(self.db, key))
+            .or_else(|| self.specialized_enum_constructor(key).map(|fact| fact.constructor))?
+            .payload
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {

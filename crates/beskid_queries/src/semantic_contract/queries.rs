@@ -30,6 +30,11 @@ pub fn resolved_local(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Resol
     with_registered_syntax(db, key, resolved_local_tracked)
 }
 
+/// Return the owning method for the exact unqualified `self` receiver path.
+pub fn implicit_method_receiver(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<AstNodeKey> {
+    with_registered_syntax(db, key, implicit_method_receiver_tracked)
+}
+
 /// Integer immediate for an unshadowed module constant in the current source unit.
 pub fn constant_integer(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<i64> {
     with_registered_syntax(db, key, constant_integer_tracked)
@@ -149,6 +154,12 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
             let arguments =
                 call_arguments(db, key)?.ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
             let array = *arguments.first().ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+            let call_syntax = db
+                .syntax_unit(key.unit)
+                .filter(|syntax| syntax.generation(db) == key.generation)
+                .ok_or_else(|| SemanticError::unavailable("collection_operation"))?;
+            let array =
+                AstNodeKey { node: normalized_expression_node(call_syntax.syntax_index(db), array.node), ..array };
             let owner = if let Some(access) = aggregate_field_access(db, array)? {
                 let receiver = resolved_local(db, access.receiver)?
                     .and_then(|resolved| local_slot(db, resolved.declaration).transpose())
@@ -184,6 +195,15 @@ pub fn collection_operation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult
         "RemoveLast" => CollectionOperation::RemoveLast,
         _ => return Ok(None),
     }))
+}
+
+/// Return the generic element and length encoded by the exact compiler-owned
+/// `Core.Collections.Array.Empty` allocation call.
+///
+/// Ordinary source, copied Foundation source, stale syntax, non-zero lengths, and raw
+/// `__array_new(element_size, length)` calls receive no fact.
+pub fn typed_array_allocation(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<TypedArrayAllocation> {
+    with_registered_syntax(db, key, typed_array_allocation_tracked)
 }
 
 pub fn primitive_numeric_conversion(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<PrimitiveNumericConversion> {
@@ -300,6 +320,11 @@ pub fn enum_layout(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumLayo
 /// emitter has an equally explicit multi-field payload representation.
 pub fn enum_constructor(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumConstructorFact> {
     with_registered_syntax(db, key, enum_constructor_tracked)
+}
+
+/// Preserve a contextual generic enum constructor until its enclosing item has a concrete ABI.
+pub fn enum_constructor_template(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<EnumConstructorTemplate> {
+    with_registered_syntax(db, key, enum_constructor_template_tracked)
 }
 
 /// Return the exact source enum declaration and arms selected by one `match` expression.

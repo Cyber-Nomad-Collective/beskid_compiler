@@ -7,7 +7,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use beskid_pckg_artifacts::{
-    ArtifactBrowser, ArtifactRecord, BrowseEntry, PackageArtifactStore, ValidatedArtifact, select_download,
+    ArtifactBrowser, ArtifactRecord, BrowseEntry, PackageArtifactStore, ValidatedArtifact,
+    parse_package_manifest_metadata, select_download,
 };
 use beskid_pckg_contract::ApiErrorResponse;
 use beskid_pckg_store::{Package, PackageVersion};
@@ -143,6 +144,7 @@ async fn browser_for_request(state: &AppState, headers: &HeaderMap, path: &Artif
         return None;
     }
     let bytes = state.artifacts.open(&version.storage_key).ok()?;
+    let metadata = parse_package_manifest_metadata(&version.manifest_json, &package.name, &version.version).ok()?;
     ArtifactBrowser::from_validated_bytes(
         &bytes,
         &ValidatedArtifact {
@@ -150,7 +152,8 @@ async fn browser_for_request(state: &AppState, headers: &HeaderMap, path: &Artif
             version: version.version,
             checksum_sha256: version.checksum_sha256,
             size_bytes: version.size_bytes,
-            manifest_json: String::new(),
+            manifest_json: version.manifest_json,
+            metadata,
         },
     )
     .ok()

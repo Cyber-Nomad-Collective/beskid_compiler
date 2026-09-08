@@ -105,6 +105,12 @@ impl RuntimeAuditMetadata {
             .iter()
             .map(|entry| entry.symbol.clone())
             .chain(manifest.assembly_exports.iter().map(|entry| entry.symbol.as_str().into()))
+            .chain(
+                crate::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS
+                    .iter()
+                    .filter(|binding| binding.target == target_triple)
+                    .map(|binding| binding.implementation.into()),
+            )
             .collect::<Vec<_>>();
         loader_required_exports.sort();
         loader_required_exports.dedup();

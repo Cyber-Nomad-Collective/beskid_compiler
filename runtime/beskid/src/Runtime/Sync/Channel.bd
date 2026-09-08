@@ -32,7 +32,7 @@ pub enum ChannelStatus {
 // capacities are rejected because this canonical implementation never
 // overwrites unread values or claims storage it does not own.
 [Export(Abi:"C", Symbol:"channel_create")]
-pub i64 ChannelCreate(i64 capacity, i64 flags) {
+pub i64 ChannelCreate(mut i64 capacity, i64 flags) {
     if capacity < 0 || capacity > CHANNEL_BUFFER_SIZE {
         return -1;
     }

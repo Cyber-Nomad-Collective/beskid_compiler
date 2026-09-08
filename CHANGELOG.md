@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- License the compiler, tooling, reusable crates, and embedded runtime under
+  Apache-2.0 while scoping AGPL-3.0-only to the runnable pckg server package;
+  preserve vendored dependency licenses and declare Cargo SPDX metadata.
+- Carry Apache license and notice files in native runtime kits and the
+  compiler-embedded corelib snapshot so redistributed artifacts retain their
+  applicable legal terms.
+
+- Make recursive staged-analysis helpers stateless associated functions,
+  removing unused rule receivers and keeping the workspace lint gate clean.
+
+- pckg now accepts the trusted identity headers forwarded by the Authentik
+  proxy outpost when `SHELL_AUTH_MODE=authentik`, including the configured
+  administrator and moderator group rules.
+- pckg package summaries now derive required `packageKind`, nullable template
+  metadata, and canonical dependencies from the immutable validated artifact
+  manifest. Published manifests are persisted with each version and parsed by
+  the artifact crate's single metadata abstraction; incomplete legacy rows and
+  unpublished records are not projected as invented package kinds.
+- pckg production startup now requires
+  `PCKG_RELEASE_PUBLISHER_KEY_SHA256` and atomically reconciles it into one
+  deterministic `release:github-actions` automation principal with read and
+  publish scopes. Only the lowercase SHA-256 digest enters server
+  configuration; malformed, missing, or colliding credentials fail startup.
+- pckg packaging now uses one path-independent artifact dependency contract:
+  exact registry dependencies are read from the staged `package.json` release
+  plan, source-only `.bproj` path declarations are rewritten in collected
+  artifact bytes, and the same canonical dependency list is emitted in the
+  artifact manifest. Source workspace manifests remain unchanged.
+- pckg packaging now emits canonical per-project artifacts only: template
+  authoring manifests move from `.beskid/template.json` to artifact-root
+  `template.json`, `.bproj` replaces the removed `Project.proj` shape, and
+  kind-specific validation admits aggregate libraries without sources and
+  template scaffold roots without a synthetic `src/` tree. Library metadata
+  advertises API docs only when the artifact actually contains them, while
+  `pckg pack --skip-docs` supports pre-generated or declaration-only release
+  inputs.
 - pckg Rust backend: publication routes now authenticate an active,
   `publish`-scoped `Authorization: Bearer bpk_*` key through the registry
   store. The shipped publisher client uses that same standard bearer transport
@@ -16,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `Remote-*` headers; invalid, revoked, or inactive keys are rejected
   without falling back to a forwarded or mock identity. Valid publisher keys
   work when browser-session authentication is intentionally unset.
+- pckg Rust backend now accepts package publication only as artifact-bound
+  multipart `version`, `checksumSha256`, and `.bpk` bytes on
+  `POST /api/packages/{name}/versions`. The metadata-only JSON request and
+  detached raw-artifact upload route are removed.
 
 - Centralize exact ABI-v5 target-triple resolution in
   `TargetMetadata::for_triple`, preserving existing CLI, AOT runtime-kit, and
@@ -69,6 +109,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve the prepared program assembly's syntax generation in incremental LSP state so
   dependency-backed completion, definition, hover, and references no longer fail closed with
   empty facts after confusing cache revisions with syntax generations.
+
+- Use the idiomatic boolean assertion in the pckg dependency-rewrite test so
+  the release compiler gate passes with warnings denied.
+- Return the validator's deterministic publication error so package-kind
+  conflicts identify the conflicting archive file instead of being hidden by
+  a generic invalid-artifact message.
+- Retire each artifact's managed heap before unloading its JIT code and static
+  type descriptors, then attach a fresh runtime state for the replacement
+  artifact so later tests cannot dereference retired descriptor storage.
+- Separate the source-owned `beskid_rt_v5_trap` export from its terminal
+  platform intrinsic, preventing recursive trap dispatch, and preserve the
+  full generation word when creating the first GC root handle so construction
+  roots release cleanly at process shutdown.
+- Mark ordinary aggregate and enum descriptors as fixed-size objects rather
+  than variable-sized arrays, preventing valid collection instances from
+  failing managed allocation.
+- Reject uploaded `.bpk` artifacts whose project dependencies retain path/git
+  sources or disagree with artifact-root `package.json`; template validation
+  now parses `template.json` and enforces the v1 schema, package identity, and
+  exact summary agreement.
+- Align `beskid pckg upload` with the Rust registry's canonical per-package publication contract:
+  read the immutable version from artifact-root `package.json`, always send multipart `version`,
+  `checksumSha256`, and `artifact` to `/api/packages/{name}/versions`, and remove the obsolete
+  `/publish`, version-bump, and detached-manifest client shape.
+
+- Lower canonical `Array.Empty<T>` through specialization-scoped ABI-v5 managed-array
+  descriptors and the rooted construction transaction, while keeping copied source and the
+  historical size-only `__array_new` service path unauthorized.
+
+- Keep imported generic receiver methods and static return signatures bound to
+  their declaring source unit. Unit type surfaces now remain authoritative when
+  dependency files reuse the entry file's byte offsets, preventing unrelated
+  nominal types from replacing canonical `List<T>`/`Stack<T>` identities.
+
+- Materialize generic collection method bodies from their exact call-derived
+  specialization: implicit fields and `self`, nested generic calls, contextual
+  `Result` constructors, and generic array indexing now retain their source-owned
+  ABI facts through TypedProgram/Salsa lowering.
+
+- Type the compiler-owned `__gc_collect` facade service as a pointer-width word so
+  `Testing.Assert.CollectGarbage` can emit its authorized ABI-v5 import while copied or altered
+  sources continue to fail closed.
+
+- Keep the trimmed Rust pckg server image build independent of the compiler
+  package client graph by moving the client-to-server bearer-auth contract to
+  `beskid_tests_pckg` and removing the test-only client dependency from
+  `beskid_pckg_server`.
 
 - Always admit string runtime helpers (`str_new`, `str_from_i64`, `str_eq`,
   `str_concat`) as corelib service imports during ISLE lowering, even without
@@ -153,6 +240,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   can select an ABI import.
 
 ### Removed
+
+- Remove the pckg server's workspace-bundle publication route and its private
+  batch-persistence contract. Release publishers now use the single canonical
+  per-package artifact path for package creation, immutable version
+  reservation, and `.bpk` upload.
 
 - Purge the legacy ABI dispatch envelope, generated routes/tags/tables, Rust runtime/handler/host crates, differential package and features, and language-handler registration remnants. ISLE and codegen now import exact canonical Corelib service symbols and signatures directly through `CodegenInput` authority.
 - Cut production engine execution over to the exact ABI-v5 native runtime kit only: remove Rust host registration, GC bootstrap, process-linked builtin fallback symbols, legacy host registration generation, and the retired `rust_fallback_handlers`/`arrays_backing` features. Rust runtime and host adapters now require an explicit differential-test feature, enforced by a retirement scan.

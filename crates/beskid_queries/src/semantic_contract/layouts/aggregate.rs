@@ -100,6 +100,21 @@ pub(in crate::semantic_contract) fn array_index_element_abi_type_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
+    Ok(match array_index_element_template_tracked(db, syntax, key)? {
+        Some(ArrayIndexElementTemplate::Concrete(element)) => Some(element),
+        Some(ArrayIndexElementTemplate::EnclosingParameter(_)) => {
+            return Err(SemanticError::unavailable("array_index_element_abi_type"));
+        }
+        None => None,
+    })
+}
+
+#[salsa::tracked(persist)]
+pub(in crate::semantic_contract) fn array_index_element_template_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<ArrayIndexElementTemplate> {
     with_node(db, syntax, key, |program, index, node| {
         let (index_node, indexed) = if let Some(indexed) = node.of::<beskid_analysis::syntax::IndexExpression>() {
             (key.node, indexed)
@@ -150,8 +165,32 @@ pub(in crate::semantic_contract) fn array_index_element_abi_type_tracked(
             let beskid_analysis::syntax::Type::Array(element) = array_type else {
                 return Err(SemanticError::unavailable("array_index_element_abi_type"));
             };
+            if let Some(parameter) = generic_parameter_reference_name(&element.node) {
+                return Ok(ArrayIndexElementTemplate::EnclosingParameter(Arc::from(parameter)));
+            }
             abi_type_from_syntax(db, AstNodeKey { node: declaration, ..key }, &element.node)
+                .map(ArrayIndexElementTemplate::Concrete)
         }))
     })?
     .transpose()
+}
+
+/// Resolve an indexed array element through one exact enclosing generic specialization.
+pub fn array_index_element_specialization(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Arc<[GenericSubstitution]>,
+) -> SemanticQueryResult<SemanticTypeId> {
+    let Some(syntax) = db.syntax_unit(key.unit) else { return Ok(None) };
+    if !syntax.accepts_key(db, key) {
+        return Ok(None);
+    }
+    let Some(template) = array_index_element_template_tracked(db, syntax, key)? else { return Ok(None) };
+    match template {
+        ArrayIndexElementTemplate::Concrete(element) => Ok(Some(element)),
+        ArrayIndexElementTemplate::EnclosingParameter(parameter) => Ok(enclosing
+            .iter()
+            .find(|binding| binding.parameter.as_ref() == parameter.as_ref())
+            .map(|binding| binding.argument)),
+    }
 }

@@ -18,11 +18,11 @@ struct RuntimeKitSelection {
 
 /// Owns an exact ABI-v5 runtime-kit selection and a [`BeskidJitModule`].
 ///
-/// Field order is load-bearing: `runtime_state` detaches the calling thread before `jit` releases
-/// the loaded runtime kit that owns those exports.
+/// Field order is load-bearing: `runtime_state` detaches the calling thread and retires the heap
+/// before `jit` releases the loaded runtime kit and artifact-owned descriptor storage.
 pub struct Engine {
     runtime_kit: RuntimeKitSelection,
-    _runtime_state: AttachedRuntimeState,
+    runtime_state: Option<AttachedRuntimeState>,
     jit: BeskidJitModule,
 }
 
@@ -59,7 +59,7 @@ impl Engine {
         let runtime_state = AttachedRuntimeState::attach(jit.runtime_kit()).map_err(JitError::RuntimeKit)?;
         Ok(Self {
             runtime_kit: RuntimeKitSelection { prefix: prefix.to_path_buf(), target, profile },
-            _runtime_state: runtime_state,
+            runtime_state: Some(runtime_state),
             jit,
         })
     }
@@ -71,13 +71,13 @@ impl Engine {
 
     /// Drop the current JIT module and reload the same validated exact runtime kit.
     pub fn reload_runtime_kit(&mut self) -> Result<(), JitError> {
-        self.jit = BeskidJitModule::new_with_runtime_kit(
+        let jit = BeskidJitModule::new_with_runtime_kit(
             &self.runtime_kit.prefix,
             &self.runtime_kit.target,
             self.runtime_kit.profile,
             &[],
         )?;
-        Ok(())
+        self.replace_jit_and_runtime(jit)
     }
 
     /// Load `artifact` into a fresh or reused JIT module, declare builtins/externs, define functions, finalize.
@@ -125,12 +125,13 @@ impl Engine {
         };
 
         // Recreate the module per artifact while preserving the exact runtime-kit authority.
-        self.jit = BeskidJitModule::new_with_runtime_kit(
+        let jit = BeskidJitModule::new_with_runtime_kit(
             &self.runtime_kit.prefix,
             &self.runtime_kit.target,
             self.runtime_kit.profile,
             &authorized_user_ffi,
         )?;
+        self.replace_jit_and_runtime(jit)?;
 
         #[cfg(debug_assertions)]
         {
@@ -144,6 +145,15 @@ impl Engine {
         }
 
         self.jit.compile_with_pipeline(artifact, pipeline)
+    }
+
+    /// Replace one artifact-owned JIT only after retiring the heap that can reference its static
+    /// descriptors, then attach a fresh runtime state to the replacement module's exact kit.
+    fn replace_jit_and_runtime(&mut self, jit: BeskidJitModule) -> Result<(), JitError> {
+        drop(self.runtime_state.take());
+        self.jit = jit;
+        self.runtime_state = Some(AttachedRuntimeState::attach(self.jit.runtime_kit()).map_err(JitError::RuntimeKit)?);
+        Ok(())
     }
 
     /// Resolved machine code for `name` after successful compile; caller must match the real signature.

@@ -1,9 +1,7 @@
-use super::artifacts::{persist_uploaded_artifact, record_publish_activity};
-use super::mapping::{next_id, now, package_not_found, package_storage_failure, version_summary};
+use super::artifacts::persist_uploaded_artifact;
 use super::{
-    ApiErrorResponse, AppState, HeaderMap, IntoResponse, Json, Path, PublishOutcome, PublishPackageVersionRequest,
-    PublishVersion, Request, Response, State, StatusCode, StoreError, authenticated_publisher_subject, header,
-    to_bytes, validate_package_artifact,
+    ApiErrorResponse, AppState, HeaderMap, IntoResponse, Json, Path, Request, Response, State, StatusCode,
+    authenticated_publisher_subject, header, validate_package_artifact,
 };
 
 pub async fn publish_version(
@@ -12,78 +10,19 @@ pub async fn publish_version(
     Path(name): Path<String>,
     request: Request,
 ) -> impl IntoResponse {
-    if request
+    if !request
         .headers()
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .is_some_and(|content_type| content_type.starts_with("multipart/form-data"))
     {
-        return publish_multipart_version(state, headers, name, request).await;
-    }
-    let request = match to_bytes(request.into_body(), 64 * 1024 * 1024)
-        .await
-        .ok()
-        .and_then(|body| serde_json::from_slice::<PublishPackageVersionRequest>(&body).ok())
-    {
-        Some(request) => request,
-        None => {
-            return (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid package version request")))
-                .into_response();
-        }
-    };
-    publish_version_metadata(state, headers, name, request).await
-}
-
-async fn publish_version_metadata(
-    state: AppState,
-    headers: axum::http::HeaderMap,
-    name: String,
-    request: PublishPackageVersionRequest,
-) -> axum::response::Response {
-    let Some(subject) = authenticated_publisher_subject(&state, &headers).await else {
-        return crate::unauthorized_response();
-    };
-    let package = match state.packages.find_package(&name).await {
-        Ok(package) => package,
-        Err(_) => return package_storage_failure(),
-    };
-    let Some(package) = package else {
-        return package_not_found();
-    };
-    if package.owner_subject != subject {
-        return package_not_found();
-    }
-    let (Some(version), Some(checksum_sha256)) = (request.version, request.checksum_sha256) else {
-        return (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("version and checksumSha256 are required")))
+        return (
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Json(ApiErrorResponse::new("package publication requires multipart/form-data")),
+        )
             .into_response();
-    };
-    match state
-        .packages
-        .publish_version(PublishVersion {
-            id: next_id("version"),
-            package_id: package.id.clone(),
-            storage_key: format!("packages/{}/{}.bpk", package.id, version),
-            version,
-            checksum_sha256,
-            size_bytes: 0,
-            now_unix_seconds: now(),
-        })
-        .await
-    {
-        Ok(PublishOutcome::Created(version)) => {
-            let _ = record_publish_activity(&state, &subject, &package.name, &version.version).await;
-            (StatusCode::CREATED, Json(version_summary(&package, &version))).into_response()
-        }
-        Ok(PublishOutcome::AlreadyExists(version)) => {
-            (StatusCode::OK, Json(version_summary(&package, &version))).into_response()
-        }
-        Err(StoreError::VersionImmutable) => {
-            (StatusCode::CONFLICT, Json(ApiErrorResponse::new("package version is immutable"))).into_response()
-        }
-        Err(_) => {
-            (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid package version request"))).into_response()
-        }
     }
+    publish_multipart_version(state, headers, name, request).await
 }
 
 async fn publish_multipart_version(state: AppState, headers: HeaderMap, name: String, request: Request) -> Response {
@@ -140,8 +79,12 @@ async fn publish_multipart_version(state: AppState, headers: HeaderMap, name: St
             )
                 .into_response();
         }
-        Err(_) => {
-            return (StatusCode::BAD_REQUEST, Json(ApiErrorResponse::new("invalid package artifact"))).into_response();
+        Err(error) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ApiErrorResponse::new(format!("invalid package artifact: {error}"))),
+            )
+                .into_response();
         }
     };
     persist_uploaded_artifact(state, subject, name, version, artifact, validated).await

@@ -12,6 +12,8 @@
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -245,9 +247,109 @@ int64_t beskid_rt_v5_intrinsic_clock_monotonic_nanos(void) {
 int64_t beskid_rt_v5_intrinsic_clock_realtime_nanos(void) {
   return beskid_clock_nanos(CLOCK_REALTIME);
 }
+_Noreturn void beskid_rt_v5_intrinsic_trap(uint8_t code, void *message,
+                                           size_t message_len) {
+  static const char prefix[] = "beskid runtime trap v5: ";
+  static const char newline[] = "\n";
+  (void)code;
+  (void)write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
+  if (message != NULL && message_len != 0)
+    (void)write(STDERR_FILENO, message, message_len);
+  (void)write(STDERR_FILENO, newline, sizeof(newline) - 1);
+  _exit(101);
+}
 void beskid_rt_v5_intrinsic_process_exit(int32_t code) { _exit(code); }
 int32_t beskid_rt_v5_intrinsic_process_getpid(void) {
   return (int32_t)getpid();
+}
+
+int32_t beskid_rt_v5_intrinsic_memory_compare(const uint8_t *left,
+                                              const uint8_t *right,
+                                              size_t length) {
+  if ((!left || !right) && length)
+    return left == right ? 0 : left ? 1 : -1;
+  for (size_t i = 0; i < length; ++i) {
+    if (left[i] != right[i])
+      return left[i] < right[i] ? -1 : 1;
+  }
+  return 0;
+}
+
+static char *beskid_linux_c_string(const struct BeskidStr *value,
+                                   size_t *size_out) {
+  if (!value || (value->len && !value->ptr) || value->len == SIZE_MAX)
+    return NULL;
+  size_t size = value->len + 1;
+  char *copy = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (copy == MAP_FAILED)
+    return NULL;
+  if (value->len)
+    __builtin_memcpy(copy, value->ptr, value->len);
+  copy[value->len] = 0;
+  *size_out = size;
+  return copy;
+}
+
+void *beskid_rt_v5_intrinsic_env_get(const struct BeskidStr *key) {
+  size_t key_size = 0;
+  char *native_key = beskid_linux_c_string(key, &key_size);
+  if (!native_key)
+    return str_new(NULL, 0);
+  const char *value = getenv(native_key);
+  (void)munmap(native_key, key_size);
+  return value ? str_new((void *)value, __builtin_strlen(value))
+               : str_new(NULL, 0);
+}
+
+int32_t beskid_rt_v5_intrinsic_env_set(const struct BeskidStr *key,
+                                       const struct BeskidStr *value) {
+  size_t key_size = 0, value_size = 0;
+  char *native_key = beskid_linux_c_string(key, &key_size);
+  char *native_value = beskid_linux_c_string(value, &value_size);
+  if (!native_key || !native_value) {
+    if (native_key)
+      (void)munmap(native_key, key_size);
+    if (native_value)
+      (void)munmap(native_value, value_size);
+    return -1;
+  }
+  int result = setenv(native_key, native_value, 1);
+  (void)munmap(native_key, key_size);
+  (void)munmap(native_value, value_size);
+  return result;
+}
+
+void *beskid_rt_v5_intrinsic_env_getcwd(void) {
+  size_t size = 256;
+  while (size <= SIZE_MAX / 2) {
+    char *buffer = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (buffer == MAP_FAILED)
+      return str_new(NULL, 0);
+    errno = 0;
+    if (getcwd(buffer, size)) {
+      void *result = str_new((void *)buffer,
+                             __builtin_strlen(buffer));
+      (void)munmap(buffer, size);
+      return result;
+    }
+    int error = errno;
+    (void)munmap(buffer, size);
+    if (error != ERANGE)
+      break;
+    size *= 2;
+  }
+  return str_new(NULL, 0);
+}
+
+int64_t beskid_rt_v5_intrinsic_tty_winsize(int64_t fd) {
+  if (fd < 0 || fd > INT_MAX)
+    return 0;
+  struct winsize size;
+  if (ioctl((int)fd, TIOCGWINSZ, &size) != 0)
+    return 0;
+  return ((int64_t)size.ws_col << 16) | (int64_t)size.ws_row;
 }
 
 enum {

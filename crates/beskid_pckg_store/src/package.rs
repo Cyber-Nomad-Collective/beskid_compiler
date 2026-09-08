@@ -23,6 +23,7 @@ pub struct PackageVersion {
     pub checksum_sha256: String,
     pub storage_key: String,
     pub size_bytes: u64,
+    pub manifest_json: String,
     pub is_yanked: bool,
     pub published_at_unix_seconds: i64,
     pub yanked_at_unix_seconds: Option<i64>,
@@ -45,25 +46,8 @@ pub struct PublishVersion {
     pub checksum_sha256: String,
     pub storage_key: String,
     pub size_bytes: u64,
+    pub manifest_json: String,
     pub now_unix_seconds: i64,
-}
-
-/// One immutable package-version reservation in a workspace publication.
-/// All reservations are committed together or none become durable.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkspacePublishReservation {
-    pub package: NewPackage,
-    pub version_id: String,
-    pub version: String,
-    pub checksum_sha256: String,
-    pub storage_key: String,
-    pub size_bytes: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkspacePublishOutcome {
-    pub package: Package,
-    pub version: PublishOutcome,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +62,7 @@ pub enum StoreError {
     InvalidAuthHubSubject,
     InvalidVersion,
     InvalidChecksum,
+    InvalidManifestMetadata,
     PackageAlreadyExists,
     PackageOwnershipConflict,
     PackageNotFound,
@@ -147,115 +132,6 @@ impl SqlxPackageRepository {
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
-
-    /// Reserves every package/version in one PostgreSQL transaction. Artifact
-    /// bytes are staged by the caller before this method and are compensated
-    /// if this transaction fails; this boundary guarantees that a malformed
-    /// later workspace member cannot leave earlier registry metadata behind.
-    pub async fn publish_workspace_batch(
-        &self,
-        reservations: &[WorkspacePublishReservation],
-    ) -> Result<Vec<WorkspacePublishOutcome>, StoreError> {
-        let mut transaction = self.pool.begin().await.map_err(database_error)?;
-        let mut outcomes = Vec::with_capacity(reservations.len());
-        for reservation in reservations {
-            validate_package_name(&reservation.package.name)?;
-            validate_subject(&reservation.package.owner_subject)?;
-            validate_version(&reservation.version)?;
-            validate_checksum(&reservation.checksum_sha256)?;
-            let requested_package_id = parse_identifier(&reservation.package.id)?;
-            let version_id = parse_identifier(&reservation.version_id)?;
-            let created_at = timestamp(reservation.package.now_unix_seconds)?;
-            let published_at = timestamp(reservation.package.now_unix_seconds)?;
-            let package = match sqlx::query_as::<_, PackageRow>(
-                "SELECT id, name, owner_subject, is_public, created_at_utc, updated_at_utc \
-                 FROM pckg_packages WHERE name = $1 FOR UPDATE",
-            )
-            .bind(&reservation.package.name)
-            .fetch_optional(&mut *transaction)
-            .await
-            .map_err(database_error)?
-            {
-                Some(row) => row.into_domain(),
-                None => {
-                    let inserted = sqlx::query_as::<_, PackageRow>(
-                        "INSERT INTO pckg_packages (id, name, owner_subject, is_public, created_at_utc, updated_at_utc) \
-                         VALUES ($1, $2, $3, $4, $5, $5) ON CONFLICT (name) DO NOTHING \
-                         RETURNING id, name, owner_subject, is_public, created_at_utc, updated_at_utc",
-                    )
-                    .bind(requested_package_id)
-                    .bind(&reservation.package.name)
-                    .bind(&reservation.package.owner_subject)
-                    .bind(reservation.package.is_public)
-                    .bind(created_at)
-                    .fetch_optional(&mut *transaction)
-                    .await
-                    .map_err(database_error)?;
-                    match inserted {
-                        Some(row) => row.into_domain(),
-                        None => sqlx::query_as::<_, PackageRow>(
-                            "SELECT id, name, owner_subject, is_public, created_at_utc, updated_at_utc \
-                             FROM pckg_packages WHERE name = $1 FOR UPDATE",
-                        )
-                        .bind(&reservation.package.name)
-                        .fetch_one(&mut *transaction)
-                        .await
-                        .map_err(database_error)?
-                        .into_domain(),
-                    }
-                }
-            };
-            if package.owner_subject != reservation.package.owner_subject {
-                return Err(StoreError::PackageOwnershipConflict);
-            }
-            let checksum = reservation.checksum_sha256.to_ascii_lowercase();
-            let outcome = if let Some(existing) =
-                find_version_in_transaction(&mut transaction, parse_identifier(&package.id)?, &reservation.version)
-                    .await?
-            {
-                if existing.checksum_sha256.eq_ignore_ascii_case(&checksum) {
-                    PublishOutcome::AlreadyExists(existing)
-                } else {
-                    return Err(StoreError::VersionImmutable);
-                }
-            } else {
-                let package_id = parse_identifier(&package.id)?;
-                let inserted = sqlx::query_as::<_, PackageVersionRow>(
-                    "INSERT INTO pckg_package_versions \
-                     (id, package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, published_at_utc, yanked_at_utc) \
-                     VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, NULL) \
-                     ON CONFLICT (package_id, version) DO NOTHING \
-                     RETURNING id, package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, published_at_utc, yanked_at_utc",
-                )
-                .bind(version_id)
-                .bind(package_id)
-                .bind(&reservation.version)
-                .bind(&checksum)
-                .bind(&reservation.storage_key)
-                .bind(i64::try_from(reservation.size_bytes).map_err(|_| StoreError::InvalidIdentifier)?)
-                .bind(published_at)
-                .fetch_optional(&mut *transaction)
-                .await
-                .map_err(database_error)?;
-                match inserted {
-                    Some(row) => PublishOutcome::Created(row.into_domain()),
-                    None => {
-                        let existing = find_version_in_transaction(&mut transaction, package_id, &reservation.version)
-                            .await?
-                            .ok_or_else(|| StoreError::Database("version conflict row disappeared".into()))?;
-                        if existing.checksum_sha256.eq_ignore_ascii_case(&checksum) {
-                            PublishOutcome::AlreadyExists(existing)
-                        } else {
-                            return Err(StoreError::VersionImmutable);
-                        }
-                    }
-                }
-            };
-            outcomes.push(WorkspacePublishOutcome { package, version: outcome });
-        }
-        transaction.commit().await.map_err(database_error)?;
-        Ok(outcomes)
-    }
 }
 
 #[async_trait]
@@ -312,7 +188,7 @@ impl AsyncPackageRepository for SqlxPackageRepository {
             .map_err(database_error)?
             .ok_or(StoreError::PackageNotFound)?;
         let versions = sqlx::query_as::<_, PackageVersionRow>(
-            "SELECT id, package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, published_at_utc, yanked_at_utc \
+            "SELECT id, package_id, version, checksum_sha256, storage_key, size_bytes, manifest_json, is_yanked, published_at_utc, yanked_at_utc \
              FROM pckg_package_versions WHERE package_id = $1 FOR UPDATE",
         )
         .bind(package)
@@ -354,6 +230,7 @@ impl AsyncPackageRepository for SqlxPackageRepository {
     async fn publish_version(&self, request: PublishVersion) -> Result<PublishOutcome, StoreError> {
         validate_version(&request.version)?;
         validate_checksum(&request.checksum_sha256)?;
+        validate_manifest_metadata(&request.manifest_json)?;
         let id = parse_identifier(&request.id)?;
         let package_id = parse_identifier(&request.package_id)?;
         let timestamp = timestamp(request.now_unix_seconds)?;
@@ -377,10 +254,10 @@ impl AsyncPackageRepository for SqlxPackageRepository {
         }
         let inserted = sqlx::query_as::<_, PackageVersionRow>(
             "INSERT INTO pckg_package_versions \
-             (id, package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, published_at_utc, yanked_at_utc) \
-             VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, NULL) \
+             (id, package_id, version, checksum_sha256, storage_key, size_bytes, manifest_json, is_yanked, published_at_utc, yanked_at_utc) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8, NULL) \
              ON CONFLICT (package_id, version) DO NOTHING \
-             RETURNING id, package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, published_at_utc, yanked_at_utc",
+             RETURNING id, package_id, version, checksum_sha256, storage_key, size_bytes, manifest_json, is_yanked, published_at_utc, yanked_at_utc",
         )
         .bind(id)
         .bind(package_id)
@@ -388,6 +265,7 @@ impl AsyncPackageRepository for SqlxPackageRepository {
         .bind(&checksum)
         .bind(&request.storage_key)
         .bind(i64::try_from(request.size_bytes).map_err(|_| StoreError::InvalidIdentifier)?)
+        .bind(&request.manifest_json)
         .bind(timestamp)
         .fetch_optional(&mut *transaction)
         .await;
@@ -417,7 +295,7 @@ impl AsyncPackageRepository for SqlxPackageRepository {
     async fn find_version(&self, package_id: &str, version: &str) -> Result<Option<PackageVersion>, StoreError> {
         let package_id = parse_identifier(package_id)?;
         let row = sqlx::query_as::<_, PackageVersionRow>(
-            "SELECT id, package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, published_at_utc, yanked_at_utc \
+            "SELECT id, package_id, version, checksum_sha256, storage_key, size_bytes, manifest_json, is_yanked, published_at_utc, yanked_at_utc \
              FROM pckg_package_versions WHERE package_id = $1 AND version = $2",
         )
         .bind(package_id)
@@ -447,7 +325,7 @@ impl AsyncPackageRepository for SqlxPackageRepository {
         let row = sqlx::query_as::<_, PackageVersionRow>(
             "UPDATE pckg_package_versions SET is_yanked = $3, yanked_at_utc = CASE WHEN $3 THEN $4 ELSE NULL END \
              WHERE package_id = $1 AND version = $2 \
-             RETURNING id, package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, published_at_utc, yanked_at_utc",
+             RETURNING id, package_id, version, checksum_sha256, storage_key, size_bytes, manifest_json, is_yanked, published_at_utc, yanked_at_utc",
         )
         .bind(package_id)
         .bind(version)
@@ -492,6 +370,7 @@ struct PackageVersionRow {
     checksum_sha256: String,
     storage_key: String,
     size_bytes: i64,
+    manifest_json: String,
     is_yanked: bool,
     published_at_utc: DateTime<Utc>,
     yanked_at_utc: Option<DateTime<Utc>>,
@@ -506,6 +385,7 @@ impl PackageVersionRow {
             checksum_sha256: self.checksum_sha256,
             storage_key: self.storage_key,
             size_bytes: self.size_bytes as u64,
+            manifest_json: self.manifest_json,
             is_yanked: self.is_yanked,
             published_at_unix_seconds: self.published_at_utc.timestamp(),
             yanked_at_unix_seconds: self.yanked_at_utc.map(|value| value.timestamp()),
@@ -519,7 +399,7 @@ async fn find_version_in_transaction(
     version: &str,
 ) -> Result<Option<PackageVersion>, StoreError> {
     sqlx::query_as::<_, PackageVersionRow>(
-        "SELECT id, package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, published_at_utc, yanked_at_utc \
+        "SELECT id, package_id, version, checksum_sha256, storage_key, size_bytes, manifest_json, is_yanked, published_at_utc, yanked_at_utc \
          FROM pckg_package_versions WHERE package_id = $1 AND version = $2 FOR UPDATE",
     )
     .bind(package_id)
@@ -558,6 +438,10 @@ pub(super) fn validate_checksum(checksum: &str) -> Result<(), StoreError> {
     (checksum.len() == 64 && checksum.bytes().all(|byte| byte.is_ascii_hexdigit()))
         .then_some(())
         .ok_or(StoreError::InvalidChecksum)
+}
+
+pub(super) fn validate_manifest_metadata(manifest_json: &str) -> Result<(), StoreError> {
+    (!manifest_json.trim().is_empty()).then_some(()).ok_or(StoreError::InvalidManifestMetadata)
 }
 
 pub(super) fn parse_identifier(value: &str) -> Result<Uuid, StoreError> {

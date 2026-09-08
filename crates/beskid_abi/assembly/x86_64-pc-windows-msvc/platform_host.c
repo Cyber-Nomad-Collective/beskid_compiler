@@ -246,11 +246,40 @@ int64_t beskid_rt_v5_intrinsic_clock_realtime_nanos(void) {
                    UINT64_C(100));
 }
 
+__declspec(noreturn) void beskid_rt_v5_intrinsic_trap(uint8_t code,
+                                                       void *message,
+                                                       size_t message_len) {
+  static const char prefix[] = "beskid runtime trap v5: ";
+  static const char newline[] = "\n";
+  HANDLE error = GetStdHandle(STD_ERROR_HANDLE);
+  DWORD written;
+  (void)code;
+  if (error != NULL && error != INVALID_HANDLE_VALUE) {
+    (void)WriteFile(error, prefix, (DWORD)(sizeof(prefix) - 1), &written, NULL);
+    if (message != NULL && message_len != 0)
+      (void)WriteFile(error, message, (DWORD)message_len, &written, NULL);
+    (void)WriteFile(error, newline, (DWORD)(sizeof(newline) - 1), &written, NULL);
+  }
+  ExitProcess(101);
+}
+
 void beskid_rt_v5_intrinsic_process_exit(int32_t code) {
   ExitProcess((UINT)code);
 }
 int32_t beskid_rt_v5_intrinsic_process_getpid(void) {
   return (int32_t)GetCurrentProcessId();
+}
+
+int32_t beskid_rt_v5_intrinsic_memory_compare(const uint8_t *left,
+                                              const uint8_t *right,
+                                              size_t length) {
+  if ((!left || !right) && length)
+    return left == right ? 0 : left ? 1 : -1;
+  for (size_t i = 0; i < length; ++i) {
+    if (left[i] != right[i])
+      return left[i] < right[i] ? -1 : 1;
+  }
+  return 0;
 }
 
 enum {
@@ -296,6 +325,93 @@ static WCHAR *beskid_windows_path(const struct BeskidStr *path) {
   wide[chars] = 0;
   return wide;
 }
+
+static void *beskid_windows_string(const WCHAR *value) {
+  size_t utf8_length = beskid_args_utf8_length((const uint16_t *)value);
+  size_t allocation = utf8_length ? utf8_length : 1;
+  uint8_t *utf8 = VirtualAlloc(NULL, allocation, MEM_COMMIT | MEM_RESERVE,
+                               PAGE_READWRITE);
+  if (!utf8)
+    return NULL;
+  if (utf8_length)
+    (void)beskid_args_write_utf8(utf8, (const uint16_t *)value);
+  void *result = str_new(utf8, utf8_length);
+  (void)VirtualFree(utf8, 0, MEM_RELEASE);
+  return result;
+}
+
+void *beskid_rt_v5_intrinsic_env_get(const struct BeskidStr *key) {
+  WCHAR *native_key = beskid_windows_path(key);
+  if (!native_key)
+    return str_new(NULL, 0);
+  SetLastError(ERROR_SUCCESS);
+  DWORD required = GetEnvironmentVariableW(native_key, NULL, 0);
+  if (!required) {
+    (void)VirtualFree(native_key, 0, MEM_RELEASE);
+    return str_new(NULL, 0);
+  }
+  WCHAR *value = VirtualAlloc(NULL, (size_t)required * sizeof(WCHAR),
+                              MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+  if (!value) {
+    (void)VirtualFree(native_key, 0, MEM_RELEASE);
+    return NULL;
+  }
+  DWORD length = GetEnvironmentVariableW(native_key, value, required);
+  (void)VirtualFree(native_key, 0, MEM_RELEASE);
+  void *result = length && length < required ? beskid_windows_string(value)
+                                             : str_new(NULL, 0);
+  (void)VirtualFree(value, 0, MEM_RELEASE);
+  return result;
+}
+
+int32_t beskid_rt_v5_intrinsic_env_set(const struct BeskidStr *key,
+                                       const struct BeskidStr *value) {
+  WCHAR *native_key = beskid_windows_path(key);
+  WCHAR *native_value = beskid_windows_path(value);
+  if (!native_key || !native_value) {
+    if (native_key)
+      (void)VirtualFree(native_key, 0, MEM_RELEASE);
+    if (native_value)
+      (void)VirtualFree(native_value, 0, MEM_RELEASE);
+    return -1;
+  }
+  BOOL result = SetEnvironmentVariableW(native_key, native_value);
+  (void)VirtualFree(native_key, 0, MEM_RELEASE);
+  (void)VirtualFree(native_value, 0, MEM_RELEASE);
+  return result ? 0 : -1;
+}
+
+void *beskid_rt_v5_intrinsic_env_getcwd(void) {
+  DWORD required = GetCurrentDirectoryW(0, NULL);
+  if (!required)
+    return str_new(NULL, 0);
+  WCHAR *value = VirtualAlloc(NULL, (size_t)required * sizeof(WCHAR),
+                              MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+  if (!value)
+    return NULL;
+  DWORD length = GetCurrentDirectoryW(required, value);
+  void *result = length && length < required ? beskid_windows_string(value)
+                                             : str_new(NULL, 0);
+  (void)VirtualFree(value, 0, MEM_RELEASE);
+  return result;
+}
+
+int64_t beskid_rt_v5_intrinsic_tty_winsize(int64_t fd) {
+  DWORD selector = fd == 0 ? STD_INPUT_HANDLE
+                           : fd == 1 ? STD_OUTPUT_HANDLE
+                                     : fd == 2 ? STD_ERROR_HANDLE : 0;
+  if (!selector)
+    return 0;
+  HANDLE handle = GetStdHandle(selector);
+  CONSOLE_SCREEN_BUFFER_INFO info;
+  if (handle == INVALID_HANDLE_VALUE || handle == NULL ||
+      !GetConsoleScreenBufferInfo(handle, &info))
+    return 0;
+  int64_t columns = (int64_t)info.srWindow.Right - info.srWindow.Left + 1;
+  int64_t rows = (int64_t)info.srWindow.Bottom - info.srWindow.Top + 1;
+  return (columns << 16) | rows;
+}
+
 int32_t beskid_rt_v5_windows_fs_read_text(const struct BeskidStr *path,
                                           uint8_t **bytes_out,
                                           size_t *length_out) {

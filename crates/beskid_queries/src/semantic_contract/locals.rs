@@ -3,6 +3,28 @@
 use super::*;
 
 #[salsa::tracked(persist)]
+pub(super) fn implicit_method_receiver_tracked(
+    db: &dyn Db,
+    syntax: SyntaxUnitInput,
+    key: AstNodeKey,
+) -> SemanticQueryResult<AstNodeKey> {
+    with_node(db, syntax, key, |_program, index, node| {
+        let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
+        let [segment] = path.path.node.segments.as_slice() else {
+            return None;
+        };
+        if !segment.node.type_args.is_empty() || segment.node.name.node.name != "self" {
+            return None;
+        }
+        let method = nearest_ancestor(index, key.node, |kind| {
+            kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition
+        })?;
+        Some(Ok(AstNodeKey { node: method, ..key }))
+    })?
+    .transpose()
+}
+
+#[salsa::tracked(persist)]
 pub(super) fn resolved_local_tracked(
     db: &dyn Db,
     syntax: SyntaxUnitInput,
@@ -69,10 +91,12 @@ fn unit_constant_integer(
 /// Resolve an unqualified integer constant through the current unit's import closure.
 ///
 /// Mirrors [`unique_imported_function`] for constants: collects every import target,
-/// searches each target unit's top-level items, and requires exactly one match so an
-/// ambiguous name resolves to nothing. The canonical runtime cross-unit scope installs
-/// one private import edge per corpus unit, so private constants shared across the
-/// embedded runtime corpus are visible here without a `pub` declaration.
+/// searches each target unit's top-level items, and requires exactly one distinct value so an
+/// ambiguous name resolves to nothing. Repeated file-local declarations of the same immutable
+/// machine value are semantically identical; conflicting declarations still fail closed. The
+/// canonical runtime cross-unit scope installs one private import edge per corpus unit, so
+/// private constants shared across the embedded runtime corpus are visible here without a `pub`
+/// declaration.
 fn imported_constant_integer(db: &dyn Db, key: AstNodeKey, name: &str) -> Option<i64> {
     let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
     let imports = registry.imports.get(&(key.unit, key.generation))?;
@@ -82,10 +106,12 @@ fn imported_constant_integer(db: &dyn Db, key: AstNodeKey, name: &str) -> Option
         }
         targets
     });
-    let candidates = targets
+    let mut candidates = targets
         .into_iter()
         .filter_map(|target| constant_integer_in_unit(db, target, key.generation, name))
         .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
     let [value] = candidates.as_slice() else {
         return None;
     };

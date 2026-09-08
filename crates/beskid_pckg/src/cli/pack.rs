@@ -1,8 +1,8 @@
 use super::versioning::{persist_pack_version_state, resolve_pack_version};
 use super::{
     BTreeMap, CompressionMethod, Digest, PackArgs, PackProfile, PckgError, Sha256, SimpleFileOptions, Write, ZipWriter,
-    build_package_json, collect_pack_entries, detect_pack_profile_with_override, fs, strip_template_pack_excludes,
-    strip_tool_pack_excludes, zip_to_pckg_error,
+    build_package_json, collect_pack_entries, detect_pack_profile_with_override, fs, prepare_artifact_dependencies,
+    prepare_template_pack_entries, strip_tool_pack_excludes, zip_to_pckg_error,
 };
 
 pub(super) fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
@@ -13,7 +13,7 @@ pub(super) fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
 
     let mut entries = collect_pack_entries(&source)?;
     if profile.is_template() {
-        strip_template_pack_excludes(&mut entries);
+        prepare_template_pack_entries(&mut entries)?;
     }
     if profile.is_tool() {
         strip_tool_pack_excludes(&mut entries);
@@ -25,6 +25,7 @@ pub(super) fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
             body: None,
         });
     }
+    let dependencies = prepare_artifact_dependencies(&source, &mut entries)?;
 
     if matches!(&profile, PackProfile::Library) {
         for (name, bytes) in &entries {
@@ -43,7 +44,8 @@ pub(super) fn execute_pack(args: PackArgs) -> Result<(), PckgError> {
         }
     }
 
-    let package_json = build_package_json(&args.package, &resolved_version, &profile)?;
+    let has_api_docs = entries.iter().any(|(name, _)| name == ".beskid/docs/api.json");
+    let package_json = build_package_json(&args.package, &resolved_version, &profile, has_api_docs, &dependencies)?;
 
     let mut checksums = BTreeMap::new();
     for (name, content) in &entries {

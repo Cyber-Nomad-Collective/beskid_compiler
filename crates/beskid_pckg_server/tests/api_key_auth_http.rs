@@ -1,3 +1,5 @@
+mod support;
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -5,9 +7,9 @@ use axum::{
     body::Body,
     http::{HeaderValue, Request, StatusCode},
 };
-use beskid_pckg::{PckgClient, PckgClientConfig};
 use beskid_pckg_server::{PckgServerConfig, router};
 use beskid_pckg_store::{ApiKey, ApiKeyStoreError, AsyncApiKeyRepository, NewApiKey};
+use support::{artifact, multipart_publish_request};
 use tower::ServiceExt;
 
 struct ActiveKeyRepository {
@@ -127,49 +129,6 @@ async fn no_session_auth_rejects_absent_or_non_bearer_credentials() {
 }
 
 #[tokio::test]
-async fn publisher_client_bearer_key_publishes_without_browser_session_auth() {
-    let token = format!("bpk_{}", "a".repeat(64));
-    let config = config_for_key(PckgServerConfig::default(), &token, test_key(vec!["publish".to_owned()], None));
-    let app = router(config);
-    let package_name = "Key.ClientContract";
-    let created = app
-        .clone()
-        .oneshot(with_authorization(package_create_request(package_name), &bearer(&token), None))
-        .await
-        .unwrap();
-    assert_eq!(created.status(), StatusCode::CREATED);
-    let version = app
-        .clone()
-        .oneshot(with_authorization(
-            Request::post(format!("/api/packages/{package_name}/versions"))
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    r#"{"version":"1.0.0","checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
-                ))
-                .unwrap(),
-            &bearer(&token),
-            None,
-        ))
-        .await
-        .unwrap();
-    assert_eq!(version.status(), StatusCode::CREATED);
-
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
-
-    let client =
-        PckgClient::new(PckgClientConfig::new(format!("http://{address}")).unwrap().with_publisher_api_key(token))
-            .unwrap();
-    let result = client.yank_package_version(package_name, "1.0.0").await;
-
-    server.abort();
-    assert!(result.is_ok(), "configured publisher key must reach the router as a valid bearer: {result:?}");
-}
-
-#[tokio::test]
 async fn inactive_bearer_key_cannot_fall_back_to_remote_user_headers() {
     let (config, _token) = active_key_config();
     let inactive = format!("bpk_{}", "b".repeat(64));
@@ -248,30 +207,18 @@ async fn every_publication_mutation_rejects_an_invalid_bearer_before_remote_iden
     let (config, _token) = active_key_config();
     let invalid = bearer(&format!("bpk_{}", "f".repeat(64)));
     let app = router(config);
+    let mut publish_request =
+        multipart_publish_request("Key.Inventory", "1.0.0", "attacker", artifact("Key.Inventory", "1.0.0"));
+    publish_request.headers_mut().insert("authorization", HeaderValue::from_str(&invalid).unwrap());
     let requests = [
         with_authorization(package_create_request("Key.Inventory"), &invalid, Some("attacker")),
-        Request::post("/api/packages/Key.Inventory/versions")
-            .header("content-type", "application/json")
-            .header("authorization", &invalid)
-            .header("remote-user", "attacker")
-            .body(Body::from(r#"{"version":"1.0.0","checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#))
-            .unwrap(),
-        Request::post("/api/packages/Key.Inventory/versions/1.0.0/artifact")
-            .header("authorization", &invalid)
-            .header("remote-user", "attacker")
-            .body(Body::empty())
-            .unwrap(),
+        publish_request,
         Request::post("/api/packages/Key.Inventory/versions/1.0.0/yank")
             .header("authorization", &invalid)
             .header("remote-user", "attacker")
             .body(Body::empty())
             .unwrap(),
         Request::post("/api/packages/Key.Inventory/versions/1.0.0/unyank")
-            .header("authorization", &invalid)
-            .header("remote-user", "attacker")
-            .body(Body::empty())
-            .unwrap(),
-        Request::post("/api/workspaces/publish")
             .header("authorization", &invalid)
             .header("remote-user", "attacker")
             .body(Body::empty())
