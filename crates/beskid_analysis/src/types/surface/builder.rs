@@ -438,20 +438,21 @@ impl<'a> TypeSurfaceBuilder<'a> {
     }
 
     fn type_id_for_type_in_generic_scope(&mut self, ty: &Spanned<Type>) -> Option<TypeId> {
-        if let Type::Complex(path) = &ty.node
-            && path.node.segments.len() == 1
-            && path.node.segments[0].node.type_args.is_empty()
-            && let Some(type_id) = self.generic_params.get(&path.node.segments[0].node.name.node.name)
-        {
-            return Some(*type_id);
-        }
         self.type_id_for_type(ty)
     }
 
     fn type_id_for_type(&mut self, ty: &Spanned<Type>) -> Option<TypeId> {
         match &ty.node {
             Type::Primitive(primitive) => self.primitive_type_id(primitive.node),
-            Type::Complex(path) => self.type_id_for_path_with_args(path),
+            Type::Complex(path) => {
+                if path.node.segments.len() == 1
+                    && path.node.segments[0].node.type_args.is_empty()
+                    && let Some(type_id) = self.generic_params.get(&path.node.segments[0].node.name.node.name)
+                {
+                    return Some(*type_id);
+                }
+                self.type_id_for_path_with_args(path)
+            }
             Type::Associated { .. } => None,
             Type::Array(inner) => {
                 let inner_id = self.type_id_for_type(inner)?;
