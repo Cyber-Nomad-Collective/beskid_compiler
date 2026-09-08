@@ -102,6 +102,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Update the embedded Corelib gates to use the canonical threading module path
+  and parenthesized match-expression operands accepted by the current grammar.
 - Keep the isolated Linux guarded-stack adapter harness linkable after the
   platform adapter gained environment intrinsics backed by the canonical
   `str_new` corelib service.
