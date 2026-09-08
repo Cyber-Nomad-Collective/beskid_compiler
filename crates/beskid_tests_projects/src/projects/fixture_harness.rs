@@ -274,6 +274,62 @@ mod tests {
     }
 
     #[test]
+    fn collections_array_tests_keep_array_iterator_signature_types() {
+        let root = corelib_tests_project_root();
+        with_project_test_env(&root, || {
+            let resolved = resolve_corelib_tests_entry_with_assembly("collections/ArrayTests.bd");
+            let assembly = resolved.assembly.as_ref().expect("ArrayTests assembly");
+            let raw_resolution = beskid_analysis::services::resolve_entry(
+                &assembly.entry_unit().program,
+                assembly,
+                Some(&assembly.entry_unit().path),
+            )
+            .expect("resolve ArrayTests entry");
+            let array_unit = assembly
+                .units
+                .iter()
+                .find(|unit| unit.path.ends_with("Core/Collections/Array.bd"))
+                .expect("Array facade unit");
+            let array_source = std::fs::read_to_string(&array_unit.path).expect("read Array facade");
+            let array_types = raw_resolution
+                .tables
+                .scoped_resolved_types
+                .iter()
+                .find(|(path, _)| beskid_analysis::paths::same_file(path, &array_unit.path))
+                .map(|(_, types)| types)
+                .expect("Array facade type facts");
+            let iterator_targets = array_types
+                .iter()
+                .filter_map(|(span, ty)| array_source.get(span.start..span.end).map(|source| (span, source, ty)))
+                .filter(|(_, source, _)| source.contains("ArrayIter"))
+                .filter_map(|(_, _, ty)| match ty {
+                    beskid_analysis::resolve::ResolvedType::Item(item) => {
+                        beskid_analysis::resolve::qualified_name(&raw_resolution, *item)
+                    }
+                    beskid_analysis::resolve::ResolvedType::Generic(_) => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(iterator_targets.len(), 6, "Array iterator declaration targets: {iterator_targets:?}");
+            assert!(
+                iterator_targets
+                    .iter()
+                    .all(|target| target.ends_with("::Core::Collections::Array::ArrayIter::ArrayIter")),
+                "Array iterator declarations resolved to {iterator_targets:?}"
+            );
+            let started = Instant::now();
+            let (_, resolution, _) =
+                beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
+                    .expect("Array facade signatures should retain ArrayIter<i64> parameters and return types");
+            let elapsed = started.elapsed();
+            assert!(elapsed < Duration::from_secs(5), "ArrayTests declaration-only semantic gate took {elapsed:?}");
+            assert!(
+                resolution.tables.scoped_resolved_values.is_empty(),
+                "dependency declaration resolution must not retain body value facts"
+            );
+        });
+    }
+
+    #[test]
     fn fs_tests_nested_enum_pattern_bindings_pass_the_production_semantic_gate() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {

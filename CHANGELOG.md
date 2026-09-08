@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve a one-segment type imported from its homonymous module to the public
+  type declaration rather than the module item, preserving generic iterator
+  signatures in Corelib array facades without loading dependency bodies.
 - Resolve dependency declaration annotations through one seeded, source-scoped
   resolver without retaining dependency body facts, restoring fast entry
   type-checks and keeping entry locals attributed to the entry source.
