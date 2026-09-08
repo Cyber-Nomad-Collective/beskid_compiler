@@ -33,18 +33,14 @@ impl Resolver {
         if self.errors.is_empty() { Ok(self.take_resolution()) } else { Err(std::mem::take(&mut self.errors)) }
     }
 
-    pub fn resolve_collected_program_for_api_documentation(
+    /// Resolve a pre-collected program under its own import scope while retaining partial facts.
+    pub(crate) fn resolve_collected_program_tolerating_errors(
         &mut self,
         program: &Spanned<Program>,
         logical_module_path: Option<&[String]>,
     ) -> Resolution {
+        self.prepare_collected_program(program, logical_module_path);
         let file_scoped_module_index = resolver::file_scoped_module_index(program);
-        self.current_module = logical_module_path
-            .map(|path| self.module_graph.ensure_module_path(path))
-            .or_else(|| {
-                resolver::file_scoped_module_path(program).map(|path| self.module_graph.ensure_module_path(&path))
-            })
-            .unwrap_or(self.module_graph.root());
         for (index, item) in program.node.items.iter().enumerate() {
             if Some(index) == file_scoped_module_index {
                 continue;
@@ -52,6 +48,14 @@ impl Resolver {
             self.resolve_item(item);
         }
         self.take_resolution()
+    }
+
+    pub fn resolve_collected_program_for_api_documentation(
+        &mut self,
+        program: &Spanned<Program>,
+        logical_module_path: Option<&[String]>,
+    ) -> Resolution {
+        self.resolve_collected_program_tolerating_errors(program, logical_module_path)
     }
 
     fn take_resolution(&mut self) -> Resolution {

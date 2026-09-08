@@ -215,6 +215,47 @@ mod tests {
     use super::*;
 
     #[test]
+    fn text_parser_tests_keep_parser_function_identity_and_signature_types() {
+        let root = corelib_tests_project_root();
+        with_project_test_env(&root, || {
+            let resolved = resolve_corelib_tests_entry_with_assembly("text/TextParserTests.bd");
+            let assembly = resolved.assembly.as_ref().expect("TextParser assembly");
+            let resolution = beskid_analysis::services::resolve_entry(
+                &assembly.entry_unit().program,
+                assembly,
+                Some(&assembly.entry_unit().path),
+            )
+            .expect("resolve TextParserTests entry");
+            let parser_targets = resolution
+                .tables
+                .resolved_values
+                .iter()
+                .filter_map(|(span, value)| {
+                    let source = resolved.source.get(span.start..span.end)?;
+                    let expected_name = ["Literal", "IsOk", "Choice2"]
+                        .into_iter()
+                        .find(|name| source.starts_with(&format!("Parser.{name}")))?;
+                    let beskid_analysis::resolve::ResolvedValue::Item(item) = value else {
+                        panic!("Parser.{expected_name} resolved to non-item {value:?}");
+                    };
+                    let target = beskid_analysis::resolve::qualified_name(&resolution, *item)
+                        .expect("qualified Parser function target");
+                    Some((expected_name, target))
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(parser_targets.iter().filter(|(name, _)| *name == "Literal").count(), 3);
+            assert_eq!(parser_targets.iter().filter(|(name, _)| *name == "IsOk").count(), 4);
+            assert_eq!(parser_targets.iter().filter(|(name, _)| *name == "Choice2").count(), 1);
+            assert!(
+                parser_targets.iter().all(|(name, target)| target.ends_with(&format!("::Core::Text::Parser::{name}"))),
+                "Parser calls resolved to {parser_targets:?}"
+            );
+            beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
+                .expect("Parser facade signatures should retain TextCursor and TextParseResult types");
+        });
+    }
+
+    #[test]
     fn fs_tests_nested_enum_pattern_bindings_pass_the_production_semantic_gate() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {

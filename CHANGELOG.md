@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve each dependency unit's import scope in entry-resolution type facts so
+  qualified Corelib facades retain their declared parameter and return types.
 - Make the native runtime-kit CLI smoke independent of test-only Corelib
   packages while still requiring its computed process result to be exactly 42,
   and retain that semantic result in runtime-kit evidence on every platform.
