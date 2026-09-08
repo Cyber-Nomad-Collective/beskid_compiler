@@ -46,6 +46,7 @@ mod tests {
             syntax_definitions: Vec::new(),
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
+            bsol_semantic_token_candidates: Vec::new(),
             syntax_completion: None,
             syntax_inlay_hints: vec![SyntaxInlayHint { start: 25, end: 30, type_label: "i32".to_string() }],
             syntax_documentation: Vec::new(),

@@ -31,14 +31,20 @@ extern void *beskid_rt_v5_intrinsic_guarded_stack_allocate(size_t, size_t);
 extern uint8_t beskid_rt_v5_intrinsic_guarded_stack_grow(void *, size_t, size_t, size_t);
 extern void beskid_rt_v5_intrinsic_guarded_stack_free(void *, size_t);
 
-// This harness links the platform adapter in isolation. Keep the trap boundary
-// present so adapter error paths remain linkable without pulling in the full
-// canonical runtime.
+// This harness links the platform adapter in isolation. Keep canonical-runtime
+// boundaries present so unrelated adapter functions remain linkable without
+// pulling in the full canonical runtime.
 _Noreturn void beskid_rt_v5_trap(uint8_t code, void *message, size_t message_len) {
   (void)code;
   (void)message;
   (void)message_len;
   _exit(101);
+}
+
+void *str_new(void *data, size_t length) {
+  (void)data;
+  (void)length;
+  return 0;
 }
 
 int main(void) {

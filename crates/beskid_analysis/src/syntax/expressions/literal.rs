@@ -30,9 +30,11 @@ pub fn integer_literal_magnitude(text: &str) -> &str {
 }
 
 /// Determine the primitive type of an integer literal from its suffix or magnitude.
-/// Literals with `_i64` suffix → I64, `_i32` suffix → I32, no suffix → I32 (default).
+/// Literals with `_u8`, `_i32`, or `_i64` use that type; no suffix defaults to I32 when it fits.
 pub fn integer_literal_primitive_type(text: &str) -> PrimitiveType {
-    if text.ends_with("_i64") {
+    if text.ends_with("_u8") {
+        PrimitiveType::U8
+    } else if text.ends_with("_i64") {
         PrimitiveType::I64
     } else if text.ends_with("_i32") {
         PrimitiveType::I32
@@ -89,5 +91,17 @@ impl crate::parsing::parsable::Parsable for Literal {
         };
 
         Ok(crate::syntax::Spanned::new(node, span))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn integer_literal_suffix_selects_its_primitive_type() {
+        assert_eq!(integer_literal_primitive_type("0_u8"), PrimitiveType::U8);
+        assert_eq!(integer_literal_primitive_type("0_i32"), PrimitiveType::I32);
+        assert_eq!(integer_literal_primitive_type("0_i64"), PrimitiveType::I64);
     }
 }

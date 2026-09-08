@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Refresh an installed bundled corelib when its content fingerprint differs even if its semantic
+  version is unchanged, preventing stale same-version templates from hiding newly shipped APIs
+  from compiler and editor resolution.
 - Allocate managed aggregates and closure environments inside the descriptor-traced GC heap, and
   align the host runtime's type-descriptor decoder with the canonical ABI-v5 field layout; retain
   concrete string equality and call-result field layouts through nested generic specialization.
@@ -98,6 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Bind BSOL semantic-token candidates to each LSP document generation so
+  `.bproj`, `.bws`, and standalone `.bsol` requests encode stored syntax facts
+  without reparsing the buffer.
 - Carry fixed-width unsigned `u32` as a first-class primitive through parsing,
   semantic facts, ABI services, layouts, casts, CLIF lowering, and JIT display;
   unsigned comparison, division, remainder, and extension no longer alias
@@ -215,6 +221,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Recognize `_u8` integer suffixes during semantic type checking, keep embedded
+  Corelib gates on the canonical threading module and current match grammar,
+  and link the isolated Linux guarded-stack harness against its required
+  canonical string constructor.
 - Let canonical runtime syscalls complete through the worker pool when invoked
   from an attached host thread outside a scheduler fiber, while retaining the
   single copied-buffer worker implementation used by parked fibers.

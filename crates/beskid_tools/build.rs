@@ -1,5 +1,9 @@
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+
+#[path = "corelib_fingerprint.rs"]
+mod corelib_fingerprint;
+
+use corelib_fingerprint::{BUNDLE_FINGERPRINT_FILE, fingerprint_dir, should_skip_component};
 
 const ENV_CORELIB_SOURCE: &str = "BESKID_CORELIB_SOURCE";
 
@@ -29,6 +33,9 @@ fn main() {
         std::fs::remove_dir_all(&dest).expect("remove stale embedded_corelib");
     }
     copy_corelib_workspace_for_embed(&corelib_workspace_dir, &dest).expect("copy corelib slice");
+    let fingerprint = fingerprint_dir(&dest).expect("fingerprint embedded corelib");
+    std::fs::write(dest.join(BUNDLE_FINGERPRINT_FILE), format!("{fingerprint}\n"))
+        .expect("write embedded corelib fingerprint");
 
     register_rerun_if_changed(&corelib_workspace_dir);
     println!("cargo:rerun-if-env-changed={ENV_CORELIB_SOURCE}");
@@ -102,7 +109,7 @@ fn copy_dir_for_embed(src: &Path, dst: &Path) -> std::io::Result<()> {
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let name = entry.file_name();
-        if should_skip_embed_copy_component(&name) {
+        if should_skip_component(&name) {
             continue;
         }
         let ty = entry.file_type()?;
@@ -115,18 +122,6 @@ fn copy_dir_for_embed(src: &Path, dst: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
-}
-
-fn should_skip_embed_copy_component(name: &OsStr) -> bool {
-    matches!(
-        name,
-        n if n == ".git"
-            || n == "obj"
-            || n == ".beskid"
-            || n == "target"
-            || n == ".venv-ci"
-            || n == ".nox"
-    )
 }
 
 fn register_rerun_if_changed(dir: &Path) {

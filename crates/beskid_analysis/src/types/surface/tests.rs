@@ -614,3 +614,139 @@ pub Cursor.TextCursor Select(Cursor.TextCursor cursor) {
         "a dependency surface must not select either nominal identity when an import alias collides with a local module"
     );
 }
+
+#[test]
+fn generic_array_function_surface_preserves_element_parameter() {
+    let dependency_path = PathBuf::from("/tmp/surface-generic-array/Core/Collections/Array.bd");
+    let entry_path = PathBuf::from("/tmp/surface-generic-array/Main.bd");
+    let dependency = parse_program(
+        r#"
+pub T[] Empty<T>() {
+    return __array_new<T>(0);
+}
+
+pub i64 Len<T>(T[] values) {
+    return __array_len(values);
+}
+"#,
+    )
+    .expect("parse generic array dependency");
+    let entry = parse_program(
+        r#"
+use Core.Collections.Array;
+
+unit Main() {
+    i64[] values = Array.Empty<i64>();
+    Array.Len<i64>(values);
+}
+"#,
+    )
+    .expect("parse importing entry");
+
+    let mut resolver = Resolver::new();
+    resolver.collect_program_in_module(
+        &dependency,
+        &["Core".to_owned(), "Collections".to_owned(), "Array".to_owned()],
+        Some(&dependency_path),
+    );
+    resolver.set_current_source_path(Some(entry_path));
+    let resolution = resolver.resolve_program(&entry).expect("resolve importing entry");
+    let surface = build_unit_type_surface(&dependency, &resolution, &dependency_path);
+
+    let signature = |name: &str| {
+        let item = resolution
+            .items
+            .iter()
+            .find(|item| item.kind == ItemKind::Function && item.name == name)
+            .map(|item| item.id)
+            .unwrap_or_else(|| panic!("{name} item"));
+        surface.function_signatures.get(&item).unwrap_or_else(|| panic!("{name} signature"))
+    };
+    let generic_array = |type_id| {
+        let Some(TypeInfo::Array(element)) = surface.types.get(type_id) else {
+            panic!("generic array function must retain an array type, got {:?}", surface.types.get(type_id));
+        };
+        assert!(matches!(surface.types.get(*element), Some(TypeInfo::GenericParam(name)) if name == "T"));
+    };
+
+    let empty = signature("Empty");
+    assert!(empty.params.is_empty());
+    generic_array(empty.return_type);
+
+    let len = signature("Len");
+    let [values] = len.params.as_slice() else { panic!("Len must retain its array parameter") };
+    generic_array(*values);
+    assert!(matches!(surface.types.get(len.return_type), Some(TypeInfo::Primitive(crate::syntax::PrimitiveType::I64))));
+}
+
+#[test]
+fn entry_only_cross_unit_typecheck_keeps_same_named_module_function_signatures_distinct() {
+    let array_path = PathBuf::from("/tmp/entry-only-current/Core/Collections/Array.bd");
+    let iterator_path = PathBuf::from("/tmp/entry-only-current/Query/ArrayIterator.bd");
+    let entry_path = PathBuf::from("/tmp/entry-only-current/QueryTests.bd");
+    let array = parse_program(
+        r#"
+pub T[] Empty<T>() {
+    return __array_new<T>(0);
+}
+
+pub T Current<T>(T[] values, i64 iterator) {
+    return values[iterator];
+}
+"#,
+    )
+    .expect("parse Array dependency");
+    let iterator = parse_program(
+        r#"
+use Core.Collections.Array;
+
+pub enum Option<T> { Some(T value), None }
+pub type ArrayIterator<T> { T[] source }
+pub Option<T> Current<T>(ArrayIterator<T> iterator) {
+    return Option::None();
+}
+"#,
+    )
+    .expect("parse ArrayIterator dependency");
+    let mut entry = parse_program(
+        r#"
+use Core.Collections.Array;
+use Query.ArrayIterator;
+
+unit Main() {
+    ArrayIterator<i64> iterator = ArrayIterator<i64> { source: Array.Empty<i64>() };
+    Option<i64> current = ArrayIterator.Current<i64>(iterator);
+}
+"#,
+    )
+    .expect("parse importing entry");
+
+    let mut resolver = Resolver::new();
+    resolver.collect_program_in_module(
+        &array,
+        &["Core".to_owned(), "Collections".to_owned(), "Array".to_owned()],
+        Some(&array_path),
+    );
+    resolver.collect_program_in_module(
+        &iterator,
+        &["Query".to_owned(), "ArrayIterator".to_owned()],
+        Some(&iterator_path),
+    );
+    resolver.set_current_source_path(Some(entry_path.clone()));
+    let resolution = resolver.resolve_program(&entry).expect("resolve importing entry");
+    let dependency_paths = [array_path, iterator_path];
+    let (_, errors) = TypeChecker::check_entry(
+        &mut entry,
+        &resolution,
+        &[&array, &iterator],
+        Some(&dependency_paths),
+        Some(entry_path),
+        false,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    assert!(errors.is_empty(), "qualified Current calls must retain their module signature: {errors:#?}");
+}

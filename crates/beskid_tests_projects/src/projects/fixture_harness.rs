@@ -215,6 +215,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn query_tests_pass_the_production_semantic_gate() {
+        let root = corelib_tests_project_root();
+        with_project_test_env(&root, || {
+            let resolved = resolve_corelib_tests_entry_with_assembly("query/QueryTests.bd");
+            let assembly = resolved.assembly.as_ref().expect("query assembly");
+            let resolution = beskid_analysis::services::resolve_entry(
+                &assembly.entry_unit().program,
+                assembly,
+                Some(&assembly.entry_unit().path),
+            )
+            .expect("resolve QueryTests entry");
+            let current_targets = resolution
+                .tables
+                .resolved_values
+                .iter()
+                .filter(|(span, _)| {
+                    resolved
+                        .source
+                        .get(span.start..span.end)
+                        .is_some_and(|source| source.starts_with("ArrayIterator.Current"))
+                })
+                .map(|(_, value)| match value {
+                    beskid_analysis::resolve::ResolvedValue::Item(item) => {
+                        beskid_analysis::resolve::qualified_name(&resolution, *item).expect("qualified Current target")
+                    }
+                    other => panic!("ArrayIterator.Current resolved to non-item {other:?}"),
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(current_targets.len(), 3);
+            assert!(
+                current_targets.iter().all(|target| target.ends_with("::Query::ArrayIterator::Current")),
+                "ArrayIterator.Current calls resolved to {current_targets:?}"
+            );
+            beskid_analysis::services::type_entry_gate(assembly.entry_unit().program.clone(), assembly)
+                .expect("QueryTests should pass the production semantic gate");
+        });
+    }
+
+    #[test]
     fn corelib_entry_assemblies_remain_isolated_by_explicit_source_path() {
         let root = corelib_tests_project_root();
         with_project_test_env(&root, || {
