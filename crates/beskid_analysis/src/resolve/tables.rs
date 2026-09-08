@@ -205,10 +205,6 @@ impl ResolutionTables {
             local_remap.insert(local.id, new_id);
         }
 
-        let scoped_types =
-            self.scoped_resolved_types.entry(crate::paths::unit_path_key(&unit_source_path)).or_default();
-        scoped_types.extend(other.resolved_types.iter().map(|(k, v)| (*k, v.clone())));
-
         let scoped_values =
             self.scoped_resolved_values.entry(crate::paths::unit_path_key(&unit_source_path)).or_default();
         for (span, value) in &other.resolved_values {
@@ -218,6 +214,15 @@ impl ResolutionTables {
             };
             scoped_values.insert(*span, remapped);
         }
+
+        self.merge_declaration_types_from(other, unit_source_path);
+    }
+
+    /// Merge only declaration type facts and conformance edges for one dependency unit.
+    pub(crate) fn merge_declaration_types_from(&mut self, other: &ResolutionTables, unit_source_path: PathBuf) {
+        let scoped_types =
+            self.scoped_resolved_types.entry(crate::paths::unit_path_key(&unit_source_path)).or_default();
+        scoped_types.extend(other.resolved_types.iter().map(|(k, v)| (*k, v.clone())));
 
         for (type_id, edges) in &other.type_conformances {
             let dst = self.type_conformances.entry(*type_id).or_default();

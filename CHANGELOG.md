@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Materialize artifact string addresses with non-colocated relocations so the arm64 JIT does not
+  require literal data to remain within 2 GiB of code.
+- Resolve a one-segment type imported from its homonymous module to the public type declaration,
+  preserving generic iterator signatures in Corelib array facades without loading dependency bodies.
+- Resolve dependency declaration annotations through one seeded, source-scoped resolver without
+  retaining dependency body facts, restoring fast entry type-checks and keeping entry locals attributed
+  to the entry source.
+- Preserve each dependency unit's import scope in entry-resolution type facts so qualified Corelib
+  facades retain their declared parameter and return types.
+- Make the native runtime-kit CLI smoke independent of test-only Corelib packages while still requiring
+  its computed process result to be exactly 42, and retain that result in runtime-kit evidence.
+- Refresh ABI-v5 bootstrap expectations from the checked-in canonical manifest after the intended
+  poll runtime, composition, callback, filesystem, environment, worker, and scheduler contracts were added.
 - Refresh an installed bundled corelib when its content fingerprint differs even if its semantic
   version is unchanged, preventing stale same-version templates from hiding newly shipped APIs
   from compiler and editor resolution.
@@ -221,6 +234,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve substituted enum payload types while recursively checking nested match patterns, so bindings
+  such as `Result::Error(FsError::NotFound(path))` retain their concrete source identity.
 - Recognize `_u8` integer suffixes during semantic type checking, keep embedded
   Corelib gates on the canonical threading module and current match grammar,
   and link the isolated Linux guarded-stack harness against its required

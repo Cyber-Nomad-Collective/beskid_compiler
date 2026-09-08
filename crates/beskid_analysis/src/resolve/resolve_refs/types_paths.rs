@@ -111,11 +111,25 @@ impl Resolver {
         }
         if segments.len() == 1 {
             let name = &segments[0];
+            let is_type_item = |item: super::super::ids::ItemId| {
+                self.items
+                    .get(item.0)
+                    .is_some_and(|info| matches!(info.kind, ItemKind::Type | ItemKind::Enum | ItemKind::Contract))
+            };
             if self.is_generic(name) {
                 self.tables.insert_type(path.span, ResolvedType::Generic(name.clone()));
                 return;
             }
-            if let Some(item) = self.resolve_item_in_scope(name) {
+            if let Some(item) = self.resolve_item_in_scope(name)
+                && is_type_item(item)
+            {
+                self.tables.insert_type(path.span, ResolvedType::Item(item));
+                return;
+            }
+            if let Some(module_path) = self.module_imports.get(name)
+                && let ModulePathLookup::Found(item) = self.lookup_homonymous_module_item(module_path)
+                && is_type_item(item)
+            {
                 self.tables.insert_type(path.span, ResolvedType::Item(item));
                 return;
             }

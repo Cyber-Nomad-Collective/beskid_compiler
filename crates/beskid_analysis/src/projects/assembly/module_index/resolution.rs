@@ -39,11 +39,15 @@ impl ModuleIndex {
         assembly: &ProgramAssembly,
     ) -> ResolveResult<Resolution> {
         let mut resolver = Resolver::new();
-        resolver.set_current_source_path(entry_source_path.map(|path| path.to_path_buf()));
+        let entry_source_path = entry_source_path.map(|path| path.to_path_buf());
+        resolver.set_current_source_path(entry_source_path.clone());
 
         self.seed_resolver_from_assembly(&mut resolver, assembly);
+        resolver.set_current_source_path(entry_source_path);
 
-        resolver.resolve_program(program)
+        let mut resolution = resolver.resolve_program(program)?;
+        self.merge_dependency_declaration_tables(&mut resolution, assembly);
+        Ok(resolution)
     }
 
     /// Resolve a non-entry unit program against the assembled module graph.
@@ -102,20 +106,30 @@ impl ModuleIndex {
         let mut resolution =
             resolver.resolve_collected_program_for_api_documentation(entry_program, entry_module_path.as_deref());
 
+        self.merge_dependency_declaration_tables(&mut resolution, assembly);
+        Some(resolution)
+    }
+
+    /// Merge source-scoped reference facts for every dependency unit into an entry resolution.
+    ///
+    /// Dependency declarations are collected while seeding the entry resolver, but their type
+    /// annotations can depend on imports declared by the dependency itself. Resolving each
+    /// collected unit under its own logical module and import scope preserves those annotations
+    /// for declaration surfaces without duplicating import expansion in the type checker.
+    fn merge_dependency_declaration_tables(&self, resolution: &mut Resolution, assembly: &ProgramAssembly) {
+        let mut dependency_resolver = Resolver::new();
+        self.seed_resolver_from_assembly(&mut dependency_resolver, assembly);
         for (index, unit) in assembly.units.iter().enumerate() {
             if index == assembly.entry_index {
                 continue;
             }
             let module_path = infer_logical_module_path(unit, &assembly.roots, assembly.has_std_dependency);
-            let mut unit_resolver = Resolver::new();
-            unit_resolver.set_current_source_path(Some(unit.path.clone()));
-            self.seed_resolver_from_assembly(&mut unit_resolver, assembly);
-            let unit_resolution =
-                unit_resolver.resolve_collected_program_for_api_documentation(&unit.program, module_path.as_deref());
-            resolution.tables.merge_from(&unit_resolution.tables, unit.path.clone());
+            dependency_resolver.set_current_source_path(Some(unit.path.clone()));
+            let unit_tables =
+                dependency_resolver.resolve_collected_program_declarations(&unit.program, module_path.as_deref());
+            resolution.tables.merge_declaration_types_from(&unit_tables, unit.path.clone());
         }
         resolution.rebuild_span_index();
-        Some(resolution)
     }
 
     fn resolve_longest_module_prefix(&self, path: &[String]) -> Option<&Path> {
