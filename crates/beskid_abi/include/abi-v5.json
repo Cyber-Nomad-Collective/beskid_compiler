@@ -1226,14 +1226,12 @@
     {
       "name": "__args_count",
       "symbol": "args_count",
-      "adapter_service": null,
       "params": [],
       "result": "i64"
     },
     {
       "name": "__args_get",
       "symbol": "args_get",
-      "adapter_service": null,
       "params": [
         {
           "name": "index",
@@ -1245,14 +1243,12 @@
     {
       "name": "__fiber_yield",
       "symbol": "beskid_rt_v5_fiber_yield",
-      "adapter_service": null,
       "params": [],
       "result": "void"
     },
     {
       "name": "__math_ceil",
       "symbol": "math_ceil",
-      "adapter_service": null,
       "params": [
         {
           "name": "value",
@@ -1264,7 +1260,6 @@
     {
       "name": "__math_floor",
       "symbol": "math_floor",
-      "adapter_service": null,
       "params": [
         {
           "name": "value",
@@ -1276,7 +1271,6 @@
     {
       "name": "__math_log",
       "symbol": "math_log",
-      "adapter_service": null,
       "params": [
         {
           "name": "value",
@@ -1288,7 +1282,6 @@
     {
       "name": "__math_sqrt",
       "symbol": "math_sqrt",
-      "adapter_service": null,
       "params": [
         {
           "name": "value",
@@ -1300,7 +1293,6 @@
     {
       "name": "__str_len",
       "symbol": "str_len",
-      "adapter_service": "__str_len",
       "params": [
         {
           "name": "value",

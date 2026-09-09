@@ -58,6 +58,7 @@ pub struct SoftBuiltinV5 {
     pub name: String,
     pub symbol: String,
     /// Optional privileged service whose adapter this source-callable declaration targets.
+    #[serde(skip_serializing)]
     pub adapter_service: Option<String>,
     pub params: Vec<ParameterV5>,
     pub result: String,

@@ -446,8 +446,6 @@ struct SourceSoftBuiltin {
     _name: String,
     #[serde(rename = "symbol")]
     _symbol: String,
-    #[serde(rename = "adapter_service")]
-    _adapter_service: Option<String>,
     #[serde(rename = "params")]
     _params: Vec<SourceParameter>,
     #[serde(rename = "result")]
