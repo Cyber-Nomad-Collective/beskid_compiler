@@ -3459,6 +3459,18 @@
       "result": "i32"
     },
     {
+      "symbol": "SetLastError",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "code",
+          "type": "u32"
+        }
+      ],
+      "result": "void"
+    },
+    {
       "symbol": "TlsAlloc",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",

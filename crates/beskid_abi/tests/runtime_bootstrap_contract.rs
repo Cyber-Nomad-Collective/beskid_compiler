@@ -282,6 +282,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "MultiByteToWideChar",
         "ReadFile",
         "SetEnvironmentVariableW",
+        "SetLastError",
         "TlsAlloc",
         "TlsGetValue",
         "TlsSetValue",
