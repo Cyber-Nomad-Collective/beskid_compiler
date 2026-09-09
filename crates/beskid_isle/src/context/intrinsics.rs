@@ -56,12 +56,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 let [address, value] = arguments.as_slice() else {
                     return None;
                 };
-                let pointer = self.builder.func.dfg.value_type(*address);
-                if !pointer.is_int() {
-                    return None;
-                }
-                self.builder.ins().store(MemFlags::new(), *value, *address, 0);
-                Some(())
+                self.emit_raw_store(kind, *address, *value)
             }
             RuntimeIntrinsicKind::MemorySet => {
                 let [destination, byte, length] = arguments.as_slice() else {
@@ -84,6 +79,22 @@ impl IsleContext<'_, '_, '_, '_> {
             }
             _ => self.direct_call_statement(key),
         }
+    }
+
+    pub(super) fn emit_raw_store(&mut self, kind: RuntimeIntrinsicKind, address: Value, value: Value) -> Option<()> {
+        let pointer_type = self.builder.func.dfg.value_type(address);
+        let value_type = self.builder.func.dfg.value_type(value);
+        if !pointer_type.is_int() || !value_type.is_int() {
+            return None;
+        }
+        let stored = match kind {
+            RuntimeIntrinsicKind::RawWordStore if value_type == pointer_type => value,
+            RuntimeIntrinsicKind::RawByteStore if value_type == types::I8 => value,
+            RuntimeIntrinsicKind::RawByteStore if value_type.bits() > 8 => self.builder.ins().ireduce(types::I8, value),
+            _ => return None,
+        };
+        self.builder.ins().store(MemFlags::new(), stored, address, 0);
+        Some(())
     }
 
     pub(super) fn emit_memory_set(&mut self, destination: Value, byte: Value, length: Value) -> Option<()> {

@@ -67,12 +67,6 @@ define_builtins! {
         returns: Usize,
         injected: true,
     },
-    &["__str_len"] => {
-        symbol: "str_len",
-        params: [String],
-        returns: Usize,
-        injected: true,
-    },
     &["__syscall_write"] => {
         symbol: "syscall_write",
         params: [U64, String],
@@ -738,6 +732,12 @@ define_builtins! {
         symbol: "math_log",
         params: [F64],
         returns: F64,
+        injected: true,
+    },
+    &["__str_len"] => {
+        symbol: "str_len",
+        params: [String],
+        returns: Usize,
         injected: true,
     },
 }

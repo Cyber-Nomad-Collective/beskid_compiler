@@ -1304,6 +1304,17 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "name": "__str_len",
+      "symbol": "str_len",
+      "params": [
+        {
+          "name": "value",
+          "type": "string"
+        }
+      ],
+      "result": "usize"
     }
   ],
   "layouts": [

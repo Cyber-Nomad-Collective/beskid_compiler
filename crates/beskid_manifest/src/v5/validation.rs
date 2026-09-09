@@ -352,6 +352,23 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
             return Err(format!("soft builtin `{}` has an invalid declaration", entry.name));
         }
         unique(entry.params.iter().map(|param| param.name.as_str()), "soft builtin parameter")?;
+        if let Some(service_name) = &entry.adapter_service {
+            let service =
+                manifest.corelib_services.iter().find(|service| &service.name == service_name).ok_or_else(|| {
+                    format!("soft builtin `{}` references unknown adapter service `{service_name}`", entry.name)
+                })?;
+            if entry.symbol != service.adapter {
+                return Err(format!(
+                    "soft builtin `{}` symbol `{}` does not match adapter `{}` for service `{service_name}`",
+                    entry.name, entry.symbol, service.adapter
+                ));
+            }
+            let source_params = entry.params.iter().map(|param| source_abi_class(&param.ty)).collect::<Vec<_>>();
+            let adapter_params = service.params.iter().map(|param| source_abi_class(&param.ty)).collect::<Vec<_>>();
+            if source_params != adapter_params || source_abi_class(&entry.result) != source_abi_class(&service.result) {
+                return Err(format!("soft builtin `{}` is ABI-incompatible with service `{service_name}`", entry.name));
+            }
+        }
     }
     for (owner, params, result) in manifest
         .exports
@@ -442,6 +459,13 @@ fn abi_width(ty: &str) -> Option<u64> {
         "v128" => 16,
         _ => return None,
     })
+}
+
+fn source_abi_class(ty: &str) -> &str {
+    match ty {
+        "string" => "pointer",
+        other => other,
+    }
 }
 
 fn field_dimensions(ty: &str, layout_sizes: &std::collections::BTreeMap<&str, u64>) -> Option<(u64, u64)> {

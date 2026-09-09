@@ -101,10 +101,11 @@ pub fn load_v5_manifest_source(source: &str) -> Result<RuntimeManifestV5, String
         .collect::<Result<Vec<_>, String>>()?;
     let soft_builtins = blocks(&document.blocks, "soft_builtin")
         .map(|block| {
-            ensure_fields(block, &["symbol", "params", "returns"])?;
+            ensure_fields(block, &["symbol", "adapter_service", "params", "returns"])?;
             Ok(SoftBuiltinV5 {
                 name: label(block)?,
                 symbol: string_field(block, "symbol")?,
+                adapter_service: optional_string_field(block, "adapter_service")?,
                 params: parameters(block, "params")?,
                 result: string_field(block, "returns")?,
             })

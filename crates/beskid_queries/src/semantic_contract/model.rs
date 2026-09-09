@@ -490,8 +490,38 @@ pub struct TypedArrayAllocation {
 pub enum CallLowering {
     Direct(AstNodeKey),
     Dynamic,
+    ManifestBuiltin(ManifestBuiltin),
     Runtime(RuntimeIntrinsic),
     CorelibService(CorelibService),
+}
+
+/// Source-callable runtime operation declared explicitly by the ABI-v5 manifest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ManifestBuiltin {
+    pub name: &'static str,
+    pub symbol: &'static str,
+}
+
+impl ManifestBuiltin {
+    pub fn for_name(name: &str) -> Option<Self> {
+        beskid_abi::generated::abi_v5_contract::ABI_V5_SOURCE_BUILTINS
+            .iter()
+            .find(|builtin| builtin.name == name)
+            .map(|builtin| Self { name: builtin.name, symbol: builtin.symbol })
+    }
+}
+
+impl serde::Serialize for ManifestBuiltin {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.name)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ManifestBuiltin {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = <String as serde::Deserialize>::deserialize(deserializer)?;
+        Self::for_name(&name).ok_or_else(|| serde::de::Error::custom(format!("unknown ManifestBuiltin `{name}`")))
+    }
 }
 
 /// Exact explicit instantiation of a generic source function.

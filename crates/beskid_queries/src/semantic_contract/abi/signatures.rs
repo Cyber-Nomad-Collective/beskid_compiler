@@ -120,10 +120,8 @@ pub(in crate::semantic_contract) fn call_abi_signature_for_call(
             return corelib_service_abi_signature(service)
                 .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
         }
-        Some(CallLowering::Dynamic) => {
-            return dispatch_builtin_abi_signature(db, key)
-                .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
-        }
+        Some(CallLowering::ManifestBuiltin(builtin)) => return manifest_builtin_abi_signature(builtin),
+        Some(CallLowering::Dynamic) => return Err(SemanticError::unavailable("call_abi_signature")),
         Some(CallLowering::Runtime(RuntimeIntrinsic(index))) => return call_abi::runtime_intrinsic_signature(index),
         None => {
             return Err(SemanticError::unavailable("call_abi_signature"));

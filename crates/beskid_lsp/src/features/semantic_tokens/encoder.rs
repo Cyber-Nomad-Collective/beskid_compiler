@@ -10,6 +10,7 @@ const TOKEN_TYPE_ENUM: u32 = 3;
 const TOKEN_TYPE_INTERFACE: u32 = 4;
 const TOKEN_TYPE_NAMESPACE: u32 = 5;
 const TOKEN_TYPE_VARIABLE: u32 = 6;
+const TOKEN_TYPE_PROPERTY: u32 = 7;
 
 const TOKEN_MODIFIER_DECLARATION: u32 = 1;
 
@@ -32,6 +33,7 @@ pub fn semantic_token_legend() -> SemanticTokensLegend {
             SemanticTokenType::INTERFACE,
             SemanticTokenType::NAMESPACE,
             SemanticTokenType::VARIABLE,
+            SemanticTokenType::PROPERTY,
         ],
         token_modifiers: vec![SemanticTokenModifier::DECLARATION],
     }
@@ -144,7 +146,7 @@ pub fn build_bsol_semantic_tokens(
             end: candidate.end,
             token_type: match candidate.kind {
                 BsolSemanticTokenKind::Namespace => TOKEN_TYPE_NAMESPACE,
-                BsolSemanticTokenKind::Variable => TOKEN_TYPE_VARIABLE,
+                BsolSemanticTokenKind::Property => TOKEN_TYPE_PROPERTY,
             },
             token_modifiers_bitset: TOKEN_MODIFIER_DECLARATION,
             priority: 20,
@@ -157,9 +159,31 @@ pub fn build_bsol_semantic_tokens(
 mod tests {
     use beskid_analysis::services::AnalysisSymbolKind;
 
-    use super::build_semantic_tokens;
+    use super::{build_bsol_semantic_tokens, build_semantic_tokens, semantic_token_legend};
     use crate::position::offset_to_position;
-    use crate::session::store::SyntaxSymbol;
+    use crate::session::store::{BsolSemanticTokenCandidate, BsolSemanticTokenKind, SyntaxSymbol};
+
+    #[test]
+    fn semantic_legend_exposes_standard_property_tokens_for_bsol_keys() {
+        assert!(
+            semantic_token_legend().token_types.contains(&tower_lsp_server::ls_types::SemanticTokenType::PROPERTY),
+            "BSOL assignment keys need the standard property token type"
+        );
+    }
+
+    #[test]
+    fn bsol_assignment_keys_use_the_property_legend_entry() {
+        let text = "enabled = true";
+        let tokens = build_bsol_semantic_tokens(
+            text,
+            &[BsolSemanticTokenCandidate { start: 0, end: 7, kind: BsolSemanticTokenKind::Property }],
+            offset_to_position,
+        );
+
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].token_type, 7);
+        assert_eq!(tokens[0].token_modifiers_bitset, 1);
+    }
 
     #[test]
     fn syntax_symbols_preserve_legend_order_and_delta_encoding() {

@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Emit standard `property` semantic tokens for BSOL assignment and inline-map
+  keys while retaining `namespace` tokens for block kinds, keeping VS Code and
+  Zed semantic highlighting aligned with the shared tree-sitter grammar.
+- Keep the `just replace` runtime-kit staging paths bound to Just's resolved
+  workspace root instead of referencing an undefined shell variable after a
+  successful release build.
+- Lower manifest-authorized `raw_byte_store` calls to exact one-byte stores,
+  preventing adjacent decimal digits and other byte-buffer writes from being
+  overwritten by the high zero bytes of wider integer values.
+- Keep Win32 `ReadFile` in the exact ABI-v5 platform-import allowlist without
+  misclassifying its leading `R` as Rust v0 mangling, while continuing to
+  reject symbols that actually demangle as Rust or match forbidden runtime
+  families. Restore the CRT-free Windows runtime boundary by removing the
+  stale `strlen` platform import that had drifted back into the canonical
+  manifest despite having no Windows runtime reference.
+- Declare source-callable runtime builtins explicitly in ABI v5, beginning with
+  `__str_len`, and carry that authority through one typed call-lowering fact.
+  Public builtin signatures and symbols now come from generated manifest data;
+  privileged Corelib services remain capability-gated, stale ABI-v4 builtin
+  shapes cannot request imports, and external callees are collected in one
+  traversal. Correct `f64` soft-builtin generation to use floating ABI slots.
 - Keep imported-member completion available while a Beskid expression is
   temporarily incomplete, so partial members such as `Output.Wri` still suggest
   `WriteLine` in LSP editors. One workspace Salsa store now serves per-document

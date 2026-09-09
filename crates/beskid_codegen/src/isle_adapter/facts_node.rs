@@ -202,12 +202,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if self.callee_bulk_parameter(key).is_some() {
             return Some(CallKind::Bulk);
         }
-        if self.query(dispatch_builtin_symbol(self.db, key)).is_some() {
-            return Some(CallKind::Dynamic);
-        }
         matches!(
             self.query(call_lowering(self.db, key)),
-            Some(CallLowering::Direct(_) | CallLowering::CorelibService(_))
+            Some(CallLowering::Direct(_) | CallLowering::ManifestBuiltin(_) | CallLowering::CorelibService(_))
         )
         .then_some(CallKind::Direct)
     }
@@ -226,10 +223,6 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn try_expression_fact(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
         self.query(try_expression_fact(self.db, key))
-    }
-
-    fn dispatch_builtin_symbol(&self, key: AstNodeKey) -> Option<&'static str> {
-        self.query(dispatch_builtin_symbol(self.db, key)).map(|symbol| symbol.0)
     }
 
     fn index_target_is_string(&self, key: AstNodeKey) -> bool {
@@ -298,6 +291,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             return Some(DirectCallee::runtime_intrinsic(index));
         }
         let lowering = self.query(call_lowering(self.db, key))?;
+        if let CallLowering::ManifestBuiltin(builtin) = lowering {
+            return Some(DirectCallee::corelib_service(builtin.symbol));
+        }
         if let CallLowering::CorelibService(service) = lowering {
             self.input.corelib_service_capability()?;
             let symbol = if beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service).is_some() {

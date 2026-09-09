@@ -193,7 +193,7 @@ fn collect_bsol_semantic_token_candidates(
                     out.push(BsolSemanticTokenCandidate {
                         start: span.start(),
                         end: span.end(),
-                        kind: BsolSemanticTokenKind::Variable,
+                        kind: BsolSemanticTokenKind::Property,
                     });
                     is_key = false;
                     continue;

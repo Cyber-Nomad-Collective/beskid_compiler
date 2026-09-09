@@ -30,6 +30,33 @@ fn v5_manifest_is_the_only_input_to_every_generated_artifact() {
     assert!(first.masm["x86_64-pc-windows-msvc"].contains("BESKID_CONTEXT_SWITCH_FROM_REGISTER TEXTEQU <rcx>"));
     assert!(first.abi_json.contains("\"trapExitStatus\": 101"));
     assert!(first.audit_json.contains("\"forbiddenSymbolFamilies\""));
+    assert!(first.rust.contains("GeneratedSourceBuiltin { name: \"__str_len\", symbol: \"str_len\""));
+    assert!(first.rust.contains("symbol: \"math_sqrt\", params: &[crate::AbiParamKind::F64]"));
+}
+
+#[test]
+fn public_builtin_must_match_its_manifest_adapter_shape() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).unwrap();
+    let wrong_symbol = source.replacen(
+        "symbol = \"str_len\" adapter_service = \"__str_len\"",
+        "symbol = \"forged_str_len\" adapter_service = \"__str_len\"",
+        1,
+    );
+    assert_eq!(
+        load_v5_manifest_source(&wrong_symbol).expect_err("adapter symbol mismatch must fail"),
+        "soft builtin `__str_len` symbol `forged_str_len` does not match adapter `str_len` for service `__str_len`"
+    );
+
+    let wrong_shape = source.replacen(
+        "adapter_service = \"__str_len\" params = [{ name = value, type = string }]",
+        "adapter_service = \"__str_len\" params = []",
+        1,
+    );
+    assert_eq!(
+        load_v5_manifest_source(&wrong_shape).expect_err("adapter shape mismatch must fail"),
+        "soft builtin `__str_len` is ABI-incompatible with service `__str_len`"
+    );
 }
 
 #[test]

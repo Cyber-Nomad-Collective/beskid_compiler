@@ -67,6 +67,9 @@ fn trace_node_facts(
                 ("Direct", Some(callee))
             }
             CallLowering::Dynamic => ("Dynamic", None),
+            CallLowering::ManifestBuiltin(builtin) => {
+                ("ManifestBuiltin", Some(DirectCallee::corelib_service(builtin.symbol)))
+            }
             CallLowering::Runtime(intrinsic) => ("Runtime", Some(DirectCallee::runtime_intrinsic(intrinsic.0))),
             CallLowering::CorelibService(service) => {
                 ("CorelibService", Some(DirectCallee::corelib_service(service.symbol)))

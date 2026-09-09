@@ -36,7 +36,10 @@ pub(in crate::semantic_contract) fn generic_call_specialization_tracked(
         };
         let declaration = match lowering {
             CallLowering::Direct(declaration) => declaration,
-            CallLowering::Dynamic | CallLowering::Runtime(_) | CallLowering::CorelibService(_) => {
+            CallLowering::Dynamic
+            | CallLowering::ManifestBuiltin(_)
+            | CallLowering::Runtime(_)
+            | CallLowering::CorelibService(_) => {
                 return None;
             }
         };

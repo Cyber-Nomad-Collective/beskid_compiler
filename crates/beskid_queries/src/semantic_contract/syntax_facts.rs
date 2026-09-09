@@ -62,64 +62,6 @@ pub(super) fn node_span_tracked(
     with_node(db, syntax, key, |_program, _index, node| node.span())
 }
 
-/// One built-in dispatch symbol resolved from syntax. The wrapped `&'static str` is borrowed
-/// from the compile-time [`beskid_analysis::builtins`] table, so it cannot round-trip through
-/// `serde_json` directly. Manual [`Serialize`]/[`Deserialize`] implementations emit the symbol as
-/// an owned string and recover the canonical `&'static str` by matching against
-/// [`beskid_analysis::builtins::builtin_specs`], failing closed with a serde error when no entry
-/// matches (a tampered or unknown symbol).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DispatchBuiltinSymbol(pub &'static str);
-
-impl serde::Serialize for DispatchBuiltinSymbol {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.0)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for DispatchBuiltinSymbol {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let symbol = beskid_abi::serde_support::recover_static_str(deserializer, "dispatch builtin symbol", |value| {
-            beskid_analysis::builtins::builtin_specs()
-                .iter()
-                .find(|spec| spec.runtime_symbol == value)
-                .map(|spec| spec.runtime_symbol)
-        })?;
-        Ok(DispatchBuiltinSymbol(symbol))
-    }
-}
-
-#[salsa::tracked(persist)]
-pub(super) fn dispatch_builtin_symbol_tracked(
-    db: &dyn Db,
-    syntax: SyntaxUnitInput,
-    key: AstNodeKey,
-) -> SemanticQueryResult<DispatchBuiltinSymbol> {
-    with_node(db, syntax, key, |program, index, node| {
-        let call = node.of::<beskid_analysis::syntax::CallExpression>()?;
-        let lowering = call_lowering_for_node(db, program, index, key, node).and_then(|result| result.ok())?;
-        if lowering != CallLowering::Dynamic {
-            return None;
-        }
-        let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node else {
-            return None;
-        };
-        if path.node.path.node.segments.len() != 1 {
-            return None;
-        }
-        let name = path.node.path.node.segments[0].node.name.node.name.as_str();
-        let (_, spec) = beskid_analysis::builtins::builtin_for_path(&[name.to_owned()])?;
-        let target = TargetMetadata::supported().into_iter().next()?;
-        AbiManifestV5::canonical_runtime(target).intrinsic_metadata(spec.runtime_symbol)?;
-        Some(Ok(DispatchBuiltinSymbol(spec.runtime_symbol)))
-    })?
-    .transpose()
-}
-
-pub fn dispatch_builtin_symbol(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<DispatchBuiltinSymbol> {
-    with_registered_syntax(db, key, dispatch_builtin_symbol_tracked)
-}
-
 #[salsa::tracked(persist)]
 pub(super) fn operator_fact_tracked(
     db: &dyn Db,

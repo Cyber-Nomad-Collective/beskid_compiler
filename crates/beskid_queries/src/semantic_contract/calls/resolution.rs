@@ -47,6 +47,10 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
                 // runtime intrinsics from ordinary Dynamic calls. Codegen still requires its
                 // separate canonical-source capability before it can emit this classification.
                 Ok(CallLowering::Runtime(intrinsic))
+            } else if path.segments.len() == 1
+                && let Some(builtin) = ManifestBuiltin::for_name(path.segments[0].node.name.node.name.as_str())
+            {
+                Ok(CallLowering::ManifestBuiltin(builtin))
             } else if imported_call_receiver_exists(db, key, path)
                 || (path.segments.iter().all(|segment| segment.node.type_args.is_empty())
                     && beskid_analysis::builtins::builtin_for_path(
