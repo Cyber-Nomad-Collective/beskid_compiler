@@ -26,6 +26,9 @@ pub enum AuthMode {
     /// `SHELL_AUTH_MODE=authelia`: the request principal is derived from the
     /// `Remote-*` headers injected by Authelia forward-auth.
     Authelia,
+    /// `SHELL_AUTH_MODE=authentik`: the request principal is derived from the
+    /// `X-Authentik-*` headers injected by Authentik's proxy outpost.
+    Authentik,
 }
 
 impl AuthMode {
@@ -33,6 +36,7 @@ impl AuthMode {
         match value.trim() {
             "mock" => Ok(Self::Mock),
             "authelia" => Ok(Self::Authelia),
+            "authentik" => Ok(Self::Authentik),
             _ => Err(AuthError::MissingConfiguration),
         }
     }
@@ -41,6 +45,7 @@ impl AuthMode {
         match self {
             Self::Mock => "mock",
             Self::Authelia => "authelia",
+            Self::Authentik => "authentik",
         }
     }
 }
@@ -55,6 +60,11 @@ pub struct AutheliaIdentity {
     pub display_name: Option<String>,
     pub groups: Vec<String>,
 }
+
+/// The identity Authentik's proxy outpost projects into a trusted request.
+/// Its shape matches the legacy forward-auth projection, while the issuer and
+/// header names remain explicit at the HTTP boundary.
+pub type AuthentikIdentity = AutheliaIdentity;
 
 /// pckg-owned automation key identity. The raw key is never persisted by the
 /// registry; only its SHA-256 digest is stored.
@@ -124,6 +134,11 @@ impl Principal {
             }
         }
         Self::from_subject(identity.subject.clone(), roles)
+    }
+
+    /// Builds a principal from Authentik's trusted outpost projection.
+    pub fn from_authentik(identity: &AuthentikIdentity, admin_group: &str, moderator_group: &str) -> Self {
+        Self::from_authelia(identity, admin_group, moderator_group)
     }
 
     pub fn from_api_key(identity: ApiKeyIdentity) -> Self {

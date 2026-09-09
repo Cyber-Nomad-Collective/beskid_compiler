@@ -3,8 +3,8 @@ use crate::abi_v5::{AbiManifestV5, canonical_runtime_package, canonical_source_h
 use super::capabilities::RuntimeCapabilityError;
 use super::sources::{
     CANONICAL_CORELIB_ARGS_SOURCE_PATH, CANONICAL_CORELIB_FS_SOURCE_PATH, CANONICAL_CORELIB_SYSCALL_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_FOUNDATION_ERROR_SOURCE_PATH,
-    CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH, canonical_corelib_service_sources,
+    CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH, CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
+    CANONICAL_FOUNDATION_ERROR_SOURCE_PATH, CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH, canonical_corelib_service_sources,
 };
 
 /// The canonical compiler-owned source file for one Foundation service unit.
@@ -21,6 +21,7 @@ pub fn canonical_corelib_service_source_path(logical_path: &str) -> Option<std::
         CANONICAL_CORELIB_SYSCALL_SOURCE_PATH => "Core/Syscall/Syscall.bd",
         CANONICAL_CORELIB_ARGS_SOURCE_PATH => "Core/Args/Args.bd",
         CANONICAL_CORELIB_FS_SOURCE_PATH => "Core/FS/FS.bd",
+        CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH => "Core/Collections/Array.bd",
         CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH => "Testing/Assert.bd",
         CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH => "Core/Output/Output.bd",
         CANONICAL_FOUNDATION_ERROR_SOURCE_PATH => "Core/Error/Error.bd",
@@ -150,9 +151,22 @@ const CORELIB_SERVICES: &[CorelibService] = &[
         symbol: "beskid_rt_v5_fs_delete",
         source_path: CANONICAL_CORELIB_FS_SOURCE_PATH,
     },
-    CorelibService { name: "__panic_str", symbol: "panic_str", source_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH },
-    CorelibService { name: "__panic_str", symbol: "panic_str", source_path: CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH },
-    CorelibService { name: "__panic_str", symbol: "panic_str", source_path: CANONICAL_FOUNDATION_ERROR_SOURCE_PATH },
+    CorelibService {
+        name: "__panic_str",
+        symbol: "beskid_trap_message",
+        source_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
+    },
+    CorelibService { name: "__gc_collect", symbol: "gc_collect", source_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH },
+    CorelibService {
+        name: "__panic_str",
+        symbol: "beskid_trap_message",
+        source_path: CANONICAL_FOUNDATION_OUTPUT_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__panic_str",
+        symbol: "beskid_trap_message",
+        source_path: CANONICAL_FOUNDATION_ERROR_SOURCE_PATH,
+    },
 ];
 
 /// Compiler-owned proof that a unit belongs to the embedded Corelib service corpus.

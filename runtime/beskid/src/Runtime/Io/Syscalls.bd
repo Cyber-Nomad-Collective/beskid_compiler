@@ -63,8 +63,8 @@ pub i64 SyscallWrite(word nativeHandle, pointer buffer, word len) {
 [Export(Abi:"C", Symbol:"syscall_write_bytes")]
 pub i64 SyscallWriteBytes(word nativeHandle, pointer data, word len) { return SyscallWrite(nativeHandle, data, len); }
 
-[Export(Abi:"C", Symbol:"panic")]
+[Export(Abi:"C", Symbol:"beskid_trap_code")]
 pub never Panic(i64 code) { Trap(9, NativePointer(0), 0); }
 
-[Export(Abi:"C", Symbol:"panic_str")]
+[Export(Abi:"C", Symbol:"beskid_trap_message")]
 pub never PanicStr(pointer message, word len) { Trap(9, message, len); }

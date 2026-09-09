@@ -2,6 +2,7 @@
 name = "beskid_telemetry"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 description = "OpenTelemetry-compatible tracing for the Beskid compiler workspace"
 
 [dependencies]

@@ -1,14 +1,12 @@
+mod support;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use beskid_pckg_server::{PckgServerConfig, router};
 use http_body_util::BodyExt;
-use sha2::Digest;
-use std::{
-    fs,
-    io::{Cursor, Write},
-};
+use std::fs;
+use support::{artifact, isolated_artifact_root, multipart_publish_request};
 use tower::ServiceExt;
-use zip::{ZipWriter, write::SimpleFileOptions};
 
 async fn response_body(response: axum::response::Response) -> serde_json::Value {
     let bytes = response.into_body().collect().await.expect("body is readable").to_bytes();
@@ -16,7 +14,7 @@ async fn response_body(response: axum::response::Response) -> serde_json::Value 
 }
 
 fn authenticated_config() -> PckgServerConfig {
-    PckgServerConfig::default().with_authelia_auth()
+    PckgServerConfig::default().with_authelia_auth().with_artifact_root(isolated_artifact_root("http-contract"))
 }
 
 /// Builds a request with the Authelia forward-auth `Remote-User` header set.
@@ -65,15 +63,7 @@ async fn package_index_search_and_detail_return_persisted_public_data() {
     for version in ["1.0.0", "2.0.0"] {
         let published = app
             .clone()
-            .oneshot(
-                Request::post("/api/packages/Public.Demo/versions")
-                    .header("content-type", "application/json")
-                    .header("remote-user", "octocat")
-                    .body(Body::from(
-                        serde_json::json!({"version": version, "checksumSha256": "a".repeat(64)}).to_string(),
-                    ))
-                    .unwrap(),
-            )
+            .oneshot(multipart_publish_request("Public.Demo", version, "octocat", artifact("Public.Demo", version)))
             .await
             .unwrap();
         assert_eq!(published.status(), StatusCode::CREATED);
@@ -183,6 +173,14 @@ async fn publisher_directory_lists_public_package_owners_and_hides_private_packa
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::CREATED);
+        if is_public {
+            let published = app
+                .clone()
+                .oneshot(multipart_publish_request(name, "1.0.0", subject, artifact(name, "1.0.0")))
+                .await
+                .unwrap();
+            assert_eq!(published.status(), StatusCode::CREATED);
+        }
     }
 
     let directory = app.clone().oneshot(Request::get("/api/publishers").body(Body::empty()).unwrap()).await.unwrap();
@@ -246,6 +244,50 @@ async fn package_mutations_require_an_authenticated_session() {
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(response_body(response).await, serde_json::json!({"message": "authentication required"}));
+}
+
+#[tokio::test]
+async fn workspace_bundle_publication_is_not_a_registry_route() {
+    let response = router(authenticated_config())
+        .oneshot(
+            Request::post("/api/workspaces/publish").header("remote-user", "publisher").body(Body::empty()).unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn package_version_publication_rejects_json_metadata_without_an_artifact() {
+    let app = router(authenticated_config());
+    let created = app
+        .clone()
+        .oneshot(
+            Request::post("/api/packages")
+                .header("content-type", "application/json")
+                .header("remote-user", "publisher")
+                .body(Body::from(r#"{"name":"Canonical.Demo","isPublic":true,"submitForReview":false}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+
+    let response = app
+        .oneshot(
+            Request::post("/api/packages/Canonical.Demo/versions")
+                .header("content-type", "application/json")
+                .header("remote-user", "publisher")
+                .body(Body::from(
+                    r#"{"version":"1.0.0","checksumSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
 }
 
 #[tokio::test]
@@ -320,32 +362,12 @@ async fn package_mutations_are_owned_by_the_verified_authelia_subject() {
         .unwrap();
     assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
 
-    let checksum = "a".repeat(64);
-    let publish_body = serde_json::json!({"version": "1.0.0", "checksumSha256": checksum}).to_string();
-    let publish = app
-        .clone()
-        .oneshot(
-            Request::post("/api/packages/Private.Demo/versions")
-                .header("content-type", "application/json")
-                .header("remote-user", "owner")
-                .body(Body::from(publish_body.clone()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let bytes = artifact("Private.Demo", "1.0.0");
+    let publish =
+        app.clone().oneshot(multipart_publish_request("Private.Demo", "1.0.0", "owner", bytes.clone())).await.unwrap();
     assert_eq!(publish.status(), StatusCode::CREATED);
 
-    let retry = app
-        .clone()
-        .oneshot(
-            Request::post("/api/packages/Private.Demo/versions")
-                .header("content-type", "application/json")
-                .header("remote-user", "owner")
-                .body(Body::from(publish_body))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let retry = app.clone().oneshot(multipart_publish_request("Private.Demo", "1.0.0", "owner", bytes)).await.unwrap();
     assert_eq!(retry.status(), StatusCode::OK);
 
     let forbidden = app
@@ -377,13 +399,7 @@ async fn package_lifecycle_lists_versions_and_hides_delete_from_non_owners() {
     assert_eq!(create.status(), StatusCode::CREATED);
     let publish = app
         .clone()
-        .oneshot(
-            Request::post("/api/packages/Lifecycle.Demo/versions")
-                .header("content-type", "application/json")
-                .header("remote-user", "owner")
-                .body(Body::from(serde_json::json!({"version":"1.0.0", "checksumSha256":"b".repeat(64)}).to_string()))
-                .unwrap(),
-        )
+        .oneshot(multipart_publish_request("Lifecycle.Demo", "1.0.0", "owner", artifact("Lifecycle.Demo", "1.0.0")))
         .await
         .unwrap();
     assert_eq!(publish.status(), StatusCode::CREATED);
@@ -417,117 +433,6 @@ async fn package_lifecycle_lists_versions_and_hides_delete_from_non_owners() {
     assert_eq!(response_body(deleted).await["success"], true);
     let absent = app.oneshot(Request::get("/api/packages/Lifecycle.Demo").body(Body::empty()).unwrap()).await.unwrap();
     assert_eq!(absent.status(), StatusCode::NOT_FOUND);
-}
-
-#[tokio::test]
-async fn workspace_publish_provisions_members_and_publishes_registry_versions() {
-    let artifact_root = std::env::temp_dir().join(format!("beskid-pckg-workspace-provision-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&artifact_root);
-    let app = router(authenticated_config().with_artifact_root(&artifact_root));
-    let bundle = workspace_bundle();
-    let response = app
-        .clone()
-        .oneshot(multipart_request("/api/workspaces/publish", "artifact", "workspace.zip", &bundle, "publisher"))
-        .await
-        .unwrap();
-    let status = response.status();
-    let body = response_body(response).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["success"], true);
-    assert_eq!(body["workspaceName"], "DemoWorkspace");
-    assert_eq!(body["packages"].as_array().unwrap().len(), 2);
-
-    for name in ["Workspace.Foundation", "Workspace.Consumer"] {
-        let detail = app
-            .clone()
-            .oneshot(Request::get(format!("/api/packages/{name}")).body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(detail.status(), StatusCode::OK);
-        assert_eq!(response_body(detail).await["latestVersion"], "0.0.1");
-    }
-    let _ = fs::remove_dir_all(artifact_root);
-}
-
-#[tokio::test]
-async fn workspace_publish_rolls_back_every_member_when_a_later_member_is_invalid() {
-    let app = router(authenticated_config());
-    let response = app
-        .clone()
-        .oneshot(multipart_request(
-            "/api/workspaces/publish",
-            "artifact",
-            "workspace.zip",
-            &workspace_bundle_with_invalid_later_member(),
-            "publisher",
-        ))
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-    for name in ["Workspace.Foundation", "Workspace.Consumer"] {
-        let detail = app
-            .clone()
-            .oneshot(Request::get(format!("/api/packages/{name}")).body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(detail.status(), StatusCode::NOT_FOUND, "{name} leaked after rollback");
-    }
-}
-
-#[tokio::test]
-async fn concurrent_workspace_publish_never_overwrites_an_immutable_artifact() {
-    let artifact_root = std::env::temp_dir().join(format!("beskid-pckg-workspace-atomicity-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&artifact_root);
-    let app_one = router(authenticated_config().with_artifact_root(&artifact_root));
-    let app_two = router(authenticated_config().with_artifact_root(&artifact_root));
-    let first = workspace_bundle_with_member_source("// first publisher bytes");
-    let second = workspace_bundle_with_member_source("// second publisher bytes");
-    let (left, right) = tokio::join!(
-        app_one.clone().oneshot(multipart_request(
-            "/api/workspaces/publish",
-            "artifact",
-            "workspace.zip",
-            &first,
-            "publisher",
-        )),
-        app_two.clone().oneshot(multipart_request(
-            "/api/workspaces/publish",
-            "artifact",
-            "workspace.zip",
-            &second,
-            "publisher",
-        )),
-    );
-    let left = left.unwrap();
-    let right = right.unwrap();
-    assert!([left.status(), right.status()].contains(&StatusCode::OK), "one publisher must win");
-    assert!(
-        [left.status(), right.status()].contains(&StatusCode::CONFLICT),
-        "different immutable artifacts must not both publish"
-    );
-
-    let winner = if left.status() == StatusCode::OK { app_one } else { app_two };
-    let version = winner
-        .clone()
-        .oneshot(authed("GET", "/api/packages/Workspace.Foundation/versions", "publisher"))
-        .await
-        .unwrap();
-    let checksum = response_body(version).await[0]["checksumSha256"].as_str().unwrap().to_owned();
-    let artifact = winner
-        .oneshot(
-            Request::get("/api/packages/Workspace.Foundation/versions/0.0.1/download").body(Body::empty()).unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(artifact.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(artifact.into_body(), usize::MAX).await.unwrap();
-    assert_eq!(
-        format!("{:x}", sha2::Sha256::digest(&bytes)),
-        checksum,
-        "durable artifact bytes must match the committed version checksum"
-    );
-    let _ = fs::remove_dir_all(artifact_root);
 }
 
 #[tokio::test]
@@ -607,6 +512,33 @@ async fn session_endpoint_projects_the_authelia_identity() {
 }
 
 #[tokio::test]
+async fn session_endpoint_projects_the_authentik_identity() {
+    let app = router(PckgServerConfig::default().with_authentik_auth());
+    let session = app
+        .oneshot(
+            Request::get("/api/auth/session")
+                .header("x-authentik-username", "pmikstacki")
+                .header("x-authentik-email", "pmikstacki@example.test")
+                .header("x-authentik-name", "Piotr Mikstacki")
+                .header("x-authentik-groups", "pckg-admins,pckg-moderators")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(session.status(), StatusCode::OK);
+    assert_eq!(
+        response_body(session).await,
+        serde_json::json!({
+            "subject": "pmikstacki",
+            "email": "pmikstacki@example.test",
+            "displayName": "Piotr Mikstacki",
+            "groups": ["pckg-admins", "pckg-moderators"]
+        })
+    );
+}
+
+#[tokio::test]
 async fn session_endpoint_rejects_anonymous_requests() {
     let app = router(authenticated_config());
     let session = app.oneshot(Request::get("/api/auth/session").body(Body::empty()).unwrap()).await.unwrap();
@@ -622,82 +554,4 @@ async fn admin_endpoints_authorize_via_authelia_admin_group() {
 
     let admin = app.clone().oneshot(authed_admin("GET", "/api/admin/permissions")).await.unwrap();
     assert_eq!(admin.status(), StatusCode::SERVICE_UNAVAILABLE);
-}
-
-fn workspace_bundle() -> Vec<u8> {
-    let entries = [
-        (
-            "Workspace.proj",
-            "workspace {\n  name = \"DemoWorkspace\"\n}\n\nmember \"foundation\" {\n  path = \"foundation\"\n}\n\nmember \"consumer\" {\n  path = \"consumer\"\n}",
-        ),
-        (
-            "workspace.package.json",
-            r#"{"schema":"beskid.workspace.package.v1","members":{"foundation":{"package":"Workspace.Foundation"},"consumer":{"package":"Workspace.Consumer"}}}"#,
-        ),
-        ("foundation/Project.proj", "project { name = \"Workspace.Foundation\" }"),
-        ("foundation/src/Prelude.bd", "// foundation"),
-        ("consumer/Project.proj", "project { name = \"Workspace.Consumer\" }"),
-        ("consumer/src/Main.bd", "// consumer"),
-    ];
-    let mut output = Cursor::new(Vec::new());
-    {
-        let mut zip = ZipWriter::new(&mut output);
-        for (path, contents) in entries {
-            zip.start_file(path, SimpleFileOptions::default()).unwrap();
-            zip.write_all(contents.as_bytes()).unwrap();
-        }
-        zip.finish().unwrap();
-    }
-    output.into_inner()
-}
-
-fn workspace_bundle_with_invalid_later_member() -> Vec<u8> {
-    let mut bundle = workspace_bundle();
-    let mut archive = zip::ZipArchive::new(Cursor::new(&bundle)).unwrap();
-    let mut output = Cursor::new(Vec::new());
-    {
-        let mut writer = ZipWriter::new(&mut output);
-        for index in 0..archive.len() {
-            let mut entry = archive.by_index(index).unwrap();
-            if entry.name() == "consumer/src/Main.bd" {
-                continue;
-            }
-            writer.start_file(entry.name(), SimpleFileOptions::default()).unwrap();
-            std::io::copy(&mut entry, &mut writer).unwrap();
-        }
-        writer.finish().unwrap();
-    }
-    bundle = output.into_inner();
-    bundle
-}
-
-fn workspace_bundle_with_member_source(source: &str) -> Vec<u8> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(workspace_bundle())).unwrap();
-    let mut output = Cursor::new(Vec::new());
-    {
-        let mut writer = ZipWriter::new(&mut output);
-        for index in 0..archive.len() {
-            let mut entry = archive.by_index(index).unwrap();
-            writer.start_file(entry.name(), SimpleFileOptions::default()).unwrap();
-            if entry.name() == "foundation/src/Prelude.bd" {
-                writer.write_all(source.as_bytes()).unwrap();
-            } else {
-                std::io::copy(&mut entry, &mut writer).unwrap();
-            }
-        }
-        writer.finish().unwrap();
-    }
-    output.into_inner()
-}
-
-fn multipart_request(path: &str, field: &str, filename: &str, bytes: &[u8], subject: &str) -> Request<Body> {
-    let boundary = "pckg-workspace-test";
-    let mut body = format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{field}\"; filename=\"{filename}\"\r\nContent-Type: application/zip\r\n\r\n").into_bytes();
-    body.extend_from_slice(bytes);
-    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
-    Request::post(path)
-        .header("content-type", format!("multipart/form-data; boundary={boundary}"))
-        .header("remote-user", subject)
-        .body(Body::from(body))
-        .unwrap()
 }

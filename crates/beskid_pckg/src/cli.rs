@@ -20,7 +20,7 @@ use zip::{CompressionMethod, ZipWriter};
 use crate::models::PackageVersionSummaryResponse;
 use crate::pack::{
     PackProfile, PackProfileOverride, build_package_json, collect_pack_entries, detect_pack_profile_with_override,
-    strip_template_pack_excludes, strip_tool_pack_excludes, zip_to_pckg_error,
+    prepare_artifact_dependencies, prepare_template_pack_entries, strip_tool_pack_excludes, zip_to_pckg_error,
 };
 use crate::{PckgClient, PckgClientConfig, PckgError};
 

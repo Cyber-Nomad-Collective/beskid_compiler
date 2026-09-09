@@ -8,7 +8,8 @@ mod token_expectations;
 
 pub(crate) use boundaries::{
     control_flow_keyword_len, is_keyword_text, recoverable_sync_boundary_start, recovery_insert_position,
-    recovery_scan_pos, recovery_source_has_fallback_control_flow_hint, top_level_statement_starts,
+    recovery_next_token_insert_position, recovery_scan_pos, recovery_source_has_fallback_control_flow_hint,
+    top_level_statement_starts,
 };
 pub(crate) use keyword_rules::{
     CONTROL_EXPRESSION_KEYWORDS, CONTROL_FLOW_KEYWORDS, ITEM_BODY_OPEN_KEYWORDS, ITEM_START_KEYWORDS,
@@ -26,6 +27,27 @@ pub(crate) use token_expectations::{
 #[cfg(test)]
 mod tests {
     use super::{KEYWORDS, PRIMITIVE_TYPE_KEYWORDS};
+
+    #[test]
+    fn recovery_position_primitives_are_the_only_strategy_positioning_primitives() {
+        let source = "let value = 1   \nnext";
+        let next_boundary = source.find("next").expect("test source includes next token");
+
+        assert_eq!(super::recovery_insert_position(source, next_boundary), 13);
+        assert_eq!(super::recovery_insert_position(&source[..next_boundary], next_boundary), 13);
+        assert_eq!(super::recovery_next_token_insert_position(source, "let value = 1".len()), next_boundary);
+
+        for strategy in [
+            include_str!("statements.rs"),
+            include_str!("expressions.rs"),
+            include_str!("expressions/scanner_context.rs"),
+        ] {
+            assert!(
+                !strategy.contains("fn recovery_insert_pos("),
+                "recovery strategies must delegate insertion positioning to syntax_primitives"
+            );
+        }
+    }
 
     #[test]
     fn all_grammar_keyword_rules_are_recovery_keywords() {

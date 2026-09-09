@@ -88,8 +88,6 @@ pub struct PublishArgs {
     pub artifact: PathBuf,
     #[arg(long)]
     pub checksum_sha256: Option<String>,
-    #[arg(long)]
-    pub manifest_json: Option<String>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -126,7 +124,7 @@ pub struct VersionActionArgs {
 /// `beskid pckg pack --package-kind` override (platform-spec packageKind tool, D-TOOL-PCKG-0004).
 #[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PackArgsPackageKind {
-    /// Detect from `Project.proj` (library or template; the historical default).
+    /// Detect from the canonical `.bproj` manifest (library or template).
     #[default]
     Auto,
     /// Pack a tool package: omits `documentation.apiJson`, strips `.beskid/docs/**`.
@@ -154,10 +152,14 @@ pub struct PackArgs {
     pub output: PathBuf,
     #[arg(long, default_value = ".beskid/pckg-version-state.json")]
     pub version_state_file: PathBuf,
-    /// Force a packageKind profile (`auto` honors `Project.proj`; `tool` packs a tool package
-    /// per platform-spec D-TOOL-PCKG-0004 without requiring `Project.proj`).
+    /// Force a packageKind profile (`auto` honors `.bproj`; `tool` packs a tool package
+    /// per platform-spec D-TOOL-PCKG-0004 without requiring a project manifest).
     #[arg(long, value_enum, default_value_t = PackArgsPackageKind::Auto)]
     pub package_kind: PackArgsPackageKind,
+    /// Skip the source documentation pass before packing. Existing API docs
+    /// remain validated and included when the caller prepared them.
+    #[arg(long)]
+    pub skip_docs: bool,
 }
 
 impl PackArgs {

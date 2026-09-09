@@ -4,8 +4,8 @@ use super::support::{
     ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxIndex,
     SyntaxModuleItem, TargetMetadata, build_typed_program, build_typed_program_with_corelib_services, call_lowering,
     canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_foundation_assert_fixture,
-    enum_layout, find_corelib_service_call, find_definition_of_kind, find_function_definitions, isa,
-    item_fixture_with_root, item_name, lower_syntax_program, parse_program_with_source_name, settings,
+    enum_layout, find_call_expression, find_corelib_service_call, find_definition_of_kind, find_function_definitions,
+    isa, item_fixture_with_root, item_name, lower_syntax_program, parse_program_with_source_name, settings,
 };
 
 #[test]
@@ -103,8 +103,35 @@ fn canonical_foundation_assert_public_helpers_lower_through_syntax_isle() {
         );
     }
     assert!(
-        artifact.extern_imports.iter().any(|import| import.symbol == "panic_str"),
-        "Assert helpers must still import authorized panic_str"
+        artifact.extern_imports.iter().any(|import| import.symbol == "beskid_trap_message"),
+        "Assert helpers must still import the authorized trap-message adapter"
+    );
+}
+
+#[test]
+fn canonical_foundation_assert_collect_garbage_imports_gc_collect() {
+    let (input, isa, root) = canonical_foundation_assert_fixture();
+    let collect_garbage = find_function_definitions(input.database(), root)
+        .into_iter()
+        .find(|key| item_name(input.database(), *key).ok().flatten().as_deref() == Some("CollectGarbage"))
+        .expect("canonical Assert CollectGarbage");
+    let call = find_corelib_service_call(input.database(), collect_garbage, "__gc_collect")
+        .expect("canonical Assert collection call");
+    assert!(matches!(
+        call_lowering(input.database(), call).expect("collection lowering"),
+        Some(beskid_queries::CallLowering::CorelibService(service))
+            if service.name == "__gc_collect" && service.symbol == "gc_collect"
+    ));
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[SyntaxModuleItem { key: collect_garbage, symbol: "CollectGarbage".into() }],
+    )
+    .expect("canonical Assert.CollectGarbage lowers through syntax ISLE");
+    assert!(
+        artifact.extern_imports.iter().any(|import| import.symbol == "gc_collect"),
+        "Assert.CollectGarbage must emit the authorized gc_collect import"
     );
 }
 
@@ -267,18 +294,20 @@ fn canonical_foundation_string_len_lowers_through_syntax_isle() {
 }
 
 #[test]
-fn copied_foundation_assert_source_cannot_receive_panic_authority() {
+fn copied_and_altered_foundation_assert_source_cannot_receive_runtime_service_authority() {
     let mut db = BeskidDatabase::default();
     let source = beskid_abi::runtime_source::canonical_corelib_service_sources()
         .into_iter()
         .find(|source| source.logical_path == CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH)
         .expect("embedded Foundation Assert source");
+    let altered_source = format!("{}\n// user-controlled alteration\n", source.source);
     let directory = tempfile::tempdir().expect("copied Foundation project").keep();
     let source_path = directory.join(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH);
     std::fs::create_dir_all(source_path.parent().expect("Assert parent")).expect("create copied Assert parent");
-    std::fs::write(&source_path, &source.source).expect("write copied Assert source");
-    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &source.source)
+    std::fs::write(&source_path, &altered_source).expect("write copied and altered Assert source");
+    let program = parse_program_with_source_name(source_path.to_str().unwrap(), &altered_source)
         .expect("parse copied Foundation Assert source");
+    let entry = SourceUnitId::new(&db, source_path.clone());
     let generation = SyntaxGenerationId(95);
     let assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
@@ -288,7 +317,7 @@ fn copied_foundation_assert_source_cannot_receive_panic_authority() {
         Arc::new(vec![SourceUnit {
             logical_name: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),
             path: source_path.clone(),
-            source: source.source,
+            source: altered_source,
             program: program.clone(),
         }]),
         0,
@@ -314,20 +343,29 @@ fn copied_foundation_assert_source_cannot_receive_panic_authority() {
     .expect("copied source remains an ordinary syntax program");
     assert!(typed.corelib_service_capability.is_none());
 
-    let trigger_failure = SyntaxIndex::from_program(&program, generation)
-        .ids_of_kind(NodeKind::CallExpression)
-        .map(|node| AstNodeKey { unit: SourceUnitId::new(&db, source_path.clone()), generation, node })
-        .find(|key| {
-            call_lowering(&db, *key)
-                .ok()
-                .flatten()
-                .is_some_and(|lowering| matches!(lowering, beskid_queries::CallLowering::Dynamic))
-        })
-        .expect("copied panic spelling remains dynamic");
-    assert!(matches!(
-        call_lowering(&db, trigger_failure).expect("copied call lowering"),
-        Some(beskid_queries::CallLowering::Dynamic)
-    ));
+    let root = AstNodeKey { unit: entry, generation, node: AstNodeId(0) };
+    let definitions = find_function_definitions(&db, root);
+    let trigger_failure = definitions
+        .iter()
+        .copied()
+        .find(|key| item_name(&db, *key).ok().flatten().as_deref() == Some("trigger_failure"))
+        .expect("copied Assert trigger_failure");
+    assert!(
+        find_corelib_service_call(&db, trigger_failure, "__panic_str").is_none(),
+        "a copied and altered Assert source must not retain panic authority"
+    );
+    let collect_garbage = definitions
+        .into_iter()
+        .find(|key| item_name(&db, *key).ok().flatten().as_deref() == Some("CollectGarbage"))
+        .expect("copied Assert CollectGarbage");
+    assert!(
+        find_corelib_service_call(&db, collect_garbage, "__gc_collect").is_none(),
+        "a copied and altered Assert source must not acquire collection authority"
+    );
+    let collection_call = find_call_expression(&db, collect_garbage).expect("copied __gc_collect call");
+    let error = call_lowering(&db, collection_call)
+        .expect_err("an unauthorized raw collection call must remain semantically unavailable");
+    assert!(error.is_unavailable(), "unauthorized collection call must fail closed: {error:?}");
 }
 
 #[cfg(unix)]

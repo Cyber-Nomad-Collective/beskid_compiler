@@ -166,9 +166,7 @@ fn core_args_adapter_binding_rejects_noncanonical_implementation_symbols() {
         );
         assert_eq!(
             load_v5_manifest_source(&mutated).expect_err("binding implementation must equal the canonical adapter"),
-            format!(
-                "corelib service `__args_count` binding for `x86_64-unknown-linux-gnu` must implement `beskid_rt_v5_args_count`"
-            )
+            "corelib service `__args_count` target binding must implement its canonical adapter"
         );
     }
 }

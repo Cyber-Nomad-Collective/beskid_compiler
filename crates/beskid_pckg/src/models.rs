@@ -100,6 +100,9 @@ pub struct PackageSummaryResponse {
     pub name: String,
     pub description: String,
     pub category: String,
+    #[serde(rename = "packageKind")]
+    pub package_kind: beskid_pckg_contract::PackageKindResponse,
+    pub template: Option<serde_json::Value>,
     #[serde(rename = "repositoryUrl")]
     pub repository_url: Option<String>,
     #[serde(rename = "websiteUrl")]
@@ -135,13 +138,6 @@ pub struct PackageVersionSummaryResponse {
     pub published_at_utc: String,
     #[serde(rename = "yankedAtUtc")]
     pub yanked_at_utc: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PublishPackageVersionResponse {
-    pub success: bool,
-    pub message: String,
-    pub version: Option<PackageVersionSummaryResponse>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -289,4 +285,37 @@ pub struct PackageVersionLifecycleResponse {
     pub success: bool,
     pub message: String,
     pub version: Option<PackageVersionSummaryResponse>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PackageSummaryResponse;
+    use beskid_pckg_contract::PackageKindResponse;
+
+    #[test]
+    fn package_summary_requires_kind_and_accepts_nullable_template_metadata() {
+        let json = serde_json::json!({
+            "id": "package-id",
+            "name": "corelib_foundation",
+            "description": "",
+            "category": "General",
+            "packageKind": "library",
+            "template": null,
+            "repositoryUrl": null,
+            "websiteUrl": null,
+            "tags": [],
+            "isPublic": true,
+            "totalDownloads": 0,
+            "updatedAtUtc": "2026-09-07T00:00:00Z",
+            "pendingReviewsCount": 0,
+            "averageRating": 0.0
+        });
+        let response: PackageSummaryResponse = serde_json::from_value(json.clone()).expect("summary contract parses");
+
+        assert_eq!(response.package_kind, PackageKindResponse::Library);
+        assert_eq!(response.template, None);
+        let mut missing_kind = json;
+        missing_kind.as_object_mut().unwrap().remove("packageKind");
+        assert!(serde_json::from_value::<PackageSummaryResponse>(missing_kind).is_err());
+    }
 }

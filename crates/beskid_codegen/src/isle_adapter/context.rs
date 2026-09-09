@@ -1,5 +1,7 @@
 use super::*;
 
+pub(super) const IMPLICIT_METHOD_RECEIVER_SLOT: LocalSlotId = LocalSlotId { owner_node: u32::MAX, index: u32::MAX };
+
 /// Query-backed facts for generated ISLE selection.
 ///
 /// Every answer is read from the generation-safe syntax authority registered by the typed

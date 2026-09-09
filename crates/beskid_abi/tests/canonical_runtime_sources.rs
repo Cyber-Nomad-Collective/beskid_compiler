@@ -1,4 +1,4 @@
-use beskid_abi::abi_v5::{AbiManifestV5, AbiType, SourceUnit, TargetMetadata};
+use beskid_abi::abi_v5::{AbiManifestV5, SourceUnit, TargetMetadata};
 use beskid_abi::runtime_source::{
     CANONICAL_BOOTSTRAP_LIFECYCLE_SOURCE_PATH, CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH,
     CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH,
@@ -142,7 +142,7 @@ fn canonical_foundation_assert_owns_only_the_panic_service() {
         capability
             .service_for_source(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, "__panic_str")
             .map(|service| service.symbol),
-        Some("panic_str")
+        Some("beskid_trap_message")
     );
     assert!(
         capability.service_for_source(CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, "__syscall_write").is_none(),

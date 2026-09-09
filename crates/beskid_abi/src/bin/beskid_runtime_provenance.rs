@@ -57,10 +57,7 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
 }
 
 fn audit_for(triple: &str) -> Result<RuntimeProvenanceAudit, String> {
-    let target = TargetMetadata::supported()
-        .into_iter()
-        .find(|candidate| candidate.triple.as_str() == triple)
-        .ok_or_else(|| format!("unsupported ABI-v5 target `{triple}`"))?;
+    let target = TargetMetadata::for_triple(triple).map_err(|_| format!("unsupported ABI-v5 target `{triple}`"))?;
     RuntimeProvenanceAudit::canonical(target).map_err(|error| format!("invalid ABI-v5 manifest: {error:?}"))
 }
 

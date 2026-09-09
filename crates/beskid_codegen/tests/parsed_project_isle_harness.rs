@@ -577,7 +577,25 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
         "canonical runtime lowering must retain the Scheduler-owned fiber spawn ABI export",
     );
     let actual_exports = artifact.exports.iter().map(|export| export.exported_symbol.clone()).collect::<BTreeSet<_>>();
-    assert_eq!(actual_exports, expected_exports, "canonical lowering publishes exactly the ABI manifest surface");
+    assert!(
+        expected_exports.is_subset(&actual_exports),
+        "canonical lowering must publish the complete public ABI manifest surface"
+    );
+    for service in ["str_concat", "gc_collect"] {
+        assert!(
+            actual_exports.contains(service),
+            "canonical lowering must publish source-owned Corelib service adapter `{service}`"
+        );
+    }
+    let imports = artifact.extern_imports.iter().map(|import| import.symbol.as_str()).collect::<BTreeSet<_>>();
+    assert!(
+        imports.contains("beskid_rt_v5_linux_fs_read_text"),
+        "canonical runtime intrinsics must link through the selected target binding"
+    );
+    assert!(
+        !imports.contains("beskid_rt_v5_intrinsic_fs_read_text"),
+        "a target-bound intrinsic must not retain its generic manifest symbol"
+    );
     assert!(
         !actual_exports.contains("gc_alloc"),
         "generic runtime helper exports must not become ABI roots without a manifest declaration",

@@ -17,4 +17,4 @@ pub pointer EnvGetcwd() { return env_getcwd(); }
 
 
 [Export(Abi:"C", Symbol:"tty_winsize")]
-pub pointer TtyWinsize() { return tty_winsize(); }
+pub i64 TtyWinsize(i64 fd) { return tty_winsize(fd); }

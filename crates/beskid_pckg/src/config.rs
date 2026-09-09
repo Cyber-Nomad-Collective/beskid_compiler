@@ -12,7 +12,6 @@ pub enum PckgAuth {
 pub struct PckgClientConfig {
     pub base_url: Url,
     pub auth: Option<PckgAuth>,
-    pub api_key_header_name: String,
     pub timeout: Duration,
     pub user_agent: String,
 }
@@ -28,7 +27,6 @@ impl PckgClientConfig {
         Ok(Self {
             base_url: url,
             auth: None,
-            api_key_header_name: "X-API-Key".to_string(),
             timeout: Duration::from_secs(30),
             user_agent: format!("beskid-pckg-client/{}", env!("CARGO_PKG_VERSION")),
         })
@@ -41,11 +39,6 @@ impl PckgClientConfig {
 
     pub fn with_publisher_api_key(mut self, api_key: impl Into<String>) -> Self {
         self.auth = Some(PckgAuth::PublisherApiKey(api_key.into()));
-        self
-    }
-
-    pub fn with_api_key_header_name(mut self, header_name: impl Into<String>) -> Self {
-        self.api_key_header_name = header_name.into();
         self
     }
 

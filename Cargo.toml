@@ -17,6 +17,10 @@ default-members = [
   "crates/beskid_graph", "crates/beskid_pest_gen", "crates/beskid_up",
 ]
 
+[workspace.package]
+license = "Apache-2.0"
+repository = "https://github.com/Cyber-Nomad-Collective/beskid_compiler"
+
 [workspace.lints.rust]
 unsafe_code = "allow"
 unused_must_use = "warn"

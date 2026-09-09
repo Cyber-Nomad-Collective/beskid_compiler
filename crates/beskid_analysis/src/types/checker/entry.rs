@@ -100,21 +100,21 @@ impl TypeChecker<'_> {
 
         let mut checker = TypeChecker::from_merged(resolution, &merged, merged_types);
 
+        // Unit surfaces are the declaration authority for dependencies. Re-reading dependency
+        // declarations through the entry unit's span tables aliases equal byte ranges across
+        // files and can overwrite a canonical signature with an unrelated entry type.
+        let authoritative_function_signatures = checker.function_signatures.clone();
+        let authoritative_method_function_signatures = checker.method_function_signatures.clone();
+        let authoritative_struct_fields = checker.struct_fields.clone();
+        let authoritative_struct_fields_ordered = checker.struct_fields_ordered.clone();
+        let authoritative_struct_event_fields = checker.struct_event_fields.clone();
+        let authoritative_enum_variants = checker.enum_variants.clone();
+        let authoritative_enum_variants_ordered = checker.enum_variants_ordered.clone();
+        let authoritative_generic_items = checker.generic_items.clone();
+        let authoritative_methods_by_receiver = checker.methods_by_receiver.clone();
+        let authoritative_contract_signatures = checker.contract_signatures.clone();
+
         let dependency_errors_before = checker.errors.len();
-        for (index, dependency) in dependency_programs.iter().enumerate() {
-            checker.current_source_path = dependency_source_paths
-                .and_then(|paths| paths.get(index))
-                .map(|path| crate::paths::unit_path_key(path));
-            checker.seed_enum_definitions(dependency);
-            checker.seed_struct_definitions(dependency);
-            checker.seed_generics_from_program(dependency);
-            let errors_before = checker.errors.len();
-            checker.seed_contract_signatures(dependency);
-            checker.errors.truncate(errors_before);
-            checker.register_foreign_function_signatures(dependency);
-            checker.errors.truncate(errors_before);
-            checker.seed_method_receivers_from_items(&dependency.node.items);
-        }
 
         if type_dependency_bodies {
             for (index, dependency) in dependency_programs.iter().enumerate() {
@@ -130,6 +130,19 @@ impl TypeChecker<'_> {
             // short-circuit the entry's own inference. Drop them so only entry call
             // constraints remain for `finish()`.
             checker.constraints = Default::default();
+
+            // Dependency body typing is compatibility work for legacy HIR lowering; it must not
+            // mutate the generation's canonical declaration surface consumed by the entry unit.
+            checker.function_signatures = authoritative_function_signatures;
+            checker.method_function_signatures = authoritative_method_function_signatures;
+            checker.struct_fields = authoritative_struct_fields;
+            checker.struct_fields_ordered = authoritative_struct_fields_ordered;
+            checker.struct_event_fields = authoritative_struct_event_fields;
+            checker.enum_variants = authoritative_enum_variants;
+            checker.enum_variants_ordered = authoritative_enum_variants_ordered;
+            checker.generic_items = authoritative_generic_items;
+            checker.methods_by_receiver = authoritative_methods_by_receiver;
+            checker.contract_signatures = authoritative_contract_signatures;
         }
 
         checker.errors.truncate(dependency_errors_before);

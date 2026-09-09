@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use beskid_analysis::types::TypeId;
 use beskid_isle::AstNodeKey;
-use beskid_queries::{GenericSpecializationInstance, child_nodes, closure_call_target, spawn_entry_validation};
+use beskid_queries::{child_nodes, closure_call_target, spawn_entry_validation};
 use cranelift_codegen::ir::Endianness;
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleResult};
 
@@ -25,42 +25,49 @@ pub(super) fn collect_array_static_plans(
     input: &CodegenInput<'_>,
     items: &[ResolvedSyntaxModuleItem],
 ) -> Vec<ArrayStaticPlan> {
-    let mut visited = HashSet::new();
-    let mut nodes = Vec::new();
+    let mut symbols = HashSet::new();
+    let mut plans = Vec::new();
     for item in items {
+        let mut visited = HashSet::new();
+        let mut nodes = Vec::new();
         collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
+        for key in nodes {
+            let plan = input
+                .array_static_plan(key)
+                .or_else(|| input.bulk_array_static_plan(key))
+                .or_else(|| input.typed_array_static_plan(key, item.specialization.as_ref()));
+            if let Some(plan) = plan
+                && symbols.insert(plan.allocation_request_symbol.clone())
+            {
+                plans.push(plan);
+            }
+        }
     }
-    nodes
-        .into_iter()
-        .filter_map(|key| input.array_static_plan(key).or_else(|| input.bulk_array_static_plan(key)))
-        .collect()
+    plans
 }
 
 pub(super) fn collect_aggregate_static_plans(
     input: &CodegenInput<'_>,
     items: &[ResolvedSyntaxModuleItem],
 ) -> Vec<AggregateStaticPlan> {
-    let mut visited = HashSet::new();
-    let mut nodes: Vec<(AstNodeKey, Option<GenericSpecializationInstance>)> = Vec::new();
+    let mut symbols = HashSet::new();
+    let mut plans = Vec::new();
     for item in items {
-        collect_ast_nodes_with_specialization(
-            input.database(),
-            item.key,
-            &mut visited,
-            &mut nodes,
-            item.specialization.clone(),
-        );
+        let mut visited = HashSet::new();
+        let mut nodes = Vec::new();
+        collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
+        for key in nodes {
+            let plan = input
+                .aggregate_static_plan(key)
+                .or_else(|| input.enum_static_plan_for_specialization(key, item.specialization.as_ref()));
+            if let Some(plan) = plan
+                && symbols.insert(plan.allocation_request_symbol.clone())
+            {
+                plans.push(plan);
+            }
+        }
     }
-    nodes
-        .into_iter()
-        .filter_map(|(key, specialization)| {
-            input.aggregate_static_plan(key).or_else(|| input.enum_static_plan(key)).or_else(|| {
-                specialization.as_ref().and_then(|specialization| {
-                    input.enum_static_plan_for_specialization(key, &specialization.substitutions)
-                })
-            })
-        })
-        .collect()
+    plans
 }
 
 /// Collect source-proven closure static plans from generation-safe syntax facts.
@@ -124,27 +131,6 @@ fn collect_ast_nodes(
     if let Ok(Some(children)) = child_nodes(db, key) {
         for child in children.iter().copied() {
             collect_ast_nodes(db, child, visited, nodes);
-        }
-    }
-}
-
-/// Specialization-tagged counterpart of [`collect_ast_nodes`]: every visited node is paired with
-/// the enclosing item's generic specialization so enum constructor plans inside specialized
-/// generic bodies can resolve their layout through the substituted type arguments.
-fn collect_ast_nodes_with_specialization(
-    db: &dyn beskid_queries::Db,
-    key: AstNodeKey,
-    visited: &mut HashSet<AstNodeKey>,
-    nodes: &mut Vec<(AstNodeKey, Option<GenericSpecializationInstance>)>,
-    specialization: Option<GenericSpecializationInstance>,
-) {
-    if !visited.insert(key) {
-        return;
-    }
-    nodes.push((key, specialization.clone()));
-    if let Ok(Some(children)) = child_nodes(db, key) {
-        for child in children.iter().copied() {
-            collect_ast_nodes_with_specialization(db, child, visited, nodes, specialization.clone());
         }
     }
 }

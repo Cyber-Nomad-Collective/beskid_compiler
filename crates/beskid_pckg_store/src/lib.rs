@@ -19,7 +19,7 @@ pub use administration::{
     PackageReviewDecision, PackageReviewQueueError, PackageReviewRequest, PublisherVerification,
     ResourcePermissionGrant,
 };
-pub use api_keys::{ApiKey, ApiKeyStoreError, AsyncApiKeyRepository, NewApiKey};
+pub use api_keys::{ApiKey, ApiKeyStoreError, AsyncApiKeyRepository, NewApiKey, validate_release_publisher_key_sha256};
 pub use memory::InMemoryPackageRepository;
 pub use operations::{
     AsyncRegistryOperationsRepository, BlockedLinkPolicy, NewBlockedLinkPolicy, NewRegistryActivity, RegistryActivity,
@@ -27,7 +27,7 @@ pub use operations::{
 };
 pub use package::{
     AsyncPackageRepository, NewPackage, Package, PackageRepository, PackageVersion, PublishOutcome, PublishVersion,
-    SqlxPackageRepository, StoreError, WorkspacePublishOutcome, WorkspacePublishReservation,
+    SqlxPackageRepository, StoreError,
 };
 pub use package_reviews::{AsyncPackageCommunityReviewRepository, PackageCommunityReview, PackageCommunityReviewError};
 

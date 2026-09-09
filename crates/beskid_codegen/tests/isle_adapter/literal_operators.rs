@@ -61,6 +61,30 @@ fn parsed_u8_comparison_coerces_integer_literals_without_hir() {
 }
 
 #[test]
+fn parsed_short_circuit_comparison_materializes_a_declared_integer_constant() {
+    let (input, isa, item) = item_fixture(
+        "const CAPACITY = 64; bool Main(word slot, word count) { return slot >= count || slot >= CAPACITY; }",
+    );
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("short-circuit comparison with a declared integer constant lowers through syntax facts");
+    let clif = function.display().to_string();
+    assert!(clif.matches("icmp").count() >= 2, "{clif}");
+    assert!(clif.contains("iconst.i64 64"), "{clif}");
+}
+
+#[test]
+fn parsed_mutable_assignment_materializes_a_declared_integer_constant_at_the_storage_abi() {
+    let (input, isa, item) = item_fixture(
+        "const DEFAULT_CAPACITY = 16; i64 Main(mut i64 capacity) { if capacity == 0 { capacity = DEFAULT_CAPACITY; } return capacity; }",
+    );
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("declared integer constant uses the mutable destination storage ABI");
+    let clif = function.display().to_string();
+    assert!(clif.contains("iconst.i64 16"), "{clif}");
+}
+
+#[test]
 fn parsed_mixed_u8_i64_arithmetic_coerces_the_u8_operand_without_hir() {
     let (input, isa, item) = item_fixture("i64 Main(u8 b, i64 acc) { return acc + (b - 48); }");
 

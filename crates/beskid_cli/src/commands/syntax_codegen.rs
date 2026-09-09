@@ -41,10 +41,7 @@ fn resolve_abi_target(target_triple: Option<&str>) -> Result<TargetMetadata> {
                 .map_err(|error| anyhow::anyhow!("native ABI-v5 target unavailable: {error}"));
         }
     };
-    TargetMetadata::supported()
-        .into_iter()
-        .find(|target| target.triple.as_str() == requested)
-        .ok_or_else(|| anyhow::anyhow!("unsupported ABI-v5 target `{requested}`"))
+    TargetMetadata::for_triple(requested).map_err(|_| anyhow::anyhow!("unsupported ABI-v5 target `{requested}`"))
 }
 
 #[cfg(test)]

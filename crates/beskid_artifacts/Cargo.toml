@@ -2,6 +2,7 @@
 name = "beskid_artifacts"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 description = "On-disk unit artifact cache schema and persistence for Beskid incremental compilation"
 
 [dependencies]

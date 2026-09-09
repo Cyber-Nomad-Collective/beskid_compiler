@@ -52,7 +52,16 @@ Each push also creates an immutable `cli-v*` / `lsp-v*` release for pinning. Ins
 
 ### Building
 
-The **core library sources** are pinned as a Git submodule at `corelib/` (repository: [beskid_standard](https://github.com/Cyber-Nomad-Collective/beskid_standard)), under `corelib/beskid_corelib/` (or `compiler/corelib/beskid_corelib/` from the aggregate superrepo root). The CLI embeds that tree at build time (`crates/beskid_cli/build.rs`).
+The **core library sources** are pinned as a Git submodule at `corelib/` (repository: [beskid_standard](https://github.com/Cyber-Nomad-Collective/beskid_standard)), under `corelib/beskid_corelib/` (or `compiler/corelib/beskid_corelib/` from the aggregate superrepo root). The CLI embeds that tree at build time (`crates/beskid_tools/build.rs`).
+
+## Licensing
+
+The compiler, CLI, LSP, reusable libraries, canonical runtime, and core library
+are Apache-2.0. The runnable `beskid_pckg_server` package is the scoped
+AGPL-3.0-only exception. Compiling a program does not impose either license on
+user-authored code; linked programs include Apache-2.0 runtime and possibly
+core-library portions whose license and notices must be preserved when those
+portions are distributed. See [LICENSING.md](LICENSING.md) for the exact scope.
 
 Corelib package publishing authority lives in `beskid_standard` CI; compiler CI validates and consumes corelib but does not publish it.
 

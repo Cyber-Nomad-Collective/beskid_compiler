@@ -2,6 +2,7 @@
 name = "beskid_abi"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 
 [dependencies]
 rustc-demangle = "0.1"

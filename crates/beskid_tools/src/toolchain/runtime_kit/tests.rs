@@ -64,6 +64,8 @@ fn native_host_builder_publishes_closure_exports_with_manifest_provenance_for_ea
         "beskid_rt_v5_closure_capture_store",
         "beskid_rt_v5_closure_environment_root",
         "beskid_rt_v5_closure_environment_root_current",
+        "str_concat",
+        "gc_collect",
     ];
 
     for profile in [RuntimeKitProfile::Debug, RuntimeKitProfile::Release] {

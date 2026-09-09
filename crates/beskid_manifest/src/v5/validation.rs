@@ -240,6 +240,8 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
                     | "__fs_exists"
                     | "__fs_mkdir"
                     | "__fs_delete"
+                    | "__panic"
+                    | "__panic_str"
             )
         {
             return Err(format!("corelib service `{}` must use canonical adapter `{expected_adapter}`", service.name));
@@ -259,6 +261,8 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         ("__fs_exists", "beskid_rt_v5_fs_exists", &["pointer"][..], "i32"),
         ("__fs_mkdir", "beskid_rt_v5_fs_mkdir", &["pointer"][..], "i32"),
         ("__fs_delete", "beskid_rt_v5_fs_delete", &["pointer"][..], "i32"),
+        ("__panic", "beskid_trap_code", &["i64"][..], "never"),
+        ("__panic_str", "beskid_trap_message", &["pointer", "usize"][..], "never"),
     ] {
         let service = manifest
             .corelib_services

@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::path::Path;
 
 use crate::progress::UploadProgress;
@@ -10,17 +11,9 @@ use crate::client::PckgClient;
 use crate::error::PckgError;
 use crate::models::{
     PackageDetailsResponse, PackageFileListResponse, PackageReviewResponse, PackageSearchResponse,
-    PackageSummaryResponse, PackageVersionLifecycleResponse, PackageVersionSummaryResponse,
-    PublishPackageVersionResponse, ReviewActionRequest, ReviewActionResponse, UpsertPackageRequest,
-    UpsertPackageResponse,
+    PackageSummaryResponse, PackageVersionLifecycleResponse, PackageVersionSummaryResponse, ReviewActionRequest,
+    ReviewActionResponse, UpsertPackageRequest, UpsertPackageResponse,
 };
-
-fn ensure_publish_success(
-    response: PublishPackageVersionResponse,
-    body_hint: Option<String>,
-) -> Result<PublishPackageVersionResponse, PckgError> {
-    if response.success { Ok(response) } else { Err(PckgError::logical_failure(response.message.clone(), body_hint)) }
-}
 
 fn ensure_upsert_success(
     response: UpsertPackageResponse,
@@ -71,31 +64,48 @@ impl PckgClient {
         self.send_no_body(Method::GET, &path, false).await
     }
 
-    /// Publish a `.bpk` from a local file. Streams the artifact (no full-file buffer).
+    /// Publish a `.bpk` from a local file through the canonical version endpoint.
     ///
-    /// Omits multipart `version` so the registry assigns the next semver. Optional
-    /// `version_bump` is sent as `versionBump` (`patch`, `minor`, or `major`; server
-    /// defaults to patch when omitted).
+    /// The immutable version is read from the artifact-root `package.json`, while the artifact is
+    /// streamed without a full-file buffer. The checksum is always present on the wire: callers
+    /// may provide a precomputed value or let this method compute it from the file.
     /// `upload_progress`: when set, reports byte progress on stderr during the HTTP upload.
-    #[allow(clippy::too_many_arguments)]
     pub async fn publish_package_version(
         &self,
         package_name: &str,
-        version_bump: Option<&str>,
         artifact_path: &Path,
         artifact_name: &str,
-        manifest_json: Option<&str>,
         checksum_sha256: Option<&str>,
         upload_progress: Option<&UploadProgress>,
-    ) -> Result<PublishPackageVersionResponse, PckgError> {
+    ) -> Result<PackageVersionSummaryResponse, PckgError> {
         if self.config().auth.is_none() {
             return Err(PckgError::MissingAuthToken);
         }
 
-        let path = format!("/api/packages/{}/publish", package_name);
+        let version = artifact_version(artifact_path, package_name)?;
+        let path = format!("/api/packages/{}/versions", package_name);
 
-        let file = File::open(artifact_path).await.map_err(PckgError::Io)?;
+        let mut file = File::open(artifact_path).await.map_err(PckgError::Io)?;
         let len = file.metadata().await.map_err(PckgError::Io)?.len();
+        let checksum_sha256 = match checksum_sha256.map(str::trim).filter(|value| !value.is_empty()) {
+            Some(checksum) => checksum.to_owned(),
+            None => {
+                use sha2::{Digest, Sha256};
+                use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+                let mut digest = Sha256::new();
+                let mut buffer = [0_u8; 64 * 1024];
+                loop {
+                    let read = file.read(&mut buffer).await.map_err(PckgError::Io)?;
+                    if read == 0 {
+                        break;
+                    }
+                    digest.update(&buffer[..read]);
+                }
+                file.seek(std::io::SeekFrom::Start(0)).await.map_err(PckgError::Io)?;
+                format!("{:x}", digest.finalize())
+            }
+        };
 
         let tracked_file: std::pin::Pin<Box<dyn tokio::io::AsyncRead + Send>> = if let Some(progress) = upload_progress
         {
@@ -111,22 +121,12 @@ impl PckgClient {
             .mime_str("application/zip")
             .map_err(PckgError::Transport)?;
 
-        let mut form = multipart::Form::new().part("artifact", part);
+        let form = multipart::Form::new()
+            .text("version", version)
+            .text("checksumSha256", checksum_sha256)
+            .part("artifact", part);
 
-        if let Some(bump) = version_bump.map(str::trim).filter(|s| !s.is_empty()) {
-            form = form.text("versionBump", bump.to_string());
-        }
-
-        if let Some(manifest_json) = manifest_json {
-            form = form.text("manifestJson", manifest_json.to_string());
-        }
-
-        if let Some(checksum_sha256) = checksum_sha256 {
-            form = form.text("checksumSha256", checksum_sha256.to_string());
-        }
-
-        let response: PublishPackageVersionResponse = self.send_multipart(Method::POST, &path, form, true).await?;
-        ensure_publish_success(response, None)
+        self.send_multipart(Method::POST, &path, form, true).await
     }
 
     pub async fn download_package_version(&self, package_name: &str, version: &str) -> Result<Vec<u8>, PckgError> {
@@ -196,4 +196,36 @@ impl PckgClient {
         let response: PackageVersionLifecycleResponse = self.send_no_body(Method::POST, &path, true).await?;
         ensure_lifecycle_success(response, None)
     }
+}
+
+fn artifact_version(path: &Path, expected_package_name: &str) -> Result<String, PckgError> {
+    const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
+
+    let file = std::fs::File::open(path)?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|error| artifact_contract_error(format!("invalid package artifact ZIP: {error}")))?;
+    let mut manifest = archive
+        .by_name("package.json")
+        .map_err(|_| artifact_contract_error("package artifact is missing root package.json"))?;
+    if manifest.size() > MAX_MANIFEST_BYTES {
+        return Err(artifact_contract_error("package artifact manifest exceeds 64 KiB"));
+    }
+    let mut json = String::new();
+    manifest
+        .read_to_string(&mut json)
+        .map_err(|error| artifact_contract_error(format!("package artifact manifest is unreadable: {error}")))?;
+    let value: serde_json::Value = serde_json::from_str(&json)
+        .map_err(|_| artifact_contract_error("package artifact manifest is not valid JSON"))?;
+    let package = value.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
+    if !package.eq_ignore_ascii_case(expected_package_name.trim()) {
+        return Err(artifact_contract_error("package artifact id does not match the requested package"));
+    }
+    let version = value.get("version").and_then(serde_json::Value::as_str).unwrap_or_default();
+    semver::Version::parse(version)
+        .map_err(|_| artifact_contract_error("package artifact version is not valid semantic version"))?;
+    Ok(version.to_owned())
+}
+
+fn artifact_contract_error(message: impl Into<String>) -> PckgError {
+    PckgError::logical_failure(message, None)
 }

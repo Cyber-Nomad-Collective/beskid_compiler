@@ -111,6 +111,11 @@ impl Emit for Type {
                 w.write_str("This")?;
                 Ok(())
             }
+            Type::Associated { contract, name } => {
+                contract.emit(w, cx)?;
+                w.write_str("::")?;
+                name.emit(w, cx)
+            }
             Type::Array(inner) => {
                 inner.emit(w, cx)?;
                 w.write_str("[]")?;

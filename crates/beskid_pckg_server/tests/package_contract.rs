@@ -1,6 +1,6 @@
 use beskid_pckg_contract::{
-    PackageContractFixture, PackageHealthSnapshotResponse, PackageSearchResponse, PackageSummaryResponse,
-    PackageVersionLifecycleResponse, PackageVersionSummaryResponse, PublishPackageVersionRequest, UpsertPackageRequest,
+    PackageContractFixture, PackageHealthSnapshotResponse, PackageKindResponse, PackageSearchResponse,
+    PackageSummaryResponse, PackageVersionLifecycleResponse, PackageVersionSummaryResponse, UpsertPackageRequest,
 };
 
 fn health() -> PackageHealthSnapshotResponse {
@@ -29,6 +29,8 @@ fn package(name: &str, is_public: bool) -> PackageSummaryResponse {
         name: name.to_owned(),
         description: "A package contract fixture.".to_owned(),
         category: "General".to_owned(),
+        package_kind: PackageKindResponse::Library,
+        template: None,
         repository_url: Some("https://example.test/repository".to_owned()),
         website_url: Some("https://example.test".to_owned()),
         tags: vec!["fixtures".to_owned()],
@@ -70,7 +72,8 @@ fn list_and_search_contracts_preserve_the_full_summary_wire_shape() {
         serde_json::to_value(vec![summary]).unwrap(),
         serde_json::json!([{
             "id": "Public.Demo-id", "name": "Public.Demo", "description": "A package contract fixture.",
-            "category": "General", "repositoryUrl": "https://example.test/repository",
+            "category": "General", "packageKind": "library", "template": null,
+            "repositoryUrl": "https://example.test/repository",
             "websiteUrl": "https://example.test", "tags": ["fixtures"], "isPublic": true,
             "totalDownloads": 42, "updatedAtUtc": "2026-07-13T12:00:00Z",
             "pendingReviewsCount": 0, "averageRating": 4.5, "iconUrl": "https://example.test/icon.svg",
@@ -134,22 +137,6 @@ fn yank_and_unyank_lifecycle_responses_keep_the_version_payload() {
     assert_eq!(json["success"], true);
     assert_eq!(json["version"]["isYanked"], true);
     assert_eq!(json["version"]["yankedAtUtc"], "2026-07-13T13:00:00Z");
-}
-
-#[test]
-fn checksum_matched_publish_is_an_idempotent_success() {
-    let existing = version("Idempotent.Demo", "1.0.0", "2026-07-13T12:00:00Z", false);
-    let request = PublishPackageVersionRequest {
-        version: Some("1.0.0".to_owned()),
-        version_bump: None,
-        checksum_sha256: Some(existing.checksum_sha256.clone()),
-    };
-
-    assert!(request.is_idempotent_against(&existing));
-    assert!(
-        !PublishPackageVersionRequest { checksum_sha256: Some("different-checksum".to_owned()), ..request }
-            .is_idempotent_against(&existing)
-    );
 }
 
 #[test]

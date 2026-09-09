@@ -21,6 +21,7 @@ fn row_version(row: sqlx::postgres::PgRow) -> Result<PackageVersion, StoreError>
         checksum_sha256: row.try_get("checksum_sha256").map_err(|error| StoreError::Database(error.to_string()))?,
         storage_key: row.try_get("storage_key").map_err(|error| StoreError::Database(error.to_string()))?,
         size_bytes: size_bytes.try_into().map_err(|_| StoreError::InvalidIdentifier)?,
+        manifest_json: row.try_get("manifest_json").map_err(|error| StoreError::Database(error.to_string()))?,
         is_yanked: row.try_get("is_yanked").map_err(|error| StoreError::Database(error.to_string()))?,
         published_at_unix_seconds: row
             .try_get("published_at")
@@ -31,7 +32,7 @@ fn row_version(row: sqlx::postgres::PgRow) -> Result<PackageVersion, StoreError>
 
 const PACKAGE_SELECT: &str = "SELECT id::text AS id, name, owner_subject, is_public, EXTRACT(EPOCH FROM created_at_utc)::bigint AS created_at, EXTRACT(EPOCH FROM updated_at_utc)::bigint AS updated_at FROM pckg_packages";
 
-const VERSION_SELECT: &str = "SELECT id::text AS id, package_id::text AS package_id, version, checksum_sha256, storage_key, size_bytes, is_yanked, EXTRACT(EPOCH FROM published_at_utc)::bigint AS published_at, EXTRACT(EPOCH FROM yanked_at_utc)::bigint AS yanked_at FROM pckg_package_versions";
+const VERSION_SELECT: &str = "SELECT id::text AS id, package_id::text AS package_id, version, checksum_sha256, storage_key, size_bytes, manifest_json, is_yanked, EXTRACT(EPOCH FROM published_at_utc)::bigint AS published_at, EXTRACT(EPOCH FROM yanked_at_utc)::bigint AS yanked_at FROM pckg_package_versions";
 
 pub(super) async fn sqlx_find_package_by_id(
     repository: &SqlxPackageRepository,

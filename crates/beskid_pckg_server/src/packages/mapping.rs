@@ -1,18 +1,33 @@
 use super::{
-    ApiErrorResponse, ArtifactRecord, IntoResponse, Json, Package, PackageHealthSnapshotResponse,
-    PackageSummaryResponse, PackageVersion, PackageVersionSummaryResponse, Response, StatusCode, select_download,
+    ApiErrorResponse, ArtifactRecord, IntoResponse, Json, Package, PackageDependencyResponse,
+    PackageHealthSnapshotResponse, PackageKind, PackageKindResponse, PackageManifestMetadata, PackageSummaryResponse,
+    PackageVersion, PackageVersionSummaryResponse, Response, StatusCode, parse_package_manifest_metadata,
+    select_download,
 };
 
 pub(super) fn package_storage_failure() -> Response {
     (StatusCode::SERVICE_UNAVAILABLE, Json(ApiErrorResponse::new("package storage unavailable"))).into_response()
 }
 
-pub(super) fn package_summary(package: &Package) -> PackageSummaryResponse {
+pub(super) fn package_manifest_metadata(
+    package: &Package,
+    version: &PackageVersion,
+) -> Result<PackageManifestMetadata, beskid_pckg_artifacts::ArtifactError> {
+    parse_package_manifest_metadata(&version.manifest_json, &package.name, &version.version)
+}
+
+pub(super) fn package_summary(package: &Package, metadata: &PackageManifestMetadata) -> PackageSummaryResponse {
     PackageSummaryResponse {
         id: package.id.clone(),
         name: package.name.clone(),
         description: String::new(),
         category: "General".to_owned(),
+        package_kind: match metadata.package_kind {
+            PackageKind::Library => PackageKindResponse::Library,
+            PackageKind::Template => PackageKindResponse::Template,
+            PackageKind::Tool => PackageKindResponse::Tool,
+        },
+        template: metadata.template.clone(),
         repository_url: None,
         website_url: None,
         tags: Vec::new(),
@@ -26,6 +41,19 @@ pub(super) fn package_summary(package: &Package) -> PackageSummaryResponse {
         owner_display_name: package.owner_subject.clone(),
         owner_is_publisher_verified: false,
     }
+}
+
+pub(super) fn dependencies(metadata: &PackageManifestMetadata) -> Vec<PackageDependencyResponse> {
+    metadata
+        .dependencies
+        .iter()
+        .map(|dependency| PackageDependencyResponse {
+            name: dependency.name.clone(),
+            version: Some(dependency.version.clone()),
+            source: dependency.source.clone(),
+            registry: None,
+        })
+        .collect()
 }
 
 pub(super) fn version_summary(package: &Package, version: &PackageVersion) -> PackageVersionSummaryResponse {

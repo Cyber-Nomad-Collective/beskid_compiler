@@ -55,8 +55,10 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
                     // The initializer is not a bare integer literal. When it is a match
                     // expression and the integer literal is in an arm body (not the
                     // scrutinee), the let's annotation selects the arm's ABI.
+                    let normalized_initializer =
+                        AstNodeKey { node: normalized_expression_node(index, initializer.node), ..initializer };
                     let initializer_node = index
-                        .node_at(program, initializer.node)
+                        .node_at(program, normalized_initializer.node)
                         .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
                     let match_expression =
                         initializer_node.of::<beskid_analysis::syntax::MatchExpression>().or_else(|| {
@@ -71,15 +73,21 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
                     let Some(match_expression) = match_expression else {
                         return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
                     };
-                    let match_node = index
-                        .children(initializer.node)
-                        .into_iter()
-                        .flatten()
-                        .copied()
-                        .find(|child| {
-                            index.kind(*child) == Some(beskid_analysis::syntax_query::NodeKind::MatchExpression)
-                        })
-                        .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
+                    let match_node = if index.kind(normalized_initializer.node)
+                        == Some(beskid_analysis::syntax_query::NodeKind::MatchExpression)
+                    {
+                        normalized_initializer.node
+                    } else {
+                        index
+                            .children(normalized_initializer.node)
+                            .into_iter()
+                            .flatten()
+                            .copied()
+                            .find(|child| {
+                                index.kind(*child) == Some(beskid_analysis::syntax_query::NodeKind::MatchExpression)
+                            })
+                            .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?
+                    };
                     let scrutinee = index
                         .direct_child_id(
                             program,
@@ -508,6 +516,7 @@ pub(in crate::semantic_contract) fn abi_type_from_syntax(
     match syntax_type {
         Type::Primitive(_) => semantic_type_from_syntax(syntax_type),
         Type::Complex(path) => nominal_aggregate_abi_type(db, key, &path.node),
+        Type::Associated { .. } => Err(SemanticError::unavailable("abi_type")),
         Type::Array(_) => Ok(SemanticTypeId::POINTER),
         Type::Function { .. } => Err(SemanticError::unavailable("abi_type")),
         Type::This_ => Err(SemanticError::unavailable("abi_type")),

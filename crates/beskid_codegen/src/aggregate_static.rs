@@ -3,8 +3,9 @@
 use std::sync::Arc;
 
 use beskid_queries::{
-    AggregateFieldShape, AstNodeKey, EnumLayoutFact, GenericSubstitution, SemanticTypeId, aggregate_layout,
-    aggregate_literal_declaration, enum_layout, enum_layout_for_specialized_constructor, enum_match,
+    AggregateFieldShape, AstNodeKey, GenericSpecializationInstance, SemanticTypeId, aggregate_layout,
+    aggregate_literal_declaration, enum_constructor_specialization, enum_layout, enum_match,
+    generic_specialization_identity,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -73,10 +74,8 @@ pub fn emit_aggregate_static_data<M: Module>(
         u64::try_from(plan.pointer_map_offsets.len())
             .map_err(|_| ModuleError::Backend(anyhow::anyhow!("aggregate pointer-map length exceeds ABI word")))?,
     )?;
-    // The descriptor flags word is zero for plain aggregates: the runtime's only defined flag is
-    // `TYPE_DESCRIPTOR_ARRAY` (value 1), which selects the array-specific validation and tracing
-    // path (size == 48, element-descriptor-backed). A non-array aggregate must take the generic
-    // pointer-map path, so it must not set the array bit.
+    // Flag bit 0 is reserved for the variable-sized array object descriptor. Ordinary
+    // aggregates (including enum payload objects) use the unflagged descriptor shape.
     write_word(&mut descriptor_bytes, 32, 0)?;
     let mut descriptor_data = DataDescription::new();
     descriptor_data.define(descriptor_bytes.into_boxed_slice());
@@ -172,33 +171,24 @@ impl CodegenInput<'_> {
     /// Produce the managed allocation metadata for an enum constructor. Enum values are references,
     /// so their tag and payload must not be backed by the constructor's stack frame.
     pub fn enum_static_plan(&self, literal: AstNodeKey) -> Option<AggregateStaticPlan> {
-        let layout = enum_layout(self.database(), literal)
-            .ok()
-            .flatten()
-            .or_else(|| enum_match(self.database(), literal).ok().flatten().map(|fact| fact.layout))?;
-        self.enum_static_plan_from_layout(literal, &layout)
+        self.enum_static_plan_for_specialization(literal, None)
     }
 
-    /// Specialized-body counterpart of [`enum_static_plan`]: resolves the enum layout through the
-    /// enclosing function's generic substitutions. Required when the constructor sits inside a
-    /// specialized generic body whose applied type arguments name the function's own generic
-    /// parameters rather than the enum's (e.g. `Result<TNext, TError>` inside `Map<TValue, TNext, TError>`),
-    /// so the unspecialized [`enum_layout`] query cannot instantiate the layout.
     pub fn enum_static_plan_for_specialization(
         &self,
         literal: AstNodeKey,
-        substitutions: &Arc<[GenericSubstitution]>,
+        specialization: Option<&GenericSpecializationInstance>,
     ) -> Option<AggregateStaticPlan> {
-        let layout =
-            enum_layout_for_specialized_constructor(self.database(), literal, substitutions.clone()).ok().flatten()?;
-        self.enum_static_plan_from_layout(literal, &layout)
-    }
-
-    fn enum_static_plan_from_layout(
-        &self,
-        literal: AstNodeKey,
-        layout: &EnumLayoutFact,
-    ) -> Option<AggregateStaticPlan> {
+        let specialized = specialization.and_then(|specialization| {
+            enum_constructor_specialization(self.database(), literal, specialization.substitutions.clone())
+                .ok()
+                .flatten()
+        });
+        let layout = specialized
+            .as_ref()
+            .map(|fact| fact.layout.clone())
+            .or_else(|| enum_layout(self.database(), literal).ok().flatten())
+            .or_else(|| enum_match(self.database(), literal).ok().flatten().map(|fact| fact.layout))?;
         let header = self.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
         let physical =
             layout.scalar_payload_object_layout(self.target().pointer_width, header.size, header.alignment)?;
@@ -215,8 +205,17 @@ impl CodegenInput<'_> {
             .units
             .iter()
             .position(|unit| paths_match(&unit.path, literal.unit.path(self.database())))?;
-        let identity =
-            format!("{}_enum_u{unit}_g{}_n{}", artifact_namespace(self), literal.generation.0, literal.node.0);
+        let specialization_identity = specialization
+            .filter(|_| specialized.is_some())
+            .map(generic_specialization_identity)
+            .map(|identity| identity.iter().map(u32::to_string).collect::<Vec<_>>().join("_"));
+        let identity = format!(
+            "{}_enum_u{unit}_g{}_n{}{}",
+            artifact_namespace(self),
+            literal.generation.0,
+            literal.node.0,
+            specialization_identity.as_deref().map(|identity| format!("_s{identity}")).unwrap_or_default()
+        );
         Some(AggregateStaticPlan {
             literal,
             descriptor_symbol: format!("__beskid_aggregate_descriptor_{identity}"),

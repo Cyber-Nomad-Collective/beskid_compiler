@@ -16,6 +16,11 @@
 
 (rule (lower_expression key @ (and
         (node_kind (NodeKind.CallExpression))
+        (call_kind (CallKind.TypedArrayAllocation))))
+      (emit_array_literal key))
+
+(rule (lower_expression key @ (and
+        (node_kind (NodeKind.CallExpression))
         (call_kind (CallKind.Direct))))
       (emit_direct_call key))
 

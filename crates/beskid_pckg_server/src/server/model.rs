@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use beskid_pckg_artifacts::LocalFileArtifactStore;
-use beskid_pckg_store::SqlxPackageRepository;
+use beskid_pckg_store::{AsyncApiKeyRepository, SqlxPackageRepository};
 
 use super::backend_memory::PackageBackend;
 use super::config::AuthConfig;
@@ -13,6 +13,7 @@ pub(crate) struct AppState {
     pub(crate) packages: PackageBackend,
     pub(crate) artifacts: Arc<LocalFileArtifactStore>,
     pub(crate) api_keys: Option<Arc<SqlxPackageRepository>>,
+    pub(crate) api_key_auth: Option<Arc<dyn AsyncApiKeyRepository>>,
     pub(crate) reviews: workspace_review_routes::ReviewQueueState,
     pub(crate) operations: operations_routes::OperationsState,
 }

@@ -188,11 +188,12 @@ GenericArguments = { "<" ~ BeskidType ~ ("," ~ BeskidType)* ~ ">" }
 
 TypeName = { PrimitiveType | Path }
 AssociatedTypeRef = { Path ~ "::" ~ Identifier }
-ArrayType = { TypeName ~ "[" ~ "]" }
-FunctionType = { TypeName ~ "(" ~ BeskidTypeList? ~ ")" }
+TypeAtom = { AssociatedTypeRef | TypeName }
+ArrayType = { TypeAtom ~ "[" ~ "]" }
+FunctionType = { TypeAtom ~ "(" ~ BeskidTypeList? ~ ")" }
 ArrowFunctionType = { "(" ~ BeskidTypeList? ~ ")" ~ "=>" ~ BeskidType }
 BeskidTypeList = { BeskidType ~ ("," ~ BeskidType)* }
-BeskidType = { ArrowFunctionType | FunctionType | ArrayType | ThisType | AssociatedTypeRef | TypeName }
+BeskidType = { ArrowFunctionType | FunctionType | ArrayType | ThisType | TypeAtom }
 
 ////////////////////////////////////////////////////////////
 // 4) DEFINITIONS

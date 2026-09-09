@@ -462,6 +462,16 @@ pub enum CollectionOperation {
     RemoveLast,
 }
 
+/// Compiler-owned generic managed-array allocation encoded by canonical Foundation syntax.
+///
+/// The element remains a named generic parameter until module emission supplies the concrete
+/// specialization environment. No element size or legacy runtime symbol crosses this boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct TypedArrayAllocation {
+    pub element_parameter: Arc<str>,
+    pub length: u64,
+}
+
 /// Backend-relevant call classification, detached from legacy HIR nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum CallLowering {
@@ -514,6 +524,14 @@ pub struct GenericNominalMethodReceiver {
 pub struct GenericSubstitution {
     pub parameter: Arc<str>,
     pub argument: SemanticTypeId,
+}
+
+/// Source-owned element type of an indexed array expression before an enclosing generic
+/// declaration has been specialized.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum ArrayIndexElementTemplate {
+    Concrete(SemanticTypeId),
+    EnclosingParameter(Arc<str>),
 }
 
 /// A fully materializable generic declaration instance.  This is deliberately detached from a
@@ -652,11 +670,12 @@ pub struct AggregateLayoutFact {
     pub fields: Arc<[(Arc<str>, AggregateFieldShape)]>,
 }
 
-/// Exact nominal field selected by a direct local receiver field path.
+/// Exact nominal field selected by a direct local or implicit method receiver field path.
 ///
-/// The receiver must resolve through the current syntax generation to a parameter or explicitly
-/// typed local whose nominal declaration has one matching field. More dynamic member shapes
-/// intentionally remain unavailable until they have their own syntax authority.
+/// The receiver must resolve through the current syntax generation to a parameter, an explicitly
+/// typed local, or the enclosing nominal method whose owning type has one matching field. More
+/// dynamic member shapes intentionally remain unavailable until they have their own syntax
+/// authority.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct AggregateFieldAccess {
     pub declaration: AstNodeKey,
@@ -713,6 +732,28 @@ pub struct EnumConstructorFact {
     pub declaration: AstNodeKey,
     pub variant_index: u32,
     pub payload: Option<AstNodeKey>,
+}
+
+/// One contextual generic enum argument retained until its enclosing item is specialized.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum EnumLayoutTemplateArgument {
+    Concrete(AggregateFieldShape),
+    EnclosingParameter(Arc<str>),
+}
+
+/// Source-owned generic enum constructor whose concrete layout depends on an enclosing item.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct EnumConstructorTemplate {
+    pub constructor: EnumConstructorFact,
+    pub parameters: Arc<[Arc<str>]>,
+    pub arguments: Arc<[EnumLayoutTemplateArgument]>,
+}
+
+/// Concrete constructor and enum layout derived from one immutable item specialization.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct EnumConstructorSpecialization {
+    pub constructor: EnumConstructorFact,
+    pub layout: EnumLayoutFact,
 }
 
 /// One direct identifier payload binding consumed by the generated enum-match emitter.

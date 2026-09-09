@@ -24,9 +24,15 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_tracked(
         (call.args.len() == 1).then_some(())?;
         let argument = index
             .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(&call.args[0]))
-            .map(|node| AstNodeKey { node, ..key })?;
+            .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })?;
         let from = match abi_type(db, argument) {
             Ok(Some(from)) => from,
+            Ok(None) if constant_integer(db, argument).ok().flatten().is_some() => SemanticTypeId::WORD,
+            Err(error)
+                if error.is_unavailable() && constant_integer(db, argument).ok().flatten().is_some() =>
+            {
+                SemanticTypeId::WORD
+            }
             Ok(None) => return Some(Err(SemanticError::unavailable("primitive_numeric_conversion"))),
             Err(error) => return Some(Err(error)),
         };
@@ -349,19 +355,11 @@ pub(in crate::semantic_contract) fn same_type_syntax(
 
     match (left, right) {
         (Type::Primitive(left), Type::Primitive(right)) => left.node == right.node,
-        (Type::Complex(left), Type::Complex(right)) => {
-            left.node.segments.len() == right.node.segments.len()
-                && left.node.segments.iter().zip(&right.node.segments).all(|(left, right)| {
-                    left.node.name.node.name == right.node.name.node.name
-                        && left.node.type_args.len() == right.node.type_args.len()
-                        && left
-                            .node
-                            .type_args
-                            .iter()
-                            .zip(&right.node.type_args)
-                            .all(|(left, right)| same_type_syntax(&left.node, &right.node))
-                })
-        }
+        (Type::Complex(left), Type::Complex(right)) => same_path_syntax(&left.node, &right.node),
+        (
+            Type::Associated { contract: left_contract, name: left_name },
+            Type::Associated { contract: right_contract, name: right_name },
+        ) => same_path_syntax(&left_contract.node, &right_contract.node) && left_name.node.name == right_name.node.name,
         (Type::Array(left), Type::Array(right)) => same_type_syntax(&left.node, &right.node),
         (
             Type::Function { return_type: left_return, parameters: left_parameters },
@@ -375,5 +373,48 @@ pub(in crate::semantic_contract) fn same_type_syntax(
                     .all(|(left, right)| same_type_syntax(&left.node, &right.node))
         }
         _ => false,
+    }
+}
+
+fn same_path_syntax(left: &beskid_analysis::syntax::Path, right: &beskid_analysis::syntax::Path) -> bool {
+    left.segments.len() == right.segments.len()
+        && left.segments.iter().zip(&right.segments).all(|(left, right)| {
+            left.node.name.node.name == right.node.name.node.name
+                && left.node.type_args.len() == right.node.type_args.len()
+                && left
+                    .node
+                    .type_args
+                    .iter()
+                    .zip(&right.node.type_args)
+                    .all(|(left, right)| same_type_syntax(&left.node, &right.node))
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use beskid_analysis::services::parse_program;
+    use beskid_analysis::syntax::{Type, items::Node};
+
+    use super::same_type_syntax;
+
+    #[test]
+    fn associated_type_syntax_compares_contract_and_member_structurally() {
+        let item = parse_type("Iterator::Item");
+        let same_item = parse_type("Iterator::Item");
+        let other_member = parse_type("Iterator::Element");
+        let other_contract = parse_type("Iterable::Item");
+
+        assert!(same_type_syntax(&item.node, &same_item.node));
+        assert!(!same_type_syntax(&item.node, &other_member.node));
+        assert!(!same_type_syntax(&item.node, &other_contract.node));
+    }
+
+    fn parse_type(source: &str) -> beskid_analysis::syntax::Spanned<Type> {
+        let program =
+            parse_program(&format!("{source} Current() {{ return; }}")).expect("associated type should parse");
+        let Node::Function(function) = &program.node.items[0].node else {
+            panic!("expected function item");
+        };
+        function.node.return_type.clone().expect("expected function return type")
     }
 }

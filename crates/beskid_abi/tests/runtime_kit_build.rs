@@ -57,6 +57,10 @@ fn builds_a_resolvable_kit_from_prebuilt_artifacts_and_writes_metadata_last() {
     assert_eq!(fs::read(&built.static_library).unwrap(), b"canonical static runtime");
     assert_eq!(fs::read(&built.shared_library).unwrap(), b"canonical shared runtime");
     assert!(built.root.join("abi.json").is_file());
+    assert!(fs::read_to_string(built.root.join("LICENSE")).expect("runtime-kit Apache license").starts_with(
+        "                                 Apache License\n                           Version 2.0, January 2004"
+    ));
+    assert!(fs::read_to_string(built.root.join("NOTICE")).expect("runtime-kit notice").contains("Beskid runtime"));
 
     let resolved = resolve_installed_runtime_kit(&prefix.0, &linux_target(), BuildProfile::Release).unwrap();
     assert_eq!(resolved.metadata, built.metadata);

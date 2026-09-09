@@ -1136,7 +1136,7 @@
     },
     {
       "name": "trap",
-      "symbol": "beskid_rt_v5_trap",
+      "symbol": "beskid_rt_v5_intrinsic_trap",
       "capability": "runtime.bootstrap.trap",
       "params": [
         {
@@ -1160,8 +1160,13 @@
       "name": "tty_winsize",
       "symbol": "beskid_rt_v5_intrinsic_tty_winsize",
       "capability": "runtime.adapter.tty_winsize",
-      "params": [],
-      "result": "pointer",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
       "resultStatus": null,
       "targetBindings": []
     },
@@ -2676,10 +2681,58 @@
       "result": "i32"
     },
     {
+      "symbol": "getcwd",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "size",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "getenv",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "key",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
       "symbol": "getpid",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
       "params": [],
+      "result": "i32"
+    },
+    {
+      "symbol": "ioctl",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "request",
+          "type": "usize"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
       "result": "i32"
     },
     {
@@ -2919,6 +2972,26 @@
       "result": "isize"
     },
     {
+      "symbol": "setenv",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "key",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "overwrite",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "sin",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3135,10 +3208,62 @@
       "result": "never"
     },
     {
+      "symbol": "GetConsoleScreenBufferInfo",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "handle",
+          "type": "pointer"
+        },
+        {
+          "name": "info",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "GetCurrentDirectoryW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "size",
+          "type": "u32"
+        },
+        {
+          "name": "buffer",
+          "type": "pointer"
+        }
+      ],
+      "result": "u32"
+    },
+    {
       "symbol": "GetCurrentProcessId",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
       "params": [],
+      "result": "u32"
+    },
+    {
+      "symbol": "GetEnvironmentVariableW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "key",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "size",
+          "type": "u32"
+        }
+      ],
       "result": "u32"
     },
     {
@@ -3286,6 +3411,22 @@
         },
         {
           "name": "overlapped",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "SetEnvironmentVariableW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "key",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
           "type": "pointer"
         }
       ],
@@ -3699,10 +3840,58 @@
       "result": "i32"
     },
     {
+      "symbol": "getcwd",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "buffer",
+          "type": "pointer"
+        },
+        {
+          "name": "size",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
+      "symbol": "getenv",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "key",
+          "type": "pointer"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
       "symbol": "getpid",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
       "params": [],
+      "result": "i32"
+    },
+    {
+      "symbol": "ioctl",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i32"
+        },
+        {
+          "name": "request",
+          "type": "usize"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        }
+      ],
       "result": "i32"
     },
     {
@@ -3940,6 +4129,26 @@
         }
       ],
       "result": "isize"
+    },
+    {
+      "symbol": "setenv",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "key",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "pointer"
+        },
+        {
+          "name": "overwrite",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "sin",
@@ -6352,7 +6561,7 @@
     },
     {
       "name": "__panic",
-      "adapter": "panic",
+      "adapter": "beskid_trap_code",
       "params": [
         {
           "name": "code",
@@ -6363,24 +6572,24 @@
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",
-          "implementation": "panic",
+          "implementation": "beskid_trap_code",
           "osImports": []
         },
         {
           "target": "x86_64-pc-windows-msvc",
-          "implementation": "panic",
+          "implementation": "beskid_trap_code",
           "osImports": []
         },
         {
           "target": "x86_64-unknown-linux-gnu",
-          "implementation": "panic",
+          "implementation": "beskid_trap_code",
           "osImports": []
         }
       ]
     },
     {
       "name": "__panic_str",
-      "adapter": "panic_str",
+      "adapter": "beskid_trap_message",
       "params": [
         {
           "name": "message",
@@ -6395,17 +6604,17 @@
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",
-          "implementation": "panic_str",
+          "implementation": "beskid_trap_message",
           "osImports": []
         },
         {
           "target": "x86_64-pc-windows-msvc",
-          "implementation": "panic_str",
+          "implementation": "beskid_trap_message",
           "osImports": []
         },
         {
           "target": "x86_64-unknown-linux-gnu",
-          "implementation": "panic_str",
+          "implementation": "beskid_trap_message",
           "osImports": []
         }
       ]
@@ -6851,8 +7060,13 @@
     {
       "name": "__tty_winsize",
       "adapter": "tty_winsize",
-      "params": [],
-      "result": "pointer",
+      "params": [
+        {
+          "name": "fd",
+          "type": "i64"
+        }
+      ],
+      "result": "i64",
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",

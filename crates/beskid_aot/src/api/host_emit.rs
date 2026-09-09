@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
-use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
+use beskid_abi::abi_v5::{AbiManifestV5, RuntimeAuditMetadata, TargetMetadata};
 use beskid_abi::runtime_provenance::{RuntimeProvenanceAudit, SymbolList};
-use beskid_abi::runtime_source::{canonical_runtime_sources, prove_canonical_runtime_corpus};
+use beskid_abi::runtime_source::{
+    canonical_runtime_source_hash, canonical_runtime_sources, prove_canonical_runtime_corpus,
+};
 use beskid_codegen::CodegenArtifact;
 
 use crate::error::{AotError, AotResult};
@@ -85,24 +87,12 @@ pub fn emit_host_platform_library_pair(
     let context_object = compile_context_assembly(&target, &output_dir, name)?;
     let platform_objects = compile_platform_objects(&target, &output_dir, name)?;
     let target_triple = target.triple.as_str().to_owned();
-    let mut required_symbols = AbiManifestV5::canonical_runtime(target.clone())
-        .assembly_exports
-        .into_iter()
-        .map(|entry| entry.symbol.as_str().to_owned())
-        .collect::<Vec<_>>();
-    required_symbols.extend([
-        "beskid_rt_v5_intrinsic_clock_monotonic_nanos".to_owned(),
-        "beskid_rt_v5_intrinsic_clock_realtime_nanos".to_owned(),
-        "beskid_rt_v5_intrinsic_process_exit".to_owned(),
-        "beskid_rt_v5_intrinsic_process_getpid".to_owned(),
-        "beskid_rt_v5_intrinsic_system_allocate".to_owned(),
-        "beskid_rt_v5_intrinsic_system_free".to_owned(),
-        "beskid_rt_v5_intrinsic_guarded_stack_allocate".to_owned(),
-        "beskid_rt_v5_intrinsic_guarded_stack_grow".to_owned(),
-        "beskid_rt_v5_intrinsic_guarded_stack_free".to_owned(),
-        "beskid_rt_v5_intrinsic_tls_get".to_owned(),
-        "beskid_rt_v5_intrinsic_tls_set".to_owned(),
-    ]);
+    let manifest = AbiManifestV5::canonical_runtime(target.clone());
+    let required_symbols = RuntimeAuditMetadata::for_manifest(&manifest, &canonical_runtime_source_hash())
+        .map_err(|error| AotError::InvalidRequest {
+            message: format!("canonical runtime loader contract is unavailable: {error:?}"),
+        })?
+        .loader_required_exports;
     emit_library_pair_with_objects(
         artifact,
         output_dir,

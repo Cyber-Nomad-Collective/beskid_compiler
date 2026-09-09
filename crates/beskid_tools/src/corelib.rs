@@ -147,3 +147,19 @@ fn write_embedded_dir(source: &Dir<'_>, destination: &Path) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::EMBEDDED_CORELIB;
+
+    #[test]
+    fn embedded_corelib_carries_its_license_and_notice() {
+        let license = EMBEDDED_CORELIB.get_file("LICENSE").expect("embedded corelib Apache license");
+        assert!(license.contents_utf8().expect("UTF-8 corelib license").starts_with(
+            "                                 Apache License\n                           Version 2.0, January 2004"
+        ));
+
+        let notice = EMBEDDED_CORELIB.get_file("NOTICE").expect("embedded corelib notice");
+        assert!(notice.contents_utf8().expect("UTF-8 corelib notice").contains("Beskid core library"));
+    }
+}

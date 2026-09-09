@@ -79,7 +79,7 @@ pub word GcRootHandle(pointer valuePtr) {
     raw_word_store(slot, NativeWord(valuePtr));
     raw_word_store(pointer_add(slot, 8), 1);
     raw_word_store(pointer_add(heap, HEAP_HANDLE_COUNT), count + 1);
-    return (1 << 32) | count;
+    return (word(1) << 32) | count;
 }
 
 [Export(Abi:"C", Symbol:"gc_unroot_handle")]

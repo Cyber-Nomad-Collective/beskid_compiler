@@ -16,6 +16,10 @@ fn canonical_audit_is_deterministic_and_derives_target_allowlists() {
     assert_eq!(first, second);
     assert_eq!(first.target, "x86_64-unknown-linux-gnu");
     assert!(first.allowed_exports.contains(&"beskid_rt_v5_trap".into()));
+    assert!(
+        first.required_exports.contains(&"beskid_trap_message".into()),
+        "every generated Corelib service adapter must be registered for JIT lookup"
+    );
     assert!(first.allowed_imports.contains(&"mmap".into()));
     assert!(first.forbidden_symbol_families.contains(&"rust".into()));
 }

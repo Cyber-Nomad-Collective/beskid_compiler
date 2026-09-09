@@ -18,12 +18,18 @@ CREATE TABLE IF NOT EXISTS pckg_package_versions (
     checksum_sha256 TEXT NOT NULL,
     storage_key TEXT NOT NULL,
     size_bytes BIGINT NOT NULL CHECK (size_bytes >= 0),
+    manifest_json TEXT NOT NULL,
     is_yanked BOOLEAN NOT NULL DEFAULT FALSE,
     published_at_utc TIMESTAMPTZ NOT NULL,
     yanked_at_utc TIMESTAMPTZ NULL,
     CONSTRAINT pckg_package_versions_package_version_key UNIQUE (package_id, version),
     CONSTRAINT pckg_package_versions_checksum_sha256_format CHECK (checksum_sha256 ~ '^[0-9a-f]{64}$')
 );
+
+-- Existing pre-Rust rows intentionally remain NULL and therefore fail closed
+-- when decoded; only an artifact-validated publication may populate metadata.
+ALTER TABLE pckg_package_versions
+    ADD COLUMN IF NOT EXISTS manifest_json TEXT;
 
 CREATE INDEX IF NOT EXISTS pckg_package_versions_available_idx
     ON pckg_package_versions (package_id, published_at_utc DESC)

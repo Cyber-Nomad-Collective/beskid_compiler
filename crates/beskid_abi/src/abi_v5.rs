@@ -80,11 +80,16 @@ impl TargetMetadata {
             .collect()
     }
 
-    pub fn validate(&self) -> Result<(), TargetValidationError> {
-        let expected = Self::supported()
+    /// Resolve one canonical ABI-v5 target from its exact target triple.
+    pub fn for_triple(triple: &str) -> Result<Self, TargetValidationError> {
+        Self::supported()
             .into_iter()
-            .find(|candidate| candidate.triple == self.triple)
-            .ok_or_else(|| TargetValidationError::UnsupportedTriple(self.triple.as_str().into()))?;
+            .find(|candidate| candidate.triple.as_str() == triple)
+            .ok_or_else(|| TargetValidationError::UnsupportedTriple(triple.into()))
+    }
+
+    pub fn validate(&self) -> Result<(), TargetValidationError> {
+        let expected = Self::for_triple(self.triple.as_str())?;
         if self != &expected {
             return Err(TargetValidationError::MetadataMismatch { triple: self.triple.as_str().into() });
         }

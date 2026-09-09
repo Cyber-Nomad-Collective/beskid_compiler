@@ -91,9 +91,7 @@ impl PckgClient {
 
         match (require_auth, self.config.auth.as_ref()) {
             (_, Some(PckgAuth::BearerToken(token))) => Ok(request.bearer_auth(token)),
-            (_, Some(PckgAuth::PublisherApiKey(api_key))) => {
-                Ok(request.header(self.config.api_key_header_name.as_str(), api_key))
-            }
+            (_, Some(PckgAuth::PublisherApiKey(api_key))) => Ok(request.bearer_auth(api_key)),
             (true, None) => Err(PckgError::MissingAuthToken),
             (false, None) => Ok(request),
         }

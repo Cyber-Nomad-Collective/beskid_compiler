@@ -11,12 +11,14 @@ use crate::commands::format::FormatArgs;
 use crate::commands::graph::GraphArgs;
 use crate::commands::import::ImportArgs;
 use crate::commands::lock::LockArgs;
-use crate::commands::package::{PackageGetArgs, PackageInstallArgs, PackagePckgArgs, PackageRemoveArgs, PackageSearchArgs};
-use crate::commands::publish::PublishArgs;
 use crate::commands::lsp::LspArgs;
 use crate::commands::migrate_bsol::MigrateBsolArgs;
 use crate::commands::new::NewArgs;
+use crate::commands::package::{
+    PackageGetArgs, PackageInstallArgs, PackagePckgArgs, PackageRemoveArgs, PackageSearchArgs,
+};
 use crate::commands::parse::ParseArgs;
+use crate::commands::publish::PublishArgs;
 use crate::commands::repl::ReplArgs;
 use crate::commands::run::RunArgs;
 use crate::commands::runtime_kit::RuntimeKitArgs;
@@ -26,7 +28,7 @@ use crate::commands::update::UpdateArgs;
 use crate::commands::validate_bsol::ValidateBsolArgs;
 use crate::commands::{
     analyze, build, clif, compiler_mod, corelib, doc, fetch, format, graph, import, lock, lsp, migrate_bsol, new,
-    package, publish, parse, repl, run, runtime_kit, test, tree, update, validate_bsol,
+    package, parse, publish, repl, run, runtime_kit, test, tree, update, validate_bsol,
 };
 use beskid_telemetry::{self, InitOptions};
 use beskid_up::UpArgs;
@@ -232,9 +234,7 @@ pub fn run() -> miette::Result<()> {
                 ProjectDevCommand::Graph(args) => graph::execute(args),
             },
             DevCommand::Package(command) => match command {
-                PackageDevCommand::Pckg(args) => {
-                    package::execute_pckg_proxy(args)
-                }
+                PackageDevCommand::Pckg(args) => package::execute_pckg_proxy(args),
             },
             DevCommand::Tooling(command) => match command {
                 ToolingDevCommand::Lsp(args) => lsp::execute(args),
@@ -299,8 +299,7 @@ mod tests {
 
     #[test]
     fn parses_dev_project_graph() {
-        let cli =
-            Cli::try_parse_from(["beskid", "dev", "project", "graph", "main.bd"]).expect("parse cli");
+        let cli = Cli::try_parse_from(["beskid", "dev", "project", "graph", "main.bd"]).expect("parse cli");
         match cli.command {
             Commands::Dev(DevCommand::Project(ProjectDevCommand::Graph(_))) => {}
             _ => panic!("expected `beskid dev project graph`"),

@@ -6,17 +6,14 @@ use beskid_abi::runtime_source::{build_canonical_runtime_kit, canonical_runtime_
 use super::model::RuntimeKitBuildOptions;
 
 pub fn build(options: RuntimeKitBuildOptions) -> Result<ResolvedRuntimeKit> {
-    let target = TargetMetadata::supported()
-        .into_iter()
-        .find(|candidate| candidate.triple.as_str() == options.target)
-        .ok_or_else(|| {
-            let supported = TargetMetadata::supported()
-                .into_iter()
-                .map(|target| target.triple.as_str().to_owned())
-                .collect::<Vec<_>>()
-                .join(", ");
-            anyhow!("unsupported ABI-v5 runtime target `{}`; expected one of: {supported}", options.target)
-        })?;
+    let target = TargetMetadata::for_triple(&options.target).map_err(|_| {
+        let supported = TargetMetadata::supported()
+            .into_iter()
+            .map(|target| target.triple.as_str().to_owned())
+            .collect::<Vec<_>>()
+            .join(", ");
+        anyhow!("unsupported ABI-v5 runtime target `{}`; expected one of: {supported}", options.target)
+    })?;
     let canonical_hash = canonical_runtime_source_hash();
     let request = RuntimeKitBuildRequest {
         prefix: options.prefix,

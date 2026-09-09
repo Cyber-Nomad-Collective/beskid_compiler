@@ -45,10 +45,8 @@ pub fn build_matrix(options: RuntimeKitMatrixBuildOptions) -> Result<Vec<Resolve
         bail!("runtime-kit matrix must contain both debug and release profiles");
     }
 
-    let target = TargetMetadata::supported()
-        .into_iter()
-        .find(|candidate| candidate.triple.as_str() == options.target)
-        .ok_or_else(|| anyhow!("unsupported ABI-v5 runtime target `{}`", options.target))?;
+    let target = TargetMetadata::for_triple(&options.target)
+        .map_err(|_| anyhow!("unsupported ABI-v5 runtime target `{}`", options.target))?;
     let final_target_root = options.prefix.join("lib/beskid-runtime/abi-5").join(target.triple.as_str());
     if final_target_root.exists() {
         bail!("runtime-kit matrix destination already exists: {}", final_target_root.display());

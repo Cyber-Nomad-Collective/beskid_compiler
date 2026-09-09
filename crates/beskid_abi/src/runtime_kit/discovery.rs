@@ -93,8 +93,5 @@ pub fn host_runtime_triple() -> Result<&'static str, HostRuntimeTargetError> {
 /// Canonical [`TargetMetadata`] for the native ABI-v5 host.
 pub fn host_runtime_target() -> Result<TargetMetadata, HostRuntimeTargetError> {
     let triple = host_runtime_triple()?;
-    TargetMetadata::supported()
-        .into_iter()
-        .find(|target| target.triple.as_str() == triple)
-        .ok_or_else(|| HostRuntimeTargetError::UnsupportedTarget { triple: triple.into() })
+    TargetMetadata::for_triple(triple).map_err(|_| HostRuntimeTargetError::UnsupportedTarget { triple: triple.into() })
 }
