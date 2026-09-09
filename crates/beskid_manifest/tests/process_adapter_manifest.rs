@@ -41,6 +41,26 @@ fn process_adapter_intrinsics_have_the_canonical_abi_v5_contract() {
 }
 
 #[test]
+fn windows_environment_adapter_imports_include_error_state_reset() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("runtime_manifest.bsol")).expect("runtime manifest");
+    let manifest = load_v5_manifest_source(&source).expect("valid runtime manifest");
+
+    let import = manifest
+        .platform_imports
+        .iter()
+        .find(|import| import.target == "x86_64-pc-windows-msvc" && import.symbol == "SetLastError")
+        .expect("Windows environment adapter must declare SetLastError provenance");
+
+    assert_eq!(import.library, "kernel32");
+    assert_eq!(
+        import.params.iter().map(|parameter| (parameter.name.as_str(), parameter.ty.as_str())).collect::<Vec<_>>(),
+        [("code", "u32")]
+    );
+    assert_eq!(import.result, "void");
+}
+
+#[test]
 fn corelib_string_services_accept_managed_string_views() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source = fs::read_to_string(root.join("runtime_manifest.bsol")).expect("runtime manifest");
