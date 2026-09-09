@@ -199,13 +199,17 @@ impl PreparedWorkspace {
             (base.source_path.clone(), None)
         };
         let revisions = revision_snapshot(&manifest_path);
+        let mut engine = Engine::try_new()
+            .map_err(|error| anyhow!("failed to initialize exact ABI-v5 runtime kit: {error}"))?;
+        engine
+            .initialize_arguments(&[manifest_path.display().to_string()])
+            .map_err(|error| anyhow!("failed to initialize explicit JIT arguments: {error}"))?;
         Ok(Self {
             session,
             base,
             manifest,
             manifest_path,
-            engine: Engine::try_new()
-                .map_err(|error| anyhow!("failed to initialize exact ABI-v5 runtime kit: {error}"))?,
+            engine,
             budgets,
             cancellation,
             started: Instant::now(),

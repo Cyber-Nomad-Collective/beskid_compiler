@@ -68,6 +68,7 @@ fn host_platform_pair_exports_canonical_runtime_and_host_platform_boundary() {
         "beskid_rt_v5_intrinsic_guarded_stack_free",
         "beskid_rt_v5_intrinsic_tls_get",
         "beskid_rt_v5_intrinsic_tls_set",
+        "beskid_rt_v5_args_handoff_utf8",
     ];
     for symbol in required_exports {
         assert!(
@@ -119,6 +120,7 @@ fn linux_host_platform_pair_exports_canonical_runtime_and_native_boundary() {
         "beskid_rt_v5_intrinsic_guarded_stack_free",
         "beskid_rt_v5_intrinsic_tls_get",
         "beskid_rt_v5_intrinsic_tls_set",
+        "beskid_rt_v5_args_handoff_utf8",
     ];
     for symbol in required_exports {
         assert!(

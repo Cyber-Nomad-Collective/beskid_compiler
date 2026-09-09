@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Treat `Never` as the bottom type when joining match-expression arms and terminate
+  effect-only Never arms without inventing a result value, restoring Fiber.Join
+  lowering. Initialize Core.Args from one explicit host-owned JIT vector through
+  the manifest-selected UTF-8/UTF-16 runtime handoff, publish that adapter from
+  native runtime kits, and present matrix target completions through one shared
+  live/drain event path. Make exact-kit validation the single authority for
+  manifest-approved platform imports such as libm. Align the remaining grammar
+  fixtures with canonical `mod` and `u32` syntax and pin the consolidated
+  Corelib Args test authority.
 - Restore the compiler-pinned Corelib runtime-authority implementation for
   atomic typed channel receive, split fiber join status/value, descriptor-backed
   arrays, and the reusable text/compiler-SDK surface, eliminating drift between

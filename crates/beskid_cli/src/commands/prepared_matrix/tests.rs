@@ -103,8 +103,8 @@ fn timeout_filter_and_skip_cannot_be_masked_by_passing_targets() {
 fn matrix_uses_one_worker_and_never_spawns_per_target_children() {
     let source = include_str!("../matrix_test.rs");
     assert!(source.contains("BESKID_PREPARED_MATRIX_WORKER"));
-    assert!(source.contains("MATRIX_EVENT_PREFIX"));
-    assert!(source.contains("parse_worker_event_line"));
+    assert!(source.contains("WORKER_EVENT_PREFIX"));
+    assert!(source.contains("decode_worker_line"));
     assert_eq!(source.matches("Command::new(executable)").count(), 1);
     assert!(!source.contains("BESKID_MATRIX_CHILD"));
     assert!(!source.contains("run_isolated_target"));

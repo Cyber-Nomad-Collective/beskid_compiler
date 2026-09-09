@@ -577,6 +577,43 @@ fn enum_match_scalar_literal_payload_emits_an_explicit_comparison() {
 }
 
 #[test]
+fn enum_match_expression_accepts_a_never_returning_arm() {
+    let (input, isa, root) = item_fixture_with_root(
+        "enum Choice { Value(i64 value), Fatal } i64 Main(Choice choice) { return match choice { Choice::Value(value) => value, Choice::Fatal => Fail(), }; } never Fail() { return Fail(); }",
+    );
+    let db = input.database();
+    let items = find_function_definitions(db, root);
+    let item = items
+        .iter()
+        .copied()
+        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Main"))
+        .expect("Main item");
+    let fail = items
+        .iter()
+        .copied()
+        .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Fail"))
+        .expect("Fail item");
+    let expression = find_node(db, item, beskid_queries::IndexedNodeKind::MatchExpression)
+        .expect("match expression with never arm");
+
+    assert_eq!(
+        node_type(db, expression).expect("match result type"),
+        Some(beskid_queries::SemanticTypeId::I64),
+        "a never-returning arm must not replace the concrete match result type"
+    );
+    let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let signature = cranelift_codegen::ir::Signature::new(isa.default_call_conv());
+    let imported = module.declare_function("Fail", Linkage::Import, &signature).expect("declare never callee");
+    let mut importer = ItemModuleImporter::new(&mut module, HashMap::from([(DirectCallee::item(fail), imported)]));
+    if let Err(error) = emit_isle_item_with_call_importer(&input, isa.as_ref(), item, &mut importer) {
+        panic!(
+            "a never-returning arm terminates without supplying a merge value: {}",
+            error.display_with_db(db)
+        );
+    }
+}
+
+#[test]
 fn enum_match_nested_nominal_enum_pattern_recurses_in_source_order() {
     let (input, isa, item) = item_fixture(
         "enum Inner { Value(i64 value), Other() } enum Result { Ok(Inner value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(Inner::Value(7_i64)) => 1_i64, Result::Ok(_) => 2_i64, Result::Error(_) => 0_i64, }; }",

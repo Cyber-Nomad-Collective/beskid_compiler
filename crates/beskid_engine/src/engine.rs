@@ -23,6 +23,7 @@ struct RuntimeKitSelection {
 pub struct Engine {
     runtime_kit: RuntimeKitSelection,
     runtime_state: Option<AttachedRuntimeState>,
+    arguments_initialized: bool,
     jit: BeskidJitModule,
 }
 
@@ -60,8 +61,22 @@ impl Engine {
         Ok(Self {
             runtime_kit: RuntimeKitSelection { prefix: prefix.to_path_buf(), target, profile },
             runtime_state: Some(runtime_state),
+            arguments_initialized: false,
             jit,
         })
+    }
+
+    /// Initialize Core.Args once from an explicit host-owned vector.
+    pub fn initialize_arguments(&mut self, arguments: &[String]) -> Result<(), JitError> {
+        if self.arguments_initialized {
+            return Err(JitError::RuntimeKit("Core.Args was already initialized for this engine".to_owned()));
+        }
+        self.jit
+            .runtime_kit()
+            .handoff_arguments(&self.runtime_kit.target, arguments)
+            .map_err(JitError::RuntimeKit)?;
+        self.arguments_initialized = true;
+        Ok(())
     }
 
     /// Exact ABI-v5 target selected by this engine's validated runtime kit.
@@ -91,7 +106,7 @@ impl Engine {
         artifact: &CodegenArtifact,
         pipeline: Option<&dyn PipelineObserver>,
     ) -> Result<(), JitError> {
-        if requires_explicit_jit_arguments(artifact) {
+        if requires_explicit_jit_arguments(artifact) && !self.arguments_initialized {
             return Err(JitError::Isa("Core.Args requires explicit JIT arguments".to_owned()));
         }
         let user_ffi_imports = beskid_codegen::referenced_extern_imports(artifact)
@@ -132,17 +147,6 @@ impl Engine {
             &authorized_user_ffi,
         )?;
         self.replace_jit_and_runtime(jit)?;
-
-        #[cfg(debug_assertions)]
-        {
-            if let Err(missing) = beskid_codegen::validate_artifact(artifact) {
-                let names: Vec<_> = missing.iter().map(|m| m.name.as_str()).collect();
-                return Err(JitError::Isa(format!(
-                    "codegen artifact validation failed: undefined callees: {}",
-                    names.join(", ")
-                )));
-            }
-        }
 
         self.jit.compile_with_pipeline(artifact, pipeline)
     }

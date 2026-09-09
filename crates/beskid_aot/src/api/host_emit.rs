@@ -88,11 +88,19 @@ pub fn emit_host_platform_library_pair(
     let platform_objects = compile_platform_objects(&target, &output_dir, name)?;
     let target_triple = target.triple.as_str().to_owned();
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
-    let required_symbols = RuntimeAuditMetadata::for_manifest(&manifest, &canonical_runtime_source_hash())
+    let mut required_symbols = RuntimeAuditMetadata::for_manifest(&manifest, &canonical_runtime_source_hash())
         .map_err(|error| AotError::InvalidRequest {
             message: format!("canonical runtime loader contract is unavailable: {error:?}"),
         })?
         .loader_required_exports;
+    // The linked native boundary is the authority for its export surface. Derive the complete
+    // platform set from the emitted objects so newly generated adapters (including Core.Args)
+    // cannot drift from a second handwritten export list.
+    for object in &platform_objects {
+        required_symbols.extend(extract_symbol_inventory(object, &target.symbol_prefix)?.defined);
+    }
+    required_symbols.sort();
+    required_symbols.dedup();
     emit_library_pair_with_objects(
         artifact,
         output_dir,
