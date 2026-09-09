@@ -130,8 +130,14 @@ fn lower_resolved_syntax_program(
     // selected, require the complete set and fail closed on a partial scheduler corpus. The stack
     // check and overflow seam functions are only invoked by spawn trampolines, so they are
     // resolved lazily as well.
-    let scheduler_entry_names =
-        ["SchedulerContext", "SchedulerSetCurrentFiber", "ContextSwitch", "SchedulerCurrentFiber", "FiberRecord"];
+    let scheduler_entry_names = [
+        "SchedulerContext",
+        "SchedulerSetCurrentFiber",
+        "ContextSwitch",
+        "SchedulerCurrentFiber",
+        "FiberRecord",
+        "FiberDone",
+    ];
     let includes_scheduler_entry = input.runtime_intrinsic_capability().is_some()
         && items.iter().any(|item| {
             beskid_queries::item_name(input.database(), item.key)
@@ -157,6 +163,7 @@ fn lower_resolved_syntax_program(
             symbol("SchedulerCurrentFiber")
                 .ok_or_else(|| emission_verification("canonical SchedulerCurrentFiber item unavailable"))?,
             symbol("FiberRecord").ok_or_else(|| emission_verification("canonical FiberRecord item unavailable"))?,
+            symbol("FiberDone").ok_or_else(|| emission_verification("canonical FiberDone item unavailable"))?,
         );
         let stack = if trampolines.is_empty() {
             None
@@ -185,10 +192,17 @@ fn lower_resolved_syntax_program(
             + usize::from(scheduler_symbols.is_some()) * 2,
     );
     if let Some((entry, _)) = scheduler_symbols {
-        let (scheduler_context, set_current, context_switch, current, fiber_record) = entry;
+        let (scheduler_context, set_current, context_switch, current, fiber_record, fiber_done) = entry;
         functions.push(crate::LoweredFunction {
             name: "__beskid_scheduler_fiber_entry".to_owned(),
-            function: emit_scheduler_fiber_entry(isa, scheduler_context, set_current, context_switch)?,
+            function: emit_scheduler_fiber_entry(
+                isa,
+                current,
+                fiber_done,
+                scheduler_context,
+                set_current,
+                context_switch,
+            )?,
         });
         functions.push(crate::LoweredFunction {
             name: "__beskid_scheduler_return_trampoline".to_owned(),

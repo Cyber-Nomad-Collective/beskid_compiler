@@ -20,7 +20,7 @@ pub bool SchedStep() {
         mut word i = 0; mut bool alive = false;
         while i < fiberCount {
             word s = FiberState(i);
-            if s == FiberState::Runnable || s == FiberState::Parked || s == FiberState::Running {
+            if s == FIBER_STATE_RUNNABLE || s == FIBER_STATE_PARKED || s == FIBER_STATE_RUNNING {
                 alive = true;
             }
             i = i + 1;
@@ -36,7 +36,7 @@ pub bool SchedStep() {
     if !FiberExists(next) || FiberParked(next) || FiberFinished(next) { return true; }
 
     if !SchedulerAcquireMutatorToken() { return false; }
-    FiberSetState(next, FiberState::Running);
+    FiberSetState(next, FIBER_STATE_RUNNING);
     SchedulerSetCurrentFiber(next);
     RestoreFiberLocalState(next);
     ContextSwitch(SchedulerContext(), NativePointer(raw_word_load(pointer_add(FiberRecord(next), 104))));
@@ -59,8 +59,8 @@ pub i64 SchedRun() {
             mut word i = 0; mut bool anyAlive = false; mut bool anyRunnable = false;
             while i < fiberCount {
                 word s = FiberState(i);
-                if s == FiberState::Runnable { anyRunnable = true; }
-                if s == FiberState::Parked || s == FiberState::Running { anyAlive = true; }
+                if s == FIBER_STATE_RUNNABLE { anyRunnable = true; }
+                if s == FIBER_STATE_PARKED || s == FIBER_STATE_RUNNING { anyAlive = true; }
                 i = i + 1;
             }
             if anyRunnable { break; }

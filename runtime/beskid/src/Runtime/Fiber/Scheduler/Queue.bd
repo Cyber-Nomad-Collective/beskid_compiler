@@ -68,8 +68,8 @@ pub unit ApplyPendingCancels() {
             // Queued and parked fibers reach a cancellation point at this
             // scheduler step. A running fiber observes the same flag when it
             // next yields or returns through its real target context path.
-            if state == FiberState::Runnable || state == FiberState::Parked {
-                raw_word_store(fib, FiberState::Cancelled);
+            if state == FIBER_STATE_RUNNABLE || state == FIBER_STATE_PARKED {
+                raw_word_store(fib, FIBER_STATE_CANCELLED);
                 raw_word_store(pointer_add(fib, 48), FIBER_JOIN_CANCELLED);
                 raw_word_store(pointer_add(fib, 56), 0);
                 if raw_byte_load(pointer_add(fib, 40)) != 0 { FiberCleanup(idx); }
@@ -106,7 +106,7 @@ pub unit ApplyPendingWakes() {
     while i < count {
         word idx = raw_word_load(pointer_add(table, 1144 + i * 8));
         if FiberExists(idx) && FiberParked(idx) {
-            FiberSetState(idx, FiberState::Runnable);
+            FiberSetState(idx, FIBER_STATE_RUNNABLE);
             RunQueuePush(idx);
         }
         i = i + 1;

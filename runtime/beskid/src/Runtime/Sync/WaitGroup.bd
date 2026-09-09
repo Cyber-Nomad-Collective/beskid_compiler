@@ -137,7 +137,7 @@ pub i32 WaitGroupWait(pointer id) {
         WaitGroupWaiterRemove(slot, waiterHandle);
         return 1;
     }
-    FiberSetState(currentFiber, FiberState::Parked);
+    FiberSetState(currentFiber, FIBER_STATE_PARKED);
     SaveFiberLocalState(currentFiber);
     SchedulerSetCurrentFiber(FIBER_NONE);
     ContextSwitch(NativePointer(raw_word_load(pointer_add(fiber, 104))), SchedulerContext());

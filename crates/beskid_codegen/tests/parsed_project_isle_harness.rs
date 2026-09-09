@@ -643,6 +643,22 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
             "scheduler function addresses must use far relocations because JIT allocations are not range-constrained"
         );
     }
+    let fiber_entry = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "__beskid_scheduler_fiber_entry")
+        .expect("generated scheduler fiber entry");
+    assert!(
+        fiber_entry.function.dfg.ext_funcs.values().any(|external| {
+            matches!(&external.name, ExternalName::TestCase(name) if std::str::from_utf8(name.raw())
+                .is_ok_and(|name| name.starts_with("FiberDone#syntax_")))
+        }),
+        "generated scheduler entry must delegate terminal state publication to canonical FiberDone",
+    );
+    assert!(
+        !fiber_entry.function.display().to_string().contains("store"),
+        "generated scheduler entry must not duplicate scheduler record state or outcome stores",
+    );
     assert!(
         artifact.functions.iter().any(|function| {
             let clif = function.function.display().to_string();

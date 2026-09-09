@@ -7,14 +7,14 @@
 // compiler materializes the selected BeskidArchContext layout for the canonical
 // source corpus; source never spells a target size, alignment, or assembly ABI.
 
-// ── Fiber State Constants ──────────────────────────────────────────
-pub enum FiberState {
-    Runnable,
-    Running,
-    Parked,
-    Done,
-    Cancelled,
-}
+// Raw scheduler-record state discriminants. These values cross generated
+// trampoline and native context boundaries, so they are words rather than
+// source enum objects.
+const FIBER_STATE_RUNNABLE = 0;
+const FIBER_STATE_RUNNING = 1;
+const FIBER_STATE_PARKED = 2;
+const FIBER_STATE_DONE = 3;
+const FIBER_STATE_CANCELLED = 4;
 
 // Discriminant constants for FiberJoinStatus storage (ABI-stable 0-4).
 // The enum-with-args type is the logical outcome; these constants are used
@@ -181,7 +181,7 @@ pub unit FiberAllocationFailed(word index, word generation) {
     pointer fib = FiberRecord(index);
     memory_set(fib, 0, FIBER_SLOT_SIZE);
     FiberSetGeneration(fib, generation);
-    raw_word_store(fib, FiberState::Done);
+    raw_word_store(fib, FIBER_STATE_DONE);
     raw_word_store(pointer_add(fib, 48), FIBER_JOIN_STACK_OVERFLOW);
     raw_word_store(pointer_add(fib, 56), 0);
     return;
@@ -228,7 +228,7 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
         return index;
     }
     memory_set(context, 0, ArchContextSize());
-    raw_word_store(fib, FiberState::Runnable);
+    raw_word_store(fib, FIBER_STATE_RUNNABLE);
     raw_word_store(pointer_add(fib, 8), entry);
     raw_word_store(pointer_add(fib, 16), arg);
     raw_word_store(pointer_add(fib, 24), cancelSlot);
@@ -267,7 +267,7 @@ pub bool SchedulerStackCheck(word requiredUsableSize) {
     word maximumSize = raw_word_load(pointer_add(fib, 88));
     if requiredUsableSize <= committedSize { return true; }
     if requiredUsableSize > maximumSize {
-        raw_word_store(fib, FiberState::Done);
+        raw_word_store(fib, FIBER_STATE_DONE);
         raw_word_store(pointer_add(fib, 48), FIBER_JOIN_STACK_OVERFLOW);
         raw_word_store(pointer_add(fib, 56), 0);
         raw_word_store(pointer_add(fib, FIBER_OUTCOME_LIMIT_OFFSET), maximumSize);
@@ -277,7 +277,7 @@ pub bool SchedulerStackCheck(word requiredUsableSize) {
     word requestedSize = ((requiredUsableSize + FIBER_STACK_INITIAL_SIZE - 1) / FIBER_STACK_INITIAL_SIZE) * FIBER_STACK_INITIAL_SIZE;
     pointer stack = NativePointer(raw_word_load(pointer_add(fib, 96)));
     if !GuardedStackGrow(stack, committedSize, requestedSize, maximumSize) {
-        raw_word_store(fib, FiberState::Done);
+        raw_word_store(fib, FIBER_STATE_DONE);
         raw_word_store(pointer_add(fib, 48), FIBER_JOIN_STACK_OVERFLOW);
         raw_word_store(pointer_add(fib, 56), 0);
         raw_word_store(pointer_add(fib, FIBER_OUTCOME_LIMIT_OFFSET), maximumSize);
@@ -295,7 +295,7 @@ pub unit SchedulerStackOverflowObserved() {
     mut word index = SchedulerCurrentFiber();
     if index == FIBER_NONE || !FiberExists(index) { return; }
     pointer fib = FiberRecord(index);
-    raw_word_store(fib, FiberState::Done);
+    raw_word_store(fib, FIBER_STATE_DONE);
     raw_word_store(pointer_add(fib, 48), FIBER_JOIN_STACK_OVERFLOW);
     raw_word_store(pointer_add(fib, 56), 0);
     return;
@@ -310,7 +310,7 @@ pub word FiberJoinStatusWord(word index) {
     }
     pointer fib = FiberRecord(index);
     word state = raw_word_load(fib);
-    if state != FiberState::Done && state != FiberState::Cancelled {
+    if state != FIBER_STATE_DONE && state != FIBER_STATE_CANCELLED {
         return FIBER_JOIN_NOT_DONE;
     }
     word outcome = raw_word_load(pointer_add(fib, 48));
@@ -482,11 +482,11 @@ pub unit FiberYield() {
     }
     pointer fib = FiberRecord(index);
     if raw_byte_load(pointer_add(fib, 41)) != 0 {
-        raw_word_store(fib, FiberState::Cancelled);
+        raw_word_store(fib, FIBER_STATE_CANCELLED);
         raw_word_store(pointer_add(fib, 48), FIBER_JOIN_CANCELLED);
         raw_word_store(pointer_add(fib, 56), 0);
     } else {
-        FiberSetState(index, FiberState::Runnable);
+        FiberSetState(index, FIBER_STATE_RUNNABLE);
         RunQueuePush(index);
     }
     SaveFiberLocalState(index);
@@ -562,13 +562,13 @@ pub word FiberState(word index) {
 
 // Check if fiber is parked (waiting on a channel/mutex/wg).
 pub bool FiberParked(word index) {
-    return FiberState(index) == FiberState::Parked;
+    return FiberState(index) == FIBER_STATE_PARKED;
 }
 
 // Check if fiber is finished.
 pub bool FiberFinished(word index) {
     word s = FiberState(index);
-    return s == FiberState::Done || s == FiberState::Cancelled;
+    return s == FIBER_STATE_DONE || s == FIBER_STATE_CANCELLED;
 }
 
 pub unit FiberCleanup(word index) {
@@ -600,14 +600,18 @@ pub unit FiberCleanup(word index) {
 
 // Mark fiber done with a return value.
 pub unit FiberDone(word index, i64 value) {
+    if !FiberExists(index) { Trap(10, NativePointer(0), 0); }
     pointer fib = FiberRecord(index);
+    word state = FiberState(index);
+    if state == FIBER_STATE_DONE || state == FIBER_STATE_CANCELLED { return; }
+    if state != FIBER_STATE_RUNNABLE && state != FIBER_STATE_RUNNING { Trap(10, NativePointer(0), 0); }
     u8 cancelled = raw_byte_load(pointer_add(fib, 41));
     if cancelled != 0 {
-        raw_word_store(fib, FiberState::Cancelled);
+        raw_word_store(fib, FIBER_STATE_CANCELLED);
         raw_word_store(pointer_add(fib, 48), FIBER_JOIN_CANCELLED);
         raw_word_store(pointer_add(fib, 56), 0);
     } else {
-        raw_word_store(fib, FiberState::Done);
+        raw_word_store(fib, FIBER_STATE_DONE);
         raw_word_store(pointer_add(fib, 48), FIBER_JOIN_OK);
         raw_word_store(pointer_add(fib, 56), word(value));
     }
@@ -659,8 +663,8 @@ pub bool SchedShutdownForced(bool forced) {
             raw_byte_store(pointer_add(fiber, 41), 1);
             pointer cancelSlot = NativePointer(raw_word_load(pointer_add(fiber, 24)));
             if cancelSlot != NativePointer(0) { raw_word_store(cancelSlot, 1); }
-            if FiberState(index) == FiberState::Parked { WakeEnqueue(index); }
-            if FiberState(index) == FiberState::Runnable { RunQueuePush(index); }
+            if FiberState(index) == FIBER_STATE_PARKED { WakeEnqueue(index); }
+            if FiberState(index) == FIBER_STATE_RUNNABLE { RunQueuePush(index); }
         }
         index = index + 1;
     }
