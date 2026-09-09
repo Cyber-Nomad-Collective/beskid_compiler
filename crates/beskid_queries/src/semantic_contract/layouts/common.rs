@@ -107,9 +107,10 @@ pub(in crate::semantic_contract) fn abi_type_for_local_path(
                 return Ok(SemanticTypeId::WORD);
             }
             let access = aggregate_field_access(db, key)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-            let layout =
-                aggregate_layout(db, access.declaration)?.ok_or_else(|| SemanticError::unavailable("abi_type"))?;
-            match layout.fields.get(usize::try_from(access.index).map_err(|_| SemanticError::unavailable("abi_type"))?)
+            match access
+                .layout
+                .fields
+                .get(usize::try_from(access.index).map_err(|_| SemanticError::unavailable("abi_type"))?)
             {
                 Some((_, AggregateFieldShape::Scalar(semantic))) => Ok(*semantic),
                 Some((_, AggregateFieldShape::Nominal(_))) => Ok(SemanticTypeId::POINTER),
@@ -266,6 +267,8 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
                 .into_iter()
                 .filter_map(|target| unique_exported_type_in_unit(db, target, key.generation, name, generic_arity)),
         );
+        let mut seen = HashSet::new();
+        candidates.retain(|candidate| seen.insert(*candidate));
         let [declaration] = candidates.as_slice() else {
             return None;
         };
@@ -278,6 +281,9 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
     {
         return Some(declaration);
     }
+    if let Some(declaration) = unique_assembled_type_in_module(db, key, &module_path, name, generic_arity) {
+        return Some(declaration);
+    }
     // One-type-per-file modules export `Core.Syscall.SyscallError` as both the module path and
     // the type name. Ordinary lookup looks for `SyscallError` inside `Core.Syscall` and misses;
     // retry against the assembly module registry with the terminal segment appended so applied
@@ -287,6 +293,28 @@ pub(in crate::semantic_contract) fn resolve_type_declaration(
     let target = {
         let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
         let [target] = registry.modules.get(&(key.generation, type_module))?.as_slice() else {
+            return None;
+        };
+        *target
+    };
+    unique_exported_type_in_unit(db, target, key.generation, name, generic_arity)
+}
+
+/// Resolve one public type from an exact absolute module path in the current assembly.
+///
+/// This is the common authority for fully qualified public signatures such as
+/// `Core.Results.Result<TValue, TError>` that deliberately do not require a local `use` binding.
+/// Ambiguous module paths remain unavailable.
+pub(in crate::semantic_contract) fn unique_assembled_type_in_module(
+    db: &dyn Db,
+    key: AstNodeKey,
+    module_path: &[String],
+    name: &str,
+    generic_arity: usize,
+) -> Option<AstNodeKey> {
+    let target = {
+        let registry = db.syntax_dependency_registry().lock().expect("syntax dependency registry");
+        let [target] = registry.modules.get(&(key.generation, module_path.to_vec()))?.as_slice() else {
             return None;
         };
         *target
@@ -400,6 +428,7 @@ pub(in crate::semantic_contract) fn semantic_type_from_syntax(
             PrimitiveType::Bool => SemanticTypeId::BOOL,
             PrimitiveType::I32 => SemanticTypeId::I32,
             PrimitiveType::I64 => SemanticTypeId::I64,
+            PrimitiveType::U32 => SemanticTypeId::U32,
             PrimitiveType::U8 => SemanticTypeId::U8,
             PrimitiveType::Pointer => SemanticTypeId::POINTER,
             PrimitiveType::Word => SemanticTypeId::WORD,

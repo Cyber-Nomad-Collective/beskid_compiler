@@ -33,6 +33,8 @@ use crate::{
 };
 
 const ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT: &str = "beskid_rt_v5_fiber_spawn_with_cancel_slot";
+const ABI_V5_SCHEDULER_STACK_CHECK: &str = "beskid_rt_v5_scheduler_stack_check";
+const ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED: &str = "beskid_rt_v5_scheduler_stack_overflow_observed";
 
 /// State owned by a long-lived Cranelift module while it receives source artifacts.
 ///
@@ -122,11 +124,22 @@ fn lower_resolved_syntax_program(
     );
 
     // The scheduler entry symbols (context, set/current fiber, context switch, fiber record) are
-    // always required for the compiler-generated fiber entry and return trampolines. The stack
+    // required only when this emission slice includes scheduler implementation items. Canonical
+    // runtime helper slices still carry intrinsic authority, but do not define or use the
+    // compiler-generated fiber entry and return trampolines. Once any scheduler entry item is
+    // selected, require the complete set and fail closed on a partial scheduler corpus. The stack
     // check and overflow seam functions are only invoked by spawn trampolines, so they are
-    // resolved lazily: a canonical runtime corpus with no spawn expressions never reaches them
-    // and must not require them to be reachable from manifest exports.
-    let scheduler_symbols = if input.runtime_intrinsic_capability().is_some() {
+    // resolved lazily as well.
+    let scheduler_entry_names =
+        ["SchedulerContext", "SchedulerSetCurrentFiber", "ContextSwitch", "SchedulerCurrentFiber", "FiberRecord"];
+    let includes_scheduler_entry = input.runtime_intrinsic_capability().is_some()
+        && items.iter().any(|item| {
+            beskid_queries::item_name(input.database(), item.key)
+                .ok()
+                .flatten()
+                .is_some_and(|name| scheduler_entry_names.contains(&name.as_ref()))
+        });
+    let scheduler_symbols = if includes_scheduler_entry {
         let symbol = |name: &str| {
             items
                 .iter()
@@ -274,10 +287,11 @@ fn lower_resolved_syntax_program(
         });
         functions.push(crate::LoweredFunction { name: item.symbol.clone(), function });
     }
+    let imports_scheduler_stack = !trampolines.is_empty() && scheduler_symbols.and_then(|(_, stack)| stack).is_none();
     if !trampolines.is_empty() {
-        let Some((_, Some((stack_check, stack_overflow)))) = scheduler_symbols else {
-            return Err(emission_verification("fiber stack checks require the exact canonical Scheduler corpus"));
-        };
+        let (stack_check, stack_overflow) = scheduler_symbols
+            .and_then(|(_, stack)| stack)
+            .unwrap_or((ABI_V5_SCHEDULER_STACK_CHECK, ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED));
         for trampoline in &trampolines {
             let target =
                 functions.iter().find(|function| function.name == trampoline.target_symbol).ok_or_else(|| {
@@ -297,6 +311,8 @@ fn lower_resolved_syntax_program(
         .into_values()
         .chain(corelib_services.into_values())
         .chain((!trampolines.is_empty()).then_some(ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT.to_owned()))
+        .chain(imports_scheduler_stack.then_some(ABI_V5_SCHEDULER_STACK_CHECK.to_owned()))
+        .chain(imports_scheduler_stack.then_some(ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED.to_owned()))
         .map(|symbol| ExternImport { symbol, abi: Some("C".into()), library: None })
         .collect::<Vec<_>>();
     for import in extern_contract_imports(input, items) {

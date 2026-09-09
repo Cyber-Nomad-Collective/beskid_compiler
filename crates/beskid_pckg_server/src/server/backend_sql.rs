@@ -7,6 +7,14 @@ fn row_package(row: sqlx::postgres::PgRow) -> Result<Package, StoreError> {
         name: row.try_get("name").map_err(|error| StoreError::Database(error.to_string()))?,
         owner_subject: row.try_get("owner_subject").map_err(|error| StoreError::Database(error.to_string()))?,
         is_public: row.try_get("is_public").map_err(|error| StoreError::Database(error.to_string()))?,
+        metadata: beskid_pckg_store::PackageMetadata {
+            description: row.try_get("description").map_err(|error| StoreError::Database(error.to_string()))?,
+            category: row.try_get("category").map_err(|error| StoreError::Database(error.to_string()))?,
+            repository_url: row.try_get("repository_url").map_err(|error| StoreError::Database(error.to_string()))?,
+            website_url: row.try_get("website_url").map_err(|error| StoreError::Database(error.to_string()))?,
+            tags: row.try_get("tags").map_err(|error| StoreError::Database(error.to_string()))?,
+            icon_url: row.try_get("icon_url").map_err(|error| StoreError::Database(error.to_string()))?,
+        },
         created_at_unix_seconds: row.try_get("created_at").map_err(|error| StoreError::Database(error.to_string()))?,
         updated_at_unix_seconds: row.try_get("updated_at").map_err(|error| StoreError::Database(error.to_string()))?,
     })
@@ -30,7 +38,7 @@ fn row_version(row: sqlx::postgres::PgRow) -> Result<PackageVersion, StoreError>
     })
 }
 
-const PACKAGE_SELECT: &str = "SELECT id::text AS id, name, owner_subject, is_public, EXTRACT(EPOCH FROM created_at_utc)::bigint AS created_at, EXTRACT(EPOCH FROM updated_at_utc)::bigint AS updated_at FROM pckg_packages";
+const PACKAGE_SELECT: &str = "SELECT id::text AS id, name, owner_subject, is_public, description, category, repository_url, website_url, tags, icon_url, EXTRACT(EPOCH FROM created_at_utc)::bigint AS created_at, EXTRACT(EPOCH FROM updated_at_utc)::bigint AS updated_at FROM pckg_packages";
 
 const VERSION_SELECT: &str = "SELECT id::text AS id, package_id::text AS package_id, version, checksum_sha256, storage_key, size_bytes, manifest_json, is_yanked, EXTRACT(EPOCH FROM published_at_utc)::bigint AS published_at, EXTRACT(EPOCH FROM yanked_at_utc)::bigint AS yanked_at FROM pckg_package_versions";
 

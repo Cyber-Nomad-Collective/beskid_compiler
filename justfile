@@ -3,7 +3,7 @@
 #   just corelib    Run corelib_tests via release beskid_cli
 #   just compiler   Run cargo test for the workspace
 #   just tests      Run compiler and corelib tests
-#   just replace    Build release CLI + LSP and overwrite installed `beskid` / `beskid_lsp`
+#   just replace    Atomically install one exact local CLI/LSP/runtime/corelib/package bundle
 #   just vscode     Build and reinstall the VS Code/Cursor extension from `beskid_vscode`
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
@@ -32,31 +32,45 @@ compiler:
 # Run compiler and corelib tests.
 tests: compiler corelib
 
-# Build release beskid_cli + beskid_lsp and replace installed toolchain binaries.
+# Build one exact-version release bundle and replace the installed toolchain.
 replace:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd "{{root}}"
-    cargo build -p beskid_cli -p beskid_lsp --release
-    cli_built="{{root}}/target/release/beskid_cli"
-    lsp_built="{{root}}/target/release/beskid_lsp"
-    cli_dest="$(command -v beskid 2>/dev/null || true)"
-    if [[ -z "${cli_dest}" ]]; then
-      cli_dest="${HOME}/.beskid/bin/beskid"
+    compiler_dir="{{root}}"
+    super_root="$(cd "${compiler_dir}/.." && pwd)"
+    required_superrepo_paths=(
+      "scripts/ci/resolve-editor-authoring-version.mjs"
+      "scripts/ci/build-release-artifact.sh"
+      "beskid_distrib/scripts/extract-release-bundle.sh"
+      "beskid_vscode/package.json"
+    )
+    missing_superrepo_paths=()
+    for relative_path in "${required_superrepo_paths[@]}"; do
+      [[ -e "${super_root}/${relative_path}" ]] || missing_superrepo_paths+=("${relative_path}")
+    done
+    if [[ "${#missing_superrepo_paths[@]}" -ne 0 ]]; then
+      echo "just replace requires the aggregate beskid superrepo checkout." >&2
+      printf 'Missing required sibling path: %s\n' "${missing_superrepo_paths[@]}" >&2
+      echo "Run ./scripts/setup-environment.sh from the beskid superrepo root, then retry." >&2
+      exit 1
     fi
-    lsp_dest="$(command -v beskid_lsp 2>/dev/null || true)"
-    if [[ -z "${lsp_dest}" ]]; then
-      lsp_dest="${HOME}/.beskid/bin/beskid_lsp"
-    fi
-    mkdir -p "$(dirname "${cli_dest}")" "$(dirname "${lsp_dest}")"
-    BESKID_RUNTIME_PREFIX="{{root}}/target/native-runtime-kit" \
-      BESKID_RUNTIME_KIT_PROFILE=release \
-      BESKID_CLI_BIN="${cli_built}" \
-      bash "{{root}}/scripts/stage-native-runtime-kit.sh"
-    install -m 0755 "${cli_built}" "${cli_dest}"
-    install -m 0755 "${lsp_built}" "${lsp_dest}"
-    echo "Replaced ${cli_dest}"
-    echo "Replaced ${lsp_dest}"
+    release_version="$(node "${super_root}/scripts/ci/resolve-editor-authoring-version.mjs" "${super_root}" "${super_root}/beskid_vscode")"
+    rust_target="$(rustc -vV | awk '/^host: / { print $2 }')"
+    asset_name=".local-beskid-bundle-${release_version}-$$.tar.gz"
+    artifact="${super_root}/${asset_name}"
+    staging="$(mktemp -d)"
+    cleanup() {
+      rm -f "${artifact}"
+      rm -rf "${staging}"
+    }
+    trap cleanup EXIT
+    bash "${super_root}/scripts/ci/build-release-artifact.sh" \
+      beskid_bundle ignored "${rust_target}" "${asset_name}" "${release_version}"
+    bash "${super_root}/beskid_distrib/scripts/extract-release-bundle.sh" \
+      "${artifact}" "${release_version}" "${rust_target}" "${staging}/bundle"
+    install_prefix="${HOME}/.beskid"
+    bash "${compiler_dir}/scripts/install-local-toolchain-bundle.sh" \
+      "${staging}/bundle" "${release_version}" "${install_prefix}"
 
 # Worktree tip: to share one target dir across git worktrees and avoid rebuilding per worktree,
 # run: CARGO_TARGET_DIR=$PWD/target cargo check   (or export it in your shell)
@@ -92,23 +106,53 @@ vscode:
     #!/usr/bin/env bash
     set -euo pipefail
     vscode_dir="{{vscode_dir}}"
+    compiler_dir="{{root}}"
+    super_root="$(cd "${compiler_dir}/.." && pwd)"
     if [[ ! -f "${vscode_dir}/package.json" ]]; then
       echo "beskid_vscode not found at ${vscode_dir} — run ./scripts/setup-environment.sh" >&2
       exit 1
     fi
+    release_version="$(node "${super_root}/scripts/ci/resolve-editor-authoring-version.mjs" "${super_root}" "${vscode_dir}")"
+    rust_target="$(rustc -vV | awk '/^host: / { print $2 }')"
+    platform_key="$(node -p 'process.platform + "-" + process.arch')"
+    binary_name="beskid_lsp"
+    if [[ "${rust_target}" == *-windows-* ]]; then
+      binary_name="beskid_lsp.exe"
+    fi
+    asset_name=".local-beskid-lsp-${release_version}-$$"
+    artifact="${super_root}/${asset_name}"
+    cleanup() {
+      rm -f "${artifact}"
+    }
+    trap cleanup EXIT
+    bash "${super_root}/scripts/ci/build-release-artifact.sh" \
+      beskid_lsp beskid_lsp "${rust_target}" "${asset_name}" "${release_version}"
+    server_dir="${vscode_dir}/server/${platform_key}"
+    mkdir -p "${server_dir}"
+    install -m 0755 "${artifact}" "${server_dir}/${binary_name}"
+    [[ "$("${server_dir}/${binary_name}" --version 2>&1)" == "beskid_lsp ${release_version}" ]]
     cd "${vscode_dir}"
     bun install
     bun run build
     mkdir -p dist
     BESKID_VSCODE_SKIP_PREBUILD=1 bunx @vscode/vsce package --out dist/beskid-dev.vsix
     vsix="${vscode_dir}/dist/beskid-dev.vsix"
+    installed=0
     if command -v cursor >/dev/null 2>&1; then
       cursor --install-extension "${vsix}" --force
       echo "Reinstalled Beskid extension in Cursor — Developer: Reload Window"
-    elif command -v code >/dev/null 2>&1; then
-      code --install-extension "${vsix}" --force
+      installed=1
+    fi
+    code_cli="$(command -v code 2>/dev/null || true)"
+    if [[ -z "${code_cli}" && -x "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" ]]; then
+      code_cli="/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+    fi
+    if [[ -n "${code_cli}" ]]; then
+      "${code_cli}" --install-extension "${vsix}" --force
       echo "Reinstalled Beskid extension in VS Code — Developer: Reload Window"
-    else
+      installed=1
+    fi
+    if [[ "${installed}" -eq 0 ]]; then
       echo "Packaged ${vsix} but no cursor/code CLI on PATH" >&2
       exit 1
     fi

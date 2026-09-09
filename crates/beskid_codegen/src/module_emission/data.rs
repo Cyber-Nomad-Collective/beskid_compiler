@@ -33,7 +33,7 @@ pub(super) fn collect_array_static_plans(
         collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
         for key in nodes {
             let plan = input
-                .array_static_plan(key)
+                .array_static_plan_for_specialization(key, item.specialization.as_ref())
                 .or_else(|| input.bulk_array_static_plan(key))
                 .or_else(|| input.typed_array_static_plan(key, item.specialization.as_ref()));
             if let Some(plan) = plan
@@ -58,7 +58,7 @@ pub(super) fn collect_aggregate_static_plans(
         collect_ast_nodes(input.database(), item.key, &mut visited, &mut nodes);
         for key in nodes {
             let plan = input
-                .aggregate_static_plan(key)
+                .aggregate_static_plan_for_specialization(key, item.specialization.as_ref())
                 .or_else(|| input.enum_static_plan_for_specialization(key, item.specialization.as_ref()));
             if let Some(plan) = plan
                 && symbols.insert(plan.allocation_request_symbol.clone())

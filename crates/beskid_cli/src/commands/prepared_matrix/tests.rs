@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::{MatrixReport, RepositorySnapshot, RevisionSnapshot, TargetReport, TargetResult};
+use super::{MatrixReport, RepositorySnapshot, RevisionSnapshot, TargetReport, TargetResult, WorkerExitCause};
 use crate::commands::test::TestSummary;
 
 fn repository(name: &str, clean: bool) -> RepositorySnapshot {
@@ -22,6 +22,7 @@ fn passing_target(name: &str) -> TargetReport {
         ended_unix_ms: 2,
         duration_ms: 1,
         active_phase: "complete".to_string(),
+        last_started_test: Some(format!("{name}.passes")),
         result: TargetResult::Passed,
         tests: TestSummary { passed: 1, ..TestSummary::default() },
         phases: Vec::new(),
@@ -43,9 +44,19 @@ fn complete_report(revisions: RevisionSnapshot) -> MatrixReport {
         skipped: 0,
         timed_out: false,
         cancelled: false,
+        worker_exit_cause: Some(WorkerExitCause::Exited { code: 0 }),
         release_eligible: false,
         targets: expected_targets.iter().map(|name| passing_target(name)).collect(),
     }
+}
+
+#[test]
+fn abnormal_worker_exit_is_never_release_eligible() {
+    let revisions = revisions();
+    let mut report = complete_report(revisions.clone());
+    report.worker_exit_cause = Some(WorkerExitCause::Signaled { signal: 4 });
+    report.finish_eligibility(&revisions);
+    assert!(!report.release_eligible);
 }
 
 #[test]
@@ -92,9 +103,20 @@ fn timeout_filter_and_skip_cannot_be_masked_by_passing_targets() {
 fn matrix_uses_one_worker_and_never_spawns_per_target_children() {
     let source = include_str!("../matrix_test.rs");
     assert!(source.contains("BESKID_PREPARED_MATRIX_WORKER"));
+    assert!(source.contains("MATRIX_EVENT_PREFIX"));
+    assert!(source.contains("parse_worker_event_line"));
     assert_eq!(source.matches("Command::new(executable)").count(), 1);
     assert!(!source.contains("BESKID_MATRIX_CHILD"));
     assert!(!source.contains("run_isolated_target"));
+}
+
+#[test]
+fn matrix_worker_stdin_is_closed_so_input_tests_observe_deterministic_eof() {
+    let source = include_str!("../matrix_test.rs");
+    assert!(
+        source.contains(".stdin(Stdio::null())"),
+        "the isolated matrix worker must not inherit an open interactive stdin"
+    );
 }
 
 #[test]

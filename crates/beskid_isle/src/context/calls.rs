@@ -26,30 +26,69 @@ impl IsleContext<'_, '_, '_, '_> {
 
     pub(super) fn import_direct_call(&mut self, key: AstNodeKey) -> Option<(cranelift_codegen::ir::Inst, Signature)> {
         let callee = self.facts.direct_callee(key)?;
-        let signature = self.facts.call_signature(key)?;
-        let function = match self.call_importer.as_deref_mut()?.import(self.builder, callee.clone(), &signature) {
+        let source_signature = self.facts.call_signature(key)?;
+        let argument_keys = self.facts.call_arguments(key)?;
+        if argument_keys.len() != source_signature.params.len() {
+            return None;
+        }
+        let mut arguments = Vec::with_capacity(argument_keys.len());
+        for (argument, parameter) in argument_keys.into_iter().zip(&source_signature.params) {
+            let value = generated::constructor_lower_expression(self, argument)?;
+            let value = if self.builder.func.dfg.value_type(value) == parameter.value_type {
+                value
+            } else {
+                self.adapt_scalar_boundary(argument, value, parameter.value_type)
+                    .or_else(|| self.materialize_canonical_runtime_direct_constant(argument, parameter.value_type))?
+            };
+            arguments.push(value);
+        }
+        let (native_signature, arguments) = self.adapt_corelib_service_call(&callee, &source_signature, arguments)?;
+        let function = match self.call_importer.as_deref_mut()?.import(self.builder, callee.clone(), &native_signature)
+        {
             Ok(function) => function,
             Err(CallImportError::UnknownCallee) => {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::UnknownCallee(callee) });
                 return None;
             }
         };
-        let argument_keys = self.facts.call_arguments(key)?;
-        if argument_keys.len() != signature.params.len() {
-            return None;
-        }
-        let mut arguments = Vec::with_capacity(argument_keys.len());
-        for (argument, parameter) in argument_keys.into_iter().zip(&signature.params) {
-            let value = generated::constructor_lower_expression(self, argument)?;
-            let value = if self.builder.func.dfg.value_type(value) == parameter.value_type {
-                value
-            } else {
-                self.materialize_canonical_runtime_direct_constant(argument, parameter.value_type)?
-            };
-            arguments.push(value);
-        }
         let call = self.builder.ins().call(function, &arguments);
-        Some((call, signature))
+        Some((call, source_signature))
+    }
+
+    fn adapt_corelib_service_call(
+        &mut self,
+        callee: &DirectCallee,
+        source_signature: &Signature,
+        arguments: Vec<Value>,
+    ) -> Option<(Signature, Vec<Value>)> {
+        let DirectCallee::CorelibService(symbol) = callee else {
+            return Some((source_signature.clone(), arguments));
+        };
+        let native_signature = corelib_service_native_signature(self.builder.func.signature.call_conv, symbol)?;
+        let pointer = dispatch::pointer_type();
+        let word = pointer;
+        let header_parts = |builder: &mut FunctionBuilder<'_>, value: Value| {
+            let data = builder.ins().load(pointer, MemFlags::new(), value, 0);
+            let len = builder.ins().load(word, MemFlags::new(), value, i32::try_from(pointer.bytes()).ok()?);
+            Some((data, len))
+        };
+        let adapted = match (*symbol, arguments.as_slice()) {
+            ("str_from_bytes_utf8", [header]) => {
+                let (data, len) = header_parts(self.builder, *header)?;
+                vec![data, len]
+            }
+            ("syscall_write_bytes", [fd, header]) => {
+                let fd = self.builder.ins().ireduce(types::I32, *fd);
+                let (data, len) = header_parts(self.builder, *header)?;
+                vec![fd, data, len]
+            }
+            ("syscall_read" | "syscall_read_bytes", [fd, header, len]) => {
+                let (data, _) = header_parts(self.builder, *header)?;
+                vec![*fd, data, *len]
+            }
+            _ => arguments,
+        };
+        (adapted.len() == native_signature.params.len()).then_some((native_signature, adapted))
     }
 
     /// Lower a `bulk`-parameter call.
@@ -179,11 +218,38 @@ impl IsleContext<'_, '_, '_, '_> {
             CollectionOperation::Append { owner: mutation_owner } => {
                 let [array_key, value_key] = arguments.as_slice() else { return None };
                 let owner = generated::constructor_lower_expression(self, *array_key)?;
-                let value = generated::constructor_lower_expression(self, *value_key)?;
-                (self.builder.func.dfg.value_type(owner) == pointer
-                    && self.builder.func.dfg.value_type(value) == element_type)
-                    .then_some(())?;
+                (self.builder.func.dfg.value_type(owner) == pointer).then_some(())?;
                 self.builder.ins().trapz(owner, TrapCode::unwrap_user(1));
+                let aggregate_base = match mutation_owner {
+                    CollectionMutationOwner::Local(slot) => {
+                        let binding = self.locals.get(&slot).copied()?;
+                        if binding.value_type != pointer
+                            || binding.managed_reference != ManagedReferenceFact::GcManaged
+                            || binding.root_slot.is_none()
+                            || self.facts.local_slot(*array_key) != Some(slot)
+                        {
+                            self.pending_error =
+                                Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
+                            return None;
+                        }
+                        None
+                    }
+                    CollectionMutationOwner::AggregateField { receiver, .. } => {
+                        let binding = self.locals.get(&receiver).copied()?;
+                        if binding.value_type != pointer
+                            || binding.managed_reference != ManagedReferenceFact::GcManaged
+                            || binding.root_slot.is_none()
+                        {
+                            self.pending_error =
+                                Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
+                            return None;
+                        }
+                        Some(self.builder.use_var(binding.variable))
+                    }
+                };
+                let value = generated::constructor_lower_expression(self, *value_key)?;
+                (self.builder.func.dfg.value_type(value) == element_type).then_some(())?;
+                let value_root = self.root_temporary_if_needed(*value_key, value)?;
                 let length_offset = i32::try_from(pointer.bytes()).ok()?;
                 let length = self.builder.ins().load(word, MemFlags::new(), owner, length_offset);
                 let next_length = self.builder.ins().iadd_imm(length, 1);
@@ -218,16 +284,9 @@ impl IsleContext<'_, '_, '_, '_> {
                     self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
                 }
                 self.builder.ins().store(MemFlags::new(), next_length, array, length_offset);
-                let publication_owner = match mutation_owner {
+                match mutation_owner {
                     CollectionMutationOwner::Local(slot) => {
-                        let (variable, owner_type) = self.locals.get(&slot).copied()?;
-                        if owner_type != pointer || self.facts.local_slot(*array_key) != Some(slot) {
-                            self.pending_error =
-                                Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
-                            return None;
-                        }
-                        self.builder.def_var(variable, array);
-                        array
+                        self.publish_managed_local(slot, array)?;
                     }
                     CollectionMutationOwner::AggregateField { receiver, field_index } => {
                         let layout = self.facts.struct_layout(*array_key)?;
@@ -238,31 +297,24 @@ impl IsleContext<'_, '_, '_, '_> {
                                 Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
                             return None;
                         };
-                        let (variable, receiver_type) = self.locals.get(&receiver).copied()?;
-                        let base = self.builder.use_var(variable);
-                        if receiver_type != pointer || field.value_type != pointer {
+                        let base = aggregate_base?;
+                        if self.locals.get(&receiver)?.value_type != pointer || field.value_type != pointer {
                             self.pending_error =
                                 Some(LoweringError { key, kind: LoweringErrorKind::UnprovenCollectionOwner });
                             return None;
                         }
                         self.builder.ins().store(MemFlags::new(), array, base, i32::try_from(field.offset).ok()?);
-                        base
+                        let barrier = self.import_runtime_helper("gc_write_barrier", &[pointer, pointer], None)?;
+                        self.builder.ins().call(barrier, &[base, array]);
                     }
-                };
-                let owner_barrier = self.import_runtime_helper(
-                    "beskid_rt_v5_array_write_barrier",
-                    &[pointer, pointer],
-                    Some(types::I8),
-                )?;
-                let owner_call = self.builder.ins().call(owner_barrier, &[publication_owner, array]);
-                let owner_published = self.builder.inst_results(owner_call).first().copied()?;
-                self.builder.ins().trapz(owner_published, TrapCode::unwrap_user(8));
+                }
                 let root_handle = self.builder.ins().stack_load(pointer, root_slot, 0);
                 let finish =
                     self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
                 let finish_call = self.builder.ins().call(finish, &[root_handle]);
                 let released = self.builder.inst_results(finish_call).first().copied()?;
                 self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
+                self.release_temporary_root(value_root)?;
                 Some(array)
             }
             CollectionOperation::Clear => {
@@ -338,9 +390,7 @@ impl IsleContext<'_, '_, '_, '_> {
         }
         for (value, parameter) in values {
             (!self.locals.contains_key(&parameter.slot)).then_some(())?;
-            let variable = self.builder.declare_var(parameter.value_type);
-            self.builder.def_var(variable, value);
-            self.locals.insert(parameter.slot, (variable, parameter.value_type));
+            self.bind_local(parameter.slot, value, parameter.value_type, parameter.managed_reference)?;
         }
         if let Some(environment) = &lambda.closure_environment {
             let _env = self.emit_inline_closure_environment(environment)?;
@@ -359,9 +409,9 @@ impl IsleContext<'_, '_, '_, '_> {
         self.builder.ins().trapz(env_ptr, TrapCode::unwrap_user(5));
         let descriptor = self.symbol_global(environment.descriptor_symbol.as_ref(), pointer)?;
         for capture in &environment.captures {
-            let (variable, value_type) = self.locals.get(&capture.local_slot).copied()?;
-            (value_type == capture.value_type).then_some(())?;
-            let value = self.builder.use_var(variable);
+            let binding = self.locals.get(&capture.local_slot).copied()?;
+            (binding.value_type == capture.value_type).then_some(())?;
+            let value = self.builder.use_var(binding.variable);
             if let Some(map_index) = capture.pointer_map_index {
                 let index = self.builder.ins().iconst(pointer, map_index as i64);
                 let store = self.import_runtime_helper(
@@ -424,6 +474,29 @@ impl IsleContext<'_, '_, '_, '_> {
         let (call, _) = self.import_direct_call(key)?;
         self.builder.inst_results(call).is_empty().then_some(())
     }
+}
+
+fn corelib_service_native_signature(call_conv: CallConv, symbol: &str) -> Option<Signature> {
+    use beskid_abi::runtime_source::CorelibServiceAbiType;
+
+    let abi = beskid_abi::runtime_source::canonical_corelib_service_abi_for_adapter(symbol)?;
+    let pointer = dispatch::pointer_type();
+    let abi_type = |ty| match ty {
+        CorelibServiceAbiType::Pointer | CorelibServiceAbiType::String | CorelibServiceAbiType::Usize => Some(pointer),
+        CorelibServiceAbiType::I64 => Some(types::I64),
+        CorelibServiceAbiType::I32 | CorelibServiceAbiType::U32 => Some(types::I32),
+        CorelibServiceAbiType::U8 => Some(types::I8),
+        CorelibServiceAbiType::F64 => Some(types::F64),
+        CorelibServiceAbiType::Void | CorelibServiceAbiType::Never => None,
+    };
+    let mut signature = Signature::new(call_conv);
+    signature
+        .params
+        .extend(abi.parameters.into_iter().map(|ty| abi_type(ty).map(AbiParam::new)).collect::<Option<Vec<_>>>()?);
+    if !matches!(abi.result, CorelibServiceAbiType::Void | CorelibServiceAbiType::Never) {
+        signature.returns.push(AbiParam::new(abi_type(abi.result)?));
+    }
+    Some(signature)
 }
 
 macro_rules! generated_call_methods {

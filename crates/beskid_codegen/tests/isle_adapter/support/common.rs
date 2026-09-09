@@ -86,6 +86,7 @@ pub(in super::super) fn function_signature(
 pub(in super::super) fn canonical_runtime_test_assembly(
     _db: &mut BeskidDatabase,
     directory: &std::path::Path,
+    generation: SyntaxGenerationId,
 ) -> (Arc<ProgramAssembly>, std::path::PathBuf) {
     let all_sources = canonical_runtime_sources();
     let mut source_units = Vec::with_capacity(all_sources.len());
@@ -116,7 +117,7 @@ pub(in super::super) fn canonical_runtime_test_assembly(
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
             false,
-            SyntaxGenerationId(0),
+            generation,
         )),
         source_path,
     )

@@ -36,20 +36,19 @@ pub(super) enum CompareOp {
 }
 
 impl CompareOp {
-    pub(super) fn intcc(self, ty: Type) -> IntCC {
+    pub(super) fn intcc(self, unsigned: bool) -> IntCC {
         use IntCC::*;
-        let signed = ty != types::I8;
         match self {
             CompareOp::Eq => Equal,
             CompareOp::Ne => NotEqual,
-            CompareOp::Lt if signed => SignedLessThan,
-            CompareOp::Lt => UnsignedLessThan,
-            CompareOp::Lte if signed => SignedLessThanOrEqual,
-            CompareOp::Lte => UnsignedLessThanOrEqual,
-            CompareOp::Gt if signed => SignedGreaterThan,
-            CompareOp::Gt => UnsignedGreaterThan,
-            CompareOp::Gte if signed => SignedGreaterThanOrEqual,
-            CompareOp::Gte => UnsignedGreaterThanOrEqual,
+            CompareOp::Lt if unsigned => UnsignedLessThan,
+            CompareOp::Lt => SignedLessThan,
+            CompareOp::Lte if unsigned => UnsignedLessThanOrEqual,
+            CompareOp::Lte => SignedLessThanOrEqual,
+            CompareOp::Gt if unsigned => UnsignedGreaterThan,
+            CompareOp::Gt => SignedGreaterThan,
+            CompareOp::Gte if unsigned => UnsignedGreaterThanOrEqual,
+            CompareOp::Gte => SignedGreaterThanOrEqual,
         }
     }
 
@@ -66,13 +65,37 @@ impl CompareOp {
 }
 
 impl IsleContext<'_, '_, '_, '_> {
-    pub(super) fn lower_compare(&mut self, left: Value, right: Value, op: CompareOp) -> Value {
+    pub(super) fn binary_is_unsigned(&self, key: AstNodeKey) -> Option<bool> {
+        let left = self.facts.child(key, 0)?;
+        let right = self.facts.child(key, 1)?;
+        let is_unsigned_integer = |semantic_type| match semantic_type {
+            beskid_queries::SemanticTypeId::U8
+            | beskid_queries::SemanticTypeId::U32
+            | beskid_queries::SemanticTypeId::WORD => Some(true),
+            beskid_queries::SemanticTypeId::I32 | beskid_queries::SemanticTypeId::I64 => Some(false),
+            _ => None,
+        };
+        let left_unsigned = is_unsigned_integer(self.facts.semantic_type(left)?)?;
+        let right_unsigned = is_unsigned_integer(self.facts.semantic_type(right)?)?;
+        (left_unsigned == right_unsigned).then_some(left_unsigned)
+    }
+
+    pub(super) fn lower_compare(
+        &mut self,
+        key: Option<AstNodeKey>,
+        left: Value,
+        right: Value,
+        op: CompareOp,
+    ) -> Option<Value> {
         if let Some((left, right)) = self.common_float_operands(left, right) {
-            return self.builder.ins().fcmp(op.fcmpcc(), left, right);
+            return Some(self.builder.ins().fcmp(op.fcmpcc(), left, right));
         }
         let (left, right) = self.common_integer_operands(left, right);
-        let ty = self.builder.func.dfg.value_type(left);
-        self.builder.ins().icmp(op.intcc(ty), left, right)
+        let unsigned = match key {
+            Some(key) => self.binary_is_unsigned(key)?,
+            None => false,
+        };
+        Some(self.builder.ins().icmp(op.intcc(unsigned), left, right))
     }
 
     pub(super) fn lower_enum_discriminant_compare(&mut self, key: AstNodeKey, invert: bool) -> Option<Value> {
@@ -193,19 +216,7 @@ macro_rules! generated_operator_methods {
             let (left, right) = self.common_bitwise_operands(left, right);
             self.builder.ins().ushr(left, right)
         }
-        fn clif_sdiv(&mut self, left: Value, right: Value) -> Value {
-            if self.builder.func.dfg.value_type(left).is_float() {
-                self.builder.ins().fdiv(left, right)
-            } else {
-                let (left, right) = self.common_integer_operands(left, right);
-                let ty = self.builder.func.dfg.value_type(left);
-                let zero = self.builder.ins().iconst(ty, 0);
-                let is_zero = self.builder.ins().icmp(IntCC::Equal, right, zero);
-                self.builder.ins().trapnz(is_zero, TrapCode::INTEGER_DIVISION_BY_ZERO);
-                self.builder.ins().sdiv(left, right)
-            }
-        }
-        fn clif_srem(&mut self, left: Value, right: Value) -> Option<Value> {
+        fn clif_srem(&mut self, key: AstNodeKey, left: Value, right: Value) -> Option<Value> {
             let ty = self.builder.func.dfg.value_type(left);
             if ty.is_float() {
                 return None;
@@ -215,15 +226,26 @@ macro_rules! generated_operator_methods {
             let zero = self.builder.ins().iconst(ty, 0);
             let is_zero = self.builder.ins().icmp(IntCC::Equal, right, zero);
             self.builder.ins().trapnz(is_zero, TrapCode::INTEGER_DIVISION_BY_ZERO);
-            Some(self.builder.ins().srem(left, right))
+            Some(if self.binary_is_unsigned(key)? {
+                self.builder.ins().urem(left, right)
+            } else {
+                self.builder.ins().srem(left, right)
+            })
         }
-        fn clif_div_trapz(&mut self, value: Value, divisor: Value) -> Value {
+        fn clif_div_trapz(&mut self, key: AstNodeKey, value: Value, divisor: Value) -> Option<Value> {
+            if let Some((value, divisor)) = self.common_float_operands(value, divisor) {
+                return Some(self.builder.ins().fdiv(value, divisor));
+            }
             let (value, divisor) = self.common_integer_operands(value, divisor);
             let ty = self.builder.func.dfg.value_type(value);
             let zero = self.builder.ins().iconst(ty, 0);
             let is_zero = self.builder.ins().icmp(IntCC::Equal, divisor, zero);
             self.builder.ins().trapnz(is_zero, TrapCode::INTEGER_DIVISION_BY_ZERO);
-            self.builder.ins().sdiv(value, divisor)
+            Some(if self.binary_is_unsigned(key)? {
+                self.builder.ins().udiv(value, divisor)
+            } else {
+                self.builder.ins().sdiv(value, divisor)
+            })
         }
         fn clif_iadd_imm(&mut self, value: Value, imm: i64) -> Value {
             self.builder.ins().iadd_imm(value, imm)
@@ -233,7 +255,7 @@ macro_rules! generated_operator_methods {
         }
 
         fn clif_eq(&mut self, left: Value, right: Value) -> Value {
-            self.lower_compare(left, right, CompareOp::Eq)
+            self.lower_compare(None, left, right, CompareOp::Eq).expect("equality does not require signedness")
         }
 
         fn clif_eq_discriminant(
@@ -259,7 +281,7 @@ macro_rules! generated_operator_methods {
         }
 
         fn clif_ne(&mut self, left: Value, right: Value) -> Value {
-            self.lower_compare(left, right, CompareOp::Ne)
+            self.lower_compare(None, left, right, CompareOp::Ne).expect("equality does not require signedness")
         }
 
         fn clif_ne_discriminant(
@@ -284,20 +306,20 @@ macro_rules! generated_operator_methods {
             self.clif_ne(left, right)
         }
 
-        fn clif_slt(&mut self, left: Value, right: Value) -> Value {
-            self.lower_compare(left, right, CompareOp::Lt)
+        fn clif_slt(&mut self, key: AstNodeKey, left: Value, right: Value) -> Option<Value> {
+            self.lower_compare(Some(key), left, right, CompareOp::Lt)
         }
 
-        fn clif_sle(&mut self, left: Value, right: Value) -> Value {
-            self.lower_compare(left, right, CompareOp::Lte)
+        fn clif_sle(&mut self, key: AstNodeKey, left: Value, right: Value) -> Option<Value> {
+            self.lower_compare(Some(key), left, right, CompareOp::Lte)
         }
 
-        fn clif_sgt(&mut self, left: Value, right: Value) -> Value {
-            self.lower_compare(left, right, CompareOp::Gt)
+        fn clif_sgt(&mut self, key: AstNodeKey, left: Value, right: Value) -> Option<Value> {
+            self.lower_compare(Some(key), left, right, CompareOp::Gt)
         }
 
-        fn clif_sge(&mut self, left: Value, right: Value) -> Value {
-            self.lower_compare(left, right, CompareOp::Gte)
+        fn clif_sge(&mut self, key: AstNodeKey, left: Value, right: Value) -> Option<Value> {
+            self.lower_compare(Some(key), left, right, CompareOp::Gte)
         }
 
         fn clif_enum_eq(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -362,6 +384,15 @@ macro_rules! generated_operator_methods {
             if actual == target {
                 return Some(value);
             }
+            if actual.is_int() && target == cranelift_codegen::ir::types::F64 {
+                return Some(
+                    if matches!(from, beskid_queries::SemanticTypeId::U8 | beskid_queries::SemanticTypeId::U32) {
+                        self.builder.ins().fcvt_from_uint(target, value)
+                    } else {
+                        self.builder.ins().fcvt_from_sint(target, value)
+                    },
+                );
+            }
             if !actual.is_int() || !target.is_int() {
                 self.pending_error = Some(LoweringError {
                     key,
@@ -372,7 +403,7 @@ macro_rules! generated_operator_methods {
                 return None;
             }
             if actual.bits() < target.bits() {
-                if from == beskid_queries::SemanticTypeId::U8 {
+                if matches!(from, beskid_queries::SemanticTypeId::U8 | beskid_queries::SemanticTypeId::U32) {
                     Some(self.builder.ins().uextend(target, value))
                 } else {
                     Some(self.builder.ins().sextend(target, value))

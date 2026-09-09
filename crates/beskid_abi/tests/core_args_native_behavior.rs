@@ -42,6 +42,7 @@ struct BeskidStr { const uint8_t *ptr; size_t len; };
 extern int64_t beskid_rt_v5_args_count(void);
 extern struct BeskidStr *beskid_rt_v5_args_get(int64_t);
 _Noreturn void beskid_rt_v5_trap(uint8_t code, void *message, size_t len) { write(2, message, len); _exit(101); }
+void *str_new(void *data, size_t length) { (void)data; (void)length; return 0; }
 int beskid_program_main(void) {
   if (beskid_rt_v5_args_count() != 3) return 10;
   struct BeskidStr *zero = beskid_rt_v5_args_get(0), *one = beskid_rt_v5_args_get(1), *two = beskid_rt_v5_args_get(2);
@@ -73,6 +74,7 @@ extern void beskid_rt_v5_args_handoff_utf8(int64_t, const char *const *);
 extern int64_t beskid_rt_v5_args_count(void);
 extern struct BeskidStr *beskid_rt_v5_args_get(int64_t);
 _Noreturn void beskid_rt_v5_trap(uint8_t code, void *message, size_t len) { write(2, message, len); _exit(101); }
+void *str_new(void *data, size_t length) { (void)data; (void)length; return 0; }
 int main(void) {
   char value[] = "alpha"; const char *argv[] = { "argv0", value };
   beskid_rt_v5_args_handoff_utf8(2, argv); value[0] = 'X';

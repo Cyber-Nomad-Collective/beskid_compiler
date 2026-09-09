@@ -93,6 +93,7 @@ pub fn emit_combinator_module(module_name: &str, rules: &[GrammarRule]) -> Strin
     writeln!(out, "/// Generated combinator parser module for `{module_name}`.").unwrap();
     writeln!(out, "use Core.Text.Cursor;").unwrap();
     writeln!(out, "use Core.Text.Parser;").unwrap();
+    writeln!(out, "use Core.Text.Parser.Terms;").unwrap();
     writeln!(out).unwrap();
 
     let mut by_name = BTreeMap::new();
@@ -105,11 +106,13 @@ pub fn emit_combinator_module(module_name: &str, rules: &[GrammarRule]) -> Strin
         let body = emit_rule_body(&rule.expression, &rule.name, &by_name);
         writeln!(
             out,
-            "pub Parser.TextParseResult<string> {callable}(Cursor.TextCursor c) {{\n{body}\n}}\n",
+            "pub Parser.Result.TextParseResult<string> {callable}(Cursor.TextCursor c) {{\n{body}\n}}\n",
             body = indent_block(&body, 4)
         )
         .unwrap();
     }
+    out.truncate(out.trim_end().len());
+    out.push('\n');
     out
 }
 
@@ -122,10 +125,37 @@ fn indent_block(body: &str, spaces: usize) -> String {
 }
 
 fn emit_rule_body(expr: &str, rule: &str, rules: &BTreeMap<&str, &GrammarRule>) -> String {
+    if let Some(term) = builtin_term(expr, rule) {
+        return format!("return Core.Text.Parser.Terms.{term}(c, \"{rule}\");");
+    }
     match parse_expr(expr) {
         Ok(node) => emit_node(&node, rule, rules),
-        Err(message) => format!("return Parser.Fail(c, Parser.ParseErrorKind::ExpectedRule, \"{rule}: {message}\");"),
+        Err(message) => format!(
+            "return Parser.Fail(c, Parser.Result.ParseErrorKind::ExpectedRule(\"{rule}: {message}\"), \"{rule}: {message}\");"
+        ),
     }
+}
+
+fn builtin_term(expr: &str, rule: &str) -> Option<&'static str> {
+    let (alphabet, term) = match rule {
+        "digit" => ("0123456789", "Digit"),
+        "lower" => ("abcdefghijklmnopqrstuvwxyz", "Lower"),
+        "upper" => ("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "Upper"),
+        _ => return None,
+    };
+    let Expr::Choice(parts) = parse_expr(expr).ok()? else {
+        return None;
+    };
+    let literals = parts
+        .iter()
+        .map(|part| match part {
+            Expr::Literal(value) => Some(value.as_str()),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (literals.len() == alphabet.len()
+        && literals.iter().zip(alphabet.chars()).all(|(value, ch)| *value == ch.to_string()))
+    .then_some(term)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,6 +167,7 @@ enum Expr {
     Choice(Vec<Expr>),
     Repeat(Box<Expr>, RepeatKind),
     Opt(Box<Expr>),
+    Not(Box<Expr>),
     Group(Box<Expr>),
 }
 
@@ -192,6 +223,9 @@ fn parse_primary(input: &str) -> Result<Expr, String> {
     }
     if trimmed == "ANY" {
         return Ok(Expr::Any);
+    }
+    if let Some(inner) = trimmed.strip_prefix('!') {
+        return Ok(Expr::Not(Box::new(parse_primary(inner.trim())?)));
     }
     if trimmed.starts_with('"') {
         return parse_string_literal(trimmed);
@@ -327,54 +361,66 @@ fn is_ident(text: &str) -> bool {
 }
 
 fn emit_node(node: &Expr, rule: &str, rules: &BTreeMap<&str, &GrammarRule>) -> String {
+    emit_node_from_cursor("c", node, rule, rules)
+}
+
+fn emit_node_from_cursor(cursor: &str, node: &Expr, rule: &str, rules: &BTreeMap<&str, &GrammarRule>) -> String {
     match node {
-        Expr::Literal(value) => emit_literal_expr(value, "c", rule, "return"),
+        Expr::Literal(value) => emit_literal_expr(value, cursor, rule, "return"),
         Expr::RuleRef(name) => {
             if rules.contains_key(name.as_str()) {
-                format!("return {}(c);", rule_name_to_callable(name))
+                format!("return {}({cursor});", rule_name_to_callable(name))
             } else {
-                format!("return Parser.Fail(c, Parser.ParseErrorKind::ExpectedRule, \"{rule}: unknown rule {name}\");")
+                format!(
+                    "return Parser.Fail({cursor}, Parser.Result.ParseErrorKind::ExpectedRule(\"{rule}: unknown rule {name}\"), \"{rule}: unknown rule {name}\");"
+                )
             }
         }
-        Expr::Any => format!("return Parser.Satisfy(c, \"{rule}\");"),
-        Expr::Group(inner) => emit_node(inner, rule, rules),
+        Expr::Any => format!("return Parser.Satisfy({cursor}, \"{rule}\");"),
+        Expr::Group(inner) => emit_node_from_cursor(cursor, inner, rule, rules),
         Expr::Opt(inner) => {
-            let inner_code = emit_node_on_cursor("c", inner, rule, rules);
+            let inner_code = emit_node_on_cursor(cursor, inner, rule, rules);
             format!(
-                "{inner_code}\nif Parser.IsOk(opt_inner) {{\n    return opt_inner;\n}}\nreturn Parser.Pure(\"\", c);"
+                "{inner_code}\nif Parser.IsOk(optInner) {{\n    return optInner;\n}}\nreturn Parser.Pure(\"\", {cursor});"
             )
         }
-        Expr::Repeat(inner, RepeatKind::ZeroOrMore) => emit_many(inner, rule, rules, false),
-        Expr::Repeat(inner, RepeatKind::OneOrMore) => emit_many(inner, rule, rules, true),
-        Expr::Seq(parts) => emit_seq(parts, rule, rules),
-        Expr::Choice(parts) => emit_choice(parts, rule, rules),
+        Expr::Not(inner) => {
+            let inner_code = emit_step_on_cursor(cursor, inner, rule, rules, "notInner");
+            format!(
+                "{inner_code}\nif Parser.IsOk(notInner) {{\n    return Parser.Fail({cursor}, Parser.Result.ParseErrorKind::ExpectedRule(\"{rule}\"), \"{rule}\");\n}}\nreturn Parser.Pure(\"\", {cursor});"
+            )
+        }
+        Expr::Repeat(inner, RepeatKind::ZeroOrMore) => emit_many(cursor, inner, rule, rules, false),
+        Expr::Repeat(inner, RepeatKind::OneOrMore) => emit_many(cursor, inner, rule, rules, true),
+        Expr::Seq(parts) => emit_seq(cursor, parts, rule, rules),
+        Expr::Choice(parts) => emit_choice(cursor, parts, rule, rules),
     }
 }
 
 fn emit_node_on_cursor(cursor: &str, node: &Expr, rule: &str, rules: &BTreeMap<&str, &GrammarRule>) -> String {
     match node {
-        Expr::Literal(value) => emit_literal_expr(value, cursor, rule, "opt_inner"),
+        Expr::Literal(value) => emit_literal_expr(value, cursor, rule, "optInner"),
         Expr::RuleRef(name) => {
-            format!("Parser.TextParseResult<string> opt_inner = {}({cursor});", rule_name_to_callable(name))
+            format!("Parser.Result.TextParseResult<string> optInner = {}({cursor});", rule_name_to_callable(name))
         }
-        Expr::Any => format!("Parser.TextParseResult<string> opt_inner = Parser.Satisfy({cursor}, \"{rule}\");"),
+        Expr::Any => format!("Parser.Result.TextParseResult<string> optInner = Parser.Satisfy({cursor}, \"{rule}\");"),
         Expr::Group(inner) => emit_node_on_cursor(cursor, inner, rule, rules),
         _ => {
-            let body = emit_node(node, rule, rules);
-            format!("Parser.TextParseResult<string> opt_inner = {{\n    {body}\n}};")
+            let body = emit_node_from_cursor(cursor, node, rule, rules);
+            format!("Parser.Result.TextParseResult<string> optInner = {{\n    {body}\n}};")
         }
     }
 }
 
-fn emit_seq(parts: &[Expr], rule: &str, rules: &BTreeMap<&str, &GrammarRule>) -> String {
+fn emit_seq(cursor: &str, parts: &[Expr], rule: &str, rules: &BTreeMap<&str, &GrammarRule>) -> String {
     if parts.is_empty() {
-        return "return Parser.Pure(\"\", c);".to_string();
+        return format!("return Parser.Pure(\"\", {cursor});");
     }
     if parts.len() == 1 {
-        return emit_node(&parts[0], rule, rules);
+        return emit_node_from_cursor(cursor, &parts[0], rule, rules);
     }
     let mut out = String::new();
-    writeln!(out, "Cursor.TextCursor seqCur = c;").unwrap();
+    writeln!(out, "mut Cursor.TextCursor seqCur = {cursor};").unwrap();
     for (index, part) in parts.iter().enumerate() {
         let var = format!("seq{index}");
         let step = emit_step_on_cursor("seqCur", part, rule, rules, &var);
@@ -388,31 +434,40 @@ fn emit_seq(parts: &[Expr], rule: &str, rules: &BTreeMap<&str, &GrammarRule>) ->
     out.trim_end().to_string()
 }
 
-fn emit_choice(parts: &[Expr], rule: &str, rules: &BTreeMap<&str, &GrammarRule>) -> String {
+fn emit_choice(cursor: &str, parts: &[Expr], rule: &str, rules: &BTreeMap<&str, &GrammarRule>) -> String {
     if parts.is_empty() {
-        return format!("return Parser.Fail(c, Parser.ParseErrorKind::ChoiceFailed, \"{rule}\");");
+        return format!(
+            "return Parser.Fail({cursor}, Parser.Result.ParseErrorKind::ChoiceFailed(\"{rule}\"), \"{rule}\");"
+        );
     }
     if parts.len() == 1 {
-        return emit_node(&parts[0], rule, rules);
+        return emit_node_from_cursor(cursor, &parts[0], rule, rules);
     }
     let mut out = String::new();
     for (index, part) in parts.iter().enumerate() {
         let var = format!("choice{index}");
-        let step = emit_step_on_cursor("c", part, rule, rules, &var);
+        let step = emit_step_on_cursor(cursor, part, rule, rules, &var);
         writeln!(out, "{step}").unwrap();
         writeln!(out, "if Parser.IsOk({var}) {{").unwrap();
         writeln!(out, "    return {var};").unwrap();
         writeln!(out, "}}").unwrap();
     }
-    writeln!(out, "return Parser.Fail(c, Parser.ParseErrorKind::ChoiceFailed, \"{rule}\");").unwrap();
+    writeln!(out, "return Parser.Fail({cursor}, Parser.Result.ParseErrorKind::ChoiceFailed(\"{rule}\"), \"{rule}\");")
+        .unwrap();
     out.trim_end().to_string()
 }
 
-fn emit_many(inner: &Expr, rule: &str, rules: &BTreeMap<&str, &GrammarRule>, one_or_more: bool) -> String {
+fn emit_many(
+    cursor: &str,
+    inner: &Expr,
+    rule: &str,
+    rules: &BTreeMap<&str, &GrammarRule>,
+    one_or_more: bool,
+) -> String {
     let step = emit_step_on_cursor("manyCur", inner, rule, rules, "manyStep");
     let mut out = String::new();
-    writeln!(out, "Cursor.TextCursor manyCur = c;").unwrap();
-    writeln!(out, "i64 manyCount = 0;").unwrap();
+    writeln!(out, "mut Cursor.TextCursor manyCur = {cursor};").unwrap();
+    writeln!(out, "mut i64 manyCount = 0;").unwrap();
     writeln!(out, "while true {{").unwrap();
     writeln!(out, "    i64 manyPos = Cursor.Position(manyCur);").unwrap();
     writeln!(out, "    {step}").unwrap();
@@ -421,14 +476,22 @@ fn emit_many(inner: &Expr, rule: &str, rules: &BTreeMap<&str, &GrammarRule>, one
     writeln!(out, "    }}").unwrap();
     writeln!(out, "    Cursor.TextCursor manyRest = Parser.RestOnOk(manyStep, manyCur);").unwrap();
     writeln!(out, "    if Cursor.Position(manyRest) == manyPos {{").unwrap();
-    writeln!(out, "        return Parser.Fail(manyCur, Parser.ParseErrorKind::ZeroWidthRepeat, \"{rule}\");").unwrap();
+    writeln!(
+        out,
+        "        return Parser.Fail(manyCur, Parser.Result.ParseErrorKind::ZeroWidthRepeat(\"{rule}\"), \"{rule}\");"
+    )
+    .unwrap();
     writeln!(out, "    }}").unwrap();
     writeln!(out, "    manyCur = manyRest;").unwrap();
     writeln!(out, "    manyCount = manyCount + 1;").unwrap();
     writeln!(out, "}}").unwrap();
     if one_or_more {
         writeln!(out, "if manyCount < 1 {{").unwrap();
-        writeln!(out, "    return Parser.Fail(c, Parser.ParseErrorKind::ExpectedRule, \"{rule}\");").unwrap();
+        writeln!(
+            out,
+            "    return Parser.Fail({cursor}, Parser.Result.ParseErrorKind::ExpectedRule(\"{rule}\"), \"{rule}\");"
+        )
+        .unwrap();
         writeln!(out, "}}").unwrap();
     }
     writeln!(out, "return Parser.Pure(\"\", manyCur);").unwrap();
@@ -443,48 +506,156 @@ fn emit_step_on_cursor(
     var: &str,
 ) -> String {
     match node {
-        Expr::Literal(value) => emit_literal_expr(value, cursor, rule, var),
-        Expr::RuleRef(name) => {
-            format!("Parser.TextParseResult<string> {var} = {}({cursor});", rule_name_to_callable(name))
+        Expr::Literal(value) if is_beskid_string_representable(value) => {
+            return format!(
+                "Parser.Result.TextParseResult<string> {var} = Parser.Literal({cursor}, \"{}\", \"{rule}\");",
+                escape_beskid_string(value)
+            );
+        }
+        Expr::RuleRef(name) if rules.contains_key(name.as_str()) => {
+            return format!("Parser.Result.TextParseResult<string> {var} = {}({cursor});", rule_name_to_callable(name));
         }
         Expr::Any => {
-            format!("Parser.TextParseResult<string> {var} = Parser.Satisfy({cursor}, \"{rule}\");")
+            return format!("Parser.Result.TextParseResult<string> {var} = Parser.Satisfy({cursor}, \"{rule}\");");
         }
-        Expr::Group(inner) => {
-            let body = emit_node(inner, rule, rules).replace("return ", "");
-            format!("Parser.TextParseResult<string> {var} = {{ {body} }};")
+        Expr::Group(inner) => return emit_step_on_cursor(cursor, inner, rule, rules, var),
+        _ => {}
+    }
+    let mut out = format!("mut Parser.Result.TextParseResult<string> {var} = Parser.Pure(\"\", {cursor});\n");
+    out.push_str(&emit_assignment_on_cursor(cursor, node, rule, rules, var));
+    out
+}
+
+fn emit_assignment_on_cursor(
+    cursor: &str,
+    node: &Expr,
+    rule: &str,
+    rules: &BTreeMap<&str, &GrammarRule>,
+    target: &str,
+) -> String {
+    match node {
+        Expr::Literal(value) => {
+            if !is_beskid_string_representable(value) {
+                return format!(
+                    "{target} = Parser.Fail({cursor}, Parser.Result.ParseErrorKind::ExpectedLiteral(\"{rule}: unrepresentable literal\"), \"{rule}: unrepresentable literal\");"
+                );
+            }
+            format!("{target} = Parser.Literal({cursor}, \"{}\", \"{rule}\");", escape_beskid_string(value))
         }
-        _ => {
-            let body = emit_node(node, rule, rules).replace("return ", "");
-            format!("Parser.TextParseResult<string> {var} = {{ {body} }};")
+        Expr::RuleRef(name) if rules.contains_key(name.as_str()) => {
+            format!("{target} = {}({cursor});", rule_name_to_callable(name))
+        }
+        Expr::RuleRef(name) => format!(
+            "{target} = Parser.Fail({cursor}, Parser.Result.ParseErrorKind::ExpectedRule(\"{rule}: unknown rule {name}\"), \"{rule}: unknown rule {name}\");"
+        ),
+        Expr::Any => format!("{target} = Parser.Satisfy({cursor}, \"{rule}\");"),
+        Expr::Group(inner) => emit_assignment_on_cursor(cursor, inner, rule, rules, target),
+        Expr::Opt(inner) => {
+            let inner = emit_assignment_on_cursor(cursor, inner, rule, rules, target);
+            format!("{inner}\nif !Parser.IsOk({target}) {{\n    {target} = Parser.Pure(\"\", {cursor});\n}}")
+        }
+        Expr::Not(inner) => {
+            let inner = emit_assignment_on_cursor(cursor, inner, rule, rules, target);
+            format!(
+                "{inner}\nif Parser.IsOk({target}) {{\n    {target} = Parser.Fail({cursor}, Parser.Result.ParseErrorKind::ExpectedRule(\"{rule}\"), \"{rule}\");\n}} else {{\n    {target} = Parser.Pure(\"\", {cursor});\n}}"
+            )
+        }
+        Expr::Seq(parts) => emit_seq_assignment(cursor, parts, rule, rules, target),
+        Expr::Choice(parts) => emit_choice_assignment(cursor, parts, rule, rules, target),
+        Expr::Repeat(inner, kind) => {
+            emit_repeat_assignment(cursor, inner, rule, rules, target, *kind == RepeatKind::OneOrMore)
         }
     }
+}
+
+fn emit_seq_assignment(
+    cursor: &str,
+    parts: &[Expr],
+    rule: &str,
+    rules: &BTreeMap<&str, &GrammarRule>,
+    target: &str,
+) -> String {
+    let seq_cursor = format!("{target}SeqCur");
+    let mut out = format!("mut Cursor.TextCursor {seq_cursor} = {cursor};");
+    for part in parts {
+        let assignment = indent_block(&emit_assignment_on_cursor(&seq_cursor, part, rule, rules, target), 4);
+        writeln!(out).unwrap();
+        writeln!(out, "if Parser.IsOk({target}) {{").unwrap();
+        writeln!(out, "{assignment}").unwrap();
+        writeln!(out, "    if Parser.IsOk({target}) {{").unwrap();
+        writeln!(out, "        {seq_cursor} = Parser.RestOnOk({target}, {seq_cursor});").unwrap();
+        write!(out, "    }}\n}}").unwrap();
+    }
+    out
+}
+
+fn emit_choice_assignment(
+    cursor: &str,
+    parts: &[Expr],
+    rule: &str,
+    rules: &BTreeMap<&str, &GrammarRule>,
+    target: &str,
+) -> String {
+    let mut out = format!(
+        "{target} = Parser.Fail({cursor}, Parser.Result.ParseErrorKind::ChoiceFailed(\"{rule}\"), \"{rule}\");"
+    );
+    for part in parts {
+        let assignment = indent_block(&emit_assignment_on_cursor(cursor, part, rule, rules, target), 4);
+        writeln!(out).unwrap();
+        writeln!(out, "if !Parser.IsOk({target}) {{").unwrap();
+        write!(out, "{assignment}\n}}").unwrap();
+    }
+    out
+}
+
+fn emit_repeat_assignment(
+    cursor: &str,
+    inner: &Expr,
+    rule: &str,
+    rules: &BTreeMap<&str, &GrammarRule>,
+    target: &str,
+    one_or_more: bool,
+) -> String {
+    let repeat_cursor = format!("{target}ManyCur");
+    let repeat_count = format!("{target}ManyCount");
+    let repeat_pos = format!("{target}ManyPos");
+    let repeat_rest = format!("{target}ManyRest");
+    let assignment = indent_block(&emit_assignment_on_cursor(&repeat_cursor, inner, rule, rules, target), 4);
+    let mut out = format!(
+        "mut Cursor.TextCursor {repeat_cursor} = {cursor};\nmut i64 {repeat_count} = 0;\nwhile Parser.IsOk({target}) {{\n    i64 {repeat_pos} = Cursor.Position({repeat_cursor});\n{assignment}\n    if !Parser.IsOk({target}) {{\n        {target} = Parser.Pure(\"\", {repeat_cursor});\n        break;\n    }}\n    Cursor.TextCursor {repeat_rest} = Parser.RestOnOk({target}, {repeat_cursor});\n    if Cursor.Position({repeat_rest}) == {repeat_pos} {{\n        {target} = Parser.Fail({repeat_cursor}, Parser.Result.ParseErrorKind::ZeroWidthRepeat(\"{rule}\"), \"{rule}\");\n        break;\n    }}\n    {repeat_cursor} = {repeat_rest};\n    {repeat_count} = {repeat_count} + 1;\n}}"
+    );
+    if one_or_more {
+        write!(out, "\nif Parser.IsOk({target}) && {repeat_count} < 1 {{\n    {target} = Parser.Fail({cursor}, Parser.Result.ParseErrorKind::ExpectedRule(\"{rule}\"), \"{rule}\");\n}}").unwrap();
+    }
+    out
 }
 
 fn emit_literal_expr(value: &str, cursor: &str, rule: &str, target: &str) -> String {
     if !is_beskid_string_representable(value) {
         return format!(
-            "Parser.TextParseResult<string> {target} = Parser.Fail({cursor}, Parser.ParseErrorKind::ExpectedLiteral, \"{rule}: unrepresentable literal\");"
+            "Parser.Result.TextParseResult<string> {target} = Parser.Fail({cursor}, Parser.Result.ParseErrorKind::ExpectedLiteral(\"{rule}: unrepresentable literal\"), \"{rule}: unrepresentable literal\");"
         );
     }
     let escaped = escape_beskid_string(value);
     if target == "return" {
         format!("return Parser.Literal({cursor}, \"{escaped}\", \"{rule}\");")
     } else {
-        format!("Parser.TextParseResult<string> {target} = Parser.Literal({cursor}, \"{escaped}\", \"{rule}\");")
+        format!("Parser.Result.TextParseResult<string> {target} = Parser.Literal({cursor}, \"{escaped}\", \"{rule}\");")
     }
 }
 
 fn is_beskid_string_representable(value: &str) -> bool {
-    value.chars().all(|ch| ch == ' ' || (ch.is_ascii_graphic() && ch != '"' && ch != '\\' && ch != '$'))
+    value.chars().all(|ch| ch == ' ' || ch.is_ascii_graphic())
 }
 
 fn escape_beskid_string(value: &str) -> String {
     let mut out = String::new();
-    for ch in value.chars() {
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
         match ch {
             '\\' => out.push_str("\\\\"),
             '"' => out.push_str("\\\""),
+            '$' if chars.peek() == Some(&'{') => out.push_str("\\$"),
             other => out.push(other),
         }
     }
@@ -509,7 +680,8 @@ mod tests {
         let out = emit_combinator_module("test", &rules);
         assert!(out.contains("ParseHi"));
         assert!(out.contains("Parser.Literal"));
-        assert!(out.contains("Parser.TextParseResult"));
+        assert!(out.contains("Parser.Result.TextParseResult"));
+        assert!(out.contains("use Core.Text.Parser.Terms;"));
     }
 
     #[test]
@@ -540,5 +712,51 @@ mod tests {
         let out = emit_combinator_module("test", &rules);
         assert!(out.contains("ChoiceFailed"));
         assert!(out.contains("if Parser.IsOk(choice0)"));
+    }
+
+    #[test]
+    fn nested_repeat_threads_the_enclosing_sequence_cursor() {
+        let rules = vec![GrammarRule { name: "pat".to_string(), expression: r#""a" ~ ("|" ~ "b")*"#.to_string() }];
+        let out = emit_combinator_module("test", &rules);
+
+        assert!(out.contains("mut Cursor.TextCursor seqCur = c;"));
+        assert!(out.contains("mut Cursor.TextCursor seq1ManyCur = seqCur;"));
+        assert!(out.contains("mut Cursor.TextCursor seq1SeqCur = seq1ManyCur;"));
+        assert!(!out.contains("Parser.Literal(c, \"|\", \"pat\")"), "nested repeat restarted at c:\n{out}");
+    }
+
+    #[test]
+    fn nested_optional_preserves_a_successful_cursor_advance() {
+        let rules = vec![GrammarRule { name: "maybe".to_string(), expression: r#""a" ~ "b"?"#.to_string() }];
+        let out = emit_combinator_module("test", &rules);
+
+        assert!(out.contains("mut Parser.Result.TextParseResult<string> seq1 = Parser.Pure(\"\", seqCur);"));
+        assert!(out.contains("seq1 = Parser.Literal(seqCur, \"b\""));
+        assert!(out.contains("if !Parser.IsOk(seq1)"));
+        assert!(out.contains("seq1 = Parser.Pure(\"\", seqCur);"));
+        assert!(!out.contains("seq1 = {"), "optional cursor result was discarded:\n{out}");
+    }
+
+    #[test]
+    fn negative_lookahead_is_zero_width_and_composable() {
+        let rules = vec![GrammarRule { name: "class_char".to_string(), expression: r#"!("]") ~ ANY"#.to_string() }];
+        let out = emit_combinator_module("test", &rules);
+
+        assert!(out.contains("seq0 = Parser.Literal(seqCur, \"]\""));
+        assert!(out.contains("seq0 = Parser.Pure(\"\", seqCur);"));
+        assert!(out.contains("seqCur = Parser.RestOnOk(seq0, seqCur);"));
+    }
+
+    #[test]
+    fn generated_literals_escape_only_beskid_string_syntax() {
+        let rules = vec![
+            GrammarRule { name: "anchor".to_string(), expression: r#""$""#.to_string() },
+            GrammarRule { name: "interpolation_text".to_string(), expression: r#""${""#.to_string() },
+        ];
+        let out = emit_combinator_module("test", &rules);
+
+        assert!(out.contains(r#"Parser.Literal(c, "$", "anchor")"#));
+        assert!(out.contains(r#"Parser.Literal(c, "\${", "interpolation_text")"#));
+        assert!(!out.contains("unrepresentable literal"));
     }
 }

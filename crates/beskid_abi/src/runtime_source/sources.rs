@@ -40,10 +40,46 @@ pub const CANONICAL_SYSCALLS_SOURCE_PATH: &str = "src/Runtime/Io/Syscalls.bd";
 pub const CANONICAL_CORELIB_SYSCALL_SOURCE_PATH: &str = "Core/Syscall/Syscall.bd";
 /// Canonical Foundation process-argument facade eligible for its two private ABI-v5 services.
 pub const CANONICAL_CORELIB_ARGS_SOURCE_PATH: &str = "Core/Args/Args.bd";
+/// Canonical concurrency scheduler facade eligible for its private ABI-v5 services.
+pub const CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH: &str = "Concurrency.bd";
+/// Canonical concurrency Fiber facade eligible for lifecycle service authority.
+pub const CANONICAL_CORELIB_FIBER_SOURCE_PATH: &str = "Concurrency/Fiber.bd";
+/// Canonical Console Linux platform facade eligible for terminal service authority.
+pub const CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH: &str = "Platform/Linux.bd";
+/// Canonical Console macOS platform facade eligible for terminal service authority.
+pub const CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE_PATH: &str = "Platform/MacOS.bd";
+/// Canonical Console Windows platform facade eligible for terminal service authority.
+pub const CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE_PATH: &str = "Platform/Windows.bd";
+/// Canonical Console terminal facade eligible for environment lookup authority.
+pub const CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH: &str = "Platform/Terminal.bd";
 /// Canonical Foundation filesystem facade eligible for private ABI-v5 filesystem services.
 pub const CANONICAL_CORELIB_FS_SOURCE_PATH: &str = "Core/FS/FS.bd";
+/// Canonical concurrency channel facade eligible for its private ABI-v5 services.
+pub const CANONICAL_CORELIB_CHANNEL_SOURCE_PATH: &str = "Concurrency/Channel.bd";
+/// Canonical concurrency mutex facade eligible for its private ABI-v5 services.
+pub const CANONICAL_CORELIB_MUTEX_SOURCE_PATH: &str = "Concurrency/Mutex.bd";
+/// Canonical concurrency hub facade eligible for its private ABI-v5 services.
+pub const CANONICAL_CORELIB_HUB_SOURCE_PATH: &str = "Concurrency/Hub.bd";
+/// Canonical concurrency wait-group facade eligible for its private ABI-v5 services.
+pub const CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH: &str = "Concurrency/WaitGroup.bd";
 /// Canonical Foundation array facade eligible for compiler-owned typed allocation lowering.
 pub const CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH: &str = "Core/Collections/Array.bd";
+/// Canonical Foundation environment facade eligible for host environment runtime services.
+pub const CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH: &str = "Core/Environment/Environment.bd";
+/// Canonical Foundation path facade eligible for string-slice runtime services.
+pub const CANONICAL_FOUNDATION_PATH_SOURCE_PATH: &str = "Core/Path/Path.bd";
+/// Canonical Foundation process facade eligible for the implemented process runtime services.
+pub const CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH: &str = "Core/Process/Process.bd";
+/// Canonical Foundation random facade eligible for the monotonic-clock runtime service.
+pub const CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH: &str = "Core/Random/Random.bd";
+/// Canonical Foundation core string facade eligible for string runtime services.
+pub const CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH: &str = "Core/String/Core.bd";
+/// Canonical Foundation UTF-8 facade eligible for byte-array and string runtime services.
+pub const CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH: &str = "Core/String/Utf8.bd";
+/// Canonical Foundation text cursor eligible for string-slice runtime services.
+pub const CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH: &str = "Core/Text/Cursor.bd";
+/// Canonical Foundation time facade eligible for realtime and monotonic clock services.
+pub const CANONICAL_FOUNDATION_TIME_SOURCE_PATH: &str = "Core/Time/Time.bd";
 /// Canonical Foundation assertion helper eligible to import the panic runtime service.
 pub const CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH: &str = "Testing/Assert.bd";
 /// Canonical Foundation output helper eligible to import the panic runtime service.
@@ -126,12 +162,52 @@ const CANONICAL_CORELIB_SYSCALL_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Syscall/Syscall.bd"));
 const CANONICAL_CORELIB_ARGS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Args/Args.bd"));
+const CANONICAL_CORELIB_CONCURRENCY_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/concurrency/src/Concurrency.bd"));
+const CANONICAL_CORELIB_FIBER_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/concurrency/src/Concurrency/Fiber.bd"));
+const CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Platform/Linux.bd"));
+const CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Platform/MacOS.bd"));
+const CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Platform/Windows.bd"));
+const CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/console/src/Platform/Terminal.bd"));
 const CANONICAL_CORELIB_FS_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/FS/FS.bd"));
+const CANONICAL_CORELIB_CHANNEL_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/concurrency/src/Concurrency/Channel.bd"));
+const CANONICAL_CORELIB_MUTEX_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/concurrency/src/Concurrency/Mutex.bd"));
+const CANONICAL_CORELIB_HUB_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/concurrency/src/Concurrency/Hub.bd"));
+const CANONICAL_CORELIB_WAIT_GROUP_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/concurrency/src/Concurrency/WaitGroup.bd"
+));
 const CANONICAL_FOUNDATION_ARRAY_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corelib/packages/foundation/src/Core/Collections/Array.bd"
 ));
+const CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corelib/packages/foundation/src/Core/Environment/Environment.bd"
+));
+const CANONICAL_FOUNDATION_PATH_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Path/Path.bd"));
+const CANONICAL_FOUNDATION_PROCESS_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Process/Process.bd"));
+const CANONICAL_FOUNDATION_RANDOM_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Random/Random.bd"));
+const CANONICAL_FOUNDATION_STRING_CORE_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/String/Core.bd"));
+const CANONICAL_FOUNDATION_STRING_UTF8_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/String/Utf8.bd"));
+const CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Text/Cursor.bd"));
+const CANONICAL_FOUNDATION_TIME_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Core/Time/Time.bd"));
 const CANONICAL_FOUNDATION_ASSERT_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corelib/packages/foundation/src/Testing/Assert.bd"));
 const CANONICAL_FOUNDATION_OUTPUT_SOURCE: &str =
@@ -248,12 +324,84 @@ pub fn canonical_corelib_service_sources() -> Vec<SourceUnit> {
         source: CANONICAL_CORELIB_ARGS_SOURCE.into(),
     });
     sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_CONCURRENCY_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_CONCURRENCY_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_FIBER_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_CONSOLE_LINUX_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_CONSOLE_MACOS_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_CONSOLE_WINDOWS_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_CONSOLE_TERMINAL_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
         logical_path: CANONICAL_CORELIB_FS_SOURCE_PATH.into(),
         source: CANONICAL_CORELIB_FS_SOURCE.into(),
     });
     sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_CHANNEL_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_CHANNEL_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_MUTEX_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_MUTEX_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_HUB_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_HUB_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_CORELIB_WAIT_GROUP_SOURCE_PATH.into(),
+        source: CANONICAL_CORELIB_WAIT_GROUP_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
         logical_path: CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH.into(),
         source: CANONICAL_FOUNDATION_ARRAY_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_ENVIRONMENT_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_PATH_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_PATH_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_PROCESS_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_PROCESS_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_RANDOM_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_RANDOM_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_STRING_CORE_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_STRING_UTF8_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_STRING_UTF8_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_TEXT_CURSOR_SOURCE.into(),
+    });
+    sources.push(SourceUnit {
+        logical_path: CANONICAL_FOUNDATION_TIME_SOURCE_PATH.into(),
+        source: CANONICAL_FOUNDATION_TIME_SOURCE.into(),
     });
     sources.push(SourceUnit {
         logical_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH.into(),

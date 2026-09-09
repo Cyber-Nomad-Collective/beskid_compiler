@@ -8,23 +8,23 @@ use super::super::tables::{ResolvedType, ResolvedValue};
 use super::lookup::ModulePathLookup;
 
 impl Resolver {
+    pub(super) fn resolve_path_type_arguments(&mut self, path: &Spanned<Path>) {
+        for segment in &path.node.segments {
+            for type_arg in &segment.node.type_args {
+                self.resolve_type(type_arg);
+            }
+        }
+    }
+
     pub(super) fn resolve_type(&mut self, ty: &Spanned<Type>) {
         match &ty.node {
             Type::Primitive(_) => {}
             Type::Complex(path) => {
-                for segment in &path.node.segments {
-                    for type_arg in &segment.node.type_args {
-                        self.resolve_type(type_arg);
-                    }
-                }
+                self.resolve_path_type_arguments(path);
                 self.resolve_type_path(path);
             }
             Type::Associated { contract, .. } => {
-                for segment in &contract.node.segments {
-                    for type_arg in &segment.node.type_args {
-                        self.resolve_type(type_arg);
-                    }
-                }
+                self.resolve_path_type_arguments(contract);
                 self.resolve_type_path(contract);
             }
             Type::Array(inner) => self.resolve_type(inner),

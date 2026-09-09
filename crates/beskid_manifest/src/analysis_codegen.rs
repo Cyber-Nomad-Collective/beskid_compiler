@@ -38,7 +38,8 @@ fn analysis_type(ty: &str) -> String {
     match ty {
         "pointer" => "ptr".into(),
         "string" => "string".into(),
-        "u8" | "u32" | "i32" | "i64" | "isize" => "u64".into(),
+        "u32" => "u32".into(),
+        "u8" | "i32" | "i64" | "isize" => "u64".into(),
         "void" => "unit".into(),
         other => other.into(),
     }
@@ -49,6 +50,7 @@ fn type_ident(ty: &str) -> &'static str {
         "string" => "String",
         "ptr" => "Ptr",
         "usize" => "Usize",
+        "u32" => "U32",
         "u64" | "i64" | "i32" => "U64",
         "f64" => "F64",
         "unit" | "void" => "Unit",

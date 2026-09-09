@@ -9,8 +9,9 @@ use std::sync::Arc;
 
 use beskid_queries::{
     AstNodeKey, CallLowering, GenericSpecializationInstance, IndexedNodeKind, SemanticTypeId, bulk_parameter,
-    call_arguments, call_lowering, child_nodes, empty_array_literal_element_abi_type, generic_specialization_identity,
-    node_kind, node_type, typed_array_allocation,
+    call_arguments, call_lowering, child_nodes, empty_array_literal_element_abi_type,
+    empty_array_literal_element_specialization, generic_specialization_identity, node_kind, node_type,
+    typed_array_allocation,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -175,6 +176,26 @@ impl CodegenInput<'_> {
         self.build_array_static_plan(literal, element_type, length, None)
     }
 
+    /// Create array metadata using the exact specialization of the item that owns the literal.
+    pub fn array_static_plan_for_specialization(
+        &self,
+        literal: AstNodeKey,
+        specialization: Option<&GenericSpecializationInstance>,
+    ) -> Option<ArrayStaticPlan> {
+        if let Some(plan) = self.array_static_plan(literal) {
+            return Some(plan);
+        }
+        let specialization = specialization?;
+        let elements = child_nodes(self.database(), literal).ok().flatten()?;
+        elements.is_empty().then_some(())?;
+        let element_type =
+            empty_array_literal_element_specialization(self.database(), literal, specialization.substitutions.clone())
+                .ok()
+                .flatten()?;
+        let identity = generic_specialization_identity(specialization);
+        self.build_array_static_plan(literal, element_type, 0, Some(identity.as_ref()))
+    }
+
     /// Create source-authorized typed-array metadata for one `bulk`-parameter call.
     ///
     /// A bulk callee declares a `bulk T[]` parameter; the call site packs N scalar arguments into
@@ -233,7 +254,7 @@ fn scalar_layout(pointer_width: u8, ty: SemanticTypeId) -> Option<(u64, u64, boo
     let pointer = u64::from(pointer_width.checked_div(8)?);
     match ty {
         SemanticTypeId::BOOL | SemanticTypeId::U8 => Some((1, 1, false)),
-        SemanticTypeId::I32 | SemanticTypeId::CHAR => Some((4, 4, false)),
+        SemanticTypeId::I32 | SemanticTypeId::U32 | SemanticTypeId::CHAR => Some((4, 4, false)),
         SemanticTypeId::I64 | SemanticTypeId::F64 => Some((8, 8, false)),
         SemanticTypeId::WORD => Some((pointer, pointer, false)),
         SemanticTypeId::POINTER | SemanticTypeId::STRING => Some((pointer, pointer, true)),

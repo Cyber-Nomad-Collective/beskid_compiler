@@ -2,8 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
 
-const ENV_CORELIB_ROOT: &str = "BESKID_CORELIB_ROOT";
-
+use beskid_abi::runtime_kit::installed_corelib_root;
 use daggy::{Dag, NodeIndex};
 
 use crate::projects::discovery::discover_project_manifest_in_dir;
@@ -195,7 +194,7 @@ pub fn resolve_dependencies(
         && !is_std_project
         && consumer_manifest.project.kind != ProjectKind::Template
         && consumer_manifest.project.kind != ProjectKind::Bsol
-        && !is_corelib_workspace_shard_manifest(consumer_manifest_path)
+        && !is_corelib_workspace_member_manifest(consumer_manifest_path)
         && !depends_on_corelib_aggregate(consumer_manifest, &consumer_project_root)
         && let Some(corelib_path) = default_corelib_dependency_path()
     {
@@ -297,12 +296,12 @@ fn attach_path_dependency(
 }
 
 fn default_corelib_dependency_path() -> Option<String> {
-    if let Ok(explicit_root) = env::var(ENV_CORELIB_ROOT) {
-        let root = PathBuf::from(explicit_root);
-        return Some(corelib_aggregate_project_dir(&root).display().to_string());
-    }
-
-    discover_repo_corelib_root().map(|path| path.display().to_string())
+    installed_corelib_root()
+        .ok()
+        .map(|root| corelib_aggregate_project_dir(&root))
+        .filter(|root| discover_project_manifest_in_dir(root).ok().flatten().is_some())
+        .or_else(discover_repo_corelib_root)
+        .map(|path| path.display().to_string())
 }
 
 /// `BESKID_CORELIB_ROOT` / install roots may be either the aggregate `beskid_corelib/` package
@@ -346,20 +345,28 @@ fn depends_on_corelib_aggregate(consumer_manifest: &ProjectManifest, consumer_pr
     })
 }
 
-/// `Project.proj` files under `compiler/corelib/packages/*` are split shards of the aggregate
-/// `corelib` package; they must not receive the implicit `Std` back-link to `beskid_corelib`
-/// (that would create `beskid_corelib -> shard -> beskid_corelib` dependency cycles).
-fn is_corelib_workspace_shard_manifest(manifest_path: &Path) -> bool {
-    let Some(aggregate_root) = default_corelib_dependency_path().map(PathBuf::from) else {
-        return false;
-    };
-    let aggregate_root = normalize_existing_path(&aggregate_root);
-    let Some(workspace_root) = aggregate_root.parent().map(normalize_existing_path) else {
-        return false;
-    };
-    let packages_root = normalize_existing_path(&workspace_root.join("packages"));
+/// Aggregate and shard manifests are already the implementation of `Std`; they must never acquire
+/// an implicit back-link to whichever installed Corelib happens to be discoverable on the host.
+/// Detect the workspace from the manifest's own path so a checkout and an installed kit cannot be
+/// combined into two divergent declarations of the same package.
+fn is_corelib_workspace_member_manifest(manifest_path: &Path) -> bool {
     let normalized_manifest = normalize_existing_path(manifest_path);
-    normalized_manifest.starts_with(&packages_root)
+    let Some(project_root) = normalized_manifest.parent() else {
+        return false;
+    };
+
+    if project_root.file_name().and_then(std::ffi::OsStr::to_str) == Some("beskid_corelib")
+        && project_root.parent().is_some_and(|workspace| workspace.join("packages").is_dir())
+    {
+        return true;
+    }
+
+    normalized_manifest.ancestors().any(|ancestor| {
+        ancestor.file_name().and_then(std::ffi::OsStr::to_str) == Some("packages")
+            && ancestor.parent().is_some_and(|workspace| {
+                discover_project_manifest_in_dir(&workspace.join("beskid_corelib")).ok().flatten().is_some()
+            })
+    })
 }
 
 fn discover_repo_corelib_root() -> Option<PathBuf> {

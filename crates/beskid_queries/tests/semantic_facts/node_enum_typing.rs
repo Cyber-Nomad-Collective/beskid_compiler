@@ -1,9 +1,9 @@
 use super::support::{assert_unavailable, key, setup};
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
-    SemanticTypeId, call_lowering, cast_intents, child_nodes, control_flow, direct_callees, enum_match, item_body,
-    item_signature, literal_fact, node_kind, node_span, node_type, reachable_items, resolved_item, resolved_local,
-    runtime_intrinsic,
+    ManagedReferenceKind, SemanticTypeId, call_lowering, cast_intents, child_nodes, control_flow, direct_callees,
+    enum_match, item_body, item_signature, literal_fact, managed_reference_kind, node_kind, node_span, node_type,
+    reachable_items, resolved_item, resolved_local, runtime_intrinsic,
 };
 use std::sync::Arc;
 
@@ -122,6 +122,18 @@ fn node_type_uses_the_exact_nominal_enum_payload_binding_shape() {
 }
 
 #[test]
+fn array_enum_payload_binding_preserves_managed_reference_identity() {
+    let source = "enum Choice { Values(i64[] values), Empty } unit Main(Choice choice) { match choice { Choice::Values(values) => { values; }, Choice::Empty => {}, }; return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let values = key(unit, generation, &index, NodeKind::PathExpression, 1);
+
+    assert_eq!(
+        managed_reference_kind(&db, values).expect("array binding managedness"),
+        Some(ManagedReferenceKind::GcManaged),
+    );
+}
+
+#[test]
 fn enum_match_uses_the_exact_nominal_pattern_binding_layout() {
     let source = "enum StandardStream { Stdin, Stdout, Stderr } enum Descriptor { Standard(StandardStream stream), Raw(i64 fd) } i64 Main(Descriptor descriptor) { return match descriptor { Descriptor::Standard(stream) => match stream { StandardStream::Stdin => 0_i64, StandardStream::Stdout => 1_i64, StandardStream::Stderr => 2_i64, }, Descriptor::Raw(fd) => fd, }; }";
     let (db, _project, unit, generation, index) = setup(source);
@@ -161,10 +173,10 @@ fn node_type_uses_an_exact_direct_call_abi_result() {
 }
 
 #[test]
-fn literal_enum_payload_pattern_remains_unavailable_to_type_queries() {
+fn typed_integer_enum_payload_pattern_is_available_to_type_queries() {
     let source = "enum Result { Ok(i64 value), Error(i64 error) } i64 Main(Result result) { return match result { Result::Ok(7_i64) => 1_i64, Result::Error(_) => 0_i64, }; }";
     let (db, _project, unit, generation, index) = setup(source);
     let expression = key(unit, generation, &index, NodeKind::MatchExpression, 0);
 
-    assert_unavailable(enum_match(&db, expression));
+    assert!(enum_match(&db, expression).expect("literal enum match query").is_some());
 }

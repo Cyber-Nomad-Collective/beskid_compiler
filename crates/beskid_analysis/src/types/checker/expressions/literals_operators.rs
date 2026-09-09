@@ -44,7 +44,11 @@ impl<'a> TypeChecker<'a> {
                 if matches!(
                     self.type_table.get(left),
                     Some(TypeInfo::Primitive(
-                        PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U8 | PrimitiveType::Word
+                        PrimitiveType::I32
+                            | PrimitiveType::I64
+                            | PrimitiveType::U32
+                            | PrimitiveType::U8
+                            | PrimitiveType::Word
                     ))
                 ) {
                     Some(left)

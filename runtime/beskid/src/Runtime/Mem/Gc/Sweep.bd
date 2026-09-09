@@ -25,7 +25,7 @@ pub bool Sweep(pointer heap) {
             }
             blockSize = ManagedObjectSize(cursor, descriptor);
             if blockSize == 0 { return false; }
-            if raw_word_load(pointer_add(cursor, 8)) == GcMark::Black {
+            if raw_word_load(pointer_add(cursor, 8)) == GcMarkBlack() {
                 live = true;
             }
         }
@@ -34,7 +34,7 @@ pub bool Sweep(pointer heap) {
             return false;
         }
         if live {
-            raw_word_store(pointer_add(cursor, 8), GcMark::White);
+            raw_word_store(pointer_add(cursor, 8), GcMarkWhite());
             liveBytes = liveBytes + blockSize;
             liveCount = liveCount + 1;
             pendingFree = NativePointer(0);

@@ -17,8 +17,8 @@ use beskid_pckg_contract::{
     PackageVersionSummaryResponse, UpsertPackageRequest,
 };
 use beskid_pckg_store::{
-    NewPackage, NewRegistryActivity, Package, PackageCommunityReview, PackageVersion, PublishOutcome, PublishVersion,
-    StoreError,
+    NewPackage, NewRegistryActivity, Package, PackageCommunityReview, PackageMetadata, PackageVersion, PublishOutcome,
+    PublishVersion, StoreError,
 };
 
 use crate::{AppState, authenticated_publisher_subject, authenticated_subject};

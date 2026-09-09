@@ -8,8 +8,8 @@ pub(in super::super) use beskid_abi::runtime_source::{
     CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_OBJECTS_SOURCE_PATH,
     CANONICAL_BOOTSTRAP_ROOTS_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
     CANONICAL_CORELIB_SYSCALL_SOURCE_PATH, CANONICAL_FOUNDATION_ARRAY_SOURCE_PATH,
-    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, canonical_corelib_service_capability,
-    canonical_corelib_service_source_path, canonical_corelib_service_sources,
+    CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH, CANONICAL_FOUNDATION_STRING_CORE_SOURCE_PATH,
+    canonical_corelib_service_capability, canonical_corelib_service_source_path, canonical_corelib_service_sources,
     canonical_corelib_syscall_service_capability, canonical_corelib_syscall_sources,
     canonical_runtime_intrinsic_capability, canonical_runtime_sources,
 };

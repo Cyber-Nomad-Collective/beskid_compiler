@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use beskid_isle::syntax_types::LiteralKind;
 use beskid_isle::{
     AstNodeKey, EnumLayout, EnumVariantLayout, FieldLayout, FunctionEmissionError, FunctionEmitter, LoweringErrorKind,
-    ManagedStructAllocation, MatchArmFact, NodeFacts, NodeKind,
+    ManagedStructAllocation, MatchArmFact, MatchPayloadPatternFact, NodeFacts, NodeKind,
 };
 use beskid_queries::{AstNodeId, BeskidDatabase, SourceUnitId, SyntaxGenerationId};
 use cranelift_codegen::ir::{Type, UserFuncName, types};
@@ -16,6 +16,8 @@ enum Arms {
     Wildcard,
     Missing,
     Duplicate,
+    NestedExact,
+    NestedMissing,
 }
 
 struct EnumFacts {
@@ -84,8 +86,9 @@ impl NodeFacts for EnumFacts {
             .then(|| ManagedStructAllocation { allocation_request_symbol: "__test_enum_allocation_request".into() })
     }
 
-    fn enum_payload(&self, key: AstNodeKey) -> Option<AstNodeKey> {
-        (key == self.nodes[1]).then_some(self.nodes[2])
+    fn enum_payloads(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        (key == self.nodes[1] && !matches!(self.arms, Arms::NestedExact | Arms::NestedMissing))
+            .then(|| vec![self.nodes[2]])
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
@@ -93,12 +96,56 @@ impl NodeFacts for EnumFacts {
             return None;
         }
         Some(match self.arms {
-            Arms::Exact => vec![MatchArmFact::variant(0, self.nodes[3]), MatchArmFact::variant(7, self.nodes[4])],
+            Arms::Exact => vec![
+                MatchArmFact::variant(0, self.nodes[3]),
+                MatchArmFact::variant_with_payload(
+                    7,
+                    self.nodes[4],
+                    MatchPayloadPatternFact::Fields(vec![MatchPayloadPatternFact::Ignore]),
+                ),
+            ],
             Arms::Wildcard => vec![MatchArmFact::variant(0, self.nodes[3]), MatchArmFact::wildcard(self.nodes[5])],
             Arms::Missing => vec![MatchArmFact::variant(0, self.nodes[3])],
             Arms::Duplicate => vec![
                 MatchArmFact::variant(0, self.nodes[3]),
                 MatchArmFact::variant(0, self.nodes[4]),
+                MatchArmFact::variant_with_payload(
+                    7,
+                    self.nodes[5],
+                    MatchPayloadPatternFact::Fields(vec![MatchPayloadPatternFact::Ignore]),
+                ),
+            ],
+            Arms::NestedExact => vec![
+                MatchArmFact::variant_with_payload(
+                    0,
+                    self.nodes[3],
+                    MatchPayloadPatternFact::Fields(vec![MatchPayloadPatternFact::Enum {
+                        layout: nested_layout(),
+                        discriminant: 0,
+                        payload: Box::new(MatchPayloadPatternFact::Fields(vec![])),
+                    }]),
+                ),
+                MatchArmFact::variant_with_payload(
+                    0,
+                    self.nodes[4],
+                    MatchPayloadPatternFact::Fields(vec![MatchPayloadPatternFact::Enum {
+                        layout: nested_layout(),
+                        discriminant: 1,
+                        payload: Box::new(MatchPayloadPatternFact::Fields(vec![])),
+                    }]),
+                ),
+                MatchArmFact::variant(7, self.nodes[5]),
+            ],
+            Arms::NestedMissing => vec![
+                MatchArmFact::variant_with_payload(
+                    0,
+                    self.nodes[3],
+                    MatchPayloadPatternFact::Fields(vec![MatchPayloadPatternFact::Enum {
+                        layout: nested_layout(),
+                        discriminant: 0,
+                        payload: Box::new(MatchPayloadPatternFact::Fields(vec![])),
+                    }]),
+                ),
                 MatchArmFact::variant(7, self.nodes[5]),
             ],
         })
@@ -110,7 +157,28 @@ fn valid_layout() -> EnumLayout {
         8,
         2,
         FieldLayout::new(types::I32, 0),
-        vec![EnumVariantLayout::new(0, None), EnumVariantLayout::new(7, Some(FieldLayout::new(types::I32, 4)))],
+        vec![EnumVariantLayout::new(0, vec![]), EnumVariantLayout::new(7, vec![Some(FieldLayout::new(types::I32, 4))])],
+    )
+}
+
+fn nested_layout() -> EnumLayout {
+    EnumLayout::new(
+        4,
+        2,
+        FieldLayout::new(types::I32, 0),
+        vec![EnumVariantLayout::new(0, vec![]), EnumVariantLayout::new(1, vec![])],
+    )
+}
+
+fn nested_outer_layout(pointer_type: Type) -> EnumLayout {
+    EnumLayout::new(
+        16,
+        3,
+        FieldLayout::new(types::I32, 0),
+        vec![
+            EnumVariantLayout::new(0, vec![Some(FieldLayout::new(pointer_type, 8))]),
+            EnumVariantLayout::new(7, vec![]),
+        ],
     )
 }
 
@@ -179,21 +247,50 @@ fn non_exhaustive_match_is_an_exact_keyed_error() {
 }
 
 #[test]
-fn duplicate_match_arm_is_an_exact_keyed_error() {
+fn repeated_variant_arms_preserve_source_order() {
     let isa = cranelift_codegen::isa::lookup(Triple::host())
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
     let facts = facts(isa.pointer_type(), Arms::Duplicate, 1, valid_layout());
     let emitter = FunctionEmitter::new(isa.as_ref());
-    let error = emitter
+    let function = emitter
         .emit_expression(UserFuncName::user(0, 31), emitter.signature([], [types::I32]), &facts, facts.nodes[0])
-        .expect_err("duplicate semantic match arms must not lower");
+        .expect("repeated variant arms are required for literal and nested-pattern fallthrough");
+    let clif = function.display().to_string();
+    let first = clif.find("iconst.i32 100").expect("first repeated arm body");
+    let second = clif.find("iconst.i32 200").expect("second repeated arm body");
+    assert!(first < second, "repeated arms must retain source order: {clif}");
+}
+
+#[test]
+fn collectively_exhaustive_nested_enum_variants_cover_the_outer_payload() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let facts = facts(isa.pointer_type(), Arms::NestedExact, 1, nested_outer_layout(isa.pointer_type()));
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    emitter
+        .emit_expression(UserFuncName::user(0, 32), emitter.signature([], [types::I32]), &facts, facts.nodes[0])
+        .expect("all nested nominal variants collectively cover the outer enum payload");
+}
+
+#[test]
+fn missing_nested_enum_variant_keeps_the_outer_match_non_exhaustive() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let facts = facts(isa.pointer_type(), Arms::NestedMissing, 1, nested_outer_layout(isa.pointer_type()));
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let error = emitter
+        .emit_expression(UserFuncName::user(0, 33), emitter.signature([], [types::I32]), &facts, facts.nodes[0])
+        .expect_err("an uncovered nested nominal variant must remain non-exhaustive");
     let FunctionEmissionError::Lowering(error) = error else {
         panic!("expected lowering error");
     };
-    assert_eq!(error.key(), facts.nodes[0]);
-    assert_eq!(error.kind(), LoweringErrorKind::InvalidMatchArms);
+    assert_eq!(error.kind(), LoweringErrorKind::NonExhaustiveMatch);
 }
 
 struct UnitMatchFacts {
@@ -242,8 +339,16 @@ impl NodeFacts for UnitMatchFacts {
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
-        (key == self.nodes[0])
-            .then(|| vec![MatchArmFact::variant(0, self.nodes[2]), MatchArmFact::variant(7, self.nodes[3])])
+        (key == self.nodes[0]).then(|| {
+            vec![
+                MatchArmFact::variant(0, self.nodes[2]),
+                MatchArmFact::variant_with_payload(
+                    7,
+                    self.nodes[3],
+                    MatchPayloadPatternFact::Fields(vec![MatchPayloadPatternFact::Ignore]),
+                ),
+            ]
+        })
     }
 }
 
@@ -281,7 +386,7 @@ fn duplicate_enum_discriminant_is_an_exact_layout_error() {
         4,
         2,
         FieldLayout::new(types::I32, 0),
-        vec![EnumVariantLayout::new(0, None), EnumVariantLayout::new(0, None)],
+        vec![EnumVariantLayout::new(0, vec![]), EnumVariantLayout::new(0, vec![])],
     );
     let facts = facts(isa.pointer_type(), Arms::Exact, 0, invalid);
     let emitter = FunctionEmitter::new(isa.as_ref());

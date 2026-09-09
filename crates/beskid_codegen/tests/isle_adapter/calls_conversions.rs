@@ -160,7 +160,7 @@ fn canonical_corelib_service_call_imports_its_distinct_abi_symbol() {
     let call = find_corelib_service_call(input.database(), read, "__syscall_read").expect("__syscall_read call");
     let service = DirectCallee::corelib_service("syscall_read");
     let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
-    let signature = function_signature(isa.as_ref(), isa.pointer_type(), [types::I64, types::I64]);
+    let signature = function_signature(isa.as_ref(), types::I64, [types::I32, isa.pointer_type(), isa.pointer_type()]);
     let imported = module
         .declare_function("syscall_read", Linkage::Import, &signature)
         .expect("declare the exact Corelib service import");
@@ -170,28 +170,34 @@ fn canonical_corelib_service_call_imports_its_distinct_abi_symbol() {
     assert_eq!(
         call_abi_signature(input.database(), call).expect("Corelib service ABI fact"),
         Some(beskid_queries::ItemSignature {
-            parameters: Arc::from([beskid_queries::SemanticTypeId::I64, beskid_queries::SemanticTypeId::I64,]),
-            result: beskid_queries::SemanticTypeId::STRING,
+            parameters: Arc::from([
+                beskid_queries::SemanticTypeId::I32,
+                beskid_queries::SemanticTypeId::POINTER,
+                beskid_queries::SemanticTypeId::WORD,
+            ]),
+            result: beskid_queries::SemanticTypeId::I64,
         })
     );
 
-    let service_facts = CorelibServiceImportFacts::new(input.database(), service);
+    let service_facts = CorelibServiceImportFacts::read(input.database(), service);
 
     let emitter = FunctionEmitter::new(isa.as_ref());
     let function = emitter
         .emit_expression_with_call_importer(
             UserFuncName::user(0, 91),
-            emitter.signature([], [isa.pointer_type()]),
+            emitter.signature([], [types::I64]),
             &service_facts,
             service_facts.call,
             &mut importer,
         )
         .expect("compiler-authorized Corelib service lowers through an exact import");
-    assert!(function.display().to_string().contains("call"));
+    let clif = function.display().to_string();
+    assert!(clif.contains("load.i64"), "the array header data pointer must be extracted: {clif}");
+    assert!(clif.contains("call"), "{clif}");
 }
 
 #[test]
-fn materialized_foundation_syscall_facade_imports_its_authorized_write_service() {
+fn materialized_foundation_syscall_facade_preserves_managed_write_abi() {
     let (input, isa, root) = materialized_corelib_syscall_fixture();
     let write = find_function_definitions(input.database(), root)
         .into_iter()
@@ -211,7 +217,7 @@ fn materialized_foundation_syscall_facade_imports_its_authorized_write_service()
         .declare_function("syscall_write", Linkage::Import, &signature)
         .expect("declare materialized Corelib service import");
     let mut importer = ItemModuleImporter::new(&mut module, HashMap::from([(service.clone(), imported)]));
-    let service_facts = CorelibServiceImportFacts::new(input.database(), service);
+    let service_facts = CorelibServiceImportFacts::write(input.database(), service);
     let function = FunctionEmitter::new(isa.as_ref())
         .emit_expression_with_call_importer(
             UserFuncName::user(0, 97),
@@ -221,10 +227,37 @@ fn materialized_foundation_syscall_facade_imports_its_authorized_write_service()
             &mut importer,
         )
         .expect("materialized Core.Syscall call lowers through the authorized external import");
-    assert!(
-        function.display().to_string().contains("call"),
-        "the trusted materialized facade must import syscall_write"
-    );
+    let clif = function.display().to_string();
+    assert!(!clif.contains("ireduce.i32"), "the managed write ABI must preserve its i64 descriptor: {clif}");
+    assert!(!clif.contains("load.i64"), "the managed string pointer must cross the adapter boundary intact: {clif}");
+    assert!(clif.contains("call"), "the trusted materialized facade must import syscall_write: {clif}");
+}
+
+#[test]
+fn utf8_service_expands_the_typed_array_header_to_native_data_and_length() {
+    let (input, isa, _) = item_fixture_with_root("unit Main() { return; }");
+    let service = DirectCallee::corelib_service("str_from_bytes_utf8");
+    let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let signature = function_signature(isa.as_ref(), isa.pointer_type(), [isa.pointer_type(), isa.pointer_type()]);
+    let imported = module
+        .declare_function("str_from_bytes_utf8", Linkage::Import, &signature)
+        .expect("declare exact UTF-8 service import");
+    let mut importer = ItemModuleImporter::new(&mut module, HashMap::from([(service.clone(), imported)]));
+    let service_facts = CorelibServiceImportFacts::header(input.database(), service);
+
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let function = emitter
+        .emit_expression_with_call_importer(
+            UserFuncName::user(0, 98),
+            emitter.signature([], [isa.pointer_type()]),
+            &service_facts,
+            service_facts.call,
+            &mut importer,
+        )
+        .expect("typed UTF-8 array facade lowers to the native data-plus-length ABI");
+    let clif = function.display().to_string();
+    assert_eq!(clif.matches("load.i64").count(), 2, "the array header must yield exactly data and length: {clif}");
+    assert!(clif.contains("call"), "the adapted UTF-8 service must be called: {clif}");
 }
 
 #[test]
@@ -247,13 +280,13 @@ fn canonical_foundation_args_module_emits_only_the_authorized_args_imports() {
     imports.sort_unstable();
     assert_eq!(
         imports,
-        vec!["args_count", "args_get"],
-        "the canonical Core.Args module is the sole source authorized to import both ABI services"
+        vec!["beskid_rt_v5_args_count", "beskid_rt_v5_args_get", "str_concat", "str_eq", "str_from_i64", "str_new"],
+        "canonical Core.Args receives its exact ABI-v5 services plus the always-available string baseline"
     );
 }
 
 #[test]
-fn copied_materialized_foundation_args_module_cannot_emit_args_imports() {
+fn trusted_materialized_foundation_args_module_emits_authorized_args_imports() {
     let source = canonical_corelib_service_sources()
         .into_iter()
         .find(|source| source.logical_path == CANONICAL_CORELIB_ARGS_SOURCE_PATH)
@@ -264,7 +297,16 @@ fn copied_materialized_foundation_args_module_cannot_emit_args_imports() {
     std::fs::write(&source_path, &source.source).expect("write copied Core.Args source");
     let (input, isa, root) = core_args_fixture(source_path.clone(), source.source, Arc::from([source_path]));
 
-    assert_args_module_cannot_emit_imports(&input, isa.as_ref(), root);
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[SyntaxModuleItem { key: named_function(&input, root, "ProgramName"), symbol: "ProgramName".into() }],
+    )
+    .expect("loader-proven materialized Core.Args emits through syntax ISLE");
+    let mut imports = artifact.extern_imports.iter().map(|import| import.symbol.as_str()).collect::<Vec<_>>();
+    imports.sort_unstable();
+    assert!(imports.contains(&"beskid_rt_v5_args_count"));
+    assert!(imports.contains(&"beskid_rt_v5_args_get"));
 }
 
 #[cfg(unix)]
@@ -341,6 +383,13 @@ fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and
         vec!["beskid_trap_message", "str_concat", "str_eq", "str_from_i64", "str_new"],
         "canonical Assert may emit the always-admitted string baseline and its reachable panic service, but no other facade service"
     );
+    let trigger = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "trigger_failure")
+        .expect("trigger_failure artifact");
+    let clif = trigger.function.display().to_string();
+    assert!(!clif.contains("load.i64"), "the managed panic string must cross the adapter boundary intact: {clif}");
 }
 
 #[test]

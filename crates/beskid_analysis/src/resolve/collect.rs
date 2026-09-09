@@ -46,7 +46,7 @@ pub(super) fn builtin_span() -> syntax::SpanInfo {
     syntax::SpanInfo { start: 0, end: 0, line_col_start: (1, 1), line_col_end: (1, 1) }
 }
 
-pub(super) fn use_imported_name(use_decl: &UseDeclaration) -> String {
+pub(crate) fn use_imported_name(use_decl: &UseDeclaration) -> String {
     use_decl.alias.as_ref().map(|alias| alias.node.name.clone()).unwrap_or_else(|| path_tail(&use_decl.path))
 }
 
@@ -109,6 +109,7 @@ impl Resolver {
         module_path: &[String],
         source_path: Option<&PathBuf>,
     ) {
+        self.module_imports.clear();
         self.current_source_path = source_path.map(|path| crate::paths::unit_path_key(path));
         if resolver::file_scoped_module_index(program).is_some() {
             self.collect_program(program);
@@ -125,7 +126,6 @@ impl Resolver {
             .map(|path| self.module_graph.ensure_module_path(&path))
             .unwrap_or(self.module_graph.root());
         self.collect_items(&program.node.items, file_scoped_module_index);
-        self.add_implicit_core_import();
     }
 
     /// Restore one already-collected unit's module and import scope before resolving its refs.
@@ -156,17 +156,18 @@ impl Resolver {
     /// Collect local declarations before applying imports so declaration identity is independent
     /// of source ordering. Imports intentionally skip occupied names; therefore a local function
     /// such as `Query.ArrayIterator.Current` deterministically shadows an imported `Current`.
-    fn collect_items(&mut self, items: &[Spanned<Node>], skip_index: Option<usize>) {
+    fn collect_items(&mut self, items: &[Spanned<Node>], excluded_index: Option<usize>) {
         for (index, item) in items.iter().enumerate() {
-            if Some(index) != skip_index && !matches!(&item.node, Node::UseDeclaration(_)) {
+            if Some(index) != excluded_index && !matches!(item.node, Node::UseDeclaration(_)) {
                 self.collect_item(item);
             }
         }
         for (index, item) in items.iter().enumerate() {
-            if Some(index) != skip_index && matches!(&item.node, Node::UseDeclaration(_)) {
+            if Some(index) != excluded_index && matches!(item.node, Node::UseDeclaration(_)) {
                 self.collect_item(item);
             }
         }
+        self.add_implicit_core_import();
     }
 
     fn add_implicit_core_import(&mut self) {

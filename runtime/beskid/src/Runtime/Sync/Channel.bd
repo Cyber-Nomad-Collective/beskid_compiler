@@ -6,7 +6,10 @@
 
 const CHANNEL_TABLE_MAX = 64;
 const CHANNEL_BUFFER_SIZE = 16; // ring buffer capacity per channel
-const CHANNEL_SLOT_SIZE = 192;  // header + ring buffer + wait lists
+const CHANNEL_SLOT_SIZE = 216;  // header + ring buffer + wait lists + one exclusive receive receipt
+const CHANNEL_RECEIPT_VALUE_OFFSET = 192;
+const CHANNEL_RECEIPT_POINTER_OFFSET = 200;
+const CHANNEL_RECEIPT_PRESENT_OFFSET = 208;
 
 // Returns the separately allocated channel table owned by the active scheduler.
 // Channel storage must never be derived from an undeclared RuntimeState offset.
@@ -55,6 +58,9 @@ pub i64 ChannelCreate(mut i64 capacity, i64 flags) {
     raw_word_store(pointer_add(slot, 168), 0); // pointer payload bitset
     raw_word_store(pointer_add(slot, 176), 0); // sending waiter bitset
     raw_word_store(pointer_add(slot, 184), 0); // receiving waiter bitset
+    raw_word_store(pointer_add(slot, CHANNEL_RECEIPT_VALUE_OFFSET), 0);
+    raw_word_store(pointer_add(slot, CHANNEL_RECEIPT_POINTER_OFFSET), 0);
+    raw_word_store(pointer_add(slot, CHANNEL_RECEIPT_PRESENT_OFFSET), 0);
     // Zero the ring buffer.
     mut word i = 0;
     while i < CHANNEL_BUFFER_SIZE {
@@ -121,73 +127,73 @@ pub i64 ChannelTrySend(i64 id, i64 value) {
     return ChannelTrySendValue(id, value);
 }
 
-pub i64 ChannelTryReceiveStatus(i64 id) {
+// Atomically removes one FIFO message and retains it in the channel-owned receipt.
+// The typed value adapter consumes that receipt immediately after an OK status.
+pub i64 ChannelClaimReceive(i64 id) {
     pointer ch = ChannelSlot(id);
     if ch == NativePointer(0) {
         return CHANNEL_STATUS_CLOSED;
     }
+    if raw_word_load(pointer_add(ch, CHANNEL_RECEIPT_PRESENT_OFFSET)) != 0 {
+        return CHANNEL_STATUS_WOULD_BLOCK;
+    }
     mut u8 closed = raw_byte_load(pointer_add(ch, 32));
     mut word count = raw_word_load(pointer_add(ch, 16));
-    if count > 0 {
-        return CHANNEL_STATUS_OK;
+    if count == 0 {
+        if closed != 0 {
+            return CHANNEL_STATUS_CLOSED;
+        }
+        return CHANNEL_STATUS_WOULD_BLOCK;
     }
-    if closed != 0 {
-        return CHANNEL_STATUS_CLOSED;
-    }
-    return CHANNEL_STATUS_WOULD_BLOCK;
+    mut word head = raw_word_load(ch);
+    word position = head % CHANNEL_BUFFER_SIZE;
+    word pointerBits = raw_word_load(pointer_add(ch, 168));
+    word pointerPayload = pointerBits & (word(1) << position);
+    word value = raw_word_load(pointer_add(ch, 40 + position * 8));
+    raw_word_store(pointer_add(ch, 40 + position * 8), 0);
+    raw_word_store(pointer_add(ch, 168), pointerBits & (0xFFFFFFFFFFFFFFFF - (word(1) << position)));
+    raw_word_store(ch, (head + 1) % CHANNEL_BUFFER_SIZE);
+    raw_word_store(pointer_add(ch, 16), count - 1);
+    raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_VALUE_OFFSET), value);
+    raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_POINTER_OFFSET), pointerPayload);
+    raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_PRESENT_OFFSET), 1);
+    ChannelWakeOne(ch, 176);
+    return CHANNEL_STATUS_OK;
+}
+
+[Export(Abi:"C", Symbol:"channel_try_receive")]
+pub i64 ChannelTryReceive(i64 id) {
+    return ChannelClaimReceive(id);
 }
 
 // Parks until a message is available, closure is observed, or cancellation wins.
 [Export(Abi:"C", Symbol:"channel_receive_status")]
 pub i64 ChannelReceiveStatus(i64 id) {
-    mut i64 status = ChannelTryReceiveStatus(id);
+    mut i64 status = ChannelClaimReceive(id);
     while status == CHANNEL_STATUS_WOULD_BLOCK {
         pointer ch = ChannelSlot(id);
         if ch == NativePointer(0) { return CHANNEL_STATUS_CLOSED; }
         status = ChannelPark(ch, 184);
         if status != CHANNEL_STATUS_OK { return status; }
-        status = ChannelTryReceiveStatus(id);
+        status = ChannelClaimReceive(id);
     }
     return status;
 }
 
-// Dequeues a value after a successful receive_status call.
+// Consumes the scalar value retained by a successful receive claim.
 [Export(Abi:"C", Symbol:"channel_receive_value")]
 pub i64 ChannelReceiveValue(i64 id) {
     pointer ch = ChannelSlot(id);
-    if ch == NativePointer(0) {
+    if ch == NativePointer(0)
+        || raw_word_load(pointer_add(ch, CHANNEL_RECEIPT_PRESENT_OFFSET)) == 0
+        || raw_word_load(pointer_add(ch, CHANNEL_RECEIPT_POINTER_OFFSET)) != 0 {
         return 0;
     }
-    mut word count = raw_word_load(pointer_add(ch, 16));
-    if count == 0 {
-        return 0;
-    }
-    mut word head = raw_word_load(pointer_add(ch, 0));
-    word value = raw_word_load(pointer_add(ch, 40 + (head % CHANNEL_BUFFER_SIZE) * 8));
-    raw_word_store(pointer_add(ch, 40 + (head % CHANNEL_BUFFER_SIZE) * 8), 0);
-    raw_word_store(pointer_add(ch, 0), (head + 1) % CHANNEL_BUFFER_SIZE);
-    raw_word_store(pointer_add(ch, 16), count - 1);
-    ChannelWakeOne(ch, 176);
+    word value = raw_word_load(pointer_add(ch, CHANNEL_RECEIPT_VALUE_OFFSET));
+    raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_VALUE_OFFSET), 0);
+    raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_PRESENT_OFFSET), 0);
+    ChannelWakeOne(ch, 184);
     return i64(value);
-}
-
-// Tries to receive without blocking. Writes value to *out on success.
-[Export(Abi:"C", Symbol:"channel_try_receive")]
-pub bool ChannelTryReceive(i64 id) {
-    pointer ch = ChannelSlot(id);
-    if ch == NativePointer(0) {
-        return false;
-    }
-    mut word count = raw_word_load(pointer_add(ch, 16));
-    if count == 0 {
-        return false;
-    }
-    mut word head = raw_word_load(pointer_add(ch, 0));
-    raw_word_store(pointer_add(ch, 40 + (head % CHANNEL_BUFFER_SIZE) * 8), 0);
-    raw_word_store(pointer_add(ch, 0), (head + 1) % CHANNEL_BUFFER_SIZE);
-    raw_word_store(pointer_add(ch, 16), count - 1);
-    ChannelWakeOne(ch, 176);
-    return true;
 }
 
 pub unit ChannelDrain(pointer ch) {
@@ -206,6 +212,14 @@ pub unit ChannelDrain(pointer ch) {
     raw_word_store(pointer_add(ch, 8), 0);
     raw_word_store(pointer_add(ch, 16), 0);
     raw_word_store(pointer_add(ch, 168), 0);
+    if raw_word_load(pointer_add(ch, CHANNEL_RECEIPT_PRESENT_OFFSET)) != 0
+        && raw_word_load(pointer_add(ch, CHANNEL_RECEIPT_POINTER_OFFSET)) != 0 {
+        word receiptHandle = raw_word_load(pointer_add(ch, CHANNEL_RECEIPT_VALUE_OFFSET));
+        if receiptHandle != 0 { GcUnrootHandle(receiptHandle); }
+    }
+    raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_VALUE_OFFSET), 0);
+    raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_POINTER_OFFSET), 0);
+    raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_PRESENT_OFFSET), 0);
     return;
 }
 
@@ -308,23 +322,17 @@ pub i64 ChannelTrySendPtr(i64 id, pointer valuePtr) {
 [Export(Abi:"C", Symbol:"channel_receive_ptr")]
 pub pointer ChannelReceivePtr(i64 id) {
     pointer ch = ChannelSlot(id);
-    if ch == NativePointer(0) || raw_word_load(pointer_add(ch, 16)) == 0 { return NativePointer(0); }
-    mut word head = raw_word_load(ch);
-    mut word position = head % CHANNEL_BUFFER_SIZE;
-    word pointerBits = raw_word_load(pointer_add(ch, 168));
-    if (pointerBits & (word(1) << position)) == 0 { return NativePointer(0); }
-    word handle = raw_word_load(pointer_add(ch, 40 + position * 8));
+    if ch == NativePointer(0)
+        || raw_word_load(pointer_add(ch, CHANNEL_RECEIPT_PRESENT_OFFSET)) == 0
+        || raw_word_load(pointer_add(ch, CHANNEL_RECEIPT_POINTER_OFFSET)) == 0 {
+        return NativePointer(0);
+    }
+    word handle = raw_word_load(pointer_add(ch, CHANNEL_RECEIPT_VALUE_OFFSET));
     pointer value = GcResolveHandle(handle);
-    raw_word_store(pointer_add(ch, 40 + position * 8), 0);
-    raw_word_store(pointer_add(ch, 168), pointerBits & (0xFFFFFFFFFFFFFFFF - (word(1) << position)));
-    raw_word_store(ch, (head + 1) % CHANNEL_BUFFER_SIZE);
-    raw_word_store(pointer_add(ch, 16), raw_word_load(pointer_add(ch, 16)) - 1);
+    raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_VALUE_OFFSET), 0);
+    raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_POINTER_OFFSET), 0);
+    raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_PRESENT_OFFSET), 0);
     GcUnrootHandle(handle);
-    ChannelWakeOne(ch, 176);
+    ChannelWakeOne(ch, 184);
     return value;
-}
-
-[Export(Abi:"C", Symbol:"channel_try_receive_ptr")]
-pub pointer ChannelTryReceivePtr(i64 id) {
-    return ChannelReceivePtr(id);
 }

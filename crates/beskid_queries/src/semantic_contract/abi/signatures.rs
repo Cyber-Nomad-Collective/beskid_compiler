@@ -126,7 +126,15 @@ pub(in crate::semantic_contract) fn call_abi_signature_for_call(
         None => {
             return Err(SemanticError::unavailable("call_abi_signature"));
         }
-        Some(CallLowering::Direct(_)) => {}
+        Some(CallLowering::Direct(declaration)) => {
+            // Extern contract methods are concrete ABI declarations, not generic source items.
+            // Select their declared ABI directly so ordinary calls do not require a synthetic
+            // specialization identity merely to expose the parameter/result shape.
+            if extern_contract_import_for_declaration(db, declaration).is_some() {
+                return item_abi_signature(db, declaration)?
+                    .ok_or_else(|| SemanticError::unavailable("call_abi_signature"));
+            }
+        }
     }
     Ok(generic_specialization_instance_for_call(db, key)?.signature)
 }

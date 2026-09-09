@@ -14,6 +14,7 @@ pub fn format_type(ty: &Spanned<Type>) -> String {
             PrimitiveType::Bool => "bool".to_string(),
             PrimitiveType::I32 => "i32".to_string(),
             PrimitiveType::I64 => "i64".to_string(),
+            PrimitiveType::U32 => "u32".to_string(),
             PrimitiveType::U8 => "u8".to_string(),
             PrimitiveType::Pointer => "pointer".to_string(),
             PrimitiveType::Word => "word".to_string(),

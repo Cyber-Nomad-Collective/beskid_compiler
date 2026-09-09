@@ -1,8 +1,8 @@
 use super::support::{assert_unavailable, key, key_at_start, setup};
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
-    call_arguments, call_lowering, collection_operation, direct_callees, nominal_member_receiver, reachable_items,
-    resolved_item, SyntaxGenerationId,
+    SyntaxGenerationId, call_arguments, call_lowering, collection_operation, direct_callees, nominal_member_receiver,
+    reachable_items, resolved_item,
 };
 use std::sync::Arc;
 
@@ -100,6 +100,35 @@ i32 Main(Point point) { return point.Ping(); }
     assert_eq!(direct_callees(&db, main).expect("nominal member call graph"), Some(Arc::from([method])));
     assert_eq!(nominal_member_receiver(&db, receiver).expect("nominal receiver fact"), Some(declaration));
     assert_eq!(call_arguments(&db, call).expect("nominal member call arguments"), Some(Arc::from([receiver])));
+}
+
+#[test]
+fn unqualified_method_call_materializes_the_enclosing_receiver_argument() {
+    let source = r#"
+type Counter {
+    i64 value,
+    i64 Current() { return value; }
+    i64 Next() { return Current() + 1; }
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let current = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
+    let next = key(unit, generation, &index, NodeKind::MethodDefinition, 1);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let receiver = key_at_start(
+        unit,
+        generation,
+        &index,
+        NodeKind::PathExpression,
+        source.rfind("Current()").expect("unqualified method call"),
+    );
+
+    assert_eq!(
+        call_lowering(&db, call).expect("method call lowering"),
+        Some(beskid_queries::CallLowering::Direct(current))
+    );
+    assert_eq!(call_arguments(&db, call).expect("method call arguments"), Some(Arc::from([receiver])));
+    assert_eq!(beskid_queries::implicit_method_receiver(&db, receiver).expect("implicit receiver"), Some(next));
 }
 
 #[test]

@@ -1,10 +1,10 @@
 use std::fs;
 use std::path::Path;
 
-use beskid_tests_support::{assert_same_canonical_path, temp_case_dir, write_project_manifest as write_manifest};
 use beskid_analysis::CompilationContext;
 use beskid_analysis::projects::UnresolvedDependencyPolicy;
 use beskid_analysis::services::{resolve_project, resolve_project_with_policy};
+use beskid_tests_support::{assert_same_canonical_path, temp_case_dir, write_project_manifest as write_manifest};
 
 use super::test_cwd::with_cwd_at_workspace_root;
 

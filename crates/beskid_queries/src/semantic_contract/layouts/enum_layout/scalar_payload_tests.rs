@@ -25,7 +25,7 @@ fn scalar_payload_layout_is_target_correct() {
     assert_eq!(target32.storage_fields.as_ref(), &[(SemanticTypeId::WORD, 20)]);
     assert_eq!(target32.object_size, 24);
     assert_eq!(target32.object_alignment, 8);
-    assert_eq!(target32.variants[1].payload_offset, Some(20));
+    assert_eq!(target32.variants[1].payload_fields.as_ref(), &[Some((SemanticTypeId::WORD, 20))]);
 
     let target64 = source.scalar_payload_object_layout(64, 16, 8).expect("64-bit layout");
     assert_eq!(target64.tag_offset, 16);
@@ -42,12 +42,23 @@ fn scalar_payload_layout_tracks_pointer_slots() {
 
     assert_eq!(physical.storage_fields.as_ref(), &[(SemanticTypeId::STRING, 20)]);
     assert_eq!(physical.pointer_map_offsets.as_ref(), &[20]);
-    assert_eq!(physical.variants[0].payload_type, None);
-    assert_eq!(physical.variants[1].payload_type, Some(SemanticTypeId::STRING));
+    assert!(physical.variants[0].payload_fields.is_empty());
+    assert_eq!(physical.variants[1].payload_fields.as_ref(), &[Some((SemanticTypeId::STRING, 20))]);
 }
 
 #[test]
-fn scalar_payload_layout_rejects_inexact_shapes() {
+fn unit_payload_uses_the_nullary_physical_shape() {
+    let physical = layout(&[Some(SemanticTypeId::UNIT), Some(SemanticTypeId::STRING)])
+        .scalar_payload_object_layout(64, 16, 8)
+        .expect("unit payload remains a zero-sized value");
+
+    assert_eq!(physical.storage_fields.as_ref(), &[(SemanticTypeId::STRING, 24)]);
+    assert_eq!(physical.variants[0].payload_fields.as_ref(), &[None]);
+    assert_eq!(physical.variants[1].payload_fields.as_ref(), &[Some((SemanticTypeId::STRING, 24))]);
+}
+
+#[test]
+fn scalar_payload_layout_preserves_multi_field_source_order() {
     let source = EnumLayoutFact {
         variants: Arc::from([EnumVariantLayoutFact {
             name: Arc::from("Pair"),
@@ -58,7 +69,12 @@ fn scalar_payload_layout_rejects_inexact_shapes() {
         }]),
     };
 
-    assert_eq!(source.scalar_payload_object_layout(64, 16, 8), None);
+    let physical = source.scalar_payload_object_layout(64, 16, 8).expect("multi-field payload layout");
+    assert_eq!(physical.storage_fields.as_ref(), &[(SemanticTypeId::I32, 20), (SemanticTypeId::I32, 24)]);
+    assert_eq!(
+        physical.variants[0].payload_fields.as_ref(),
+        &[Some((SemanticTypeId::I32, 20)), Some((SemanticTypeId::I32, 24))]
+    );
     assert_eq!(layout(&[Some(SemanticTypeId::I64)]).scalar_payload_object_layout(16, 16, 8), None);
 }
 
@@ -69,7 +85,7 @@ fn scalar_payload_layout_separates_mixed_pointer_and_scalar_slots() {
 
     assert_eq!(physical.storage_fields.as_ref(), &[(SemanticTypeId::I64, 24), (SemanticTypeId::STRING, 32)]);
     assert_eq!(physical.pointer_map_offsets.as_ref(), &[32]);
-    assert_eq!(physical.variants[0].payload_offset, Some(32));
-    assert_eq!(physical.variants[1].payload_offset, Some(24));
+    assert_eq!(physical.variants[0].payload_fields.as_ref(), &[Some((SemanticTypeId::STRING, 32))]);
+    assert_eq!(physical.variants[1].payload_fields.as_ref(), &[Some((SemanticTypeId::I64, 24))]);
     assert_eq!(physical.object_size, 40);
 }

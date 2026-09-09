@@ -25,6 +25,8 @@ impl StringInterner for ArtifactStringInterner<'_> {
         let global = builder.func.create_global_value(GlobalValueData::Symbol {
             name: ExternalName::testcase(symbol),
             offset: 0.into(),
+            // JIT code and readonly data use independent allocation arenas. Keep the literal
+            // address range-independent instead of promising an AArch64 ADRP-reachable target.
             colocated: false,
             tls: false,
         });
@@ -131,37 +133,57 @@ pub(super) fn corelib_service_symbols(
     input: &CodegenInput<'_>,
     items: &[ResolvedSyntaxModuleItem],
 ) -> HashMap<DirectCallee, String> {
-    let mut callees = HashSet::new();
+    let mut manifest_builtins = HashSet::new();
+    let mut corelib_services = HashSet::new();
     for item in items {
-        collect_manifest_service_callees(input.database(), item.key, &mut callees);
+        collect_manifest_service_callees(input.database(), item.key, &mut manifest_builtins, &mut corelib_services);
     }
     let mut symbols = HashMap::new();
     for symbol in ALWAYS_AVAILABLE_STRING_SERVICES {
         symbols.insert(DirectCallee::corelib_service(symbol), (*symbol).to_owned());
     }
-    for symbol in callees {
+    for symbol in manifest_builtins {
         if !ALWAYS_AVAILABLE_STRING_SERVICES.contains(&symbol) {
             symbols.insert(DirectCallee::corelib_service(symbol), symbol.to_owned());
+        }
+    }
+    if let Some(capability) = input.corelib_service_capability() {
+        for service in capability.services() {
+            if corelib_services.contains(&service.symbol) && !ALWAYS_AVAILABLE_STRING_SERVICES.contains(&service.symbol)
+            {
+                symbols.insert(DirectCallee::corelib_service(service.symbol), service.symbol.to_owned());
+                if let Some(dispatch) = beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(*service) {
+                    symbols.insert(
+                        DirectCallee::corelib_service(dispatch.managed_symbol),
+                        dispatch.managed_symbol.to_owned(),
+                    );
+                }
+            }
         }
     }
     symbols
 }
 
-fn collect_manifest_service_callees(db: &dyn beskid_queries::Db, key: AstNodeKey, callees: &mut HashSet<&'static str>) {
+fn collect_manifest_service_callees(
+    db: &dyn beskid_queries::Db,
+    key: AstNodeKey,
+    manifest_builtins: &mut HashSet<&'static str>,
+    corelib_services: &mut HashSet<&'static str>,
+) {
     if let Ok(Some(lowering)) = call_lowering(db, key) {
         match lowering {
             CallLowering::ManifestBuiltin(builtin) => {
-                callees.insert(builtin.symbol);
+                manifest_builtins.insert(builtin.symbol);
             }
             CallLowering::CorelibService(service) => {
-                callees.insert(service.symbol);
+                corelib_services.insert(service.symbol);
             }
             CallLowering::Direct(_) | CallLowering::Dynamic | CallLowering::Runtime(_) => {}
         }
     }
     if let Ok(Some(children)) = child_nodes(db, key) {
         for child in children.iter().copied() {
-            collect_manifest_service_callees(db, child, callees);
+            collect_manifest_service_callees(db, child, manifest_builtins, corelib_services);
         }
     }
 }

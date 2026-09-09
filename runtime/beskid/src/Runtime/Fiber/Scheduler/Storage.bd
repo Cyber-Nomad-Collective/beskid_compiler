@@ -9,7 +9,7 @@ const SCHEDULER_WAITGROUP_STATE_OFFSET = 3472;
 const SCHEDULER_HUB_STATE_OFFSET = 3488;
 
 // These allocation sizes are co-located with their only executable consumers.
-const CHANNEL_TABLE_SIZE = 12296; // count word + 64 fixed channel slots
+const CHANNEL_TABLE_SIZE = 13832; // count word + 64 fixed channel/receipt slots
 const MUTEX_TABLE_SIZE = 4872; // count word + 32 fixed mutex slots
 const WG_TABLE_SIZE = 2312; // count word + 16 fixed WaitGroup slots
 const HUB_TABLE_SIZE = 65800;
@@ -111,7 +111,7 @@ pub unit SchedulerStorageShutdown(pointer scheduler) {
     if channelTable != NativePointer(0) {
         word count = raw_word_load(channelTable);
         mut word index = 0;
-        while index < count { ChannelDrain(pointer_add(channelTable, 8 + index * 192)); index = index + 1; }
+        while index < count { ChannelDrain(pointer_add(channelTable, 8 + index * 216)); index = index + 1; }
         SystemFree(channelTable, CHANNEL_TABLE_SIZE);
     }
     if mutexTable != NativePointer(0) { SystemFree(mutexTable, MUTEX_TABLE_SIZE); }

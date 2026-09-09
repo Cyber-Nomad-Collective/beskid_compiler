@@ -110,7 +110,7 @@ fn execute_single_target(args: TestArgs, hi_tx: Option<Sender<RuntimeOp>>) -> Re
         .prepare_targets(std::slice::from_ref(&target_name), |_| Ok(()))?
         .pop()
         .ok_or_else(|| anyhow!("prepared target inventory was empty"))?;
-    let report = execute_prepared_target(&mut workspace, target, &args, true)?;
+    let report = execute_prepared_target(&mut workspace, target, &args, true, &mut |_| Ok(()))?;
     if report.result == TargetResult::Passed {
         Ok(())
     } else {
@@ -123,6 +123,7 @@ pub(crate) fn execute_prepared_target(
     target: PreparedTarget,
     args: &TestArgs,
     emit: bool,
+    on_test_started: &mut dyn FnMut(&str) -> Result<()>,
 ) -> Result<TargetReport> {
     let target_started = Instant::now();
     let started_unix_ms = unix_ms();
@@ -165,6 +166,8 @@ pub(crate) fn execute_prepared_target(
     let mut executions = Vec::new();
     let mut summary = TestSummary::default();
     let mut timeout_error = None;
+    let mut first_failure = None;
+    let mut last_started_test = None;
     for (test, row_index, initial) in planned {
         if let Err(error) = workspace.check_budget(&target.name, "execute_tests", Some(target_started)) {
             timeout_error = Some(error);
@@ -201,6 +204,8 @@ pub(crate) fn execute_prepared_target(
             summary.skipped += 1;
             continue;
         }
+        on_test_started(&test.qualified_name)?;
+        last_started_test = Some(test.qualified_name.clone());
         if emit && !args.json {
             test_ui.start_running(row_index)?;
             if !args.plain {
@@ -241,6 +246,9 @@ pub(crate) fn execute_prepared_target(
                 } else {
                     diagnostics::format_report(&diagnostics::report_from_anyhow(&error)).to_string()
                 };
+                if first_failure.is_none() {
+                    first_failure = Some(format!("{}: {}", test.qualified_name, reason.trim()));
+                }
                 if emit {
                     let detail =
                         format!("\n  FAIL {name}: {reason}", name = test.qualified_name, reason = reason.trim());
@@ -289,9 +297,15 @@ pub(crate) fn execute_prepared_target(
         }
     }
 
-    let error = timeout_error
-        .map(|error| error.to_string())
-        .or_else(|| (summary.failed > 0).then(|| format!("{} test(s) failed", summary.failed)));
+    let error = timeout_error.map(|error| error.to_string()).or_else(|| {
+        (summary.failed > 0).then(|| {
+            format!(
+                "{} test(s) failed; first failure: {}",
+                summary.failed,
+                first_failure.as_deref().unwrap_or("unknown test failure")
+            )
+        })
+    });
     if result == TargetResult::Passed {
         workspace.session().pipeline().finish_session("Tests complete");
     } else {
@@ -304,6 +318,7 @@ pub(crate) fn execute_prepared_target(
         ended_unix_ms: unix_ms(),
         duration_ms: duration_ms(target_started.elapsed()),
         active_phase: "complete".to_string(),
+        last_started_test,
         result,
         tests: summary,
         phases,

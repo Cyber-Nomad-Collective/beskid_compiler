@@ -19,7 +19,7 @@ impl<'db> SyntaxNodeFacts<'db> {
         Self { db: input.database(), input, isa: None, item_specializations: HashMap::new() }
     }
 
-    pub(super) fn new_with_isa(input: &'db CodegenInput<'db>, isa: &'db dyn TargetIsa) -> Self {
+    pub fn new_with_isa(input: &'db CodegenInput<'db>, isa: &'db dyn TargetIsa) -> Self {
         Self { db: input.database(), input, isa: Some(isa), item_specializations: HashMap::new() }
     }
 
@@ -39,6 +39,13 @@ impl<'db> SyntaxNodeFacts<'db> {
 
     pub(super) fn query<T>(&self, result: beskid_queries::SemanticQueryResult<T>) -> Option<T> {
         result.ok().flatten()
+    }
+
+    /// Return the sole immutable specialization carried by this per-item fact view.
+    pub(super) fn current_item_specialization(&self) -> Option<&beskid_queries::GenericSpecializationInstance> {
+        let mut specializations = self.item_specializations.values();
+        let specialization = specializations.next()?;
+        specializations.next().is_none().then_some(specialization)
     }
 
     /// Exact compiler-selected slot for an injection target. Absence denies composition lowering;

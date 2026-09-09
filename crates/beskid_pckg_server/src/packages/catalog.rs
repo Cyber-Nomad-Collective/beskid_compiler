@@ -5,8 +5,8 @@ use super::mapping::{
 };
 use super::{
     ApiErrorResponse, AppState, HeaderMap, IntoResponse, Json, NewPackage, PackageArtifactStore,
-    PackageDetailsResponse, PackageManifestMetadata, PackageSearchResponse, PackageSummaryResponse, Path, Query,
-    Response, State, StatusCode, StoreError, UpsertPackageRequest, authenticated_publisher_subject,
+    PackageDetailsResponse, PackageManifestMetadata, PackageMetadata, PackageSearchResponse, PackageSummaryResponse,
+    Path, Query, Response, State, StatusCode, StoreError, UpsertPackageRequest, authenticated_publisher_subject,
     authenticated_subject,
 };
 use beskid_pckg_store::AsyncAdministrationRepository;
@@ -232,6 +232,14 @@ pub async fn upsert_package(
             name: request.name,
             owner_subject: subject,
             is_public: request.is_public,
+            metadata: PackageMetadata {
+                description: request.description.unwrap_or_default(),
+                category: request.category.unwrap_or_else(|| "General".to_owned()),
+                repository_url: request.repository_url,
+                website_url: request.website_url,
+                tags: request.tags.unwrap_or_default(),
+                icon_url: request.icon_url,
+            },
             now_unix_seconds: now(),
         })
         .await

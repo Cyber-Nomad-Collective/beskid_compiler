@@ -1,8 +1,8 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
-    EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SyntaxGenerationId,
-    SourceUnitId, SyntaxIndex, SyntaxModuleItem, TargetMetadata, build_typed_program, find_function_definition,
-    find_function_definitions, find_node, isa, item_fixture_with_root, lower_syntax_program,
+    EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
+    SyntaxGenerationId, SyntaxIndex, SyntaxModuleItem, TargetMetadata, build_typed_program, find_function_definition,
+    find_function_definitions, find_node, find_nodes_of_kind, isa, item_fixture_with_root, lower_syntax_program,
     parse_program_with_source_name, settings,
 };
 
@@ -158,6 +158,46 @@ unit Main(List<i64> list) {
 }
 
 #[test]
+fn concrete_parameter_field_assignment_retains_its_declared_storage_abi() {
+    let (input, isa, root) = item_fixture_with_root(
+        r#"
+type Random {
+    i64 state,
+}
+i64 Advance(mut Random random) {
+    random.state = random.state + 1;
+    return random.state;
+}
+unit Main(Random random) {
+    Advance(random);
+    return;
+}
+"#,
+    );
+    let functions = find_function_definitions(input.database(), root);
+    let advance = functions[0];
+    let main = functions[1];
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: advance, symbol: "Random_Advance".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
+    )
+    .expect("an assignment to an implicit receiver field lowers from its declared aggregate layout");
+
+    let advance = artifact
+        .functions
+        .iter()
+        .find(|function| function.name.starts_with("Random_Advance"))
+        .expect("lowered Advance function");
+    let clif = advance.function.display().to_string();
+    assert!(clif.contains("store"), "field assignment must emit a store: {clif}");
+}
+
+#[test]
 fn specialized_generic_method_lowers_nested_array_append_with_its_enclosing_element_type() {
     let list_source = r#"
 use Core.Collections.Array;
@@ -186,6 +226,96 @@ unit Main(List<i64> list) { list.Push(7_i64); return; }
         ],
     )
     .expect("nested Array.Append<T> lowers with the List<i64> specialization");
+}
+
+#[test]
+fn specialized_generic_method_lowers_array_append_of_a_nested_nominal_element() {
+    let map_source = r#"
+use Core.Collections.Array;
+pub type MapEntry<TKey, TValue> {
+    TKey key,
+    TValue value,
+}
+pub type Map<TKey, TValue> {
+    MapEntry<TKey, TValue>[] entries,
+    pub unit Insert(TKey key, TValue value) {
+        MapEntry<TKey, TValue> fresh = MapEntry<TKey, TValue> { key: key, value: value };
+        mut MapEntry<TKey, TValue>[] nextEntries = entries;
+        Array.Append<MapEntry<TKey, TValue>>(nextEntries, fresh);
+        return;
+    }
+}
+unit Main(Map<i64, string> map) { map.Insert(7_i64, "value"); return; }
+"#;
+    let array_source = "pub T[] Append<T>(mut T[] values, T value) { return values; }";
+    let (input, isa, root) = imported_list_fixture(map_source, &[("Core/Collections/Array.bd", array_source)]);
+    let insert = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition)
+        .expect("Map.Insert method");
+    let main = find_function_definition(input.database(), root).expect("Main function");
+    let calls = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::CallExpression);
+    let append = calls
+        .iter()
+        .copied()
+        .find(|call| beskid_queries::collection_operation(input.database(), *call).ok().flatten().is_some())
+        .expect("nested Array.Append call");
+    let insert_call = calls.into_iter().find(|call| *call != append).expect("concrete Map.Insert call");
+    let insert_specialization = beskid_queries::generic_call_specialization(input.database(), insert_call)
+        .expect("Map.Insert specialization query")
+        .expect("concrete Map.Insert specialization");
+    let insert_specialization =
+        beskid_queries::generic_call_specialization_instance(input.database(), insert_specialization)
+            .expect("Map.Insert specialization instance query")
+            .expect("Map.Insert specialization instance");
+    let append_specialization =
+        beskid_queries::generic_call_specialization_in_environment(input.database(), append, &insert_specialization)
+            .expect("nested Array.Append specialization query")
+            .expect("nested Array.Append specialization");
+    assert_eq!(append_specialization.substitutions.len(), 1);
+    assert_eq!(append_specialization.substitutions[0].argument, beskid_queries::SemanticTypeId::POINTER);
+
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: insert, symbol: "Map_Insert".into() },
+            SyntaxModuleItem { key: main, symbol: "Main".into() },
+        ],
+    )
+    .expect("Array.Append<MapEntry<TKey, TValue>> inherits the specialized Map method environment");
+}
+
+#[test]
+fn mutable_local_array_append_inside_a_loop_preserves_its_owner_slot() {
+    let list_source = r#"
+use Core.Collections.Array;
+unit Fill(u8[] values, i64 length) {
+    mut u8[] result = values;
+    mut i64 index = 0;
+    while index < length {
+        Array.Append<u8>(result, u8(0));
+        index = index + 1;
+    }
+    return;
+}
+unit Main(mut u8[] values) { Fill(values, 2); return; }
+"#;
+    let array_source = "pub T[] Append<T>(mut T[] values, T value) { return values; }";
+    let (input, isa, root) = imported_list_fixture(list_source, &[("Core/Collections/Array.bd", array_source)]);
+    let functions = find_function_definitions(input.database(), root);
+    let fill = functions[0];
+    let main = functions[1];
+    let operations = find_nodes_of_kind(input.database(), fill, beskid_queries::IndexedNodeKind::CallExpression)
+        .into_iter()
+        .map(|call| (call, beskid_queries::collection_operation(input.database(), call)))
+        .collect::<Vec<_>>();
+    assert!(operations.iter().any(|(_, operation)| matches!(operation, Ok(Some(_)))), "{operations:?}");
+
+    lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[SyntaxModuleItem { key: fill, symbol: "Fill".into() }, SyntaxModuleItem { key: main, symbol: "Main".into() }],
+    )
+    .expect("a canonical Array.Append inside a loop must retain the mutable local owner proof");
 }
 
 #[test]
@@ -226,8 +356,8 @@ type List<T> {
 unit Main(List<i64> list) { list.Pop(); return; }
 "#,
     );
-    let pop = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition)
-        .expect("List.Pop method");
+    let pop =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("List.Pop method");
     let main = find_function_definition(input.database(), root).expect("Main function");
 
     lower_syntax_program(
@@ -258,13 +388,10 @@ unit Main(List<i64> list) { list.Get(0_i64); return; }
     let result_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
     let (input, isa, root) = imported_list_fixture(
         list_source,
-        &[
-            ("Core/Collections/Array.bd", array_source),
-            ("Core/Results/Results.bd", result_source),
-        ],
+        &[("Core/Collections/Array.bd", array_source), ("Core/Results/Results.bd", result_source)],
     );
-    let get = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition)
-        .expect("List.Get method");
+    let get =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("List.Get method");
     let main = find_function_definition(input.database(), root).expect("Main function");
     let array_get = imported_function(&input, "Core/Collections/Array.bd");
 
@@ -291,10 +418,9 @@ pub type List<T> {
 unit Main(List<i64> list) { list.Get(0_i64); return; }
 "#;
     let array_source = "pub T Get<T>(T[] values, i64 index) { return values[index]; }";
-    let (input, isa, root) =
-        imported_list_fixture(list_source, &[("Core/Collections/Array.bd", array_source)]);
-    let get = find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition)
-        .expect("List.Get method");
+    let (input, isa, root) = imported_list_fixture(list_source, &[("Core/Collections/Array.bd", array_source)]);
+    let get =
+        find_node(input.database(), root, beskid_queries::IndexedNodeKind::MethodDefinition).expect("List.Get method");
     let main = find_function_definition(input.database(), root).expect("Main function");
     let array_get = imported_function(&input, "Core/Collections/Array.bd");
 

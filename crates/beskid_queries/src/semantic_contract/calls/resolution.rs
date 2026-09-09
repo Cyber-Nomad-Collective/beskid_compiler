@@ -18,6 +18,8 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
                 Err(SemanticError::unavailable("generic_receiver_instantiation"))
             } else if let Some(service) = corelib_service_for(db, key, path) {
                 Ok(CallLowering::CorelibService(service))
+            } else if let Some((declaration, _)) = unqualified_enclosing_method_call(program, index, key, path) {
+                Ok(CallLowering::Direct(declaration))
             } else if let Some((declaration, _)) = nominal_local_member_receiver(db, program, index, key, path) {
                 Ok(CallLowering::Direct(declaration))
             } else if path.segments.iter().any(|segment| !segment.node.type_args.is_empty()) {
@@ -79,6 +81,40 @@ pub(in crate::semantic_contract) fn call_lowering_for_node(
         }
         _ => Err(SemanticError::unavailable("call_lowering")),
     })
+}
+
+/// Resolve `Method(args)` inside another method of the same nominal type.
+///
+/// Beskid does not spell `self` at these call sites, but the method ABI always carries the
+/// receiver first. This syntax-only authority is deliberately restricted to an unqualified,
+/// unique sibling method so module functions and imported names keep their existing semantics.
+pub(in crate::semantic_contract) fn unqualified_enclosing_method_call(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<(AstNodeKey, AstNodeKey)> {
+    let [segment] = path.segments.as_slice() else { return None };
+    if !segment.node.type_args.is_empty() {
+        return None;
+    }
+    let enclosing =
+        nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition)?;
+    let owner = parent_node(index, enclosing)?;
+    index.node_at(program, owner)?.of::<beskid_analysis::syntax::TypeDefinition>()?;
+    let matches = index
+        .children(owner)?
+        .iter()
+        .copied()
+        .filter(|candidate| {
+            index
+                .node_at(program, *candidate)
+                .and_then(|node| node.of::<beskid_analysis::syntax::MethodDefinition>())
+                .is_some_and(|method| method.name.node.name == segment.node.name.node.name)
+        })
+        .collect::<Vec<_>>();
+    let [target] = matches.as_slice() else { return None };
+    Some((AstNodeKey { node: *target, ..key }, AstNodeKey { node: enclosing, ..key }))
 }
 
 /// Runtime intrinsic lowering is available only to the exact embedded corpus. The typed-program

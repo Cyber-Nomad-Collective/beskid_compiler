@@ -1,12 +1,13 @@
 use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase,
-    CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH,
-    CANONICAL_SCHEDULER_CORE_SOURCE_PATH, CANONICAL_SCHEDULER_POLL_SOURCE_PATH, CallKind, CodegenInput,
-    EffectiveCompilationRoots, IndexedNodeKind, ModuleIndex, NodeFacts, PathBuf, ProgramAssembly, ProjectSession,
-    RootEntry, SemanticTypeId, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxNodeFacts, TypedProgram,
-    build_canonical_runtime_typed_program, build_typed_program, call_lowering, canonical_runtime_intrinsic_capability,
-    canonical_runtime_sources, find_node, find_node_matching, input_fixture, item_name, linux_target,
-    parse_program_with_source_name, primitive_numeric_conversion,
+    CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_EVENTS_SOURCE_PATH,
+    CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
+    CANONICAL_SCHEDULER_POLL_SOURCE_PATH, CallKind, CodegenInput, EffectiveCompilationRoots, IndexedNodeKind,
+    ModuleIndex, NodeFacts, PathBuf, ProgramAssembly, ProjectSession, RootEntry, SemanticTypeId, SourceUnit,
+    SourceUnitId, SyntaxGenerationId, SyntaxNodeFacts, TypedProgram, build_canonical_runtime_typed_program,
+    build_typed_program, call_lowering, canonical_runtime_intrinsic_capability, canonical_runtime_sources, find_node,
+    find_node_matching, input_fixture, item_name, linux_target, parse_program_with_source_name,
+    primitive_numeric_conversion,
 };
 
 /// The exact compiler-embedded canonical runtime corpus, materialized on disk under its own
@@ -55,7 +56,7 @@ impl CanonicalRuntimeCorpus {
             .clone()
     }
 
-    fn assembly(&self) -> Arc<ProgramAssembly> {
+    fn assembly(&self, generation: SyntaxGenerationId) -> Arc<ProgramAssembly> {
         Arc::new(ProgramAssembly::new(
             EffectiveCompilationRoots {
                 host: RootEntry { dependency_name: None, source_root: self.directory.clone() },
@@ -66,7 +67,7 @@ impl CanonicalRuntimeCorpus {
             AssemblyDiscovery::ImportClosure,
             Arc::new(ModuleIndex::empty()),
             false,
-            SyntaxGenerationId(0),
+            generation,
         ))
     }
 }
@@ -89,7 +90,7 @@ fn canonical_typed_program(
         db,
         project,
         generation,
-        corpus.assembly(),
+        corpus.assembly(generation),
         canonical_runtime_intrinsic_capability(manifest).expect("compiler authority"),
     )
     .expect("exact canonical assembly")
@@ -135,6 +136,34 @@ fn exact_canonical_assembly_carries_intrinsic_authority_to_codegen() {
 }
 
 #[test]
+fn canonical_events_runtime_item_retains_u32_index_abi() {
+    use beskid_queries::item_signature;
+
+    let mut db = BeskidDatabase::default();
+    let corpus = CanonicalRuntimeCorpus::materialize();
+    let target = linux_target();
+    let manifest = AbiManifestV5::canonical_runtime(target);
+    let typed = canonical_typed_program(&mut db, &corpus, SyntaxGenerationId(31), &manifest);
+    let events_root = AstNodeKey {
+        unit: SourceUnitId::new(&db, corpus.unit_path(CANONICAL_EVENTS_SOURCE_PATH)),
+        generation: typed.generation,
+        node: AstNodeId(0),
+    };
+    let handler = find_node_matching(&db, events_root, IndexedNodeKind::FunctionDefinition, |item| {
+        matches!(item_name(&db, item).ok().flatten().as_deref(), Some("EventGetHandler"))
+    })
+    .expect("canonical EventGetHandler item");
+
+    assert_eq!(
+        item_signature(&db, handler).expect("EventGetHandler signature"),
+        Some(beskid_queries::ItemSignature {
+            parameters: Arc::from([SemanticTypeId::POINTER, SemanticTypeId::U32]),
+            result: SemanticTypeId::POINTER,
+        })
+    );
+}
+
+#[test]
 fn canonical_runtime_source_can_import_manifest_owned_intrinsics() {
     let mut db = BeskidDatabase::default();
     let corpus = CanonicalRuntimeCorpus::materialize();
@@ -163,7 +192,7 @@ fn canonical_runtime_source_can_import_manifest_owned_intrinsics() {
 }
 
 #[test]
-fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
+fn canonical_trap_intrinsic_uses_the_source_owned_bridge_and_rejects_user_packages() {
     use beskid_abi::abi_v5::AbiType;
     use beskid_queries::{item_signature, runtime_intrinsic_name};
 
@@ -187,7 +216,7 @@ fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
         .iter()
         .find(|intrinsic| intrinsic.name == "trap")
         .expect("manifest owns trap");
-    assert_eq!(trap_meta.symbol, "beskid_rt_v5_trap");
+    assert_eq!(trap_meta.symbol, "beskid_rt_v5_intrinsic_trap");
     assert_eq!(trap_meta.params.as_slice(), &[AbiType::U8, AbiType::Pointer, AbiType::USize]);
     assert_eq!(trap_meta.result, AbiType::Void);
     assert!(trap_meta.noreturn, "ABI never result must be recorded as noreturn Void");
@@ -200,7 +229,7 @@ fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
     })
     .expect("canonical Trap wrapper invokes trap");
     let (_, authorized) = input.runtime_intrinsic_for(trap, "trap").expect("trusted package may import trap");
-    assert_eq!(authorized.symbol, "beskid_rt_v5_trap");
+    assert_eq!(authorized.symbol, "beskid_rt_v5_intrinsic_trap");
     assert_eq!(
         authorized.params.as_slice(),
         &[AbiType::U8, AbiType::Pointer, AbiType::USize],
@@ -374,6 +403,7 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
     let main_path = ordinary.join("Main.bd");
     let helper = "pub pointer NativePointer(word value) { return value; }";
     let main = "pointer Main() { return NativePointer(0); }";
+    let ordinary_generation = SyntaxGenerationId(92);
     let ordinary_assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: ordinary.clone() },
@@ -397,9 +427,8 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        generation,
+        ordinary_generation,
     ));
-    let ordinary_generation = SyntaxGenerationId(92);
     let ordinary_project =
         ProjectSession::new(&db, ordinary.clone(), main_path.clone(), "App".into(), "ordinary".into());
     let ordinary_typed = build_typed_program(&mut db, ordinary_project, ordinary_generation, ordinary_assembly)

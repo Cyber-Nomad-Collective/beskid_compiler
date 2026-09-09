@@ -3,9 +3,9 @@ use super::support::{
     EffectiveCompilationRoots, HashMap, JITBuilder, JITModule, Linkage, Module, ModuleIndex, NodeFacts,
     ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId, SyntaxGenerationId, SyntaxModuleItem,
     TargetMetadata, build_typed_program, default_libcall_names, emit_isle_item, find_function_definition,
-    find_function_definitions, find_node, find_test_definition, isa, item_fixture, item_fixture_with_root,
-    lower_syntax_program, mutable_local_assignment, named_function, node_kind, parse_program_with_source_name,
-    settings, test_statement_nodes,
+    find_function_definitions, find_node, find_nodes_of_kind, find_test_definition, isa, item_fixture,
+    item_fixture_with_root, lower_syntax_program, mutable_local_assignment, named_function, node_kind,
+    parse_program_with_source_name, settings, test_statement_nodes,
 };
 
 extern "C" fn test_str_new(bytes: *const u8, _byte_len: usize) -> *const u8 {
@@ -63,6 +63,42 @@ fn parsed_u8_comparison_coerces_integer_literals_without_hir() {
     let function = emit_isle_item(&input, isa.as_ref(), item).expect("u8 comparisons lower through syntax facts");
     let clif = function.display().to_string();
     assert!(clif.contains("iconst.i8 57"), "{clif}");
+}
+
+#[test]
+fn parsed_f64_comparison_lowers_when_nested_in_a_boolean_call_argument() {
+    let (input, isa, root) = item_fixture_with_root(
+        "unit Accept(bool value) { return; } unit Main() { f64 value = 0.5; Accept(value >= 0.0); return; }",
+    );
+    let functions = find_function_definitions(input.database(), root);
+
+    let artifact = lower_syntax_program(
+        &input,
+        isa.as_ref(),
+        &[
+            SyntaxModuleItem { key: functions[0], symbol: "Accept".into() },
+            SyntaxModuleItem { key: functions[1], symbol: "Main".into() },
+        ],
+    )
+    .expect("an f64 comparison used as a bool argument lowers through syntax facts");
+
+    let main =
+        artifact.functions.iter().find(|function| function.name.starts_with("Main")).expect("lowered Main function");
+    assert!(main.function.display().to_string().contains("fcmp"));
+}
+
+#[test]
+fn explicit_i64_to_f64_conversion_lowers_through_the_numeric_conversion_construct() {
+    let (input, isa, item) = item_fixture(
+        "f64 Main(mut i64 raw) { if raw < 0 { raw = -raw; } f64 result = f64(raw); return result / 9223372036854775808.0; }",
+    );
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("an explicit signed-integer to f64 conversion lowers through syntax facts");
+    let clif = function.display().to_string();
+    assert!(clif.contains("fcvt_from_sint.f64"), "{clif}");
+    assert!(clif.contains("fdiv"), "{clif}");
+    assert!(!clif.contains("sdiv"), "floating-point division must not use the integer path: {clif}");
 }
 
 #[test]
@@ -168,6 +204,60 @@ fn parsed_parameter_read_materializes_the_generation_safe_local_slot() {
     let clif = function.display().to_string();
     assert!(clif.contains("function u0:0(i32) -> i32"), "{clif}");
     assert!(clif.contains("return v0"), "{clif}");
+}
+
+#[test]
+fn u32_boundary_zero_extends_and_relational_comparison_is_unsigned() {
+    let (input, isa, item) = item_fixture("bool Main(u8 value) { u32 wide = value; return wide < 4294967295_u32; }");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("u32 storage boundary and comparison lower with unsigned semantics");
+    let clif = function.display().to_string();
+    assert!(clif.contains("uextend.i32"), "u8-to-u32 storage must zero extend:\n{clif}");
+    assert!(clif.contains("icmp ult"), "u32 relational comparison must be unsigned:\n{clif}");
+    assert!(!clif.contains("icmp slt"), "u32 must not alias signed i32 comparison semantics:\n{clif}");
+}
+
+#[test]
+fn u32_signedness_is_symmetric_for_a_contextual_left_literal() {
+    let (input, isa, item) = item_fixture("bool Main(u32 value) { return 1 < value; }");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("a left contextual literal inherits the right u32 operand semantics");
+    let clif = function.display().to_string();
+    assert!(clif.contains("icmp ult"), "the right u32 operand must select unsigned comparison:\n{clif}");
+    assert!(!clif.contains("icmp slt"), "operand order must not select signed comparison:\n{clif}");
+}
+
+#[test]
+fn u32_division_and_remainder_use_unsigned_clif_operations() {
+    let (input, isa, item) =
+        item_fixture("u32 Main(u32 value) { u32 quotient = value / 2_u32; return quotient % 3_u32; }");
+
+    let function = emit_isle_item(&input, isa.as_ref(), item).expect("u32 division and remainder lower");
+    let clif = function.display().to_string();
+    assert!(clif.contains("udiv"), "u32 division must be unsigned:\n{clif}");
+    assert!(clif.contains("urem"), "u32 remainder must be unsigned:\n{clif}");
+    assert!(!clif.contains("sdiv"), "u32 division must not alias i32:\n{clif}");
+    assert!(!clif.contains("srem"), "u32 remainder must not alias i32:\n{clif}");
+}
+
+#[test]
+fn grouped_nested_word_modulo_retains_unsigned_operand_authority() {
+    let (input, isa, item) = item_fixture("word Main(word tail) { word nextTail = (tail + 1) % 32; return nextTail; }");
+    let facts = beskid_codegen::SyntaxNodeFacts::new(&input);
+    let outer = find_nodes_of_kind(input.database(), item, beskid_queries::IndexedNodeKind::BinaryExpression)
+        .into_iter()
+        .next()
+        .expect("outer modulo expression");
+    let grouped = facts.child(outer, 0).expect("grouped left operand");
+    assert_eq!(facts.semantic_type(grouped), Some(beskid_queries::SemanticTypeId::WORD));
+
+    let function = emit_isle_item(&input, isa.as_ref(), item)
+        .expect("a grouped nested word addition retains word authority for modulo lowering");
+    let clif = function.display().to_string();
+    assert!(clif.contains("urem"), "word modulo must use unsigned remainder:\n{clif}");
+    assert!(!clif.contains("srem"), "word modulo must not use signed remainder:\n{clif}");
 }
 
 #[test]

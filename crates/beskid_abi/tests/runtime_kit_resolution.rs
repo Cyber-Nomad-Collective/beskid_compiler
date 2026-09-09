@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use beskid_abi::abi_v5::{ABI_V5, AbiManifestV5, RuntimeAuditMetadata, TargetMetadata};
 use beskid_abi::runtime_kit::{
     BuildProfile, RuntimeArtifact, RuntimeArtifacts, RuntimeKitMetadata, RuntimeKitResolutionError,
-    exact_kit_metadata_path, host_runtime_triple, installed_runtime_prefix_for_executable, installed_runtime_root,
-    profile_directory_name, resolve_installed_runtime_kit,
+    exact_kit_metadata_path, host_runtime_triple, installed_corelib_root_for_executable, installed_runtime_root,
+    installed_toolchain_prefix_for_executable, profile_directory_name, resolve_installed_runtime_kit,
 };
 use sha2::{Digest, Sha256};
 
@@ -242,8 +242,7 @@ fn wrong_target_metadata_fails_closed_without_selecting_another_installed_kit() 
 #[test]
 fn install_prefix_derives_from_bin_layout_only() {
     let executable = PathBuf::from("/opt/beskid/bin/beskid_cli");
-    let prefix = installed_runtime_prefix_for_executable(&executable).unwrap();
-    assert_eq!(prefix, PathBuf::from("/opt/beskid"));
+    assert_eq!(installed_toolchain_prefix_for_executable(&executable).unwrap(), PathBuf::from("/opt/beskid"));
     assert!(
         host_runtime_triple().is_ok()
             || cfg!(not(any(
@@ -257,5 +256,22 @@ fn install_prefix_derives_from_bin_layout_only() {
 #[test]
 fn install_prefix_rejects_executables_outside_the_bin_layout() {
     let executable = PathBuf::from("/opt/beskid/tools/beskid_cli");
-    assert!(installed_runtime_prefix_for_executable(&executable).is_err());
+    assert!(installed_toolchain_prefix_for_executable(&executable).is_err());
+}
+
+#[test]
+fn installed_corelib_needs_no_override_and_prefers_the_bundled_workspace() {
+    let installed = TempPrefix::new();
+    let home = TempPrefix::new();
+    let executable = installed.0.join("bin/beskid");
+    fs::create_dir_all(executable.parent().unwrap()).unwrap();
+
+    assert_eq!(
+        installed_corelib_root_for_executable(&executable, Some(&home.0)).unwrap(),
+        home.0.join(".beskid/beskid_corelib"),
+    );
+
+    let bundled = installed.0.join("beskid_corelib");
+    fs::create_dir_all(&bundled).unwrap();
+    assert_eq!(installed_corelib_root_for_executable(&executable, Some(&home.0)).unwrap(), bundled);
 }

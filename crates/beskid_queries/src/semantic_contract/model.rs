@@ -372,6 +372,16 @@ impl SpawnLegality {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SemanticTypeId(pub u32);
 
+/// Whether a source value is traced by the Beskid garbage collector.
+///
+/// `NativeOrScalar` intentionally includes the source `pointer` primitive: sharing a machine
+/// representation with managed values never makes an opaque native address a GC root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum ManagedReferenceKind {
+    GcManaged,
+    NativeOrScalar,
+}
+
 impl SemanticTypeId {
     pub const UNIT: Self = Self(0);
     pub const BOOL: Self = Self(1);
@@ -387,6 +397,8 @@ impl SemanticTypeId {
     pub const POINTER: Self = Self(9);
     /// Bottom type for operations which cannot return normally.
     pub const NEVER: Self = Self(10);
+    /// Fixed-width unsigned 32-bit integer. Its CLIF storage is `i32`, but its semantics are unsigned.
+    pub const U32: Self = Self(11);
 
     /// Return this semantic scalar's target-specific ABI size, alignment, and pointer-map class.
     pub fn scalar_abi_layout(self, pointer_width: u8) -> Option<ScalarAbiLayout> {
@@ -397,7 +409,7 @@ impl SemanticTypeId {
         };
         match self {
             Self::BOOL | Self::U8 => Some(ScalarAbiLayout { size: 1, alignment: 1, is_pointer: false }),
-            Self::I32 | Self::CHAR => Some(ScalarAbiLayout { size: 4, alignment: 4, is_pointer: false }),
+            Self::I32 | Self::U32 | Self::CHAR => Some(ScalarAbiLayout { size: 4, alignment: 4, is_pointer: false }),
             Self::I64 | Self::F64 => Some(ScalarAbiLayout { size: 8, alignment: 8, is_pointer: false }),
             Self::WORD => Some(ScalarAbiLayout { size: pointer_size, alignment: pointer_size, is_pointer: false }),
             Self::POINTER | Self::STRING => {
@@ -417,6 +429,7 @@ impl SemanticTypeId {
             Self::BOOL => "bool",
             Self::I32 => "i32",
             Self::I64 => "i64",
+            Self::U32 => "u32",
             Self::U8 => "u8",
             Self::F64 => "f64",
             Self::CHAR => "char",
@@ -554,6 +567,70 @@ pub struct GenericNominalMethodReceiver {
 pub struct GenericSubstitution {
     pub parameter: Arc<str>,
     pub argument: SemanticTypeId,
+    source_identity: GenericSourceTypeIdentity,
+}
+
+/// Canonical source identity retained independently from a type's target ABI representation.
+///
+/// This is deliberately private to the semantic model. Callers can consume the derived
+/// [`SemanticTypeId`] through [`GenericSubstitution::argument`], while specialization identity
+/// remains impossible to reconstruct from pointer-shaped ABI facts.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(in crate::semantic_contract) enum GenericSourceTypeIdentity {
+    Abi(SemanticTypeId),
+    Nominal { qualified_name: Arc<str>, arguments: Arc<[GenericSourceTypeIdentity]> },
+    Array(Box<GenericSourceTypeIdentity>),
+    Function { parameters: Arc<[GenericSourceTypeIdentity]>, result: Box<GenericSourceTypeIdentity> },
+}
+
+impl GenericSubstitution {
+    /// Construct an ABI-inferred substitution when no more specific source identity exists.
+    pub fn inferred(parameter: impl Into<Arc<str>>, argument: SemanticTypeId) -> Self {
+        Self { parameter: parameter.into(), argument, source_identity: GenericSourceTypeIdentity::Abi(argument) }
+    }
+
+    /// Rebind the same source argument to a nested generic declaration parameter.
+    pub fn rebind(&self, parameter: impl Into<Arc<str>>) -> Self {
+        Self { parameter: parameter.into(), argument: self.argument, source_identity: self.source_identity.clone() }
+    }
+
+    /// Whether values supplied by this source-level binding are traced by the GC.
+    ///
+    /// This preserves the distinction erased by pointer-shaped ABI specialization: arrays,
+    /// functions, and nominal values are managed, while an explicit native pointer is not.
+    pub fn managed_reference_kind(&self) -> ManagedReferenceKind {
+        self.source_identity.managed_reference_kind()
+    }
+
+    pub(in crate::semantic_contract) fn from_source(
+        parameter: impl Into<Arc<str>>,
+        argument: SemanticTypeId,
+        source_identity: GenericSourceTypeIdentity,
+    ) -> Self {
+        Self { parameter: parameter.into(), argument, source_identity }
+    }
+
+    pub(in crate::semantic_contract) fn source_identity(&self) -> &GenericSourceTypeIdentity {
+        &self.source_identity
+    }
+}
+
+impl GenericSourceTypeIdentity {
+    pub(in crate::semantic_contract) fn abi_type(&self) -> SemanticTypeId {
+        match self {
+            Self::Abi(argument) => *argument,
+            Self::Nominal { .. } | Self::Array(_) | Self::Function { .. } => SemanticTypeId::POINTER,
+        }
+    }
+
+    pub(in crate::semantic_contract) fn managed_reference_kind(&self) -> ManagedReferenceKind {
+        match self {
+            Self::Abi(SemanticTypeId::STRING) | Self::Nominal { .. } | Self::Array(_) | Self::Function { .. } => {
+                ManagedReferenceKind::GcManaged
+            }
+            Self::Abi(_) => ManagedReferenceKind::NativeOrScalar,
+        }
+    }
 }
 
 /// Source-owned element type of an indexed array expression before an enclosing generic
@@ -570,6 +647,8 @@ pub enum ArrayIndexElementTemplate {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct GenericSpecializationInstance {
     pub declaration: AstNodeKey,
+    /// Deterministic assembly-relative declaration identity used only for emitted symbols.
+    pub declaration_identity: Arc<str>,
     pub signature: ItemSignature,
     pub substitutions: Arc<[GenericSubstitution]>,
 }
@@ -588,27 +667,49 @@ pub struct GenericCallTemplate {
 /// Stable module identity for a materialized generic declaration.
 ///
 /// ABI signatures alone are not sufficient: distinct nominal substitutions may lower to the
-/// same pointer ABI. The identity therefore records declaration generation plus every ordered
-/// source parameter name and concrete semantic argument.
+/// same pointer ABI. The emitted identity therefore records the deterministic qualified
+/// declaration name plus every ordered parameter name and recursive source-type shape; process-
+/// local syntax generations and node numbers remain lookup authority only and never enter it.
 pub fn generic_specialization_identity(instance: &GenericSpecializationInstance) -> Arc<[u32]> {
-    let generation = instance.declaration.generation.0;
-    let mut identity = vec![
-        (generation >> 32) as u32,
-        generation as u32,
-        instance.declaration.node.0,
-        u32::try_from(instance.substitutions.len()).unwrap_or(u32::MAX),
-    ];
+    let mut identity = vec![u32::try_from(instance.declaration_identity.len()).unwrap_or(u32::MAX)];
+    identity.extend(instance.declaration_identity.bytes().map(u32::from));
+    identity.extend([u32::try_from(instance.substitutions.len()).unwrap_or(u32::MAX)]);
     for binding in instance.substitutions.iter() {
         // Encode every UTF-8 byte with a length delimiter. This is deliberately not a hash:
         // distinct source parameter names cannot collide in the module identity.
         identity.push(u32::try_from(binding.parameter.len()).unwrap_or(u32::MAX));
         identity.extend(binding.parameter.bytes().map(u32::from));
-        identity.push(binding.argument.0);
+        append_generic_source_type_identity(&mut identity, &binding.source_identity);
     }
     identity.push(u32::MAX);
     identity.extend(instance.signature.parameters.iter().map(|semantic| semantic.0));
     identity.push(instance.signature.result.0);
     identity.into()
+}
+
+fn append_generic_source_type_identity(identity: &mut Vec<u32>, source: &GenericSourceTypeIdentity) {
+    match source {
+        GenericSourceTypeIdentity::Abi(argument) => identity.extend([0, argument.0]),
+        GenericSourceTypeIdentity::Nominal { qualified_name, arguments, .. } => {
+            identity.extend([1, u32::try_from(qualified_name.len()).unwrap_or(u32::MAX)]);
+            identity.extend(qualified_name.bytes().map(u32::from));
+            identity.push(u32::try_from(arguments.len()).unwrap_or(u32::MAX));
+            for argument in arguments.iter() {
+                append_generic_source_type_identity(identity, argument);
+            }
+        }
+        GenericSourceTypeIdentity::Array(element) => {
+            identity.push(2);
+            append_generic_source_type_identity(identity, element);
+        }
+        GenericSourceTypeIdentity::Function { parameters, result } => {
+            identity.extend([3, u32::try_from(parameters.len()).unwrap_or(u32::MAX)]);
+            for parameter in parameters.iter() {
+                append_generic_source_type_identity(identity, parameter);
+            }
+            append_generic_source_type_identity(identity, result);
+        }
+    }
 }
 
 /// One semantic cast required while lowering an AST node.
@@ -700,17 +801,23 @@ pub struct AggregateLayoutFact {
     pub fields: Arc<[(Arc<str>, AggregateFieldShape)]>,
 }
 
+/// Source names paired with the current-generation value expressions of one aggregate literal.
+pub type AggregateLiteralFieldValues = Arc<[(Arc<str>, AstNodeKey)]>;
+
 /// Exact nominal field selected by a direct local or implicit method receiver field path.
 ///
 /// The receiver must resolve through the current syntax generation to a parameter, an explicitly
-/// typed local, or the enclosing nominal method whose owning type has one matching field. More
-/// dynamic member shapes intentionally remain unavailable until they have their own syntax
-/// authority.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+/// typed local, the enclosing nominal method, or a generic call result whose complete
+/// specialization proves one nominal return layout. More dynamic member shapes intentionally
+/// remain unavailable until they have their own syntax authority.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct AggregateFieldAccess {
     pub declaration: AstNodeKey,
     pub receiver: AstNodeKey,
     pub index: u32,
+    /// Exact applied field layout of the receiver. Generic aggregate arguments are
+    /// materialized here rather than being reconstructed by code generation.
+    pub layout: AggregateLayoutFact,
 }
 
 /// Target-specific ABI layout of one semantic scalar.
@@ -721,14 +828,14 @@ pub struct ScalarAbiLayout {
     pub is_pointer: bool,
 }
 
-/// Exact ABI-v5 storage selected by one source enum variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+/// Exact ABI-v5 storage selected by one source enum variant, in source field order.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumScalarPayloadVariantLayout {
-    pub payload_type: Option<SemanticTypeId>,
-    pub payload_offset: Option<u64>,
+    /// Unit fields retain their source position as `None` while consuming no physical storage.
+    pub payload_fields: Arc<[Option<(SemanticTypeId, u64)>]>,
 }
 
-/// Target-specific managed-object layout for an enum whose variants carry at most one scalar value.
+/// Target-specific managed-object layout for a source enum payload.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumScalarPayloadObjectLayout {
     pub object_size: u64,
@@ -752,16 +859,12 @@ pub struct EnumVariantLayoutFact {
     pub fields: Arc<[(Arc<str>, AggregateFieldShape)]>,
 }
 
-/// Exact enum declaration, source-order variant, and payload selected by a constructor.
-///
-/// The current generated ISLE enum emitter represents at most one payload value per variant.
-/// Constructors with more than one source field deliberately remain unavailable instead of
-/// silently dropping data while that emitter is extended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+/// Exact enum declaration, source-order variant, and ordered payloads selected by a constructor.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumConstructorFact {
     pub declaration: AstNodeKey,
     pub variant_index: u32,
-    pub payload: Option<AstNodeKey>,
+    pub payloads: Arc<[AstNodeKey]>,
 }
 
 /// One contextual generic enum argument retained until its enclosing item is specialized.
@@ -786,24 +889,57 @@ pub struct EnumConstructorSpecialization {
     pub layout: EnumLayoutFact,
 }
 
-/// One direct identifier payload binding consumed by the generated enum-match emitter.
+/// One identifier binding within a recursively matched enum payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumMatchBindingFact {
     /// Exact identifier declaration introduced by the match pattern.
     pub declaration: AstNodeKey,
     /// Source-proven ABI shape of the single matched variant payload.
     pub payload: AggregateFieldShape,
+    /// Source-proven ownership class retained independently of pointer-shaped ABI storage.
+    pub managed_reference: ManagedReferenceKind,
 }
 
-/// One source arm consumed by the generated enum-match emitter.
+/// One scalar literal comparison in a recursive match pattern.
 ///
-/// Guards and nested, literal, or multi-payload destructuring remain unavailable until the
-/// generated ISLE emitter has explicit representations for them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+/// The source value, its explicit semantic type, and its current-generation syntax identity are
+/// retained together so lowering does not need to infer comparison semantics from raw text.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct EnumMatchScalarLiteralFact {
+    pub literal: AstNodeKey,
+    pub semantic_type: SemanticTypeId,
+    pub value: LiteralFact,
+}
+
+/// One enum variant selected inside a recursive match pattern.
+///
+/// Every nested nominal enum carries its exact applied source layout. Target-specific offsets are
+/// deliberately absent and remain the responsibility of ABI lowering.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct EnumMatchVariantPatternFact {
+    pub declaration: AstNodeKey,
+    pub layout: EnumLayoutFact,
+    pub variant_index: u32,
+    pub items: Arc<[EnumMatchPatternFact]>,
+}
+
+/// Target-neutral recursive pattern authority for one source match arm.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum EnumMatchPatternFact {
+    Wildcard,
+    Binding(EnumMatchBindingFact),
+    UnitLiteral { literal: AstNodeKey },
+    ScalarLiteral(EnumMatchScalarLiteralFact),
+    Enum(EnumMatchVariantPatternFact),
+}
+
+/// One source arm consumed by enum-match lowering.
+///
+/// Guards remain unavailable. Pattern structure is expressed once through the recursive tree.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct EnumMatchArmFact {
-    pub variant_index: Option<u32>,
+    pub pattern: EnumMatchPatternFact,
     pub body: AstNodeKey,
-    pub binding: Option<EnumMatchBindingFact>,
 }
 
 /// Exact enum declaration and source-ordered arms selected by a `match` expression.

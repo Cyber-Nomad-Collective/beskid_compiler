@@ -2,9 +2,90 @@ use super::support::{
     AbiManifestV5, Arc, AssemblyDiscovery, AstNodeId, AstNodeKey, BeskidDatabase, CodegenInput,
     EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, ProjectSession, RootEntry, SourceUnit, SourceUnitId,
     SyntaxGenerationId, TargetMetadata, aggregate_field_access, build_typed_program, emit_isle_expression,
-    emit_isle_item, empty_array_literal_element_abi_type, find_function_definition, find_node, isa,
+    emit_isle_item, empty_array_literal_element_abi_type, find_function_definition, find_node, find_nodes_of_kind, isa,
     item_fixture_with_root, parse_program_with_source_name, settings,
 };
+use beskid_queries::contextual_integer_literal_abi_type;
+
+#[test]
+fn applied_generic_aggregate_plans_distinguish_pointer_and_scalar_fields() {
+    let source = "type Applied<T> { T value, i64 rest } i64 Main() { Applied<string> pointerValue = Applied<string> { value: \"ok\", rest: 1_i64 }; Applied<i32> scalarValue = Applied<i32> { value: 2, rest: 3_i64 }; return scalarValue.rest; }";
+    let (input, _isa, root) = item_fixture_with_root(source);
+    let literals = find_nodes_of_kind(input.database(), root, beskid_queries::IndexedNodeKind::StructLiteralExpression);
+    let [pointer_literal, scalar_literal] = literals.as_slice() else {
+        panic!("expected pointer and scalar aggregate literals, got {literals:?}");
+    };
+    let pointer = input.aggregate_static_plan(*pointer_literal).expect("pointer-applied aggregate plan");
+    let scalar = input.aggregate_static_plan(*scalar_literal).expect("scalar-applied aggregate plan");
+
+    assert_eq!(pointer.fields[0].abi_type, beskid_queries::SemanticTypeId::STRING);
+    assert_eq!(pointer.pointer_map_offsets.as_ref(), &[pointer.fields[0].field_offset]);
+    assert_eq!(scalar.fields[0].abi_type, beskid_queries::SemanticTypeId::I32);
+    assert!(scalar.pointer_map_offsets.is_empty());
+}
+
+#[test]
+fn applied_generic_integer_field_uses_the_instantiated_layout_when_lowered() {
+    let (input, isa, root) = item_fixture_with_root(
+        "type Applied<T> { T value } i32 Main() { Applied<i32> value = Applied<i32> { value: 7 }; return value.value; }",
+    );
+    let function = find_function_definition(input.database(), root).expect("Main definition");
+    let literal = find_node(input.database(), root, beskid_queries::IndexedNodeKind::LiteralExpression)
+        .expect("aggregate field integer literal");
+
+    assert_eq!(
+        contextual_integer_literal_abi_type(input.database(), literal).expect("contextual ABI query"),
+        Some(beskid_queries::SemanticTypeId::I32),
+        "the applied aggregate layout, rather than the generic declaration syntax, owns the field ABI"
+    );
+
+    let clif = emit_isle_item(&input, isa.as_ref(), function)
+        .expect("the unsuffixed integer must inherit i32 from Applied<i32>.value")
+        .display()
+        .to_string();
+
+    assert!(clif.contains("iconst.i32 7"), "the applied generic field must materialize at i32 width: {clif}");
+    assert!(clif.contains("load.i32"), "the applied generic projection must retain the same i32 layout: {clif}");
+}
+
+#[test]
+fn named_aggregate_fields_lower_in_declaration_layout_order() {
+    let (input, isa, root) = item_fixture_with_root(
+        "type Mixed { i32 narrow, i64 wide } i64 Main() { Mixed value = Mixed { wide: 9_i64, narrow: 7 }; return value.wide; }",
+    );
+    let function = find_function_definition(input.database(), root).expect("Main definition");
+    let literal = find_node(input.database(), root, beskid_queries::IndexedNodeKind::StructLiteralExpression)
+        .expect("aggregate literal");
+    let plan = input.aggregate_static_plan(literal).expect("aggregate plan");
+    let [narrow_layout, wide_layout] = plan.fields.as_ref() else {
+        panic!("expected two physical fields: {plan:?}");
+    };
+
+    let clif = emit_isle_item(&input, isa.as_ref(), function)
+        .expect("named fields may be written in a different order from their declaration")
+        .display()
+        .to_string();
+
+    let instruction_result = |needle: &str| {
+        clif.lines().find_map(|line| {
+            let (result, instruction) = line.trim().split_once(" = ")?;
+            instruction.contains(needle).then(|| result.to_string())
+        })
+    };
+    let narrow_value = instruction_result("iconst.i32 7").expect("narrow constant");
+    let wide_value = instruction_result("iconst.i64 9").expect("wide constant");
+    let narrow_address = instruction_result(&format!(", {}", narrow_layout.field_offset)).expect("narrow address");
+    let wide_address = instruction_result(&format!(", {}", wide_layout.field_offset)).expect("wide address");
+
+    assert!(
+        clif.lines().any(|line| line.trim().starts_with(&format!("store {narrow_value}, {narrow_address}"))),
+        "the named `narrow` value must target its declared layout offset: {clif}"
+    );
+    assert!(
+        clif.lines().any(|line| line.trim().starts_with(&format!("store {wide_value}, {wide_address}"))),
+        "the named `wide` value must target its declared layout offset: {clif}"
+    );
+}
 
 #[test]
 fn parsed_struct_literal_uses_source_aggregate_layout_without_hir() {

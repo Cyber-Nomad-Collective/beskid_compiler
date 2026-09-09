@@ -64,7 +64,15 @@ pub bool ValidateArrayElementDescriptor(pointer descriptor) {
     word alignment = raw_word_load(pointer_add(descriptor, 8));
     word pointerCount = raw_word_load(pointer_add(descriptor, 24));
     pointer pointerMap = NativePointer(raw_word_load(pointer_add(descriptor, 16)));
-    if stride == 0 || IsValidObjectAlignment(alignment) == false || stride % alignment != 0 { return false; }
+    // Element storage is packed inside an already word-aligned managed object. Scalar elements
+    // therefore retain their natural 1/4/8-byte alignment; applying the GC object's minimum
+    // eight-byte alignment rule here would reject canonical bool/u8/i32 array descriptors.
+    if stride == 0 || alignment == 0 || alignment > 8 || stride % alignment != 0 { return false; }
+    mut word remainingAlignment = alignment;
+    while remainingAlignment > 1 {
+        if remainingAlignment % 2 != 0 { return false; }
+        remainingAlignment = remainingAlignment / 2;
+    }
     if pointerCount == 0 { return true; }
     if pointerMap == NativePointer(0) { return false; }
     mut word index = 0;
@@ -90,8 +98,10 @@ pub word ManagedObjectSize(pointer object, pointer descriptor) {
     word backingSize = stride * capacity;
     if capacity != 0 && backingSize / stride != capacity { return 0; }
     word totalSize = fixedSize + backingSize;
-    if totalSize < fixedSize || totalSize % 8 != 0 { return 0; }
-    return totalSize;
+    if totalSize < fixedSize { return 0; }
+    word alignedSize = AlignUp(totalSize, TypeDescriptorAlignment(descriptor));
+    if alignedSize < totalSize { return 0; }
+    return alignedSize;
 }
 
 // Returns whether one ABI allocation alignment is a power-of-two word alignment.
@@ -211,7 +221,7 @@ pub pointer AllocateObject(pointer request) {
                 if alignment != TypeDescriptorAlignment(descriptor) {
                     return NativePointer(0);
                 } else {
-                    pointer object = SystemAllocate(size, alignment);
+                    pointer object = GcAlloc(size, alignment);
                     if object == NativePointer(0) {
                           return object;
                     } else {

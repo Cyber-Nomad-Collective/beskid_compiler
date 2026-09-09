@@ -4,9 +4,10 @@
 mod scalar_payload_tests;
 
 use super::super::*;
+use crate::semantic_contract::typing::managed_reference_kind_for_syntax_type;
 
 impl EnumLayoutFact {
-    /// Compute the sole target-specific physical authority for ABI-v5 scalar-payload enums.
+    /// Compute the sole target-specific physical authority for ABI-v5 enum payloads.
     ///
     /// Pointer and scalar payloads use distinct union slots so the static pointer map traces every
     /// managed payload without scanning scalar bits.
@@ -26,63 +27,87 @@ impl EnumLayoutFact {
         if header_size < 16 || header_alignment == 0 || !header_alignment.is_power_of_two() {
             return None;
         }
-        let mut scalar_storage = None::<StorageClass>;
-        let mut pointer_storage = None::<StorageClass>;
+        let mut storage_by_position = Vec::<(Option<StorageClass>, Option<StorageClass>)>::new();
         let payloads = self
             .variants
             .iter()
-            .map(|variant| match variant.fields.as_ref() {
-                [] => Some(None),
-                [(_, shape)] => {
-                    let ty = match shape {
-                        AggregateFieldShape::Scalar(ty) => *ty,
-                        AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
-                    };
-                    let layout = ty.scalar_abi_layout(pointer_width)?;
-                    let storage = if layout.is_pointer { &mut pointer_storage } else { &mut scalar_storage };
-                    if storage.is_none_or(|current| {
-                        layout.size > current.size
-                            || (layout.size == current.size && layout.alignment > current.alignment)
-                    }) {
-                        *storage = Some(StorageClass { ty, size: layout.size, alignment: layout.alignment });
-                    }
-                    Some(Some((ty, layout.is_pointer)))
-                }
-                _ => None,
+            .map(|variant| {
+                variant
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .map(|(position, (_, shape))| {
+                        if matches!(shape, AggregateFieldShape::Scalar(SemanticTypeId::UNIT)) {
+                            return Some(None);
+                        }
+                        let ty = match shape {
+                            AggregateFieldShape::Scalar(ty) => *ty,
+                            AggregateFieldShape::Nominal(_) => SemanticTypeId::POINTER,
+                        };
+                        let layout = ty.scalar_abi_layout(pointer_width)?;
+                        if storage_by_position.len() <= position {
+                            storage_by_position.resize(position + 1, (None, None));
+                        }
+                        let (scalar_storage, pointer_storage) = &mut storage_by_position[position];
+                        let storage = if layout.is_pointer { pointer_storage } else { scalar_storage };
+                        if storage.is_none_or(|current| {
+                            layout.size > current.size
+                                || (layout.size == current.size && layout.alignment > current.alignment)
+                        }) {
+                            *storage = Some(StorageClass { ty, size: layout.size, alignment: layout.alignment });
+                        }
+                        Some(Some((ty, layout.is_pointer)))
+                    })
+                    .collect::<Option<Vec<_>>>()
             })
             .collect::<Option<Vec<_>>>()?;
 
         let tag_offset = align_to_layout(header_size, 4)?;
         let mut end = tag_offset.checked_add(4)?;
         let mut object_alignment = header_alignment.max(4);
-        let mut storage_fields = Vec::with_capacity(2);
-        let scalar_offset = append_storage(
-            scalar_storage.map(|storage| (storage.ty, storage.size, storage.alignment)),
-            &mut end,
-            &mut object_alignment,
-            &mut storage_fields,
-        )?;
-        let pointer_offset = append_storage(
-            pointer_storage.map(|storage| (storage.ty, storage.size, storage.alignment)),
-            &mut end,
-            &mut object_alignment,
-            &mut storage_fields,
-        )?;
+        let mut storage_fields = Vec::with_capacity(storage_by_position.len() * 2);
+        let mut offsets_by_position = Vec::with_capacity(storage_by_position.len());
+        let mut pointer_map_offsets = Vec::new();
+        for (scalar_storage, pointer_storage) in storage_by_position {
+            let scalar_offset = append_storage(
+                scalar_storage.map(|storage| (storage.ty, storage.size, storage.alignment)),
+                &mut end,
+                &mut object_alignment,
+                &mut storage_fields,
+            )?;
+            let pointer_offset = append_storage(
+                pointer_storage.map(|storage| (storage.ty, storage.size, storage.alignment)),
+                &mut end,
+                &mut object_alignment,
+                &mut storage_fields,
+            )?;
+            pointer_map_offsets.extend(pointer_offset);
+            offsets_by_position.push((scalar_offset, pointer_offset));
+        }
         let variants = payloads
             .into_iter()
-            .map(|payload| {
-                let (payload_type, payload_offset) = payload
-                    .map(|(ty, is_pointer)| (Some(ty), if is_pointer { pointer_offset } else { scalar_offset }))
-                    .unwrap_or((None, None));
-                EnumScalarPayloadVariantLayout { payload_type, payload_offset }
+            .map(|payloads| {
+                let payload_fields = payloads
+                    .into_iter()
+                    .enumerate()
+                    .map(|(position, payload)| {
+                        let Some((ty, is_pointer)) = payload else {
+                            return Some(None);
+                        };
+                        let (scalar_offset, pointer_offset) = offsets_by_position[position];
+                        let offset = if is_pointer { pointer_offset? } else { scalar_offset? };
+                        Some(Some((ty, offset)))
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                Some(EnumScalarPayloadVariantLayout { payload_fields: payload_fields.into() })
             })
-            .collect::<Vec<_>>();
+            .collect::<Option<Vec<_>>>()?;
         Some(EnumScalarPayloadObjectLayout {
             object_size: align_to_layout(end, object_alignment)?,
             object_alignment,
             tag_offset,
             storage_fields: storage_fields.into(),
-            pointer_map_offsets: pointer_offset.into_iter().collect::<Vec<_>>().into(),
+            pointer_map_offsets: pointer_map_offsets.into(),
             variants: variants.into(),
         })
     }
@@ -122,9 +147,9 @@ pub(in crate::semantic_contract) fn enum_layout_tracked(
         }
         node.of::<beskid_analysis::syntax::EnumConstructorExpression>()
             .map(|constructor| {
-                let type_path = contextual_enum_constructor_type_path(program, index, key, constructor)
-                    .unwrap_or(&constructor.path.node.type_path.node);
-                instantiated_enum_layout_for_path(db, key, type_path)
+                let type_path = contextual_enum_constructor_type_path(db, program, index, key, constructor)
+                    .unwrap_or_else(|| constructor.path.node.type_path.node.clone());
+                instantiated_enum_layout_for_path(db, key, &type_path)
             })
             .or_else(|| {
                 node.of::<beskid_analysis::syntax::TryExpression>().map(|_| {
@@ -149,12 +174,13 @@ pub(in crate::semantic_contract) fn enum_layout_tracked(
 
 /// Return an explicitly applied enum type from the immediate typed context of a genericless
 /// constructor. This intentionally declines all inferred, nested, and control-flow contexts.
-pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path<'a>(
-    program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
     constructor: &beskid_analysis::syntax::EnumConstructorExpression,
-) -> Option<&'a beskid_analysis::syntax::Path> {
+) -> Option<beskid_analysis::syntax::Path> {
     let constructor_path = &constructor.path.node.type_path.node;
     let terminal = constructor_path.segments.last()?;
     if !terminal.node.type_args.is_empty() {
@@ -164,7 +190,10 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path<'a>(
     let mut current = parent_node(index, key.node)?;
     while matches!(
         index.kind(current)?,
-        beskid_analysis::syntax_query::NodeKind::Expression | beskid_analysis::syntax_query::NodeKind::Statement
+        beskid_analysis::syntax_query::NodeKind::Expression
+            | beskid_analysis::syntax_query::NodeKind::Statement
+            | beskid_analysis::syntax_query::NodeKind::MatchArm
+            | beskid_analysis::syntax_query::NodeKind::MatchExpression
     ) {
         current = parent_node(index, current)?;
     }
@@ -193,6 +222,20 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path<'a>(
                         .and_then(|method| method.return_type.as_ref().map(|annotation| &annotation.node))
                 })
         }
+        beskid_analysis::syntax_query::NodeKind::AssignExpression => {
+            let assignment = mutable_local_assignment(db, AstNodeKey { node: current, ..key }).ok().flatten()?;
+            explicit_local_declaration_type(program, index, assignment.declaration.node)
+        }
+        beskid_analysis::syntax_query::NodeKind::CallExpression => {
+            return expected_explicit_call_argument_type(db, program, index, key).and_then(|expected| {
+                let beskid_analysis::syntax::Type::Complex(path) = expected else { return None };
+                let expected_path = path.node;
+                let expected_terminal = expected_path.segments.last()?;
+                (expected_terminal.node.name.node.name == constructor_name
+                    && !expected_terminal.node.type_args.is_empty())
+                .then_some(expected_path)
+            });
+        }
         _ => None,
     }?;
     let beskid_analysis::syntax::Type::Complex(path) = expected else {
@@ -201,7 +244,19 @@ pub(in crate::semantic_contract) fn contextual_enum_constructor_type_path<'a>(
     let expected_path = &path.node;
     let expected_terminal = expected_path.segments.last()?;
     (expected_terminal.node.name.node.name == constructor_name && !expected_terminal.node.type_args.is_empty())
-        .then_some(expected_path)
+        .then_some(expected_path.clone())
+}
+
+fn explicit_local_declaration_type<'a>(
+    program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    declaration: beskid_analysis::syntax::AstNodeId,
+) -> Option<&'a beskid_analysis::syntax::Type> {
+    let declaration = index.node_at(program, parent_node(index, declaration)?)?;
+    declaration
+        .of::<beskid_analysis::syntax::LetStatement>()
+        .and_then(|statement| statement.type_annotation.as_ref().map(|annotation| &annotation.node))
+        .or_else(|| declaration.of::<beskid_analysis::syntax::Parameter>().map(|parameter| &parameter.ty.node))
 }
 
 pub(in crate::semantic_contract) fn instantiated_enum_layout_for_path(
@@ -346,10 +401,10 @@ pub(in crate::semantic_contract) fn enum_constructor_tracked(
 ) -> SemanticQueryResult<EnumConstructorFact> {
     with_node(db, syntax, key, |program, index, node| {
         let constructor = node.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
-        let type_path = contextual_enum_constructor_type_path(program, index, key, constructor)
-            .unwrap_or(&constructor.path.node.type_path.node);
+        let type_path = contextual_enum_constructor_type_path(db, program, index, key, constructor)
+            .unwrap_or_else(|| constructor.path.node.type_path.node.clone());
         let declaration =
-            resolve_type_declaration(db, key, type_path).ok_or_else(|| SemanticError::unavailable("enum_constructor"));
+            resolve_type_declaration(db, key, &type_path).ok_or_else(|| SemanticError::unavailable("enum_constructor"));
         let declaration = match declaration {
             Ok(declaration) => declaration,
             Err(error) => return Some(Err(error)),
@@ -364,24 +419,24 @@ pub(in crate::semantic_contract) fn enum_constructor_tracked(
             return Some(Err(SemanticError::unavailable("enum_constructor")));
         };
         let variant = &layout.variants[variant_index];
-        if variant.fields.len() != constructor.args.len() || variant.fields.len() > 1 {
+        if variant.fields.len() != constructor.args.len() {
             return Some(Err(SemanticError::unavailable("enum_constructor")));
         }
-        let payload = constructor
+        let payloads = constructor
             .args
-            .first()
+            .iter()
             .map(|argument| {
                 index
                     .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
                     .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
                     .ok_or_else(|| SemanticError::unavailable("enum_constructor"))
             })
-            .transpose();
+            .collect::<Result<Vec<_>, _>>();
         let variant_index = match u32::try_from(variant_index) {
             Ok(variant_index) => variant_index,
             Err(_) => return Some(Err(SemanticError::unavailable("enum_constructor"))),
         };
-        Some(payload.map(|payload| EnumConstructorFact { declaration, variant_index, payload }))
+        Some(payloads.map(|payloads| EnumConstructorFact { declaration, variant_index, payloads: payloads.into() }))
     })?
     .transpose()
 }
@@ -394,8 +449,8 @@ pub(in crate::semantic_contract) fn enum_constructor_template_tracked(
 ) -> SemanticQueryResult<EnumConstructorTemplate> {
     with_node(db, syntax, key, |program, index, node| {
         let constructor = node.of::<beskid_analysis::syntax::EnumConstructorExpression>()?;
-        let contextual = contextual_enum_constructor_type_path(program, index, key, constructor)?;
-        let declaration = resolve_type_declaration(db, key, contextual)?;
+        let contextual = contextual_enum_constructor_type_path(db, program, index, key, constructor)?;
+        let declaration = resolve_type_declaration(db, key, &contextual)?;
         let declaration_syntax = db.syntax_unit(declaration.unit)?;
         let definition = declaration_syntax
             .syntax_index(db)
@@ -462,18 +517,27 @@ pub(in crate::semantic_contract) fn enum_constructor_template_tracked(
             return Some(Err(SemanticError::unavailable("enum_constructor_template")));
         };
         let variant = &definition.variants[usize::try_from(variant_index).ok()?];
-        if variant.node.fields.len() != constructor.args.len() || variant.node.fields.len() > 1 {
+        if variant.node.fields.len() != constructor.args.len() {
             return Some(Err(SemanticError::unavailable("enum_constructor_template")));
         }
-        let payload = constructor.args.first().and_then(|argument| {
-            index
-                .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
-                .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
-        });
+        let payloads = constructor
+            .args
+            .iter()
+            .map(|argument| {
+                index
+                    .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(argument))
+                    .map(|node| AstNodeKey { node: normalized_expression_node(index, node), ..key })
+                    .ok_or_else(|| SemanticError::unavailable("enum_constructor_template"))
+            })
+            .collect::<Result<Vec<_>, _>>();
+        let payloads = match payloads {
+            Ok(payloads) => payloads,
+            Err(error) => return Some(Err(error)),
+        };
         let parameters =
             definition.generics.iter().map(|generic| Arc::<str>::from(generic.node.name.as_str())).collect::<Vec<_>>();
         Some(Ok(EnumConstructorTemplate {
-            constructor: EnumConstructorFact { declaration, variant_index, payload },
+            constructor: EnumConstructorFact { declaration, variant_index, payloads: payloads.into() },
             parameters: parameters.into(),
             arguments: arguments.into(),
         }))
@@ -541,92 +605,303 @@ pub(in crate::semantic_contract) fn enum_match_tracked(
             Some(Err(error)) => return Some(Err(error)),
             None => return Some(Err(SemanticError::unavailable("enum_match"))),
         };
-        let mut arms = Vec::with_capacity(expression.arms.len());
-        for arm in &expression.arms {
-            if arm.node.guard.is_some() {
-                return Some(Err(SemanticError::unavailable("enum_match")));
-            }
-            let arm_node = index
-                .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(arm))
-                .ok_or_else(|| SemanticError::unavailable("enum_match"));
-            let arm_node = match arm_node {
-                Ok(arm_node) => arm_node,
-                Err(error) => return Some(Err(error)),
-            };
-            let body = index
-                .direct_child_id(program, arm_node, beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.value))
-                .map(|body| AstNodeKey { node: normalized_expression_node(index, body), ..key })
-                .ok_or_else(|| SemanticError::unavailable("enum_match"));
-            let body = match body {
-                Ok(body) => body,
-                Err(error) => return Some(Err(error)),
-            };
-            let arm_fact = match &arm.node.pattern.node {
-                beskid_analysis::syntax::Pattern::Wildcard => Ok((None, None)),
-                beskid_analysis::syntax::Pattern::Enum(pattern) => {
-                    if !enum_pattern_targets_declaration(db, declaration, &pattern.node.path.node.type_path.node) {
-                        return Some(Err(SemanticError::unavailable("enum_match")));
-                    }
-                    let name = pattern.node.path.node.variant.node.name.as_str();
-                    let Some((variant_index, variant)) =
-                        layout.variants.iter().enumerate().find(|(_, variant)| variant.name.as_ref() == name)
-                    else {
-                        return Some(Err(SemanticError::unavailable("enum_match")));
-                    };
-                    if variant.fields.len() != pattern.node.items.len() || variant.fields.len() > 1 {
-                        return Some(Err(SemanticError::unavailable("enum_match")));
-                    }
-                    let binding = match pattern.node.items.as_slice() {
-                        [] => None,
-                        [item] if matches!(item.node, beskid_analysis::syntax::Pattern::Wildcard) => None,
-                        [item] if matches!(item.node, beskid_analysis::syntax::Pattern::Identifier(_)) => {
-                            let Some(pattern_node) = index
-                                .direct_child_id(
-                                    program,
-                                    arm_node,
-                                    beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.pattern),
-                                )
-                                .and_then(|node| {
-                                    index.direct_child_id(
-                                        program,
-                                        node,
-                                        beskid_analysis::syntax_query::DynNodeRef::from(pattern),
-                                    )
-                                })
-                                .and_then(|node| {
-                                    index.direct_child_id(
-                                        program,
-                                        node,
-                                        beskid_analysis::syntax_query::DynNodeRef::from(item),
-                                    )
-                                })
-                                .and_then(|node| index.children(node)?.first().copied())
-                            else {
-                                return Some(Err(SemanticError::unavailable("enum_match")));
-                            };
-                            Some(EnumMatchBindingFact {
-                                declaration: AstNodeKey { node: pattern_node, ..key },
-                                payload: variant.fields[0].1,
-                            })
-                        }
-                        _ => return Some(Err(SemanticError::unavailable("enum_match"))),
-                    };
-                    let Ok(variant_index) = u32::try_from(variant_index) else {
-                        return Some(Err(SemanticError::unavailable("enum_match")));
-                    };
-                    Ok((Some(variant_index), binding))
-                }
-                _ => Err(SemanticError::unavailable("enum_match")),
-            };
-            let (variant_index, binding) = match arm_fact {
-                Ok(fact) => fact,
-                Err(error) => return Some(Err(error)),
-            };
-            arms.push(EnumMatchArmFact { variant_index, body, binding });
-        }
-        Some(Ok(EnumMatchFact { declaration, layout, arms: arms.into() }))
+        let environment = match enum_match_ownership_environment(db, program, index, key, expression, declaration, None)
+        {
+            Ok(environment) => environment,
+            Err(error) => return Some(Err(error)),
+        };
+        Some(materialize_enum_match(db, program, index, key, expression, declaration, layout, &environment))
     })?
     .transpose()
+}
+
+/// Materialize a generic match through the immutable specialization of its enclosing item.
+///
+/// The ordinary `enum_match` fact remains target-neutral and unavailable when a generic payload's
+/// ownership cannot be proven. This explicit path applies the call-derived substitutions before
+/// constructing layouts or bindings, so pointer-shaped nominal/native identities are never guessed.
+pub fn enum_match_specialization(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Arc<[GenericSubstitution]>,
+) -> SemanticQueryResult<EnumMatchFact> {
+    let syntax = db
+        .syntax_unit(key.unit)
+        .filter(|syntax| syntax.accepts_key(db, key))
+        .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let expression = index
+        .node_at(program, key.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::MatchExpression>())
+        .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
+    let (declaration, layout) =
+        enum_match_scrutinee_layout_in_environment(db, program, index, key, expression, &enclosing)?
+            .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
+    let environment =
+        enum_match_ownership_environment(db, program, index, key, expression, declaration, Some(&enclosing))?;
+    materialize_enum_match(db, program, index, key, expression, declaration, layout, &environment).map(Some)
+}
+
+fn materialize_enum_match(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    expression: &beskid_analysis::syntax::MatchExpression,
+    declaration: AstNodeKey,
+    layout: EnumLayoutFact,
+    environment: &HashMap<String, ManagedReferenceKind>,
+) -> Result<EnumMatchFact, SemanticError> {
+    let mut arms = Vec::with_capacity(expression.arms.len());
+    for arm in &expression.arms {
+        if arm.node.guard.is_some() {
+            return Err(SemanticError::unavailable("enum_match"));
+        }
+        let arm_node = index
+            .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(arm))
+            .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+        let body = index
+            .direct_child_id(program, arm_node, beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.value))
+            .map(|body| AstNodeKey { node: normalized_expression_node(index, body), ..key })
+            .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+        let pattern_node = index
+            .direct_child_id(program, arm_node, beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.pattern))
+            .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+        let pattern = materialize_match_pattern(
+            db,
+            program,
+            index,
+            key,
+            pattern_node,
+            &arm.node.pattern,
+            MatchPatternExpectation::NominalEnum { declaration, layout: layout.clone() },
+            environment,
+        )?;
+        arms.push(EnumMatchArmFact { pattern, body });
+    }
+    Ok(EnumMatchFact { declaration, layout, arms: arms.into() })
+}
+
+#[derive(Clone)]
+enum MatchPatternExpectation {
+    Scalar { semantic_type: SemanticTypeId, managed_reference: ManagedReferenceKind },
+    Nominal(AstNodeKey),
+    NominalEnum { declaration: AstNodeKey, layout: EnumLayoutFact },
+}
+
+impl MatchPatternExpectation {
+    fn binding_shape(&self) -> AggregateFieldShape {
+        match self {
+            Self::Scalar { semantic_type, .. } => AggregateFieldShape::Scalar(*semantic_type),
+            Self::Nominal(declaration) | Self::NominalEnum { declaration, .. } => {
+                AggregateFieldShape::Nominal(*declaration)
+            }
+        }
+    }
+
+    fn managed_reference(&self) -> ManagedReferenceKind {
+        match self {
+            Self::Scalar { managed_reference, .. } => *managed_reference,
+            Self::Nominal(_) | Self::NominalEnum { .. } => ManagedReferenceKind::GcManaged,
+        }
+    }
+}
+
+fn materialize_match_pattern(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    pattern_node: beskid_analysis::syntax::AstNodeId,
+    pattern: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Pattern>,
+    expected: MatchPatternExpectation,
+    environment: &HashMap<String, ManagedReferenceKind>,
+) -> Result<EnumMatchPatternFact, SemanticError> {
+    match &pattern.node {
+        beskid_analysis::syntax::Pattern::Wildcard => Ok(EnumMatchPatternFact::Wildcard),
+        beskid_analysis::syntax::Pattern::Identifier(identifier) => {
+            if matches!(expected, MatchPatternExpectation::Scalar { semantic_type: SemanticTypeId::UNIT, .. }) {
+                return Err(SemanticError::unavailable("enum_match"));
+            }
+            let declaration = index
+                .direct_child_id(program, pattern_node, beskid_analysis::syntax_query::DynNodeRef::from(identifier))
+                .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+            Ok(EnumMatchPatternFact::Binding(EnumMatchBindingFact {
+                declaration: AstNodeKey { node: declaration, ..key },
+                payload: expected.binding_shape(),
+                managed_reference: expected.managed_reference(),
+            }))
+        }
+        beskid_analysis::syntax::Pattern::Literal(literal) => {
+            let literal_node = index
+                .direct_child_id(program, pattern_node, beskid_analysis::syntax_query::DynNodeRef::from(literal))
+                .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+            let literal_key = AstNodeKey { node: literal_node, ..key };
+            match &literal.node {
+                beskid_analysis::syntax::Literal::Unit
+                    if matches!(
+                        expected,
+                        MatchPatternExpectation::Scalar { semantic_type: SemanticTypeId::UNIT, .. }
+                    ) =>
+                {
+                    Ok(EnumMatchPatternFact::UnitLiteral { literal: literal_key })
+                }
+                beskid_analysis::syntax::Literal::Integer(value) => materialize_scalar_literal(
+                    literal_key,
+                    &expected,
+                    semantic_type_for_literal(&literal.node),
+                    LiteralFact::Integer(Arc::from(value.as_str())),
+                ),
+                beskid_analysis::syntax::Literal::Bool(value) => {
+                    materialize_scalar_literal(literal_key, &expected, SemanticTypeId::BOOL, LiteralFact::Bool(*value))
+                }
+                beskid_analysis::syntax::Literal::Char(value) => materialize_scalar_literal(
+                    literal_key,
+                    &expected,
+                    SemanticTypeId::CHAR,
+                    LiteralFact::Char(Arc::from(value.as_str())),
+                ),
+                beskid_analysis::syntax::Literal::Float(_)
+                | beskid_analysis::syntax::Literal::String(_)
+                | beskid_analysis::syntax::Literal::Unit => Err(SemanticError::unavailable("enum_match")),
+            }
+        }
+        beskid_analysis::syntax::Pattern::Enum(enum_pattern) => {
+            let (declaration, layout) = match expected {
+                MatchPatternExpectation::NominalEnum { declaration, layout } => (declaration, layout),
+                MatchPatternExpectation::Nominal(declaration) => {
+                    let layout =
+                        enum_layout(db, declaration)?.ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+                    (declaration, layout)
+                }
+                MatchPatternExpectation::Scalar { .. } => return Err(SemanticError::unavailable("enum_match")),
+            };
+            materialize_enum_pattern(
+                db,
+                program,
+                index,
+                key,
+                pattern_node,
+                enum_pattern,
+                (declaration, layout),
+                environment,
+            )
+        }
+    }
+}
+
+fn materialize_scalar_literal(
+    literal: AstNodeKey,
+    expected: &MatchPatternExpectation,
+    semantic_type: SemanticTypeId,
+    value: LiteralFact,
+) -> Result<EnumMatchPatternFact, SemanticError> {
+    if !matches!(expected, MatchPatternExpectation::Scalar { semantic_type: expected, .. } if *expected == semantic_type)
+    {
+        return Err(SemanticError::unavailable("enum_match"));
+    }
+    Ok(EnumMatchPatternFact::ScalarLiteral(EnumMatchScalarLiteralFact { literal, semantic_type, value }))
+}
+
+fn materialize_enum_pattern(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    pattern_node: beskid_analysis::syntax::AstNodeId,
+    pattern: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::EnumPattern>,
+    applied_enum: (AstNodeKey, EnumLayoutFact),
+    environment: &HashMap<String, ManagedReferenceKind>,
+) -> Result<EnumMatchPatternFact, SemanticError> {
+    let (declaration, layout) = applied_enum;
+    if !enum_pattern_targets_declaration(db, declaration, &pattern.node.path.node.type_path.node) {
+        return Err(SemanticError::unavailable("enum_match"));
+    }
+    let name = pattern.node.path.node.variant.node.name.as_str();
+    let (variant_index, variant) = layout
+        .variants
+        .iter()
+        .enumerate()
+        .find(|(_, variant)| variant.name.as_ref() == name)
+        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+    if variant.fields.len() != pattern.node.items.len() {
+        return Err(SemanticError::unavailable("enum_match"));
+    }
+    let enum_pattern_node = index
+        .direct_child_id(program, pattern_node, beskid_analysis::syntax_query::DynNodeRef::from(pattern))
+        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+    let items = pattern
+        .node
+        .items
+        .iter()
+        .zip(variant.fields.iter())
+        .enumerate()
+        .map(|(field_index, (item, (_, shape)))| {
+            let item_node = index
+                .direct_child_id(program, enum_pattern_node, beskid_analysis::syntax_query::DynNodeRef::from(item))
+                .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+            let expected = match shape {
+                AggregateFieldShape::Scalar(semantic_type) => MatchPatternExpectation::Scalar {
+                    semantic_type: *semantic_type,
+                    managed_reference: enum_variant_field_managed_reference(
+                        db,
+                        declaration,
+                        variant_index,
+                        field_index,
+                        *shape,
+                        environment,
+                    )?,
+                },
+                AggregateFieldShape::Nominal(declaration) => MatchPatternExpectation::Nominal(*declaration),
+            };
+            materialize_match_pattern(db, program, index, key, item_node, item, expected, environment)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(EnumMatchPatternFact::Enum(EnumMatchVariantPatternFact {
+        declaration,
+        layout,
+        variant_index: u32::try_from(variant_index).map_err(|_| SemanticError::unavailable("enum_match"))?,
+        items: items.into(),
+    }))
+}
+
+fn enum_variant_field_managed_reference(
+    db: &dyn Db,
+    declaration: AstNodeKey,
+    variant_index: usize,
+    field_index: usize,
+    applied_shape: AggregateFieldShape,
+    environment: &HashMap<String, ManagedReferenceKind>,
+) -> Result<ManagedReferenceKind, SemanticError> {
+    let syntax = db
+        .syntax_unit(declaration.unit)
+        .filter(|syntax| syntax.accepts_key(db, declaration))
+        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+    let definition = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::EnumDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+    let field = definition
+        .variants
+        .get(variant_index)
+        .and_then(|variant| variant.node.fields.get(field_index))
+        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+
+    if let Some(parameter) = generic_parameter_reference_name(&field.node.ty.node) {
+        if let Some(managed_reference) = environment.get(parameter) {
+            return Ok(*managed_reference);
+        }
+        return match applied_shape {
+            AggregateFieldShape::Nominal(_) | AggregateFieldShape::Scalar(SemanticTypeId::STRING) => {
+                Ok(ManagedReferenceKind::GcManaged)
+            }
+            AggregateFieldShape::Scalar(SemanticTypeId::POINTER) => Err(SemanticError::unavailable("enum_match")),
+            AggregateFieldShape::Scalar(_) => Ok(ManagedReferenceKind::NativeOrScalar),
+        };
+    }
+    managed_reference_kind_for_syntax_type(&field.node.ty.node)
 }
 
 pub(in crate::semantic_contract) fn enum_pattern_targets_declaration(
@@ -691,8 +966,7 @@ pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
         )?;
         let scrutinee = normalized_expression_node(index, scrutinee);
         let access = aggregate_field_access(db, AstNodeKey { node: scrutinee, ..key }).ok().flatten()?;
-        let layout = aggregate_layout(db, access.declaration).ok().flatten()?;
-        let field = layout.fields.get(usize::try_from(access.index).ok()?)?;
+        let field = access.layout.fields.get(usize::try_from(access.index).ok()?)?;
         let AggregateFieldShape::Nominal(declaration) = field.1 else {
             return None;
         };
@@ -702,13 +976,7 @@ pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
                 .map(|layout| (declaration, layout)),
         );
     }
-    let [segment] = path.node.path.node.segments.as_slice() else {
-        return None;
-    };
-    if !segment.node.type_args.is_empty() {
-        return None;
-    }
-    let local = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())?;
+    let local = enum_match_scrutinee_local_declaration(program, index, key, expression)?;
     let parent = parent_node(index, local)?;
     if index.kind(parent)? == beskid_analysis::syntax_query::NodeKind::Pattern {
         let binding = match pattern_binding_fact(db, index, key, local)? {
@@ -724,6 +992,24 @@ pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
                 .map(|layout| (declaration, layout)),
         );
     }
+    let path = enum_match_scrutinee_explicit_type_path(program, index, key, expression)?;
+    let declaration = resolve_type_declaration(db, key, &path)?;
+    Some(instantiated_enum_layout_for_path(db, key, &path).map(|layout| (declaration, layout)))
+}
+
+/// Retain the source-level applied type of a local match scrutinee.
+///
+/// Enum layout intentionally erases source identities down to ABI shapes. Pattern binding also
+/// needs the applied type to distinguish a managed array/nominal from an unmanaged native pointer,
+/// so this helper is the single syntax-backed seam used by both layout and ownership projection.
+fn enum_match_scrutinee_explicit_type_path(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    expression: &beskid_analysis::syntax::MatchExpression,
+) -> Option<beskid_analysis::syntax::Path> {
+    let local = enum_match_scrutinee_local_declaration(program, index, key, expression)?;
+    let parent = parent_node(index, local)?;
     let annotation = match index.kind(parent)? {
         beskid_analysis::syntax_query::NodeKind::Parameter => index
             .node_at(program, parent)?
@@ -739,8 +1025,147 @@ pub(in crate::semantic_contract) fn enum_match_scrutinee_layout(
     let beskid_analysis::syntax::Type::Complex(path) = annotation else {
         return None;
     };
-    let declaration = resolve_type_declaration(db, key, &path.node)?;
-    Some(instantiated_enum_layout_for_path(db, key, &path.node).map(|layout| (declaration, layout)))
+    Some(path.node.clone())
+}
+
+fn enum_match_scrutinee_local_declaration(
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    expression: &beskid_analysis::syntax::MatchExpression,
+) -> Option<beskid_analysis::syntax::AstNodeId> {
+    let beskid_analysis::syntax::Expression::Path(path) = &expression.scrutinee.node else {
+        return None;
+    };
+    let [segment] = path.node.path.node.segments.as_slice() else {
+        return None;
+    };
+    if !segment.node.type_args.is_empty() {
+        return None;
+    }
+    resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())
+}
+
+/// Project an applied generic enum type into the ownership facts needed by pattern bindings.
+///
+/// Physical enum layouts collapse arrays, functions, nominals, and native pointers to pointer
+/// shapes. This environment preserves the source distinction without adding a second layout path.
+/// If an applied argument still names an enclosing generic, only an explicit call specialization
+/// may provide its ownership; missing substitutions fail closed.
+fn enum_match_ownership_environment(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    expression: &beskid_analysis::syntax::MatchExpression,
+    declaration: AstNodeKey,
+    enclosing: Option<&[GenericSubstitution]>,
+) -> Result<HashMap<String, ManagedReferenceKind>, SemanticError> {
+    let syntax = db
+        .syntax_unit(declaration.unit)
+        .filter(|syntax| syntax.accepts_key(db, declaration))
+        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+    let definition = syntax
+        .syntax_index(db)
+        .node_at(syntax.expanded_program(db), declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::EnumDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+    if definition.generics.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let Some(path) = enum_match_scrutinee_explicit_type_path(program, index, key, expression) else {
+        // Other supported scrutinee shapes retain their existing conservative field inference.
+        // In particular, pointer-shaped generic fields remain unavailable rather than guessed.
+        return Ok(HashMap::new());
+    };
+    let terminal = path.segments.last().ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+    if terminal.node.type_args.len() != definition.generics.len() {
+        return Err(SemanticError::unavailable("enum_match"));
+    }
+    definition
+        .generics
+        .iter()
+        .zip(terminal.node.type_args.iter())
+        .map(|(parameter, argument)| {
+            let ownership = if let Some(name) = generic_parameter_reference_name(&argument.node) {
+                if let Some(binding) =
+                    enclosing.and_then(|bindings| bindings.iter().find(|binding| binding.parameter.as_ref() == name))
+                {
+                    binding.managed_reference_kind()
+                } else if aggregate_shape_from_applied_type(db, key, &argument.node).is_ok() {
+                    // A one-segment nominal path has the same syntax shape as a generic parameter.
+                    // A resolvable applied nominal is concrete and therefore managed.
+                    managed_reference_kind_for_syntax_type(&argument.node)?
+                } else {
+                    return Err(SemanticError::unavailable("enum_match"));
+                }
+            } else {
+                managed_reference_kind_for_syntax_type(&argument.node)?
+            };
+            Ok((parameter.node.name.clone(), ownership))
+        })
+        .collect()
+}
+
+fn enum_match_scrutinee_layout_in_environment(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    expression: &beskid_analysis::syntax::MatchExpression,
+    enclosing: &[GenericSubstitution],
+) -> Result<Option<(AstNodeKey, EnumLayoutFact)>, SemanticError> {
+    let Some(path) = enum_match_scrutinee_explicit_type_path(program, index, key, expression) else {
+        return Ok(None);
+    };
+    let declaration = resolve_type_declaration(db, key, &path)
+        .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
+    let layout = instantiated_enum_layout_for_path_in_environment(db, key, &path, enclosing)?;
+    Ok(Some((declaration, layout)))
+}
+
+fn instantiated_enum_layout_for_path_in_environment(
+    db: &dyn Db,
+    use_key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+    enclosing: &[GenericSubstitution],
+) -> Result<EnumLayoutFact, SemanticError> {
+    let declaration = resolve_type_declaration(db, use_key, path)
+        .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
+    let syntax = db
+        .syntax_unit(declaration.unit)
+        .filter(|syntax| syntax.accepts_key(db, declaration))
+        .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
+    let program = syntax.expanded_program(db);
+    let index = syntax.syntax_index(db);
+    let definition = index
+        .node_at(program, declaration.node)
+        .and_then(|node| node.of::<beskid_analysis::syntax::EnumDefinition>())
+        .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
+    if definition.generics.is_empty() {
+        return enum_layout_from_definition(db, program, index, declaration, definition, None);
+    }
+    let terminal = path.segments.last().ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
+    if terminal.node.type_args.len() != definition.generics.len() {
+        return Err(SemanticError::unavailable("enum_match_specialization"));
+    }
+    let substitutions = definition
+        .generics
+        .iter()
+        .zip(terminal.node.type_args.iter())
+        .map(|(parameter, argument)| {
+            let shape = aggregate_shape_from_applied_type(db, use_key, &argument.node).or_else(|error| {
+                let name = generic_parameter_reference_name(&argument.node).ok_or(error)?;
+                enclosing
+                    .iter()
+                    .find(|binding| binding.parameter.as_ref() == name)
+                    .map(|binding| AggregateFieldShape::Scalar(binding.argument))
+                    .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))
+            })?;
+            Ok((parameter.node.name.clone(), shape))
+        })
+        .collect::<Result<HashMap<_, _>, SemanticError>>()?;
+    enum_layout_from_definition(db, program, index, declaration, definition, Some(&substitutions))
 }
 
 /// Preserve nominal enum provenance for a direct call used as a `match` scrutinee.

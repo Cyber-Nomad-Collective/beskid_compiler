@@ -71,12 +71,12 @@ pub i64 SyscallSubmitAndPark(word nativeHandle, pointer managedBuffer, word len,
 }
 
 [Export(Abi:"C", Symbol:"syscall_read")]
-pub i64 SyscallRead(word nativeHandle, pointer buffer, word len) {
-    return SyscallSubmitAndPark(nativeHandle, buffer, len, SYSCALL_READ);
+pub i64 SyscallRead(i32 nativeHandle, pointer buffer, word len) {
+    return SyscallSubmitAndPark(word(nativeHandle), buffer, len, SYSCALL_READ);
 }
 
 [Export(Abi:"C", Symbol:"syscall_read_bytes")]
-pub i64 SyscallReadBytes(word nativeHandle, pointer data, word len) { return SyscallRead(nativeHandle, data, len); }
+pub i64 SyscallReadBytes(i32 nativeHandle, pointer data, word len) { return SyscallRead(nativeHandle, data, len); }
 
 [Export(Abi:"C", Symbol:"syscall_write")]
 pub i64 SyscallWrite(i64 nativeHandle, pointer value) {
@@ -85,8 +85,8 @@ pub i64 SyscallWrite(i64 nativeHandle, pointer value) {
 }
 
 [Export(Abi:"C", Symbol:"syscall_write_bytes")]
-pub i64 SyscallWriteBytes(word nativeHandle, pointer data, word len) {
-    return SyscallSubmitAndPark(nativeHandle, data, len, SYSCALL_WRITE);
+pub i64 SyscallWriteBytes(i32 nativeHandle, pointer data, word len) {
+    return SyscallSubmitAndPark(word(nativeHandle), data, len, SYSCALL_WRITE);
 }
 
 [Export(Abi:"C", Symbol:"beskid_trap_code")]

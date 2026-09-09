@@ -14,6 +14,7 @@ impl<'a> TypeChecker<'a> {
             PrimitiveType::Bool,
             PrimitiveType::I32,
             PrimitiveType::I64,
+            PrimitiveType::U32,
             PrimitiveType::U8,
             PrimitiveType::F64,
             PrimitiveType::Char,
@@ -383,7 +384,9 @@ impl<'a> TypeChecker<'a> {
     pub(super) fn is_numeric(&self, type_id: TypeId) -> bool {
         matches!(
             self.type_table.get(type_id),
-            Some(TypeInfo::Primitive(PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U8 | PrimitiveType::F64))
+            Some(TypeInfo::Primitive(
+                PrimitiveType::I32 | PrimitiveType::I64 | PrimitiveType::U32 | PrimitiveType::U8 | PrimitiveType::F64
+            ))
         )
     }
 

@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::paths;
+use crate::resolve::collect::use_imported_name;
+use crate::resolve::resolver::path_segments;
 use crate::resolve::{ItemId, ItemKind, Resolution, ResolvedType};
 use crate::syntax::{
     ContractNode, FieldKind, FunctionDefinition, MethodDefinition, Node, Path, PrimitiveType, Program, Type,
@@ -13,6 +15,12 @@ use crate::types::{TypeId, TypeInfo, TypeTable};
 
 use super::model::UnitTypeSurface;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ModuleImport {
+    Unique(Vec<String>),
+    Ambiguous,
+}
+
 pub(super) struct TypeSurfaceBuilder<'a> {
     resolution: &'a Resolution,
     source_path: PathBuf,
@@ -20,6 +28,7 @@ pub(super) struct TypeSurfaceBuilder<'a> {
     primitive_types: HashMap<PrimitiveType, TypeId>,
     named_types: HashMap<ItemId, TypeId>,
     generic_params: HashMap<String, TypeId>,
+    module_import_scopes: Vec<HashMap<String, ModuleImport>>,
     surface: UnitTypeSurface,
 }
 
@@ -32,6 +41,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
             primitive_types: HashMap::new(),
             named_types: HashMap::new(),
             generic_params: HashMap::new(),
+            module_import_scopes: Vec::new(),
             surface: UnitTypeSurface::default(),
         };
         builder.seed_primitives();
@@ -45,6 +55,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
     }
 
     pub(super) fn walk_program(&mut self, program: &Spanned<Program>) {
+        self.push_module_import_scope(&program.node.items);
         for item in &program.node.items {
             self.walk_item(item);
         }
@@ -68,6 +79,41 @@ impl<'a> TypeSurfaceBuilder<'a> {
                 _ => {}
             }
         }
+        self.module_import_scopes.pop();
+    }
+
+    fn push_module_import_scope(&mut self, items: &[Spanned<Node>]) {
+        let mut imports = HashMap::new();
+        let local_modules = items
+            .iter()
+            .filter_map(|item| match &item.node {
+                Node::InlineModule(module) => Some(module.node.name.node.name.clone()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+        for item in items {
+            let Node::UseDeclaration(declaration) = &item.node else {
+                continue;
+            };
+            let path = path_segments(&declaration.node.path);
+            if path.is_empty() {
+                continue;
+            }
+            let alias = use_imported_name(&declaration.node);
+            if local_modules.contains(&alias) {
+                imports.insert(alias, ModuleImport::Ambiguous);
+                continue;
+            }
+            match imports.entry(alias) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(ModuleImport::Unique(path));
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    entry.insert(ModuleImport::Ambiguous);
+                }
+            }
+        }
+        self.module_import_scopes.push(imports);
     }
 
     fn walk_item(&mut self, item: &Spanned<Node>) {
@@ -85,7 +131,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
                     self.generic_params.insert(name.clone(), type_id);
                     inserted.push(name);
                 }
-                self.register_struct_definition(item.span, &def.node, true);
+                self.register_struct_definition(item.span, &def.node);
                 for method in &def.node.methods {
                     self.register_foreign_method(method.span, method);
                 }
@@ -103,9 +149,11 @@ impl<'a> TypeSurfaceBuilder<'a> {
                 }
             }
             Node::InlineModule(module) => {
+                self.push_module_import_scope(&module.node.items);
                 for nested in &module.node.items {
                     self.walk_item(nested);
                 }
+                self.module_import_scopes.pop();
             }
             _ => {}
         }
@@ -116,6 +164,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
             PrimitiveType::Bool,
             PrimitiveType::I32,
             PrimitiveType::I64,
+            PrimitiveType::U32,
             PrimitiveType::U8,
             PrimitiveType::F64,
             PrimitiveType::Char,
@@ -151,7 +200,15 @@ impl<'a> TypeSurfaceBuilder<'a> {
         }
     }
 
-    fn register_struct_definition(&mut self, item_span: SpanInfo, def: &TypeDefinition, in_generic_scope: bool) {
+    fn register_struct_definition(&mut self, item_span: SpanInfo, def: &TypeDefinition) {
+        if def
+            .fields
+            .iter()
+            .filter(|field| field.node.kind != FieldKind::Injected)
+            .any(|field| self.type_references_ambiguous_module_import(&field.node.ty))
+        {
+            return;
+        }
         let mut ordered = Vec::new();
         let mut event_fields = HashMap::new();
         for field in &def.fields {
@@ -161,11 +218,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
             if field.node.kind == FieldKind::Event {
                 event_fields.insert(field.node.name.node.name.clone(), field.node.event_capacity);
             }
-            let type_id = if in_generic_scope {
-                self.type_id_for_type_in_generic_scope(&field.node.ty)
-            } else {
-                self.type_id_for_type(&field.node.ty)
-            };
+            let type_id = self.type_id_for_type(&field.node.ty);
             if let Some(type_id) = type_id {
                 ordered.push((field.node.name.node.name.clone(), type_id));
             }
@@ -181,6 +234,14 @@ impl<'a> TypeSurfaceBuilder<'a> {
     }
 
     fn register_enum_definition(&mut self, item_span: SpanInfo, def: &crate::syntax::EnumDefinition) {
+        if def
+            .variants
+            .iter()
+            .flat_map(|variant| &variant.node.fields)
+            .any(|field| self.type_references_ambiguous_module_import(&field.node.ty))
+        {
+            return;
+        }
         let mut inserted = Vec::new();
         for generic in &def.generics {
             let name = generic.node.name.clone();
@@ -192,7 +253,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         for variant in &def.variants {
             let mut fields = Vec::new();
             for field in &variant.node.fields {
-                if let Some(type_id) = self.type_id_for_type_in_generic_scope(&field.node.ty) {
+                if let Some(type_id) = self.type_id_for_type(&field.node.ty) {
                     fields.push(type_id);
                 }
             }
@@ -209,6 +270,11 @@ impl<'a> TypeSurfaceBuilder<'a> {
     }
 
     fn register_foreign_function(&mut self, item_span: SpanInfo, def: &FunctionDefinition) {
+        if def.parameters.iter().any(|param| self.type_references_ambiguous_module_import(&param.node.ty))
+            || def.return_type.as_ref().is_some_and(|ty| self.type_references_ambiguous_module_import(ty))
+        {
+            return;
+        }
         let mut inserted = Vec::new();
         for generic in &def.generics {
             let name = generic.node.name.clone();
@@ -219,12 +285,12 @@ impl<'a> TypeSurfaceBuilder<'a> {
         let return_type = def
             .return_type
             .as_ref()
-            .and_then(|ty| self.resolve_foreign_return_type(ty))
+            .and_then(|ty| self.type_id_for_type(ty))
             .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
         let placeholder_param = self.primitive_type_id(PrimitiveType::I64);
         let mut params = Vec::new();
         for param in &def.parameters {
-            let type_id = self.type_id_for_type_in_generic_scope(&param.node.ty).or(placeholder_param);
+            let type_id = self.type_id_for_type(&param.node.ty).or(placeholder_param);
             if let Some(type_id) = type_id {
                 params.push(type_id);
             }
@@ -237,16 +303,21 @@ impl<'a> TypeSurfaceBuilder<'a> {
     }
 
     fn register_foreign_method(&mut self, item_span: SpanInfo, def: &Spanned<MethodDefinition>) {
+        if def.node.parameters.iter().any(|param| self.type_references_ambiguous_module_import(&param.node.ty))
+            || def.node.return_type.as_ref().is_some_and(|ty| self.type_references_ambiguous_module_import(ty))
+        {
+            return;
+        }
         let return_type = def
             .node
             .return_type
             .as_ref()
-            .and_then(|ty| self.type_id_for_type_in_generic_scope(ty))
+            .and_then(|ty| self.type_id_for_type(ty))
             .or_else(|| self.primitive_type_id(PrimitiveType::Unit));
         let placeholder_param = self.primitive_type_id(PrimitiveType::I64);
         let mut params = Vec::new();
         for param in &def.node.parameters {
-            let type_id = self.type_id_for_type_in_generic_scope(&param.node.ty).or(placeholder_param);
+            let type_id = self.type_id_for_type(&param.node.ty).or(placeholder_param);
             if let Some(type_id) = type_id {
                 params.push(type_id);
             }
@@ -276,7 +347,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         let Some(method_item_id) = self.canonical_item_id_for_span(item_span) else {
             return;
         };
-        let Some(receiver_type_id) = self.type_id_for_type_in_generic_scope(&first.node.ty) else {
+        let Some(receiver_type_id) = self.type_id_for_type(&first.node.ty) else {
             return;
         };
         let Some(receiver_item) = self.named_item_id(receiver_type_id) else {
@@ -369,6 +440,19 @@ impl<'a> TypeSurfaceBuilder<'a> {
                     if methods.iter().any(|(name, _)| name == &signature.node.name.node.name) {
                         continue;
                     }
+                    if signature
+                        .node
+                        .parameters
+                        .iter()
+                        .any(|param| self.type_references_ambiguous_module_import(&param.node.ty))
+                        || signature
+                            .node
+                            .return_type
+                            .as_ref()
+                            .is_some_and(|ty| self.type_references_ambiguous_module_import(ty))
+                    {
+                        continue;
+                    }
                     let mut params = Vec::new();
                     let mut valid = true;
                     for param in &signature.node.parameters {
@@ -424,35 +508,48 @@ impl<'a> TypeSurfaceBuilder<'a> {
         self.surface.function_signatures.insert(item_id, FunctionSignature { params, return_type });
     }
 
-    fn resolve_foreign_return_type(&mut self, ty: &Spanned<Type>) -> Option<TypeId> {
-        if let Some(type_id) = self.type_id_for_type_in_generic_scope(ty) {
-            return Some(type_id);
+    fn type_references_ambiguous_module_import(&self, ty: &Spanned<Type>) -> bool {
+        match &ty.node {
+            Type::Primitive(_) => false,
+            Type::Complex(path) => self.path_references_ambiguous_module_import(path),
+            Type::Associated { contract, .. } => self.path_references_ambiguous_module_import(contract),
+            Type::Array(inner) => self.type_references_ambiguous_module_import(inner),
+            Type::Function { return_type, parameters } => {
+                self.type_references_ambiguous_module_import(return_type)
+                    || parameters.iter().any(|parameter| self.type_references_ambiguous_module_import(parameter))
+            }
         }
-        if let Some(type_id) = self.type_id_for_type(ty) {
-            return Some(type_id);
-        }
-        let Type::Complex(path) = &ty.node else {
-            return None;
-        };
-        self.type_id_for_path_with_args(path)
     }
 
-    fn type_id_for_type_in_generic_scope(&mut self, ty: &Spanned<Type>) -> Option<TypeId> {
-        self.type_id_for_type(ty)
+    fn path_references_ambiguous_module_import(&self, path: &Spanned<Path>) -> bool {
+        let segments = path_segments(path);
+        if segments.len() >= 2 {
+            for scope in self.module_import_scopes.iter().rev() {
+                match scope.get(&segments[0]) {
+                    Some(ModuleImport::Ambiguous) => return true,
+                    Some(ModuleImport::Unique(_)) => break,
+                    None => {}
+                }
+            }
+        }
+        path.node
+            .segments
+            .iter()
+            .flat_map(|segment| &segment.node.type_args)
+            .any(|argument| self.type_references_ambiguous_module_import(argument))
     }
 
     fn type_id_for_type(&mut self, ty: &Spanned<Type>) -> Option<TypeId> {
+        if let Type::Complex(path) = &ty.node
+            && path.node.segments.len() == 1
+            && path.node.segments[0].node.type_args.is_empty()
+            && let Some(type_id) = self.generic_params.get(&path.node.segments[0].node.name.node.name)
+        {
+            return Some(*type_id);
+        }
         match &ty.node {
             Type::Primitive(primitive) => self.primitive_type_id(primitive.node),
-            Type::Complex(path) => {
-                if path.node.segments.len() == 1
-                    && path.node.segments[0].node.type_args.is_empty()
-                    && let Some(type_id) = self.generic_params.get(&path.node.segments[0].node.name.node.name)
-                {
-                    return Some(*type_id);
-                }
-                self.type_id_for_path_with_args(path)
-            }
+            Type::Complex(path) => self.type_id_for_path_with_args(path),
             Type::Associated { .. } => None,
             Type::Array(inner) => {
                 let inner_id = self.type_id_for_type(inner)?;
@@ -478,7 +575,7 @@ impl<'a> TypeSurfaceBuilder<'a> {
         }
         let mut args = Vec::with_capacity(last.node.type_args.len());
         for arg in &last.node.type_args {
-            args.push(self.type_id_for_type_in_generic_scope(arg)?);
+            args.push(self.type_id_for_type(arg)?);
         }
         Some(self.types.intern(TypeInfo::Applied { base: item_id, args }))
     }
@@ -487,8 +584,22 @@ impl<'a> TypeSurfaceBuilder<'a> {
         if let Some(ResolvedType::Item(item_id)) = self.resolved_type_at(path.span) {
             return Some(item_id);
         }
-        let segments: Vec<String> =
+        let mut segments: Vec<String> =
             path.node.segments.iter().map(|segment| segment.node.name.node.name.clone()).collect();
+        if segments.len() >= 2 {
+            for scope in self.module_import_scopes.iter().rev() {
+                match scope.get(&segments[0]) {
+                    Some(ModuleImport::Unique(imported)) => {
+                        let mut expanded = imported.clone();
+                        expanded.extend_from_slice(&segments[1..]);
+                        segments = expanded;
+                        break;
+                    }
+                    Some(ModuleImport::Ambiguous) => return None,
+                    None => {}
+                }
+            }
+        }
         if segments.len() >= 2 {
             let (module_path, tail) = segments.split_at(segments.len() - 1);
             if let Some(module_id) = self.resolution.module_graph.module_id(module_path)

@@ -28,9 +28,7 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_tracked(
         let from = match abi_type(db, argument) {
             Ok(Some(from)) => from,
             Ok(None) if constant_integer(db, argument).ok().flatten().is_some() => SemanticTypeId::WORD,
-            Err(error)
-                if error.is_unavailable() && constant_integer(db, argument).ok().flatten().is_some() =>
-            {
+            Err(error) if error.is_unavailable() && constant_integer(db, argument).ok().flatten().is_some() => {
                 SemanticTypeId::WORD
             }
             Ok(None) => return Some(Err(SemanticError::unavailable("primitive_numeric_conversion"))),
@@ -57,8 +55,10 @@ pub(in crate::semantic_contract) fn primitive_numeric_conversion_target(
     Some(match segment.node.name.node.name.as_str() {
         "i32" => SemanticTypeId::I32,
         "i64" => SemanticTypeId::I64,
+        "u32" => SemanticTypeId::U32,
         "u8" | "byte" => SemanticTypeId::U8,
         "word" => SemanticTypeId::WORD,
+        "f64" => SemanticTypeId::F64,
         _ => return None,
     })
 }
@@ -89,6 +89,17 @@ pub(in crate::semantic_contract) fn call_arguments_tracked(
                 return Some(Err(SemanticError::unavailable("call_arguments")));
             };
             arguments.push(AstNodeKey { node: normalized_expression_node(index, receiver), ..key });
+        } else if let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node
+            && unqualified_enclosing_method_call(program, index, key, &path.node.path.node).is_some()
+        {
+            let Some(callee) = index.direct_child_id(
+                program,
+                key.node,
+                beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()),
+            ) else {
+                return Some(Err(SemanticError::unavailable("call_arguments")));
+            };
+            arguments.push(AstNodeKey { node: normalized_expression_node(index, callee), ..key });
         } else if let beskid_analysis::syntax::Expression::Path(path) = &call.callee.node
             && nominal_local_member_receiver(db, program, index, key, &path.node.path.node).is_some()
         {

@@ -110,6 +110,95 @@ test gc_array_uses_distinct_descriptors_and_traces_variable_pointer_elements {
     DropTestHeap(runtime, thread, heap, region, 512);
 }
 
+test gc_external_root_accepts_public_array_reference {
+    pointer runtime = SystemAllocate(64, 8);
+    pointer heap = SystemAllocate(720, 8);
+    pointer region = SystemAllocate(256, 8);
+    pointer thread = InstallTestHeap(runtime, heap, region, 256);
+    pointer element = SystemAllocate(32, 8);
+    memory_set(element, 0, 32);
+    raw_word_store(element, 8);
+    raw_word_store(pointer_add(element, 8), 8);
+    pointer arrayDescriptor = TestDescriptor(48, 8);
+    raw_word_store(pointer_add(arrayDescriptor, 32), TYPE_DESCRIPTOR_ARRAY);
+    pointer request = SystemAllocate(32, 8);
+    memory_set(request, 0, 32);
+    raw_word_store(request, NativeWord(element));
+    raw_word_store(pointer_add(request, 8), 2);
+    raw_word_store(pointer_add(request, 16), NativeWord(arrayDescriptor));
+    pointer handleOut = SystemAllocate(8, 8);
+    pointer rootSlot = SystemAllocate(8, 8);
+
+    pointer array = AllocateArrayRooted(request, handleOut);
+    Assert.True(array != NativePointer(0), "public array allocates");
+    Assert.Equal(ArrayConstructionFinish(NativePointer(raw_word_load(handleOut))), 1, "construction handle releases");
+    raw_word_store(rootSlot, NativeWord(array));
+    Assert.True(GcRegisterRoot(rootSlot), "public array reference registers as an external root");
+    Assert.True(GcCollect() > 0, "public array root keeps its backing object alive");
+    Assert.Equal(GcObjectCount(), 1, "public array root retains exactly its object");
+    Assert.Equal(ArrayLen(array), 2, "public array remains readable after collection");
+
+    GcUnregisterRoot(rootSlot);
+    SystemFree(rootSlot, 8);
+    SystemFree(handleOut, 8);
+    SystemFree(request, 32);
+    SystemFree(arrayDescriptor, 40);
+    SystemFree(element, 32);
+    DropTestHeap(runtime, thread, heap, region, 256);
+}
+
+test gc_nested_array_reference_keeps_child_alive {
+    pointer runtime = SystemAllocate(64, 8);
+    pointer heap = SystemAllocate(720, 8);
+    pointer region = SystemAllocate(512, 8);
+    pointer thread = InstallTestHeap(runtime, heap, region, 512);
+    pointer pointerMap = SystemAllocate(8, 8);
+    raw_word_store(pointerMap, 0);
+    pointer pointerElement = SystemAllocate(32, 8);
+    memory_set(pointerElement, 0, 32);
+    raw_word_store(pointerElement, 8);
+    raw_word_store(pointer_add(pointerElement, 8), 8);
+    raw_word_store(pointer_add(pointerElement, 16), NativeWord(pointerMap));
+    raw_word_store(pointer_add(pointerElement, 24), 1);
+    pointer scalarElement = SystemAllocate(32, 8);
+    memory_set(scalarElement, 0, 32);
+    raw_word_store(scalarElement, 8);
+    raw_word_store(pointer_add(scalarElement, 8), 8);
+    pointer arrayDescriptor = TestDescriptor(48, 8);
+    raw_word_store(pointer_add(arrayDescriptor, 32), TYPE_DESCRIPTOR_ARRAY);
+    pointer childRequest = SystemAllocate(32, 8);
+    pointer parentRequest = SystemAllocate(32, 8);
+    memory_set(childRequest, 0, 32);
+    memory_set(parentRequest, 0, 32);
+    raw_word_store(childRequest, NativeWord(scalarElement));
+    raw_word_store(pointer_add(childRequest, 8), 1);
+    raw_word_store(pointer_add(childRequest, 16), NativeWord(arrayDescriptor));
+    raw_word_store(parentRequest, NativeWord(pointerElement));
+    raw_word_store(pointer_add(parentRequest, 8), 1);
+    raw_word_store(pointer_add(parentRequest, 16), NativeWord(arrayDescriptor));
+    pointer childHandleOut = SystemAllocate(8, 8);
+    pointer parentHandleOut = SystemAllocate(8, 8);
+
+    pointer child = AllocateArrayRooted(childRequest, childHandleOut);
+    pointer parent = AllocateArrayRooted(parentRequest, parentHandleOut);
+    Assert.True(child != NativePointer(0) && parent != NativePointer(0), "nested arrays allocate");
+    raw_word_store(NativePointer(raw_word_load(parent)), NativeWord(child));
+    Assert.Equal(ArrayConstructionFinish(NativePointer(raw_word_load(childHandleOut))), 1, "child construction releases");
+    Assert.True(GcCollect() > 0, "parent traces a public child array reference");
+    Assert.Equal(GcObjectCount(), 2, "parent and nested child both survive");
+    Assert.Equal(ArrayConstructionFinish(NativePointer(raw_word_load(parentHandleOut))), 1, "parent construction releases");
+
+    SystemFree(parentHandleOut, 8);
+    SystemFree(childHandleOut, 8);
+    SystemFree(parentRequest, 32);
+    SystemFree(childRequest, 32);
+    SystemFree(arrayDescriptor, 40);
+    SystemFree(scalarElement, 32);
+    SystemFree(pointerElement, 32);
+    SystemFree(pointerMap, 8);
+    DropTestHeap(runtime, thread, heap, region, 512);
+}
+
 test gc_heap_wide_marking_handles_broad_roots_fanout_and_cycles {
     pointer runtime = SystemAllocate(64, 8);
     pointer heap = SystemAllocate(720, 8);

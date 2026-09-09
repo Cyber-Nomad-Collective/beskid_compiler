@@ -14,7 +14,7 @@ use axum::{
     response::IntoResponse,
 };
 use beskid_pckg_auth::{
-    ApiKeyIdentity, ApiKeyScope, AuthMode, AuthentikIdentity, AutheliaIdentity, Principal, SessionIdentity, SubjectRole,
+    ApiKeyIdentity, ApiKeyScope, AuthMode, AutheliaIdentity, AuthentikIdentity, Principal, SessionIdentity, SubjectRole,
 };
 use beskid_pckg_contract::ApiErrorResponse;
 

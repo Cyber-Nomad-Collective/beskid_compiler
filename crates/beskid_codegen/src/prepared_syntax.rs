@@ -133,9 +133,7 @@ pub fn lower_canonical_runtime_prepared_syntax(
             .ok_or_else(|| anyhow::anyhow!("canonical runtime export `{export}` has no source root"))?;
         let reachable = reachable_items(input.database(), program, entry)
             .map_err(|error| anyhow::anyhow!("canonical runtime reachability failed for `{export}`: {error}"))?
-            .ok_or_else(|| {
-                anyhow::anyhow!("incomplete direct-call facts for canonical runtime export `{export}`")
-            })?;
+            .ok_or_else(|| anyhow::anyhow!("incomplete direct-call facts for canonical runtime export `{export}`"))?;
         for key in reachable.iter().copied() {
             if !selected.insert(key) {
                 continue;

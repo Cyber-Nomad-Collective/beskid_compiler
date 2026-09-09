@@ -354,6 +354,21 @@
       "result": "void"
     },
     {
+      "symbol": "beskid_rt_v5_scheduler_stack_check",
+      "params": [
+        {
+          "name": "required_usable_size",
+          "type": "usize"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_scheduler_stack_overflow_observed",
+      "params": [],
+      "result": "void"
+    },
+    {
       "symbol": "beskid_rt_v5_thread_attach",
       "params": [
         {
@@ -4855,7 +4870,7 @@
           "type": "i64"
         }
       ],
-      "result": "u8",
+      "result": "i64",
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",
@@ -4870,34 +4885,6 @@
         {
           "target": "x86_64-unknown-linux-gnu",
           "implementation": "channel_try_receive",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__channel_try_receive_ptr",
-      "adapter": "channel_try_receive_ptr",
-      "params": [
-        {
-          "name": "id",
-          "type": "i64"
-        }
-      ],
-      "result": "pointer",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "channel_try_receive_ptr",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "channel_try_receive_ptr",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "channel_try_receive_ptr",
           "osImports": []
         }
       ]
@@ -5639,6 +5626,10 @@
       "params": [
         {
           "name": "fiberId",
+          "type": "i64"
+        },
+        {
+          "name": "reason",
           "type": "i64"
         }
       ],

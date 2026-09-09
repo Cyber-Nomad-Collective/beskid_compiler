@@ -776,6 +776,7 @@ dependencies = [
  "sha2 0.10.9",
  "sqlx",
  "tokio",
+ "url",
  "uuid",
 ]
 
@@ -999,6 +1000,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tachyonfx",
  "tokio",
  "tracing",

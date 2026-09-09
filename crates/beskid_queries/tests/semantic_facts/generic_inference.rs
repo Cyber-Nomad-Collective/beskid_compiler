@@ -2,8 +2,8 @@ use super::support::{assert_unavailable, key, setup};
 use beskid_analysis::syntax_query::NodeKind;
 use beskid_queries::{
     AstNodeKey, CallLowering, ItemSignature, SemanticTypeId, abi_type, call_abi_signature, call_arguments,
-    call_lowering, generic_call_instantiation, generic_call_specialization, generic_call_template,
-    generic_nominal_method_receiver,
+    call_lowering, generic_call_instantiation, generic_call_specialization, generic_call_specialization_in_environment,
+    generic_call_template, generic_nominal_method_receiver, generic_specialization_identity,
 };
 use std::sync::Arc;
 
@@ -43,6 +43,286 @@ unit Main() { Channel<i64> ch = Create<i64>(); return; }
         call_abi_signature(&db, nested).expect("nested call ABI"),
         Some(ItemSignature { parameters: Arc::from([SemanticTypeId::POINTER]), result: SemanticTypeId::POINTER })
     );
+}
+
+#[test]
+fn inferred_generic_call_uses_source_types_for_fields_calls_and_pattern_bindings() {
+    let source = r#"
+type Box { i64 value }
+enum Result<T> { Ok(T value), Error() }
+i64 Current() { return 7_i64; }
+unit Equal<T>(T actual, T expected, string because) { return; }
+unit Main(Box box, Result<string> result) {
+    Equal(box.value, Current(), "field and call");
+    match result {
+        Result::Ok(text) => { Equal(text, "ok", "pattern binding"); },
+        Result::Error() => { },
+    };
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let equal = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    let specializations = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .filter(|call| matches!(call_lowering(&db, *call), Ok(Some(CallLowering::Direct(item))) if item == equal))
+        .map(|call| generic_call_specialization(&db, call))
+        .collect::<Result<Vec<_>, _>>()
+        .expect("source-backed generic call specializations");
+
+    assert_eq!(specializations.len(), 2);
+    assert!(specializations.into_iter().all(|specialization| specialization.is_some()));
+}
+
+#[test]
+fn explicit_generic_call_does_not_reinfer_its_source_argument_from_expressions() {
+    let source = r#"
+type Box { i64 value }
+unit Append<T>(T[] values, T value) { return; }
+unit Main(i64[] values, Box box) { Append<i64>(values, box.value); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let append = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let call = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .find(|call| matches!(call_lowering(&db, *call), Ok(Some(CallLowering::Direct(item))) if item == append))
+        .expect("Append<i64> call");
+
+    assert!(
+        generic_call_specialization(&db, call)
+            .expect("explicit specialization must use explicit source arguments")
+            .is_some()
+    );
+}
+
+#[test]
+fn nested_generic_application_is_materialized_from_the_enclosing_source_environment() {
+    let source = r#"
+type Entry<TKey, TValue> { TKey key, TValue value }
+T[] Empty<T>() { return []; }
+Entry<TKey, TValue>[] Entries<TKey, TValue>() { return Empty<Entry<TKey, TValue>>(); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let entries = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+    let empty_call = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .find(|call| matches!(call_lowering(&db, *call), Ok(Some(CallLowering::Direct(_)))))
+        .expect("nested Empty<Entry<TKey, TValue>> call");
+    let enclosing = beskid_queries::GenericSpecializationInstance {
+        declaration: entries,
+        declaration_identity: Arc::from("Entries"),
+        signature: ItemSignature { parameters: Arc::from([]), result: SemanticTypeId::POINTER },
+        substitutions: Arc::from([
+            beskid_queries::GenericSubstitution::inferred("TKey", SemanticTypeId::I64),
+            beskid_queries::GenericSubstitution::inferred("TValue", SemanticTypeId::STRING),
+        ]),
+    };
+
+    let specialization = generic_call_specialization_in_environment(&db, empty_call, &enclosing)
+        .expect("nested generic application query")
+        .expect("nested generic application specialization");
+    assert_eq!(specialization.signature.result, SemanticTypeId::POINTER);
+    assert_eq!(specialization.substitutions.len(), 1);
+    assert_eq!(specialization.substitutions[0].argument, SemanticTypeId::POINTER);
+}
+
+#[test]
+fn nominal_generic_specializations_keep_distinct_source_identities() {
+    let source = r#"
+type Left { i64 value }
+type Right { i64 value }
+unit Use<T>(T value) { return; }
+unit Main() {
+    Use<Left>(Left { value: 1_i64 });
+    Use<Right>(Right { value: 2_i64 });
+    Use<Left>(Left { value: 3_i64 });
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let specializations = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .map(|call| {
+            generic_call_specialization(&db, call)
+                .expect("generic specialization query")
+                .expect("explicit generic specialization")
+        })
+        .collect::<Vec<_>>();
+    let identities = specializations
+        .iter()
+        .map(|specialization| {
+            generic_specialization_identity(&beskid_queries::GenericSpecializationInstance {
+                declaration: specialization.declaration,
+                declaration_identity: Arc::from("Use"),
+                signature: specialization.signature.clone(),
+                substitutions: specialization.substitutions.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(identities.len(), 3);
+    assert!(specializations.iter().all(|specialization| {
+        specialization.signature.parameters.as_ref() == [SemanticTypeId::POINTER]
+            && specialization.substitutions[0].argument == SemanticTypeId::POINTER
+    }));
+    assert_ne!(
+        identities[0], identities[1],
+        "distinct nominal source applications must not alias through their shared pointer ABI"
+    );
+    assert_eq!(identities[0], identities[2], "repeated applications of the same nominal source type must deduplicate");
+}
+
+#[test]
+fn explicit_generic_enum_argument_retains_nominal_source_identity() {
+    let source = r#"
+enum Choice { Left(), Right() }
+unit Consume<T>(T value) { return; }
+unit Main() { Consume<Choice>(Choice::Left()); }
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let consume = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let call = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .find(|call| matches!(call_lowering(&db, *call), Ok(Some(CallLowering::Direct(item))) if item == consume))
+        .expect("Consume<Choice> call");
+    let specialization = generic_call_specialization(&db, call)
+        .expect("enum generic specialization query")
+        .expect("enum generic specialization");
+
+    assert_eq!(specialization.substitutions[0].argument, SemanticTypeId::POINTER);
+    let identity = generic_specialization_identity(&beskid_queries::GenericSpecializationInstance {
+        declaration: specialization.declaration,
+        declaration_identity: Arc::from("Consume"),
+        signature: specialization.signature,
+        substitutions: specialization.substitutions,
+    });
+    assert!(identity.len() > 8, "the identity must retain more than the enum's pointer ABI");
+}
+
+#[test]
+fn inferred_nominal_generic_specializations_keep_distinct_source_identities() {
+    let source = r#"
+type Left { i64 value }
+type Right { i64 value }
+unit Use<T>(T value) { return; }
+unit Main() {
+    Use(Left { value: 1_i64 });
+    Use(Right { value: 2_i64 });
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let use_function = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let specializations = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .filter(
+            |call| matches!(call_lowering(&db, *call), Ok(Some(CallLowering::Direct(item))) if item == use_function),
+        )
+        .map(|call| {
+            generic_call_specialization(&db, call)
+                .expect("inferred nominal specialization query")
+                .expect("inferred nominal specialization")
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(specializations.len(), 2);
+    let identities = specializations
+        .into_iter()
+        .map(|specialization| {
+            generic_specialization_identity(&beskid_queries::GenericSpecializationInstance {
+                declaration: specialization.declaration,
+                declaration_identity: Arc::from("Use"),
+                signature: specialization.signature,
+                substitutions: specialization.substitutions,
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_ne!(identities[0], identities[1], "inferred Left and Right must not alias through POINTER");
+}
+
+#[test]
+fn inferred_enum_generic_specializations_keep_distinct_source_identities() {
+    let source = r#"
+enum LeftChoice { Value() }
+enum RightChoice { Value() }
+unit Use<T>(T value) { return; }
+unit Main() {
+    Use(LeftChoice::Value());
+    Use(RightChoice::Value());
+}
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let use_function = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let identities = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .filter(
+            |call| matches!(call_lowering(&db, *call), Ok(Some(CallLowering::Direct(item))) if item == use_function),
+        )
+        .map(|call| {
+            let specialization = generic_call_specialization(&db, call)
+                .expect("inferred enum specialization query")
+                .expect("inferred enum specialization");
+            generic_specialization_identity(&beskid_queries::GenericSpecializationInstance {
+                declaration: specialization.declaration,
+                declaration_identity: Arc::from("Use"),
+                signature: specialization.signature,
+                substitutions: specialization.substitutions,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(identities.len(), 2);
+    assert_ne!(identities[0], identities[1], "distinct inferred enums must not alias through POINTER");
+}
+
+#[test]
+fn inferred_nested_nominal_parameter_recursively_binds_its_generic_argument() {
+    let source = r#"
+type Left { i64 value }
+type Right { i64 value }
+type Outer<T> { T value }
+type Inner<T> { T value }
+Inner<T> Project<T>(Outer<T> source) { return Inner<T> { value: source.value }; }
+unit Main(Outer<Left> left, Outer<Right> right) {
+    Inner<Left> projectedLeft = Project(left);
+    Inner<Right> projectedRight = Project(right);
+}
+
+"#;
+    let (db, _project, unit, generation, index) = setup(source);
+    let project = key(unit, generation, &index, NodeKind::FunctionDefinition, 0);
+    let specializations = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .filter(|call| matches!(call_lowering(&db, *call), Ok(Some(CallLowering::Direct(item))) if item == project))
+        .map(|call| {
+            generic_call_specialization(&db, call)
+                .expect("nested nominal inference query")
+                .expect("nested nominal inference")
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(specializations.len(), 2);
+    assert!(specializations.iter().all(|specialization| {
+        specialization.signature.parameters.as_ref() == [SemanticTypeId::POINTER]
+            && specialization.signature.result == SemanticTypeId::POINTER
+    }));
+    let identities = specializations
+        .into_iter()
+        .map(|specialization| {
+            generic_specialization_identity(&beskid_queries::GenericSpecializationInstance {
+                declaration: specialization.declaration,
+                declaration_identity: Arc::from("Project"),
+                signature: specialization.signature,
+                substitutions: specialization.substitutions,
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_ne!(identities[0], identities[1], "Outer<Left> and Outer<Right> must infer distinct T bindings");
 }
 
 #[test]
@@ -93,25 +373,21 @@ Result<SendOk, ChannelError> MapSendStatus() { return Success<SendOk, ChannelErr
         })
         .expect("Success<SendOk, ChannelError> call");
 
+    let specialization = generic_call_specialization(&db, call)
+        .expect("explicit aggregate specialization")
+        .expect("explicit aggregate specialization fact");
+    assert_eq!(specialization.declaration, success);
     assert_eq!(
-        generic_call_specialization(&db, call).expect("explicit aggregate specialization"),
-        Some(beskid_queries::GenericCallSpecialization {
-            declaration: success,
-            signature: ItemSignature {
-                parameters: Arc::from([SemanticTypeId::POINTER]),
-                result: SemanticTypeId::POINTER,
-            },
-            substitutions: Arc::from([
-                beskid_queries::GenericSubstitution {
-                    parameter: Arc::from("TValue"),
-                    argument: SemanticTypeId::POINTER,
-                },
-                beskid_queries::GenericSubstitution {
-                    parameter: Arc::from("TError"),
-                    argument: SemanticTypeId::POINTER,
-                },
-            ]),
-        })
+        specialization.signature,
+        ItemSignature { parameters: Arc::from([SemanticTypeId::POINTER]), result: SemanticTypeId::POINTER }
+    );
+    assert_eq!(
+        specialization
+            .substitutions
+            .iter()
+            .map(|binding| (binding.parameter.as_ref(), binding.argument))
+            .collect::<Vec<_>>(),
+        vec![("TValue", SemanticTypeId::POINTER), ("TError", SemanticTypeId::POINTER)]
     );
 }
 
@@ -161,10 +437,7 @@ unit Main() { Equal(1, 1, "because"); return; }
                 parameters: Arc::from([SemanticTypeId::I32, SemanticTypeId::I32, SemanticTypeId::STRING,]),
                 result: SemanticTypeId::UNIT,
             },
-            substitutions: Arc::from([beskid_queries::GenericSubstitution {
-                parameter: Arc::from("T"),
-                argument: SemanticTypeId::I32,
-            }]),
+            substitutions: Arc::from([beskid_queries::GenericSubstitution::inferred("T", SemanticTypeId::I32,)]),
         })
     );
 }
@@ -193,10 +466,7 @@ unit Main(Result<string, string> result) {
                 parameters: Arc::from([SemanticTypeId::STRING, SemanticTypeId::STRING, SemanticTypeId::STRING]),
                 result: SemanticTypeId::UNIT,
             },
-            substitutions: Arc::from([beskid_queries::GenericSubstitution {
-                parameter: Arc::from("T"),
-                argument: SemanticTypeId::STRING,
-            }]),
+            substitutions: Arc::from([beskid_queries::GenericSubstitution::inferred("T", SemanticTypeId::STRING,)]),
         })
     );
 }
@@ -214,10 +484,7 @@ unit Main(List<i64> list) { list.Echo(1_i64); }
     let method = key(unit, generation, &index, NodeKind::MethodDefinition, 0);
     let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
 
-    assert_eq!(
-        call_lowering(&db, call).expect("generic nominal method lowering"),
-        Some(CallLowering::Direct(method))
-    );
+    assert_eq!(call_lowering(&db, call).expect("generic nominal method lowering"), Some(CallLowering::Direct(method)));
     let receiver = generic_nominal_method_receiver(&db, call)
         .expect("generic nominal receiver")
         .expect("explicit List<i64> receiver must prove the owner environment");
@@ -225,10 +492,7 @@ unit Main(List<i64> list) { list.Echo(1_i64); }
     assert_eq!(receiver.owner, key(unit, generation, &index, NodeKind::TypeDefinition, 0));
     assert_eq!(
         receiver.substitutions,
-        Arc::from([beskid_queries::GenericSubstitution {
-            parameter: Arc::from("T"),
-            argument: SemanticTypeId::I64,
-        }])
+        Arc::from([beskid_queries::GenericSubstitution::inferred("T", SemanticTypeId::I64)])
     );
 
     assert_eq!(
@@ -239,10 +503,7 @@ unit Main(List<i64> list) { list.Echo(1_i64); }
                 parameters: Arc::from([SemanticTypeId::POINTER, SemanticTypeId::I64]),
                 result: SemanticTypeId::I64,
             },
-            substitutions: Arc::from([beskid_queries::GenericSubstitution {
-                parameter: Arc::from("T"),
-                argument: SemanticTypeId::I64,
-            }]),
+            substitutions: Arc::from([beskid_queries::GenericSubstitution::inferred("T", SemanticTypeId::I64,)]),
         })
     );
 }
@@ -314,10 +575,7 @@ unit Main() { Equal(Position(), -1, "negative position"); return; }
                 parameters: Arc::from([SemanticTypeId::I64, SemanticTypeId::I64, SemanticTypeId::STRING,]),
                 result: SemanticTypeId::UNIT,
             },
-            substitutions: Arc::from([beskid_queries::GenericSubstitution {
-                parameter: Arc::from("T"),
-                argument: SemanticTypeId::I64,
-            }]),
+            substitutions: Arc::from([beskid_queries::GenericSubstitution::inferred("T", SemanticTypeId::I64,)]),
         })
     );
 }

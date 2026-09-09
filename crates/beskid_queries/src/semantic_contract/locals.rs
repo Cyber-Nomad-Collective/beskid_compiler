@@ -8,18 +8,32 @@ pub(super) fn implicit_method_receiver_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<AstNodeKey> {
-    with_node(db, syntax, key, |_program, index, node| {
+    with_node(db, syntax, key, |program, index, node| {
         let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
         let [segment] = path.path.node.segments.as_slice() else {
             return None;
         };
-        if !segment.node.type_args.is_empty() || segment.node.name.node.name != "self" {
+        if !segment.node.type_args.is_empty() {
             return None;
         }
         let method = nearest_ancestor(index, key.node, |kind| {
             kind == beskid_analysis::syntax_query::NodeKind::MethodDefinition
         })?;
-        Some(Ok(AstNodeKey { node: method, ..key }))
+        if segment.node.name.node.name == "self" {
+            return Some(Ok(AstNodeKey { node: method, ..key }));
+        }
+        let call_node =
+            nearest_ancestor(index, key.node, |kind| kind == beskid_analysis::syntax_query::NodeKind::CallExpression)?;
+        let call = index.node_at(program, call_node)?.of::<beskid_analysis::syntax::CallExpression>()?;
+        let callee = index.direct_child_id(
+            program,
+            call_node,
+            beskid_analysis::syntax_query::DynNodeRef::from(call.callee.as_ref()),
+        )?;
+        (normalized_expression_node(index, callee) == key.node).then_some(())?;
+        unqualified_enclosing_method_call(program, index, AstNodeKey { node: call_node, ..key }, &path.path.node)
+            .filter(|(_, enclosing)| enclosing.node == method)
+            .map(|(_, enclosing)| Ok(enclosing))
     })?
     .transpose()
 }

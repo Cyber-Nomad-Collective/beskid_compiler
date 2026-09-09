@@ -2,7 +2,7 @@ use super::*;
 
 impl NodeFacts for SyntaxNodeFacts<'_> {
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
-        if self.query(aggregate_field_access(self.db, key)).is_some() {
+        if self.aggregate_field_access_in_context(key).is_some() {
             return Some(NodeKind::FieldExpression);
         }
         if self.query(range_for_fact(self.db, key)).is_some() {
@@ -37,9 +37,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         let operator = self.query(operator_fact(self.db, key))?;
         let specialized_string_operands =
             matches!(operator, beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq)
-                && self.child(key, 0).and_then(|operand| self.specialized_direct_parameter_type(operand))
+                && self.child(key, 0).and_then(|operand| self.scalar_semantic_type(operand))
                     == Some(SemanticTypeId::STRING)
-                && self.child(key, 1).and_then(|operand| self.specialized_direct_parameter_type(operand))
+                && self.child(key, 1).and_then(|operand| self.scalar_semantic_type(operand))
                     == Some(SemanticTypeId::STRING);
         let specialized_enum_operands =
             matches!(operator, beskid_queries::OperatorFact::Eq | beskid_queries::OperatorFact::NotEq)
@@ -95,7 +95,18 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         match kind {
             NodeKind::BlockExpression => {
                 let nodes = self.query(block_statement_nodes(self.db, key))?;
-                let len = nodes.len();
+                let len =
+                    if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::BlockExpression) {
+                        nodes.last().map_or(nodes.len(), |result_statement| {
+                            if self.node_kind(*result_statement) == Some(NodeKind::ExpressionStatement) {
+                                nodes.len() - 1
+                            } else {
+                                nodes.len()
+                            }
+                        })
+                    } else {
+                        nodes.len()
+                    };
                 if len > u8::MAX as usize {
                     return None;
                 }
@@ -111,6 +122,13 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             }
             _ => None,
         }
+    }
+
+    fn block_result(&self, key: AstNodeKey) -> Option<AstNodeKey> {
+        (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::BlockExpression)).then_some(())?;
+        let result_statement = *self.query(block_statement_nodes(self.db, key))?.last()?;
+        (self.node_kind(result_statement) == Some(NodeKind::ExpressionStatement)).then_some(())?;
+        self.child(result_statement, 0)
     }
 
     fn let_initializer(&self, key: AstNodeKey) -> Option<AstNodeKey> {
@@ -167,6 +185,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if self.typed_array_plan(key).is_some() {
             return Some(CallKind::TypedArrayAllocation);
         }
+        // An exact generation-bound closure target outranks domain-specific call probes. Stored
+        // lambdas use a local path as their callee; asking collection dispatch about that path can
+        // fail unavailable even though the closure call is fully proven.
+        if self.inline_lambda_call(key).is_some() {
+            return Some(CallKind::InlineLambda);
+        }
         match beskid_queries::collection_operation(self.db, key) {
             Ok(Some(_)) | Err(_) => return Some(CallKind::CollectionOperation),
             Ok(None) => {}
@@ -177,9 +201,6 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         // would otherwise reject the N-scalar-vs-one-array arity mismatch.
         if self.callee_bulk_parameter(key).is_some() {
             return Some(CallKind::Bulk);
-        }
-        if self.inline_lambda_call(key).is_some() {
-            return Some(CallKind::InlineLambda);
         }
         matches!(
             self.query(call_lowering(self.db, key)),
@@ -194,6 +215,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
         self.specialized_direct_parameter_type(key).or_else(|| self.scalar_semantic_type(key))
+    }
+
+    fn managed_reference(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
+        self.managed_reference_in_context(key)
     }
 
     fn try_expression_fact(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
@@ -271,24 +296,17 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         }
         if let CallLowering::CorelibService(service) = lowering {
             self.input.corelib_service_capability()?;
-            return Some(DirectCallee::corelib_service(service.symbol));
+            let symbol = if beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service).is_some() {
+                self.typed_corelib_value_service(key, service)?.0
+            } else {
+                service.symbol
+            };
+            return Some(DirectCallee::corelib_service(symbol));
         }
         let CallLowering::Direct(declaration) = lowering else {
             return None;
         };
-        if self.query(generic_call_template(self.db, key)).is_some() {
-            let specialization = self.generic_call_specialization_in_context(key)?;
-            return Some(DirectCallee::specialized_item(
-                specialization.declaration,
-                specialization_identity(&specialization),
-            ));
-        }
-        if let Some(specialization) = self.query(generic_call_specialization(self.db, key)) {
-            let specialization = beskid_queries::GenericSpecializationInstance {
-                declaration: specialization.declaration,
-                signature: specialization.signature,
-                substitutions: specialization.substitutions,
-            };
+        if let Some(specialization) = self.generic_call_specialization_in_context(key) {
             return Some(DirectCallee::specialized_item(
                 specialization.declaration,
                 specialization_identity(&specialization),
@@ -312,8 +330,17 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                 }
             });
         }
-        if self.query(generic_call_template(self.db, key)).is_some() {
-            return signature_for_item(self.isa?, self.generic_call_specialization_in_context(key)?.signature);
+        if let Some(CallLowering::CorelibService(service)) = self.query(call_lowering(self.db, key))
+            && beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service).is_some()
+        {
+            let (_, result) = self.typed_corelib_value_service(key, service)?;
+            return signature_for_item(
+                self.isa?,
+                ItemSignature { parameters: std::sync::Arc::from([SemanticTypeId::I64]), result },
+            );
+        }
+        if let Some(specialization) = self.generic_call_specialization_in_context(key) {
+            return signature_for_item(self.isa?, specialization.signature);
         }
         signature_for_item(self.isa?, self.query(call_abi_signature(self.db, key))?)
     }
@@ -344,6 +371,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                 Some(ParameterSlot {
                     slot: LocalSlotId { owner_node: slot.owner.node.0, index: slot.index },
                     value_type: map_signature_type(self.isa?, semantic)?,
+                    managed_reference: self.managed_reference(parameter)?,
                 })
             })
             .collect::<Option<Vec<_>>>()?;
@@ -373,7 +401,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     fn managed_array_allocation(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedArrayAllocation> {
         let plan = self
             .input
-            .array_static_plan(key)
+            .array_static_plan_for_specialization(key, self.current_item_specialization())
             .or_else(|| self.input.bulk_array_static_plan(key))
             .or_else(|| self.typed_array_plan(key))?;
         Some(beskid_isle::ManagedArrayAllocation { allocation_request_symbol: plan.allocation_request_symbol.into() })
@@ -387,6 +415,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                 // materialized local so its declared pointer position is consumed by ISLE.
                 slot: super::context::IMPLICIT_METHOD_RECEIVER_SLOT,
                 value_type: self.isa?.pointer_type(),
+                managed_reference: ManagedReferenceFact::GcManaged,
             });
         }
         self.collect_function_parameters(key, &mut parameters)?;
@@ -463,8 +492,18 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                 .call_signature(key)
                 .and_then(|signature| signature.returns.first().map(|param| param.value_type));
         }
+        if self.node_kind(key) == Some(NodeKind::CallExpression)
+            && let Some(signature) = self.call_signature(key)
+        {
+            return signature.returns.first().map(|parameter| parameter.value_type);
+        }
         let contextual = self.query(contextual_integer_literal_abi_type(self.db, key));
         let semantic = contextual
+            .or_else(|| {
+                (self.node_kind(key) == Some(NodeKind::CallExpression))
+                    .then(|| self.scalar_semantic_type(key))
+                    .flatten()
+            })
             .or_else(|| self.query(call_argument_abi_type(self.db, key)))
             .or_else(|| self.scalar_semantic_type(key))
             .or_else(|| Some(self.query(call_abi_signature(self.db, key))?.result))?;
@@ -475,22 +514,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn struct_fields(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
-        (self.node_kind(key) == Some(NodeKind::StructLiteralExpression)).then(|| {
-            self.raw_children(key)
-                .into_iter()
-                .filter(|child| {
-                    self.query(node_kind(self.db, *child)) == Some(beskid_queries::IndexedNodeKind::StructLiteralField)
-                })
-                .filter_map(|field| self.raw_children(field).last().copied())
-                .filter_map(|value| self.unwrap_transparent(value))
-                .collect()
-        })
+        self.struct_fields_in_layout_order(key)
     }
 
     fn struct_layout(&self, key: AstNodeKey) -> Option<StructLayout> {
         self.struct_layout_for_literal(key).or_else(|| {
-            self.query(aggregate_field_access(self.db, key))
-                .and_then(|access| self.struct_layout_for_declaration(access.declaration))
+            self.aggregate_field_access_in_context(key).and_then(|access| self.struct_layout_for_access(&access))
         })
     }
 
@@ -498,21 +527,19 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         Some(ManagedStructAllocation {
             allocation_request_symbol: self
                 .input
-                .aggregate_static_plan(key)
-                .or_else(|| {
-                    self.input.enum_static_plan_for_specialization(key, self.item_specializations.values().next())
-                })?
+                .aggregate_static_plan_for_specialization(key, self.current_item_specialization())
+                .or_else(|| self.input.enum_static_plan_for_specialization(key, self.current_item_specialization()))?
                 .allocation_request_symbol
                 .into(),
         })
     }
 
     fn field_index(&self, key: AstNodeKey) -> Option<u32> {
-        self.query(aggregate_field_access(self.db, key)).map(|access| access.index)
+        self.aggregate_field_access_in_context(key).map(|access| access.index)
     }
 
     fn field_receiver_slot(&self, key: AstNodeKey) -> Option<LocalSlotId> {
-        let access = self.query(aggregate_field_access(self.db, key))?;
+        let access = self.aggregate_field_access_in_context(key)?;
         if self.query(node_kind(self.db, access.receiver)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition) {
             return Some(super::context::IMPLICIT_METHOD_RECEIVER_SLOT);
         }
@@ -549,6 +576,7 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
                 left_type,
                 SemanticTypeId::I32
                     | SemanticTypeId::I64
+                    | SemanticTypeId::U32
                     | SemanticTypeId::U8
                     | SemanticTypeId::F64
                     | SemanticTypeId::BOOL
@@ -568,36 +596,34 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             .map(|constructor| constructor.variant_index)
     }
 
-    fn enum_payload(&self, key: AstNodeKey) -> Option<AstNodeKey> {
-        self.query(enum_constructor(self.db, key))
-            .or_else(|| self.specialized_enum_constructor(key).map(|fact| fact.constructor))?
-            .payload
+    fn enum_payloads(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
+        Some(
+            self.query(enum_constructor(self.db, key))
+                .or_else(|| self.specialized_enum_constructor(key).map(|fact| fact.constructor))?
+                .payloads
+                .to_vec(),
+        )
     }
 
     fn match_arms(&self, key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
-        let fact = self.query(enum_match(self.db, key))?;
+        let fact = self.enum_match_in_context(key)?;
         fact.arms
             .iter()
-            .map(|arm| {
-                let binding = match arm.binding {
-                    Some(binding) => {
-                        let slot = self.query(local_slot(self.db, binding.declaration))?;
-                        let value_type = match binding.payload {
-                            AggregateFieldShape::Scalar(semantic) => map_signature_type(self.isa?, semantic)?,
-                            AggregateFieldShape::Nominal(_) => self.isa?.pointer_type(),
-                        };
-                        Some(MatchArmBindingFact {
-                            slot: LocalSlotId { owner_node: slot.owner.node.0, index: slot.index },
-                            value_type,
-                        })
-                    }
-                    None => None,
-                };
-                Some(match arm.variant_index {
-                    Some(variant) => MatchArmFact::variant_with_binding(u64::from(variant), arm.body, binding),
-                    None if binding.is_none() => MatchArmFact::wildcard(arm.body),
-                    None => return None,
-                })
+            .map(|arm| match &arm.pattern {
+                beskid_queries::EnumMatchPatternFact::Wildcard => Some(MatchArmFact::wildcard(arm.body)),
+                beskid_queries::EnumMatchPatternFact::Enum(pattern)
+                    if pattern.declaration == fact.declaration && pattern.layout == fact.layout =>
+                {
+                    let payload = MatchPayloadPatternFact::Fields(
+                        pattern
+                            .items
+                            .iter()
+                            .map(|payload| self.match_payload_pattern(payload))
+                            .collect::<Option<Vec<_>>>()?,
+                    );
+                    Some(MatchArmFact::variant_with_payload(u64::from(pattern.variant_index), arm.body, payload))
+                }
+                _ => None,
             })
             .collect()
     }

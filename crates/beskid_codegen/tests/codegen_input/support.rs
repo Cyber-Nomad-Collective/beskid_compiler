@@ -4,7 +4,7 @@ pub(super) use std::sync::Arc;
 pub(super) use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata};
 pub(super) use beskid_abi::runtime_source::{
     CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH, CANONICAL_BOOTSTRAP_SOURCE_PATH, CANONICAL_CORELIB_ARGS_SOURCE_PATH,
-    CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
+    CANONICAL_EVENTS_SOURCE_PATH, CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH, CANONICAL_SCHEDULER_CORE_SOURCE_PATH,
     CANONICAL_SCHEDULER_POLL_SOURCE_PATH, canonical_corelib_service_capability, canonical_corelib_service_source_path,
     canonical_corelib_service_sources, canonical_runtime_intrinsic_capability, canonical_runtime_sources,
 };

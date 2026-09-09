@@ -112,7 +112,7 @@ Keyword = {
 
 DecimalIntegerBody = { ASCII_DIGIT+ ~ ("_" ~ ASCII_DIGIT+)* }
 HexIntegerBody = { ASCII_HEX_DIGIT+ ~ ("_" ~ ASCII_HEX_DIGIT+)* }
-IntegerLiteral = @{ "-"? ~ (("0x" ~ HexIntegerBody) | DecimalIntegerBody) ~ ("_i32" | "_i64" | "_u8")? }
+IntegerLiteral = @{ "-"? ~ (("0x" ~ HexIntegerBody) | DecimalIntegerBody) ~ ("_i32" | "_i64" | "_u32" | "_u8")? }
 FloatLiteral = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 StringLiteral = @{ "\"" ~ StringContent* ~ "\"" }
 StringLiteralValueBody = ${ (StringContent)* }
@@ -177,7 +177,7 @@ EnumPath = { Path ~ "::" ~ Identifier }
 ////////////////////////////////////////////////////////////
 // 3) TYPES
 ////////////////////////////////////////////////////////////
-PrimitiveType = { "bool" | "i32" | "i64" | "u8" | "pointer" | "word" | "f64" | "char" | "string" | "unit" | "never" }
+PrimitiveType = { "bool" | "i32" | "i64" | "u32" | "u8" | "pointer" | "word" | "f64" | "char" | "string" | "unit" | "never" }
 
 GenericParameters = { "<" ~ Identifier ~ ("," ~ Identifier)* ~ ">" }
 GenericArguments = { "<" ~ BeskidType ~ ("," ~ BeskidType)* ~ ">" }

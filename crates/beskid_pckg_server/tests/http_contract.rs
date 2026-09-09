@@ -90,6 +90,66 @@ async fn package_index_search_and_detail_return_persisted_public_data() {
 }
 
 #[tokio::test]
+async fn package_metadata_round_trips_through_public_catalog_and_detail() {
+    let app = router(authenticated_config());
+    let create = app
+        .clone()
+        .oneshot(
+            Request::post("/api/packages")
+                .header("content-type", "application/json")
+                .header("remote-user", "publisher")
+                .body(Body::from(
+                    r#"{"name":"Metadata.Demo","description":"Compiler tools","category":"Tooling","repositoryUrl":"https://example.test/repository","websiteUrl":"https://example.test","tags":["compiler","tooling"],"isPublic":true,"submitForReview":false,"iconUrl":"https://example.test/icon.svg"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let published = app
+        .clone()
+        .oneshot(multipart_publish_request("Metadata.Demo", "1.0.0", "publisher", artifact("Metadata.Demo", "1.0.0")))
+        .await
+        .unwrap();
+    assert_eq!(published.status(), StatusCode::CREATED);
+
+    let catalog = app.clone().oneshot(Request::get("/api/packages").body(Body::empty()).unwrap()).await.unwrap();
+    let catalog = response_body(catalog).await;
+    assert_eq!(catalog[0]["description"], "Compiler tools");
+    assert_eq!(catalog[0]["category"], "Tooling");
+    assert_eq!(catalog[0]["repositoryUrl"], "https://example.test/repository");
+    assert_eq!(catalog[0]["websiteUrl"], "https://example.test");
+    assert_eq!(catalog[0]["tags"], serde_json::json!(["compiler", "tooling"]));
+    assert_eq!(catalog[0]["iconUrl"], "https://example.test/icon.svg");
+
+    let detail = app.oneshot(Request::get("/api/packages/Metadata.Demo").body(Body::empty()).unwrap()).await.unwrap();
+    let detail = response_body(detail).await;
+    assert_eq!(detail["package"], catalog[0]);
+}
+
+#[tokio::test]
+async fn invalid_package_metadata_fails_before_persistence() {
+    let app = router(authenticated_config());
+    let response = app
+        .clone()
+        .oneshot(
+            Request::post("/api/packages")
+                .header("content-type", "application/json")
+                .header("remote-user", "publisher")
+                .body(Body::from(
+                    r#"{"name":"Unsafe.Metadata","websiteUrl":"javascript:alert(1)","isPublic":true,"submitForReview":false}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let catalog = app.oneshot(Request::get("/api/packages").body(Body::empty()).unwrap()).await.unwrap();
+    assert!(response_body(catalog).await.as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn public_package_reviews_are_upserted_by_subject_and_reject_blocked_links() {
     let app = router(authenticated_config());
     let created = app

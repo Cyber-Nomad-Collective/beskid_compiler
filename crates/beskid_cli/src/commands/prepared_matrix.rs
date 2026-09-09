@@ -90,10 +90,19 @@ pub struct TargetReport {
     pub ended_unix_ms: u64,
     pub duration_ms: u64,
     pub active_phase: String,
+    pub last_started_test: Option<String>,
     pub result: TargetResult,
     pub tests: super::test::TestSummary,
     pub phases: Vec<PhaseRecord>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkerExitCause {
+    Exited { code: i32 },
+    Signaled { signal: i32 },
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -109,6 +118,7 @@ pub struct MatrixReport {
     pub skipped: usize,
     pub timed_out: bool,
     pub cancelled: bool,
+    pub worker_exit_cause: Option<WorkerExitCause>,
     pub release_eligible: bool,
     pub targets: Vec<TargetReport>,
 }
@@ -131,6 +141,7 @@ impl MatrixReport {
             && self.skipped == 0
             && !self.timed_out
             && !self.cancelled
+            && self.worker_exit_cause == Some(WorkerExitCause::Exited { code: 0 })
             && revisions_fresh
             && self.targets.len() == self.denominator
             && all_passed;

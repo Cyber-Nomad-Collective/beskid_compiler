@@ -405,30 +405,45 @@ pub enum CallImportError {
 pub struct MatchArmBindingFact {
     pub slot: LocalSlotId,
     pub value_type: Type,
+    pub managed_reference: ManagedReferenceFact,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MatchPayloadPatternFact {
+    Ignore,
+    Unit,
+    Binding(MatchArmBindingFact),
+    ScalarLiteral { expression: AstNodeKey, value_type: Type },
+    Fields(Vec<MatchPayloadPatternFact>),
+    Enum { layout: EnumLayout, discriminant: u64, payload: Box<MatchPayloadPatternFact> },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MatchArmFact {
     pub(crate) discriminant: Option<u64>,
     pub(crate) body: AstNodeKey,
-    pub(crate) binding: Option<MatchArmBindingFact>,
+    pub(crate) payload: MatchPayloadPatternFact,
 }
 
 impl MatchArmFact {
     pub const fn variant(discriminant: u64, body: AstNodeKey) -> Self {
-        Self { discriminant: Some(discriminant), body, binding: None }
+        Self { discriminant: Some(discriminant), body, payload: MatchPayloadPatternFact::Fields(Vec::new()) }
     }
 
-    pub const fn variant_with_binding(
-        discriminant: u64,
-        body: AstNodeKey,
-        binding: Option<MatchArmBindingFact>,
-    ) -> Self {
-        Self { discriminant: Some(discriminant), body, binding }
+    pub fn variant_with_binding(discriminant: u64, body: AstNodeKey, binding: Option<MatchArmBindingFact>) -> Self {
+        let payload = match binding {
+            Some(binding) => MatchPayloadPatternFact::Binding(binding),
+            None => MatchPayloadPatternFact::Ignore,
+        };
+        Self { discriminant: Some(discriminant), body, payload: MatchPayloadPatternFact::Fields(vec![payload]) }
+    }
+
+    pub fn variant_with_payload(discriminant: u64, body: AstNodeKey, payload: MatchPayloadPatternFact) -> Self {
+        Self { discriminant: Some(discriminant), body, payload }
     }
 
     pub const fn wildcard(body: AstNodeKey) -> Self {
-        Self { discriminant: None, body, binding: None }
+        Self { discriminant: None, body, payload: MatchPayloadPatternFact::Ignore }
     }
 }
 
@@ -467,6 +482,17 @@ pub enum CollectionOperation {
     RemoveLast,
 }
 
+/// Source-authoritative GC classification kept distinct from the physical pointer ABI.
+///
+/// `NativeOrScalar` includes opaque native `pointer` values. `GcManaged` is reserved for
+/// strings, arrays, nominal objects/enums, and closure environments whose source type is traced
+/// by the ABI-v5 collector.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ManagedReferenceFact {
+    NativeOrScalar,
+    GcManaged,
+}
+
 pub trait NodeFacts {
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind>;
     fn literal_kind(&self, _key: AstNodeKey) -> Option<LiteralKind> {
@@ -486,6 +512,9 @@ pub trait NodeFacts {
     }
     /// Exact semantic type used to validate a primitive conversion fact before it reaches CLIF.
     fn semantic_type(&self, _key: AstNodeKey) -> Option<beskid_queries::SemanticTypeId> {
+        None
+    }
+    fn managed_reference(&self, _key: AstNodeKey) -> Option<ManagedReferenceFact> {
         None
     }
     /// Syntax/Salsa-proven Result propagation facts for postfix `value?`.
@@ -588,7 +617,7 @@ pub trait NodeFacts {
     fn enum_variant_index(&self, _key: AstNodeKey) -> Option<u32> {
         None
     }
-    fn enum_payload(&self, _key: AstNodeKey) -> Option<AstNodeKey> {
+    fn enum_payloads(&self, _key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
         None
     }
     fn match_arms(&self, _key: AstNodeKey) -> Option<Vec<MatchArmFact>> {
@@ -638,4 +667,5 @@ pub struct LocalSlotId {
 pub struct ParameterSlot {
     pub slot: LocalSlotId,
     pub value_type: Type,
+    pub managed_reference: ManagedReferenceFact,
 }

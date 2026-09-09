@@ -4,6 +4,18 @@ use std::time::Duration;
 
 use abfall::{ArrayElementDescriptor, GcCell, GcContext, GcPtr, Heap, Trace, Tracer, TypeDescriptor};
 
+#[test]
+fn beskid_type_descriptor_matches_the_abi_v5_layout() {
+    assert_eq!(std::mem::size_of::<TypeDescriptor>(), 40);
+    assert_eq!(std::mem::align_of::<TypeDescriptor>(), 8);
+    assert_eq!(std::mem::offset_of!(TypeDescriptor, size), 0);
+    assert_eq!(std::mem::offset_of!(TypeDescriptor, alignment), 8);
+    assert_eq!(std::mem::offset_of!(TypeDescriptor, pointer_map), 16);
+    assert_eq!(std::mem::offset_of!(TypeDescriptor, pointer_count), 24);
+    assert_eq!(std::mem::offset_of!(TypeDescriptor, flags), 32);
+    assert_eq!(std::mem::offset_of!(TypeDescriptor, reserved), 36);
+}
+
 // Simple acyclic node type for graph tracing tests
 struct Node {
     value: usize,
@@ -174,10 +186,11 @@ fn beskid_descriptor_trace_keeps_child_payload_alive() {
     let pointer_offsets = [8usize];
     let desc = TypeDescriptor {
         size: 16,
-        align: 8,
+        alignment: 8,
+        pointer_map: pointer_offsets.as_ptr(),
         pointer_count: 1,
-        pointer_offsets: pointer_offsets.as_ptr(),
-        name: std::ptr::null(),
+        flags: 0,
+        reserved: 0,
     };
 
     let parent = heap.allocate_beskid(16, (&desc as *const TypeDescriptor).cast::<u8>());

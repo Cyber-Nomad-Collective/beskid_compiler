@@ -28,14 +28,45 @@
 //! - Legacy executable prepare per entry was ~25 min — do not use for spine gates.
 
 use crate::projects::fixture_harness::{
-    corelib_tests_project_root, typecheck_corelib_tests_entry, with_project_test_env,
+    corelib_tests_project_root, resolve_corelib_tests_entry_with_assembly, typecheck_corelib_tests_entry,
+    with_project_test_env,
 };
+use beskid_analysis::resolve::{ResolvedValue, qualified_name};
+use beskid_analysis::services::{DependencyTypingPolicy, resolve_and_type_program_with_assembly};
 
 use super::corelib_spine_harness::run_corelib_typecheck_matrix;
 
 #[test]
 fn corelib_tests_front_end_typechecks_matrix() {
     run_corelib_typecheck_matrix();
+}
+
+#[test]
+fn query_tests_hir_typecheck_preserves_qualified_array_iterator_current() {
+    with_project_test_env(&corelib_tests_project_root(), || {
+        let resolved = resolve_corelib_tests_entry_with_assembly("query/QueryTests.bd");
+        let assembly = resolved.assembly.as_ref().expect("QueryTests assembly");
+        let entry = assembly.entry_unit().program.clone();
+        let resolution = assembly
+            .module_index
+            .resolve_entry_program(&entry, Some(&assembly.entry_unit().path), assembly)
+            .expect("QueryTests resolution");
+        let current_callees: Vec<_> = resolution
+            .tables
+            .resolved_values
+            .values()
+            .filter_map(|value| match value {
+                ResolvedValue::Item(item_id) => qualified_name(&resolution, *item_id),
+                ResolvedValue::Local(_) => None,
+            })
+            .filter(|name| name.ends_with("::Current"))
+            .collect();
+        assert_eq!(current_callees.len(), 3);
+        assert!(current_callees.iter().all(|name| name.ends_with("::Query::ArrayIterator::Current")));
+
+        resolve_and_type_program_with_assembly(&entry, Some(assembly), None, DependencyTypingPolicy::FullClosure)
+            .expect("Query.ArrayIterator.Current<T>(iterator) must retain its one-argument Option<T> signature");
+    });
 }
 
 macro_rules! corelib_typecheck_test {

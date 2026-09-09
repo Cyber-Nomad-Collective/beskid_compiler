@@ -34,10 +34,11 @@ impl AlignedBytes {
 #[derive(Clone, Copy, Debug)]
 pub struct TypeDescriptor {
     pub size: usize,
-    pub align: usize,
-    pub pointer_count: u32,
-    pub pointer_offsets: *const usize,
-    pub name: *const u8,
+    pub alignment: usize,
+    pub pointer_map: *const usize,
+    pub pointer_count: usize,
+    pub flags: u32,
+    pub reserved: u32,
 }
 
 /// Immutable ABI-v5 element metadata for one managed array backing store.
@@ -75,11 +76,11 @@ impl TypeDescriptor {
     /// `pointer_count` valid `usize` entries for the returned slice lifetime.
     #[inline]
     pub unsafe fn pointer_map(&self) -> &[usize] {
-        if self.pointer_count == 0 || self.pointer_offsets.is_null() {
+        if self.pointer_count == 0 || self.pointer_map.is_null() {
             return &[];
         }
         // SAFETY: upheld by the caller; see this method's contract.
-        unsafe { std::slice::from_raw_parts(self.pointer_offsets, self.pointer_count as usize) }
+        unsafe { std::slice::from_raw_parts(self.pointer_map, self.pointer_count) }
     }
 }
 

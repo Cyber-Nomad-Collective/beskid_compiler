@@ -54,6 +54,8 @@ export "beskid_rt_v5_closure_environment_allocate" { params = [{ name = request,
 export "beskid_rt_v5_closure_capture_store" { params = [{ name = environment, type = pointer }, { name = descriptor, type = pointer }, { name = map_index, type = usize }, { name = value, type = pointer }] returns = u8 }
 export "beskid_rt_v5_closure_environment_root" { params = [{ name = tls_state, type = pointer }, { name = slot_index, type = usize }, { name = environment, type = pointer }] returns = u8 }
 export "beskid_rt_v5_fiber_spawn_with_cancel_slot" { params = [{ name = entry, type = pointer }, { name = environment, type = pointer }, { name = cancelled_slot, type = pointer }] returns = i64 }
+export "beskid_rt_v5_scheduler_stack_check" { params = [{ name = required_usable_size, type = usize }] returns = u8 }
+export "beskid_rt_v5_scheduler_stack_overflow_observed" { params = [] returns = void }
 export "beskid_rt_v5_closure_environment_root_current" { params = [{ name = slot_index, type = usize }, { name = environment, type = pointer }] returns = u8 }
 export "beskid_rt_v5_trap" {
   params = [{ name = code, type = u8 }, { name = message, type = pointer }, { name = message_len, type = usize }]
@@ -440,7 +442,7 @@ corelib_service "__fiber_spawn" {
 
 corelib_service "__fiber_cancel" {
   adapter = "fiber_cancel"
-  params = [{ name = fiberId, type = i64 }]
+  params = [{ name = fiberId, type = i64 }, { name = reason, type = i64 }]
   returns = u8
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "fiber_cancel", os_imports = [] },
@@ -1090,7 +1092,7 @@ corelib_service "__channel_receive_value" {
 corelib_service "__channel_try_receive" {
   adapter = "channel_try_receive"
   params = [{ name = id, type = i64 }]
-  returns = u8
+  returns = i64
   target_bindings = [
     { target = "x86_64-unknown-linux-gnu", implementation = "channel_try_receive", os_imports = [] },
     { target = "aarch64-apple-darwin", implementation = "channel_try_receive", os_imports = [] },
@@ -1139,17 +1141,6 @@ corelib_service "__channel_receive_ptr" {
     { target = "x86_64-unknown-linux-gnu", implementation = "channel_receive_ptr", os_imports = [] },
     { target = "aarch64-apple-darwin", implementation = "channel_receive_ptr", os_imports = [] },
     { target = "x86_64-pc-windows-msvc", implementation = "channel_receive_ptr", os_imports = [] }
-  ]
-}
-
-corelib_service "__channel_try_receive_ptr" {
-  adapter = "channel_try_receive_ptr"
-  params = [{ name = id, type = i64 }]
-  returns = pointer
-  target_bindings = [
-    { target = "x86_64-unknown-linux-gnu", implementation = "channel_try_receive_ptr", os_imports = [] },
-    { target = "aarch64-apple-darwin", implementation = "channel_try_receive_ptr", os_imports = [] },
-    { target = "x86_64-pc-windows-msvc", implementation = "channel_try_receive_ptr", os_imports = [] }
   ]
 }
 
@@ -1497,7 +1488,6 @@ platform_import "GetFileAttributesW" { target = "x86_64-pc-windows-msvc" library
 platform_import "CreateDirectoryW" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = path, type = pointer }, { name = security_attributes, type = pointer }] returns = i32 }
 platform_import "DeleteFileW" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = path, type = pointer }] returns = i32 }
 platform_import "GetLastError" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [] returns = u32 }
-
 assembly "beskid_arch_v5_context_init" {
   params = [{ name = context, type = pointer }, { name = stack_top, type = pointer }, { name = entry, type = pointer }, { name = argument, type = pointer }, { name = return_trampoline, type = pointer }]
   returns = void

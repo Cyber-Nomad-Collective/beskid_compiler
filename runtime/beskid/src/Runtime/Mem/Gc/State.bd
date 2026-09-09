@@ -1,10 +1,11 @@
 // Canonical Beskid GC state and manifest-owned layout accessors.
 
-pub enum GcMark {
-    White,
-    Gray,
-    Black,
-}
+// Raw GC header mark states. These are machine words, not managed enum objects: allocation and
+// marking must remain possible without recursively allocating a value merely to compare or store
+// the collector's own state. Public accessors keep one authority across the split GC modules.
+pub word GcMarkWhite() { return 0; }
+pub word GcMarkGrayState() { return 1; }
+pub word GcMarkBlack() { return 2; }
 
 const HEAP_REGION_START = 0;
 const HEAP_REGION_SIZE = 8;

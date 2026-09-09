@@ -31,6 +31,7 @@ pub enum SurfacePrimitive {
     Bool,
     I32,
     I64,
+    U32,
     U8,
     Pointer,
     Word,
@@ -49,6 +50,7 @@ impl SurfacePrimitive {
             "bool" => Self::Bool,
             "i32" => Self::I32,
             "i64" => Self::I64,
+            "u32" => Self::U32,
             "u8" => Self::U8,
             "pointer" => Self::Pointer,
             "word" => Self::Word,
@@ -73,6 +75,7 @@ pub fn surface_primitive_to_type_shape(primitive: SurfacePrimitive) -> Option<Ty
         SurfacePrimitive::Bool => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I8 })),
         SurfacePrimitive::U8 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::U8 })),
         SurfacePrimitive::I32 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I32 })),
+        SurfacePrimitive::U32 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::U32 })),
         SurfacePrimitive::I64 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I64 })),
         SurfacePrimitive::F64 => Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::F64 })),
         SurfacePrimitive::Pointer => Some(TypeShape::OpaqueHandle),
@@ -95,6 +98,10 @@ mod tests {
         assert_eq!(
             surface_primitive_to_type_shape(SurfacePrimitive::I64),
             Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::I64 }))
+        );
+        assert_eq!(
+            surface_primitive_to_type_shape(SurfacePrimitive::U32),
+            Some(TypeShape::Scalar(ScalarShape { abi_type: AbiType::U32 }))
         );
         assert_eq!(
             surface_primitive_to_type_shape(SurfacePrimitive::F64),

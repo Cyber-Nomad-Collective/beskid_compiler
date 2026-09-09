@@ -1,15 +1,43 @@
 // Canonical heap-wide mark discovery and descriptor-driven tracing.
 
+/// Resolves an ABI-visible managed reference to its exact GC object start.
+///
+/// Most managed values already point at their allocation header. Arrays are the deliberate
+/// exception: their public `{ data, len, cap }` value starts 24 bytes into the object. Keeping
+/// this translation here gives roots, aggregate fields, array elements, and write barriers one
+/// common marking contract without teaching any producer about GC header offsets.
+pub pointer ManagedObjectForReference(pointer heap, pointer value) {
+    if IsAllocatedObject(heap, value) {
+        return value;
+    }
+    if value == NativePointer(0) || NativeWord(value) < 24 {
+        return NativePointer(0);
+    }
+    pointer object = NativePointer(NativeWord(value) - 24);
+    if IsAllocatedObject(heap, object) == false {
+        return NativePointer(0);
+    }
+    pointer descriptor = NativePointer(raw_word_load(object));
+    if ValidateTypeDescriptor(descriptor) == false || TypeDescriptorFlags(descriptor) != TYPE_DESCRIPTOR_ARRAY {
+        return NativePointer(0);
+    }
+    if pointer_add(object, 24) != value || NativePointer(raw_word_load(value)) != pointer_add(object, 48) {
+        return NativePointer(0);
+    }
+    return object;
+}
+
 pub unit GcMarkGray(pointer object) {
     pointer heap = Heap();
-    if IsAllocatedObject(heap, object) == false {
+    pointer normalized = ManagedObjectForReference(heap, object);
+    if normalized == NativePointer(0) {
         return;
     }
-    word state = raw_word_load(pointer_add(object, 8));
-    if state != GcMark::White {
+    word state = raw_word_load(pointer_add(normalized, 8));
+    if state != GcMarkWhite() {
         return;
     }
-    raw_word_store(pointer_add(object, 8), GcMark::Gray);
+    raw_word_store(pointer_add(normalized, 8), GcMarkGrayState());
     return;
 }
 
@@ -32,7 +60,7 @@ pub bool ProcessGrayStack() {
                 if ValidateTypeDescriptor(descriptor) == false { return false; }
                 size = ManagedObjectSize(object, descriptor);
                 if size == 0 { return false; }
-                if raw_word_load(pointer_add(object, 8)) == GcMark::Gray {
+                if raw_word_load(pointer_add(object, 8)) == GcMarkGrayState() {
                     if TypeDescriptorFlags(descriptor) == TYPE_DESCRIPTOR_ARRAY {
                         pointer element = NativePointer(raw_word_load(pointer_add(object, 16)));
                         word stride = raw_word_load(element);
@@ -64,7 +92,7 @@ pub bool ProcessGrayStack() {
                             index = index + 1;
                         }
                     }
-                    raw_word_store(pointer_add(object, 8), GcMark::Black);
+                    raw_word_store(pointer_add(object, 8), GcMarkBlack());
                     found = true;
                 }
             }

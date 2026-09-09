@@ -143,6 +143,16 @@ corelib_lower_test!(
     "hub_register_returns_result"
 );
 corelib_lower_test!(slice_returns_substring_lowers, "console/FormatScanTests.bd", "slice_returns_substring");
+corelib_lower_test!(
+    bytes_from_string_matches_utf8_length_lowers,
+    "core/BytesTests.bd",
+    "bytes_from_string_matches_utf8_length"
+);
+corelib_lower_test!(
+    utf8_encode_to_bytes_roundtrip_lowers,
+    "core/EncodingUtf8Tests.bd",
+    "utf8_encode_to_bytes_roundtrip"
+);
 corelib_lower_test!(text_cursor_from_starts_at_zero_lowers, "text/TextCursorTests.bd", "from_starts_at_zero");
 corelib_lower_test!(
     text_parser_literal_matches_prefix_lowers,

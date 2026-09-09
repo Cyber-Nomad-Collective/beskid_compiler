@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use beskid_abi::runtime_source::{
-    CANONICAL_CORELIB_ARGS_SOURCE_PATH, CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability,
-    canonical_corelib_service_source_path, canonical_corelib_service_sources,
+    CorelibService, CorelibServiceCapability, RuntimeIntrinsicCapability, canonical_corelib_service_source_path,
+    canonical_corelib_service_sources,
 };
 use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::syntax::SyntaxGenerationId;
@@ -279,28 +279,20 @@ fn canonical_corelib_service_units(
                         return false;
                     }
 
-                    if expected.logical_path == CANONICAL_CORELIB_ARGS_SOURCE_PATH {
-                        // Core.Args exposes process command-line data. Unlike the established
-                        // Foundation facades, it is authorized only from the compiler-owned
-                        // regular file at its exact lexical path: materialized copies and
-                        // symlink aliases must not inherit its capability.
-                        return unit.path == canonical_path
-                            && std::fs::symlink_metadata(&unit.path).is_ok_and(|metadata| {
-                                metadata.file_type().is_file() && !metadata.file_type().is_symlink()
-                            });
-                    }
-
                     // Direct compiler sources retain their canonical lexical identity.
                     // Compare lexically (after normalize_lexically in the path helper) so
                     // a user-project symlink to the same inode cannot acquire authority.
-                    unit.path == canonical_path
+                    let authorized_path = unit.path == canonical_path
                         // Materialized dependency copies lose that physical identity. The
                         // assembly loader supplies this separate, origin-checked path list
                         // only after resolving the original dependency from compiler Corelib.
                         || assembly
                             .trusted_corelib_service_paths
                             .iter()
-                            .any(|trusted| trusted == &unit.path)
+                            .any(|trusted| trusted == &unit.path);
+                    authorized_path
+                        && std::fs::symlink_metadata(&unit.path)
+                            .is_ok_and(|metadata| metadata.file_type().is_file() && !metadata.file_type().is_symlink())
                 })
                 .collect::<Vec<_>>();
             (candidates.len() == 1).then(|| {

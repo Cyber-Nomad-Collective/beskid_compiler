@@ -8,7 +8,7 @@ use crate::context::{
     materialize_parameters,
 };
 use crate::errors::FunctionEmissionError;
-use crate::facts::{AstNodeKey, InlineCaptureField, NodeFacts};
+use crate::facts::{AstNodeKey, InlineCaptureField, ManagedReferenceFact, NodeFacts};
 
 /// Parsed item inputs for statement-oriented ISLE emission.
 pub struct ItemStatementEmission<'a> {
@@ -123,11 +123,20 @@ impl<'isa> FunctionEmitter<'isa> {
                 for capture in captures {
                     let address = context.builder.ins().iadd_imm(environment, i64::from(capture.field_offset));
                     let value = context.builder.ins().load(capture.value_type, MemFlags::new(), address, 0);
-                    let variable = context.builder.declare_var(capture.value_type);
-                    context.builder.def_var(variable, value);
-                    context.locals.insert(capture.local_slot, (variable, capture.value_type));
+                    let managed_reference = if capture.pointer_map_index.is_some() {
+                        ManagedReferenceFact::GcManaged
+                    } else {
+                        ManagedReferenceFact::NativeOrScalar
+                    };
+                    context
+                        .bind_local(capture.local_slot, value, capture.value_type, managed_reference)
+                        .ok_or_else(|| FunctionEmissionError::verification(body, "closure capture root is invalid"))?;
                 }
-                lower_expression(&mut context, body).map_err(FunctionEmissionError::Lowering)?
+                let value = lower_expression(&mut context, body).map_err(FunctionEmissionError::Lowering)?;
+                context.release_managed_local_roots().ok_or_else(|| {
+                    FunctionEmissionError::verification(body, "closure capture root cleanup is invalid")
+                })?;
+                value
             };
             if builder.func.dfg.value_type(value) != result {
                 return Err(FunctionEmissionError::verification(body, "closure lambda entry result type mismatch"));
@@ -192,13 +201,17 @@ impl<'isa> FunctionEmitter<'isa> {
                 materialize_parameters(&mut context, item)?;
             }
             lower_statement(&mut context, request.body).map_err(FunctionEmissionError::Lowering)?;
-            let final_block = builder
+            let final_block = context
+                .builder
                 .current_block()
                 .ok_or_else(|| FunctionEmissionError::verification(verification_site, "function has no final block"))?;
-            let terminated = block_is_terminated(&builder, final_block);
+            let terminated = block_is_terminated(context.builder, final_block);
             if !terminated {
-                if builder.func.signature.returns.is_empty() {
-                    builder.ins().return_(&[]);
+                if context.builder.func.signature.returns.is_empty() {
+                    context.release_managed_local_roots().ok_or_else(|| {
+                        FunctionEmissionError::verification(verification_site, "managed local root cleanup is invalid")
+                    })?;
+                    context.builder.ins().return_(&[]);
                 } else {
                     return Err(FunctionEmissionError::verification(
                         verification_site,

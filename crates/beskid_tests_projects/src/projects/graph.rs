@@ -1,9 +1,9 @@
 use std::fs;
 
-use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 use beskid_analysis::projects::{
     UnresolvedDependencyKind, build_project_graph, collect_dependency_projects, collect_unresolved_dependencies,
 };
+use beskid_tests_support::{temp_case_dir, write_project_manifest as write_manifest};
 
 use super::test_cwd::{compiler_workspace_root, with_cwd_at_workspace_root};
 

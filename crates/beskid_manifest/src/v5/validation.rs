@@ -201,7 +201,6 @@ pub(super) fn validate(manifest: &RuntimeManifestV5) -> Result<(), String> {
         "__channel_send_ptr",
         "__channel_try_send_ptr",
         "__channel_receive_ptr",
-        "__channel_try_receive_ptr",
         "__mutex_create",
         "__mutex_lock",
         "__mutex_try_lock",

@@ -1,5 +1,9 @@
 #[path = "isle_adapter/calls_conversions.rs"]
 mod calls_conversions;
+#[path = "isle_adapter/channel_conditions.rs"]
+mod channel_conditions;
+#[path = "isle_adapter/composition_conditions.rs"]
+mod composition_conditions;
 #[path = "isle_adapter/control_flow_closures_spawn.rs"]
 mod control_flow_closures_spawn;
 #[path = "isle_adapter/corelib_services.rs"]
@@ -8,15 +12,23 @@ mod corelib_services;
 mod diagnostics_fail_closed;
 #[path = "isle_adapter/enum_match_result.rs"]
 mod enum_match_result;
+#[path = "isle_adapter/importer_relocations.rs"]
+mod importer_relocations;
 #[path = "isle_adapter/literal_operators.rs"]
 mod literal_operators;
+#[path = "isle_adapter/managed_references.rs"]
+mod managed_references;
 #[path = "isle_adapter/memory_aggregate_arrays.rs"]
 mod memory_aggregate_arrays;
 #[path = "isle_adapter/method_owned_fields.rs"]
 mod method_owned_fields;
 #[path = "isle_adapter/module_emission_specialization.rs"]
 mod module_emission_specialization;
+#[path = "isle_adapter/runtime_gc_aggregate.rs"]
+mod runtime_gc_aggregate;
 #[path = "isle_adapter/statement_result_storage.rs"]
 mod statement_result_storage;
 #[path = "isle_adapter/support.rs"]
 mod support;
+#[path = "isle_adapter/waitgroup_conditions.rs"]
+mod waitgroup_conditions;
