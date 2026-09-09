@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep the `just replace` runtime-kit staging paths bound to Just's resolved
+  workspace root instead of referencing an undefined shell variable after a
+  successful release build.
 - Lower manifest-authorized `raw_byte_store` calls to exact one-byte stores,
   preventing adjacent decimal digits and other byte-buffer writes from being
   overwritten by the high zero bytes of wider integer values.
