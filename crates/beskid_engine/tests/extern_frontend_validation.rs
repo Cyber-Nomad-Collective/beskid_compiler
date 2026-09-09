@@ -47,7 +47,7 @@ pub i64 Main() { return 0; }
 }
 
 #[test]
-fn extern_ref_param_modifier_rejected_at_parse() -> Result<()> {
+fn extern_ref_param_modifier_rejected_before_codegen() -> Result<()> {
     let src = r#"
 [Extern(Abi:"C", Library:"libc.so.6")]
 pub contract C { i64 nope(ref i64 p); }
@@ -57,6 +57,6 @@ pub i64 Main() { return 0; }
     let err = prepare_syntax_front_end(std::path::Path::new("<memory>"), src)
         .expect_err("should fail for ref parameter modifier");
     let msg = format!("{err:#}");
-    assert!(msg.contains("unknown module path") && msg.contains("ref"), "unexpected message: {msg}");
+    assert!(msg.contains("unknown type `ref`"), "unexpected message: {msg}");
     Ok(())
 }

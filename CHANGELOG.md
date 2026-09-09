@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep the extern frontend regression aligned with parse recovery: unsupported
+  `ref` parameter syntax remains rejected before codegen without coupling the
+  test to an obsolete recovered module-path diagnostic.
 - Allow only the standard ELF shared-linker startup imports when auditing the
   exact Linux context library, while keeping runtime, application, dynamic-TLS,
   and static-archive dependencies fail-closed under the centralized provenance
