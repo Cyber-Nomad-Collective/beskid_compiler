@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore the strict workspace Clippy gate on Rust 1.98 by consolidating enum
+  match materialization inputs into one semantic context and using the direct
+  collection membership and conditional forms required by current lints.
 - Emit standard `property` semantic tokens for BSOL assignment and inline-map
   keys while retaining `namespace` tokens for block kinds, keeping VS Code and
   Zed semantic highlighting aligned with the shared tree-sitter grammar.

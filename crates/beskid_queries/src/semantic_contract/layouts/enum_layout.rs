@@ -610,7 +610,8 @@ pub(in crate::semantic_contract) fn enum_match_tracked(
             Ok(environment) => environment,
             Err(error) => return Some(Err(error)),
         };
-        Some(materialize_enum_match(db, program, index, key, expression, declaration, layout, &environment))
+        let context = EnumMatchMaterializer { db, program, index, key, environment: &environment };
+        Some(materialize_enum_match(&context, expression, declaration, layout))
     })?
     .transpose()
 }
@@ -640,43 +641,55 @@ pub fn enum_match_specialization(
             .ok_or_else(|| SemanticError::unavailable("enum_match_specialization"))?;
     let environment =
         enum_match_ownership_environment(db, program, index, key, expression, declaration, Some(&enclosing))?;
-    materialize_enum_match(db, program, index, key, expression, declaration, layout, &environment).map(Some)
+    let context = EnumMatchMaterializer { db, program, index, key, environment: &environment };
+    materialize_enum_match(&context, expression, declaration, layout).map(Some)
+}
+
+struct EnumMatchMaterializer<'a> {
+    db: &'a dyn Db,
+    program: &'a beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &'a beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    environment: &'a HashMap<String, ManagedReferenceKind>,
 }
 
 fn materialize_enum_match(
-    db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &beskid_analysis::syntax_query::SyntaxIndex,
-    key: AstNodeKey,
+    context: &EnumMatchMaterializer<'_>,
     expression: &beskid_analysis::syntax::MatchExpression,
     declaration: AstNodeKey,
     layout: EnumLayoutFact,
-    environment: &HashMap<String, ManagedReferenceKind>,
 ) -> Result<EnumMatchFact, SemanticError> {
     let mut arms = Vec::with_capacity(expression.arms.len());
     for arm in &expression.arms {
         if arm.node.guard.is_some() {
             return Err(SemanticError::unavailable("enum_match"));
         }
-        let arm_node = index
-            .direct_child_id(program, key.node, beskid_analysis::syntax_query::DynNodeRef::from(arm))
+        let arm_node = context
+            .index
+            .direct_child_id(context.program, context.key.node, beskid_analysis::syntax_query::DynNodeRef::from(arm))
             .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-        let body = index
-            .direct_child_id(program, arm_node, beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.value))
-            .map(|body| AstNodeKey { node: normalized_expression_node(index, body), ..key })
+        let body = context
+            .index
+            .direct_child_id(
+                context.program,
+                arm_node,
+                beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.value),
+            )
+            .map(|body| AstNodeKey { node: normalized_expression_node(context.index, body), ..context.key })
             .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-        let pattern_node = index
-            .direct_child_id(program, arm_node, beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.pattern))
+        let pattern_node = context
+            .index
+            .direct_child_id(
+                context.program,
+                arm_node,
+                beskid_analysis::syntax_query::DynNodeRef::from(&arm.node.pattern),
+            )
             .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
         let pattern = materialize_match_pattern(
-            db,
-            program,
-            index,
-            key,
+            context,
             pattern_node,
             &arm.node.pattern,
             MatchPatternExpectation::NominalEnum { declaration, layout: layout.clone() },
-            environment,
         )?;
         arms.push(EnumMatchArmFact { pattern, body });
     }
@@ -709,14 +722,10 @@ impl MatchPatternExpectation {
 }
 
 fn materialize_match_pattern(
-    db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &beskid_analysis::syntax_query::SyntaxIndex,
-    key: AstNodeKey,
+    context: &EnumMatchMaterializer<'_>,
     pattern_node: beskid_analysis::syntax::AstNodeId,
     pattern: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Pattern>,
     expected: MatchPatternExpectation,
-    environment: &HashMap<String, ManagedReferenceKind>,
 ) -> Result<EnumMatchPatternFact, SemanticError> {
     match &pattern.node {
         beskid_analysis::syntax::Pattern::Wildcard => Ok(EnumMatchPatternFact::Wildcard),
@@ -724,20 +733,30 @@ fn materialize_match_pattern(
             if matches!(expected, MatchPatternExpectation::Scalar { semantic_type: SemanticTypeId::UNIT, .. }) {
                 return Err(SemanticError::unavailable("enum_match"));
             }
-            let declaration = index
-                .direct_child_id(program, pattern_node, beskid_analysis::syntax_query::DynNodeRef::from(identifier))
+            let declaration = context
+                .index
+                .direct_child_id(
+                    context.program,
+                    pattern_node,
+                    beskid_analysis::syntax_query::DynNodeRef::from(identifier),
+                )
                 .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
             Ok(EnumMatchPatternFact::Binding(EnumMatchBindingFact {
-                declaration: AstNodeKey { node: declaration, ..key },
+                declaration: AstNodeKey { node: declaration, ..context.key },
                 payload: expected.binding_shape(),
                 managed_reference: expected.managed_reference(),
             }))
         }
         beskid_analysis::syntax::Pattern::Literal(literal) => {
-            let literal_node = index
-                .direct_child_id(program, pattern_node, beskid_analysis::syntax_query::DynNodeRef::from(literal))
+            let literal_node = context
+                .index
+                .direct_child_id(
+                    context.program,
+                    pattern_node,
+                    beskid_analysis::syntax_query::DynNodeRef::from(literal),
+                )
                 .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
-            let literal_key = AstNodeKey { node: literal_node, ..key };
+            let literal_key = AstNodeKey { node: literal_node, ..context.key };
             match &literal.node {
                 beskid_analysis::syntax::Literal::Unit
                     if matches!(
@@ -771,22 +790,13 @@ fn materialize_match_pattern(
             let (declaration, layout) = match expected {
                 MatchPatternExpectation::NominalEnum { declaration, layout } => (declaration, layout),
                 MatchPatternExpectation::Nominal(declaration) => {
-                    let layout =
-                        enum_layout(db, declaration)?.ok_or_else(|| SemanticError::unavailable("enum_match"))?;
+                    let layout = enum_layout(context.db, declaration)?
+                        .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
                     (declaration, layout)
                 }
                 MatchPatternExpectation::Scalar { .. } => return Err(SemanticError::unavailable("enum_match")),
             };
-            materialize_enum_pattern(
-                db,
-                program,
-                index,
-                key,
-                pattern_node,
-                enum_pattern,
-                (declaration, layout),
-                environment,
-            )
+            materialize_enum_pattern(context, pattern_node, enum_pattern, (declaration, layout))
         }
     }
 }
@@ -805,17 +815,13 @@ fn materialize_scalar_literal(
 }
 
 fn materialize_enum_pattern(
-    db: &dyn Db,
-    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
-    index: &beskid_analysis::syntax_query::SyntaxIndex,
-    key: AstNodeKey,
+    context: &EnumMatchMaterializer<'_>,
     pattern_node: beskid_analysis::syntax::AstNodeId,
     pattern: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::EnumPattern>,
     applied_enum: (AstNodeKey, EnumLayoutFact),
-    environment: &HashMap<String, ManagedReferenceKind>,
 ) -> Result<EnumMatchPatternFact, SemanticError> {
     let (declaration, layout) = applied_enum;
-    if !enum_pattern_targets_declaration(db, declaration, &pattern.node.path.node.type_path.node) {
+    if !enum_pattern_targets_declaration(context.db, declaration, &pattern.node.path.node.type_path.node) {
         return Err(SemanticError::unavailable("enum_match"));
     }
     let name = pattern.node.path.node.variant.node.name.as_str();
@@ -828,8 +834,9 @@ fn materialize_enum_pattern(
     if variant.fields.len() != pattern.node.items.len() {
         return Err(SemanticError::unavailable("enum_match"));
     }
-    let enum_pattern_node = index
-        .direct_child_id(program, pattern_node, beskid_analysis::syntax_query::DynNodeRef::from(pattern))
+    let enum_pattern_node = context
+        .index
+        .direct_child_id(context.program, pattern_node, beskid_analysis::syntax_query::DynNodeRef::from(pattern))
         .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
     let items = pattern
         .node
@@ -838,24 +845,29 @@ fn materialize_enum_pattern(
         .zip(variant.fields.iter())
         .enumerate()
         .map(|(field_index, (item, (_, shape)))| {
-            let item_node = index
-                .direct_child_id(program, enum_pattern_node, beskid_analysis::syntax_query::DynNodeRef::from(item))
+            let item_node = context
+                .index
+                .direct_child_id(
+                    context.program,
+                    enum_pattern_node,
+                    beskid_analysis::syntax_query::DynNodeRef::from(item),
+                )
                 .ok_or_else(|| SemanticError::unavailable("enum_match"))?;
             let expected = match shape {
                 AggregateFieldShape::Scalar(semantic_type) => MatchPatternExpectation::Scalar {
                     semantic_type: *semantic_type,
                     managed_reference: enum_variant_field_managed_reference(
-                        db,
+                        context.db,
                         declaration,
                         variant_index,
                         field_index,
                         *shape,
-                        environment,
+                        context.environment,
                     )?,
                 },
                 AggregateFieldShape::Nominal(declaration) => MatchPatternExpectation::Nominal(*declaration),
             };
-            materialize_match_pattern(db, program, index, key, item_node, item, expected, environment)
+            materialize_match_pattern(context, item_node, item, expected)
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(EnumMatchPatternFact::Enum(EnumMatchVariantPatternFact {

@@ -93,10 +93,8 @@ pub(in crate::semantic_contract) fn contextual_integer_literal_abi_type_tracked(
                             .direct_child_id(program, parent, beskid_analysis::syntax_query::DynNodeRef::from(argument))
                             .map(|node| normalized_expression_node(index, node))
                             .ok_or_else(|| SemanticError::unavailable("contextual_integer_literal_abi_type"))?;
-                        if argument_node == key.node {
-                            if payload_position.replace(position).is_some() {
-                                return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
-                            }
+                        if argument_node == key.node && payload_position.replace(position).is_some() {
+                            return Err(SemanticError::unavailable("contextual_integer_literal_abi_type"));
                         }
                     }
                     let payload_position = payload_position
