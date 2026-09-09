@@ -97,7 +97,7 @@ pub fn parameter_generic_reference(db: &dyn Db, key: AstNodeKey) -> SemanticQuer
     };
     let owner = AstNodeKey { node: owner_node, ..key };
     let Some((generics, _)) = generic_callable_parameters(db, owner) else { return Ok(None) };
-    Ok(generics.iter().any(|generic| *generic == name).then(|| Arc::<str>::from(name)))
+    Ok(generics.contains(&name).then(|| Arc::<str>::from(name)))
 }
 
 /// Return the exact root expression keys of positional call arguments in source order.

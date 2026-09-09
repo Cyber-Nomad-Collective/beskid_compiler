@@ -349,7 +349,6 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     let items = runtime_roots
         .iter()
         .copied()
-        .into_iter()
         .flat_map(|root| find_function_definitions(input.database(), root))
         .collect::<Vec<_>>();
     let selected = [

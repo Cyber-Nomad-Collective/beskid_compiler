@@ -771,7 +771,7 @@ fn regex_span_list_constructor_stores_two_nominal_payload_fields_in_source_order
     assert_eq!(fields.len(), parameters.len(), "each constructor parameter must retain one payload slot");
     for (field, parameter) in fields.iter().zip(parameters) {
         let field = field.as_ref().expect("both Regex payloads are managed references");
-        let offset = i64::try_from(field.offset).expect("payload offset fits CLIF");
+        let offset = i64::from(field.offset);
         let store = function
             .layout
             .blocks()

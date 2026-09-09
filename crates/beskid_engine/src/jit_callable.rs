@@ -102,6 +102,11 @@ impl JitCallable {
     }
 }
 
+unsafe fn invoke0<R>(ptr: *const u8) -> R {
+    let callable: extern "C" fn() -> R = unsafe { std::mem::transmute(ptr) };
+    callable()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,9 +116,4 @@ mod tests {
         assert!(matches!(EntryReturnKind::from_semantic_type(SemanticTypeId::U32), EntryReturnKind::U32));
         assert_eq!(JitCallable::format_i64_result(u32::MAX as i64, EntryReturnKind::U32), "4294967295");
     }
-}
-
-unsafe fn invoke0<R>(ptr: *const u8) -> R {
-    let callable: extern "C" fn() -> R = unsafe { std::mem::transmute(ptr) };
-    callable()
 }
