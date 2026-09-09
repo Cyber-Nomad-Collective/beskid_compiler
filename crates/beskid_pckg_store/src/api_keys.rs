@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::package::SqlxPackageRepository;
 
 pub const RELEASE_PUBLISHER_KEY_ID: &str = "79587ce7-3937-4e21-8f74-e6d19d056fb2";
-pub const RELEASE_PUBLISHER_SUBJECT: &str = "release:github-actions";
+pub const RELEASE_PUBLISHER_SUBJECT: &str = "release:appveyor";
 pub const RELEASE_PUBLISHER_LABEL: &str = "GitHub Actions Release";
 pub(crate) const RECONCILE_RELEASE_PUBLISHER_KEY_SQL: &str = "INSERT INTO pckg_api_keys (id,subject,label,token_sha256,scopes,created_at_utc,revoked_at_utc) \
      VALUES ($1,$2,$3,$4,$5,$6,NULL) \

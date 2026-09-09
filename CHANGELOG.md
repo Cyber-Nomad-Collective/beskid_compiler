@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Rename the deterministic pckg release automation subject from the retired
+  GitHub Actions identity to `release:appveyor` and document AppVeyor as the
+  native compiler gate runner.
 - Route Linux workspace links through `clang` and `mold`, copy that shared
   Cargo configuration into the pckg server image, and document `cargo-binstall`
   as the contributor path for Cargo utility installation.

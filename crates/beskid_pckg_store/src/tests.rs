@@ -122,7 +122,7 @@ fn release_publisher_key_accepts_only_a_lowercase_sha256_digest() {
 #[test]
 fn release_publisher_reconciliation_has_one_stable_idempotent_rotation_path() {
     assert_eq!(RELEASE_PUBLISHER_KEY_ID, "79587ce7-3937-4e21-8f74-e6d19d056fb2");
-    assert_eq!(RELEASE_PUBLISHER_SUBJECT, "release:github-actions");
+    assert_eq!(RELEASE_PUBLISHER_SUBJECT, "release:appveyor");
     assert!(RECONCILE_RELEASE_PUBLISHER_KEY_SQL.contains("ON CONFLICT (id) DO UPDATE"));
     assert!(RECONCILE_RELEASE_PUBLISHER_KEY_SQL.contains("token_sha256=EXCLUDED.token_sha256"));
     assert!(RECONCILE_RELEASE_PUBLISHER_KEY_SQL.contains("revoked_at_utc=NULL"));
