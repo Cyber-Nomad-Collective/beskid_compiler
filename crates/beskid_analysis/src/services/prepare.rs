@@ -15,7 +15,8 @@ use crate::analysis::SemanticDiagnostic;
 use crate::analysis::rules::{RuleContext, resolve, types};
 use crate::mod_host::diagnostics::{analyzer_diagnostic_to_semantic, analyzer_fix_to_syntax_fix};
 use crate::mod_host::{
-    ModHostInput, SyntaxFix, native_invoker_for_plan, run_analyze_rewrite_after_composition, run_through_generate,
+    ModHostInput, SyntaxFix, native_invoker_for_plan, run_analyze_rewrite_after_composition,
+    run_analyze_rewrite_with_invoker, run_through_generate, run_through_generate_without_materializing_outputs,
 };
 use crate::projects::{
     CompilePlan, PreparedProjectWorkspace, ProgramAssembly, SourceUnit, assemble_program, assembly_options_for_prepare,
@@ -124,6 +125,7 @@ pub fn prepare_compilation(
         &options,
         pipeline,
         false,
+        true,
     )?;
 
     Ok(spine.prepared)
@@ -154,10 +156,43 @@ pub fn prepare_compilation_diagnostics(
         &options,
         pipeline,
         true,
+        true,
     )?;
     diagnostics.extend(spine.collected_diagnostics);
     fixes.extend(spine.collected_fixes);
     Ok((spine.prepared, diagnostics, fixes))
+}
+
+/// Collect diagnostics from an owned assembly without consulting or updating
+/// the process-wide entry-session cache.
+///
+/// This is intended for overlapping editor jobs whose version identity is
+/// enforced by the caller. It requires `resolved.assembly` so no global
+/// assembly/session authority can substitute a different generation.
+pub fn prepare_compilation_diagnostics_isolated(
+    resolved: &ResolvedInput,
+    options: PrepareOptions,
+    pipeline: Option<&dyn PipelineObserver>,
+) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<SyntaxFix>)> {
+    let plan = resolved
+        .compile_plan
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("prepare_compilation requires a CompilePlan (project context)"))?;
+    if resolved.assembly.is_none() {
+        return Err(anyhow::anyhow!("isolated diagnostics require an owned program assembly"));
+    }
+    let spine = run_prepare_spine(
+        &resolved.source_path,
+        &resolved.source,
+        plan,
+        resolved.prepared_workspace.as_ref(),
+        resolved.assembly.as_ref(),
+        &options,
+        pipeline,
+        true,
+        false,
+    )?;
+    Ok((spine.prepared, spine.collected_diagnostics, spine.collected_fixes))
 }
 
 struct PrepareSpineOutput {
@@ -179,6 +214,7 @@ fn run_prepare_spine(
     options: &PrepareOptions,
     pipeline: Option<&dyn PipelineObserver>,
     collect_diagnostics: bool,
+    use_session_cache: bool,
 ) -> Result<PrepareSpineOutput> {
     let assembly_options = assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
 
@@ -192,7 +228,7 @@ fn run_prepare_spine(
     )
     .entered();
 
-    if let Some(cached) = cached_executable_if_valid(&session_fingerprint) {
+    if use_session_cache && let Some(cached) = cached_executable_if_valid(&session_fingerprint) {
         let syntax_generation_id = current_syntax_generation_id(&session_fingerprint);
         Span::current().record("syntax_generation_id", syntax_generation_id);
         let front = cached.as_ref();
@@ -209,7 +245,11 @@ fn run_prepare_spine(
         });
     }
 
-    let assembly = if let Some(cached) = cached_assembly {
+    let assembly = if let Some(cached) = cached_assembly
+        && !use_session_cache
+    {
+        cached.clone()
+    } else if let Some(cached) = cached_assembly {
         let session = session_for_assembly(session_fingerprint.clone(), cached.clone());
         (*session.assembly).clone()
     } else {
@@ -229,22 +269,26 @@ fn run_prepare_spine(
     let native_invoker = native_invoker_for_plan(plan, pipeline).ok().flatten();
     let invoker_ref = native_invoker.as_ref().map(|invoker| invoker as &dyn crate::mod_host::ContractInvoker);
 
-    let mut generated = run_through_generate(
-        program.clone(),
-        &ModHostInput {
-            compile_plan: Some(plan),
-            source_name: &entry_unit.logical_name,
-            source: entry_source,
-            pipeline,
-            invoker: invoker_ref,
-            cached_target_fingerprint: None,
-        },
-    )?;
+    let mod_input = ModHostInput {
+        compile_plan: Some(plan),
+        source_name: &entry_unit.logical_name,
+        source: entry_source,
+        pipeline,
+        invoker: invoker_ref,
+        cached_target_fingerprint: None,
+    };
+    let mut generated = if use_session_cache {
+        run_through_generate(program.clone(), &mod_input)?
+    } else {
+        run_through_generate_without_materializing_outputs(program.clone(), &mod_input)?
+    };
     program = generated.program;
 
     let mut collected_diagnostics = generated.macro_diagnostics;
-    let syntax_generation_id = current_syntax_generation_id(&session_fingerprint);
+    let syntax_generation_id =
+        if use_session_cache { current_syntax_generation_id(&session_fingerprint) } else { assembly.generation.0 };
     Span::current().record("syntax_generation_id", syntax_generation_id);
+    let mut local_semantic_snapshot = None;
 
     let mut rule_options = AnalysisOptions::default();
     rule_options.module_level_meta_items_allowed = options.front_end.module_level_meta_items_allowed;
@@ -271,10 +315,12 @@ fn run_prepare_spine(
             semantic.as_slice()
         };
         observe_phase(pipeline, SEMANTIC_SNAPSHOT, || {
-            update_semantic_snapshot(
-                &session_fingerprint,
-                SemanticSnapshot::from_diagnostics(snapshot_diagnostics, syntax_generation_id, "semantic"),
-            );
+            let snapshot = SemanticSnapshot::from_diagnostics(snapshot_diagnostics, syntax_generation_id, "semantic");
+            if use_session_cache {
+                update_semantic_snapshot(&session_fingerprint, snapshot);
+            } else {
+                local_semantic_snapshot = Some(snapshot);
+            }
         });
     }
 
@@ -282,20 +328,35 @@ fn run_prepare_spine(
         Ok::<_, anyhow::Error>(resolve_program_composition(&program, Some(plan)))
     })?;
 
-    if (options.front_end.with_semantic_diagnostics || collect_diagnostics)
-        && let Some(mut snapshot) = super::session::cached_semantic_snapshot(&session_fingerprint)
-    {
-        snapshot = snapshot.with_composition(&composition_result.snapshot);
-        update_semantic_snapshot(&session_fingerprint, snapshot);
+    if options.front_end.with_semantic_diagnostics || collect_diagnostics {
+        if use_session_cache {
+            if let Some(mut snapshot) = super::session::cached_semantic_snapshot(&session_fingerprint) {
+                snapshot = snapshot.with_composition(&composition_result.snapshot);
+                update_semantic_snapshot(&session_fingerprint, snapshot);
+            }
+        } else if let Some(snapshot) = local_semantic_snapshot.take() {
+            local_semantic_snapshot = Some(snapshot.with_composition(&composition_result.snapshot));
+        }
     }
 
-    let mod_rewrite = run_analyze_rewrite_after_composition(
-        program.clone(),
-        &generated.session,
-        &session_fingerprint,
-        invoker_ref,
-        pipeline,
-    )?;
+    let mod_rewrite = if use_session_cache {
+        run_analyze_rewrite_after_composition(
+            program.clone(),
+            &generated.session,
+            &session_fingerprint,
+            invoker_ref,
+            pipeline,
+        )?
+    } else {
+        run_analyze_rewrite_with_invoker(
+            program.clone(),
+            &generated.session,
+            invoker_ref,
+            None,
+            local_semantic_snapshot.as_ref(),
+            pipeline,
+        )?
+    };
     program = mod_rewrite.program;
 
     // Mod analyzer diagnostics are always collected so a mod `Error`-severity
@@ -354,16 +415,25 @@ fn run_prepare_spine(
                 binding_plan: binding_plan.clone(),
                 composition_snapshot: composition_snapshot.clone(),
             };
-            let executable_snapshot = super::session::cached_semantic_snapshot(&session_fingerprint)
-                .map(|snap| snap.with_typed_resolution(resolution_fingerprint, types_fingerprint))
-                .unwrap_or_else(|| {
-                    SemanticSnapshot::from_diagnostics(&[], syntax_generation_id, "executable")
-                        .with_composition(&composition_snapshot)
-                        .with_typed_resolution(resolution_fingerprint, types_fingerprint)
-                });
-            let stored = store_executable_and_snapshot(&session_fingerprint, Some(typed_result), executable_snapshot)
-                .ok_or_else(|| anyhow::anyhow!("entry session missing for executable cache store"))?;
-            Some(stored)
+            let executable_snapshot = (if use_session_cache {
+                super::session::cached_semantic_snapshot(&session_fingerprint)
+            } else {
+                local_semantic_snapshot.clone()
+            })
+            .map(|snap| snap.with_typed_resolution(resolution_fingerprint, types_fingerprint))
+            .unwrap_or_else(|| {
+                SemanticSnapshot::from_diagnostics(&[], syntax_generation_id, "executable")
+                    .with_composition(&composition_snapshot)
+                    .with_typed_resolution(resolution_fingerprint, types_fingerprint)
+            });
+            if use_session_cache {
+                let stored =
+                    store_executable_and_snapshot(&session_fingerprint, Some(typed_result), executable_snapshot)
+                        .ok_or_else(|| anyhow::anyhow!("entry session missing for executable cache store"))?;
+                Some(stored)
+            } else {
+                Some(Arc::new(typed_result))
+            }
         }
         Err(error) if collect_diagnostics => {
             collected_diagnostics.extend(semantic_facts_errors_to_diagnostics(
@@ -486,7 +556,10 @@ fn typed_fingerprint_types(typed: &crate::types::TypeResult) -> u64 {
 mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use super::{PrepareOptions, collect_analyzer_diagnostics, prepare_compilation, prepare_compilation_diagnostics};
+    use super::{
+        PrepareOptions, collect_analyzer_diagnostics, prepare_compilation, prepare_compilation_diagnostics,
+        prepare_compilation_diagnostics_isolated,
+    };
     use crate::analysis::diagnostics::Severity;
     use crate::mod_host::{
         AnalyzerDiagnostic, AnalyzerSeverity, ContractInvoker, ContractRegistration, ModHostAnalyzeResult,
@@ -574,6 +647,53 @@ mod tests {
         assert_eq!(actual, expected);
         assert!(!diags.is_empty(), "prepare-spine diagnostics must surface without DocumentAnalysisSnapshot");
 
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn isolated_diagnostics_do_not_read_or_replace_entry_session_assembly() {
+        crate::services::invalidate_entry_sessions();
+        let test_id = TEST_ID.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("beskid_prepare_isolated_diags_{test_id}"));
+        std::fs::create_dir_all(&root).expect("test source root");
+        let entry_path = root.join("Main.bd");
+        let first_source = "i32 Main() { return 1; }";
+        std::fs::write(&entry_path, first_source).expect("entry source");
+        let plan = synthetic_compile_plan_for_source(&entry_path);
+        let first = resolved_input_from_plan(entry_path.clone(), first_source.to_string(), plan.clone(), None, None);
+        prepare_compilation(&first, PrepareOptions::default(), None).expect("seed cached prepare");
+
+        let second_source = "i32 Main() { return MissingNew; }";
+        let assembly_options =
+            crate::projects::assembly_options_for_prepare(&plan, FrontEndOptions::default().assembly_discovery);
+        let second_assembly =
+            crate::projects::assemble_program(&plan, None, &entry_path, Some(second_source), &assembly_options, None)
+                .expect("second assembly");
+        let second = resolved_input_from_plan(
+            entry_path.clone(),
+            second_source.to_string(),
+            plan.clone(),
+            None,
+            Some(second_assembly),
+        );
+        let (prepared, diagnostics, _) = prepare_compilation_diagnostics_isolated(
+            &second,
+            PrepareOptions {
+                front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
+                ..Default::default()
+            },
+            None,
+        )
+        .expect("isolated diagnostics");
+
+        assert_eq!(prepared.assembly.entry_unit().source, second_source);
+        assert!(!diagnostics.is_empty(), "second assembly should diagnose its unresolved name");
+        let fingerprint = crate::services::SessionFingerprint::for_entry(&plan, &entry_path);
+        let cached = crate::services::entry_session::cached_compilation_session(&fingerprint)
+            .expect("seeded entry session remains cached");
+        assert_eq!(cached.assembly.entry_unit().source, first_source);
+
+        crate::services::invalidate_entry_sessions();
         let _ = std::fs::remove_dir_all(root);
     }
 

@@ -120,7 +120,7 @@ mod tests {
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
             bsol_semantic_token_candidates: Vec::new(),
-            syntax_completion: Some(SyntaxCompletion { anchor }),
+            syntax_completion: Some(SyntaxCompletion { entry_anchor: Some(anchor), dependency_surface: Arc::from([]) }),
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),

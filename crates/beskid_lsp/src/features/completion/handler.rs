@@ -1,13 +1,19 @@
-use beskid_queries::{BeskidDatabase, CompletionContext, completion_candidates};
+use beskid_queries::{CompletionContext, completion_candidates};
 use tower_lsp_server::ls_types::{CompletionItem, CompletionResponse, CompletionTextEdit, TextEdit, Uri};
 
 use crate::features::project_manifest::api as project_manifest;
 use crate::manifest_uri::is_standalone_bsol_uri;
 use crate::position::offset_range_to_lsp;
+use crate::session::imports::RecoverableCompletionSyntax;
 use crate::session::store::Document;
 
 /// Completion items at `offset`, including manifest-aware suggestions for `.bproj`/`.bws` buffers.
-pub fn handle_completion(db: &BeskidDatabase, uri: &Uri, doc: &Document, offset: usize) -> CompletionResponse {
+pub fn handle_completion(
+    db: &beskid_queries::BeskidDatabase,
+    uri: &Uri,
+    doc: &Document,
+    offset: usize,
+) -> CompletionResponse {
     if is_standalone_bsol_uri(uri) {
         return CompletionResponse::Array(crate::standalone_bsol::completion_items(&doc.text, offset));
     }
@@ -34,17 +40,48 @@ pub fn handle_completion(db: &BeskidDatabase, uri: &Uri, doc: &Document, offset:
     }
 
     let context = completion_context(&doc.text, offset);
-    let mut items: Vec<CompletionItem> = doc
-        .syntax_completion
-        .and_then(|completion| {
-            context.and_then(|context| {
-                completion_candidates(db, completion.anchor, context)
-                    .ok()
-                    .flatten()
-                    .map(|candidates| (context, candidates))
-            })
+    let syntax_candidates = doc.syntax_completion.as_ref().and_then(|completion| {
+        context.map(|context| {
+            let current = completion
+                .entry_anchor
+                .and_then(|anchor| completion_candidates(db, anchor, context).ok().flatten())
+                .map(|candidates| candidates.to_vec())
+                .unwrap_or_default();
+            if !current.is_empty() {
+                return current;
+            }
+            let before = doc.text[..context.replacement_start].trim_end();
+            let Some(before_dot) = before.strip_suffix('.') else {
+                return current;
+            };
+            let receiver =
+                before_dot.rsplit(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_').next().unwrap_or_default();
+            let completion_prefix = &doc.text[context.replacement_start..context.replacement_end];
+            completion
+                .dependency_surface
+                .iter()
+                .find(|surface| {
+                    surface.receiver.as_ref() == receiver
+                        && recoverable_imported_member_access(&doc.text, context, receiver, &surface.import_path)
+                })
+                .map(|surface| {
+                    surface
+                        .candidates
+                        .iter()
+                        .filter(|candidate| candidate.label.starts_with(completion_prefix))
+                        .cloned()
+                        .map(|mut candidate| {
+                            candidate.replacement_start = context.replacement_start;
+                            candidate.replacement_end = context.replacement_end;
+                            candidate
+                        })
+                        .collect()
+                })
+                .unwrap_or(current)
         })
-        .map(|(_context, candidates)| {
+    });
+    let mut items: Vec<CompletionItem> = syntax_candidates
+        .map(|candidates| {
             candidates
                 .iter()
                 .filter(|candidate| prefix.is_empty() || candidate.label.to_lowercase().starts_with(prefix.as_str()))
@@ -66,6 +103,27 @@ pub fn handle_completion(db: &BeskidDatabase, uri: &Uri, doc: &Document, offset:
     items.dedup_by(|left, right| left.label == right.label && left.kind == right.kind);
     items.truncate(200);
     CompletionResponse::Array(items)
+}
+
+fn recoverable_imported_member_access(
+    text: &str,
+    context: CompletionContext,
+    receiver: &str,
+    import_path: &[std::sync::Arc<str>],
+) -> bool {
+    if receiver.is_empty() {
+        return false;
+    }
+    let Some(receiver_start) = context.replacement_start.checked_sub(receiver.len() + 1) else {
+        return false;
+    };
+    if text.get(receiver_start..context.replacement_start) != Some(&format!("{receiver}.")) {
+        return false;
+    }
+    let Some(syntax) = RecoverableCompletionSyntax::parse(text) else {
+        return false;
+    };
+    syntax.imports(receiver, import_path) && syntax.contains_member_access(receiver_start, context.replacement_end)
 }
 
 fn completion_context(text: &str, offset: usize) -> Option<CompletionContext> {
@@ -122,8 +180,27 @@ mod tests {
     };
     use tower_lsp_server::ls_types::Uri;
 
-    use super::handle_completion;
+    use super::{completion_context, handle_completion, recoverable_imported_member_access};
     use crate::session::store::{Document, SyntaxCompletion};
+
+    #[test]
+    fn fallback_member_completion_requires_a_current_imported_code_path() {
+        let code = "use Lib.Tools;\ni32 Main() { return Tools.Hel; }";
+        let code_offset = code.find("Hel").expect("code member") + 3;
+        let code_context = completion_context(code, code_offset).expect("code context");
+        let tools_path = [std::sync::Arc::from("Lib"), std::sync::Arc::from("Tools")];
+        assert!(recoverable_imported_member_access(code, code_context, "Tools", &tools_path));
+
+        let missing_import = "i32 Main() { return Tools.Hel; }";
+        let missing_offset = missing_import.find("Hel").expect("missing-import member") + 3;
+        let missing_context = completion_context(missing_import, missing_offset).expect("missing-import context");
+        assert!(!recoverable_imported_member_access(missing_import, missing_context, "Tools", &tools_path));
+
+        let comment = "use Lib.Tools;\ni32 Main() { // Tools.Hel\n return 0; }";
+        let comment_offset = comment.find("Hel").expect("comment member") + 3;
+        let comment_context = completion_context(comment, comment_offset).expect("comment context");
+        assert!(!recoverable_imported_member_access(comment, comment_context, "Tools", &tools_path));
+    }
 
     #[test]
     fn syntax_completion_works_without_legacy_analysis() {
@@ -153,7 +230,7 @@ mod tests {
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
             bsol_semantic_token_candidates: Vec::new(),
-            syntax_completion: Some(SyntaxCompletion { anchor }),
+            syntax_completion: Some(SyntaxCompletion { entry_anchor: Some(anchor), dependency_surface: Arc::from([]) }),
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),
@@ -184,10 +261,12 @@ mod tests {
             syntax_diagnostics: Vec::new(),
             syntax_fixes: Vec::new(),
         };
-        let db = BeskidDatabase::default();
-
-        let response =
-            handle_completion(&db, &Uri::from_str("file:///standalone/schema.bsol").expect("uri"), &doc, source.len());
+        let response = handle_completion(
+            &BeskidDatabase::default(),
+            &Uri::from_str("file:///standalone/schema.bsol").expect("uri"),
+            &doc,
+            source.len(),
+        );
 
         let tower_lsp_server::ls_types::CompletionResponse::Array(items) = response else {
             panic!("expected completion array");
@@ -204,7 +283,7 @@ mod tests {
         let main_path = root.join("Main.bd");
         let tools_path = root.join("Lib/Tools.bd");
         let main_source = "use Lib.Tools;\ni32 Main() { return Tools.Hel; }";
-        let tools_source = "i32 Helper() { return 1; }";
+        let tools_source = "pub i32 Helper() { return 1; } i32 Hidden() { return 2; }";
         let main_program =
             expand_program(parse_program(main_source).expect("main parses"), DEFAULT_MAX_MACRO_EXPANSION_DEPTH);
         let tools_program =
@@ -252,6 +331,18 @@ mod tests {
             generation,
             node: index.ids_of_kind(NodeKind::Program).next().expect("program node"),
         };
+        let surface = beskid_queries::completion_dependency_surface(&db, anchor)
+            .expect("dependency surface query")
+            .expect("registered dependency surface");
+        assert!(
+            surface.iter().any(|member| member.receiver.as_ref() == "Tools"
+                && member.candidates.iter().any(|item| item.label.as_ref() == "Helper")),
+            "imported members must be capturable as owned completion data: {surface:#?}"
+        );
+        assert!(
+            surface.iter().all(|member| member.candidates.iter().all(|item| item.label.as_ref() != "Hidden")),
+            "private imported members must not enter the completion surface: {surface:#?}"
+        );
         let doc = Document {
             version: 1,
             text: main_source.to_string(),
@@ -259,7 +350,7 @@ mod tests {
             syntax_hovers: Vec::new(),
             syntax_symbols: Vec::new(),
             bsol_semantic_token_candidates: Vec::new(),
-            syntax_completion: Some(SyntaxCompletion { anchor }),
+            syntax_completion: Some(SyntaxCompletion { entry_anchor: Some(anchor), dependency_surface: Arc::from([]) }),
             syntax_inlay_hints: Vec::new(),
             syntax_documentation: Vec::new(),
             syntax_diagnostics: Vec::new(),

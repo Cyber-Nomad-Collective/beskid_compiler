@@ -32,13 +32,13 @@ impl BeskidDatabase {
         })?;
         let source_fingerprint = Arc::<str>::from(beskid_artifacts::content_fingerprint(&source));
         if let Some(input) = self.syntax_unit(unit) {
-            self.validate_existing_registration(input, project, generation, &source_fingerprint)?;
+            self.validate_existing_registration(input, project, generation, &source_fingerprint, false)?;
             if input.source_fingerprint(self) == &source_fingerprint {
                 return Ok(input);
             }
         }
         let program = self.parse_and_expand(unit, &source)?;
-        self.register_expanded_syntax(project, unit, generation, source_fingerprint, Arc::new(program))
+        self.register_expanded_syntax(project, unit, generation, source_fingerprint, Arc::new(program), false)
     }
 
     /// Register an already expanded source unit without reparsing away mod rewrites.
@@ -53,14 +53,16 @@ impl BeskidDatabase {
         let source_fingerprint = Arc::<str>::from(beskid_artifacts::content_fingerprint(&source));
         let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&expanded_program)?);
         if let Some(input) = self.syntax_unit(unit) {
-            self.validate_existing_registration(input, project, generation, &source_fingerprint)?;
-            if input.source_fingerprint(self) == &source_fingerprint
+            self.validate_existing_registration(input, project, generation, &source_fingerprint, true)?;
+            if input.generation(self) == generation
+                && input.source_fingerprint(self) == &source_fingerprint
                 && input.revision(self).tree_fingerprint == tree_fingerprint
             {
                 return Ok(input);
             }
         }
-        let input = self.register_expanded_syntax(project, unit, generation, source_fingerprint, expanded_program)?;
+        let input =
+            self.register_expanded_syntax(project, unit, generation, source_fingerprint, expanded_program, true)?;
         self.ensure_file_text(unit.path(self).clone(), source);
         Ok(input)
     }
@@ -75,13 +77,14 @@ impl BeskidDatabase {
     ) -> Result<SyntaxUnitInput, SemanticError> {
         let source_fingerprint = Arc::<str>::from(beskid_artifacts::content_fingerprint(&source));
         if let Some(input) = self.syntax_unit(unit) {
-            self.validate_existing_registration(input, project, generation, &source_fingerprint)?;
+            self.validate_existing_registration(input, project, generation, &source_fingerprint, false)?;
             if input.source_fingerprint(self) == &source_fingerprint {
                 return Ok(input);
             }
         }
         let program = self.parse_and_expand(unit, &source)?;
-        let input = self.register_expanded_syntax(project, unit, generation, source_fingerprint, Arc::new(program))?;
+        let input =
+            self.register_expanded_syntax(project, unit, generation, source_fingerprint, Arc::new(program), false)?;
         self.ensure_file_text(unit.path(self).clone(), source);
         Ok(input)
     }
@@ -93,25 +96,42 @@ impl BeskidDatabase {
         generation: beskid_analysis::syntax::SyntaxGenerationId,
         source_fingerprint: Arc<str>,
         expanded_program: Arc<beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>>,
+        allow_unchanged_relabel: bool,
     ) -> Result<SyntaxUnitInput, SemanticError> {
         let tree_fingerprint = Arc::<str>::from(expanded_syntax_fingerprint(&expanded_program)?);
         let registry = Arc::clone(&self.syntax_unit_registry);
         let mut registry = registry.lock().expect("syntax unit registry");
         if let Some(input) = registry.get(&unit).copied() {
-            self.validate_existing_registration(input, project, generation, &source_fingerprint)?;
+            self.validate_existing_registration(
+                input,
+                project,
+                generation,
+                &source_fingerprint,
+                allow_unchanged_relabel,
+            )?;
             let current = input.revision(self);
-            if current.tree_fingerprint_history.iter().any(|fingerprint| fingerprint == &tree_fingerprint) {
+            let source_changed = current.source_fingerprint != source_fingerprint;
+            if source_changed
+                && current.tree_fingerprint_history.iter().any(|fingerprint| fingerprint == &tree_fingerprint)
+            {
                 return Err(SemanticError::new(
                     "expanded syntax cannot reuse a tree fingerprint from an existing generation",
                 ));
+            }
+            if generation == input.generation(self) {
+                return Err(SemanticError::new("one syntax generation cannot describe multiple expanded trees"));
             }
             let syntax_index =
                 Arc::new(beskid_analysis::syntax_query::SyntaxIndex::from_program(&expanded_program, generation));
             self.syntax_index_build_count.fetch_add(1, Ordering::Relaxed);
             let mut source_fingerprint_history = current.source_fingerprint_history.to_vec();
-            source_fingerprint_history.push(Arc::clone(&source_fingerprint));
+            if source_changed {
+                source_fingerprint_history.push(Arc::clone(&source_fingerprint));
+            }
             let mut tree_fingerprint_history = current.tree_fingerprint_history.to_vec();
-            tree_fingerprint_history.push(Arc::clone(&tree_fingerprint));
+            if current.tree_fingerprint != tree_fingerprint {
+                tree_fingerprint_history.push(Arc::clone(&tree_fingerprint));
+            }
             input.set_revision(self).to(Arc::new(SyntaxUnitRevision {
                 generation,
                 expanded_program,
@@ -150,6 +170,7 @@ impl BeskidDatabase {
         project: ProjectSession,
         generation: beskid_analysis::syntax::SyntaxGenerationId,
         source_fingerprint: &Arc<str>,
+        allow_unchanged_relabel: bool,
     ) -> Result<(), SemanticError> {
         if input.project(self) != project {
             return Err(SemanticError::new("a source unit cannot be reassigned to another project session"));
@@ -171,7 +192,7 @@ impl BeskidDatabase {
         {
             return Err(SemanticError::new("source syntax cannot resurrect a fingerprint from an earlier generation"));
         }
-        if !source_changed && generation != current_generation {
+        if !allow_unchanged_relabel && !source_changed && generation != current_generation {
             return Err(SemanticError::new("unchanged syntax cannot be relabeled with a different generation"));
         }
         Ok(())

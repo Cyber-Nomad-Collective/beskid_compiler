@@ -30,6 +30,7 @@ mod validate;
 pub use api::{
     collect_mod_target_fingerprint, extract_mod_host_diagnostics, native_invoker_for_plan, run_analyze_rewrite,
     run_analyze_rewrite_after_composition, run_analyze_rewrite_with_invoker, run_through_generate,
+    run_through_generate_without_materializing_outputs,
 };
 pub use collect::{capture_target_fingerprint, targets_changed};
 pub use context::ModInvocationContext;
