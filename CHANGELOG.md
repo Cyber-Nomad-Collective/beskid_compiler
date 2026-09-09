@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   canonical ABI-v5 manifest and generated runtime contract, allowing exact
   runtime-kit provenance checks to accept the intentional `kernel32` import
   while continuing to reject undeclared dependencies.
+- Complete generated fiber entries through the canonical scheduler state transition,
+  preventing runtime shutdown from rejecting successfully drained spawned lambdas
+  whose terminal state had been written with a duplicated raw enum discriminant.
 - Keep the extern frontend regression aligned with parse recovery: unsupported
   `ref` parameter syntax remains rejected before codegen without coupling the
   test to an obsolete recovered module-path diagnostic.

@@ -6,7 +6,7 @@ use beskid_queries::{
     spawn_entry_validation,
 };
 use cranelift_codegen::ir::{
-    AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, Type, condcodes::IntCC, types,
+    AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, Type, types,
 };
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::verify_function;
@@ -341,6 +341,8 @@ fn collect_spawn_nodes(
 
 pub(super) fn emit_scheduler_fiber_entry(
     isa: &dyn TargetIsa,
+    scheduler_current_symbol: &str,
+    fiber_done_symbol: &str,
     scheduler_context_symbol: &str,
     scheduler_set_current_symbol: &str,
     context_switch_symbol: &str,
@@ -365,23 +367,11 @@ pub(super) fn emit_scheduler_fiber_entry(
         let body_signature = builder.import_signature(body_signature);
         let body_call = builder.ins().call_indirect(body_signature, entry, &[argument]);
         let result = builder.inst_results(body_call)[0];
-        let state = builder.ins().load(pointer, cranelift_codegen::ir::MemFlags::trusted(), fiber, 0);
-        let done = builder.ins().iconst(pointer, 3);
-        let overflow_observed = builder.ins().icmp(IntCC::Equal, state, done);
-        let publish_normal = builder.create_block();
-        let resume_scheduler = builder.create_block();
-        builder.ins().brif(overflow_observed, resume_scheduler, &[], publish_normal, &[]);
-        builder.seal_block(publish_normal);
-
-        builder.switch_to_block(publish_normal);
-        builder.ins().store(cranelift_codegen::ir::MemFlags::trusted(), result, fiber, 56);
-        let ok = builder.ins().iconst(pointer, 0);
-        builder.ins().store(cranelift_codegen::ir::MemFlags::trusted(), done, fiber, 0);
-        builder.ins().store(cranelift_codegen::ir::MemFlags::trusted(), ok, fiber, 48);
-        builder.ins().jump(resume_scheduler, &[]);
-        builder.seal_block(resume_scheduler);
-
-        builder.switch_to_block(resume_scheduler);
+        let current = import_local(&mut builder, scheduler_current_symbol, &[], Some(pointer));
+        let current_call = builder.ins().call(current, &[]);
+        let index = builder.inst_results(current_call)[0];
+        let fiber_done = import_local(&mut builder, fiber_done_symbol, &[pointer, types::I64], None);
+        builder.ins().call(fiber_done, &[index, result]);
         let none = builder.ins().iconst(pointer, 0xFFFF);
         let set_current = import_local(&mut builder, scheduler_set_current_symbol, &[pointer], None);
         builder.ins().call(set_current, &[none]);

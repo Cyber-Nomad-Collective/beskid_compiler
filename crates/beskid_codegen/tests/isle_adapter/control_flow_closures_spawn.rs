@@ -408,8 +408,14 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
             selected_keys.push(key);
         }
     }
-    let scheduler_entry_names =
-        ["SchedulerContext", "SchedulerSetCurrentFiber", "ContextSwitch", "SchedulerCurrentFiber", "FiberRecord"];
+    let scheduler_entry_names = [
+        "SchedulerContext",
+        "SchedulerSetCurrentFiber",
+        "ContextSwitch",
+        "SchedulerCurrentFiber",
+        "FiberRecord",
+        "FiberDone",
+    ];
     if selected_keys.iter().copied().any(|key| {
         item_name(input.database(), key)
             .ok()

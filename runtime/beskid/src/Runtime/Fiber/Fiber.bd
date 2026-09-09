@@ -22,7 +22,7 @@ pub bool FiberCancel(i64 fiberId, i64 reason) {
     if !FiberHandleValid(handle) { return false; }
     word index = FiberHandleIndex(handle);
     word state = FiberState(index);
-    if state == FiberState::Done || state == FiberState::Cancelled {
+    if state == FIBER_STATE_DONE || state == FIBER_STATE_CANCELLED {
         return false;
     }
     pointer fib = FiberRecord(index);

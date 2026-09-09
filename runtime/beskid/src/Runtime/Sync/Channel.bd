@@ -271,7 +271,7 @@ pub i64 ChannelPark(pointer ch, word waiterOffset) {
     pointer fiber = FiberRecord(index);
     if raw_byte_load(pointer_add(fiber, 41)) != 0 { return CHANNEL_STATUS_CANCELLED; }
     raw_word_store(pointer_add(ch, waiterOffset), raw_word_load(pointer_add(ch, waiterOffset)) | (word(1) << index));
-    FiberSetState(index, FiberState::Parked);
+    FiberSetState(index, FIBER_STATE_PARKED);
     SaveFiberLocalState(index);
     SchedulerSetCurrentFiber(FIBER_NONE);
     ContextSwitch(NativePointer(raw_word_load(pointer_add(fiber, 104))), SchedulerContext());
