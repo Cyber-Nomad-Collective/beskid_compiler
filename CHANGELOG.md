@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Emit standard `property` semantic tokens for BSOL assignment and inline-map
+  keys while retaining `namespace` tokens for block kinds, keeping VS Code and
+  Zed semantic highlighting aligned with the shared tree-sitter grammar.
 - Keep the `just replace` runtime-kit staging paths bound to Just's resolved
   workspace root instead of referencing an undefined shell variable after a
   successful release build.

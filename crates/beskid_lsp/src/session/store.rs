@@ -76,7 +76,7 @@ pub struct BsolSemanticTokenCandidate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BsolSemanticTokenKind {
     Namespace,
-    Variable,
+    Property,
 }
 
 /// One diagnostic proven for the current buffer revision (never an analysis/HIR snapshot).
