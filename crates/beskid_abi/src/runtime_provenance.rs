@@ -19,8 +19,9 @@ use crate::runtime_source::canonical_runtime_source_hash;
 /// initial-exec TLS would make the runtime require unavailable static TLS.
 /// Keep this list exact so the shared-artifact audit continues to reject Rust runtime linkage and
 /// other undeclared imports.
-const LINUX_ELF_SHARED_LOADER_IMPORTS: &[&str] =
-    &["_ITM_deregisterTMCloneTable", "_ITM_registerTMCloneTable", "__cxa_finalize", "__gmon_start__", "__tls_get_addr"];
+const LINUX_ELF_SHARED_TOOLCHAIN_IMPORTS: &[&str] =
+    &["_ITM_deregisterTMCloneTable", "_ITM_registerTMCloneTable", "__cxa_finalize", "__gmon_start__"];
+const LINUX_ELF_DYNAMIC_TLS_IMPORTS: &[&str] = &["__tls_get_addr"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,11 +94,39 @@ impl RuntimeProvenanceAudit {
     ///
     /// The accepted Linux imports are emitted by the dynamic-loader/toolchain boundary.
     pub fn verify_shared(&self, symbols: &SymbolList) -> Result<(), SymbolListError> {
-        let additional_imports = match self.target.as_str() {
-            "x86_64-unknown-linux-gnu" => LINUX_ELF_SHARED_LOADER_IMPORTS,
-            _ => &[],
-        };
-        self.verify_with_additional_imports(symbols, additional_imports)
+        let mut additional_imports = shared_toolchain_imports(&self.target).to_vec();
+        if self.target == "x86_64-unknown-linux-gnu" {
+            additional_imports.extend_from_slice(LINUX_ELF_DYNAMIC_TLS_IMPORTS);
+        }
+        self.verify_with_additional_imports(symbols, &additional_imports)
+    }
+
+    /// Verify imports on an otherwise exact native artifact.
+    ///
+    /// Shared ELF images gain a fixed set of startup imports from the C linker even when their
+    /// input object has no imports. This narrow policy deliberately excludes the runtime's libc
+    /// and dynamic-TLS dependencies, so a context-only library cannot acquire broader runtime or
+    /// application authority.
+    pub fn verify_toolchain_imports(&self, symbols: &SymbolList, shared: bool) -> Result<(), SymbolListError> {
+        if symbols.target != self.target {
+            return Err(SymbolListError::TargetMismatch {
+                expected: self.target.clone(),
+                actual: symbols.target.clone(),
+            });
+        }
+        let allowed_imports = if shared { shared_toolchain_imports(&self.target) } else { &[] };
+        RuntimeAuditMetadata {
+            allowed_imports: allowed_imports.iter().map(|symbol| (*symbol).into()).collect(),
+            allowed_exports: Vec::new(),
+            loader_required_exports: Vec::new(),
+            forbidden_rust_symbols: self.forbidden_symbol_families.clone(),
+            object_format: target_object_format(&self.target)?,
+            symbol_prefix: target_symbol_prefix(&self.target)?,
+            layout_hash: String::new(),
+            runtime_source_hash: String::new(),
+        }
+        .audit_linked_runtime_symbol_tables(&[], std::iter::empty(), symbols.undefined.iter().map(String::as_str))
+        .map_err(SymbolListError::Policy)
     }
 
     /// Verify a host platform static archive that still contains `platform_tls.o`.
@@ -144,6 +173,13 @@ impl RuntimeProvenanceAudit {
             symbols.undefined.iter().map(String::as_str),
         )
         .map_err(SymbolListError::Policy)
+    }
+}
+
+fn shared_toolchain_imports(target: &str) -> &'static [&'static str] {
+    match target {
+        "x86_64-unknown-linux-gnu" => LINUX_ELF_SHARED_TOOLCHAIN_IMPORTS,
+        _ => &[],
     }
 }
 

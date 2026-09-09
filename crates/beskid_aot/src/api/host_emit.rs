@@ -51,7 +51,7 @@ pub fn emit_host_context_library_pair(
         .map_err(|err| AotError::Io { path: output_dir.clone(), message: err.to_string() })?;
     let context_object = compile_context_assembly(&target, &output_dir, name)?;
     let target_triple = target.triple.as_str().to_owned();
-    let context_symbols = AbiManifestV5::canonical_runtime(target)
+    let context_symbols = AbiManifestV5::canonical_runtime(target.clone())
         .assembly_exports
         .into_iter()
         .map(|entry| entry.symbol.as_str().to_owned())
@@ -64,7 +64,7 @@ pub fn emit_host_context_library_pair(
         Some(target_triple),
         context_symbols,
         vec![context_object],
-        ProvenancePolicy::Exact,
+        ProvenancePolicy::Exact(target),
     )
 }
 
@@ -195,31 +195,25 @@ fn emit_library_pair_with_objects(
 }
 
 enum ProvenancePolicy {
-    Exact,
+    Exact(TargetMetadata),
     CanonicalRuntime(TargetMetadata),
 }
 
 impl ProvenancePolicy {
     fn symbol_prefix(&self) -> &str {
         match self {
-            Self::Exact => {
-                if cfg!(target_os = "macos") {
-                    "_"
-                } else {
-                    ""
-                }
-            }
+            Self::Exact(target) => &target.symbol_prefix,
             Self::CanonicalRuntime(target) => &target.symbol_prefix,
         }
     }
 
     fn verify(&self, required_symbols: &[String], inventory: &NativeSymbolInventory, shared: bool) -> AotResult<()> {
         match self {
-            Self::Exact => {
+            Self::Exact(target) => {
                 let mut required = required_symbols.to_vec();
                 required.sort();
                 required.dedup();
-                if inventory.defined != required || !inventory.imported.is_empty() {
+                if inventory.defined != required {
                     return Err(AotError::ObjectModule {
                         message: format!(
                             "runtime provenance mismatch for {}: required definitions {required:?}, actual definitions {:?}, actual imports {:?}",
@@ -229,7 +223,18 @@ impl ProvenancePolicy {
                         ),
                     });
                 }
-                Ok(())
+                let audit =
+                    RuntimeProvenanceAudit::canonical(target.clone()).map_err(|error| AotError::ObjectModule {
+                        message: format!("cannot construct exact native provenance policy: {error}"),
+                    })?;
+                let symbols = SymbolList {
+                    target: target.triple.as_str().to_owned(),
+                    defined: Vec::new(),
+                    undefined: inventory.imported.clone(),
+                };
+                audit.verify_toolchain_imports(&symbols, shared).map_err(|error| AotError::ObjectModule {
+                    message: format!("runtime provenance mismatch for {}: {error}", inventory.artifact.display()),
+                })
             }
             Self::CanonicalRuntime(target) => {
                 let audit =

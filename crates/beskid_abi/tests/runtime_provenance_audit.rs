@@ -250,3 +250,26 @@ fn linux_shared_runtime_allows_only_documented_dynamic_loader_imports() {
     let error = darwin_audit.verify_shared(&darwin_symbols).unwrap_err();
     assert!(error.to_string().contains("unexpected"));
 }
+
+#[test]
+fn exact_linux_shared_artifact_allows_only_linker_generated_imports() {
+    let audit = RuntimeProvenanceAudit::canonical(target("x86_64-unknown-linux-gnu")).unwrap();
+    let symbols = SymbolList {
+        target: "x86_64-unknown-linux-gnu".into(),
+        defined: vec!["beskid_arch_v5_context_init".into(), "beskid_arch_v5_context_switch".into()],
+        undefined: ["_ITM_deregisterTMCloneTable", "_ITM_registerTMCloneTable", "__cxa_finalize", "__gmon_start__"]
+            .into_iter()
+            .map(ToString::to_string)
+            .collect(),
+    };
+
+    audit.verify_toolchain_imports(&symbols, true).unwrap();
+
+    let mut application_dependency = symbols.clone();
+    application_dependency.undefined.push("mmap".into());
+    let error = audit.verify_toolchain_imports(&application_dependency, true).unwrap_err();
+    assert!(error.to_string().contains("unexpected"), "unexpected allowlist result: {error}");
+
+    let error = audit.verify_toolchain_imports(&symbols, false).unwrap_err();
+    assert!(error.to_string().contains("unexpected"), "static archives must not inherit ELF shared imports: {error}");
+}
