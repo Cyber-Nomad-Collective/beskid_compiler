@@ -229,22 +229,18 @@ pub fn host_runtime_target() -> Result<TargetMetadata, JitError> {
 #[cfg(all(not(feature = "extern_dlopen"), unix))]
 fn resolve_process_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(String, *const u8)>, String> {
     use std::ffi::{CStr, CString};
-    use std::os::raw::{c_char, c_void};
-
-    const RTLD_DEFAULT: *mut c_void = -2isize as *mut c_void;
-
-    unsafe extern "C" {
-        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
-        fn dlerror() -> *const c_char;
-    }
 
     let mut result = Vec::with_capacity(imports.len());
     for imp in imports {
         let c_sym = CString::new(imp.symbol.as_str()).map_err(|_| format!("bad symbol: {}", imp.symbol))?;
+        // POSIX requires callers to clear the thread-local error before dlsym.
+        // libc also supplies the platform-correct RTLD_DEFAULT value: null on
+        // glibc, but -2 on Darwin.
+        unsafe { libc::dlerror() };
         #[cfg(target_os = "macos")]
-        let mut addr = unsafe { dlsym(RTLD_DEFAULT, c_sym.as_ptr()) };
+        let mut addr = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c_sym.as_ptr()) };
         #[cfg(not(target_os = "macos"))]
-        let addr = unsafe { dlsym(RTLD_DEFAULT, c_sym.as_ptr()) };
+        let addr = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c_sym.as_ptr()) };
         // Cranelift's Mach-O import spelling carries the object-file leading
         // underscore, whereas dlsym expects the C source name.
         #[cfg(target_os = "macos")]
@@ -252,11 +248,17 @@ fn resolve_process_extern_symbols(imports: &[ExternImport]) -> Result<Vec<(Strin
             && let Some(symbol) = imp.symbol.strip_prefix('_')
         {
             let c_symbol = CString::new(symbol).map_err(|_| format!("bad symbol: {symbol}"))?;
-            addr = unsafe { dlsym(RTLD_DEFAULT, c_symbol.as_ptr()) };
+            unsafe { libc::dlerror() };
+            addr = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c_symbol.as_ptr()) };
         }
         if addr.is_null() {
-            let err = unsafe { CStr::from_ptr(dlerror()) };
-            return Err(format!("dlsym({}): {}", imp.symbol, err.to_string_lossy()));
+            let error = unsafe { libc::dlerror() };
+            let detail = if error.is_null() {
+                "symbol resolved to a null address".into()
+            } else {
+                unsafe { CStr::from_ptr(error) }.to_string_lossy().into_owned()
+            };
+            return Err(format!("dlsym({}): {detail}", imp.symbol));
         }
         result.push((imp.symbol.clone(), addr as *const u8));
     }
