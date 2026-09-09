@@ -6,8 +6,12 @@
 # Shared target dir across git worktrees (set per-worktree via env if you prefer isolation).
 # Uncomment to share: CARGO_TARGET_DIR is not a config key; document in justfile instead.
 
+[target.'cfg(target_os = "linux")']
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
 [target.aarch64-apple-darwin]
-# rust-lld ships with the toolchain and is the safe darwin linker. Use "mold" only if validated.
+# rust-lld ships with the toolchain and is the supported Darwin linker; mold is Linux-only here.
 linker = "rust-lld"
 
 [target.x86_64-pc-windows-msvc]

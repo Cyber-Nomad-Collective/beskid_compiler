@@ -12,18 +12,25 @@
 # members entirely, so the build is self-contained and fast.
 #
 # SQLx uses runtime-tokio-rustls (pure-Rust TLS via ring); no system OpenSSL
-# or libpq is required at build or runtime. ring needs a C compiler + make,
-# both present in the rust:1-bookworm image.
+# or libpq is required at build or runtime. The workspace Cargo configuration
+# drives Linux links through clang and mold.
 
 # --- Build stage -------------------------------------------------------------
 FROM rust:1-bookworm AS build
 
-# ring (rustls crypto backend) needs a C compiler and make; both ship in the
-# rust:1-bookworm image. No extra -dev packages are required.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends clang mold \
+    && command -v clang \
+    && command -v mold \
+    && mold --version \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV CARGO_TERM_COLOR=always
 # Keep cargo off the network for the source-copy steps; deps come from the
 # registry only during the explicit fetch/build steps.
 WORKDIR /app
+
+COPY .cargo ./.cargo
 
 # Trimmed workspace manifest — only the pckg crates. This is generated in the
 # image so the build never touches the rest of the compiler workspace (which

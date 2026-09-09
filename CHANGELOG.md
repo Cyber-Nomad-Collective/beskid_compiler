@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Route Linux workspace links through `clang` and `mold`, copy that shared
+  Cargo configuration into the pckg server image, and document `cargo-binstall`
+  as the contributor path for Cargo utility installation.
 - License the compiler, tooling, reusable crates, and embedded runtime under
   Apache-2.0 while scoping AGPL-3.0-only to the runnable pckg server package;
   preserve vendored dependency licenses and declare Cargo SPDX metadata.

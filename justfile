@@ -60,7 +60,7 @@ replace:
 
 # Worktree tip: to share one target dir across git worktrees and avoid rebuilding per worktree,
 # run: CARGO_TARGET_DIR=$PWD/target cargo check   (or export it in your shell)
-# sccache (wired in .cargo/config.toml) covers the cache either way.
+# sccache covers the cache either way when enabled through RUSTC_WRAPPER.
 
 # Fast type-check the default member set (excludes the test sink crates).
 check:
@@ -82,9 +82,9 @@ check:
 check-p crate:
     cargo check -p {{crate}}
 
-# Remove build artifacts unused for 30 days (requires `cargo install cargo-sweep`).
+# Remove build artifacts unused for 30 days (requires `cargo binstall cargo-sweep --no-confirm`).
 clean-stale:
-    @command -v cargo-sweep >/dev/null 2>&1 || { echo "Install: cargo install cargo-sweep"; exit 1; }
+    @command -v cargo-sweep >/dev/null 2>&1 || { echo "Install: cargo binstall cargo-sweep --no-confirm"; exit 1; }
     cargo sweep -t 30
 
 # Build beskid_vscode and reinstall into Cursor or VS Code (reload window after).
