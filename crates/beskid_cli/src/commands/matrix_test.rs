@@ -143,59 +143,7 @@ fn supervise_worker(args: TestArgs) -> Result<()> {
     let mut fatal = None;
     loop {
         while let Ok(event) = rx.try_recv() {
-            match event? {
-                WorkerEvent::Prepared {
-                    manifest,
-                    revisions,
-                    expected_targets,
-                    selected_targets: selected,
-                    filtered,
-                } => {
-                    selected_targets = selected;
-                    report = Some(MatrixReport {
-                        manifest,
-                        revisions,
-                        denominator: expected_targets.len(),
-                        expected_targets,
-                        selected: selected_targets.len(),
-                        filtered,
-                        retried: false,
-                        ignored: 0,
-                        skipped: 0,
-                        timed_out: false,
-                        cancelled: false,
-                        worker_exit_cause: None,
-                        release_eligible: false,
-                        targets: Vec::new(),
-                    });
-                }
-                WorkerEvent::TargetStarted { target, phase } => {
-                    eprint!("Running {target}... ");
-                    let _ = std::io::stderr().flush();
-                    active = Some(ActiveTarget { target, phase, last_started_test: None, started: Instant::now() });
-                }
-                WorkerEvent::TestStarted { target, test } => {
-                    if let Some(current) = active.as_mut().filter(|current| current.target == target) {
-                        current.last_started_test = Some(test);
-                    }
-                }
-                WorkerEvent::TargetFinished { report: target_report } => {
-                    if target_report.result == TargetResult::Passed {
-                        eprintln!("PASS ({:.1?})", Duration::from_millis(target_report.duration_ms));
-                    } else {
-                        eprintln!("FAIL: {}", target_report.error.as_deref().unwrap_or("target failed"));
-                    }
-                    if let Some(matrix) = report.as_mut() {
-                        matrix.skipped += target_report.tests.skipped;
-                        matrix.timed_out |= target_report.result == TargetResult::TimedOut;
-                        matrix.targets.push(target_report);
-                    }
-                    active = None;
-                }
-                WorkerEvent::Fatal { phase, error } => {
-                    fatal = Some(format!("worker failed in phase `{phase}`: {error}"))
-                }
-            }
+            apply_worker_event(event?, &mut report, &mut selected_targets, &mut active, &mut fatal)?;
         }
 
         let matrix_expired = matrix_started.elapsed() >= budgets.matrix;
@@ -392,7 +340,7 @@ fn drain_events_until_closed(
 ) -> Result<()> {
     loop {
         match rx.recv() {
-            Ok(event) => apply_worker_event(event?, report, selected_targets, active, fatal),
+            Ok(event) => apply_worker_event(event?, report, selected_targets, active, fatal)?,
             Err(_) => return Ok(()),
         }
     }
@@ -404,7 +352,7 @@ fn apply_worker_event(
     selected_targets: &mut Vec<String>,
     active: &mut Option<ActiveTarget>,
     fatal: &mut Option<String>,
-) {
+) -> Result<()> {
     match event {
         WorkerEvent::Prepared { manifest, revisions, expected_targets, selected_targets: selected, filtered } => {
             *selected_targets = selected;
@@ -426,6 +374,8 @@ fn apply_worker_event(
             });
         }
         WorkerEvent::TargetStarted { target, phase } => {
+            eprint!("Running {target}... ");
+            std::io::stderr().flush()?;
             *active = Some(ActiveTarget { target, phase, last_started_test: None, started: Instant::now() });
         }
         WorkerEvent::TestStarted { target, test } => {
@@ -434,6 +384,11 @@ fn apply_worker_event(
             }
         }
         WorkerEvent::TargetFinished { report: target_report } => {
+            if target_report.result == TargetResult::Passed {
+                eprintln!("PASS ({:.1?})", Duration::from_millis(target_report.duration_ms));
+            } else {
+                eprintln!("FAIL: {}", target_report.error.as_deref().unwrap_or("target failed"));
+            }
             if let Some(matrix) = report.as_mut() {
                 matrix.skipped += target_report.tests.skipped;
                 matrix.timed_out |= target_report.result == TargetResult::TimedOut;
@@ -443,6 +398,7 @@ fn apply_worker_event(
         }
         WorkerEvent::Fatal { phase, error } => *fatal = Some(format!("worker failed in phase `{phase}`: {error}")),
     }
+    Ok(())
 }
 
 fn empty_failed_report(args: &TestArgs) -> MatrixReport {

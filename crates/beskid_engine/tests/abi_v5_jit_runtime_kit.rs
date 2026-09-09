@@ -9,7 +9,7 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use beskid_abi::abi_v5::{AbiManifestV5, TargetMetadata, canonical_source_hash};
+use beskid_abi::abi_v5::{AbiManifestV5, RuntimeAuditMetadata, TargetMetadata, canonical_source_hash};
 use beskid_abi::runtime_kit::{BuildProfile, RuntimeKitBuildRequest, build_runtime_kit};
 use beskid_abi::runtime_source::canonical_runtime_sources;
 use beskid_codegen::{CodegenArtifact, ExternImport, LoweredFunction};
@@ -90,12 +90,9 @@ fn install_kit(
     let shared_library = inputs.join(if cfg!(target_os = "macos") { "runtime.dylib" } else { "runtime.so" });
     let manifest = AbiManifestV5::canonical_runtime(target.clone());
     let symbols = if complete_exports {
-        manifest
-            .exports
-            .iter()
-            .map(|entry| entry.symbol.clone())
-            .chain(manifest.assembly_exports.iter().map(|entry| entry.symbol.as_str().to_owned()))
-            .collect::<Vec<_>>()
+        RuntimeAuditMetadata::for_manifest(&manifest, &source_hash)
+            .expect("derive the exact loader surface for the fake runtime")
+            .loader_required_exports
     } else {
         vec!["beskid_rt_v5_abi_version".to_owned()]
     };
@@ -265,13 +262,11 @@ fn engine_uses_only_the_configured_exact_runtime_kit() {
     let error = engine
         .compile_artifact(&artifact)
         .expect_err("Engine must not satisfy an unapproved reference from process symbols");
-    // The Engine fails closed on the unapproved reference regardless of build profile: release
-    // builds reach the exact-kit validator ("not approved"), while debug builds trip the
-    // `#[cfg(debug_assertions)]` artifact validator first, which rejects the same reference as an
-    // undefined callee. Either way it is rejected rather than satisfied from process symbols.
+    // Exact-kit validation is the single authority in every build profile. It admits manifest
+    // platform imports such as libm while rejecting arbitrary surrounding-process symbols.
     let message = error.to_string();
     assert!(
-        message.contains("not approved") || message.contains("undefined callees"),
+        message.contains("not approved"),
         "Engine must fail closed on an unapproved reference rather than satisfy it from process symbols; got: {message}"
     );
 }

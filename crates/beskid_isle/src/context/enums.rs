@@ -334,6 +334,11 @@ impl IsleContext<'_, '_, '_, '_> {
             self.begin_local_root_scope();
             let _installed = self.install_match_bindings(key, &bindings)?;
             if let Some(result_type) = result_type {
+                if self.facts.semantic_type(arm.body) == Some(beskid_queries::SemanticTypeId::NEVER) {
+                    self.lower_expression_for_effect(arm.body)?;
+                    self.end_local_root_scope_for_current_block()?;
+                    continue;
+                }
                 let value = generated::constructor_lower_expression(self, arm.body)?;
                 if self.builder.func.dfg.value_type(value) != result_type {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });

@@ -72,6 +72,24 @@ fn fresh_native_runtime_kit_executes_a_canonical_entrypoint() {
 }
 
 #[test]
+fn fresh_native_runtime_kit_accepts_one_explicit_argument_handoff() {
+    let prefix = tempfile::tempdir().expect("fresh runtime-kit prefix");
+    build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)
+        .expect("publish canonical native runtime kit");
+    let target = host_runtime_target().expect("supported native host target");
+    let mut engine =
+        Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).expect("load the exact fresh runtime kit");
+
+    engine
+        .initialize_arguments(&["beskid-test".to_owned(), "--explicit".to_owned()])
+        .expect("handoff explicit host-owned arguments");
+    let error = engine
+        .initialize_arguments(&["replacement".to_owned()])
+        .expect_err("argument authority is one-shot per engine");
+    assert!(error.to_string().contains("already initialized"));
+}
+
+#[test]
 fn public_run_entrypoint_uses_the_syntax_isle_path() {
     let prefix = tempfile::tempdir().expect("fresh runtime-kit prefix");
     build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug)

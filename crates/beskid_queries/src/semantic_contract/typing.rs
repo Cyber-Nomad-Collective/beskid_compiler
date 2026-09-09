@@ -293,11 +293,22 @@ pub(super) fn enum_match_result_semantic_type(db: &dyn Db, key: AstNodeKey) -> R
             Some(contextual) => contextual,
             None => node_type(db, arm.body)?.ok_or_else(|| SemanticError::unavailable("node_type"))?,
         };
-        if result.replace(arm_type).is_some_and(|previous| previous != arm_type) {
-            return Err(SemanticError::unavailable("node_type"));
-        }
+        result = join_match_arm_type(result, arm_type)?;
     }
     result.ok_or_else(|| SemanticError::unavailable("node_type"))
+}
+
+fn join_match_arm_type(
+    current: Option<SemanticTypeId>,
+    candidate: SemanticTypeId,
+) -> Result<Option<SemanticTypeId>, SemanticError> {
+    match current {
+        None => Ok(Some(candidate)),
+        Some(previous) if previous == candidate => Ok(Some(previous)),
+        Some(SemanticTypeId::NEVER) => Ok(Some(candidate)),
+        Some(previous) if candidate == SemanticTypeId::NEVER => Ok(Some(previous)),
+        Some(_) => Err(SemanticError::unavailable("node_type")),
+    }
 }
 
 pub(super) fn pattern_binding_semantic_type(
@@ -415,9 +426,10 @@ pub(super) fn semantic_type_for_node(
                 Ok(arm_type) => arm_type,
                 Err(error) => return Some(Err(error)),
             };
-            if result.replace(arm_type).is_some_and(|previous| previous != arm_type) {
-                return Some(Err(SemanticError::unavailable("node_type")));
-            }
+            result = match join_match_arm_type(result, arm_type) {
+                Ok(result) => result,
+                Err(error) => return Some(Err(error)),
+            };
         }
         return result.map(Ok).or_else(|| Some(Err(SemanticError::unavailable("node_type"))));
     }

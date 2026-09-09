@@ -534,7 +534,7 @@ mod tests {
         let source = r#"
             use Sdk.Payload;
 
-            module Nested {
+            mod Nested {
                 unit Consume<Payload>(Payload value) {
                     return;
                 }

@@ -6,6 +6,7 @@ use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
 use beskid_abi::abi_v5::TargetMetadata;
+use beskid_abi::generated::abi_v5_contract::ABI_V5_CORE_ARGS_ENTRY_ADAPTERS;
 use beskid_abi::runtime_kit::{BuildProfile, RuntimeKitMetadata};
 use beskid_abi::runtime_source::resolve_canonical_runtime_kit;
 
@@ -49,6 +50,60 @@ impl JitRuntimeKit {
 
     pub fn symbol_names(&self) -> impl Iterator<Item = &str> {
         self.symbols.iter().map(|(name, _)| name.as_str())
+    }
+
+    /// Copy one explicit argument vector into the selected runtime kit's process-lifetime arena.
+    pub(crate) fn handoff_arguments(&self, target: &TargetMetadata, arguments: &[String]) -> Result<(), String> {
+        let adapter = ABI_V5_CORE_ARGS_ENTRY_ADAPTERS
+            .iter()
+            .find(|adapter| adapter.target == target.triple.as_str())
+            .ok_or_else(|| format!("ABI-v5 has no Core.Args entry adapter for `{}`", target.triple.as_str()))?;
+        let count = i64::try_from(arguments.len()).map_err(|_| "Core.Args count exceeds i64".to_owned())?;
+        let handoff = self._library.symbol(adapter.handoff)?;
+
+        #[cfg(unix)]
+        {
+            if adapter.capture != "utf8_argv" {
+                return Err(format!("Core.Args adapter `{}` is not UTF-8 on this host", adapter.handoff));
+            }
+            let encoded = arguments
+                .iter()
+                .map(|argument| {
+                    CString::new(argument.as_str()).map_err(|_| "Core.Args argument contains an interior NUL".to_owned())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let pointers = encoded.iter().map(|argument| argument.as_ptr()).collect::<Vec<_>>();
+            // SAFETY: the generated adapter selects this signature for Unix targets. The runtime
+            // copies every argument before returning, while `encoded` and `pointers` remain alive.
+            let handoff = unsafe {
+                std::mem::transmute::<*const u8, unsafe extern "C" fn(i64, *const *const std::ffi::c_char)>(handoff)
+            };
+            unsafe { handoff(count, pointers.as_ptr()) };
+        }
+
+        #[cfg(windows)]
+        {
+            if adapter.capture != "utf16_wargv" {
+                return Err(format!("Core.Args adapter `{}` is not UTF-16 on this host", adapter.handoff));
+            }
+            let encoded = arguments
+                .iter()
+                .map(|argument| {
+                    if argument.encode_utf16().any(|unit| unit == 0) {
+                        return Err("Core.Args argument contains an interior NUL".to_owned());
+                    }
+                    Ok(argument.encode_utf16().chain(std::iter::once(0)).collect::<Vec<_>>())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let pointers = encoded.iter().map(|argument| argument.as_ptr()).collect::<Vec<_>>();
+            // SAFETY: the generated adapter selects this signature for Windows. The runtime copies
+            // every NUL-terminated argument before returning while both vectors remain alive.
+            let handoff = unsafe {
+                std::mem::transmute::<*const u8, unsafe extern "C" fn(i64, *const *const u16)>(handoff)
+            };
+            unsafe { handoff(count, pointers.as_ptr()) };
+        }
+        Ok(())
     }
 
     fn loader_required_symbol(&self, name: &str) -> Result<*const u8, String> {

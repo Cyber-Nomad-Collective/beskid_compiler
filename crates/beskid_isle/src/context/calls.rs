@@ -472,7 +472,11 @@ impl IsleContext<'_, '_, '_, '_> {
     pub(super) fn direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
         self.facts.call_signature(key)?.returns.is_empty().then_some(())?;
         let (call, _) = self.import_direct_call(key)?;
-        self.builder.inst_results(call).is_empty().then_some(())
+        self.builder.inst_results(call).is_empty().then_some(())?;
+        if self.facts.semantic_type(key) == Some(beskid_queries::SemanticTypeId::NEVER) {
+            self.builder.ins().trap(TrapCode::unwrap_user(9));
+        }
+        Some(())
     }
 }
 
