@@ -51,6 +51,19 @@ pub(super) fn render_rust(
             )
         })
         .collect::<String>();
+    let source_builtin_rows = manifest
+        .soft_builtins
+        .iter()
+        .filter(|builtin| builtin.adapter_service.is_some())
+        .map(|builtin| {
+            let params =
+                builtin.params.iter().map(|parameter| format!("{:?}", parameter.ty)).collect::<Vec<_>>().join(", ");
+            format!(
+                "    GeneratedSourceBuiltin {{ name: {:?}, symbol: {:?}, params: &[{}], result: {:?} }},\n",
+                builtin.name, builtin.symbol, params, builtin.result,
+            )
+        })
+        .collect::<String>();
     let corelib_service_binding_rows = manifest
         .corelib_services
         .iter()
@@ -97,6 +110,14 @@ pub const ABI_V5_TARGETS: &[GeneratedTarget] = &[\n{target_rows}];\n\
 pub const ABI_V5_ASM_INCLUDES: &[(&str, &str)] = &[\n{asm_rows}];\n\
 /// Process-linked soft builtins declared by the ABI-v5 source manifest.\n\
 pub const ABI_V5_SOFT_BUILTINS: &[crate::BuiltinFnSpec] = &[\n{soft_builtin_rows}];\n\
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n\
+pub struct GeneratedSourceBuiltin {{\n\
+pub name: &'static str,\n\
+pub symbol: &'static str,\n\
+pub params: &'static [&'static str],\n\
+pub result: &'static str,\n\
+}}\n\
+pub const ABI_V5_SOURCE_BUILTINS: &[GeneratedSourceBuiltin] = &[\n{source_builtin_rows}];\n\
 #[derive(Debug, Clone, Copy)]\n\
 pub struct GeneratedCorelibServiceBinding {{\n\
     pub service: &'static str,\n\
@@ -149,9 +170,10 @@ pub const ABI_V5_TRAPS: &[(&str, u8)] = &[\n{trap_rows}];\n",
 fn soft_builtin_param_kind(ty: &str) -> &'static str {
     match ty {
         "pointer" | "string" => "crate::AbiParamKind::Ptr",
-        "usize" | "isize" | "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64" | "f32" | "f64" => {
+        "usize" | "isize" | "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64" | "f32" => {
             "crate::AbiParamKind::I64"
         }
+        "f64" => "crate::AbiParamKind::F64",
         other => panic!("invalid soft builtin parameter type `{other}`"),
     }
 }
@@ -162,7 +184,8 @@ fn soft_builtin_return_kind(ty: &str) -> &'static str {
         "never" => "crate::AbiReturnKind::Never",
         "pointer" | "string" => "crate::AbiReturnKind::Ptr",
         "i32" | "u32" | "i8" | "u8" | "i16" | "u16" => "crate::AbiReturnKind::I32",
-        "usize" | "isize" | "i64" | "u64" | "f32" | "f64" => "crate::AbiReturnKind::I64",
+        "usize" | "isize" | "i64" | "u64" | "f32" => "crate::AbiReturnKind::I64",
+        "f64" => "crate::AbiReturnKind::F64",
         other => panic!("invalid soft builtin result type `{other}`"),
     }
 }

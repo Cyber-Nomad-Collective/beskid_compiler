@@ -33,13 +33,12 @@ use abi::{
     abi_type_tracked, binary_operand_abi_type_tracked, block_may_fall_through, builtin_type_to_semantic,
     call_abi_signature_for_call, call_abi_signature_tracked, call_argument_abi_type_tracked,
     contextual_constant_integer, contextual_integer_literal_abi_type_tracked, control_flow_for_node,
-    control_flow_tracked, corelib_service_abi_signature, dispatch_builtin_abi_signature,
-    exact_assembled_nominal_envelope, generic_abi_type, generic_parameter_reference_name,
-    generic_specialization_instance_for_call, generic_type_name, if_may_fall_through, integer_has_explicit_abi_suffix,
-    integer_literal_fits_abi, integer_literal_text, integer_literal_u64, item_abi_signature_tracked,
-    item_abi_type_from_syntax, item_signature_for_node, item_signature_tracked, signature_from_syntax,
-    statement_may_fall_through, statements_may_fall_through, type_syntax_mentions_generic_parameter,
-    unsuffixed_integer_literal, value_abi_type_tracked,
+    control_flow_tracked, corelib_service_abi_signature, exact_assembled_nominal_envelope, generic_abi_type,
+    generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name, if_may_fall_through,
+    integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text, integer_literal_u64,
+    item_abi_signature_tracked, item_abi_type_from_syntax, item_signature_for_node, item_signature_tracked,
+    manifest_builtin_abi_signature, signature_from_syntax, statement_may_fall_through, statements_may_fall_through,
+    type_syntax_mentions_generic_parameter, unsuffixed_integer_literal, value_abi_type_tracked,
 };
 use bulk::bulk_parameter_tracked;
 use calls::{
@@ -93,10 +92,10 @@ use resolution::{
 };
 use syntax_facts::{
     binary_operator, block_statement_nodes_tracked, child_nodes_tracked, clif_block_body_tracked,
-    direct_callees_for_item, direct_callees_tracked, dispatch_builtin_symbol_tracked, item_body_tracked,
-    item_export_symbol_tracked, item_name_tracked, literal_fact_tracked, node_kind_tracked, node_span_tracked,
-    operator_fact_for_binary, operator_fact_tracked, reachable_items_tracked, test_bool_literal, test_item_tracked,
-    test_statement_nodes_tracked, test_string_literal, unary_operator, with_node,
+    direct_callees_for_item, direct_callees_tracked, item_body_tracked, item_export_symbol_tracked, item_name_tracked,
+    literal_fact_tracked, node_kind_tracked, node_span_tracked, operator_fact_for_binary, operator_fact_tracked,
+    reachable_items_tracked, test_bool_literal, test_item_tracked, test_statement_nodes_tracked, test_string_literal,
+    unary_operator, with_node,
 };
 use typed_arrays::typed_array_allocation_tracked;
 use typing::{
@@ -122,12 +121,13 @@ pub use model::{
     EnumLayoutTemplateArgument, EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumScalarPayloadObjectLayout,
     EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, ExportSymbol, ForIteratorFact, GenericCallInstantiation,
     GenericCallSpecialization, GenericCallTemplate, GenericNominalMethodReceiver, GenericSpecializationInstance,
-    GenericSubstitution, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, MutableLocalAssignment, OperatorFact,
-    PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName,
-    ScalarAbiLayout, SemanticError, SemanticQueryResult, SemanticTypeId, SourceSpan, SourceUnitId, SpawnDiagnostic,
-    SpawnDiagnosticKind, SpawnEntryValidation, SpawnLegality, SpawnTarget, SyntaxUnitInput, SyntaxUnitRevision,
-    TestItem, TryExpressionFact, TypedArrayAllocation, TypedProgram, format_ast_node_key, format_ast_node_site,
-    format_ast_node_trace, format_source_span_range, generic_specialization_identity,
+    GenericSubstitution, IndexedNodeKind, ItemSignature, LiteralFact, LocalSlot, ManifestBuiltin,
+    MutableLocalAssignment, OperatorFact, PrimitiveNumericConversion, RangeForFact, ResolvedItem, ResolvedLocal,
+    RuntimeIntrinsic, RuntimeIntrinsicName, ScalarAbiLayout, SemanticError, SemanticQueryResult, SemanticTypeId,
+    SourceSpan, SourceUnitId, SpawnDiagnostic, SpawnDiagnosticKind, SpawnEntryValidation, SpawnLegality, SpawnTarget,
+    SyntaxUnitInput, SyntaxUnitRevision, TestItem, TryExpressionFact, TypedArrayAllocation, TypedProgram,
+    format_ast_node_key, format_ast_node_site, format_ast_node_trace, format_source_span_range,
+    generic_specialization_identity,
 };
 pub use queries::{
     abi_type, aggregate_field_access, aggregate_layout, aggregate_literal_declaration, array_index_element_abi_type,
@@ -143,4 +143,3 @@ pub use queries::{
     runtime_intrinsic, runtime_intrinsic_name, spawn_entry_validation, spawn_legality, spawn_target, test_item,
     test_statement_nodes, try_expression_fact, typed_array_allocation, value_abi_type,
 };
-pub use syntax_facts::{DispatchBuiltinSymbol, dispatch_builtin_symbol};

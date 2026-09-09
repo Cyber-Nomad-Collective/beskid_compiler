@@ -374,22 +374,38 @@ pub(in crate::semantic_contract) fn binary_operand_abi_type_tracked(
     .transpose()
 }
 
-/// ABI signature for a soft runtime builtin reached as [`CallLowering::Dynamic`].
-///
-/// Only names with a dispatch route receive a signature; this never grants Corelib-service or
-/// canonical-runtime intrinsic authority.
-pub(in crate::semantic_contract) fn dispatch_builtin_abi_signature(
-    db: &dyn Db,
-    key: AstNodeKey,
-) -> Option<ItemSignature> {
-    let symbol = dispatch_builtin_symbol(db, key).ok().flatten()?;
-    let (_, spec) = beskid_analysis::builtins::builtin_specs()
+/// Exact source signature for a publicly callable ABI-v5 manifest builtin.
+pub(in crate::semantic_contract) fn manifest_builtin_abi_signature(
+    builtin: ManifestBuiltin,
+) -> Result<ItemSignature, SemanticError> {
+    let declaration = beskid_abi::generated::abi_v5_contract::ABI_V5_SOURCE_BUILTINS
         .iter()
-        .enumerate()
-        .find(|(_, candidate)| candidate.runtime_symbol == symbol.0)?;
-    let parameters = spec.params.iter().copied().map(builtin_type_to_semantic).collect::<Option<Vec<_>>>()?;
-    let result = builtin_type_to_semantic(spec.returns)?;
-    Some(ItemSignature { parameters: parameters.into(), result })
+        .find(|candidate| candidate.name == builtin.name && candidate.symbol == builtin.symbol)
+        .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+    let parameters = declaration
+        .params
+        .iter()
+        .map(|ty| manifest_type_to_semantic(ty))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+    let result = manifest_type_to_semantic(declaration.result)
+        .ok_or_else(|| SemanticError::unavailable("call_abi_signature"))?;
+    Ok(ItemSignature { parameters: parameters.into(), result })
+}
+
+fn manifest_type_to_semantic(ty: &str) -> Option<SemanticTypeId> {
+    Some(match ty {
+        "string" => SemanticTypeId::STRING,
+        "pointer" => SemanticTypeId::POINTER,
+        "usize" | "isize" => SemanticTypeId::WORD,
+        "i8" | "u8" => SemanticTypeId::U8,
+        "i16" | "u16" | "i32" | "u32" => SemanticTypeId::I32,
+        "i64" | "u64" => SemanticTypeId::I64,
+        "f64" => SemanticTypeId::F64,
+        "void" => SemanticTypeId::UNIT,
+        "never" => SemanticTypeId::NEVER,
+        _ => return None,
+    })
 }
 
 pub(in crate::semantic_contract) fn builtin_type_to_semantic(

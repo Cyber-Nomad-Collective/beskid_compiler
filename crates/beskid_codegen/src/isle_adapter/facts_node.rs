@@ -178,18 +178,12 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if self.callee_bulk_parameter(key).is_some() {
             return Some(CallKind::Bulk);
         }
-        if self.query(dispatch_builtin_symbol(self.db, key)).is_some() {
-            // Manifest-proven builtins use the same exact-symbol importer as Corelib services.
-            // Keeping them on the direct-call path avoids a second dynamic-call emitter while
-            // the Salsa fact still fails closed for unknown or target-drifting symbols.
-            return Some(CallKind::Direct);
-        }
         if self.inline_lambda_call(key).is_some() {
             return Some(CallKind::InlineLambda);
         }
         matches!(
             self.query(call_lowering(self.db, key)),
-            Some(CallLowering::Direct(_) | CallLowering::CorelibService(_))
+            Some(CallLowering::Direct(_) | CallLowering::ManifestBuiltin(_) | CallLowering::CorelibService(_))
         )
         .then_some(CallKind::Direct)
     }
@@ -204,10 +198,6 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
 
     fn try_expression_fact(&self, key: AstNodeKey) -> Option<beskid_queries::TryExpressionFact> {
         self.query(try_expression_fact(self.db, key))
-    }
-
-    fn dispatch_builtin_symbol(&self, key: AstNodeKey) -> Option<&'static str> {
-        self.query(dispatch_builtin_symbol(self.db, key)).map(|symbol| symbol.0)
     }
 
     fn index_target_is_string(&self, key: AstNodeKey) -> bool {
@@ -275,10 +265,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
         if let Some((index, _)) = self.runtime_intrinsic(key) {
             return Some(DirectCallee::runtime_intrinsic(index));
         }
-        if let Some(symbol) = self.dispatch_builtin_symbol(key) {
-            return Some(DirectCallee::corelib_service(symbol));
-        }
         let lowering = self.query(call_lowering(self.db, key))?;
+        if let CallLowering::ManifestBuiltin(builtin) = lowering {
+            return Some(DirectCallee::corelib_service(builtin.symbol));
+        }
         if let CallLowering::CorelibService(service) = lowering {
             self.input.corelib_service_capability()?;
             return Some(DirectCallee::corelib_service(service.symbol));

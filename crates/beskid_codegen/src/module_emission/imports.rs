@@ -133,8 +133,7 @@ pub(super) fn corelib_service_symbols(
 ) -> HashMap<DirectCallee, String> {
     let mut callees = HashSet::new();
     for item in items {
-        collect_corelib_service_callees(input.database(), item.key, &mut callees);
-        collect_dispatch_builtin_callees(input.database(), item.key, &mut callees);
+        collect_manifest_service_callees(input.database(), item.key, &mut callees);
     }
     let mut symbols = HashMap::new();
     for symbol in ALWAYS_AVAILABLE_STRING_SERVICES {
@@ -148,24 +147,21 @@ pub(super) fn corelib_service_symbols(
     symbols
 }
 
-fn collect_dispatch_builtin_callees(db: &dyn beskid_queries::Db, key: AstNodeKey, callees: &mut HashSet<&'static str>) {
-    if let Ok(Some(symbol)) = beskid_queries::dispatch_builtin_symbol(db, key) {
-        callees.insert(symbol.0);
-    }
-    if let Ok(Some(children)) = child_nodes(db, key) {
-        for child in children.iter().copied() {
-            collect_dispatch_builtin_callees(db, child, callees);
+fn collect_manifest_service_callees(db: &dyn beskid_queries::Db, key: AstNodeKey, callees: &mut HashSet<&'static str>) {
+    if let Ok(Some(lowering)) = call_lowering(db, key) {
+        match lowering {
+            CallLowering::ManifestBuiltin(builtin) => {
+                callees.insert(builtin.symbol);
+            }
+            CallLowering::CorelibService(service) => {
+                callees.insert(service.symbol);
+            }
+            CallLowering::Direct(_) | CallLowering::Dynamic | CallLowering::Runtime(_) => {}
         }
     }
-}
-
-fn collect_corelib_service_callees(db: &dyn beskid_queries::Db, key: AstNodeKey, callees: &mut HashSet<&'static str>) {
-    if let Ok(Some(CallLowering::CorelibService(service))) = call_lowering(db, key) {
-        callees.insert(service.symbol);
-    }
     if let Ok(Some(children)) = child_nodes(db, key) {
         for child in children.iter().copied() {
-            collect_corelib_service_callees(db, child, callees);
+            collect_manifest_service_callees(db, child, callees);
         }
     }
 }

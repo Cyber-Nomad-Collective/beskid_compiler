@@ -21,10 +21,10 @@ pub(in crate::semantic_contract) use signatures::{
 pub(in crate::semantic_contract) use specialization::{
     abi_signature_from_syntax, binary_operand_abi_type_tracked, builtin_type_to_semantic,
     call_argument_abi_type_tracked, contextual_constant_integer, corelib_service_abi_signature,
-    dispatch_builtin_abi_signature, exact_assembled_nominal_envelope, generic_abi_type,
-    generic_parameter_reference_name, generic_specialization_instance_for_call, generic_type_name,
-    integer_has_explicit_abi_suffix, integer_literal_fits_abi, integer_literal_text, integer_literal_u64,
-    item_abi_type_from_syntax, type_syntax_mentions_generic_parameter, unsuffixed_integer_literal,
+    exact_assembled_nominal_envelope, generic_abi_type, generic_parameter_reference_name,
+    generic_specialization_instance_for_call, generic_type_name, integer_has_explicit_abi_suffix,
+    integer_literal_fits_abi, integer_literal_text, integer_literal_u64, item_abi_type_from_syntax,
+    manifest_builtin_abi_signature, type_syntax_mentions_generic_parameter, unsuffixed_integer_literal,
 };
 
 pub(in crate::semantic_contract) use statements::statement_abi_type_for_node;

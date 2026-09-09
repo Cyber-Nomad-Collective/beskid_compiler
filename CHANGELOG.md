@@ -21,11 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   families. Restore the CRT-free Windows runtime boundary by removing the
   stale `strlen` platform import that had drifted back into the canonical
   manifest despite having no Windows runtime reference.
-- Resolve soft builtin ABI signatures through the manifest-generated
-  Corelib-service adapter table for every supported target, then reuse that
-  proof for call-expression value types and the existing exact-symbol call
-  importer. This restores `Core.String.Len` without a second dynamic-call
-  emitter or symbol-guessing path.
+- Declare source-callable runtime builtins explicitly in ABI v5, beginning with
+  `__str_len`, and carry that authority through one typed call-lowering fact.
+  Public builtin signatures and symbols now come from generated manifest data;
+  privileged Corelib services remain capability-gated, stale ABI-v4 builtin
+  shapes cannot request imports, and external callees are collected in one
+  traversal. Correct `f64` soft-builtin generation to use floating ABI slots.
 - Keep imported-member completion available while a Beskid expression is
   temporarily incomplete, so partial members such as `Output.Wri` still suggest
   `WriteLine` in LSP editors. One workspace Salsa store now serves per-document
