@@ -76,8 +76,7 @@ pub fn prepare_compilation_with_db(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<PreparedCompilation> {
     trace_query("prepare_compilation_with_db", false);
-    let resolved = enrich_resolved_with_assembly(db, resolved, &options)?;
-    db.ensure_file_text(resolved.source_path.clone(), resolved.source.clone());
+    let resolved = assemble_resolved_input_with_db(db, resolved, &options)?;
     let result = beskid_analysis::services::prepare_compilation(&resolved, options, pipeline)?;
     touch_from_prepare(&resolved);
     emit_salsa_stats(pipeline);
@@ -91,8 +90,7 @@ pub fn prepare_compilation_diagnostics_with_db(
     pipeline: Option<&dyn PipelineObserver>,
 ) -> Result<(PreparedCompilation, Vec<SemanticDiagnostic>, Vec<beskid_analysis::SyntaxFix>)> {
     trace_query("prepare_compilation_diagnostics_with_db", false);
-    let resolved = enrich_resolved_with_assembly(db, resolved, &options)?;
-    db.ensure_file_text(resolved.source_path.clone(), resolved.source.clone());
+    let resolved = assemble_resolved_input_with_db(db, resolved, &options)?;
     let result = beskid_analysis::services::prepare_compilation_diagnostics(&resolved, options, pipeline)?;
     if let Some(fp) = session_fingerprint(&resolved) {
         let _ = semantic_snapshot(db, &fingerprint_key(&fp));
@@ -122,8 +120,7 @@ pub fn entry_resolution_with_db(
     options: &PrepareOptions,
 ) -> Result<SharedResolution> {
     trace_query("entry_resolution_with_db", false);
-    let resolved = enrich_resolved_with_assembly(db, resolved, options)?;
-    db.ensure_file_text(resolved.source_path.clone(), resolved.source.clone());
+    let resolved = assemble_resolved_input_with_db(db, resolved, options)?;
     let assembly =
         resolved.assembly.as_ref().ok_or_else(|| anyhow::anyhow!("entry resolution requires assembled program"))?;
     let resolution = beskid_analysis::services::resolve_entry(
@@ -135,29 +132,35 @@ pub fn entry_resolution_with_db(
     Ok(SharedResolution::from_resolution(resolution))
 }
 
-fn enrich_resolved_with_assembly(
+/// Commit source inputs and derive the Salsa-backed syntax assembly.
+///
+/// Callers may release writer exclusivity after this phase and run downstream
+/// analysis from the owned [`ResolvedInput`] assembly without holding Salsa.
+pub fn assemble_resolved_input_with_db(
     db: &mut BeskidDatabase,
     resolved: &ResolvedInput,
     options: &PrepareOptions,
 ) -> Result<ResolvedInput> {
-    if resolved.assembly.is_some() {
-        return Ok(clone_resolved(resolved));
-    }
-    let Some(plan) = resolved.compile_plan.as_ref() else {
-        return Ok(clone_resolved(resolved));
+    let enriched = if resolved.assembly.is_some() {
+        clone_resolved(resolved)
+    } else if let Some(plan) = resolved.compile_plan.as_ref() {
+        let assembly_options =
+            beskid_analysis::projects::assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
+        let assembly = program_assembly(
+            db,
+            plan,
+            resolved.prepared_workspace.as_ref(),
+            &resolved.source_path,
+            Some(&resolved.source),
+            &assembly_options,
+        )
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
+        resolved.with_assembly(assembly)
+    } else {
+        clone_resolved(resolved)
     };
-    let assembly_options =
-        beskid_analysis::projects::assembly_options_for_prepare(plan, options.front_end.assembly_discovery);
-    let assembly = program_assembly(
-        db,
-        plan,
-        resolved.prepared_workspace.as_ref(),
-        &resolved.source_path,
-        Some(&resolved.source),
-        &assembly_options,
-    )
-    .map_err(|err| anyhow::anyhow!("{err}"))?;
-    Ok(resolved.with_assembly(assembly))
+    db.ensure_file_text(enriched.source_path.clone(), enriched.source.clone());
+    Ok(enriched)
 }
 
 fn clone_resolved(resolved: &ResolvedInput) -> ResolvedInput {

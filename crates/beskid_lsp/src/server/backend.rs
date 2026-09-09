@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,11 +20,10 @@ use crate::features::{
 use crate::logging::{ClientLogFilter, client_log};
 use crate::protocol::request::{snapshot_document, snapshot_lsp_request, snapshot_request};
 use crate::server::init::initialize_result;
-use crate::session::db_access::with_compilation_db;
+use crate::session::db_access::{document_update_gate, parallel_compilation_db, with_compilation_db};
 use crate::session::lifecycle::{
     apply_persistence_config, persistence_config_from_configuration, persistence_config_from_value,
-    publish_diagnostics_for_uri, remove_document, save_snapshot_now, schedule_persistence_snapshot_save,
-    schedule_typed_prepare_rebuild, set_document,
+    publish_diagnostics_for_uri, remove_document, save_snapshot_now, schedule_persistence_snapshot_save, set_document,
 };
 use crate::session::store::State;
 use crate::text_sync::apply_document_changes;
@@ -156,7 +156,6 @@ impl LanguageServer for Backend {
         let doc = params.text_document;
         let _ = set_document(&self.state, doc.uri.clone(), doc.version, doc.text).await;
         self.schedule_publish_diagnostics(doc.uri.clone()).await;
-        schedule_typed_prepare_rebuild(self.state.clone(), doc.uri).await;
         schedule_persistence_snapshot_save(self.state.clone()).await;
     }
 
@@ -175,7 +174,6 @@ impl LanguageServer for Backend {
         };
         if updated {
             self.schedule_publish_diagnostics(uri.clone()).await;
-            schedule_typed_prepare_rebuild(self.state.clone(), uri).await;
             schedule_persistence_snapshot_save(self.state.clone()).await;
         }
     }
@@ -233,15 +231,28 @@ impl LanguageServer for Backend {
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let update_gate = document_update_gate(&self.state, &params.text_document_position.text_document.uri).await;
+        let update_guard = update_gate.lock().await;
         let Some(snapshot) = snapshot_lsp_request(&self.state, params).await else {
             return Ok(Some(CompletionResponse::Array(Vec::new())));
         };
-        Ok(Some(
-            with_compilation_db(&self.state, |db| {
-                completion::handler::handle_completion(db, &snapshot.uri, &snapshot.document, snapshot.offset)
-            })
-            .await,
-        ))
+        let db = parallel_compilation_db(&self.state).await;
+        drop(update_guard);
+        let response = tokio::task::spawn_blocking(move || {
+            salsa::Cancelled::catch(AssertUnwindSafe(|| {
+                completion::handler::handle_completion(&db, &snapshot.uri, &snapshot.document, snapshot.offset)
+            }))
+        })
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "parallel Salsa completion task failed");
+            tower_lsp_server::jsonrpc::Error::internal_error()
+        })?
+        .map_err(|cancelled| {
+            tracing::debug!(%cancelled, "parallel Salsa completion invalidated by a newer input revision");
+            tower_lsp_server::jsonrpc::Error::content_modified()
+        })?;
+        Ok(Some(response))
     }
 
     async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {

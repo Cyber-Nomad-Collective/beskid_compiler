@@ -115,7 +115,10 @@ pub use abi::{
     generic_call_specialization_in_environment, generic_call_specialization_instance, generic_specialization_instance,
 };
 pub use calls::extern_contract_import_for_declaration;
-pub use completion::completion_candidates;
+pub use completion::{
+    completion_candidates, completion_dependency_surface, completion_dependency_surface_for_assembly,
+    completion_dependency_surface_for_program,
+};
 pub use layouts::{
     aggregate_field_access_specialization, aggregate_literal_specialization, array_index_element_specialization,
     empty_array_literal_element_specialization, enum_constructor_specialization, enum_match_specialization,
@@ -126,11 +129,11 @@ pub use model::{
     CastIntent, ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment,
     ClosureEnvironmentAbiShape, ClosureEnvironmentField, ClosureLoweringStatus, ClosurePointerMapRequirement,
     ClosureSignature, CollectionMutationOwner, CollectionOperation, CompletionCandidate, CompletionContext,
-    CompletionKind, ControlFlow, CorelibService, EnumConstructorFact, EnumConstructorSpecialization,
-    EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument, EnumMatchArmFact, EnumMatchBindingFact,
-    EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact, EnumMatchVariantPatternFact,
-    EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact, ExportSymbol,
-    ForIteratorFact, GenericCallInstantiation, GenericCallSpecialization, GenericCallTemplate,
+    CompletionKind, CompletionMemberSurface, ControlFlow, CorelibService, EnumConstructorFact,
+    EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact, EnumLayoutTemplateArgument,
+    EnumMatchArmFact, EnumMatchBindingFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
+    EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
+    ExportSymbol, ForIteratorFact, GenericCallInstantiation, GenericCallSpecialization, GenericCallTemplate,
     GenericNominalMethodReceiver, GenericSpecializationInstance, GenericSubstitution, IndexedNodeKind, ItemSignature,
     LiteralFact, LocalSlot, ManagedReferenceKind, MutableLocalAssignment, OperatorFact, PrimitiveNumericConversion,
     RangeForFact, ResolvedItem, ResolvedLocal, RuntimeIntrinsic, RuntimeIntrinsicName, ScalarAbiLayout, SemanticError,

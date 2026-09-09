@@ -981,6 +981,17 @@ pub struct CompletionCandidate {
     pub replacement_end: usize,
 }
 
+/// Owned, generation-independent member candidates captured from one valid
+/// dependency generation for bounded editor completion fallback.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct CompletionMemberSurface {
+    pub receiver: Arc<str>,
+    /// Exact logical module path named by the import which produced this surface.
+    /// The receiver alone is insufficient because two imports can reuse one alias.
+    pub import_path: Arc<[Arc<str>]>,
+    pub candidates: Arc<[CompletionCandidate]>,
+}
+
 pub type IndexedNodeKind = beskid_analysis::syntax_query::NodeKind;
 pub type SourceSpan = beskid_analysis::syntax::SpanInfo;
 

@@ -48,9 +48,9 @@ pub use db::{
     reset_compilation_database,
 };
 pub use entry::{
-    cached_semantic_snapshot_for_key, entry_resolution_with_db, fingerprint_key, invalidate_entry_sessions,
-    prepare_compilation_diagnostics_with_db, prepare_compilation_with_db, semantic_gate_diagnostics, semantic_snapshot,
-    session_fingerprint, typed_entry_bundle,
+    assemble_resolved_input_with_db, cached_semantic_snapshot_for_key, entry_resolution_with_db, fingerprint_key,
+    invalidate_entry_sessions, prepare_compilation_diagnostics_with_db, prepare_compilation_with_db,
+    semantic_gate_diagnostics, semantic_snapshot, session_fingerprint, typed_entry_bundle,
 };
 pub use graph::{
     discovered_units, module_index_fingerprint, program_assembly, program_assembly_tracked, reverse_dependents,
@@ -74,8 +74,8 @@ pub use semantic_contract::{
     ArrayIndexElementTemplate, AstNodeKey, BulkParameterFact, CallLowering, CaptureStorageClass, CastIntent,
     ClosureAllocationStatus, ClosureCallTarget, ClosureCapture, ClosureEnvironment, ClosureEnvironmentField,
     ClosureLoweringStatus, ClosurePointerMapRequirement, CollectionMutationOwner, CollectionOperation,
-    CompletionCandidate, CompletionContext, CompletionKind, ControlFlow, CorelibService, DispatchBuiltinSymbol,
-    EnumConstructorFact, EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact,
+    CompletionCandidate, CompletionContext, CompletionKind, CompletionMemberSurface, ControlFlow, CorelibService,
+    DispatchBuiltinSymbol, EnumConstructorFact, EnumConstructorSpecialization, EnumConstructorTemplate, EnumLayoutFact,
     EnumLayoutTemplateArgument, EnumMatchArmFact, EnumMatchFact, EnumMatchPatternFact, EnumMatchScalarLiteralFact,
     EnumMatchVariantPatternFact, EnumScalarPayloadObjectLayout, EnumScalarPayloadVariantLayout, EnumVariantLayoutFact,
     ExportSymbol, ForIteratorFact, GenericCallInstantiation, GenericCallSpecialization, GenericCallTemplate,
@@ -89,7 +89,8 @@ pub use semantic_contract::{
     array_index_element_abi_type, array_index_element_specialization, binary_operand_abi_type, block_statement_nodes,
     bulk_parameter, call_abi_signature, call_argument_abi_type, call_arguments, call_lowering, callable_signature,
     capture_storage, cast_intents, child_nodes, clif_block_body, closure_call_target, closure_environment,
-    closure_signature, collection_operation, completion_candidates, constant_integer,
+    closure_signature, collection_operation, completion_candidates, completion_dependency_surface,
+    completion_dependency_surface_for_assembly, completion_dependency_surface_for_program, constant_integer,
     contextual_integer_literal_abi_type, control_flow, direct_callees, dispatch_builtin_symbol,
     empty_array_literal_element_abi_type, empty_array_literal_element_specialization, enum_constructor,
     enum_constructor_specialization, enum_constructor_template, enum_layout, enum_match, enum_match_specialization,

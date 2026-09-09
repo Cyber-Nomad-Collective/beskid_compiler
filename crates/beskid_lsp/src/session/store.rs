@@ -138,9 +138,14 @@ pub struct SyntaxInlayHint {
 }
 
 /// The authoritative syntax generation available to a completion request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxCompletion {
-    pub anchor: AstNodeKey,
+    /// Current-buffer syntax authority when the fast prepare accepted the edit.
+    pub entry_anchor: Option<AstNodeKey>,
+    /// Owned imported-member surface captured from this document's prepared
+    /// assembly. A newer partial snapshot may retain only bindings still present
+    /// in its recoverable imports; the surface is never broader semantic authority.
+    pub dependency_surface: Arc<[beskid_queries::CompletionMemberSurface]>,
 }
 
 /// In-memory LSP workspace: open docs, closed-but-indexed files, and compilation context cache.
@@ -157,10 +162,10 @@ pub struct State {
     pub compilation_db: Arc<Mutex<BeskidDatabase>>,
     /// Canonical project root the Salsa database was configured for (avoids wholesale resets).
     pub configured_project_root: Option<PathBuf>,
-    /// Serializes all Salsa database operations across concurrent LSP handlers.
+    /// Serializes Salsa input mutation while parallel query handles are acquired.
     pub(crate) db_gate: Arc<AsyncMutex<()>>,
-    /// Coalesced typed-prepare schedule revision per open URI (debounced rebuild).
-    pub typed_prepare_schedule_revision: HashMap<Uri, u64>,
+    /// Preserves notification order per URI without blocking unrelated buffers.
+    pub(crate) document_update_gates: HashMap<Uri, Arc<AsyncMutex<()>>>,
     /// Set after the first workspace scan finishes (gates Salsa work during startup).
     pub(crate) initial_scan_complete: Arc<AtomicBool>,
     /// Wakes tasks waiting on [`initial_scan_complete`].
@@ -193,7 +198,7 @@ impl Default for State {
             compilation_db: Arc::new(Mutex::new(BeskidDatabase::default())),
             configured_project_root: None,
             db_gate: db_access::new_db_gate(),
-            typed_prepare_schedule_revision: HashMap::new(),
+            document_update_gates: HashMap::new(),
             initial_scan_complete: Arc::new(AtomicBool::new(false)),
             scan_barrier: Arc::new(Notify::new()),
             persistence_save_enabled: true,
