@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Allow only the standard ELF shared-linker startup imports when auditing the
+  exact Linux context library, while keeping runtime, application, dynamic-TLS,
+  and static-archive dependencies fail-closed under the centralized provenance
+  policy.
 - Resolve process-linked Unix externs through `libc::RTLD_DEFAULT` and its
   `dlsym`/`dlerror` contract, preventing Linux JIT workers from using Darwin's
   sentinel handle and crashing on standard functions such as `sched_yield`.
