@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep imported-member completion available while a Beskid expression is
+  temporarily incomplete, so partial members such as `Output.Wri` still suggest
+  `WriteLine` in LSP editors. One workspace Salsa store now serves per-document
+  ordered edits and concurrent read-only handles; each document owns a bounded
+  dependency completion surface keyed by exact import path and alias, while
+  current-buffer syntax facts and versioned diagnostic publication remain
+  generation-strict. Open buffers retain their own source identity instead of
+  inheriting the configured target entry, and incomplete semantic resolution
+  does not erase recoverable syntax facts. Entry-only feedback is immediate;
+  full diagnostic analysis is coalesced behind a 120 ms idle debounce and runs
+  after releasing Salsa writer and LSP state locks in a cache-isolated mode that
+  does not materialize generated project outputs.
 - Advertise `@` as an LSP completion trigger so standalone BSOL editors show
   the existing `@schemaless` suggestion as the annotation is typed.
 - Frame prepared-matrix worker events separately from Beskid program stdout,

@@ -76,7 +76,6 @@ pub async fn invalidate_compilation_cache(state: &RwLock<State>) {
             beskid_queries::invalidate_entry_sessions(root);
         }
         write.compilation_context_cache.clear();
-        write.typed_prepare_schedule_revision.clear();
         if !cold_start {
             write.reset_compilation_db_with_db(db);
             // Fail closed: drop bound facts until rebuild_open_document_syntax_facts runs.

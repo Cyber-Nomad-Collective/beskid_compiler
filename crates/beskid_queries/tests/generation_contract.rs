@@ -5,9 +5,9 @@ use beskid_analysis::projects::{
     AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry,
 };
 use beskid_queries::{
-    AstNodeId, AstNodeKey, BeskidDatabase, ModHostSyntaxGenerationId, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    TypedProgram, call_arguments, call_lowering, cast_intents, control_flow, item_signature, local_slot, node_type,
-    resolved_item, resolved_local, runtime_intrinsic,
+    AstNodeId, AstNodeKey, BeskidDatabase, CompletionContext, ModHostSyntaxGenerationId, ProjectSession, SourceUnitId,
+    SyntaxGenerationId, TypedProgram, call_arguments, call_lowering, cast_intents, completion_candidates, control_flow,
+    item_signature, local_slot, node_type, resolved_item, resolved_local, runtime_intrinsic,
 };
 
 fn empty_assembly() -> Arc<ProgramAssembly> {
@@ -180,6 +180,74 @@ fn unchanged_ensure_is_idempotent_without_parse_or_index_rebuild() {
 
     assert!(first == second);
     assert_eq!(db.syntax_authority_counts(), (1, 1));
+}
+
+#[test]
+fn unchanged_expanded_syntax_advances_generation_on_one_input() {
+    let mut db = BeskidDatabase::default();
+    let entry = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Expanded.bd"));
+    let project = ProjectSession::new(
+        &db,
+        PathBuf::from("/tmp/project"),
+        entry.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let source = "i32 Main() { return 0; }";
+    let program = Arc::new(beskid_analysis::services::parse_program(source).expect("parse"));
+
+    let first = db
+        .ensure_expanded_syntax_unit(project, entry, SyntaxGenerationId(1), source.to_string(), Arc::clone(&program))
+        .expect("first expanded generation");
+    let second = db
+        .ensure_expanded_syntax_unit(project, entry, SyntaxGenerationId(2), source.to_string(), program)
+        .expect("unchanged expanded relabel");
+
+    assert!(first == second, "generation relabel must reuse the single Salsa input");
+    assert!(db.syntax_unit(entry) == Some(second));
+}
+
+#[test]
+fn cloned_salsa_handles_share_registered_completion_facts() {
+    use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
+
+    let mut db = BeskidDatabase::default();
+    let entry = SourceUnitId::new(&db, PathBuf::from("/tmp/project/src/Parallel.bd"));
+    let project = ProjectSession::new(
+        &db,
+        PathBuf::from("/tmp/project"),
+        entry.path(&db).clone(),
+        "App".to_string(),
+        "lock".to_string(),
+    );
+    let source = "i32 Zebra() { return 0; } i32 Main() { return Zeb; }";
+    let generation = SyntaxGenerationId(1);
+    db.update_syntax_source(project, entry, generation, source.to_string()).expect("syntax source");
+    let program = beskid_analysis::services::parse_program(source).expect("parse");
+    let index = SyntaxIndex::from_program(&program, generation);
+    let anchor = AstNodeKey {
+        unit: entry,
+        generation,
+        node: index.ids_of_kind(NodeKind::Program).next().expect("program node"),
+    };
+    let context = CompletionContext {
+        cursor: source.find("Zeb;").expect("prefix") + 3,
+        replacement_start: source.find("Zeb;").expect("prefix"),
+        replacement_end: source.find("Zeb;").expect("prefix") + 3,
+    };
+    let first = db.clone();
+    let second = db.clone();
+
+    std::thread::scope(|scope| {
+        for handle in [first, second] {
+            scope.spawn(move || {
+                let candidates = completion_candidates(&handle, anchor, context)
+                    .expect("completion query")
+                    .expect("completion candidates");
+                assert!(candidates.iter().any(|candidate| candidate.label.as_ref() == "Zebra"));
+            });
+        }
+    });
 }
 
 #[test]

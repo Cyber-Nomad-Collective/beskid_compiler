@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use beskid_analysis::services::ResolvedInput;
+use beskid_analysis::projects::ProgramAssembly;
+use beskid_analysis::services::{ResolvedInput, parse_program_with_source_name};
 use beskid_queries::{
     AstNodeKey, SemanticTypeId, SyntaxGenerationId, build_typed_program, node_span, node_type, resolved_item,
     resolved_local,
@@ -35,24 +36,34 @@ pub(super) struct SyntaxFacts {
     pub(super) fixes: Vec<SyntaxFix>,
 }
 
-pub(super) fn syntax_facts_for_entry(
+pub(super) fn syntax_facts_for_assembly(
     db: &mut beskid_queries::BeskidDatabase,
     resolved: &ResolvedInput,
-    entry_state: &beskid_queries::TypedEntryState,
+    assembly: Arc<ProgramAssembly>,
 ) -> SyntaxFacts {
     let Some(plan) = resolved.compile_plan.as_ref() else {
         return SyntaxFacts::default();
     };
-    let Some(front_end) = entry_state.typed.as_ref() else {
-        return SyntaxFacts::default();
-    };
     let project = db.ensure_project_session(plan, &resolved.source_path, lockfile_digest_for_plan(plan));
+    let dependency_surface =
+        parse_program_with_source_name(&resolved.source_path.display().to_string(), &resolved.source)
+            .map(|program| beskid_queries::completion_dependency_surface_for_program(&assembly, &program))
+            .unwrap_or_else(|_| beskid_queries::completion_dependency_surface_for_assembly(&assembly));
+    let recoverable_symbols = assembly
+        .units
+        .get(assembly.entry_index)
+        .map(|entry| syntax_symbols_for_program(&entry.program))
+        .unwrap_or_default();
     // Fail closed to prepare-spine syntax authority: post-mod-rewrite entry program, never the
     // pre-rewrite ProgramAssembly units that still carry HIR compatibility state.
-    let assembly = Arc::new(front_end.syntax_assembly());
-    let generation = SyntaxGenerationId(entry_state.generation);
+    let generation = SyntaxGenerationId(assembly.generation.0);
     let Ok(typed) = build_typed_program(db, project, generation, assembly) else {
-        return SyntaxFacts::default();
+        return SyntaxFacts {
+            symbols: recoverable_symbols,
+            completion: (!dependency_surface.is_empty())
+                .then_some(SyntaxCompletion { entry_anchor: None, dependency_surface }),
+            ..SyntaxFacts::default()
+        };
     };
     let unit = typed.entry;
     let Some(entry) = typed.assembly.units.get(typed.assembly.entry_index) else {
@@ -132,7 +143,8 @@ pub(super) fn syntax_facts_for_entry(
     let completion = index
         .ids_of_kind(beskid_analysis::syntax_query::NodeKind::Program)
         .next()
-        .map(|node| SyntaxCompletion { anchor: AstNodeKey { unit, generation, node } });
+        .map(|node| AstNodeKey { unit, generation, node })
+        .map(|entry_anchor| SyntaxCompletion { entry_anchor: Some(entry_anchor), dependency_surface });
     SyntaxFacts {
         definitions,
         hovers,
@@ -214,7 +226,7 @@ fn syntax_type_label(ty: SemanticTypeId) -> Option<&'static str> {
     }
 }
 
-fn syntax_symbols_for_program(
+pub(super) fn syntax_symbols_for_program(
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
 ) -> Vec<SyntaxSymbol> {
     use beskid_analysis::services::AnalysisSymbolKind as Kind;
@@ -272,4 +284,19 @@ fn syntax_symbols_for_program(
             .map(|(name, kind, span)| SyntaxSymbol { name, kind, start: span.start, end: span.end })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::syntax_symbols_for_program;
+
+    #[test]
+    fn recoverable_partial_expression_keeps_current_outline_symbols() {
+        let source = "use Core.Output;\ni32 FreshMain() {\n    Output.Wri\n    return 0;\n}";
+        let program = beskid_analysis::services::parse_program_with_source_name("Main.bd", source)
+            .expect("the editor parser should recover an incomplete member expression");
+
+        let names = syntax_symbols_for_program(&program).into_iter().map(|symbol| symbol.name).collect::<Vec<_>>();
+        assert_eq!(names, vec!["Output", "FreshMain"]);
+    }
 }

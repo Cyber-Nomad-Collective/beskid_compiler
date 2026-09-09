@@ -69,6 +69,23 @@ pub fn collect_mod_target_fingerprint(input: &ModHostInput<'_>) -> Result<String
 }
 
 pub fn run_through_generate(program: Spanned<Program>, input: &ModHostInput<'_>) -> Result<ModHostGenerateResult> {
+    run_through_generate_with_output_policy(program, input, true)
+}
+
+/// Run collect/generate for an editor snapshot without writing declared outputs.
+/// Generated syntax is still merged into the owned program used for diagnostics.
+pub fn run_through_generate_without_materializing_outputs(
+    program: Spanned<Program>,
+    input: &ModHostInput<'_>,
+) -> Result<ModHostGenerateResult> {
+    run_through_generate_with_output_policy(program, input, false)
+}
+
+fn run_through_generate_with_output_policy(
+    program: Spanned<Program>,
+    input: &ModHostInput<'_>,
+    materialize_outputs: bool,
+) -> Result<ModHostGenerateResult> {
     let macro_outcome = run_macro_expand_with_diagnostics(program, input.pipeline, input.source_name, input.source)?;
     let mut macro_diagnostics = macro_outcome.diagnostics;
     let mut program = macro_outcome.program;
@@ -118,7 +135,9 @@ pub fn run_through_generate(program: Spanned<Program>, input: &ModHostInput<'_>)
 
         generated = run_generators(&loaded, &collected, input, invoker, input.pipeline)?;
         generator_outcomes = generated.outcomes.clone();
-        materialize_declared_outputs(input.compile_plan, &loaded, &generator_outcomes)?;
+        if materialize_outputs {
+            materialize_declared_outputs(input.compile_plan, &loaded, &generator_outcomes)?;
+        }
         if !generated.has_typed_merge() {
             break;
         }

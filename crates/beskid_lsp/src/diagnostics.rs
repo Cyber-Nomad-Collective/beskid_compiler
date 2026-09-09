@@ -6,8 +6,11 @@
 
 use beskid_analysis::AnalysisOptions;
 use beskid_analysis::CompilationContext;
+use beskid_analysis::projects::ProgramAssembly;
 use beskid_analysis::projects::{ProjectError, parse_bsol_document, parse_manifest, parse_workspace_manifest};
-use beskid_analysis::services::{self, FrontEndOptions, PrepareOptions, resolved_input_from_plan};
+use beskid_analysis::services::{
+    self, DependencyTypingPolicy, FrontEndOptions, PrepareOptions, ResolvedInput, resolved_input_from_plan,
+};
 use beskid_analysis::syntax::Program;
 use beskid_analysis::{SemanticDiagnostic, Severity, SyntaxFix};
 use beskid_queries::BeskidDatabase;
@@ -17,6 +20,64 @@ use crate::features::project_manifest::api as project_manifest;
 use crate::manifest_uri::{is_manifest_uri, is_standalone_bsol_uri};
 use crate::position::offset_range_to_lsp;
 use crate::session::store::{SyntaxDiagnostic, SyntaxDiagnosticSeverity};
+
+pub(crate) struct PreparedSyntaxFacts {
+    pub(crate) assembly: ProgramAssembly,
+    pub(crate) diagnostics: Vec<SyntaxDiagnostic>,
+    pub(crate) fixes: Vec<SyntaxFix>,
+}
+
+/// Run the one authoritative project-backed diagnostic preparation and translate its
+/// generation-bound products for LSP document facts.
+pub(crate) fn prepare_project_syntax_facts(
+    db: &mut BeskidDatabase,
+    resolved: &ResolvedInput,
+    dependency_typing: DependencyTypingPolicy,
+) -> anyhow::Result<PreparedSyntaxFacts> {
+    let (prepared, diagnostics, fixes) = beskid_queries::prepare_compilation_diagnostics_with_db(
+        db,
+        resolved,
+        PrepareOptions {
+            front_end: FrontEndOptions {
+                with_semantic_diagnostics: dependency_typing == DependencyTypingPolicy::FullClosure,
+                ..Default::default()
+            },
+            dependency_typing,
+        },
+        None,
+    )?;
+    Ok(PreparedSyntaxFacts {
+        assembly: prepared.syntax_assembly(),
+        diagnostics: diagnostics.into_iter().map(syntax_diagnostic_from_semantic).collect(),
+        fixes,
+    })
+}
+
+/// Run downstream diagnostics from an already assembled, owned input.
+///
+/// This phase does not access Salsa, so the LSP can release writer exclusivity
+/// before performing full dependency analysis.
+pub(crate) fn prepare_project_diagnostics_from_assembled(
+    resolved: &ResolvedInput,
+    dependency_typing: DependencyTypingPolicy,
+) -> anyhow::Result<PreparedSyntaxFacts> {
+    let (prepared, diagnostics, fixes) = services::prepare_compilation_diagnostics_isolated(
+        resolved,
+        PrepareOptions {
+            front_end: FrontEndOptions {
+                with_semantic_diagnostics: dependency_typing == DependencyTypingPolicy::FullClosure,
+                ..Default::default()
+            },
+            dependency_typing,
+        },
+        None,
+    )?;
+    Ok(PreparedSyntaxFacts {
+        assembly: prepared.syntax_assembly(),
+        diagnostics: diagnostics.into_iter().map(syntax_diagnostic_from_semantic).collect(),
+        fixes,
+    })
+}
 
 /// Collect generation-bound diagnostic facts and mod-origin quick-fixes for a `.bd`,
 /// `.bproj`, `.bws`, `.bsol`, or other manifest buffer.
@@ -61,16 +122,8 @@ pub fn collect_syntax_diagnostics(
         if beskid_queries::is_typed_bundle_stale(db, &entry_key) {
             return (structural_syntax_diagnostics(&uri.to_string(), source), Vec::new());
         }
-        if let Ok((_, diags, fixes)) = beskid_queries::prepare_compilation_diagnostics_with_db(
-            db,
-            &resolved,
-            PrepareOptions {
-                front_end: FrontEndOptions { with_semantic_diagnostics: true, ..Default::default() },
-                dependency_typing: beskid_analysis::services::DependencyTypingPolicy::FullClosure,
-            },
-            None,
-        ) {
-            return (diags.into_iter().map(syntax_diagnostic_from_semantic).collect(), fixes);
+        if let Ok(prepared) = prepare_project_syntax_facts(db, &resolved, DependencyTypingPolicy::FullClosure) {
+            return (prepared.diagnostics, prepared.fixes);
         }
     }
 
