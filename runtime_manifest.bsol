@@ -1496,7 +1496,6 @@ platform_import "GetFileAttributesW" { target = "x86_64-pc-windows-msvc" library
 platform_import "CreateDirectoryW" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = path, type = pointer }, { name = security_attributes, type = pointer }] returns = i32 }
 platform_import "DeleteFileW" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [{ name = path, type = pointer }] returns = i32 }
 platform_import "GetLastError" { target = "x86_64-pc-windows-msvc" library = kernel32 params = [] returns = u32 }
-platform_import "strlen" { target = "x86_64-pc-windows-msvc" library = ucrt params = [{ name = value, type = pointer }] returns = usize }
 
 assembly "beskid_arch_v5_context_init" {
   params = [{ name = context, type = pointer }, { name = stack_top, type = pointer }, { name = entry, type = pointer }, { name = argument, type = pointer }, { name = return_trampoline, type = pointer }]

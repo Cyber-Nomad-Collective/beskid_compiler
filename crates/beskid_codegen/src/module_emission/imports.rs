@@ -69,9 +69,7 @@ pub(super) fn runtime_intrinsic_symbols(input: &CodegenInput<'_>) -> HashMap<Dir
                         .find(|binding| binding.target == input.target().triple.as_str())
                         .map(|binding| binding.implementation.clone())
                         .unwrap_or_else(|| intrinsic.symbol.clone());
-                    u32::try_from(index)
-                        .ok()
-                        .map(|index| (DirectCallee::runtime_intrinsic(index), symbol))
+                    u32::try_from(index).ok().map(|index| (DirectCallee::runtime_intrinsic(index), symbol))
                 })
                 .collect()
         })
@@ -122,9 +120,9 @@ pub(super) fn extern_contract_imports(
 /// Corelib syscall capability because they are fundamental operations, not facade services.
 const ALWAYS_AVAILABLE_STRING_SERVICES: &[&str] = &["str_new", "str_from_i64", "str_eq", "str_concat"];
 
-/// ABI symbols admitted by the distinct Corelib syscall capability. Unlike runtime intrinsics,
-/// these imports can only be selected by a `CallLowering::CorelibService` syntax fact from the
-/// exact embedded facade; ordinary dynamic calls never reach this table.
+/// ABI symbols admitted by either the distinct Corelib syscall capability or a generated
+/// manifest-backed builtin fact. Both use the same exact-symbol import table; neither path may
+/// guess a native symbol from source spelling.
 ///
 /// String runtime helpers (`str_new`, `str_from_i64`, `str_eq`, `str_concat`) are always
 /// available because ISLE lowering emits them directly for string literals, coercion,
@@ -136,19 +134,29 @@ pub(super) fn corelib_service_symbols(
     let mut callees = HashSet::new();
     for item in items {
         collect_corelib_service_callees(input.database(), item.key, &mut callees);
+        collect_dispatch_builtin_callees(input.database(), item.key, &mut callees);
     }
     let mut symbols = HashMap::new();
     for symbol in ALWAYS_AVAILABLE_STRING_SERVICES {
         symbols.insert(DirectCallee::corelib_service(symbol), (*symbol).to_owned());
     }
-    if let Some(capability) = input.corelib_service_capability() {
-        for service in capability.services() {
-            if callees.contains(&service.symbol) && !ALWAYS_AVAILABLE_STRING_SERVICES.contains(&service.symbol) {
-                symbols.insert(DirectCallee::corelib_service(service.symbol), service.symbol.to_owned());
-            }
+    for symbol in callees {
+        if !ALWAYS_AVAILABLE_STRING_SERVICES.contains(&symbol) {
+            symbols.insert(DirectCallee::corelib_service(symbol), symbol.to_owned());
         }
     }
     symbols
+}
+
+fn collect_dispatch_builtin_callees(db: &dyn beskid_queries::Db, key: AstNodeKey, callees: &mut HashSet<&'static str>) {
+    if let Ok(Some(symbol)) = beskid_queries::dispatch_builtin_symbol(db, key) {
+        callees.insert(symbol.0);
+    }
+    if let Ok(Some(children)) = child_nodes(db, key) {
+        for child in children.iter().copied() {
+            collect_dispatch_builtin_callees(db, child, callees);
+        }
+    }
 }
 
 fn collect_corelib_service_callees(db: &dyn beskid_queries::Db, key: AstNodeKey, callees: &mut HashSet<&'static str>) {

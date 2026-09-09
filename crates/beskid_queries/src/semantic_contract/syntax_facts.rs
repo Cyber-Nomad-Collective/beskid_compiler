@@ -109,8 +109,16 @@ pub(super) fn dispatch_builtin_symbol_tracked(
         }
         let name = path.node.path.node.segments[0].node.name.node.name.as_str();
         let (_, spec) = beskid_analysis::builtins::builtin_for_path(&[name.to_owned()])?;
-        let target = TargetMetadata::supported().into_iter().next()?;
-        AbiManifestV5::canonical_runtime(target).intrinsic_metadata(spec.runtime_symbol)?;
+        let authorized_for_every_target = TargetMetadata::supported().into_iter().all(|target| {
+            beskid_abi::generated::abi_v5_contract::ABI_V5_CORELIB_SERVICE_BINDINGS.iter().any(|binding| {
+                binding.target == target.triple.as_str()
+                    && binding.service == name
+                    && binding.adapter == spec.runtime_symbol
+            })
+        });
+        if !authorized_for_every_target {
+            return None;
+        }
         Some(Ok(DispatchBuiltinSymbol(spec.runtime_symbol)))
     })?
     .transpose()

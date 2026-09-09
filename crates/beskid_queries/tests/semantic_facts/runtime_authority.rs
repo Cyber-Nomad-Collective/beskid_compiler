@@ -10,9 +10,10 @@ use beskid_analysis::projects::{
 use beskid_analysis::services::parse_program;
 use beskid_analysis::syntax_query::{NodeKind, SyntaxIndex};
 use beskid_queries::{
-    AstNodeKey, BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId,
-    build_canonical_corelib_syscall_typed_program, build_typed_program_with_corelib_syscall_services, call_lowering,
-    runtime_intrinsic,
+    AstNodeKey, BeskidDatabase, ProjectSession, SemanticTypeId, SourceUnitId, SyntaxGenerationId,
+    build_canonical_corelib_syscall_typed_program, build_typed_program_with_corelib_syscall_services,
+    call_abi_signature, call_lowering, dispatch_builtin_symbol, primitive_numeric_conversion, runtime_intrinsic,
+    value_abi_type,
 };
 use std::sync::Arc;
 
@@ -32,6 +33,46 @@ fn runtime_intrinsic_uses_the_manifest_owned_builtin_index() {
         call_lowering(&db, call).expect("manifest builtin call lowering"),
         Some(beskid_queries::CallLowering::Dynamic)
     );
+    assert_eq!(
+        dispatch_builtin_symbol(&db, call).expect("dispatch builtin symbol").map(|symbol| symbol.0),
+        Some("str_len")
+    );
+    assert_eq!(
+        call_abi_signature(&db, call).expect("dispatch builtin ABI signature").map(|signature| signature.result),
+        Some(SemanticTypeId::WORD)
+    );
+}
+
+#[test]
+fn dynamic_string_length_builtin_proves_explicit_i64_return_conversion() {
+    let source = "i64 Main(string text) { return i64(__str_len(text)); }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let calls = index
+        .ids_of_kind(NodeKind::CallExpression)
+        .map(|node| AstNodeKey { unit, generation, node })
+        .collect::<Vec<_>>();
+    let builtin = calls
+        .iter()
+        .copied()
+        .find(|call| matches!(call_lowering(&db, *call), Ok(Some(beskid_queries::CallLowering::Dynamic))))
+        .expect("dynamic __str_len call");
+    let conversion = calls
+        .iter()
+        .copied()
+        .find(|call| matches!(primitive_numeric_conversion(&db, *call), Ok(Some(_))))
+        .expect("word-to-i64 conversion");
+    let returned = key(unit, generation, &index, NodeKind::ReturnStatement, 0);
+
+    assert_eq!(
+        call_abi_signature(&db, builtin).expect("builtin ABI signature").map(|signature| signature.result),
+        Some(SemanticTypeId::WORD)
+    );
+    assert_eq!(value_abi_type(&db, builtin).expect("builtin value ABI"), Some(SemanticTypeId::WORD));
+    assert_eq!(
+        primitive_numeric_conversion(&db, conversion).expect("conversion ABI fact"),
+        Some(beskid_queries::PrimitiveNumericConversion { from: SemanticTypeId::WORD, to: SemanticTypeId::I64 })
+    );
+    assert_eq!(value_abi_type(&db, returned).expect("return ABI fact"), Some(SemanticTypeId::I64));
 }
 
 #[test]

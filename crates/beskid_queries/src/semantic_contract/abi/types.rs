@@ -262,14 +262,6 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
                 Ok(None) => (),
                 Err(error) => return Some(Err(error)),
             }
-            let lowering = match call_lowering(db, key) {
-                Ok(Some(lowering)) => lowering,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-            if !matches!(lowering, CallLowering::Direct(_) | CallLowering::Runtime(_)) {
-                return Some(Err(SemanticError::unavailable("abi_type")));
-            }
             let signature = match call_abi_signature(db, key) {
                 Ok(Some(signature)) => signature,
                 Ok(None) => return None,

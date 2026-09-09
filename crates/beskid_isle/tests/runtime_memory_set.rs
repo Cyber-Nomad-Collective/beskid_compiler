@@ -20,9 +20,10 @@ struct CanonicalConstantMemorySetFacts {
     length_is_path: bool,
 }
 
-struct RawWordStoreFacts {
+struct RawStoreFacts {
     nodes: [AstNodeKey; 4],
     pointer_type: cranelift_codegen::ir::Type,
+    kind: RuntimeIntrinsicKind,
 }
 
 struct NestedRawWordStoreFacts {
@@ -31,7 +32,7 @@ struct NestedRawWordStoreFacts {
     offset_is_path: bool,
 }
 
-impl NodeFacts for RawWordStoreFacts {
+impl NodeFacts for RawStoreFacts {
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
         if key == self.nodes[0] {
             Some(NodeKind::ExpressionStatement)
@@ -53,7 +54,7 @@ impl NodeFacts for RawWordStoreFacts {
     }
 
     fn runtime_intrinsic_kind(&self, key: AstNodeKey) -> Option<RuntimeIntrinsicKind> {
-        (key == self.nodes[1]).then_some(RuntimeIntrinsicKind::RawWordStore)
+        (key == self.nodes[1]).then_some(self.kind)
     }
 
     fn call_arguments(&self, key: AstNodeKey) -> Option<Vec<AstNodeKey>> {
@@ -61,7 +62,11 @@ impl NodeFacts for RawWordStoreFacts {
     }
 
     fn call_signature(&self, key: AstNodeKey) -> Option<Signature> {
-        (key == self.nodes[1]).then(|| intrinsic_signature(&[self.pointer_type, self.pointer_type]))
+        (key == self.nodes[1]).then(|| {
+            let value_type =
+                if self.kind == RuntimeIntrinsicKind::RawByteStore { types::I8 } else { self.pointer_type };
+            intrinsic_signature(&[self.pointer_type, value_type])
+        })
     }
 
     fn literal_kind(&self, key: AstNodeKey) -> Option<LiteralKind> {
@@ -72,14 +77,20 @@ impl NodeFacts for RawWordStoreFacts {
         if key == self.nodes[2] {
             Some(0)
         } else if key == self.nodes[3] {
-            Some(1)
+            Some(48)
         } else {
             None
         }
     }
 
     fn scalar_type(&self, key: AstNodeKey) -> Option<cranelift_codegen::ir::Type> {
-        self.nodes[2..].contains(&key).then_some(self.pointer_type)
+        if key == self.nodes[2] {
+            Some(self.pointer_type)
+        } else if key == self.nodes[3] {
+            Some(if self.kind == RuntimeIntrinsicKind::RawByteStore { types::I64 } else { self.pointer_type })
+        } else {
+            None
+        }
     }
 }
 
@@ -322,13 +333,14 @@ fn canonical_constant_facts(
     }
 }
 
-fn raw_word_store_facts(pointer_type: cranelift_codegen::ir::Type) -> RawWordStoreFacts {
+fn raw_store_facts(pointer_type: cranelift_codegen::ir::Type, kind: RuntimeIntrinsicKind) -> RawStoreFacts {
     let db = BeskidDatabase::default();
     let unit = SourceUnitId::new(&db, PathBuf::from("/tmp/RuntimeRawWordStore.bd"));
     let generation = SyntaxGenerationId(402);
-    RawWordStoreFacts {
+    RawStoreFacts {
         nodes: std::array::from_fn(|index| AstNodeKey { unit, generation, node: AstNodeId(index as u32 + 1) }),
         pointer_type,
+        kind,
     }
 }
 
@@ -429,7 +441,7 @@ fn runtime_raw_word_store_expression_statement_lowers_inline_without_an_abi_impo
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    let facts = raw_word_store_facts(isa.pointer_type());
+    let facts = raw_store_facts(isa.pointer_type(), RuntimeIntrinsicKind::RawWordStore);
     let emitter = FunctionEmitter::new(isa.as_ref());
     let function = emitter
         .emit_statement(UserFuncName::user(0, 403), emitter.signature([], []), &facts, facts.nodes[0])
@@ -440,6 +452,22 @@ fn runtime_raw_word_store_expression_statement_lowers_inline_without_an_abi_impo
         !clif.contains("beskid_rt_v5_intrinsic_raw_word_store"),
         "raw_word_store must not import an ABI helper:\n{clif}"
     );
+}
+
+#[test]
+fn runtime_raw_byte_store_reduces_wide_value_to_one_byte() {
+    let isa = cranelift_codegen::isa::lookup(Triple::host())
+        .expect("host ISA")
+        .finish(settings::Flags::new(settings::builder()))
+        .expect("host flags");
+    let facts = raw_store_facts(isa.pointer_type(), RuntimeIntrinsicKind::RawByteStore);
+    let emitter = FunctionEmitter::new(isa.as_ref());
+    let function = emitter
+        .emit_statement(UserFuncName::user(0, 408), emitter.signature([], []), &facts, facts.nodes[0])
+        .expect("canonical runtime raw_byte_store lowers as a statement");
+    let clif = function.display().to_string();
+    assert!(clif.contains("ireduce.i8"), "raw_byte_store must reduce a wide value before storing:\n{clif}");
+    assert!(clif.contains("store"), "raw_byte_store must lower to an inline store:\n{clif}");
 }
 
 #[test]

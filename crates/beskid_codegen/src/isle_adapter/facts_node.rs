@@ -179,7 +179,10 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             return Some(CallKind::Bulk);
         }
         if self.query(dispatch_builtin_symbol(self.db, key)).is_some() {
-            return Some(CallKind::Dynamic);
+            // Manifest-proven builtins use the same exact-symbol importer as Corelib services.
+            // Keeping them on the direct-call path avoids a second dynamic-call emitter while
+            // the Salsa fact still fails closed for unknown or target-drifting symbols.
+            return Some(CallKind::Direct);
         }
         if self.inline_lambda_call(key).is_some() {
             return Some(CallKind::InlineLambda);
@@ -271,6 +274,9 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
         if let Some((index, _)) = self.runtime_intrinsic(key) {
             return Some(DirectCallee::runtime_intrinsic(index));
+        }
+        if let Some(symbol) = self.dispatch_builtin_symbol(key) {
+            return Some(DirectCallee::corelib_service(symbol));
         }
         let lowering = self.query(call_lowering(self.db, key))?;
         if let CallLowering::CorelibService(service) = lowering {

@@ -268,12 +268,11 @@ fn normalize_object_symbol(raw: &str, object_format: &str, symbol_prefix: &str) 
 
 fn reject_forbidden_provenance(raw: &str, forbidden: &[String]) -> Result<(), String> {
     let unprefixed = raw.strip_prefix('_').unwrap_or(raw);
-    let rust_mangled = unprefixed.starts_with('R') || (unprefixed.starts_with("ZN") && unprefixed.ends_with('E'));
     let demangled = try_demangle(raw).or_else(|_| try_demangle(unprefixed)).ok().map(|symbol| symbol.to_string());
     let forbidden_family = forbidden
         .iter()
         .any(|family| raw.contains(family) || demangled.as_deref().is_some_and(|symbol| symbol.contains(family)));
-    if rust_mangled || demangled.is_some() || forbidden_family {
+    if demangled.is_some() || forbidden_family {
         Err(format!("forbidden runtime provenance symbol `{raw}`"))
     } else {
         Ok(())
