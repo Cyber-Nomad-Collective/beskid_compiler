@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore the compiler-pinned Corelib runtime-authority implementation for
+  atomic typed channel receive, split fiber join status/value, descriptor-backed
+  arrays, and the reusable text/compiler-SDK surface, eliminating drift between
+  embedded source bytes and the ABI-v5 service table.
 - Restore the strict workspace Clippy gate on Rust 1.98 by consolidating enum
   match materialization inputs into one semantic context and using the direct
   collection membership and conditional forms required by current lints. Keep
