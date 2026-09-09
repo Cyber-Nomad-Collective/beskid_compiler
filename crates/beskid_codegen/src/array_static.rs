@@ -9,8 +9,9 @@ use std::sync::Arc;
 
 use beskid_queries::{
     AstNodeKey, CallLowering, GenericSpecializationInstance, IndexedNodeKind, SemanticTypeId, bulk_parameter,
-    call_arguments, call_lowering, child_nodes, empty_array_literal_element_abi_type, generic_specialization_identity,
-    node_kind, node_type, typed_array_allocation,
+    call_arguments, call_lowering, child_nodes, empty_array_literal_element_abi_type,
+    empty_array_literal_element_specialization, generic_specialization_identity, node_kind, node_type,
+    typed_array_allocation,
 };
 use cranelift_module::{DataDescription, DataId, Linkage, Module, ModuleError, ModuleResult};
 
@@ -173,6 +174,26 @@ impl CodegenInput<'_> {
         };
         let length = u64::try_from(elements.len()).ok()?;
         self.build_array_static_plan(literal, element_type, length, None)
+    }
+
+    /// Create array metadata using the exact specialization of the item that owns the literal.
+    pub fn array_static_plan_for_specialization(
+        &self,
+        literal: AstNodeKey,
+        specialization: Option<&GenericSpecializationInstance>,
+    ) -> Option<ArrayStaticPlan> {
+        if let Some(plan) = self.array_static_plan(literal) {
+            return Some(plan);
+        }
+        let specialization = specialization?;
+        let elements = child_nodes(self.database(), literal).ok().flatten()?;
+        elements.is_empty().then_some(())?;
+        let element_type =
+            empty_array_literal_element_specialization(self.database(), literal, specialization.substitutions.clone())
+                .ok()
+                .flatten()?;
+        let identity = generic_specialization_identity(specialization);
+        self.build_array_static_plan(literal, element_type, 0, Some(identity.as_ref()))
     }
 
     /// Create source-authorized typed-array metadata for one `bulk`-parameter call.

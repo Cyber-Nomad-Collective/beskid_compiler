@@ -33,6 +33,8 @@ use crate::{
 };
 
 const ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT: &str = "beskid_rt_v5_fiber_spawn_with_cancel_slot";
+const ABI_V5_SCHEDULER_STACK_CHECK: &str = "beskid_rt_v5_scheduler_stack_check";
+const ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED: &str = "beskid_rt_v5_scheduler_stack_overflow_observed";
 
 /// State owned by a long-lived Cranelift module while it receives source artifacts.
 ///
@@ -285,10 +287,11 @@ fn lower_resolved_syntax_program(
         });
         functions.push(crate::LoweredFunction { name: item.symbol.clone(), function });
     }
+    let imports_scheduler_stack = !trampolines.is_empty() && scheduler_symbols.and_then(|(_, stack)| stack).is_none();
     if !trampolines.is_empty() {
-        let Some((_, Some((stack_check, stack_overflow)))) = scheduler_symbols else {
-            return Err(emission_verification("fiber stack checks require the exact canonical Scheduler corpus"));
-        };
+        let (stack_check, stack_overflow) = scheduler_symbols
+            .and_then(|(_, stack)| stack)
+            .unwrap_or((ABI_V5_SCHEDULER_STACK_CHECK, ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED));
         for trampoline in &trampolines {
             let target =
                 functions.iter().find(|function| function.name == trampoline.target_symbol).ok_or_else(|| {
@@ -308,6 +311,8 @@ fn lower_resolved_syntax_program(
         .into_values()
         .chain(corelib_services.into_values())
         .chain((!trampolines.is_empty()).then_some(ABI_V5_FIBER_SPAWN_WITH_CANCEL_SLOT.to_owned()))
+        .chain(imports_scheduler_stack.then_some(ABI_V5_SCHEDULER_STACK_CHECK.to_owned()))
+        .chain(imports_scheduler_stack.then_some(ABI_V5_SCHEDULER_STACK_OVERFLOW_OBSERVED.to_owned()))
         .map(|symbol| ExternImport { symbol, abi: Some("C".into()), library: None })
         .collect::<Vec<_>>();
     for import in extern_contract_imports(input, items) {

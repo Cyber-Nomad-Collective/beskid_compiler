@@ -75,6 +75,8 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
             ("beskid_rt_v5_poll_monitor_poll", &[AbiType::I64, AbiType::Pointer][..], AbiType::I32,),
             ("beskid_rt_v5_process_init", &[AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_process_shutdown", &[AbiType::Pointer][..], AbiType::Void,),
+            ("beskid_rt_v5_scheduler_stack_check", &[AbiType::USize][..], AbiType::U8,),
+            ("beskid_rt_v5_scheduler_stack_overflow_observed", &[][..], AbiType::Void,),
             ("beskid_rt_v5_thread_attach", &[AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_thread_detach", &[AbiType::Pointer][..], AbiType::Void,),
             ("beskid_rt_v5_trap", &[AbiType::U8, AbiType::Pointer, AbiType::USize][..], AbiType::Void,),
@@ -298,12 +300,11 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "pow",
         "sin",
         "sqrt",
-        "strlen",
         "tan",
     ];
     let math_imports = ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
     let windows_ucrt_imports =
-        ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "strlen", "tan"];
+        ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
     for target in supported_targets() {
         let is_windows = target.triple.as_str() == "x86_64-pc-windows-msvc";
         let (expected_symbols, expected_library) = match target.triple.as_str() {

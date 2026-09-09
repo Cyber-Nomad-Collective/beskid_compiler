@@ -354,6 +354,21 @@
       "result": "void"
     },
     {
+      "symbol": "beskid_rt_v5_scheduler_stack_check",
+      "params": [
+        {
+          "name": "required_usable_size",
+          "type": "usize"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_scheduler_stack_overflow_observed",
+      "params": [],
+      "result": "void"
+    },
+    {
       "symbol": "beskid_rt_v5_thread_attach",
       "params": [
         {
@@ -3694,18 +3709,6 @@
         }
       ],
       "result": "f64"
-    },
-    {
-      "symbol": "strlen",
-      "target": "x86_64-pc-windows-msvc",
-      "library": "ucrt",
-      "params": [
-        {
-          "name": "value",
-          "type": "pointer"
-        }
-      ],
-      "result": "usize"
     },
     {
       "symbol": "tan",

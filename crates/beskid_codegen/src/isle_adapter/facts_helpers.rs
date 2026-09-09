@@ -292,7 +292,7 @@ impl SyntaxNodeFacts<'_> {
     }
 
     pub(super) fn array_layout_for_literal(&self, key: AstNodeKey) -> Option<beskid_isle::ArrayLayout> {
-        let plan = self.input.array_static_plan(key)?;
+        let plan = self.input.array_static_plan_for_specialization(key, self.current_item_specialization())?;
         let element = map_signature_type(self.isa?, plan.element_type)?;
         let stride = u32::try_from(plan.stride).ok()?;
         let length = u32::try_from(plan.length).ok()?;

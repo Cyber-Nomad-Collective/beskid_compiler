@@ -258,6 +258,7 @@ pub word FiberAlloc(word entry, word arg, word cancelSlot, word parent) {
 // package API. There is no safe synchronous native-fault interception here: an
 // unchecked access into the protected range remains an OS fault rather than a
 // recoverable scheduler event.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_scheduler_stack_check")]
 pub bool SchedulerStackCheck(word requiredUsableSize) {
     mut word index = SchedulerCurrentFiber();
     if index == FIBER_NONE || !FiberExists(index) { return false; }
@@ -289,6 +290,7 @@ pub bool SchedulerStackCheck(word requiredUsableSize) {
 
 // Records an overflow detected by a compiler stack-limit comparison before the
 // protected range is touched. Its public join status is the ABI-stable value 3.
+[Export(Abi:"C", Symbol:"beskid_rt_v5_scheduler_stack_overflow_observed")]
 pub unit SchedulerStackOverflowObserved() {
     mut word index = SchedulerCurrentFiber();
     if index == FIBER_NONE || !FiberExists(index) { return; }

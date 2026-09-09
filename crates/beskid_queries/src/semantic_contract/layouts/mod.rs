@@ -11,7 +11,9 @@ pub(in crate::semantic_contract) use aggregate::{
     array_index_element_template_tracked, empty_array_literal_element_abi_type_tracked,
     instantiated_aggregate_layout_for_path,
 };
-pub use aggregate::{aggregate_literal_specialization, array_index_element_specialization};
+pub use aggregate::{
+    aggregate_literal_specialization, array_index_element_specialization, empty_array_literal_element_specialization,
+};
 
 pub(in crate::semantic_contract) use common::{
     abi_local_declaration_type, abi_type_for_direct_aggregate_field_projection, abi_type_for_local_path,

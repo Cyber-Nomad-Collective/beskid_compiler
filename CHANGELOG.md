@@ -16,9 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   state between independent targets, so stdout-writing and sequential Corelib
   tests cannot corrupt or collide with later supervisor work.
 - Align the managed-string Corelib write and panic service signatures with
-  their runtime adapters, extracting UTF-8 data and length before syscall or
-  trap handoff instead of forwarding object headers as raw bytes, and service
-  writes synchronously when a JIT host is not executing inside a fiber.
+  their runtime adapters, forwarding the managed string pointer intact while
+  reserving UTF-8 data-and-length extraction for raw byte-view services, and
+  service writes synchronously when a JIT host is not executing inside a fiber.
+- Resolve direct-return empty array literals from the enclosing generic
+  specialization, giving each concrete instantiation distinct, correctly typed
+  array metadata while leaving ambiguous empty arrays rejected.
+- Keep native-runtime provenance exact without mistaking Win32 `R*` imports for
+  Rust symbols, remove the retired Windows `strlen` dependency, and make the
+  isolated Core.Args adapter fixtures satisfy the managed-string constructor
+  boundary used by environment services.
+- Expose manifest-owned scheduler stack-check seams to ordinary generated spawn
+  trampolines, so application artifacts retain bounded-stack enforcement while
+  canonical runtime builds reuse the same local definitions.
 - Cover the `pckg pack --skip-docs` contract end to end, requiring prepared library API docs to
   remain byte-identical in the artifact and its manifest documentation pointer.
 - Reuse the shared scalar-boundary adapter for direct-call parameters so semantically authorized

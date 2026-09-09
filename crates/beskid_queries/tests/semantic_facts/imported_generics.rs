@@ -474,14 +474,19 @@ pub Core.Results.Result<i64, Core.Syscall.SyscallError> Write() {
         call_abi_signature(&db, call).expect("generic Results.IsOk call ABI"),
         Some(ItemSignature { parameters: Arc::from([SemanticTypeId::POINTER]), result: SemanticTypeId::BOOL })
     );
+    let specialization = generic_call_specialization(&db, call)
+        .expect("generic Results.IsOk specialization")
+        .expect("concrete imported specialization");
+    assert_eq!(specialization.declaration, declaration);
     assert_eq!(
-        generic_call_specialization(&db, call).expect("generic Results.IsOk specialization"),
-        Some(beskid_queries::GenericCallSpecialization {
-            declaration,
-            signature: ItemSignature { parameters: Arc::from([SemanticTypeId::POINTER]), result: SemanticTypeId::BOOL },
-            substitutions: Arc::from([]),
-        })
+        specialization.signature,
+        ItemSignature { parameters: Arc::from([SemanticTypeId::POINTER]), result: SemanticTypeId::BOOL }
     );
+    assert_eq!(specialization.substitutions.len(), 2);
+    assert_eq!(specialization.substitutions[0].parameter.as_ref(), "TValue");
+    assert_eq!(specialization.substitutions[0].argument, SemanticTypeId::I64);
+    assert_eq!(specialization.substitutions[1].parameter.as_ref(), "TError");
+    assert_eq!(specialization.substitutions[1].argument, SemanticTypeId::POINTER);
 }
 
 #[test]

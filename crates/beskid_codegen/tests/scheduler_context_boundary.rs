@@ -84,6 +84,6 @@ fn canonical_scheduler_uses_manifest_guarded_stacks_with_bounded_usable_storage(
     assert!(scheduler.contains("if requiredUsableSize > maximumSize"));
     assert!(scheduler.contains("GuardedStackGrow(stack, committedSize, requestedSize, maximumSize)"));
     assert!(scheduler.contains("pub unit SchedulerStackOverflowObserved()"));
-    assert!(scheduler.contains("raw_word_store(pointer_add(fib, 48), JoinOutcome::StackOverflow);"));
+    assert!(scheduler.contains("raw_word_store(pointer_add(fib, 48), FIBER_JOIN_STACK_OVERFLOW);"));
     assert!(scheduler.contains("SystemFree(context, ArchContextSize());"));
 }

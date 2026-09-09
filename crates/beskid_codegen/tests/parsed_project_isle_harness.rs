@@ -515,7 +515,7 @@ fn parsed_project_capturing_lambda_keeps_generation_safe_capture_facts_and_fails
     let (target, isa) = x86_64_target_and_isa();
 
     with_db(|db| {
-        let generation = SyntaxGenerationId(1);
+        let generation = assembly.generation;
         let unit = SourceUnitId::new(db, source_path.clone());
         let typed = beskid_queries::build_typed_program(
             db,

@@ -192,7 +192,7 @@ fn canonical_runtime_source_can_import_manifest_owned_intrinsics() {
 }
 
 #[test]
-fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
+fn canonical_trap_intrinsic_uses_the_source_owned_bridge_and_rejects_user_packages() {
     use beskid_abi::abi_v5::AbiType;
     use beskid_queries::{item_signature, runtime_intrinsic_name};
 
@@ -216,7 +216,7 @@ fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
         .iter()
         .find(|intrinsic| intrinsic.name == "trap")
         .expect("manifest owns trap");
-    assert_eq!(trap_meta.symbol, "beskid_rt_v5_trap");
+    assert_eq!(trap_meta.symbol, "beskid_rt_v5_intrinsic_trap");
     assert_eq!(trap_meta.params.as_slice(), &[AbiType::U8, AbiType::Pointer, AbiType::USize]);
     assert_eq!(trap_meta.result, AbiType::Void);
     assert!(trap_meta.noreturn, "ABI never result must be recorded as noreturn Void");
@@ -229,7 +229,7 @@ fn canonical_trap_intrinsic_maps_usize_to_word_and_rejects_user_packages() {
     })
     .expect("canonical Trap wrapper invokes trap");
     let (_, authorized) = input.runtime_intrinsic_for(trap, "trap").expect("trusted package may import trap");
-    assert_eq!(authorized.symbol, "beskid_rt_v5_trap");
+    assert_eq!(authorized.symbol, "beskid_rt_v5_intrinsic_trap");
     assert_eq!(
         authorized.params.as_slice(),
         &[AbiType::U8, AbiType::Pointer, AbiType::USize],
@@ -403,6 +403,7 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
     let main_path = ordinary.join("Main.bd");
     let helper = "pub pointer NativePointer(word value) { return value; }";
     let main = "pointer Main() { return NativePointer(0); }";
+    let ordinary_generation = SyntaxGenerationId(92);
     let ordinary_assembly = Arc::new(ProgramAssembly::new(
         EffectiveCompilationRoots {
             host: RootEntry { dependency_name: None, source_root: ordinary.clone() },
@@ -426,9 +427,8 @@ fn exact_canonical_runtime_corpus_resolves_bootstrap_helpers_but_ordinary_assemb
         AssemblyDiscovery::ImportClosure,
         Arc::new(ModuleIndex::empty()),
         false,
-        generation,
+        ordinary_generation,
     ));
-    let ordinary_generation = SyntaxGenerationId(92);
     let ordinary_project =
         ProjectSession::new(&db, ordinary.clone(), main_path.clone(), "App".into(), "ordinary".into());
     let ordinary_typed = build_typed_program(&mut db, ordinary_project, ordinary_generation, ordinary_assembly)

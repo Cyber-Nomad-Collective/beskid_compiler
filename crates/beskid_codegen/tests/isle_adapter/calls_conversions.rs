@@ -197,7 +197,7 @@ fn canonical_corelib_service_call_imports_its_distinct_abi_symbol() {
 }
 
 #[test]
-fn materialized_foundation_syscall_facade_imports_its_authorized_write_service() {
+fn materialized_foundation_syscall_facade_preserves_managed_write_abi() {
     let (input, isa, root) = materialized_corelib_syscall_fixture();
     let write = find_function_definitions(input.database(), root)
         .into_iter()
@@ -212,7 +212,7 @@ fn materialized_foundation_syscall_facade_imports_its_authorized_write_service()
     );
     let service = DirectCallee::corelib_service("syscall_write");
     let mut module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
-    let signature = function_signature(isa.as_ref(), types::I64, [types::I32, isa.pointer_type(), isa.pointer_type()]);
+    let signature = function_signature(isa.as_ref(), types::I64, [types::I64, isa.pointer_type()]);
     let imported = module
         .declare_function("syscall_write", Linkage::Import, &signature)
         .expect("declare materialized Corelib service import");
@@ -228,8 +228,8 @@ fn materialized_foundation_syscall_facade_imports_its_authorized_write_service()
         )
         .expect("materialized Core.Syscall call lowers through the authorized external import");
     let clif = function.display().to_string();
-    assert!(clif.contains("ireduce.i32"), "the source fd must be adapted to the native i32 ABI: {clif}");
-    assert!(clif.contains("load.i64"), "the string header must be expanded to data plus length: {clif}");
+    assert!(!clif.contains("ireduce.i32"), "the managed write ABI must preserve its i64 descriptor: {clif}");
+    assert!(!clif.contains("load.i64"), "the managed string pointer must cross the adapter boundary intact: {clif}");
     assert!(clif.contains("call"), "the trusted materialized facade must import syscall_write: {clif}");
 }
 
@@ -383,6 +383,13 @@ fn canonical_foundation_assert_trigger_failure_imports_only_baseline_strings_and
         vec!["beskid_trap_message", "str_concat", "str_eq", "str_from_i64", "str_new"],
         "canonical Assert may emit the always-admitted string baseline and its reachable panic service, but no other facade service"
     );
+    let trigger = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "trigger_failure")
+        .expect("trigger_failure artifact");
+    let clif = trigger.function.display().to_string();
+    assert!(!clif.contains("load.i64"), "the managed panic string must cross the adapter boundary intact: {clif}");
 }
 
 #[test]

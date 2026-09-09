@@ -73,11 +73,11 @@ impl IsleContext<'_, '_, '_, '_> {
             Some((data, len))
         };
         let adapted = match (*symbol, arguments.as_slice()) {
-            ("beskid_trap_message" | "str_from_bytes_utf8", [header]) => {
+            ("str_from_bytes_utf8", [header]) => {
                 let (data, len) = header_parts(self.builder, *header)?;
                 vec![data, len]
             }
-            ("syscall_write" | "syscall_write_bytes", [fd, header]) => {
+            ("syscall_write_bytes", [fd, header]) => {
                 let fd = self.builder.ins().ireduce(types::I32, *fd);
                 let (data, len) = header_parts(self.builder, *header)?;
                 vec![fd, data, len]

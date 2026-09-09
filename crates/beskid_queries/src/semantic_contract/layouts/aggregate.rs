@@ -219,6 +219,64 @@ pub(in crate::semantic_contract) fn empty_array_literal_element_abi_type_tracked
     .transpose()
 }
 
+/// Resolve an empty array literal that is the direct return value of a specialized generic item.
+///
+/// The declared `T[]` return type supplies the parameter name and the immutable enclosing
+/// specialization supplies its concrete ABI. Other empty-literal contexts remain unavailable.
+pub fn empty_array_literal_element_specialization(
+    db: &dyn Db,
+    key: AstNodeKey,
+    enclosing: Arc<[GenericSubstitution]>,
+) -> SemanticQueryResult<SemanticTypeId> {
+    let Some(syntax) = db.syntax_unit(key.unit).filter(|syntax| syntax.accepts_key(db, key)) else {
+        return Ok(None);
+    };
+    with_node(db, syntax, key, |program, index, node| {
+        let array = node.of::<beskid_analysis::syntax::ArrayLiteralExpression>()?;
+        if !array.elements.is_empty() {
+            return None;
+        }
+        let expression = parent_node(index, key.node)?;
+        if index.kind(expression) != Some(beskid_analysis::syntax_query::NodeKind::Expression) {
+            return None;
+        }
+        let return_node = parent_node(index, expression)?;
+        let statement = index.node_at(program, return_node)?.of::<beskid_analysis::syntax::ReturnStatement>()?;
+        let returned = statement.value.as_ref().and_then(|value| {
+            index.direct_child_id(program, return_node, beskid_analysis::syntax_query::DynNodeRef::from(value))
+        })?;
+        if returned != expression {
+            return None;
+        }
+        let item_node = nearest_ancestor(index, return_node, |kind| {
+            matches!(
+                kind,
+                beskid_analysis::syntax_query::NodeKind::FunctionDefinition
+                    | beskid_analysis::syntax_query::NodeKind::MethodDefinition
+            )
+        })?;
+        let item = index.node_at(program, item_node)?;
+        let return_type = item
+            .of::<beskid_analysis::syntax::FunctionDefinition>()
+            .and_then(|function| function.return_type.as_ref())
+            .or_else(|| {
+                item.of::<beskid_analysis::syntax::MethodDefinition>().and_then(|method| method.return_type.as_ref())
+            })?;
+        let beskid_analysis::syntax::Type::Array(element) = &return_type.node else { return None };
+        if let Some(parameter) = generic_parameter_reference_name(&element.node) {
+            return Some(
+                enclosing
+                    .iter()
+                    .find(|binding| binding.parameter.as_ref() == parameter)
+                    .map(|binding| binding.argument)
+                    .ok_or_else(|| SemanticError::unavailable("empty_array_literal_element_specialization")),
+            );
+        }
+        Some(abi_type_from_syntax(db, AstNodeKey { node: item_node, ..key }, &element.node))
+    })?
+    .transpose()
+}
+
 /// Return the element ABI for an indexed, explicitly declared local array.
 ///
 /// Array literals own allocation metadata, but an index operation may address an array supplied

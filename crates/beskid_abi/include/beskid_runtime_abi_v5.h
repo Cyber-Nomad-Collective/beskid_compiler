@@ -297,6 +297,8 @@ int64_t beskid_rt_v5_poll_monitor_new(int64_t task);
 int32_t beskid_rt_v5_poll_monitor_poll(int64_t monitor, void * result_slot);
 void * beskid_rt_v5_process_init(void * config);
 void beskid_rt_v5_process_shutdown(void * runtime);
+uint8_t beskid_rt_v5_scheduler_stack_check(size_t required_usable_size);
+void beskid_rt_v5_scheduler_stack_overflow_observed(void);
 void * beskid_rt_v5_thread_attach(void * runtime);
 void beskid_rt_v5_thread_detach(void * thread);
 _Noreturn void beskid_rt_v5_trap(uint8_t code, void * message, size_t message_len);
