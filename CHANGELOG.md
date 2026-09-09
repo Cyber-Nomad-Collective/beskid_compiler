@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve process-linked Unix externs through `libc::RTLD_DEFAULT` and its
+  `dlsym`/`dlerror` contract, preventing Linux JIT workers from using Darwin's
+  sentinel handle and crashing on standard functions such as `sched_yield`.
+
 - Treat `Never` as the bottom type when joining match-expression arms and terminate
   effect-only Never arms without inventing a result value, restoring Fiber.Join
   lowering. Initialize Core.Args from one explicit host-owned JIT vector through

@@ -18,6 +18,9 @@ beskid_queries = { path = "../beskid_queries" }
 beskid_pipeline = { path = "../beskid_pipeline" }
 anyhow = "1"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [features]
 extern_dlopen = []
 

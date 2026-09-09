@@ -28,7 +28,6 @@ pub i64 Main() { return 0; }
 
 #[test]
 #[cfg(not(feature = "extern_dlopen"))]
-#[ignore = "syntax-ISLE Extern Path Direct prepare works; process-symbol JIT link still SIGSEGV on Linux CI (follow-up)"]
 fn extern_resolution_via_process_symbols_without_feature() -> Result<()> {
     let src = r#"
 [Extern(Abi:"C", Library:"libc.so.6")]
@@ -41,12 +40,14 @@ pub i64 Main() { return C.getpid(); }
     let prepared = prepare_jit_entrypoint(std::path::Path::new("<memory>"), src, "Main")?;
     let mut engine = Engine::new();
     engine.compile_artifact(&prepared.artifact).expect("compile via process-linked libc symbols");
+    let main_ptr = unsafe { engine.entrypoint_ptr(&prepared.symbol).unwrap() };
+    let fun: extern "C" fn() -> i64 = unsafe { std::mem::transmute(main_ptr) };
+    assert!(fun() > 1);
     Ok(())
 }
 
 #[test]
 #[cfg(not(feature = "extern_dlopen"))]
-#[ignore = "syntax-ISLE Extern Path Direct prepare works; process-symbol JIT link still SIGSEGV on Linux CI (follow-up)"]
 fn extern_missing_symbol_errors_without_feature() -> Result<()> {
     let src = r#"
 [Extern(Abi:"C", Library:"libc.so.6")]
