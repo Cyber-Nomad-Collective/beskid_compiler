@@ -6,7 +6,8 @@ use anyhow::Result;
 
 static SCRATCH_DIRECTORY_ID: AtomicU64 = AtomicU64::new(0);
 
-/// Ensure `source` is readable from an isolated assembly-discovery root (`<memory>` and missing paths).
+/// Ensure `source` is readable from an isolated assembly-discovery root
+/// (virtual labels such as `<memory>` and `<repl>`, plus missing paths).
 pub fn materialize_source_path_for_lowering(path: &Path, source: &str) -> Result<PathBuf> {
     if path.is_file() {
         return Ok(path.to_path_buf());
