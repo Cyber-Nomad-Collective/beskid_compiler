@@ -24,6 +24,11 @@ pub(in super::super) unsafe extern "C" fn test_tls_get() -> *mut u8 {
     TEST_CURRENT_TLS.load(Ordering::SeqCst) as *mut u8
 }
 
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64"),))]
+pub(in super::super) unsafe extern "C" fn test_trap(_code: u8, _message: *const u8, _message_len: usize) -> ! {
+    std::process::abort()
+}
+
 pub(in super::super) fn item_fixture(
     source: &str,
 ) -> (CodegenInput<'static>, Arc<dyn cranelift_codegen::isa::TargetIsa>, AstNodeKey) {
