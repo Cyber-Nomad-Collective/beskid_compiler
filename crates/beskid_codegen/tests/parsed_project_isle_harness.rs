@@ -10,7 +10,7 @@ use beskid_codegen::{lower_canonical_runtime_prepared_syntax, lower_syntax_assem
 use beskid_queries::{
     AstNodeId, AstNodeKey, SourceUnitId, SyntaxGenerationId, child_nodes, closure_environment, node_kind, with_db,
 };
-use cranelift_codegen::{ir::ExternalName, isa, settings, verify_function};
+use cranelift_codegen::{Context, control::ControlPlane, ir::ExternalName, isa, settings, verify_function};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::default_libcall_names;
 
@@ -65,10 +65,9 @@ fn x86_64_target_and_isa() -> (TargetMetadata, std::sync::Arc<dyn cranelift_code
         .into_iter()
         .find(|target| target.triple.as_str() == "x86_64-unknown-linux-gnu")
         .expect("Linux x86_64 ABI target");
-    let isa = isa::lookup_by_name("x86_64")
-        .expect("x86 ISA")
-        .finish(settings::Flags::new(settings::builder()))
-        .expect("finish ISA");
+    let settings = beskid_codegen::cranelift_host::production_isa_settings_builder().expect("production ISA settings");
+    let isa =
+        isa::lookup_by_name("x86_64").expect("x86 ISA").finish(settings::Flags::new(settings)).expect("finish ISA");
     (target, isa)
 }
 
@@ -635,6 +634,9 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
     for function in &artifact.functions {
         verify_function(&function.function, isa.flags())
             .unwrap_or_else(|error| panic!("stock CLIF verifier rejected {}: {error}", function.name));
+        Context::for_function(function.function.clone())
+            .compile(isa.as_ref(), &mut ControlPlane::default())
+            .unwrap_or_else(|error| panic!("machine emission rejected {}: {error:?}", function.name));
     }
     for scheduler_entry in ["__beskid_scheduler_fiber_entry", "__beskid_scheduler_return_trampoline"] {
         let imports = artifact.functions.iter().flat_map(|function| function.function.dfg.ext_funcs.values());

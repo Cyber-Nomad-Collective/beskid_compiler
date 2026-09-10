@@ -196,7 +196,8 @@ impl BeskidObjectModule {
 #[allow(non_snake_case)]
 fn ObjectCodegenFlags(profile: BuildProfile) -> AotResult<settings::Flags> {
     #[allow(non_snake_case)]
-    let mut flagBuilder = settings::builder();
+    let mut flagBuilder = beskid_codegen::cranelift_host::production_isa_settings_builder()
+        .map_err(|err| AotError::IsaInit { message: err.to_string() })?;
     flagBuilder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
     flagBuilder.set("enable_verifier", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
     #[allow(non_snake_case)]
@@ -213,7 +214,8 @@ fn ObjectCodegenFlags(profile: BuildProfile) -> AotResult<settings::Flags> {
 #[allow(non_snake_case)]
 pub(crate) fn ObjectTargetIsa(target: &str) -> AotResult<std::sync::Arc<dyn TargetIsa>> {
     #[allow(non_snake_case)]
-    let mut flagBuilder = settings::builder();
+    let mut flagBuilder = beskid_codegen::cranelift_host::production_isa_settings_builder()
+        .map_err(|err| AotError::IsaInit { message: err.to_string() })?;
     flagBuilder.set("is_pic", "true").map_err(|err| AotError::IsaInit { message: err.to_string() })?;
     cranelift_codegen::isa::lookup_by_name(target)
         .map_err(|err| AotError::IsaInit { message: err.to_string() })?
@@ -236,6 +238,7 @@ mod profile_tests {
         assert_eq!(flags.opt_level(), OptLevel::None);
         assert!(flags.enable_verifier());
         assert!(flags.is_pic());
+        assert!(flags.preserve_frame_pointers());
     }
 
     // Test names follow the CamelCase convention used by the AOT profile suite.
@@ -247,5 +250,6 @@ mod profile_tests {
         assert_eq!(flags.opt_level(), OptLevel::Speed);
         assert!(flags.enable_verifier());
         assert!(flags.is_pic());
+        assert!(flags.preserve_frame_pointers());
     }
 }

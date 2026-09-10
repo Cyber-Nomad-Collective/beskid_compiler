@@ -184,8 +184,10 @@ pub fn lower_syntax_assembly_entrypoint(
 
 fn native_isa() -> Result<Arc<dyn TargetIsa>> {
     let builder = cranelift_native::builder().map_err(|error| anyhow::anyhow!("native ISA unavailable: {error}"))?;
+    let settings = beskid_codegen::cranelift_host::production_isa_settings_builder()
+        .map_err(|error| anyhow::anyhow!("native ISA settings failed: {error}"))?;
     builder
-        .finish(settings::Flags::new(settings::builder()))
+        .finish(settings::Flags::new(settings))
         .map_err(|error| anyhow::anyhow!("native ISA construction failed: {error}"))
 }
 

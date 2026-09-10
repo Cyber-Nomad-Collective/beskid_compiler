@@ -9,9 +9,21 @@ use beskid_abi::interop::c_profile::C_PROFILE_PERMITTED_SCALARS;
 use beskid_abi::{AbiParamKind, AbiReturnKind, all_builtin_specs};
 use cranelift_codegen::ir::{AbiParam, ExternalName, Signature, UserExternalName, types};
 use cranelift_codegen::isa::CallConv;
+use cranelift_codegen::settings::{self, Configurable};
 use cranelift_module::{FuncId, FuncOrDataId, Linkage, Module, ModuleError};
 
 use crate::CodegenArtifact;
+
+/// Construct the shared settings builder for every production JIT and AOT ISA.
+///
+/// Cranelift's x64 tail-call emitter currently requires frame pointers. Keeping
+/// this invariant here prevents lowering and final machine emission from using
+/// different ISA contracts.
+pub fn production_isa_settings_builder() -> Result<settings::Builder, settings::SetError> {
+    let mut builder = settings::builder();
+    builder.set("preserve_frame_pointers", "true")?;
+    Ok(builder)
+}
 
 /// Remapping failures when resolving `ExternalName::TestCase` references against a module.
 #[derive(Debug)]
