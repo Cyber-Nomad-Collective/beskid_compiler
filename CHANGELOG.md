@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Allow only the Mach-O linker-generated `dyld_stub_binder` import when
+  auditing the exact macOS shared runtime, preserving fail-closed provenance
+  checks for undeclared runtime and application dependencies.
 - Complete Linux x86-64 fibers through Cranelift tail transfers, preserving the
   scheduler's return stack while retaining one generated owner for completion
   state and one canonical System V signature for the manifest-owned context

@@ -252,6 +252,21 @@ fn linux_shared_runtime_allows_only_documented_dynamic_loader_imports() {
 }
 
 #[test]
+fn darwin_shared_runtime_allows_only_the_dyld_stub_binder() {
+    let audit = RuntimeProvenanceAudit::canonical(target("aarch64-apple-darwin")).unwrap();
+    let mut symbols = audit.fixture_symbol_list().unwrap();
+    symbols.undefined.push("_dyld_stub_binder".into());
+
+    let static_error = audit.verify(&symbols).unwrap_err();
+    assert!(static_error.to_string().contains("unexpected"));
+    audit.verify_shared(&symbols).unwrap();
+
+    symbols.undefined.push("_malloc".into());
+    let error = audit.verify_shared(&symbols).unwrap_err();
+    assert!(error.to_string().contains("unexpected"), "unexpected allowlist result: {error}");
+}
+
+#[test]
 fn exact_linux_shared_artifact_allows_only_linker_generated_imports() {
     let audit = RuntimeProvenanceAudit::canonical(target("x86_64-unknown-linux-gnu")).unwrap();
     let symbols = SymbolList {

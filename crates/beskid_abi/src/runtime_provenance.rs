@@ -22,6 +22,7 @@ use crate::runtime_source::canonical_runtime_source_hash;
 const LINUX_ELF_SHARED_TOOLCHAIN_IMPORTS: &[&str] =
     &["_ITM_deregisterTMCloneTable", "_ITM_registerTMCloneTable", "__cxa_finalize", "__gmon_start__"];
 const LINUX_ELF_DYNAMIC_TLS_IMPORTS: &[&str] = &["__tls_get_addr"];
+const DARWIN_MACHO_SHARED_TOOLCHAIN_IMPORTS: &[&str] = &["dyld_stub_binder"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -179,6 +180,7 @@ impl RuntimeProvenanceAudit {
 fn shared_toolchain_imports(target: &str) -> &'static [&'static str] {
     match target {
         "x86_64-unknown-linux-gnu" => LINUX_ELF_SHARED_TOOLCHAIN_IMPORTS,
+        "aarch64-apple-darwin" => DARWIN_MACHO_SHARED_TOOLCHAIN_IMPORTS,
         _ => &[],
     }
 }
