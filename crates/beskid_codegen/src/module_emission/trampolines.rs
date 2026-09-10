@@ -5,10 +5,8 @@ use beskid_queries::{
     child_nodes, closure_environment, closure_signature, item_abi_signature, node_kind, resolved_item,
     spawn_entry_validation,
 };
-use cranelift_codegen::ir::{
-    AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, Type, types,
-};
-use cranelift_codegen::isa::TargetIsa;
+use cranelift_codegen::ir::{AbiParam, ExtFuncData, ExternalName, Function, InstBuilder, Signature, Type, types};
+use cranelift_codegen::isa::{CallConv, TargetIsa};
 use cranelift_codegen::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 
@@ -28,6 +26,11 @@ pub(super) struct SpawnTrampoline {
     /// Present when the trampoline target is a capturing lambda that reads from the environment.
     pub(super) closure_captures: Option<Vec<beskid_isle::InlineCaptureField>>,
     pub(super) symbol: String,
+}
+
+pub(super) enum SchedulerCompletionTransfer<'a> {
+    Return,
+    Tail { context_switch_symbol: &'a str },
 }
 
 /// One freestanding lambda lowered to its own trampoline function.
@@ -343,9 +346,11 @@ pub(super) fn emit_scheduler_fiber_entry(
     isa: &dyn TargetIsa,
     scheduler_current_symbol: &str,
     fiber_done_symbol: &str,
+    completion_transfer: &SchedulerCompletionTransfer<'_>,
 ) -> Result<Function, SyntaxModuleEmissionError> {
     let pointer = isa.pointer_type();
-    let mut signature = Signature::new(isa.default_call_conv());
+    let tail_completion = matches!(completion_transfer, SchedulerCompletionTransfer::Tail { .. });
+    let mut signature = Signature::new(if tail_completion { CallConv::Tail } else { isa.default_call_conv() });
     signature.params.push(AbiParam::new(pointer));
     let mut function = Function::with_name_signature(cranelift_codegen::ir::UserFuncName::user(0, 0), signature);
     let mut builder_context = FunctionBuilderContext::new();
@@ -364,14 +369,38 @@ pub(super) fn emit_scheduler_fiber_entry(
         let body_signature = builder.import_signature(body_signature);
         let body_call = builder.ins().call_indirect(body_signature, entry, &[argument]);
         let result = builder.inst_results(body_call)[0];
-        let current = import_local(&mut builder, scheduler_current_symbol, &[], Some(pointer));
+        let current = import_local_with_call_conv(
+            &mut builder,
+            scheduler_current_symbol,
+            &[],
+            Some(pointer),
+            isa.default_call_conv(),
+        );
         let current_call = builder.ins().call(current, &[]);
         let index = builder.inst_results(current_call)[0];
-        let fiber_done = import_local(&mut builder, fiber_done_symbol, &[pointer, types::I64], None);
+        let fiber_done = import_local_with_call_conv(
+            &mut builder,
+            fiber_done_symbol,
+            &[pointer, types::I64],
+            None,
+            isa.default_call_conv(),
+        );
         builder.ins().call(fiber_done, &[index, result]);
-        // Context initialization installs the scheduler return trampoline as the entry's return
-        // address. Keep scheduler resumption there so every target uses the same ABI-owned path.
-        builder.ins().return_(&[]);
+        if tail_completion {
+            let completion = import_with_call_conv(
+                &mut builder,
+                "__beskid_scheduler_return_trampoline",
+                &[],
+                None,
+                CallConv::Tail,
+                false,
+            );
+            builder.ins().return_call(completion, &[]);
+        } else {
+            // Context initialization installs the scheduler return trampoline as the entry's
+            // return address on targets without the x86-64 System V tail-transfer path.
+            builder.ins().return_(&[]);
+        }
         builder.finalize();
     }
     verify_function(&function, isa.flags())
@@ -386,9 +415,11 @@ pub(super) fn emit_scheduler_return_trampoline(
     scheduler_context_symbol: &str,
     scheduler_set_current_symbol: &str,
     context_switch_symbol: &str,
+    completion_transfer: &SchedulerCompletionTransfer<'_>,
 ) -> Result<Function, SyntaxModuleEmissionError> {
     let pointer = isa.pointer_type();
-    let signature = Signature::new(isa.default_call_conv());
+    let tail_completion = matches!(completion_transfer, SchedulerCompletionTransfer::Tail { .. });
+    let signature = Signature::new(if tail_completion { CallConv::Tail } else { isa.default_call_conv() });
     let mut function = Function::with_name_signature(cranelift_codegen::ir::UserFuncName::user(0, 0), signature);
     let mut builder_context = FunctionBuilderContext::new();
     {
@@ -396,22 +427,68 @@ pub(super) fn emit_scheduler_return_trampoline(
         let block = builder.create_block();
         builder.switch_to_block(block);
         builder.seal_block(block);
-        let current = import_local(&mut builder, scheduler_current_symbol, &[], Some(pointer));
+        let current = import_local_with_call_conv(
+            &mut builder,
+            scheduler_current_symbol,
+            &[],
+            Some(pointer),
+            isa.default_call_conv(),
+        );
         let current_call = builder.ins().call(current, &[]);
         let index = builder.inst_results(current_call)[0];
-        let record = import_local(&mut builder, fiber_record_symbol, &[pointer], Some(pointer));
+        let record = import_local_with_call_conv(
+            &mut builder,
+            fiber_record_symbol,
+            &[pointer],
+            Some(pointer),
+            isa.default_call_conv(),
+        );
         let record_call = builder.ins().call(record, &[index]);
         let fiber = builder.inst_results(record_call)[0];
         let none = builder.ins().iconst(pointer, 0xFFFF);
-        let set_current = import_local(&mut builder, scheduler_set_current_symbol, &[pointer], None);
+        let set_current = import_local_with_call_conv(
+            &mut builder,
+            scheduler_set_current_symbol,
+            &[pointer],
+            None,
+            isa.default_call_conv(),
+        );
         builder.ins().call(set_current, &[none]);
-        let scheduler_context = import_local(&mut builder, scheduler_context_symbol, &[], Some(pointer));
+        let scheduler_context = import_local_with_call_conv(
+            &mut builder,
+            scheduler_context_symbol,
+            &[],
+            Some(pointer),
+            isa.default_call_conv(),
+        );
         let scheduler_call = builder.ins().call(scheduler_context, &[]);
         let scheduler = builder.inst_results(scheduler_call)[0];
         let fiber_context = builder.ins().load(pointer, cranelift_codegen::ir::MemFlags::trusted(), fiber, 104);
-        let switch = import_local(&mut builder, context_switch_symbol, &[pointer, pointer], None);
-        builder.ins().call(switch, &[fiber_context, scheduler]);
-        builder.ins().return_(&[]);
+        if let SchedulerCompletionTransfer::Tail { context_switch_symbol } = completion_transfer {
+            let switch = import_with_call_conv(
+                &mut builder,
+                context_switch_symbol,
+                &[pointer, pointer],
+                None,
+                isa.default_call_conv(),
+                false,
+            );
+            let switch_address = builder.ins().func_addr(pointer, switch);
+            let mut tail_signature = Signature::new(CallConv::Tail);
+            tail_signature.params.extend([pointer, pointer].into_iter().map(AbiParam::new));
+            let tail_signature = builder.import_signature(tail_signature);
+            builder.ins().return_call_indirect(tail_signature, switch_address, &[fiber_context, scheduler]);
+        } else {
+            let switch = import_local_with_call_conv(
+                &mut builder,
+                context_switch_symbol,
+                &[pointer, pointer],
+                None,
+                isa.default_call_conv(),
+            );
+            builder.ins().call(switch, &[fiber_context, scheduler]);
+            builder.ins().return_(&[]);
+        }
         builder.finalize();
     }
     verify_function(&function, isa.flags())
@@ -425,7 +502,28 @@ fn import_local(
     params: &[Type],
     result: Option<Type>,
 ) -> cranelift_codegen::ir::FuncRef {
-    let mut signature = Signature::new(builder.func.signature.call_conv);
+    import_local_with_call_conv(builder, symbol, params, result, builder.func.signature.call_conv)
+}
+
+fn import_local_with_call_conv(
+    builder: &mut FunctionBuilder<'_>,
+    symbol: &str,
+    params: &[Type],
+    result: Option<Type>,
+    call_conv: CallConv,
+) -> cranelift_codegen::ir::FuncRef {
+    import_with_call_conv(builder, symbol, params, result, call_conv, true)
+}
+
+fn import_with_call_conv(
+    builder: &mut FunctionBuilder<'_>,
+    symbol: &str,
+    params: &[Type],
+    result: Option<Type>,
+    call_conv: CallConv,
+    colocated: bool,
+) -> cranelift_codegen::ir::FuncRef {
+    let mut signature = Signature::new(call_conv);
     signature.params.extend(params.iter().copied().map(AbiParam::new));
     if let Some(result) = result {
         signature.returns.push(AbiParam::new(result));
@@ -434,7 +532,7 @@ fn import_local(
     builder.func.import_function(ExtFuncData {
         name: ExternalName::testcase(symbol.as_bytes()),
         signature,
-        colocated: true,
+        colocated,
         patchable: false,
     })
 }

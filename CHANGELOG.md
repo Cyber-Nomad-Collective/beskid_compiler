@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Complete Linux x86-64 fibers through Cranelift tail transfers, preserving the
+  scheduler's return stack while retaining one generated owner for completion
+  state and one canonical System V signature for the manifest-owned context
+  switch.
 - Materialize virtual source labels such as `<repl>` and `<memory>` under the
   portable `main.bd` leaf, allowing REPL type-checking and evaluation to run on
   Windows while retaining one isolated scratch root per lowering request.

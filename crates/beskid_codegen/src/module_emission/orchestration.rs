@@ -16,8 +16,9 @@ use super::items::{ResolvedSyntaxModuleItem, SyntaxModuleItem};
 use super::specialization::resolve_module_items;
 use super::trace::{trace_item_facts, trace_key};
 use super::trampolines::{
-    conservative_fiber_stack_requirement, emit_scheduler_fiber_entry, emit_scheduler_return_trampoline,
-    emit_spawn_trampoline, expand_direct_spawn_items, resolve_lambda_trampolines, resolve_spawn_trampolines,
+    SchedulerCompletionTransfer, conservative_fiber_stack_requirement, emit_scheduler_fiber_entry,
+    emit_scheduler_return_trampoline, emit_spawn_trampoline, expand_direct_spawn_items, resolve_lambda_trampolines,
+    resolve_spawn_trampolines,
 };
 use crate::aggregate_static::{ABI_V5_MANAGED_OBJECT_ALLOCATE, emit_aggregate_static_data};
 use crate::array_static::{
@@ -103,6 +104,14 @@ fn lower_resolved_syntax_program(
         }
     }
     let runtime_intrinsics = runtime_intrinsic_symbols(input);
+    let tail_context_switch_symbol = input
+        .abi_manifest()
+        .trusted_runtime_intrinsics
+        .iter()
+        .position(|intrinsic| intrinsic.name == "context_switch")
+        .and_then(|index| u32::try_from(index).ok())
+        .and_then(|index| runtime_intrinsics.get(&DirectCallee::runtime_intrinsic(index)))
+        .cloned();
     symbols.extend(runtime_intrinsics.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
     let corelib_services = corelib_service_symbols(input, items);
     symbols.extend(corelib_services.iter().map(|(callee, symbol)| (callee.clone(), symbol.clone())));
@@ -193,9 +202,17 @@ fn lower_resolved_syntax_program(
     );
     if let Some((entry, _)) = scheduler_symbols {
         let (scheduler_context, set_current, context_switch, current, fiber_record, fiber_done) = entry;
+        let tail_context_switch = tail_context_switch_symbol
+            .as_deref()
+            .ok_or_else(|| emission_verification("manifest context_switch intrinsic unavailable"))?;
+        let completion_transfer = if input.target().triple.as_str() == "x86_64-unknown-linux-gnu" {
+            SchedulerCompletionTransfer::Tail { context_switch_symbol: tail_context_switch }
+        } else {
+            SchedulerCompletionTransfer::Return
+        };
         functions.push(crate::LoweredFunction {
             name: "__beskid_scheduler_fiber_entry".to_owned(),
-            function: emit_scheduler_fiber_entry(isa, current, fiber_done)?,
+            function: emit_scheduler_fiber_entry(isa, current, fiber_done, &completion_transfer)?,
         });
         functions.push(crate::LoweredFunction {
             name: "__beskid_scheduler_return_trampoline".to_owned(),
@@ -206,6 +223,7 @@ fn lower_resolved_syntax_program(
                 scheduler_context,
                 set_current,
                 context_switch,
+                &completion_transfer,
             )?,
         });
     }

@@ -5,12 +5,14 @@ use beskid_analysis::{
     projects::{AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit},
     services::parse_program_with_source_name,
 };
-use beskid_codegen::lower_canonical_runtime_prepared_syntax;
-use beskid_codegen::lower_syntax_assembly_entrypoint;
+use beskid_codegen::cranelift_host::collect_validated_extern_signatures;
+use beskid_codegen::{lower_canonical_runtime_prepared_syntax, lower_syntax_assembly_entrypoint};
 use beskid_queries::{
     AstNodeId, AstNodeKey, SourceUnitId, SyntaxGenerationId, child_nodes, closure_environment, node_kind, with_db,
 };
 use cranelift_codegen::{ir::ExternalName, isa, settings, verify_function};
+use cranelift_jit::{JITBuilder, JITModule};
+use cranelift_module::default_libcall_names;
 
 #[test]
 fn retired_public_codegen_facade_is_absent() {
@@ -597,6 +599,10 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
         .collect::<BTreeSet<_>>();
     let artifact = with_db(|db| lower_canonical_runtime_prepared_syntax(db, target, isa.as_ref()))
         .expect("canonical runtime lowers through TypedProgram → CodegenInput → ISLE");
+    let module = JITModule::new(JITBuilder::with_isa(isa.clone(), default_libcall_names()));
+    let extern_signatures = collect_validated_extern_signatures(&module, &artifact)
+        .expect("manifest externs retain one signature across canonical runtime callsites");
+    assert_eq!(extern_signatures["beskid_arch_v5_context_switch"].call_conv, cranelift_codegen::isa::CallConv::SystemV,);
     assert!(!artifact.functions.is_empty(), "canonical Bootstrap must emit at least one verified function");
     assert!(
         artifact.exports.iter().any(|export| export.exported_symbol == "beskid_rt_v5_fiber_spawn_with_cancel_slot"),
@@ -678,6 +684,20 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
              importing `{scheduler_resume_symbol}`",
         );
     }
+    assert_eq!(fiber_entry.function.signature.call_conv, cranelift_codegen::isa::CallConv::Tail);
+    assert!(fiber_entry_imports.contains(&"__beskid_scheduler_return_trampoline"));
+    assert!(fiber_entry.function.display().to_string().contains("return_call"));
+    assert!(!fiber_entry.function.display().to_string().lines().any(|line| line.trim() == "return"));
+    for external in fiber_entry.function.dfg.ext_funcs.values() {
+        let ExternalName::TestCase(name) = &external.name else { continue };
+        let name = std::str::from_utf8(name.raw()).expect("UTF-8 scheduler symbol");
+        let call_conv = fiber_entry.function.dfg.signatures[external.signature].call_conv;
+        if name == "__beskid_scheduler_return_trampoline" {
+            assert_eq!(call_conv, cranelift_codegen::isa::CallConv::Tail);
+        } else {
+            assert_eq!(call_conv, cranelift_codegen::isa::CallConv::SystemV);
+        }
+    }
     let return_trampoline = artifact
         .functions
         .iter()
@@ -693,14 +713,35 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
             _ => None,
         })
         .collect::<Vec<_>>();
-    for scheduler_resume_symbol in
-        ["SchedulerContext#syntax_", "SchedulerSetCurrentFiber#syntax_", "ContextSwitch#syntax_"]
-    {
+    for scheduler_resume_symbol in ["SchedulerContext#syntax_", "SchedulerSetCurrentFiber#syntax_"] {
         assert!(
             return_trampoline_imports.iter().any(|name| name.starts_with(scheduler_resume_symbol)),
             "scheduler return trampoline must remain the sole owner of `{scheduler_resume_symbol}`",
         );
     }
+    assert_eq!(return_trampoline.function.signature.call_conv, cranelift_codegen::isa::CallConv::Tail);
+    assert!(return_trampoline_imports.contains(&"beskid_arch_v5_context_switch"));
+    assert!(!return_trampoline_imports.iter().any(|name| name.starts_with("ContextSwitch#syntax_")));
+    assert!(return_trampoline.function.display().to_string().contains("return_call_indirect"));
+    assert!(!return_trampoline.function.display().to_string().lines().any(|line| line.trim() == "return"));
+    for external in return_trampoline.function.dfg.ext_funcs.values() {
+        let ExternalName::TestCase(name) = &external.name else { continue };
+        let name = std::str::from_utf8(name.raw()).expect("UTF-8 scheduler symbol");
+        let call_conv = return_trampoline.function.dfg.signatures[external.signature].call_conv;
+        assert_eq!(call_conv, cranelift_codegen::isa::CallConv::SystemV, "ordinary import `{name}`");
+    }
+    let context_switch_signatures = artifact
+        .functions
+        .iter()
+        .flat_map(|function| {
+            function.function.dfg.ext_funcs.values().filter_map(|external| {
+                matches!(&external.name, ExternalName::TestCase(name) if name.raw() == b"beskid_arch_v5_context_switch")
+                    .then_some(function.function.dfg.signatures[external.signature].call_conv)
+            })
+        })
+        .collect::<Vec<_>>();
+    assert!(!context_switch_signatures.is_empty());
+    assert!(context_switch_signatures.iter().all(|call_conv| *call_conv == cranelift_codegen::isa::CallConv::SystemV));
     assert!(
         artifact.functions.iter().any(|function| {
             let clif = function.function.display().to_string();
