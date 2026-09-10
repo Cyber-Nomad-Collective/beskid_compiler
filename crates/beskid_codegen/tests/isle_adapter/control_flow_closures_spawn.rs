@@ -6,7 +6,7 @@ use super::support::{
     canonical_runtime_intrinsic_capability, canonical_runtime_test_assembly, default_libcall_names,
     emit_closure_static_data, emit_isle_item, emit_syntax_program, find_definition_of_kind, find_function_definition,
     find_function_definitions, find_node, find_nodes_of_kind, isa, item_fixture, item_fixture_with_root, item_name,
-    lower_syntax_program, settings, test_system_allocate, test_tls_get,
+    lower_syntax_program, settings, test_system_allocate, test_tls_get, test_trap,
 };
 use beskid_abi::runtime_source::{CANONICAL_GC_ALLOCATION_SOURCE_PATH, canonical_runtime_sources};
 
@@ -465,6 +465,7 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     builder.symbol("beskid_arch_v5_context_switch", test_context_switch as *const u8);
     builder.symbol("beskid_rt_v5_intrinsic_system_allocate", test_system_allocate as *const u8);
     builder.symbol("beskid_rt_v5_intrinsic_tls_get", test_tls_get as *const u8);
+    builder.symbol("beskid_rt_v5_intrinsic_trap", test_trap as *const u8);
     let mut module = JITModule::new(builder);
     let declared = emit_syntax_program(&mut module, &input, isa.as_ref(), &module_items, Linkage::Export)
         .expect("closure descriptor helpers lower through the production module emitter");
