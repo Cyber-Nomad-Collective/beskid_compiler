@@ -678,6 +678,20 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
              importing `{scheduler_resume_symbol}`",
         );
     }
+    assert_eq!(fiber_entry.function.signature.call_conv, cranelift_codegen::isa::CallConv::Tail);
+    assert!(fiber_entry_imports.contains(&"__beskid_scheduler_return_trampoline"));
+    assert!(fiber_entry.function.display().to_string().contains("return_call"));
+    assert!(!fiber_entry.function.display().to_string().lines().any(|line| line.trim() == "return"));
+    for external in fiber_entry.function.dfg.ext_funcs.values() {
+        let ExternalName::TestCase(name) = &external.name else { continue };
+        let name = std::str::from_utf8(name.raw()).expect("UTF-8 scheduler symbol");
+        let call_conv = fiber_entry.function.dfg.signatures[external.signature].call_conv;
+        if name == "__beskid_scheduler_return_trampoline" {
+            assert_eq!(call_conv, cranelift_codegen::isa::CallConv::Tail);
+        } else {
+            assert_eq!(call_conv, cranelift_codegen::isa::CallConv::SystemV);
+        }
+    }
     let return_trampoline = artifact
         .functions
         .iter()
@@ -693,13 +707,26 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
             _ => None,
         })
         .collect::<Vec<_>>();
-    for scheduler_resume_symbol in
-        ["SchedulerContext#syntax_", "SchedulerSetCurrentFiber#syntax_", "ContextSwitch#syntax_"]
-    {
+    for scheduler_resume_symbol in ["SchedulerContext#syntax_", "SchedulerSetCurrentFiber#syntax_"] {
         assert!(
             return_trampoline_imports.iter().any(|name| name.starts_with(scheduler_resume_symbol)),
             "scheduler return trampoline must remain the sole owner of `{scheduler_resume_symbol}`",
         );
+    }
+    assert_eq!(return_trampoline.function.signature.call_conv, cranelift_codegen::isa::CallConv::Tail);
+    assert!(return_trampoline_imports.contains(&"beskid_arch_v5_context_switch"));
+    assert!(!return_trampoline_imports.iter().any(|name| name.starts_with("ContextSwitch#syntax_")));
+    assert!(return_trampoline.function.display().to_string().contains("return_call"));
+    assert!(!return_trampoline.function.display().to_string().lines().any(|line| line.trim() == "return"));
+    for external in return_trampoline.function.dfg.ext_funcs.values() {
+        let ExternalName::TestCase(name) = &external.name else { continue };
+        let name = std::str::from_utf8(name.raw()).expect("UTF-8 scheduler symbol");
+        let call_conv = return_trampoline.function.dfg.signatures[external.signature].call_conv;
+        if name == "beskid_arch_v5_context_switch" {
+            assert_eq!(call_conv, cranelift_codegen::isa::CallConv::Tail);
+        } else {
+            assert_eq!(call_conv, cranelift_codegen::isa::CallConv::SystemV);
+        }
     }
     assert!(
         artifact.functions.iter().any(|function| {
