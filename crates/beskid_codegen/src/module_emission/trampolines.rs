@@ -470,10 +470,14 @@ pub(super) fn emit_scheduler_return_trampoline(
                 context_switch_symbol,
                 &[pointer, pointer],
                 None,
-                CallConv::Tail,
+                isa.default_call_conv(),
                 false,
             );
-            builder.ins().return_call(switch, &[fiber_context, scheduler]);
+            let switch_address = builder.ins().func_addr(pointer, switch);
+            let mut tail_signature = Signature::new(CallConv::Tail);
+            tail_signature.params.extend([pointer, pointer].into_iter().map(AbiParam::new));
+            let tail_signature = builder.import_signature(tail_signature);
+            builder.ins().return_call_indirect(tail_signature, switch_address, &[fiber_context, scheduler]);
         } else {
             let switch = import_local_with_call_conv(
                 &mut builder,
