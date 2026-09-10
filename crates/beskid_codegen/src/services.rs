@@ -4,22 +4,30 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::CodegenArtifact;
 use anyhow::Result;
 
-static SCRATCH_FILE_ID: AtomicU64 = AtomicU64::new(0);
+static SCRATCH_DIRECTORY_ID: AtomicU64 = AtomicU64::new(0);
 
-/// Ensure `source` is readable from disk for assembly discovery (`<memory>` and missing paths).
+/// Ensure `source` is readable from an isolated assembly-discovery root (`<memory>` and missing paths).
 pub fn materialize_source_path_for_lowering(path: &Path, source: &str) -> Result<PathBuf> {
     if path.is_file() {
         return Ok(path.to_path_buf());
     }
-    let dir = std::env::temp_dir().join("beskid_codegen_scratch");
-    std::fs::create_dir_all(&dir)?;
-    let id = SCRATCH_FILE_ID.fetch_add(1, Ordering::Relaxed);
+    let scratch_root = std::env::temp_dir().join("beskid_codegen_scratch");
+    std::fs::create_dir_all(&scratch_root)?;
+    let dir = loop {
+        let id = SCRATCH_DIRECTORY_ID.fetch_add(1, Ordering::Relaxed);
+        let candidate = scratch_root.join(format!("{}-{id}", std::process::id()));
+        match std::fs::create_dir(&candidate) {
+            Ok(()) => break candidate,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
+    };
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
         .filter(|name| !name.is_empty() && *name != "<memory>")
         .unwrap_or("main.bd");
-    let file = dir.join(format!("{id}_{file_name}"));
+    let file = dir.join(file_name);
     std::fs::write(&file, source)?;
     Ok(file)
 }
