@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Read linked-image export and import directories alongside ordinary and
+  dynamic symbol tables, so stripped PE DLLs retain exact ABI-v5 provenance
+  validation instead of appearing to have no exports or dependencies.
 - Resolve the manifest-owned fail-closed trap intrinsic in the executable
   canonical-runtime closure harness now that validated fiber completion is part
   of its transitive scheduler dependency slice.

@@ -69,10 +69,9 @@ fn extract_object_symbols(
             defined.insert(normalized);
         }
     }
-    // PE export-table symbols (reported by `dynamic_symbols`) are defined DLL exports but
-    // carry no COFF section index — they own an RVA in the export directory instead. The
-    // section-index guard above would silently drop every ABI-v5 export from a Windows DLL,
-    // so dynamic symbols only need to be undefined to classify as imports.
+    // Dynamic symbol tables supplement ordinary symbol tables for linked ELF/Mach-O images.
+    // PE/COFF does not expose its image directories through this iterator, so those are
+    // collected separately below.
     for symbol in object.dynamic_symbols() {
         if !symbol.is_global() && !symbol.is_weak() {
             continue;
@@ -88,7 +87,36 @@ fn extract_object_symbols(
             defined.insert(normalized);
         }
     }
+    for export in object.exports().map_err(|error| AotError::ObjectModule {
+        message: format!("cannot parse export directory from {}: {error}", path.display()),
+    })? {
+        if let Some(normalized) = normalize_directory_symbol(export.name(), symbol_prefix, "export", path)? {
+            defined.insert(normalized);
+        }
+    }
+    for import in object.imports().map_err(|error| AotError::ObjectModule {
+        message: format!("cannot parse import directory from {}: {error}", path.display()),
+    })? {
+        if let Some(normalized) = normalize_directory_symbol(import.name(), symbol_prefix, "import", path)? {
+            imported.insert(normalized);
+        }
+    }
     Ok(())
+}
+
+fn normalize_directory_symbol(
+    symbol: &[u8],
+    symbol_prefix: &str,
+    table: &str,
+    path: &Path,
+) -> AotResult<Option<String>> {
+    if symbol.is_empty() {
+        return Ok(None);
+    }
+    let symbol = std::str::from_utf8(symbol).map_err(|error| AotError::ObjectModule {
+        message: format!("cannot decode {table} symbol from {} as UTF-8: {error}", path.display()),
+    })?;
+    Ok(Some(normalize_target_symbol(symbol, symbol_prefix)))
 }
 
 fn normalize_target_symbol(symbol: &str, symbol_prefix: &str) -> String {
@@ -97,7 +125,16 @@ fn normalize_target_symbol(symbol: &str, symbol_prefix: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_target_symbol;
+    use super::{extract_symbol_inventory, normalize_target_symbol};
+
+    #[test]
+    fn pe_export_and_import_directories_are_symbol_sources() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pe_export_table.dll");
+        let inventory = extract_symbol_inventory(&path, "").expect("parse PE fixture");
+
+        assert_eq!(inventory.defined, ["expected_export"]);
+        assert_eq!(inventory.imported, ["expected_import"]);
+    }
 
     #[test]
     fn target_prefix_is_normalized_only_at_extraction_seam() {
