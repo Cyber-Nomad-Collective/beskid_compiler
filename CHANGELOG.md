@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make ABI-v5 builtin generation idempotent across LF and CRLF checkouts,
   preventing Windows builds from appending the 49 manifest-owned declarations
   twice and reporting duplicate semantic items in compiler and REPL entrypoints.
+- Isolate every synthetic codegen source in its own collision-checked scan root,
+  preventing workspace discovery from ingesting sibling or stale scratch `.bd`
+  files created by other lowering calls and processes.
 - Return completed generated fibers through the ABI-installed scheduler return
   trampoline, keeping current-fiber clearing and context switching in one
   architecture-owned path and preventing Linux x86-64 spawned lambdas from
