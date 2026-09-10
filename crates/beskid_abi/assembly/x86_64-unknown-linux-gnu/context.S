@@ -18,17 +18,25 @@ BESKID_SYMBOL(beskid_arch_v5_context_init):
     movq $0, BESKID_X86_64_UNKNOWN_LINUX_GNU_CONTEXT_RBX_OFFSET(%rdi)
     movq $0, BESKID_X86_64_UNKNOWN_LINUX_GNU_CONTEXT_RBP_OFFSET(%rdi)
     movq %rcx, BESKID_X86_64_UNKNOWN_LINUX_GNU_CONTEXT_R12_OFFSET(%rdi)
-    movq $0, BESKID_X86_64_UNKNOWN_LINUX_GNU_CONTEXT_R13_OFFSET(%rdi)
+    movq %r8, BESKID_X86_64_UNKNOWN_LINUX_GNU_CONTEXT_R13_OFFSET(%rdi)
     movq $0, BESKID_X86_64_UNKNOWN_LINUX_GNU_CONTEXT_R14_OFFSET(%rdi)
     movq $0, BESKID_X86_64_UNKNOWN_LINUX_GNU_CONTEXT_R15_OFFSET(%rdi)
     movq %rsi, %rax
-    andq $-16, %rax
-    subq $8, %rax
-    movq %r8, (%rax)
+    andq $-BESKID_X86_64_UNKNOWN_LINUX_GNU_STACK_ALIGNMENT, %rax
+    subq $(BESKID_X86_64_UNKNOWN_LINUX_GNU_SHADOW_SPACE + 8), %rax
+    leaq L_beskid_context_return(%rip), %r9
+    movq %r9, (%rax)
     movq %rax, BESKID_X86_64_UNKNOWN_LINUX_GNU_CONTEXT_RSP_OFFSET(%rdi)
     movq %rdx, BESKID_X86_64_UNKNOWN_LINUX_GNU_CONTEXT_RIP_OFFSET(%rdi)
     ret
 BESKID_FUNCTION_SIZE(beskid_arch_v5_context_init)
+
+// A normal x86-64 return advances RSP by one word. Re-establish the System V
+// function-entry alignment before entering the caller-supplied return trampoline.
+// R13 is part of the manifest-owned preserved set, so the fiber entry retains it.
+L_beskid_context_return:
+    subq $8, %rsp
+    jmp *%r13
 
 .p2align 4
 .globl BESKID_SYMBOL(beskid_arch_v5_context_switch)

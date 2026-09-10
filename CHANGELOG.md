@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Re-enter x86-64 fiber return trampolines through an assembly alignment bridge
+  on System V and Windows x64, preserving each manifest-owned calling
+  convention's stack alignment and Windows home space after the fiber entry
+  returns.
 - Make ABI-v5 builtin generation idempotent across LF and CRLF checkouts,
   preventing Windows builds from appending the 49 manifest-owned declarations
   twice and reporting duplicate semantic items in compiler and REPL entrypoints.

@@ -1,4 +1,4 @@
-#![cfg(any(target_os = "macos", target_os = "linux"))]
+#![cfg(any(target_os = "macos", target_os = "linux", all(target_os = "windows", target_env = "msvc")))]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -122,7 +122,81 @@ fn masm_source_saves_the_complete_manifest_preserved_register_set() {
         )));
     }
     assert!(source.contains("BESKID_CONTEXT_INIT_RETURN_TRAMPOLINE_STACK_OPERAND"));
+    assert!(source.contains("mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_R13_OFFSET], r10"));
+    assert!(source.contains("lea r11, context_return"));
+    assert!(source.contains("sub rsp, 8"));
+    assert!(source.contains("jmp r13"));
     assert!(!source.contains(".pushreg"));
     assert!(!source.contains(".allocstack"));
     assert!(!source.contains(".endprolog"));
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64", target_env = "msvc"))]
+#[test]
+fn windows_x64_context_enters_entry_and_return_trampoline_with_abi_aligned_stack() {
+    let temp = TempDir::new();
+    prepare_include(&temp.0);
+    let harness = temp.0.join("context_harness.c");
+    fs::write(
+        &harness,
+        r#"
+#include <intrin.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+typedef __declspec(align(16)) struct { unsigned char bytes[240]; } Context;
+extern void beskid_arch_v5_context_init(Context *, void *, void (*)(void *), void *, void (*)(void));
+extern void beskid_arch_v5_context_switch(Context *, Context *);
+
+static Context mainContext;
+static Context fiberContext;
+static uintptr_t token;
+static int stage;
+
+static __declspec(noinline) int StackIsAbiAligned(void) {
+  return ((uintptr_t)_AddressOfReturnAddress() & 15) == 8;
+}
+
+static void FiberReturn(void) {
+  stage = StackIsAbiAligned() ? 3 : -3;
+  beskid_arch_v5_context_switch(&fiberContext, &mainContext);
+  __debugbreak();
+}
+
+static void FiberEntry(void *argument) {
+  stage = argument == &token && StackIsAbiAligned() ? 1 : -1;
+  beskid_arch_v5_context_switch(&fiberContext, &mainContext);
+  stage = 2;
+}
+
+int main(void) {
+  const size_t stackSize = 64 * 1024;
+  unsigned char *stack = _aligned_malloc(stackSize, 16);
+  if (stack == NULL) return 10;
+  beskid_arch_v5_context_init(&fiberContext, stack + stackSize, FiberEntry, &token, FiberReturn);
+  beskid_arch_v5_context_switch(&mainContext, &fiberContext);
+  if (stage != 1) return 11;
+  beskid_arch_v5_context_switch(&mainContext, &fiberContext);
+  if (stage != 3) return 12;
+  _aligned_free(stack);
+  return 0;
+}
+"#,
+    )
+    .unwrap();
+
+    let object = temp.0.join("context.obj");
+    output(
+        Command::new("llvm-ml").args(["--m64", "/c", "/X", "/Fo"]).arg(&object).arg("/I").arg(&temp.0).arg(source()),
+    );
+    let executable = temp.0.join("context_harness.exe");
+    output(
+        Command::new("clang")
+            .args(["--target=x86_64-pc-windows-msvc", "-std=c11", "-O0"])
+            .arg(&harness)
+            .arg(&object)
+            .arg("-o")
+            .arg(&executable),
+    );
+    output(&mut Command::new(executable));
 }
