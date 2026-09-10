@@ -659,6 +659,48 @@ fn canonical_runtime_production_path_lowers_trusted_intrinsics_to_verified_clif(
         !fiber_entry.function.display().to_string().contains("store"),
         "generated scheduler entry must not duplicate scheduler record state or outcome stores",
     );
+    let fiber_entry_imports = fiber_entry
+        .function
+        .dfg
+        .ext_funcs
+        .values()
+        .filter_map(|external| match &external.name {
+            ExternalName::TestCase(name) => std::str::from_utf8(name.raw()).ok(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for scheduler_resume_symbol in
+        ["SchedulerContext#syntax_", "SchedulerSetCurrentFiber#syntax_", "ContextSwitch#syntax_"]
+    {
+        assert!(
+            !fiber_entry_imports.iter().any(|name| name.starts_with(scheduler_resume_symbol)),
+            "generated scheduler entry must return through the installed scheduler return trampoline instead of \
+             importing `{scheduler_resume_symbol}`",
+        );
+    }
+    let return_trampoline = artifact
+        .functions
+        .iter()
+        .find(|function| function.name == "__beskid_scheduler_return_trampoline")
+        .expect("generated scheduler return trampoline");
+    let return_trampoline_imports = return_trampoline
+        .function
+        .dfg
+        .ext_funcs
+        .values()
+        .filter_map(|external| match &external.name {
+            ExternalName::TestCase(name) => std::str::from_utf8(name.raw()).ok(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for scheduler_resume_symbol in
+        ["SchedulerContext#syntax_", "SchedulerSetCurrentFiber#syntax_", "ContextSwitch#syntax_"]
+    {
+        assert!(
+            return_trampoline_imports.iter().any(|name| name.starts_with(scheduler_resume_symbol)),
+            "scheduler return trampoline must remain the sole owner of `{scheduler_resume_symbol}`",
+        );
+    }
     assert!(
         artifact.functions.iter().any(|function| {
             let clif = function.function.display().to_string();

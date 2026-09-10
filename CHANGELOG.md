@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Return completed generated fibers through the ABI-installed scheduler return
+  trampoline, keeping current-fiber clearing and context switching in one
+  architecture-owned path and preventing Linux x86-64 spawned lambdas from
+  resuming through duplicated generated context-switch logic.
 - Read linked-image export and import directories alongside ordinary and
   dynamic symbol tables, so stripped PE DLLs retain exact ABI-v5 provenance
   validation instead of appearing to have no exports or dependencies.
