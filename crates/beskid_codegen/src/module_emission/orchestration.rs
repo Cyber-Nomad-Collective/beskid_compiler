@@ -195,14 +195,7 @@ fn lower_resolved_syntax_program(
         let (scheduler_context, set_current, context_switch, current, fiber_record, fiber_done) = entry;
         functions.push(crate::LoweredFunction {
             name: "__beskid_scheduler_fiber_entry".to_owned(),
-            function: emit_scheduler_fiber_entry(
-                isa,
-                current,
-                fiber_done,
-                scheduler_context,
-                set_current,
-                context_switch,
-            )?,
+            function: emit_scheduler_fiber_entry(isa, current, fiber_done)?,
         });
         functions.push(crate::LoweredFunction {
             name: "__beskid_scheduler_return_trampoline".to_owned(),

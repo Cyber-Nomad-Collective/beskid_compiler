@@ -343,9 +343,6 @@ pub(super) fn emit_scheduler_fiber_entry(
     isa: &dyn TargetIsa,
     scheduler_current_symbol: &str,
     fiber_done_symbol: &str,
-    scheduler_context_symbol: &str,
-    scheduler_set_current_symbol: &str,
-    context_switch_symbol: &str,
 ) -> Result<Function, SyntaxModuleEmissionError> {
     let pointer = isa.pointer_type();
     let mut signature = Signature::new(isa.default_call_conv());
@@ -372,15 +369,8 @@ pub(super) fn emit_scheduler_fiber_entry(
         let index = builder.inst_results(current_call)[0];
         let fiber_done = import_local(&mut builder, fiber_done_symbol, &[pointer, types::I64], None);
         builder.ins().call(fiber_done, &[index, result]);
-        let none = builder.ins().iconst(pointer, 0xFFFF);
-        let set_current = import_local(&mut builder, scheduler_set_current_symbol, &[pointer], None);
-        builder.ins().call(set_current, &[none]);
-        let scheduler_context = import_local(&mut builder, scheduler_context_symbol, &[], Some(pointer));
-        let scheduler_call = builder.ins().call(scheduler_context, &[]);
-        let scheduler = builder.inst_results(scheduler_call)[0];
-        let fiber_context = builder.ins().load(pointer, cranelift_codegen::ir::MemFlags::trusted(), fiber, 104);
-        let switch = import_local(&mut builder, context_switch_symbol, &[pointer, pointer], None);
-        builder.ins().call(switch, &[fiber_context, scheduler]);
+        // Context initialization installs the scheduler return trampoline as the entry's return
+        // address. Keep scheduler resumption there so every target uses the same ABI-owned path.
         builder.ins().return_(&[]);
         builder.finalize();
     }
