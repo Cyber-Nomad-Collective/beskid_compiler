@@ -20,14 +20,14 @@ fn append_probe_hex(buffer: &mut [u8], cursor: &mut usize, value: u64) {
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 unsafe extern "C" fn scheduler_probe_sigsegv(
     _signal: libc::c_int,
-    _info: *mut libc::siginfo_t,
+    info: *mut libc::siginfo_t,
     context: *mut libc::c_void,
 ) {
     let registers = unsafe { &(*(context.cast::<libc::ucontext_t>())).uc_mcontext.gregs };
     let mut buffer = [0_u8; 256];
     let mut cursor = 0;
     for (label, register) in [
-        (b"rip=0x".as_slice(), libc::REG_RIP),
+        (b"beskid-linux-probe sigsegv rip=0x".as_slice(), libc::REG_RIP),
         (b" rsp=0x".as_slice(), libc::REG_RSP),
         (b" rbp=0x".as_slice(), libc::REG_RBP),
         (b" rdi=0x".as_slice(), libc::REG_RDI),
@@ -37,6 +37,10 @@ unsafe extern "C" fn scheduler_probe_sigsegv(
         cursor += label.len();
         append_probe_hex(&mut buffer, &mut cursor, registers[register as usize] as u64);
     }
+    let label = b" fault=0x";
+    buffer[cursor..cursor + label.len()].copy_from_slice(label);
+    cursor += label.len();
+    append_probe_hex(&mut buffer, &mut cursor, unsafe { (*info).si_addr() } as usize as u64);
     buffer[cursor] = b'\n';
     cursor += 1;
     let _ = unsafe { libc::write(libc::STDERR_FILENO, buffer.as_ptr().cast(), cursor) };
@@ -45,10 +49,14 @@ unsafe extern "C" fn scheduler_probe_sigsegv(
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn install_scheduler_probe() {
+    let alternate_stack = Box::leak(vec![0_u8; libc::SIGSTKSZ].into_boxed_slice());
+    let stack =
+        libc::stack_t { ss_sp: alternate_stack.as_mut_ptr().cast(), ss_flags: 0, ss_size: alternate_stack.len() };
     let mut action = unsafe { std::mem::zeroed::<libc::sigaction>() };
-    action.sa_sigaction = scheduler_probe_sigsegv as usize;
-    action.sa_flags = libc::SA_SIGINFO;
+    action.sa_sigaction = scheduler_probe_sigsegv as *const () as usize;
+    action.sa_flags = libc::SA_SIGINFO | libc::SA_ONSTACK;
     unsafe {
+        assert_eq!(libc::sigaltstack(&stack, std::ptr::null_mut()), 0);
         libc::sigemptyset(&mut action.sa_mask);
         assert_eq!(libc::sigaction(libc::SIGSEGV, &action, std::ptr::null_mut()), 0);
     }
@@ -56,6 +64,23 @@ fn install_scheduler_probe() {
 
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 fn install_scheduler_probe() {}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn scheduler_probe_write(message: &str) {
+    let bytes = message.as_bytes();
+    let mut written = 0;
+    while written < bytes.len() {
+        let count =
+            unsafe { libc::write(libc::STDERR_FILENO, bytes[written..].as_ptr().cast(), bytes.len() - written) };
+        if count <= 0 {
+            break;
+        }
+        written += count as usize;
+    }
+}
+
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+fn scheduler_probe_write(_message: &str) {}
 
 #[test]
 fn jit_runs_zero_capture_lambda_spawn_under_fiber_scheduler() {
@@ -83,23 +108,23 @@ fn jit_runs_zero_capture_lambda_spawn_under_fiber_scheduler() {
         functions.sort_unstable_by_key(|(address, _)| *address);
         for (index, (start, name)) in functions.iter().enumerate() {
             let end = functions.get(index + 1).map_or(*start, |(address, _)| *address);
-            eprintln!("beskid-linux-probe jit=[0x{start:016x},0x{end:016x}) {name}");
+            scheduler_probe_write(&format!("beskid-linux-probe jit=[0x{start:016x},0x{end:016x}) {name}\n"));
         }
         let maps = std::fs::read_to_string("/proc/self/maps").expect("Linux process mappings");
         for mapping in maps.lines().filter(|line| line.contains("r-xp") || line.contains("rwxp")) {
-            eprintln!("beskid-linux-probe map {mapping}");
+            scheduler_probe_write(&format!("beskid-linux-probe map {mapping}\n"));
         }
     }
     install_scheduler_probe();
     let pointer = unsafe { engine.entrypoint_ptr(&prepared.symbol) }.expect("Main pointer");
     let main: extern "C" fn() -> i64 = unsafe { std::mem::transmute(pointer) };
-    eprintln!("beskid-linux-probe before-main");
+    scheduler_probe_write("beskid-linux-probe before-main\n");
     let result = main();
-    eprintln!("beskid-linux-probe after-main result={result}");
+    scheduler_probe_write(&format!("beskid-linux-probe after-main result={result}\n"));
     assert_eq!(result, 5, "spawned lambda must not corrupt the caller result");
-    eprintln!("beskid-linux-probe before-engine-drop");
+    scheduler_probe_write("beskid-linux-probe before-engine-drop\n");
     drop(engine);
-    eprintln!("beskid-linux-probe after-engine-drop");
+    scheduler_probe_write("beskid-linux-probe after-engine-drop\n");
 }
 
 #[test]
