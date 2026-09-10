@@ -6,7 +6,8 @@ use anyhow::Result;
 
 static SCRATCH_DIRECTORY_ID: AtomicU64 = AtomicU64::new(0);
 
-/// Ensure `source` is readable from an isolated assembly-discovery root (`<memory>` and missing paths).
+/// Ensure `source` is readable from an isolated assembly-discovery root
+/// (virtual labels such as `<memory>` and `<repl>`, plus missing paths).
 pub fn materialize_source_path_for_lowering(path: &Path, source: &str) -> Result<PathBuf> {
     if path.is_file() {
         return Ok(path.to_path_buf());
@@ -25,7 +26,7 @@ pub fn materialize_source_path_for_lowering(path: &Path, source: &str) -> Result
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
-        .filter(|name| !name.is_empty() && *name != "<memory>")
+        .filter(|name| !name.is_empty() && !(name.starts_with('<') && name.ends_with('>')))
         .unwrap_or("main.bd");
     let file = dir.join(file_name);
     std::fs::write(&file, source)?;
