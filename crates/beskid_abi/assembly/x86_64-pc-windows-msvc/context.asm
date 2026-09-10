@@ -13,7 +13,7 @@ beskid_arch_v5_context_init PROC
     mov QWORD PTR [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_RDI_OFFSET], 0
     mov QWORD PTR [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_RSI_OFFSET], 0
     mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_R12_OFFSET], r9
-    mov QWORD PTR [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_R13_OFFSET], 0
+    mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_R13_OFFSET], r10
     mov QWORD PTR [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_R14_OFFSET], 0
     mov QWORD PTR [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_R15_OFFSET], 0
     pxor xmm0, xmm0
@@ -28,13 +28,21 @@ beskid_arch_v5_context_init PROC
     movdqu [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_XMM14_OFFSET], xmm0
     movdqu [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_XMM15_OFFSET], xmm0
     mov rax, rdx
-    and rax, -16
-    sub rax, 40
-    mov [rax], r10
+    and rax, -BESKID_X86_64_PC_WINDOWS_MSVC_STACK_ALIGNMENT
+    sub rax, BESKID_X86_64_PC_WINDOWS_MSVC_SHADOW_SPACE + 8
+    lea r11, context_return
+    mov [rax], r11
     mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_RSP_OFFSET], rax
     mov [rcx + BESKID_X86_64_PC_WINDOWS_MSVC_CONTEXT_RIP_OFFSET], r8
     ret
 beskid_arch_v5_context_init ENDP
+
+; A normal x86-64 return advances RSP by one word. Re-establish the Windows
+; x64 function-entry alignment and its 32-byte home space before entering the
+; caller-supplied return trampoline. R13 is manifest-owned preserved state.
+context_return:
+    sub rsp, 8
+    jmp r13
 
 PUBLIC beskid_arch_v5_context_switch
 beskid_arch_v5_context_switch PROC

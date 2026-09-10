@@ -159,13 +159,15 @@ static uintptr_t token;
 static int stage;
 
 static void FiberReturn(void) {
-  stage = 3;
+  // System V function entry requires RSP + 8 to be 16-byte aligned. At -O0,
+  // the frame pointer after the prologue must therefore itself be 16-byte aligned.
+  stage = ((uintptr_t)__builtin_frame_address(0) & 15) == 0 ? 3 : -3;
   beskid_arch_v5_context_switch(&fiberContext, &mainContext);
   __builtin_trap();
 }
 
 static void FiberEntry(void *argument) {
-  stage = argument == &token ? 1 : -1;
+  stage = argument == &token && ((uintptr_t)__builtin_frame_address(0) & 15) == 0 ? 1 : -1;
   beskid_arch_v5_context_switch(&fiberContext, &mainContext);
   stage = 2;
   beskid_arch_v5_context_switch(&fiberContext, &mainContext);
