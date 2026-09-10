@@ -25,7 +25,7 @@ pub fn materialize_source_path_for_lowering(path: &Path, source: &str) -> Result
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
-        .filter(|name| !name.is_empty() && *name != "<memory>")
+        .filter(|name| !name.is_empty() && !(name.starts_with('<') && name.ends_with('>')))
         .unwrap_or("main.bd");
     let file = dir.join(file_name);
     std::fs::write(&file, source)?;

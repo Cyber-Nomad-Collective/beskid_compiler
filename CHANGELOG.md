@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Materialize virtual source labels such as `<repl>` and `<memory>` under the
+  portable `main.bd` leaf, allowing REPL type-checking and evaluation to run on
+  Windows while retaining one isolated scratch root per lowering request.
 - Re-enter x86-64 fiber return trampolines through an assembly alignment bridge
   on System V and Windows x64, preserving each manifest-owned calling
   convention's stack alignment and Windows home space after the fiber entry

@@ -30,3 +30,18 @@ fn materialized_sources_have_isolated_synthetic_scan_roots() {
 
     assert!(roots_are_isolated, "each materialized source must own its synthetic workspace-scan root");
 }
+
+#[test]
+fn repl_sentinel_uses_a_portable_materialized_file_name() {
+    let materialized = materialize_source_path_for_lowering(Path::new("<repl>"), "i64 Main() { return 42; }")
+        .expect("materialize REPL source");
+
+    assert_eq!(materialized.file_name().and_then(|name| name.to_str()), Some("main.bd"));
+    assert_eq!(
+        std::fs::read_to_string(&materialized).expect("read materialized REPL source"),
+        "i64 Main() { return 42; }"
+    );
+
+    std::fs::remove_file(&materialized).expect("remove materialized REPL source");
+    std::fs::remove_dir(materialized.parent().expect("REPL source parent")).expect("remove REPL scan root");
+}
