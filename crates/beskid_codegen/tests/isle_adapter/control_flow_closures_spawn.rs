@@ -334,10 +334,13 @@ fn canonical_runtime_closure_descriptor_validation_and_rooting_execute_fail_clos
     let leaked: &'static BeskidDatabase = Box::leak(db);
     let input = CodegenInput::new(leaked, typed, Arc::from([native_root, objects_root, roots_root]), target, manifest)
         .expect("canonical runtime codegen input");
+    let production_settings =
+        beskid_codegen::cranelift_host::production_isa_settings_builder().expect("production ISA settings");
     let isa = isa::lookup_by_name(host_isa_name)
         .expect("host ISA")
-        .finish(settings::Flags::new(settings::builder()))
+        .finish(settings::Flags::new(production_settings))
         .expect("host flags");
+    assert!(isa.flags().preserve_frame_pointers(), "executable canonical-runtime tests use production ISA invariants");
     let runtime_roots = canonical_runtime_sources()
         .iter()
         .map(|source| AstNodeKey {

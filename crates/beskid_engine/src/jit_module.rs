@@ -271,8 +271,9 @@ fn validate_exact_symbol_references(
 
 fn new_builder(extras: &[(String, *const u8)]) -> Result<JITBuilder, JitError> {
     let isa_builder = cranelift_native::builder().map_err(|err| JitError::Isa(err.to_string()))?;
-    let isa =
-        isa_builder.finish(settings::Flags::new(settings::builder())).map_err(|err| JitError::Isa(err.to_string()))?;
+    let settings = beskid_codegen::cranelift_host::production_isa_settings_builder()
+        .map_err(|err| JitError::Isa(err.to_string()))?;
+    let isa = isa_builder.finish(settings::Flags::new(settings)).map_err(|err| JitError::Isa(err.to_string()))?;
     let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
     for (sym, addr) in extras {
         builder.symbol(sym, *addr);
