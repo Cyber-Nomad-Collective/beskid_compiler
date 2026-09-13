@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve implicit `Std` exclusively from the Corelib embedded in the installed
+  toolchain, never from a compiler checkout; the standalone LSP now provisions
+  that same embedded bundle before its first workspace scan.
 - Publish full-closure type diagnostics for closed `.bd` workspace files during
   the initial language-server scan, matching CLI and open-buffer behavior; keep
   unresolvable standalone sources scan-safe by publishing their structural

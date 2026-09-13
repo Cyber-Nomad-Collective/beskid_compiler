@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::env;
 use std::path::{Path, PathBuf};
 
 use beskid_abi::runtime_kit::installed_corelib_root;
@@ -298,10 +297,17 @@ fn attach_path_dependency(
 fn default_corelib_dependency_path() -> Option<String> {
     installed_corelib_root()
         .ok()
-        .map(|root| corelib_aggregate_project_dir(&root))
-        .filter(|root| discover_project_manifest_in_dir(root).ok().flatten().is_some())
-        .or_else(discover_repo_corelib_root)
+        .and_then(|root| bundled_corelib_dependency_path(&root))
         .map(|path| path.display().to_string())
+}
+
+/// Return the aggregate project from the Corelib installed with the executable.
+///
+/// Deliberately do not search the working directory or a compiler checkout here:
+/// doing so lets a source checkout mask a missing release bundle.
+fn bundled_corelib_dependency_path(root: &Path) -> Option<PathBuf> {
+    let aggregate = corelib_aggregate_project_dir(root);
+    discover_project_manifest_in_dir(&aggregate).ok().flatten().map(|_| aggregate)
 }
 
 /// `BESKID_CORELIB_ROOT` / install roots may be either the aggregate `beskid_corelib/` package
@@ -369,17 +375,6 @@ fn is_corelib_workspace_member_manifest(manifest_path: &Path) -> bool {
     })
 }
 
-fn discover_repo_corelib_root() -> Option<PathBuf> {
-    let cwd = env::current_dir().ok()?;
-    for ancestor in cwd.ancestors() {
-        let candidate = ancestor.join("corelib").join("beskid_corelib");
-        if discover_project_manifest_in_dir(&candidate).ok().flatten().is_some() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
 fn is_std_manifest_path(manifest_path: &Path) -> bool {
     let normalized_manifest = normalize_existing_path(manifest_path);
     let Some(corelib_root) = default_corelib_dependency_path() else {
@@ -391,6 +386,18 @@ fn is_std_manifest_path(manifest_path: &Path) -> bool {
         .map(|path| normalize_existing_path(&path))
         .unwrap_or_else(|| normalize_existing_path(&PathBuf::from(corelib_root).join("corelib.bproj")));
     normalized_manifest == corelib_manifest
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bundled_corelib_dependency_path;
+    use std::path::Path;
+
+    #[test]
+    fn default_corelib_requires_an_installed_bundle() {
+        // A random project directory must not inherit Corelib from a compiler checkout.
+        assert_eq!(bundled_corelib_dependency_path(Path::new("/definitely-not-an-installed-beskid-corelib")), None);
+    }
 }
 
 fn format_cycle_from_visiting(visiting: &[PathBuf], cycle_start: usize, repeated_path: &Path) -> String {
