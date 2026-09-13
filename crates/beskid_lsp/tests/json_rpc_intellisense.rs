@@ -27,14 +27,22 @@ fn completion_labels(response: &Value) -> Vec<&str> {
     response["result"].as_array().expect("completion array").iter().filter_map(|item| item["label"].as_str()).collect()
 }
 
-fn wait_for_idle_status(messages: &Receiver<Value>) {
+fn wait_for_idle_status_with_document_diagnostics(messages: &Receiver<Value>, uri: &str) -> Value {
+    let mut matched = None;
     loop {
         let message = messages.recv_timeout(Duration::from_secs(30)).expect("LSP notification before timeout");
+        if message.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics")
+            && message["params"]["uri"].as_str() == Some(uri)
+        {
+            matched = Some(message);
+            continue;
+        }
         if message.get("method").and_then(Value::as_str) == Some("beskid/status")
             && message["params"]["phase"].as_str() == Some("idle")
             && message["params"]["active"].as_bool() == Some(false)
         {
-            return;
+            return matched
+                .unwrap_or_else(|| panic!("LSP did not publish diagnostics for closed workspace file {uri}"));
         }
     }
 }
@@ -67,7 +75,8 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
     let source = "use Std.Core.Output;\n\ni32 Main() {\n    Output.WriteLine(\"ok\");\n    return 0;\n}\n";
     let source_path = project.path().join("Src/Main.bd");
     std::fs::write(&source_path, source).expect("source file");
-    let sibling_source = "use Std.Core.Output;\n\ni32 Sibling() {\n    Output.Wri(\"ok\");\n    return 0;\n}\n";
+    let sibling_source =
+        "use Std.Core.Output;\n\ni32 Sibling() {\n    Output.WriteLine(\"ok\");\n    return \"wrong\";\n}\n";
     let sibling_path = project.path().join("Src/Sibling.bd");
     std::fs::write(&sibling_path, sibling_source).expect("sibling source file");
 
@@ -122,7 +131,13 @@ fn json_rpc_completion_and_hover_use_dependency_syntax_facts() {
     );
     assert!(response_with_id(&messages, 1).get("error").is_none());
     send_message(&mut stdin, json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}));
-    wait_for_idle_status(&messages);
+    let closed_sibling_diagnostics = wait_for_idle_status_with_document_diagnostics(&messages, &sibling_uri);
+    assert!(
+        closed_sibling_diagnostics["params"]["diagnostics"].as_array().is_some_and(|diagnostics| diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic["code"].as_str() == Some("E1206"))),
+        "closed workspace file must receive its project type-check diagnostic: {closed_sibling_diagnostics:#}"
+    );
     send_message(
         &mut stdin,
         json!({

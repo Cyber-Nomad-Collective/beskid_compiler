@@ -15,7 +15,9 @@ use walkdir::WalkDir;
 
 use crate::diagnostics::{collect_syntax_diagnostics, lsp_diagnostics_from_syntax};
 use crate::protocol::status::{idle_status, send_beskid_status, workspace_scan_status};
-use crate::session::lifecycle::{build_document, rebuild_open_document_syntax_facts, set_disk_snapshot};
+use crate::session::lifecycle::{
+    build_document, build_initial_workspace_document, rebuild_open_document_syntax_facts, set_disk_snapshot,
+};
 use crate::session::project_context::invalidate_compilation_cache;
 use crate::session::startup::signal_initial_scan_complete;
 use crate::session::store::{Document, State};
@@ -130,27 +132,33 @@ pub async fn scan_workspace(client: &Client, state: &RwLock<State>, root: &Path,
         let Ok(text) = tokio::fs::read_to_string(&path).await else {
             continue;
         };
-        let (facts, fixes) = collect_syntax_diagnostics(None, &uri, &text, None);
-        let diagnostics = lsp_diagnostics_from_syntax(&text, &facts);
-        let bsol_semantic_token_candidates = path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .filter(|extension| matches!(*extension, "bproj" | "bws" | "bsol"))
-            .map(|_| crate::session::lifecycle::bsol_semantic_token_candidates(&text))
-            .unwrap_or_default();
-        let doc = Document {
-            version: 0,
-            text: text.clone(),
-            syntax_definitions: Vec::new(),
-            syntax_hovers: Vec::new(),
-            syntax_symbols: Vec::new(),
-            bsol_semantic_token_candidates,
-            syntax_completion: None,
-            syntax_inlay_hints: Vec::new(),
-            syntax_documentation: Vec::new(),
-            syntax_diagnostics: facts,
-            syntax_fixes: fixes,
-        };
+        let doc =
+            if is_manifest_extension(path.extension().and_then(|extension| extension.to_str()).unwrap_or_default())
+                || path.extension().and_then(|extension| extension.to_str()) == Some("bsol")
+            {
+                let (diagnostics, fixes) = collect_syntax_diagnostics(None, &uri, &text, None);
+                let bsol_semantic_token_candidates = crate::session::lifecycle::bsol_semantic_token_candidates(&text);
+                Document {
+                    version: 0,
+                    text,
+                    syntax_definitions: Vec::new(),
+                    syntax_hovers: Vec::new(),
+                    syntax_symbols: Vec::new(),
+                    bsol_semantic_token_candidates,
+                    syntax_completion: None,
+                    syntax_inlay_hints: Vec::new(),
+                    syntax_documentation: Vec::new(),
+                    syntax_diagnostics: diagnostics,
+                    syntax_fixes: fixes,
+                }
+            } else {
+                // Closed Beskid sources must use the same project-backed, full-closure
+                // diagnostic path as open buffers. The structural helper deliberately
+                // excludes lower-spine type checking, which made valid syntax with a
+                // type error appear clean until the user opened the file.
+                build_initial_workspace_document(state, &uri, 0, text).await
+            };
+        let diagnostics = lsp_diagnostics_from_syntax(&doc.text, &doc.syntax_diagnostics);
         set_disk_snapshot(state, uri.clone(), doc).await;
         client.publish_diagnostics(uri, diagnostics, Some(0)).await;
     }

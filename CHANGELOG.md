@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Publish full-closure type diagnostics for closed `.bd` workspace files during
+  the initial language-server scan, matching CLI and open-buffer behavior; keep
+  unresolvable standalone sources scan-safe by publishing their structural
+  diagnostics without waiting on the scan that owns their startup barrier.
 - Complete Linux x86-64 fibers through Cranelift tail transfers, preserving the
   scheduler's return stack while retaining one generated owner for completion
   state and one canonical System V signature for the manifest-owned context

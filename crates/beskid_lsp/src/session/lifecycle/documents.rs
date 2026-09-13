@@ -5,7 +5,9 @@ use tokio::sync::RwLock;
 use tower_lsp_server::ls_types::Uri;
 
 use crate::{
-    diagnostics::{prepare_project_diagnostics_from_assembled, prepare_project_syntax_facts},
+    diagnostics::{
+        collect_syntax_diagnostics, prepare_project_diagnostics_from_assembled, prepare_project_syntax_facts,
+    },
     manifest_uri::{is_manifest_uri, is_standalone_bsol_uri},
     session::{
         db_access::{document_update_gate, with_compilation_db_for_project},
@@ -17,6 +19,31 @@ use crate::{
     },
     workspace_scan::uri_to_path,
 };
+
+#[derive(Clone, Copy)]
+enum StartupFallback {
+    WaitForScan,
+    StructuralOnly,
+}
+
+async fn fallback_diagnostics(
+    state: &RwLock<State>,
+    uri: &Uri,
+    text: &str,
+    compilation_context: Option<&beskid_analysis::CompilationContext>,
+    fallback: StartupFallback,
+) -> (Vec<crate::session::store::SyntaxDiagnostic>, Vec<beskid_analysis::SyntaxFix>) {
+    match fallback {
+        StartupFallback::WaitForScan => {
+            collect_syntax_diagnostics_for_state(state, uri, text, compilation_context).await
+        }
+        // The first workspace scan owns the startup barrier. If a source cannot
+        // be prepared as a project, using the normal bridge here would wait for
+        // this same scan to finish and deadlock the server before it can publish
+        // even structural diagnostics.
+        StartupFallback::StructuralOnly => collect_syntax_diagnostics(None, uri, text, compilation_context),
+    }
+}
 
 pub(super) async fn build_full_diagnostic_facts(
     state: &RwLock<State>,
@@ -90,6 +117,25 @@ pub(super) async fn build_syntax_facts_with_policy(
     current_document_only: bool,
 ) -> SyntaxFacts {
     wait_for_initial_scan(state).await;
+    build_syntax_facts_with_policy_after_startup(
+        state,
+        uri,
+        text,
+        dependency_typing,
+        current_document_only,
+        StartupFallback::WaitForScan,
+    )
+    .await
+}
+
+async fn build_syntax_facts_with_policy_after_startup(
+    state: &RwLock<State>,
+    uri: &Uri,
+    text: &str,
+    dependency_typing: DependencyTypingPolicy,
+    current_document_only: bool,
+    fallback: StartupFallback,
+) -> SyntaxFacts {
     let documentation = if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
         Vec::new()
     } else {
@@ -106,7 +152,7 @@ pub(super) async fn build_syntax_facts_with_policy(
             .unwrap_or_default()
     };
     if is_manifest_uri(uri) || is_standalone_bsol_uri(uri) {
-        let (diagnostics, fixes) = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        let (diagnostics, fixes) = fallback_diagnostics(state, uri, text, None, fallback).await;
         return SyntaxFacts {
             documentation,
             diagnostics,
@@ -116,11 +162,11 @@ pub(super) async fn build_syntax_facts_with_policy(
         };
     }
     let Some(path) = uri_to_path(uri) else {
-        let (diagnostics, fixes) = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        let (diagnostics, fixes) = fallback_diagnostics(state, uri, text, None, fallback).await;
         return SyntaxFacts { documentation, symbols: current_symbols, diagnostics, fixes, ..SyntaxFacts::default() };
     };
     let Some((resolved, session)) = resolved_input_for_path(state, &path, text).await else {
-        let (diagnostics, fixes) = collect_syntax_diagnostics_for_state(state, uri, text, None).await;
+        let (diagnostics, fixes) = fallback_diagnostics(state, uri, text, None, fallback).await;
         return SyntaxFacts { documentation, symbols: current_symbols, diagnostics, fixes, ..SyntaxFacts::default() };
     };
     if current_document_only {
@@ -130,7 +176,7 @@ pub(super) async fn build_syntax_facts_with_policy(
         }
     }
     let Some(plan) = session.compile_plan.as_ref() else {
-        let (diagnostics, fixes) = collect_syntax_diagnostics_for_state(state, uri, text, Some(&session)).await;
+        let (diagnostics, fixes) = fallback_diagnostics(state, uri, text, Some(&session), fallback).await;
         return SyntaxFacts { documentation, symbols: current_symbols, diagnostics, fixes, ..SyntaxFacts::default() };
     };
     let buffered_sources = {
@@ -185,7 +231,7 @@ pub(super) async fn build_syntax_facts_with_policy(
     let mut facts = if let Some(facts) = prepared_facts {
         facts
     } else {
-        let (diagnostics, fixes) = collect_syntax_diagnostics_for_state(state, uri, text, Some(&session)).await;
+        let (diagnostics, fixes) = fallback_diagnostics(state, uri, text, Some(&session), fallback).await;
         SyntaxFacts { diagnostics, fixes, ..SyntaxFacts::default() }
     };
     facts.documentation = documentation;
@@ -228,6 +274,28 @@ pub(super) fn apply_syntax_facts(doc: &mut Document, syntax_facts: SyntaxFacts) 
 /// Build a [`Document`] for `uri` with generation-bound syntax facts for the buffer text.
 pub async fn build_document(state: &RwLock<State>, uri: &Uri, version: i32, text: String) -> Document {
     let syntax_facts = build_syntax_facts(state, uri, &text).await;
+    document_from_syntax_facts(version, text, syntax_facts)
+}
+
+/// Build a closed-file snapshot while the initial workspace scan is still in progress.
+///
+/// This bypasses only the startup barrier; type-checking and the generation-bound document
+/// representation are otherwise identical to [`build_document`].
+pub(crate) async fn build_initial_workspace_document(
+    state: &RwLock<State>,
+    uri: &Uri,
+    version: i32,
+    text: String,
+) -> Document {
+    let syntax_facts = build_syntax_facts_with_policy_after_startup(
+        state,
+        uri,
+        &text,
+        DependencyTypingPolicy::FullClosure,
+        false,
+        StartupFallback::StructuralOnly,
+    )
+    .await;
     document_from_syntax_facts(version, text, syntax_facts)
 }
 

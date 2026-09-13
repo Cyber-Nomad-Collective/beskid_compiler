@@ -2,7 +2,9 @@ use std::str::FromStr;
 
 use tower_lsp_server::ls_types::Uri;
 
-use super::{rebuild_open_document_syntax_facts, set_document};
+use std::time::Duration;
+
+use super::{build_initial_workspace_document, rebuild_open_document_syntax_facts, set_document};
 use crate::session::project_context::invalidate_compilation_cache;
 use crate::session::store::{Document, State};
 
@@ -16,6 +18,20 @@ fn uri() -> Uri {
 
 fn standalone_bsol_uri() -> Uri {
     Uri::from_str("file:///cache_test.bsol").expect("valid uri")
+}
+
+#[tokio::test]
+async fn initial_workspace_document_does_not_wait_on_its_own_scan_without_a_project() {
+    let state = tokio::sync::RwLock::new(State::default());
+    let file_uri = Uri::from_str("file:///standalone-scan.bd").expect("valid URI");
+
+    let document =
+        tokio::time::timeout(Duration::from_secs(1), build_initial_workspace_document(&state, &file_uri, 0, source()))
+            .await
+            .expect("initial scan must not wait for itself");
+
+    assert_eq!(document.version, 0);
+    assert_eq!(document.text, source());
 }
 
 #[tokio::test]

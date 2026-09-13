@@ -5,6 +5,7 @@ mod persistence;
 mod revisions_resolution;
 
 pub use diagnostics::publish_diagnostics_for_uri;
+pub(crate) use documents::build_initial_workspace_document;
 pub use documents::{
     build_document, rebuild_open_document_syntax_facts, remove_document, set_disk_snapshot, set_document,
 };

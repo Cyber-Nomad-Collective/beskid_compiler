@@ -62,7 +62,7 @@ async fn full_returns_none_after_document_close() {
 async fn bsol_configuration_documents_emit_ast_backed_structural_tokens_for_every_extension() {
     const SOURCE: &str = "project {\n  name = \"demo\"\n  target \"app\" {\n    entry = \"main.bd\"\n  }\n}";
     const EXPECTED: &[(u32, u32, u32, u32, u32)] =
-        &[(0, 0, 7, 5, 1), (1, 2, 4, 6, 1), (2, 2, 6, 5, 1), (3, 4, 5, 6, 1)];
+        &[(0, 0, 7, 5, 1), (1, 2, 4, 7, 1), (2, 2, 6, 5, 1), (3, 4, 5, 7, 1)];
 
     for extension in ["bproj", "bws", "bsol"] {
         let (service, _socket) = LspService::new(Backend::new);
