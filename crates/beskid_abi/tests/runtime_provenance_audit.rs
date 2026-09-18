@@ -153,6 +153,19 @@ fn darwin_matrix_adapter_symbols_match_the_canonical_import_policy() {
 }
 
 #[test]
+fn darwin_shared_image_accepts_only_the_macho_stub_binder_toolchain_import() {
+    let audit = RuntimeProvenanceAudit::canonical(target("aarch64-apple-darwin")).unwrap();
+    let mut symbols = audit.fixture_symbol_list().unwrap();
+    symbols.undefined.push("_dyld_stub_binder".into());
+
+    audit.verify_shared(&symbols).expect("Mach-O shared images require dyld's stub binder");
+    assert!(
+        audit.verify_static_archive(&symbols).is_err(),
+        "static Darwin archives must not acquire the shared-loader import"
+    );
+}
+
+#[test]
 fn symbol_list_parser_rejects_target_mismatch() {
     let list = parse_symbol_list("target=x86_64-pc-windows-msvc\ndefined=beskid_rt_v5_abi_version\n").unwrap();
     let audit = RuntimeProvenanceAudit::canonical(target("x86_64-unknown-linux-gnu")).unwrap();

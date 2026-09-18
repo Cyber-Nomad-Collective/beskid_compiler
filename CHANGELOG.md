@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Allow the Mach-O shared-linker `dyld_stub_binder` import during runtime-kit
+  provenance validation while retaining the stricter static-archive policy.
 - Resolve implicit `Std` exclusively from the Corelib embedded in the installed
   toolchain, never from a compiler checkout; the standalone LSP now provisions
   that same embedded bundle before its first workspace scan.
