@@ -207,6 +207,7 @@ pub fn build_package_json(
             "schema": "beskid.package.v1",
             "id": package_id,
             "version": version,
+            "packageKind": PACKAGE_KIND_LIBRARY,
             "documentation": {
                 "apiJson": ".beskid/docs/api.json",
                 "schemaVersion": API_JSON_SCHEMA_VERSION,
@@ -216,6 +217,7 @@ pub fn build_package_json(
             "schema": "beskid.package.v1",
             "id": package_id,
             "version": version,
+            "packageKind": PACKAGE_KIND_LIBRARY,
         }),
         PackProfile::Template(summary) => json!({
             "schema": "beskid.package.v1",
@@ -442,6 +444,7 @@ mod tests {
         let json =
             build_package_json("corelib_compiler_sdk", "0.1.1", &PackProfile::Library, false, &[]).expect("serialize");
         let root: Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(root["packageKind"], PACKAGE_KIND_LIBRARY);
         assert!(root.get("documentation").is_none());
     }
 
@@ -450,6 +453,7 @@ mod tests {
         let json =
             build_package_json("corelib_foundation", "0.1.1", &PackProfile::Library, true, &[]).expect("serialize");
         let root: Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(root["packageKind"], PACKAGE_KIND_LIBRARY);
         assert_eq!(root["documentation"]["apiJson"], ".beskid/docs/api.json");
     }
 
