@@ -3,6 +3,8 @@
 // Callers provide aligned, stable, zeroed slot storage and an already rooted payload.
 // Operations run on the owning heap's mutator without a safepoint. Descriptors outlive slots.
 // Clear/replacement relinquish tracing ownership, never invoke user disposal.
+// A live owner_state is this slot's address, not a copyable live flag. Generic root
+// registration alone cannot authorize bytes copied from a different owner slot.
 
 pub bool AbiValueIsVacant(pointer slot) {
     if slot == NativePointer(0) || NativeWord(slot) % BESKID_ABI_VALUE_ALIGNMENT != 0 { return false; }
@@ -17,7 +19,7 @@ pub bool AbiValueIsLive(pointer slot) {
     if slot == NativePointer(0) || NativeWord(slot) % BESKID_ABI_VALUE_ALIGNMENT != 0 { return false; }
     pointer heap = Heap();
     if heap == NativePointer(0)
-        || raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_OWNER_STATE_OFFSET)) != 1
+        || raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_OWNER_STATE_OFFSET)) != NativeWord(slot)
         || raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_OWNER_HEAP_OFFSET)) != NativeWord(heap)
         || raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_TAG_OFFSET)) == 0 { return false; }
     pointer payload = NativePointer(raw_word_load(pointer_add(slot, BESKID_ABI_VALUE_PAYLOAD_OFFSET)));
@@ -51,7 +53,7 @@ pub bool AbiValueInitialize(pointer slot, word tag, pointer payload, pointer des
     raw_word_store(root, NativeWord(payload));
     raw_word_store(pointer_add(slot, BESKID_ABI_VALUE_DESCRIPTOR_OFFSET), NativeWord(descriptor));
     raw_word_store(pointer_add(slot, BESKID_ABI_VALUE_OWNER_HEAP_OFFSET), NativeWord(heap));
-    raw_word_store(pointer_add(slot, BESKID_ABI_VALUE_OWNER_STATE_OFFSET), 1);
+    raw_word_store(pointer_add(slot, BESKID_ABI_VALUE_OWNER_STATE_OFFSET), NativeWord(slot));
     return true;
 }
 

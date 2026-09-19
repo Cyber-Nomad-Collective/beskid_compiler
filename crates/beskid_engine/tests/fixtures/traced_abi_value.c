@@ -80,6 +80,41 @@ int RunAbiValueFixture(MoveValue move) {
     ValueSlot illegal_copy = receiver;
     assert(!move(&illegal_copy, &sender)); /* Copying bytes must not mint ownership. */
     assert(!beskid_rt_v5_abi_value_clear(&illegal_copy));
+    /* A generic root registration cannot confer ABI ownership on copied bytes. */
+    ValueSlot registered_copy = {0};
+    assert(gc_register_root(field(&registered_copy, BESKID_ABI_VALUE_PAYLOAD_OFFSET)));
+    memcpy(&registered_copy, &receiver, sizeof(receiver));
+    ValueSlot receiver_before = receiver, registered_before = registered_copy;
+    assert(!move(&registered_copy, &sender));
+    assert(!move(&receiver, &registered_copy));
+    assert(!beskid_rt_v5_abi_value_clear(&registered_copy));
+    assert(!beskid_rt_v5_abi_value_initialize(&registered_copy, 13, owned_resource, resource_descriptor));
+    assert(!beskid_rt_v5_abi_value_replace_with_barrier(&registered_copy, &receiver));
+    assert(!beskid_rt_v5_abi_value_replace_with_barrier(&receiver, &registered_copy));
+    assert(vacant(&sender) && memcmp(&receiver, &receiver_before, sizeof(receiver)) == 0);
+    assert(memcmp(&registered_copy, &registered_before, sizeof(registered_copy)) == 0);
+    gc_unregister_root(field(&registered_copy, BESKID_ABI_VALUE_PAYLOAD_OFFSET));
+
+    /* Nor can overwriting an already live, address-rooted ABI destination. */
+    ValueSlot live_copy = {0};
+    uintptr_t *previous_payload = beskid_rt_v5_managed_object_allocate(resource_request);
+    assert(previous_payload);
+    previous_payload[2] = 7; /* ordinary boxed scalar owned by the original slot */
+    assert(beskid_rt_v5_abi_value_initialize(&live_copy, 14, previous_payload, resource_descriptor));
+    ValueSlot live_before = live_copy;
+    memcpy(&live_copy, &receiver, sizeof(receiver));
+    assert(!move(&live_copy, &sender));
+    assert(!move(&receiver, &live_copy));
+    assert(!beskid_rt_v5_abi_value_clear(&live_copy));
+    assert(!beskid_rt_v5_abi_value_initialize(&live_copy, 13, owned_resource, resource_descriptor));
+    assert(!beskid_rt_v5_abi_value_replace_with_barrier(&live_copy, &receiver));
+    assert(!beskid_rt_v5_abi_value_replace_with_barrier(&receiver, &live_copy));
+    assert(vacant(&sender) && memcmp(&receiver, &receiver_before, sizeof(receiver)) == 0);
+    assert(memcmp(&live_copy, &receiver_before, sizeof(live_copy)) == 0);
+    /* Restore this test-corrupted slot so its legitimate root can be released. */
+    memcpy(&live_copy, &live_before, sizeof(live_copy));
+    assert(beskid_rt_v5_abi_value_clear(&live_copy));
+    assert(gc_external_root_count() == 1);
     uintptr_t saved_heap = *field(&receiver, BESKID_ABI_VALUE_OWNER_HEAP_OFFSET);
     *field(&receiver, BESKID_ABI_VALUE_OWNER_HEAP_OFFSET) = 1;
     assert(!beskid_rt_v5_abi_value_clear(&receiver));

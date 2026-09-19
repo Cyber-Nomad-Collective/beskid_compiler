@@ -1342,7 +1342,8 @@ entry_adapter "Core.Args" {
 
 // Foundation's sole transport slot. Every payload is a managed value (scalars and opaque
 // resources are boxed using their ordinary type descriptor). No untraced payload variant.
-// Zero-filled storage is vacant; owner_state 1 means live and address-rooted in owner_heap.
+// Zero-filled storage is vacant; live owner_state is the slot's own address, binding
+// ownership to stable storage in addition to its payload-field root in owner_heap.
 // Slot storage is stable until clear/move_out; tag is a nonzero producer type identity.
 layout "BeskidAbiValue" { size = 40 alignment = 8 project_to_runtime = constants fields = [{ name = tag, offset = 0, type = usize }, { name = payload, offset = 8, type = pointer }, { name = descriptor, offset = 16, type = pointer }, { name = owner_heap, offset = 24, type = pointer }, { name = owner_state, offset = 32, type = usize }] }
 export "beskid_rt_v5_abi_value_initialize" { params = [{ name = slot, type = pointer }, { name = tag, type = usize }, { name = payload, type = pointer }, { name = descriptor, type = pointer }] returns = u8 }

@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bind traced ABI-value ownership to its stable slot address; reject byte copies
+  even into generic registered roots or already-live ABI slots.
 - Emit the required `packageKind: "library"` discriminator in every library
   package artifact, allowing pckg to accept Corelib publication.
 - Allow the Mach-O shared-linker `dyld_stub_binder` import during runtime-kit
