@@ -29,6 +29,16 @@ pub i32 Main() { return 42; }
 }
 
 #[test]
+fn format_scoped_use_preserves_both_regions_and_nested_statement_counts() {
+    let program = parse_program("use Core.Disposable; Result<unit, DisposeError> Run() { use Resource outer = Open(); use (Resource inner = Resource {}) { inner.Read(); } return Result::Ok(()); }").unwrap();
+    assert_eq!(program_statement_count(&program.node), 4);
+    let once = format_program(&program).unwrap();
+    let reparsed = parse_program(&once).unwrap();
+    assert_eq!(program_statement_count(&reparsed.node), 4);
+    assert_eq!(format_program(&reparsed).unwrap(), once);
+}
+
+#[test]
 fn format_golden_use_and_function() {
     let src = "use a.b;\npub i32 Main() { return 42; }\n";
     let p = parse_program(src).expect("parse");
@@ -332,6 +342,10 @@ fn count_statement(stmt: &Statement) -> usize {
         Statement::While(w) => count_block_statements(&w.node.body.node),
         Statement::For(f) => count_block_statements(&f.node.body.node),
         Statement::Let(l) => count_expr_blocks(&l.node.value.node),
+        Statement::Use(scoped) => {
+            count_expr_blocks(&scoped.node.binding.node.value.node)
+                + scoped.node.body.as_ref().map(|body| count_block_statements(&body.node)).unwrap_or(0)
+        }
         Statement::Return(r) => r.node.value.as_ref().map(|e| count_expr_blocks(&e.node)).unwrap_or(0),
         Statement::Expression(e) => count_expr_blocks(&e.node.expression.node),
         Statement::Break(_) | Statement::Continue(_) => 0,
