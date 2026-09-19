@@ -61,6 +61,66 @@
       "result": "void"
     },
     {
+      "symbol": "beskid_rt_v5_abi_value_clear",
+      "params": [
+        {
+          "name": "slot",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_abi_value_initialize",
+      "params": [
+        {
+          "name": "slot",
+          "type": "pointer"
+        },
+        {
+          "name": "tag",
+          "type": "usize"
+        },
+        {
+          "name": "payload",
+          "type": "pointer"
+        },
+        {
+          "name": "descriptor",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_abi_value_move_out",
+      "params": [
+        {
+          "name": "source",
+          "type": "pointer"
+        },
+        {
+          "name": "destination",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_abi_value_replace_with_barrier",
+      "params": [
+        {
+          "name": "destination",
+          "type": "pointer"
+        },
+        {
+          "name": "source",
+          "type": "pointer"
+        }
+      ],
+      "result": "u8"
+    },
+    {
       "symbol": "beskid_rt_v5_abi_version",
       "params": [],
       "result": "u32"
@@ -1318,6 +1378,39 @@
     }
   ],
   "layouts": [
+    {
+      "name": "BeskidAbiValue",
+      "target": null,
+      "size": 40,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "tag",
+          "offset": 0,
+          "type": "usize"
+        },
+        {
+          "name": "payload",
+          "offset": 8,
+          "type": "pointer"
+        },
+        {
+          "name": "descriptor",
+          "offset": 16,
+          "type": "pointer"
+        },
+        {
+          "name": "owner_heap",
+          "offset": 24,
+          "type": "pointer"
+        },
+        {
+          "name": "owner_state",
+          "offset": 32,
+          "type": "usize"
+        }
+      ]
+    },
     {
       "name": "BeskidAllocationRequest",
       "target": null,

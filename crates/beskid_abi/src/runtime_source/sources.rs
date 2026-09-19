@@ -218,6 +218,14 @@ const CANONICAL_FOUNDATION_ERROR_SOURCE: &str =
 /// The runtime source corpus built into this compiler version.
 pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
     vec![
+        SourceUnit {
+            logical_path: "src/Runtime/Mem/AbiValue.bd".into(),
+            source: format!(
+                "{}{}",
+                crate::generated::abi_v5_contract::ABI_V5_RUNTIME_LAYOUT_SOURCE,
+                include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Mem/AbiValue.bd"))
+            ),
+        },
         SourceUnit { logical_path: CANONICAL_BOOTSTRAP_SOURCE_PATH.into(), source: CANONICAL_BOOTSTRAP_SOURCE.into() },
         SourceUnit {
             logical_path: CANONICAL_BOOTSTRAP_NATIVE_SOURCE_PATH.into(),

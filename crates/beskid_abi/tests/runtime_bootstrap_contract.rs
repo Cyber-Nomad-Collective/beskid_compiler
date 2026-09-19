@@ -31,6 +31,14 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
         vec![
             ("beskid_library_attach_v5", &[AbiType::Pointer][..], AbiType::I32,),
             ("beskid_library_detach_v5", &[AbiType::Pointer][..], AbiType::Void,),
+            ("beskid_rt_v5_abi_value_clear", &[AbiType::Pointer][..], AbiType::U8),
+            (
+                "beskid_rt_v5_abi_value_initialize",
+                &[AbiType::Pointer, AbiType::USize, AbiType::Pointer, AbiType::Pointer][..],
+                AbiType::U8
+            ),
+            ("beskid_rt_v5_abi_value_move_out", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8),
+            ("beskid_rt_v5_abi_value_replace_with_barrier", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::U8),
             ("beskid_rt_v5_abi_version", &[][..], AbiType::U32),
             ("beskid_rt_v5_array_allocate_rooted", &[AbiType::Pointer, AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_array_construction_finish", &[AbiType::Pointer][..], AbiType::U8,),
@@ -156,6 +164,7 @@ fn canonical_layouts_freeze_common_and_target_context_offsets() {
         assert_eq!(
             names,
             vec![
+                "BeskidAbiValue",
                 "BeskidAllocationRequest",
                 "BeskidArrayAllocationRequest",
                 "BeskidArrayElementDescriptor",

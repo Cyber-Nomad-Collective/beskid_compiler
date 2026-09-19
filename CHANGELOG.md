@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Define the Foundation `BeskidAbiValue` transport slot in the runtime manifest and
+  generate its runtime offsets alongside ABI metadata. Add traced initialize,
+  replacement, move, and clear operations with heap ownership and root retention.
+- Add static, native-kit, and JIT ownership/collection fixtures and a staged negative
+  transport audit for the subsequent Fiber and Channel migrations.
+
 ### Fixed
 
 - Emit the required `packageKind: "library"` discriminator in every library

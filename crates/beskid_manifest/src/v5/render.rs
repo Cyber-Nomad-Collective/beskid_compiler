@@ -9,6 +9,7 @@ pub(super) fn render_rust(
     masm: &BTreeMap<String, String>,
 ) -> String {
     let json = serde_json::to_string(manifest).expect("serializable manifest");
+    let runtime_layout_source = render_runtime_layout_source(manifest);
     let trap_rows =
         manifest.traps.iter().map(|trap| format!("    ({:?}, {}),\n", trap.name, trap.code)).collect::<String>();
     let target_rows = manifest
@@ -91,6 +92,7 @@ pub(super) fn render_rust(
     format!(
         "// @generated from runtime_manifest.bsol; do not edit.\n\
 pub const ABI_V5_SOURCE_JSON: &str = r#\"{json}\"#;\n\
+pub const ABI_V5_RUNTIME_LAYOUT_SOURCE: &str = {runtime_layout_source:?};\n\
 pub const ABI_V5_RUNTIME_PUBLISHER: &str = {:?};\n\
 pub const ABI_V5_RUNTIME_PACKAGE: &str = {:?};\n\
 pub const ABI_V5_TRAP_EXIT_STATUS: u32 = {};\n\
@@ -165,6 +167,21 @@ pub const ABI_V5_TRAPS: &[(&str, u8)] = &[\n{trap_rows}];\n",
         manifest.meta.trap_exit_status,
         manifest.meta.trap_diagnostic
     )
+}
+
+// Project offsets directly from the same layout used by C, assembly, and kit metadata.
+// Canonical runtime consumers never maintain a second list of offsets for these layouts.
+fn render_runtime_layout_source(manifest: &RuntimeManifestV5) -> String {
+    let mut out = String::from("// @generated from runtime_manifest.bsol; do not edit.\n");
+    for layout in manifest.layouts.iter().filter(|layout| layout.project_to_runtime.as_deref() == Some("constants")) {
+        let name = macro_name(&layout.name);
+        writeln!(out, "const {name}_SIZE = {};", layout.size).unwrap();
+        writeln!(out, "const {name}_ALIGNMENT = {};", layout.alignment).unwrap();
+        for field in &layout.fields {
+            writeln!(out, "const {name}_{}_OFFSET = {};", macro_name(&field.name), field.offset).unwrap();
+        }
+    }
+    out
 }
 
 fn soft_builtin_param_kind(ty: &str) -> &'static str {

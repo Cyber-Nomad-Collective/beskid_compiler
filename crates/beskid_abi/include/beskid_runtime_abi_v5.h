@@ -7,6 +7,13 @@
 #define BESKID_TRAP_EXIT_STATUS 101
 #define BESKID_TRAP_DIAGNOSTIC "beskid runtime trap v5"
 struct BeskidStr;
+#define BESKID_ABI_VALUE_SIZE 40
+#define BESKID_ABI_VALUE_ALIGNMENT 8
+#define BESKID_ABI_VALUE_TAG_OFFSET 0
+#define BESKID_ABI_VALUE_PAYLOAD_OFFSET 8
+#define BESKID_ABI_VALUE_DESCRIPTOR_OFFSET 16
+#define BESKID_ABI_VALUE_OWNER_HEAP_OFFSET 24
+#define BESKID_ABI_VALUE_OWNER_STATE_OFFSET 32
 #define BESKID_ALLOCATION_REQUEST_SIZE 24
 #define BESKID_ALLOCATION_REQUEST_ALIGNMENT 8
 #define BESKID_ALLOCATION_REQUEST_SIZE_OFFSET 0
@@ -273,6 +280,10 @@ struct BeskidStr;
 #define BESKID_ARCH_CONTEXT_X86_64_SYS_V_RIP_OFFSET 56
 int32_t beskid_library_attach_v5(void * runtime);
 void beskid_library_detach_v5(void * runtime);
+uint8_t beskid_rt_v5_abi_value_clear(void * slot);
+uint8_t beskid_rt_v5_abi_value_initialize(void * slot, size_t tag, void * payload, void * descriptor);
+uint8_t beskid_rt_v5_abi_value_move_out(void * source, void * destination);
+uint8_t beskid_rt_v5_abi_value_replace_with_barrier(void * destination, void * source);
 uint32_t beskid_rt_v5_abi_version(void);
 void * beskid_rt_v5_array_allocate_rooted(void * request, void * root_handle_out);
 uint8_t beskid_rt_v5_array_construction_finish(void * root_handle);
