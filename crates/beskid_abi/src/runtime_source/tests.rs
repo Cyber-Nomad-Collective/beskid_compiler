@@ -41,9 +41,9 @@ fn canonical_fiber_facade_exposes_one_exact_join_and_cancel_contract() {
         .into_iter()
         .find(|source| source.logical_path == FIBER_FACADE)
         .expect("compiler embeds canonical Fiber facade");
-    assert!(source.source.contains("__fiber_join_status(self.handle)"));
-    assert!(!source.source.contains("__fiber_join(self.handle)"));
-    assert!(source.source.contains("__fiber_cancel(self.handle, reason)"));
+    assert!(source.source.contains("__fiber_join_status(handle)"));
+    assert!(!source.source.contains("__fiber_join(handle)"));
+    assert!(source.source.contains("__fiber_cancel(handle, 0_i64)"));
 
     let target = crate::abi_v5::TargetMetadata::supported()
         .into_iter()
@@ -63,6 +63,9 @@ fn canonical_fiber_facade_exposes_one_exact_join_and_cancel_contract() {
         [
             ("__fiber_cancel", "fiber_cancel"),
             ("__fiber_detach", "fiber_detach"),
+            ("__fiber_join_detail", "fiber_join_detail"),
+            ("__fiber_join_message", "fiber_join_message"),
+            ("__fiber_join_error_finish", "fiber_join_error_finish"),
             ("__fiber_join_status", "fiber_join_status"),
             ("__fiber_join_value", "fiber_join_value"),
             ("__panic_str", "beskid_trap_message"),
@@ -106,18 +109,13 @@ fn canonical_channel_facade_uses_one_atomic_try_receive_claim_before_value_selec
     let value = capability
         .service_for_source(CANONICAL_CORELIB_CHANNEL_SOURCE_PATH, "__channel_receive_value")
         .expect("typed Channel value service");
-    let dispatch = canonical_corelib_service_value_dispatch(value).expect("scalar/managed value dispatch");
-    assert_eq!(dispatch.scalar_symbol, "channel_receive_value");
-    assert_eq!(dispatch.managed_symbol, "channel_receive_ptr");
+    let dispatch = canonical_corelib_service_value_dispatch(value).expect("one traced value adapter");
+    assert_eq!(dispatch.symbol, "channel_receive_value");
     assert_eq!(
-        canonical_corelib_service_abi_for_adapter(dispatch.scalar_symbol),
-        Some(CorelibServiceAbi { parameters: vec![CorelibServiceAbiType::I64], result: CorelibServiceAbiType::I64 })
-    );
-    assert_eq!(
-        canonical_corelib_service_abi_for_adapter(dispatch.managed_symbol),
+        canonical_corelib_service_abi_for_adapter(dispatch.symbol),
         Some(CorelibServiceAbi {
-            parameters: vec![CorelibServiceAbiType::I64],
-            result: CorelibServiceAbiType::Pointer,
+            parameters: vec![CorelibServiceAbiType::I64, CorelibServiceAbiType::Pointer],
+            result: CorelibServiceAbiType::U8
         })
     );
 }

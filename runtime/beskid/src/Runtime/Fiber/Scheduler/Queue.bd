@@ -39,16 +39,18 @@ pub unit ApplyPendingSpawns() {
 
 // Enqueue a pending cancel.
 pub unit PendingCancelEnqueue(word fiberIndex) {
+    if !FiberExists(fiberIndex) { return; }
+    word handle = FiberHandle(fiberIndex);
     pointer table = SchedTable();
     if table == NativePointer(0) { return; }
     word count = raw_word_load(pointer_add(table, 872));
     if count >= 32 { return; }
     mut word existing = 0;
     while existing < count {
-        if raw_word_load(pointer_add(table, 616 + existing * 8)) == fiberIndex { return; }
+        if raw_word_load(pointer_add(table, 616 + existing * 8)) == handle { return; }
         existing = existing + 1;
     }
-    raw_word_store(pointer_add(table, 616 + count * 8), fiberIndex);
+    raw_word_store(pointer_add(table, 616 + count * 8), handle);
     raw_word_store(pointer_add(table, 872), count + 1);
     return;
 }
@@ -60,15 +62,22 @@ pub unit ApplyPendingCancels() {
     word count = raw_word_load(pointer_add(table, 872));
     mut word i = 0;
     while i < count {
-        word idx = raw_word_load(pointer_add(table, 616 + i * 8));
-        if FiberExists(idx) {
+        word handle = raw_word_load(pointer_add(table, 616 + i * 8));
+        // A completed/consumed operation may leave a cancellation queued until
+        // the next scheduler step. Never apply it to a reused record generation.
+        if FiberHandleValid(handle) {
+            word idx = FiberHandleIndex(handle);
             pointer fib = FiberRecord(idx);
             word state = FiberState(idx);
             raw_byte_store(pointer_add(fib, 41), 1); // cancelled
             // Queued and parked fibers reach a cancellation point at this
             // scheduler step. A running fiber observes the same flag when it
             // next yields or returns through its real target context path.
-            if state == FIBER_STATE_RUNNABLE || state == FIBER_STATE_PARKED {
+            if raw_byte_load(pointer_add(fib, BESKID_FIBER_RECORD_CHANNEL_OPERATION_OFFSET)) != 0 {
+                // An in-flight channel call must resolve its commit ownership and
+                // report Cancelled on its original stack before fiber completion.
+                if state == FIBER_STATE_PARKED { WakeEnqueue(idx); }
+            } else if state == FIBER_STATE_RUNNABLE || state == FIBER_STATE_PARKED {
                 raw_word_store(fib, FIBER_STATE_CANCELLED);
                 raw_word_store(pointer_add(fib, 48), FIBER_JOIN_CANCELLED);
                 raw_word_store(pointer_add(fib, 56), 0);

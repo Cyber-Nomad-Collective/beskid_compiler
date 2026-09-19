@@ -1,7 +1,7 @@
 use beskid_manifest::load_v5_manifest_source;
 
-// This audit intentionally becomes mandatory only after F2/F3 (Tasks 3 and 4) migrate
-// Fiber and Channel together. Keeping the assertion executable prevents a prose-only gate.
+// Mandatory after the F2/F3 Fiber/Channel cutover. All value routes, including
+// Hub's dependent receipt, use one traced caller-slot protocol.
 fn violations<'a>(entries: impl IntoIterator<Item = (&'a str, Vec<&'a str>, &'a str)>) -> Vec<String> {
     entries
         .into_iter()
@@ -10,14 +10,17 @@ fn violations<'a>(entries: impl IntoIterator<Item = (&'a str, Vec<&'a str>, &'a 
                 || name.contains("channel_send")
                 || name.contains("channel_try_send")
                 || name.contains("channel_recv")
-                || name.contains("channel_receive");
+                || name.contains("channel_receive")
+                || name.contains("hub_wait_receive_value");
             if !transport {
                 return None;
             }
             let side_channel = name.ends_with("_ptr") || name.ends_with("_pointer") || name.ends_with("_scalar");
             let value_slot = params.iter().skip(1).any(|ty| *ty == "pointer");
-            let scalar_value =
-                (name.contains("fiber_join_value") || name.contains("channel_receive_value")) && !value_slot;
+            let scalar_value = (name.contains("fiber_join_value")
+                || name.contains("channel_receive_value")
+                || name.contains("hub_wait_receive_value"))
+                && !value_slot;
             let scalar_send = name.contains("send") && params.get(1) != Some(&"pointer");
             let pointer_return = result == "pointer";
             (side_channel || scalar_value || scalar_send || pointer_return).then(|| name.to_owned())
@@ -34,21 +37,29 @@ fn audit_rejects_scalar_and_pointer_side_channels_but_accepts_one_slot_protocol(
             ("__channel_send_ptr", vec!["i64", "pointer"], "i64"),
             ("__channel_recv_ptr", vec!["i64"], "pointer"),
             ("__channel_receive_value", vec!["i64"], "i64"),
+            ("__hub_wait_receive_value", vec!["i64"], "i64"),
         ]),
-        ["__fiber_join_value", "__channel_send", "__channel_send_ptr", "__channel_recv_ptr", "__channel_receive_value"]
+        [
+            "__fiber_join_value",
+            "__channel_send",
+            "__channel_send_ptr",
+            "__channel_recv_ptr",
+            "__channel_receive_value",
+            "__hub_wait_receive_value"
+        ]
     );
     assert!(
         violations([
             ("__fiber_join_value", vec!["i64", "pointer"], "u8"),
             ("__channel_send", vec!["i64", "pointer"], "i64"),
             ("__channel_receive", vec!["i64", "pointer"], "i64"),
+            ("__hub_wait_receive_value", vec!["i64", "pointer"], "u8"),
         ])
         .is_empty()
     );
 }
 
 #[test]
-#[ignore = "F1 staging gate: enable after Tasks 3 (Fiber) and 4 (Channel) migrate all consumers"]
 fn public_foundation_transport_has_no_scalar_or_pointer_side_channel() {
     let manifest = load_v5_manifest_source(include_str!("../../../runtime_manifest.bsol")).unwrap();
     let entries = manifest
@@ -74,4 +85,16 @@ fn public_foundation_transport_has_no_scalar_or_pointer_side_channel() {
             )
         }));
     assert_eq!(violations(entries), Vec::<String>::new(), "F2/F3 transport migration is incomplete");
+    // Source-authorized typed adapters must never regain an injected scalar route
+    // through the retired ABI-v4 analysis baseline.
+    let baseline = include_str!("../../beskid_analysis/src/generated/builtins.inc.rs");
+    for name in [
+        "__fiber_join_value",
+        "__channel_send",
+        "__channel_try_send",
+        "__channel_receive_value",
+        "__hub_wait_receive_value",
+    ] {
+        assert!(!baseline.contains(&format!("&[\"{name}\"]")), "retired scalar builtin {name}");
+    }
 }

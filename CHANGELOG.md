@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Transport Channel queue cells, parked sends, and exclusive receive receipts
+  through traced ABI owner slots; exercise forced-GC bytes, aggregates, and opaque
+  resources across JIT, static AOT, and native kits.
+- Grow unbounded channels with stable linked cells beyond the old 16-entry ring.
+
 - Return typed `Fiber<T>` handles from `spawn`, with generation-bound move-only
   ownership facts and rooted capture/result transport through `BeskidAbiValue`.
 - Exercise forced-GC Fiber array, aggregate, and opaque resource transfer through
@@ -287,6 +292,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   builds succeed or fail, so local release staging has the same rollback guarantee
   as package publication.
 ### Changed
+
+- Preserve committed channel values across close and cancellation, release channel
+  locks before parking, and report cancellation on the owning operation's stack.
+- Share one typed slot adapter across Fiber, Channel, and Hub receive; remove scalar
+  and pointer-side channel transport exports and injected legacy value builtins.
+- Carry generation-safe handles in pending cancellation entries so an old request
+  cannot cancel a new child that reuses its record.
 
 - Bind BSOL semantic-token candidates to each LSP document generation so
   `.bproj`, `.bws`, and standalone `.bsol` requests encode stored syntax facts

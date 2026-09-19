@@ -152,12 +152,6 @@ pub(super) fn corelib_service_symbols(
             if corelib_services.contains(&service.symbol) && !ALWAYS_AVAILABLE_STRING_SERVICES.contains(&service.symbol)
             {
                 symbols.insert(DirectCallee::corelib_service(service.symbol), service.symbol.to_owned());
-                if let Some(dispatch) = beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(*service) {
-                    symbols.insert(
-                        DirectCallee::corelib_service(dispatch.managed_symbol),
-                        dispatch.managed_symbol.to_owned(),
-                    );
-                }
             }
         }
     }

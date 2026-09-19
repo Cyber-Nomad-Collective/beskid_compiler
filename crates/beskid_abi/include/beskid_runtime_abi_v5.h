@@ -70,6 +70,7 @@ struct BeskidStr;
 #define BESKID_FIBER_RECORD_DETACHED_OFFSET 40
 #define BESKID_FIBER_RECORD_CANCELLED_OFFSET 41
 #define BESKID_FIBER_RECORD_CONSUMED_OFFSET 42
+#define BESKID_FIBER_RECORD_CHANNEL_OPERATION_OFFSET 43
 #define BESKID_FIBER_RECORD_GENERATION_OFFSET 44
 #define BESKID_FIBER_RECORD_OUTCOME_KIND_OFFSET 48
 #define BESKID_FIBER_RECORD_PANIC_MESSAGE_OFFSET 56
@@ -338,14 +339,11 @@ uint8_t bytes_get(void * bytes, size_t index);
 void bytes_set(void * bytes, size_t index, uint8_t value);
 void channel_close(int64_t id);
 int64_t channel_create(int64_t capacity, int64_t flags);
-void * channel_receive_ptr(int64_t id);
 int64_t channel_receive_status(int64_t id);
-int64_t channel_receive_value(int64_t id);
-int64_t channel_send(int64_t id, int64_t value);
-int64_t channel_send_ptr(int64_t id, void * valuePtr);
+uint8_t channel_receive_value(int64_t id, void * destination);
+int64_t channel_send(int64_t id, void * sender);
 int64_t channel_try_receive(int64_t id);
-int64_t channel_try_send(int64_t id, int64_t value);
-int64_t channel_try_send_ptr(int64_t id, void * valuePtr);
+int64_t channel_try_send(int64_t id, void * sender);
 int64_t clock_monotonic_nanos(void);
 int64_t clock_realtime_nanos(void);
 void * composition_container_create(size_t slot_count);
@@ -401,7 +399,7 @@ int64_t hub_register(int64_t hubId, int64_t index, int64_t channelId);
 int64_t hub_unregister(int64_t hubId, int64_t index);
 int64_t hub_wait_receive_index(int64_t hubId);
 int64_t hub_wait_receive_status(int64_t hubId);
-int64_t hub_wait_receive_value(int64_t hubId);
+uint8_t hub_wait_receive_value(int64_t hubId, void * destination);
 void * mutex_create(void);
 int32_t mutex_lock(void * id);
 int32_t mutex_try_lock(void * id);

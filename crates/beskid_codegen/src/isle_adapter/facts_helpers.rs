@@ -541,11 +541,9 @@ fn select_typed_corelib_value_service(
     semantic: SemanticTypeId,
 ) -> Option<(&'static str, SemanticTypeId)> {
     match (managed, semantic) {
-        (ManagedReferenceKind::GcManaged, SemanticTypeId::POINTER) => {
-            Some((dispatch.managed_symbol, SemanticTypeId::POINTER))
-        }
+        (ManagedReferenceKind::GcManaged, SemanticTypeId::POINTER) => Some((dispatch.symbol, SemanticTypeId::POINTER)),
         (ManagedReferenceKind::NativeOrScalar, semantic) if semantic != SemanticTypeId::POINTER => {
-            Some((dispatch.scalar_symbol, semantic))
+            Some((dispatch.symbol, semantic))
         }
         _ => None,
     }
@@ -556,20 +554,17 @@ mod typed_corelib_value_service_tests {
     use super::*;
 
     const DISPATCH: beskid_abi::runtime_source::CorelibServiceValueDispatch =
-        beskid_abi::runtime_source::CorelibServiceValueDispatch {
-            scalar_symbol: "channel_receive_value",
-            managed_symbol: "channel_receive_ptr",
-        };
+        beskid_abi::runtime_source::CorelibServiceValueDispatch { symbol: "channel_receive_value" };
 
     #[test]
-    fn scalar_and_managed_values_select_distinct_canonical_adapters() {
+    fn scalar_and_managed_values_select_one_canonical_slot_adapter() {
         assert_eq!(
             select_typed_corelib_value_service(DISPATCH, ManagedReferenceKind::NativeOrScalar, SemanticTypeId::I64),
             Some(("channel_receive_value", SemanticTypeId::I64))
         );
         assert_eq!(
             select_typed_corelib_value_service(DISPATCH, ManagedReferenceKind::GcManaged, SemanticTypeId::POINTER),
-            Some(("channel_receive_ptr", SemanticTypeId::POINTER))
+            Some(("channel_receive_value", SemanticTypeId::POINTER))
         );
     }
 

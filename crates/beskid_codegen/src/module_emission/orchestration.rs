@@ -351,9 +351,23 @@ fn lower_resolved_syntax_program(
         }
     }
     let mut aggregate_static_plans = collect_aggregate_static_plans(input, items);
-    if extern_imports.iter().any(|import| import.symbol == "fiber_join_value") {
+    if extern_imports.iter().any(|import| {
+        matches!(
+            import.symbol.as_str(),
+            "fiber_join_value"
+                | "channel_receive_value"
+                | "hub_wait_receive_value"
+                | "channel_send"
+                | "channel_try_send"
+        )
+    }) {
         extern_imports.push(ExternImport {
             symbol: "beskid_rt_v5_abi_value_clear".to_owned(),
+            abi: Some("C".into()),
+            library: None,
+        });
+        extern_imports.push(ExternImport {
+            symbol: "beskid_rt_v5_abi_value_initialize".to_owned(),
             abi: Some("C".into()),
             library: None,
         });

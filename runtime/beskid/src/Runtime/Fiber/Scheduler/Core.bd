@@ -37,7 +37,7 @@ const FIBER_JOIN_NOT_DONE = 4;
 //   offset   32: run_queue[32] (32 words)
 //   offset  288: pending_spawns[8] (8 * 40 bytes: entry/arg/cancel/parent)
 //   offset  608: pending_spawn_count (word)
-//   offset  616: pending_cancels[32] (32 words)
+//   offset  616: pending_cancels[32] (generation-safe handles, never bare indices)
 //   offset  872: pending_cancel_count (word)
 //   offset  880: pending_detaches[32] (32 words)
 //   offset 1136: pending_detach_count (word)

@@ -12,16 +12,34 @@ use std::{collections::HashSet, path::Path, process::Command, sync::Arc};
 
 #[test]
 fn source_fiber_values_survive_collection_in_jit_aot_and_native_kit() {
+    source_transfer_fixture("fiber", "RunFiberFixture", 126);
+}
+
+#[test]
+fn source_channel_values_survive_collection_in_jit_aot_and_native_kit() {
+    source_transfer_fixture("channel", "RunChannelFixture", 126);
+}
+
+fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let compiler = root.join("../..").canonicalize().unwrap();
     let concurrency = compiler.join("corelib/packages/concurrency/src");
     let foundation = compiler.join("corelib/packages/foundation/src");
     let application_root = root.join("tests/fixtures");
-    let source_path = application_root.join("fiber_value_transfer.bd");
-    let mut paths = vec![(source_path, "fiber_value_transfer.bd")];
+    let fixture_name = format!("{kind}_value_transfer.bd");
+    let source_path = application_root.join(&fixture_name);
+    let mut paths = vec![(source_path, fixture_name.as_str())];
     for (base, relative) in [
         (&concurrency, "Concurrency/Fiber.bd"),
         (&concurrency, "Concurrency/FiberError.bd"),
+        (&concurrency, "Concurrency/Channel.bd"),
+        (&concurrency, "Concurrency/ChannelError.bd"),
+        (&concurrency, "Concurrency/ChannelOptions.bd"),
+        (&concurrency, "Concurrency/Status.bd"),
+        (&concurrency, "Concurrency/TryResult.bd"),
+        (&concurrency, "Concurrency/Hub.bd"),
+        (&concurrency, "Concurrency/HubError.bd"),
+        (&concurrency, "Concurrency/HubReceiveResult.bd"),
         (&foundation, "Core/Results/Results.bd"),
     ] {
         paths.push((base.join(relative), relative));
@@ -53,7 +71,7 @@ fn source_fiber_values_survive_collection_in_jit_aot_and_native_kit() {
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder().unwrap();
     let isa = cranelift_native::builder().unwrap().finish(cranelift_codegen::settings::Flags::new(settings)).unwrap();
     let mut db = BeskidDatabase::default();
-    let lowered = lower_syntax_assembly_entrypoint(&mut db, assembly, "RunFiberFixture", target.clone(), isa.as_ref())
+    let lowered = lower_syntax_assembly_entrypoint(&mut db, assembly, entry, target.clone(), isa.as_ref())
         .expect("typed Fiber source lowering");
     eprintln!("Fiber source lowering complete");
     let prefix = tempfile::tempdir().unwrap();
@@ -65,7 +83,7 @@ fn source_fiber_values_survive_collection_in_jit_aot_and_native_kit() {
         let entry = unsafe { engine.entrypoint_ptr(&lowered.symbol) }.unwrap();
         let run: extern "C" fn() -> i64 = unsafe { std::mem::transmute(entry) };
         eprintln!("Fiber JIT execution start");
-        assert_eq!(run(), 126);
+        assert_eq!(run(), expected);
         eprintln!("Fiber JIT execution complete");
     }
     let object_path = prefix.path().join("fiber.o");

@@ -467,34 +467,6 @@
       ]
     },
     {
-      "name": "__channel_receive_ptr",
-      "adapter": "channel_receive_ptr",
-      "params": [
-        {
-          "name": "id",
-          "type": "i64"
-        }
-      ],
-      "result": "pointer",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "channel_receive_ptr",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "channel_receive_ptr",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "channel_receive_ptr",
-          "osImports": []
-        }
-      ]
-    },
-    {
       "name": "__channel_receive_status",
       "adapter": "channel_receive_status",
       "params": [
@@ -529,9 +501,13 @@
         {
           "name": "id",
           "type": "i64"
+        },
+        {
+          "name": "destination",
+          "type": "pointer"
         }
       ],
-      "result": "i64",
+      "result": "u8",
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",
@@ -559,39 +535,7 @@
           "type": "i64"
         },
         {
-          "name": "value",
-          "type": "i64"
-        }
-      ],
-      "result": "i64",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "channel_send",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "channel_send",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "channel_send",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__channel_send_ptr",
-      "adapter": "channel_send_ptr",
-      "params": [
-        {
-          "name": "id",
-          "type": "i64"
-        },
-        {
-          "name": "valuePtr",
+          "name": "sender",
           "type": "pointer"
         }
       ],
@@ -599,17 +543,17 @@
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",
-          "implementation": "channel_send_ptr",
+          "implementation": "channel_send",
           "osImports": []
         },
         {
           "target": "x86_64-pc-windows-msvc",
-          "implementation": "channel_send_ptr",
+          "implementation": "channel_send",
           "osImports": []
         },
         {
           "target": "x86_64-unknown-linux-gnu",
-          "implementation": "channel_send_ptr",
+          "implementation": "channel_send",
           "osImports": []
         }
       ]
@@ -651,39 +595,7 @@
           "type": "i64"
         },
         {
-          "name": "value",
-          "type": "i64"
-        }
-      ],
-      "result": "i64",
-      "targetBindings": [
-        {
-          "target": "aarch64-apple-darwin",
-          "implementation": "channel_try_send",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-pc-windows-msvc",
-          "implementation": "channel_try_send",
-          "osImports": []
-        },
-        {
-          "target": "x86_64-unknown-linux-gnu",
-          "implementation": "channel_try_send",
-          "osImports": []
-        }
-      ]
-    },
-    {
-      "name": "__channel_try_send_ptr",
-      "adapter": "channel_try_send_ptr",
-      "params": [
-        {
-          "name": "id",
-          "type": "i64"
-        },
-        {
-          "name": "valuePtr",
+          "name": "sender",
           "type": "pointer"
         }
       ],
@@ -691,17 +603,17 @@
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",
-          "implementation": "channel_try_send_ptr",
+          "implementation": "channel_try_send",
           "osImports": []
         },
         {
           "target": "x86_64-pc-windows-msvc",
-          "implementation": "channel_try_send_ptr",
+          "implementation": "channel_try_send",
           "osImports": []
         },
         {
           "target": "x86_64-unknown-linux-gnu",
-          "implementation": "channel_try_send_ptr",
+          "implementation": "channel_try_send",
           "osImports": []
         }
       ]
@@ -2266,9 +2178,13 @@
         {
           "name": "hubId",
           "type": "i64"
+        },
+        {
+          "name": "destination",
+          "type": "pointer"
         }
       ],
-      "result": "i64",
+      "result": "u8",
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",

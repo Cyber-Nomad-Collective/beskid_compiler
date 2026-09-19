@@ -101,11 +101,10 @@ pub struct CorelibServiceAbi {
     pub result: CorelibServiceAbiType,
 }
 
-/// Type-directed native value adapters owned by one exact source service.
+/// One traced native value adapter owned by one exact source service.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CorelibServiceValueDispatch {
-    pub scalar_symbol: &'static str,
-    pub managed_symbol: &'static str,
+    pub symbol: &'static str,
 }
 
 /// Return the type-directed value adapters for a canonical source-authorized service.
@@ -114,18 +113,15 @@ pub fn canonical_corelib_service_value_dispatch(service: CorelibService) -> Opti
         && service.symbol == "fiber_join_value"
         && service.source_path == CANONICAL_CORELIB_FIBER_SOURCE_PATH
     {
-        return Some(CorelibServiceValueDispatch {
-            scalar_symbol: "fiber_join_value",
-            managed_symbol: "fiber_join_value",
-        });
+        return Some(CorelibServiceValueDispatch { symbol: "fiber_join_value" });
     }
-    (service.name == "__channel_receive_value"
+    ((service.name == "__channel_receive_value"
         && service.symbol == "channel_receive_value"
         && service.source_path == CANONICAL_CORELIB_CHANNEL_SOURCE_PATH)
-        .then_some(CorelibServiceValueDispatch {
-            scalar_symbol: "channel_receive_value",
-            managed_symbol: "channel_receive_ptr",
-        })
+        || (service.name == "__hub_wait_receive_value"
+            && service.symbol == "hub_wait_receive_value"
+            && service.source_path == CANONICAL_CORELIB_HUB_SOURCE_PATH))
+        .then_some(CorelibServiceValueDispatch { symbol: service.symbol })
 }
 
 /// Resolve a service adapter against the canonical ABI-v5 bindings.

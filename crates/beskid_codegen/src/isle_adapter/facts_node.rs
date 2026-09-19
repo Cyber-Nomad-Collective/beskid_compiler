@@ -671,16 +671,40 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn traced_fiber_join_layout(&self, key: AstNodeKey) -> Option<beskid_isle::TracedFiberJoinLayout> {
-        if self.direct_callee(key)? != DirectCallee::corelib_service("fiber_join_value") {
+        let DirectCallee::CorelibService(
+            symbol @ ("fiber_join_value" | "channel_receive_value" | "hub_wait_receive_value"),
+        ) = self.direct_callee(key)?
+        else {
             return None;
-        }
+        };
         let slot = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAbiValue")?;
         let header = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
         Some(beskid_isle::TracedFiberJoinLayout {
+            symbol,
             slot_size: u32::try_from(slot.size).ok()?,
             alignment_shift: u8::try_from(slot.alignment.ilog2()).ok()?,
             payload_offset: i32::try_from(slot.fields.iter().find(|field| field.name == "payload")?.offset).ok()?,
             value_offset: i32::try_from(header.size).ok()?,
+        })
+    }
+
+    fn traced_channel_send_layout(&self, key: AstNodeKey) -> Option<beskid_isle::TracedFiberJoinLayout> {
+        let DirectCallee::CorelibService(symbol @ ("channel_send" | "channel_try_send")) = self.direct_callee(key)?
+        else {
+            return None;
+        };
+        let arguments = self.call_arguments(key)?;
+        let [_, value] = arguments.as_slice() else {
+            return None;
+        };
+        (self.managed_reference_in_context(*value)? == beskid_isle::ManagedReferenceFact::GcManaged).then_some(())?;
+        let slot = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAbiValue")?;
+        Some(beskid_isle::TracedFiberJoinLayout {
+            symbol,
+            slot_size: u32::try_from(slot.size).ok()?,
+            alignment_shift: u8::try_from(slot.alignment.ilog2()).ok()?,
+            payload_offset: i32::try_from(slot.fields.iter().find(|field| field.name == "payload")?.offset).ok()?,
+            value_offset: 0,
         })
     }
 

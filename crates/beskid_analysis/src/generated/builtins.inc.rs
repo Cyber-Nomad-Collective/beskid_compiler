@@ -223,27 +223,9 @@ define_builtins! {
         returns: U64,
         injected: true,
     },
-    &["__channel_receive_value"] => {
-        symbol: "channel_receive_value",
-        params: [U64],
-        returns: U64,
-        injected: true,
-    },
-    &["__channel_send"] => {
-        symbol: "channel_send",
-        params: [U64, U64],
-        returns: U64,
-        injected: true,
-    },
     &["__channel_try_receive"] => {
         symbol: "channel_try_receive",
         params: [U64],
-        returns: U64,
-        injected: true,
-    },
-    &["__channel_try_send"] => {
-        symbol: "channel_try_send",
-        params: [U64, U64],
         returns: U64,
         injected: true,
     },
@@ -275,12 +257,6 @@ define_builtins! {
         symbol: "fiber_join_status",
         params: [U64],
         returns: I32,
-        injected: true,
-    },
-    &["__fiber_join_value"] => {
-        symbol: "fiber_join_value",
-        params: [U64],
-        returns: U64,
         injected: true,
     },
     &["__fiber_now_millis"] => {
@@ -345,12 +321,6 @@ define_builtins! {
     },
     &["__hub_wait_receive"] => {
         symbol: "hub_wait_receive_status",
-        params: [U64],
-        returns: U64,
-        injected: true,
-    },
-    &["__hub_wait_receive_value"] => {
-        symbol: "hub_wait_receive_value",
         params: [U64],
         returns: U64,
         injected: true,

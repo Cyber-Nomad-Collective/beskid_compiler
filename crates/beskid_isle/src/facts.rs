@@ -358,6 +358,7 @@ pub struct SpawnEntry {
 /// Manifest-derived destination slot and boxed-value offsets for typed Fiber Join.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TracedFiberJoinLayout {
+    pub symbol: &'static str,
     pub slot_size: u32,
     pub alignment_shift: u8,
     pub payload_offset: i32,
@@ -640,6 +641,10 @@ pub trait NodeFacts {
         None
     }
     fn traced_fiber_join_layout(&self, _key: AstNodeKey) -> Option<TracedFiberJoinLayout> {
+        None
+    }
+
+    fn traced_channel_send_layout(&self, _key: AstNodeKey) -> Option<TracedFiberJoinLayout> {
         None
     }
     fn lambda_entry(&self, _key: AstNodeKey) -> Option<LambdaEntry> {

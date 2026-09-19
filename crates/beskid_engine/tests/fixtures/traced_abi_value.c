@@ -42,9 +42,215 @@ static void transfer_via_fiber(ValueSlot *owner) {
     gc_collect();
 }
 
+static void channel_close_retains_committed_value(ValueSlot *owner) {
+    void *expected = payload(owner);
+    int64_t channel = channel_create(1, 0);
+    assert(channel >= 0);
+    assert(channel_try_send(channel, owner) == 0);
+    assert(vacant(owner));
+    channel_close(channel);
+    gc_collect();
+    assert(channel_try_receive(channel) == 0); /* Closed queues must drain. */
+    assert(channel_receive_value(channel, owner));
+    assert(payload(owner) == expected);
+    ValueSlot duplicate = {0};
+    assert(!channel_receive_value(channel, &duplicate));
+    assert(channel_try_receive(channel) == 1);
+    assert(channel_try_send(channel, owner) == 1);
+    assert(payload(owner) == expected); /* close cannot consume an uncommitted send */
+}
+
+static void channel_dynamic_storage(void) {
+    int64_t channel = channel_create(0, 0);
+    uintptr_t descriptor[] = {24, 8, 0, 0, 0};
+    uintptr_t request[] = {24, 8, (uintptr_t)descriptor};
+    for (uintptr_t i = 0; i < 24; ++i) {
+        uintptr_t *boxed = beskid_rt_v5_managed_object_allocate(request);
+        assert(boxed);
+        boxed[2] = i;
+        ValueSlot sender = {0};
+        assert(beskid_rt_v5_abi_value_initialize(&sender, 30, boxed, descriptor));
+        assert(channel_try_send(channel, &sender) == 0);
+        assert(vacant(&sender));
+        gc_collect();
+    }
+    channel_close(channel);
+    /* Each move validates slot-address ownership. Growing beyond the old ring
+     * cannot byte-copy/relocate initialized cells or alter FIFO order. */
+    for (uintptr_t i = 0; i < 24; ++i) {
+        ValueSlot received = {0};
+        assert(channel_try_receive(channel) == 0);
+        gc_collect(); /* exclusive receipt must remain rooted */
+        assert(channel_receive_value(channel, &received));
+        assert(((uintptr_t *)payload(&received))[2] == i);
+        assert(beskid_rt_v5_abi_value_clear(&received));
+    }
+    assert(channel_try_receive(channel) == 1);
+    gc_collect();
+    assert(gc_external_root_count() == 0 && gc_object_count() == 0);
+}
+
+static int64_t receipt_channel;
+static void *channel_receipt_thief(void *argument) {
+    ValueSlot stolen = {0};
+    assert(!channel_receive_value(receipt_channel, &stolen));
+    assert(vacant(&stolen));
+    return argument;
+}
+static void *channel_cancelled_receiver(void *argument) {
+    ValueSlot receiver = {0};
+    assert(channel_try_receive(receipt_channel) == 0);
+    assert(fiber_cancel(fiber_current_id(), 9));
+    channel_close(receipt_channel);
+    gc_collect();
+    /* Cancellation after claim must not discard an already-committed receipt. */
+    assert(channel_receive_value(receipt_channel, &receiver));
+    assert(payload(&receiver) == argument);
+    assert(!channel_receive_value(receipt_channel, &receiver));
+    assert(beskid_rt_v5_abi_value_clear(&receiver));
+    return argument;
+}
+static void channel_receipt_ownership(ValueSlot *owner) {
+    void *expected = payload(owner);
+    receipt_channel = channel_create(1, 0);
+    assert(channel_try_send(receipt_channel, owner) == 0);
+    assert(channel_try_receive(receipt_channel) == 0);
+    gc_collect();
+    int64_t thief = fiber_spawn((void *)channel_receipt_thief, expected);
+    assert(fiber_join_status(thief) == 0);
+    ValueSlot child = {0};
+    assert(fiber_join_value(thief, &child));
+    assert(beskid_rt_v5_abi_value_clear(&child));
+    assert(channel_receive_value(receipt_channel, owner));
+    assert(payload(owner) == expected);
+    assert(channel_try_send(receipt_channel, owner) == 0);
+    int64_t receiver = fiber_spawn((void *)channel_cancelled_receiver, expected);
+    assert(fiber_join_status(receiver) == 0);
+    assert(fiber_join_value(receiver, owner));
+    assert(payload(owner) == expected);
+    assert(channel_try_receive(receipt_channel) == 1);
+}
+
+static int64_t race_channel, race_sender, race_status;
+static int race_mode, race_sender_owned;
+static void *channel_sender_fixture(void *argument) {
+    ValueSlot pending = {0};
+    /* Normalize arrays through their object header's descriptor in the caller. */
+    extern uintptr_t *race_descriptor;
+    assert(beskid_rt_v5_abi_value_initialize(&pending, 21, argument, race_descriptor));
+    race_status = channel_send(race_channel, &pending);
+    race_sender_owned = !vacant(&pending);
+    assert(beskid_rt_v5_abi_value_clear(&pending));
+    return argument;
+}
+uintptr_t *race_descriptor;
+static void *channel_controller_fixture(void *argument) {
+    gc_collect(); /* pending sender or committed queue is the transfer owner */
+    if (race_mode == 4) {
+        ValueSlot sender = {0};
+        assert(beskid_rt_v5_abi_value_initialize(&sender, 23, argument, race_descriptor));
+        assert(channel_try_send(race_channel, &sender) == 0);
+    } else if (race_mode == 1) {
+        ValueSlot first = {0};
+        assert(channel_try_receive(race_channel) == 0);
+        assert(channel_receive_value(race_channel, &first));
+        assert(beskid_rt_v5_abi_value_clear(&first));
+    } else if (race_mode == 3 || race_mode == 6) {
+        channel_close(race_channel);
+    } else {
+        assert(fiber_cancel(race_sender, 7));
+    }
+    return argument;
+}
+static void *channel_waiting_receiver(void *argument) {
+    ValueSlot receiver = {0};
+    race_status = channel_receive_status(race_channel);
+    if (race_status == 0) {
+        assert(channel_receive_value(race_channel, &receiver));
+        assert(payload(&receiver) == argument);
+        assert(beskid_rt_v5_abi_value_clear(&receiver));
+    } else assert(vacant(&receiver));
+    return argument;
+}
+static void channel_receiver_wake(ValueSlot *owner, int mode) {
+    void *expected = payload(owner);
+    race_descriptor = (uintptr_t *)*field(owner, BESKID_ABI_VALUE_DESCRIPTOR_OFFSET);
+    race_channel = channel_create(1, 0);
+    race_mode = mode;
+    race_status = -100;
+    race_sender = fiber_spawn((void *)channel_waiting_receiver, expected);
+    int64_t controller = fiber_spawn((void *)channel_controller_fixture, expected);
+    assert(beskid_rt_v5_abi_value_clear(owner));
+    int64_t outcome = fiber_join_status(race_sender);
+    assert(outcome == (mode == 5 ? 1 : 0));
+    if (outcome == 0) {
+        ValueSlot joined = {0};
+        assert(fiber_join_value(race_sender, &joined));
+        assert(beskid_rt_v5_abi_value_clear(&joined));
+    } else fiber_join_error_finish(race_sender);
+    assert(fiber_join_status(controller) == 0);
+    assert(fiber_join_value(controller, owner));
+    assert(race_status == (mode == 4 ? 0 : mode == 5 ? 2 : 1));
+    channel_close(race_channel);
+    assert(channel_try_receive(race_channel) == 1);
+}
+static void channel_race(ValueSlot *owner, int mode) {
+    void *expected = payload(owner);
+    race_descriptor = (uintptr_t *)*field(owner, BESKID_ABI_VALUE_DESCRIPTOR_OFFSET);
+    race_channel = channel_create(1, 0);
+    race_mode = mode;
+    race_status = -100;
+    race_sender_owned = -100;
+    if (mode != 2) {
+        uintptr_t descriptor[] = {24, 8, 0, 0, 0};
+        uintptr_t request[] = {24, 8, (uintptr_t)descriptor};
+        void *first = beskid_rt_v5_managed_object_allocate(request);
+        ValueSlot queued = {0};
+        assert(beskid_rt_v5_abi_value_initialize(&queued, 22, first, descriptor));
+        assert(channel_try_send(race_channel, &queued) == 0);
+        /* Descriptor must outlive all queued cells: drain this initial cell before return. */
+        race_sender = fiber_spawn((void *)channel_sender_fixture, expected);
+        int64_t controller = fiber_spawn((void *)channel_controller_fixture, expected);
+        assert(race_sender >= 0 && controller >= 0);
+        assert(beskid_rt_v5_abi_value_clear(owner));
+        int64_t status = fiber_join_status(race_sender);
+        assert(status == (mode == 0 ? 1 : 0));
+        if (status == 0) { ValueSlot joined = {0}; assert(fiber_join_value(race_sender, &joined)); assert(beskid_rt_v5_abi_value_clear(&joined)); }
+        else fiber_join_error_finish(race_sender);
+        assert(fiber_join_status(controller) == 0);
+        assert(fiber_join_value(controller, owner));
+        assert(race_status == (mode == 0 ? 2 : mode == 3 ? 1 : 0));
+        assert(race_sender_owned == (mode == 1 ? 0 : 1));
+        ValueSlot received = {0};
+        assert(channel_try_receive(race_channel) == 0);
+        assert(channel_receive_value(race_channel, &received));
+        if (mode == 1) assert(payload(&received) == expected);
+        assert(beskid_rt_v5_abi_value_clear(&received));
+    } else {
+        race_sender = fiber_spawn((void *)channel_sender_fixture, expected);
+        int64_t controller = fiber_spawn((void *)channel_controller_fixture, expected);
+        assert(beskid_rt_v5_abi_value_clear(owner));
+        assert(fiber_join_status(race_sender) == 1);
+        fiber_join_error_finish(race_sender);
+        assert(fiber_join_status(controller) == 0);
+        assert(fiber_join_value(controller, owner));
+        assert(race_status == 2 && race_sender_owned == 0);
+        ValueSlot received = {0};
+        assert(channel_try_receive(race_channel) == 0);
+        assert(channel_receive_value(race_channel, &received));
+        assert(payload(&received) == expected);
+        assert(beskid_rt_v5_abi_value_clear(&received));
+    }
+    assert(payload(owner) == expected);
+    channel_close(race_channel);
+    assert(channel_try_receive(race_channel) == 1);
+    gc_collect();
+}
+
 int RunAbiValueFixture(MoveValue move) {
     _Alignas(8) unsigned char runtime[BESKID_RUNTIME_STATE_SIZE] = {0};
     assert(beskid_rt_v5_process_init(runtime) == runtime);
+    channel_dynamic_storage();
     int64_t children[16];
     uintptr_t fiber_descriptor[] = {24, 8, 0, 0, 0};
     uintptr_t fiber_request[] = {24, 8, (uintptr_t)fiber_descriptor};
@@ -80,6 +286,13 @@ int RunAbiValueFixture(MoveValue move) {
     assert(beskid_rt_v5_abi_value_initialize(&sender, 11, array, array_descriptor));
     assert(beskid_rt_v5_array_construction_finish((void *)construction));
     transfer_via_fiber(&sender);
+    channel_close_retains_committed_value(&sender);
+    channel_race(&sender, 0);
+    channel_race(&sender, 1);
+    channel_race(&sender, 2);
+    channel_race(&sender, 3);
+    channel_receipt_ownership(&sender);
+    for (int mode = 4; mode < 7; ++mode) channel_receiver_wake(&sender, mode);
     assert(gc_external_root_count() == 1);
     gc_collect();
     assert(gc_object_count() == 1);
@@ -103,6 +316,10 @@ int RunAbiValueFixture(MoveValue move) {
     assert(vacant(&sender));
     assert(beskid_rt_v5_abi_value_initialize(&sender, 12, aggregate, aggregate_descriptor));
     transfer_via_fiber(&sender);
+    channel_close_retains_committed_value(&sender);
+    for (int mode = 0; mode < 4; ++mode) channel_race(&sender, mode);
+    channel_receipt_ownership(&sender);
+    for (int mode = 4; mode < 7; ++mode) channel_receiver_wake(&sender, mode);
     assert(beskid_rt_v5_abi_value_replace_with_barrier(&receiver, &sender));
     assert(vacant(&sender) && gc_external_root_count() == 1);
     gc_collect();
@@ -122,6 +339,10 @@ int RunAbiValueFixture(MoveValue move) {
     owned_resource[2] = UINT64_C(0xfedcba9876543210);
     assert(beskid_rt_v5_abi_value_initialize(&sender, 13, owned_resource, resource_descriptor));
     transfer_via_fiber(&sender);
+    channel_close_retains_committed_value(&sender);
+    for (int mode = 0; mode < 4; ++mode) channel_race(&sender, mode);
+    channel_receipt_ownership(&sender);
+    for (int mode = 4; mode < 7; ++mode) channel_receiver_wake(&sender, mode);
     uintptr_t empty_roots[62] = {0};
     for (size_t i = 0; i < 62; ++i) assert(gc_register_root(&empty_roots[i]));
     assert(!move(&sender, &receiver)); /* Full root registry: retain sender ownership. */

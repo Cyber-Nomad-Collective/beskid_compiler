@@ -194,17 +194,17 @@ pub unit HubWakeChannel(i64 channelId) {
 }
 
 [Export(Abi:"C", Symbol:"hub_wait_receive_value")]
-pub i64 HubWaitReceiveValue(i64 hubId) {
+pub bool HubWaitReceiveValue(i64 hubId, pointer destination) {
     mut word hi = word(hubId);
-    if hi >= HUB_TABLE_MAX { return 0; }
+    if hi >= HUB_TABLE_MAX { return false; }
     pointer hub = HubSlot(hi);
     mut word cursor = raw_word_load(pointer_add(hub, 8)) & 0xFF;
     word entryCount = raw_word_load(hub);
-    if entryCount == 0 { return 0; }
+    if entryCount == 0 { return false; }
     word pos = (cursor + entryCount - 1) % entryCount;
     word entry = pointer_add(hub, 16 + pos * 16);
     i64 chId = i64(raw_word_load(pointer_add(entry, 8)));
-    return ChannelReceiveValue(chId);
+    return ChannelReceiveValue(chId, destination);
 }
 
 [Export(Abi:"C", Symbol:"hub_wait_receive_index")]
