@@ -656,6 +656,48 @@ define_builtins! {
         returns: U64,
         injected: true,
     },
+    &["worker_release"] => {
+        symbol: "beskid_rt_v5_intrinsic_worker_release",
+        params: [Ptr],
+        returns: Unit,
+        injected: true,
+    },
+    &["owner_create"] => {
+        symbol: "beskid_rt_v5_intrinsic_owner_create",
+        params: [],
+        returns: Usize,
+        injected: true,
+    },
+    &["owner_destroy"] => {
+        symbol: "beskid_rt_v5_intrinsic_owner_destroy",
+        params: [Usize],
+        returns: Unit,
+        injected: true,
+    },
+    &["owner_post"] => {
+        symbol: "beskid_rt_v5_intrinsic_owner_post",
+        params: [Usize, Usize, Usize],
+        returns: U64,
+        injected: true,
+    },
+    &["owner_pop"] => {
+        symbol: "beskid_rt_v5_intrinsic_owner_pop",
+        params: [Usize, Ptr],
+        returns: U64,
+        injected: true,
+    },
+    &["owner_wait"] => {
+        symbol: "beskid_rt_v5_intrinsic_owner_wait",
+        params: [Usize, U64],
+        returns: Unit,
+        injected: true,
+    },
+    &["wait_claim"] => {
+        symbol: "beskid_rt_v5_intrinsic_wait_claim",
+        params: [Ptr, Usize],
+        returns: U64,
+        injected: true,
+    },
     &["__args_count"] => {
         symbol: "args_count",
         params: [],

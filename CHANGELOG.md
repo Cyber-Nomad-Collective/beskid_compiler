@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Route external Fiber waits through owner mailboxes and one atomic completion
+  winner, with monotonic absolute-deadline heaps and generation-bound cancellation.
+- Exercise native wake-before/during/after-park races, completion-source pairs,
+  cancelled pipe reads with late worker completion, and reused Fiber/wait slots
+  through static AOT, shared runtime kits, and JIT completion calls.
 - Transport Channel queue cells, parked sends, and exclusive receive receipts
   through traced ABI owner slots; exercise forced-GC bytes, aggregates, and opaque
   resources across JIT, static AOT, and native kits.
@@ -26,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reconstruct packed Fiber generations with unsigned bytes at their authoritative
+  reader, preserving valid handles across the 127-to-128 generation boundary.
+- Keep parked external waits live without scheduler spinning or false deadlock;
+  unregister cancelled worker publication while retaining native buffers until
+  the operating-system call returns, and cancel detached timers during shutdown.
 - Preserve active Channel receipts across cancellation yields and nested calls;
   restore abandoned receipts to FIFO heads during generation-bound fiber cleanup
   without dropping values, leaking roots, or blocking closed-channel drain.

@@ -194,14 +194,13 @@ struct BeskidStr;
 #define BESKID_SCHEDULER_STATE_PENDING_DETACH_COUNT_OFFSET 1136
 #define BESKID_SCHEDULER_STATE_PENDING_WAKES_OFFSET 1144
 #define BESKID_SCHEDULER_STATE_PENDING_WAKE_COUNT_OFFSET 1400
+#define BESKID_SCHEDULER_STATE_EXTERNAL_STATE_OFFSET 1408
 #define BESKID_SCHEDULER_STATE_CHANNEL_TABLE_OFFSET 3456
 #define BESKID_SCHEDULER_STATE_MUTEX_TABLE_OFFSET 3464
 #define BESKID_SCHEDULER_STATE_WAITGROUP_TABLE_OFFSET 3472
 #define BESKID_SCHEDULER_STATE_CURRENT_FIBER_OFFSET 3480
 #define BESKID_SCHEDULER_STATE_HUB_TABLE_OFFSET 3488
 #define BESKID_SCHEDULER_STATE_SCHEDULER_CONTEXT_OFFSET 3496
-#define BESKID_SCHEDULER_STATE_WORKERS_OFFSET 3512
-#define BESKID_SCHEDULER_STATE_NEXT_WORKER_TAG_OFFSET 4024
 #define BESKID_SCHEDULER_STATE_MUTATOR_TOKEN_OFFSET 4032
 #define BESKID_SCHEDULER_STATE_POLL_STATE_OFFSET 4040
 #define BESKID_SCHEDULER_STATE_FIBERS_OFFSET 4048
@@ -221,7 +220,7 @@ struct BeskidStr;
 #define BESKID_TYPE_DESCRIPTOR_POINTER_COUNT_OFFSET 24
 #define BESKID_TYPE_DESCRIPTOR_FLAGS_OFFSET 32
 #define BESKID_TYPE_DESCRIPTOR_RESERVED_OFFSET 36
-#define BESKID_WORKER_REQUEST_SIZE 64
+#define BESKID_WORKER_REQUEST_SIZE 72
 #define BESKID_WORKER_REQUEST_ALIGNMENT 8
 #define BESKID_WORKER_REQUEST_NEXT_OFFSET 0
 #define BESKID_WORKER_REQUEST_TAG_OFFSET 8
@@ -232,7 +231,8 @@ struct BeskidStr;
 #define BESKID_WORKER_REQUEST_LENGTH_OFFSET 40
 #define BESKID_WORKER_REQUEST_RESULT_OFFSET 48
 #define BESKID_WORKER_REQUEST_ERROR_OFFSET 56
-#define BESKID_WORKER_REQUEST_PADDING_OFFSET 60
+#define BESKID_WORKER_REQUEST_ABANDONED_OFFSET 60
+#define BESKID_WORKER_REQUEST_OWNER_SCHEDULER_ID_OFFSET 64
 #define BESKID_ARCH_CONTEXT_AARCH64_DARWIN_SIZE 176
 #define BESKID_ARCH_CONTEXT_AARCH64_DARWIN_ALIGNMENT 16
 #define BESKID_ARCH_CONTEXT_AARCH64_DARWIN_X19_OFFSET 0
@@ -304,6 +304,15 @@ uint8_t beskid_rt_v5_closure_capture_store(void * environment, void * descriptor
 void * beskid_rt_v5_closure_environment_allocate(void * request);
 uint8_t beskid_rt_v5_closure_environment_root(void * tls_state, size_t slot_index, void * environment);
 uint8_t beskid_rt_v5_closure_environment_root_current(size_t slot_index, void * environment);
+size_t beskid_rt_v5_external_active_count(void);
+size_t beskid_rt_v5_external_owner_id(void);
+void beskid_rt_v5_external_pump(int64_t now);
+size_t beskid_rt_v5_external_sleep_until(int64_t deadline);
+uint8_t beskid_rt_v5_external_try_complete(size_t wait_id, size_t generation, size_t source);
+size_t beskid_rt_v5_external_wait_park(size_t token);
+uint8_t beskid_rt_v5_external_wait_post(size_t owner, size_t token, size_t source);
+size_t beskid_rt_v5_external_wait_register(size_t fiber_handle, size_t operation, int64_t deadline);
+uint8_t beskid_rt_v5_external_wait_release(size_t token);
 void beskid_rt_v5_fiber_yield(void);
 void * beskid_rt_v5_managed_object_allocate(void * request);
 int32_t beskid_rt_v5_poll_executor_run_once(void);

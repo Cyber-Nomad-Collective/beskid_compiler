@@ -18,7 +18,11 @@ fn compile(temp: &Path, name: &str, source: &str, entry: bool) -> PathBuf {
     let executable = temp.join(name);
     fs::write(&harness, source).expect("write Core.Args harness");
     let mut command = Command::new("clang");
-    command.args(["-std=c11", "-arch", "arm64"]).arg(root.join("assembly/aarch64-apple-darwin/platform_host.c"));
+    // Only the argument seam is exercised by this isolated adapter fixture.
+    // Strip unrelated worker functions, whose allocator lives in platform.S.
+    command
+        .args(["-std=c11", "-arch", "arm64", "-Wl,-dead_strip"])
+        .arg(root.join("assembly/aarch64-apple-darwin/platform_host.c"));
     if entry {
         command.arg(root.join("assembly/aarch64-apple-darwin/args_entry.S"));
     }

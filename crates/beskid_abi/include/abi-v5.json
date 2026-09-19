@@ -246,6 +246,110 @@
       "result": "u8"
     },
     {
+      "symbol": "beskid_rt_v5_external_active_count",
+      "params": [],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_rt_v5_external_owner_id",
+      "params": [],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_rt_v5_external_pump",
+      "params": [
+        {
+          "name": "now",
+          "type": "i64"
+        }
+      ],
+      "result": "void"
+    },
+    {
+      "symbol": "beskid_rt_v5_external_sleep_until",
+      "params": [
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_rt_v5_external_try_complete",
+      "params": [
+        {
+          "name": "wait_id",
+          "type": "usize"
+        },
+        {
+          "name": "generation",
+          "type": "usize"
+        },
+        {
+          "name": "source",
+          "type": "usize"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_external_wait_park",
+      "params": [
+        {
+          "name": "token",
+          "type": "usize"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_rt_v5_external_wait_post",
+      "params": [
+        {
+          "name": "owner",
+          "type": "usize"
+        },
+        {
+          "name": "token",
+          "type": "usize"
+        },
+        {
+          "name": "source",
+          "type": "usize"
+        }
+      ],
+      "result": "u8"
+    },
+    {
+      "symbol": "beskid_rt_v5_external_wait_register",
+      "params": [
+        {
+          "name": "fiber_handle",
+          "type": "usize"
+        },
+        {
+          "name": "operation",
+          "type": "usize"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "usize"
+    },
+    {
+      "symbol": "beskid_rt_v5_external_wait_release",
+      "params": [
+        {
+          "name": "token",
+          "type": "usize"
+        }
+      ],
+      "result": "u8"
+    },
+    {
       "symbol": "beskid_rt_v5_fiber_yield",
       "params": [],
       "result": "void"
@@ -1014,6 +1118,87 @@
       "targetBindings": []
     },
     {
+      "name": "owner_create",
+      "symbol": "beskid_rt_v5_intrinsic_owner_create",
+      "capability": "runtime.scheduler.owner_create",
+      "params": [],
+      "result": "usize",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "owner_destroy",
+      "symbol": "beskid_rt_v5_intrinsic_owner_destroy",
+      "capability": "runtime.scheduler.owner_destroy",
+      "params": [
+        {
+          "name": "owner",
+          "type": "usize"
+        }
+      ],
+      "result": "void",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "owner_pop",
+      "symbol": "beskid_rt_v5_intrinsic_owner_pop",
+      "capability": "runtime.scheduler.owner_pop",
+      "params": [
+        {
+          "name": "owner",
+          "type": "usize"
+        },
+        {
+          "name": "command",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "owner_post",
+      "symbol": "beskid_rt_v5_intrinsic_owner_post",
+      "capability": "runtime.scheduler.owner_post",
+      "params": [
+        {
+          "name": "owner",
+          "type": "usize"
+        },
+        {
+          "name": "token",
+          "type": "usize"
+        },
+        {
+          "name": "source",
+          "type": "usize"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "owner_wait",
+      "symbol": "beskid_rt_v5_intrinsic_owner_wait",
+      "capability": "runtime.scheduler.owner_wait",
+      "params": [
+        {
+          "name": "owner",
+          "type": "usize"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "void",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
       "name": "pointer_add",
       "symbol": "beskid_rt_v5_intrinsic_pointer_add",
       "capability": "runtime.bootstrap.pointer_add",
@@ -1228,6 +1413,24 @@
       "targetBindings": []
     },
     {
+      "name": "wait_claim",
+      "symbol": "beskid_rt_v5_intrinsic_wait_claim",
+      "capability": "runtime.scheduler.wait_claim",
+      "params": [
+        {
+          "name": "state",
+          "type": "pointer"
+        },
+        {
+          "name": "source",
+          "type": "usize"
+        }
+      ],
+      "result": "i32",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
       "name": "worker_poll",
       "symbol": "beskid_rt_v5_intrinsic_worker_poll",
       "capability": "runtime.scheduler.worker_poll",
@@ -1260,6 +1463,20 @@
       "symbol": "beskid_rt_v5_intrinsic_worker_pool_shutdown",
       "capability": "runtime.scheduler.worker_pool_shutdown",
       "params": [],
+      "result": "void",
+      "resultStatus": null,
+      "targetBindings": []
+    },
+    {
+      "name": "worker_release",
+      "symbol": "beskid_rt_v5_intrinsic_worker_release",
+      "capability": "runtime.scheduler.worker_release",
+      "params": [
+        {
+          "name": "request",
+          "type": "pointer"
+        }
+      ],
       "result": "void",
       "resultStatus": null,
       "targetBindings": []
@@ -2250,6 +2467,11 @@
           "type": "usize"
         },
         {
+          "name": "external_state",
+          "offset": 1408,
+          "type": "pointer"
+        },
+        {
           "name": "channel_table",
           "offset": 3456,
           "type": "pointer"
@@ -2278,16 +2500,6 @@
           "name": "scheduler_context",
           "offset": 3496,
           "type": "pointer"
-        },
-        {
-          "name": "workers",
-          "offset": 3512,
-          "type": "usize[64]"
-        },
-        {
-          "name": "next_worker_tag",
-          "offset": 4024,
-          "type": "usize"
         },
         {
           "name": "mutator_token",
@@ -2385,7 +2597,7 @@
     {
       "name": "BeskidWorkerRequest",
       "target": null,
-      "size": 64,
+      "size": 72,
       "alignment": 8,
       "fields": [
         {
@@ -2434,9 +2646,14 @@
           "type": "i32"
         },
         {
-          "name": "padding",
+          "name": "abandoned",
           "offset": 60,
           "type": "u32"
+        },
+        {
+          "name": "owner_scheduler_id",
+          "offset": 64,
+          "type": "usize"
         }
       ]
     },
@@ -2745,6 +2962,22 @@
       "result": "f64"
     },
     {
+      "symbol": "bzero",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "destination",
+          "type": "pointer"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "void"
+    },
+    {
       "symbol": "ceil",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -2948,6 +3181,26 @@
       "result": "pointer"
     },
     {
+      "symbol": "memset",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "destination",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "i32"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
       "symbol": "mkdir",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3068,6 +3321,82 @@
       "result": "f64"
     },
     {
+      "symbol": "pthread_cond_broadcast",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "condition",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_cond_destroy",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "condition",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_cond_init",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "condition",
+          "type": "pointer"
+        },
+        {
+          "name": "attributes",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_cond_timedwait_relative_np",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "condition",
+          "type": "pointer"
+        },
+        {
+          "name": "mutex",
+          "type": "pointer"
+        },
+        {
+          "name": "deadline",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_cond_wait",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "condition",
+          "type": "pointer"
+        },
+        {
+          "name": "mutex",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "pthread_create",
       "target": "aarch64-apple-darwin",
       "library": "libSystem",
@@ -3102,6 +3431,30 @@
         },
         {
           "name": "result",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_mutex_lock",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "mutex",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_mutex_unlock",
+      "target": "aarch64-apple-darwin",
+      "library": "libSystem",
+      "params": [
+        {
+          "name": "mutex",
           "type": "pointer"
         }
       ],
@@ -3242,6 +3595,18 @@
         }
       ],
       "result": "isize"
+    },
+    {
+      "symbol": "AcquireSRWLockExclusive",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "lock",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
     },
     {
       "symbol": "CloseHandle",
@@ -3513,6 +3878,18 @@
       "result": "i32"
     },
     {
+      "symbol": "InitializeConditionVariable",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "condition",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
       "symbol": "MultiByteToWideChar",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -3573,6 +3950,18 @@
       "result": "i32"
     },
     {
+      "symbol": "ReleaseSRWLockExclusive",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "lock",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
+    },
+    {
       "symbol": "SetEnvironmentVariableW",
       "target": "x86_64-pc-windows-msvc",
       "library": "kernel32",
@@ -3599,6 +3988,30 @@
         }
       ],
       "result": "void"
+    },
+    {
+      "symbol": "SleepConditionVariableSRW",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "condition",
+          "type": "pointer"
+        },
+        {
+          "name": "lock",
+          "type": "pointer"
+        },
+        {
+          "name": "timeout",
+          "type": "u32"
+        },
+        {
+          "name": "flags",
+          "type": "u32"
+        }
+      ],
+      "result": "i32"
     },
     {
       "symbol": "TlsAlloc",
@@ -3694,6 +4107,18 @@
         }
       ],
       "result": "u32"
+    },
+    {
+      "symbol": "WakeAllConditionVariable",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "kernel32",
+      "params": [
+        {
+          "name": "condition",
+          "type": "pointer"
+        }
+      ],
+      "result": "void"
     },
     {
       "symbol": "WriteFile",
@@ -3822,6 +4247,26 @@
         }
       ],
       "result": "f64"
+    },
+    {
+      "symbol": "memset",
+      "target": "x86_64-pc-windows-msvc",
+      "library": "ucrt",
+      "params": [
+        {
+          "name": "destination",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "i32"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
     },
     {
       "symbol": "pow",
@@ -4107,6 +4552,26 @@
       "result": "pointer"
     },
     {
+      "symbol": "memset",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "destination",
+          "type": "pointer"
+        },
+        {
+          "name": "value",
+          "type": "i32"
+        },
+        {
+          "name": "length",
+          "type": "usize"
+        }
+      ],
+      "result": "pointer"
+    },
+    {
       "symbol": "mkdir",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -4227,6 +4692,122 @@
       "result": "f64"
     },
     {
+      "symbol": "pthread_cond_broadcast",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "condition",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_cond_destroy",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "condition",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_cond_init",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "condition",
+          "type": "pointer"
+        },
+        {
+          "name": "attributes",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_cond_timedwait",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "condition",
+          "type": "pointer"
+        },
+        {
+          "name": "mutex",
+          "type": "pointer"
+        },
+        {
+          "name": "deadline",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_cond_wait",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "condition",
+          "type": "pointer"
+        },
+        {
+          "name": "mutex",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_condattr_destroy",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "attributes",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_condattr_init",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "attributes",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_condattr_setclock",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "attributes",
+          "type": "pointer"
+        },
+        {
+          "name": "clock",
+          "type": "i32"
+        }
+      ],
+      "result": "i32"
+    },
+    {
       "symbol": "pthread_create",
       "target": "x86_64-unknown-linux-gnu",
       "library": "libc",
@@ -4261,6 +4842,30 @@
         },
         {
           "name": "result",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_mutex_lock",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "mutex",
+          "type": "pointer"
+        }
+      ],
+      "result": "i32"
+    },
+    {
+      "symbol": "pthread_mutex_unlock",
+      "target": "x86_64-unknown-linux-gnu",
+      "library": "libc",
+      "params": [
+        {
+          "name": "mutex",
           "type": "pointer"
         }
       ],

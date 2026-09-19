@@ -19,6 +19,7 @@ pub const CANONICAL_SCHEDULER_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler.b
 pub const CANONICAL_SCHEDULER_CONTEXT_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Context.bd";
 pub const CANONICAL_SCHEDULER_CORE_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Core.bd";
 pub const CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Storage.bd";
+pub const CANONICAL_SCHEDULER_EXTERNAL_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/External.bd";
 pub const CANONICAL_SCHEDULER_QUEUE_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Queue.bd";
 pub const CANONICAL_SCHEDULER_LOOP_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Loop.bd";
 pub const CANONICAL_SCHEDULER_POLL_SOURCE_PATH: &str = "src/Runtime/Fiber/Scheduler/Poll.bd";
@@ -125,6 +126,8 @@ const CANONICAL_SCHEDULER_CORE_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/Core.bd"));
 const CANONICAL_SCHEDULER_STORAGE_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/Storage.bd"));
+const CANONICAL_SCHEDULER_EXTERNAL_SOURCE: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/External.bd"));
 const CANONICAL_SCHEDULER_QUEUE_SOURCE: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime/beskid/src/Runtime/Fiber/Scheduler/Queue.bd"));
 const CANONICAL_SCHEDULER_LOOP_SOURCE: &str =
@@ -280,6 +283,10 @@ pub fn canonical_runtime_sources() -> Vec<SourceUnit> {
         SourceUnit {
             logical_path: CANONICAL_SCHEDULER_STORAGE_SOURCE_PATH.into(),
             source: CANONICAL_SCHEDULER_STORAGE_SOURCE.into(),
+        },
+        SourceUnit {
+            logical_path: CANONICAL_SCHEDULER_EXTERNAL_SOURCE_PATH.into(),
+            source: CANONICAL_SCHEDULER_EXTERNAL_SOURCE.into(),
         },
         SourceUnit {
             logical_path: CANONICAL_SCHEDULER_QUEUE_SOURCE_PATH.into(),

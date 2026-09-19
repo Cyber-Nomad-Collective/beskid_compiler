@@ -60,6 +60,19 @@ fn canonical_contract_has_the_exact_lifecycle_closure_and_trap_exports() {
                 AbiType::U8,
             ),
             ("beskid_rt_v5_closure_environment_root_current", &[AbiType::USize, AbiType::Pointer][..], AbiType::U8,),
+            ("beskid_rt_v5_external_active_count", &[][..], AbiType::USize),
+            ("beskid_rt_v5_external_owner_id", &[][..], AbiType::USize),
+            ("beskid_rt_v5_external_pump", &[AbiType::I64][..], AbiType::Void),
+            ("beskid_rt_v5_external_sleep_until", &[AbiType::I64][..], AbiType::USize),
+            ("beskid_rt_v5_external_try_complete", &[AbiType::USize, AbiType::USize, AbiType::USize][..], AbiType::U8),
+            ("beskid_rt_v5_external_wait_park", &[AbiType::USize][..], AbiType::USize),
+            ("beskid_rt_v5_external_wait_post", &[AbiType::USize, AbiType::USize, AbiType::USize][..], AbiType::U8),
+            (
+                "beskid_rt_v5_external_wait_register",
+                &[AbiType::USize, AbiType::USize, AbiType::I64][..],
+                AbiType::USize
+            ),
+            ("beskid_rt_v5_external_wait_release", &[AbiType::USize][..], AbiType::U8),
             ("beskid_rt_v5_fiber_yield", &[][..], AbiType::Void,),
             ("beskid_rt_v5_managed_object_allocate", &[AbiType::Pointer][..], AbiType::Pointer,),
             ("beskid_rt_v5_poll_executor_run_once", &[][..], AbiType::I32,),
@@ -99,7 +112,7 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert_eq!(package.name(), CANONICAL_RUNTIME_PACKAGE_NAME);
     assert_eq!(package.abi_version(), ABI_V5);
     let names = manifest.trusted_runtime_intrinsics.iter().map(|intrinsic| intrinsic.name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names.len(), 41);
+    assert_eq!(names.len(), 48);
     assert!(names.contains(&"pointer_add"));
     assert!(names.contains(&"raw_word_load"));
     assert!(names.contains(&"system_allocate"));
@@ -115,6 +128,11 @@ fn trusted_intrinsics_are_typed_and_owned_only_by_the_canonical_package() {
     assert!(names.contains(&"fs_read_text"));
     assert!(names.contains(&"tty_winsize"));
     assert!(names.contains(&"worker_submit"));
+    for name in
+        ["worker_release", "owner_create", "owner_destroy", "owner_post", "owner_pop", "owner_wait", "wait_claim"]
+    {
+        assert!(names.contains(&name));
+    }
     assert!(manifest.intrinsic_metadata("pointer_add").is_some());
 
     let mut unauthorized = manifest.clone();
@@ -247,14 +265,21 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "log10",
         "log2",
         "memcpy",
+        "memset",
         "mkdir",
         "mmap",
         "mprotect",
         "munmap",
         "open",
         "pow",
+        "pthread_cond_broadcast",
+        "pthread_cond_destroy",
+        "pthread_cond_init",
+        "pthread_cond_wait",
         "pthread_create",
         "pthread_join",
+        "pthread_mutex_lock",
+        "pthread_mutex_unlock",
         "read",
         "setenv",
         "sin",
@@ -266,6 +291,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "write",
     ];
     let windows_imports = [
+        "AcquireSRWLockExclusive",
         "CloseHandle",
         "CreateDirectoryW",
         "CreateFileW",
@@ -283,16 +309,20 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "GetSystemTimeAsFileTime",
         "GetTickCount64",
         "InitOnceExecuteOnce",
+        "InitializeConditionVariable",
         "MultiByteToWideChar",
         "ReadFile",
+        "ReleaseSRWLockExclusive",
         "SetEnvironmentVariableW",
         "SetLastError",
+        "SleepConditionVariableSRW",
         "TlsAlloc",
         "TlsGetValue",
         "TlsSetValue",
         "VirtualAlloc",
         "VirtualFree",
         "WaitForSingleObject",
+        "WakeAllConditionVariable",
         "WriteFile",
         "atan2",
         "ceil",
@@ -302,6 +332,7 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
         "log",
         "log10",
         "log2",
+        "memset",
         "pow",
         "sin",
         "sqrt",
@@ -309,15 +340,29 @@ fn target_system_imports_are_exact_and_unknown_contracts_are_rejected() {
     ];
     let math_imports = ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
     let windows_ucrt_imports =
-        ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "pow", "sin", "sqrt", "tan"];
+        ["atan2", "ceil", "cos", "fabs", "floor", "log", "log10", "log2", "memset", "pow", "sin", "sqrt", "tan"];
     for target in supported_targets() {
         let is_windows = target.triple.as_str() == "x86_64-pc-windows-msvc";
-        let (expected_symbols, expected_library) = match target.triple.as_str() {
-            "aarch64-apple-darwin" => (&unix_imports[..], None),
-            "x86_64-unknown-linux-gnu" => (&unix_imports[..], Some(("libc", "libm"))),
-            "x86_64-pc-windows-msvc" => (&windows_imports[..], Some(("kernel32", "ucrt"))),
+        let (mut expected_symbols, expected_library) = match target.triple.as_str() {
+            "aarch64-apple-darwin" => {
+                let mut imports = unix_imports.to_vec();
+                imports.extend(["bzero", "pthread_cond_timedwait_relative_np"]);
+                (imports, None)
+            }
+            "x86_64-unknown-linux-gnu" => {
+                let mut imports = unix_imports.to_vec();
+                imports.extend([
+                    "pthread_cond_timedwait",
+                    "pthread_condattr_init",
+                    "pthread_condattr_destroy",
+                    "pthread_condattr_setclock",
+                ]);
+                (imports, Some(("libc", "libm")))
+            }
+            "x86_64-pc-windows-msvc" => (windows_imports.to_vec(), Some(("kernel32", "ucrt"))),
             unsupported => panic!("unsupported target in contract test: {unsupported}"),
         };
+        expected_symbols.sort_unstable();
         let mut manifest = AbiManifestV5::canonical_runtime(target);
         assert_eq!(
             manifest.platform_imports.iter().map(|entry| entry.symbol.as_str()).collect::<Vec<_>>(),

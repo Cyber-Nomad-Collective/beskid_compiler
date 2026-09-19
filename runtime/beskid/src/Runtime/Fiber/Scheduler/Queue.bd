@@ -73,7 +73,9 @@ pub unit ApplyPendingCancels() {
             // Queued and parked fibers reach a cancellation point at this
             // scheduler step. A running fiber observes the same flag when it
             // next yields or returns through its real target context path.
-            if ChannelHasOperation(idx) {
+            if ExternalCancelFiber(handle) {
+                // The operation's single winner owns wake and native cleanup.
+            } else if ChannelHasOperation(idx) {
                 // An in-flight channel call must resolve its commit ownership and
                 // report Cancelled on its original stack before fiber completion.
                 if state == FIBER_STATE_PARKED { WakeEnqueue(idx); }

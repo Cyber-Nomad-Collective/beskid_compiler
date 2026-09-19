@@ -78,7 +78,10 @@ pub i32 FiberJoinStatus(i64 fiberId) {
     while FiberJoinStatusWord(index) == FIBER_JOIN_NOT_DONE {
         if SchedulerCurrentFiber() == index { Trap(7, NativePointer(0), 0); }
         if SchedulerCurrentFiber() == FIBER_NONE {
-            if SchedStep() == false { Trap(7, NativePointer(0), 0); }
+            if SchedStep() == false {
+                if ExternalActiveCount() == 0 { Trap(7, NativePointer(0), 0); }
+                owner_wait(ExternalOwnerId(), ExternalNextDeadline());
+            }
         } else {
             FiberYield();
         }

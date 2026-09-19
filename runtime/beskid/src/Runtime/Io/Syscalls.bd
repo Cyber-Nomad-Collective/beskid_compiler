@@ -2,7 +2,6 @@
 // worker pool: submission copies bytes/metadata to native system allocations,
 // parks the calling fiber, and copies read results only after scheduler resume.
 
-const SYSCALL_REQUEST_SIZE = 64;
 const SYSCALL_READ = 1;
 const SYSCALL_WRITE = 2;
 
@@ -16,11 +15,11 @@ word StringViewLength(pointer value) {
     return raw_word_load(pointer_add(value, 8));
 }
 
-i64 FinishSyscallRequest(pointer request, pointer nativeBuffer, word allocation, pointer managedBuffer, word len, word operation) {
+i64 FinishSyscallRequest(pointer request, pointer managedBuffer) {
     i64 result = i64(raw_word_load(pointer_add(request, 48)));
+    pointer nativeBuffer = NativePointer(raw_word_load(pointer_add(request, 32)));
+    word operation = raw_word_load(pointer_add(request, 16)) & 0xFFFFFFFF;
     if operation == SYSCALL_READ && result > 0 { memory_copy(managedBuffer, nativeBuffer, word(result)); }
-    SystemFree(request, SYSCALL_REQUEST_SIZE);
-    SystemFree(nativeBuffer, allocation);
     return result;
 }
 
@@ -31,9 +30,9 @@ pub i64 SyscallSubmitAndPark(word nativeHandle, pointer managedBuffer, word len,
     if nativeBuffer == NativePointer(0) { return -1; }
     if operation == SYSCALL_WRITE && len != 0 { memory_copy(nativeBuffer, managedBuffer, len); }
 
-    pointer request = SystemAllocate(SYSCALL_REQUEST_SIZE, 8);
+    pointer request = SystemAllocate(BESKID_WORKER_REQUEST_SIZE, 8);
     if request == NativePointer(0) { SystemFree(nativeBuffer, allocation); return -1; }
-    memory_set(request, 0, SYSCALL_REQUEST_SIZE);
+    memory_set(request, 0, BESKID_WORKER_REQUEST_SIZE);
     raw_word_store(pointer_add(request, 16), operation);
     raw_word_store(pointer_add(request, 24), nativeHandle);
     raw_word_store(pointer_add(request, 32), NativeWord(nativeBuffer));
@@ -42,32 +41,37 @@ pub i64 SyscallSubmitAndPark(word nativeHandle, pointer managedBuffer, word len,
     word fiberIndex = SchedulerCurrentFiber();
     if fiberIndex == FIBER_NONE {
         if WorkerSubmit(request) != 0 {
-            SystemFree(request, SYSCALL_REQUEST_SIZE);
+            SystemFree(request, BESKID_WORKER_REQUEST_SIZE);
             SystemFree(nativeBuffer, allocation);
             return -1;
         }
         while !WorkerPoll(request) {}
-        return FinishSyscallRequest(request, nativeBuffer, allocation, managedBuffer, len, operation);
+        i64 result = FinishSyscallRequest(request, managedBuffer);
+        worker_release(request);
+        return result;
     }
-    if !SchedulerRegisterWorkerRequest(request, fiberIndex) {
-        SystemFree(request, SYSCALL_REQUEST_SIZE);
+    word token = ExternalWaitRegister(FiberHandle(fiberIndex), operation, -1);
+    if token == 0 {
+        SystemFree(request, BESKID_WORKER_REQUEST_SIZE);
         SystemFree(nativeBuffer, allocation);
         return -1;
     }
+    raw_word_store(pointer_add(request, 8), token);
+    raw_word_store(pointer_add(request, 64), ExternalOwnerId());
+    pointer wait = ExternalWaitRecord(token);
+    raw_word_store(pointer_add(wait, 40), NativeWord(request));
     if WorkerSubmit(request) != 0 {
-        SchedulerUnregisterWorkerRequest(request);
-        SystemFree(request, SYSCALL_REQUEST_SIZE);
-        SystemFree(nativeBuffer, allocation);
+        ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_CLOSED);
+        ExternalRelease(token);
         return -1;
     }
-
-    FiberSetState(fiberIndex, FIBER_STATE_PARKED);
-    SaveFiberLocalState(fiberIndex);
-    SchedulerSetCurrentFiber(FIBER_NONE);
-    SchedulerReleaseMutatorToken();
-    ContextSwitch(NativePointer(raw_word_load(pointer_add(FiberRecord(fiberIndex), 104))), SchedulerContext());
-
-    return FinishSyscallRequest(request, nativeBuffer, allocation, managedBuffer, len, operation);
+    word source = ExternalWaitPark(token);
+    mut i64 result = -1;
+    if source == EXTERNAL_READY {
+        result = FinishSyscallRequest(request, managedBuffer);
+    }
+    ExternalRelease(token);
+    return result;
 }
 
 [Export(Abi:"C", Symbol:"syscall_read")]

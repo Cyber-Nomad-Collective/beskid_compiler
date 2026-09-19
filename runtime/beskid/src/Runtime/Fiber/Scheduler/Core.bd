@@ -43,7 +43,7 @@ const FIBER_JOIN_NOT_DONE = 4;
 //   offset 1136: pending_detach_count (word)
 //   offset 1144: pending_wakes[32] (32 words)
 //   offset 1400: pending_wake_count (word)
-//   offset 1408: reserved (the fiber table follows scheduler metadata)
+//   offset 1408: owner external-wait state (native mailbox + wait/deadline tables)
 //   offset 3456: channel_table (pointer to a separately allocated, zeroed
 //                Channel.bd table)
 //   offset 3464: mutex_table (pointer to a separately allocated, zeroed
@@ -54,8 +54,6 @@ const FIBER_JOIN_NOT_DONE = 4;
 //                executing on this scheduler thread)
 //   offset 3488: hub_table (pointer to a separately allocated, zeroed PubSub table)
 //   offset 3496: scheduler context
-//   offset 3512: syscall worker slots[32] (request pointer, parked fiber)
-//   offset 4024: next syscall tag
 //   offset 4032: Phase-A mutator token owner (BeskidTlsState pointer)
 //   offset 4040: poll executor state (pointer to separately allocated private state)
 //   offset 4048: fiber_table[FIBER_TABLE_MAX], BESKID_FIBER_RECORD_SIZE bytes per record
@@ -100,10 +98,6 @@ const FIBER_STACK_MAX_SIZE = 8388608;
 const SCHEDULER_STATE_OFFSET = 32;
 const SCHEDULER_CURRENT_FIBER_OFFSET = 3480;
 const SCHEDULER_CONTEXT_OFFSET = 3496;
-const SCHEDULER_WORKER_TABLE_OFFSET = 3512;
-const SCHEDULER_WORKER_SLOT_SIZE = 16;
-const SCHEDULER_WORKER_SLOT_COUNT = 32;
-const SCHEDULER_WORKER_NEXT_TAG_OFFSET = 4024;
 const SCHEDULER_MUTATOR_TOKEN_OFFSET = 4032;
 
 // Returns the scheduler table owned by the active ABI-v5 runtime state.
@@ -127,10 +121,12 @@ pub pointer FiberRecord(word index) {
 // Internal scheduler operations use slot indices. Public handles combine the
 // low 32-bit slot index with a generation in the high 32 bits.
 pub word FiberGeneration(pointer fiber) {
-    return word(raw_byte_load(pointer_add(fiber, 44))) |
-           (word(raw_byte_load(pointer_add(fiber, 45))) << 8) |
-           (word(raw_byte_load(pointer_add(fiber, 46))) << 16) |
-           (word(raw_byte_load(pointer_add(fiber, 47))) << 24);
+    // Mask before shifting: byte-to-word lowering may sign-extend its u8 input.
+    // Generation 128 must remain 128, never become a negative public handle.
+    return (word(raw_byte_load(pointer_add(fiber, 44))) & 0xFF) |
+           ((word(raw_byte_load(pointer_add(fiber, 45))) & 0xFF) << 8) |
+           ((word(raw_byte_load(pointer_add(fiber, 46))) & 0xFF) << 16) |
+           ((word(raw_byte_load(pointer_add(fiber, 47))) & 0xFF) << 24);
 }
 
 pub unit FiberSetGeneration(pointer fiber, word generation) {
@@ -332,70 +328,6 @@ pub word SchedulerCurrentFiber() {
     return raw_word_load(pointer_add(table, SCHEDULER_CURRENT_FIBER_OFFSET));
 }
 
-pub bool SchedulerRegisterWorkerRequest(pointer request, word fiberIndex) {
-    mut pointer table = SchedTable();
-    if table == NativePointer(0) || request == NativePointer(0) || fiberIndex == FIBER_NONE { return false; }
-    mut word slot = 0;
-    while slot < SCHEDULER_WORKER_SLOT_COUNT {
-        pointer record = pointer_add(table, SCHEDULER_WORKER_TABLE_OFFSET + slot * SCHEDULER_WORKER_SLOT_SIZE);
-        if raw_word_load(record) == 0 {
-            mut word tag = raw_word_load(pointer_add(table, SCHEDULER_WORKER_NEXT_TAG_OFFSET)) + 1;
-            if tag == 0 { tag = 1; }
-            raw_word_store(pointer_add(table, SCHEDULER_WORKER_NEXT_TAG_OFFSET), tag);
-            raw_word_store(pointer_add(request, 8), tag);
-            raw_word_store(record, NativeWord(request));
-            raw_word_store(pointer_add(record, 8), fiberIndex);
-            return true;
-        }
-        slot = slot + 1;
-    }
-    return false;
-}
-
-pub bool SchedulerUnregisterWorkerRequest(pointer request) {
-    mut pointer table = SchedTable();
-    if table == NativePointer(0) || request == NativePointer(0) { return false; }
-    mut word slot = 0;
-    while slot < SCHEDULER_WORKER_SLOT_COUNT {
-        pointer record = pointer_add(table, SCHEDULER_WORKER_TABLE_OFFSET + slot * SCHEDULER_WORKER_SLOT_SIZE);
-        if raw_word_load(record) == NativeWord(request) {
-            raw_word_store(record, 0);
-            raw_word_store(pointer_add(record, 8), 0);
-            return true;
-        }
-        slot = slot + 1;
-    }
-    return false;
-}
-
-pub bool SchedulerHasWorkerRequests() {
-    mut pointer table = SchedTable();
-    if table == NativePointer(0) { return false; }
-    mut word slot = 0;
-    while slot < SCHEDULER_WORKER_SLOT_COUNT {
-        if raw_word_load(pointer_add(table, SCHEDULER_WORKER_TABLE_OFFSET + slot * SCHEDULER_WORKER_SLOT_SIZE)) != 0 { return true; }
-        slot = slot + 1;
-    }
-    return false;
-}
-
-pub unit SchedulerPollWorkerCompletions() {
-    mut pointer table = SchedTable();
-    if table == NativePointer(0) { return; }
-    mut word slot = 0;
-    while slot < SCHEDULER_WORKER_SLOT_COUNT {
-        pointer record = pointer_add(table, SCHEDULER_WORKER_TABLE_OFFSET + slot * SCHEDULER_WORKER_SLOT_SIZE);
-        pointer request = NativePointer(raw_word_load(record));
-        if request != NativePointer(0) && WorkerPoll(request) {
-            word fiberIndex = raw_word_load(pointer_add(record, 8));
-            raw_word_store(record, 0);
-            raw_word_store(pointer_add(record, 8), 0);
-            if FiberExists(fiberIndex) && FiberParked(fiberIndex) { WakeEnqueue(fiberIndex); }
-        }
-        slot = slot + 1;
-    }
-    return;
-}
 
 pub bool SchedulerAcquireMutatorToken() {
     mut pointer table = SchedTable(); pointer thread = CurrentThreadState();
@@ -686,6 +618,7 @@ pub unit SchedInit() {
     memory_set(schedulerContext, 0, ArchContextSize());
     raw_word_store(pointer_add(table, SCHEDULER_CONTEXT_OFFSET), NativeWord(schedulerContext));
     raw_word_store(pointer_add(table, 8), FIBER_NONE);
+    ExternalInit(table);
     SchedulerSetCurrentFiber(FIBER_NONE);
     return;
 }
@@ -709,6 +642,7 @@ pub bool SchedShutdownForced(bool forced) {
             if FiberExists(index) && raw_byte_load(pointer_add(FiberRecord(index), 40)) != 0 && !FiberFinished(index) {
                 // Detach relinquishes shutdown liveness. No detached context is
                 // resumed once shutdown starts; owned storage is released below.
+                ExternalCancelFiber(FiberHandle(index));
                 raw_word_store(FiberRecord(index), FIBER_STATE_CANCELLED);
                 raw_word_store(pointer_add(FiberRecord(index), 48), FIBER_JOIN_CANCELLED);
             }
@@ -717,12 +651,15 @@ pub bool SchedShutdownForced(bool forced) {
                 raw_byte_store(pointer_add(fiber, 41), 1);
                 pointer cancelSlot = NativePointer(raw_word_load(pointer_add(fiber, 24)));
                 if cancelSlot != NativePointer(0) { raw_word_store(cancelSlot, 1); }
-                if FiberState(index) == FIBER_STATE_PARKED { WakeEnqueue(index); }
+                if !ExternalCancelFiber(FiberHandle(index)) && FiberState(index) == FIBER_STATE_PARKED { WakeEnqueue(index); }
                 if FiberState(index) == FIBER_STATE_RUNNABLE { RunQueuePush(index); }
             }
             index = index + 1;
         }
-        if SchedStep() == false && SchedulerHasWorkerRequests() == false { break; }
+        if SchedStep() == false {
+            if ExternalActiveCount() == 0 { break; }
+            owner_wait(ExternalOwnerId(), ExternalNextDeadline());
+        }
     }
     count = raw_word_load(table);
     index = 0;
@@ -735,6 +672,7 @@ pub bool SchedShutdownForced(bool forced) {
         if FiberExists(index) { FiberCleanup(index); }
         index = index + 1;
     }
+    ExternalShutdown(table);
     PollStateShutdown(table);
     SchedulerStorageShutdown(table);
     pointer schedulerContext = SchedulerContext();
