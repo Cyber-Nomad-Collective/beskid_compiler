@@ -94,6 +94,28 @@ fn payload_patterns_are_exhaustive(patterns: &[&MatchPayloadPatternFact]) -> boo
 }
 
 impl IsleContext<'_, '_, '_, '_> {
+    /// Shared managed enum construction for source constructors and cleanup errors.
+    pub(super) fn allocate_enum_variant(
+        &mut self,
+        allocation: &crate::ManagedStructAllocation,
+        layout: &EnumLayout,
+        variant: usize,
+    ) -> Option<Value> {
+        if !layout.is_valid() {
+            return None;
+        }
+        let variant = layout.variants.get(variant)?;
+        let pointer = dispatch::pointer_type();
+        let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer)?;
+        let allocate = self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer))?;
+        let call = self.builder.ins().call(allocate, &[request]);
+        let object = self.builder.inst_results(call).first().copied()?;
+        self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
+        let tag = self.builder.ins().iconst(layout.tag.value_type, variant.discriminant as i64);
+        self.builder.ins().store(MemFlags::new(), tag, object, i32::try_from(layout.tag.offset).ok()?);
+        Some(object)
+    }
+
     fn emit_match_payload_branch(
         &mut self,
         key: AstNodeKey,
@@ -344,7 +366,7 @@ impl IsleContext<'_, '_, '_, '_> {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidMatchArms });
                     return None;
                 }
-                self.end_local_root_scope(true)?;
+                self.end_local_root_scope(true, None)?;
                 self.builder.ins().jump(merge, &[value.into()]);
                 merge_reachable = true;
             } else {
@@ -417,17 +439,7 @@ macro_rules! generated_enum_methods {
                 self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidEnumLayout });
                 return None;
             }
-            let request = self.symbol_global(allocation.allocation_request_symbol.as_ref(), pointer_type)?;
-            let allocate = self.import_runtime_helper(
-                "beskid_rt_v5_managed_object_allocate",
-                &[pointer_type],
-                Some(pointer_type),
-            )?;
-            let allocation_call = self.builder.ins().call(allocate, &[request]);
-            let object = self.builder.inst_results(allocation_call).first().copied()?;
-            self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
-            let tag = self.builder.ins().iconst(layout.tag.value_type, variant.discriminant as i64);
-            self.builder.ins().store(MemFlags::new(), tag, object, i32::try_from(layout.tag.offset).ok()?);
+            let object = self.allocate_enum_variant(&allocation, &layout, variant_index as usize)?;
             let payloads = self.facts.enum_payloads(key)?;
             self.emit_enum_constructor_payloads(key, object, &variant.payload_fields, &payloads)?;
             Some(object)
@@ -487,7 +499,7 @@ macro_rules! generated_enum_methods {
 
             self.builder.switch_to_block(error_block);
             self.builder.seal_block(error_block);
-            self.builder.ins().return_(&[operand]);
+            self.return_with_cleanup(operand)?;
 
             self.builder.switch_to_block(merge_block);
             self.builder.seal_block(merge_block);

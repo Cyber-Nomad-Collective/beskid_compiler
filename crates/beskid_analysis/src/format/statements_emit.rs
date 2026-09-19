@@ -22,8 +22,8 @@ fn emit_parenthesized_condition<W: Write>(
     }
 }
 
-impl Emit for LetStatement {
-    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+impl LetStatement {
+    fn emit_binding<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         if let Some(ty) = &self.type_annotation {
             if self.mutable {
                 cx.token(w, "mut")?;
@@ -44,7 +44,13 @@ impl Emit for LetStatement {
         cx.space(w)?;
         cx.token(w, "=")?;
         cx.space(w)?;
-        self.value.emit(w, cx)?;
+        self.value.emit(w, cx)
+    }
+}
+
+impl Emit for LetStatement {
+    fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
+        self.emit_binding(w, cx)?;
         w.write_char(';')?;
         Ok(())
     }
@@ -223,6 +229,19 @@ impl Emit for Statement {
     fn emit<W: Write>(&self, w: &mut W, cx: &mut EmitCtx) -> Result<(), EmitError> {
         match self {
             Statement::Let(s) => s.emit(w, cx),
+            Statement::Use(s) => {
+                cx.token(w, "use")?;
+                cx.space(w)?;
+                if let Some(body) = &s.node.body {
+                    w.write_char('(')?;
+                    s.node.binding.node.emit_binding(w, cx)?;
+                    w.write_char(')')?;
+                    cx.space(w)?;
+                    body.emit(w, cx)
+                } else {
+                    s.node.binding.emit(w, cx)
+                }
+            }
             Statement::Return(s) => s.emit(w, cx),
             Statement::Break(s) => s.emit(w, cx),
             Statement::Continue(s) => s.emit(w, cx),

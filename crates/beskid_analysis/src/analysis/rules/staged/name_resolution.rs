@@ -202,6 +202,10 @@ impl<'a> UseBeforeDeclVisitor<'a> {
 impl Visit for UseBeforeDeclVisitor<'_> {
     fn enter(&mut self, node: NodeRef<'_>) {
         let parent = self.kind_stack.last().copied();
+        if node.of::<crate::syntax::ScopedUseStatement>().is_some_and(|scoped| scoped.body.is_some()) {
+            self.block_frames
+                .push(DeclFrame { pending: HashSet::new(), start_declared_len: self.declared_stack.len() });
+        }
 
         if let Some(for_statement) = node.of::<ForStatement>() {
             self.for_iterators.push(for_statement.iterator.node.name.clone());
@@ -212,7 +216,11 @@ impl Visit for UseBeforeDeclVisitor<'_> {
                 .statements
                 .iter()
                 .filter_map(|statement| match &statement.node {
-                    Statement::Let(let_statement) => Some(let_statement.node.name.node.name.clone()),
+                    Statement::Let(let_statement)
+                    | Statement::Use(Spanned {
+                        node: crate::syntax::ScopedUseStatement { binding: let_statement, body: None },
+                        ..
+                    }) => Some(let_statement.node.name.node.name.clone()),
                     _ => None,
                 })
                 .collect::<HashSet<_>>();
@@ -256,7 +264,8 @@ impl Visit for UseBeforeDeclVisitor<'_> {
             self.declared_stack.push(name);
         }
 
-        if node.of::<Block>().is_some()
+        if (node.of::<Block>().is_some()
+            || node.of::<crate::syntax::ScopedUseStatement>().is_some_and(|scoped| scoped.body.is_some()))
             && let Some(frame) = self.block_frames.pop()
         {
             self.declared_stack.truncate(frame.start_declared_len);

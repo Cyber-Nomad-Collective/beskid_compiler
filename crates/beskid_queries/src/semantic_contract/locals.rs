@@ -288,6 +288,16 @@ pub(super) fn local_declaration_scope(
             if declaration.0 >= reference.0 || is_ancestor(index, parent, reference) {
                 return None;
             }
+            if let Some(scoped) = parent_node(index, parent)
+                && index.kind(scoped) == Some(beskid_analysis::syntax_query::NodeKind::ScopedUseStatement)
+                && let Some(body) = index
+                    .children(scoped)?
+                    .iter()
+                    .copied()
+                    .find(|child| index.kind(*child) == Some(beskid_analysis::syntax_query::NodeKind::Block))
+            {
+                return is_ancestor(index, body, reference).then_some(body);
+            }
             nearest_ancestor(index, parent, |kind| {
                 matches!(
                     kind,

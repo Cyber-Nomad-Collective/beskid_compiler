@@ -1,0 +1,25 @@
+enum DisposeError { Failed() }
+enum Result<T, E> { Ok(T value), Error(E error) }
+contract Disposable { Result<unit, DisposeError> Dispose(); }
+[Extern(Abi:"C")]
+pub contract Probe { unit gc_collect(); }
+type Resource: Disposable {
+    pub Result<unit, DisposeError> Dispose() {
+        Probe.gc_collect();
+        return Result::Error(DisposeError::Failed());
+    }
+}
+[CleanupConversion]
+string ConvertCleanup(DisposeError error) { return "cleanup"; }
+Result<i64, string> Work() {
+    use Resource outer = Resource {};
+    use Resource inner = Resource {};
+    return Result::Ok(7_i64);
+}
+i64 StringValue(string error) {
+    if error == "cleanup" { return 42_i64; }
+    return 2_i64;
+}
+i64 RunCleanupFixture() {
+    return match Work() { Result::Ok(_) => 1_i64, Result::Error(error) => StringValue(error), };
+}

@@ -124,7 +124,7 @@ macro_rules! generated_control_flow_methods {
         }
 
         fn emit_block_expression(&mut self, key: AstNodeKey) -> Option<Value> {
-            let saved_locals = self.locals.clone();
+            self.begin_local_root_scope();
             let lowered = (|| {
                 let count = self.facts.statement_count(key)?;
                 for index in 0..count {
@@ -144,9 +144,15 @@ macro_rules! generated_control_flow_methods {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidBlockExpression });
                     return None;
                 };
+                let root = if self.facts.managed_reference(result_key)? == ManagedReferenceFact::GcManaged {
+                    Some(self.root_temporary(value)?)
+                } else {
+                    None
+                };
+                self.end_local_root_scope(true, root)?;
+                self.release_temporary_root(root)?;
                 Some(value)
             })();
-            self.locals = saved_locals;
             lowered
         }
 
@@ -220,8 +226,7 @@ macro_rules! generated_control_flow_methods {
                 let value = self.lower_nested_expression(value_key)?;
                 let expected = self.builder.func.signature.returns.first()?.value_type;
                 let value = self.adapt_scalar_boundary(value_key, value, expected)?;
-                self.release_managed_local_roots()?;
-                self.builder.ins().return_(&[value]);
+                self.return_with_cleanup(value)?;
             } else {
                 self.release_managed_local_roots()?;
                 self.builder.ins().return_(&[]);
@@ -244,6 +249,21 @@ macro_rules! generated_control_flow_methods {
             let value_type = self.facts.scalar_type(key)?;
             let value = self.adapt_scalar_boundary(initializer, value, value_type)?;
             self.bind_local(slot, value, value_type, self.local_managed_reference(key, value_type)?)
+        }
+
+        fn emit_scoped_use(&mut self, key: AstNodeKey) -> Option<()> {
+            let plan = self.facts.scoped_cleanup(key)?;
+            let body = plan.body;
+            if body.is_some() {
+                self.begin_local_root_scope();
+            }
+            self.emit_local_let(plan.binding)?;
+            self.local_root_scopes.last_mut()?.cleanups.push(plan);
+            if let Some(body) = body {
+                self.lower_nested_statement(body)?;
+                self.end_local_root_scope_for_current_block()?;
+            }
+            Some(())
         }
 
         fn emit_if_else(&mut self, key: AstNodeKey) -> Option<()> {
@@ -398,6 +418,7 @@ macro_rules! generated_control_flow_methods {
 
         fn emit_break(&mut self, _key: AstNodeKey) -> Option<()> {
             let targets = *self.loop_stack.last()?;
+            self.cleanup_scope_exit(targets.root_scope_depth, None)?;
             self.release_local_roots_from(targets.root_scope_depth)?;
             let target = targets.break_block;
             self.builder.ins().jump(target, &[]);
@@ -406,6 +427,7 @@ macro_rules! generated_control_flow_methods {
 
         fn emit_continue(&mut self, _key: AstNodeKey) -> Option<()> {
             let targets = *self.loop_stack.last()?;
+            self.cleanup_scope_exit(targets.root_scope_depth, None)?;
             self.release_local_roots_from(targets.root_scope_depth)?;
             let target = targets.continue_block;
             self.builder.ins().jump(target, &[]);

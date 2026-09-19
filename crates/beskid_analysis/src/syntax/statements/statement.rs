@@ -5,7 +5,7 @@ use crate::parsing::error::ParseError;
 use crate::parsing::parsable::Parsable;
 use crate::syntax::{
     BreakStatement, ContinueStatement, ExpressionStatement, ForStatement, IfStatement, LaunchStatement, LetStatement,
-    ReturnStatement, SpanInfo, Spanned, WhileStatement, WithStatement,
+    ReturnStatement, ScopedUseStatement, SpanInfo, Spanned, WhileStatement, WithStatement,
 };
 
 use beskid_ast_derive::AstNode;
@@ -13,6 +13,8 @@ use beskid_ast_derive::AstNode;
 /// Executable statement inside a block (not a top-level item).
 #[derive(AstNode, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Statement {
+    #[ast(child)]
+    Use(Spanned<ScopedUseStatement>),
     #[ast(child)]
     Let(Spanned<LetStatement>),
     #[ast(child)]
@@ -48,6 +50,10 @@ fn parse_statement(pair: Pair<Rule>) -> Result<Spanned<Statement>, ParseError> {
         Rule::Statement => {
             let inner = pair.into_inner().next().ok_or(ParseError::missing(Rule::Statement))?;
             parse_statement(inner)
+        }
+        Rule::ScopedUseStatement => {
+            let statement = ScopedUseStatement::parse(pair)?;
+            Ok(Spanned::new(Statement::Use(statement), span))
         }
         Rule::LetStatement => {
             let statement = LetStatement::parse(pair)?;

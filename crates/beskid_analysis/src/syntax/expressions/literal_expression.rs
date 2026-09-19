@@ -307,8 +307,15 @@ fn remap_block_spans(block: &mut Spanned<crate::syntax::Block>, offset: usize, s
 fn remap_statement_spans(statement: &mut Spanned<crate::syntax::Statement>, offset: usize, source: &str) {
     statement.span = remap_span(statement.span, offset, source);
     use crate::syntax::Statement;
+    if let Statement::Use(scoped) = &mut statement.node {
+        scoped.span = remap_span(scoped.span, offset, source);
+        if let Some(body) = &mut scoped.node.body {
+            remap_block_spans(body, offset, source);
+        }
+    }
     match &mut statement.node {
-        Statement::Let(let_stmt) => {
+        Statement::Let(let_stmt)
+        | Statement::Use(Spanned { node: crate::syntax::ScopedUseStatement { binding: let_stmt, .. }, .. }) => {
             let_stmt.span = remap_span(let_stmt.span, offset, source);
             let_stmt.node.name.span = remap_span(let_stmt.node.name.span, offset, source);
             if let Some(ty) = &mut let_stmt.node.type_annotation {

@@ -23,6 +23,7 @@ use crate::layout::{EnumLayout, FieldLayout};
 
 mod aggregate;
 mod calls;
+mod cleanup;
 mod control_flow;
 mod enums;
 mod intrinsics;
@@ -54,6 +55,7 @@ struct LoopTargets {
 #[derive(Default)]
 struct LocalRootScope {
     bindings: Vec<(LocalSlotId, Option<StackSlot>)>,
+    cleanups: Vec<crate::ScopedCleanupPlan>,
 }
 
 #[derive(Clone, Copy)]

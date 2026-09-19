@@ -255,9 +255,7 @@ pub(in crate::semantic_contract) fn canonical_result_definition_for_type(
     let beskid_analysis::syntax::Type::Complex(path) = syntax_type else {
         return None;
     };
-    let [segment] = path.node.segments.as_slice() else {
-        return None;
-    };
+    let segment = path.node.segments.last()?;
     if segment.node.name.node.name != "Result" || segment.node.type_args.len() != 2 {
         return None;
     }
@@ -346,9 +344,7 @@ pub(in crate::semantic_contract) fn result_type_parts(
     let beskid_analysis::syntax::Type::Complex(path) = syntax_type else {
         return None;
     };
-    let [segment] = path.node.segments.as_slice() else {
-        return None;
-    };
+    let segment = path.node.segments.last()?;
     if segment.node.name.node.name != "Result" {
         return None;
     }

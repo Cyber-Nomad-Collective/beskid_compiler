@@ -4,6 +4,8 @@
 (extern constructor emit_return emit_return)
 (decl partial emit_local_let (AstNodeKey) Unit)
 (extern constructor emit_local_let emit_local_let)
+(decl partial emit_scoped_use (AstNodeKey) Unit)
+(extern constructor emit_scoped_use emit_scoped_use)
 (decl partial lower_statement (AstNodeKey) Unit)
 
 (decl partial statement_cursor (AstNodeKey) StatementCursor)
@@ -42,6 +44,8 @@
       (emit_return key))
 (rule (lower_statement key @ (node_kind (NodeKind.LetStatement)))
       (emit_local_let key))
+(rule (lower_statement key @ (node_kind (NodeKind.ScopedUseStatement)))
+      (emit_scoped_use key))
 (rule (lower_statement key @ (node_kind (NodeKind.BlockExpression)))
       (lower_statement_cursor (statement_cursor key)))
 (rule (lower_statement key @ (node_kind (NodeKind.TestDefinition)))

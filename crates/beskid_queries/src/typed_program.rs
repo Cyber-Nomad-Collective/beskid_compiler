@@ -161,6 +161,22 @@ pub fn build_typed_program(
             .collect();
         registry.imports.insert((unit_id, generation), imports);
     }
+    drop(registry);
+    for unit in assembly.units.iter() {
+        let identity = SourceUnitId::new(db, unit.path.clone());
+        let syntax = db.syntax_unit(identity).ok_or_else(|| SemanticError::new("registered syntax disappeared"))?;
+        for node in syntax.syntax_index(db).ids_of_kind(beskid_analysis::syntax_query::NodeKind::ScopedUseStatement) {
+            let key = crate::AstNodeKey { unit: identity, generation, node };
+            let cleanup =
+                crate::scoped_cleanup(db, key)?.ok_or_else(|| SemanticError::unavailable("scoped_cleanup"))?;
+            if let Some(diagnostic) = cleanup.diagnostic {
+                return Err(SemanticError::new(format!(
+                    "scoped use rejected: {diagnostic:?} at {}",
+                    crate::format_ast_node_site(db, key)
+                )));
+            }
+        }
+    }
 
     Ok(TypedProgram {
         project,

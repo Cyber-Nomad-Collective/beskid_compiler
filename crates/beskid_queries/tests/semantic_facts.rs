@@ -1,6 +1,8 @@
 #[rustfmt::skip]
 #[path = "semantic_facts/support.rs"]
 mod support;
+#[path = "semantic_facts/scoped_cleanup.rs"]
+mod scoped_cleanup;
 #[rustfmt::skip]
 #[path = "semantic_facts/foundation.rs"]
 mod foundation;

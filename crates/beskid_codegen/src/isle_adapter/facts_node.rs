@@ -1,6 +1,31 @@
 use super::*;
 
 impl NodeFacts for SyntaxNodeFacts<'_> {
+    fn scoped_cleanup(&self, key: AstNodeKey) -> Option<beskid_isle::ScopedCleanupPlan> {
+        let fact = self.query(beskid_queries::scoped_cleanup(self.db, key))?;
+        if fact.diagnostic.is_some() {
+            return None;
+        }
+        let dispose = fact.dispose?;
+        let conversion = match fact.conversion {
+            Some(item) => Some((
+                DirectCallee::item(item),
+                signature_for_item(self.isa?, self.query(item_abi_signature(self.db, item))?)?,
+            )),
+            None => None,
+        };
+        Some(beskid_isle::ScopedCleanupPlan {
+            binding: fact.binding,
+            body: fact.body,
+            dispose: DirectCallee::item(dispose),
+            dispose_signature: signature_for_item(self.isa?, self.query(item_abi_signature(self.db, dispose))?)?,
+            dispose_layout: self.enum_layout_from_fact(&fact.dispose_layout?)?,
+            conversion,
+            enclosing_layout: self.enum_layout_from_fact(&fact.enclosing_layout?)?,
+            allocation: self.managed_struct_allocation(key)?,
+            converted_error_managed: fact.converted_error_managed,
+        })
+    }
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind> {
         if self.aggregate_field_access_in_context(key).is_some() {
             return Some(NodeKind::FieldExpression);

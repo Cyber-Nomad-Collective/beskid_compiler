@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add scoped `use Type name = expression;` and explicit
+  `use (Type name = expression) { ... }` without changing module imports.
+  Require a source-proven fresh acquisition, nonescaping receiver use, the exact
+  Disposable contract, and an enclosing Result with one explicit cleanup conversion.
+- Dispose lexical resources exactly once in reverse order through the existing
+  local-root scope stack on fallthrough, return, postfix `?`, and structured exits.
+  Preserve the first cleanup error while draining outer resources and root managed
+  cleanup values across collection; support managed, scalar, and unit errors.
+- Publish `Core.Disposable` and regenerate the syntax SDK for scoped bindings.
+
 - Route external Fiber waits through owner mailboxes and one atomic completion
   winner, with monotonic absolute-deadline heaps and generation-bound cancellation.
 - Exercise native wake-before/during/after-park races, completion-source pairs,

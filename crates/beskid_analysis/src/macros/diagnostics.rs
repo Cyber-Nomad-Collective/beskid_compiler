@@ -103,9 +103,17 @@ fn scan_statement_residuals(
 ) {
     use crate::syntax::Statement;
 
+    if let Statement::Use(scoped) = &stmt.node
+        && let Some(body) = &scoped.node.body
+    {
+        scan_block_residuals(source_name, source, body, out);
+    }
     match &stmt.node {
         Statement::Expression(es) => scan_expression_residuals(source_name, source, &es.node.expression, out),
-        Statement::Let(ls) => scan_expression_residuals(source_name, source, &ls.node.value, out),
+        Statement::Let(ls)
+        | Statement::Use(Spanned { node: crate::syntax::ScopedUseStatement { binding: ls, .. }, .. }) => {
+            scan_expression_residuals(source_name, source, &ls.node.value, out)
+        }
         Statement::Return(rs) => {
             if let Some(v) = &rs.node.value {
                 scan_expression_residuals(source_name, source, v, out);

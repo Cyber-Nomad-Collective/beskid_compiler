@@ -34,6 +34,7 @@ pub enum ReflectSdkNodeKind {
     Block,
     Statement,
     LetStatement,
+    ScopedUseStatement,
     ReturnStatement,
     BreakStatement,
     ContinueStatement,

@@ -313,8 +313,14 @@ impl<'a> PrepWalker<'a> {
     }
 
     fn walk_statement(&mut self, stmt: &Spanned<Statement>) {
+        if let Statement::Use(scoped) = &stmt.node
+            && let Some(body) = &scoped.node.body
+        {
+            self.walk_block(body);
+        }
         match &stmt.node {
-            Statement::Let(let_stmt) => {
+            Statement::Let(let_stmt)
+            | Statement::Use(Spanned { node: crate::syntax::ScopedUseStatement { binding: let_stmt, .. }, .. }) => {
                 if let Some(ty) = &let_stmt.node.type_annotation {
                     let expected = self.type_id_for_program_type(ty);
                     let prev = self.contextual_expected_type;

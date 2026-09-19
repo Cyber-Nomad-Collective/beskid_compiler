@@ -366,8 +366,17 @@ impl SemanticPipelineRule {
 
     fn collect_block_locals_for_type(&self, block: &Spanned<Block>, type_name: &str, locals: &mut HashSet<String>) {
         for statement in &block.node.statements {
+            if let Statement::Use(scoped) = &statement.node
+                && let Some(body) = &scoped.node.body
+            {
+                self.collect_block_locals_for_type(body, type_name, locals);
+            }
             match &statement.node {
-                Statement::Let(let_statement) => {
+                Statement::Let(let_statement)
+                | Statement::Use(Spanned {
+                    node: crate::syntax::ScopedUseStatement { binding: let_statement, .. },
+                    ..
+                }) => {
                     if let Some(type_annotation) = &let_statement.node.type_annotation
                         && self.type_name_stage5(type_annotation).as_deref() == Some(type_name)
                     {

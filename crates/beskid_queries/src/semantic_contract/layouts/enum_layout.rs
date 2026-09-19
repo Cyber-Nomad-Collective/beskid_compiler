@@ -142,6 +142,12 @@ pub(in crate::semantic_contract) fn enum_layout_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<EnumLayoutFact> {
     with_node(db, syntax, key, |program, index, node| {
+        if node.of::<beskid_analysis::syntax::ScopedUseStatement>().is_some() {
+            return Some(scoped_cleanup(db, key).and_then(|fact| {
+                fact.and_then(|fact| fact.enclosing_layout)
+                    .ok_or_else(|| SemanticError::unavailable("scoped_cleanup_layout"))
+            }));
+        }
         if let Some(definition) = node.of::<beskid_analysis::syntax::EnumDefinition>() {
             return Some(enum_layout_from_definition(db, program, index, key, definition, None));
         }

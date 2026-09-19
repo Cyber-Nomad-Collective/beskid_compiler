@@ -329,6 +329,11 @@ impl<'a> ControlFlowVisitor<'a> {
                     true
                 }
             }
+            Statement::Use(scoped) => {
+                scoped.node.body.as_ref().is_some_and(|body| {
+                    body.node.statements.iter().any(|statement| self.statement_terminates(statement))
+                })
+            }
             Statement::Let(_)
             | Statement::While(_)
             | Statement::For(_)

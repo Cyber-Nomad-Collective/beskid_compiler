@@ -17,6 +17,7 @@ mod abi;
 mod bulk;
 mod call_abi;
 mod calls;
+mod cleanup;
 mod closures_spawn;
 mod completion;
 mod layouts;
@@ -60,6 +61,7 @@ use calls::{
     type_syntax_is_enclosing_generic_parameter_reference, type_syntax_is_generic_parameter_reference,
     unique_nominal_method_declaration, unqualified_enclosing_method_call,
 };
+pub use cleanup::{ScopedAcquisition, ScopedCleanup, ScopedCleanupDiagnostic, scoped_cleanup};
 use closures_spawn::{
     callable_fiber_ownership_tracked, callable_signature_for_node, callable_signature_for_path,
     callable_signature_tracked, capture_storage_class, capture_storage_for_node, capture_storage_tracked,

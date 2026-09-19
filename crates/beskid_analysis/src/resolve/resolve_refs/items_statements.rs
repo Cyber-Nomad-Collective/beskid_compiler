@@ -233,8 +233,16 @@ impl Resolver {
     }
 
     pub(super) fn resolve_statement(&mut self, statement: &Spanned<Statement>) {
+        let scoped_body = match &statement.node {
+            Statement::Use(scoped) => scoped.node.body.as_ref(),
+            _ => None,
+        };
+        if scoped_body.is_some() {
+            self.push_scope();
+        }
         match &statement.node {
-            Statement::Let(let_stmt) => {
+            Statement::Let(let_stmt)
+            | Statement::Use(Spanned { node: crate::syntax::ScopedUseStatement { binding: let_stmt, .. }, .. }) => {
                 if let Some(type_annotation) = &let_stmt.node.type_annotation {
                     self.resolve_type(type_annotation);
                 }
@@ -267,6 +275,10 @@ impl Resolver {
                 self.resolve_expression(&expr_stmt.node.expression);
             }
             Statement::With(_) | Statement::Launch(_) => {}
+        }
+        if let Some(body) = scoped_body {
+            self.resolve_block(body);
+            self.pop_scope();
         }
     }
 }

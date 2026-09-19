@@ -35,7 +35,7 @@ impl Parsable for LetStatement {
         let (mut mutable, mut name_pair, mut value_pair, mut type_annotation) = (false, None, None, None);
 
         match rule {
-            Rule::TypedLetStatement => {
+            Rule::TypedLetStatement | Rule::ScopedUseBinding => {
                 let first = inner.next().ok_or(ParseError::missing(Rule::BeskidType))?;
                 let type_pair = if first.as_rule() == Rule::MutKeyword {
                     mutable = true;

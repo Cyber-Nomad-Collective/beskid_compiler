@@ -132,8 +132,11 @@ impl IsleContext<'_, '_, '_, '_> {
         Some(())
     }
 
-    pub(super) fn end_local_root_scope(&mut self, unregister: bool) -> Option<()> {
+    pub(super) fn end_local_root_scope(&mut self, unregister: bool, abandoned_root: Option<StackSlot>) -> Option<()> {
         (self.local_root_scopes.len() > 1).then_some(())?;
+        if unregister {
+            self.cleanup_scope_exit(self.local_root_scopes.len() - 1, abandoned_root)?;
+        }
         let scope = self.local_root_scopes.pop()?;
         if unregister {
             for (_, slot) in scope.bindings.iter().rev() {
@@ -150,6 +153,6 @@ impl IsleContext<'_, '_, '_, '_> {
 
     pub(super) fn end_local_root_scope_for_current_block(&mut self) -> Option<()> {
         let current = self.builder.current_block()?;
-        self.end_local_root_scope(!block_is_terminated(self.builder, current))
+        self.end_local_root_scope(!block_is_terminated(self.builder, current), None)
     }
 }

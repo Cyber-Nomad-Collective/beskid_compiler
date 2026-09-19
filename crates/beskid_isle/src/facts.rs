@@ -24,6 +24,7 @@ node_kinds!(
     ExpressionStatement,
     ReturnStatement,
     LetStatement,
+    ScopedUseStatement,
     IfStatement,
     WhileStatement,
     BreakStatement,
@@ -73,6 +74,7 @@ pub const fn classify_syntax_node_kind(kind: beskid_queries::IndexedNodeKind) ->
         Syntax::ExpressionStatement => IsleLowered(NodeKind::ExpressionStatement),
         Syntax::ReturnStatement => IsleLowered(NodeKind::ReturnStatement),
         Syntax::LetStatement => IsleLowered(NodeKind::LetStatement),
+        Syntax::ScopedUseStatement => IsleLowered(NodeKind::ScopedUseStatement),
         Syntax::IfStatement => IsleLowered(NodeKind::IfStatement),
         Syntax::WhileStatement => IsleLowered(NodeKind::WhileStatement),
         Syntax::BreakStatement => IsleLowered(NodeKind::BreakStatement),
@@ -504,7 +506,23 @@ pub enum ManagedReferenceFact {
     GcManaged,
 }
 
+#[derive(Clone)]
+pub struct ScopedCleanupPlan {
+    pub binding: AstNodeKey,
+    pub body: Option<AstNodeKey>,
+    pub dispose: DirectCallee,
+    pub dispose_signature: Signature,
+    pub dispose_layout: crate::EnumLayout,
+    pub conversion: Option<(DirectCallee, Signature)>,
+    pub enclosing_layout: crate::EnumLayout,
+    pub allocation: ManagedStructAllocation,
+    pub converted_error_managed: bool,
+}
+
 pub trait NodeFacts {
+    fn scoped_cleanup(&self, _key: AstNodeKey) -> Option<ScopedCleanupPlan> {
+        None
+    }
     fn node_kind(&self, key: AstNodeKey) -> Option<NodeKind>;
     fn literal_kind(&self, _key: AstNodeKey) -> Option<LiteralKind> {
         None
