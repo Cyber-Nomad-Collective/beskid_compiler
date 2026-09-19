@@ -44,6 +44,16 @@ fn traced_values_survive_collection_and_transfer_in_native_aot_and_jit() {
             .output()
             .unwrap();
         assert!(output.status.success(), "{mode}: {}", String::from_utf8_lossy(&output.stderr));
+        let panic = Command::new(&executable)
+            .arg("detached-panic")
+            .env(
+                if cfg!(target_os = "macos") { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" },
+                kit.shared_library.parent().unwrap(),
+            )
+            .output()
+            .unwrap();
+        assert!(!panic.status.success(), "{mode}: detached panic must abort");
+        assert!(String::from_utf8_lossy(&panic.stderr).contains("child panic"), "{mode}: {:?}", panic);
     }
 
     // Build a native fixture entry, then supply a real JIT-generated transfer call.

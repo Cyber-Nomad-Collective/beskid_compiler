@@ -26,6 +26,7 @@ pub(super) struct SpawnTrampoline {
     /// Present when the trampoline target is a capturing lambda that reads from the environment.
     pub(super) closure_captures: Option<Vec<beskid_isle::InlineCaptureField>>,
     pub(super) symbol: String,
+    pub(super) result_plan: crate::aggregate_static::AggregateStaticPlan,
 }
 
 pub(super) enum SchedulerCompletionTransfer<'a> {
@@ -110,6 +111,16 @@ pub(super) fn resolve_spawn_trampolines(
     let mut spawns = Vec::new();
     let mut visited = HashSet::new();
     for item in items {
+        if let Some(ownership) = beskid_queries::callable_fiber_ownership(db, item.key)
+            .map_err(|error| emission_verification(error.to_string()))?
+            && !ownership.diagnostics.is_empty()
+        {
+            return Err(emission_verification(format!(
+                "spawn legality rejected {}: {:?}",
+                beskid_queries::format_ast_node_key(db, item.key),
+                ownership.diagnostics
+            )));
+        }
         collect_spawn_nodes(db, item.key, &mut visited, &mut spawns);
     }
     let mut trampolines = Vec::new();
@@ -120,7 +131,11 @@ pub(super) fn resolve_spawn_trampolines(
             continue;
         };
         if !validation.is_zero_argument_entry {
-            continue;
+            return Err(emission_verification(format!(
+                "spawn legality rejected {} at SpawnExpression: {:?}",
+                spawn.unit.path(db).display(),
+                validation.diagnostics,
+            )));
         }
         match node_kind(db, validation.target).map_err(|error| emission_verification(error.to_string()))? {
             Some(beskid_queries::IndexedNodeKind::PathExpression) => {
@@ -143,6 +158,8 @@ pub(super) fn resolve_spawn_trampolines(
                     continue;
                 };
                 let symbol = spawn_trampoline_symbol(&target_symbol, spawn);
+                let result_plan =
+                    spawn_result_plan(input, spawn, &symbol, validation.callable.as_ref().unwrap().result)?;
                 trampolines.push(SpawnTrampoline {
                     spawn,
                     target_symbol,
@@ -150,6 +167,7 @@ pub(super) fn resolve_spawn_trampolines(
                     lambda_body: None,
                     closure_captures: None,
                     symbol,
+                    result_plan,
                 });
             }
             Some(beskid_queries::IndexedNodeKind::LambdaExpression) => {
@@ -190,7 +208,7 @@ pub(super) fn resolve_spawn_trampolines(
                 else {
                     continue;
                 };
-                let Some(mut signature) = signature_for_item(isa, lambda.callable) else {
+                let Some(mut signature) = signature_for_item(isa, lambda.callable.clone()) else {
                     continue;
                 };
                 if !signature.params.is_empty() {
@@ -201,6 +219,7 @@ pub(super) fn resolve_spawn_trampolines(
                 }
                 let target_symbol = format!("__beskid_spawn_lambda_syntax_g{}_n{}", spawn.generation.0, spawn.node.0);
                 let symbol = spawn_trampoline_symbol(&target_symbol, spawn);
+                let result_plan = spawn_result_plan(input, spawn, &symbol, lambda.callable.result)?;
                 trampolines.push(SpawnTrampoline {
                     spawn,
                     target_symbol,
@@ -208,12 +227,47 @@ pub(super) fn resolve_spawn_trampolines(
                     lambda_body: Some(lambda.body),
                     closure_captures,
                     symbol,
+                    result_plan,
                 });
             }
             _ => continue,
         }
     }
     Ok(trampolines)
+}
+
+fn spawn_result_plan(
+    input: &CodegenInput<'_>,
+    spawn: AstNodeKey,
+    symbol: &str,
+    result: beskid_queries::SemanticTypeId,
+) -> Result<crate::aggregate_static::AggregateStaticPlan, SyntaxModuleEmissionError> {
+    let header = input
+        .abi_manifest()
+        .layouts
+        .iter()
+        .find(|layout| layout.name == "BeskidObjectHeader")
+        .ok_or_else(|| emission_verification("spawn result object header unavailable"))?;
+    let handle = beskid_queries::spawn_handle_type(input.database(), spawn)
+        .map_err(|error| emission_verification(error.to_string()))?
+        .ok_or_else(|| emission_verification("spawn payload source identity unavailable"))?;
+    let pointer_map_offsets =
+        if handle.payload.managed_reference_kind() == beskid_queries::ManagedReferenceKind::GcManaged {
+            vec![header.size]
+        } else {
+            Vec::new()
+        };
+    Ok(crate::aggregate_static::AggregateStaticPlan {
+        literal: spawn,
+        descriptor_symbol: format!("{symbol}_result_descriptor"),
+        pointer_map_symbol: format!("{symbol}_result_pointer_map"),
+        allocation_request_symbol: format!("{symbol}_result_request"),
+        object_size: header.size + 8,
+        object_alignment: header.alignment,
+        pointer_map_offsets: pointer_map_offsets.into(),
+        fields: vec![crate::aggregate_static::AggregateStaticField { abi_type: result, field_offset: header.size }]
+            .into(),
+    })
 }
 
 fn spawn_trampoline_symbol(target_symbol: &str, spawn: AstNodeKey) -> String {
@@ -646,16 +700,52 @@ pub(super) fn emit_spawn_trampoline(
         let results = builder.inst_results(call).to_vec();
         let result = match results.as_slice() {
             [] => builder.ins().iconst(types::I64, 0),
-            [value] if builder.func.dfg.value_type(*value) == types::I64 => *value,
-            [value] if builder.func.dfg.value_type(*value).is_int() => builder.ins().sextend(types::I64, *value),
+            [value] => *value,
             _ => {
                 return Err(emission_verification(format!(
-                    "spawn trampoline target `{}` must return unit or an integer ABI value",
+                    "spawn trampoline target `{}` must return one typed ABI value",
                     trampoline.target_symbol
                 )));
             }
         };
-        builder.ins().return_(&[result]);
+        let root = if !trampoline.result_plan.pointer_map_offsets.is_empty() {
+            let slot = builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
+                cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
+                pointer.bytes(),
+                3,
+            ));
+            builder.ins().stack_store(result, slot, 0);
+            let address = builder.ins().stack_addr(pointer, slot, 0);
+            let register = import_local(&mut builder, "gc_register_root", &[pointer], Some(types::I8));
+            let call = builder.ins().call(register, &[address]);
+            let ok = builder.inst_results(call)[0];
+            builder.ins().trapz(ok, cranelift_codegen::ir::TrapCode::unwrap_user(5));
+            Some(address)
+        } else {
+            None
+        };
+        let request = builder.func.create_global_value(cranelift_codegen::ir::GlobalValueData::Symbol {
+            name: ExternalName::testcase(&trampoline.result_plan.allocation_request_symbol),
+            offset: 0.into(),
+            colocated: false,
+            tls: false,
+        });
+        let request = builder.ins().global_value(pointer, request);
+        let allocate = import_local(&mut builder, "beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer));
+        let call = builder.ins().call(allocate, &[request]);
+        let boxed = builder.inst_results(call)[0];
+        builder.ins().trapz(boxed, cranelift_codegen::ir::TrapCode::unwrap_user(5));
+        builder.ins().store(
+            cranelift_codegen::ir::MemFlags::new(),
+            result,
+            boxed,
+            trampoline.result_plan.fields[0].field_offset as i32,
+        );
+        if let Some(root) = root {
+            let unregister = import_local(&mut builder, "gc_unregister_root", &[pointer], None);
+            builder.ins().call(unregister, &[root]);
+        }
+        builder.ins().return_(&[boxed]);
         builder.finalize();
     }
     verify_function(&function, isa.flags()).map_err(|error| {

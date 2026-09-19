@@ -214,6 +214,14 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
     }
 
     fn semantic_type(&self, key: AstNodeKey) -> Option<SemanticTypeId> {
+        if let Some(CallLowering::CorelibService(service)) = self.query(call_lowering(self.db, key))
+            && beskid_abi::runtime_source::canonical_corelib_service_value_dispatch(service).is_some()
+        {
+            return self.typed_corelib_value_service(key, service).map(|(_, result)| result);
+        }
+        if let Some(specialization) = self.generic_call_specialization_in_context(key) {
+            return Some(specialization.signature.result);
+        }
         self.specialized_direct_parameter_type(key).or_else(|| self.scalar_semantic_type(key))
     }
 
@@ -653,7 +661,27 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             }
             _ => return None,
         };
-        Some(beskid_isle::SpawnEntry { trampoline: DirectCallee::spawn_trampoline(key), closure_environment })
+        let handle = self.input.spawn_handle_static_plan(key)?;
+        Some(beskid_isle::SpawnEntry {
+            trampoline: DirectCallee::spawn_trampoline(key),
+            closure_environment,
+            handle_request_symbol: handle.allocation_request_symbol.into(),
+            handle_field_offset: i32::try_from(handle.fields[0].field_offset).ok()?,
+        })
+    }
+
+    fn traced_fiber_join_layout(&self, key: AstNodeKey) -> Option<beskid_isle::TracedFiberJoinLayout> {
+        if self.direct_callee(key)? != DirectCallee::corelib_service("fiber_join_value") {
+            return None;
+        }
+        let slot = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidAbiValue")?;
+        let header = self.input.abi_manifest().layouts.iter().find(|layout| layout.name == "BeskidObjectHeader")?;
+        Some(beskid_isle::TracedFiberJoinLayout {
+            slot_size: u32::try_from(slot.size).ok()?,
+            alignment_shift: u8::try_from(slot.alignment.ilog2()).ok()?,
+            payload_offset: i32::try_from(slot.fields.iter().find(|field| field.name == "payload")?.offset).ok()?,
+            value_offset: i32::try_from(header.size).ok()?,
+        })
     }
 
     fn lambda_entry(&self, key: AstNodeKey) -> Option<beskid_isle::LambdaEntry> {
@@ -685,7 +713,6 @@ impl NodeFacts for SyntaxNodeFacts<'_> {
             Some(beskid_isle::InlineClosureEnvironment {
                 allocation_request_symbol: authority.plan.allocation_request_symbol.clone().into(),
                 descriptor_symbol: authority.plan.descriptor_symbol.clone().into(),
-                root_slot_index: authority.root.slot_index,
                 captures,
             })
         };

@@ -103,6 +103,32 @@ fn write_word(bytes: &mut [u8], offset: usize, value: u64) -> Result<(), ModuleE
 }
 
 impl CodegenInput<'_> {
+    /// Allocate the ordinary source-defined Fiber<T> shape; no parallel handle layout.
+    pub fn spawn_handle_static_plan(&self, spawn: AstNodeKey) -> Option<AggregateStaticPlan> {
+        let handle = beskid_queries::spawn_handle_type(self.database(), spawn).ok().flatten()?;
+        let layout = self.aggregate_object_layout(handle.declaration)?;
+        if layout.fields.len() != 1 || layout.fields[0].abi_type != SemanticTypeId::I64 {
+            return None;
+        }
+        let unit = self
+            .typed_program()
+            .assembly
+            .units
+            .iter()
+            .position(|unit| paths_match(&unit.path, spawn.unit.path(self.database())))?;
+        let identity = format!("{}_u{unit}_g{}_n{}", artifact_namespace(self), spawn.generation.0, spawn.node.0);
+        Some(AggregateStaticPlan {
+            literal: spawn,
+            descriptor_symbol: format!("__beskid_fiber_descriptor_{identity}"),
+            pointer_map_symbol: format!("__beskid_fiber_pointer_map_{identity}"),
+            allocation_request_symbol: format!("__beskid_fiber_request_{identity}"),
+            object_size: layout.object_size,
+            object_alignment: layout.object_alignment,
+            pointer_map_offsets: layout.pointer_map_offsets,
+            fields: layout.fields,
+        })
+    }
+
     /// Compute the header-relative field layout of a managed aggregate declaration.
     ///
     /// Field access lowering consumes this directly so that reads and writes address the same bytes

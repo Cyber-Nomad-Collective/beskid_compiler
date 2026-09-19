@@ -326,6 +326,8 @@ pub enum SpawnDiagnosticKind {
     /// empty-arg `spawn Entry()` sugar (normalized to `Entry`) are legal.
     CalleeArgumentsUnsupported,
     StackReferenceEscapesSpawn,
+    DiscardedHandle,
+    UseAfterMove,
 }
 
 /// One precise diagnostic selected from current syntax facts for a spawn expression.
@@ -334,6 +336,14 @@ pub struct SpawnDiagnostic {
     pub kind: SpawnDiagnosticKind,
     pub span: SourceSpan,
     pub capture: Option<CaptureStorage>,
+}
+
+/// Move-only Fiber capabilities in one callable, bound to the current syntax generation.
+/// Spawn legality and emission both consume this fact, including callables without a spawn.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct FiberOwnership {
+    pub callable: AstNodeKey,
+    pub diagnostics: Arc<[SpawnDiagnostic]>,
 }
 
 /// Authoritative spawn lowering facts and any source-owned legality diagnostics.
@@ -347,6 +357,13 @@ pub struct SpawnLegality {
     pub result: Option<SemanticTypeId>,
     pub span: SourceSpan,
     pub diagnostics: Arc<[SpawnDiagnostic]>,
+}
+
+/// Nominal handle application projected from the authoritative spawn legality fact.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct SpawnHandleType {
+    pub declaration: AstNodeKey,
+    pub payload: GenericSubstitution,
 }
 
 /// Source-only validation of whether a spawn target is a legal zero-argument entry.

@@ -60,7 +60,7 @@ struct BeskidStr;
 #define BESKID_COMPOSITION_SCOPE_PARENT_SCOPE_OFFSET 8
 #define BESKID_COMPOSITION_SCOPE_OWNED_COUNT_OFFSET 16
 #define BESKID_COMPOSITION_SCOPE_OWNED_VALUES_OFFSET 24
-#define BESKID_FIBER_RECORD_SIZE 128
+#define BESKID_FIBER_RECORD_SIZE 240
 #define BESKID_FIBER_RECORD_ALIGNMENT 8
 #define BESKID_FIBER_RECORD_STATE_OFFSET 0
 #define BESKID_FIBER_RECORD_ENTRY_OFFSET 8
@@ -69,9 +69,10 @@ struct BeskidStr;
 #define BESKID_FIBER_RECORD_PARENT_OFFSET 32
 #define BESKID_FIBER_RECORD_DETACHED_OFFSET 40
 #define BESKID_FIBER_RECORD_CANCELLED_OFFSET 41
+#define BESKID_FIBER_RECORD_CONSUMED_OFFSET 42
 #define BESKID_FIBER_RECORD_GENERATION_OFFSET 44
 #define BESKID_FIBER_RECORD_OUTCOME_KIND_OFFSET 48
-#define BESKID_FIBER_RECORD_OUTCOME_VALUE_OFFSET 56
+#define BESKID_FIBER_RECORD_PANIC_MESSAGE_OFFSET 56
 #define BESKID_FIBER_RECORD_COMPOSITION_SCOPE_OFFSET 64
 #define BESKID_FIBER_RECORD_COMPOSITION_DEPTH_OFFSET 72
 #define BESKID_FIBER_RECORD_ROOT_FRAME_OFFSET 80
@@ -80,6 +81,12 @@ struct BeskidStr;
 #define BESKID_FIBER_RECORD_ARCH_CONTEXT_OFFSET 104
 #define BESKID_FIBER_RECORD_ARCH_CONTEXT_SIZE_OFFSET 112
 #define BESKID_FIBER_RECORD_STACK_USABLE_SIZE_OFFSET 120
+#define BESKID_FIBER_RECORD_OUTCOME_REASON_OFFSET 128
+#define BESKID_FIBER_RECORD_OUTCOME_CANCELER_OFFSET 136
+#define BESKID_FIBER_RECORD_OUTCOME_LIMIT_OFFSET 144
+#define BESKID_FIBER_RECORD_OUTCOME_REQUESTED_OFFSET 152
+#define BESKID_FIBER_RECORD_RESULT_OFFSET 160
+#define BESKID_FIBER_RECORD_CAPTURE_OFFSET 200
 #define BESKID_GC_HANDLE_SLOT_SIZE 16
 #define BESKID_GC_HANDLE_SLOT_ALIGNMENT 8
 #define BESKID_GC_HANDLE_SLOT_VALUE_OFFSET 0
@@ -171,7 +178,7 @@ struct BeskidStr;
 #define BESKID_RUNTIME_STATE_TLS_KEY_OFFSET 48
 #define BESKID_RUNTIME_STATE_LIFECYCLE_STATE_OFFSET 56
 #define BESKID_RUNTIME_STATE_LIFECYCLE_GENERATION_OFFSET 60
-#define BESKID_SCHEDULER_STATE_SIZE 3512
+#define BESKID_SCHEDULER_STATE_SIZE 7888
 #define BESKID_SCHEDULER_STATE_ALIGNMENT 8
 #define BESKID_SCHEDULER_STATE_FIBER_COUNT_OFFSET 0
 #define BESKID_SCHEDULER_STATE_MAIN_FIBER_OFFSET 8
@@ -186,14 +193,17 @@ struct BeskidStr;
 #define BESKID_SCHEDULER_STATE_PENDING_DETACH_COUNT_OFFSET 1136
 #define BESKID_SCHEDULER_STATE_PENDING_WAKES_OFFSET 1144
 #define BESKID_SCHEDULER_STATE_PENDING_WAKE_COUNT_OFFSET 1400
-#define BESKID_SCHEDULER_STATE_FIBERS_OFFSET 1408
 #define BESKID_SCHEDULER_STATE_CHANNEL_TABLE_OFFSET 3456
 #define BESKID_SCHEDULER_STATE_MUTEX_TABLE_OFFSET 3464
 #define BESKID_SCHEDULER_STATE_WAITGROUP_TABLE_OFFSET 3472
 #define BESKID_SCHEDULER_STATE_CURRENT_FIBER_OFFSET 3480
 #define BESKID_SCHEDULER_STATE_HUB_TABLE_OFFSET 3488
 #define BESKID_SCHEDULER_STATE_SCHEDULER_CONTEXT_OFFSET 3496
-#define BESKID_SCHEDULER_STATE_POLL_STATE_OFFSET 3504
+#define BESKID_SCHEDULER_STATE_WORKERS_OFFSET 3512
+#define BESKID_SCHEDULER_STATE_NEXT_WORKER_TAG_OFFSET 4024
+#define BESKID_SCHEDULER_STATE_MUTATOR_TOKEN_OFFSET 4032
+#define BESKID_SCHEDULER_STATE_POLL_STATE_OFFSET 4040
+#define BESKID_SCHEDULER_STATE_FIBERS_OFFSET 4048
 #define BESKID_TLS_STATE_SIZE 48
 #define BESKID_TLS_STATE_ALIGNMENT 8
 #define BESKID_TLS_STATE_RUNTIME_OFFSET 0
@@ -293,7 +303,6 @@ uint8_t beskid_rt_v5_closure_capture_store(void * environment, void * descriptor
 void * beskid_rt_v5_closure_environment_allocate(void * request);
 uint8_t beskid_rt_v5_closure_environment_root(void * tls_state, size_t slot_index, void * environment);
 uint8_t beskid_rt_v5_closure_environment_root_current(size_t slot_index, void * environment);
-int64_t beskid_rt_v5_fiber_spawn_with_cancel_slot(void * entry, void * environment, void * cancelled_slot);
 void beskid_rt_v5_fiber_yield(void);
 void * beskid_rt_v5_managed_object_allocate(void * request);
 int32_t beskid_rt_v5_poll_executor_run_once(void);
@@ -363,8 +372,11 @@ size_t event_unsubscribe_first(void * eventSlot, void * handler);
 uint8_t fiber_cancel(int64_t fiberId, int64_t reason);
 int64_t fiber_current_id(void);
 void fiber_detach(int64_t fiberId);
+int64_t fiber_join_detail(int64_t fiberId, size_t detail);
+uint8_t fiber_join_error_finish(int64_t fiberId);
+void * fiber_join_message(int64_t fiberId);
 int32_t fiber_join_status(int64_t fiberId);
-int64_t fiber_join_value(int64_t fiberId);
+uint8_t fiber_join_value(int64_t fiberId, void * destination);
 int64_t fiber_now_millis(void);
 size_t fiber_processor_count(void);
 int64_t fiber_spawn(void * entry, void * argument);

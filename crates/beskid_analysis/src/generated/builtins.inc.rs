@@ -301,12 +301,6 @@ define_builtins! {
         returns: U64,
         injected: true,
     },
-    &["__fiber_spawn_with_cancel_slot"] => {
-        symbol: "fiber_spawn_with_cancel_slot",
-        params: [Ptr, Ptr, Ptr],
-        returns: U64,
-        injected: true,
-    },
     &["__fs_delete"] => {
         symbol: "fs_delete",
         params: [String],

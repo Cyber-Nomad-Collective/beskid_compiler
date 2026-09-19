@@ -318,6 +318,22 @@ fn parsed_generic_unit_payload_pattern_lowers_without_fabricating_storage() {
 }
 
 #[test]
+fn generic_unit_arguments_preserve_effects_without_fabricating_abi_storage() {
+    let (input, isa, root) = item_fixture_with_root(
+        "unit Effect() { return; } i64 Consume<T>(T value, i64 count) { return count; } i64 Main() { return Consume<unit>(Effect(), 42_i64); }",
+    );
+    let items = find_function_definitions(input.database(), root)
+        .into_iter()
+        .map(|key| SyntaxModuleItem { symbol: item_name(input.database(), key).unwrap().unwrap().to_string(), key })
+        .collect::<Vec<_>>();
+    let artifact = lower_syntax_program(&input, isa.as_ref(), &items).expect("zero-sized generic parameter erasure");
+    let consume = artifact.functions.iter().find(|function| function.name.starts_with("Consume")).unwrap();
+    assert_eq!(consume.function.signature.params.len(), 1);
+    let main = artifact.functions.iter().find(|function| function.name == "Main").unwrap();
+    assert!(main.function.display().to_string().contains("Effect"));
+}
+
+#[test]
 fn generic_enum_constructor_without_context_remains_unavailable() {
     let (input, _isa, root) = item_fixture_with_root(
         "enum Result<TValue, TError> { Ok(TValue value), Error(TError error) } enum SyscallError { InvalidFd(i64 fd) } unit Main() { Result::Error(SyscallError::InvalidFd(1_i64)); return; }",
@@ -593,8 +609,8 @@ fn enum_match_expression_accepts_a_never_returning_arm() {
         .copied()
         .find(|key| item_name(db, *key).ok().flatten().as_deref() == Some("Fail"))
         .expect("Fail item");
-    let expression = find_node(db, item, beskid_queries::IndexedNodeKind::MatchExpression)
-        .expect("match expression with never arm");
+    let expression =
+        find_node(db, item, beskid_queries::IndexedNodeKind::MatchExpression).expect("match expression with never arm");
 
     assert_eq!(
         node_type(db, expression).expect("match result type"),
@@ -606,10 +622,7 @@ fn enum_match_expression_accepts_a_never_returning_arm() {
     let imported = module.declare_function("Fail", Linkage::Import, &signature).expect("declare never callee");
     let mut importer = ItemModuleImporter::new(&mut module, HashMap::from([(DirectCallee::item(fail), imported)]));
     if let Err(error) = emit_isle_item_with_call_importer(&input, isa.as_ref(), item, &mut importer) {
-        panic!(
-            "a never-returning arm terminates without supplying a merge value: {}",
-            error.display_with_db(db)
-        );
+        panic!("a never-returning arm terminates without supplying a merge value: {}", error.display_with_db(db));
     }
 }
 
@@ -641,21 +654,21 @@ fn cross_unit_generic_receiver_match_preserves_a_concrete_nominal_error() {
     let project_root = tempfile::tempdir().expect("project").keep();
     let source_root = project_root.join("src");
     let main_path = source_root.join("Main.bd");
-    let fiber_path = source_root.join("Concurrency/Fiber.bd");
-    let fiber_error_path = source_root.join("Concurrency/FiberError.bd");
-    let fiber_status_path = source_root.join("Concurrency/FiberJoinStatus.bd");
+    let fiber_path = source_root.join("Concurrency/Work.bd");
+    let fiber_error_path = source_root.join("Concurrency/WorkError.bd");
+    let fiber_status_path = source_root.join("Concurrency/WorkStatus.bd");
     let results_path = source_root.join("Core/Results.bd");
-    let main_source = "use Concurrency.Fiber; unit Main() { Fiber<i64> fiber = Fiber<i64> { value: 7_i64, handle: -1_i64 }; Fiber<i64>.Join(fiber); return; }";
-    let fiber_source = "use Concurrency.FiberError; use Concurrency.FiberJoinStatus; use Core.Results; pub type Fiber<T> { T value, i64 handle } pub Core.Results.Result<T, FiberError> Join<T>(Fiber<T> self) { FiberJoinStatus status = FiberJoinStatus::Panicked(self.handle, \"panic\"); return match status { FiberJoinStatus::Ok(_) => Result::Ok(self.value), FiberJoinStatus::Cancelled(reason, cancelerId) => Result::Error(FiberError::Cancelled(reason, cancelerId)), FiberJoinStatus::StackOverflow(limitBytes, requestedBytes) => Result::Error(FiberError::StackOverflow(limitBytes, requestedBytes)), FiberJoinStatus::Panicked(code, message) => Result::Error(FiberError::Panicked(code, message)), FiberJoinStatus::NotDone => Result::Error(FiberError::Panicked(-1_i64, \"not done\")), }; }";
-    let fiber_error_source = "pub enum FiberError { Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message) }";
-    let fiber_status_source = "pub enum FiberJoinStatus { Ok(i64 value), Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message), NotDone }";
+    let main_source = "use Concurrency.Work; unit Main() { Work<i64> fiber = Work<i64> { value: 7_i64, handle: -1_i64 }; Work<i64>.Join(fiber); return; }";
+    let fiber_source = "use Concurrency.WorkError; use Concurrency.WorkStatus; use Core.Results; pub type Work<T> { T value, i64 handle } pub Core.Results.Result<T, WorkError> Join<T>(Work<T> self) { WorkStatus status = WorkStatus::Panicked(self.handle, \"panic\"); return match status { WorkStatus::Ok(_) => Result::Ok(self.value), WorkStatus::Cancelled(reason, cancelerId) => Result::Error(WorkError::Cancelled(reason, cancelerId)), WorkStatus::StackOverflow(limitBytes, requestedBytes) => Result::Error(WorkError::StackOverflow(limitBytes, requestedBytes)), WorkStatus::Panicked(code, message) => Result::Error(WorkError::Panicked(code, message)), WorkStatus::NotDone => Result::Error(WorkError::Panicked(-1_i64, \"not done\")), }; }";
+    let fiber_error_source = "pub enum WorkError { Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message) }";
+    let fiber_status_source = "pub enum WorkStatus { Ok(i64 value), Cancelled(i64 reason, i64 cancelerId), StackOverflow(i64 limitBytes, i64 requestedBytes), Panicked(i64 code, string message), NotDone }";
     let results_source = "pub enum Result<TValue, TError> { Ok(TValue value), Error(TError error) }";
     std::fs::create_dir_all(fiber_path.parent().expect("fiber parent")).expect("create source tree");
     std::fs::create_dir_all(results_path.parent().expect("results parent")).expect("create Core source tree");
     std::fs::write(&main_path, main_source).expect("write Main source");
-    std::fs::write(&fiber_path, fiber_source).expect("write Fiber source");
-    std::fs::write(&fiber_error_path, fiber_error_source).expect("write FiberError source");
-    std::fs::write(&fiber_status_path, fiber_status_source).expect("write FiberJoinStatus source");
+    std::fs::write(&fiber_path, fiber_source).expect("write Work source");
+    std::fs::write(&fiber_error_path, fiber_error_source).expect("write WorkError source");
+    std::fs::write(&fiber_status_path, fiber_status_source).expect("write WorkStatus source");
     std::fs::write(&results_path, results_source).expect("write Results source");
     let units = [
         (main_path.clone(), main_source),
@@ -710,17 +723,17 @@ fn cross_unit_generic_receiver_match_preserves_a_concrete_nominal_error() {
         .expect("host ISA")
         .finish(settings::Flags::new(settings::builder()))
         .expect("host flags");
-    let call = find_call_expression(input.database(), main).expect("Fiber<i64>.Join call");
+    let call = find_call_expression(input.database(), main).expect("Work<i64>.Join call");
     let specialization = beskid_queries::generic_call_specialization(input.database(), call)
         .expect("Join specialization query")
-        .expect("the applied Fiber receiver must specialize Join<T>");
+        .expect("the applied Work receiver must specialize Join<T>");
     let matched =
         find_node(input.database(), join, beskid_queries::IndexedNodeKind::MatchExpression).expect("Join status match");
     assert!(
         beskid_queries::enum_match_specialization(input.database(), matched, specialization.substitutions.clone(),)
             .expect("specialized Join match query")
             .is_some(),
-        "the imported concrete FiberError must survive beside the owner-propagated T"
+        "the imported concrete WorkError must survive beside the owner-propagated T"
     );
     for constructor in
         find_nodes_of_kind(input.database(), join, beskid_queries::IndexedNodeKind::EnumConstructorExpression)

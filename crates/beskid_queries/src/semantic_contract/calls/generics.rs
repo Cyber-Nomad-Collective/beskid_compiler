@@ -125,6 +125,14 @@ pub(in crate::semantic_contract) fn generic_nominal_method_receiver_tracked(
         let method_syntax = db.syntax_unit(method.unit)?;
         let owner_node = parent_node(method_syntax.syntax_index(db), method.node)?;
         let owner = AstNodeKey { node: owner_node, ..method };
+        if let Some(handle) = inferred_spawn_handle(db, receiver) {
+            return Some(Ok(GenericNominalMethodReceiver {
+                method,
+                receiver,
+                owner,
+                substitutions: Arc::from([handle.payload]),
+            }));
+        }
         let owner_definition = method_syntax
             .syntax_index(db)
             .node_at(method_syntax.expanded_program(db), owner_node)?
@@ -232,6 +240,17 @@ pub(in crate::semantic_contract) fn generic_source_expression_identity(
     let node =
         index.node_at(program, normalized).ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
     let normalized_key = AstNodeKey { node: normalized, ..key };
+
+    if node.of::<beskid_analysis::syntax::SpawnExpression>().is_some() {
+        let handle = spawn_handle_type(db, normalized_key)?
+            .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+        let qualified_name = stable_declaration_identity(db, handle.declaration)
+            .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+        return Ok(GenericSourceTypeIdentity::Nominal {
+            qualified_name,
+            arguments: Arc::from([handle.payload.source_identity().clone()]),
+        });
+    }
 
     if let Some(literal) = node.of::<beskid_analysis::syntax::LiteralExpression>() {
         return Ok(GenericSourceTypeIdentity::Abi(semantic_type_for_literal(&literal.literal.node)));
@@ -413,11 +432,14 @@ fn generic_source_local_identity(
                 .node_at(program, parent)
                 .and_then(|node| node.of::<beskid_analysis::syntax::LetStatement>())
                 .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
-            let annotation = statement
-                .type_annotation
-                .as_ref()
-                .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
-            generic_source_type_identity(db, key, &annotation.node)
+            if let Some(annotation) = statement.type_annotation.as_ref() {
+                generic_source_type_identity(db, key, &annotation.node)
+            } else {
+                let initializer = index
+                    .direct_child_id(program, parent, beskid_analysis::syntax_query::DynNodeRef::from(&statement.value))
+                    .ok_or_else(|| SemanticError::unavailable("source_expression_type"))?;
+                generic_source_expression_identity(db, AstNodeKey { node: initializer, ..key })
+            }
         }
         _ => Err(SemanticError::unavailable("source_expression_type")),
     }

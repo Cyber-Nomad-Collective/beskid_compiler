@@ -110,6 +110,15 @@ pub struct CorelibServiceValueDispatch {
 
 /// Return the type-directed value adapters for a canonical source-authorized service.
 pub fn canonical_corelib_service_value_dispatch(service: CorelibService) -> Option<CorelibServiceValueDispatch> {
+    if service.name == "__fiber_join_value"
+        && service.symbol == "fiber_join_value"
+        && service.source_path == CANONICAL_CORELIB_FIBER_SOURCE_PATH
+    {
+        return Some(CorelibServiceValueDispatch {
+            scalar_symbol: "fiber_join_value",
+            managed_symbol: "fiber_join_value",
+        });
+    }
     (service.name == "__channel_receive_value"
         && service.symbol == "channel_receive_value"
         && service.source_path == CANONICAL_CORELIB_CHANNEL_SOURCE_PATH)
@@ -293,6 +302,21 @@ const CORELIB_SERVICES: &[CorelibService] = &[
     },
     CorelibService { name: "__fiber_cancel", symbol: "fiber_cancel", source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH },
     CorelibService { name: "__fiber_detach", symbol: "fiber_detach", source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH },
+    CorelibService {
+        name: "__fiber_join_detail",
+        symbol: "fiber_join_detail",
+        source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__fiber_join_message",
+        symbol: "fiber_join_message",
+        source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__fiber_join_error_finish",
+        symbol: "fiber_join_error_finish",
+        source_path: CANONICAL_CORELIB_FIBER_SOURCE_PATH,
+    },
     CorelibService {
         name: "__fiber_join_status",
         symbol: "fiber_join_status",

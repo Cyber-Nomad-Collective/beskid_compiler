@@ -28,11 +28,14 @@ impl IsleContext<'_, '_, '_, '_> {
         let callee = self.facts.direct_callee(key)?;
         let source_signature = self.facts.call_signature(key)?;
         let argument_keys = self.facts.call_arguments(key)?;
-        if argument_keys.len() != source_signature.params.len() {
-            return None;
-        }
         let mut arguments = Vec::with_capacity(argument_keys.len());
-        for (argument, parameter) in argument_keys.into_iter().zip(&source_signature.params) {
+        let mut parameters = source_signature.params.iter();
+        for argument in argument_keys {
+            if self.facts.semantic_type(argument) == Some(beskid_queries::SemanticTypeId::UNIT) {
+                self.lower_expression_for_effect(argument)?;
+                continue;
+            }
+            let parameter = parameters.next()?;
             let value = generated::constructor_lower_expression(self, argument)?;
             let value = if self.builder.func.dfg.value_type(value) == parameter.value_type {
                 value
@@ -41,6 +44,9 @@ impl IsleContext<'_, '_, '_, '_> {
                     .or_else(|| self.materialize_canonical_runtime_direct_constant(argument, parameter.value_type))?
             };
             arguments.push(value);
+        }
+        if parameters.next().is_some() {
+            return None;
         }
         let (native_signature, arguments) = self.adapt_corelib_service_call(&callee, &source_signature, arguments)?;
         let function = match self.call_importer.as_deref_mut()?.import(self.builder, callee.clone(), &native_signature)
@@ -372,8 +378,44 @@ impl IsleContext<'_, '_, '_, '_> {
         if signature.returns.len() != 1 || signature.returns[0].value_type != result_type {
             return None;
         }
+        if self.facts.traced_fiber_join_layout(key).is_some() {
+            return self.traced_value_move_call(key, Some(result_type))?;
+        }
         let (call, _) = self.import_direct_call(key)?;
         self.builder.inst_results(call).first().copied()
+    }
+
+    fn traced_value_move_call(&mut self, key: AstNodeKey, result_type: Option<Type>) -> Option<Option<Value>> {
+        let layout = self.facts.traced_fiber_join_layout(key)?;
+        let arguments = self.facts.call_arguments(key)?;
+        let [argument] = arguments.as_slice() else {
+            return None;
+        };
+        let handle = generated::constructor_lower_expression(self, *argument)?;
+        let pointer = dispatch::pointer_type();
+        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            layout.slot_size,
+            layout.alignment_shift,
+        ));
+        let zero = self.builder.ins().iconst(pointer, 0);
+        for offset in (0..layout.slot_size).step_by(pointer.bytes() as usize) {
+            self.builder.ins().stack_store(zero, slot, offset as i32);
+        }
+        let destination = self.builder.ins().stack_addr(pointer, slot, 0);
+        let transfer = self.import_runtime_helper("fiber_join_value", &[types::I64, pointer], Some(types::I8))?;
+        let call = self.builder.ins().call(transfer, &[handle, destination]);
+        let moved = self.builder.inst_results(call)[0];
+        self.builder.ins().trapz(moved, TrapCode::unwrap_user(10));
+        let payload = self.builder.ins().stack_load(pointer, slot, layout.payload_offset);
+        let value = result_type.map(|ty| self.builder.ins().load(ty, MemFlags::new(), payload, layout.value_offset));
+        // Clear is non-allocating: no safepoint exists between the rooted payload
+        // read and the caller installing the ordinary result/local root.
+        let clear = self.import_runtime_helper("beskid_rt_v5_abi_value_clear", &[pointer], Some(types::I8))?;
+        let call = self.builder.ins().call(clear, &[destination]);
+        let cleared = self.builder.inst_results(call)[0];
+        self.builder.ins().trapz(cleared, TrapCode::unwrap_user(10));
+        Some(value)
     }
 
     pub(super) fn inline_lambda_call(&mut self, key: AstNodeKey) -> Option<Value> {
@@ -393,13 +435,17 @@ impl IsleContext<'_, '_, '_, '_> {
             self.bind_local(parameter.slot, value, parameter.value_type, parameter.managed_reference)?;
         }
         if let Some(environment) = &lambda.closure_environment {
-            let _env = self.emit_inline_closure_environment(environment)?;
+            let (_, root) = self.emit_inline_closure_environment(environment)?;
+            self.release_temporary_root(Some(root))?;
         }
         let value = generated::constructor_lower_expression(self, lambda.body)?;
         (self.builder.func.dfg.value_type(value) == lambda.result_type).then_some(value)
     }
 
-    pub(super) fn emit_inline_closure_environment(&mut self, environment: &InlineClosureEnvironment) -> Option<Value> {
+    pub(super) fn emit_inline_closure_environment(
+        &mut self,
+        environment: &InlineClosureEnvironment,
+    ) -> Option<(Value, StackSlot)> {
         let pointer = dispatch::pointer_type();
         let request = self.symbol_global(environment.allocation_request_symbol.as_ref(), pointer)?;
         let allocate =
@@ -407,6 +453,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let allocate_call = self.builder.ins().call(allocate, &[request]);
         let env_ptr = self.builder.inst_results(allocate_call).first().copied()?;
         self.builder.ins().trapz(env_ptr, TrapCode::unwrap_user(5));
+        let root = self.root_temporary(env_ptr)?;
         let descriptor = self.symbol_global(environment.descriptor_symbol.as_ref(), pointer)?;
         for capture in &environment.captures {
             let binding = self.locals.get(&capture.local_slot).copied()?;
@@ -427,16 +474,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 self.builder.ins().store(MemFlags::new(), value, address, 0);
             }
         }
-        let slot = self.builder.ins().iconst(pointer, environment.root_slot_index as i64);
-        let root = self.import_runtime_helper(
-            "beskid_rt_v5_closure_environment_root_current",
-            &[pointer, pointer],
-            Some(types::I8),
-        )?;
-        let root_call = self.builder.ins().call(root, &[slot, env_ptr]);
-        let rooted = self.builder.inst_results(root_call).first().copied()?;
-        self.builder.ins().trapz(rooted, TrapCode::unwrap_user(8));
-        Some(env_ptr)
+        Some((env_ptr, root))
     }
 
     pub(super) fn symbol_global(&mut self, symbol: &str, pointer: Type) -> Option<Value> {
@@ -471,6 +509,10 @@ impl IsleContext<'_, '_, '_, '_> {
 
     pub(super) fn direct_call_statement(&mut self, key: AstNodeKey) -> Option<()> {
         self.facts.call_signature(key)?.returns.is_empty().then_some(())?;
+        if self.facts.traced_fiber_join_layout(key).is_some() {
+            self.traced_value_move_call(key, None)?;
+            return Some(());
+        }
         let (call, _) = self.import_direct_call(key)?;
         self.builder.inst_results(call).is_empty().then_some(())?;
         if self.facts.semantic_type(key) == Some(beskid_queries::SemanticTypeId::NEVER) {
@@ -537,33 +579,37 @@ macro_rules! generated_call_methods {
                     }
                 };
             let entry_ptr = self.builder.ins().func_addr(pointer, trampoline);
-            let environment = if let Some(closure) = &entry.closure_environment {
-                self.emit_inline_closure_environment(closure)?
+            let (environment, environment_root) = if let Some(closure) = &entry.closure_environment {
+                let (value, root) = self.emit_inline_closure_environment(closure)?;
+                (value, Some(root))
             } else {
-                self.builder.ins().iconst(pointer, 0)
+                (self.builder.ins().iconst(pointer, 0), None)
             };
-            let cancel_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-                StackSlotKind::ExplicitSlot,
-                pointer.bytes(),
-                pointer.bytes().ilog2() as u8,
-            ));
-            self.builder.ins().stack_store(environment, cancel_slot, 0);
-            let cancel_slot_address = self.builder.ins().stack_addr(pointer, cancel_slot, 0);
             let mut signature = Signature::new(self.builder.func.signature.call_conv);
-            signature.params.push(AbiParam::new(pointer));
             signature.params.push(AbiParam::new(pointer));
             signature.params.push(AbiParam::new(pointer));
             signature.returns.push(AbiParam::new(types::I64));
             let signature = self.builder.func.import_signature(signature);
             let runtime_entry = self.builder.func.import_function(cranelift_codegen::ir::ExtFuncData {
-                name: ExternalName::testcase("beskid_rt_v5_fiber_spawn_with_cancel_slot"),
+                name: ExternalName::testcase("fiber_spawn"),
                 signature,
                 colocated: false,
                 patchable: false,
             });
-            self.builder.ins().call(runtime_entry, &[entry_ptr, environment, cancel_slot_address]);
-            let entry_call = self.builder.ins().call(trampoline, &[environment]);
-            self.builder.inst_results(entry_call).first().copied()
+            let spawn_call = self.builder.ins().call(runtime_entry, &[entry_ptr, environment]);
+            let handle = self.builder.inst_results(spawn_call).first().copied()?;
+            self.release_temporary_root(environment_root)?;
+            let failed =
+                self.builder.ins().icmp_imm(cranelift_codegen::ir::condcodes::IntCC::SignedLessThan, handle, 0);
+            self.builder.ins().trapnz(failed, TrapCode::unwrap_user(5));
+            let request = self.symbol_global(&entry.handle_request_symbol, pointer)?;
+            let allocate =
+                self.import_runtime_helper("beskid_rt_v5_managed_object_allocate", &[pointer], Some(pointer))?;
+            let allocation = self.builder.ins().call(allocate, &[request]);
+            let value = self.builder.inst_results(allocation).first().copied()?;
+            self.builder.ins().trapz(value, TrapCode::unwrap_user(5));
+            self.builder.ins().store(MemFlags::new(), handle, value, entry.handle_field_offset);
+            Some(value)
         }
 
         /// Lower a freestanding [`LambdaExpression`] to a closure value.
@@ -591,7 +637,8 @@ macro_rules! generated_call_methods {
                 };
             let entry_ptr = self.builder.ins().func_addr(pointer, trampoline);
             if let Some(closure) = &entry.closure_environment {
-                self.emit_inline_closure_environment(closure)?;
+                let (_, root) = self.emit_inline_closure_environment(closure)?;
+                self.release_temporary_root(Some(root))?;
             }
             Some(entry_ptr)
         }

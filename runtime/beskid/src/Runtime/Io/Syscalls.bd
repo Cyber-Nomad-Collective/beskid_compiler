@@ -90,9 +90,36 @@ pub i64 SyscallWriteBytes(i32 nativeHandle, pointer data, word len) {
 }
 
 [Export(Abi:"C", Symbol:"beskid_trap_code")]
-pub never Panic(i64 code) { Trap(9, NativePointer(0), 0); }
+pub never Panic(i64 code) { FiberPanic(NativePointer(0)); }
 
 [Export(Abi:"C", Symbol:"beskid_trap_message")]
 pub never PanicStr(pointer message) {
-    Trap(9, StringViewData(message), StringViewLength(message));
+    FiberPanic(message);
+}
+
+// A child panic unwinds by transferring its native context back to the scheduler.
+// The terminal stack is never resumed. A panic outside a fiber, or in a detached
+// fiber, retains process-fatal behavior. Panic codes exposed by Join are always 2.
+pub never FiberPanic(pointer message) {
+    word index = SchedulerCurrentFiber();
+    if index == FIBER_NONE || !FiberExists(index) {
+        Trap(9, StringViewData(message), StringViewLength(message));
+    }
+    pointer fiber = FiberRecord(index);
+    if raw_byte_load(pointer_add(fiber, 40)) != 0 {
+        Trap(9, StringViewData(message), StringViewLength(message));
+    }
+    pointer ownedMessage = StrNew(StringViewData(message), StringViewLength(message));
+    if ownedMessage == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+    raw_word_store(pointer_add(fiber, 56), NativeWord(ownedMessage));
+    raw_word_store(pointer_add(fiber, FIBER_OUTCOME_REASON_OFFSET), 2);
+    raw_word_store(pointer_add(fiber, 48), FIBER_JOIN_PANICKED);
+    raw_word_store(fiber, FIBER_STATE_DONE);
+    if AbiValueClear(pointer_add(fiber, BESKID_FIBER_RECORD_CAPTURE_OFFSET)) == false { Trap(10, NativePointer(0), 0); }
+    raw_word_store(pointer_add(fiber, 16), 0);
+    FiberReleaseStackRoots(index);
+    SaveFiberLocalState(index);
+    SchedulerSetCurrentFiber(FIBER_NONE);
+    ContextSwitch(NativePointer(raw_word_load(pointer_add(fiber, 104))), SchedulerContext());
+    Trap(10, NativePointer(0), 0);
 }

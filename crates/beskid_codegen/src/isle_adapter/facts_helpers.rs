@@ -189,9 +189,10 @@ impl SyntaxNodeFacts<'_> {
 
     pub(super) fn enum_layout_for(&self, key: AstNodeKey) -> Option<EnumLayout> {
         let source = self
-            .query(enum_layout(self.db, key))
-            .or_else(|| self.specialized_enum_constructor(key).map(|fact| fact.layout))
-            .or_else(|| self.enum_match_in_context(key).map(|fact| fact.layout))?;
+            .specialized_enum_constructor(key)
+            .map(|fact| fact.layout)
+            .or_else(|| self.enum_match_in_context(key).map(|fact| fact.layout))
+            .or_else(|| self.query(enum_layout(self.db, key)))?;
         self.enum_layout_from_fact(&source)
     }
 
@@ -362,6 +363,8 @@ impl SyntaxNodeFacts<'_> {
         key: AstNodeKey,
         parameters: &mut Vec<ParameterSlot>,
     ) -> Option<()> {
+        let mut source_position =
+            usize::from(self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::MethodDefinition));
         for child in self.raw_children(key) {
             match self.query(node_kind(self.db, child))? {
                 beskid_queries::IndexedNodeKind::Block => continue,
@@ -373,24 +376,25 @@ impl SyntaxNodeFacts<'_> {
                     let specialization = self
                         .item_specializations
                         .get(&key)
-                        .and_then(|specialization| specialization.signature.parameters.get(parameters.len()))
+                        .and_then(|specialization| specialization.signature.parameters.get(source_position))
                         .copied();
-                    let value_type = specialization
+                    let semantic = specialization
                         .or_else(|| {
                             self.query(item_abi_signature(self.db, key))
-                                .and_then(|signature| signature.parameters.get(parameters.len()).copied())
+                                .and_then(|signature| signature.parameters.get(source_position).copied())
                         })
-                        .or_else(|| self.scalar_semantic_type(identifier))
-                        .and_then(|semantic| {
-                            if matches!(
-                                semantic,
-                                SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING
-                            ) {
-                                self.isa.map(|isa| isa.pointer_type())
-                            } else {
-                                map_scalar_type(semantic)
-                            }
-                        })?;
+                        .or_else(|| self.scalar_semantic_type(identifier))?;
+                    source_position += 1;
+                    if semantic == SemanticTypeId::UNIT {
+                        continue;
+                    }
+                    let value_type = Some(semantic).and_then(|semantic| {
+                        if matches!(semantic, SemanticTypeId::WORD | SemanticTypeId::POINTER | SemanticTypeId::STRING) {
+                            self.isa.map(|isa| isa.pointer_type())
+                        } else {
+                            map_scalar_type(semantic)
+                        }
+                    })?;
                     let managed_reference =
                         if let Some(parameter_name) = self.query(parameter_generic_reference(self.db, child)) {
                             let binding = self

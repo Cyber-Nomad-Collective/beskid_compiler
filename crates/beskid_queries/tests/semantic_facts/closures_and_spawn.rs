@@ -10,6 +10,83 @@ use beskid_queries::{
 use std::sync::Arc;
 
 #[test]
+fn removed_parent_owned_cancel_slot_builtin_is_unavailable() {
+    assert!(beskid_analysis::builtins::builtin_for_path(&["__fiber_spawn_with_cancel_slot".into()]).is_none());
+}
+
+#[test]
+fn inferred_spawn_handle_preserves_nominal_receiver_and_result_identity() {
+    let source = "pub type Fiber<T> { i64 handle, pub unit Cancel() { return; } } i64 Compute() { return 42_i64; } unit Main() { let child = spawn Compute(); child.Cancel(); return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+    assert_eq!(beskid_queries::abi_type(&db, spawn).unwrap(), Some(SemanticTypeId::POINTER));
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 1);
+    let receiver =
+        beskid_queries::generic_nominal_method_receiver(&db, call).unwrap().expect("inferred Fiber receiver");
+    assert_eq!(receiver.substitutions[0].argument, SemanticTypeId::I64);
+}
+
+#[test]
+fn spawn_heap_array_capture_is_transferable_but_native_pointer_is_not() {
+    for (ty, legal) in [("u8[]", true), ("pointer", false)] {
+        let source = format!("i32 Main({ty} buffer) {{ let child = spawn (() => buffer); return 0; }}");
+        let (db, _project, unit, generation, index) = setup(&source);
+        let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+        let fact = spawn_legality(&db, spawn).unwrap().unwrap();
+        assert_eq!(fact.is_legal(), legal, "{ty}: {fact:?}");
+    }
+}
+
+#[test]
+fn moved_and_returned_fiber_bindings_preserve_the_nominal_receiver() {
+    for body in [
+        "let child = spawn Compute(); let next = child; next.Cancel();",
+        "let child = Start(); child.Cancel();",
+        "let next = parameter; next.Cancel();",
+    ] {
+        let source = format!(
+            "pub type Fiber<T> {{ i64 handle, pub unit Cancel() {{ return; }} }} i64 Compute() {{ return 42_i64; }} Fiber<i64> Start() {{ return spawn Compute(); }} unit Main(Fiber<i64> parameter) {{ {body} return; }}"
+        );
+        let (db, _project, unit, generation, index) = setup(&source);
+        let call = beskid_queries::AstNodeKey {
+            unit,
+            generation,
+            node: index.ids_of_kind(NodeKind::CallExpression).last().unwrap(),
+        };
+        let receiver = beskid_queries::generic_nominal_method_receiver(&db, call)
+            .unwrap()
+            .expect("inferred Fiber receiver after ownership transfer");
+        assert_eq!(receiver.substitutions[0].argument, SemanticTypeId::I64, "{body}");
+    }
+}
+
+#[test]
+fn spawn_handle_terminal_ownership_is_checked_from_current_syntax() {
+    for (body, expected) in [
+        ("spawn Compute();", Some("DiscardedHandle")),
+        ("let child = spawn Compute(); child.Join(); child.Join();", Some("UseAfterMove")),
+        ("let child = spawn Compute(); child.Detach(); child.Join();", Some("UseAfterMove")),
+        ("let child = spawn Compute(); child.Cancel(); child.Cancel(); child.Join();", None),
+        ("let child = spawn Compute(); child.Detach();", None),
+        ("let child = spawn Compute(); let next = child; child.Join();", Some("UseAfterMove")),
+        ("let child = spawn Compute(); let next = child; next.Join(); next.Join();", Some("UseAfterMove")),
+        ("let child = spawn Compute(); let next = child; next.Cancel(); next.Join();", None),
+        ("let child = spawn Compute(); if true { child.Join(); } else { child.Detach(); }", None),
+        ("let child = spawn Compute(); if true { child.Join(); } child.Join();", Some("UseAfterMove")),
+        ("let child = spawn Compute(); while true { child.Join(); }", Some("UseAfterMove")),
+    ] {
+        let source = format!("i64 Compute() {{ return 42; }} unit Main() {{ {body} return; }}");
+        let (db, _project, unit, generation, index) = setup(&source);
+        let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+        let fact = spawn_legality(&db, spawn).unwrap().unwrap();
+        match expected {
+            Some(expected) => assert!(format!("{:?}", fact.diagnostics).contains(expected), "{body}: {fact:?}"),
+            None => assert!(fact.is_legal(), "{body}: {fact:?}"),
+        }
+    }
+}
+
+#[test]
 fn closure_environment_reports_only_outer_lexical_captures() {
     let source = r#"i32 Main(i32 outer) {
     let copied = outer;
@@ -41,6 +118,60 @@ fn closure_environment_reports_only_outer_lexical_captures() {
             span: node_span(&db, copied_use).expect("copied use span").expect("copied use span fact"),
         }]
     );
+}
+
+#[test]
+fn spawn_legality_projects_ownership_of_returned_and_parameter_handles() {
+    for body in ["let child = Start(); child.Join(); child.Join();", "parameter.Detach(); parameter.Join();"] {
+        let source = format!(
+            "pub type Fiber<T> {{ i64 handle, }} i64 Compute() {{ return 42_i64; }} Fiber<i64> Start() {{ return spawn Compute(); }} unit Main(Fiber<i64> parameter) {{ let marker = spawn Compute(); {body} return; }}"
+        );
+        let (db, _project, unit, generation, index) = setup(&source);
+        let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 1);
+        let fact = spawn_legality(&db, spawn).unwrap().unwrap();
+        assert!(
+            fact.diagnostics.iter().any(|diagnostic| diagnostic.kind == SpawnDiagnosticKind::UseAfterMove),
+            "{body}: {fact:?}"
+        );
+    }
+}
+
+#[test]
+fn callable_fiber_ownership_covers_handles_without_local_spawn() {
+    for (body, rejected) in [
+        ("let child = Start(); child.Join(); child.Join();", true),
+        ("parameter.Detach(); parameter.Join();", true),
+        ("parameter.Join(); parameter.Cancel();", true),
+        ("let next = parameter; parameter.Join();", true),
+        ("let next = parameter; next.Join(); next.Detach();", true),
+        ("let next = parameter; next.Cancel(); next.Join();", false),
+        ("let child = Start(); if true { child.Join(); } else { child.Detach(); }", false),
+        ("if true { parameter.Join(); } else { parameter.Detach(); }", false),
+        ("if true { parameter.Join(); } parameter.Join();", true),
+        ("parameter.Cancel(); parameter.Cancel(); parameter.Join();", false),
+    ] {
+        let source = format!(
+            "pub type Fiber<T> {{ i64 handle, }} Fiber<i64> Start() {{ return Fiber<i64> {{ handle: 1_i64 }}; }} unit Main(Fiber<i64> parameter) {{ {body} return; }}"
+        );
+        let (db, _project, unit, generation, index) = setup(&source);
+        assert_eq!(index.ids_of_kind(NodeKind::SpawnExpression).count(), 0);
+        let callable = key(unit, generation, &index, NodeKind::FunctionDefinition, 1);
+        let fact = beskid_queries::callable_fiber_ownership(&db, callable).unwrap().unwrap();
+        assert_eq!(fact.callable, callable);
+        assert_eq!(
+            fact.diagnostics.iter().any(|diagnostic| diagnostic.kind == SpawnDiagnosticKind::UseAfterMove),
+            rejected,
+            "{body}: {fact:?}"
+        );
+        assert!(
+            beskid_queries::callable_fiber_ownership(
+                &db,
+                beskid_queries::AstNodeKey { generation: SyntaxGenerationId(generation.0 + 1), ..callable }
+            )
+            .unwrap()
+            .is_none()
+        );
+    }
 }
 
 #[test]

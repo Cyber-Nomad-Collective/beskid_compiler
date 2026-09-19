@@ -16,7 +16,7 @@ fn jit_runs_zero_capture_lambda_spawn_under_fiber_scheduler() {
     let mut engine =
         Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).expect("load exact native runtime kit");
 
-    let source = "i64 Main() { spawn (() => 42_i64); return 5; }";
+    let source = "pub type Fiber<T> { i64 handle, } i64 Main() { let child = spawn (() => 42_i64); return 5; }";
     let prepared = prepare_jit_entrypoint(Path::new("spawn_lambda.bd"), source, "Main")
         .expect("syntax-owned lambda spawn must prepare for JIT");
     engine.compile_artifact(&prepared.artifact).expect("syntax-owned lambda spawn must compile in the JIT");

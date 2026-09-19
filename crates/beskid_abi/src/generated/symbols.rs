@@ -55,7 +55,6 @@ pub const SYM_FIBER_JOIN_VALUE: &str = "fiber_join_value";
 pub const SYM_FIBER_NOW_MILLIS: &str = "fiber_now_millis";
 pub const SYM_FIBER_PROCESSOR_COUNT: &str = "fiber_processor_count";
 pub const SYM_FIBER_SPAWN: &str = "fiber_spawn";
-pub const SYM_FIBER_SPAWN_WITH_CANCEL_SLOT: &str = "fiber_spawn_with_cancel_slot";
 pub const SYM_FIBER_YIELD: &str = "fiber_yield";
 pub const SYM_FS_DELETE: &str = "fs_delete";
 pub const SYM_FS_EXISTS: &str = "fs_exists";

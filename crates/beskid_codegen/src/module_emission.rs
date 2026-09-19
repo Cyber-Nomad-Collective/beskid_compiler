@@ -7,6 +7,17 @@ mod specialization;
 mod trace;
 mod trampolines;
 
+/// Canonical source callees invoked by compiler-generated scheduler entry/return trampolines.
+/// They are explicit reachability roots because indirect context entry is not a source call.
+pub(crate) const SCHEDULER_ENTRY_HELPERS: &[&str] = &[
+    "SchedulerContext",
+    "SchedulerSetCurrentFiber",
+    "ContextSwitch",
+    "SchedulerCurrentFiber",
+    "FiberRecord",
+    "FiberDone",
+];
+
 pub use contracts::SyntaxModuleEmissionError;
 pub use data::{DescriptorHandles, emit_closure_static_plans, emit_string_literals, emit_type_descriptors};
 pub use items::SyntaxModuleItem;

@@ -212,6 +212,11 @@ pub(in crate::semantic_contract) fn abi_type_tracked(
     key: AstNodeKey,
 ) -> SemanticQueryResult<SemanticTypeId> {
     with_node(db, syntax, key, |program, index, node| {
+        if node.of::<beskid_analysis::syntax::SpawnExpression>().is_some() {
+            return Some(spawn_handle_type(db, key).and_then(|fact| {
+                fact.map(|_| SemanticTypeId::POINTER).ok_or_else(|| SemanticError::unavailable("abi_type"))
+            }));
+        }
         if let Some(binary) = node.of::<beskid_analysis::syntax::BinaryExpression>() {
             return Some(abi_type_for_binary_expression(db, program, index, key, binary));
         }
@@ -345,6 +350,10 @@ pub(in crate::semantic_contract) fn abi_type_for_expression(
     use beskid_analysis::syntax::Expression;
 
     match expression {
+        Expression::Spawn(_) => {
+            let spawn = normalized_expression_node(index, key.node);
+            abi_type(db, AstNodeKey { node: spawn, ..key })?.ok_or_else(|| SemanticError::unavailable("abi_type"))
+        }
         Expression::Literal(literal) => Ok(semantic_type_for_literal(&literal.node.literal.node)),
         Expression::Path(path) => abi_type_for_local_path(db, program, index, key, &path.node.path.node),
         Expression::Grouped(_) => {

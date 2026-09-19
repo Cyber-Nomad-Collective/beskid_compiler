@@ -1457,6 +1457,94 @@
       ]
     },
     {
+      "name": "__fiber_join_detail",
+      "adapter": "fiber_join_detail",
+      "params": [
+        {
+          "name": "fiberId",
+          "type": "i64"
+        },
+        {
+          "name": "detail",
+          "type": "usize"
+        }
+      ],
+      "result": "i64",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_join_detail",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_join_detail",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_join_detail",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fiber_join_error_finish",
+      "adapter": "fiber_join_error_finish",
+      "params": [
+        {
+          "name": "fiberId",
+          "type": "i64"
+        }
+      ],
+      "result": "u8",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_join_error_finish",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_join_error_finish",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_join_error_finish",
+          "osImports": []
+        }
+      ]
+    },
+    {
+      "name": "__fiber_join_message",
+      "adapter": "fiber_join_message",
+      "params": [
+        {
+          "name": "fiberId",
+          "type": "i64"
+        }
+      ],
+      "result": "pointer",
+      "targetBindings": [
+        {
+          "target": "aarch64-apple-darwin",
+          "implementation": "fiber_join_message",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-pc-windows-msvc",
+          "implementation": "fiber_join_message",
+          "osImports": []
+        },
+        {
+          "target": "x86_64-unknown-linux-gnu",
+          "implementation": "fiber_join_message",
+          "osImports": []
+        }
+      ]
+    },
+    {
       "name": "__fiber_join_status",
       "adapter": "fiber_join_status",
       "params": [
@@ -1491,9 +1579,13 @@
         {
           "name": "fiberId",
           "type": "i64"
+        },
+        {
+          "name": "destination",
+          "type": "pointer"
         }
       ],
-      "result": "i64",
+      "result": "u8",
       "targetBindings": [
         {
           "target": "aarch64-apple-darwin",

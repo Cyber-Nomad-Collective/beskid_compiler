@@ -492,6 +492,14 @@ pub fn spawn_legality(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<Spawn
     with_registered_syntax(db, key, spawn_legality_tracked)
 }
 
+pub fn callable_fiber_ownership(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<FiberOwnership> {
+    with_registered_syntax(db, key, callable_fiber_ownership_tracked)
+}
+
+pub fn spawn_handle_type(db: &dyn Db, key: AstNodeKey) -> SemanticQueryResult<SpawnHandleType> {
+    with_registered_syntax(db, key, spawn_handle_type_tracked)
+}
+
 /// Return source-only zero-argument spawn-entry validation for the current syntax generation.
 ///
 /// This validation does not claim a generated trampoline, closure allocation, or runtime fiber

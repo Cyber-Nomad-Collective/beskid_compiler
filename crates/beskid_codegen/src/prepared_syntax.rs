@@ -123,7 +123,15 @@ pub fn lower_canonical_runtime_prepared_syntax(
     }
     let mut items = Vec::new();
     let mut selected = HashSet::new();
-    for (export, entry) in &exported_items {
+    let mut entry_roots = exported_items.iter().map(|(name, key)| (name.clone(), *key)).collect::<Vec<_>>();
+    for key in input.roots().iter().copied().flat_map(|root| function_definitions(input.database(), root)) {
+        if let Some(name) = item_name(input.database(), key)?
+            && crate::module_emission::SCHEDULER_ENTRY_HELPERS.contains(&name.as_ref())
+        {
+            entry_roots.push((name.to_string(), key));
+        }
+    }
+    for (export, entry) in &entry_roots {
         let entry = *entry;
         let program = input
             .roots()

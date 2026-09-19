@@ -351,6 +351,17 @@ impl DirectCallee {
 pub struct SpawnEntry {
     pub trampoline: DirectCallee,
     pub closure_environment: Option<InlineClosureEnvironment>,
+    pub handle_request_symbol: std::sync::Arc<str>,
+    pub handle_field_offset: i32,
+}
+
+/// Manifest-derived destination slot and boxed-value offsets for typed Fiber Join.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TracedFiberJoinLayout {
+    pub slot_size: u32,
+    pub alignment_shift: u8,
+    pub payload_offset: i32,
+    pub value_offset: i32,
 }
 
 /// One transferable capture field stored into an ABI-v5 closure environment before a call/spawn.
@@ -370,7 +381,6 @@ pub struct InlineCaptureField {
 pub struct InlineClosureEnvironment {
     pub allocation_request_symbol: std::sync::Arc<str>,
     pub descriptor_symbol: std::sync::Arc<str>,
-    pub root_slot_index: u64,
     pub captures: Vec<InlineCaptureField>,
 }
 
@@ -627,6 +637,9 @@ pub trait NodeFacts {
         None
     }
     fn spawn_entry(&self, _key: AstNodeKey) -> Option<SpawnEntry> {
+        None
+    }
+    fn traced_fiber_join_layout(&self, _key: AstNodeKey) -> Option<TracedFiberJoinLayout> {
         None
     }
     fn lambda_entry(&self, _key: AstNodeKey) -> Option<LambdaEntry> {

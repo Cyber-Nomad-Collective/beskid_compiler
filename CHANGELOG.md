@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Return typed `Fiber<T>` handles from `spawn`, with generation-bound move-only
+  ownership facts and rooted capture/result transport through `BeskidAbiValue`.
+- Exercise forced-GC Fiber array, aggregate, and opaque resource transfer through
+  production source lowering in JIT, static AOT, and native runtime-kit modes.
 - Define the Foundation `BeskidAbiValue` transport slot in the runtime manifest and
   generate its runtime offsets alongside ABI metadata. Add traced initialize,
   replacement, move, and clear operations with heap ownership and root retention.
@@ -17,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Schedule spawned entries only through the runtime-owned child context; make
+  Join move once, Detach consume ownership, and Cancel preserve its first request.
+  Retain child panic as a typed result and release abandoned child-stack roots.
+- Keep Fiber record stride and scheduler allocation in the generated manifest
+  layout, and rescan shutdown children so recursively detached work does not run.
+- Erase zero-sized generic arguments at the ordinary ABI boundary while preserving
+  their effects and concrete enum layouts, including `Fiber<unit>.Join()`.
 - Bind traced ABI-value ownership to its stable slot address; reject byte copies
   even into generic registered roots or already-live ABI slots.
 - Emit the required `packageKind: "library"` discriminator in every library

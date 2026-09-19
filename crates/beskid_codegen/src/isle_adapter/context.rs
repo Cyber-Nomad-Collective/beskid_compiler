@@ -90,7 +90,6 @@ impl<'db> SyntaxNodeFacts<'db> {
         Some(InlineClosureEnvironment {
             allocation_request_symbol: authority.plan.allocation_request_symbol.into(),
             descriptor_symbol: authority.plan.descriptor_symbol.into(),
-            root_slot_index: authority.root.slot_index,
             captures,
         })
     }

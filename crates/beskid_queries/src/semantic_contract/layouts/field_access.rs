@@ -319,6 +319,9 @@ pub(in crate::semantic_contract) fn nominal_local_receiver_declaration(
         };
         return Some((declaration, receiver));
     }
+    if let Some(handle) = inferred_spawn_handle(db, receiver) {
+        return Some((handle.declaration, receiver));
+    }
     let path = explicit_local_complex_type_path(program, index, local)?;
     resolve_type_declaration(db, key, path).map(|declaration| (declaration, receiver))
 }

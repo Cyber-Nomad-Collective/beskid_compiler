@@ -48,7 +48,7 @@ pub bool SchedStep() {
     return true;
 }
 
-// Run the scheduler until quiescence. Returns the main fiber's result.
+// Run the scheduler until quiescence. Typed results remain owned by their handles.
 pub i64 SchedRun() {
     SchedInit();
     while true {
@@ -71,13 +71,6 @@ pub i64 SchedRun() {
             if anyAlive { Trap(7, NativePointer(0), 0); }
             break;
         }
-    }
-    pointer table = SchedTable();
-    word main = raw_word_load(pointer_add(table, 8));
-    if main != FIBER_NONE && FiberExists(main) {
-        word status = FiberJoinStatusWord(main);
-        if status == FIBER_JOIN_OK { return i64(raw_word_load(pointer_add(FiberRecord(main), 56))); }
-        if status != FIBER_JOIN_NOT_DONE { Trap(6, NativePointer(0), 0); }
     }
     return 0;
 }

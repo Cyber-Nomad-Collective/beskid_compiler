@@ -227,10 +227,22 @@ pub(in crate::semantic_contract) fn abi_local_declaration_type(
             .node_at(program, parent)?
             .of::<beskid_analysis::syntax::Parameter>()
             .map(|parameter| abi_type_from_syntax(db, key, &parameter.ty.node)),
+        beskid_analysis::syntax_query::NodeKind::LambdaParameter => {
+            index.node_at(program, parent)?.of::<beskid_analysis::syntax::LambdaParameter>().map(|parameter| {
+                parameter
+                    .ty
+                    .as_ref()
+                    .ok_or_else(|| SemanticError::unavailable("abi_type"))
+                    .and_then(|ty| abi_type_from_syntax(db, key, &ty.node))
+            })
+        }
         beskid_analysis::syntax_query::NodeKind::LetStatement => {
             index.node_at(program, parent)?.of::<beskid_analysis::syntax::LetStatement>().map(|statement| {
                 statement.type_annotation.as_ref().map_or_else(
-                    || Err(SemanticError::unavailable("abi_type")),
+                    || {
+                        value_abi_type(db, AstNodeKey { node: parent, ..key })?
+                            .ok_or_else(|| SemanticError::unavailable("abi_type"))
+                    },
                     |syntax_type| abi_type_from_syntax(db, key, &syntax_type.node),
                 )
             })
