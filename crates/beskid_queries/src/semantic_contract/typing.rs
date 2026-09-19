@@ -26,6 +26,19 @@ pub(super) fn managed_reference_kind_tracked(
             return Some(managed_reference_kind_for_syntax_type(&parameter.ty.node));
         }
         if let Some(statement) = node.of::<beskid_analysis::syntax::LetStatement>() {
+            if statement.type_annotation.is_none() {
+                return Some(
+                    index
+                        .direct_child_id(
+                            program,
+                            key.node,
+                            beskid_analysis::syntax_query::DynNodeRef::from(&statement.value),
+                        )
+                        .ok_or_else(|| SemanticError::unavailable("managed_reference_kind"))
+                        .and_then(|node| managed_reference_kind(db, AstNodeKey { node, ..key }))
+                        .and_then(|kind| kind.ok_or_else(|| SemanticError::unavailable("managed_reference_kind"))),
+                );
+            }
             return Some(
                 statement
                     .type_annotation
@@ -51,21 +64,14 @@ pub(super) fn managed_reference_kind_tracked(
                 }
                 return Some(managed_reference_kind_for_syntax_type(&parameter.ty.node));
             }
-            if let Some(statement) =
-                index.node_at(program, parent).and_then(|parent| parent.of::<beskid_analysis::syntax::LetStatement>())
+            if index
+                .node_at(program, parent)
+                .and_then(|parent| parent.of::<beskid_analysis::syntax::LetStatement>())
+                .is_some()
             {
                 return Some(
-                    statement
-                        .type_annotation
-                        .as_ref()
-                        .ok_or_else(|| SemanticError::unavailable("managed_reference_kind"))
-                        .and_then(|annotation| {
-                            if type_syntax_is_enclosing_generic_parameter_reference(db, key, &annotation.node) {
-                                Err(SemanticError::unavailable("managed_reference_kind"))
-                            } else {
-                                managed_reference_kind_for_syntax_type(&annotation.node)
-                            }
-                        }),
+                    managed_reference_kind(db, AstNodeKey { node: parent, ..key })
+                        .and_then(|kind| kind.ok_or_else(|| SemanticError::unavailable("managed_reference_kind"))),
                 );
             }
         }

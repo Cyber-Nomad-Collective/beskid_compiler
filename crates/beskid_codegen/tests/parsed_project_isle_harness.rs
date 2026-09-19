@@ -286,6 +286,21 @@ fn reachable_callable_rejects_repeatable_fiber_capture_and_inferred_method_doubl
 }
 
 #[test]
+fn one_shot_spawn_capture_entry_spellings_reach_production_lowering() {
+    for suffix in ["", "()"] {
+        let source = format!(
+            "pub type Fiber<T> {{ i64 handle, pub i64 Join() {{ return 1_i64; }} }} i64 Compute() {{ return 42_i64; }} i64 Main() {{ let child = spawn Compute(); let next = spawn (() => child.Join()){suffix}; return 0_i64; }}"
+        );
+        let project = tempfile::tempdir().unwrap();
+        let assembly = parse_production_units(project.path(), &[("Main.bd", "Main", &source)]);
+        let (target, isa) = x86_64_target_and_isa();
+        let lowered = with_db(|db| lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa.as_ref()))
+            .unwrap_or_else(|error| panic!("one-shot spawn suffix {suffix:?}: {error}"));
+        assert!(lowered.artifact.extern_imports.iter().any(|import| import.symbol == "fiber_spawn"));
+    }
+}
+
+#[test]
 fn parsed_direct_zero_argument_spawn_emits_syntax_owned_trampoline_and_fiber_dispatch() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "

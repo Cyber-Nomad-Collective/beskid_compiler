@@ -87,6 +87,48 @@ fn spawn_handle_terminal_ownership_is_checked_from_current_syntax() {
 }
 
 #[test]
+fn closure_environment_retains_only_resolved_nominal_method_receivers() {
+    for (method, expected) in [("Join", 1), ("Missing", 0)] {
+        let source = format!(
+            "pub type Fiber<T> {{ i64 handle, pub i64 Join() {{ return 1_i64; }} }} unit Main(Fiber<i64> child) {{ let next = spawn (() => child.{method}()); return; }}"
+        );
+        let (db, _project, unit, generation, index) = setup(&source);
+        let lambda = key(unit, generation, &index, NodeKind::LambdaExpression, 0);
+        let captures = closure_environment(&db, lambda).unwrap().unwrap().captures;
+        assert_eq!(captures.len(), expected, "{method}: {captures:?}");
+        if expected == 1 {
+            assert_eq!(captures[0].class, CaptureStorageClass::TransferableValue);
+            let path =
+                key_at_start(unit, generation, &index, NodeKind::PathExpression, source.find("child.Join").unwrap());
+            assert_eq!(capture_storage(&db, path).unwrap().unwrap().declaration, captures[0].declaration);
+        }
+    }
+    let source = "pub type Fiber<T> { i64 handle, pub i64 Join() { return 1_i64; } } unit Main() { mut Fiber<i64> child = Fiber<i64> { handle: 1_i64 }; let next = spawn (() => child.Join())(); return; }";
+    let (db, _project, unit, generation, index) = setup(source);
+    let spawn = key(unit, generation, &index, NodeKind::SpawnExpression, 0);
+    let legality = spawn_legality(&db, spawn).unwrap().unwrap();
+    assert!(legality.diagnostics.iter().any(|d| d.kind == SpawnDiagnosticKind::StackReferenceEscapesSpawn));
+}
+
+#[test]
+fn inferred_capture_provenance_uses_source_identity_not_pointer_abi() {
+    for (initializer, expected) in [
+        ("spawn Compute()", CaptureStorageClass::TransferableValue),
+        ("buffer", CaptureStorageClass::TransferableValue),
+        ("native", CaptureStorageClass::StackReference),
+    ] {
+        let source = format!(
+            "pub type Fiber<T> {{ i64 handle, }} i64 Compute() {{ return 42_i64; }} unit Main(u8[] buffer, pointer native) {{ let value = {initializer}; let next = spawn (() => value); return; }}"
+        );
+        let (db, _project, unit, generation, index) = setup(&source);
+        let lambda = key(unit, generation, &index, NodeKind::LambdaExpression, 0);
+        let captures = closure_environment(&db, lambda).unwrap().unwrap().captures;
+        assert_eq!(captures.len(), 1);
+        assert_eq!(captures[0].class, expected, "{initializer}");
+    }
+}
+
+#[test]
 fn closure_environment_reports_only_outer_lexical_captures() {
     let source = r#"i32 Main(i32 outer) {
     let copied = outer;
@@ -183,6 +225,9 @@ fn fiber_ownership_rejects_repeatable_closures_consuming_captures() {
         ("let run = () => child.Cancel(); run(); run(); child.Join();", false),
         ("let run = () => 42_i64; run(); run(); child.Join();", false),
         ("let next = spawn (() => child.Join());", false),
+        ("let next = spawn (() => child.Join())();", false),
+        ("let next = spawn (() => child.Join())(); child.Join();", true),
+        ("let run = () => child.Join(); let next = spawn run();", true),
     ] {
         let source = format!(
             "pub type Fiber<T> {{ i64 handle, pub i64 Join() {{ return 1_i64; }} pub unit Cancel() {{ return; }} }} i64 Compute() {{ return 42_i64; }} unit Main() {{ let child = spawn Compute(); {body} return; }}"

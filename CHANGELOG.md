@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Share spawn-entry normalization when checking one-shot Fiber captures, including
+  the empty-call lambda spelling. Retain resolved nominal method receivers in
+  closure environments and preserve inferred managed-value capture provenance.
 - Reject repeatable closures that consume captured Fiber handles and track inferred
   factory-method Fiber results, including generic result substitutions.
 - Schedule spawned entries only through the runtime-owned child context; make

@@ -163,6 +163,26 @@ pub(super) fn closure_call_target_tracked(
     }))
 }
 
+/// Capture local values and source-resolved nominal method receivers using the
+/// same declaration identity as ordinary method calls. Unknown qualified paths
+/// are not evidence of a captured receiver.
+fn closure_capture_declaration(
+    db: &dyn Db,
+    program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
+    index: &beskid_analysis::syntax_query::SyntaxIndex,
+    key: AstNodeKey,
+    path: &beskid_analysis::syntax::Path,
+) -> Option<AstNodeKey> {
+    if let [segment] = path.segments.as_slice() {
+        if !segment.node.type_args.is_empty() {
+            return None;
+        }
+        return resolve_lexical_declaration(program, index, key.node, &segment.node.name.node.name)
+            .map(|node| AstNodeKey { node, ..key });
+    }
+    nominal_local_member_receiver(db, program, index, key, path).map(|(_, receiver)| receiver)
+}
+
 pub(super) fn closure_captures(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
@@ -180,18 +200,14 @@ pub(super) fn closure_captures(
         let Some(path) = node.of::<beskid_analysis::syntax::PathExpression>() else {
             return Err(SemanticError::unavailable("closure_environment"));
         };
-        let Some(declaration) = resolve_lexical_declaration(
-            program,
-            index,
-            path_id,
-            path.path.node.segments.first().map(|segment| segment.node.name.node.name.as_str()).unwrap_or_default(),
-        ) else {
+        let Some(declaration) =
+            closure_capture_declaration(db, program, index, AstNodeKey { node: path_id, ..lambda }, &path.path.node)
+        else {
             continue;
         };
-        if path.path.node.segments.len() != 1 || is_ancestor(index, lambda.node, declaration) {
+        if is_ancestor(index, lambda.node, declaration.node) {
             continue;
         }
-        let declaration = AstNodeKey { node: declaration, ..lambda };
         if captures.iter().any(|capture| capture.declaration == declaration) {
             continue;
         }
@@ -225,14 +241,7 @@ pub(super) fn capture_storage_for_node(
     node: beskid_analysis::syntax_query::DynNodeRef<'_>,
 ) -> Option<Result<CaptureStorage, SemanticError>> {
     let path = node.of::<beskid_analysis::syntax::PathExpression>()?;
-    let [segment] = path.path.node.segments.as_slice() else {
-        return None;
-    };
-    if !segment.node.type_args.is_empty() {
-        return None;
-    }
-    let declaration = resolve_lexical_declaration(program, index, key.node, segment.node.name.node.name.as_str())?;
-    let declaration = AstNodeKey { node: declaration, ..key };
+    let declaration = closure_capture_declaration(db, program, index, key, &path.path.node)?;
     let span = node.span()?;
     Some(capture_storage_class(db, program, index, declaration).map(|class| CaptureStorage {
         declaration,
@@ -730,15 +739,12 @@ fn spawn_handle_diagnostics(
                 // Ordinary closures are repeatable; they cannot own a consuming
                 // Fiber capture. A lambda directly transferred to spawn has one
                 // invocation and is checked as that one-shot ownership transfer.
-                let mut container = parent;
-                while let Some(wrapper) = parent_node(index, container) {
-                    if matches!(index.kind(wrapper), Some(NodeKind::Expression | NodeKind::GroupedExpression)) {
-                        container = wrapper;
-                    } else {
-                        repeated_move |= index.kind(wrapper) != Some(NodeKind::SpawnExpression);
-                        break;
-                    }
-                }
+                // The spawn-target fact shares spawn_entry_operand normalization
+                // with emission, including the empty-call entry spelling.
+                let one_shot = nearest_ancestor(index, parent, |kind| kind == NodeKind::SpawnExpression)
+                    .and_then(|node| spawn_target(db, AstNodeKey { node, ..key }).ok().flatten())
+                    .is_some_and(|target| target.callee.node == parent);
+                repeated_move |= !one_shot;
             }
             if index.kind(parent) == Some(NodeKind::IfStatement)
                 && matches!(index.kind(child), Some(NodeKind::Block | NodeKind::ElseBranch))
