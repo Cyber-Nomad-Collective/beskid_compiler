@@ -412,14 +412,16 @@ pub(super) fn spawn_handle_type_tracked(
     syntax: SyntaxUnitInput,
     key: AstNodeKey,
 ) -> SemanticQueryResult<SpawnHandleType> {
-    let Some(legality) = spawn_legality_tracked(db, syntax, key)?.filter(SpawnLegality::is_legal) else {
+    // Source identity is needed to compute ownership, so it cannot depend on
+    // ownership legality. Only spawn legality/entry validation authorize emission.
+    let Some(target) = spawn_target_tracked(db, syntax, key)? else {
         return Ok(None);
     };
     let declaration =
         layouts::unique_assembled_type_in_module(db, key, &["Concurrency".into(), "Fiber".into()], "Fiber", 1)
             .or_else(|| unique_type_in_unit(db, key.unit, key.generation, "Fiber", 1))
             .ok_or_else(|| SemanticError::unavailable("spawn_handle_type"))?;
-    let target = legality.target.callee;
+    let target = target.callee;
     let identity = if let Some(lambda) = closure_signature(db, target)? {
         generic_source_expression_identity(db, lambda.body)?
     } else {
@@ -608,15 +610,16 @@ fn fiber_type_declaration(db: &dyn Db, key: AstNodeKey, ty: &beskid_analysis::sy
     (actual == fiber).then_some(actual)
 }
 
-/// Seed ownership from declared parameters/locals, spawn, or a direct callable's declared result.
-/// This deliberately does not query spawn legality or receiver lowering: those consume this fact.
+/// Seed ownership from declared parameters/locals, spawn, or resolved callable result identity.
+/// Ordinary source identity preserves method receiver and generic substitutions, without
+/// deriving nominal ownership from a pointer-shaped ABI or querying ownership legality.
 fn fiber_owner_seed(
     db: &dyn Db,
     program: &beskid_analysis::syntax::Spanned<beskid_analysis::syntax::Program>,
     index: &beskid_analysis::syntax_query::SyntaxIndex,
     key: AstNodeKey,
 ) -> Option<beskid_analysis::syntax::AstNodeId> {
-    use beskid_analysis::syntax::{Expression, LetStatement, Parameter};
+    use beskid_analysis::syntax::{LetStatement, Parameter};
     let node = index.node_at(program, key.node)?;
     if let Some(parameter) = node.of::<Parameter>() {
         fiber_type_declaration(db, key, &parameter.ty.node)?;
@@ -634,21 +637,16 @@ fn fiber_owner_seed(
         true
     } else if let Some(annotation) = &binding.type_annotation {
         fiber_type_declaration(db, key, &annotation.node).is_some()
-    } else if let Some(call) = index.node_at(program, initializer)?.of::<beskid_analysis::syntax::CallExpression>() {
-        let Expression::Path(path) = &call.callee.node else {
+    } else if index.kind(initializer) == Some(beskid_analysis::syntax_query::NodeKind::CallExpression) {
+        let GenericSourceTypeIdentity::Nominal { qualified_name, arguments } =
+            generic_source_expression_identity(db, AstNodeKey { node: initializer, ..key }).ok()?
+        else {
             return None;
         };
-        let first = path.node.path.node.segments.first()?;
-        if resolve_lexical_declaration(program, index, initializer, &first.node.name.node.name).is_some() {
-            return None;
-        }
-        let declaration = resolve_item_declaration(db, program, index, key, &path.node.path.node)?;
-        let target = db.syntax_unit(declaration.unit)?;
-        let function = target
-            .syntax_index(db)
-            .node_at(target.expanded_program(db), declaration.node)?
-            .of::<beskid_analysis::syntax::FunctionDefinition>()?;
-        fiber_type_declaration(db, declaration, &function.return_type.as_ref()?.node).is_some()
+        let fiber =
+            layouts::unique_assembled_type_in_module(db, key, &["Concurrency".into(), "Fiber".into()], "Fiber", 1)
+                .or_else(|| unique_type_in_unit(db, key.unit, key.generation, "Fiber", 1))?;
+        stable_declaration_identity(db, fiber)? == qualified_name && arguments.len() == 1
     } else {
         false
     };
@@ -728,6 +726,20 @@ fn spawn_handle_diagnostics(
         let mut repeated_move = false;
         let mut child = use_id;
         while let Some(parent) = parent_node(index, child) {
+            if index.kind(parent) == Some(NodeKind::LambdaExpression) && !is_ancestor(index, parent, local) {
+                // Ordinary closures are repeatable; they cannot own a consuming
+                // Fiber capture. A lambda directly transferred to spawn has one
+                // invocation and is checked as that one-shot ownership transfer.
+                let mut container = parent;
+                while let Some(wrapper) = parent_node(index, container) {
+                    if matches!(index.kind(wrapper), Some(NodeKind::Expression | NodeKind::GroupedExpression)) {
+                        container = wrapper;
+                    } else {
+                        repeated_move |= index.kind(wrapper) != Some(NodeKind::SpawnExpression);
+                        break;
+                    }
+                }
+            }
             if index.kind(parent) == Some(NodeKind::IfStatement)
                 && matches!(index.kind(child), Some(NodeKind::Block | NodeKind::ElseBranch))
             {

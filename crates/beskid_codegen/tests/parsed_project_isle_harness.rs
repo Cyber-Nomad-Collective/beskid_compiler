@@ -267,6 +267,25 @@ fn reachable_callable_rejects_moved_fiber_parameters_without_local_spawn() {
 }
 
 #[test]
+fn reachable_callable_rejects_repeatable_fiber_capture_and_inferred_method_double_join() {
+    for body in [
+        "let child = factory.Start(); let run = () => child.Join(); run(); run();",
+        "let child = factory.Start(); child.Join(); child.Join();",
+    ] {
+        let source = format!(
+            "pub type Fiber<T> {{ i64 handle, pub unit Join() {{ return; }} }} pub type Factory<T> {{ T value, pub Fiber<T> Start() {{ return Fiber<T> {{ handle: 1_i64 }}; }} }} unit Consume(Factory<i64> factory) {{ {body} return; }} unit Main() {{ Factory<i64> factory = Factory<i64> {{ value: 1_i64 }}; Consume(factory); return; }}"
+        );
+        let temporary = tempfile::tempdir().unwrap();
+        let assembly = parse_production_units(temporary.path(), &[("Main.bd", "Main", &source)]);
+        let (target, isa) = x86_64_target_and_isa();
+        let error = with_db(|db| lower_syntax_assembly_entrypoint(db, assembly, "Main", target, isa.as_ref()))
+            .err()
+            .expect("invalid inferred Fiber ownership rejected before emission");
+        assert!(error.to_string().contains("UseAfterMove"), "{body}: {error}");
+    }
+}
+
+#[test]
 fn parsed_direct_zero_argument_spawn_emits_syntax_owned_trampoline_and_fiber_dispatch() {
     let project = tempfile::tempdir().expect("project directory");
     let source = "

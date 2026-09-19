@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reject repeatable closures that consume captured Fiber handles and track inferred
+  factory-method Fiber results, including generic result substitutions.
 - Schedule spawned entries only through the runtime-owned child context; make
   Join move once, Detach consume ownership, and Cancel preserve its first request.
   Retain child panic as a typed result and release abandoned child-stack roots.
