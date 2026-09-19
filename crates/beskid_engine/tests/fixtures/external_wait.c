@@ -129,12 +129,26 @@ static void *deadlock_entry(void *argument) {
 }
 
 static int descriptors[2];
+static int retry_descriptors[2];
 static int64_t reader;
 static int resumed;
 static void *read_entry(void *argument) {
     unsigned char byte = 0;
     assert(syscall_read_bytes(descriptors[0], &byte, 1) == -1);
     resumed++;
+    assert(beskid_rt_v5_external_active_count() == 0);
+    /* Cancellation is a persistent fiber property, not a one-wait message.
+     * Repeated Cancel is accepted without publishing another cancel command. */
+    assert(fiber_cancel(fiber_current_id(), 10));
+    alarm(3);
+    assert(beskid_rt_v5_external_sleep_until(clock_monotonic_nanos() + 30000000000) == 3);
+    assert(beskid_rt_v5_external_active_count() == 0);
+    assert(fiber_cancel(fiber_current_id(), 11));
+    assert(syscall_read_bytes(retry_descriptors[0], &byte, 1) == -1);
+    assert(byte == 0 && beskid_rt_v5_external_active_count() == 0);
+    assert(beskid_rt_v5_external_sleep_until(clock_monotonic_nanos() + 30000000000) == 3);
+    assert(beskid_rt_v5_external_active_count() == 0);
+    alarm(0);
     return argument;
 }
 static void *cancel_entry(void *argument) {
@@ -147,6 +161,7 @@ static void *late_completion_entry(void *argument) {
     assert((uint32_t)fiber_current_id() != (uint32_t)reader);
     assert(beskid_rt_v5_external_active_count() == 1);
     assert(write(descriptors[1], "x", 1) == 1);
+    assert(write(retry_descriptors[1], "y", 1) == 1);
     post_pair();
     return argument;
 }
@@ -252,6 +267,7 @@ int RunExternalWaitFixture(TryComplete complete, int deadlock) {
     close(descriptors[0]); close(descriptors[1]);
     assert(pipe(descriptors) == 0);
     reader = fiber_spawn((void *)read_entry, value);
+    assert(pipe(retry_descriptors) == 0);
     int64_t canceler = fiber_spawn((void *)cancel_entry, value);
     assert(fiber_join_status(reader) == 1);
     assert(resumed == 1); /* cancellation must return through the owner operation */
@@ -269,6 +285,7 @@ int RunExternalWaitFixture(TryComplete complete, int deadlock) {
     assert(detached_started && beskid_rt_v5_external_active_count() == 1);
     gc_unregister_root(&value);
     close(descriptors[0]); close(descriptors[1]);
+    close(retry_descriptors[0]); close(retry_descriptors[1]);
     alarm(3); /* a detached deadline must not retain scheduler liveness */
     beskid_rt_v5_process_shutdown(runtime);
     alarm(0);

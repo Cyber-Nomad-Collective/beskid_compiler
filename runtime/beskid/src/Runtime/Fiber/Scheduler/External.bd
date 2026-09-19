@@ -179,6 +179,14 @@ pub word ExternalWaitPark(word token) {
     pointer record = ExternalWaitRecord(token);
     word current = SchedulerCurrentFiber();
     if record == NativePointer(0) || current == FIBER_NONE || raw_word_load(pointer_add(record, 8)) != FiberHandle(current) { return 0; }
+    // Cancellation stays attached to the fiber across operation returns. A
+    // repeated Cancel need not enqueue another command, and its slot can be
+    // published before ApplyPendingCancels has set the scheduler flag.
+    pointer fiber = FiberRecord(current);
+    pointer cancel = NativePointer(raw_word_load(pointer_add(fiber, 24)));
+    if raw_byte_load(pointer_add(fiber, 41)) != 0 || (cancel != NativePointer(0) && raw_word_load(cancel) != 0) {
+        ExternalTryComplete(token & 0xFFFFFFFF, token >> 32, EXTERNAL_CANCELLED);
+    }
     // A completion received before park is observed without a context switch.
     ExternalPump(clock_monotonic_nanos());
     if raw_word_load(pointer_add(record, 32)) == 0 {

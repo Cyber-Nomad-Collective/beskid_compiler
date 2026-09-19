@@ -1,0 +1,45 @@
+use Concurrency.Fiber;
+use Concurrency.FiberError;
+use Core.Results;
+
+[Extern(Abi:"C")]
+pub contract Probe {
+    i64 fiber_current_id();
+    bool fiber_cancel(i64 fiber, i64 reason);
+    i64 clock_monotonic_nanos();
+    word beskid_rt_v5_external_sleep_until(i64 deadline);
+    word beskid_rt_v5_external_active_count();
+    unit beskid_rt_v5_fiber_yield();
+    unit beskid_trap_code(i64 code);
+}
+
+i64 CancelAndRetry() {
+    // The first call observes the published cancellation slot; following calls
+    // must keep observing cancellation without requiring a second queue message.
+    i64 self = Probe.fiber_current_id();
+    let firstCancel = Probe.fiber_cancel(self, 9_i64);
+    word first = Probe.beskid_rt_v5_external_sleep_until(Probe.clock_monotonic_nanos() + 100000000_i64);
+    let repeatCancel = Probe.fiber_cancel(self, 10_i64);
+    word second = Probe.beskid_rt_v5_external_sleep_until(Probe.clock_monotonic_nanos() + 100000000_i64);
+    word third = Probe.beskid_rt_v5_external_sleep_until(Probe.clock_monotonic_nanos() + 100000000_i64);
+    if !firstCancel || !repeatCancel || first != 3 || second != 3 || third != 3 || Probe.beskid_rt_v5_external_active_count() != 0 {
+        Probe.beskid_trap_code(19_i64);
+    }
+    Probe.beskid_rt_v5_fiber_yield();
+    return 0_i64;
+}
+i64 FreshTimer() {
+    word result = Probe.beskid_rt_v5_external_sleep_until(Probe.clock_monotonic_nanos() + 1000000_i64);
+    if result != 4 || Probe.beskid_rt_v5_external_active_count() != 0 { Probe.beskid_trap_code(19_i64); }
+    return 126_i64;
+}
+i64 RunExternalCancellationFixture() {
+    Fiber<i64> cancelled = spawn CancelAndRetry();
+    i64 score = match cancelled.Join() {
+        Result::Error(FiberError::Cancelled(_, _)) => 0_i64,
+        _ => -1000_i64,
+    };
+    Fiber<i64> fresh = spawn FreshTimer();
+    i64 freshScore = match fresh.Join() { Result::Ok(value) => value, _ => -1000_i64, };
+    return score + freshScore;
+}

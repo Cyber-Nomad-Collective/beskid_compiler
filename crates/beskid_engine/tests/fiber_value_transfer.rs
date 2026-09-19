@@ -25,6 +25,11 @@ fn source_channel_claim_cancellation_cleanup_preserves_typed_value() {
     source_transfer_fixture("channel_receipt", "RunChannelReceiptFixture", 126);
 }
 
+#[test]
+fn source_external_cancellation_is_sticky_across_new_waits_but_not_fiber_reuse() {
+    source_transfer_fixture("external_cancel", "RunExternalCancellationFixture", 126);
+}
+
 fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let compiler = root.join("../..").canonicalize().unwrap();

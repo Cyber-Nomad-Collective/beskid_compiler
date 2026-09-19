@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Honor sticky Fiber cancellation before every new external park, including
+  timer/read retries after a cancelled operation and idempotent repeated Cancel;
+  keep completion arbitration and wait cleanup in the single owner winner.
 - Reconstruct packed Fiber generations with unsigned bytes at their authoritative
   reader, preserving valid handles across the 127-to-128 generation boundary.
 - Keep parked external waits live without scheduler spinning or false deadlock;
