@@ -15,6 +15,11 @@ const CHANNEL_STATUS_OK = 0;
 const CHANNEL_STATUS_CLOSED = 1;
 const CHANNEL_STATUS_CANCELLED = 2;
 const CHANNEL_STATUS_WOULD_BLOCK = 3;
+// Manifest channel_operation byte: low 2 bits are the current call phase;
+// high 6 bits count claimed receipts (0..63). Nested calls preserve receipts.
+const CHANNEL_OPERATION_PHASE_MASK = 3;
+const CHANNEL_OPERATION_RECEIPT_UNIT = 4;
+const CHANNEL_OPERATION_RECEIPT_MASK = 252;
 
 pub pointer ChannelTable() { return SchedulerChannelTable(); }
 
@@ -40,10 +45,31 @@ pub bool ChannelCancelled() {
         || (cancel != NativePointer(0) && raw_word_load(cancel) != 0);
 }
 pub word ChannelReceiver() { return word(FiberCurrentId()); }
+pub bool ChannelHasOperation(word index) {
+    return FiberExists(index)
+        && raw_byte_load(pointer_add(FiberRecord(index), BESKID_FIBER_RECORD_CHANNEL_OPERATION_OFFSET)) != 0;
+}
 pub unit ChannelOperation(u8 ownership) {
+    if ownership > CHANNEL_OPERATION_PHASE_MASK { Trap(10, NativePointer(0), 0); }
     word index = SchedulerCurrentFiber();
     if index != FIBER_NONE && FiberExists(index) {
-        raw_byte_store(pointer_add(FiberRecord(index), BESKID_FIBER_RECORD_CHANNEL_OPERATION_OFFSET), ownership);
+        pointer state = pointer_add(FiberRecord(index), BESKID_FIBER_RECORD_CHANNEL_OPERATION_OFFSET);
+        raw_byte_store(state, (raw_byte_load(state) & CHANNEL_OPERATION_RECEIPT_MASK) | ownership);
+    }
+    return;
+}
+pub unit ChannelReceiptOperation(word receiver, bool acquire) {
+    if receiver == 0xFFFFFFFFFFFFFFFF { return; }
+    if !FiberHandleValid(receiver) { Trap(10, NativePointer(0), 0); }
+    pointer state = pointer_add(FiberRecord(FiberHandleIndex(receiver)), BESKID_FIBER_RECORD_CHANNEL_OPERATION_OFFSET);
+    u8 current = raw_byte_load(state);
+    u8 receipts = current & CHANNEL_OPERATION_RECEIPT_MASK;
+    if acquire {
+        if receipts == CHANNEL_OPERATION_RECEIPT_MASK { Trap(10, NativePointer(0), 0); }
+        raw_byte_store(state, current + CHANNEL_OPERATION_RECEIPT_UNIT);
+    } else {
+        if receipts == 0 { Trap(10, NativePointer(0), 0); }
+        raw_byte_store(state, current - CHANNEL_OPERATION_RECEIPT_UNIT);
     }
     return;
 }
@@ -150,6 +176,7 @@ pub i64 ChannelClaimLocked(pointer ch) {
     raw_word_store(pointer_add(cell, 8), CHANNEL_RECEIVER_OWNS);
     // Generation-safe receiver identity prevents another fiber stealing a receipt.
     raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_OWNER), ChannelReceiver());
+    ChannelReceiptOperation(ChannelReceiver(), true);
     raw_word_store(ch, raw_word_load(cell));
     if count == 1 { raw_word_store(pointer_add(ch, 8), 0); }
     raw_word_store(pointer_add(ch, 16), count - 1);
@@ -192,11 +219,47 @@ pub bool ChannelReceiveValue(i64 id, pointer destination) {
     // Claim already committed. Cancellation cannot discard a successful receipt.
     bool moved = AbiValueMoveOut(pointer_add(ch, CHANNEL_RECEIPT_VALUE), destination);
     if moved {
+        ChannelReceiptOperation(ChannelReceiver(), false);
         raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_OWNER), 0);
         ChannelWakeOne(ch, CHANNEL_RECEIVE_WAITERS);
     }
     ChannelUnlock(ch);
     return moved;
+}
+// A terminal claimant may return or panic without consuming its receipt. Cleanup
+// restores that oldest committed value before releasing the generation's stack.
+// This is an ownership move, never a clear or resource disposal.
+pub unit ChannelReleaseReceipts(word receiver) {
+    if !FiberHandleValid(receiver) { return; }
+    pointer table = ChannelTable();
+    if table == NativePointer(0) { return; }
+    mut word index = 0;
+    while index < raw_word_load(table) {
+        pointer ch = pointer_add(table, 8 + index * CHANNEL_SLOT_SIZE);
+        ChannelLock(ch);
+        if raw_word_load(pointer_add(ch, CHANNEL_RECEIPT_OWNER)) == receiver {
+            pointer cell = SystemAllocate(CHANNEL_CELL_SIZE, 8);
+            if cell == NativePointer(0) { Trap(5, NativePointer(0), 0); }
+            memory_set(cell, 0, CHANNEL_CELL_SIZE);
+            if !AbiValueMoveOut(pointer_add(ch, CHANNEL_RECEIPT_VALUE), pointer_add(cell, CHANNEL_CELL_VALUE)) {
+                Trap(10, NativePointer(0), 0);
+            }
+            raw_word_store(pointer_add(cell, 8), CHANNEL_OWNS);
+            raw_word_store(cell, raw_word_load(ch));
+            raw_word_store(ch, NativeWord(cell));
+            if raw_word_load(pointer_add(ch, 16)) == 0 { raw_word_store(pointer_add(ch, 8), NativeWord(cell)); }
+            raw_word_store(pointer_add(ch, 16), raw_word_load(pointer_add(ch, 16)) + 1);
+            raw_word_store(pointer_add(ch, CHANNEL_RECEIPT_OWNER), 0);
+            ChannelReceiptOperation(receiver, false);
+            ChannelWakeOne(ch, CHANNEL_RECEIVE_WAITERS);
+            HubWakeChannel(i64(index));
+        }
+        ChannelUnlock(ch);
+        index = index + 1;
+    }
+    pointer state = pointer_add(FiberRecord(FiberHandleIndex(receiver)), BESKID_FIBER_RECORD_CHANNEL_OPERATION_OFFSET);
+    if (raw_byte_load(state) & CHANNEL_OPERATION_RECEIPT_MASK) != 0 { Trap(10, NativePointer(0), 0); }
+    return;
 }
 [Export(Abi:"C", Symbol:"channel_close")]
 pub unit ChannelClose(i64 id) {

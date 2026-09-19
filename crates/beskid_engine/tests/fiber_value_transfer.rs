@@ -20,6 +20,11 @@ fn source_channel_values_survive_collection_in_jit_aot_and_native_kit() {
     source_transfer_fixture("channel", "RunChannelFixture", 126);
 }
 
+#[test]
+fn source_channel_claim_cancellation_cleanup_preserves_typed_value() {
+    source_transfer_fixture("channel_receipt", "RunChannelReceiptFixture", 126);
+}
+
 fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let compiler = root.join("../..").canonicalize().unwrap();

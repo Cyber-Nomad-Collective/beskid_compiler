@@ -34,6 +34,18 @@ fn traced_values_survive_collection_and_transfer_in_native_aot_and_jit() {
             .output()
             .unwrap();
         assert!(output.status.success(), "{mode}: {}", String::from_utf8_lossy(&output.stderr));
+        for fault in ["receipt-count-overflow", "receipt-count-underflow"] {
+            let rejected = Command::new(&executable)
+                .arg(fault)
+                .env(
+                    if cfg!(target_os = "macos") { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" },
+                    kit.shared_library.parent().unwrap(),
+                )
+                .output()
+                .unwrap();
+            assert_eq!(rejected.status.code(), Some(101), "{mode}/{fault}: {rejected:?}");
+            assert!(String::from_utf8_lossy(&rejected.stderr).contains("beskid runtime trap v5"));
+        }
         // The existing kit builder preserves its staging install-name on Darwin. Scope
         // loader lookup to this exact test kit, without changing the published artifact.
         let output = Command::new(&executable)

@@ -483,7 +483,7 @@ pub unit FiberYield() {
         return;
     }
     pointer fib = FiberRecord(index);
-    if raw_byte_load(pointer_add(fib, 41)) != 0 {
+    if raw_byte_load(pointer_add(fib, 41)) != 0 && !ChannelHasOperation(index) {
         raw_word_store(fib, FIBER_STATE_CANCELLED);
         raw_word_store(pointer_add(fib, 48), FIBER_JOIN_CANCELLED);
         raw_word_store(pointer_add(fib, 56), 0);
@@ -596,8 +596,9 @@ pub unit FiberReleaseStackRoots(word index) {
 }
 
 pub unit FiberCleanup(word index) {
-    FiberReleaseStackRoots(index);
     if !FiberExists(index) { return; }
+    ChannelReleaseReceipts(FiberHandle(index));
+    FiberReleaseStackRoots(index);
     pointer fib = FiberRecord(index);
     pointer message = NativePointer(raw_word_load(pointer_add(fib, 56)));
     if message != NativePointer(0) {

@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve active Channel receipts across cancellation yields and nested calls;
+  restore abandoned receipts to FIFO heads during generation-bound fiber cleanup
+  without dropping values, leaking roots, or blocking closed-channel drain.
 - Share spawn-entry normalization when checking one-shot Fiber captures, including
   the empty-call lambda spelling. Retain resolved nominal method receivers in
   closure environments and preserve inferred managed-value capture provenance.

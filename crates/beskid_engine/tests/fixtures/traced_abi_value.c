@@ -3,6 +3,7 @@
 #include "beskid_runtime_abi_v5.h"
 #include <assert.h>
 #include <string.h>
+#include <stdlib.h>
 
 typedef uint8_t (*MoveValue)(void *, void *);
 typedef struct { _Alignas(8) unsigned char bytes[BESKID_ABI_VALUE_SIZE]; } ValueSlot;
@@ -91,6 +92,10 @@ static void channel_dynamic_storage(void) {
 }
 
 static int64_t receipt_channel;
+static int64_t receipt_second_channel;
+static uintptr_t *receipt_descriptor;
+static ValueSlot *receipt_destination;
+static int receipt_resumed;
 static void *channel_receipt_thief(void *argument) {
     ValueSlot stolen = {0};
     assert(!channel_receive_value(receipt_channel, &stolen));
@@ -98,21 +103,35 @@ static void *channel_receipt_thief(void *argument) {
     return argument;
 }
 static void *channel_cancelled_receiver(void *argument) {
-    ValueSlot receiver = {0};
     assert(channel_try_receive(receipt_channel) == 0);
+    assert(channel_try_receive(receipt_second_channel) == 0);
+    ValueSlot nested = {0};
+    assert(beskid_rt_v5_abi_value_initialize(&nested, 31, argument, receipt_descriptor));
+    assert(channel_send(receipt_second_channel, &nested) == 0);
+    assert(vacant(&nested)); /* nested send phase must not clear either receipt */
     assert(fiber_cancel(fiber_current_id(), 9));
+    beskid_rt_v5_fiber_yield(); /* pending cancellation must retain the claimant */
+    beskid_rt_v5_fiber_yield(); /* already-applied cancellation must also resume */
+    assert(channel_receive_value(receipt_second_channel, &nested));
+    assert(!channel_receive_value(receipt_channel, &nested)); /* failed move retains its count */
+    assert(beskid_rt_v5_abi_value_clear(&nested));
+    beskid_rt_v5_fiber_yield(); /* resolving one receipt cannot abandon the other */
     channel_close(receipt_channel);
     gc_collect();
     /* Cancellation after claim must not discard an already-committed receipt. */
-    assert(channel_receive_value(receipt_channel, &receiver));
-    assert(payload(&receiver) == argument);
-    assert(!channel_receive_value(receipt_channel, &receiver));
-    assert(beskid_rt_v5_abi_value_clear(&receiver));
+    assert(channel_receive_value(receipt_channel, receipt_destination));
+    assert(payload(receipt_destination) == argument);
+    ValueSlot duplicate = {0};
+    assert(!channel_receive_value(receipt_channel, &duplicate));
+    assert(channel_try_receive(receipt_channel) == 2); /* cancellation only after ownership resolved */
+    receipt_resumed = 1;
     return argument;
 }
 static void channel_receipt_ownership(ValueSlot *owner) {
     void *expected = payload(owner);
+    receipt_descriptor = (uintptr_t *)*field(owner, BESKID_ABI_VALUE_DESCRIPTOR_OFFSET);
     receipt_channel = channel_create(1, 0);
+    receipt_second_channel = channel_create(1, 0);
     assert(channel_try_send(receipt_channel, owner) == 0);
     assert(channel_try_receive(receipt_channel) == 0);
     gc_collect();
@@ -124,10 +143,116 @@ static void channel_receipt_ownership(ValueSlot *owner) {
     assert(channel_receive_value(receipt_channel, owner));
     assert(payload(owner) == expected);
     assert(channel_try_send(receipt_channel, owner) == 0);
+    ValueSlot second = {0};
+    assert(beskid_rt_v5_abi_value_initialize(&second, 32, expected, receipt_descriptor));
+    assert(channel_try_send(receipt_second_channel, &second) == 0);
+    receipt_destination = owner;
+    receipt_resumed = 0;
     int64_t receiver = fiber_spawn((void *)channel_cancelled_receiver, expected);
-    assert(fiber_join_status(receiver) == 0);
-    assert(fiber_join_value(receiver, owner));
+    assert(fiber_join_status(receiver) == 1);
+    fiber_join_error_finish(receiver);
+    channel_close(receipt_channel);
+    assert(receipt_resumed == 1); /* cannot terminalize/clean up an unresolved receipt */
+    gc_collect();
     assert(payload(owner) == expected);
+    assert(channel_try_receive(receipt_channel) == 1);
+    channel_close(receipt_second_channel);
+    assert(channel_try_receive(receipt_second_channel) == 0);
+    assert(channel_receive_value(receipt_second_channel, &second));
+    assert(payload(&second) == expected);
+    assert(beskid_rt_v5_abi_value_clear(&second));
+    assert(channel_try_receive(receipt_second_channel) == 1);
+}
+
+static int receipt_abort_mode;
+static void *channel_abandoned_receiver(void *argument) {
+    assert(channel_try_receive(receipt_channel) == 0);
+    static uintptr_t tail_descriptor[] = {24, 8, 0, 0, 0};
+    uintptr_t tail_request[] = {24, 8, (uintptr_t)tail_descriptor};
+    uintptr_t *tail = beskid_rt_v5_managed_object_allocate(tail_request);
+    assert(tail);
+    tail[2] = 99;
+    ValueSlot newer = {0};
+    assert(beskid_rt_v5_abi_value_initialize(&newer, 34, tail, tail_descriptor));
+    assert(channel_try_send(receipt_channel, &newer) == 0);
+    beskid_rt_v5_fiber_yield(); /* let another receiver park behind the exclusive receipt */
+    if (receipt_abort_mode == 1) beskid_trap_code(19);
+    if (receipt_abort_mode == 2) {
+        assert(fiber_cancel(fiber_current_id(), 9));
+        beskid_rt_v5_fiber_yield();
+        beskid_rt_v5_fiber_yield();
+    }
+    return argument; /* explicit return/panic/cancel teardown returns receipt to queue */
+}
+static void channel_receipt_abort(ValueSlot *owner, int mode) {
+    void *expected = payload(owner);
+    receipt_channel = channel_create(1, 0);
+    receipt_abort_mode = mode;
+    assert(channel_try_send(receipt_channel, owner) == 0);
+    int64_t claimant = fiber_spawn((void *)channel_abandoned_receiver, expected);
+    assert(fiber_join_status(claimant) == (mode == 0 ? 0 : mode == 1 ? 2 : 1));
+    ValueSlot result = {0};
+    if (mode == 0) {
+        assert(fiber_join_value(claimant, &result));
+        assert(beskid_rt_v5_abi_value_clear(&result));
+    } else assert(fiber_join_error_finish(claimant));
+    /* Repeated stale cleanup must neither retract nor duplicate the restored cell. */
+    assert(!fiber_join_error_finish(claimant));
+    int64_t next_generation = fiber_spawn((void *)fiber_wait_fixture, expected);
+    assert(next_generation != claimant);
+    assert(!fiber_join_error_finish(claimant));
+    assert(!fiber_cancel(claimant, 7));
+    assert(fiber_join_status(next_generation) == 0);
+    assert(fiber_join_value(next_generation, &result));
+    assert(beskid_rt_v5_abi_value_clear(&result));
+    channel_close(receipt_channel);
+    gc_collect();
+    assert(channel_try_receive(receipt_channel) == 0);
+    assert(channel_receive_value(receipt_channel, owner));
+    assert(payload(owner) == expected);
+    assert(!channel_receive_value(receipt_channel, &result));
+    assert(channel_try_receive(receipt_channel) == 0); /* restored receipt precedes later commit */
+    assert(channel_receive_value(receipt_channel, &result));
+    assert(((uintptr_t *)payload(&result))[2] == 99);
+    assert(beskid_rt_v5_abi_value_clear(&result));
+    assert(channel_try_receive(receipt_channel) == 1);
+}
+
+static int64_t receipt_wait_hub;
+static void *channel_receipt_waiter(void *argument) {
+    ValueSlot received = {0};
+    if (receipt_wait_hub >= 0) {
+        assert(hub_wait_receive_status(receipt_wait_hub) == 0);
+        assert(hub_wait_receive_value(receipt_wait_hub, &received));
+    } else {
+        assert(channel_receive_status(receipt_channel) == 0);
+        assert(channel_receive_value(receipt_channel, &received));
+    }
+    assert(payload(&received) == argument);
+    assert(beskid_rt_v5_abi_value_clear(&received));
+    return argument;
+}
+static void channel_receipt_cleanup_wakes(ValueSlot *owner, int use_hub) {
+    void *expected = payload(owner);
+    receipt_channel = channel_create(1, 0);
+    receipt_abort_mode = 0;
+    receipt_wait_hub = use_hub ? hub_create() : -1;
+    if (use_hub) assert(hub_register(receipt_wait_hub, 7, receipt_channel) == 0);
+    assert(channel_try_send(receipt_channel, owner) == 0);
+    int64_t claimant = fiber_spawn((void *)channel_abandoned_receiver, expected);
+    int64_t waiter = fiber_spawn((void *)channel_receipt_waiter, expected);
+    assert(fiber_join_status(claimant) == 0);
+    ValueSlot result = {0};
+    assert(fiber_join_value(claimant, &result)); /* cleanup wakes the parked receiver */
+    assert(beskid_rt_v5_abi_value_clear(&result));
+    assert(fiber_join_status(waiter) == 0);
+    assert(fiber_join_value(waiter, owner));
+    assert(payload(owner) == expected);
+    channel_close(receipt_channel);
+    assert(channel_try_receive(receipt_channel) == 0);
+    assert(channel_receive_value(receipt_channel, &result));
+    assert(((uintptr_t *)payload(&result))[2] == 99);
+    assert(beskid_rt_v5_abi_value_clear(&result));
     assert(channel_try_receive(receipt_channel) == 1);
 }
 
@@ -292,6 +417,8 @@ int RunAbiValueFixture(MoveValue move) {
     channel_race(&sender, 2);
     channel_race(&sender, 3);
     channel_receipt_ownership(&sender);
+    for (int mode = 0; mode < 3; ++mode) channel_receipt_abort(&sender, mode);
+    for (int hub = 0; hub < 2; ++hub) channel_receipt_cleanup_wakes(&sender, hub);
     for (int mode = 4; mode < 7; ++mode) channel_receiver_wake(&sender, mode);
     assert(gc_external_root_count() == 1);
     gc_collect();
@@ -319,6 +446,8 @@ int RunAbiValueFixture(MoveValue move) {
     channel_close_retains_committed_value(&sender);
     for (int mode = 0; mode < 4; ++mode) channel_race(&sender, mode);
     channel_receipt_ownership(&sender);
+    for (int mode = 0; mode < 3; ++mode) channel_receipt_abort(&sender, mode);
+    for (int hub = 0; hub < 2; ++hub) channel_receipt_cleanup_wakes(&sender, hub);
     for (int mode = 4; mode < 7; ++mode) channel_receiver_wake(&sender, mode);
     assert(beskid_rt_v5_abi_value_replace_with_barrier(&receiver, &sender));
     assert(vacant(&sender) && gc_external_root_count() == 1);
@@ -342,6 +471,8 @@ int RunAbiValueFixture(MoveValue move) {
     channel_close_retains_committed_value(&sender);
     for (int mode = 0; mode < 4; ++mode) channel_race(&sender, mode);
     channel_receipt_ownership(&sender);
+    for (int mode = 0; mode < 3; ++mode) channel_receipt_abort(&sender, mode);
+    for (int hub = 0; hub < 2; ++hub) channel_receipt_cleanup_wakes(&sender, hub);
     for (int mode = 4; mode < 7; ++mode) channel_receiver_wake(&sender, mode);
     uintptr_t empty_roots[62] = {0};
     for (size_t i = 0; i < 62; ++i) assert(gc_register_root(&empty_roots[i]));
@@ -423,7 +554,43 @@ int RunAbiValueFixture(MoveValue move) {
 }
 
 #ifdef ABI_VALUE_STANDALONE
+static unsigned char *receipt_runtime;
+static int receipt_count_underflow;
+static void *channel_receipt_count_corruption(void *argument) {
+    uintptr_t scheduler = *(uintptr_t *)(receipt_runtime + BESKID_RUNTIME_STATE_SCHEDULER_OFFSET);
+    uintptr_t index = (uintptr_t)fiber_current_id() & UINT32_MAX;
+    unsigned char *operation = (unsigned char *)scheduler + BESKID_SCHEDULER_STATE_FIBERS_OFFSET
+        + index * BESKID_FIBER_RECORD_SIZE + BESKID_FIBER_RECORD_CHANNEL_OPERATION_OFFSET;
+    if (receipt_count_underflow) {
+        assert(channel_try_receive(receipt_channel) == 0);
+        *operation = 0; /* fault injection: resolving must reject count underflow */
+        ValueSlot received = {0};
+        channel_receive_value(receipt_channel, &received);
+    } else {
+        *operation = 252; /* fault injection: acquiring must reject 63 -> 64 */
+        channel_try_receive(receipt_channel);
+    }
+    (void)argument;
+    _Exit(0); /* only a trap at the operation boundary can satisfy the control */
+}
 int main(int argc, char **argv) {
+    if (argc == 2 && (strcmp(argv[1], "receipt-count-overflow") == 0
+        || strcmp(argv[1], "receipt-count-underflow") == 0)) {
+        _Alignas(8) unsigned char runtime[BESKID_RUNTIME_STATE_SIZE] = {0};
+        assert(beskid_rt_v5_process_init(runtime) == runtime);
+        receipt_runtime = runtime;
+        receipt_count_underflow = strcmp(argv[1], "receipt-count-underflow") == 0;
+        uintptr_t descriptor[] = {24, 8, 0, 0, 0};
+        uintptr_t request[] = {24, 8, (uintptr_t)descriptor};
+        void *value = beskid_rt_v5_managed_object_allocate(request);
+        ValueSlot owner = {0};
+        assert(beskid_rt_v5_abi_value_initialize(&owner, 33, value, descriptor));
+        receipt_channel = channel_create(1, 0);
+        assert(channel_try_send(receipt_channel, &owner) == 0);
+        int64_t child = fiber_spawn((void *)channel_receipt_count_corruption, value);
+        fiber_join_status(child);
+        return 0;
+    }
     if (argc == 2 && strcmp(argv[1], "detached-panic") == 0) {
         _Alignas(8) unsigned char runtime[BESKID_RUNTIME_STATE_SIZE] = {0};
         assert(beskid_rt_v5_process_init(runtime) == runtime);

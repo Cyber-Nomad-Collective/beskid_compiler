@@ -1,0 +1,72 @@
+use Concurrency.Channel;
+use Concurrency.ChannelError;
+use Concurrency.ChannelOptions;
+use Concurrency.TryResult;
+use Concurrency.Fiber;
+use Concurrency.FiberError;
+use Core.Results;
+
+[Extern(Abi:"C")]
+pub contract Probe {
+    unit gc_collect();
+    unit beskid_trap_code(i64 code);
+    i64 channel_try_receive(i64 channel);
+    i64 fiber_current_id();
+    bool fiber_cancel(i64 fiber, i64 reason);
+    unit beskid_rt_v5_fiber_yield();
+}
+pub type Aggregate { u8[] bytes, i64 marker, }
+pub type OwnedResource { i64 token, }
+i64 Bytes(u8[] value) { u8 first = value[0]; return i64(first); }
+i64 AggregateValue(Aggregate value) { return Bytes(value.bytes) + value.marker - 7_i64; }
+i64 ResourceValue(OwnedResource value) { return value.token; }
+
+// Exercise the public split native claim, then abandon it through real source
+// cancellation/return. Cleanup must restore ownership for a typed facade receive.
+i64 AbandonReceipt(i64 channel) {
+    i64 status = Probe.channel_try_receive(channel);
+    if status != 0 { Probe.beskid_trap_code(19_i64); }
+    let cancelled = Probe.fiber_cancel(Probe.fiber_current_id(), 9_i64);
+    Probe.beskid_rt_v5_fiber_yield();
+    Probe.beskid_rt_v5_fiber_yield();
+    Probe.gc_collect();
+    return 42_i64;
+}
+i64 Cancelled(Result<i64, FiberError> result) {
+    return match result { Result::Error(FiberError::Cancelled(_, _)) => 0_i64, _ => -1000_i64, };
+}
+i64 RunChannelReceiptFixture() {
+    Channel<u8[]> bytes = Channel<u8[]>.Create();
+    Channel<Aggregate> aggregate = Channel<Aggregate>.Create();
+    Channel<OwnedResource> resource = Channel<OwnedResource>.Create();
+    let sentBytes = Channel.TrySend<u8[]>(bytes, [42_u8]);
+    let sentAggregate = Channel.TrySend<Aggregate>(aggregate, Aggregate { bytes: [42_u8], marker: 7_i64 });
+    let sentResource = Channel.TrySend<OwnedResource>(resource, OwnedResource { token: 42_i64 });
+    i64 firstHandle = Channel.Handle<u8[]>(bytes);
+    i64 secondHandle = Channel.Handle<Aggregate>(aggregate);
+    i64 thirdHandle = Channel.Handle<OwnedResource>(resource);
+    Fiber<i64> first = spawn (() => AbandonReceipt(firstHandle));
+    Fiber<i64> second = spawn (() => AbandonReceipt(secondHandle));
+    Fiber<i64> third = spawn (() => AbandonReceipt(thirdHandle));
+    i64 cancelled = Cancelled(first.Join()) + Cancelled(second.Join()) + Cancelled(third.Join());
+    Channel.Close<u8[]>(bytes);
+    Channel.Close<Aggregate>(aggregate);
+    Channel.Close<OwnedResource>(resource);
+    Probe.gc_collect();
+    Result<u8[], ChannelError> firstValue = Channel.Receive<u8[]>(bytes);
+    Result<Aggregate, ChannelError> secondValue = Channel.Receive<Aggregate>(aggregate);
+    Result<OwnedResource, ChannelError> thirdValue = Channel.Receive<OwnedResource>(resource);
+    i64 a = match firstValue {
+        Result::Ok(value) => Bytes(value), _ => -1000_i64,
+    };
+    i64 b = match secondValue {
+        Result::Ok(value) => AggregateValue(value), _ => -1000_i64,
+    };
+    i64 c = match thirdValue {
+        Result::Ok(value) => ResourceValue(value), _ => -1000_i64,
+    };
+    i64 drained = match Channel.TryReceive<OwnedResource>(resource) {
+        TryResult::Err(ChannelError::Closed(_)) => 0_i64, _ => -1000_i64,
+    };
+    return a + b + c + cancelled + drained;
+}
