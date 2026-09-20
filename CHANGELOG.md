@@ -51,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve lexical generic shadowing when classifying contract parameters and
+  member receivers, including generics declared by a method's owning type.
 - Share array-literal and indexed-element ABI facts between semantic validation and
   code generation, and distinguish typed Corelib service source results from their
   status/out-slot transport ABI during nested generic specialization.

@@ -103,12 +103,18 @@ pub(super) fn contract_parameter_declarations(
         .iter()
         .enumerate()
         .filter_map(|(position, parameter)| {
+            let node = index.direct_child_id(program, declaration.node, DynNodeRef::from(parameter))?;
+            let parameter_key = AstNodeKey { node, ..declaration };
+            // Lexical generic bindings shadow outer contracts, including owner generics on
+            // methods. Classify the declared parameter before consulting contract namespaces.
+            if type_syntax_is_enclosing_generic_parameter_reference(db, parameter_key, &parameter.node.ty.node) {
+                return None;
+            }
             let Type::Complex(path) = &parameter.node.ty.node else {
                 return None;
             };
             let contract = resolve_contract(db, declaration, &path.node)?;
-            let node = index.direct_child_id(program, declaration.node, DynNodeRef::from(parameter))?;
-            Some((AstNodeKey { node, ..declaration }, u32::try_from(position).ok()?, contract))
+            Some((parameter_key, u32::try_from(position).ok()?, contract))
         })
         .collect()
 }
@@ -182,6 +188,13 @@ pub(super) fn contract_member_receiver(
     let identifier = resolve_lexical_declaration(program, index, key.node, &receiver.node.name.node.name)?;
     let parameter_node = parent_node(index, identifier)?;
     let parameter = index.node_at(program, parameter_node)?.of::<Parameter>()?;
+    if type_syntax_is_enclosing_generic_parameter_reference(
+        db,
+        AstNodeKey { node: parameter_node, ..key },
+        &parameter.ty.node,
+    ) {
+        return None;
+    }
     let Type::Complex(annotation) = &parameter.ty.node else {
         return None;
     };

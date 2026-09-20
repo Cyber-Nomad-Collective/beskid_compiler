@@ -6,6 +6,102 @@ use beskid_queries::{
 };
 
 #[test]
+fn function_generic_name_shadows_outer_contract() {
+    let source = "contract Reader { i64 Read(); } Reader Identity<Reader>(Reader value) { return value; } unit Main() { Identity<i64>(1_i64); }";
+    let (db, _, unit, generation, index) = setup(source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let instance = generic_call_specialization(&db, call).expect("generic Reader shadows contract").unwrap();
+    assert!(instance.contract_witnesses.is_empty());
+    assert_eq!(instance.signature.parameters.as_ref(), &[beskid_queries::SemanticTypeId::I64]);
+    assert_eq!(instance.signature.result, beskid_queries::SemanticTypeId::I64);
+}
+
+#[test]
+fn generic_owner_name_shadows_outer_contract_for_method_parameters() {
+    let source = "contract Reader { i64 Read(); } type Identity<Reader> { pub Reader Echo(Reader value) { return value; } } unit Main(Identity<i64> identity) { identity.Echo(1_i64); }";
+    let (db, _, unit, generation, index) = setup(source);
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let instance = generic_call_specialization(&db, call).expect("owner Reader shadows contract").unwrap();
+    assert!(instance.contract_witnesses.is_empty());
+    assert_eq!(
+        instance.signature.parameters.as_ref(),
+        &[beskid_queries::SemanticTypeId::POINTER, beskid_queries::SemanticTypeId::I64]
+    );
+    assert_eq!(instance.signature.result, beskid_queries::SemanticTypeId::I64);
+}
+
+#[test]
+fn shadowed_generic_receiver_does_not_acquire_outer_contract_members() {
+    for declaration in [
+        "unit Inspect<Reader>(Reader value) { value.Read(); }",
+        "type Inspector<Reader> { pub unit Inspect(Reader value) { value.Read(); } }",
+    ] {
+        let (db, _, unit, generation, index) = setup(&format!("contract Reader {{ i64 Read(); }} {declaration}"));
+        let call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+        assert!(
+            call_lowering(&db, call).is_err(),
+            "an unconstrained generic member must fail closed, not inherit a same-named contract's members"
+        );
+    }
+}
+
+#[test]
+fn genuine_imported_contract_parameter_still_mints_a_concrete_witness() {
+    use beskid_analysis::projects::{
+        AssemblyDiscovery, EffectiveCompilationRoots, ModuleIndex, ProgramAssembly, RootEntry, SourceUnit,
+    };
+    use beskid_analysis::services::parse_program;
+    use beskid_analysis::syntax_query::SyntaxIndex;
+    use beskid_queries::{BeskidDatabase, ProjectSession, SourceUnitId, SyntaxGenerationId};
+    use std::{path::PathBuf, sync::Arc};
+
+    let root = PathBuf::from("/tmp/contract-shadowing/src");
+    let main_path = root.join("Main.bd");
+    let main_source = "use Api.Reader; type Source: Reader { pub i64 Read() { return 17_i64; } } i64 ReadOne(Reader reader) { return reader.Read(); } unit Main() { ReadOne(Source {}); }";
+    let main_program = parse_program(main_source).unwrap();
+    let contract_source = "pub contract Reader { i64 Read(); }";
+    let generation = SyntaxGenerationId(77);
+    let index = SyntaxIndex::from_program(&main_program, generation);
+    let assembly = Arc::new(ProgramAssembly::new(
+        EffectiveCompilationRoots {
+            host: RootEntry { dependency_name: None, source_root: root.clone() },
+            dependencies: Vec::new(),
+        },
+        Arc::new(vec![
+            SourceUnit {
+                path: main_path.clone(),
+                logical_name: "Main.bd".into(),
+                source: main_source.into(),
+                program: main_program,
+            },
+            SourceUnit {
+                path: root.join("Api/Reader.bd"),
+                logical_name: "Api/Reader.bd".into(),
+                source: contract_source.into(),
+                program: parse_program(contract_source).unwrap(),
+            },
+        ]),
+        0,
+        AssemblyDiscovery::ImportClosure,
+        Arc::new(ModuleIndex::empty()),
+        false,
+        generation,
+    ));
+    let mut db = BeskidDatabase::default();
+    let unit = SourceUnitId::new(&db, main_path.clone());
+    let project = ProjectSession::new(&db, root.parent().unwrap().to_owned(), main_path, "App".into(), "test".into());
+    beskid_queries::build_typed_program(&mut db, project, generation, assembly).unwrap();
+    let call = key(unit, generation, &index, NodeKind::CallExpression, 1);
+    let instance = generic_call_specialization_instance(&db, generic_call_specialization(&db, call).unwrap().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(instance.contract_witnesses.len(), 1);
+    let method_call = key(unit, generation, &index, NodeKind::CallExpression, 0);
+    let implementation = generic_call_specialization_in_environment(&db, method_call, &instance).unwrap().unwrap();
+    assert_eq!(implementation.declaration, key(unit, generation, &index, NodeKind::MethodDefinition, 0));
+}
+
+#[test]
 fn array_literals_have_one_pointer_abi_for_scalar_and_managed_elements() {
     for literal in ["[1_u8, 2_u8]", "[\"one\", \"two\"]"] {
         let (db, _, unit, generation, index) = setup(&format!("unit Main() {{ let values = {literal}; }}"));
