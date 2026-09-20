@@ -1,10 +1,12 @@
 //! Effective (materialized-first) source roots for assembly and module-path checks.
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::collections::HashSet;
+use std::path::{Component, Path, PathBuf};
 
-use crate::projects::workflow::ProjectLockDependencyEntry;
-use crate::projects::{CompilePlan, PROJECT_LOCK_FILE_NAME, PreparedProjectWorkspace};
+use crate::projects::{
+    CompilePlan, PROJECT_LOCK_FILE_NAME, PreparedProjectWorkspace, ProjectLockDependencyEntry,
+    load_project_lock_dependencies_from_path,
+};
 
 /// One searchable source root (host or named dependency).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,29 +59,19 @@ pub fn effective_roots_from_plan_and_workspace(
 
 /// Replay materialized roots from an on-disk `Project.lock` when no prepared workspace is available (LSP).
 pub fn effective_roots_from_lockfile(plan: &CompilePlan, lockfile_path: &Path) -> EffectiveCompilationRoots {
-    let mut base = effective_roots_from_plan_and_workspace(plan, None);
-    let Ok(text) = fs::read_to_string(lockfile_path) else {
+    let base = effective_roots_from_plan_and_workspace(plan, None);
+    let Ok(entries) = load_project_lock_dependencies_from_path(lockfile_path) else {
         return base;
     };
-
-    let entries = parse_lockfile_dependency_lines(&text);
-    if entries.is_empty() {
+    let Some(trusted_dependencies_root) = plan.project_root.join("obj/beskid/deps/src").canonicalize().ok() else {
         return base;
-    }
-
-    for entry in entries {
-        let materialized = PathBuf::from(entry.materialized_root());
-        if !materialized.is_dir() {
-            continue;
-        }
-        let project = PathBuf::from(entry.project());
-        let source_root = PathBuf::from(entry.source_root());
-        let relative = source_root.strip_prefix(&project).unwrap_or(Path::new("src"));
-        let effective = materialized.join(relative);
-        if let Some(dep) = base.dependencies.iter_mut().find(|d| d.dependency_name.as_deref() == Some(entry.name())) {
-            dep.source_root = if effective.is_dir() { effective } else { materialized };
-        }
-    }
+    };
+    let Some(replayed_dependencies) = replayed_dependency_roots(plan, lockfile_path, &entries, &trusted_dependencies_root)
+    else {
+        return base;
+    };
+    let mut roots = base;
+    roots.dependencies = replayed_dependencies;
 
     let root_materialized = plan.project_root.join("obj").join("beskid").join("root");
     if root_materialized.is_dir() {
@@ -87,18 +79,66 @@ pub fn effective_roots_from_lockfile(plan: &CompilePlan, lockfile_path: &Path) -
             plan.source_root.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Src".to_string());
         let candidate = root_materialized.join(segment);
         if candidate.is_dir() {
-            base.host.source_root = candidate;
+            roots.host.source_root = candidate;
         }
     }
 
-    base
+    roots
 }
 
-fn parse_lockfile_dependency_lines(text: &str) -> Vec<ProjectLockDependencyEntry> {
-    text.lines()
-        .filter(|line| !line.starts_with('#') && line.contains("name="))
-        .filter_map(|line| ProjectLockDependencyEntry::parse_v1_line(line.trim_start().strip_prefix("- ").unwrap_or(line)).ok())
-        .collect()
+fn replayed_dependency_roots(
+    plan: &CompilePlan,
+    lockfile_path: &Path,
+    entries: &[ProjectLockDependencyEntry],
+    trusted_dependencies_root: &Path,
+) -> Option<Vec<RootEntry>> {
+    let expected_names: HashSet<_> = plan
+        .dependency_projects
+        .iter()
+        .map(|dependency| dependency.dependency_name.as_str())
+        .collect();
+    let entry_names: HashSet<_> = entries.iter().map(ProjectLockDependencyEntry::name).collect();
+    if expected_names != entry_names || entries.len() != expected_names.len() {
+        return None;
+    }
+
+    let lock_root = lockfile_path.parent()?;
+    let mut replayed = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let dependency = plan
+            .dependency_projects
+            .iter()
+            .find(|dependency| dependency.dependency_name == entry.name())?;
+        let materialized = resolve_lock_path(lock_root, Path::new(entry.materialized_root()));
+        let materialized = materialized.canonicalize().ok()?;
+        if !materialized.starts_with(trusted_dependencies_root) {
+            return None;
+        }
+
+        let project = resolve_lock_path(lock_root, Path::new(entry.project()));
+        let source_root = if Path::new(entry.source_root()).is_absolute() {
+            PathBuf::from(entry.source_root())
+        } else {
+            project.join(entry.source_root())
+        };
+        let relative = source_root.strip_prefix(&project).ok()?;
+        if relative.components().any(|component| matches!(component, Component::ParentDir | Component::RootDir | Component::Prefix(_))) {
+            return None;
+        }
+        let effective = materialized.join(relative).canonicalize().ok()?;
+        if !effective.starts_with(&materialized) {
+            return None;
+        }
+        replayed.push(RootEntry {
+            dependency_name: Some(dependency.dependency_name.clone()),
+            source_root: effective,
+        });
+    }
+    Some(replayed)
+}
+
+fn resolve_lock_path(lock_root: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() { path.to_path_buf() } else { lock_root.join(path) }
 }
 
 /// Effective roots for a compile plan: workspace, else lockfile beside manifest, else plan paths.

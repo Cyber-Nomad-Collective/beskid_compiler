@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -154,10 +155,16 @@ impl ProjectLockfileV1 {
             }
 
             if let Some(value) = line.strip_prefix("root_manifest=") {
+                if root_manifest.is_some() {
+                    return Err(ProjectError::Validation("lockfile duplicates `root_manifest`".to_string()));
+                }
                 root_manifest = Some(value.to_string());
                 continue;
             }
             if let Some(value) = line.strip_prefix("project_name=") {
+                if project_name.is_some() {
+                    return Err(ProjectError::Validation("lockfile duplicates `project_name`".to_string()));
+                }
                 project_name = Some(value.to_string());
                 continue;
             }
@@ -174,6 +181,11 @@ impl ProjectLockfileV1 {
             }
 
             return Err(ProjectError::Validation(format!("invalid lockfile line `{line}`")));
+        }
+
+        let dependency_names: HashSet<_> = dependencies.iter().map(ProjectLockDependencyEntry::name).collect();
+        if dependency_names.len() != dependencies.len() {
+            return Err(ProjectError::Validation("lockfile duplicates a dependency name".to_string()));
         }
 
         let mut parsed = Self {
@@ -209,7 +221,17 @@ impl ProjectLockfileV1 {
 
 /// Load dependency lines from `project_root/Project.lock` when the file exists.
 pub fn load_project_lock_dependencies(project_root: &Path) -> Result<Vec<ProjectLockDependencyEntry>, ProjectError> {
-    let lock_path = project_root.join(PROJECT_LOCK_FILE_NAME);
+    load_project_lock_dependencies_from_path(&project_root.join(PROJECT_LOCK_FILE_NAME))
+}
+
+/// Strictly load the v1 dependency entries from one explicit lockfile path.
+///
+/// Callers that replay lockfile paths must use this parser rather than scanning
+/// individual lines: malformed or duplicate entries invalidate the entire
+/// lockfile.
+pub fn load_project_lock_dependencies_from_path(
+    lock_path: &Path,
+) -> Result<Vec<ProjectLockDependencyEntry>, ProjectError> {
     if !lock_path.is_file() {
         return Ok(Vec::new());
     }
