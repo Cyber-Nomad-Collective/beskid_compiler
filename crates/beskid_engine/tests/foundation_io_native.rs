@@ -62,7 +62,11 @@ fn foundation_copy_rejects_every_invalid_range_before_mutation() {
 }
 
 #[test]
-// Exercise Core.IO transfer boundaries and fixture-only lifecycle contracts in every native mode.
+fn foundation_io_transfers_validate_ranges_and_handle_partial_eof_and_progress() {
+    run_foundation_fixture("foundation_io.bd");
+}
+
+#[test]
 fn foundation_io_closer_stream_and_scoped_cleanup_are_native_safe() {
     run_foundation_fixture("foundation_io.bd");
 }

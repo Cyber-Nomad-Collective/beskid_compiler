@@ -81,6 +81,11 @@ Result<unit, IoError> CloseTwice(Closer closer) {
         Result::Error(error) => Result::Error(error),
     };
 }
+bool FirstFailureThenSecondCloseIsOk(Closer closer) {
+    Result<unit, IoError> first = closer.Close();
+    Result<unit, IoError> second = closer.Close();
+    return IsCloseFailure(first) && IsCloseOk(second);
+}
 i64 ThroughStream(Stream stream) {
     u8[] destination = [0_u8];
     Result<i64, IoError> read = stream.Read(destination, 0_i64, 1_i64);
@@ -148,11 +153,15 @@ pub i64 RunFoundationFixture() {
     if !IsCloseOk(CloseTwice(stream)) { return 14_i64; }
     if closed[1] != 1_i64 { return 15_i64; }
     if ThroughStream(stream) != 0_i64 { return 16_i64; }
+    i64[] closerFailure = [0_i64, 0_i64, 1_i64];
+    TestStream failingCloser = TestStream { state: closerFailure };
+    if !FirstFailureThenSecondCloseIsOk(failingCloser) { return 17_i64; }
+    if closerFailure[1] != 1_i64 { return 18_i64; }
     i64[] scopedSuccess = [0_i64, 0_i64, 0_i64];
-    if !IsCloseOk(CloseThenScopedCleanup(scopedSuccess)) { return 17_i64; }
-    if scopedSuccess[1] != 1_i64 { return 18_i64; }
+    if !IsCloseOk(CloseThenScopedCleanup(scopedSuccess)) { return 19_i64; }
+    if scopedSuccess[1] != 1_i64 { return 20_i64; }
     i64[] scopedFailure = [0_i64, 0_i64, 1_i64];
-    if !IsCloseFailure(CloseThenScopedCleanup(scopedFailure)) { return 19_i64; }
-    if scopedFailure[1] != 1_i64 { return 20_i64; }
+    if !IsCloseFailure(CloseThenScopedCleanup(scopedFailure)) { return 21_i64; }
+    if scopedFailure[1] != 1_i64 { return 22_i64; }
     return 42_i64;
 }
