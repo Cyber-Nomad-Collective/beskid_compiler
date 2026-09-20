@@ -1,6 +1,9 @@
 use Core.IO;
 use Core.IO.Reader;
 use Core.IO.Writer;
+use Core.IO.Closer;
+use Core.IO.Stream;
+use Core.Disposable;
 use Core.IO.IoError;
 use Core.Bytes.Slice;
 use Core.Results;
@@ -29,6 +32,72 @@ type PartialWriter: Writer {
         cursor[1] = cursor[1] * 10_i64 + i64(byte);
         return Result::Ok(1_i64);
     }
+}
+type TestStream: Stream, Closer, Disposable {
+    i64[] state,
+    pub Result<i64, IoError> Read(u8[] destination, i64 offset, i64 count) {
+        return Result::Ok(0_i64);
+    }
+    pub Result<i64, IoError> Write(u8[] source, i64 offset, i64 count) {
+        return Result::Ok(0_i64);
+    }
+    pub Result<unit, IoError> Close() {
+        i64[] lifecycle = state;
+        if lifecycle[0] != 0_i64 { return Result::Ok(()); }
+        lifecycle[0] = 1_i64;
+        lifecycle[1] = lifecycle[1] + 1_i64;
+        if lifecycle[2] != 0_i64 { return Result::Error(IoError::CloseFailed()); }
+        return Result::Ok(());
+    }
+    pub Result<unit, DisposeError> Dispose() {
+        Result<unit, IoError> closed = Close();
+        return match closed {
+            Result::Ok(_) => Result::Ok(()),
+            Result::Error(_) => Result::Error(DisposeError::Failed()),
+        };
+    }
+}
+bool IsCloseOk(Result<unit, IoError> result) {
+    return match result {
+        Result::Ok(_) => true,
+        Result::Error(_) => false,
+    };
+}
+bool IsCloseFailure(Result<unit, IoError> result) {
+    return match result {
+        Result::Ok(_) => false,
+        Result::Error(error) => match error {
+            IoError::CloseFailed() => true, IoError::InvalidRange() => false,
+            IoError::UnexpectedEof(_) => false, IoError::NoProgress() => false,
+            IoError::ReadFailed() => false, IoError::WriteFailed() => false,
+        },
+    };
+}
+Result<unit, IoError> CloseTwice(Closer closer) {
+    Result<unit, IoError> first = closer.Close();
+    Result<unit, IoError> second = closer.Close();
+    return match first {
+        Result::Ok(_) => second,
+        Result::Error(error) => Result::Error(error),
+    };
+}
+i64 ThroughStream(Stream stream) {
+    u8[] destination = [0_u8];
+    Result<i64, IoError> read = stream.Read(destination, 0_i64, 1_i64);
+    Result<i64, IoError> written = stream.Write([1_u8], 0_i64, 1_i64);
+    return match read {
+        Result::Error(_) => 1_i64,
+        Result::Ok(readCount) => match written {
+            Result::Error(_) => 2_i64,
+            Result::Ok(writeCount) => readCount * 10_i64 + writeCount,
+        },
+    };
+}
+Result<unit, IoError> CloseThenScopedCleanup(i64[] state) {
+    TestStream explicit = TestStream { state: state };
+    Result<unit, IoError> first = explicit.Close();
+    use TestStream scoped = TestStream { state: state };
+    return first;
 }
 bool IsRange(Result<unit, IoError> result) {
     return match result {
@@ -66,12 +135,24 @@ pub i64 RunFoundationFixture() {
     if writes[0] != 3_i64 || writes[1] != 123_i64 { return 7_i64; }
     PartialWriter stalled = PartialWriter { state: writes, stall: true };
     Result<unit, IoError> noProgress = IO.WriteAll(stalled, [1_u8], 0_i64, 1_i64);
-    return match noProgress {
-        Result::Ok(_) => 8_i64,
+    match noProgress {
+        Result::Ok(_) => { return 8_i64; },
         Result::Error(error) => match error {
-            IoError::NoProgress() => 42_i64, IoError::UnexpectedEof(_) => 9_i64,
-            IoError::InvalidRange() => 10_i64, IoError::ReadFailed() => 11_i64,
-            IoError::WriteFailed() => 12_i64, IoError::CloseFailed() => 13_i64,
+            IoError::NoProgress() => {}, IoError::UnexpectedEof(_) => { return 9_i64; },
+            IoError::InvalidRange() => { return 10_i64; }, IoError::ReadFailed() => { return 11_i64; },
+            IoError::WriteFailed() => { return 12_i64; }, IoError::CloseFailed() => { return 13_i64; },
         },
     };
+    i64[] closed = [0_i64, 0_i64, 0_i64];
+    TestStream stream = TestStream { state: closed };
+    if !IsCloseOk(CloseTwice(stream)) { return 14_i64; }
+    if closed[1] != 1_i64 { return 15_i64; }
+    if ThroughStream(stream) != 0_i64 { return 16_i64; }
+    i64[] scopedSuccess = [0_i64, 0_i64, 0_i64];
+    if !IsCloseOk(CloseThenScopedCleanup(scopedSuccess)) { return 17_i64; }
+    if scopedSuccess[1] != 1_i64 { return 18_i64; }
+    i64[] scopedFailure = [0_i64, 0_i64, 1_i64];
+    if !IsCloseFailure(CloseThenScopedCleanup(scopedFailure)) { return 19_i64; }
+    if scopedFailure[1] != 1_i64 { return 20_i64; }
+    return 42_i64;
 }

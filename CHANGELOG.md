@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Prove fixture-only `TestStream` lifecycle dispatch through `Stream`, `Closer`,
+  and `Disposable` across source lowering, JIT, static AOT, and the native kit.
+  Verify one physical close after explicit success and failure before scoped cleanup.
 - Specialize contract-typed callable parameters statically with independent,
   source-identity-preserving conformance witnesses and exact public method mappings.
   Reuse generic specialization and direct emission without vtables or wrapper values;
