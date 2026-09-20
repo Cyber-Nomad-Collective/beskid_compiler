@@ -55,7 +55,9 @@ pub(super) fn render_rust(
     let source_builtin_rows = manifest
         .soft_builtins
         .iter()
-        .filter(|builtin| builtin.adapter_service.is_some())
+        .filter(|builtin| {
+            builtin.adapter_service.is_some() || manifest.exports.iter().any(|export| export.symbol == builtin.symbol)
+        })
         .map(|builtin| {
             let params =
                 builtin.params.iter().map(|parameter| format!("{:?}", parameter.ty)).collect::<Vec<_>>().join(", ");

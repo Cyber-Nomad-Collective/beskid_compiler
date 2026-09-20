@@ -1574,6 +1574,17 @@
         }
       ],
       "result": "usize"
+    },
+    {
+      "name": "__timer_sleep_until",
+      "symbol": "beskid_rt_v5_external_sleep_until",
+      "params": [
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ],
+      "result": "usize"
     }
   ],
   "layouts": [

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Bind `Core.Time.Sleep` to the existing external timer export through one
+  manifest-owned source builtin. Generate source-call authority for export-backed
+  soft bindings only after exact ABI validation, and authorize Time's existing
+  invariant diagnostic service. Exercise the public facade's typed errors,
+  timing, sibling progress, cancellation, and registration reuse across JIT,
+  static AOT, and shared native kits; log each kit's source and artifact hashes.
 - Prove fixture-only `TestStream` lifecycle dispatch through `Stream`, `Closer`,
   and `Disposable` across source lowering, JIT, static AOT, and the native kit.
   Verify one physical close after explicit success and failure before scoped cleanup.

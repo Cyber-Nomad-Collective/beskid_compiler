@@ -517,6 +517,11 @@ const CORELIB_SERVICES: &[CorelibService] = &[
     CorelibService {
         name: "__panic_str",
         symbol: "beskid_trap_message",
+        source_path: CANONICAL_FOUNDATION_TIME_SOURCE_PATH,
+    },
+    CorelibService {
+        name: "__panic_str",
+        symbol: "beskid_trap_message",
         source_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH,
     },
     CorelibService { name: "__gc_collect", symbol: "gc_collect", source_path: CANONICAL_FOUNDATION_ASSERT_SOURCE_PATH },

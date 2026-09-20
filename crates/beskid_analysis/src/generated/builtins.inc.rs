@@ -716,6 +716,12 @@ define_builtins! {
         returns: Unit,
         injected: true,
     },
+    &["__timer_sleep_until"] => {
+        symbol: "beskid_rt_v5_external_sleep_until",
+        params: [U64],
+        returns: Usize,
+        injected: true,
+    },
     &["__math_floor"] => {
         symbol: "math_floor",
         params: [F64],

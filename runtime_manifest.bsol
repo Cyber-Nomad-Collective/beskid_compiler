@@ -216,6 +216,7 @@ status "BeskidCompositionStatus" { repr = usize values = [{ name = Configuring, 
 soft_builtin "__args_count" { symbol = "args_count" params = [] returns = i64 }
 soft_builtin "__args_get" { symbol = "args_get" params = [{ name = index, type = i64 }] returns = string }
 soft_builtin "__fiber_yield" { symbol = "beskid_rt_v5_fiber_yield" params = [] returns = void }
+soft_builtin "__timer_sleep_until" { symbol = "beskid_rt_v5_external_sleep_until" params = [{ name = deadline, type = i64 }] returns = usize }
 soft_builtin "__math_floor" { symbol = "math_floor" params = [{ name = value, type = f64 }] returns = f64 }
 soft_builtin "__math_ceil" { symbol = "math_ceil" params = [{ name = value, type = f64 }] returns = f64 }
 soft_builtin "__math_sqrt" { symbol = "math_sqrt" params = [{ name = value, type = f64 }] returns = f64 }

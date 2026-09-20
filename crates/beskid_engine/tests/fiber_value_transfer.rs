@@ -11,6 +11,11 @@ use beskid_tools::toolchain::runtime_kit::{RuntimeKitProfile, build_native_host}
 use std::{collections::HashSet, path::Path, process::Command, sync::Arc};
 
 #[test]
+fn source_timer_sleep_has_typed_outcomes_and_owned_registration() {
+    source_transfer_fixture("timer", "RunTimerFixture", 126);
+}
+
+#[test]
 fn source_fiber_values_survive_collection_in_jit_aot_and_native_kit() {
     source_transfer_fixture("fiber", "RunFiberFixture", 126);
 }
@@ -60,6 +65,20 @@ fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
     ] {
         paths.push((base.join(relative), relative));
     }
+    if kind.starts_with("timer") {
+        for relative in [
+            "Core/Time/Time.bd",
+            "Core/Time/Duration.bd",
+            "Core/Time/Instant.bd",
+            "Core/Time/Date.bd",
+            "Core/Time/DateTime.bd",
+            "Core/Time/TimeOfDay.bd",
+            "Core/Time/TimeError.bd",
+            "Core/Time/TimerError.bd",
+        ] {
+            paths.push((foundation.join(relative), relative));
+        }
+    }
     let units = paths
         .into_iter()
         .map(|(path, logical_name)| {
@@ -92,7 +111,13 @@ fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
     eprintln!("Fiber source lowering complete");
     let prefix = tempfile::tempdir().unwrap();
     let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).unwrap();
-    eprintln!("Fiber native kit complete");
+    eprintln!(
+        "{kind} native kit: target={} source={} static={} shared={}",
+        kit.metadata.target.triple.as_str(),
+        kit.metadata.source_hash,
+        kit.metadata.artifacts.static_library.sha256,
+        kit.metadata.artifacts.shared_library.sha256,
+    );
     {
         let mut engine = beskid_engine::Engine::with_runtime_kit(prefix.path(), target, BuildProfile::Debug).unwrap();
         engine.compile_artifact(&lowered.artifact).expect("JIT typed Fiber artifact");
@@ -134,5 +159,6 @@ fn source_transfer_fixture(kind: &str, entry: &str, expected: i64) {
             .output()
             .unwrap();
         assert!(output.status.success(), "{mode}: {}", String::from_utf8_lossy(&output.stderr));
+        eprintln!("{kind} {mode} execution complete");
     }
 }
