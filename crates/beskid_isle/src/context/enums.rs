@@ -440,8 +440,10 @@ macro_rules! generated_enum_methods {
                 return None;
             }
             let object = self.allocate_enum_variant(&allocation, &layout, variant_index as usize)?;
+            let root = self.root_expression_value(object)?;
             let payloads = self.facts.enum_payloads(key)?;
             self.emit_enum_constructor_payloads(key, object, &variant.payload_fields, &payloads)?;
+            self.release_expression_root(Some(root))?;
             Some(object)
         }
 

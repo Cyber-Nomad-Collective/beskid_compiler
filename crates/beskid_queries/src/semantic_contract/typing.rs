@@ -108,7 +108,7 @@ pub(super) fn managed_reference_kind_tracked(
         }
         if node.of::<beskid_analysis::syntax::CallExpression>().is_some()
             && let Ok(Some(CallLowering::Direct(declaration))) = call_lowering(db, key)
-            && let Some(kind) = managed_reference_kind_for_callable_result(db, key, declaration)
+            && let Some(kind) = managed_reference_kind_for_callable_result(db, key, declaration, None)
         {
             return Some(kind);
         }
@@ -195,12 +195,25 @@ pub(in crate::semantic_contract) fn managed_reference_kind_for_syntax_type(
     })
 }
 
+/// Preserve source result ownership through the already selected generic call environment.
+pub fn specialized_call_result_managed_reference_kind(
+    db: &dyn Db,
+    use_key: AstNodeKey,
+    instance: &GenericSpecializationInstance,
+) -> SemanticQueryResult<ManagedReferenceKind> {
+    if !db.syntax_unit(use_key.unit).is_some_and(|syntax| syntax.accepts_key(db, use_key)) {
+        return Ok(None);
+    }
+    managed_reference_kind_for_callable_result(db, use_key, instance.declaration, Some(instance)).transpose()
+}
+
 fn managed_reference_kind_for_callable_result(
     db: &dyn Db,
     use_key: AstNodeKey,
     declaration: AstNodeKey,
+    instance: Option<&GenericSpecializationInstance>,
 ) -> Option<Result<ManagedReferenceKind, SemanticError>> {
-    let syntax = db.syntax_unit(declaration.unit)?;
+    let syntax = db.syntax_unit(declaration.unit).filter(|syntax| syntax.accepts_key(db, declaration))?;
     let node = syntax.syntax_index(db).node_at(syntax.expanded_program(db), declaration.node)?;
     let return_type = node
         .of::<beskid_analysis::syntax::FunctionDefinition>()
@@ -216,8 +229,9 @@ fn managed_reference_kind_for_callable_result(
         | beskid_analysis::syntax::Type::Array(_)
         | beskid_analysis::syntax::Type::Function { .. } => managed_reference_kind_for_syntax_type(&return_type.node),
         beskid_analysis::syntax::Type::Complex(_) => {
+            let selected = instance.cloned().or_else(|| generic_specialization_instance_for_call(db, use_key).ok());
             if let Some(parameter) = generic_parameter_reference_name(&return_type.node)
-                && let Ok(instance) = generic_specialization_instance_for_call(db, use_key)
+                && let Some(instance) = selected
                 && let Some(binding) =
                     instance.substitutions.iter().find(|binding| binding.parameter.as_ref() == parameter)
             {

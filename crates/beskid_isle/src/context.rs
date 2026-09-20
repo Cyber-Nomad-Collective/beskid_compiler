@@ -56,6 +56,15 @@ struct LoopTargets {
 struct LocalRootScope {
     bindings: Vec<(LocalSlotId, Option<StackSlot>)>,
     cleanups: Vec<crate::ScopedCleanupPlan>,
+    temporaries: Vec<ScopedTemporaryRoot>,
+}
+
+/// Roots owned by an expression until its value has been published or consumed. They
+/// belong to the lexical root scope so a nested cleanup-error return also releases them.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ScopedTemporaryRoot {
+    Managed(StackSlot),
+    ArrayConstruction(StackSlot),
 }
 
 #[derive(Clone, Copy)]

@@ -103,8 +103,9 @@ pub use semantic_contract::{
     literal_fact, local_slot, managed_reference_kind, mutable_local_assignment, node_kind, node_span, node_type,
     nominal_member_receiver, operator_fact, parameter_generic_reference, primitive_numeric_conversion, range_for_fact,
     reachable_items, resolved_item, resolved_local, runtime_intrinsic, runtime_intrinsic_name, scoped_cleanup,
-    spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target, test_item, test_statement_nodes,
-    try_expression_fact, typed_array_allocation, value_abi_type,
+    spawn_entry_validation, spawn_handle_type, spawn_legality, spawn_target,
+    specialized_call_result_managed_reference_kind, test_item, test_statement_nodes, try_expression_fact,
+    typed_array_allocation, value_abi_type,
 };
 pub use session::{
     compile_front_end_from_resolved_input, configure_db_for_project, prepare_compilation,

@@ -104,6 +104,10 @@ impl NodeFacts for CallFacts {
         (key == self.argument).then_some(self.canonical_constant).flatten()
     }
 
+    fn managed_reference(&self, key: AstNodeKey) -> Option<beskid_isle::ManagedReferenceFact> {
+        (key == self.argument).then_some(beskid_isle::ManagedReferenceFact::NativeOrScalar)
+    }
+
     fn direct_callee(&self, key: AstNodeKey) -> Option<DirectCallee> {
         (key == self.call).then_some(self.callee.clone())
     }

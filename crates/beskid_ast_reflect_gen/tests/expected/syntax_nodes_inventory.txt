@@ -73,6 +73,7 @@ ReturnStatement
 ScopeDefinition
 ScopeHook
 ScopeHookKind
+ScopedUseStatement
 SpawnExpression
 Statement
 StringLiteralPart

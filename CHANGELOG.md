@@ -41,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep live enum construction objects and managed struct/call arguments rooted
+  across nested scoped disposal. Release abandoned expression roots and array
+  construction handles through the existing lexical exit stack, including cleanup
+  failure, and record the scoped-use node in the reflection inventory.
 - Honor sticky Fiber cancellation before every new external park, including
   timer/read retries after a cancelled operation and idempotent repeated Cancel;
   keep completion arbitration and wait cleanup in the single owner winner.

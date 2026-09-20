@@ -213,7 +213,8 @@ fn emit(arms: Arms, function_index: u32) -> String {
 fn enum_literal_and_exhaustive_match_uses_managed_storage() {
     let clif = emit(Arms::Exact, 26);
     assert!(clif.contains("beskid_rt_v5_managed_object_allocate"), "{clif}");
-    assert!(!clif.contains("stack_store"), "{clif}");
+    // Stack slots may hold construction roots; the enum itself remains managed.
+    assert!(clif.contains("gc_register_root"), "{clif}");
     assert!(clif.contains("load.i32"), "{clif}");
     assert!(clif.contains("brif"), "{clif}");
 }

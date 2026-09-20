@@ -29,6 +29,8 @@ mod syntax_facts;
 mod typed_arrays;
 mod typing;
 
+pub use typing::specialized_call_result_managed_reference_kind;
+
 use abi::{
     abi_signature_from_syntax, abi_type_for_binary_expression, abi_type_for_expression, abi_type_from_syntax,
     abi_type_tracked, binary_operand_abi_type_tracked, block_may_fall_through, builtin_type_to_semantic,

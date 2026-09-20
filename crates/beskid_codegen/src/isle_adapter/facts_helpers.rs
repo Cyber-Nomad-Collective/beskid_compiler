@@ -36,6 +36,30 @@ impl SyntaxNodeFacts<'_> {
     /// lowered. Generic parameter paths must use their concrete source substitution: their
     /// pointer-shaped ABI alone cannot distinguish a managed nominal/string from a native pointer.
     pub(super) fn managed_reference_in_context(&self, key: AstNodeKey) -> Option<ManagedReferenceFact> {
+        if self.typed_array_plan(key).is_some() || self.query(implicit_method_receiver(self.db, key)).is_some() {
+            return Some(ManagedReferenceFact::GcManaged);
+        }
+        if let Some(instance) = self.generic_call_specialization_in_context(key) {
+            return self
+                .query(beskid_queries::specialized_call_result_managed_reference_kind(self.db, key, &instance))
+                .map(|kind| match kind {
+                    ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
+                    ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+                });
+        }
+        // These compiler-authorized intrinsics produce native addresses. Their
+        // pointer-shaped ABI alone cannot prove that category to the source query.
+        if matches!(
+            self.runtime_intrinsic_kind(key),
+            Some(
+                RuntimeIntrinsicKind::PointerFromNativeWord
+                    | RuntimeIntrinsicKind::PointerAdd
+                    | RuntimeIntrinsicKind::SchedulerFiberEntryAddress
+                    | RuntimeIntrinsicKind::SchedulerReturnTrampolineAddress
+            )
+        ) {
+            return Some(ManagedReferenceFact::NativeOrScalar);
+        }
         if self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::PathExpression)
             && let Some(managed) = self.specialized_local_managed_reference(key)
         {
@@ -45,6 +69,26 @@ impl SyntaxNodeFacts<'_> {
             return Some(match kind {
                 ManagedReferenceKind::GcManaged => ManagedReferenceFact::GcManaged,
                 ManagedReferenceKind::NativeOrScalar => ManagedReferenceFact::NativeOrScalar,
+            });
+        }
+        if let Some(operator) = self.operator_fact(key) {
+            return Some(if operator == OperatorFact::StringAdd {
+                ManagedReferenceFact::GcManaged
+            } else {
+                ManagedReferenceFact::NativeOrScalar
+            });
+        }
+        // Contextual scalar ABI facts also cover expressions such as native-word
+        // arithmetic that have no independently inferred node_type. Only a distinct
+        // scalar/string identity is sufficient here; POINTER remains ambiguous.
+        if let Some(semantic) =
+            self.scalar_semantic_type(key).or_else(|| self.query(call_argument_abi_type(self.db, key)))
+            && semantic != SemanticTypeId::POINTER
+        {
+            return Some(if semantic == SemanticTypeId::STRING {
+                ManagedReferenceFact::GcManaged
+            } else {
+                ManagedReferenceFact::NativeOrScalar
             });
         }
         (self.query(node_kind(self.db, key)) == Some(beskid_queries::IndexedNodeKind::LetStatement))

@@ -29,6 +29,7 @@ impl IsleContext<'_, '_, '_, '_> {
         let source_signature = self.facts.call_signature(key)?;
         let argument_keys = self.facts.call_arguments(key)?;
         let mut arguments = Vec::with_capacity(argument_keys.len());
+        let mut roots = Vec::with_capacity(argument_keys.len());
         let mut parameters = source_signature.params.iter();
         for argument in argument_keys {
             if self.facts.semantic_type(argument) == Some(beskid_queries::SemanticTypeId::UNIT) {
@@ -43,6 +44,7 @@ impl IsleContext<'_, '_, '_, '_> {
                 self.adapt_scalar_boundary(argument, value, parameter.value_type)
                     .or_else(|| self.materialize_canonical_runtime_direct_constant(argument, parameter.value_type))?
             };
+            roots.push(self.root_expression_value_if_needed(argument, value)?);
             arguments.push(value);
         }
         if parameters.next().is_some() {
@@ -58,6 +60,9 @@ impl IsleContext<'_, '_, '_, '_> {
             }
         };
         let call = self.builder.ins().call(function, &arguments);
+        for root in roots.into_iter().rev() {
+            self.release_expression_root(root)?;
+        }
         Some((call, source_signature))
     }
 
@@ -125,6 +130,8 @@ impl IsleContext<'_, '_, '_, '_> {
         let allocation_call = self.builder.ins().call(allocate, &[request, root_slot_address]);
         let array = self.builder.inst_results(allocation_call).first().copied()?;
         self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
+        let root = ScopedTemporaryRoot::ArrayConstruction(root_slot);
+        self.track_expression_root(root)?;
         // `BeskidArray.ptr` remains at offset zero.  The backing bytes are owned by the same
         // descriptor-backed GC allocation; they are never a stack temporary.
         let data = self.builder.ins().load(pointer, MemFlags::new(), array, 0);
@@ -149,15 +156,6 @@ impl IsleContext<'_, '_, '_, '_> {
                 self.builder.ins().trapz(published, TrapCode::unwrap_user(8));
             }
         }
-        // The allocation was rooted before the first nested element was lowered. Release only
-        // after every store and pointer-publication barrier has completed.
-        let root_handle = self.builder.ins().stack_load(pointer, root_slot, 0);
-        let finish =
-            self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
-        let finish_call = self.builder.ins().call(finish, &[root_handle]);
-        let released = self.builder.inst_results(finish_call).first().copied()?;
-        self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
-
         // Direct-call the callee with the packed array as its sole argument. The callee signature
         // has one array parameter, so this import bypasses `import_direct_call`'s scalar-arity
         // check (N scalars vs. one array parameter would otherwise fail it).
@@ -179,6 +177,7 @@ impl IsleContext<'_, '_, '_, '_> {
             }
         };
         let call = self.builder.ins().call(function, &[array]);
+        self.release_expression_root(Some(root))?;
         self.builder.inst_results(call).first().copied()
     }
 
@@ -472,11 +471,13 @@ impl IsleContext<'_, '_, '_, '_> {
         for (argument, parameter) in arguments.into_iter().zip(&lambda.parameters) {
             let value = generated::constructor_lower_expression(self, argument)?;
             (self.builder.func.dfg.value_type(value) == parameter.value_type).then_some(())?;
-            values.push((value, parameter));
+            let root = self.root_expression_value_if_needed(argument, value)?;
+            values.push((value, parameter, root));
         }
-        for (value, parameter) in values {
+        for (value, parameter, root) in values {
             (!self.locals.contains_key(&parameter.slot)).then_some(())?;
             self.bind_local(parameter.slot, value, parameter.value_type, parameter.managed_reference)?;
+            self.release_expression_root(root)?;
         }
         if let Some(environment) = &lambda.closure_environment {
             let (_, root) = self.emit_inline_closure_environment(environment)?;

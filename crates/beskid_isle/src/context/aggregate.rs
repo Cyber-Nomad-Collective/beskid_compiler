@@ -51,6 +51,8 @@ macro_rules! generated_aggregate_methods {
             let allocation_call = self.builder.ins().call(allocate, &[request, root_slot_address]);
             let array = self.builder.inst_results(allocation_call).first().copied()?;
             self.builder.ins().trapz(array, TrapCode::unwrap_user(5));
+            let root = ScopedTemporaryRoot::ArrayConstruction(root_slot);
+            self.track_expression_root(root)?;
             // `BeskidArray.ptr` remains at offset zero.  The backing bytes are owned by the same
             // descriptor-backed GC allocation; they are never a stack temporary.
             let data = self.builder.ins().load(pointer, MemFlags::new(), array, 0);
@@ -79,12 +81,7 @@ macro_rules! generated_aggregate_methods {
             }
             // The allocation was rooted before the first nested element was lowered. Release only
             // after every store and pointer-publication barrier has completed.
-            let root_handle = self.builder.ins().stack_load(pointer, root_slot, 0);
-            let finish =
-                self.import_runtime_helper("beskid_rt_v5_array_construction_finish", &[pointer], Some(types::I8))?;
-            let finish_call = self.builder.ins().call(finish, &[root_handle]);
-            let released = self.builder.inst_results(finish_call).first().copied()?;
-            self.builder.ins().trapz(released, TrapCode::unwrap_user(10));
+            self.release_expression_root(Some(root))?;
             Some(array)
         }
 
@@ -195,7 +192,8 @@ macro_rules! generated_aggregate_methods {
                     self.pending_error = Some(LoweringError { key, kind: LoweringErrorKind::InvalidStructLayout });
                     return None;
                 }
-                values.push((value, *field_layout));
+                let root = self.root_expression_value_if_needed(field_key, value)?;
+                values.push((value, *field_layout, root));
             }
             let pointer_type = self.facts.scalar_type(key)?;
             if !pointer_type.is_int() {
@@ -211,9 +209,12 @@ macro_rules! generated_aggregate_methods {
             let allocation_call = self.builder.ins().call(allocate, &[request]);
             let object = self.builder.inst_results(allocation_call).first().copied()?;
             self.builder.ins().trapz(object, TrapCode::unwrap_user(5));
-            for (value, field_layout) in values {
+            for (value, field_layout, _) in &values {
                 let address = self.builder.ins().iadd_imm(object, i64::from(field_layout.offset));
-                self.builder.ins().store(MemFlags::new(), value, address, 0);
+                self.builder.ins().store(MemFlags::new(), *value, address, 0);
+            }
+            for (_, _, root) in values.into_iter().rev() {
+                self.release_expression_root(root)?;
             }
             Some(object)
         }
