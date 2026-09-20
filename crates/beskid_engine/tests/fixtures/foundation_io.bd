@@ -35,6 +35,8 @@ type PartialWriter: Writer {
 }
 type TestStream: Stream, Closer, Disposable {
     i64[] state,
+    i64[] trace,
+    i64 digit,
     pub Result<i64, IoError> Read(u8[] destination, i64 offset, i64 count) {
         return Result::Ok(0_i64);
     }
@@ -43,9 +45,11 @@ type TestStream: Stream, Closer, Disposable {
     }
     pub Result<unit, IoError> Close() {
         i64[] lifecycle = state;
+        i64[] releaseTrace = trace;
         if lifecycle[0] != 0_i64 { return Result::Ok(()); }
         lifecycle[0] = 1_i64;
         lifecycle[1] = lifecycle[1] + 1_i64;
+        if digit != 0_i64 { releaseTrace[0] = releaseTrace[0] * 10_i64 + digit; }
         if lifecycle[2] != 0_i64 { return Result::Error(IoError::CloseFailed()); }
         return Result::Ok(());
     }
@@ -99,10 +103,46 @@ i64 ThroughStream(Stream stream) {
     };
 }
 Result<unit, IoError> CloseThenScopedCleanup(i64[] state) {
-    TestStream explicit = TestStream { state: state };
+    TestStream explicit = TestStream { state: state, trace: [0_i64], digit: 0_i64 };
     Result<unit, IoError> first = explicit.Close();
-    use TestStream scoped = TestStream { state: state };
+    use TestStream scoped = TestStream { state: state, trace: [0_i64], digit: 0_i64 };
     return first;
+}
+Result<i64, IoError> FallthroughFromScope(i64[] state) {
+    if true {
+        use TestStream scoped = TestStream { state: state, trace: [0_i64], digit: 0_i64 };
+    }
+    return Result::Ok(301_i64);
+}
+Result<i64, IoError> ReturnFromScope(i64[] state) {
+    use TestStream scoped = TestStream { state: state, trace: [0_i64], digit: 0_i64 };
+    return Result::Ok(302_i64);
+}
+Result<i64, IoError> PropagateFromScope(i64[] state, Result<i64, IoError> operand) {
+    use TestStream scoped = TestStream { state: state, trace: [0_i64], digit: 0_i64 };
+    i64 ignored = operand?;
+    return Result::Ok(303_i64);
+}
+Result<i64, IoError> CleanupFailureFromScope(i64[] state) {
+    use TestStream scoped = TestStream { state: state, trace: [0_i64], digit: 0_i64 };
+    return Result::Ok(304_i64);
+}
+Result<i64, IoError> NestedFromScope(i64[] outerState, i64[] innerState, i64[] trace) {
+    use TestStream outer = TestStream { state: outerState, trace: trace, digit: 1_i64 };
+    if true {
+        use TestStream inner = TestStream { state: innerState, trace: trace, digit: 2_i64 };
+    }
+    return Result::Ok(305_i64);
+}
+i64 IoResultCode(Result<i64, IoError> result) {
+    return match result {
+        Result::Ok(value) => value,
+        Result::Error(error) => match error {
+            IoError::ReadFailed() => -1_i64, IoError::CloseFailed() => -2_i64,
+            IoError::InvalidRange() => -3_i64, IoError::UnexpectedEof(_) => -4_i64,
+            IoError::NoProgress() => -5_i64, IoError::WriteFailed() => -6_i64,
+        },
+    };
 }
 bool IsRange(Result<unit, IoError> result) {
     return match result {
@@ -149,12 +189,12 @@ pub i64 RunFoundationFixture() {
         },
     };
     i64[] closed = [0_i64, 0_i64, 0_i64];
-    TestStream stream = TestStream { state: closed };
+    TestStream stream = TestStream { state: closed, trace: [0_i64], digit: 0_i64 };
     if !IsCloseOk(CloseTwice(stream)) { return 14_i64; }
     if closed[1] != 1_i64 { return 15_i64; }
     if ThroughStream(stream) != 0_i64 { return 16_i64; }
     i64[] closerFailure = [0_i64, 0_i64, 1_i64];
-    TestStream failingCloser = TestStream { state: closerFailure };
+    TestStream failingCloser = TestStream { state: closerFailure, trace: [0_i64], digit: 0_i64 };
     if !FirstFailureThenSecondCloseIsOk(failingCloser) { return 17_i64; }
     if closerFailure[1] != 1_i64 { return 18_i64; }
     i64[] scopedSuccess = [0_i64, 0_i64, 0_i64];
@@ -163,5 +203,19 @@ pub i64 RunFoundationFixture() {
     i64[] scopedFailure = [0_i64, 0_i64, 1_i64];
     if !IsCloseFailure(CloseThenScopedCleanup(scopedFailure)) { return 21_i64; }
     if scopedFailure[1] != 1_i64 { return 22_i64; }
+    i64[] fallthrough = [0_i64, 0_i64, 0_i64];
+    if IoResultCode(FallthroughFromScope(fallthrough)) != 301_i64 || fallthrough[1] != 1_i64 { return 23_i64; }
+    i64[] returned = [0_i64, 0_i64, 0_i64];
+    if IoResultCode(ReturnFromScope(returned)) != 302_i64 || returned[1] != 1_i64 { return 24_i64; }
+    i64[] propagated = [0_i64, 0_i64, 0_i64];
+    Result<i64, IoError> readFailure = Result::Error(IoError::ReadFailed());
+    if IoResultCode(PropagateFromScope(propagated, readFailure)) != -1_i64 || propagated[1] != 1_i64 { return 25_i64; }
+    i64[] cleanupFailure = [0_i64, 0_i64, 1_i64];
+    if IoResultCode(CleanupFailureFromScope(cleanupFailure)) != -2_i64 || cleanupFailure[1] != 1_i64 { return 26_i64; }
+    i64[] outerState = [0_i64, 0_i64, 0_i64];
+    i64[] innerState = [0_i64, 0_i64, 0_i64];
+    i64[] nestedTrace = [0_i64];
+    if IoResultCode(NestedFromScope(outerState, innerState, nestedTrace)) != 305_i64 { return 27_i64; }
+    if outerState[1] != 1_i64 || innerState[1] != 1_i64 || nestedTrace[0] != 21_i64 { return 28_i64; }
     return 42_i64;
 }
