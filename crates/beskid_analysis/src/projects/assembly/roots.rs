@@ -97,7 +97,7 @@ pub fn effective_roots_from_lockfile(plan: &CompilePlan, lockfile_path: &Path) -
 fn parse_lockfile_dependency_lines(text: &str) -> Vec<ProjectLockDependencyEntry> {
     text.lines()
         .filter(|line| !line.starts_with('#') && line.contains("name="))
-        .filter_map(|line| ProjectLockDependencyEntry::parse_v1_line(line).ok())
+        .filter_map(|line| ProjectLockDependencyEntry::parse_v1_line(line.trim_start().strip_prefix("- ").unwrap_or(line)).ok())
         .collect()
 }
 

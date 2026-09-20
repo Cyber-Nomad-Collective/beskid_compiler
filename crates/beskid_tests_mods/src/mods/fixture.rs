@@ -7,7 +7,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-use beskid_analysis::projects::{CompilePlan, ResolvedDependencyProject, Target, TargetKind};
+use beskid_analysis::projects::{
+    effective_roots_from_lockfile, CompilePlan, ResolvedDependencyProject, Target, TargetKind,
+};
 
 use beskid_tests_support::temp_case_dir;
 
@@ -19,26 +21,60 @@ const SAMPLE_MOD_SOURCE: &str = include_str!("../../fixtures/mods/sample_mod/Src
 #[test]
 fn sample_mod_materialized_foundation_replays_no_lossy_utf8_append_route() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/mods/sample_mod");
-    let dependencies = fixture.join("obj/beskid/deps/src");
     let lock = fs::read_to_string(fixture.join("Project.lock")).expect("read fixture lockfile");
     let lock_entry = lock
         .lines()
         .find(|line| line.starts_with("- name=corelib_foundation;"))
         .expect("foundation lock entry");
-    let foundation_name = lock_entry
-        .split("materialized_root=")
-        .nth(1)
-        .and_then(|path| PathBuf::from(path).file_name().map(|name| name.to_string_lossy().into_owned()))
-        .expect("foundation materialized-root basename");
+    let lock_field = |name| {
+        lock_entry
+            .split(';')
+            .find_map(|field| field.strip_prefix(name))
+            .expect("foundation lock field")
+    };
+    let materialized_root = PathBuf::from(lock_field("materialized_root="));
+    let expected_materialized_root = fixture.join("obj/beskid/deps/src").join(
+        materialized_root.file_name().expect("foundation materialized-root basename"),
+    );
+    assert!(materialized_root.is_absolute(), "LSP replays the lockfile's absolute materialized root");
+    assert_eq!(
+        materialized_root, expected_materialized_root,
+        "lockfile must name the checked-in fixture root, not merely a same-named basename"
+    );
     assert!(
-        dependencies.join(&foundation_name).is_dir(),
+        materialized_root.is_dir(),
         "lock must replay a checked-in materialized foundation snapshot: {lock_entry}"
+    );
+
+    let plan = CompilePlan {
+        project_root: fixture.clone(),
+        manifest_path: fixture.join("SampleMod.bproj"),
+        project_name: "SampleMod".to_string(),
+        source_root: fixture.join("Src"),
+        target: Target { name: "main".to_string(), kind: TargetKind::App, entry: Some("Mod.bd".to_string()) },
+        dependency_projects: vec![ResolvedDependencyProject {
+            dependency_name: "corelib_foundation".to_string(),
+            manifest_path: PathBuf::from(lock_field("manifest=")),
+            project_root: PathBuf::from(lock_field("project=")),
+            project_name: "corelib_foundation".to_string(),
+            source_root: PathBuf::from(lock_field("source_root=")),
+        }],
+        unresolved_dependencies: Vec::new(),
+        has_std_dependency: false,
+    };
+    let replayed = effective_roots_from_lockfile(&plan, &fixture.join("Project.lock"));
+    assert_eq!(
+        replayed.dependencies,
+        vec![beskid_analysis::projects::RootEntry {
+            dependency_name: Some("corelib_foundation".to_string()),
+            source_root: materialized_root.join("src"),
+        }],
+        "LSP lockfile replay must resolve the exact absolute materialized root"
     );
 
     for source in ["String.bd", "Utf8.bd"] {
         let source = fs::read_to_string(
-            dependencies
-                .join(&foundation_name)
+            materialized_root
                 .join("src/Core/String")
                 .join(source),
         )

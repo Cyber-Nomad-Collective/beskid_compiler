@@ -51,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Replay the dash-prefixed dependency entries emitted by v1 lockfiles, so LSP
+  uses their materialized absolute source roots.
 - Regenerate the sample-module materialized corelib from the checked-out source
   and assert that lockfile replay cannot restore either removed UTF-8 append route.
 - Remove the public lossy UTF-8 append routes and reject legacy consumers at
