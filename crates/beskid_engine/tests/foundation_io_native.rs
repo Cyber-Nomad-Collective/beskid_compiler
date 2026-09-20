@@ -35,6 +35,12 @@ fn foundation_utf8_materializes_every_accepted_code_unit() {
 }
 
 #[test]
+fn foundation_utf8_does_not_expose_lossy_append_route() {
+    let result = lower_foundation_fixture("foundation_utf8_legacy_append.bd");
+    assert!(result.is_err(), "the deprecated UTF-8 append route must not be a public callable");
+}
+
+#[test]
 fn foundation_byte_cursors_validate_ranges_and_preserve_position_on_failure() {
     run_foundation_fixture("foundation_bytes.bd");
 }
@@ -157,7 +163,7 @@ fn foundation_numeric_panic_preserves_process_trap_code() {
     }
 }
 
-fn run_foundation_fixture(fixture: &str) {
+fn lower_foundation_fixture(fixture: &str) -> anyhow::Result<beskid_codegen::PreparedSyntaxEntrypoint> {
     let compiler = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
     let foundation = compiler.join("corelib/packages/foundation/src");
     let concurrency = compiler.join("corelib/packages/concurrency/src");
@@ -247,14 +253,19 @@ fn run_foundation_fixture(fixture: &str) {
     let target = beskid_engine::host_runtime_target().unwrap();
     let settings = beskid_codegen::cranelift_host::production_isa_settings_builder().unwrap();
     let isa = cranelift_native::builder().unwrap().finish(cranelift_codegen::settings::Flags::new(settings)).unwrap();
-    let lowered = beskid_codegen::lower_syntax_assembly_entrypoint(
+    beskid_codegen::lower_syntax_assembly_entrypoint(
         &mut BeskidDatabase::default(),
         assembly,
         "RunFoundationFixture",
         target.clone(),
         isa.as_ref(),
     )
-    .expect("Foundation fixture source lowering");
+}
+
+fn run_foundation_fixture(fixture: &str) {
+    let compiler = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
+    let target = beskid_engine::host_runtime_target().unwrap();
+    let lowered = lower_foundation_fixture(fixture).expect("Foundation fixture source lowering");
     eprintln!("{fixture}: source lowering complete");
     let prefix = tempfile::tempdir().unwrap();
     let kit = build_native_host(prefix.path().to_path_buf(), RuntimeKitProfile::Debug).unwrap();

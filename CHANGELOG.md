@@ -51,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remove the public lossy UTF-8 append routes and reject legacy consumers at
+  source lowering. Extend native canonical decoding evidence for punctuation,
+  two-/three-/four-byte scalars, and invalid Unicode scalar encodings.
 - Preserve lexical generic shadowing when classifying contract parameters and
   member receivers, including generics declared by a method's owning type.
 - Share array-literal and indexed-element ABI facts between semantic validation and
